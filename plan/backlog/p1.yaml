@@ -424,24 +424,27 @@ issues:
   verify:
   - cargo test; local test against the developer's install documented
 - key: P1-19
-  title: Detect Steam and GOG Quake installs
+  title: Find the user's Quake game data
   labels:
   - L0-formats
   - area:preview
   - type:feature
-  size: S
+  size: M
   reqs:
   - LIC-4
   - PLAT-2
+  - PLAT-8
   depends:
   - P1-18
   deliverable:
-  - 'crates/qs-install: finds Steam (library folders) and GOG installs on macOS, Windows and Linux; reports id1 and rerelease paths; manual override'
+  - 'crates/qs-install: finds Steam library installs and GOG installs (including GOG Galaxy) on Windows and Linux; on macOS, where both stores sell Quake as Windows-only, finds folders downloaded with steamcmd (Windows platform forced) and folders extracted from the GOG installer with innoextract; reports the id1, rerelease and expansion paths'
+  - Accepts any folder containing id1/pak0.pak as a manual override, and validates what it finds by checksum (shareware, registered original, rerelease), reporting what is missing, such as pak1.pak when only the rerelease is installed (Epic, Game Pass)
+  - 'docs/game-data.md: where each store puts the files on each OS and how to get them onto a Mac (GOG installer and innoextract, or steamcmd), written for players'
   acceptance:
-  - Detects installs on all three OSes in tests using fixture directory layouts
-  - Never copies or bundles game data
+  - Detects installs on all three OSes in tests using fixture directory layouts, including steamcmd and innoextract layouts on macOS
+  - Fixtures contain directory layouts and checksums only; no game data is copied, bundled or committed
   verify:
-  - Fixture tests; manual check on each OS recorded
+  - Fixture tests; manual check recorded on macOS against Justin's GOG purchase extracted with innoextract, and on Windows and Linux
 - key: P1-20
   title: Implement the lexer and preprocessor (vanilla)
   labels:

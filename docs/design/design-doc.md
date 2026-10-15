@@ -1,8 +1,8 @@
 # QuakeC IDE - Design Document
 
-Justin Plock · revision 35, 2026-10-15 (license decided)
+Justin Plock · revision 36, 2026-10-15 (license decided; mod export, texture import, Mac game data)
 
-> **Snapshot.** A copy of the design document as approved on 2026-10-15 (revision 34), updated in revision 35 for the license decision in ADR-0002. The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
+> **Snapshot.** A copy of the design document as approved on 2026-10-15 (revision 34), updated in revision 35 for the license decision in ADR-0002 and in revision 36 for mod export, texture import and getting the game files onto a Mac. The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
 
 ## Summary and goals
 
@@ -69,7 +69,7 @@ Yes, Quake runs natively on Apple silicon Macs, but only through community sourc
 | FTEQW | Unverified on Apple silicon | Yes | Yes | Flagship live debug on Windows/Linux |
 | KEX rerelease | None (CrossOver only) | Yes | No | Compile target only |
 
-Steam ships Quake as a Windows-only download, but its `id1` and `rerelease` data folders work with the native Mac ports. The IDE should detect Steam and GOG installs on all three OSes and point the engine at them.
+Steam and GOG both sell Quake as a Windows-only game, but its `id1` and `rerelease` data folders work with the native Mac ports. On a Mac there is usually no store install to find: players download the Steam files with `steamcmd` (forcing the Windows platform) or extract the GOG installer with `innoextract`, and Epic and Game Pass sell only the rerelease, without the original game's `pak1.pak`. The IDE detects Steam and GOG installs on Windows and Linux, recognises the steamcmd and innoextract layouts on macOS, accepts any folder that contains `id1/pak0.pak`, and walks the player through it on first run. Game data is always read where it is, never copied.
 
 Because FTEQW's Mac story is unclear, the preview host (see Engine bridge) is what guarantees live preview on macOS. The IDE itself targets macOS universal, Windows x64/arm64 and Linux x86\_64/aarch64 from one codebase.
 
@@ -250,7 +250,7 @@ The IDE includes its own map editor and map compiler, so building a level, like 
 | --- | --- |
 | Brushes | Create, clip, vertex-edit and CSG brushes in a 3D view with optional 2D views; grid snapping; texture alignment and lock |
 | Entities | Place, move and edit entities, with keys typed and completed from QuakeC; MDL and BSP model previews |
-| Textures | WAD2 browser with palette-correct preview and usage counts |
+| Textures | WAD2 browser with palette-correct preview and usage counts; import PNG images into the project's WAD, quantized to the Quake palette with mipmaps |
 | Formats | Read and write .map (standard and Valve 220); write BSP29, BSP2 and .lit |
 | Diagnostics | Leaks drawn as a path in the 3D view; missing textures; unknown classnames, keys and targets |
 
@@ -298,6 +298,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 - Preview host with reload-on-save, breakpoints and an entity inspector; FTEQW adapter on Windows and Linux.
 - Agent panel with diff review, checkpoints and the tools in Agent harness; MCP server.
 - Signed builds for all three OSes.
+- Export a mod as a zip players can install: progs.dat, maps and the project's own assets, optionally in a PAK, with a README and license notices, never id's game data.
 
 **Out (later)**
 
