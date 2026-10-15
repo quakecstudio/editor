@@ -404,6 +404,7 @@ issues:
   - repo
   - area:legal
   - type:decision
+  - needs:human
   size: S
   reqs:
   - LIC-6
@@ -446,6 +447,7 @@ issues:
   - repo
   - area:process
   - type:test
+  - needs:human
   size: S
   reqs:
   - MVP-1
@@ -469,6 +471,7 @@ issues:
   - repo
   - area:process
   - type:gate
+  - needs:human
   size: S
   reqs:
   - MVP-2

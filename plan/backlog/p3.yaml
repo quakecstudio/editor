@@ -379,6 +379,7 @@ issues:
   - repo
   - area:process
   - type:gate
+  - needs:human
   size: S
   reqs:
   - MVP-2

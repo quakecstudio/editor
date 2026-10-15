@@ -184,6 +184,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -461,6 +462,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -603,6 +605,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2

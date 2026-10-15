@@ -12,12 +12,24 @@ QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview
 - Phases run in order (P0 to P7, then LATER). An issue depends on the previous phase's gate, and on the readiness review of any lower layer it builds on (`docs/testing.md`). Do not start an issue whose dependencies are open.
 - To change the plan, edit `plan/requirements.yaml` or `plan/backlog/*.yaml`, run the checks below, open a PR, and sync GitHub with `plan/apply.py` after it merges. Do not edit issue bodies by hand; the sync overwrites them.
 - Decisions go in `docs/adr/` (set up by [#7](https://github.com/quakecstudio/editor/issues/7)).
+- `python3 plan/status.py --phase P0` shows what is closed, ready and waiting in a phase.
+
+## Working autonomously
+
+Use the project skills and subagents; [`docs/agents/README.md`](docs/agents/README.md) explains them and how to run a whole phase under `/goal`.
+
+- `/work-issue <n>` for one issue, `/run-phase <phase>` to drive a phase through the `spec-author`, `implementer` and `reviewer` subagents.
+- `needs:human` issues (decisions, gates, hardware, credentials, legal) are prepared, never closed, by agents: `/prepare-decision`, `/gate-review`.
+- `/readiness-review` for `type:readiness` issues, `/plan-change` to change the plan.
 
 ```bash
 python3 plan/check.py --write-coverage            # every requirement covered, dependencies valid
 (cd plan && python3 -m unittest test_check.py)    # the checker's own tests
 python3 plan/gen_readiness.py                     # after adding or relabelling feature or test issues
 python3 plan/apply.py --repo quakecstudio/editor  # sync labels, milestones and issues (idempotent)
+python3 plan/status.py --phase P0                 # a phase's progress; the last line is the verdict
+(cd plan && python3 -m unittest test_status.py)   # status tests
+python3 .claude/hooks/test_clean_room_guard.py    # clean-room guard tests
 ```
 
 ## Rules
@@ -26,6 +38,6 @@ python3 plan/apply.py --repo quakecstudio/editor  # sync labels, milestones and 
 - **Rust conventions.** Follow [`docs/conventions.md`](docs/conventions.md): pinned toolchain, exact-pinned workspace dependencies, no panics, unwraps or expects in shipped crates, crates depend only on lower layers.
 - **Tests before climbing.** A layer's work above it waits until that layer meets the bar in [`docs/testing.md`](docs/testing.md).
 - **UI.** Match the approved mockups in [`docs/design/`](docs/design/README.md). The game runs in its own docked window in v1; the embedded game view is post-MVP.
-- **Git.** `main` only accepts changes through the merge queue: work on a branch and open a PR. Use Conventional Commits. Do not add Co-Authored-By trailers.
+- **Git.** `main` only accepts changes through the merge queue: work on a branch and open a PR. An agent may add its own PR to the merge queue once CI passes (`.claude/skills/work-issue/scripts/land.sh`), except for `needs:human` issues, which wait for Justin. Use Conventional Commits. Do not add Co-Authored-By trailers.
 - **Writing.** Plain hyphens, not em or en dashes, in docs and messages.
 - **Never** bundle Quake game data (pak0/pak1) or QuakeC 1.06, which has no license.

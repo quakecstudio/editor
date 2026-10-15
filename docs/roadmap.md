@@ -81,8 +81,10 @@ The largest risk in Phase 0 is the two-week UI framework spike ([#10](https://gi
 
 ## Working an issue
 
+Agents use the `/work-issue` skill, and `/run-phase` under `/goal` to work a whole phase; see [`agents/README.md`](agents/README.md). By hand, the steps are the same:
+
 1. Pick an open issue in the current phase whose dependencies are all closed.
 2. Read its deliverable, acceptance criteria and verification, the requirements it cites in [`plan/requirements.yaml`](../plan/requirements.yaml), and the matching section of the design document.
 3. On a `clean-room:impl` issue, work only from `docs/spec/`; on a `clean-room:spec` issue, record what you read.
-4. Work on a branch, meet the definition of done in the issue, and open a PR; `main` merges only through the merge queue.
+4. Work on a branch, meet the definition of done in the issue, and open a PR with `Closes #<n>`. `main` merges only through the merge queue; an agent may add its own PR once CI passes, except for `needs:human` issues.
 5. If the work shows the plan is wrong or incomplete, change `plan/` in a PR and file follow-up issues; do not leave it in comments.

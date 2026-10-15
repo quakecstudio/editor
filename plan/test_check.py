@@ -48,6 +48,9 @@ class CheckRules(unittest.TestCase):
             k["P1-07"]["depends"] = ["P0-20"]
         self.assert_flags(m, "P1-08: clean-room:impl issue has no spec issue upstream")
 
+    def test_decision_without_needs_human(self):
+        self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "label it needs:human")
+
     def test_decision_without_adr(self):
         self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["a decision"]), "must name a docs/adr/")
 

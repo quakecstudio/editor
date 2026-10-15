@@ -58,6 +58,8 @@ labels:
   - {name: "size:S", color: "c2e0c6", description: "Up to 2 days"}
   - {name: "size:M", color: "fef2c0", description: "Up to 1 week"}
   - {name: "size:L", color: "f9d0c4", description: "Up to 2 weeks"}
+  owner:
+    - {name: "needs:human", color: "e99695", description: "A person must act before it closes: a decision, a sign-off, hardware, credentials or a legal review"}
   role:
     - {name: "clean-room:spec", color: "000000", description: "Author may read GPL source; must not implement the matching code"}
     - {name: "clean-room:impl", color: "666666", description: "Work only from docs/spec/; must not read the matching GPL source"}

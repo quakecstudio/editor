@@ -191,6 +191,7 @@ issues:
   - repo
   - area:legal
   - type:decision
+  - needs:human
   size: S
   reqs:
   - LIC-1
@@ -283,6 +284,7 @@ issues:
   - gpl-tools
   - area:preview
   - type:decision
+  - needs:human
   size: S
   reqs:
   - ENG-2
@@ -301,6 +303,7 @@ issues:
   - gpl-tools
   - area:preview
   - type:spike
+  - needs:human
   size: S
   reqs:
   - PLAT-4
@@ -316,6 +319,7 @@ issues:
   - repo
   - area:preview
   - type:decision
+  - needs:human
   size: S
   reqs:
   - OPEN-2
@@ -334,6 +338,7 @@ issues:
   - repo
   - area:legal
   - type:decision
+  - needs:human
   size: S
   reqs:
   - OPEN-1
@@ -426,6 +431,7 @@ issues:
   - repo
   - area:process
   - type:decision
+  - needs:human
   size: S
   reqs:
   - MVP-4
@@ -445,6 +451,7 @@ issues:
   - repo
   - area:preview
   - type:decision
+  - needs:human
   size: S
   reqs:
   - PLAT-6
@@ -464,6 +471,7 @@ issues:
   - repo
   - area:release
   - type:chore
+  - needs:human
   size: S
   reqs:
   - QA-14
@@ -482,6 +490,7 @@ issues:
   - repo
   - area:process
   - type:decision
+  - needs:human
   size: M
   reqs:
   - TEST-1
@@ -510,6 +519,7 @@ issues:
   - L7-ui
   - area:editor
   - type:decision
+  - needs:human
   size: M
   reqs:
   - UI-14
@@ -537,6 +547,7 @@ issues:
   - repo
   - area:process
   - type:gate
+  - needs:human
   size: S
   reqs:
   - MVP-2

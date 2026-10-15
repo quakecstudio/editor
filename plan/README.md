@@ -11,6 +11,8 @@ The backlog for QuakeC Studio, kept as data so nothing in the [design document](
 | `check.py` | Fails if a requirement is uncovered, an issue is incomplete, dependencies cycle or skip a phase, a gate is incomplete, a clean-room implementation has no spec, or a decision names no ADR; writes `coverage.md` |
 | `test_check.py` | Negative tests: each rule must catch a deliberate fault |
 | `apply.py` | Creates or updates labels, milestones and issues on GitHub, idempotently |
+| `status.py` | A phase's progress from the plan and GitHub, by track (`spec`, `build`, `review`, `human`, `agents`); its last line is the verdict `/goal` tests |
+| `test_status.py` | Tests for `status.py` |
 | `review_page.py` | Renders the plan as one HTML review page |
 
 ## Rules the checker enforces
@@ -18,6 +20,7 @@ The backlog for QuakeC Studio, kept as data so nothing in the [design document](
 - Phases run in order: every issue depends on the previous phase's gate; post-MVP (`LATER`) issues wait for the MVP gate.
 - Layers wait for tested foundations: an issue that builds on a lower layer depends on that layer's readiness review (`docs/testing.md`).
 - Clean-room: every `clean-room:impl` issue has a `type:spec` issue upstream (`docs/clean-room.md`, from P0-09).
+- People: every decision and gate is labelled `needs:human`, so agents prepare it but never close it.
 
 ## Commands
 
@@ -26,5 +29,6 @@ python3 plan/check.py --write-coverage     # validate and refresh coverage.md
 python3 -m unittest plan/test_check.py     # checker self-tests (run from plan/)
 python3 plan/gen_readiness.py              # after adding or relabelling feature/test issues
 python3 plan/apply.py --repo quakecstudio/editor --dry-run
+python3 plan/status.py --phase P0                 # what is closed, ready and waiting
 python3 plan/review_page.py out.html
 ```
