@@ -54,6 +54,10 @@ labels:
     - {name: "type:chore", color: "ededed", description: "Repo and process setup"}
     - {name: "type:gate", color: "b60205", description: "Phase gate review"}
     - {name: "type:readiness", color: "d4c5f9", description: "Layer test-suite readiness review (docs/testing.md)"}
+  size:
+  - {name: "size:S", color: "c2e0c6", description: "Up to 2 days"}
+  - {name: "size:M", color: "fef2c0", description: "Up to 1 week"}
+  - {name: "size:L", color: "f9d0c4", description: "Up to 2 weeks"}
   role:
     - {name: "clean-room:spec", color: "000000", description: "Author may read GPL source; must not implement the matching code"}
     - {name: "clean-room:impl", color: "666666", description: "Work only from docs/spec/; must not read the matching GPL source"}

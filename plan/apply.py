@@ -135,6 +135,8 @@ def main() -> int:
         print("plan/check.py fails; fix the plan first", file=sys.stderr)
         return 1
     issues.sort(key=lambda i: (PHASE_ORDER.index(i["milestone"]), i["key"]))
+    for i in issues:  # Size is shown on the Project board through a size:* label
+        i["labels"] = [*i["labels"], f"size:{i['size']}"]
     titles = {i["key"]: i["title"] for i in issues}
     repo = f"repos/{args.repo}"
 
