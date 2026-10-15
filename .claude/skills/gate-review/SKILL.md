@@ -38,5 +38,6 @@ A criterion without evidence fails the gate: file the missing work as an issue i
 
 ## 3. Close it
 
-1. Open the PR with the report and `Closes #$ARGUMENTS`, then land it with `.claude/skills/work-issue/scripts/land.sh <pr-number>`.
-2. Comment on the gate issue: three lines of summary, the report, and every issue in the phase with its state.
+1. Point the README at the next run: `python3 plan/status.py --readme --phase <next phase>` (after P7, use `--phase LATER`, which says every gate is closed). Commit the change with the report.
+2. Open the PR with the report and `Closes #$ARGUMENTS`, then land it with `.claude/skills/work-issue/scripts/land.sh <pr-number>`.
+3. Comment on the gate issue: three lines of summary, the report, and every issue in the phase with its state.

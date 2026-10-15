@@ -27,7 +27,8 @@ python3 plan/check.py --write-coverage            # every requirement covered, d
 (cd plan && python3 -m unittest test_check.py)    # the checker's own tests
 python3 plan/gen_readiness.py                     # after adding or relabelling feature or test issues
 python3 plan/apply.py --repo quakecstudio/editor  # sync labels, milestones and issues (idempotent)
-python3 plan/status.py --phase P0                 # a phase's progress; the last line is the verdict
+python3 plan/status.py                            # the current phase's progress; the last line is the verdict
+python3 plan/status.py --readme                   # refresh the README's Next run block (current phase and /goal command)
 (cd plan && python3 -m unittest test_status.py)   # status tests
 ```
 
