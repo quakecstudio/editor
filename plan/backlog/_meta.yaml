@@ -59,7 +59,7 @@ labels:
   - {name: "size:M", color: "fef2c0", description: "Up to 1 week"}
   - {name: "size:L", color: "f9d0c4", description: "Up to 2 weeks"}
   owner:
-    - {name: "needs:human", color: "e99695", description: "A person must act before it closes: a decision, hardware, credentials, a legal review or publishing the MVP release"}
-    - {name: "escalated", color: "d93f0b", description: "An agent stopped on something only a person can resolve; see the latest comment. Remove it when resolved"}
+    - {name: "needs:human", color: "e99695", description: "A person must act: a decision, hardware, credentials, legal review or the MVP release"}
+    - {name: "escalated", color: "d93f0b", description: "An agent needs a person; see the latest comment. Remove when resolved"}
 
 sizes: {S: "up to 2 days", M: "up to 1 week", L: "up to 2 weeks"}
