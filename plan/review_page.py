@@ -18,7 +18,7 @@ DECISIONS = [
     ("panic = \"unwind\"", "vouch aborts on panic. This plan unwinds in release builds so the command guard can keep a session alive after one bad command."),
     ("Config and log locations", "vouch uses XDG directories on every OS, including macOS. Desktop apps usually use ~/Library/Application Support and %APPDATA%. P0-01 decides."),
     ("The editor repo is public", "quakecstudio/editor is public, so the plan on the docs/plan branch is visible. It contains no GPL code. P0-08 keeps the GPL repos private and nothing published until the legal review (P4-22)."),
-    ("Create the issues", "The plan is on the docs/plan branch. Once you approve it, plan/apply.py creates the labels, milestones and all issues in quakecstudio/editor."),
+    ("Make main the default branch", "The plan is on main, but GitHub made docs/plan the default because it was pushed first. Change it under Settings > General; this session is not allowed to change repository settings."),
 ]
 
 
@@ -139,7 +139,7 @@ td.sec { font: 600 14px var(--display); background: var(--chip); }
 <div class="wrap">
   <header>
     <h1>QuakeC Studio Backlog</h1>
-    <p class="lede">Every requirement in the design document has an ID, and every issue names its deliverable, acceptance criteria and verification. Phase order and layer test-suite readiness are enforced as dependencies. The plan is on the docs/plan branch; no issues have been created yet.</p>
+    <p class="lede">Every requirement in the design document has an ID, and every issue names its deliverable, acceptance criteria and verification. Phase order and layer test-suite readiness are enforced as dependencies. All issues are on GitHub in quakecstudio/editor, one per plan key.</p>
     <div class="status" id="status"></div>
   </header>
 

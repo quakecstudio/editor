@@ -27,14 +27,14 @@ issues:
   - deny.toml with targets, [advisories], [licenses] (confidence-threshold 0.8), [bans] and [sources] (unknown-registry deny, unknown-git warn, crates.io only, git sources pinned to a rev)
   - 'crates/qs-paths: the single paths module; docs/adr/ entry choosing XDG everywhere or native per-OS dirs'
   - README.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, .gitattributes, .gitignore (license files land with P0-08)
-  - 'Test modules carry #![expect(clippy::unwrap_used, ..., reason = "test code: ...")] as in vouch; qs-tests keeps [lints] workspace = true'
+  - 'Test modules opt out of the no-panic lints with a module-level inner expect attribute naming each lint and reason = "test code: ...", as in vouch; qs-tests keeps [lints] workspace = true'
   - 'crates/qs-tests: the single cross-crate integration test binary (tests/it/)'
   acceptance:
   - cargo build and cargo test pass on an empty workspace on macOS, Windows and Linux
   - 'Fixture code using unwrap, indexing, unchecked arithmetic, an as-cast, println! and an #[allow] without reason each fails clippy'
   - cargo deny check fails when a GPL dependency or a wildcard version is added
   - Every config value matches docs/conventions.md (checked by a script, not by eye)
-  - 'Whether unsafe is needed for windowing/wgpu is settled; if so it is confined to one crate with #[expect(unsafe_code, reason)]'
+  - 'Whether unsafe is needed for windowing/wgpu is settled; if so it is confined to one crate with `#[expect(unsafe_code, reason)]`'
   - Release builds of the app binaries use panic = "unwind" so the command guard works (differs from vouch)
   verify:
   - make lint, make test and make audit on all three OSes; conventions conformance script output attached
