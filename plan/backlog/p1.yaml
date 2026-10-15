@@ -538,7 +538,6 @@ issues:
   - repo
   - area:process
   - type:gate
-  - needs:human
   size: S
   reqs:
   - MVP-2
@@ -575,5 +574,6 @@ issues:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
   - 'Gate met: zero VM divergences on id 1.01 (id qcc) and rerelease (pinned FTEQCC) with at least 90% statement coverage; lossless parse of the whole corpus'
+  - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
-  - Sign-off comment linking CI runs
+  - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed

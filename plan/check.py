@@ -9,7 +9,7 @@ Fails (exit 1) if:
   - an issue depends on an issue in a later phase, or dependencies form a cycle
   - a gate issue does not depend on every other issue in its phase
   - a type:decision issue does not name a docs/adr/ file in its deliverable
-  - a type:decision or type:gate issue is not labelled needs:human
+  - a type:decision issue is not labelled needs:human
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -188,8 +188,8 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
             errors.append(f"{k}: decision issue must name a docs/adr/ file in its deliverable")
 
     for k, i in by_key.items():
-        if ("type:decision" in i["labels"] or "type:gate" in i["labels"]) and "needs:human" not in i["labels"]:
-            errors.append(f"{k}: decisions and gates need a person; label it needs:human")
+        if "type:decision" in i["labels"] and "needs:human" not in i["labels"]:
+            errors.append(f"{k}: decisions need a person; label it needs:human")
 
     covered = {r for i in issues for r in i.get("reqs", [])}
     for r in reqs:

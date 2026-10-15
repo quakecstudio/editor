@@ -379,7 +379,6 @@ issues:
   - repo
   - area:process
   - type:gate
-  - needs:human
   size: S
   reqs:
   - MVP-2
@@ -408,5 +407,6 @@ issues:
   - docs/gates/p3.md with latency measurements per OS, integration test results, updated risk register
   acceptance:
   - 'Gate met: save-to-game in about a second on all three OSes with breakpoints and inspection'
+  - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
-  - Sign-off comment linking CI runs and recordings
+  - The gate report merged with `Closes`, linking the CI runs and recordings; the reviewer's closing comment lists the phase's issues, all closed

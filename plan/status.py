@@ -5,8 +5,9 @@ Issues are grouped into tracks by who may work them:
 
   build   every issue an agent can finish other than readiness reviews (specs, ports, features,
           tests, tooling, docs); the implementer subagent works these
-  review  type:readiness issues (an independent reviewer, see docs/testing.md)
-  human   needs:human issues (decisions, sign-offs, hardware, credentials, license review)
+  review  type:readiness and type:gate issues (an independent reviewer, see docs/testing.md)
+  human   needs:human issues (decisions, hardware, credentials, license review, the MVP release),
+          and any issue labelled `escalated` on GitHub, where an agent stopped for a person
   agents  build + review: everything an agent can close
   all     the whole phase
 
@@ -35,17 +36,17 @@ from check import PHASE_ORDER, load_backlog
 TRACKS = ("build", "review", "human", "agents", "all")
 
 
-def track_of(issue: dict) -> str:
+def track_of(issue: dict, state: dict | None = None) -> str:
     labels = issue.get("labels", [])
-    if "needs:human" in labels:
+    if "needs:human" in labels or "escalated" in (state or {}).get("labels", []):
         return "human"
-    if "type:readiness" in labels:
+    if "type:readiness" in labels or "type:gate" in labels:
         return "review"
     return "build"
 
 
-def in_track(issue: dict, track: str) -> bool:
-    t = track_of(issue)
+def in_track(issue: dict, track: str, state: dict | None = None) -> bool:
+    t = track_of(issue, state)
     if track == "all":
         return True
     if track == "agents":
@@ -54,8 +55,11 @@ def in_track(issue: dict, track: str) -> bool:
 
 
 def compute(issues: list[dict], states: dict[str, dict], phase: str, track: str) -> dict:
-    """states maps plan key -> {"number": int | None, "state": "open" | "closed"}."""
+    """states maps plan key -> {"number": int | None, "state": "open" | "closed", "labels": [...]}."""
     by_key = {i["key"]: i for i in issues}
+
+    def trk(k: str) -> str:
+        return track_of(by_key[k], states.get(k))
 
     def is_closed(k: str) -> bool:
         return states.get(k, {}).get("state") == "closed"
@@ -67,9 +71,9 @@ def compute(issues: list[dict], states: dict[str, dict], phase: str, track: str)
     def row(k: str) -> dict:
         i = by_key[k]
         return {"key": k, "number": states.get(k, {}).get("number"), "title": i["title"],
-                "track": track_of(i)}
+                "track": trk(k)}
 
-    mine = [i for i in issues if i["milestone"] == phase and in_track(i, track)]
+    mine = [i for i in issues if i["milestone"] == phase and in_track(i, track, states.get(i["key"]))]
     mine.sort(key=lambda i: i["key"])
     closed = [i["key"] for i in mine if is_closed(i["key"])]
     open_ = [i["key"] for i in mine if not is_closed(i["key"])]
@@ -95,8 +99,8 @@ def compute(issues: list[dict], states: dict[str, dict], phase: str, track: str)
             waiting[k] = sorted(open_blockers(k, set()))
 
     blockers = sorted({b for bs in waiting.values() for b in bs})
-    human_blockers = [b for b in blockers if track_of(by_key[b]) == "human"]
-    other_blockers = [b for b in blockers if track_of(by_key[b]) != "human"]
+    human_blockers = [b for b in blockers if trk(b) == "human"]
+    other_blockers = [b for b in blockers if trk(b) != "human"]
 
     if not open_:
         verdict = "COMPLETE"
@@ -127,7 +131,8 @@ def github_states(repo: str) -> dict[str, dict]:
             continue
         m = MARKER.search(gi.get("body") or "")
         if m:
-            states[m.group(1)] = {"number": gi["number"], "state": gi["state"]}
+            states[m.group(1)] = {"number": gi["number"], "state": gi["state"],
+                                  "labels": [l["name"] for l in gi.get("labels", [])]}
     return states
 
 

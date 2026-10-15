@@ -4,13 +4,17 @@ QuakeC Studio is built by Claude Code agents working through the plan's issues, 
 
 ## What is autonomous and what is not
 
-Agents take an issue from open to merged on their own: they read it, build it on a branch, open a PR, wait for CI, add the PR to the merge queue and confirm the merge. They also run the independent readiness reviews, and they prepare everything a person has to act on.
+Agents take an issue from open to merged on their own: they read it, build it on a branch, open a PR, wait for CI, add the PR to the merge queue and confirm the merge. They also run the independent readiness reviews, close phase gates when nothing in the phase straggles, and prepare everything a person has to act on.
 
 Issues labelled `needs:human` wait for Justin. They are:
 
 - every decision (`type:decision`): the agent drafts the ADR with options and a recommendation as a draft PR; Justin decides and merges it;
-- every phase gate (`type:gate`): the agent writes the evidence report; Justin signs the gate off;
-- work that needs hardware, money or a lawyer: checking FTEQW on Apple silicon (#13), code-signing credentials (#23), the MVP demo on three OSes (#135), the license compliance review before release.
+- work that needs hardware, credentials or a lawyer: checking FTEQW on Apple silicon (#13), entering your existing Apple and Azure signing credentials as CI secrets (#23), the MVP demo on three OSes (#135), the license compliance review before release;
+- the MVP gate (#136), because it publishes the release.
+
+Other phase gates are not yours: the reviewer agent closes a gate once every issue in the phase's milestone is closed, including follow-ups filed along the way, nothing was deferred to a later phase, and every gate criterion has evidence in `docs/gates/<phase>.md`. If something would have to be deferred, it labels the gate `escalated` and asks you instead.
+
+Any issue an agent cannot finish without a person gets the `escalated` label and a comment saying what is needed. `status.py` treats it like `needs:human`; remove the label once it is resolved.
 
 Creating new GitHub repositories (`quakecstudio/preview-host`, `quakecstudio/tree-sitter-quakec`) is also Justin's; an agent that needs one stops and says so.
 
@@ -23,13 +27,13 @@ Creating new GitHub repositories (`quakecstudio/preview-host`, `quakecstudio/tre
 | `/work-issue <n>` | Takes one issue from open to merged |
 | `/prepare-decision <n>` | Drafts an ADR for a decision issue and asks Justin |
 | `/readiness-review <n>` | Independent review of a layer's test suite against [`docs/testing.md`](../testing.md) |
-| `/gate-review <n>` | Assembles the evidence for a phase gate |
+| `/gate-review <n>` | Checks that nothing in the phase straggles, writes the gate report with its evidence and closes the gate |
 | `/plan-change` | Changes `plan/` safely and syncs GitHub |
 | `implementer` subagent | All build work (specs, ports, features, tests, tooling, docs) and decision drafts |
-| `reviewer` subagent | Readiness reviews and gate reports; never fixes what it reviews |
+| `reviewer` subagent | Readiness reviews and phase gates; never fixes what it reviews |
 | `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge |
 
-`status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness), `human` (`needs:human`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
+`status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness and gates), `human` (`needs:human` or `escalated`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
 
 The project is GPL-3.0-or-later ([ADR-0002](../adr/0002-license-model.md)), so agents may read and port id's source directly; ports keep id's copyright line and cite where they came from.
 
@@ -50,15 +54,15 @@ An agent may add its own PR to the merge queue once CI passes on it (`land.sh` d
 /goal Run /run-phase P0 agents until python3 plan/status.py --phase P0 --track agents prints a last line starting "STATUS P0 agents: COMPLETE" or "STATUS P0 agents: WAITING ON PEOPLE". Run that command at the end of every turn so its last line is in the transcript. Every merged PR passed CI. Stop after 150 turns.
 ```
 
-Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR, a gate report or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
+Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
 
 | Phase | What to expect |
 | --- | --- |
-| 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope, signing and the gate. The license is decided. |
+| 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope and the signing secrets. The license is decided; the agent closes the gate. |
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
-| 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups, and the gate. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
+| 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
 | 3 | Needs `quakecstudio/preview-host` for the fork (#90). Engine integration tests need the redistributable test assets chosen in #17. |
-| 4 | Autonomous up to signing and release, which need the credentials from #23, then the legal review, the demo and the gate. |
+| 4 | Autonomous up to signing and release, which need the credentials from #23, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
 ## Watching a run

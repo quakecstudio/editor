@@ -497,7 +497,6 @@ issues:
   - repo
   - area:process
   - type:gate
-  - needs:human
   size: S
   reqs:
   - MVP-2
@@ -532,5 +531,6 @@ issues:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
   - 'Gate met: the rerelease compiles with our compiler and leaves the same qc-vm traces as the FTEQCC-built rerelease; full navigation and clean diagnostics in the editor'
+  - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
-  - Sign-off comment linking CI runs
+  - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed

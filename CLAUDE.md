@@ -19,8 +19,8 @@ QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview
 Use the project skills and subagents; [`docs/agents/README.md`](docs/agents/README.md) explains them and how to run a whole phase under `/goal`.
 
 - `/work-issue <n>` for one issue, `/run-phase <phase>` to drive a phase through the `implementer` and `reviewer` subagents.
-- `needs:human` issues (decisions, gates, hardware, credentials, legal) are prepared, never closed, by agents: `/prepare-decision`, `/gate-review`.
-- `/readiness-review` for `type:readiness` issues, `/plan-change` to change the plan.
+- `needs:human` issues (decisions, hardware, credentials, legal, the MVP release) are prepared, never closed, by agents: `/prepare-decision`. When an agent stops on something only a person can resolve, it labels the issue `escalated` and comments.
+- `/readiness-review` for `type:readiness` issues, `/gate-review` to close a phase gate once nothing in the phase straggles, `/plan-change` to change the plan.
 
 ```bash
 python3 plan/check.py --write-coverage            # every requirement covered, dependencies valid

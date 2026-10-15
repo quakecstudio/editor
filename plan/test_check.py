@@ -43,7 +43,7 @@ class CheckRules(unittest.TestCase):
         self.assert_flags(lambda r, k, i: k["P1-25"]["depends"].remove("P1-15"), "gate does not depend")
 
     def test_decision_without_needs_human(self):
-        self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "label it needs:human")
+        self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "decisions need a person")
 
     def test_decision_without_adr(self):
         self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["a decision"]), "must name a docs/adr/")
