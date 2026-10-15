@@ -17,6 +17,8 @@ import json
 import re
 import subprocess
 import sys
+import time
+from urllib.parse import quote
 
 from check import PHASE_ORDER, check, load_backlog, load_requirements
 
@@ -24,14 +26,30 @@ MARKER = re.compile(r"<!-- plan-key: ([A-Z0-9-]+) -->")
 
 
 def gh(args: list[str], payload: dict | None = None) -> object:
+    """Call the GitHub API. Writes are paced and retried on secondary rate limits."""
     cmd = ["gh", "api", *args]
     if payload is not None:
         cmd += ["--input", "-"]
-    out = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
-                         capture_output=True, text=True)
-    if out.returncode != 0:
+    writing = payload is not None
+    for attempt in range(6):
+        out = subprocess.run(cmd, input=json.dumps(payload) if writing else None,
+                             capture_output=True, text=True)
+        if out.returncode == 0:
+            if writing:
+                time.sleep(1.0)  # stay under GitHub's content-creation limits
+            if not out.stdout.strip():
+                return None
+            data = json.loads(out.stdout)
+            if "--paginate" in args:  # called with --slurp: a list of pages
+                return [item for page in data for item in page]
+            return data
+        if "rate limit" in out.stderr.lower() or "HTTP 403" in out.stderr or "HTTP 429" in out.stderr:
+            wait = 30 * (attempt + 1)
+            print(f"rate limited; waiting {wait}s", file=sys.stderr)
+            time.sleep(wait)
+            continue
         raise RuntimeError(f"gh api {' '.join(args)} failed: {out.stderr.strip()}")
-    return json.loads(out.stdout) if out.stdout.strip() else None
+    raise RuntimeError(f"gh api {' '.join(args)} still rate limited after retries")
 
 
 def render_body(issue: dict, reqs: dict, meta: dict, numbers: dict[str, int], titles: dict[str, str]) -> str:
@@ -88,15 +106,15 @@ def main() -> int:
             print("-" * 60, f"\n{i['title']}\n", render_body(i, reqs, meta, {}, titles))
         return 0
 
-    existing_labels = {l["name"] for l in gh([f"{repo}/labels", "--paginate"])}
+    existing_labels = {l["name"] for l in gh([f"{repo}/labels", "--paginate", "--slurp"])}
     for l in all_labels:
         body = {"name": l["name"], "color": l["color"], "description": l["description"]}
         if l["name"] in existing_labels:
-            gh(["-X", "PATCH", f"{repo}/labels/{l['name']}"], body)
+            gh(["-X", "PATCH", f"{repo}/labels/{quote(l['name'], safe='')}"], body)
         else:
             gh(["-X", "POST", f"{repo}/labels"], body)
 
-    ms_numbers = {m["title"]: m["number"] for m in gh([f"{repo}/milestones?state=all", "--paginate"])}
+    ms_numbers = {m["title"]: m["number"] for m in gh([f"{repo}/milestones?state=all", "--paginate", "--slurp"])}
     ms_by_key = {}
     for m in meta["milestones"]:
         body = {"title": m["title"], "description": f"Gate: {m['gate']}"}
@@ -107,7 +125,7 @@ def main() -> int:
             ms_by_key[m["key"]] = gh(["-X", "POST", f"{repo}/milestones"], body)["number"]
 
     numbers: dict[str, int] = {}
-    for gi in gh([f"{repo}/issues?state=all&per_page=100", "--paginate"]):
+    for gi in gh([f"{repo}/issues?state=all&per_page=100", "--paginate", "--slurp"]):
         m = MARKER.search(gi.get("body") or "")
         if m:
             numbers[m.group(1)] = gi["number"]
