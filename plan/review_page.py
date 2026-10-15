@@ -17,8 +17,8 @@ DECISIONS = [
     ("MVP scope", "The design doc's MVP list does not name ACP hosting, Cmd/Ctrl+K, next-edit, tree-sitter, editor extensions, the restart-loop adapters, the KEX target or the update mechanism, but the plan builds them before the MVP. P0-21 asks you to confirm each one."),
     ("panic = \"unwind\"", "vouch aborts on panic. This plan unwinds in release builds so the command guard can keep a session alive after one bad command."),
     ("Config and log locations", "vouch uses XDG directories on every OS, including macOS. Desktop apps usually use ~/Library/Application Support and %APPDATA%. P0-01 decides."),
-    ("The editor repo is public", "quakecstudio/editor is public. Nothing has been pushed yet. P0-08 keeps GPL repos private and nothing published until the legal review (P4-22)."),
-    ("GitHub write access", "Reads work, but this session cannot push to quakecstudio/editor. Install the Claude GitHub App on the org (github.com/apps/claude) so the plan files can be committed and plan/apply.py can create the issues."),
+    ("The editor repo is public", "quakecstudio/editor is public, so the plan on the docs/plan branch is visible. It contains no GPL code. P0-08 keeps the GPL repos private and nothing published until the legal review (P4-22)."),
+    ("Create the issues", "The plan is on the docs/plan branch. Once you approve it, plan/apply.py creates the labels, milestones and all issues in quakecstudio/editor."),
 ]
 
 
@@ -139,7 +139,7 @@ td.sec { font: 600 14px var(--display); background: var(--chip); }
 <div class="wrap">
   <header>
     <h1>QuakeC Studio Backlog</h1>
-    <p class="lede">Every requirement in the design document has an ID, and every issue names its deliverable, acceptance criteria and verification. Phase order and layer test-suite readiness are enforced as dependencies. Nothing has been created on GitHub yet.</p>
+    <p class="lede">Every requirement in the design document has an ID, and every issue names its deliverable, acceptance criteria and verification. Phase order and layer test-suite readiness are enforced as dependencies. The plan is on the docs/plan branch; no issues have been created yet.</p>
     <div class="status" id="status"></div>
   </header>
 
