@@ -1,8 +1,8 @@
 # QuakeC IDE - Design Document
 
-Justin Plock · revision 34, 2026-10-15
+Justin Plock · revision 35, 2026-10-15 (license decided)
 
-> **Snapshot.** A copy of the design document as approved on 2026-10-15. The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
+> **Snapshot.** A copy of the design document as approved on 2026-10-15 (revision 34), updated in revision 35 for the license decision in ADR-0002. The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
 
 ## Summary and goals
 
@@ -50,15 +50,13 @@ Yes, the Quake engine is open source: John Carmack released it on December 21, 1
 | 2021 rerelease QuakeC ([quake-rerelease-qc](https://github.com/id-Software/quake-rerelease-qc)) | GPLv2 | Modern-dialect test corpus and template |
 | Game data (pak0/pak1) | Proprietary | Never bundled; detect the user's Steam/GOG install |
 
-**Can we build the foundation on the true source? Yes, but pick the license first.** A direct Rust port of id's C is a derivative work, so those crates, and any binary that links them, must be GPL. The Crafting Apps are MIT OR Apache-2.0 and clean-room, which rules out a direct port if we want the same license.
+**Can we build the foundation on the true source? Yes.** The whole project is licensed **GPL-3.0-or-later** ([ADR-0002](../adr/0002-license-model.md), decided 2026-10-15). id's code is GPL-2.0-or-later, so we use it under version 3, which the Apache-2.0-only dependencies we expect (gpui among them) require.
 
-Recommended split:
+1. **Port from the real thing.** We port id's formats, VM and tools to Rust with the C open beside us. Ported files keep id's copyright notice and cite the file and function they came from, and the behaviour is written up in `docs/spec/` so tests can cite it and agents have it as context.
+2. **Differential testing against the original.** We build id's original VM and qcc from source as test oracles (in `oracles/`, CI only) and compare results instruction by instruction on the same progs.dat. A port is only done when it matches.
+3. **Preview host: a separate program.** A small engine fork (QuakeSpasm or vkQuake lineage) with an IDE bridge, talking to the IDE over a local socket. It is separate because it is a C engine, not for licensing reasons.
 
-1. **IDE core: MIT OR Apache-2.0, clean-room.** One agent or person reads the GPL source and writes a behavioural spec (formats, opcode table, VM rules, edge cases) in plain prose. A second implements from the spec only. The spec and its traceability live in `docs/spec/`.
-2. **Differential testing against the real thing.** Build id's original VM and qcc as a separate test oracle binary (GPL, never linked into the IDE) and compare results instruction by instruction on the same progs.dat.
-3. **Preview host: GPL, separate program.** A small engine fork (QuakeSpasm or vkQuake lineage) with an IDE bridge, talking to the IDE over a local socket.
-
-I'm not a lawyer. The separate-process boundary in points 2 and 3 is the common reading of GPL "aggregation", but confirm it with counsel before release. If keeping the license simple matters more, the alternative is GPL-2.0-or-later for the whole project, which also matches FTEQCC and the community norm.
+A permissive core behind a clean room was considered and rejected: it needed separate spec authors and implementers and a legal review of the process boundary, for a benefit (closed forks) the project does not need. Every package ships the GPL-3.0 text, notices and a corresponding-source link; a license compliance review comes before the first public release.
 
 ## Platform support
 
@@ -103,10 +101,10 @@ flowchart TB
   syn["L2 Syntax + project: preprocessor, lossless CST, progs.src module graph"]
   vm["L1 VM: qc-vm, qc-edict, qc-builtins, what the engine executes"]
   fmt["L0 Formats: progs.dat, .lno, .map, BSP29/BSP2, WAD2 and MDL, as id defined them"]
-  subgraph gpl["Separate processes (GPL, never linked)"]
-    oracles["id qcc + qbsp: GPL oracles, CI only"]
-    host["Preview host: GPL, local socket"]
-    idvm["id's VM: GPL, CI only"]
+  subgraph gpl["Separate processes (C programs)"]
+    oracles["id qcc + qbsp: oracles, CI only"]
+    host["Preview host: engine fork, local socket"]
+    idvm["id's VM: oracle, CI only"]
   end
   apps --> ui --> agent --> cmd
   cmd --> eb
@@ -119,9 +117,9 @@ flowchart TB
   vm -. compared in CI .-> idvm
 ```
 
-*Every surface runs on one command engine; GPL code stays out of process.*
+*Every surface runs on one command engine; the C programs run as separate processes.*
 
-Each crate may depend only on layers below it, enforced by `cargo xtask layers`. The programs on the right run as separate processes and are never linked into the IDE, which keeps the core's license independent of the GPL.
+Each crate may depend only on layers below it, enforced by `cargo xtask layers`. The programs on the right are C programs that run as separate processes: the oracles only in CI, the preview host beside the IDE.
 
 ## Foundation layers from first principles
 
@@ -140,7 +138,7 @@ Limits such as call depth, local stack size and the runaway statement count are 
 
 **How we know it's right**
 
-- A differential runner executes the same progs.dat in `qc-vm` and in id's original VM (the GPL oracle) and compares globals and edicts after every statement.
+- A differential runner executes the same progs.dat in `qc-vm` and in id's original VM (built from source as an oracle) and compares globals and edicts after every statement.
 - The corpus: id 1.01 QuakeC, the rerelease QuakeC and a set of public mods, each compiled with id's qcc and with our compiler.
 - Fuzzing feeds random but well-formed progs to both and flags any divergence.
 
@@ -256,7 +254,7 @@ The IDE includes its own map editor and map compiler, so building a level, like 
 | Formats | Read and write .map (standard and Valve 220); write BSP29, BSP2 and .lit |
 | Diagnostics | Leaks drawn as a path in the 3D view; missing textures; unknown classnames, keys and targets |
 
-**Our own map compiler.** `qmap-bsp`, `qmap-vis` and `qmap-light` in Rust turn a .map into a playable BSP, replacing the qbsp, vis and light stages. They are specified clean-room from id's GPL [quake-tools](https://github.com/id-Software/quake-tools) and checked in CI against id's originals and [ericw-tools](https://github.com/ericwa/ericw-tools) (GPLv2+), neither of which is shipped. BSP2 and coloured light are in scope because modern maps need them; ericw-tools' advanced lighting comes later.
+**Our own map compiler.** `qmap-bsp`, `qmap-vis` and `qmap-light` in Rust turn a .map into a playable BSP, replacing the qbsp, vis and light stages. They are ported from id's GPL [quake-tools](https://github.com/id-Software/quake-tools) and checked in CI against id's originals and [ericw-tools](https://github.com/ericwa/ericw-tools) (GPLv2+), neither of which is shipped. BSP2 and coloured light are in scope because modern maps need them; ericw-tools' advanced lighting comes later.
 
 **Fast iteration inside the play loop**
 
@@ -311,8 +309,8 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 
 | Phase | Work | Gate |
 | --- | --- | --- |
-| 0: decisions and spikes | gpui vs egui spike against the acceptance test; license model; clean-room spec process; repo, `cargo xtask ci`, layering check, signing accounts for macOS and Windows | UI framework and license chosen |
-| 1: foundations | qc-progs, qc-types, qc-vm, qc-edict built from the spec; GPL oracle runner in CI; lossless parser, preprocessor and progs.src project graph; parser fuzzing | qc-vm matches id's VM on the id 1.01 and rerelease corpus |
+| 0: decisions and spikes | gpui vs egui spike against the acceptance test; license model (decided: GPL-3.0-or-later); porting process; repo, `cargo xtask ci`, layering check, signing accounts for macOS and Windows | UI framework and license chosen |
+| 1: foundations | qc-progs, qc-types, qc-vm, qc-edict ported from id's source with specs; oracle runner in CI; lossless parser, preprocessor and progs.src project graph; parser fuzzing | qc-vm matches id's VM on the id 1.01 and rerelease corpus |
 | 2: language core and editor | Semantic model with vanilla and FTEQCC dialects; engine-target database; LSP; editor shell, navigation, diagnostics; our compiler for vanilla, then the rerelease's FTEQCC features | The rerelease QuakeC compiles with our compiler and behaves identically in qc-vm |
 | 3: live preview | Preview host fork with IDE bridge; reload-on-save, breakpoints, entity inspector; FTEQW adapter on Windows and Linux; state-loss warnings | Save-to-game in about a second on macOS, Windows and Linux |
 | 4: agent and MVP release | Agent panel, diff review, checkpoints, vm.run and scenario.run tools; MCP server; signed builds for all three OSes; agent evals | **MVP:** the agent adds a weapon to the rerelease and it fires in a live game |
@@ -329,7 +327,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 | Compiler is now on the critical path | MVP slips | Vanilla first, then only the rerelease's FTEQCC features; GMQCC syntax after the MVP |
 | Map compiler output differs from established tools | Maps leak, break or light differently than with ericw-tools | Differential checks against id's tools and ericw-tools in CI; compile a public map corpus |
 | Map editor scope rivals the rest of the IDE | Effort pulled from the code and preview work | Map editor phases start only after the MVP; entity editing ships before brush editing |
-| GPL boundary misjudged | Forced relicense of the IDE core | Clean-room spec process from day one; legal review before first public release |
+| License non-compliance | Distribution blocked or takedown requests | GPL-3.0-or-later throughout (ADR-0002); notices and a source link in every package; compliance review before the first public release |
 | FTEQW unavailable or weak on macOS | No live debug on Mac | Preview host covers all three OSes |
 | gpui API churn | Rework when Zed changes it | Pin versions; keep UI as a thin top layer |
 | Small audience | Slow adoption | LSP + tree-sitter + MCP reach users in their existing editors and agents |
@@ -338,7 +336,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 
 **Open questions**
 
-- [ ] License: MIT OR Apache-2.0 core with a GPL preview host, or GPL for everything?
+- [x] License: GPL-3.0-or-later for the whole project (ADR-0002).
 - [ ] Product name (QuakeC Studio is unclaimed in search, worth a trademark check).
 - [ ] Which engine is the default preview target: our host, or FTEQW where available?
 - [ ] Does a web build matter enough to choose egui?

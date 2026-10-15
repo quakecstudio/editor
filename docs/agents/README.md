@@ -10,9 +10,9 @@ Issues labelled `needs:human` wait for Justin. They are:
 
 - every decision (`type:decision`): the agent drafts the ADR with options and a recommendation as a draft PR; Justin decides and merges it;
 - every phase gate (`type:gate`): the agent writes the evidence report; Justin signs the gate off;
-- work that needs hardware, money or a lawyer: checking FTEQW on Apple silicon (#13), code-signing credentials (#23), the MVP demo on three OSes (#135), the legal review of the GPL boundary.
+- work that needs hardware, money or a lawyer: checking FTEQW on Apple silicon (#13), code-signing credentials (#23), the MVP demo on three OSes (#135), the license compliance review before release.
 
-Creating new GitHub repositories (`quakecstudio/oracles`, `quakecstudio/preview-host`, `quakecstudio/tree-sitter-quakec`) is also Justin's; an agent that needs one stops and says so.
+Creating new GitHub repositories (`quakecstudio/preview-host`, `quakecstudio/tree-sitter-quakec`) is also Justin's; an agent that needs one stops and says so.
 
 ## The pieces
 
@@ -25,14 +25,13 @@ Creating new GitHub repositories (`quakecstudio/oracles`, `quakecstudio/preview-
 | `/readiness-review <n>` | Independent review of a layer's test suite against [`docs/testing.md`](../testing.md) |
 | `/gate-review <n>` | Assembles the evidence for a phase gate |
 | `/plan-change` | Changes `plan/` safely and syncs GitHub |
-| `clean-room` skill | The clean-room rules, preloaded into the subagents |
-| `spec-author` subagent | Clean-room specs and GPL tools; the only role that may read id's GPL source |
-| `implementer` subagent | All other build work and decision drafts; a guard hook blocks it from GPL source |
+| `implementer` subagent | All build work (specs, ports, features, tests, tooling, docs) and decision drafts |
 | `reviewer` subagent | Readiness reviews and gate reports; never fixes what it reviews |
-| [`.claude/hooks/clean_room_guard.py`](../../.claude/hooks/clean_room_guard.py) | Blocks implementer and reviewer tool calls that would reach GPL source |
 | `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge |
 
-`status.py` sorts issues into tracks by who may work them: `spec` (clean-room specs and GPL tools), `build`, `review` (readiness), `human` (`needs:human`), and `agents` (everything except `human`). The orchestrator works the `agents` track and routes each issue by its track, so the spec author and the implementer are always separate agents with separate context.
+`status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness), `human` (`needs:human`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
+
+The project is GPL-3.0-or-later ([ADR-0002](../adr/0002-license-model.md)), so agents may read and port id's source directly; ports keep id's copyright line and cite where they came from.
 
 ## Merge policy
 
@@ -48,15 +47,15 @@ An agent may add its own PR to the merge queue once CI passes on it (`land.sh` d
 ## Running a phase
 
 ```
-/goal Run /run-phase P0 agents until python3 plan/status.py --phase P0 --track agents prints a last line starting "STATUS P0 agents: COMPLETE" or "STATUS P0 agents: WAITING ON PEOPLE". Run that command at the end of every turn so its last line is in the transcript. Every merged PR passed CI. Never read GPL source in this session. Stop after 150 turns.
+/goal Run /run-phase P0 agents until python3 plan/status.py --phase P0 --track agents prints a last line starting "STATUS P0 agents: COMPLETE" or "STATUS P0 agents: WAITING ON PEOPLE". Run that command at the end of every turn so its last line is in the transcript. Every merged PR passed CI. Stop after 150 turns.
 ```
 
 Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR, a gate report or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
 
 | Phase | What to expect |
 | --- | --- |
-| 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7) and drafts every decision, then waits for you on the licence, name, preview host, MVP scope, signing and the gate. |
-| 1 | Long and mostly autonomous. Needs `quakecstudio/oracles` to exist before the oracle work (#35). Specs land first, then the clean-room implementations, then readiness reviews. |
+| 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope, signing and the gate. The license is decided. |
+| 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
 | 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups, and the gate. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
 | 3 | Needs `quakecstudio/preview-host` for the fork (#90). Engine integration tests need the redistributable test assets chosen in #17. |
 | 4 | Autonomous up to signing and release, which need the credentials from #23, then the legal review, the demo and the gate. |

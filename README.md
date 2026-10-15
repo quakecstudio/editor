@@ -23,6 +23,6 @@ Phase 0 of 7: decisions and spikes. There is no code yet. Work is tracked as Git
 
 ## License
 
-To be decided in [#8](https://github.com/quakecstudio/editor/issues/8): MIT OR Apache-2.0 for the IDE core with GPL tools kept out of process, or GPL for everything. Quake's game data is not included and never will be; you need your own copy of Quake.
+GPL-3.0-or-later ([LICENSE](LICENSE), [ADR-0002](docs/adr/0002-license-model.md)). Code ported from id Software's Quake source, which id released under GPL-2.0-or-later, keeps id's copyright notice. Quake's game data is not included and never will be; you need your own copy of Quake.
 
 QuakeC Studio is an independent project and is not affiliated with or endorsed by id Software, ZeniMax Media or Bethesda.

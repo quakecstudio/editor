@@ -32,7 +32,7 @@ issues:
   acceptance:
   - cargo build and cargo test pass on an empty workspace on macOS, Windows and Linux
   - 'Fixture code using unwrap, indexing, unchecked arithmetic, an as-cast, println! and an #[allow] without reason each fails clippy'
-  - cargo deny check fails when a GPL dependency or a wildcard version is added
+  - cargo deny check fails when a dependency license incompatible with GPL-3.0-or-later or a wildcard version is added
   - Every config value matches docs/conventions.md (checked by a script, not by eye)
   - 'Whether unsafe is needed for windowing/wgpu is settled; if so it is confined to one crate with `#[expect(unsafe_code, reason)]`'
   - Release builds of the app binaries use panic = "unwind" so the command guard works (differs from vouch)
@@ -114,13 +114,13 @@ issues:
   deliverable:
   - 'CLAUDE.md: overview, architecture, code conventions, test conventions, commands (vouch layout)'
   - 'AGENTS.md: pointer to CLAUDE.md plus environment setup; .claude/hooks/session-setup.sh'
-  - '.claude/rules/: branching.md, commits-and-issues.md (no Co-Authored-By), development-discipline.md, specs-are-source-of-truth.md, clean-room.md, layering.md'
+  - '.claude/rules/: branching.md, commits-and-issues.md (no Co-Authored-By), development-discipline.md, specs-are-source-of-truth.md, porting.md, layering.md'
   - specs/ cache with manifest.tsv (origin URL, sha256) and scripts/refresh-specs.sh, seeded with the LSP, MCP and ACP specifications
   - docs/spec/requirements.tsv format and the spec-citation coverage ratchet test in qs-tests
   - .github/ISSUE_TEMPLATE/ for feature, spec, decision, spike and bug, each requiring deliverable, acceptance criteria, verification and requirement IDs; .github/pull_request_template.md with the definition
     of done
   acceptance:
-  - A fresh agent session given only the repo states the layering, no-panic, clean-room and commit rules and the make ci command
+  - A fresh agent session given only the repo states the layering, no-panic, porting and commit rules and the make ci command
   - Removing a spec citation from a test fails the coverage ratchet
   - Each issue template shows deliverable, acceptance and verification sections
   verify:
@@ -195,20 +195,16 @@ issues:
   size: S
   reqs:
   - LIC-1
-  depends:
-  - P0-07
   deliverable:
-  - docs/adr/0002-license-model.md comparing MIT OR Apache-2.0 core + GPL preview host and tools vs GPL-2.0-or-later throughout
-  - LICENSE files and SPDX headers policy matching the decision
-  - Updated deny.toml allowed-license list
+  - 'docs/adr/0002-license-model.md: GPL-3.0-or-later for the whole project, the alternatives considered and the consequences for the plan'
+  - LICENSE with the GPL-3.0 text; the SPDX header and notice policy in docs/conventions.md
   acceptance:
-  - The ADR states which repos hold GPL code and what may cross the process boundary
-  - cargo xtask licenses enforces the decision
-  - Until P4-22 signs off, no package is published and GPL repos (oracles, preview host) are created private; the editor repo holds no GPL code
+  - The ADR is accepted by Justin
+  - docs/conventions.md, the plan and the design document no longer assume a permissive core or a clean room
   verify:
-  - ADR reviewed and merged; licenses check passes
+  - ADR merged; P0-01's deny.toml and P0-02's licenses check enforce it
 - key: P0-09
-  title: Define the clean-room process
+  title: Define the porting process
   labels:
   - repo
   - area:legal
@@ -220,17 +216,14 @@ issues:
   depends:
   - P0-08
   deliverable:
-  - 'docs/clean-room.md: roles, which GPL sources each role may read, spec format, contamination rules and remedy'
-  - 'Agent separation: spec and implementation run in separate sessions with no shared memory; implementer environments have no checkout of GPL repos'
-  - 'docs/clean-room/readers.md: every person or agent, the GPL files they read and the date (including oracle and preview-host developers)'
-  - A GitHub Action that rejects assigning a clean-room:impl issue to anyone listed as a reader for that spec area
+  - 'docs/porting.md: which id sources are authoritative for each layer, how a port keeps id''s copyright notice and cites the file and function, how behaviour is written up in docs/spec/, and what the differential tests must cover'
+  - 'A worked example: one id function, its Rust port with notice and citation, its spec section and its test'
   - 'docs/spec/README.md and docs/spec/_template.md: numbered sections, behaviour statements, named constants with citations, test vectors'
   acceptance:
   - Each spec section has a stable ID that implementation PRs and tests cite
-  - The assignment check blocks a listed reader in a test run
-  - The process states what happens if ADR-0002 chooses GPL throughout (whether the clean-room is kept)
+  - cargo xtask licenses (P0-02) fails a file that says it is ported from id's code but lacks id's copyright line
   verify:
-  - Action tested against a fixture readers.md
+  - The worked example compiles and its test passes once the workspace exists; the licenses check is tested against a fixture
 - key: P0-10
   title: 'Spike: gpui vs egui against the editor acceptance test'
   labels:
@@ -281,7 +274,7 @@ issues:
 - key: P0-12
   title: Decide the preview host base engine
   labels:
-  - gpl-tools
+  - c-tools
   - area:preview
   - type:decision
   - needs:human
@@ -300,7 +293,7 @@ issues:
 - key: P0-13
   title: Verify FTEQW on Apple silicon
   labels:
-  - gpl-tools
+  - c-tools
   - area:preview
   - type:spike
   - needs:human
@@ -371,7 +364,7 @@ issues:
   - Policy that QuakeC 1.06 is never fetched or bundled
   acceptance:
   - Every entry has a license recorded from the item's own files, not guessed
-  - Nothing GPL or unlicensed is vendored into the permissive tree
+  - Nothing unlicensed (such as QuakeC 1.06) or incompatible with GPL-3.0-or-later is vendored into the repo
   verify:
   - cargo xtask corpus verify checks URLs and checksums
 - key: P0-17

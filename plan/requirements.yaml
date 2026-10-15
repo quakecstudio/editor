@@ -1,5 +1,5 @@
 # Every requirement in the QuakeC IDE design document, one ID each.
-# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 34, 2026-10-15).
+# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 35, 2026-10-15).
 # Each requirement must be covered by at least one issue in backlog.yaml;
 # plan/check.py fails if one is not.
 #
@@ -22,14 +22,14 @@ sections:
   - id: LIC
     title: Source and licensing
     requirements:
-      - {id: LIC-1, kind: stated, text: "Decide the license model: MIT OR Apache-2.0 core with a GPL preview host, or GPL for everything"}
-      - {id: LIC-2, kind: stated, text: "Clean-room process: spec authors read GPL source and write prose specs in docs/spec/; implementers work from specs only; traceability kept"}
-      - {id: LIC-3, kind: stated, text: "id's original VM and qcc built as separate GPL test-oracle programs, never linked into or shipped with the IDE"}
+      - {id: LIC-1, kind: stated, text: "License: GPL-3.0-or-later for the whole project (id's GPL-2.0-or-later code is used under version 3, which Apache-2.0-only dependencies such as gpui require)"}
+      - {id: LIC-2, kind: stated, text: "Porting process: code ported from id's source keeps id's copyright notice and cites the file and function it came from; the behaviour is documented in docs/spec/ so tests can cite it"}
+      - {id: LIC-3, kind: stated, text: "id's original VM and qcc built from source as test oracles for differential testing; not shipped with the IDE"}
       - {id: LIC-4, kind: stated, text: "Game data (pak0/pak1) never bundled; detect the user's Steam and GOG installs"}
       - {id: LIC-5, kind: stated, text: "QuakeC 1.06 (no license) is read-only and never bundled; GPLv2 1.01 and rerelease QuakeC used as corpus and template"}
-      - {id: LIC-6, kind: stated, text: "Legal review of the GPL process boundary before the first public release"}
-      - {id: LIC-8, kind: implied, text: "A pinned FTEQCC, built in the GPL oracle repo, defines expected behaviour for the rerelease in CI only (no id compiler handles the rerelease)"}
-      - {id: LIC-7, kind: implied, text: "GPL test corpora and oracles live outside the permissively licensed tree (separate repo or fetched at test time) so the core repo stays single-licensed"}
+      - {id: LIC-6, kind: stated, text: "License compliance review before the first public release: notices, corresponding source, dependency licenses compatible with GPL-3.0-or-later"}
+      - {id: LIC-8, kind: implied, text: "A pinned FTEQCC, built with the oracles, defines expected behaviour for the rerelease in CI only (no id compiler handles the rerelease)"}
+      - {id: LIC-7, kind: implied, text: "Oracles build from oracles/ in this repo; third-party sources and corpora are fetched by checksum at build time, never vendored; game data and QuakeC 1.06 never enter the repo"}
 
   - id: PLAT
     title: Platform support
@@ -59,7 +59,7 @@ sections:
     title: Architecture
     requirements:
       - {id: ARCH-1, kind: stated, text: "Crate layers L0-L7 plus apps; a crate depends only on lower layers, enforced by cargo xtask layers"}
-      - {id: ARCH-2, kind: stated, text: "GPL programs (the preview host; id qcc and id map tools; id VM) run as separate processes and are never linked"}
+      - {id: ARCH-2, kind: stated, text: "C programs (the preview host engine; the id VM, id qcc and map-tool oracles) run as separate processes and talk to the IDE over protocols"}
       - {id: ARCH-3, kind: implied, text: "Cargo workspace scaffold, toolchain pin, rustfmt/clippy config and pinned dependency policy"}
 
   - id: FND
@@ -168,7 +168,7 @@ sections:
       - {id: MAP-8, kind: stated, text: "qmap-bsp: .map to BSP (replacing qbsp)"}
       - {id: MAP-9, kind: stated, text: "qmap-vis: potentially visible set"}
       - {id: MAP-10, kind: stated, text: "qmap-light: lightmaps including coloured light (.lit)"}
-      - {id: MAP-11, kind: stated, text: "Map compilers specified clean-room from id's quake-tools and checked in CI against id's tools and ericw-tools, neither shipped"}
+      - {id: MAP-11, kind: stated, text: "Map compilers ported from id's quake-tools and checked in CI against id's tools and ericw-tools, neither shipped"}
       - {id: MAP-12, kind: stated, text: "Entity-only changes reach the running game with no recompile"}
       - {id: MAP-13, kind: stated, text: "Play from here: fast compile (no vis, quick light), player spawned at the camera"}
       - {id: MAP-14, kind: stated, text: "Background full compile with vis and final light swaps in when done"}
@@ -222,7 +222,7 @@ sections:
     requirements:
       - {id: PM-1, kind: stated, text: "Milestones per phase with gate as exit criteria; labels on layer, area and type; one Project board with Phase, Layer, Status, Size and board, roadmap and decisions views"}
       - {id: PM-2, kind: stated, text: "Decisions as issues resolved into ADRs in docs/adr/"}
-      - {id: PM-3, kind: stated, text: "Clean-room work tracked: spec issues output docs/spec/; implementation issues link spec sections; spec author is not the implementer"}
+      - {id: PM-3, kind: stated, text: "Specs tracked: spec issues output docs/spec/; implementation issues link spec sections; tests cite them"}
       - {id: PM-4, kind: stated, text: "Branch protection on main with cargo xtask ci required; AGENTS.md with layering, no-panics and spec-only rules"}
       - {id: PM-5, kind: stated, text: "Every issue ends in a concrete deliverable with acceptance criteria and verification (user requirement, 2026-10-15)"}
       - {id: PM-6, kind: stated, text: "Nothing in the design doc is missed: requirement coverage checked automatically"}
@@ -242,7 +242,7 @@ sections:
       - {id: CONV-10, kind: stated, text: "Conventional Commits, branch naming, squash merges, no direct pushes to main, worktrees for parallel agents; no Co-Authored-By trailers"}
       - {id: CONV-11, kind: stated, text: "Test placement, single integration test binary, spec-struct fixtures, no wall-clock waits, tests cite the spec section they pin with a coverage ratchet"}
       - {id: CONV-12, kind: stated, text: "Specs are the source of truth: never state required behaviour from memory; public specs cached verbatim in specs/ with manifest and sha256"}
-      - {id: CONV-13, kind: stated, text: "CLAUDE.md, AGENTS.md and .claude/rules/ (branching, commits-and-issues, development-discipline, specs-are-source-of-truth, clean-room, layering) and a session-setup hook"}
+      - {id: CONV-13, kind: stated, text: "CLAUDE.md, AGENTS.md and .claude/rules/ (branching, commits-and-issues, development-discipline, specs-are-source-of-truth, porting, layering) and a session-setup hook"}
       - {id: CONV-14, kind: stated, text: "Repository layout: crates/ with a project prefix, apps/, xtask/, fuzz/ outside the workspace, docs/ mdBook, specs/, plan/, packaging/"}
       - {id: CONV-15, kind: stated, text: "Repository files: dual license files (per ADR), README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT"}
       - {id: CONV-16, kind: stated, text: "tracing for diagnostics, one paths module (XDG vs native dirs decided in an ADR), user-facing strings in one catalog"}

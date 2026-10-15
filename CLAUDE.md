@@ -18,7 +18,7 @@ QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview
 
 Use the project skills and subagents; [`docs/agents/README.md`](docs/agents/README.md) explains them and how to run a whole phase under `/goal`.
 
-- `/work-issue <n>` for one issue, `/run-phase <phase>` to drive a phase through the `spec-author`, `implementer` and `reviewer` subagents.
+- `/work-issue <n>` for one issue, `/run-phase <phase>` to drive a phase through the `implementer` and `reviewer` subagents.
 - `needs:human` issues (decisions, gates, hardware, credentials, legal) are prepared, never closed, by agents: `/prepare-decision`, `/gate-review`.
 - `/readiness-review` for `type:readiness` issues, `/plan-change` to change the plan.
 
@@ -29,12 +29,11 @@ python3 plan/gen_readiness.py                     # after adding or relabelling 
 python3 plan/apply.py --repo quakecstudio/editor  # sync labels, milestones and issues (idempotent)
 python3 plan/status.py --phase P0                 # a phase's progress; the last line is the verdict
 (cd plan && python3 -m unittest test_status.py)   # status tests
-python3 .claude/hooks/test_clean_room_guard.py    # clean-room guard tests
 ```
 
 ## Rules
 
-- **Clean room.** id Software's Quake code is GPL. On an issue labelled `clean-room:impl`, work only from `docs/spec/` and never read the matching GPL source. On `clean-room:spec`, record every GPL file you read in `docs/clean-room/readers.md` and do not implement the matching code. The process is defined by [#9](https://github.com/quakecstudio/editor/issues/9).
+- **License and porting.** The whole project is GPL-3.0-or-later ([ADR-0002](docs/adr/0002-license-model.md)). Port from id's source freely: keep id's copyright line, cite the file and function, document the behaviour in `docs/spec/` and prove it with a differential test against the oracle. Dependencies must be GPL-3.0-compatible. The process is written up in `docs/porting.md` by [#9](https://github.com/quakecstudio/editor/issues/9).
 - **Rust conventions.** Follow [`docs/conventions.md`](docs/conventions.md): pinned toolchain, exact-pinned workspace dependencies, no panics, unwraps or expects in shipped crates, crates depend only on lower layers.
 - **Tests before climbing.** A layer's work above it waits until that layer meets the bar in [`docs/testing.md`](docs/testing.md).
 - **UI.** Match the approved mockups in [`docs/design/`](docs/design/README.md). The game runs in its own docked window in v1; the embedded game view is post-MVP.

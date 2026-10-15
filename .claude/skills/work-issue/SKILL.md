@@ -16,15 +16,16 @@ Issue: #$ARGUMENTS
 3. Look up each requirement ID in `plan/requirements.yaml` and read the matching section of `docs/design/design-doc.md`. For UI work, open the mockups in `docs/design/mockups/` and match them.
 4. Check the labels:
    - `needs:human`: do not implement or merge. Use the `prepare-decision` skill (decisions) or prepare what a person needs and comment on the issue (hardware, credentials, legal, gate). Then stop.
-   - `clean-room:impl`: work only from `docs/spec/`. Never open id's GPL source, the oracles repo or a GPL port's source. If the spec is missing something, stop and file a spec issue (`plan-change` skill) instead of guessing or looking.
-   - `clean-room:spec` or `gpl-tools`: you may read the GPL source. Record every GPL file you read in `docs/clean-room/readers.md`. Never write the clean-room implementation of anything you specified.
+   - `c-tools`: the work is C code, either in `oracles/` here or in a separate repo such as `quakecstudio/preview-host`. If that repo does not exist yet, stop and report it: Justin creates repositories.
    - `type:readiness`: use the `readiness-review` skill instead.
    - `type:gate`: use the `gate-review` skill instead.
+5. Never commit Quake game data (pak0/pak1) or QuakeC 1.06, which has no license. Fetch third-party sources and corpora by checksum instead of vendoring them.
 
 ## 2. Build it
 
 1. `git switch main && git pull --ff-only`, then `git switch -c <type>/<issue-number>-<short-slug>`, for example `feat/45-qc-types`.
-2. Do exactly what the deliverable says, at the paths it names. Follow `docs/conventions.md`: no panics, `unwrap` or `expect` in shipped crates; a crate depends only on lower layers; every source file starts with the SPDX line.
+2. Do exactly what the deliverable says, at the paths it names. Follow `docs/conventions.md`: no panics, `unwrap` or `expect` in shipped crates; a crate depends only on lower layers; every source file starts with the `GPL-3.0-or-later` SPDX line.
+   - Porting from id's source is encouraged (the project is GPL-3.0-or-later, ADR-0002). Keep id's copyright line in the file header, cite the file and function you ported, write the behaviour up in `docs/spec/`, and prove it with a differential test against the oracle. Follow `docs/porting.md` once #9 lands.
 3. Meet every acceptance criterion with a test or a recorded result. Tests that pin a spec rule cite the spec section.
 4. Run the checks that exist so far. Once #2 lands that is `make ci` (or `cargo xtask ci`); until then run `python3 plan/check.py` and the tests of whatever you touched.
 5. If the work shows the plan is wrong or incomplete, change it with the `plan-change` skill in the same PR, or file a follow-up issue. Never leave it in a comment.

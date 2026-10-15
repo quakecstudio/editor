@@ -3,11 +3,11 @@
 
 Issues are grouped into tracks by who may work them:
 
-  spec    clean-room:spec issues and gpl-tools issues (the only work that may read id's GPL source)
-  build   every other issue an agent can finish (implementation, tests, tooling, docs)
+  build   every issue an agent can finish other than readiness reviews (specs, ports, features,
+          tests, tooling, docs); the implementer subagent works these
   review  type:readiness issues (an independent reviewer, see docs/testing.md)
-  human   needs:human issues (decisions, sign-offs, hardware, credentials, legal review)
-  agents  spec + build + review: everything an agent can close
+  human   needs:human issues (decisions, sign-offs, hardware, credentials, license review)
+  agents  build + review: everything an agent can close
   all     the whole phase
 
 The last line is the verdict a /goal condition can test:
@@ -32,7 +32,7 @@ import sys
 
 from check import PHASE_ORDER, load_backlog
 
-TRACKS = ("spec", "build", "review", "human", "agents", "all")
+TRACKS = ("build", "review", "human", "agents", "all")
 
 
 def track_of(issue: dict) -> str:
@@ -41,8 +41,6 @@ def track_of(issue: dict) -> str:
         return "human"
     if "type:readiness" in labels:
         return "review"
-    if "clean-room:spec" in labels or "gpl-tools" in labels:
-        return "spec"
     return "build"
 
 

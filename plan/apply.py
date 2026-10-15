@@ -113,10 +113,6 @@ def render_body(issue: dict, reqs: dict, meta: dict, numbers: dict[str, int], ti
         for d in issue["depends"]:
             ref = f"#{numbers[d]}" if d in numbers else f"`{d}`"
             lines.append(f"- [ ] {ref} {titles[d]}")
-    if "clean-room:impl" in issue["labels"]:
-        lines += ["", "> Clean-room implementation: work only from `docs/spec/`. Do not read the matching GPL source."]
-    if "clean-room:spec" in issue["labels"]:
-        lines += ["", "> Clean-room spec: record every GPL file you read in `docs/clean-room/readers.md`. You may not implement the matching code."]
     lines += ["", "## Definition of done", *[f"- [ ] {d}" for d in meta["definition_of_done"]], "",
               f"<!-- plan-key: {issue['key']} -->"]
     return "\n".join(lines)

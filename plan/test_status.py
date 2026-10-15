@@ -12,14 +12,15 @@ def issue(key, milestone="P1", labels=("type:feature",), depends=()):
 
 
 GATE0 = issue("P0-20", "P0", ("type:gate", "needs:human"))
-SPEC = issue("P1-01", labels=("type:spec", "clean-room:spec"), depends=["P0-20"])
-IMPL = issue("P1-07", labels=("type:feature", "clean-room:impl"), depends=["P0-20", "P1-01"])
+SPEC = issue("P1-01", labels=("type:spec",), depends=["P0-20"])
+IMPL = issue("P1-07", labels=("type:feature",), depends=["P0-20", "P1-01"])
 TOOL = issue("P1-14", labels=("type:chore",), depends=["P0-20"])
-NEXT = issue("P1-08", labels=("type:feature", "clean-room:impl"), depends=["P0-20", "P1-07"])
+NEXT = issue("P1-08", labels=("type:feature",), depends=["P0-20", "P1-07"])
 REVIEW = issue("P1-R0", labels=("type:readiness",), depends=["P0-20", "P1-07", "P1-08"])
+ABOVE = issue("P1-30", labels=("type:feature",), depends=["P0-20", "P1-R0"])
 GATE1 = issue("P1-25", labels=("type:gate", "needs:human"),
-              depends=["P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0"])
-PLAN = [GATE0, SPEC, IMPL, TOOL, NEXT, REVIEW, GATE1]
+              depends=["P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0", "P1-30"])
+PLAN = [GATE0, SPEC, IMPL, TOOL, NEXT, REVIEW, ABOVE, GATE1]
 
 
 def states(closed=(), numbers=None):
@@ -30,11 +31,11 @@ def states(closed=(), numbers=None):
 
 class Tracks(unittest.TestCase):
     def test_track_of(self):
-        self.assertEqual(status.track_of(SPEC), "spec")
+        self.assertEqual(status.track_of(SPEC), "build")
         self.assertEqual(status.track_of(IMPL), "build")
         self.assertEqual(status.track_of(REVIEW), "review")
         self.assertEqual(status.track_of(GATE1), "human")
-        self.assertEqual(status.track_of(issue("X", labels=("type:feature", "gpl-tools"))), "spec")
+        self.assertEqual(status.track_of(issue("X", labels=("type:feature", "c-tools"))), "build")
 
 
 class Verdicts(unittest.TestCase):
@@ -47,17 +48,18 @@ class Verdicts(unittest.TestCase):
         self.assertEqual([x["key"] for x in r["ready"]], ["P1-01", "P1-14"])
         self.assertTrue(r["verdict"].startswith("IN PROGRESS"))
 
-    def test_build_track_blocked_by_spec_track(self):
-        r = status.compute(PLAN, states(closed={"P0-20", "P1-14"}), "P1", "build")
-        self.assertEqual(r["verdict"], "BLOCKED P1-01")
+    def test_build_track_blocked_by_review_track(self):
+        done = {"P0-20", "P1-01", "P1-07", "P1-14", "P1-08"}
+        r = status.compute(PLAN, states(closed=done), "P1", "build")
+        self.assertEqual(r["verdict"], "BLOCKED P1-R0")
 
     def test_chain_inside_track_is_followed(self):
-        r = status.compute(PLAN, states(closed={"P0-20", "P1-14"}), "P1", "build")
-        nxt = next(w for w in r["waiting"] if w["key"] == "P1-08")
-        self.assertEqual([b["key"] for b in nxt["blocked_by"]], ["P1-01"])
+        r = status.compute(PLAN, states(closed={"P0-20", "P1-01", "P1-14"}), "P1", "review")
+        rev = next(w for w in r["waiting"] if w["key"] == "P1-R0")
+        self.assertEqual([b["key"] for b in rev["blocked_by"]], ["P1-07", "P1-08"])
 
     def test_agents_complete_while_gate_open(self):
-        done = {"P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0"}
+        done = {"P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0", "P1-30"}
         r = status.compute(PLAN, states(closed=done), "P1", "agents")
         self.assertEqual(r["verdict"], "COMPLETE")
         r = status.compute(PLAN, states(closed=done), "P1", "all")

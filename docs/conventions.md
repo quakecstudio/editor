@@ -106,8 +106,8 @@ semantics require exact IEEE comparison. There the lint is expected per site wit
 **differs from vouch** twice: vouch targets musl on Linux, but a GPU desktop app links the
 system graphics stack, so Linux builds use glibc; and vouch has no `x86_64-apple-darwin`, which
 this project adds for the universal macOS build);
-`[advisories]` with every ignore justified in a comment; `[licenses]` with the vouch allowlist
-(no GPL in the core tree) and `confidence-threshold = 0.8`; `[bans]` with `wildcards = "deny"` and
+`[advisories]` with every ignore justified in a comment; `[licenses]` allowing only licenses compatible with GPL-3.0-or-later
+(**differs from vouch**: no GPL-2.0-only, no proprietary; ADR-0002) and `confidence-threshold = 0.8`; `[bans]` with `wildcards = "deny"` and
 `multiple-versions = "warn"`, each `skip` carrying a `reason`; `[sources]` with
 `unknown-registry = "deny"`, `unknown-git = "warn"`, crates.io as the only registry and every git
 source pinned to a rev. Runs as `make audit` and in CI via `cargo-deny-action` with
@@ -185,10 +185,10 @@ From vouch's CLAUDE.md:
 - Inline `#[cfg(test)] mod tests` until about 500 lines, then a sibling `foo/tests.rs`.
 - Fixtures come from factory functions taking a spec struct whose `Default` is the ordinary
   case; tests spell out only the axis they test.
-- Tests never wait on the wall clock. Rust crates take an injected clock; the GPL preview host
+- Tests never wait on the wall clock. Rust crates take an injected clock; the preview host
   is covered instead by its fixed-timestep headless mode (P3-05).
 - **A test that pins a normative statement cites it**, e.g. `// spec vm §4.3: division by
-  zero yields ...`. This project applies the rule to `docs/spec/` clean-room sections.
+  zero yields ...`. This project applies the rule to `docs/spec/` sections.
   `docs/spec/requirements.tsv` lists every normative statement, and a coverage test
   ratchets it, as `specs/requirements.tsv` and `spec_coverage.rs` do in vouch.
 
@@ -196,19 +196,20 @@ From vouch's CLAUDE.md:
 
 vouch's rule: never state what a specification requires from memory; open it and quote
 it with section and source. Here that means:
-- **Clean-room specs** (`docs/spec/`) are the only source of engine and format behaviour
-  for implementers.
-- **Public, non-GPL specifications** this project implements (LSP, MCP, ACP, JSON Schema,
+- **Behaviour specs** (`docs/spec/`) document engine and format behaviour, written with id's
+  source open and citing the file and function; tests cite them.
+- **Public specifications** this project implements (LSP, MCP, ACP, JSON Schema,
   the Steam library file format, and similar) are cached verbatim under `specs/` with
   `specs/manifest.tsv` holding the origin URL and sha256, as in vouch.
-- GPL source is never cached in this repo.
+- Third-party source code (id's engine and tools, FTEQCC, ericw-tools) is fetched by commit and
+  checksum when a build needs it, never vendored.
 
 ## Agent instructions (CONV-13)
 
 As in vouch: `CLAUDE.md` holds the project overview, architecture, conventions and
 commands; `AGENTS.md` points to it and covers environment setup; `.claude/rules/` holds
 `branching.md`, `commits-and-issues.md`, `continuous-improvement.md`,
-`development-discipline.md`, `specs-are-source-of-truth.md`, plus this project's `clean-room.md`,
+`development-discipline.md`, `specs-are-source-of-truth.md`, plus this project's `porting.md`,
 `layering.md` and `testing.md` (the readiness rule in `docs/testing.md`).
 `.claude/hooks/session-setup.sh` installs the toolchain in remote sessions.
 
@@ -230,13 +231,16 @@ product name in ADR-0006.
 
 ## Source file headers
 
-Every source file starts with an SPDX line, as in vouch:
-`// SPDX-License-Identifier: Apache-2.0 OR MIT` (the exact expression follows ADR-0002).
+Every source file starts with an SPDX line, as in vouch, but with this project's license
+(**differs from vouch**, which is Apache-2.0 OR MIT; ADR-0002):
+`// SPDX-License-Identifier: GPL-3.0-or-later`. A file ported from id's code keeps id's
+copyright line, `// Copyright (C) 1996-1997 Id Software, Inc.`, above ours, and cites the file
+and function it came from.
 `make audit` fails a file without one.
 
 ## Repository files (CONV-15)
 
-`LICENSE-APACHE` and `LICENSE-MIT` (subject to ADR-0002), `README.md`, `CONTRIBUTING.md`,
+`LICENSE` (GPL-3.0, ADR-0002), `README.md`, `CONTRIBUTING.md`,
 `SECURITY.md`, `CODE_OF_CONDUCT.md`, `.gitattributes`, `.gitignore`, `.env.example` if needed.
 
 ## Diagnostics and paths (CONV-16)
