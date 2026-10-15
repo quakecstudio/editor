@@ -14,6 +14,7 @@ Phase 0 of 7: decisions and spikes. There is no code yet. Work is tracked as Git
 
 | Document | What it covers |
 | --- | --- |
+| [`docs/roadmap.md`](docs/roadmap.md) | The overall plan: decisions so far, layers, the phases and their gates, where we are, how to work an issue |
 | [`docs/design/design-doc.md`](docs/design/design-doc.md) | What we are building and why |
 | [`docs/design/README.md`](docs/design/README.md) | The approved mockups and the design language |
 | [`plan/README.md`](plan/README.md) | How the design becomes requirements, issues, phases and gates |

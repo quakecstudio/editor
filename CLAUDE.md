@@ -4,7 +4,7 @@ Starter instructions for agents working in this repository. The full version, wi
 
 ## What this is
 
-QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview, a built-in agent and a map editor. Read [`README.md`](README.md), then [`docs/design/design-doc.md`](docs/design/design-doc.md) for the why.
+QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview, a built-in agent and a map editor. Read [`docs/roadmap.md`](docs/roadmap.md) first: it is the overall plan and says where we are. Then [`docs/design/design-doc.md`](docs/design/design-doc.md) for the why.
 
 ## How work is organised
 
