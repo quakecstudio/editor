@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuakeC Studio: command palette</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#6FA8DC}a:hover{color:#9CC4E8}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; position: relative; overflow: hidden; background: #1A1918; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: #E8E3DC; font-variant-ligatures: none">
+
+  <!-- the window behind the palette -->
+  <div style="position: absolute; inset: 0; display: flex; flex-direction: column" aria-hidden="true">
+    <div style="height: 38px; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: #161514; border-bottom: 1px solid #2A2826">
+      <div style="display: flex; gap: 8px">
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #EC6A5E"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #F4BF4F"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #61C554"></span>
+      </div>
+      <span style="font-weight: 600; margin-left: 10px">ember_mod</span>
+    </div>
+    <div style="height: 44px; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: #1D1B1A; border-bottom: 1px solid #2A2826; color: #ABA49A">
+      <span style="padding: 4px 12px; border-radius: 6px; background: #2A2826; color: #E8E3DC">Play</span><span>Pause</span><span>Step</span><span>Restart map</span>
+    </div>
+    <div style="flex: 1; display: flex">
+      <div style="width: 232px; background: #211F1E; border-right: 1px solid #2A2826"></div>
+      <div style="flex: 1; padding: 40px 0 0 74px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 20px; color: #D9D2C7; white-space: pre"><span style="color: #86BFD0">void</span>() <span style="color: #E8C77E">W_FireEmber</span> =
+{
+    <span style="color: #E0956A">local</span> <span style="color: #86BFD0">entity</span> ember;
+
+    self.currentammo = self.ammo_cells = self.ammo_cells - <span style="color: #CDA4DE">1</span>;
+    <span style="color: #E8C77E">sound</span> (self, <span style="color: #CDA4DE">CHAN_WEAPON</span>, <span style="color: #A9CB82">"weapons/ember.wav"</span>, <span style="color: #CDA4DE">1</span>, <span style="color: #CDA4DE">ATTN_NORM</span>);
+
+    ember = <span style="color: #E8C77E">spawn</span> ();
+    ember.owner = self;
+    ember.classname = <span style="color: #A9CB82">"ember"</span>;
+    ember.movetype = <span style="color: #CDA4DE">MOVETYPE_BOUNCE</span>;
+    ember.solid = <span style="color: #CDA4DE">SOLID_BBOX</span>;
+    ember.bounces = <span style="color: #CDA4DE">2</span>;
+    ember.effects = <span style="color: #CDA4DE">EF_DIMLIGHT</span>;
+    ember.touch = <span style="color: #E8C77E">Ember_Touch</span>;
+    ember.think = <span style="color: #E8C77E">Ember_Explode</span>;
+    ember.nextthink = time + <span style="color: #CDA4DE">4</span>;
+};</div>
+      <div style="width: 330px; background: #211F1E; border-left: 1px solid #2A2826"></div>
+    </div>
+    <div style="height: 26px; background: #161514; border-top: 1px solid #2A2826"></div>
+  </div>
+  <div style="position: absolute; inset: 0; background: rgba(8,7,6,0.55)"></div>
+
+  <!-- palette -->
+  <div role="dialog" aria-label="Command palette" style="position: absolute; left: 400px; top: 96px; width: 640px; display: flex; flex-direction: column; border-radius: 10px; background: #211F1E; border: 1px solid #423F3B; box-shadow: 0 24px 60px rgba(0,0,0,0.6); overflow: hidden">
+    <label style="height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #33302D">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#ABA49A" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.2"></circle><path d="M10.2 10.2l3.3 3.3"></path></svg>
+      <input aria-label="Search commands" value="pla" style="flex: 1; background: none; border: 0; outline: none; color: #E8E3DC; font: inherit; font-size: 15px">
+      <span style="font-size: 12px; color: #ABA49A">8 of 214 commands</span>
+    </label>
+    <div role="listbox" aria-label="Matching commands" style="display: flex; flex-direction: column; padding: 6px">
+      <div role="option" aria-selected="true" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px; background: #3A2A1E">
+        <span style="flex: 1"><b style="color: #EE8B45; font-weight: 600">Pla</b>y</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">play.start</span>
+        <span style="width: 64px; text-align: right; font-size: 12px; color: #E8E3DC">F5</span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1"><b style="color: #EE8B45; font-weight: 600">Pla</b>y from here <span style="color: #ABA49A">in the map editor</span></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">map.play_from_here</span>
+        <span style="width: 64px; text-align: right; font-size: 12px; color: #ABA49A">⇧F5</span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Pause <span style="color: #ABA49A">the running game</span></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">play.pause</span>
+        <span style="width: 64px; text-align: right; font-size: 12px; color: #ABA49A">F6</span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Restart map</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">play.restart_map</span>
+        <span style="width: 64px; text-align: right; font-size: 12px; color: #ABA49A">⌘⇧R</span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Choose the engine to <b style="color: #EE8B45; font-weight: 600">pla</b>y in</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">engine.pick</span>
+        <span style="width: 64px"></span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Run scenario: ember_bounces_twice <span style="color: #ABA49A">re<b style="color: #EE8B45; font-weight: 600">pla</b>y</span></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">scenario.run</span>
+        <span style="width: 64px"></span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Spawn entity at crosshair <span style="color: #ABA49A">while <b style="color: #EE8B45; font-weight: 600">pla</b>ying</span></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">engine.spawn</span>
+        <span style="width: 64px"></span>
+      </div>
+      <div role="option" aria-selected="false" style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 10px; border-radius: 6px">
+        <span style="flex: 1">Take a screenshot of the game</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ABA49A">engine.screenshot</span>
+        <span style="width: 64px"></span>
+      </div>
+    </div>
+    <div style="height: 34px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-top: 1px solid #33302D; font-size: 12px; color: #ABA49A; white-space: nowrap">
+      <span>↑↓ move</span><span>↵ run</span><span>⌘↵ ask the agent to run it</span>
+      <div style="flex: 1"></div>
+      <span>Also available to the agent and the CLI</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

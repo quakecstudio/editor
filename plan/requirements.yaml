@@ -1,5 +1,5 @@
 # Every requirement in the QuakeC IDE design document, one ID each.
-# Source: "QuakeC IDE - Design Document" (claude.ai doc, rev 34, 2026-10-15).
+# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 34, 2026-10-15).
 # Each requirement must be covered by at least one issue in backlog.yaml;
 # plan/check.py fails if one is not.
 #

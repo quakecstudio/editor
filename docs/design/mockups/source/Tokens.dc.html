@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuakeC Studio: theme, type and window chrome</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#6FA8DC}a:hover{color:#9CC4E8}
+</style>
+</helmet>
+<div style="width: 1440px; height: 660px; box-sizing: border-box; padding: 40px 48px; display: flex; flex-direction: column; gap: 28px; overflow: hidden; background: #161514; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: #E8E3DC; font-variant-ligatures: none">
+  <div style="display: flex; align-items: baseline; gap: 16px">
+    <h1 style="margin: 0; font-size: 26px; font-weight: 600">Theme, type and window chrome</h1>
+    <span style="color: #ABA49A">Warm graphite with one ember accent. Every text pair meets WCAG AA.</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; flex: 1; min-height: 0">
+
+    <!-- dark -->
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 14px; font-weight: 600">Dark (default)</h2>
+      <div style="display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; row-gap: 8px; column-gap: 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px">
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D"></span><span>surface.editor #1A1918</span><span style="color: #ABA49A"></span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #211F1E; border: 1px solid #33302D"></span><span>surface.panel #211F1E</span><span style="color: #ABA49A"></span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #2A2826; border: 1px solid #33302D"></span><span>surface.raised #2A2826</span><span style="color: #ABA49A"></span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #E8E3DC"></span><span>text #E8E3DC</span><span style="color: #ABA49A">12.9:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #ABA49A"></span><span>text.muted #ABA49A</span><span style="color: #ABA49A">6.7:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #8E877D"></span><span>text.faint #8E877D</span><span style="color: #ABA49A">4.6:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #EE8B45"></span><span>accent #EE8B45</span><span style="color: #ABA49A">6.6:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #6FA8DC"></span><span>focus #6FA8DC</span><span style="color: #ABA49A">6.5:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #8CC47E"></span><span>ok #8CC47E</span><span style="color: #ABA49A">8.1:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #E2B04A"></span><span>warn #E2B04A</span><span style="color: #ABA49A">8.2:1</span>
+        <span style="width: 40px; height: 28px; border-radius: 5px; background: #EC7A6C"></span><span>error #EC7A6C</span><span style="color: #ABA49A">5.9:1</span>
+      </div>
+      <div style="font-size: 12px; color: #ABA49A">Ratios are against surface.panel. text.faint is only used on editor and panel surfaces.</div>
+    </section>
+
+    <!-- light -->
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 14px; font-weight: 600">Light</h2>
+      <div style="border-radius: 10px; overflow: hidden; border: 1px solid #33302D; background: #FCFBF9; color: #22201D">
+        <div style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #F4F2EE; border-bottom: 1px solid #E0DCD5">
+          <span style="width: 10px; height: 10px; border-radius: 5px; background: #EC6A5E"></span>
+          <span style="width: 10px; height: 10px; border-radius: 5px; background: #F4BF4F"></span>
+          <span style="width: 10px; height: 10px; border-radius: 5px; background: #61C554"></span>
+          <span style="margin-left: 8px; font-size: 12px; font-weight: 600">ember_mod</span>
+          <span style="margin-left: auto; font-size: 12px; padding: 2px 10px; border-radius: 5px; background: #A84D16; color: #FFFFFF; font-weight: 600">Play</span>
+        </div>
+        <div style="padding: 10px 0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 20px; white-space: pre; overflow: hidden"><span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">33</span>    self.bounces = self.bounces - <span style="color: #8547A0">1</span>;
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">34</span>    self.velocity = self.velocity * <span style="color: #8547A0">0.7</span>;
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">35</span>    <span style="color: #8A6512; font-style: italic">sound</span> (self, <span style="color: #8547A0">CHAN_WEAPON</span>, <span style="color: #4F7A2A">"weapons/bounce.wav"</span>, <span style="color: #8547A0">1</span>, <span style="color: #8547A0">ATTN_NORM</span>);
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">36</span>};
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">37</span>
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">38</span><span style="color: #21708A">void</span>() <span style="color: #8A6512">W_FireEmber</span> =
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">39</span>{
+<span style="display: inline-block; width: 40px; text-align: right; padding-right: 14px; color: #6E6860">40</span>    <span style="color: #A84F1C">local</span> <span style="color: #21708A">entity</span> ember;</div>
+      </div>
+      <h2 style="margin: 8px 0 0; font-size: 14px; font-weight: 600">Code colours</h2>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+        <span><span style="color: #E0956A">local</span> <span style="color: #ABA49A">keyword</span></span>
+        <span><span style="color: #86BFD0">entity</span> <span style="color: #ABA49A">type</span></span>
+        <span><span style="color: #E8C77E">Ember_Touch</span> <span style="color: #ABA49A">function</span></span>
+        <span><span style="color: #E8C77E; font-style: italic">spawn</span> <span style="color: #ABA49A">builtin</span></span>
+        <span><span style="color: #CDA4DE">MOVETYPE_BOUNCE</span> <span style="color: #ABA49A">constant</span></span>
+        <span><span style="color: #A9CB82">"ember"</span> <span style="color: #ABA49A">string</span></span>
+        <span><span style="color: #86BFD0">'0 0 16'</span> <span style="color: #ABA49A">vector</span></span>
+        <span><span style="color: #938C82; font-style: italic">// note</span> <span style="color: #ABA49A">comment</span></span>
+      </div>
+    </section>
+
+    <!-- type and chrome -->
+    <section style="display: flex; flex-direction: column; gap: 12px">
+      <h2 style="margin: 0; font-size: 14px; font-weight: 600">Type</h2>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 20px; font-weight: 600">IBM Plex Sans 600 / 20 for titles</div>
+        <div style="font-size: 13px">IBM Plex Sans 400 / 13 for the interface</div>
+        <div style="font-size: 12px; font-weight: 600; color: #ABA49A">IBM Plex Sans 600 / 12 for panel headings</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px">JetBrains Mono 400 / 13 on a 20 px line for code</div>
+      </div>
+      <h2 style="margin: 10px 0 0; font-size: 14px; font-weight: 600">Spacing and shape</h2>
+      <div style="display: flex; align-items: flex-end; gap: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #ABA49A">
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 4px"><span style="width: 4px; height: 4px; background: #EE8B45"></span>4</span>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 4px"><span style="width: 8px; height: 8px; background: #EE8B45"></span>8</span>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 4px"><span style="width: 12px; height: 12px; background: #EE8B45"></span>12</span>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 4px"><span style="width: 16px; height: 16px; background: #EE8B45"></span>16</span>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 4px"><span style="width: 24px; height: 24px; background: #EE8B45"></span>24</span>
+        <span style="margin-left: 18px">rows 24 · toolbar 44 · radius 5 / 6 / 8 / 10</span>
+      </div>
+      <h2 style="margin: 10px 0 0; font-size: 14px; font-weight: 600">Window chrome</h2>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; color: #ABA49A">macOS: native traffic lights, menus in the system menu bar</span>
+          <div style="height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px; background: #1A1918; border: 1px solid #33302D">
+            <span style="width: 11px; height: 11px; border-radius: 6px; background: #EC6A5E"></span><span style="width: 11px; height: 11px; border-radius: 6px; background: #F4BF4F"></span><span style="width: 11px; height: 11px; border-radius: 6px; background: #61C554"></span>
+            <span style="margin-left: 10px; font-weight: 600; font-size: 12.5px">ember_mod</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; color: #ABA49A">Windows: app menu button left, caption buttons right</span>
+          <div style="height: 34px; display: flex; align-items: center; gap: 10px; padding-left: 12px; border-radius: 8px; background: #1A1918; border: 1px solid #33302D; overflow: hidden">
+            <span style="font-size: 12.5px; color: #ABA49A">☰</span>
+            <span style="font-weight: 600; font-size: 12.5px">ember_mod</span>
+            <span style="flex: 1"></span>
+            <span style="width: 44px; height: 34px; display: grid; place-items: center; color: #ABA49A">─</span><span style="width: 44px; height: 34px; display: grid; place-items: center; color: #ABA49A">▢</span><span style="width: 44px; height: 34px; display: grid; place-items: center; color: #ABA49A">✕</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="font-size: 12px; color: #ABA49A">Linux: client-side title bar, buttons follow the desktop's layout</span>
+          <div style="height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 12px; border-radius: 8px; background: #1A1918; border: 1px solid #33302D">
+            <span style="font-size: 12.5px; color: #ABA49A">☰</span>
+            <span style="font-weight: 600; font-size: 12.5px">ember_mod</span>
+            <span style="flex: 1"></span>
+            <span style="width: 22px; height: 22px; border-radius: 11px; background: #2A2826; display: grid; place-items: center; color: #ABA49A; font-size: 11px">✕</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":660}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

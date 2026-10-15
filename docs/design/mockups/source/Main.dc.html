@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuakeC Studio: play loop with the docked engine</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#6FA8DC}a:hover{color:#9CC4E8}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1920px; height: 1080px; position: relative; overflow: hidden; background: #0F0E0D; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: #E8E3DC; font-variant-ligatures: none">
+
+  <!-- IDE window -->
+  <div style="position: absolute; left: 16px; top: 16px; width: 1264px; height: 1048px; display: flex; flex-direction: column; background: #1A1918; border: 1px solid #3A3734; border-radius: 10px; overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,0.55)">
+
+    <!-- title bar -->
+    <div style="height: 38px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 12px 0 14px; background: #161514; border-bottom: 1px solid #2A2826">
+      <div style="display: flex; gap: 8px" aria-hidden="true">
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #EC6A5E"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #F4BF4F"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #61C554"></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; margin-left: 10px">
+        <span style="font-weight: 600">ember_mod</span>
+        <span style="display: flex; align-items: center; gap: 5px; color: #ABA49A">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="5" cy="4" r="1.5"></circle><circle cx="5" cy="12" r="1.5"></circle><circle cx="11" cy="6" r="1.5"></circle><path d="M5 5.5v5M11 7.5c0 2-6 1.5-6 3"></path></svg>
+          main
+        </span>
+      </div>
+      <div style="flex: 1"></div>
+      <div style="display: flex; gap: 4px; color: #ABA49A">
+        <button aria-label="Toggle left dock" style="width: 28px; height: 26px; display: grid; place-items: center; border-radius: 6px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M6 3v10"></path></svg></button>
+        <button aria-label="Toggle bottom panel" style="width: 28px; height: 26px; display: grid; place-items: center; border-radius: 6px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M2 9.5h12"></path></svg></button>
+        <button aria-label="Toggle right dock" style="width: 28px; height: 26px; display: grid; place-items: center; border-radius: 6px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"></rect><path d="M10 3v10"></path></svg></button>
+      </div>
+    </div>
+
+    <!-- play toolbar -->
+    <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #1D1B1A; border-bottom: 1px solid #2A2826; white-space: nowrap">
+      <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 10px; border-radius: 6px; background: #EE8B45; color: #1A1918; font-weight: 600">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z"></path></svg>
+        Playing
+      </button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; color: #E8E3DC">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" rx="0.8"></rect><rect x="9.5" y="3" width="3" height="10" rx="0.8"></rect></svg>
+        Pause
+      </button>
+      <button disabled style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; color: #8E877D; cursor: default">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3.5 3v10l6.5-5z" fill="currentColor" stroke="none"></path><path d="M12.5 3v10"></path></svg>
+        Step
+      </button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px; color: #E8E3DC">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.6-3.7"></path><path d="M3.2 2v3h3"></path></svg>
+        Restart map
+      </button>
+      <span style="width: 1px; height: 20px; background: #33302D; margin: 0 6px"></span>
+      <button style="height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: #2A2826; border: 1px solid #33302D">
+        <span style="color: #ABA49A">Engine</span>
+        <span>Preview host</span>
+        <span style="font-size: 11px; color: #ABA49A; border: 1px solid #423F3B; border-radius: 4px; padding: 0 5px; line-height: 16px">docked right</span>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#ABA49A" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+      </button>
+      <button style="height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; background: #2A2826; border: 1px solid #33302D">
+        <span style="color: #ABA49A">Map</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px">start</span>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#ABA49A" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+      </button>
+      <span style="display: flex; align-items: center; gap: 7px; margin-left: 10px; color: #ABA49A">
+        <span style="width: 8px; height: 8px; border-radius: 4px; background: #8CC47E"></span>
+        Reloaded 0.9 s after save
+      </span>
+      <div style="flex: 1"></div>
+      <button style="height: 30px; width: 236px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; border-radius: 6px; background: #1A1918; border: 1px solid #33302D; color: #ABA49A">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.2"></circle><path d="M10.2 10.2l3.3 3.3"></path></svg>
+        <span style="flex: 1; text-align: left">Search commands</span>
+        <span style="font-size: 11.5px; border: 1px solid #423F3B; border-radius: 4px; padding: 0 5px; line-height: 18px">⌘⇧P</span>
+      </button>
+    </div>
+
+    <!-- body -->
+    <div style="flex: 1; min-height: 0; display: flex">
+
+      <!-- left dock -->
+      <div style="width: 236px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-right: 1px solid #2A2826">
+        <div style="height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600; color: #ABA49A">Project</div>
+        <div style="display: flex; flex-direction: column; font-size: 13px; color: #ABA49A">
+          <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 10px; color: #E8E3DC"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>ember_mod</div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>src</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">defs.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">subs.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">combat.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">items.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 56px; background: #2E3640; color: #E8E3DC"><span>weapons.qc</span><span style="font-size: 11px; font-weight: 600; color: #E2B04A">M</span></div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">client.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">world.qc</div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>maps</div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>scenarios</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 42px">progs.src</div>
+          <div style="height: 24px; display: flex; align-items: center; padding-left: 42px">AGENTS.md</div>
+        </div>
+
+        <div style="height: 1px; background: #2A2826; margin-top: 12px"></div>
+        <div style="height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; font-weight: 600; color: #ABA49A"><span>Entities</span><span style="font-weight: 400">61 live</span></div>
+        <div style="padding: 0 10px 8px">
+          <label style="height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border-radius: 6px; background: #1A1918; border: 1px solid #33302D; color: #8E877D">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.2"></circle><path d="M10.2 10.2l3.3 3.3"></path></svg>
+            <input aria-label="Filter entities" placeholder="Filter by classname or field" style="flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #E8E3DC; font: inherit; font-size: 12.5px">
+          </label>
+        </div>
+        <div style="display: flex; flex-direction: column; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #ABA49A">
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">worldspawn</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">player</span><span style="color: #8E877D">#1</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #3A2A1E; color: #F2E9DE; box-shadow: inset 2px 0 0 #EE8B45"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#EE8B45" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">ember</span><span style="color: #EE8B45">#212</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">info_player_start</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">light</span><span style="color: #8E877D">12</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">item_cells</span><span style="color: #8E877D">4</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">trigger_once</span><span style="color: #8E877D">3</span></div>
+          <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M8 2l5 3v6l-5 3-5-3V5z"></path><path d="M3 5l5 3 5-3M8 8v6"></path></svg><span style="flex: 1">func_door</span><span style="color: #8E877D">2</span></div>
+        </div>
+      </div>
+
+      <!-- centre: editor over the bottom panel -->
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+        <div style="height: 36px; flex: none; display: flex; align-items: stretch; background: #211F1E; border-bottom: 1px solid #2A2826">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #1A1918; border-right: 1px solid #2A2826; box-shadow: inset 0 -1px 0 #1A1918"><span>weapons.qc</span></div>
+          <div style="display: flex; align-items: center; padding: 0 14px; color: #ABA49A; border-right: 1px solid #2A2826">items.qc</div>
+          <div style="display: flex; align-items: center; padding: 0 14px; color: #ABA49A; border-right: 1px solid #2A2826">AGENTS.md</div>
+        </div>
+        <div style="height: 28px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 16px; color: #ABA49A; font-size: 12.5px">
+          <span>src</span><span style="color: #8E877D">/</span><span>weapons.qc</span><span style="color: #8E877D">/</span><span style="color: #E8C77E; font-family: 'JetBrains Mono', monospace; font-size: 12px">W_FireEmber</span>
+        </div>
+
+        <!-- editor -->
+        <div style="flex: 1; min-height: 0; overflow: hidden; padding-top: 2px; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #D9D2C7">
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">24</span><span style="white-space: pre"><span style="color: #86BFD0">void</span>() <span style="color: #E8C77E">Ember_Touch</span> =</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">25</span><span style="white-space: pre">{</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">26</span><span style="white-space: pre">    <span style="color: #E0956A">if</span> (other == self.owner)</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">27</span><span style="white-space: pre">        <span style="color: #E0956A">return</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">28</span><span style="white-space: pre">    <span style="color: #E0956A">if</span> (other.takedamage || self.bounces &lt;= <span style="color: #CDA4DE">0</span>)</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">29</span><span style="white-space: pre">    {</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">30</span><span style="white-space: pre">        <span style="color: #E8C77E">Ember_Explode</span> ();</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">31</span><span style="white-space: pre">        <span style="color: #E0956A">return</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">32</span><span style="white-space: pre">    }</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">33</span><span style="white-space: pre">    self.bounces = self.bounces - <span style="color: #CDA4DE">1</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">34</span><span style="white-space: pre">    self.velocity = self.velocity * <span style="color: #CDA4DE">0.7</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">35</span><span style="white-space: pre">    <span style="color: #E8C77E; font-style: italic">sound</span> (self, <span style="color: #CDA4DE">CHAN_WEAPON</span>, <span style="color: #A9CB82">"weapons/bounce.wav"</span>, <span style="color: #CDA4DE">1</span>, <span style="color: #CDA4DE">ATTN_NORM</span>);</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">36</span><span style="white-space: pre">};</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">37</span><span style="white-space: pre"></span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">38</span><span style="white-space: pre"><span style="color: #86BFD0">void</span>() <span style="color: #E8C77E">W_FireEmber</span> =</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">39</span><span style="white-space: pre">{</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">40</span><span style="white-space: pre">    <span style="color: #E0956A">local</span> <span style="color: #86BFD0">entity</span> ember;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">41</span><span style="white-space: pre"></span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">42</span><span style="white-space: pre">    self.currentammo = self.ammo_cells = self.ammo_cells - <span style="color: #CDA4DE">1</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">43</span><span style="white-space: pre">    <span style="color: #E8C77E; font-style: italic">sound</span> (self, <span style="color: #CDA4DE">CHAN_WEAPON</span>, <span style="color: #A9CB82">"weapons/ember.wav"</span>, <span style="color: #CDA4DE">1</span>, <span style="color: #CDA4DE">ATTN_NORM</span>);</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">44</span><span style="white-space: pre"></span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">45</span><span style="white-space: pre">    ember = <span style="color: #E8C77E; font-style: italic">spawn</span> ();</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">46</span><span style="white-space: pre">    ember.owner = self;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">47</span><span style="white-space: pre">    ember.classname = <span style="color: #A9CB82">"ember"</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">48</span><span style="white-space: pre">    ember.movetype = <span style="color: #CDA4DE">MOVETYPE_BOUNCE</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">49</span><span style="white-space: pre">    ember.solid = <span style="color: #CDA4DE">SOLID_BBOX</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center; background: #222120"><span style="width: 56px; text-align: right; padding-right: 18px; color: #E8E3DC; box-shadow: inset 3px 0 0 #E2B04A">50</span><span style="white-space: pre">    ember.bounces = <span style="color: #CDA4DE">2</span>;</span><span style="display: inline-block; width: 2px; height: 17px; margin-left: 1px; background: #EE8B45"></span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">51</span><span style="white-space: pre">    ember.effects = <span style="color: #CDA4DE">EF_DIMLIGHT</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">52</span><span style="white-space: pre">    ember.touch = <span style="color: #E8C77E">Ember_Touch</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">53</span><span style="white-space: pre">    ember.think = <span style="color: #E8C77E">Ember_Explode</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">54</span><span style="white-space: pre">    ember.nextthink = time + <span style="color: #CDA4DE">4</span>;</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">55</span><span style="white-space: pre; color: #8E877D; font-style: italic">    ember.avelocity = '300 300 0';</span><span style="margin-left: 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 11.5px; color: #ABA49A; border: 1px solid #423F3B; border-radius: 4px; padding: 0 6px; line-height: 17px">Tab to accept</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">56</span><span style="white-space: pre"></span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">57</span><span style="white-space: pre">    <span style="color: #E8C77E; font-style: italic">makevectors</span> (self.v_angle);</span></div>
+          <div style="display: flex; height: 20px; align-items: center"><span style="width: 56px; text-align: right; padding-right: 18px; color: #8E877D">58</span><span style="white-space: pre">    ember.velocity = v_forward * <span style="color: #CDA4DE">600</span> + v_up * <span style="color: #CDA4DE">120</span>;</span></div>
+        </div>
+
+        <!-- bottom panel -->
+        <div style="height: 232px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-top: 1px solid #2A2826">
+          <div style="height: 34px; flex: none; display: flex; align-items: stretch; gap: 2px; padding: 0 8px; border-bottom: 1px solid #2A2826">
+            <button style="display: flex; align-items: center; gap: 6px; padding: 0 10px; color: #ABA49A">Problems <span style="font-size: 11px; background: #2A2826; border-radius: 8px; padding: 0 6px; line-height: 16px">0</span></button>
+            <button style="display: flex; align-items: center; padding: 0 10px; color: #E8E3DC; box-shadow: inset 0 -2px 0 #EE8B45">Console</button>
+            <button style="display: flex; align-items: center; padding: 0 10px; color: #ABA49A">Debugger</button>
+          </div>
+          <div style="flex: 1; padding: 8px 16px; display: flex; flex-direction: column; gap: 2px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 20px; color: #D9D2C7; background: #1A1918">
+            <div style="color: #8E877D">Preview host 0.1 · bridge protocol 1 · map start</div>
+            <div><span style="color: #8E877D">19:42:07</span>  saved src/weapons.qc</div>
+            <div><span style="color: #8E877D">19:42:07</span>  <span style="color: #8CC47E">compiled progs.dat in 184 ms: 0 errors, 0 warnings</span></div>
+            <div><span style="color: #8E877D">19:42:08</span>  hot reload: 2 functions replaced, 61 entities kept, fields matched by name</div>
+            <div><span style="color: #8E877D">19:42:11</span>  ember #212 bounced off world at '412 -96 88' (bounces left: 1)</div>
+            <div style="flex: 1"></div>
+            <label style="display: flex; align-items: center; gap: 8px; height: 26px; border-top: 1px solid #2A2826; padding-top: 6px"><span style="color: #EE8B45">]</span><input aria-label="Console command" placeholder="Console command, for example impulse 9" style="flex: 1; background: none; border: 0; outline: none; color: #E8E3DC; font: inherit"></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- right dock -->
+      <div style="width: 328px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-left: 1px solid #2A2826">
+        <div style="height: 32px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; font-weight: 600; color: #ABA49A">
+          <span>Properties</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 500; color: #EE8B45">ember #212</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 7px; margin: 0 12px 8px; padding: 6px 9px; border-radius: 6px; background: #2A2826; color: #ABA49A; font-size: 12px">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg>
+          Read only while playing. Pause to edit.
+        </div>
+        <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr); row-gap: 1px; padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 24px">
+          <span style="color: #ABA49A">classname</span><span style="color: #A9CB82">"ember"</span>
+          <span style="color: #ABA49A">origin</span><span style="color: #86BFD0">'412 -96 88'</span>
+          <span style="color: #ABA49A">velocity</span><span style="color: #86BFD0">'336 -12 74'</span>
+          <span style="color: #ABA49A">movetype</span><span style="color: #CDA4DE">MOVETYPE_BOUNCE</span>
+          <span style="color: #ABA49A">bounces</span><span style="color: #CDA4DE">1</span>
+          <span style="color: #ABA49A">effects</span><span style="color: #CDA4DE">EF_DIMLIGHT</span>
+          <span style="color: #ABA49A">nextthink</span><span style="color: #CDA4DE">21.34</span>
+          <span style="color: #ABA49A">touch</span><span style="color: #E8C77E">Ember_Touch</span>
+          <span style="color: #ABA49A">owner</span><span style="color: #D9D2C7">player #1</span>
+        </div>
+        <div style="padding: 10px 12px 14px">
+          <button style="height: 30px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 6px; border: 1px solid #423F3B; color: #E8E3DC">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 1.8l1.4 4.1 4.3.1-3.4 2.6 1.2 4.1L8 10.3l-3.5 2.4 1.2-4.1L2.3 6l4.3-.1z"></path></svg>
+            Ask about this entity
+          </button>
+        </div>
+
+        <div style="height: 1px; background: #2A2826"></div>
+        <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px">
+          <span style="font-size: 12px; font-weight: 600; color: #ABA49A">Agent</span>
+          <div style="flex: 1"></div>
+          <button style="height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 5px; background: #2A2826; color: #ABA49A; font-size: 12px">Anthropic <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg></button>
+          <button aria-label="New thread" style="width: 24px; height: 24px; display: grid; place-items: center; border-radius: 5px; color: #ABA49A"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 3v10M3 8h10"></path></svg></button>
+        </div>
+        <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 0 12px 12px">
+          <div style="font-weight: 600; font-size: 13.5px">Embers bounce twice</div>
+          <div style="padding: 9px 11px; border-radius: 8px; background: #2A2826; line-height: 19px">Make embers bounce twice and lose speed on each bounce.</div>
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 12.5px">
+            <div style="display: flex; align-items: center; gap: 8px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8CC47E" stroke-width="1.8" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg><span style="font-family: 'JetBrains Mono', monospace">symbol.references</span><span style="color: #ABA49A">Ember_Touch, 3</span></div>
+            <div style="display: flex; align-items: center; gap: 8px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8CC47E" stroke-width="1.8" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg><span style="font-family: 'JetBrains Mono', monospace">edit.apply</span><span style="color: #ABA49A">weapons.qc +9 −2, accepted</span></div>
+            <div style="display: flex; align-items: center; gap: 8px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8CC47E" stroke-width="1.8" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg><span style="font-family: 'JetBrains Mono', monospace">compile</span><span style="color: #ABA49A">clean, 184 ms</span></div>
+            <div style="display: flex; align-items: center; gap: 8px"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#8CC47E" stroke-width="1.8" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"></path></svg><span style="font-family: 'JetBrains Mono', monospace">scenario.run</span><span style="color: #ABA49A">ember_bounces_twice, passed</span></div>
+          </div>
+          <div style="line-height: 19px; color: #D9D2C7">Done. Embers now bounce twice, keep 70% of their speed each time, and explode on the third touch or after 4 s.</div>
+          <div style="display: flex; align-items: center; gap: 8px; color: #ABA49A; font-size: 12px">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 5v3l2 1.5"></path></svg>
+            Checkpoint 4
+            <a href="#" style="margin-left: auto">Restore</a>
+          </div>
+          <div style="flex: 1"></div>
+          <label style="display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; background: #1A1918; border: 1px solid #33302D">
+            <input aria-label="Message the agent" placeholder="Ask, @ to mention, / for commands" style="background: none; border: 0; outline: none; color: #E8E3DC; font: inherit">
+            <span style="display: flex; align-items: center; gap: 6px">
+              <span style="font-size: 11.5px; color: #ABA49A; background: #2A2826; border-radius: 4px; padding: 0 6px; line-height: 20px; font-family: 'JetBrains Mono', monospace">@ember #212</span>
+              <span style="flex: 1"></span>
+              <span style="width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; background: #EE8B45; color: #1A1918"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8h9M8.5 4.5L12 8l-3.5 3.5"></path></svg></span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- status bar -->
+    <div style="height: 26px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: #161514; border-top: 1px solid #2A2826; font-size: 12px; color: #ABA49A">
+      <span style="display: flex; align-items: center; gap: 5px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"></path></svg>0</span>
+      <span style="display: flex; align-items: center; gap: 5px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2.5l6 11H2z"></path><path d="M8 6.5v3M8 11.5v.5"></path></svg>0</span>
+      <span>Preview host running, 12.8 s</span>
+      <div style="flex: 1"></div>
+      <span>Ln 50, Col 22</span>
+      <span>QuakeC (FTEQCC)</span>
+      <span>Spaces: 4</span>
+    </div>
+  </div>
+
+  <!-- docked engine window -->
+  <div style="position: absolute; left: 1296px; top: 16px; width: 608px; display: flex; flex-direction: column; border: 1px solid #3A3734; border-radius: 10px; overflow: hidden; background: #000000; box-shadow: 0 24px 64px rgba(0,0,0,0.55)">
+    <div style="height: 30px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: #1E1D1B; border-bottom: 1px solid #2A2826">
+      <div style="display: flex; gap: 8px" aria-hidden="true">
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #EC6A5E"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #F4BF4F"></span>
+        <span style="width: 12px; height: 12px; border-radius: 6px; background: #61C554"></span>
+      </div>
+      <span style="flex: 1; text-align: center; margin-right: 52px; color: #ABA49A; font-size: 12.5px">Preview host · start</span>
+    </div>
+    <img src="assets/engine-scene.svg" alt="The running game: a stone corridor with a glowing ember mid-flight, outlined because it is selected" style="display: block; width: 608px; height: 456px">
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

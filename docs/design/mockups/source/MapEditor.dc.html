@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuakeC Studio: map editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#6FA8DC}a:hover{color:#9CC4E8}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+</style>
+</helmet>
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; overflow: hidden; background: #1A1918; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px; color: #E8E3DC; font-variant-ligatures: none">
+
+  <div style="height: 38px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: #161514; border-bottom: 1px solid #2A2826">
+    <div style="display: flex; gap: 8px" aria-hidden="true">
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #EC6A5E"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #F4BF4F"></span>
+      <span style="width: 12px; height: 12px; border-radius: 6px; background: #61C554"></span>
+    </div>
+    <span style="font-weight: 600; margin-left: 10px">ember_mod</span>
+    <span style="color: #ABA49A">main</span>
+  </div>
+
+  <!-- toolbar: play from here, map tools, compile -->
+  <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #1D1B1A; border-bottom: 1px solid #2A2826">
+    <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 12px 0 10px; border-radius: 6px; background: #EE8B45; color: #1A1918; font-weight: 600">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z"></path></svg>
+      Play from here
+    </button>
+    <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 6px">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4.5 2.8v10.4L13 8z"></path></svg>
+      Play
+    </button>
+    <span style="width: 1px; height: 20px; background: #33302D; margin: 0 6px"></span>
+    <div role="toolbar" aria-label="Map tools" style="display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: #2A2826">
+      <button aria-pressed="true" style="height: 26px; padding: 0 10px; border-radius: 5px; background: #1A1918; color: #E8E3DC">Select</button>
+      <button aria-pressed="false" style="height: 26px; padding: 0 10px; border-radius: 5px; color: #ABA49A">Brush</button>
+      <button aria-pressed="false" style="height: 26px; padding: 0 10px; border-radius: 5px; color: #ABA49A">Clip</button>
+      <button aria-pressed="false" style="height: 26px; padding: 0 10px; border-radius: 5px; color: #ABA49A">Vertex</button>
+      <button aria-pressed="false" style="height: 26px; padding: 0 10px; border-radius: 5px; color: #ABA49A">Entity</button>
+    </div>
+    <button style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 6px; color: #ABA49A">Grid <span style="color: #E8E3DC">16</span></button>
+    <button aria-pressed="true" style="height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 6px; color: #ABA49A">Texture lock <span style="color: #8CC47E">on</span></button>
+    <div style="flex: 1"></div>
+    <div style="display: flex; align-items: center; gap: 10px; color: #ABA49A; font-size: 12.5px">
+      <span style="display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #8CC47E"></span>Fast compile 0.4 s</span>
+      <span>Full compile with vis and light</span>
+      <span style="width: 120px; height: 6px; border-radius: 3px; background: #2A2826; overflow: hidden" role="progressbar" aria-label="Full compile" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100"><span style="display: block; width: 62%; height: 100%; background: #6FA8DC"></span></span>
+      <span style="color: #E8E3DC">62%</span>
+    </div>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex">
+
+    <!-- left dock: project and map outline -->
+    <div style="width: 232px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-right: 1px solid #2A2826; color: #ABA49A">
+      <div style="height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600">Project</div>
+      <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 10px; color: #E8E3DC"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>ember_mod</div>
+      <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>src</div>
+      <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>maps</div>
+      <div style="height: 24px; display: flex; align-items: center; padding-left: 56px; background: #2E3640; color: #E8E3DC">start.map</div>
+      <div style="height: 24px; display: flex; align-items: center; padding-left: 56px">hall.map</div>
+      <div style="height: 24px; display: flex; align-items: center; gap: 6px; padding-left: 24px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>textures</div>
+
+      <div style="height: 1px; background: #2A2826; margin-top: 10px"></div>
+      <div style="height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; font-weight: 600"><span>Map</span><span style="font-weight: 400">214 brushes</span></div>
+      <div style="display: flex; flex-direction: column; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">worldspawn</span><span style="color: #8E877D">209</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">info_player_start</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #3A2A1E; color: #F2E9DE; box-shadow: inset 2px 0 0 #EE8B45"><span style="flex: 1">ember_trap</span><span style="color: #EE8B45">hall_trap</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">light</span><span style="color: #8E877D">12</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">item_cells</span><span style="color: #8E877D">4</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">func_door</span><span style="color: #8E877D">2</span></div>
+        <div style="height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 12px"><span style="flex: 1">trigger_once</span><span style="color: #8E877D">3</span></div>
+      </div>
+    </div>
+
+    <!-- centre: viewport and texture browser -->
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+      <div style="height: 34px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #211F1E; border-bottom: 1px solid #2A2826; font-size: 12.5px; color: #ABA49A">
+        <div role="tablist" aria-label="Views" style="display: flex; gap: 2px">
+          <button role="tab" aria-selected="true" style="height: 24px; padding: 0 10px; border-radius: 5px; background: #2A2826; color: #E8E3DC">3D + top</button>
+          <button role="tab" aria-selected="false" style="height: 24px; padding: 0 10px; border-radius: 5px">3D</button>
+          <button role="tab" aria-selected="false" style="height: 24px; padding: 0 10px; border-radius: 5px">Four views</button>
+        </div>
+        <div style="flex: 1"></div>
+        <span>Camera -260 -520 420</span>
+        <span>Selected: 1 entity</span>
+      </div>
+      <div style="flex: 1; min-height: 0; position: relative; background: #121110; overflow: hidden">
+        <img src="assets/map-3d.svg" alt="3D view of the start map: a room with a pillar and a selected ember_trap entity on a rust step" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover">
+        <div style="position: absolute; right: 12px; bottom: 12px; width: 170px; height: 202px; border-radius: 8px; overflow: hidden; border: 1px solid #33302D; box-shadow: 0 8px 24px rgba(0,0,0,0.4)">
+          <img src="assets/map-top.svg" alt="Top view of the same room" style="display: block; width: 170px; height: 202px; object-fit: cover">
+          <span style="position: absolute; left: 8px; top: 6px; font-size: 11.5px; color: #ABA49A">Top</span>
+        </div>
+      </div>
+
+      <!-- texture browser -->
+      <div style="height: 188px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-top: 1px solid #2A2826">
+        <div style="height: 36px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid #2A2826">
+          <button style="height: 24px; padding: 0 10px; color: #E8E3DC; box-shadow: inset 0 -2px 0 #EE8B45">Textures</button>
+          <button style="height: 24px; padding: 0 10px; color: #ABA49A">Entities</button>
+          <label style="margin-left: 8px; height: 26px; width: 220px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border-radius: 6px; background: #1A1918; border: 1px solid #33302D; color: #8E877D">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.2"></circle><path d="M10.2 10.2l3.3 3.3"></path></svg>
+            <input aria-label="Filter textures" placeholder="Filter textures" style="flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #E8E3DC; font: inherit; font-size: 12.5px">
+          </label>
+          <span style="color: #ABA49A; font-size: 12px">ember.wad, 46 textures</span>
+        </div>
+        <div style="flex: 1; display: flex; gap: 12px; padding: 12px; overflow: hidden; font-family: 'JetBrains Mono', monospace; font-size: 11.5px">
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #6A4C38; background-image: repeating-linear-gradient(0deg, #3E2C20 0 2px, transparent 2px 21px), repeating-linear-gradient(90deg, #3E2C20 0 2px, transparent 2px 42px)"></span><span style="color: #ABA49A">brick_rust1 <span style="color: #8E877D">48</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #5E5A54; background-image: repeating-linear-gradient(0deg, #46423D 0 2px, transparent 2px 28px), repeating-linear-gradient(90deg, #46423D 0 2px, transparent 2px 28px)"></span><span style="color: #ABA49A">stone_grey3 <span style="color: #8E877D">112</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #4F5559; background-image: repeating-linear-gradient(90deg, #3A3F43 0 1px, transparent 1px 12px)"></span><span style="color: #ABA49A">metal_plate2 <span style="color: #8E877D">21</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #7A4428; background-image: repeating-linear-gradient(45deg, #5E321C 0 3px, transparent 3px 11px); outline: 2px solid #EE8B45; outline-offset: 2px"></span><span style="color: #E8E3DC">metal_rust2 <span style="color: #EE8B45">6</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #6B5236; background-image: repeating-linear-gradient(0deg, #523E28 0 2px, transparent 2px 14px)"></span><span style="color: #ABA49A">wood_beam1 <span style="color: #8E877D">9</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #4E6B2E; background-image: repeating-radial-gradient(circle at 30% 40%, #5F8236 0 4px, #4E6B2E 4px 9px)"></span><span style="color: #ABA49A">*slime0 <span style="color: #8E877D">3</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #3B2E3E; background-image: repeating-linear-gradient(160deg, #4A3A4F 0 6px, transparent 6px 18px)"></span><span style="color: #ABA49A">sky_ember <span style="color: #8E877D">14</span></span></div>
+          <div style="width: 84px; display: flex; flex-direction: column; gap: 6px"><span style="width: 84px; height: 84px; border-radius: 4px; background-color: #8C7A52; background-image: repeating-linear-gradient(0deg, #6E5F3E 0 3px, transparent 3px 16px)"></span><span style="color: #ABA49A">trim_bronze <span style="color: #8E877D">30</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- right dock: entity keys typed from QuakeC -->
+    <div style="width: 340px; flex: none; display: flex; flex-direction: column; background: #211F1E; border-left: 1px solid #2A2826">
+      <div style="height: 32px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; font-weight: 600; color: #ABA49A">
+        <span>Entity</span>
+        <a href="#" style="font-weight: 400; font-family: 'JetBrains Mono', monospace">src/traps.qc:12</a>
+      </div>
+      <div style="padding: 0 12px 10px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 500; color: #EE8B45">ember_trap</div>
+        <div style="color: #ABA49A; line-height: 18px; font-size: 12.5px">Fires embers at the player while START_ON is set. Toggled when its targetname is used.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 96px minmax(0, 1fr) 44px; align-items: center; column-gap: 8px; row-gap: 5px; padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+        <span style="color: #ABA49A">origin</span><input aria-label="origin" value="448 128 64" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D; color: #86BFD0; font: inherit"><span style="color: #8E877D; font-size: 11.5px">vector</span>
+        <span style="color: #ABA49A">targetname</span><input aria-label="targetname" value="hall_trap" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D; color: #A9CB82; font: inherit"><span style="color: #8E877D; font-size: 11.5px">string</span>
+        <span style="color: #ABA49A">delay</span><input aria-label="delay" value="0.5" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D; color: #CDA4DE; font: inherit"><span style="color: #8E877D; font-size: 11.5px">float</span>
+        <span style="color: #ABA49A">wait</span><input aria-label="wait" value="2" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D; color: #CDA4DE; font: inherit"><span style="color: #8E877D; font-size: 11.5px">float</span>
+        <span style="color: #ABA49A">speed</span><input aria-label="speed" placeholder="600 (default)" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #33302D; color: #CDA4DE; font: inherit"><span style="color: #8E877D; font-size: 11.5px">float</span>
+        <span style="color: #EC7A6C">dealy</span><input aria-label="dealy" value="1" style="height: 24px; padding: 0 7px; border-radius: 5px; background: #1A1918; border: 1px solid #EC7A6C; color: #E8E3DC; font: inherit"><span style="color: #8E877D; font-size: 11.5px">?</span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 8px; margin: 6px 12px 0; padding: 7px 9px; border-radius: 6px; background: #3A2220; font-size: 12px; line-height: 17px; color: #F2D2CC">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#EC7A6C" stroke-width="1.5" style="flex: none; margin-top: 2px" aria-hidden="true"><path d="M8 2.5l6 11H2z"></path><path d="M8 6.5v3M8 11.5v.5"></path></svg>
+        <span>ember_trap never reads dealy. Did you mean delay? <a href="#" style="color: #F2D2CC; text-decoration: underline">Rename key</a></span>
+      </div>
+
+      <div style="padding: 12px 12px 4px; font-size: 12px; font-weight: 600; color: #ABA49A">Spawn flags</div>
+      <div style="display: flex; gap: 16px; padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+        <label style="display: flex; align-items: center; gap: 7px"><input type="checkbox" checked style="accent-color: #EE8B45; margin: 0">START_ON</label>
+        <label style="display: flex; align-items: center; gap: 7px; color: #ABA49A"><input type="checkbox" style="accent-color: #EE8B45; margin: 0">SILENT</label>
+      </div>
+
+      <div style="padding: 14px 12px 6px; font-size: 12px; font-weight: 600; color: #ABA49A">Add key</div>
+      <div style="padding: 0 12px; display: flex; flex-direction: column">
+        <label style="height: 28px; display: flex; align-items: center; padding: 0 8px; border-radius: 6px 6px 0 0; background: #1A1918; border: 1px solid #6FA8DC; font-family: 'JetBrains Mono', monospace; font-size: 12.5px"><input aria-label="New key" value="bo" style="flex: 1; background: none; border: 0; outline: none; color: #E8E3DC; font: inherit"></label>
+        <div role="listbox" aria-label="Keys ember_trap reads" style="display: flex; flex-direction: column; border: 1px solid #33302D; border-top: 0; border-radius: 0 0 6px 6px; background: #2A2826; font-family: 'JetBrains Mono', monospace; font-size: 12.5px">
+          <div role="option" aria-selected="true" style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; background: #2E3640"><span style="flex: 1"><b style="font-weight: 600">bo</b>unces</span><span style="color: #ABA49A; font-size: 11.5px">float · traps.qc:20</span></div>
+          <div role="option" aria-selected="false" style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; color: #ABA49A"><span style="flex: 1">sounds</span><span style="font-size: 11.5px">float · traps.qc:24</span></div>
+          <div role="option" aria-selected="false" style="height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; color: #ABA49A"><span style="flex: 1">target</span><span style="font-size: 11.5px">string · subs.qc</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height: 26px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: #161514; border-top: 1px solid #2A2826; font-size: 12px; color: #ABA49A">
+    <span>start.map</span>
+    <span>214 brushes, 23 entities</span>
+    <span style="color: #8CC47E">No leaks</span>
+    <span style="color: #EC7A6C">1 problem</span>
+    <div style="flex: 1"></div>
+    <span>Valve 220</span>
+    <span>BSP2</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

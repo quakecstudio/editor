@@ -1,6 +1,6 @@
 # Plan
 
-The backlog for QuakeC Studio, kept as data so nothing in the design document is missed.
+The backlog for QuakeC Studio, kept as data so nothing in the [design document](../docs/design/design-doc.md) is missed.
 
 | File | Purpose |
 | --- | --- |
