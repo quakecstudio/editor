@@ -372,17 +372,21 @@ issues:
   size: L
   reqs:
   - UI-2
+  - UI-14
+  - UI-15
   - PRIN-1
   - CONV-16
   depends:
   - P0-10
   - P2-12
   - P0-15
+  - P0-25
   deliverable:
   - 'apps/desktop (name from ADR-0006) on the chosen framework: window, docking layout with toolbar, left (Project, Entities), centre (editor, game), right (Properties, agent), bottom (Problems, Console,
     Debugger) panels as placeholders wired to commands'
   acceptance:
   - Layout persists across restarts; every panel toggle is a command
+  - Theme, type and spacing come from docs/design/tokens.toml and match the approved mockups (P0-25)
   - Every user-facing string comes from the single string catalog (CONV-16); a lint or test fails on string literals in UI code
   verify:
   - Headless launch smoke test in CI; snapshot tests once P2-21 lands

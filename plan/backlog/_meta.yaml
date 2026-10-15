@@ -10,7 +10,7 @@ definition_of_done:
   - "Follow-up work found while doing the issue is filed as new issues and linked, not left in comments"
 
 milestones:
-  - {key: P0, title: "Phase 0: decisions and spikes", gate: "UI framework and license model chosen and recorded as ADRs; repo, CI and planning in place"}
+  - {key: P0, title: "Phase 0: decisions and spikes", gate: "UI framework, license model and visual design chosen and recorded as ADRs; repo, CI and planning in place"}
   - {key: P1, title: "Phase 1: foundations", gate: "qc-vm matches id's VM statement by statement on the id 1.01 and rerelease corpus; parser round-trips the corpus losslessly"}
   - {key: P2, title: "Phase 2: language core and editor", gate: "The rerelease QuakeC compiles with our compiler and behaves identically in qc-vm; full navigation and clean diagnostics in the editor"}
   - {key: P3, title: "Phase 3: live preview", gate: "Save-to-game in about a second on macOS, Windows and Linux, with breakpoints and entity inspection"}

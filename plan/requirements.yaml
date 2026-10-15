@@ -152,6 +152,8 @@ sections:
       - {id: UI-11, kind: stated, text: "External agents run in the panel over the Agent Client Protocol"}
       - {id: UI-12, kind: stated, text: "Debugger panel: call stack, watches, breakpoints"}
       - {id: UI-13, kind: stated, text: "Properties panel: selected entity's fields, editable while paused"}
+      - {id: UI-14, kind: stated, text: "Zed's editor feel and Roblox Studio's play loop: calm, dense, keyboard-first, native on each OS"}
+      - {id: UI-15, kind: implied, text: "Visual design set before the UI is built: theme tokens (dark and light), UI and code typefaces, spacing and density, icons, OS window chrome, and approved mockups of the main screens"}
 
   - id: MAP
     title: Map editor
