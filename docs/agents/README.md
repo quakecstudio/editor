@@ -50,6 +50,8 @@ An agent may add its own PR to the merge queue once CI passes on it (`land.sh` d
 
 ## Running a phase
 
+The [README](../../README.md#status) always shows the current phase and the exact command for the next run. `python3 plan/status.py --readme` writes it, and the gate reviewer updates it to the next phase in the PR that closes each gate. The general form is:
+
 ```
 /goal Run /run-phase P0 agents until python3 plan/status.py --phase P0 --track agents prints a last line starting "STATUS P0 agents: COMPLETE" or "STATUS P0 agents: WAITING ON PEOPLE". Run that command at the end of every turn so its last line is in the transcript. Every merged PR passed CI. Stop after 150 turns.
 ```

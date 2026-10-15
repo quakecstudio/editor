@@ -81,6 +81,37 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(r["status_line"], "STATUS P1 agents: IN PROGRESS, next #33 #46")
 
 
+class NextRun(unittest.TestCase):
+    TITLES = {"P0": "Phase 0: x", "P1": "Phase 1: foundations"}
+
+    def test_current_phase_is_first_open_gate(self):
+        self.assertEqual(status.current_phase(PLAN, states()), "P0")
+        self.assertEqual(status.current_phase(PLAN, states(closed={"P0-20"})), "P1")
+        self.assertIsNone(status.current_phase(PLAN, states(closed={"P0-20", "P1-25"})))
+
+    def test_goal_command_names_the_phase_everywhere(self):
+        cmd = status.goal_command("P3")
+        self.assertTrue(cmd.startswith("/goal Run /run-phase P3 agents"))
+        self.assertIn('"STATUS P3 agents: COMPLETE"', cmd)
+        self.assertNotIn("P0", cmd)
+
+    def test_readme_block_round_trips(self):
+        text = f"intro\n{status.BLOCK_START}\nold\n{status.BLOCK_END}\nrest\n"
+        new = status.replace_block(text, status.readme_block("P1", self.TITLES, 49))
+        self.assertIn("**Now:** Phase 1: foundations (gate #49).", new)
+        self.assertIn(status.goal_command("P1"), new)
+        self.assertTrue(new.startswith("intro\n") and new.endswith("\nrest\n"))
+        self.assertEqual(status.replace_block(new, status.readme_block("P1", self.TITLES, 49)), new)
+
+    def test_readme_block_when_done(self):
+        self.assertIn("Every phase gate is closed", status.readme_block("LATER", self.TITLES, None))
+
+    def test_real_readme_has_the_block(self):
+        text = status.README.read_text(encoding="utf-8")
+        self.assertIn(status.BLOCK_START, text)
+        self.assertIn(status.BLOCK_END, text)
+
+
 class RealPlan(unittest.TestCase):
     def test_runs_on_the_real_plan(self):
         _, issues = status.load_backlog()
