@@ -1,5 +1,5 @@
 # Every requirement in the QuakeC IDE design document, one ID each.
-# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 35, 2026-10-15).
+# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 36, 2026-10-15).
 # Each requirement must be covered by at least one issue in backlog.yaml;
 # plan/check.py fails if one is not.
 #
@@ -41,6 +41,7 @@ sections:
       - {id: PLAT-6, kind: implied, text: "Game directory strategy: build output and engine launch against the user's install without modifying or copying it"}
       - {id: PLAT-7, kind: implied, text: "Detect and configure third-party engines (FTEQW, vkQuake, QuakeSpasm, Ironwail): paths and versions"}
       - {id: PLAT-5, kind: stated, text: "vkQuake and QuakeSpasm/Ironwail usable as restart-loop preview targets and for compatibility checks"}
+      - {id: PLAT-8, kind: stated, text: "On macOS, where Steam and GOG sell Quake as Windows-only, accept any folder with id1/pak0.pak, recognise steamcmd downloads and GOG installers extracted with innoextract, and guide the user through it on first run; game data is read in place, never copied"}
 
   - id: PRIN
     title: Product principles
@@ -179,6 +180,7 @@ sections:
       - {id: MAP-20, kind: stated, text: "Editing follows TrenchBroom's conventions (camera, selection, keybindings)"}
       - {id: MAP-21, kind: stated, text: "ericw-tools' advanced lighting features come later"}
       - {id: MAP-22, kind: implied, text: "Entity edits to shipped maps that have no .map source (BSP entity lump or .ent override)"}
+      - {id: MAP-23, kind: stated, text: "Import PNG images as textures into the project's WAD2, quantized to the Quake palette with mipmaps and Quake's texture naming rules"}
       - {id: MAP-19, kind: implied, text: "Public map corpus with known-good licenses for compiler differential tests"}
 
   - id: QA
@@ -198,6 +200,7 @@ sections:
       - {id: QA-13, kind: implied, text: "QuakeC test format and test command, so 'its tests pass' (AGT-5) has something to run"}
       - {id: QA-14, kind: implied, text: "Apple Developer ID and Windows code-signing credentials available to CI ahead of release"}
       - {id: QA-12, kind: implied, text: "New-project templates (rerelease and id1 based), using the GPLv2 rerelease QuakeC as the doc's licensing table allows"}
+      - {id: QA-15, kind: stated, text: "Export a mod as a zip players can install: progs.dat, maps and the project's own assets, optionally packed into a PAK, with a README and license notices, never id's game data"}
 
   - id: MVP
     title: MVP scope and milestones

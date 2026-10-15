@@ -373,6 +373,27 @@ issues:
   - Finds each installed engine in fixture layouts on all three OSes; reports versions
   verify:
   - Fixture tests; manual check per OS recorded
+- key: P3-21
+  title: Guide the user to their Quake files on first run
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - PLAT-8
+  - LIC-4
+  depends:
+  - P1-19
+  - P2-17
+  deliverable:
+  - A first-run panel, also reachable from settings, shown when no game data is found or the rerelease or pak1.pak is missing
+  - 'It explains, per OS and store, how to get the files (on a Mac: download the GOG Windows installer and extract it with innoextract, or download with steamcmd; Epic and Game Pass have only the rerelease), offers a folder picker, and shows what the chosen folder contains and lacks'
+  acceptance:
+  - Found, missing and partial (rerelease only, shareware only) states each render correctly
+  - Choosing a valid folder makes Play work without restarting the app; the files are read in place, never copied
+  verify:
+  - UI snapshot tests; manual first run on macOS with GOG files extracted by innoextract
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -384,6 +405,7 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - P3-21
   - P3-01
   - P3-02
   - P3-03

@@ -449,6 +449,48 @@ groups:
     - An eval where a door won't open is solved by reading both the map and the QuakeC behind it
     verify:
     - Eval task
+  - key: P6-15
+    title: Write WAD2 files and quantize images to the Quake palette
+    labels:
+    - L0-formats
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-23
+    depends:
+    - P1-18
+    deliverable:
+    - A WAD2 writer in crates/qs-wad and a miptex encoder with four mip levels, following docs/spec/wad2.md
+    - 'Quantization of RGBA images to the Quake palette: perceptual nearest colour with optional dithering, fullbright colours used only where the source asks for them, transparency only for `{` textures'
+    - 'Texture name validation: 15 characters at most, and the meaning of `*` (liquids), `sky`, `+0` to `+9` and `+a` to `+j` (animation) prefixes'
+    acceptance:
+    - Write then read round-trips every texture byte for byte
+    - Mean colour error against a reference quantizer recorded in a test and does not regress
+    - Sizes that are not multiples of 16 and invalid names are reported, never silently changed
+    verify:
+    - cargo test; golden images in tests
+  - key: P6-16
+    title: Import textures into the project WAD
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-23
+    - MAP-5
+    depends:
+    - P6-15
+    - P6-10
+    deliverable:
+    - Import from the texture browser and by dragging PNG files onto it, with a preview of the quantized result before it is saved
+    - The project's own WAD in its texture folder, referenced from worldspawn so our map compiler and the engines find it
+    acceptance:
+    - An imported texture can be applied to a brush, compiles with qmap-bsp and shows correctly in the preview host
+    - Re-importing a changed PNG updates the texture in place and in open maps
+    verify:
+    - UI snapshot tests; integration test that imports, compiles and renders
   - key: P6-14
     title: Phase 6 gate review
     labels:
@@ -461,6 +503,8 @@ groups:
     - OPEN-5
     - MAP-18
     depends:
+    - P6-16
+    - P6-15
     - P6-01
     - P6-02
     - P6-03

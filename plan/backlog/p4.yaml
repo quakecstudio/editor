@@ -465,6 +465,49 @@ issues:
   - Succeeds on all three OSes from release builds
   verify:
   - Recordings and eval report attached
+- key: P4-27
+  title: Write PAK files
+  labels:
+  - L0-formats
+  - area:release
+  - type:feature
+  size: S
+  reqs:
+  - QA-15
+  depends:
+  - P1-18
+  deliverable:
+  - A writer in crates/qs-pak, following docs/spec/pak.md, with deterministic output (sorted entries, no timestamps)
+  acceptance:
+  - Write then read round-trips every file of a generated test tree byte for byte
+  - Files written by us load in the preview host and QuakeSpasm
+  - Fuzzed and oversized inputs return errors, never panic
+  verify:
+  - cargo test; engine load test in CI with open test assets
+- key: P4-28
+  title: Export a mod for players
+  labels:
+  - L5-commands
+  - area:release
+  - type:feature
+  size: M
+  reqs:
+  - QA-15
+  - LIC-4
+  - LIC-5
+  depends:
+  - P4-27
+  - P4-17
+  deliverable:
+  - 'A `project.export` command, used by File > Export Mod and the agent: a zip of the mod folder named after the project, containing progs.dat (and csprogs.dat or menu.dat if built), maps and the project''s own assets, optionally packed into pak0.pak'
+  - A generated README.txt with what the mod is, which game it needs (original or rerelease) and how to install and launch it in common engines; the project's license and the notices of everything it includes
+  - Refuses to export id's game data, detected by checksum and by the files of the user's install, and lists any file whose license is unknown according to the project's attribution file
+  acceptance:
+  - An exported template mod, unzipped into a clean Quake folder, launches and plays in the preview host and QuakeSpasm on each OS
+  - An export that would include a file from id1 or the rerelease paks fails with a clear message
+  - Exporting twice from the same sources produces the same zip
+  verify:
+  - Integration test in CI with open test assets; manual install-and-play check recorded on macOS
 - key: P4-25
   title: Phase 4 gate review and MVP release
   labels:
@@ -479,6 +522,8 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
+  - P4-27
+  - P4-28
   - P4-02
   - P4-03
   - P4-04

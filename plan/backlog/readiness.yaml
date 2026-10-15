@@ -467,10 +467,11 @@ groups:
     - P3-14
     - P3-15
     - P3-16
+    - P3-21
     - P2-R7
     - P0-24
     deliverable:
-    - 'docs/readiness/p3-r7.md following docs/readiness/_template.md, covering: P3-11, P3-12, P3-13, P3-14, P3-15, P3-16'
+    - 'docs/readiness/p3-r7.md following docs/readiness/_template.md, covering: P3-11, P3-12, P3-13, P3-14, P3-15, P3-16, P3-21'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -518,6 +519,40 @@ groups:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
 - milestone: P4
   issues:
+  - key: P4-R0
+    title: L0 formats test-suite readiness (P4)
+    labels:
+    - L0-formats
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-1
+    - TEST-2
+    - TEST-3
+    - TEST-4
+    - TEST-5
+    - TEST-6
+    - TEST-7
+    - TEST-8
+    - TEST-9
+    - TEST-10
+    - TEST-11
+    - TEST-12
+    depends:
+    - P4-27
+    - P1-R0
+    - P0-24
+    deliverable:
+    - 'docs/readiness/p4-r0.md following docs/readiness/_template.md, covering: P4-27'
+    - Ratchet values for every crate in the layer committed to CI
+    acceptance:
+    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
+    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
+    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
+    - Defects reported against this layer from higher layers are all closed
+    verify:
+    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P4-R5
     title: L5 commands test-suite readiness (P4)
     labels:
@@ -544,10 +579,11 @@ groups:
     - P4-03
     - P4-04
     - P4-05
+    - P4-28
     - P2-R5
     - P0-24
     deliverable:
-    - 'docs/readiness/p4-r5.md following docs/readiness/_template.md, covering: P4-02, P4-26, P4-03, P4-04, P4-05'
+    - 'docs/readiness/p4-r5.md following docs/readiness/_template.md, covering: P4-02, P4-26, P4-03, P4-04, P4-05, P4-28'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -690,7 +726,7 @@ groups:
     - TEST-12
     depends:
     - P5-02
-    - P1-R0
+    - P4-R0
     - P0-24
     deliverable:
     - 'docs/readiness/p5-r0.md following docs/readiness/_template.md, covering: P5-02'
@@ -876,6 +912,40 @@ groups:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
 - milestone: P6
   issues:
+  - key: P6-R0
+    title: L0 formats test-suite readiness (P6)
+    labels:
+    - L0-formats
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-1
+    - TEST-2
+    - TEST-3
+    - TEST-4
+    - TEST-5
+    - TEST-6
+    - TEST-7
+    - TEST-8
+    - TEST-9
+    - TEST-10
+    - TEST-11
+    - TEST-12
+    depends:
+    - P6-15
+    - P5-R0
+    - P0-24
+    deliverable:
+    - 'docs/readiness/p6-r0.md following docs/readiness/_template.md, covering: P6-15'
+    - Ratchet values for every crate in the layer committed to CI
+    acceptance:
+    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
+    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
+    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
+    - Defects reported against this layer from higher layers are all closed
+    verify:
+    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P6-R4
     title: L4 bridges test-suite readiness (P6)
     labels:
@@ -973,10 +1043,11 @@ groups:
     - P6-10
     - P6-11
     - P6-12
+    - P6-16
     - P5-R7
     - P0-24
     deliverable:
-    - 'docs/readiness/p6-r7.md following docs/readiness/_template.md, covering: P6-08, P6-09, P6-10, P6-11, P6-12'
+    - 'docs/readiness/p6-r7.md following docs/readiness/_template.md, covering: P6-08, P6-09, P6-10, P6-11, P6-12, P6-16'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
