@@ -504,6 +504,33 @@ issues:
   - Lowering a committed ratchet value without a readiness issue reference fails CI
   verify:
   - Fixture tests for each job; CI run links
+- key: P0-25
+  title: Set the visual design and approve mockups of the main screens
+  labels:
+  - L7-ui
+  - area:editor
+  - type:decision
+  size: M
+  reqs:
+  - UI-14
+  - UI-15
+  - UI-2
+  - QA-9
+  depends:
+  - P0-07
+  deliverable:
+  - 'docs/design/visual.md: theme tokens for dark and light (colour, spacing, radius, elevation), UI and code typefaces with sizes, density, icon set, motion, and window chrome per OS (macOS traffic lights and native menu bar; Windows and Linux client-side title bar)'
+  - 'Mockups of the main screens, exported to docs/design/mockups/: code beside the docked engine window (v1), paused inspection with Properties and agent hunk review, inline edit (Cmd/Ctrl+K), command palette, and the map editor (3D view, entity keys, texture browser)'
+  - docs/design/tokens.toml, the single source the UI layer reads its theme from
+  - docs/adr/0010-visual-design.md recording the direction and what was rejected
+  acceptance:
+  - Every panel named in UI-2 appears in at least one mockup, with real QuakeC and real entity fields, no placeholder text
+  - The v1 mockups show the engine in its own docked window (ENG-9); the embedded game view appears only in a mockup marked post-MVP
+  - Every text and icon colour pair in both themes meets WCAG AA contrast (QA-9)
+  - Justin approves the mockups on this issue before P2-17 starts
+  verify:
+  - A contrast check over docs/design/tokens.toml runs in CI and fails below AA
+  - Approval comment linked from the ADR
 - key: P0-20
   title: Phase 0 gate review
   labels:
@@ -538,6 +565,7 @@ issues:
   - P0-21
   - P0-22
   - P0-23
+  - P0-25
   - P0-24
   deliverable:
   - 'docs/gates/p0.md: gate criteria, evidence for each, open items carried forward, updated risk register'
