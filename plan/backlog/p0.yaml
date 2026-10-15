@@ -1,0 +1,549 @@
+milestone: P0
+issues:
+- key: P0-01
+  title: Scaffold the Cargo workspace with the vouch conventions
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - ARCH-3
+  - PRIN-7
+  - CONV-1
+  - CONV-2
+  - CONV-3
+  - CONV-4
+  - CONV-5
+  - CONV-6
+  - CONV-14
+  - CONV-15
+  - CONV-16
+  deliverable:
+  - docs/conventions.md (drafted 2026-10-15) adopted, with every 'differs from vouch' item confirmed or changed
+  - Cargo.toml workspace (resolver 3, crates/*, apps/*, xtask) with [workspace.package], the vouch [workspace.lints.rust] and [workspace.lints.clippy] sets, [workspace.dependencies] policy, release and
+    ci profiles
+  - rust-toolchain.toml (exact channel), .rustfmt.toml and .clippy.toml as in docs/conventions.md
+  - deny.toml with targets, [advisories], [licenses] (confidence-threshold 0.8), [bans] and [sources] (unknown-registry deny, unknown-git warn, crates.io only, git sources pinned to a rev)
+  - 'crates/qs-paths: the single paths module; docs/adr/ entry choosing XDG everywhere or native per-OS dirs'
+  - README.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, .gitattributes, .gitignore (license files land with P0-08)
+  - 'Test modules carry #![expect(clippy::unwrap_used, ..., reason = "test code: ...")] as in vouch; qs-tests keeps [lints] workspace = true'
+  - 'crates/qs-tests: the single cross-crate integration test binary (tests/it/)'
+  acceptance:
+  - cargo build and cargo test pass on an empty workspace on macOS, Windows and Linux
+  - 'Fixture code using unwrap, indexing, unchecked arithmetic, an as-cast, println! and an #[allow] without reason each fails clippy'
+  - cargo deny check fails when a GPL dependency or a wildcard version is added
+  - Every config value matches docs/conventions.md (checked by a script, not by eye)
+  - 'Whether unsafe is needed for windowing/wgpu is settled; if so it is confined to one crate with #[expect(unsafe_code, reason)]'
+  - Release builds of the app binaries use panic = "unwind" so the command guard works (differs from vouch)
+  verify:
+  - make lint, make test and make audit on all three OSes; conventions conformance script output attached
+- key: P0-02
+  title: 'Build the Makefile and cargo xtask: ci, layers, licenses, attribution'
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: M
+  reqs:
+  - ARCH-1
+  - QA-1
+  - CONV-8
+  depends:
+  - P0-01
+  deliverable:
+  - xtask/ crate with subcommands ci, layers, licenses, attribution
+  - layers.toml mapping every crate to L0-L7 or apps, with the rule that a crate may depend only on lower layers
+  - ATTRIBUTION.md format and checker for bundled assets
+  - docs/layers.md explaining the layer model with the architecture diagram
+  - Makefile with fmt, lint, check, test, test-integration, test-fuzz, test-coverage (cargo-llvm-cov), test-mutants (cargo-mutants), audit, docs-build, bench, ci and help targets, calling cargo and xtask
+  acceptance:
+  - cargo xtask ci runs fmt --check, clippy -D warnings, tests, layers, licenses, attribution and exits non-zero on any failure
+  - Adding a dependency from an L1 crate to an L3 crate fails cargo xtask layers with a message naming both crates
+  - A crate missing from layers.toml fails the check
+  - An asset file not listed in ATTRIBUTION.md fails cargo xtask attribution
+  - Every committed file is license-scanned (e.g. askalono) and carries an allowed SPDX header; a file without one fails
+  - make ci runs exactly what CI runs
+  verify:
+  - xtask self-tests with fixture workspaces for each failure case
+- key: P0-03
+  title: Set up CI on macOS, Windows and Linux and protect main
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  - PM-4
+  - PLAT-1
+  - CONV-7
+  - CONV-9
+  depends:
+  - P0-02
+  deliverable:
+  - .github/workflows/ci.yml with separate Format, Clippy (--locked --all-targets --all-features -D warnings), Unit Tests (Linux, macOS, Windows), Build (every target, --profile ci --locked), cargo-deny
+    and dependency-review jobs
+  - 'Build targets: aarch64-apple-darwin, x86_64-apple-darwin and a lipo''d universal macOS binary, x86_64 and aarch64 Windows, x86_64 and aarch64 Linux'
+  - '.github/workflows/secure_workflows.yml failing any unpinned third-party action; zizmor lint; least-privilege permissions and persist-credentials: false'
+  - .pre-commit-config.yaml for prek, SHA-pinned, pre-commit and pre-push hooks as in docs/conventions.md
+  - 'Branch protection on main: PR required, all CI jobs required, squash merge only, no force push'
+  acceptance:
+  - A PR that breaks fmt, clippy, tests, layering, licenses or deny cannot be merged
+  - A PR adding an action pinned by tag instead of SHA fails
+  - All six targets and the universal macOS binary build on every PR
+  verify:
+  - A deliberately failing test PR is blocked; screenshot of the protection settings attached
+- key: P0-04
+  title: Write CLAUDE.md, AGENTS.md, .claude/rules and the issue and PR templates
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - PM-4
+  - PM-5
+  - LIC-2
+  - CONV-10
+  - CONV-11
+  - CONV-12
+  - CONV-13
+  depends:
+  - P0-09
+  deliverable:
+  - 'CLAUDE.md: overview, architecture, code conventions, test conventions, commands (vouch layout)'
+  - 'AGENTS.md: pointer to CLAUDE.md plus environment setup; .claude/hooks/session-setup.sh'
+  - '.claude/rules/: branching.md, commits-and-issues.md (no Co-Authored-By), development-discipline.md, specs-are-source-of-truth.md, clean-room.md, layering.md'
+  - specs/ cache with manifest.tsv (origin URL, sha256) and scripts/refresh-specs.sh, seeded with the LSP, MCP and ACP specifications
+  - docs/spec/requirements.tsv format and the spec-citation coverage ratchet test in qs-tests
+  - .github/ISSUE_TEMPLATE/ for feature, spec, decision, spike and bug, each requiring deliverable, acceptance criteria, verification and requirement IDs; .github/pull_request_template.md with the definition
+    of done
+  acceptance:
+  - A fresh agent session given only the repo states the layering, no-panic, clean-room and commit rules and the make ci command
+  - Removing a spec citation from a test fails the coverage ratchet
+  - Each issue template shows deliverable, acceptance and verification sections
+  verify:
+  - Review by a second person or a fresh agent session against the checklist above
+- key: P0-05
+  title: Put the plan in the repo with an automatic coverage check
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - PM-5
+  - PM-6
+  depends:
+  - P0-01
+  deliverable:
+  - 'docs/design.md: the design document, versioned in the repo as the source of truth'
+  - plan/requirements.yaml, plan/backlog/*.yaml and plan/check.py
+  - 'plan/coverage.md generated report: every requirement with its issues and status'
+  - CI step running plan/check.py
+  acceptance:
+  - check.py fails if a requirement has no issue, an issue cites an unknown requirement, or an issue lacks deliverable, acceptance or verification
+  - check.py fails if docs/design.md changes without requirements.yaml being reviewed (the PR template asks; the check compares a recorded hash)
+  verify:
+  - check.py unit tests with fixtures for each failure
+- key: P0-06
+  title: Create milestones, labels and the Project board from the plan
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - PM-1
+  depends:
+  - P0-05
+  deliverable:
+  - plan/apply.py that creates or updates milestones, labels and issues on GitHub idempotently from plan/backlog
+  - GitHub Project with fields Phase, Layer, Status, Size, Requirements and views Board, Roadmap (by milestone) and Decisions (type:decision, open)
+  acceptance:
+  - Running apply.py twice creates nothing new the second time
+  - Every issue on GitHub carries a plan key (e.g. P1-07) that matches backlog.yaml
+  verify:
+  - Dry-run output attached; Project URL linked in README
+- key: P0-07
+  title: Set up the ADR process
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - PM-2
+  depends:
+  - P0-01
+  deliverable:
+  - docs/adr/0000-template.md (context, options, decision, consequences, links)
+  - docs/adr/0001-record-decisions.md
+  - docs/adr/README.md index, generated or checked by xtask
+  acceptance:
+  - Every type:decision issue names its docs/adr/ file in its deliverable (checked by plan/check.py)
+  verify:
+  - plan/check.py verifies every type:decision issue names a docs/adr/ file in its deliverable
+- key: P0-08
+  title: Decide the license model
+  labels:
+  - repo
+  - area:legal
+  - type:decision
+  size: S
+  reqs:
+  - LIC-1
+  depends:
+  - P0-07
+  deliverable:
+  - docs/adr/0002-license-model.md comparing MIT OR Apache-2.0 core + GPL preview host and tools vs GPL-2.0-or-later throughout
+  - LICENSE files and SPDX headers policy matching the decision
+  - Updated deny.toml allowed-license list
+  acceptance:
+  - The ADR states which repos hold GPL code and what may cross the process boundary
+  - cargo xtask licenses enforces the decision
+  - Until P4-22 signs off, no package is published and GPL repos (oracles, preview host) are created private; the editor repo holds no GPL code
+  verify:
+  - ADR reviewed and merged; licenses check passes
+- key: P0-09
+  title: Define the clean-room process
+  labels:
+  - repo
+  - area:legal
+  - type:chore
+  size: S
+  reqs:
+  - LIC-2
+  - PM-3
+  depends:
+  - P0-08
+  deliverable:
+  - 'docs/clean-room.md: roles, which GPL sources each role may read, spec format, contamination rules and remedy'
+  - 'Agent separation: spec and implementation run in separate sessions with no shared memory; implementer environments have no checkout of GPL repos'
+  - 'docs/clean-room/readers.md: every person or agent, the GPL files they read and the date (including oracle and preview-host developers)'
+  - A GitHub Action that rejects assigning a clean-room:impl issue to anyone listed as a reader for that spec area
+  - 'docs/spec/README.md and docs/spec/_template.md: numbered sections, behaviour statements, named constants with citations, test vectors'
+  acceptance:
+  - Each spec section has a stable ID that implementation PRs and tests cite
+  - The assignment check blocks a listed reader in a test run
+  - The process states what happens if ADR-0002 chooses GPL throughout (whether the clean-room is kept)
+  verify:
+  - Action tested against a fixture readers.md
+- key: P0-10
+  title: 'Spike: gpui vs egui against the editor acceptance test'
+  labels:
+  - L7-ui
+  - area:editor
+  - type:spike
+  size: L
+  reqs:
+  - UI-1
+  - OPEN-3
+  - PRIN-5
+  depends:
+  - P0-01
+  - P0-11
+  - P0-16
+  deliverable:
+  - spikes/ui-gpui and spikes/ui-egui prototypes (not shipped) opening a 50,000-line QC project, each also rendering a wgpu 3D viewport inside the UI; semantic highlighting simulated from lexer tokens since
+    the semantic model comes later
+  - docs/spikes/ui-framework.md with frame-time measurements on an M-series Mac, a mid-range Windows laptop and Linux Wayland, IME and multi-cursor results, inline-diff rendering, accessibility support
+  - docs/adr/0003-ui-framework.md, including whether a web build is required (answers OPEN-3)
+  acceptance:
+  - Both prototypes measured with the same scripted input and harness
+  - 'Pass threshold: p99 frame time at most 8.3 ms (120 Hz) while typing and scrolling on all three machines; IME and multi-cursor work; a wgpu viewport renders inside the window'
+  - If neither passes, the ADR names the fallback (e.g. custom editor widget on the closer framework) and its cost
+  verify:
+  - Raw benchmark data committed under docs/spikes/data/
+- key: P0-11
+  title: Define performance budgets and the benchmark harness
+  labels:
+  - repo
+  - area:process
+  - type:test
+  size: S
+  reqs:
+  - PRIN-5
+  - ENG-13
+  depends:
+  - P0-01
+  deliverable:
+  - 'docs/perf-budgets.md: open project and type under 1 s, keystroke under one frame at 120 Hz, id1 recompile under 200 ms, save-to-game p95 at most 1.0 s windowed, with test hardware listed'
+  - benches/ harness (criterion or divan) and a cargo xtask bench command that records results to a JSON history
+  acceptance:
+  - Each budget has a named benchmark that later issues fill in
+  - A regression over 10% against the last recorded run is reported in CI
+  - 'Save-to-game budget: p95 at most 1.0 s from save to the change visible in a windowed engine, per OS'
+  verify:
+  - Harness runs in CI and uploads the JSON
+- key: P0-12
+  title: Decide the preview host base engine
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:decision
+  size: S
+  reqs:
+  - ENG-2
+  - PLAT-3
+  depends:
+  - P0-07
+  deliverable:
+  - docs/adr/0004-preview-host-base.md comparing QuakeSpasm, Ironwail and vkQuake on license, macOS Apple silicon support, code size, rerelease support and how invasive a bridge module is
+  acceptance:
+  - Scored criteria table (license, Apple silicon, rerelease support, code size, bridge invasiveness, upstream activity) with each candidate built and run on all three OSes
+  verify:
+  - Build logs and screenshots attached to the issue
+- key: P0-13
+  title: Verify FTEQW on Apple silicon
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:spike
+  size: S
+  reqs:
+  - PLAT-4
+  deliverable:
+  - 'docs/spikes/fteqw-macos.md: build steps, whether it runs natively, whether -qcdebug and applycompile work'
+  acceptance:
+  - 'A clear yes, no or partial for each of: builds, runs, debugs, reloads'
+  verify:
+  - Screenshots and console logs attached
+- key: P0-14
+  title: Decide the default preview target
+  labels:
+  - repo
+  - area:preview
+  - type:decision
+  size: S
+  reqs:
+  - OPEN-2
+  depends:
+  - P0-12
+  - P0-13
+  deliverable:
+  - docs/adr/0005-default-preview-target.md
+  acceptance:
+  - States the default per OS and when FTEQW is offered instead
+  verify:
+  - ADR merged
+- key: P0-15
+  title: Decide the product name and check the trademark
+  labels:
+  - repo
+  - area:legal
+  - type:decision
+  size: S
+  reqs:
+  - OPEN-1
+  depends:
+  - P0-07
+  deliverable:
+  - docs/adr/0006-product-name.md with USPTO and EUIPO search results, domain and crate-name availability
+  acceptance:
+  - Binary, crate prefix and bundle identifier names fixed (e.g. quakec-ide, qs-*)
+  verify:
+  - Search records attached
+- key: P0-16
+  title: Select the conformance corpora and verify their licenses
+  labels:
+  - repo
+  - area:legal
+  - type:test
+  size: M
+  reqs:
+  - OPEN-4
+  - FND-9
+  - MAP-19
+  - LIC-5
+  - LIC-7
+  depends:
+  - P0-08
+  deliverable:
+  - 'corpus/manifest.toml listing each QuakeC codebase and map: source URL, pinned commit or checksum, license, permitted use (vendor, fetch-at-test, never)'
+  - Entries for id 1.01 QuakeC, rerelease QuakeC, at least 10 public mods (e.g. Arcane Dimensions, Copper, Quoth, Alkaline) and at least 20 public maps
+  - Policy that QuakeC 1.06 is never fetched or bundled
+  acceptance:
+  - Every entry has a license recorded from the item's own files, not guessed
+  - Nothing GPL or unlicensed is vendored into the permissive tree
+  verify:
+  - cargo xtask corpus verify checks URLs and checksums
+- key: P0-17
+  title: Choose redistributable test assets for CI
+  labels:
+  - repo
+  - area:legal
+  - type:test
+  size: S
+  reqs:
+  - QA-4
+  - LIC-4
+  depends:
+  - P0-16
+  deliverable:
+  - 'docs/test-assets.md: chosen assets (e.g. LibreQuake) with license review, and the rule that id''s pak0/pak1 never enter CI'
+  - cargo xtask assets fetch to download and checksum them
+  acceptance:
+  - A map, models, textures and sounds sufficient for a headless scenario
+  - Every model and sound the rerelease QuakeC precaches at spawn is present in the asset set or has a stand-in (checked by listing precache calls)
+  verify:
+  - Fetch runs in CI on all three OSes
+- key: P0-18
+  title: Write the scope document and post-MVP list
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: S
+  reqs:
+  - GOAL-7
+  - MVP-3
+  deliverable:
+  - 'docs/scope.md: goals, v1 non-goals, MVP in/out, post-MVP items each linked to its LATER issue'
+  acceptance:
+  - Every non-goal and post-MVP item in docs/design.md appears with a link
+  verify:
+  - The issue adds an xtask check that every LATER issue key appears in docs/scope.md
+- key: P0-19
+  title: Create the risk register
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - OPEN-5
+  deliverable:
+  - 'docs/risks.md with every risk from the design doc: impact, mitigation, owner, linked issues, status'
+  acceptance:
+  - Every risk in the design doc is present with owner and mitigation
+  verify:
+  - Diff against the design doc's risk table attached
+- key: P0-21
+  title: Confirm the MVP scope
+  labels:
+  - repo
+  - area:process
+  - type:decision
+  size: S
+  reqs:
+  - MVP-4
+  - MVP-3
+  deliverable:
+  - 'docs/adr/0007-mvp-scope.md: the design doc''s MVP In list, plus a yes/no for each item this plan puts on the MVP path that the In list does not name: ACP hosting, Cmd/Ctrl+K, next-edit, tree-sitter,
+    editor extensions, restart-loop adapters, KEX target, update mechanism, map tools'
+  acceptance:
+  - Items answered no are moved to LATER in plan/backlog and plan/check.py still passes
+  verify:
+  - ADR merged; backlog diff linked
+  depends:
+  - P0-07
+- key: P0-22
+  title: Decide the game directory strategy
+  labels:
+  - repo
+  - area:preview
+  - type:decision
+  size: S
+  reqs:
+  - PLAT-6
+  - LIC-4
+  deliverable:
+  - 'docs/adr/0008-game-directories.md: where compiled progs.dat and maps go, and how each engine is launched against the user''s Steam or GOG install (e.g. -basedir plus a mod dir in the project) without
+    modifying or copying the install'
+  acceptance:
+  - Prototype launch works with Steam and GOG installs on all three OSes for id1 and the rerelease
+  verify:
+  - Recorded launches per OS
+  depends:
+  - P0-07
+- key: P0-23
+  title: Obtain code-signing credentials
+  labels:
+  - repo
+  - area:release
+  - type:chore
+  size: S
+  reqs:
+  - QA-14
+  deliverable:
+  - Apple Developer ID (application and installer certificates, notarization API key) and a Windows code-signing certificate or Azure Trusted Signing account, stored as CI secrets
+  - docs/releasing.md section on credential ownership and renewal
+  acceptance:
+  - A test binary is signed and notarized on macOS and signed on Windows from CI
+  verify:
+  - CI run link
+  depends:
+  - P0-15
+- key: P0-24
+  title: Set the test-suite readiness bar and its CI tooling
+  labels:
+  - repo
+  - area:process
+  - type:decision
+  size: M
+  reqs:
+  - TEST-1
+  - TEST-2
+  - TEST-3
+  - TEST-7
+  - TEST-10
+  - TEST-12
+  depends:
+  - P0-07
+  - P0-02
+  deliverable:
+  - docs/adr/0009-test-readiness-bar.md confirming or changing the thresholds in docs/testing.md
+  - docs/testing.md adopted; docs/readiness/_template.md for readiness reports
+  - 'CI jobs: coverage (cargo-llvm-cov) per crate, mutation testing (cargo-mutants, nightly and on changed crates in PRs), 20-run flake job per OS, spec-citation ratchet, all writing per-crate numbers to
+    a JSON history'
+  - 'Ratchet mechanism: per-crate minimums in a committed file that CI enforces and only a readiness issue may raise'
+  acceptance:
+  - A fixture crate below any threshold fails the matching CI job
+  - Lowering a committed ratchet value without a readiness issue reference fails CI
+  verify:
+  - Fixture tests for each job; CI run links
+- key: P0-20
+  title: Phase 0 gate review
+  labels:
+  - repo
+  - area:process
+  - type:gate
+  size: S
+  reqs:
+  - MVP-2
+  - OPEN-5
+  - MVP-5
+  depends:
+  - P0-01
+  - P0-02
+  - P0-03
+  - P0-04
+  - P0-05
+  - P0-06
+  - P0-07
+  - P0-08
+  - P0-09
+  - P0-10
+  - P0-11
+  - P0-12
+  - P0-13
+  - P0-14
+  - P0-15
+  - P0-16
+  - P0-17
+  - P0-18
+  - P0-19
+  - P0-21
+  - P0-22
+  - P0-23
+  - P0-24
+  deliverable:
+  - 'docs/gates/p0.md: gate criteria, evidence for each, open items carried forward, updated risk register'
+  - Sized, dated roadmap for Phases 1 to 7 based on the spike results (docs/roadmap.md)
+  acceptance:
+  - 'Gate met: UI framework and license ADRs merged; CI, planning and process in place'
+  - Every P0 issue closed or explicitly moved with a reason
+  verify:
+  - Review meeting notes or sign-off comment on the issue

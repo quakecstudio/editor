@@ -1,0 +1,262 @@
+# Every requirement in the QuakeC IDE design document, one ID each.
+# Source: "QuakeC IDE - Design Document" (claude.ai doc, rev 34, 2026-10-15).
+# Each requirement must be covered by at least one issue in backlog.yaml;
+# plan/check.py fails if one is not.
+#
+# kind: stated  = written in the design doc
+#       implied = needed to deliver a stated requirement but not written down;
+#                 listed so it is decided, not silently assumed
+
+sections:
+  - id: GOAL
+    title: Summary and goals
+    requirements:
+      - {id: GOAL-1, kind: stated, text: "Dialect-aware semantic engine (vanilla, FTEQCC, GMQCC; SSQC, CSQC, MenuQC) with fault-tolerant parsing, go-to-definition, references, rename and diagnostics"}
+      - {id: GOAL-2, kind: stated, text: "Our own QuakeC compiler on the same semantic model; no outside toolchain"}
+      - {id: GOAL-3, kind: stated, text: "Live preview: save, compile, see the change in a running engine, with breakpoints and entity inspection"}
+      - {id: GOAL-4, kind: stated, text: "Built-in agent harness whose tools are the UI's commands, also exposed over MCP and a CLI"}
+      - {id: GOAL-5, kind: stated, text: "Built-in map editor and map compiler sharing the QuakeC project, entity definitions and play loop"}
+      - {id: GOAL-6, kind: stated, text: "One Rust codebase, signed native builds for macOS (universal), Windows and Linux, no crashes in shipped code"}
+      - {id: GOAL-7, kind: stated, text: "Non-goals for v1 recorded (Q2/Q3/Half-Life map formats, GMQCC-only syntax before MVP, web build, Quake 2/3 game code)"}
+
+  - id: LIC
+    title: Source and licensing
+    requirements:
+      - {id: LIC-1, kind: stated, text: "Decide the license model: MIT OR Apache-2.0 core with a GPL preview host, or GPL for everything"}
+      - {id: LIC-2, kind: stated, text: "Clean-room process: spec authors read GPL source and write prose specs in docs/spec/; implementers work from specs only; traceability kept"}
+      - {id: LIC-3, kind: stated, text: "id's original VM and qcc built as separate GPL test-oracle programs, never linked into or shipped with the IDE"}
+      - {id: LIC-4, kind: stated, text: "Game data (pak0/pak1) never bundled; detect the user's Steam and GOG installs"}
+      - {id: LIC-5, kind: stated, text: "QuakeC 1.06 (no license) is read-only and never bundled; GPLv2 1.01 and rerelease QuakeC used as corpus and template"}
+      - {id: LIC-6, kind: stated, text: "Legal review of the GPL process boundary before the first public release"}
+      - {id: LIC-8, kind: implied, text: "A pinned FTEQCC, built in the GPL oracle repo, defines expected behaviour for the rerelease in CI only (no id compiler handles the rerelease)"}
+      - {id: LIC-7, kind: implied, text: "GPL test corpora and oracles live outside the permissively licensed tree (separate repo or fetched at test time) so the core repo stays single-licensed"}
+
+  - id: PLAT
+    title: Platform support
+    requirements:
+      - {id: PLAT-1, kind: stated, text: "IDE targets macOS universal, Windows x64/arm64 and Linux x86_64/aarch64 from one codebase"}
+      - {id: PLAT-2, kind: stated, text: "Detect Steam and GOG Quake installs (id1 and rerelease folders) on all three OSes and point engines at them"}
+      - {id: PLAT-3, kind: stated, text: "Preview host provides identical live preview on macOS, Windows and Linux"}
+      - {id: PLAT-4, kind: stated, text: "Verify FTEQW's Apple silicon status before relying on it"}
+      - {id: PLAT-6, kind: implied, text: "Game directory strategy: build output and engine launch against the user's install without modifying or copying it"}
+      - {id: PLAT-7, kind: implied, text: "Detect and configure third-party engines (FTEQW, vkQuake, QuakeSpasm, Ironwail): paths and versions"}
+      - {id: PLAT-5, kind: stated, text: "vkQuake and QuakeSpasm/Ironwail usable as restart-loop preview targets and for compatibility checks"}
+
+  - id: PRIN
+    title: Product principles
+    requirements:
+      - {id: PRIN-1, kind: stated, text: "The game is the centre: edit, Play, see, click, inspect, change as one loop"}
+      - {id: PRIN-2, kind: stated, text: "The agent reads live entities, fields and console output from the running game"}
+      - {id: PRIN-3, kind: stated, text: "One command registry: every menu item, keystroke and agent tool is a command with an id, typed parameters and an undo step"}
+      - {id: PRIN-4, kind: stated, text: "Agent edits are reviewable diffs with checkpoints; the agent proves work with a compile, test or screenshot"}
+      - {id: PRIN-5, kind: stated, text: "Performance targets measured: open and type in under 1 s, every keystroke under one frame, id1-sized recompile under 200 ms"}
+      - {id: PRIN-6, kind: stated, text: "Open to other agents: host external agents over ACP and expose IDE tools over MCP"}
+      - {id: PRIN-7, kind: stated, text: "Never crash: clippy denies panics in shipped crates; commands run behind a guard"}
+      - {id: PRIN-8, kind: stated, text: "Honest about state: warn before a reload drops entity state or when an engine lacks a builtin"}
+      - {id: PRIN-9, kind: stated, text: "Offline and private: no account, no telemetry, user-chosen model providers including local"}
+
+  - id: ARCH
+    title: Architecture
+    requirements:
+      - {id: ARCH-1, kind: stated, text: "Crate layers L0-L7 plus apps; a crate depends only on lower layers, enforced by cargo xtask layers"}
+      - {id: ARCH-2, kind: stated, text: "GPL programs (the preview host; id qcc and id map tools; id VM) run as separate processes and are never linked"}
+      - {id: ARCH-3, kind: implied, text: "Cargo workspace scaffold, toolchain pin, rustfmt/clippy config and pinned dependency policy"}
+
+  - id: FND
+    title: Foundation layers
+    requirements:
+      - {id: FND-1, kind: stated, text: "qc-progs: progs.dat v6 header, statements, globaldefs, fielddefs, functions, string table; FTE v7 extensions behind a flag"}
+      - {id: FND-2, kind: stated, text: "qc-types: the eight QC types and their global-slot layout"}
+      - {id: FND-3, kind: stated, text: "qc-vm: opcode semantics, call and local stacks, parameter and return slots, builtin dispatch, runaway-loop guard"}
+      - {id: FND-4, kind: stated, text: "qc-edict: entity memory, field access, spawn/remove, system globals and fields shared with the engine"}
+      - {id: FND-5, kind: stated, text: "qc-builtins: vanilla builtin table with signatures and side effects, mockable for tests"}
+      - {id: FND-6, kind: stated, text: "qc-lno: statement-to-source line maps"}
+      - {id: FND-7, kind: stated, text: "Engine limits are named constants in the spec with a citation to file and function"}
+      - {id: FND-8, kind: stated, text: "Differential runner compares qc-vm and id's VM globals and edicts after every statement"}
+      - {id: FND-9, kind: stated, text: "Test corpus: id 1.01 QuakeC, rerelease QuakeC and public mods"}
+      - {id: FND-10, kind: stated, text: "Fuzzing feeds well-formed random progs to both VMs and flags divergence"}
+      - {id: FND-11, kind: implied, text: "PAK and WAD2 readers and game filesystem search paths, needed to load progs, textures and models from the user's install"}
+
+  - id: LANG
+    title: Language core
+    requirements:
+      - {id: LANG-1, kind: stated, text: "Lexer and preprocessor: #include, #define, #ifdef, FTEQCC pragmas, macro expansion tracked to source spans"}
+      - {id: LANG-2, kind: stated, text: "Hand-written error-tolerant parser producing a lossless CST"}
+      - {id: LANG-3, kind: stated, text: "Project graph: progs.src order, includes, multiple modules (SSQC, CSQC, MenuQC) each with its own symbol table"}
+      - {id: LANG-4, kind: stated, text: "Incremental semantic model: resolution, types, field vs global, prototypes vs bodies, frame macros and model frames"}
+      - {id: LANG-5, kind: stated, text: "Dialect profiles (vanilla, FTEQCC, GMQCC) as feature flags on one parser"}
+      - {id: LANG-6, kind: stated, text: "Engine-target database from fteextensions.qc, dpextensions.qc and rerelease defs, with diagnostics for unsupported builtins"}
+      - {id: LANG-7, kind: stated, text: "LSP server: definition, references, rename, hover docs, completion, semantic tokens, inlay hints"}
+      - {id: LANG-8, kind: stated, text: "tree-sitter grammar for highlighting in Zed and Neovim"}
+      - {id: LANG-9, kind: stated, text: "Standalone LSP binary from the same crates so VS Code and other editors benefit"}
+      - {id: LANG-10, kind: implied, text: "Project configuration file declaring modules, dialect and target engine"}
+
+  - id: COMP
+    title: Compiler
+    requirements:
+      - {id: COMP-1, kind: stated, text: "qc-codegen emits progs.dat v6, FTE's extended format when targeted, and .lno"}
+      - {id: COMP-2, kind: stated, text: "As-you-type errors are exactly the build's errors"}
+      - {id: COMP-3, kind: stated, text: "Dialect order: vanilla, rerelease's FTEQCC features (MVP), rest of FTEQCC, GMQCC last"}
+      - {id: COMP-4, kind: stated, text: "Correctness = same globals and edicts as id's VM running qcc output; byte-identical output not a goal"}
+      - {id: COMP-5, kind: stated, text: "Optimizations (constant folding, dead code, string/global dedup) each behind a flag and covered by the differential suite"}
+      - {id: COMP-6, kind: stated, text: "Incremental recompile of id1-sized code under 200 ms"}
+      - {id: COMP-7, kind: stated, text: "id qcc built from GPL source is the vanilla oracle in CI only"}
+      - {id: COMP-8, kind: stated, text: "Extended-dialect conformance by compiling the rerelease and public mods and checking runtime behaviour"}
+      - {id: COMP-9, kind: stated, text: "Published compatibility list of mods that compile and behave correctly"}
+
+  - id: ENG
+    title: Engine bridge and live preview
+    requirements:
+      - {id: ENG-1, kind: stated, text: "EngineAdapter trait: launch, reload, set_breakpoint, step, inspect, console, screenshot"}
+      - {id: ENG-2, kind: stated, text: "Preview host: small GPL QuakeSpasm-lineage fork with an IDE bridge module emitting structured events over a versioned JSON local-socket protocol"}
+      - {id: ENG-3, kind: stated, text: "Preview host hot reload keeps the map and migrates fields by name where types match"}
+      - {id: ENG-4, kind: stated, text: "Preview host debugging: breakpoints, step, watch, entity tree"}
+      - {id: ENG-5, kind: stated, text: "FTEQW adapter: applycompile reload and the fteqccgui debug protocol over stdin/stdout with -qcdebug"}
+      - {id: ENG-6, kind: stated, text: "DarkPlaces adapter: recompile + restart, prvm_* inspection over rcon/stdin (post-MVP)"}
+      - {id: ENG-7, kind: stated, text: "QuakeSpasm, Ironwail and vkQuake adapter: recompile + restart over the stdin console"}
+      - {id: ENG-8, kind: stated, text: "KEX rerelease as a compile target only"}
+      - {id: ENG-9, kind: stated, text: "v1 docking: engine window placed beside the IDE and following focus"}
+      - {id: ENG-10, kind: stated, text: "Embedded game view inside the IDE (later)"}
+      - {id: ENG-11, kind: stated, text: "Before a state-dropping reload the UI lists what will reset and offers a map restart"}
+      - {id: ENG-12, kind: implied, text: "Headless preview host mode for scenario runs and CI"}
+      - {id: ENG-13, kind: stated, text: "Save, compile, reload and see it in the running game in about a second"}
+      - {id: ENG-14, kind: implied, text: "Bridge operations the UI needs beyond ENG-1: pause/resume, set field, pick, spawn/remove/edit entity, each capability-flagged"}
+
+  - id: AGT
+    title: Agent harness
+    requirements:
+      - {id: AGT-1, kind: stated, text: "Agent is a client of the command registry using the semantic core; loop is plan, edit, compile, test, preview, propose"}
+      - {id: AGT-2, kind: stated, text: "Tools: project.symbols, symbol.definition, symbol.references, engine.builtins, edit.apply, compile, vm.run, scenario.run, engine.inspect, engine.console, engine.screenshot"}
+      - {id: AGT-3, kind: stated, text: "Edits arrive as hunks accepted or rejected one by one; nothing touches disk until accepted"}
+      - {id: AGT-4, kind: stated, text: "Every agent run creates a git-backed checkpoint that can be rolled back"}
+      - {id: AGT-5, kind: stated, text: "A run is marked done only when compile is clean and its tests pass"}
+      - {id: AGT-6, kind: stated, text: "Providers: Anthropic, OpenAI-compatible endpoints, Ollama; keys in the OS keychain"}
+      - {id: AGT-7, kind: stated, text: "quakec-ide mcp exposes the tools headless; --connect attaches to the running app"}
+      - {id: AGT-8, kind: stated, text: "Per-project AGENTS.md loaded into every run"}
+      - {id: AGT-9, kind: stated, text: "Engine-target database, project dialect and a curated QuakeC reference ship with the app as agent context"}
+      - {id: AGT-10, kind: implied, text: "Deterministic scenario format (map, seed, scripted inputs, assertions) for scenario.run"}
+
+  - id: UI
+    title: Editor and UI
+    requirements:
+      - {id: UI-1, kind: stated, text: "Two-week gpui vs egui spike against the acceptance test on Mac, Windows and Linux; decision recorded"}
+      - {id: UI-2, kind: stated, text: "Layout: toolbar (Play, Pause, Step, Restart map, engine picker); Project and Entities left; editor and game centre; Properties and agent right; Problems, Console, Debugger bottom"}
+      - {id: UI-3, kind: stated, text: "Play loop: Play launches the preview host; save hot-reloads; clicking an entity selects it everywhere; Pause freezes for inspection"}
+      - {id: UI-4, kind: stated, text: "Code editor: semantic highlighting, multi-cursor, IME, large files, inline diff rendering"}
+      - {id: UI-5, kind: stated, text: "Agent panel with parallel threads, checkpoints and hunk-by-hunk review, modelled on Zed's"}
+      - {id: UI-6, kind: stated, text: "Cmd/Ctrl+K inline edit shown as a diff in place"}
+      - {id: UI-7, kind: stated, text: "Next-edit suggestions on Tab from the semantic model"}
+      - {id: UI-8, kind: stated, text: "@ mentions for files, symbols, builtins, selected entity and last console error"}
+      - {id: UI-9, kind: stated, text: "Ask about this on any entity starts an agent thread with its state attached"}
+      - {id: UI-10, kind: stated, text: "Command palette over the whole registry"}
+      - {id: UI-11, kind: stated, text: "External agents run in the panel over the Agent Client Protocol"}
+      - {id: UI-12, kind: stated, text: "Debugger panel: call stack, watches, breakpoints"}
+      - {id: UI-13, kind: stated, text: "Properties panel: selected entity's fields, editable while paused"}
+
+  - id: MAP
+    title: Map editor
+    requirements:
+      - {id: MAP-1, kind: stated, text: "Entity definitions derived from the semantic model (spawn functions, fields read, types, /*QUAKED*/ comments)"}
+      - {id: MAP-2, kind: stated, text: "Renaming a field in code updates the map editor; misspelled keys in maps are diagnostics"}
+      - {id: MAP-3, kind: stated, text: "Brushes: create, clip, vertex edit, CSG in a 3D view with optional 2D views, grid snapping, texture alignment and lock"}
+      - {id: MAP-4, kind: stated, text: "Entities: place, move, edit with typed and completed keys; MDL and BSP model previews"}
+      - {id: MAP-5, kind: stated, text: "WAD2 texture browser with palette-correct preview and usage counts"}
+      - {id: MAP-6, kind: stated, text: "Read and write .map (standard and Valve 220); write BSP29, BSP2 and .lit"}
+      - {id: MAP-7, kind: stated, text: "Diagnostics: leak path drawn in 3D, missing textures, unknown classnames, keys and targets"}
+      - {id: MAP-8, kind: stated, text: "qmap-bsp: .map to BSP (replacing qbsp)"}
+      - {id: MAP-9, kind: stated, text: "qmap-vis: potentially visible set"}
+      - {id: MAP-10, kind: stated, text: "qmap-light: lightmaps including coloured light (.lit)"}
+      - {id: MAP-11, kind: stated, text: "Map compilers specified clean-room from id's quake-tools and checked in CI against id's tools and ericw-tools, neither shipped"}
+      - {id: MAP-12, kind: stated, text: "Entity-only changes reach the running game with no recompile"}
+      - {id: MAP-13, kind: stated, text: "Play from here: fast compile (no vis, quick light), player spawned at the camera"}
+      - {id: MAP-14, kind: stated, text: "Background full compile with vis and final light swaps in when done"}
+      - {id: MAP-15, kind: stated, text: "Region compile of the rooms being worked on"}
+      - {id: MAP-16, kind: stated, text: "Agent tools: map.inspect, map.entity.place, map.entity.set, map.compile, map.leaks"}
+      - {id: MAP-17, kind: stated, text: "One wgpu renderer for live brushes, compiled BSPs with lightmaps and model previews"}
+      - {id: MAP-18, kind: stated, text: "Phasing: entity editing (Phase 5), brushes and compiler (Phase 6), full lighting, region compile and performance (Phase 7)"}
+      - {id: MAP-20, kind: stated, text: "Editing follows TrenchBroom's conventions (camera, selection, keybindings)"}
+      - {id: MAP-21, kind: stated, text: "ericw-tools' advanced lighting features come later"}
+      - {id: MAP-22, kind: implied, text: "Entity edits to shipped maps that have no .map source (BSP entity lump or .ent override)"}
+      - {id: MAP-19, kind: implied, text: "Public map corpus with known-good licenses for compiler differential tests"}
+
+  - id: QA
+    title: Quality, testing and release
+    requirements:
+      - {id: QA-1, kind: stated, text: "cargo xtask ci runs fmt, clippy with panics denied, all tests, layering, license and asset-attribution checks, differential VM suite; required before merge"}
+      - {id: QA-2, kind: stated, text: "Parser fuzzing: never crash, lossless round trip"}
+      - {id: QA-3, kind: stated, text: "UI snapshot tests through an offscreen harness; docs screenshots from the same harness"}
+      - {id: QA-4, kind: stated, text: "Engine integration tests: headless preview host runs scripted scenarios in CI on all three OSes with open test assets (license checked)"}
+      - {id: QA-5, kind: stated, text: "Agent evals: fixed modding tasks scored on compile success, test pass and reviewer acceptance"}
+      - {id: QA-6, kind: stated, text: "Release: signed notarized universal macOS DMG; signed MSI and portable zip for Windows x64/arm64; AppImage, Flatpak, deb, rpm for Linux x86_64/aarch64; checksums"}
+      - {id: QA-7, kind: stated, text: "Crash-safe logging to a per-OS log directory; source text never logged"}
+      - {id: QA-8, kind: implied, text: "User documentation: getting started, play loop, agent, map editor; rustdoc and a README per crate"}
+      - {id: QA-9, kind: implied, text: "Accessibility: screen-reader names and roles, full keyboard navigation, WCAG AA contrast (part of the Crafting Apps quality bar)"}
+      - {id: QA-10, kind: implied, text: "Settings and preferences persisted per user and per project"}
+      - {id: QA-11, kind: implied, text: "Update mechanism for installed builds"}
+      - {id: QA-13, kind: implied, text: "QuakeC test format and test command, so 'its tests pass' (AGT-5) has something to run"}
+      - {id: QA-14, kind: implied, text: "Apple Developer ID and Windows code-signing credentials obtained ahead of release"}
+      - {id: QA-12, kind: implied, text: "New-project templates (rerelease and id1 based), using the GPLv2 rerelease QuakeC as the doc's licensing table allows"}
+
+  - id: MVP
+    title: MVP scope and milestones
+    requirements:
+      - {id: MVP-1, kind: stated, text: "MVP acceptance: open the rerelease QuakeC, agent adds a weapon, review the diff, it fires in a live game on macOS, Windows and Linux"}
+      - {id: MVP-2, kind: stated, text: "Phases run in order; each gate must pass before the next phase starts"}
+      - {id: MVP-4, kind: stated, text: "MVP In list: semantic core for vanilla and FTEQCC dialects (SSQC only); editor with navigation, diagnostics, completion, hover; own compiler for vanilla + rerelease FTEQCC features; preview host with reload-on-save, breakpoints, entity inspector; FTEQW adapter on Windows and Linux; agent panel with diff review, checkpoints, the agent tools; MCP server; signed builds"}
+      - {id: MVP-5, kind: stated, text: "Dates stay open until the Phase 0 spike sizes the work, then the roadmap is dated"}
+      - {id: MVP-3, kind: stated, text: "Post-MVP items tracked: GMQCC, CSQC and MenuQC, optimizations beyond constant folding, DarkPlaces adapter, embedded game view, web build"}
+
+  - id: OPEN
+    title: Risks and open questions
+    requirements:
+      - {id: OPEN-1, kind: stated, text: "Product name and trademark check"}
+      - {id: OPEN-2, kind: stated, text: "Default preview target: our host or FTEQW where available"}
+      - {id: OPEN-3, kind: stated, text: "Does a web build matter enough to choose egui"}
+      - {id: OPEN-4, kind: stated, text: "Which public mods form the conformance corpus and are their licenses OK"}
+      - {id: OPEN-5, kind: stated, text: "Risk register reviewed at every phase gate"}
+
+  - id: PM
+    title: Project management (from the tracking plan)
+    requirements:
+      - {id: PM-1, kind: stated, text: "Milestones per phase with gate as exit criteria; labels on layer, area and type; one Project board with Phase, Layer, Status, Size and board, roadmap and decisions views"}
+      - {id: PM-2, kind: stated, text: "Decisions as issues resolved into ADRs in docs/adr/"}
+      - {id: PM-3, kind: stated, text: "Clean-room work tracked: spec issues output docs/spec/; implementation issues link spec sections; spec author is not the implementer"}
+      - {id: PM-4, kind: stated, text: "Branch protection on main with cargo xtask ci required; AGENTS.md with layering, no-panics and spec-only rules"}
+      - {id: PM-5, kind: stated, text: "Every issue ends in a concrete deliverable with acceptance criteria and verification (user requirement, 2026-10-15)"}
+      - {id: PM-6, kind: stated, text: "Nothing in the design doc is missed: requirement coverage checked automatically"}
+
+  - id: CONV
+    title: Rust conventions (follow vouch-sh/vouch; see docs/conventions.md)
+    requirements:
+      - {id: CONV-1, kind: stated, text: "Exact pinned toolchain, edition 2024, resolver 3, [workspace.package] inheritance, CalVer, [lints] workspace = true in every crate"}
+      - {id: CONV-2, kind: stated, text: "rustfmt config identical to vouch (edition 2024, max_width 100, 4 spaces, field init shorthand, Unix newlines)"}
+      - {id: CONV-3, kind: stated, text: "vouch's rust and clippy lint set: no-panic, indexing, arithmetic, casts, floats, print, absolute_paths, too_many_lines 150, #[expect] with reason only"}
+      - {id: CONV-4, kind: stated, text: "All dependencies in [workspace.dependencies], exact versions, default-features = false, features enabled per crate"}
+      - {id: CONV-5, kind: stated, text: "cargo-deny with targets, justified advisory ignores, license allowlist, wildcards denied, reasoned skips"}
+      - {id: CONV-6, kind: stated, text: "Release profile strip, lto, codegen-units 1, opt-level 3, panic unwind (differs from vouch so the command guard works); ci profile with thin LTO"}
+      - {id: CONV-7, kind: stated, text: "CI: SHA-pinned actions with an enforcement workflow, zizmor, least privilege, separate fmt/clippy/test/build/deny/dependency-review jobs, --locked"}
+      - {id: CONV-8, kind: stated, text: "Makefile entry points: fmt, lint, check, test, test-integration, test-fuzz, test-coverage, test-mutants, audit, docs-build, bench, ci"}
+      - {id: CONV-9, kind: stated, text: "prek pre-commit hooks, SHA-pinned, pre-commit and pre-push"}
+      - {id: CONV-10, kind: stated, text: "Conventional Commits, branch naming, squash merges, no direct pushes to main, worktrees for parallel agents; no Co-Authored-By trailers"}
+      - {id: CONV-11, kind: stated, text: "Test placement, single integration test binary, spec-struct fixtures, no wall-clock waits, tests cite the spec section they pin with a coverage ratchet"}
+      - {id: CONV-12, kind: stated, text: "Specs are the source of truth: never state required behaviour from memory; public specs cached verbatim in specs/ with manifest and sha256"}
+      - {id: CONV-13, kind: stated, text: "CLAUDE.md, AGENTS.md and .claude/rules/ (branching, commits-and-issues, development-discipline, specs-are-source-of-truth, clean-room, layering) and a session-setup hook"}
+      - {id: CONV-14, kind: stated, text: "Repository layout: crates/ with a project prefix, apps/, xtask/, fuzz/ outside the workspace, docs/ mdBook, specs/, plan/, packaging/"}
+      - {id: CONV-15, kind: stated, text: "Repository files: dual license files (per ADR), README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT"}
+      - {id: CONV-16, kind: stated, text: "tracing for diagnostics, one paths module (XDG vs native dirs decided in an ADR), user-facing strings in one catalog"}
+
+  - id: TEST
+    title: Test-suite readiness (see docs/testing.md)
+    requirements:
+      - {id: TEST-1, kind: stated, text: "Line and branch coverage per crate meets the bar in ADR-0009 (proposed lines 90%, branches 80%)"}
+      - {id: TEST-2, kind: stated, text: "Mutation score per crate meets the bar (proposed 90%); every surviving mutant killed or justified"}
+      - {id: TEST-3, kind: stated, text: "Every normative spec statement for a crate has a citing test (100%)"}
+      - {id: TEST-4, kind: stated, text: "Property tests for every encoder/decoder round trip and every stated invariant"}
+      - {id: TEST-5, kind: stated, text: "Fuzzing of every parser or decoder of external input, 24 h clean, findings kept as regression tests"}
+      - {id: TEST-6, kind: stated, text: "Differential tests wherever an oracle exists, zero divergences, at least 90% exercised"}
+      - {id: TEST-7, kind: stated, text: "No flaky tests: 20 consecutive passing runs on each OS; no wall-clock waits"}
+      - {id: TEST-8, kind: stated, text: "Performance budgets checked where they apply; regressions over 10% fail"}
+      - {id: TEST-9, kind: stated, text: "Independent adversarial review of each layer's suite before readiness"}
+      - {id: TEST-10, kind: stated, text: "Readiness numbers become CI ratchets so a ready layer cannot decay"}
+      - {id: TEST-11, kind: stated, text: "A lower-layer defect found from above reopens that layer's readiness"}
+      - {id: TEST-12, kind: stated, text: "No issue that builds on a lower layer starts until that layer's readiness issue passes (owner's rule, 2026-10-15)"}

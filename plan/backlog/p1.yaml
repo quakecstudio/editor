@@ -1,0 +1,595 @@
+milestone: P1
+issues:
+- key: P1-01
+  title: 'Spec: progs.dat format and QC type layout'
+  labels:
+  - L0-formats
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: M
+  reqs:
+  - FND-1
+  - FND-2
+  - FND-7
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - 'docs/spec/progs.md: header, version numbers, statements, globaldefs, fielddefs, functions, string table, CRC; the eight types and their global-slot sizes; FTE v7 differences in a separate section'
+  - 'docs/spec/limits.md: every format and engine limit as a named constant with file and function citation'
+  - Hand-written test vectors (hex dumps with expected decoded values) under docs/spec/vectors/progs/
+  acceptance:
+  - Every field of every on-disk structure is described with offset, size, type and meaning
+  - AUTHORS.md records the GPL files read
+  verify:
+  - Review by the qc-progs implementer for completeness (questions filed as spec issues, not answered from GPL code)
+- key: P1-02
+  title: 'Spec: QC virtual machine execution'
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: L
+  reqs:
+  - FND-3
+  - FND-7
+  - LIC-2
+  depends:
+  - P1-01
+  deliverable:
+  - 'docs/spec/vm.md: every opcode with operands, semantics and edge cases (division by zero, NaN, float-to-int, string comparison, entity 0); call and return; parameter slots OFS_PARM0-7 and OFS_RETURN;
+    local stack save and restore; builtin dispatch; runaway loop limit; error behaviour'
+  - 'Test vectors: small programs with expected global state after each statement'
+  acceptance:
+  - All vanilla opcodes covered with at least one vector each
+  verify:
+  - Vectors later run against the GPL oracle (P1-11) and must pass
+- key: P1-03
+  title: 'Spec: edicts, system globals and fields'
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: M
+  reqs:
+  - FND-4
+  - FND-7
+  - LIC-2
+  depends:
+  - P1-01
+  deliverable:
+  - 'docs/spec/edicts.md: entity memory layout, field offsets, world entity, free list and reuse timing, spawn/remove semantics, system globals and fields the engine reads and writes (time, self, other,
+    think, nextthink, etc.), the end_sys_globals and end_sys_fields contract'
+  acceptance:
+  - Each system global and field lists who writes it (engine or QC) and when
+  verify:
+  - Implementer review; vectors checked against the oracle
+- key: P1-04
+  title: 'Spec: vanilla builtins'
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: L
+  reqs:
+  - FND-5
+  - LIC-2
+  depends:
+  - P1-03
+  deliverable:
+  - 'docs/spec/builtins.md: every vanilla builtin by number with signature, arguments, return, side effects on edicts and engine state, error cases, and which can be faithfully mocked without an engine'
+  acceptance:
+  - All builtins numbered 1 to the last vanilla builtin are present
+  verify:
+  - Cross-checked against the rerelease defs.qc prototypes
+- key: P1-05
+  title: 'Spec: PAK, WAD2 and the game filesystem'
+  labels:
+  - L0-formats
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: S
+  reqs:
+  - FND-11
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - docs/spec/pak.md, docs/spec/wad2.md, docs/spec/filesystem.md (search path order, -game and -basedir semantics, rerelease layout)
+  acceptance:
+  - Enough to list and read every file in id1 and rerelease paks
+  verify:
+  - Implementer review
+- key: P1-06
+  title: 'Spec: vanilla QuakeC language'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:spec
+  - clean-room:spec
+  size: L
+  reqs:
+  - LANG-1
+  - LANG-2
+  - LANG-4
+  - COMP-1
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - 'docs/spec/language.md: lexical grammar, preprocessor, declarations (globals, fields, functions, prototypes, frame macros $frame/$modelname), statements, expressions and precedence, type rules, implicit
+    conversions, progs.src format, and how each construct maps to progs statements'
+  - 'docs/spec/language-diagnostics.md: the error and warning catalogue with codes'
+  acceptance:
+  - Every construct used in id 1.01 QuakeC has a section
+  verify:
+  - A grep-based coverage script lists every keyword and operator in the 1.01 source and finds each in the spec
+- key: P1-07
+  title: Implement qc-types
+  labels:
+  - L0-formats
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: S
+  reqs:
+  - FND-2
+  depends:
+  - P1-01
+  - P0-02
+  deliverable:
+  - 'crates/qc-types: type enum, slot sizes, typed values, conversions'
+  acceptance:
+  - Property tests for conversions; every type from spec section progs/types implemented
+  verify:
+  - cargo test -p qc-types
+- key: P1-08
+  title: Implement qc-progs read and write
+  labels:
+  - L0-formats
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: M
+  reqs:
+  - FND-1
+  - FND-7
+  depends:
+  - P1-07
+  deliverable:
+  - 'crates/qc-progs: zero-copy reader, writer, validation with typed errors, FTE v7 reading behind a feature flag'
+  - Limits from docs/spec/limits.md as named constants
+  acceptance:
+  - Every spec test vector and hand-built fixture round-trips byte for byte through read then write
+  - Malformed input never panics (fuzz target included)
+  verify:
+  - cargo test -p qc-progs; cargo xtask fuzz qc-progs --time 10m in nightly CI
+- key: P1-09
+  title: Implement qc-edict
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: M
+  reqs:
+  - FND-4
+  depends:
+  - P1-08
+  - P1-03
+  deliverable:
+  - 'crates/qc-edict: entity storage, field access by offset and by name, spawn/remove with spec-exact reuse rules, system global and field views'
+  acceptance:
+  - Spec vectors for spawn, remove and reuse pass
+  verify:
+  - cargo test -p qc-edict
+- key: P1-10
+  title: Implement qc-vm
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: L
+  reqs:
+  - FND-3
+  - FND-7
+  depends:
+  - P1-09
+  - P1-02
+  - P1-12
+  deliverable:
+  - 'crates/qc-vm: interpreter for all vanilla opcodes, call and local stacks, builtin trait, runaway guard, structured errors with QC stack trace, a per-statement trace hook'
+  acceptance:
+  - All VM spec vectors pass
+  - No panics on any input; errors are values
+  - Trace hook output matches the shared trace format (P1-12)
+  verify:
+  - cargo test -p qc-vm; differential suite (P1-13)
+- key: P1-11
+  title: 'Build the GPL oracle repo: id VM trace harness and id qcc'
+  labels:
+  - gpl-tools
+  - area:vm
+  - type:test
+  size: M
+  reqs:
+  - LIC-3
+  - LIC-7
+  - ARCH-2
+  - COMP-7
+  depends:
+  - P0-08
+  - P1-12
+  - P1-27
+  deliverable:
+  - 'Separate repo quakecstudio/oracles (GPL-2.0-or-later): id''s VM extracted into a headless runner implementing docs/spec/differential.md and emitting the shared trace; id''s qcc built unmodified'
+  - Reproducible builds for macOS, Windows and Linux published as CI artifacts with checksums
+  acceptance:
+  - The editor repo downloads oracle binaries by checksum in CI and never compiles or links their source
+  - Running the oracle on id 1.01 progs produces traces
+  verify:
+  - Oracle repo CI; editor repo cargo xtask oracle fetch
+- key: P1-26
+  title: Build pinned FTEQCC in the oracle repo (test-only)
+  labels:
+  - gpl-tools
+  - area:compiler
+  - type:test
+  size: S
+  reqs:
+  - LIC-8
+  - COMP-8
+  - ARCH-2
+  depends:
+  - P1-11
+  deliverable:
+  - Pinned FTEQCC built in quakecstudio/oracles and published by checksum; rerelease progs.dat files built with it, published as oracle artifacts
+  - Built with flags targeting progs v6; a check asserts the output uses vanilla opcodes only (if impossible, P1-02 and P1-10 must cover the extra opcodes and this issue records which)
+  acceptance:
+  - Never linked, shipped or required to build the IDE; fetched only by CI and make targets
+  verify:
+  - Oracle repo CI; make oracle-fetch in the editor repo
+- key: P1-12
+  title: Define the shared VM trace format
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-02
+  deliverable:
+  - 'docs/spec/trace.md: per-statement record (function, statement index, opcode, changed globals, changed edict fields, builtin calls) in a compact binary form plus a JSON debug form'
+  acceptance:
+  - Both the oracle and qc-vm can emit it without sharing code
+  verify:
+  - Round-trip test of encoder and decoder in crates/qc-trace
+- key: P1-27
+  title: 'Spec: differential harness'
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: M
+  reqs:
+  - FND-8
+  - FND-5
+  - LIC-2
+  depends:
+  - P1-02
+  - P1-03
+  - P1-04
+  deliverable:
+  - 'docs/spec/differential.md: deterministic mock-builtin behaviour both VMs implement independently; world and edict fixture setup; entry-point script (worldspawn, spawn functions from a map entity list,
+    N frames of think with fixed time); statement-coverage measurement from traces'
+  acceptance:
+  - Both the oracle runner and qc-builtins can be implemented from it without sharing code
+  verify:
+  - Implementer review from both sides
+- key: P1-13
+  title: Build the differential VM runner
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  size: M
+  reqs:
+  - FND-8
+  - QA-1
+  depends:
+  - P1-10
+  - P1-11
+  - P1-16
+  - P1-26
+  deliverable:
+  - 'tests/differential: runs each corpus progs function in qc-vm and the oracle, compares traces statement by statement, reports the first divergence with context'
+  - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
+  acceptance:
+  - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
+  - At least 90% of statements executed per corpus codebase, measured from traces
+  - A deliberate opcode bug is caught with the right statement reported
+  verify:
+  - Mutation test in CI
+- key: P1-14
+  title: Build corpus fetch and build tooling
+  labels:
+  - repo
+  - area:vm
+  - type:test
+  size: S
+  reqs:
+  - FND-9
+  - LIC-5
+  - LIC-7
+  depends:
+  - P0-16
+  - P1-11
+  - P1-26
+  - P1-08
+  deliverable:
+  - 'cargo xtask corpus fetch|build|verify: downloads entries in corpus/manifest.toml by checksum into a cache outside the source tree; builds progs with the oracle qcc where needed'
+  acceptance:
+  - Works offline from cache; refuses entries marked never
+  - From Quake-Tools only qcc/v101qc/*.qc is extracted; no GPL compiler or engine source enters the cache
+  - Every oracle-built progs.dat in the corpus round-trips byte for byte through qc-progs (run here because this is where those files first exist)
+  verify:
+  - CI job on all three OSes
+- key: P1-15
+  title: Fuzz qc-vm against the oracle
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  size: M
+  reqs:
+  - FND-10
+  depends:
+  - P1-13
+  deliverable:
+  - fuzz/ target generating well-formed progs (valid statements and globals) and comparing qc-vm with the oracle
+  acceptance:
+  - 24-hour run with no divergence or crash before the gate; found cases minimized into regression tests
+  verify:
+  - Nightly fuzz job with corpus persisted
+- key: P1-16
+  title: Implement qc-builtins with mocks
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: M
+  reqs:
+  - FND-5
+  depends:
+  - P1-10
+  - P1-04
+  - P1-27
+  deliverable:
+  - 'crates/qc-builtins: vanilla builtin table with signatures and documented side effects; a mock engine implementing docs/spec/differential.md''s deterministic behaviour for unit tests; a trait for real
+    engines'
+  acceptance:
+  - Every builtin in the spec is present, either implemented by the mock or marked engine-only with a typed error
+  verify:
+  - cargo test -p qc-builtins; differential suite exercises the mocked set
+- key: P1-17
+  title: 'Spec: .lno line-map format'
+  labels:
+  - L0-formats
+  - area:vm
+  - type:spec
+  - clean-room:spec
+  size: S
+  reqs:
+  - FND-6
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - 'docs/spec/lno.md: header, versioning and statement-to-line encoding, written from observed files and public documentation; GPL compiler sources consulted are logged in readers.md'
+  acceptance:
+  - Enough to read and write .lno files found in the corpus
+  verify:
+  - Implementer review
+- key: P1-28
+  title: Implement qc-lno
+  labels:
+  - L0-formats
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: S
+  reqs:
+  - FND-6
+  depends:
+  - P1-17
+  - P1-08
+  deliverable:
+  - 'crates/qc-lno: read and write statement-to-line maps'
+  acceptance:
+  - Round-trips every .lno file in the corpus
+  verify:
+  - cargo test -p qc-lno
+- key: P1-18
+  title: Implement PAK, WAD2 and the virtual filesystem
+  labels:
+  - L0-formats
+  - area:vm
+  - type:feature
+  - clean-room:impl
+  size: M
+  reqs:
+  - FND-11
+  depends:
+  - P1-05
+  deliverable:
+  - crates/qs-pak, crates/qs-wad, crates/qs-vfs with spec search-path order
+  acceptance:
+  - Lists and reads every file in a real id1 and rerelease install
+  - Fuzzed readers never panic
+  verify:
+  - cargo test; local test against the developer's install documented
+- key: P1-19
+  title: Detect Steam and GOG Quake installs
+  labels:
+  - L0-formats
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - LIC-4
+  - PLAT-2
+  depends:
+  - P1-18
+  deliverable:
+  - 'crates/qs-install: finds Steam (library folders) and GOG installs on macOS, Windows and Linux; reports id1 and rerelease paths; manual override'
+  acceptance:
+  - Detects installs on all three OSes in tests using fixture directory layouts
+  - Never copies or bundles game data
+  verify:
+  - Fixture tests; manual check on each OS recorded
+- key: P1-20
+  title: Implement the lexer and preprocessor (vanilla)
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  - clean-room:impl
+  size: M
+  reqs:
+  - LANG-1
+  depends:
+  - P1-06
+  deliverable:
+  - 'crates/qc-lexer and crates/qc-preproc: tokens with spans, #include, #define, #ifdef as specified in docs/spec/language.md, macro expansion mapped back to source spans; FTEQCC pragmas follow in P2-03'
+  acceptance:
+  - Every vanilla corpus file lexes without errors
+  - Every expanded token maps to its original span
+  verify:
+  - cargo test; snapshot tests
+- key: P1-21
+  title: Implement the lossless, error-tolerant parser
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  - clean-room:impl
+  size: L
+  reqs:
+  - LANG-2
+  - GOAL-1
+  depends:
+  - P1-20
+  deliverable:
+  - 'crates/qc-syntax: rowan-style CST, hand-written recursive-descent parser with error recovery, typed AST view'
+  acceptance:
+  - Every corpus file (including FTEQCC ones, as unparsed trivia where needed) round-trips text exactly from the CST
+  - Deleting any single token from a corpus file still yields a tree with a localized error
+  verify:
+  - cargo test -p qc-syntax; recovery test generator
+- key: P1-22
+  title: Fuzz the parser
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - QA-2
+  depends:
+  - P1-21
+  deliverable:
+  - fuzz/parser target with grammar-aware mutation
+  acceptance:
+  - No crash and lossless round trip on every input over a 24-hour run
+  verify:
+  - Nightly fuzz job
+- key: P1-23
+  title: Implement the project graph and project file
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-3
+  - LANG-10
+  depends:
+  - P1-21
+  deliverable:
+  - 'docs/spec/project-file.md: quakec.toml declaring modules (ssqc, csqc, menuqc), progs.src per module, dialect, target engine, output paths'
+  - 'crates/qc-project (after ADR-0008 for output paths): loads quakec.toml or a bare progs.src, builds the ordered file graph per module'
+  acceptance:
+  - Opens id 1.01, rerelease and every corpus mod with correct file order
+  verify:
+  - cargo test -p qc-project
+- key: P1-24
+  title: Add crash-safe logging
+  labels:
+  - L0-formats
+  - area:release
+  - type:feature
+  size: S
+  reqs:
+  - QA-7
+  depends:
+  - P0-01
+  deliverable:
+  - 'crates/qs-log: per-OS log directory, rotation, size cap, panic hook writing a crash record, RUST_LOG directives, redaction so source text never reaches logs'
+  acceptance:
+  - A test logs a source snippet through every API and asserts it is redacted
+  verify:
+  - cargo test -p qs-log
+- key: P1-25
+  title: Phase 1 gate review
+  labels:
+  - repo
+  - area:process
+  - type:gate
+  size: S
+  reqs:
+  - MVP-2
+  - OPEN-5
+  depends:
+  - P1-01
+  - P1-02
+  - P1-03
+  - P1-04
+  - P1-05
+  - P1-06
+  - P1-07
+  - P1-08
+  - P1-09
+  - P1-10
+  - P1-11
+  - P1-12
+  - P1-13
+  - P1-14
+  - P1-15
+  - P1-16
+  - P1-17
+  - P1-18
+  - P1-19
+  - P1-20
+  - P1-21
+  - P1-22
+  - P1-23
+  - P1-24
+  - P1-28
+  - P1-27
+  - P1-26
+  deliverable:
+  - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
+  acceptance:
+  - 'Gate met: zero VM divergences on id 1.01 (id qcc) and rerelease (pinned FTEQCC) with at least 90% statement coverage; lossless parse of the whole corpus'
+  verify:
+  - Sign-off comment linking CI runs

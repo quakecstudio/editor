@@ -1,0 +1,837 @@
+groups:
+- milestone: P5
+  issues:
+  - key: P5-01
+    title: 'Spec: BSP29, BSP2, MDL and .map formats'
+    labels:
+    - L0-formats
+    - area:map
+    - type:spec
+    - clean-room:spec
+    size: M
+    reqs:
+    - MAP-6
+    - MAP-4
+    - LIC-2
+    depends:
+    - P0-09
+    deliverable:
+    - docs/spec/bsp.md (BSP29 and BSP2 lumps, .lit), docs/spec/mdl.md, docs/spec/map.md (standard and Valve 220 brush formats, entity syntax, worldspawn conventions)
+    - Test vectors under docs/spec/vectors/
+    acceptance:
+    - Every lump and structure field described
+    verify:
+    - Implementer review
+  - key: P5-02
+    title: Implement .map, BSP and MDL readers and the .map writer
+    labels:
+    - L0-formats
+    - area:map
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - MAP-6
+    - MAP-4
+    - MAP-22
+    depends:
+    - P5-01
+    deliverable:
+    - crates/qs-map (read/write standard and Valve 220, preserving comments and formatting), crates/qs-bsp (read BSP29/BSP2, .lit), crates/qs-mdl (read)
+    - Entity-lump writing for BSPs and .ent override files, for shipped maps with no .map source
+    acceptance:
+    - Every corpus .map round-trips with only formatting changes allowed by the spec; every corpus BSP and id1 MDL loads
+    - Fuzzed readers never panic
+    verify:
+    - cargo test; fuzz targets
+  - key: P5-03
+    title: Derive entity definitions from QuakeC
+    labels:
+    - L3-semantics
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-1
+    depends:
+    - P2-02
+    deliverable:
+    - 'Query in qc-sema producing entity classes from spawn functions: keys read (fields used in the spawn function and its callees), types, defaults, spawnflags, /*QUAKED*/ comment docs, model and size
+      hints'
+    - Export to FGD for other editors
+    acceptance:
+    - Generated definitions for id1 and the rerelease cover every classname in their maps
+    verify:
+    - Golden tests; coverage report against corpus maps
+  - key: P5-04
+    title: Map diagnostics and rename propagation
+    labels:
+    - L3-semantics
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-2
+    - MAP-7
+    depends:
+    - P5-03
+    - P5-02
+    deliverable:
+    - Diagnostics for unknown classnames, unknown keys, wrongly typed values and dangling target/targetname; renaming a field in code offers to rewrite map keys
+    acceptance:
+    - A misspelled key in a corpus map is reported with a fix suggestion
+    - Renaming a field in QC rewrites that key in open maps after confirmation
+    verify:
+    - cargo test
+  - key: P5-05
+    title: Build the wgpu renderer for BSPs and models
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-17
+    depends:
+    - P5-02
+    - P0-10
+    deliverable:
+    - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
+    acceptance:
+    - Renders every id1 map at 120 Hz on the reference Mac
+    verify:
+    - Image comparison tests; benchmark
+  - key: P5-06
+    title: Map view with entity editing
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-4
+    - GOAL-5
+    - MAP-20
+    - MAP-22
+    depends:
+    - P5-05
+    - P5-03
+    deliverable:
+    - '3D map view: camera, selection, place, move, rotate and delete entities; key editor with typed, completed keys; model previews for entities'
+    acceptance:
+    - Every edit is a command with undo; saving produces a valid .map
+    - Camera, selection and keybindings follow TrenchBroom's conventions (documented mapping)
+    - Editing a shipped BSP map's entities saves to an .ent override or rewritten entity lump
+    verify:
+    - UI snapshot tests; round-trip tests
+  - key: P5-07
+    title: Live entity updates in the running game
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-12
+    depends:
+    - P5-06
+    - P3-06
+    - P5-10
+    deliverable:
+    - Bridge commands to spawn, remove and change entities from the map editor without recompiling the BSP
+    acceptance:
+    - Placing a monster in the editor spawns it in the running game
+    verify:
+    - Scenario test
+  - key: P5-10
+    title: 'Preview host: live entity operations'
+    labels:
+    - gpl-tools
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-12
+    - ENG-14
+    depends:
+    - P3-02
+    deliverable:
+    - Host-side spawn, remove and edit entity from a map entity description, with a bridge protocol version bump
+    acceptance:
+    - Spawned entities behave as if loaded from the map (spawn function run, targets linked)
+    verify:
+    - Host repo scenario tests
+  - key: P5-08
+    title: 'Agent map tools: inspect, place and set'
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-16
+    depends:
+    - P5-06
+    deliverable:
+    - map.inspect, map.entity.place, map.entity.set commands with schemas
+    acceptance:
+    - The agent places three Shamblers in a named room from a prompt in an eval
+    verify:
+    - Eval task
+  - key: P5-09
+    title: Phase 5 gate review
+    labels:
+    - repo
+    - area:process
+    - type:gate
+    size: S
+    reqs:
+    - MVP-2
+    - OPEN-5
+    - MAP-18
+    depends:
+    - P5-01
+    - P5-02
+    - P5-03
+    - P5-04
+    - P5-05
+    - P5-06
+    - P5-07
+    - P5-08
+    - P5-10
+    deliverable:
+    - docs/gates/p5.md
+    acceptance:
+    - 'Gate met: entities in existing maps edited with QuakeC-derived definitions and appearing live'
+    verify:
+    - Sign-off comment
+- milestone: P6
+  issues:
+  - key: P6-01
+    title: 'Spec: BSP compilation (qbsp)'
+    labels:
+    - L4-bridges
+    - area:map
+    - type:spec
+    - clean-room:spec
+    size: L
+    reqs:
+    - MAP-11
+    - MAP-8
+    - LIC-2
+    depends:
+    - P5-01
+    deliverable:
+    - 'docs/spec/qbsp.md: brush CSG, hull expansion for clip hulls, BSP tree construction and splitting heuristics, portals, outside fill and leak detection, face texturing, BSP29/BSP2 output, .prt and
+      pointfile output'
+    acceptance:
+    - Each stage has inputs, outputs and invariants that tests can check
+    verify:
+    - Implementer review
+  - key: P6-02
+    title: 'Spec: vis and light'
+    labels:
+    - L4-bridges
+    - area:map
+    - type:spec
+    - clean-room:spec
+    size: L
+    reqs:
+    - MAP-11
+    - MAP-9
+    - MAP-10
+    - LIC-2
+    depends:
+    - P6-01
+    deliverable:
+    - docs/spec/vis.md (portal flow, PVS compression) and docs/spec/light.md (light entity keys, attenuation, sampling, lightmap layout, coloured light and .lit)
+    acceptance:
+    - Fast and full modes defined for both
+    verify:
+    - Implementer review
+  - key: P6-03
+    title: 'Map compiler oracles: id tools and ericw-tools'
+    labels:
+    - gpl-tools
+    - area:map
+    - type:test
+    size: S
+    reqs:
+    - MAP-11
+    - ARCH-2
+    depends:
+    - P1-11
+    deliverable:
+    - id's qbsp, vis and light and a pinned ericw-tools built in quakecstudio/oracles and published by checksum
+    acceptance:
+    - Never linked or shipped; fetched in CI only
+    verify:
+    - Oracle repo CI
+  - key: P6-04
+    title: Implement qmap-bsp
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - MAP-8
+    - MAP-6
+    depends:
+    - P6-01
+    - P5-02
+    deliverable:
+    - 'crates/qmap-bsp: .map to BSP29 and BSP2, .prt, pointfile on leaks'
+    acceptance:
+    - Every corpus map compiles, loads in the preview host, spawns the player and reports no host errors
+    verify:
+    - Map differential suite (P6-07)
+  - key: P6-05
+    title: Implement qmap-vis
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    - clean-room:impl
+    size: M
+    reqs:
+    - MAP-9
+    depends:
+    - P6-02
+    - P6-04
+    deliverable:
+    - 'crates/qmap-vis: fast and full PVS, multithreaded'
+    acceptance:
+    - PVS is conservative (never hides a visible leaf) on the corpus
+    verify:
+    - Visibility tests rendering from sample points; differential suite
+  - key: P6-06
+    title: Implement qmap-light fast mode
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    - clean-room:impl
+    size: M
+    reqs:
+    - MAP-10
+    depends:
+    - P6-02
+    - P6-04
+    deliverable:
+    - 'crates/qmap-light: fast lightmaps for Play from here, multithreaded'
+    acceptance:
+    - Lights an id1-sized map in under 5 s on the reference Mac
+    verify:
+    - Benchmark; image comparison with tolerance against id light
+  - key: P6-07
+    title: Map compiler differential suite
+    labels:
+    - L4-bridges
+    - area:map
+    - type:test
+    size: M
+    reqs:
+    - MAP-11
+    - MAP-19
+    depends:
+    - P6-03
+    - P6-04
+    - P6-05
+    - P6-06
+    deliverable:
+    - 'tests/map-diff: compiles corpus maps with our tools and the oracles; compares leak detection, entity lumps, hull collision on sampled traces, face counts within tolerance and rendered views'
+    acceptance:
+    - No collision differences on sampled traces; leaks agree on every corpus map
+    verify:
+    - Nightly job report
+  - key: P6-08
+    title: Brush editing tools
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-3
+    - GOAL-5
+    depends:
+    - P5-06
+    deliverable:
+    - Create, clip, vertex edit, CSG subtract and merge, grid snapping, live brush rendering
+    acceptance:
+    - Every operation is a command with undo; invalid brushes are prevented or flagged
+    verify:
+    - Geometry property tests; UI snapshot tests
+  - key: P6-09
+    title: 2D views and texture alignment
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-3
+    depends:
+    - P6-08
+    deliverable:
+    - Optional top, front and side 2D views; texture alignment tools and texture lock
+    acceptance:
+    - Moving a brush with texture lock keeps textures fixed in world space
+    verify:
+    - Tests
+  - key: P6-10
+    title: WAD2 texture browser
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-5
+    depends:
+    - P5-05
+    - P1-18
+    deliverable:
+    - Browser with palette-correct previews, search and usage counts
+    acceptance:
+    - Shows every texture in id1 WADs and the map's own textures
+    verify:
+    - UI snapshot tests
+  - key: P6-11
+    title: Leak and missing-texture diagnostics in the map view
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-7
+    depends:
+    - P6-04
+    - P5-06
+    deliverable:
+    - Leak path drawn in 3D from the pointfile; missing textures listed and highlighted
+    acceptance:
+    - Clicking a leak diagnostic flies the camera along the path
+    verify:
+    - UI snapshot tests
+  - key: P6-12
+    title: Play from here
+    labels:
+    - L7-ui
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-13
+    depends:
+    - P6-06
+    - P3-12
+    deliverable:
+    - Fast compile (bsp, no vis, fast light) and launch with the player at the camera
+    acceptance:
+    - Under 10 s from click to playing on an id1-sized map
+    - A scenario test builds a new map from brushes, compiles it and confirms the player spawns and can walk between two rooms
+    verify:
+    - Benchmark
+  - key: P6-13
+    title: 'Agent map tools: compile and leaks'
+    labels:
+    - L5-commands
+    - area:map
+    - type:feature
+    size: S
+    reqs:
+    - MAP-16
+    depends:
+    - P6-04
+    - P5-08
+    deliverable:
+    - map.compile and map.leaks commands
+    acceptance:
+    - An eval where the agent finds and fixes a leak passes
+    - An eval where a door won't open is solved by reading both the map and the QuakeC behind it
+    verify:
+    - Eval task
+  - key: P6-14
+    title: Phase 6 gate review
+    labels:
+    - repo
+    - area:process
+    - type:gate
+    size: S
+    reqs:
+    - MVP-2
+    - OPEN-5
+    - MAP-18
+    depends:
+    - P6-01
+    - P6-02
+    - P6-03
+    - P6-04
+    - P6-05
+    - P6-06
+    - P6-07
+    - P6-08
+    - P6-09
+    - P6-10
+    - P6-11
+    - P6-12
+    - P6-13
+    deliverable:
+    - docs/gates/p6.md
+    acceptance:
+    - 'Gate met: a new map built from brushes compiles with our tools, plays and matches the oracles on the corpus'
+    verify:
+    - Sign-off comment
+- milestone: P7
+  issues:
+  - key: P7-01
+    title: Full lighting with coloured light
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - MAP-10
+    - MAP-6
+    depends:
+    - P6-06
+    deliverable:
+    - Full-quality mode in qmap-light with coloured light and .lit output
+    acceptance:
+    - Image comparison against id light within tolerance; .lit loads in QuakeSpasm, vkQuake and the preview host
+    verify:
+    - Differential suite; image tests
+  - key: P7-02
+    title: Background full compile with swap-in
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-14
+    depends:
+    - P7-01
+    - P6-05
+    - P6-12
+    - P7-07
+    deliverable:
+    - Full compile (vis + final light) runs in the background after a fast compile and swaps into the running game when done
+    acceptance:
+    - The player's position and entity state survive the swap
+    verify:
+    - Scenario test
+  - key: P7-07
+    title: 'Preview host: BSP hot swap keeping state'
+    labels:
+    - gpl-tools
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-14
+    depends:
+    - P5-10
+    deliverable:
+    - Host-side command to swap the world BSP while keeping player position and entity state, with a bridge protocol version bump
+    acceptance:
+    - Swap during play keeps position, health and entity state
+    verify:
+    - Host repo scenario tests
+  - key: P7-03
+    title: Region compile
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-15
+    depends:
+    - P6-04
+    deliverable:
+    - Compile only brushes and entities inside a selected region, sealed automatically
+    acceptance:
+    - Region compile of one room in a large map is at least 5x faster than a full fast compile
+    verify:
+    - Benchmark
+  - key: P7-04
+    title: Map compile performance
+    labels:
+    - L4-bridges
+    - area:map
+    - type:test
+    size: M
+    reqs:
+    - MAP-18
+    - PRIN-5
+    depends:
+    - P7-01
+    - P7-03
+    deliverable:
+    - Map compile budgets added to docs/perf-budgets.md and met
+    acceptance:
+    - Each budget met on the reference machines
+    verify:
+    - cargo xtask bench history
+  - key: P7-05
+    title: Map editor user guide
+    labels:
+    - repo
+    - area:docs
+    - type:chore
+    size: S
+    reqs:
+    - QA-8
+    depends:
+    - P6-12
+    deliverable:
+    - docs/guide/map-editor.md with snapshot-harness screenshots
+    acceptance:
+    - Covers entity editing, brushes, compiling, leaks and Play from here
+    verify:
+    - Usability test with one mapper
+  - key: P7-06
+    title: Phase 7 gate review
+    labels:
+    - repo
+    - area:process
+    - type:gate
+    size: S
+    reqs:
+    - MVP-2
+    - OPEN-5
+    - MAP-18
+    depends:
+    - P7-01
+    - P7-02
+    - P7-03
+    - P7-04
+    - P7-05
+    - P7-07
+    deliverable:
+    - docs/gates/p7.md
+    acceptance:
+    - 'Gate met: final lighting, region compile and background full compile within budgets'
+    verify:
+    - Sign-off comment
+- milestone: LATER
+  issues:
+  - key: L-01
+    title: 'Spec: FTEQCC code generation beyond the rerelease subset'
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:spec
+    - clean-room:spec
+    size: L
+    reqs:
+    - COMP-3
+    - LANG-5
+    - GOAL-1
+    depends:
+    - P2-25
+    deliverable:
+    - docs/spec/dialect-fteqcc.md codegen sections for classes, structs, pointers, arrays and ints, and FTE extended progs output
+    acceptance:
+    - Every construct in the FTEQCC corpus mods has a codegen section
+    verify:
+    - Implementer review
+  - key: L-10
+    title: 'Spec: GMQCC dialect'
+    labels:
+    - L2-syntax
+    - area:language
+    - type:spec
+    - clean-room:spec
+    size: M
+    reqs:
+    - COMP-3
+    - LANG-5
+    - LIC-2
+    depends:
+    - P2-25
+    deliverable:
+    - docs/spec/dialect-gmqcc.md from GMQCC's public documentation, with its license recorded
+    acceptance:
+    - Every construct in the GMQCC corpus codebase has a section
+    verify:
+    - Coverage script
+  - key: L-08
+    title: Generate code for full FTEQCC
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - COMP-3
+    - COMP-1
+    depends:
+    - L-01
+    - P2-26
+    - P2-07
+    deliverable:
+    - qc-codegen support for the L-01 spec sections
+    acceptance:
+    - FTEQCC corpus mods compile and pass conformance against pinned-FTEQCC output
+    verify:
+    - Conformance suite
+  - key: L-02
+    title: GMQCC dialect
+    labels:
+    - L3-semantics
+    - area:language
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - COMP-3
+    - LANG-5
+    - GOAL-1
+    - MVP-3
+    depends:
+    - L-10
+    - L-08
+    deliverable:
+    - Spec and implementation of GMQCC syntax as a dialect profile
+    acceptance:
+    - A GMQCC corpus codebase (e.g. Xonotic's QC) parses and resolves
+    verify:
+    - Conformance suite
+  - key: L-03
+    title: 'Spec: CSQC and MenuQC modules'
+    labels:
+    - L3-semantics
+    - area:language
+    - type:spec
+    - clean-room:spec
+    size: M
+    reqs:
+    - GOAL-1
+    - LANG-3
+    - MVP-3
+    depends:
+    - P2-02
+    deliverable:
+    - 'docs/spec/csqc-menuqc.md: module entry points, system globals and builtin sets for client-side and menu QC, from public documentation with sources logged'
+    acceptance:
+    - Covers every entry point used by CSQC corpus mods
+    verify:
+    - Implementer review
+  - key: L-09
+    title: Implement CSQC and MenuQC modules
+    labels:
+    - L3-semantics
+    - area:language
+    - type:feature
+    - clean-room:impl
+    size: L
+    reqs:
+    - GOAL-1
+    - LANG-3
+    - MVP-3
+    depends:
+    - L-03
+    deliverable:
+    - Separate module symbol tables, builtin sets and build outputs for csprogs.dat and menu.dat
+    acceptance:
+    - A corpus mod with CSQC builds all modules
+    verify:
+    - Conformance suite
+  - key: L-04
+    title: Dead-code removal and string and global deduplication
+    labels:
+    - L4-bridges
+    - area:compiler
+    - type:feature
+    size: M
+    reqs:
+    - COMP-5
+    - MVP-3
+    depends:
+    - P2-08
+    deliverable:
+    - Optimizations behind --opt flags
+    acceptance:
+    - No divergence in the differential suite with each flag on
+    verify:
+    - Differential suite
+  - key: L-05
+    title: DarkPlaces adapter
+    labels:
+    - L4-bridges
+    - area:preview
+    - type:feature
+    size: M
+    reqs:
+    - ENG-6
+    - MVP-3
+    depends:
+    - P3-06
+    deliverable:
+    - 'Adapter: recompile + restart, prvm_edict and prvm_global inspection over rcon or stdin'
+    acceptance:
+    - Inspection works in the Entities and Properties panels
+    verify:
+    - Adapter tests
+  - key: L-06
+    title: Embedded game view
+    labels:
+    - L7-ui
+    - area:preview
+    - type:feature
+    size: L
+    reqs:
+    - ENG-10
+    - MVP-3
+    depends:
+    - P3-11
+    deliverable:
+    - Game frames shown inside the IDE via shared texture or frame streaming
+    acceptance:
+    - Within one frame of latency of the docked window
+    verify:
+    - Benchmark
+  - key: L-07
+    title: Web build
+    labels:
+    - apps
+    - area:editor
+    - type:feature
+    size: L
+    reqs:
+    - MVP-3
+    - OPEN-3
+    depends:
+    - P0-10
+    deliverable:
+    - WebAssembly build if ADR-0003 kept it in scope; otherwise this issue is closed with a link to the ADR
+    acceptance:
+    - Matches whatever ADR-0003 decided
+    verify:
+    - ADR link
+  - key: L-12
+    title: Advanced lighting (ericw-tools class)
+    labels:
+    - L4-bridges
+    - area:map
+    - type:feature
+    size: L
+    reqs:
+    - MAP-21
+    depends:
+    - P7-01
+    deliverable:
+    - Spec and implementation plan for advanced lighting features (bounce, sunlight, phong, dirt) split into spec and impl issues when scheduled
+    acceptance:
+    - An ADR schedules or rejects each feature
+    verify:
+    - ADR link

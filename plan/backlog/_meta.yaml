@@ -1,0 +1,61 @@
+# Milestones, labels and the definition of done shared by every issue.
+
+definition_of_done:
+  - "The deliverable exists at the path(s) named in the issue and is merged to main"
+  - "Every acceptance criterion is met and each one is checked by a test or a recorded result linked in the issue"
+  - "The verification steps run in CI (cargo xtask ci) or, for manual checks, their output is attached to the issue"
+  - "Public items have rustdoc; a crate README states purpose, layer and spec sections it implements"
+  - "Clean-room: implementation PRs cite docs/spec/ sections only, never GPL source; the spec author did not write the implementation"
+  - "No new clippy allow, unwrap, expect or panic in shipped crates"
+  - "Follow-up work found while doing the issue is filed as new issues and linked, not left in comments"
+
+milestones:
+  - {key: P0, title: "Phase 0: decisions and spikes", gate: "UI framework and license model chosen and recorded as ADRs; repo, CI and planning in place"}
+  - {key: P1, title: "Phase 1: foundations", gate: "qc-vm matches id's VM statement by statement on the id 1.01 and rerelease corpus; parser round-trips the corpus losslessly"}
+  - {key: P2, title: "Phase 2: language core and editor", gate: "The rerelease QuakeC compiles with our compiler and behaves identically in qc-vm; full navigation and clean diagnostics in the editor"}
+  - {key: P3, title: "Phase 3: live preview", gate: "Save-to-game in about a second on macOS, Windows and Linux, with breakpoints and entity inspection"}
+  - {key: P4, title: "Phase 4: agent and MVP release", gate: "MVP demo: the agent adds a weapon to the rerelease and it fires in a live game on all three OSes; signed builds published"}
+  - {key: P5, title: "Phase 5: map entity editing", gate: "Entities in existing maps are edited with QuakeC-derived definitions and appear live in the running game"}
+  - {key: P6, title: "Phase 6: brushes and map compiler", gate: "A new map is built from brushes, compiled by our tools and plays, matching id's tools on the map corpus"}
+  - {key: P7, title: "Phase 7: lighting, region compile and performance", gate: "Final coloured lighting, region compile and background full compile meet the performance budgets"}
+  - {key: LATER, title: "Post-MVP backlog", gate: "Scheduled into a phase by an ADR before work starts"}
+
+labels:
+  layer:
+    - {name: "L0-formats", color: "1d76db", description: "progs.dat, .lno, .map, BSP, WAD2, MDL, PAK"}
+    - {name: "L1-vm", color: "1d76db", description: "qc-vm, qc-edict, qc-builtins"}
+    - {name: "L2-syntax", color: "1d76db", description: "Preprocessor, CST, project graph"}
+    - {name: "L3-semantics", color: "1d76db", description: "Resolution, types, dialects, engine DB, LSP, map model"}
+    - {name: "L4-bridges", color: "1d76db", description: "Compilers and engine bridge"}
+    - {name: "L5-commands", color: "1d76db", description: "Command engine, session, undo"}
+    - {name: "L6-agent", color: "1d76db", description: "Agent loop, providers, MCP, ACP"}
+    - {name: "L7-ui", color: "1d76db", description: "UI on the chosen framework"}
+    - {name: "apps", color: "1d76db", description: "Desktop app, CLI, LSP binary"}
+    - {name: "gpl-tools", color: "5319e7", description: "Separate GPL repos: oracles, preview host"}
+    - {name: "repo", color: "1d76db", description: "Workspace, CI, process"}
+  area:
+    - {name: "area:compiler", color: "0e8a16", description: ""}
+    - {name: "area:vm", color: "0e8a16", description: ""}
+    - {name: "area:language", color: "0e8a16", description: ""}
+    - {name: "area:preview", color: "0e8a16", description: ""}
+    - {name: "area:agent", color: "0e8a16", description: ""}
+    - {name: "area:editor", color: "0e8a16", description: ""}
+    - {name: "area:map", color: "0e8a16", description: ""}
+    - {name: "area:release", color: "0e8a16", description: ""}
+    - {name: "area:docs", color: "0e8a16", description: ""}
+    - {name: "area:legal", color: "0e8a16", description: ""}
+    - {name: "area:process", color: "0e8a16", description: ""}
+  type:
+    - {name: "type:feature", color: "fbca04", description: "Builds a capability"}
+    - {name: "type:spec", color: "c5def5", description: "Clean-room spec; output is prose in docs/spec/"}
+    - {name: "type:decision", color: "d93f0b", description: "Resolves into an ADR"}
+    - {name: "type:spike", color: "f9d0c4", description: "Time-boxed investigation with a written result"}
+    - {name: "type:test", color: "bfd4f2", description: "Test harness, corpus or evals"}
+    - {name: "type:chore", color: "ededed", description: "Repo and process setup"}
+    - {name: "type:gate", color: "b60205", description: "Phase gate review"}
+    - {name: "type:readiness", color: "d4c5f9", description: "Layer test-suite readiness review (docs/testing.md)"}
+  role:
+    - {name: "clean-room:spec", color: "000000", description: "Author may read GPL source; must not implement the matching code"}
+    - {name: "clean-room:impl", color: "666666", description: "Work only from docs/spec/; must not read the matching GPL source"}
+
+sizes: {S: "up to 2 days", M: "up to 1 week", L: "up to 2 weeks"}

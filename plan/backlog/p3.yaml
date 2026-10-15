@@ -1,0 +1,411 @@
+milestone: P3
+issues:
+- key: P3-01
+  title: 'Spec: IDE bridge protocol'
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:spec
+  size: M
+  reqs:
+  - ENG-2
+  - ENG-1
+  - ENG-14
+  depends:
+  - P0-12
+  deliverable:
+  - 'docs/spec/bridge-protocol.md: versioned JSON messages over a local socket; handshake and version negotiation; events (progs loaded, map loaded, edict spawned/changed/removed, QC error, breakpoint hit,
+    console line); commands (reload, pause, resume, step, set breakpoint, inspect, set field, pick at screen point, spawn, remove and edit entity, console, screenshot, spawn player at), each capability-flagged'
+  - JSON Schemas under docs/spec/bridge-schema/
+  acceptance:
+  - Every EngineAdapter operation maps to a protocol command
+  - Compatibility rules for adding fields and messages are stated
+  verify:
+  - Schema validation tests in both repos
+- key: P3-02
+  title: Fork the preview host and add the bridge module
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:feature
+  size: L
+  reqs:
+  - ENG-2
+  - PLAT-3
+  - ARCH-2
+  depends:
+  - P3-01
+  - P0-14
+  deliverable:
+  - Separate repo quakecstudio/preview-host (GPL), forked from the engine chosen in ADR-0004, with a bridge module implementing docs/spec/bridge-protocol.md events
+  - Builds for macOS universal, Windows x64/arm64, Linux x86_64/aarch64 as CI artifacts with checksums
+  acceptance:
+  - Loads id1 and rerelease from the user's install and streams events to a test client
+  - Every change outside bridge/ is listed in PATCHES.md with its reason
+  - 'Implements every command in bridge-protocol.md except reload (P3-03) and debugging (P3-04): pause, resume, step, set field, pick, inspect, console, screenshot, spawn player at; each with a conformance
+    test'
+  verify:
+  - Protocol conformance tests in the host repo CI on all three OSes
+- key: P3-03
+  title: Hot reload with field migration in the preview host
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:feature
+  size: L
+  reqs:
+  - ENG-3
+  depends:
+  - P3-02
+  deliverable:
+  - 'Reload command that swaps progs.dat while keeping the map: maps globals and fields by name and type, rebinds function references by name, reports every value it could not migrate'
+  acceptance:
+  - Changing a monster's think function while the map runs takes effect without a restart
+  - Adding a field, changing a field type and removing a function each produce a precise migration report
+  verify:
+  - Host-repo tests driving reload through the bridge test client; the IDE-side reload scenario is in P3-17
+- key: P3-04
+  title: Debugging in the preview host
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-4
+  - GOAL-3
+  depends:
+  - P3-02
+  - P1-28
+  deliverable:
+  - Breakpoints by source line via .lno, step in/over/out, call stack, watch expressions, entity tree snapshot
+  acceptance:
+  - Breaking in a monster's think, stepping and inspecting self fields works on all three OSes
+  verify:
+  - Scripted debug session test
+- key: P3-05
+  title: Headless mode for the preview host
+  labels:
+  - gpl-tools
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - ENG-12
+  depends:
+  - P3-02
+  deliverable:
+  - Headless run with no window or audio, fixed timestep, deterministic seed, offscreen screenshot
+  acceptance:
+  - Runs in CI containers on Linux and on macOS and Windows runners
+  verify:
+  - CI job
+- key: P3-19
+  title: Spec and runner for deterministic scenarios
+  labels:
+  - L4-bridges
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-10
+  - AGT-2
+  depends:
+  - P3-05
+  - P3-06
+  deliverable:
+  - 'docs/spec/scenario.md: scenario file (map, seed, player start, timed inputs, console commands, assertions on edicts and globals, screenshots)'
+  - scenario.run command executing a scenario in the headless host and returning structured pass/fail with evidence
+  acceptance:
+  - The same scenario gives identical results on ten consecutive runs on each OS
+  verify:
+  - Determinism test in CI
+- key: P3-06
+  title: Implement the EngineAdapter trait and preview host adapter
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-1
+  - ENG-14
+  depends:
+  - P3-01
+  - P0-22
+  deliverable:
+  - 'crates/qs-engine: EngineAdapter with launch, reload, set_breakpoint, step, inspect, console, screenshot plus capability-flagged pause, resume, set_field, pick, spawn, remove and edit_entity; the preview
+    host adapter speaking the bridge protocol'
+  - The preview host binary is located from the app bundle (shipped with the app, P4-18) or a configured path; no runtime download
+  acceptance:
+  - Adapter test suite runs against the real host in headless mode
+  verify:
+  - cargo test -p qs-engine
+- key: P3-07
+  title: FTEQW adapter
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-5
+  depends:
+  - P3-06
+  - P0-13
+  - P3-20
+  - P2-08
+  deliverable:
+  - 'FTEQW adapter: launch with -qcdebug, applycompile reload, fteqccgui protocol (qcbreakpoint, qcresume, qcinspect, qcreloaded) over stdin/stdout'
+  - docs/spec/fteqw-debug-protocol.md written from observed behaviour and public docs
+  acceptance:
+  - Breakpoint, step and reload work against FTEQW on Windows and Linux (and macOS if P0-13 found it works)
+  verify:
+  - Adapter tests against a pinned FTEQW build
+- key: P3-08
+  title: QuakeSpasm, Ironwail and vkQuake restart-loop adapter
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - ENG-7
+  - PLAT-5
+  depends:
+  - P3-06
+  - P3-20
+  deliverable:
+  - 'Adapter: launch with the project''s game dir, recompile then restart via the console, capture console output'
+  acceptance:
+  - Save-to-restart works with each engine on each OS it supports
+  verify:
+  - Adapter tests with pinned engine builds
+- key: P3-09
+  title: KEX rerelease compile target
+  labels:
+  - L3-semantics
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - ENG-8
+  depends:
+  - P2-04
+  deliverable:
+  - 'KEX target profile: builtins, output layout and localization string handling; no launch support'
+  acceptance:
+  - Output loads in the KEX rerelease on Windows (manual check)
+  verify:
+  - Recorded manual test
+- key: P3-10
+  title: State-loss analysis and reload warnings
+  labels:
+  - L3-semantics
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-11
+  - PRIN-8
+  depends:
+  - P3-03
+  - P2-02
+  - P3-19
+  - P3-12
+  deliverable:
+  - Pre-reload diff of old and new progs (fields, types, functions referenced by live entities) and a UI prompt listing what will reset with a Restart map option
+  acceptance:
+  - The prompt's list matches the host's migration report in every scenario test
+  verify:
+  - Scenario tests comparing prediction with the host report
+- key: P3-11
+  title: Dock the engine window beside the IDE
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-9
+  depends:
+  - P3-06
+  - P2-17
+  deliverable:
+  - Window placement beside the IDE that follows focus and resizes with the layout on macOS, Windows, X11 and Wayland (with documented Wayland limits)
+  acceptance:
+  - Play opens the game next to the editor on each OS
+  verify:
+  - Recorded manual test per OS
+- key: P3-12
+  title: Play loop toolbar and engine picker
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - UI-3
+  - UI-2
+  - PRIN-1
+  - GOAL-3
+  - ENG-13
+  depends:
+  - P3-06
+  - P2-17
+  - P2-13
+  deliverable:
+  - Toolbar Play, Pause, Step, Restart map and target engine picker; save triggers compile and reload
+  acceptance:
+  - Save-to-game p95 at most 1.0 s, measured with windowed engines on each OS (not only headless)
+  verify:
+  - Latency benchmark per OS recorded in the bench history
+- key: P3-13
+  title: Entities outliner
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - UI-2
+  - UI-3
+  - PRIN-2
+  depends:
+  - P3-12
+  deliverable:
+  - Live tree of edicts grouped by classname with filter and search, updated from bridge events
+  acceptance:
+  - Stays responsive with 2,000 live edicts
+  verify:
+  - Benchmark; UI snapshot tests
+- key: P3-14
+  title: Properties panel
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - UI-13
+  depends:
+  - P3-13
+  - P3-19
+  deliverable:
+  - Selected entity's fields with types and values; editing while paused sends set-field commands
+  acceptance:
+  - Editing health on a paused monster changes it in game
+  verify:
+  - Scenario test
+- key: P3-15
+  title: Select an entity everywhere
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - UI-3
+  depends:
+  - P3-14
+  deliverable:
+  - Clicking an entity in the game or outliner selects it in Properties and jumps to its spawn function and current think function
+  acceptance:
+  - Picking works in the game window via a bridge pick command
+  verify:
+  - Scenario test; recorded manual test
+- key: P3-16
+  title: Debugger and Console panels
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - UI-12
+  - GOAL-3
+  depends:
+  - P3-04
+  - P3-12
+  deliverable:
+  - Breakpoint gutter, call stack, watches, step controls; console with input and filtered output
+  acceptance:
+  - Same debug flow works against the preview host and FTEQW
+  verify:
+  - UI snapshot tests; adapter tests
+- key: P3-17
+  title: Engine integration tests in CI
+  labels:
+  - repo
+  - area:preview
+  - type:test
+  size: M
+  reqs:
+  - QA-4
+  depends:
+  - P3-05
+  - P0-17
+  - P3-19
+  - P3-03
+  - P3-04
+  - P3-06
+  deliverable:
+  - 'tests/engine: headless host scenarios using the open test assets on all three OSes'
+  acceptance:
+  - Reload, breakpoint, inspect and set-field scenarios pass on every OS
+  - The rerelease QuakeC runs a headless scenario on the open test assets
+  verify:
+  - CI job
+- key: P3-20
+  title: Detect and configure third-party engines
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: S
+  reqs:
+  - PLAT-7
+  depends:
+  - P1-19
+  deliverable:
+  - Engine discovery for FTEQW, vkQuake, QuakeSpasm and Ironwail on each OS (common install paths, app bundles, PATH), version probing, manual configuration in settings
+  acceptance:
+  - Finds each installed engine in fixture layouts on all three OSes; reports versions
+  verify:
+  - Fixture tests; manual check per OS recorded
+- key: P3-18
+  title: Phase 3 gate review
+  labels:
+  - repo
+  - area:process
+  - type:gate
+  size: S
+  reqs:
+  - MVP-2
+  - OPEN-5
+  depends:
+  - P3-01
+  - P3-02
+  - P3-03
+  - P3-04
+  - P3-05
+  - P3-06
+  - P3-07
+  - P3-08
+  - P3-09
+  - P3-10
+  - P3-11
+  - P3-12
+  - P3-13
+  - P3-14
+  - P3-15
+  - P3-16
+  - P3-17
+  - P3-19
+  - P3-20
+  deliverable:
+  - docs/gates/p3.md with latency measurements per OS, integration test results, updated risk register
+  acceptance:
+  - 'Gate met: save-to-game in about a second on all three OSes with breakpoints and inspection'
+  verify:
+  - Sign-off comment linking CI runs and recordings

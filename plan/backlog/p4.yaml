@@ -1,0 +1,508 @@
+milestone: P4
+issues:
+- key: P4-02
+  title: 'vm.run: run a QC function with mocked builtins'
+  labels:
+  - L5-commands
+  - area:agent
+  - type:feature
+  size: S
+  reqs:
+  - AGT-2
+  depends:
+  - P1-16
+  - P2-12
+  deliverable:
+  - 'vm.run command: compile, set up edicts and globals from a fixture, call a function in qc-vm with the mock engine, return the resulting state diff'
+  acceptance:
+  - Unit tests for a weapon function run in under 50 ms
+  verify:
+  - cargo test; benchmark
+- key: P4-26
+  title: QuakeC test format and test command
+  labels:
+  - L5-commands
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - QA-13
+  - AGT-5
+  depends:
+  - P4-02
+  - P3-19
+  deliverable:
+  - 'docs/spec/qc-tests.md: test discovery, fixtures, assertions for QC unit tests (vm.run) and scenario tests'
+  - test command running both kinds with structured results
+  acceptance:
+  - A project's tests run from the CLI, the UI and the agent with identical results
+  verify:
+  - cargo test; sample project in templates
+- key: P4-03
+  title: Semantic, compile and engine tools as commands
+  labels:
+  - L5-commands
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-2
+  - AGT-1
+  - PRIN-2
+  depends:
+  - P2-12
+  - P3-06
+  deliverable:
+  - Commands project.symbols, symbol.definition, symbol.references, engine.builtins, compile, engine.inspect, engine.console, engine.screenshot with JSON schemas and examples
+  acceptance:
+  - Each tool returns structured results tested against the rerelease and a headless host
+  verify:
+  - cargo test; docs/commands.md regenerated
+- key: P4-04
+  title: Staged edits and hunk review
+  labels:
+  - L5-commands
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-3
+  - PRIN-4
+  depends:
+  - P2-12
+  deliverable:
+  - edit.apply stages a multi-file change set; accept or reject per hunk; nothing written to disk until accepted; staged changes visible to the semantic model as an overlay
+  acceptance:
+  - Rejecting a hunk leaves the file byte-identical; compile can run against the overlay before acceptance
+  verify:
+  - cargo test with property tests over random hunk choices
+- key: P4-05
+  title: Git-backed checkpoints
+  labels:
+  - L5-commands
+  - area:agent
+  - type:feature
+  size: S
+  reqs:
+  - AGT-4
+  depends:
+  - P4-04
+  deliverable:
+  - Checkpoint per agent run stored as git objects on a private ref (works in non-git folders by initializing a hidden store); restore command
+  acceptance:
+  - Restoring returns every file to its exact prior content, including deletions
+  verify:
+  - cargo test
+- key: P4-06
+  title: Agent loop runtime with done criteria
+  labels:
+  - L6-agent
+  - area:agent
+  - type:feature
+  size: L
+  reqs:
+  - AGT-1
+  - AGT-5
+  - PRIN-4
+  depends:
+  - P4-03
+  - P4-04
+  - P4-05
+  - P3-19
+  - P4-02
+  - P4-26
+  deliverable:
+  - 'crates/qs-agent: plan, edit, compile, test, preview, propose loop over the command registry; a run is done only when compile is clean and its tests or scenario pass, otherwise it reports why'
+  acceptance:
+  - An agent run with a failing scenario cannot be marked done
+  verify:
+  - Tests with a scripted fake model
+- key: P4-07
+  title: Model providers and key storage
+  labels:
+  - L6-agent
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-6
+  - PRIN-9
+  depends:
+  - P4-06
+  deliverable:
+  - 'Providers: Anthropic, OpenAI-compatible endpoints, Ollama; keys stored in macOS Keychain, Windows Credential Manager and Secret Service'
+  acceptance:
+  - Keys never appear in logs, settings files or crash records
+  - Works fully offline with a local Ollama model
+  verify:
+  - Tests with mocked endpoints; log redaction test
+- key: P4-08
+  title: 'Ship agent context: AGENTS.md, engine DB and QuakeC reference'
+  labels:
+  - L6-agent
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-8
+  - AGT-9
+  depends:
+  - P4-06
+  - P2-04
+  deliverable:
+  - Per-project AGENTS.md loaded into every run; docs/agent-reference/ curated QuakeC reference written for the agent (original text, not copied)
+  acceptance:
+  - The agent's context for a run includes the target engine's builtins and the project dialect
+  verify:
+  - Context snapshot tests
+- key: P4-09
+  title: Agent panel
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: L
+  reqs:
+  - UI-5
+  - PRIN-4
+  depends:
+  - P4-06
+  - P2-17
+  deliverable:
+  - Panel with parallel threads, streaming, tool-call display, per-hunk accept/reject, checkpoint restore
+  acceptance:
+  - Two threads run at once without blocking the editor's frame budget
+  verify:
+  - UI snapshot tests; benchmark
+- key: P4-10
+  title: Inline edit (Cmd/Ctrl+K)
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - UI-6
+  depends:
+  - P4-09
+  deliverable:
+  - Inline prompt on a selection producing an in-place diff to accept or reject
+  acceptance:
+  - Undo after accepting restores the original in one step
+  verify:
+  - UI tests with a fake model
+- key: P4-11
+  title: Next-edit suggestions
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - UI-7
+  depends:
+  - P4-10
+  - P2-02
+  deliverable:
+  - Suggestions on Tab derived from the semantic model (rename propagation, matching declarations) with optional model assistance
+  acceptance:
+  - Renaming a field suggests every use site; Tab walks through them
+  verify:
+  - Tests on the rerelease
+- key: P4-12
+  title: '@ mentions and Ask about this'
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - UI-8
+  - UI-9
+  - PRIN-2
+  depends:
+  - P4-09
+  - P3-15
+  deliverable:
+  - '@ mentions for files, symbols, builtins, the selected entity and the last console error; right-click Ask about this on an entity in the outliner or game'
+  acceptance:
+  - A thread started from an entity contains its fields, classname and current think function
+  verify:
+  - Context snapshot tests
+- key: P4-13
+  title: MCP server
+  labels:
+  - L6-agent
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - AGT-7
+  - PRIN-6
+  - GOAL-4
+  depends:
+  - P4-03
+  deliverable:
+  - quakec-ide mcp exposing every agent tool headless, --connect to the running app, read and write root restrictions
+  - docs/mcp.md with setup for Claude Code and other clients
+  acceptance:
+  - Claude Code completes a compile-and-scenario task through MCP
+  verify:
+  - MCP conformance tests; recorded session
+- key: P4-14
+  title: Host external agents over ACP
+  labels:
+  - L7-ui
+  - area:agent
+  - type:feature
+  size: M
+  reqs:
+  - UI-11
+  - PRIN-6
+  depends:
+  - P4-09
+  deliverable:
+  - Agent Client Protocol host so Claude Code, Codex and others run in the agent panel with the IDE's tools available
+  acceptance:
+  - At least two external agents complete a task in the panel
+  verify:
+  - Recorded sessions; protocol tests
+- key: P4-15
+  title: Agent evals
+  labels:
+  - L6-agent
+  - area:agent
+  - type:test
+  size: M
+  reqs:
+  - QA-5
+  depends:
+  - P4-06
+  deliverable:
+  - 'evals/: fixed tasks (add a weapon, fix a crash, port a mod to the rerelease, plus others) each with a defining scenario, a reviewer rubric and a pass threshold'
+  - CI job with model credentials as secrets, a per-run cost cap and results history
+  acceptance:
+  - Each task has a scenario that defines success
+  verify:
+  - cargo xtask evals produces a report
+- key: P4-16
+  title: 'Privacy audit: offline, no account, no telemetry'
+  labels:
+  - repo
+  - area:legal
+  - type:test
+  size: S
+  reqs:
+  - PRIN-9
+  depends:
+  - P4-07
+  deliverable:
+  - docs/privacy.md listing every network call the app can make and when; a test that runs the app with network denied
+  acceptance:
+  - With no provider configured the app makes zero network requests
+  verify:
+  - Network-denied CI test
+- key: P4-17
+  title: New-project templates
+  labels:
+  - apps
+  - area:editor
+  - type:feature
+  size: S
+  reqs:
+  - QA-12
+  - LIC-5
+  depends:
+  - P2-13
+  deliverable:
+  - 'File > New from template: rerelease-based and id1-based starters with quakec.toml, fetched or generated under their GPLv2 terms with notices'
+  acceptance:
+  - A new project builds and plays immediately
+  verify:
+  - Template integration test
+- key: P4-18
+  title: 'Release pipeline: signing and packaging'
+  labels:
+  - repo
+  - area:release
+  - type:feature
+  size: L
+  reqs:
+  - QA-6
+  - GOAL-6
+  - PLAT-1
+  depends:
+  - P0-03
+  - P3-02
+  - P0-15
+  - P0-23
+  deliverable:
+  - 'Release workflow: signed and notarized universal macOS DMG; signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
+  - The preview host bundled as a separate signed and notarized executable, with its GPL license text, a corresponding-source link and NOTICE in every package
+  - docs/releasing.md
+  acceptance:
+  - A tagged pre-release produces every artifact, and each installs and launches on a clean machine
+  - From the Flatpak sandbox, Steam detection, preview host launch and keychain access all work
+  verify:
+  - Release dry run with install tests
+- key: P4-19
+  title: Update mechanism
+  labels:
+  - apps
+  - area:release
+  - type:feature
+  size: S
+  reqs:
+  - QA-11
+  - PRIN-9
+  depends:
+  - P4-18
+  deliverable:
+  - Opt-in update check against GitHub releases with signature verification; AppImage zsync
+  acceptance:
+  - No network call unless the user enabled update checks
+  verify:
+  - Update test against a fake release feed
+- key: P4-20
+  title: User documentation
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: M
+  reqs:
+  - QA-8
+  depends:
+  - P4-09
+  - P3-12
+  deliverable:
+  - 'docs/guide/: getting started, opening a mod, the play loop, debugging, the agent, MCP and ACP, troubleshooting; screenshots from the snapshot harness'
+  acceptance:
+  - A new user follows getting started to a running mod without other help (tested with one person)
+  verify:
+  - Usability test notes attached
+- key: P4-21
+  title: Publish the compatibility list
+  labels:
+  - repo
+  - area:compiler
+  - type:chore
+  size: S
+  reqs:
+  - COMP-9
+  depends:
+  - P2-10
+  deliverable:
+  - 'docs/compatibility.md generated from the conformance suite: each corpus mod with build and behaviour status and linked issues'
+  acceptance:
+  - Regenerated on every release
+  verify:
+  - Release workflow step
+- key: P4-22
+  title: Legal review of the GPL boundary
+  labels:
+  - repo
+  - area:legal
+  - type:decision
+  size: S
+  reqs:
+  - LIC-6
+  depends:
+  - P0-08
+  - P3-02
+  - P1-11
+  - P4-18
+  - P2-04
+  - P4-17
+  - P0-16
+  deliverable:
+  - docs/adr/00NN-legal-review.md summarizing counsel's review of the separate-process boundary, clean-room records and corpus handling
+  acceptance:
+  - Sign-off received before the first public release
+  verify:
+  - Counsel's letter or notes referenced (kept private if needed)
+- key: P4-23
+  title: Verify performance budgets
+  labels:
+  - repo
+  - area:editor
+  - type:test
+  size: S
+  reqs:
+  - PRIN-5
+  depends:
+  - P2-18
+  - P2-11
+  - P3-12
+  deliverable:
+  - docs/gates/perf-mvp.md with every budget measured on the reference machines
+  acceptance:
+  - All budgets met or a dated plan for each miss
+  verify:
+  - cargo xtask bench history
+- key: P4-24
+  title: MVP acceptance demo on three OSes
+  labels:
+  - repo
+  - area:process
+  - type:test
+  size: S
+  reqs:
+  - MVP-1
+  depends:
+  - P4-06
+  - P4-09
+  - P4-12
+  - P3-12
+  - P4-18
+  - P4-07
+  deliverable:
+  - 'Recorded demo on macOS, Windows and Linux: open the rerelease, ask the agent for a new weapon, review the diff, play and fire it'
+  - The same task automated as an eval and a scenario
+  acceptance:
+  - Succeeds on all three OSes from release builds
+  verify:
+  - Recordings and eval report attached
+- key: P4-25
+  title: Phase 4 gate review and MVP release
+  labels:
+  - repo
+  - area:process
+  - type:gate
+  size: S
+  reqs:
+  - MVP-2
+  - OPEN-5
+  - GOAL-6
+  - MVP-4
+  depends:
+  - P4-02
+  - P4-03
+  - P4-04
+  - P4-05
+  - P4-06
+  - P4-07
+  - P4-08
+  - P4-09
+  - P4-10
+  - P4-11
+  - P4-12
+  - P4-13
+  - P4-14
+  - P4-15
+  - P4-16
+  - P4-17
+  - P4-18
+  - P4-19
+  - P4-20
+  - P4-21
+  - P4-22
+  - P4-23
+  - P4-24
+  - P4-26
+  deliverable:
+  - docs/gates/p4.md, release notes and the published MVP release
+  acceptance:
+  - 'Gate met: MVP demo passes on all three OSes; signed builds published'
+  verify:
+  - Sign-off comment linking the release
