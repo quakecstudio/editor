@@ -5,7 +5,7 @@ definition_of_done:
   - "Every acceptance criterion is met and each one is checked by a test or a recorded result linked in the issue"
   - "The verification steps run in CI (cargo xtask ci) or, for manual checks, their output is attached to the issue"
   - "Public items have rustdoc; a crate README states purpose, layer and spec sections it implements"
-  - "Clean-room: implementation PRs cite docs/spec/ sections only, never GPL source; the spec author did not write the implementation"
+  - "Ported code keeps id's copyright notice and cites the file and function it came from; the behaviour is in docs/spec/ and tests cite it"
   - "No new clippy allow, unwrap, expect or panic in shipped crates"
   - "Follow-up work found while doing the issue is filed as new issues and linked, not left in comments"
 
@@ -31,7 +31,7 @@ labels:
     - {name: "L6-agent", color: "1d76db", description: "Agent loop, providers, MCP, ACP"}
     - {name: "L7-ui", color: "1d76db", description: "UI on the chosen framework"}
     - {name: "apps", color: "1d76db", description: "Desktop app, CLI, LSP binary"}
-    - {name: "gpl-tools", color: "5319e7", description: "Separate GPL repos: oracles, preview host"}
+    - {name: "c-tools", color: "5319e7", description: "C programs: the oracles in oracles/ and the preview host engine fork"}
     - {name: "repo", color: "1d76db", description: "Workspace, CI, process"}
   area:
     - {name: "area:compiler", color: "0e8a16", description: ""}
@@ -47,7 +47,7 @@ labels:
     - {name: "area:process", color: "0e8a16", description: ""}
   type:
     - {name: "type:feature", color: "fbca04", description: "Builds a capability"}
-    - {name: "type:spec", color: "c5def5", description: "Clean-room spec; output is prose in docs/spec/"}
+    - {name: "type:spec", color: "c5def5", description: "Behaviour spec; output is prose in docs/spec/"}
     - {name: "type:decision", color: "d93f0b", description: "Resolves into an ADR"}
     - {name: "type:spike", color: "f9d0c4", description: "Time-boxed investigation with a written result"}
     - {name: "type:test", color: "bfd4f2", description: "Test harness, corpus or evals"}
@@ -58,8 +58,7 @@ labels:
   - {name: "size:S", color: "c2e0c6", description: "Up to 2 days"}
   - {name: "size:M", color: "fef2c0", description: "Up to 1 week"}
   - {name: "size:L", color: "f9d0c4", description: "Up to 2 weeks"}
-  role:
-    - {name: "clean-room:spec", color: "000000", description: "Author may read GPL source; must not implement the matching code"}
-    - {name: "clean-room:impl", color: "666666", description: "Work only from docs/spec/; must not read the matching GPL source"}
+  owner:
+    - {name: "needs:human", color: "e99695", description: "A person must act before it closes: a decision, a sign-off, hardware, credentials or a legal review"}
 
 sizes: {S: "up to 2 days", M: "up to 1 week", L: "up to 2 weeks"}

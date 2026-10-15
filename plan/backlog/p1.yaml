@@ -6,7 +6,6 @@ issues:
   - L0-formats
   - area:vm
   - type:spec
-  - clean-room:spec
   size: M
   reqs:
   - FND-1
@@ -21,16 +20,15 @@ issues:
   - Hand-written test vectors (hex dumps with expected decoded values) under docs/spec/vectors/progs/
   acceptance:
   - Every field of every on-disk structure is described with offset, size, type and meaning
-  - AUTHORS.md records the GPL files read
+  - Each section cites the id source file and function it describes
   verify:
-  - Review by the qc-progs implementer for completeness (questions filed as spec issues, not answered from GPL code)
+  - Checked against id's source; the vectors pass against the id VM oracle once P1-11 lands
 - key: P1-02
   title: 'Spec: QC virtual machine execution'
   labels:
   - L1-vm
   - area:vm
   - type:spec
-  - clean-room:spec
   size: L
   reqs:
   - FND-3
@@ -45,14 +43,13 @@ issues:
   acceptance:
   - All vanilla opcodes covered with at least one vector each
   verify:
-  - Vectors later run against the GPL oracle (P1-11) and must pass
+  - Vectors later run against the id VM oracle (P1-11) and must pass
 - key: P1-03
   title: 'Spec: edicts, system globals and fields'
   labels:
   - L1-vm
   - area:vm
   - type:spec
-  - clean-room:spec
   size: M
   reqs:
   - FND-4
@@ -73,7 +70,6 @@ issues:
   - L1-vm
   - area:vm
   - type:spec
-  - clean-room:spec
   size: L
   reqs:
   - FND-5
@@ -92,7 +88,6 @@ issues:
   - L0-formats
   - area:vm
   - type:spec
-  - clean-room:spec
   size: S
   reqs:
   - FND-11
@@ -111,7 +106,6 @@ issues:
   - L2-syntax
   - area:language
   - type:spec
-  - clean-room:spec
   size: L
   reqs:
   - LANG-1
@@ -135,7 +129,6 @@ issues:
   - L0-formats
   - area:vm
   - type:feature
-  - clean-room:impl
   size: S
   reqs:
   - FND-2
@@ -154,7 +147,6 @@ issues:
   - L0-formats
   - area:vm
   - type:feature
-  - clean-room:impl
   size: M
   reqs:
   - FND-1
@@ -175,7 +167,6 @@ issues:
   - L1-vm
   - area:vm
   - type:feature
-  - clean-room:impl
   size: M
   reqs:
   - FND-4
@@ -194,7 +185,6 @@ issues:
   - L1-vm
   - area:vm
   - type:feature
-  - clean-room:impl
   size: L
   reqs:
   - FND-3
@@ -212,9 +202,9 @@ issues:
   verify:
   - cargo test -p qc-vm; differential suite (P1-13)
 - key: P1-11
-  title: 'Build the GPL oracle repo: id VM trace harness and id qcc'
+  title: 'Build the oracles: id VM trace harness and id qcc'
   labels:
-  - gpl-tools
+  - c-tools
   - area:vm
   - type:test
   size: M
@@ -228,17 +218,17 @@ issues:
   - P1-12
   - P1-27
   deliverable:
-  - 'Separate repo quakecstudio/oracles (GPL-2.0-or-later): id''s VM extracted into a headless runner implementing docs/spec/differential.md and emitting the shared trace; id''s qcc built unmodified'
-  - Reproducible builds for macOS, Windows and Linux published as CI artifacts with checksums
+  - 'oracles/ in this repo: id''s VM extracted into a headless runner implementing docs/spec/differential.md and emitting the shared trace; id''s qcc built unmodified; id''s sources fetched by pinned commit and checksum, with only our harness code committed'
+  - cargo xtask oracles builds them with the system C compiler on macOS, Windows and Linux; CI caches the binaries
   acceptance:
-  - The editor repo downloads oracle binaries by checksum in CI and never compiles or links their source
   - Running the oracle on id 1.01 progs produces traces
+  - The oracles are never part of the shipped app or required to build it
   verify:
-  - Oracle repo CI; editor repo cargo xtask oracle fetch
+  - cargo xtask oracles in CI on all three OSes
 - key: P1-26
-  title: Build pinned FTEQCC in the oracle repo (test-only)
+  title: Build pinned FTEQCC with the oracles (test-only)
   labels:
-  - gpl-tools
+  - c-tools
   - area:compiler
   - type:test
   size: S
@@ -249,12 +239,12 @@ issues:
   depends:
   - P1-11
   deliverable:
-  - Pinned FTEQCC built in quakecstudio/oracles and published by checksum; rerelease progs.dat files built with it, published as oracle artifacts
+  - Pinned FTEQCC fetched by commit and checksum and built by cargo xtask oracles; rerelease progs.dat files built with it and cached as oracle artifacts
   - Built with flags targeting progs v6; a check asserts the output uses vanilla opcodes only (if impossible, P1-02 and P1-10 must cover the extra opcodes and this issue records which)
   acceptance:
-  - Never linked, shipped or required to build the IDE; fetched only by CI and make targets
+  - Never shipped or required to build the IDE; built only by CI and make targets
   verify:
-  - Oracle repo CI; make oracle-fetch in the editor repo
+  - cargo xtask oracles in CI
 - key: P1-12
   title: Define the shared VM trace format
   labels:
@@ -278,7 +268,6 @@ issues:
   - L1-vm
   - area:vm
   - type:spec
-  - clean-room:spec
   size: M
   reqs:
   - FND-8
@@ -339,7 +328,7 @@ issues:
   - 'cargo xtask corpus fetch|build|verify: downloads entries in corpus/manifest.toml by checksum into a cache outside the source tree; builds progs with the oracle qcc where needed'
   acceptance:
   - Works offline from cache; refuses entries marked never
-  - From Quake-Tools only qcc/v101qc/*.qc is extracted; no GPL compiler or engine source enters the cache
+  - From Quake-Tools only qcc/v101qc/*.qc is extracted into the corpus; compiler and engine sources belong to the oracles build
   - Every oracle-built progs.dat in the corpus round-trips byte for byte through qc-progs (run here because this is where those files first exist)
   verify:
   - CI job on all three OSes
@@ -366,7 +355,6 @@ issues:
   - L1-vm
   - area:vm
   - type:feature
-  - clean-room:impl
   size: M
   reqs:
   - FND-5
@@ -387,7 +375,6 @@ issues:
   - L0-formats
   - area:vm
   - type:spec
-  - clean-room:spec
   size: S
   reqs:
   - FND-6
@@ -395,7 +382,7 @@ issues:
   depends:
   - P0-09
   deliverable:
-  - 'docs/spec/lno.md: header, versioning and statement-to-line encoding, written from observed files and public documentation; GPL compiler sources consulted are logged in readers.md'
+  - 'docs/spec/lno.md: header, versioning and statement-to-line encoding, written from FTEQCC''s and GMQCC''s sources, observed files and public documentation, citing each'
   acceptance:
   - Enough to read and write .lno files found in the corpus
   verify:
@@ -406,7 +393,6 @@ issues:
   - L0-formats
   - area:vm
   - type:feature
-  - clean-room:impl
   size: S
   reqs:
   - FND-6
@@ -425,7 +411,6 @@ issues:
   - L0-formats
   - area:vm
   - type:feature
-  - clean-room:impl
   size: M
   reqs:
   - FND-11
@@ -463,7 +448,6 @@ issues:
   - L2-syntax
   - area:language
   - type:feature
-  - clean-room:impl
   size: M
   reqs:
   - LANG-1
@@ -482,7 +466,6 @@ issues:
   - L2-syntax
   - area:language
   - type:feature
-  - clean-room:impl
   size: L
   reqs:
   - LANG-2
@@ -555,6 +538,7 @@ issues:
   - repo
   - area:process
   - type:gate
+  - needs:human
   size: S
   reqs:
   - MVP-2

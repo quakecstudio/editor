@@ -7,7 +7,6 @@ groups:
     - L0-formats
     - area:map
     - type:spec
-    - clean-room:spec
     size: M
     reqs:
     - MAP-6
@@ -28,7 +27,6 @@ groups:
     - L0-formats
     - area:map
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - MAP-6
@@ -146,7 +144,7 @@ groups:
   - key: P5-10
     title: 'Preview host: live entity operations'
     labels:
-    - gpl-tools
+    - c-tools
     - area:map
     - type:feature
     size: M
@@ -184,6 +182,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -213,7 +212,6 @@ groups:
     - L4-bridges
     - area:map
     - type:spec
-    - clean-room:spec
     size: L
     reqs:
     - MAP-11
@@ -234,7 +232,6 @@ groups:
     - L4-bridges
     - area:map
     - type:spec
-    - clean-room:spec
     size: L
     reqs:
     - MAP-11
@@ -252,7 +249,7 @@ groups:
   - key: P6-03
     title: 'Map compiler oracles: id tools and ericw-tools'
     labels:
-    - gpl-tools
+    - c-tools
     - area:map
     - type:test
     size: S
@@ -262,18 +259,17 @@ groups:
     depends:
     - P1-11
     deliverable:
-    - id's qbsp, vis and light and a pinned ericw-tools built in quakecstudio/oracles and published by checksum
+    - id's qbsp, vis and light and a pinned ericw-tools fetched by commit and checksum and built by cargo xtask oracles
     acceptance:
-    - Never linked or shipped; fetched in CI only
+    - Never shipped; built in CI only
     verify:
-    - Oracle repo CI
+    - cargo xtask oracles in CI
   - key: P6-04
     title: Implement qmap-bsp
     labels:
     - L4-bridges
     - area:map
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - MAP-8
@@ -293,7 +289,6 @@ groups:
     - L4-bridges
     - area:map
     - type:feature
-    - clean-room:impl
     size: M
     reqs:
     - MAP-9
@@ -312,7 +307,6 @@ groups:
     - L4-bridges
     - area:map
     - type:feature
-    - clean-room:impl
     size: M
     reqs:
     - MAP-10
@@ -461,6 +455,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -494,7 +489,6 @@ groups:
     - L4-bridges
     - area:map
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - MAP-10
@@ -530,7 +524,7 @@ groups:
   - key: P7-07
     title: 'Preview host: BSP hot swap keeping state'
     labels:
-    - gpl-tools
+    - c-tools
     - area:map
     - type:feature
     size: M
@@ -603,6 +597,7 @@ groups:
     - repo
     - area:process
     - type:gate
+    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -629,7 +624,6 @@ groups:
     - L4-bridges
     - area:compiler
     - type:spec
-    - clean-room:spec
     size: L
     reqs:
     - COMP-3
@@ -649,7 +643,6 @@ groups:
     - L2-syntax
     - area:language
     - type:spec
-    - clean-room:spec
     size: M
     reqs:
     - COMP-3
@@ -669,7 +662,6 @@ groups:
     - L4-bridges
     - area:compiler
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - COMP-3
@@ -690,7 +682,6 @@ groups:
     - L3-semantics
     - area:language
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - COMP-3
@@ -712,7 +703,6 @@ groups:
     - L3-semantics
     - area:language
     - type:spec
-    - clean-room:spec
     size: M
     reqs:
     - GOAL-1
@@ -732,7 +722,6 @@ groups:
     - L3-semantics
     - area:language
     - type:feature
-    - clean-room:impl
     size: L
     reqs:
     - GOAL-1

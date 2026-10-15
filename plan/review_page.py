@@ -13,11 +13,11 @@ from check import PHASE_ORDER, check, load_backlog, load_requirements
 
 DECISIONS = [
     ("Readiness thresholds", "docs/testing.md proposes 90% line and 80% branch coverage, a 90% mutation score, 100% spec-citation coverage, 24 h of clean fuzzing and 20 flake-free runs per OS before any layer is built on. P0-24 records the final numbers."),
-    ("FTEQCC as a test-only oracle", "id's qcc cannot compile the 2021 rerelease, so the plan builds a pinned FTEQCC in the separate GPL oracle repo to define correct behaviour in CI (P1-26). The IDE itself still ships with no outside compiler. Drop it and the rerelease has no external reference."),
+    ("FTEQCC as a test-only oracle", "id's qcc cannot compile the 2021 rerelease, so the plan builds a pinned FTEQCC with the oracles to define correct behaviour in CI (P1-26). The IDE itself still ships with no outside compiler. Drop it and the rerelease has no external reference."),
     ("MVP scope", "The design doc's MVP list does not name ACP hosting, Cmd/Ctrl+K, next-edit, tree-sitter, editor extensions, the restart-loop adapters, the KEX target or the update mechanism, but the plan builds them before the MVP. P0-21 asks you to confirm each one."),
     ("panic = \"unwind\"", "vouch aborts on panic. This plan unwinds in release builds so the command guard can keep a session alive after one bad command."),
     ("Config and log locations", "vouch uses XDG directories on every OS, including macOS. Desktop apps usually use ~/Library/Application Support and %APPDATA%. P0-01 decides."),
-    ("The editor repo is public", "quakecstudio/editor is public, so the plan on the docs/plan branch is visible. It contains no GPL code. P0-08 keeps the GPL repos private and nothing published until the legal review (P4-22)."),
+    ("The editor repo is public", "quakecstudio/editor is public and, since ADR-0002, licensed GPL-3.0-or-later like the rest of the project. Nothing is published as a release until the license compliance review (P4-22)."),
     ("Make main the default branch", "The plan is on main, but GitHub made docs/plan the default because it was pushed first. Change it under Settings > General; this session is not allowed to change repository settings."),
 ]
 
@@ -186,7 +186,7 @@ const code = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 const reqText = Object.fromEntries(D.reqs.map((r) => [r.id, r.text]));
 const byKey = Object.fromEntries(D.issues.map((i) => [i.key, i]));
 const typeOf = (i) => i.labels.find((l) => l.startsWith("type:")) || "";
-const layers = ["L0-formats","L1-vm","L2-syntax","L3-semantics","L4-bridges","L5-commands","L6-agent","L7-ui","apps","gpl-tools","repo"];
+const layers = ["L0-formats","L1-vm","L2-syntax","L3-semantics","L4-bridges","L5-commands","L6-agent","L7-ui","apps","c-tools","repo"];
 const layerOf = (i) => i.labels.find((l) => layers.includes(l)) || "";
 
 const implied = D.reqs.filter((r) => r.kind === "implied").length;

@@ -338,7 +338,7 @@ issues:
   - P0-23
   deliverable:
   - 'Release workflow: signed and notarized universal macOS DMG; signed MSI and portable zip for Windows x64 and arm64; AppImage, Flatpak, deb and rpm for Linux x86_64 and aarch64; SHA256SUMS'
-  - The preview host bundled as a separate signed and notarized executable, with its GPL license text, a corresponding-source link and NOTICE in every package
+  - The preview host bundled as a separate signed and notarized executable; the GPL-3.0 text, a corresponding-source link and NOTICE in every package
   - docs/releasing.md
   acceptance:
   - A tagged pre-release produces every artifact, and each installs and launches on a clean machine
@@ -399,11 +399,12 @@ issues:
   verify:
   - Release workflow step
 - key: P4-22
-  title: Legal review of the GPL boundary
+  title: License compliance review before release
   labels:
   - repo
   - area:legal
   - type:decision
+  - needs:human
   size: S
   reqs:
   - LIC-6
@@ -416,7 +417,7 @@ issues:
   - P4-17
   - P0-16
   deliverable:
-  - docs/adr/00NN-legal-review.md summarizing counsel's review of the separate-process boundary, clean-room records and corpus handling
+  - docs/adr/00NN-license-review.md summarizing the review of notices, corresponding source, dependency licenses and corpus handling
   acceptance:
   - Sign-off received before the first public release
   verify:
@@ -446,6 +447,7 @@ issues:
   - repo
   - area:process
   - type:test
+  - needs:human
   size: S
   reqs:
   - MVP-1
@@ -469,6 +471,7 @@ issues:
   - repo
   - area:process
   - type:gate
+  - needs:human
   size: S
   reqs:
   - MVP-2

@@ -18,12 +18,12 @@ def groups(doc):
 
 
 # ---------- generate readiness issues ----------
-LAYERS = ["L0-formats", "L1-vm", "L2-syntax", "L3-semantics", "L4-bridges", "L5-commands", "L6-agent", "L7-ui", "apps", "gpl-tools"]
+LAYERS = ["L0-formats", "L1-vm", "L2-syntax", "L3-semantics", "L4-bridges", "L5-commands", "L6-agent", "L7-ui", "apps", "c-tools"]
 SHORT = {"L0-formats": "R0", "L1-vm": "R1", "L2-syntax": "R2", "L3-semantics": "R3", "L4-bridges": "R4",
-         "L5-commands": "R5", "L6-agent": "R6", "L7-ui": "R7", "apps": "RA", "gpl-tools": "RG"}
+         "L5-commands": "R5", "L6-agent": "R6", "L7-ui": "R7", "apps": "RA", "c-tools": "RG"}
 NAMES = {"L0-formats": "L0 formats", "L1-vm": "L1 VM", "L2-syntax": "L2 syntax", "L3-semantics": "L3 semantics",
          "L4-bridges": "L4 bridges", "L5-commands": "L5 commands", "L6-agent": "L6 agent", "L7-ui": "L7 UI",
-         "apps": "apps", "gpl-tools": "GPL tools"}
+         "apps": "apps", "c-tools": "C tools"}
 BUILD_TYPES = {"type:feature", "type:test"}
 PHASES = ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
 

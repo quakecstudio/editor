@@ -1,0 +1,22 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-15T20:30:00Z"},
+  "title": "QuakeC Studio mockups",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1920, "h": 1080, "title": "v1 play loop: code beside the docked engine"},
+    "Inspect.dc.html": {"x": 2000, "y": 0, "w": 1440, "h": 900, "title": "Paused: inspect, debug, ask the agent"},
+    "InlineEdit.dc.html": {"x": 0, "y": 1500, "w": 1440, "h": 900, "title": "Inline edit (Cmd/Ctrl+K)"},
+    "Palette.dc.html": {"x": 1520, "y": 1500, "w": 1440, "h": 900, "title": "Command palette"},
+    "MapEditor.dc.html": {"x": 0, "y": 2900, "w": 1440, "h": 900, "title": "Map editor"},
+    "Tokens.dc.html": {"x": 1520, "y": 2900, "w": 1440, "h": 660, "title": "Theme, type and window chrome"}
+  },
+  "order": ["Main.dc.html", "Inspect.dc.html", "InlineEdit.dc.html", "Palette.dc.html", "MapEditor.dc.html", "Tokens.dc.html"],
+  "notes": {
+    "row1": {"x": 0, "y": -300, "text": "The play loop", "kind": "title1", "maxW": 3440},
+    "row2": {"x": 0, "y": 1200, "text": "Editing with the agent", "kind": "title1", "maxW": 2960},
+    "row3": {"x": 0, "y": 2600, "text": "Map editor and design tokens", "kind": "title1", "maxW": 2960}
+  },
+  "designSystems": []
+}

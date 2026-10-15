@@ -114,9 +114,9 @@ groups:
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P1-RG
-    title: GPL tools test-suite readiness (P1)
+    title: C tools test-suite readiness (P1)
     labels:
-    - gpl-tools
+    - c-tools
     - area:process
     - type:readiness
     size: S
@@ -480,9 +480,9 @@ groups:
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P3-RG
-    title: GPL tools test-suite readiness (P3)
+    title: C tools test-suite readiness (P3)
     labels:
-    - gpl-tools
+    - c-tools
     - area:process
     - type:readiness
     size: S
@@ -841,9 +841,9 @@ groups:
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P5-RG
-    title: GPL tools test-suite readiness (P5)
+    title: C tools test-suite readiness (P5)
     labels:
-    - gpl-tools
+    - c-tools
     - area:process
     - type:readiness
     size: S
@@ -986,9 +986,9 @@ groups:
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P6-RG
-    title: GPL tools test-suite readiness (P6)
+    title: C tools test-suite readiness (P6)
     labels:
-    - gpl-tools
+    - c-tools
     - area:process
     - type:readiness
     size: S
@@ -1059,9 +1059,9 @@ groups:
     verify:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P7-RG
-    title: GPL tools test-suite readiness (P7)
+    title: C tools test-suite readiness (P7)
     labels:
-    - gpl-tools
+    - c-tools
     - area:process
     - type:readiness
     size: S

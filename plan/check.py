@@ -8,8 +8,8 @@ Fails (exit 1) if:
   - an issue has no type:* label, or more than one
   - an issue depends on an issue in a later phase, or dependencies form a cycle
   - a gate issue does not depend on every other issue in its phase
-  - a clean-room:impl issue does not depend on a type:spec issue (directly or transitively)
   - a type:decision issue does not name a docs/adr/ file in its deliverable
+  - a type:decision or type:gate issue is not labelled needs:human
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -57,7 +57,7 @@ def load_backlog() -> tuple[dict, list[dict]]:
     return meta, issues
 
 
-LAYER_RANK = {"gpl-tools": -1, "L0-formats": 0, "L1-vm": 1, "L2-syntax": 2, "L3-semantics": 3,
+LAYER_RANK = {"c-tools": -1, "L0-formats": 0, "L1-vm": 1, "L2-syntax": 2, "L3-semantics": 3,
               "L4-bridges": 4, "L5-commands": 5, "L6-agent": 6, "L7-ui": 7, "apps": 8}
 BUILD_TYPES = {"type:feature", "type:test"}
 
@@ -71,7 +71,7 @@ def add_readiness_dependencies(issues: list[dict]) -> None:
     """Building on a lower layer waits for that layer's test-suite readiness (docs/testing.md).
 
     For every feature or test issue X that depends on a feature or test issue D in a lower
-    layer (or a GPL tool), X also depends on the readiness issue for D's layer in D's phase.
+    layer (or a C tool), X also depends on the readiness issue for D's layer in D's phase.
     Phase gates depend on every readiness issue in their phase.
     """
     by_key = {i["key"]: i for i in issues}
@@ -183,23 +183,13 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
             if missing:
                 errors.append(f"{k}: gate does not depend on {sorted(missing)}")
 
-    # clean-room impl must trace to a spec
-    def ancestors(k: str, seen: set[str] | None = None) -> set[str]:
-        seen = seen if seen is not None else set()
-        for d in by_key.get(k, {}).get("depends", []):
-            if d in by_key and d not in seen:
-                seen.add(d)
-                ancestors(d, seen)
-        return seen
-
-    for k, i in by_key.items():
-        if "clean-room:impl" in i["labels"]:
-            if not any("type:spec" in by_key[a]["labels"] for a in ancestors(k)):
-                errors.append(f"{k}: clean-room:impl issue has no spec issue upstream")
-
     for k, i in by_key.items():
         if "type:decision" in i["labels"] and not any("docs/adr/" in d for d in i.get("deliverable", [])):
             errors.append(f"{k}: decision issue must name a docs/adr/ file in its deliverable")
+
+    for k, i in by_key.items():
+        if ("type:decision" in i["labels"] or "type:gate" in i["labels"]) and "needs:human" not in i["labels"]:
+            errors.append(f"{k}: decisions and gates need a person; label it needs:human")
 
     covered = {r for i in issues for r in i.get("reqs", [])}
     for r in reqs:

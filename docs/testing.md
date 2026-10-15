@@ -9,7 +9,7 @@ Requirement IDs (`TEST-n`) are tracked in `plan/requirements.yaml`.
 - Every phase has one **readiness issue per layer** it builds (`type:readiness`, keys like
   `P1-R1` for Phase 1, layer L1). It depends on every feature and test issue of that layer in
   that phase, and on the same layer's readiness from earlier phases.
-- If a feature or test issue depends on work in a **lower layer** (or a GPL tool), `plan/check.py`
+- If a feature or test issue depends on work in a **lower layer** (or a C tool), `plan/check.py`
   makes it depend on that layer's readiness issue too. Upward progress waits on the
   lower layer's suite, not just its code.
 - Phase gates depend on every readiness issue in their phase, so a phase cannot close with
@@ -55,7 +55,7 @@ starts. Exceptions are listed per crate in its README with a reason, never waive
 - **L6 agent:** tests use a scripted fake model; evals (P4-15) measure quality, not correctness.
 - **L7 UI and apps:** coverage applies to non-rendering code; every command and panel has
   an offscreen snapshot test; accessibility checks run in CI.
-- **GPL tools (oracle and preview host repos):** the same bar applied in their own repos,
+- **C tools (`oracles/` and the preview host repo):** the same bar,
   with protocol conformance tests shared with the editor repo.
 
 ## Readiness report
