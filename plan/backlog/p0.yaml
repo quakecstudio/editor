@@ -459,7 +459,7 @@ issues:
   depends:
   - P0-07
 - key: P0-23
-  title: Obtain code-signing credentials
+  title: Add the code-signing credentials to CI
   labels:
   - repo
   - area:release
@@ -469,13 +469,15 @@ issues:
   reqs:
   - QA-14
   deliverable:
-  - Apple Developer ID (application and installer certificates, notarization API key) and a Windows code-signing certificate or Azure Trusted Signing account, stored as CI secrets
-  - docs/releasing.md section on credential ownership and renewal
+  - 'docs/releasing.md: the secret names, the protected `release` GitHub environment that holds them, who owns each credential and when it renews (an agent writes this and the signing workflow)'
+  - Justin's existing Apple Developer ID (application and installer certificates, notarization API key) and Azure code-signing credentials entered as secrets of the `release` environment under those names (Justin enters the values; agents never handle them)
   acceptance:
+  - '`gh api repos/quakecstudio/editor/environments/release/secrets` lists every name in docs/releasing.md'
   - A test binary is signed and notarized on macOS and signed on Windows from CI
   verify:
   - CI run link
   depends:
+  - P0-02
   - P0-15
 - key: P0-24
   title: Set the test-suite readiness bar and its CI tooling
@@ -540,7 +542,6 @@ issues:
   - repo
   - area:process
   - type:gate
-  - needs:human
   size: S
   reqs:
   - MVP-2
@@ -572,10 +573,10 @@ issues:
   - P0-25
   - P0-24
   deliverable:
-  - 'docs/gates/p0.md: gate criteria, evidence for each, open items carried forward, updated risk register'
+  - 'docs/gates/p0.md: gate criteria, evidence for each, updated risk register'
   - Sized, dated roadmap for Phases 1 to 7 based on the spike results (docs/roadmap.md)
   acceptance:
   - 'Gate met: UI framework and license ADRs merged; CI, planning and process in place'
-  - Every P0 issue closed or explicitly moved with a reason
+  - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
-  - Review meeting notes or sign-off comment on the issue
+  - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed

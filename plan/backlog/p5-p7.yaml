@@ -182,7 +182,6 @@ groups:
     - repo
     - area:process
     - type:gate
-    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -202,8 +201,9 @@ groups:
     - docs/gates/p5.md
     acceptance:
     - 'Gate met: entities in existing maps edited with QuakeC-derived definitions and appearing live'
+    - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
     verify:
-    - Sign-off comment
+    - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: P6
   issues:
   - key: P6-01
@@ -455,7 +455,6 @@ groups:
     - repo
     - area:process
     - type:gate
-    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -479,8 +478,9 @@ groups:
     - docs/gates/p6.md
     acceptance:
     - 'Gate met: a new map built from brushes compiles with our tools, plays and matches the oracles on the corpus'
+    - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
     verify:
-    - Sign-off comment
+    - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: P7
   issues:
   - key: P7-01
@@ -597,7 +597,6 @@ groups:
     - repo
     - area:process
     - type:gate
-    - needs:human
     size: S
     reqs:
     - MVP-2
@@ -614,8 +613,9 @@ groups:
     - docs/gates/p7.md
     acceptance:
     - 'Gate met: final lighting, region compile and background full compile within budgets'
+    - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
     verify:
-    - Sign-off comment
+    - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
 - milestone: LATER
   issues:
   - key: L-01

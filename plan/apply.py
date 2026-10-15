@@ -23,6 +23,8 @@ from urllib.parse import quote
 from check import PHASE_ORDER, check, load_backlog, load_requirements
 
 MARKER = re.compile(r"<!-- plan-key: ([A-Z0-9-]+) -->")
+# Set on GitHub by agents or people, never by the plan; apply.py keeps them.
+RUNTIME_LABELS = ("escalated",)
 
 
 TRANSIENT = ("connection reset", "eof", "timeout", "tls handshake", "http 502", "http 503", "http 504")
@@ -204,13 +206,16 @@ def main() -> int:
     for i in issues:
         body = render_body(i, reqs, meta, numbers, titles)
         have = current.get(i["key"], {})
+        have_labels = [l["name"] for l in have.get("labels", [])]
+        # labels the agents set at run time (see RUNTIME_LABELS) survive a sync
+        labels = [*i["labels"], *(l for l in RUNTIME_LABELS if l in have_labels)]
         same = (normalize(have.get("body") or "") == body and have.get("title") == i["title"]
-                and sorted(l["name"] for l in have.get("labels", [])) == sorted(i["labels"])
+                and sorted(have_labels) == sorted(labels)
                 and (have.get("milestone") or {}).get("number") == ms_by_key[i["milestone"]])
         if same:
             continue
         gh(["-X", "PATCH", f"{repo}/issues/{numbers[i['key']]}"],
-           {"title": i["title"], "body": body, "labels": i["labels"], "milestone": ms_by_key[i["milestone"]]})
+           {"title": i["title"], "body": body, "labels": labels, "milestone": ms_by_key[i["milestone"]]})
         changed += 1
     print(f"done: {len(issues)} issues in sync ({changed} updated)")
     return 0

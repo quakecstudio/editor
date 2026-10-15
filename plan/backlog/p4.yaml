@@ -507,5 +507,6 @@ issues:
   - docs/gates/p4.md, release notes and the published MVP release
   acceptance:
   - 'Gate met: MVP demo passes on all three OSes; signed builds published'
+  - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
-  - Sign-off comment linking the release
+  - Justin's sign-off comment linking the release

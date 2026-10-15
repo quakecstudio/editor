@@ -1,8 +1,8 @@
 ---
 name: run-phase
-description: Drive a whole QuakeC Studio phase to completion by delegating every unblocked issue to the right subagent (implementer or reviewer) until plan/status.py reports the phase complete or waiting on people. Use with /goal for unattended runs.
+description: Drive a whole QuakeC Studio phase to completion, gate included, by delegating every unblocked issue to the right subagent (implementer or reviewer) until plan/status.py reports the phase complete or waiting on people. Use with /goal for unattended runs.
 argument-hint: "[phase, e.g. P1] [track: agents (default), build or review]"
-allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue view *) Bash(gh issue comment *)
+allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh issue edit *)
 ---
 
 # Run a phase
@@ -20,18 +20,17 @@ You are the orchestrator. You do not implement issues yourself; you keep the que
    - `IN PROGRESS, next #n ...`: work the listed issues.
 2. For each issue listed as next, delegate it with the Agent tool to the subagent for its track (shown in brackets in the report):
    - `[build]` (specs, ports, features, tests, tooling, docs) -> `implementer`
-   - `[review]` (readiness reviews) -> `reviewer`
+   - `[review]` (readiness reviews and the phase gate) -> `reviewer`
    Give the subagent the issue number and the instruction to use its skills. Never hand a reviewer the implementer's notes; it works from the evidence.
 3. Issues with no dependency between them can run in parallel, at most three at a time. Do not run two implementers on issues that change the same crate at once.
-4. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, comment on the issue and move on.
+4. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, add the `escalated` label, comment on the issue with what is needed, mention @jplock and move on (`status.py` then counts it as waiting on people). If the gate reviewer reports stragglers that can be finished in this phase, work them before retrying the gate.
 5. Run the status again and repeat.
 
 ## Preparing people's work
 
 For every open `needs:human` issue in the phase that blocks the track, make sure a person can act on it quickly:
 - decisions: delegate to `implementer` with the `prepare-decision` skill (draft ADR, options, recommendation, draft PR);
-- the phase gate: delegate to `reviewer` with the `gate-review` skill once everything else in the phase is closed;
-- hardware, credentials or legal review: comment on the issue with exactly what is needed and why it blocks.
+- hardware, credentials, legal review or the MVP release: comment on the issue with exactly what is needed and why it blocks.
 Do this once per issue; check the issue comments first so you do not repeat it.
 
 ## Finish

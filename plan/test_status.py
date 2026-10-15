@@ -11,22 +11,23 @@ def issue(key, milestone="P1", labels=("type:feature",), depends=()):
             "depends": list(depends)}
 
 
-GATE0 = issue("P0-20", "P0", ("type:gate", "needs:human"))
+GATE0 = issue("P0-20", "P0", ("type:gate",))
 SPEC = issue("P1-01", labels=("type:spec",), depends=["P0-20"])
 IMPL = issue("P1-07", labels=("type:feature",), depends=["P0-20", "P1-01"])
 TOOL = issue("P1-14", labels=("type:chore",), depends=["P0-20"])
 NEXT = issue("P1-08", labels=("type:feature",), depends=["P0-20", "P1-07"])
 REVIEW = issue("P1-R0", labels=("type:readiness",), depends=["P0-20", "P1-07", "P1-08"])
 ABOVE = issue("P1-30", labels=("type:feature",), depends=["P0-20", "P1-R0"])
-GATE1 = issue("P1-25", labels=("type:gate", "needs:human"),
+GATE1 = issue("P1-25", labels=("type:gate",),
               depends=["P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0", "P1-30"])
 PLAN = [GATE0, SPEC, IMPL, TOOL, NEXT, REVIEW, ABOVE, GATE1]
 
 
-def states(closed=(), numbers=None):
+def states(closed=(), numbers=None, escalated=()):
     numbers = numbers or {}
     return {i["key"]: {"number": numbers.get(i["key"]),
-                       "state": "closed" if i["key"] in closed else "open"} for i in PLAN}
+                       "state": "closed" if i["key"] in closed else "open",
+                       "labels": ["escalated"] if i["key"] in escalated else []} for i in PLAN}
 
 
 class Tracks(unittest.TestCase):
@@ -34,14 +35,24 @@ class Tracks(unittest.TestCase):
         self.assertEqual(status.track_of(SPEC), "build")
         self.assertEqual(status.track_of(IMPL), "build")
         self.assertEqual(status.track_of(REVIEW), "review")
-        self.assertEqual(status.track_of(GATE1), "human")
+        self.assertEqual(status.track_of(GATE1), "review")
+        self.assertEqual(status.track_of(issue("D", labels=("type:decision", "needs:human"))), "human")
+        self.assertEqual(status.track_of(IMPL, {"labels": ["escalated"]}), "human")
         self.assertEqual(status.track_of(issue("X", labels=("type:feature", "c-tools"))), "build")
 
 
 class Verdicts(unittest.TestCase):
-    def test_waiting_on_previous_gate(self):
+    def test_blocked_on_previous_gate(self):
         r = status.compute(PLAN, states(numbers={"P0-20": 20}), "P1", "agents")
+        self.assertEqual(r["verdict"], "BLOCKED #20")
+
+    def test_escalated_gate_waits_on_people(self):
+        r = status.compute(PLAN, states(numbers={"P0-20": 20}, escalated={"P0-20"}), "P1", "agents")
         self.assertEqual(r["verdict"], "WAITING ON PEOPLE #20")
+
+    def test_escalated_issue_leaves_the_agents_track(self):
+        r = status.compute(PLAN, states(closed={"P0-20"}, escalated={"P1-14"}), "P1", "agents")
+        self.assertEqual([x["key"] for x in r["ready"]], ["P1-01"])
 
     def test_in_progress_lists_ready_issues(self):
         r = status.compute(PLAN, states(closed={"P0-20"}), "P1", "agents")
@@ -58,12 +69,12 @@ class Verdicts(unittest.TestCase):
         rev = next(w for w in r["waiting"] if w["key"] == "P1-R0")
         self.assertEqual([b["key"] for b in rev["blocked_by"]], ["P1-07", "P1-08"])
 
-    def test_agents_complete_while_gate_open(self):
+    def test_gate_is_the_last_agent_issue(self):
         done = {"P0-20", "P1-01", "P1-07", "P1-14", "P1-08", "P1-R0", "P1-30"}
         r = status.compute(PLAN, states(closed=done), "P1", "agents")
+        self.assertEqual([(x["key"], x["track"]) for x in r["ready"]], [("P1-25", "review")])
+        r = status.compute(PLAN, states(closed=done | {"P1-25"}), "P1", "agents")
         self.assertEqual(r["verdict"], "COMPLETE")
-        r = status.compute(PLAN, states(closed=done), "P1", "all")
-        self.assertTrue(r["verdict"].startswith("IN PROGRESS, next"))
 
     def test_status_line(self):
         r = status.compute(PLAN, states(closed={"P0-20"}, numbers={"P1-01": 33, "P1-14": 46}), "P1", "agents")
