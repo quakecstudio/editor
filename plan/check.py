@@ -10,6 +10,7 @@ Fails (exit 1) if:
   - a gate issue does not depend on every other issue in its phase
   - a type:decision issue does not name a docs/adr/ file in its deliverable
   - a type:decision issue is not labelled needs:human
+  - a label description is longer than GitHub's 100-character limit
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -125,6 +126,11 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
     labels = {l["name"] for group in meta["labels"].values() for l in group}
     sizes = set(meta["sizes"])
     by_key: dict[str, dict] = {}
+
+    for group in meta["labels"].values():
+        for l in group:
+            if len(l.get("description", "")) > 100:
+                errors.append(f"label {l['name']}: description over GitHub's 100-character limit")
 
     for i in issues:
         k = i.get("key", "?")

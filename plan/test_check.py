@@ -45,6 +45,12 @@ class CheckRules(unittest.TestCase):
     def test_decision_without_needs_human(self):
         self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "decisions need a person")
 
+    def test_label_description_too_long(self):
+        meta = copy.deepcopy(self.meta)
+        next(iter(meta["labels"].values()))[0]["description"] = "x" * 101
+        errors = check.check(self.reqs, meta, copy.deepcopy(self.issues))
+        self.assertTrue(any("100-character limit" in e for e in errors), errors[:5])
+
     def test_decision_without_adr(self):
         self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["a decision"]), "must name a docs/adr/")
 
