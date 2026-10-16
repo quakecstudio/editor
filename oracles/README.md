@@ -55,7 +55,7 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 ## Building
 
 ```bash
-cargo xtask oracles                 # build all three, then run every VM vector through the VM oracle
+cargo xtask oracles                 # build all three, then run every VM vector and scenario number vector through the VM oracle
 cargo xtask oracles build           # build only; prints where the binaries are
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
 cargo xtask oracles rerelease <dir> # also compile the six rerelease codebases with FTEQCC

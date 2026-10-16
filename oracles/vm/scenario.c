@@ -52,7 +52,7 @@ static int refuse(const char *path, int line, const char *why) {
     return QS_EXIT_REFUSED;
 }
 
-// DIFF-2.3: decimal digits with an optional leading `-`, in range.
+// DIFF-2.7: an optional `-`, then decimal digits, in range.
 static qboolean parse_integer(const char *text, long long min, long long max, long long *out) {
     const char *p = text;
     if (*p == '-')
@@ -71,7 +71,8 @@ static qboolean parse_integer(const char *text, long long min, long long max, lo
     return true;
 }
 
-// A decimal number: an optional `-`, digits with at most one `.`, and an optional exponent.
+// DIFF-2.8: an optional `-`, digits with at most one `.`, and an optional exponent. The check
+// comes first because strtod and strtof also accept `+`, `inf`, `nan` and hexadecimal.
 static qboolean decimal_syntax(const char *text) {
     const char *p = text;
     int digits = 0;
@@ -102,10 +103,15 @@ static qboolean decimal_syntax(const char *text) {
     return *p == 0;
 }
 
+// DIFF-2.8: the nearest f32, rounded once by strtof; a text whose nearest f32 is infinite is
+// refused.
 static qboolean parse_float(const char *text, float *out) {
     if (!decimal_syntax(text))
         return false;
-    *out = strtof(text, NULL);
+    float value = strtof(text, NULL);
+    if (isinf(value))
+        return false;
+    *out = value;
     return true;
 }
 

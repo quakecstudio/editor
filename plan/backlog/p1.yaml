@@ -307,6 +307,7 @@ issues:
   - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
   - At least 90% of statements executed per corpus codebase, measured from traces
   - A deliberate opcode bug is caught with the right statement reported
+  - The runner's scenario reader gives every vector in docs/spec/vectors/scenario/numbers.txt its result (DIFF-2.7 to DIFF-2.9)
   verify:
   - Mutation test in CI
 - key: P1-14
@@ -643,7 +644,7 @@ issues:
   - P1-32
   deliverable:
   - 'The Readiness workflow (.github/workflows/readiness.yml, cargo xtask readiness) measures the C tools layer: line and branch coverage of our C (oracles/vm/*.c) under every vector and the id 1.01 scenarios, built with source-based coverage; cargo xtask oracles run 20 times on each OS; and the spec statements oracles/README.md lists as implemented, cited by tests'
-  - 'Tests that bring our C to the bar: every refusal of DIFF-2.3 and every exit status of oracles/README.md (2 refused, 3 cannot write, 4 crashed), run through the built oracle in CI; tests citing the DIFF and TRACE-5 statements the oracle implements, which are all in docs/spec/coverage-baseline.tsv today'
+  - 'Tests that bring our C to the bar: every refusal of DIFF-2.9 and every exit status of oracles/README.md (2 refused, 3 cannot write, 4 crashed), run through the built oracle in CI; tests citing the DIFF and TRACE-5 statements the oracle implements, which are all in docs/spec/coverage-baseline.tsv today'
   - 'Unit tests for the Rust driver in xtask/src/oracles.rs and xtask/src/oracles/ (oracles.rs, compile.rs and id101.rs had no unit-test coverage, vectors.rs 47%, rerelease.rs 56% on 2026-10-16), and the three xtask tests that need a git checkout (attribution, licenses, corpus verify) made to pass in the copy cargo mutants tests, so the xtask mutation run can start'
   - 'A fuzz target for each parser of the layer that reads a file: the scenario file (DIFF-2), the progs loader and init file of vm-oracle, and the vector parser in xtask/src/oracles/vectors.rs; or an exception with its reason in oracles/README.md and ratchets.toml'
   - Any part of the bar that cannot apply to C (for example mutation testing) recorded as an exception with its reason in oracles/README.md and under exceptions in ratchets.toml
@@ -666,11 +667,11 @@ issues:
   - P1-11
   - P1-37
   deliverable:
-  - 'oracles/vm/scenario.c: a scenario with a NUL byte is read as DIFF-2.1 says (lines of bytes), so an unknown key after it is refused; integers are read as DIFF-2.3 says, so `frames 0000000000000000001` (19 digits, value 1) is accepted rather than refused'
+  - 'oracles/vm/scenario.c: a scenario with a NUL byte is read as DIFF-2.1 says (lines of bytes), so an unknown key after it is refused; integers are read as DIFF-2.7 says, so `frames 0000000000000000001` (19 digits, value 1) is accepted rather than refused'
   - 'oracles/vm/host.c: the init file of vector mode (oracles/README.md) refuses a value that is not the number its line takes, instead of reading it with atoi or strtoul: `global 100x bits zz` and `seed abc` run today with slot 100 and value 0, and `bits 1ffffffff` is truncated to 32 bits'
   - A regression test for each, run through the built oracle in CI
   acceptance:
-  - 'Each input above gets the exit status DIFF-2.3 and oracles/README.md give it: 2 for a refused file, 0 for the accepted integer; the review''s probe (docs/readiness/p1-rg.md) reproduces each case'
+  - 'Each input above gets the exit status DIFF-2.9 and oracles/README.md give it: 2 for a refused file, 0 for the accepted integer; the review''s probe (docs/readiness/p1-rg.md) reproduces each case'
   verify:
   - cargo xtask oracles in CI on all three OSes
 - key: P1-37
