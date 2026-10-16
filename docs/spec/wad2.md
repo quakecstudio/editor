@@ -8,7 +8,7 @@ Describes the WAD2 lump archive and how the engine reads it, as implemented by
 [id-Software/Quake](https://github.com/id-Software/Quake) at commit
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`. The engine reads one WAD2 file, `gfx.wad`,
 for its 2D graphics; map editors and compilers use WAD2 files of textures (MAP-5,
-MAP-23). To be implemented by `crates/qs-wad`
+MAP-23). Implemented by `crates/qs-wad`
 ([#42](https://github.com/quakecstudio/editor/issues/42)).
 
 All integers in a WAD2 file are 32-bit two's-complement signed little-endian values read
@@ -178,6 +178,10 @@ lumps, every one with `disksize` equal to `size`. Looking up `conchars`, `CONCHA
 `disc` and `backtile` found offsets 23996, 23996, 40380 and 7604, and
 `ConChars_extra_long_name` was not found. A reader written from this spec alone gave the
 same lumps and lookups.
+
+`qs-wad`'s unit tests check the behaviour of every row of the table above, and the `qs-vfs` example
+`walk` found the same 149 lumps and `conchars` at offset 23996 in LibreQuake's `gfx.wad` on
+2026-10-16.
 
 ## WAD-4 Lump contents the engine reads
 

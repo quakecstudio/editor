@@ -1,0 +1,15 @@
+[package]
+name = "qs-wad"
+description = "Zero-copy WAD2 reader: id's W_LoadWadFile and W_GetLumpinfo with bounds checks, and the lump layouts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
