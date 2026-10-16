@@ -12,8 +12,11 @@ stores put it on each operating system, and how to get it onto a Mac.
 | The shareware episode | `id1/pak0.pak` only | Episode 1 only; QuakeC Studio reports `id1/pak1.pak` as missing |
 | The 2021 rerelease (Quake Enhanced) | `rerelease/id1/pak0.pak`, `QuakeEX.kpf`, and `hipnotic`, `rogue`, `dopa`, `mg1` | Mods for the rerelease; its `id1` has only its own `pak0.pak` |
 
-Steam and GOG sell both the original game and the rerelease. The Epic Games Store and Xbox Game
-Pass sell only the rerelease, so QuakeC Studio reports the original `id1/pak0.pak` and
+Steam and GOG sell both the original game and the rerelease. Steam's install has the rerelease
+in its `rerelease` folder; GOG's Quake Enhanced has the rerelease at the top (`QuakeEX.kpf`,
+`id1`, `hipnotic`, `rogue`, `dopa`, `mg1`, `mg3`, `ctf`) and the original DOS game in its `dos`
+folder (`dos/id1/PAK0.PAK`, `dos/id1/PAK1.PAK`, `dos/hipnotic`, `dos/rogue`), and QuakeC Studio
+reports both. The Epic Games Store and Xbox Game Pass sell only the rerelease, so QuakeC Studio reports the original `id1/pak0.pak` and
 `id1/pak1.pak` as missing for those installs. Names are matched in any case: Steam's original
 install uses `Id1/PAK0.PAK`.
 
