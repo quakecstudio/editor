@@ -401,6 +401,7 @@ issues:
   size: S
   reqs:
   - MVP-1
+  - PLAT-2
   depends:
   - P4-06
   - P4-09
@@ -413,8 +414,9 @@ issues:
   - The same task automated as an eval and a scenario
   acceptance:
   - Succeeds on all three OSes from release builds
+  - On Windows and on Linux, `cargo run --release -p qs-install --example find` with no arguments, run from main, detects a real Steam or GOG Quake install, reporting its id1, rerelease and expansion paths (FS-6.1) and the editions and missing files (FS-6.4, FS-6.5); a failure is filed as a type:bug against qs-install and fixed before this issue closes
   verify:
-  - Recordings and eval report attached
+  - Recordings and eval report attached, with the Windows and Linux `find` output
 - key: P4-27
   title: Write PAK files
   labels:

@@ -457,7 +457,7 @@ issues:
   - The directory-link function has tests for a symbolic link (macOS and Linux), a junction (Windows), a broken link and a missing install, each run in CI on its OS
   - Fixtures contain directory layouts and checksums only; no game data is copied, bundled or committed
   verify:
-  - Fixture tests and the directory-link tests in CI on all three OSes; the run against Justin's real installs (macOS GOG purchase extracted with innoextract, Windows and Linux) is P1-30
+  - Fixture tests and the directory-link tests in CI on all three OSes; the run against Justin's real installs on macOS (his GOG purchases, one extracted with innoextract) is P1-30, and the Windows and Linux runs are P4-24
 - key: P1-20
   title: Implement the lexer and preprocessor (vanilla)
   labels:
@@ -1167,7 +1167,6 @@ issues:
   - repo
   - area:vm
   - type:test
-  - needs:human
   size: S
   reqs:
   - FND-11
@@ -1184,7 +1183,7 @@ issues:
   - P1-54
   deliverable:
   - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model (P1-29), and every alias model and BSP with its .lit and entity text (P5-02), it reads. No game data is committed (LIC-4)'
-  - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
+  - 'The output of `cargo run --release -p qs-install --example find`, run from main on macOS and posted on this issue, given each of Justin''s GOG folders: the GOG purchase extracted with innoextract, and Quake Enhanced. The Windows and Linux runs with no arguments, which need real Steam or GOG installs, are part of the MVP acceptance demo (P4-24)'
   acceptance:
   - Every run ends with `read N files, ...` and prints no `failed:` lines; a `.wav` outside `sound/`, which the engine never loads as a sound (WAV-3), is counted on its own line, and a `.lit` QuakeSpasm ignores is a `warning:` line (BSP-18)
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
@@ -1193,4 +1192,4 @@ issues:
   - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
   - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-bsp, qs-map, qs-wav or qs-install and fixed before this issue closes
   verify:
-  - Walk output for all six runs and find output for the three OSes attached to the issue
+  - Walk output for all six runs and find output for both macOS folders attached to the issue
