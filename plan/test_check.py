@@ -114,5 +114,76 @@ class ScopeRule(unittest.TestCase):
         self.assertIn("missing", errors[0])
 
 
+class RiskRule(unittest.TestCase):
+    """docs/risks.md must match the design doc's risk table (P0-19, OPEN-5)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.meta, _ = check.load_backlog()
+        cls.risks = check.RISKS.read_text()
+        cls.design = check.DESIGN_DOC.read_text()
+
+    def risk_errors(self, risks=None, design=None):
+        with tempfile.TemporaryDirectory() as d:
+            rp, dp = Path(d) / "risks.md", Path(d) / "design-doc.md"
+            rp.write_text(self.risks if risks is None else risks)
+            dp.write_text(self.design if design is None else design)
+            return check.check_risks(self.meta, rp, dp)
+
+    def test_register_matches_design_doc(self):
+        self.assertEqual(check.check_risks(self.meta), [])
+
+    def test_risk_missing_from_register(self):
+        risks = "\n".join(l for l in self.risks.splitlines() if not l.startswith("| R-8 |"))
+        self.assertEqual(self.risk_errors(risks),
+                         ["docs/risks.md: design-doc risk missing from the register: Small audience"])
+
+    def test_new_design_risk_flagged(self):
+        design = self.design.replace("| Small audience |", "| Engine bugs | Crashes | Report upstream |\n| Small audience |")
+        self.assertEqual(self.risk_errors(design=design),
+                         ["docs/risks.md: design-doc risk missing from the register: Engine bugs"])
+
+    def test_risk_not_in_design_doc(self):
+        risks = self.risks.replace("| R-8 | Small audience |", "| R-8 | Tiny audience |")
+        errors = self.risk_errors(risks)
+        self.assertIn("R-8: risk not in the design doc's risk table: Tiny audience", errors)
+
+    def test_mitigation_drift(self):
+        risks = self.risks.replace("Pin versions; keep UI", "Pin versions; keep the UI")
+        self.assertEqual(self.risk_errors(risks), ["R-7: impact or mitigation differs from the design doc"])
+
+    def test_owner_must_be_area(self):
+        risks = self.risks.replace("| area:agent |", "| nobody |")
+        self.assertEqual(self.risk_errors(risks), ["R-9: owner must be an area:* label, got 'nobody'"])
+
+    def test_linked_issue_required(self):
+        row = next(l for l in self.risks.splitlines() if l.startswith("| R-2 |"))
+        cells = row.split("|")
+        cells[6] = " none yet "
+        self.assertEqual(self.risk_errors(self.risks.replace(row, "|".join(cells))), ["R-2: no linked issue"])
+
+    def test_unknown_status(self):
+        row = next(l for l in self.risks.splitlines() if l.startswith("| R-6 |"))
+        errors = self.risk_errors(self.risks.replace(row, row.replace("| Open |", "| Done |")))
+        self.assertEqual(len(errors), 1)
+        self.assertTrue(errors[0].startswith("R-6: status must be one of"))
+
+    def test_malformed_row(self):
+        row = next(l for l in self.risks.splitlines() if l.startswith("| R-1 |"))
+        errors = self.risk_errors(self.risks.replace(row, row.rsplit("|", 2)[0] + "|"))
+        self.assertTrue(any(e.startswith("docs/risks.md: register row needs 7 cells") for e in errors))
+
+    def test_missing_register_file(self):
+        errors = check.check_risks(self.meta, Path("/nonexistent/risks.md"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing", errors[0])
+
+    def test_design_doc_without_risk_table(self):
+        design = self.design.replace("## Risks and open questions", "## Something else")
+        errors = self.risk_errors(design=design)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("no risk table", errors[0])
+
+
 if __name__ == "__main__":
     unittest.main()
