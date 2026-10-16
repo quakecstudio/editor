@@ -27,7 +27,9 @@ make help                      # every target: fmt, lint, test, audit, test-cove
 config matches `docs/conventions.md`), `adr`, `layers` (crates depend only on their own layer or
 lower, `docs/layers.md`), `licenses` (SPDX and ported-file headers), `attribution` (every asset
 is in `ATTRIBUTION.md`), clippy with `-D warnings`, the tests, `clippy-fixtures`,
-`cargo deny check` and `deny-fixtures`. The last two need network access.
+`cargo deny check` and `deny-fixtures`. The last two need network access. CI runs the same
+steps, but its `cargo xtask ci` job skips the ones another job runs with the same command
+(`--skip`, [docs/ci.md](docs/ci.md#which-job-runs-each-step-of-cargo-xtask-ci)).
 
 Shipped crates never panic: `unwrap`, `expect`, indexing, unchecked arithmetic and `as` casts
 are denied by lint. An exception is `#[expect(lint, reason = "...")]` at the narrowest scope,

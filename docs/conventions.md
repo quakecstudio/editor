@@ -191,8 +191,8 @@ OpenSSL license is not GPL-compatible; `GPL-3.0-or-later` added for our own crat
 `confidence-threshold = 0.8`; `[bans]` with `wildcards = "deny"` and
 `multiple-versions = "warn"`, each `skip` carrying a `reason`; `[sources]` with
 `unknown-registry = "deny"`, `unknown-git = "warn"`, crates.io as the only registry and every git
-source pinned to a rev. Runs as `make audit` and in CI via `cargo-deny-action` with
-`check advisories bans licenses sources`.
+source pinned to a rev. Runs as `make audit`, in `cargo xtask ci` and in CI's `cargo-deny` job
+as `cargo deny --locked --all-features check advisories bans licenses sources`.
 
 As in vouch, `allow-wildcard-paths = true` lets our own unpublished crates depend on each other
 by path without a version. **Differs from vouch:** `unused-allowed-license = "allow"`, because

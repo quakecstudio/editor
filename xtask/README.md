@@ -8,7 +8,7 @@ Build automation for the workspace, run as `cargo xtask <command>` (the alias is
 
 | Command | What it checks |
 | --- | --- |
-| `ci` | Everything a change must pass before it merges, in one run: `cargo fmt --check`, `conventions`, `adr`, `layers`, `licenses`, `attribution`, clippy with `-D warnings`, the tests, `clippy-fixtures`, `cargo deny check` and `deny-fixtures`. Every step runs; it exits non-zero if any failed. `make ci` and CI run this |
+| `ci` | Everything a change must pass before it merges, in one run: `cargo fmt --check`, `conventions`, `adr`, `layers`, `licenses`, `attribution`, clippy with `-D warnings`, the tests, `clippy-fixtures`, `cargo deny check` and `deny-fixtures`. Every step runs; it exits non-zero if any failed. `make ci` runs this; CI runs it as `ci --skip <step>,...`, which leaves out the named steps (`fmt`, `clippy`, `test`, `deny`, ...) because another job runs them ([`docs/ci.md`](../docs/ci.md#which-job-runs-each-step-of-cargo-xtask-ci)), and fails on a name no step has |
 | `adr` | Every ADR in `docs/adr/` follows `0000-template.md` and is listed in the index in `docs/adr/README.md` (ADR-0001) |
 | `conventions` | Every config value matches `docs/conventions.md` (see "Checking conformance" there) |
 | `clippy-fixtures` | The workspace lints reject each fixture in `fixtures/clippy/` with the lint it names, and pass the controls |
