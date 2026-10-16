@@ -7,7 +7,7 @@ Describes the PAK archive format and how the engine reads it, as implemented by
 `WinQuake/common.c` and `WinQuake/crc.c` in
 [id-Software/Quake](https://github.com/id-Software/Quake) at commit
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`. Where PAK files sit on the search path is
-[`filesystem.md`](filesystem.md). To be implemented by `crates/qs-pak`
+[`filesystem.md`](filesystem.md). Implemented by `crates/qs-pak`
 ([#42](https://github.com/quakecstudio/editor/issues/42)).
 
 All integers in a PAK file are 32-bit two's-complement signed little-endian values: the
@@ -193,7 +193,7 @@ entries are written in the order shown, data first and directory last.
 | Input | Result | Statements |
 | --- | --- | --- |
 | `dirlen` 0 | Loads; 0 entries; CRC 65535; modified | PAK-2.3, PAK-4.1, PAK-4.2 |
-| `a.txt` (`AB`), `b.txt` (empty), then 10 extra directory bytes (`dirlen` 138) | 2 entries: `a.txt` at 12 length 2, `b.txt` at 14 length 0; CRC 29531 | PAK-2.1, PAK-2.2, PAK-3.3, PAK-4.1 |
+| `a.txt` (`AB`), `b.txt` (empty), then 10 extra directory bytes, each `x` (`dirlen` 138) | 2 entries: `a.txt` at 12 length 2, `b.txt` at 14 length 0; CRC 29531 | PAK-2.1, PAK-2.2, PAK-3.3, PAK-4.1 |
 | Two entries named `a.txt` (`first`, `second`) | Both listed, in that order; a lookup returns `first` | PAK-2.11, PAK-3.1 |
 | Magic `pack` | Error `... is not a packfile` | PAK-1.2 |
 | 2048 empty entries | Loads; 2048 entries | PAK-2.4 |
@@ -208,6 +208,10 @@ The same build listed and read every entry of LibreQuake's `lite` release (the
 (`28423c01...0e39365`) has 60 entries, CRC 47719; both are marked modified. A reader
 written from this spec alone produced the same names, offsets, lengths, CRCs and content
 hashes for all 413 entries. id's own paks are game data and are not used here (LIC-4).
+
+`qs-pak`'s unit tests check the behaviour of every row of the table above, and the `qs-vfs` example
+`walk` (`cargo run --release -p qs-vfs --example walk -- -basedir <install>`) reported the
+same entry counts and CRCs for LibreQuake's two paks on 2026-10-16, reading all 413 entries.
 
 ## PAK-5 The 2021 rerelease's archives
 

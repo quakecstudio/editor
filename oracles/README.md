@@ -126,7 +126,7 @@ console line it prints before calling `Host_Error ("Program error")`.
 
 ### Readings the specs leave open
 
-The oracle had to choose an answer in these places; P1-30 (`plan/backlog/p1.yaml`)
+The oracle had to choose an answer in these places; P1-31 (`plan/backlog/p1.yaml`)
 pins them in the specs so that `qc-builtins` makes the same choice:
 
 - An entity value names an edict when it is a whole, non-negative number of edicts below

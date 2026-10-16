@@ -14,10 +14,26 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
+qs-pak = { path = "../crates/qs-pak" }
+qs-wad = { path = "../crates/qs-wad" }
 
 [[bin]]
 name = "qc-progs"
 path = "fuzz_targets/qc_progs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-pak"
+path = "fuzz_targets/qs_pak.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-wad"
+path = "fuzz_targets/qs_wad.rs"
 test = false
 doc = false
 bench = false

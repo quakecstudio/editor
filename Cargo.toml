@@ -119,7 +119,9 @@ qc-progs = { path = "crates/qc-progs" }
 qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }
 qs-log = { path = "crates/qs-log" }
+qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }
+qs-wad = { path = "crates/qs-wad" }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
 toml = { version = "=1.1.6", default-features = false }
