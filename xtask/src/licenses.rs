@@ -12,6 +12,10 @@
 //! - **Text** (docs, config, data): covered by `LICENSE`; needs no header.
 //! - **Asset** (images, fonts, sounds, game formats): its license is recorded in
 //!   `ATTRIBUTION.md` and checked by `cargo xtask attribution`.
+//! - **Cached specification** (every file under `specs/` except its README and
+//!   manifest): third-party text kept byte-identical to its origin, so it is not
+//!   scanned for SPDX tags. Its license is recorded in `specs/README.md`, and it
+//!   must be listed in `specs/manifest.tsv`.
 //!
 //! Every source and text file is also scanned for SPDX tags in comments, and
 //! each one must name an allowed license. `LICENSE` must be the GPL-3.0 text.
@@ -34,12 +38,16 @@ const TEXT_EXTENSIONS: [&str; 10] = [
 const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];
 const COMMENT_CLOSERS: [&str; 2] = ["*/", "-->"];
+const CACHED_DIR: &str = "specs/";
+const CACHED_MANIFEST: &str = "specs/manifest.tsv";
+const CACHED_OWN: [&str; 2] = ["specs/README.md", CACHED_MANIFEST];
 
 #[derive(Debug, PartialEq, Eq)]
 enum Kind {
     Source,
     Text,
     Asset,
+    Cached,
     Unknown,
 }
 
@@ -52,6 +60,7 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
     let upstreams = ported::upstreams(&repo::read(root, ported::DOC)?)?;
     let mut report = Report::default();
     let (mut sources, mut texts, mut assets) = (0_usize, 0_usize, 0_usize);
+    let cached = cached_files(root, files, &mut report)?;
     for path in files {
         let before = report.problems.len();
         let kind = classify(path);
@@ -67,6 +76,7 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
                 assets = assets.saturating_add(1);
                 continue;
             }
+            Kind::Cached => continue,
             Kind::Source | Kind::Text => {}
         }
         let text = match repo::read(root, path) {
@@ -119,6 +129,11 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
     report.passed.push(format!(
         "{assets} asset files are left to cargo xtask attribution"
     ));
+    if cached > 0 {
+        report.passed.push(format!(
+            "{cached} cached specification files are listed in {CACHED_MANIFEST}"
+        ));
+    }
 
     let license_ok = files.iter().any(|path| path == LICENSE_FILE)
         && repo::read(root, LICENSE_FILE)
@@ -127,7 +142,40 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
     Ok(report)
 }
 
+/// Counts the cached specification files among `files` that `specs/manifest.tsv`
+/// lists, and reports each one it does not.
+fn cached_files(root: &Path, files: &[String], report: &mut Report) -> Result<usize, String> {
+    let cached: Vec<&String> = files
+        .iter()
+        .filter(|path| classify(path) == Kind::Cached)
+        .collect();
+    if cached.is_empty() {
+        return Ok(0);
+    }
+    let manifest = repo::read(root, CACHED_MANIFEST)?;
+    let listed: Vec<&str> = manifest
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split('\t').next())
+        .collect();
+    let mut count = 0_usize;
+    for path in cached {
+        if listed.contains(&path.as_str()) {
+            count = count.saturating_add(1);
+        } else {
+            report.problems.push(format!(
+                "{path}: cached specification not listed in {CACHED_MANIFEST}; add it with \
+                 scripts/refresh-specs.sh (specs/README.md)"
+            ));
+        }
+    }
+    Ok(count)
+}
+
 fn classify(path: &str) -> Kind {
+    if path.starts_with(CACHED_DIR) && !CACHED_OWN.contains(&path) {
+        return Kind::Cached;
+    }
     let path = Path::new(path);
     let name = path
         .file_name()
@@ -295,6 +343,42 @@ mod tests {
     }
 
     #[test]
+    fn cached_specifications_must_be_in_the_manifest() {
+        let manifest = "path\tspec\turl\tsha256\tbytes\tfetched\n\
+                        specs/x/listed.mdx\tX 1\thttps://example.org/a\t-\t-\t-\n";
+        let foreign = format!("// {}\nexport type T = 1;\n", tag("Apache-2.0"));
+        let files = [
+            (CACHED_MANIFEST, manifest.to_owned()),
+            ("specs/README.md", "# Cached\n".to_owned()),
+            ("specs/x/listed.mdx", foreign),
+            ("specs/x/unlisted.ts", String::new()),
+        ];
+        let (root, listed) = fixture("cached", &files);
+        let report = check(&root, &listed).unwrap();
+        assert_eq!(
+            report.problems,
+            [
+                "specs/x/unlisted.ts: cached specification not listed in specs/manifest.tsv; \
+              add it with scripts/refresh-specs.sh (specs/README.md)"
+            ]
+        );
+        assert!(
+            report
+                .passed
+                .iter()
+                .any(|line| line.starts_with("1 cached specification files")),
+            "{:?}",
+            report.passed
+        );
+    }
+
+    #[test]
+    fn cached_specifications_need_the_manifest() {
+        let (root, listed) = fixture("cached-no-manifest", &[("specs/x/a.mdx", String::new())]);
+        assert!(check(&root, &listed).is_err());
+    }
+
+    #[test]
     fn a_ported_header_violation_fails() {
         let text = format!(
             "// {}\n// Ported from id-Software/Quake@{COMMIT}: a.c, F\n",
@@ -353,5 +437,13 @@ mod tests {
         assert_eq!(classify("Cargo.lock"), Kind::Text);
         assert_eq!(classify("a/b.png"), Kind::Asset);
         assert_eq!(classify("a/b"), Kind::Unknown);
+        assert_eq!(
+            classify("specs/lsp/3.18/metaModel/metaModel.ts"),
+            Kind::Cached
+        );
+        assert_eq!(classify("specs/acp/v1/overview.mdx"), Kind::Cached);
+        assert_eq!(classify("specs/README.md"), Kind::Text);
+        assert_eq!(classify("specs/manifest.tsv"), Kind::Text);
+        assert_eq!(classify("docs/specs/a.mdx"), Kind::Unknown);
     }
 }

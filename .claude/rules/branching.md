@@ -33,14 +33,13 @@ Run what CI runs, from the repository root:
 
 ```bash
 make ci        # cargo xtask ci: fmt, clippy -D warnings, tests, layering, licenses, conventions, ...
-prek run       # the pre-commit hooks
+prek run       # the pre-commit hooks, once #3 adds .pre-commit-config.yaml
 python3 plan/check.py --write-coverage && (cd plan && python3 -m unittest test_check.py test_status.py)
 ```
 
-Until `make ci` exists ([#2](https://github.com/quakecstudio/editor/issues/2)), run the
-commands it will wrap: `cargo fmt --all --check`,
-`cargo clippy --locked --all-targets --all-features -- -D warnings`, `cargo test --locked`,
-`cargo xtask conventions`, `cargo xtask adr`, and the `plan/` checks above.
+`make ci` prints a summary of its steps; rerun the one that failed on its own (the list is
+in `CLAUDE.md`, Commands). Run `scripts/refresh-specs.sh --verify` too when the PR touches
+`specs/`.
 
 Then check the PR against the gates CI cannot see:
 
