@@ -117,6 +117,63 @@ groups:
     - The agent places three Shamblers in a named room from a prompt in an eval
     verify:
     - Eval task
+  - key: P5-11
+    title: Read Half-Life's BSP version 30
+    labels:
+    - L0-formats
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-24
+    - MAP-6
+    - LIC-7
+    depends:
+    - P5-02
+    - P1-45
+    deliverable:
+    - 'docs/spec/bsp.md: a section on BSP version 30, described from QuakeSpasm (sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5, Quake/gl_model.c, Mod_LoadBrushModel and the readers it calls under `#ifdef BSP29_VALVE`, which Quake/quakedef.h enables with `#define BSP29_VALVE // enable Half-Life map support`), not ported: GoldSrc''s source is not a porting upstream. At least: `case BSPVERSION_VALVE:` loading with `bsp2 = false`, the palette after each embedded texture''s pixels (`// valve textures have a color palette immediately following the pixels`, a 16-bit colour count and that many RGB triples, clamped to the lump), lighting that is already RGB (`// lightmap samples are already stored as rgb`) with face light offsets taken as byte offsets into it, and the `sky` prefix not marking a sky texture in version 30 (`loadmodel->bspversion != BSPVERSION_VALVE && !q_strncasecmp(tx->name,"sky",3)`); every statement quotes QS and says what qs-bsp does'
+    - 'BSP-20.2 withdrawn and replaced as docs/spec/README.md says: the replacement says BspLoader::FitzQuake (the default, ADR-0012) reads version 30 as QS does, BspLoader::WinQuake and BspLoader::GlQuake still fail it with BSP-1.2''s error, and Quake 64''s `Q64 ` stays rejected by every loader; the vector `version-30` moves from an expected difference to an agreement in the differential run'
+    - 'crates/qs-bsp: BspVersion gains version 30 and BspLoader::FitzQuake reads it, exposing each embedded texture''s palette beside its pixels and RGB lighting as the raw bytes the lump holds, with no conversion to the Quake palette'
+    - 'Vectors under docs/spec/vectors/bsp/ for each new statement (at least a version 30 file with an embedded paletted texture, a texture whose palette runs past the lump, an external texture with offset 0, RGB lighting, and a `sky` texture), self-built by the vectors'' factory or taken from FreeHL''s own assets where their license allows and ATTRIBUTION.md lists them; never Valve''s game data'
+    - 'A differential run recorded in docs/spec/vectors/bsp/README.md: QS''s Mod_LoadBrushModel and the readers it calls, copied unchanged from the pinned commit into the harness P1-45 built, run on every version 30 vector, giving the same result as qs-bsp'
+    acceptance:
+    - Every new statement in docs/spec/bsp.md quotes QS's code at the pinned commit and has a citing test; the replaced BSP-20.2 is withdrawn, not edited in place, and the spec-citation ratchet passes
+    - Bsp::read with BspLoader::default() loads every version 30 vector and BspLoader::WinQuake and BspLoader::GlQuake fail it with BSP-1.2's error, shown by tests; every existing vector gives the same result as before
+    - The recorded QS run (command, compiler, inputs and results) agrees with qs-bsp on every version 30 vector
+    - No Valve game data is in the repository or fetched by CI; every asset used is self-built or listed in ATTRIBUTION.md with its license (cargo xtask attribution passes)
+    - The fuzz target for qs-bsp covers version 30 and never panics
+    verify:
+    - cargo test -p qs-bsp; cargo test -p qs-tests; the recorded run in the vectors' README and the PR
+  - key: P5-12
+    title: Read WAD3 texture files with per-texture palettes
+    labels:
+    - L0-formats
+    - area:map
+    - type:feature
+    size: M
+    reqs:
+    - MAP-24
+    - MAP-5
+    - LIC-7
+    depends:
+    - P1-18
+    - P5-11
+    deliverable:
+    - 'docs/spec/wad3.md: WAD3, described from QuakeSpasm (sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5, Quake/wad.c, W_OpenWadFile, which accepts `id != WADID && id != WADID_VALVE` as valid, and Quake/gl_model.c, the external texture lookup that reads a texture''s palette after its pixels, `// valve textures have a color palette immediately following the pixels`), not ported: header, directory, the miptex lump with its 16-bit colour count and RGB palette, clamping when the palette runs past the lump, and how a version 30 BSP''s `wad` key and an offset of 0 resolve an external texture; docs/spec/wad2.md''s WAD-1.2 (id''s loader accepts only `WAD2`) stays true for id''s W_LoadWadFile, and wad3.md says which entry point each applies to'
+    - 'crates/qs-wad: a WAD3 reader beside the WAD2 one, each texture exposed with its own palette; the WAD2 reader unchanged'
+    - 'crates/qs-bsp: the external textures of a version 30 BSP (P5-11) resolved from the WAD3 files its `wad` key names, as QS does, with each texture''s own palette'
+    - 'Vectors under docs/spec/vectors/wad3/ for each statement (at least a texture with a full 256-colour palette, one with fewer colours, one whose palette runs past the lump, a truncated directory, and a bad identification), self-built by a factory or taken from FreeHL''s own assets where their license allows and ATTRIBUTION.md lists them; never Valve''s game data'
+    - 'A differential run recorded in docs/spec/vectors/wad3/README.md: QS''s W_OpenWadFile and its external texture lookup, copied unchanged from the pinned commit into the P1-45 harness, run on every vector, giving the same result as qs-wad'
+    acceptance:
+    - Every statement in docs/spec/wad3.md quotes QS's code at the pinned commit and has a citing test; requirements.tsv lists them and the spec-citation ratchet passes
+    - Every vector gives the result its README records, and the WAD2 reader's existing tests pass unchanged
+    - A version 30 vector with an external texture loads its pixels and palette from a WAD3 vector, shown by a test
+    - The recorded QS run (command, compiler, inputs and results) agrees with qs-wad on every vector
+    - No Valve game data is in the repository or fetched by CI; every asset used is self-built or listed in ATTRIBUTION.md with its license (cargo xtask attribution passes)
+    - A fuzz target for the WAD3 reader never panics
+    verify:
+    - cargo test -p qs-wad; cargo test -p qs-bsp; cargo test -p qs-tests; the recorded run in the vectors' README and the PR
   - key: P5-09
     title: Phase 5 gate review
     labels:
@@ -135,6 +192,8 @@ groups:
     - P5-07
     - P5-08
     - P5-10
+    - P5-11
+    - P5-12
     deliverable:
     - docs/gates/p5.md
     acceptance:
