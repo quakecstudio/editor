@@ -542,12 +542,8 @@ static void run_scenario(void) {
         server_frame(frame);
 }
 
-// DIFF-8.3 to DIFF-8.5: Host_ShutdownServer's ClientDisconnect runs.
-static void shut_down(void) {
-    jmp_buf catch_point;
-    if (setjmp(catch_point))
-        return;
-    qs_catch = &catch_point;
+// DIFF-8.3: Host_ShutdownServer's ClientDisconnect runs, which save and restore self.
+static void disconnect_clients(void) {
     for (int slot = 0; slot < svs.maxclients; slot++) {
         if (!entered[slot])
             continue;
@@ -556,6 +552,34 @@ static void shut_down(void) {
         qs_run(pr_global_struct->ClientDisconnect);
         pr_global_struct->self = saved;
     }
+}
+
+// DIFF-8.4, DIFF-8.5: an error during the shutdown ends the scenario at once.
+static void shut_down(void) {
+    static jmp_buf catch_point;
+    if (!setjmp(catch_point)) {
+        qs_catch = &catch_point;
+        disconnect_clients();
+    }
+}
+
+// The scenario, then the shutdown after a runtime or host error (DIFF-8.3), in a function of
+// its own so that no local variable lives across setjmp.
+static void run_and_shut_down(void) {
+    static jmp_buf catch_point;
+    switch (setjmp(catch_point)) {
+    case 0:
+        qs_catch = &catch_point;
+        run_scenario();
+        break;
+    case QS_ERROR_HOST:
+        if (sv.active)
+            shut_down();
+        break;
+    default:
+        break;
+    }
+    qs_catch = NULL;
 }
 
 int qs_scenario_main(const char *scenario_path, const char *trace_path) {
@@ -587,16 +611,7 @@ int qs_scenario_main(const char *scenario_path, const char *trace_path) {
         return QS_EXIT_IO;
     }
     qs_trace_header(pr_crc, progs->numstrings);
-
-    jmp_buf catch_point;
-    int kind = setjmp(catch_point);
-    if (kind == 0) {
-        qs_catch = &catch_point;
-        run_scenario();
-    } else if (kind == QS_ERROR_HOST && sv.active) {
-        shut_down();
-    }
-    qs_catch = NULL;
+    run_and_shut_down();
     if (!qs_trace_close()) {
         fprintf(stderr, "vm-oracle: cannot write %s\n", trace_path);
         return QS_EXIT_IO;

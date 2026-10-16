@@ -32,6 +32,19 @@ qs_prstack_t (*qs_pr_stack(void))[QS_MAX_STACK_DEPTH] {
     return (qs_prstack_t(*)[QS_MAX_STACK_DEPTH])pr_stack_storage;
 }
 
+// pr_exec.c's strcmp (quakedef.h, QS_PR_EXEC): VM-7.2's byte difference, the bytes compared
+// as unsigned.
+int qs_strcmp(const char *a, const char *b);
+int qs_strcmp(const char *a, const char *b) {
+    const unsigned char *x = (const unsigned char *)a;
+    const unsigned char *y = (const unsigned char *)b;
+    while (*x && *x == *y) {
+        x++;
+        y++;
+    }
+    return (int)*x - (int)*y;
+}
+
 // What id's pr_edict.c and pr_cmds.c would define; the oracle sets them up instead.
 dprograms_t *progs;
 dfunction_t *pr_functions;
@@ -539,6 +552,18 @@ static int split(char *line, char **words, int max) {
     return n;
 }
 
+// The run is in a function of its own so that no local variable lives across setjmp.
+static int vector_entry;
+
+static void run_vector_entry(void) {
+    static jmp_buf catch_point;
+    if (!setjmp(catch_point)) {
+        qs_catch = &catch_point;
+        qs_run(vector_entry);
+    }
+    qs_catch = NULL;
+}
+
 int qs_vector_main(const char *progs_path, const char *init_path, const char *trace_path) {
     qs_progs_file_t file;
     const char *refused = qs_load_progs(progs_path, false, &file);
@@ -610,12 +635,8 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
         return QS_EXIT_IO;
     }
     qs_trace_header(pr_crc, progs->numstrings);
-    jmp_buf catch_point;
-    if (!setjmp(catch_point)) {
-        qs_catch = &catch_point;
-        qs_run(entry);
-    }
-    qs_catch = NULL;
+    vector_entry = entry;
+    run_vector_entry();
     printf("depth=%d localstack=%d\n", pr_depth, localstack_used);
     if (!qs_trace_close()) {
         fprintf(stderr, "vm-oracle: cannot write %s\n", trace_path);

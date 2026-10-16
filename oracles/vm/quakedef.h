@@ -96,18 +96,23 @@ typedef struct {
     int effects;
 } entity_state_t;
 
-// pr_exec.c is built with QS_PR_EXEC, which redirects two of its variables and nothing else
-// (oracles/README.md, "How the VM is observed"):
+// pr_exec.c is built with QS_PR_EXEC, which redirects two of its variables and one C library
+// call, and nothing else (oracles/README.md, "How the VM is observed"):
 // - its check of the statement trace flag, made after each statement becomes current and
 //   before it runs, calls the oracle's hook, which records the statement and reads as false;
 // - its call stack is storage the oracle owns, with one spare frame: on a stack overflow
 //   PR_StackTrace writes one frame past the 32 (pr_stack[pr_depth] with pr_depth 32), which in
 //   id's 32-bit build lands in an unused local stack slot and here would land on whatever the
-//   linker put next.
+//   linker put next;
+// - strcmp returns the difference of the first differing bytes, as glibc's and macOS's do and
+//   vm.md VM-7.2 fixes for NE_S; C fixes only its sign, and the Windows C runtime returns -1
+//   and 1.
 #ifdef QS_PR_EXEC
 qboolean *qs_statement_hook(void);
 #define pr_trace (*qs_statement_hook())
 #define pr_stack (*qs_pr_stack())
+int qs_strcmp(const char *a, const char *b);
+#define strcmp qs_strcmp
 #endif
 
 #include "progs.h"

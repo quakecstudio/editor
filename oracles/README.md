@@ -105,7 +105,7 @@ far (DIFF-10.1).
 ### How the VM is observed
 
 `pr_exec.c` is compiled byte for byte as fetched, and the build defines `QS_PR_EXEC`, under which
-[`vm/quakedef.h`](vm/quakedef.h) redirects two of its identifiers and nothing else:
+[`vm/quakedef.h`](vm/quakedef.h) redirects three of its identifiers and nothing else:
 
 - `pr_trace`, the statement trace flag, becomes a call to the oracle's hook. `PR_ExecuteProgram`
   tests the flag after each statement becomes current and before it executes, so the hook sees
@@ -117,6 +117,9 @@ far (DIFF-10.1).
   overflow `PR_StackTrace` writes the frame one past the end; in id's 32-bit build that lands
   in a local stack slot nothing reads again, and here it would land on whatever the linker
   placed next.
+- `strcmp` returns the difference of the first differing bytes, read as unsigned, which is
+  what glibc and macOS return and what VM-7.2 fixes for `NE_S`. C fixes only the sign, and the
+  Windows C runtime returns -1 and 1.
 
 Calls into QuakeC from the host and from builtins go through a wrapper that writes the run and
 exit records (TRACE-4.1, TRACE-4.5). id's `Host_Error` and `Sys_Error` are the oracle's: they
