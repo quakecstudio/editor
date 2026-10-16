@@ -99,9 +99,14 @@ Each section holds, in this order:
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
 | `EXAMPLE` | [`example.md`](example.md) | The worked porting example: entity-string escapes | [#9](https://github.com/quakecstudio/editor/issues/9) |
+| `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
+| `PAK` | [`pak.md`](pak.md) | PAK archives: header, directory, reading entries, the modified-game CRC | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
+| `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
+| `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
+| `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
 
 Specs planned in Phase 1 (`edicts.md`, `builtins.md`,
 `trace.md`, `differential.md`) register their prefix here when they are written.
