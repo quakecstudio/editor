@@ -41,6 +41,16 @@ use compile::{Code, Compiler, Unit};
 const SOURCES: &str = "oracles/sources.toml";
 const OUT: &str = "target/oracles";
 
+/// When this environment variable is set and not empty, our harness files are built with
+/// clang's source-based coverage (`compile::COVERAGE_FLAGS`), and every run of the VM oracle
+/// writes a profile where `LLVM_PROFILE_FILE` says. `cargo xtask readiness` sets both to
+/// measure the coverage of our C (`docs/testing.md`, TEST-1).
+pub(crate) const COVERAGE_ENV: &str = "QS_ORACLE_COVERAGE";
+
+fn coverage_requested() -> bool {
+    std::env::var_os(COVERAGE_ENV).is_some_and(|value| !value.is_empty())
+}
+
 /// Our harness files, compiled with every warning an error.
 const VM_HARNESS: [&str; 5] = [
     "oracles/vm/host.c",
@@ -275,6 +285,24 @@ fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
+/// Where the oracles are built.
+fn locate(root: &Path) -> Oracles {
+    let out = root.join(OUT);
+    let bin = out.join("bin");
+    Oracles {
+        qcc: bin.join(Compiler::executable("qcc")),
+        vm: bin.join(Compiler::executable("vm-oracle")),
+        fteqcc: bin.join(Compiler::executable("fteqcc")),
+        work: out.join("work"),
+        rerelease: out.join("rerelease"),
+    }
+}
+
+/// The VM oracle's executable, once built.
+pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
+    locate(root).vm
+}
+
 /// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
 pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     let sources = read_sources(root)?;
@@ -282,18 +310,11 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     let cache = out.join("src");
     let objects = out.join("build");
     let bin = out.join("bin");
-    let work = out.join("work");
-    for dir in [&cache, &objects, &bin, &work] {
+    let oracles = locate(root);
+    for dir in [&cache, &objects, &bin, &oracles.work] {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let oracles = Oracles {
-        qcc: bin.join(Compiler::executable("qcc")),
-        vm: bin.join(Compiler::executable("vm-oracle")),
-        fteqcc: bin.join(Compiler::executable("fteqcc")),
-        work,
-        rerelease: out.join("rerelease"),
-    };
-    let compiler = Compiler::find(&objects)?;
+    let compiler = Compiler::find(&objects, coverage_requested())?;
     let stamp_now = stamp(root, &compiler)?;
     let stamp_file = bin.join("stamp");
     if oracles.qcc.is_file()

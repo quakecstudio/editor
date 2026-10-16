@@ -3,8 +3,8 @@
 //! The spec-citation ratchet (CONV-11, TEST-3).
 //!
 //! Every normative statement in `docs/spec/*.md` (a list item starting `- **PREFIX-n.m**`) must
-//! be cited by a `// spec PREFIX-n.m` comment in a Rust file under `crates/` or `apps/`, or be
-//! listed in `docs/spec/coverage-baseline.tsv`. The ratchet only turns one way: a statement
+//! be cited by a `// spec PREFIX-n.m` comment in a Rust file under `crates/`, `apps/` or
+//! `xtask/` (outside `xtask/fixtures/`), or be listed in `docs/spec/coverage-baseline.tsv`. The ratchet only turns one way: a statement
 //! that loses its last citation fails, and a baseline entry that gains a citation fails until
 //! it is removed from the baseline. `docs/spec/requirements.tsv` is the index of every
 //! statement and must match the spec files. The format is in `docs/spec/README.md`.
@@ -306,12 +306,22 @@ fn repo_statements() -> Vec<Statement> {
     statements
 }
 
-fn repo_citations() -> Vec<Citation> {
+/// The Rust files that cite statements: the crates, the apps and xtask, whose oracle module
+/// tests the oracles' C (`oracles/README.md`). xtask's fixture crates cite statements of their
+/// own small repositories, not of `docs/spec/`.
+fn citing_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for dir in ["crates", "apps"] {
+    for dir in ["crates", "apps", "xtask"] {
         rust_files(&repo_root().join(dir), &mut files);
     }
+    let fixtures = repo_root().join("xtask/fixtures");
+    files.retain(|path| !path.starts_with(&fixtures));
     files.sort();
+    files
+}
+
+fn repo_citations() -> Vec<Citation> {
+    let files = citing_files();
     let mut citations = Vec::new();
     for path in files {
         let text = fs::read_to_string(&path).expect("Rust file is readable");
@@ -345,6 +355,21 @@ fn requirements_tsv_lists_every_statement() {
     assert!(
         actual == expected,
         "docs/spec/requirements.tsv is out of date; replace it with:\n{expected}"
+    );
+}
+
+#[test]
+fn xtask_cites_statements_and_its_fixtures_do_not() {
+    let files: Vec<String> = citing_files().iter().map(|path| relative(path)).collect();
+    assert!(
+        files.iter().any(|file| file == "xtask/src/corpus/build.rs"),
+        "xtask's tests cite statements: {files:?}"
+    );
+    assert!(
+        files
+            .iter()
+            .all(|file| !file.starts_with("xtask/fixtures/")),
+        "the fixture crates cite their own statements: {files:?}"
     );
 }
 

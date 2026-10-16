@@ -270,8 +270,101 @@ exceptions = { flakes = "slow" }
 }
 
 #[test]
+fn a_table_holds_a_review_s_four_minimums_or_only_exceptions() {
+    let problems = |text: &str| validate(&parse(text).unwrap(), &keys());
+    let readiness_alone = problems("[crates.qs-x]\nreadiness = \"P1-R0\"\n");
+    assert_eq!(readiness_alone.len(), 2, "{readiness_alone:?}");
+    assert!(readiness_alone[0].contains("a readiness issue but no minimums"));
+    assert!(readiness_alone[1].contains("needs the minimums of a review, or an exception"));
+    let empty = problems("[crates.qs-x]\n");
+    assert_eq!(empty.len(), 1, "{empty:?}");
+    let partial = problems("[crates.qs-x]\nreadiness = \"P1-R0\"\nlines = 95\n");
+    assert_eq!(partial.len(), 3, "{partial:?}");
+    assert!(
+        partial.iter().all(|p| p.contains("has no minimum")),
+        "{partial:?}"
+    );
+    let unnamed = problems(&BASE.replace("readiness = \"P1-R0\"\n", ""));
+    assert_eq!(unnamed.len(), 1, "{unnamed:?}");
+    assert!(
+        unnamed[0].contains("minimums need the readiness issue"),
+        "{unnamed:?}"
+    );
+    let exceptions_only =
+        "[crates.qs-c]\nreason = \"no tool\"\nexceptions = { mutation = \"C\" }\n";
+    assert_eq!(problems(exceptions_only), Vec::<String>::new());
+}
+
+#[test]
+fn an_exception_with_no_minimum_passes_unmeasured() {
+    let ratchets =
+        parse("[crates.qs-c]\nreason = \"no tool\"\nexceptions = { mutation = \"C\" }\n").unwrap();
+    let mut measured = passing("qs-c");
+    measured.retain(|m| m.check != Check::Mutation);
+    let mut report = Report::default();
+    for (name, checks) in &group(&measured, &mut report) {
+        evaluate(name, checks, ratchets.crates.get(name), &mut report);
+    }
+    assert_eq!(report.problems, Vec::<String>::new());
+    assert!(
+        report
+            .passed
+            .iter()
+            .any(|line| line == "qs-c mutation: not measured, waived by an exception: C"),
+        "{:?}",
+        report.passed
+    );
+    let mut report = Report::default();
+    let held = parse(&edit(
+        "mutation = 92",
+        "mutation = 92\nexceptions = { mutation = \"C\" }",
+    ))
+    .unwrap();
+    let mut unmeasured = passing("qs-x");
+    unmeasured.retain(|m| m.check != Check::Mutation);
+    for (name, checks) in &group(&unmeasured, &mut report) {
+        evaluate(name, checks, held.crates.get(name), &mut report);
+    }
+    assert_eq!(
+        report.problems,
+        ["qs-x mutation: not measured"],
+        "a minimum still needs a measurement"
+    );
+}
+
+#[test]
+fn a_table_of_exceptions_changes_with_a_reason_and_gains_a_review() {
+    let before =
+        parse("[crates.qs-c]\nreason = \"no tool\"\nexceptions = { mutation = \"C\" }\n").unwrap();
+    let wider = parse(
+        "[crates.qs-c]\nreason = \"no tool\"\nexceptions = { mutation = \"C\", branches = \"b\" }\n",
+    )
+    .unwrap();
+    let problems = check_change(&before, &wider, &members());
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("without a new reason"), "{problems:?}");
+    let reasoned = parse(
+        "[crates.qs-c]\nreason = \"branch tool\"\nexceptions = { mutation = \"C\", branches = \"b\" }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        check_change(&before, &reasoned, &members()),
+        Vec::<String>::new()
+    );
+    let reviewed = parse(
+        "[crates.qs-c]\nreadiness = \"P1-R1\"\nlines = 93\nbranches = 85\nmutation = 0\nspec = 100\n\
+         reason = \"no tool\"\nexceptions = { mutation = \"C\" }\n",
+    )
+    .unwrap();
+    assert_eq!(
+        check_change(&before, &reviewed, &members()),
+        Vec::<String>::new()
+    );
+    assert_eq!(validate(&reviewed, &keys()), Vec::<String>::new());
+}
+
+#[test]
 fn the_file_rejects_unknown_fields_and_checks() {
-    assert!(parse("[crates.qs-x]\nreadiness = \"P1-R0\"\n").is_err());
     assert!(parse(&format!("{BASE}regions = 90\n")).is_err());
     assert!(
         parse(&edit(

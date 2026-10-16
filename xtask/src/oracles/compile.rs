@@ -31,11 +31,16 @@ pub(crate) const MSVC_FLAGS: [&str; 6] = [
     "/D_CRT_NONSTDC_NO_DEPRECATE",
 ];
 
+/// The flags that add clang's source-based coverage to our files and to the link, for the C
+/// coverage the Readiness workflow measures (`docs/testing.md`, TEST-1).
+pub(crate) const COVERAGE_FLAGS: [&str; 2] = ["-fprofile-instr-generate", "-fcoverage-mapping"];
+
 /// The compiler, and the environment it needs (MSVC's `INCLUDE`, `LIB` and `PATH`).
 pub(crate) struct Compiler {
     path: PathBuf,
     env: Vec<(OsString, OsString)>,
     msvc: bool,
+    coverage: bool,
 }
 
 /// Whose code a file is: upstream code (id's, FTEQCC's) is compiled without warnings, ours with
@@ -70,8 +75,9 @@ fn host_triple() -> Result<&'static str, String> {
 }
 
 impl Compiler {
-    /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents).
-    pub(crate) fn find(scratch: &Path) -> Result<Self, String> {
+    /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents). With
+    /// `coverage`, our files and the link take [`COVERAGE_FLAGS`], which need clang.
+    pub(crate) fn find(scratch: &Path, coverage: bool) -> Result<Self, String> {
         let triple = host_triple()?;
         let tool = Build::new()
             .target(triple)
@@ -84,6 +90,12 @@ impl Compiler {
             .emit_rerun_if_env_changed(false)
             .try_get_compiler()
             .map_err(|e| format!("no C compiler found: {e}"))?;
+        if coverage && !tool.is_like_clang() {
+            return Err(format!(
+                "C coverage needs clang, and the C compiler is {} (set CC=clang)",
+                tool.path().display()
+            ));
+        }
         Ok(Self {
             path: tool.path().to_path_buf(),
             env: tool
@@ -91,16 +103,21 @@ impl Compiler {
                 .map(|(k, v)| (k.to_owned(), v.to_owned()))
                 .collect(),
             msvc: tool.is_like_msvc(),
+            coverage,
         })
     }
 
     /// The compiler's path and flags, for the build stamp.
     pub(crate) fn describe(&self) -> String {
-        let flags = if self.msvc {
+        let mut flags = if self.msvc {
             MSVC_FLAGS.join(" ")
         } else {
             GNU_FLAGS.join(" ")
         };
+        if self.coverage {
+            flags.push_str(" coverage ");
+            flags.push_str(&COVERAGE_FLAGS.join(" "));
+        }
         format!("{} {flags}", self.path.display())
     }
 
@@ -147,6 +164,9 @@ impl Compiler {
             command.args(GNU_FLAGS);
             if unit.code == Code::Ours {
                 command.args(["-Wall", "-Wextra", "-Werror"]);
+                if self.coverage {
+                    command.args(COVERAGE_FLAGS);
+                }
             } else {
                 command.arg("-w");
             }
@@ -173,6 +193,9 @@ impl Compiler {
             command.arg(format!("/Fe{}", out.display()));
         } else {
             command.args(objects);
+            if self.coverage {
+                command.args(COVERAGE_FLAGS);
+            }
             command.arg("-o").arg(out).arg("-lm");
         }
         run(command, &format!("link {}", out.display()))

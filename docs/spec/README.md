@@ -51,8 +51,10 @@ statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
 `crates/qs-tests/tests/it/spec_coverage.rs` checks, on every `cargo test`:
 
 - Every active statement in `docs/spec/*.md` (all but `README.md` and `_`-prefixed templates)
-  is cited by a line starting `// spec <ID>` in a Rust file under `crates/` or `apps/`, or
-  is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv).
+  is cited by a line starting `// spec <ID>` in a Rust file under `crates/`, `apps/` or
+  `xtask/` (whose oracle module tests the oracles' C through the built oracle; its
+  `fixtures/` cite statements of their own), or is listed in
+  [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - Every citation names a statement that exists and is not withdrawn. A citation names
   statements (`PREFIX-n.m`), never just a section.
 - No statement in the baseline is cited: once a test cites it, it leaves the baseline in the
