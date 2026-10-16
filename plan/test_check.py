@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Negative tests for plan/check.py: each rule must catch a deliberate fault."""
 
+from __future__ import annotations
+
 import copy
+import hashlib
 import re
 import tempfile
 import unittest
@@ -38,6 +41,15 @@ class CheckRules(unittest.TestCase):
 
     def test_missing_acceptance(self):
         self.assert_flags(lambda r, k, i: k["P0-01"].update(acceptance=[]), "P0-01: missing acceptance")
+
+    def test_missing_deliverable(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"].update(deliverable=[]), "P0-01: missing deliverable")
+
+    def test_missing_verification(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"].pop("verify"), "P0-01: missing verify")
+
+    def test_unknown_requirement(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"]["reqs"].append("NOPE-1"), "P0-01: unknown requirement NOPE-1")
 
     def test_later_phase_dependency(self):
         self.assert_flags(lambda r, k, i: k["P1-10"]["depends"].append("P2-06"), "from a later phase")
@@ -200,6 +212,78 @@ class RiskRule(unittest.TestCase):
         self.assertIn("no risk table", errors[0])
 
 
+class DesignHashRule(unittest.TestCase):
+    """A design-doc change fails the check until requirements.yaml records the new hash (P0-05, PM-6)."""
+
+    def hash_errors(self, design: bytes, recorded: str | None):
+        with tempfile.TemporaryDirectory() as d:
+            dp, rp = Path(d) / "design-doc.md", Path(d) / "requirements.yaml"
+            dp.write_bytes(design)
+            header = "" if recorded is None else f"{check.DESIGN_HASH_KEY}: {recorded}\n"
+            rp.write_text(header + "sections: []\n")
+            return check.check_design_hash(rp, dp)
+
+    def test_recorded_hash_matches(self):
+        self.assertEqual(check.check_design_hash(), [])
+
+    def test_matching_fixture_passes(self):
+        self.assertEqual(self.hash_errors(b"# Design\n", hashlib.sha256(b"# Design\n").hexdigest()), [])
+
+    def test_changed_design_doc_flagged(self):
+        recorded = hashlib.sha256(b"# Design\n").hexdigest()
+        new = hashlib.sha256(b"# Design v2\n").hexdigest()
+        errors = self.hash_errors(b"# Design v2\n", recorded)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("changed since requirements.yaml was last reviewed", errors[0])
+        self.assertTrue(errors[0].endswith(f"design_doc_sha256: {new}"), errors[0])
+
+    def test_missing_hash_flagged(self):
+        errors = self.hash_errors(b"# Design\n", None)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("records no design_doc_sha256", errors[0])
+
+    def test_crlf_checkout_hashes_like_lf(self):
+        self.assertEqual(self.hash_errors(b"# Design\r\nText\r\n", hashlib.sha256(b"# Design\nText\n").hexdigest()), [])
+
+    def test_missing_design_doc(self):
+        with tempfile.TemporaryDirectory() as d:
+            errors = check.check_design_hash(check.REQUIREMENTS, Path(d) / "design-doc.md")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing", errors[0])
+
+
+class CoverageRule(unittest.TestCase):
+    """plan/coverage.md is regenerated with the plan, never left stale (P0-05)."""
+
+    @classmethod
+    def setUpClass(cls):
+        reqs = check.load_requirements()
+        meta, issues = check.load_backlog()
+        cls.expected = check.coverage_md(reqs, meta, issues)
+
+    def test_committed_coverage_is_current(self):
+        self.assertEqual(check.check_coverage(self.expected), [])
+
+    def test_every_requirement_is_listed(self):
+        for r in check.load_requirements():
+            self.assertIn(f"| {r} |", self.expected)
+
+    def coverage_errors(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "coverage.md"
+            if text is not None:
+                path.write_text(text)
+            return check.check_coverage(self.expected, path)
+
+    def test_stale_coverage_flagged(self):
+        stale = self.expected.replace("| GOAL-1 |", "| GOAL-1x |")
+        self.assertEqual(self.coverage_errors(stale),
+                         ["coverage.md: out of date; run python3 plan/check.py --write-coverage"])
+
+    def test_missing_coverage_flagged(self):
+        self.assertEqual(len(self.coverage_errors(None)), 1)
+
+
 class TemplateRule(unittest.TestCase):
     """Issue templates ask for deliverable, acceptance, verification and requirement IDs; the
     PR template carries the definition of done (P0-04, PM-5)."""
@@ -263,6 +347,11 @@ class TemplateRule(unittest.TestCase):
         item = self.meta["definition_of_done"][0]
         errors = self.template_errors(pr_edit=lambda t: t.replace(f"- [ ] {item}\n", ""))
         self.assertEqual(errors, [f"pull_request_template.md: definition-of-done item missing: {item}"])
+
+    def test_pr_template_must_ask_about_the_design_doc(self):
+        errors = self.template_errors(pr_edit=lambda t: t.replace("design_doc_sha256", "the hash"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("does not ask whether requirements.yaml was reviewed", errors[0])
 
     def test_missing_pr_template(self):
         errors = check.check_templates(self.meta, check.ISSUE_TEMPLATES, Path("/nonexistent/pr.md"))

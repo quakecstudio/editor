@@ -145,13 +145,13 @@ issues:
   depends:
   - P0-01
   deliverable:
-  - 'docs/design.md: the design document, versioned in the repo as the source of truth'
+  - 'docs/design/design-doc.md: the design document, versioned in the repo as the source of truth'
   - plan/requirements.yaml, plan/backlog/*.yaml and plan/check.py
   - 'plan/coverage.md generated report: every requirement with its issues and status'
   - CI step running plan/check.py
   acceptance:
   - check.py fails if a requirement has no issue, an issue cites an unknown requirement, or an issue lacks deliverable, acceptance or verification
-  - check.py fails if docs/design.md changes without requirements.yaml being reviewed (the PR template asks; the check compares a recorded hash)
+  - check.py fails if docs/design/design-doc.md changes without requirements.yaml being reviewed (the PR template asks; the check compares a recorded hash)
   verify:
   - check.py unit tests with fixtures for each failure
 - key: P0-06
