@@ -14,29 +14,30 @@ Requirement IDs (`TEST-n`) are tracked in `plan/requirements.yaml`.
   lower layer's suite, not just its code.
 - Phase gates depend on every readiness issue in their phase, so a phase cannot close with
   a layer whose suite has not passed.
-- Once a layer passes, its numbers become CI ratchets (TEST-10). A later change that lowers
-  coverage, mutation score or spec-citation coverage fails CI.
+- Once a layer passes, its numbers become ratchets in `ratchets.toml` (TEST-10). A later change
+  that lowers coverage, mutation score or spec-citation coverage fails the layer's next readiness
+  run; moving the ratchet into pull-request CI is a later decision (ADR-0009).
 - A defect found in a higher layer that originates in a lower one reopens the lower layer's
   readiness: it is fixed in the lower layer with a regression test there, and the review is
   repeated for the affected crate (TEST-11).
 
 ## The bar
 
-The numbers below are proposed and must be confirmed in ADR-0009 (P0-24) before Phase 1
-starts. Exceptions are listed per crate in its README with a reason, never waived silently.
+The numbers below are confirmed in [ADR-0009](adr/0009-test-readiness-bar.md) and measured when
+a layer's readiness review runs (the on-demand `Readiness` workflow), not on every pull request. Exceptions are listed per crate in its README with a reason, never waived silently.
 
-| ID | Requirement | Proposed threshold | Measured by |
+| ID | Requirement | Threshold | Measured by |
 | --- | --- | --- | --- |
-| TEST-1 | Line and branch coverage per crate, excluding generated code | lines ≥ 90%, branches ≥ 80% | `make test-coverage` (cargo-llvm-cov) |
-| TEST-2 | Mutation score per crate | ≥ 90% of mutants caught; every survivor killed by a new test or recorded as equivalent with a reason | `make test-mutants` (cargo-mutants) |
+| TEST-1 | Line and branch coverage per crate, excluding generated code | lines ≥ 90%, branches ≥ 80% | `make test-coverage` (cargo-llvm-cov), readiness workflow |
+| TEST-2 | Mutation score per crate | ≥ 90% of mutants caught; every survivor killed by a new test or recorded as equivalent with a reason | `make test-mutants` (cargo-mutants), readiness workflow |
 | TEST-3 | Spec traceability: every normative statement in the crate's `docs/spec/` sections has a test citing it | 100%, no baseline backlog for new crates | spec-citation ratchet in `qs-tests` |
 | TEST-4 | Property tests for every encoder/decoder (round trip) and every stated invariant | one property per invariant listed in the crate README | proptest |
-| TEST-5 | Fuzzing of every parser or decoder that reads files or network input | 24 h without a crash or divergence; minimized findings committed as regression tests | `make test-fuzz`, nightly job |
+| TEST-5 | Fuzzing of every parser or decoder that reads files or network input | 24 h without a crash or divergence; minimized findings committed as regression tests | `make test-fuzz`, readiness workflow |
 | TEST-6 | Differential tests wherever an oracle exists (id VM, id qcc, pinned FTEQCC, id map tools, ericw-tools) | zero divergences; ≥ 90% of statements or code paths exercised | differential suites |
-| TEST-7 | No flaky tests | full suite passes 20 consecutive runs on each of macOS, Windows and Linux; no wall-clock waits | nightly flake job |
+| TEST-7 | No flaky tests | full suite passes 20 consecutive runs on each of macOS, Windows and Linux; no wall-clock waits | readiness workflow, 20 runs per OS |
 | TEST-8 | Performance where a budget applies | within budget on the reference machines; regression over 10% fails | `make bench` history |
 | TEST-9 | Independent adversarial review | a reviewer who did not write the code (person or separate agent session) spends a fixed time trying to break the layer and writes at least five new tests; any defect found blocks readiness until fixed and re-reviewed | readiness report |
-| TEST-10 | Ratchets | the readiness numbers become CI minimums for the crate | CI |
+| TEST-10 | Ratchets | the readiness numbers become per-crate minimums in `ratchets.toml` | `cargo xtask ratchet` in the readiness workflow; in pull-request CI later, by a new decision |
 | TEST-11 | Reopening | a lower-layer defect found from above reopens that layer's readiness | issue process |
 
 ## Layer notes
