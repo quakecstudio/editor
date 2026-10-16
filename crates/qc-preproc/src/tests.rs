@@ -195,11 +195,18 @@ fn redefinition() {
     let (pp, out) =
         one("#define A 1 + 2\n#define A 1   +   2\nA\n#define A 3\nA\n#define A(x) x\nA(4)");
     assert_eq!(tokens(&out), "1 + 2 3 4");
+    assert!(pp.is_defined("A"));
     assert_eq!(
         diagnostics(&pp, &out),
         "W0102 macro A redefined @a.qc:4\nW0102 macro A redefined @a.qc:6\n"
     );
     assert!(!out.diagnostics[0].code.is_error());
+    let (_, out) = one("#define A 1\n#define A 1 2");
+    assert_eq!(
+        codes(&out),
+        vec![Code::W0102],
+        "a longer body is a different body"
+    );
 }
 
 // spec QC-9.4: replacement is rescanned, but never for the macro being expanded
@@ -421,6 +428,22 @@ fn wrong_argument_count() {
     );
     let use_span = out.diagnostics[2].span;
     assert_eq!(span_text(&pp, use_span), "P(1,\n2,3)");
+}
+
+// spec QC-9.7: a use span runs to the `)` only when that `)` follows it in the same file
+#[test]
+fn use_span_ends_at_its_own_paren() {
+    let files = [
+        ("a.qc", "#define P(a) a\nP(1\n#include \"b.qc\"\n"),
+        ("b.qc", "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n)"),
+    ];
+    let (pp, outputs) = project(&ProjectSpec {
+        files: &files,
+        ..ProjectSpec::default()
+    });
+    assert_eq!(tokens(&outputs[0]), "1");
+    let expansion = &pp.expansions()[0];
+    assert_eq!(span_text(&pp, expansion.use_span), "P");
 }
 
 // spec QC-9.10, QCD-8.10: an argument list still open at the end of the file is an error

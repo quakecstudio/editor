@@ -471,11 +471,13 @@ impl<L: Loader> Preprocessor<L> {
             return;
         };
         let taking = cursor.taking();
-        if was_taking && !taking {
-            cursor.skip_start = Some(whole.end);
-        } else if !was_taking && taking {
-            let start = cursor.skip_start.take().unwrap_or(whole.start);
-            cursor.skipped.push(Span::new(start, whole.start));
+        match (was_taking, taking) {
+            (true, false) => cursor.skip_start = Some(whole.end),
+            (false, true) => {
+                let start = cursor.skip_start.take().unwrap_or(whole.start);
+                cursor.skipped.push(Span::new(start, whole.start));
+            }
+            (true, true) | (false, false) => {}
         }
     }
 
