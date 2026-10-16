@@ -408,7 +408,7 @@ issues:
   acceptance:
   - Every non-goal and post-MVP item in docs/design.md appears with a link
   verify:
-  - The issue adds an xtask check that every LATER issue key appears in docs/scope.md
+  - plan/check.py fails when a LATER issue is not linked from docs/scope.md (negative tests in plan/test_check.py); it runs in CI with the plan check (P0-05)
 - key: P0-19
   title: Create the risk register
   labels:
