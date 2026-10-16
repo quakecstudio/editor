@@ -4,6 +4,7 @@
 # may depend on anything, and nothing may depend on them.
 
 [crates]
+qc-trace = "L1"
 qc-types = "L0"
 qs-bench = "tests"
 qs-log = "L0"

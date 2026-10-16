@@ -1,0 +1,18 @@
+[package]
+name = "qc-trace"
+description = "The shared per-statement VM trace format, with its binary and JSON encoders and decoders"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
