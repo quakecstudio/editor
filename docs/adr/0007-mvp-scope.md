@@ -1,8 +1,8 @@
 # ADR-0007: Confirm the MVP In list and move ACP, next-edit and the updater after it
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, accepting the recommendation (option C)
 - **Issue:** [#21](https://github.com/quakecstudio/editor/issues/21)
 - **Requirements:** MVP-4, MVP-3
 
@@ -50,7 +50,7 @@ list.
 
 ## Decision
 
-Recommendation: **confirm the In list as written, and take option C.**
+Decided: **confirm the In list as written, and take option C.**
 
 | Item | MVP | Why |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ does not touch. They keep every item that the demo, mod export or a recorded ris
 
 ## Consequences
 
-If accepted as recommended (the plan changes are in this ADR's pull request):
+The plan changes are in this ADR's pull request:
 
 - `plan/backlog/p4.yaml` to the LATER milestone in `plan/backlog/p5-p7.yaml`: P4-11 (#122), P4-14
   (#125) and P4-19 (#130), keeping their keys, so `plan/apply.py` moves the existing issues instead
