@@ -126,8 +126,7 @@ pub(crate) fn parse(text: &str) -> Result<(ProjectTable, Vec<CheckedModule>), St
 
 /// Whether `path` has a root (`/x`) or, on Windows, a drive (`C:`) (PRJ-2.5).
 fn rooted(path: &Path) -> bool {
-    path.has_root()
-        || matches!(path.components().next(), Some(Component::Prefix(_)))
+    path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_)))
 }
 
 /// Whether `name` is a single directory name (PRJ-2.3).

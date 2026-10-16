@@ -253,11 +253,12 @@ The unit tests in `crates/qc-project` hold the small cases. The corpus was check
   2091 functions in the `progs.dat` it compiles from id 1.01 appear in the graph's order
   (`cargo xtask project-corpus --progs`, which CI runs). Swapping two lines of the
   `progs.src` makes the check fail.
-- **FTEQCC** built from `engine/qclib` at commit `f937b9d88f71fc4429db5fe56c6a98d922711b2e`
-  (`make qcc`, Apple clang, arm64 macOS). With default verbosity it prints `compiling` or
-  `including` for each list and `#includelist` entry, not for `#include`, so those entries
-  were compared. "Prefix" means this build stopped early, on a compile error or a crash of
-  the build, and every entry it printed was in the graph's order.
+- **FTEQCC**, the pinned build `cargo xtask oracles build` makes (P1-26), run locally on
+  arm64 macOS with `-srcfile` in each module's directory. With default verbosity it prints
+  `compiling` or `including` for each list and `#includelist` entry, not for `#include`, so
+  those entries were compared. "Prefix" means FTEQCC stopped early, on a compile error or a
+  crash (signal 11, cause not investigated), and every entry it printed was in the graph's
+  order.
 - **The C preprocessor** (`cc -xc -E -H`, Apple clang 21) for Xonotic, which builds with it
   (`qcsrc/Makefile`, `CPP := cc -xc -E`): its include trace is the whole graph, `#include`
   entries and all. `quakec.toml` gave the defines of `qcsrc/tools/qcc.sh`, with
