@@ -1,17 +1,41 @@
-# CI for every pull request, every merge-queue group and every push to main
-# (docs/conventions.md, CONV-7). Each job name below is a required status check
-# in the `main` ruleset (docs/ci.md), so every job runs on merge_group events
-# and keeps a static name: renaming a job means changing the ruleset too.
+# CI for every pull request and every merge-queue group (docs/conventions.md,
+# CONV-7). Each job name below is a required status check in the `main` ruleset
+# (docs/ci.md), so every job runs on merge_group events and keeps a static name:
+# renaming a job means changing the ruleset too.
+#
+# Caches are saved only by runs on main (github.ref == 'refs/heads/main'): a
+# cache saved in a pull request or merge group run is scoped to its ref and no
+# other pull request or queue run can restore it. The merge group has already
+# checked what lands on main, so a run on main is there to fill the caches: it
+# runs the pull request's jobs except Format and cargo-deny, which save none,
+# and only when a file that decides a cache key changes (the push paths below
+# mirror every key's hashFiles and Swatinem/rust-cache's inputs), weekly in
+# case a cache was evicted, and on demand.
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
     types: [checks_requested]
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - "**/Cargo.toml"
+      - .cargo/config.toml
+      - rust-toolchain.toml
+      - oracles/**
+      - xtask/src/oracles.rs
+      - xtask/src/oracles/**
+      - corpus/manifest.toml
+      - .github/workflows/ci.yml
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
 
+# A newer push to a pull request supersedes its older run; a run on main is
+# never cancelled once it starts, so it finishes saving its caches.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -27,6 +51,8 @@ env:
 jobs:
   fmt:
     name: Format
+    # Saves no cache, so a run on main skips it.
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,7 +111,8 @@ jobs:
       # with the system C compiler, then the VM oracle checked against the VM vectors. The
       # fetched sources and binaries are cached; a stamp of every input decides whether the
       # cached binaries are rebuilt.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: oracles-cache
         with:
           path: |
             target/oracles/src
@@ -93,6 +120,13 @@ jobs:
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Build and check the oracles
         run: cargo xtask oracles
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && steps.oracles-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: ${{ steps.oracles-cache.outputs.cache-primary-key }}
 
   build:
     name: Build (${{ matrix.name }})
@@ -203,6 +237,8 @@ jobs:
 
   deny:
     name: cargo-deny
+    # Saves no cache, so a run on main skips it.
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -216,8 +252,8 @@ jobs:
 
   dependency-review:
     name: Dependency Review
-    # The action compares a pull request's base and head; on merge_group and
-    # push events the job is skipped, which a required check accepts.
+    # The action compares a pull request's base and head; on merge_group events
+    # and runs on main the job is skipped, which a required check accepts.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -249,6 +285,11 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # The deletion check below runs only in the merge group on Linux, where it takes
+      # minutes unoptimized: there the job's one xtask build is optimized. Debug
+      # assertions and overflow checks stay on, as in every other run.
+      CARGO_PROFILE_DEV_OPT_LEVEL: ${{ github.event_name == 'merge_group' && matrix.name == 'linux' && '3' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -261,8 +302,10 @@ jobs:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
       # The archives are pinned by the manifest, so its SHA-256 (hashFiles) is
-      # the cache key: a manifest change downloads afresh.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # the cache key: a manifest change downloads afresh. Saved at the end of
+      # the job, after every fetch, on main only.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: downloads-cache
         with:
           path: ${{ runner.temp }}/test-assets/downloads
           key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
@@ -288,8 +331,9 @@ jobs:
       - name: Lex and preprocess id 1.01
         if: runner.os == 'Linux'
         run: cargo xtask lex-corpus "$QS_TEST_ASSETS/codebase/id-1.01"
-      # P1-11: id's qcc compiles id 1.01 and the VM oracle traces the result.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # P1-11: id's qcc compiles id 1.01 and the VM oracle traces the result. Unit Tests
+      # (linux) saves the oracles under the same key, so this job only restores them.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.os == 'Linux'
         with:
           path: |
@@ -302,14 +346,20 @@ jobs:
       - name: Write the rerelease and two FTEQCC mods to the asset cache
         if: runner.os == 'Linux'
         run: cargo xtask corpus fetch rerelease copper arcane-dimensions
-      # P1-21: id 1.01 parses with no errors and every single-token deletion leaves a local
-      # error; every file of each codebase, FTEQCC ones included, round-trips through the tree.
+      # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
+      # included, round-trips through the tree.
       - name: Parse the corpus
         if: runner.os == 'Linux'
         run: |
-          cargo xtask parse-corpus --vanilla --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
+          cargo xtask parse-corpus --vanilla "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P1-21: every single-token deletion in id 1.01 leaves a local error. It reparses
+      # each file once per token, the one step that takes minutes, so it runs in the
+      # merge group only, which every change passes before it reaches main.
+      - name: Check that deleting any token of id 1.01 leaves a local error
+        if: runner.os == 'Linux' && github.event_name == 'merge_group'
+        run: cargo xtask parse-corpus --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
       # target/oracles/rerelease, cached on everything that decides their bytes.
@@ -318,14 +368,20 @@ jobs:
         run: |
           cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
             rerelease-ctf rerelease-mg3
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.os == 'Linux'
+        id: rerelease-cache
         with:
           path: target/oracles/rerelease
           key: oracle-artifacts-rerelease-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**', 'corpus/manifest.toml') }}
       - name: Compile the rerelease with FTEQCC
         if: runner.os == 'Linux'
         run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.rerelease-cache.outputs.cache-hit != 'true'
+        with:
+          path: target/oracles/rerelease
+          key: ${{ steps.rerelease-cache.outputs.cache-primary-key }}
       # P1-14: every progs.dat an oracle compiler builds from the corpus (id 1.01 with id's qcc,
       # the rerelease with FTEQCC) is kept in the cache and round-trips through qc-progs.
       - name: Build the corpus progs and round-trip them through qc-progs
@@ -373,3 +429,8 @@ jobs:
       - name: Decode the LibreQuake lite asset
         if: runner.os == 'Linux'
         run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: ${{ steps.downloads-cache.outputs.cache-primary-key }}

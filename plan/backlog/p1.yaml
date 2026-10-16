@@ -898,6 +898,46 @@ issues:
   - land.sh passes shellcheck and shfmt -i 2 -d, keeps its timeout argument and exit codes (0 merged, 1 otherwise with the reason printed), and lands the PR that delivers this issue
   verify:
   - shellcheck and shfmt output and the land.sh run recorded in the PR
+- key: P1-49
+  title: Run CI once per pull request and once per merge group
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-7
+  - QA-1
+  deliverable:
+  - '.github/workflows/ci.yml and .github/workflows/secure_workflows.yml: no full run on every push to main, so a change runs the suite on its pull request and in its merge group only; caches are saved only from runs on main, because a cache saved in a merge group run (ref gh-readonly-queue/main/...) is scoped to that temporary branch and no pull request or later queue run can restore it; ci.yml runs on a push to main only when a file that decides a cache key changes, plus weekly and on demand, and such a run only builds what fills the caches (Justin, 2026-10-16)'
+  - '.github/workflows/ci.yml, Test Assets (linux): the single-token deletion check of id 1.01 (cargo xtask parse-corpus --deletions), the one step that takes minutes, runs only in the merge group, and the corpus parses run from an optimized xtask build; every other step and job still runs on the pull request'
+  - 'docs/ci.md: when each check runs, where each step moved off the pull request still runs, and how the caches are saved'
+  acceptance:
+  - No check that guards main is dropped; each step skipped on the pull request runs in the merge group, and the required check names are unchanged
+  - Before and after job timings of a pull request run and a merge group run, from real runs, recorded in the PR
+  - actionlint and zizmor report nothing on the workflows
+  verify:
+  - The PR's own pull request and merge group runs, with timings in the PR body
+- key: P1-50
+  title: Stop the cargo xtask ci job repeating other required CI jobs
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-7
+  - QA-1
+  depends:
+  - P1-49
+  deliverable:
+  - 'xtask/src/ci.rs and .github/workflows/ci.yml: the cargo xtask ci job in CI skips the steps that another required job runs with the same command (cargo fmt --all --check in Format, cargo clippy in Clippy, cargo test in Unit Tests (linux), cargo-deny in cargo-deny), so each runs once per CI run, while make ci still runs every step locally; found while doing P1-49'
+  - 'docs/ci.md: which job runs each step of cargo xtask ci'
+  acceptance:
+  - A test shows the skip option leaves out exactly the named steps and rejects an unknown one; make ci still runs all steps
+  - Every step of cargo xtask ci still runs in some required job of each CI run
+  verify:
+  - cargo test -p xtask; the PR's CI run
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -958,6 +998,8 @@ issues:
   - P1-46
   - P1-47
   - P1-48
+  - P1-49
+  - P1-50
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
