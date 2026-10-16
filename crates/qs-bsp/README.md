@@ -51,4 +51,7 @@ with `CalcSurfaceExtents` computing each texture coordinate with WinQuake's own 
 instructions at 53 bits and comparing as WinQuake does (BSP-9.11, BSP-9.12; the run is under
 "Evidence for BSP-9.11 and BSP-9.12" in `docs/spec/bsp.md`), and `qs-bsp` printed the same
 for all 23 maps; single-precision arithmetic would give 247 of their faces another
-`texturemins` or extent. The harness is not committed, as id's C never is.
+`texturemins` or extent. `texturemins` and extents are kept in 16 bits, as id's `short` fields
+hold them (BSP-9.14); the vectors `extents-65552`, `extents-32784` and `texturemins-32768`
+pin that against the arm64 and x86-64 builds. The harness is not committed, as id's C never
+is.

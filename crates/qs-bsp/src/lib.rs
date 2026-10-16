@@ -479,10 +479,10 @@ pub struct Face {
     pub styles: [u8; BSP_MAXLIGHTMAPS],
     /// Its first light sample, or -1 (BSP-9.6).
     pub lightofs: i32,
-    /// `texturemins` (BSP-9.3, BSP-9.5).
-    pub texturemins: [i32; 2],
-    /// `extents` (BSP-9.3, BSP-9.5).
-    pub extents: [i32; 2],
+    /// `texturemins`, kept in 16 bits as id's `short` field (BSP-9.5, BSP-9.10, BSP-9.14).
+    pub texturemins: [i16; 2],
+    /// `extents`, kept in 16 bits as id's `short` field (BSP-9.5, BSP-9.10, BSP-9.14).
+    pub extents: [i16; 2],
     /// `SURF_` flags (BSP-9.1, BSP-9.5).
     pub flags: u32,
     /// Lightmap width and height in samples, from the extents before BSP-9.5 (BSP-9.7).
@@ -705,10 +705,10 @@ fn x87_replaces(lower: f32, upper: f32) -> bool {
 }
 
 /// A `double` converted to `int` as the original x86 build does it: in range it truncates,
-/// otherwise it gives the integer indefinite value, `i32::MIN` (BSP-9.9).
+/// otherwise it gives the integer indefinite value, `i32::MIN` (BSP-9.13).
 #[expect(
     clippy::cast_possible_truncation,
-    reason = "spec BSP-9.9: in range the value is already whole, so nothing is lost"
+    reason = "spec BSP-9.13: in range the value is already whole, so nothing is lost"
 )]
 fn x86_double_to_int(value: f64) -> i32 {
     let value = value.trunc();
@@ -717,6 +717,13 @@ fn x86_double_to_int(value: f64) -> i32 {
     } else {
         i32::MIN
     }
+}
+
+/// The low 16 bits of `value` as a signed value, as C's conversion to `short` keeps them on
+/// id's x86 builds (BSP-9.14).
+fn low_16(value: i32) -> i16 {
+    let [low, high, ..] = value.to_le_bytes();
+    i16::from_le_bytes([low, high])
 }
 
 /// The lumps of a header and the file they index.
@@ -1080,7 +1087,7 @@ impl<'a> Bsp<'a> {
     }
 
     /// id's `CalcSurfaceExtents` as WinQuake's and GLQuake's x86 builds run it (BSP-9.4,
-    /// BSP-9.7, BSP-9.10 to BSP-9.12).
+    /// BSP-9.7, BSP-9.10 to BSP-9.14).
     fn calc_surface_extents(&self, face: &mut Face, element: usize) -> Result<(), BspError> {
         let mut mins = [999_999.0_f32; 2];
         let mut maxs = [-99_999.0_f32; 2];
@@ -1113,21 +1120,21 @@ impl<'a> Bsp<'a> {
             let max = maxs.get(axis).copied().unwrap_or_default();
             let bmin = x86_double_to_int(f64::from(min / 16.0).floor());
             let bmax = x86_double_to_int(f64::from(max / 16.0).ceil());
-            let texturemins = bmin.wrapping_mul(16);
-            let extents = bmax.wrapping_sub(bmin).wrapping_mul(16);
+            let texturemins = low_16(bmin.wrapping_mul(16));
+            let extents = low_16(bmax.wrapping_sub(bmin).wrapping_mul(16));
             if let Some(slot) = face.texturemins.get_mut(axis) {
                 *slot = texturemins;
             }
             if let Some(slot) = face.extents.get_mut(axis) {
                 *slot = extents;
             }
-            if texinfo.flags & BSP_TEX_SPECIAL == 0 && extents > BSP_MAX_SURFACE_EXTENT {
+            if texinfo.flags & BSP_TEX_SPECIAL == 0 && i32::from(extents) > BSP_MAX_SURFACE_EXTENT {
                 return Err(BspError::BadSurfaceExtents);
             }
         }
-        face.lightmap_size = face
-            .extents
-            .map(|extent| usize::try_from(extent.wrapping_shr(4).wrapping_add(1)).unwrap_or(0));
+        face.lightmap_size = face.extents.map(|extent| {
+            usize::try_from(i32::from(extent).wrapping_shr(4).wrapping_add(1)).unwrap_or(0)
+        });
         Ok(())
     }
 
