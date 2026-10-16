@@ -112,6 +112,8 @@ similar_names = "allow"
 [workspace.dependencies]
 criterion = { version = "=0.8.2", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
+qc-lexer = { path = "crates/qc-lexer" }
+qc-preproc = { path = "crates/qc-preproc" }
 qc-types = { path = "crates/qc-types" }
 qs-log = { path = "crates/qs-log" }
 qs-paths = { path = "crates/qs-paths" }

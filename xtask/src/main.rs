@@ -25,6 +25,8 @@
 //!   minimums in `ratchets.toml`, and checks how `ratchets.toml` has changed.
 //! - `fuzz`: runs the cargo-fuzz targets in `fuzz/` on nightly for a fixed time
 //!   each; `make test-fuzz` and the nightly `Fuzz` workflow call it.
+//! - `lex-corpus`: lexes every `.qc` file of a codebase directory and
+//!   preprocesses the files its `progs.src` lists, failing on any error.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -44,6 +46,7 @@ mod conventions;
 mod fixtures;
 mod fuzz;
 mod layers;
+mod lex_corpus;
 mod licenses;
 mod ported;
 mod ratchet;
@@ -55,7 +58,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
-                     readiness | ratchet | fuzz>";
+                     readiness | ratchet | fuzz | lex-corpus>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -67,6 +70,7 @@ fn main() -> ExitCode {
         let command: Option<Command> = match name.as_str() {
             "bench" => Some(bench::main),
             "fuzz" => Some(fuzz::main),
+            "lex-corpus" => Some(lex_corpus::main),
             "readiness" => Some(readiness::main),
             "ratchet" => Some(ratchet::main),
             _ => None,

@@ -352,6 +352,22 @@ dialect features (P2-01, P2-03).
   (LANG-1).
 - **QC-9.8** Macros and conditional state run on across the files of one `progs.src`, in
   compilation order (QC-23.3); frame macros do not (QC-8.3).
+- **QC-9.9** A directive name other than `include`, `define`, `undef`, `ifdef`, `ifndef`,
+  `else` and `endif` is an error outside a skipped block, and so is a directive whose operand
+  is missing or malformed: `#include` without a string literal, `#define`, `#undef`,
+  `#ifdef` or `#ifndef` without a name, or a parameter list that is not names separated by
+  `,` and closed by `)`. The directive line is then dropped. Tokens after the operand of
+  `#include`, `#undef`, `#ifdef`, `#ifndef`, `#else` and `#endif` are ignored.
+- **QC-9.10** A function-like macro name not followed by `(` is an ordinary name and is not
+  replaced. A use whose argument count differs from the parameter count, or whose argument
+  list is not closed by `)` before the end of the file, is an error; the use is left
+  unreplaced. Arguments are split at commas outside parentheses, and `F()` passes no
+  arguments.
+- **QC-9.11** An `#include` of a file that cannot be read, or of a file that is already being
+  included (directly or through other includes), is an error, and the directive is dropped.
+- **QC-9.12** A conditional block is closed in the file that opens it, whether that file is
+  listed in `progs.src` or included. At the end of each file, every block it opened that is
+  still open is reported (QC-9.6) and closed, so the next file starts outside it.
 
 ## QC-10 Types
 
@@ -1139,6 +1155,9 @@ differential suite lists each of these as an expected divergence.
   (QC-20.6).
 - **QC-27.13** `progdefs.h` generation skips component definitions only for vectors that
   have them (QC-25.7).
+- **QC-27.14** A `,` or `;` on a `$cd`, `$origin`, `$base`, `$flags`, `$scale` or `$skin`
+  line makes id's `qcc` loop forever, as on a `$frame` line (QC-8.9). This compiler ignores
+  the whole rest of such a line, `,` and `;` included (QC-8.4).
 
 ## Coverage of id 1.01
 

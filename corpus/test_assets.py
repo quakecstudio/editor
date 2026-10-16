@@ -355,6 +355,23 @@ class Sources(TempDir):
         self.assertEqual(urls, [f"https://github.com/o/r/archive/{COMMIT}.tar.gz"])
         self.assertEqual(sorted(files), ["qc/defs.qc", "qc/world.qc"])
 
+    def test_cmd_codebase_writes_the_tree(self):
+        out = self.dest / "cb"
+        with contextlib.redirect_stdout(io.StringIO()):
+            errs = assets.cmd_codebase(manifest(), "rr", out, lambda u: TARBALL)
+        self.assertEqual(errs, [])
+        written = sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
+        self.assertEqual(written, ["defs.qc", "progs.src", "world.qc"])
+        self.assertEqual((out / "defs.qc").read_bytes(), DEFS)
+
+    def test_cmd_codebase_errors(self):
+        errs = assets.cmd_codebase(manifest(), "nosuch", self.dest, lambda u: TARBALL)
+        self.assertEqual(errs, ["codebase nosuch: no usable codebase nosuch"])
+        evil = make_tarball({"qc/defs.qc": DEFS, "qc/../../evil.qc": b"x"})
+        errs = assets.cmd_codebase(manifest(), "rr", self.dest / "cb", lambda u: evil)
+        self.assertEqual(len(errs), 1)
+        self.assertIn("is outside", errs[0])
+
     def test_pinned_checksum_mismatch(self):
         with self.assertRaisesRegex(assets.AssetError, "s:qc/defs.qc: sha256"):
             assets.codebase_sources(manifest("1" * 64), "rr", lambda u: TARBALL)
