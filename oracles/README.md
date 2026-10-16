@@ -47,6 +47,7 @@ The builtins that are ours rather than id's, and why: `ftos`, `vtos` and the joi
 `bprint` and the others (BUILTIN-7.5, BUILTIN-7.6, where id's buffers overflow or C libraries
 differ); `error` and `objerror` (the error record carries the joined text, DIFF-8.2); `break`
 (BUILTIN-16.3); `lightstyle`'s range check (BUILTIN-12.6), before id's `PF_lightstyle`;
+`WriteString` and `WriteEntity`, which read the destination first (BUILTIN-2.10);
 `traceline`'s collision, `checkclient`, `aim`, `droptofloor`, `walkmove` and `movetogoal`
 (DIFF-7); and `dprint`, `eprint`, `coredump`, `traceon` and `traceoff`, which only print.
 `ED_ParseEpair` is ours for EDICT-8.3.
@@ -87,11 +88,13 @@ vm-oracle [--console] vector <progs.dat> <init> <trace>
 
 `scenario` runs a scenario file of DIFF-2 and writes its trace. `vector` runs one program of
 [`docs/spec/vectors/vm/`](../docs/spec/vectors/vm/README.md) in the vectors' environment (three
-edicts, the stub builtins), with initial values from an init file that xtask writes:
+edicts in use out of `LIMIT_MAX_EDICTS`, the stub builtins), with initial values from an init
+file that xtask writes:
 
 ```text
 edicts 3
 loading                       # optional: the server is loading
+builtins engine               # optional: the scenario table of id's builtins, not the stubs
 entry 1
 global <slot> bits <hex> | entity <n> | pointer <n> <field>
 field <edict> <field> bits <hex> | entity <n> | pointer <n> <field>
@@ -131,19 +134,30 @@ write the error record (TRACE-4.6 to TRACE-4.8, DIFF-8.1, DIFF-8.2) and return t
 which shuts the server down as DIFF-8.3 says. `PR_RunError` is id's; its message is the last
 console line it prints before calling `Host_Error ("Program error")`.
 
-### Readings the specs leave open
+### Argument checks
 
-The oracle had to choose an answer in these places; P1-31 (`plan/backlog/p1.yaml`)
-pins them in the specs so that `qc-builtins` makes the same choice:
+id's builtins read entity, string and field values without checking them. The specs fix what a
+bad one does, and the oracle makes the same checks as `qc-builtins`, with the messages of
+DIFF-6.6:
 
-- An entity value names an edict when it is a whole, non-negative number of edicts below
-  `LIMIT_MAX_EDICTS` (EDICT-1.5); any other is BUILTIN-2.3's `invalid entity`.
-- A string value is valid when it is inside the string table or is exactly the value of an
-  engine string; any other is BUILTIN-2.5's `invalid string`.
-- Those checks, and BUILTIN-8.3's `invalid field`, happen where id's code reads the argument
-  (`G_EDICT`, `PROG_TO_EDICT`, `G_STRING`, `E_STRING`), so a builtin's earlier writes stand.
-- `find` checks each edict's field value as a string argument.
-- `vtos` prints a NaN or an infinity component as `ftos` does (BUILTIN-7.6).
+- An entity value must name an edict (EDICT-1.9): a whole, non-negative number of edicts below
+  `LIMIT_MAX_EDICTS`, in use or not; any other is `invalid entity` (BUILTIN-2.7).
+- A string value must be inside the string table or exactly the value of an engine string
+  (BUILTIN-2.8); any other is `invalid string` (BUILTIN-2.5). A field index outside the
+  progs's fields is `invalid field` (BUILTIN-8.3).
+- Each check is made where id's code reads the value (BUILTIN-2.9): `quakedef.h` replaces
+  `G_EDICT`, `PROG_TO_EDICT`, `G_STRING` and `E_STRING` (and so `G_EDICTNUM`) with checked forms
+  in every file but `pr_exec.c`, and in the file of id's `pr_cmds.c` functions, which the build
+  marks with `QS_EXTRACTED_PR_CMDS`, it checks the `model` text `PF_makestatic` passes to
+  `SV_ModelIndex`. A builtin's earlier writes stand, and `find` checks the field of each edict
+  it examines and no other (BUILTIN-8.8).
+- `WriteString` and `WriteEntity` are ours: id's pass `WriteDest()` and the value as arguments
+  of one call, whose order C leaves to the compiler, and BUILTIN-2.10 reads the destination
+  first.
+- `vtos` prints a NaN or an infinity component as `ftos` does (BUILTIN-7.7).
+
+The vectors in [`builtins.txt`](../docs/spec/vectors/vm/builtins.txt) run id's builtins
+(`builtins: engine`) and pin each of these; `cargo xtask oracles` runs them with the others.
 
 ## FTEQCC and the rerelease
 

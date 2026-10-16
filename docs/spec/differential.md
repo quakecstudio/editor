@@ -53,8 +53,9 @@ nearest `f32`, as C's assignment of a `double` to a `float` rounds it.
   say the mock does what an id function does, the oracle may compile that function from the
   pinned commit (for example `ED_Alloc`, `ED_Free`, `ED_LoadFromFile`, `SV_RunThink` or a
   class pure `PF_` function), and QuakeC Studio uses its own port. Where those specs fix an
-  answer that id's C leaves undefined or platform-dependent (BUILTIN-2.3, BUILTIN-2.5,
-  BUILTIN-7.5, BUILTIN-7.6, BUILTIN-8.3, BUILTIN-12.6, BUILTIN-16.3, EDICT-8.3), both mocks
+  answer that id's C leaves undefined or platform-dependent (BUILTIN-2.5, BUILTIN-2.7,
+  BUILTIN-2.10, BUILTIN-7.5, BUILTIN-7.6, BUILTIN-7.7, BUILTIN-8.3, BUILTIN-12.6,
+  BUILTIN-16.3, EDICT-8.3), both mocks
   implement the fixed answer, so for that case the oracle does not run id's code. The float to
   integer conversion of BUILTIN-2.2 is the exception: its fixed answer is what id's code gives
   on x86, so the oracle may use C's conversion. `pr_exec.c` is never changed, so the VM's own
@@ -321,7 +322,7 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
   and never drops the client. No output, console text included, is compared.
 - **DIFF-6.6** The errors that builtins.md fixes where id's C is undefined are runtime errors
   (VM-19.4) with these messages in the mock, so both mocks write the same error record:
-  `invalid entity` (BUILTIN-2.3), `invalid string` (BUILTIN-2.5), `invalid field`
+  `invalid entity` (BUILTIN-2.7), `invalid string` (BUILTIN-2.5), `invalid field`
   (BUILTIN-8.3) and `invalid lightstyle` (BUILTIN-12.6).
 - **DIFF-6.7** No mock builtin starts a nested run: `walkmove` and `movetogoal` touch nothing
   (DIFF-7.7, DIFF-7.8). `traceon` and `traceoff` change only the trace flag (BUILTIN-16.4),
@@ -344,7 +345,8 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
 The class world builtins (BUILTIN-4.4) answer as if the map were empty space with a floor
 just under every entity: no trace hits anything, every point is visible from every other,
 and every step succeeds. Each reads its entity arguments, and `self` where id's reads it,
-with BUILTIN-2.3's check, except that `checkclient` does not read `self` (DIFF-7.3).
+with BUILTIN-2.7's check (BUILTIN-2.9), except that `checkclient` does not read `self`
+(DIFF-7.3).
 
 ### Behaviour
 

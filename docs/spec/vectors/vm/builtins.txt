@@ -1,0 +1,462 @@
+# The argument checks of id's builtins: edicts.md EDICT-1.9, builtins.md BUILTIN-2.4,
+# BUILTIN-2.5, BUILTIN-2.7 to BUILTIN-2.10, BUILTIN-7.7, BUILTIN-8.3 and BUILTIN-8.8.
+# Every vector runs id's builtins (`builtins: engine`), not the stubs. Format: README.md.
+#
+# Builtin numbers (BUILTIN-5): setorigin 2, setmodel 3, remove 15, find 18, vtos 27, cvar 45,
+# nextent 47, ChangeYaw 49, WriteByte 52, WriteString 58, WriteEntity 59, precache_file 68,
+# makestatic 69, changelevel 70. PARM0 is slot 4, PARM1 slot 7, PARM2 slot 10; `self` is
+# global 28 and `msg_entity` global 81; `model` is field 29, `nextthink` field 46.
+
+== entity_unused_edict
+spec: EDICT-1.9, BUILTIN-2.7
+builtins: engine
+globals: 100=e10 101=1 102=2 103=3 104=i10 120=i2
+functions:
+  2: builtin=2
+code:
+  STORE_ENT 100 4
+  STORE_V 101 7
+  CALL2 120             # setorigin(e10, '1 2 3'): edict 10 is past num_edicts but in the array
+  LOAD_V 100 104 110    # its origin
+  DONE
+expect:
+  1 STORE_ENT 4=e10
+  2 STORE_V 7=1 8=2 9=3
+  3 CALL2
+  4 LOAD_V 110=1 111=2 112=3
+  5 DONE
+  done
+
+== entity_past_the_array
+spec: EDICT-1.9, BUILTIN-2.7
+builtins: engine
+globals: 100=e600 120=i2
+functions:
+  2: builtin=2
+code:
+  STORE_ENT 100 4
+  CALL2 120             # setorigin(edict 600)
+  DONE
+expect:
+  1 STORE_ENT 4=e600
+  2 CALL2
+  error "invalid entity"
+
+== entity_not_a_multiple
+spec: EDICT-1.9, BUILTIN-2.7
+builtins: engine
+globals: 100=i4 120=i2
+functions:
+  2: builtin=2
+code:
+  STORE_ENT 100 4
+  CALL2 120             # setorigin(4): 4 bytes into the world
+  DONE
+expect:
+  1 STORE_ENT 4=i4
+  2 CALL2
+  error "invalid entity"
+
+== entity_negative
+spec: EDICT-1.9, BUILTIN-2.7
+builtins: engine
+globals: 100=i-1 120=i2
+functions:
+  2: builtin=2
+code:
+  STORE_ENT 100 4
+  CALL2 120
+  DONE
+expect:
+  1 STORE_ENT 4=i-1
+  2 CALL2
+  error "invalid entity"
+
+== entity_from_self
+spec: BUILTIN-2.7
+builtins: engine
+globals: 28=e600 120=i2
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw reads self with PROG_TO_EDICT
+  DONE
+expect:
+  1 CALL0
+  error "invalid entity"
+
+== entity_from_msg_entity
+spec: BUILTIN-2.7
+builtins: engine
+globals: 81=i4 100=1 120=i2
+functions:
+  2: builtin=52
+code:
+  STORE_F 100 4
+  CALL2 120             # WriteByte(MSG_ONE, 0) reads msg_entity with PROG_TO_EDICT
+  DONE
+expect:
+  1 STORE_F 4=1
+  2 CALL2
+  error "invalid entity"
+
+== entity_checked_before_num_for_edict
+spec: BUILTIN-2.9, BUILTIN-2.4
+builtins: engine
+globals: 100=i4 120=i2
+functions:
+  2: builtin=47
+code:
+  STORE_ENT 100 4
+  CALL1 120             # nextent(4): G_EDICTNUM's entity check comes first
+  DONE
+expect:
+  1 STORE_ENT 4=i4
+  2 CALL1
+  error "invalid entity"
+
+== entity_past_num_edicts_in_num_for_edict
+spec: BUILTIN-2.9, BUILTIN-2.4
+builtins: engine
+globals: 100=e10 120=i2
+functions:
+  2: builtin=47
+code:
+  STORE_ENT 100 4
+  CALL1 120             # nextent(e10): names an edict, but not one in use
+  DONE
+expect:
+  1 STORE_ENT 4=e10
+  2 CALL1
+  error "NUM_FOR_EDICT: bad pointer"
+
+== string_table_offsets
+spec: BUILTIN-2.8
+builtins: engine
+# Offsets 0 "", 1 "ab", 2 "b", 3 the NUL: numstrings is 4.
+strings: "ab"
+globals: 100=i3 120=i2
+functions:
+  2: builtin=45
+code:
+  CALL1 120             # cvar(""): offset 0
+  STORE_S 100 4
+  CALL1 120             # cvar at 3, the last byte of the table
+  DONE
+expect:
+  1 CALL1
+  2 STORE_S 4=i3
+  3 CALL1
+  4 DONE
+  done
+
+== string_past_the_table
+spec: BUILTIN-2.8, BUILTIN-2.5
+builtins: engine
+strings: "ab"
+globals: 100=i4 120=i2
+functions:
+  2: builtin=45
+code:
+  STORE_S 100 4
+  CALL1 120             # cvar(4): numstrings is 4
+  DONE
+expect:
+  1 STORE_S 4=i4
+  2 CALL1
+  error "invalid string"
+
+== string_negative
+spec: BUILTIN-2.8, BUILTIN-2.5
+builtins: engine
+globals: 100=i-1 120=i2
+functions:
+  2: builtin=45
+code:
+  STORE_S 100 4
+  CALL1 120
+  DONE
+expect:
+  1 STORE_S 4=i-1
+  2 CALL1
+  error "invalid string"
+
+== string_engine_made
+spec: BUILTIN-2.8
+builtins: engine
+globals: 100=1.5 120=i2 121=i3
+functions:
+  2: builtin=27
+  3: builtin=45
+code:
+  STORE_V 100 4
+  CALL1 120             # vtos: an engine-made string
+  STORE_S 1 4
+  CALL1 121             # cvar of it
+  DONE
+expect:
+  1 STORE_V 4=1.5
+  2 CALL1 1=es
+  3 STORE_S 4=es
+  4 CALL1 1=0
+  5 DONE
+  done
+
+== string_not_read
+spec: BUILTIN-2.9
+builtins: engine
+globals: 100=i9999 120=i2
+functions:
+  2: builtin=68
+code:
+  STORE_S 100 4
+  CALL1 120             # precache_file copies PARM0 to RETURN and never reads its text
+  DONE
+expect:
+  1 STORE_S 4=i9999
+  2 CALL1 1=i9999
+  3 DONE 1=0
+  done
+
+== check_after_earlier_write
+spec: BUILTIN-2.9
+builtins: engine
+globals: 100=e1 120=i2
+fields: e1.29=i9999
+functions:
+  2: builtin=69
+code:
+  STORE_ENT 100 4
+  CALL1 120             # makestatic(e1): svc_spawnstatic is written, then model is read
+  DONE
+expect:
+  1 STORE_ENT 4=e1
+  2 CALL1
+  error "invalid string"
+
+== changelevel_reads_once
+spec: BUILTIN-2.9
+builtins: engine
+strings: "ab"
+globals: 100=i1 101=i9999 120=i2
+functions:
+  2: builtin=70
+code:
+  STORE_S 100 4
+  CALL1 120             # changelevel("ab")
+  STORE_S 101 4
+  CALL1 120             # already issued: the bad string is never read
+  DONE
+expect:
+  1 STORE_S 4=i1
+  2 CALL1
+  3 STORE_S 4=i9999
+  4 CALL1
+  5 DONE
+  done
+
+== first_read_decides
+spec: BUILTIN-2.9
+builtins: engine
+globals: 100=i4 101=i9999 120=i2
+functions:
+  2: builtin=3
+code:
+  STORE_ENT 100 4
+  STORE_S 101 7
+  CALL2 120             # setmodel(4, 9999): e is read before m
+  DONE
+expect:
+  1 STORE_ENT 4=i4
+  2 STORE_S 7=i9999
+  3 CALL2
+  error "invalid entity"
+
+== write_string_destination_first
+spec: BUILTIN-2.10
+builtins: engine
+globals: 100=5 101=i9999 120=i2
+functions:
+  2: builtin=58
+code:
+  STORE_F 100 4
+  STORE_S 101 7
+  CALL2 120             # WriteString(5, 9999)
+  DONE
+expect:
+  1 STORE_F 4=5
+  2 STORE_S 7=i9999
+  3 CALL2
+  error "WriteDest: bad destination"
+
+== write_string_bad_value
+spec: BUILTIN-2.10, BUILTIN-2.5
+builtins: engine
+globals: 101=i9999 120=i2
+functions:
+  2: builtin=58
+code:
+  STORE_S 101 7
+  CALL2 120             # WriteString(MSG_BROADCAST, 9999)
+  DONE
+expect:
+  1 STORE_S 7=i9999
+  2 CALL2
+  error "invalid string"
+
+== write_entity_destination_first
+spec: BUILTIN-2.10
+builtins: engine
+globals: 100=5 101=i4 120=i2
+functions:
+  2: builtin=59
+code:
+  STORE_F 100 4
+  STORE_ENT 101 7
+  CALL2 120             # WriteEntity(5, 4)
+  DONE
+expect:
+  1 STORE_F 4=5
+  2 STORE_ENT 7=i4
+  3 CALL2
+  error "WriteDest: bad destination"
+
+== write_entity_bad_value
+spec: BUILTIN-2.10, BUILTIN-2.9
+builtins: engine
+globals: 101=e10 120=i2
+functions:
+  2: builtin=59
+code:
+  STORE_ENT 101 7
+  CALL2 120             # WriteEntity(MSG_BROADCAST, e10)
+  DONE
+expect:
+  1 STORE_ENT 7=e10
+  2 CALL2
+  error "NUM_FOR_EDICT: bad pointer"
+
+== find_bad_value_before_a_match
+spec: BUILTIN-8.8, BUILTIN-2.8
+builtins: engine
+strings: "ab"
+globals: 100=i105 101=i1 120=i2
+fields: e1.105=i9999 e2.105=i1
+functions:
+  2: builtin=18
+code:
+  STORE_F 100 7
+  STORE_S 101 10
+  CALL3 120             # find(world, 105, "ab"): e1's value is read first
+  DONE
+expect:
+  1 STORE_F 7=i105
+  2 STORE_S 10=i1
+  3 CALL3
+  error "invalid string"
+
+== find_match_before_a_bad_value
+spec: BUILTIN-8.8
+builtins: engine
+strings: "ab"
+globals: 100=i105 101=i1 120=i2
+fields: e1.105=i1 e2.105=i9999
+functions:
+  2: builtin=18
+code:
+  STORE_F 100 7
+  STORE_S 101 10
+  CALL3 120             # find(world, 105, "ab") returns e1 and never reads e2's value
+  DONE
+expect:
+  1 STORE_F 7=i105
+  2 STORE_S 10=i1
+  3 CALL3 1=e1
+  4 DONE 1=0
+  done
+
+== find_bad_field
+spec: BUILTIN-8.8, BUILTIN-8.3
+builtins: engine
+strings: "ab"
+globals: 100=i9999 101=i1 120=i2
+functions:
+  2: builtin=18
+code:
+  STORE_F 100 7
+  STORE_S 101 10
+  CALL3 120             # find(world, 9999, "ab")
+  DONE
+expect:
+  1 STORE_F 7=i9999
+  2 STORE_S 10=i1
+  3 CALL3
+  error "invalid field"
+
+== find_examines_no_edict
+spec: BUILTIN-8.8
+builtins: engine
+strings: "ab"
+globals: 100=i9999 101=i1 102=e1 103=e2 120=i2 121=i3
+functions:
+  2: builtin=18
+  3: builtin=15
+code:
+  STORE_ENT 103 4
+  STORE_F 100 7
+  STORE_S 101 10
+  CALL3 120             # find(e2, 9999, "ab"): e2 is the last edict in use
+  STORE_ENT 103 4
+  CALL1 121             # remove(e2)
+  STORE_ENT 102 4
+  CALL3 120             # find(e1, 9999, "ab"): every edict after e1 is free
+  DONE
+expect:
+  1 STORE_ENT 4=e2
+  2 STORE_F 7=i9999
+  3 STORE_S 10=i1
+  4 CALL3
+  5 STORE_ENT
+  6 CALL1 e2.46=-1
+  7 STORE_ENT 4=e1
+  8 CALL3
+  9 DONE
+  done
+
+== vtos_nan_and_infinity
+spec: BUILTIN-7.7
+builtins: engine
+strings: "'  nan   inf  -inf'"
+globals: 100=nan 101=inf 102=-inf 103=i1 120=i2
+functions:
+  2: builtin=27
+code:
+  STORE_V 100 4
+  CALL1 120
+  EQ_S 1 103 110        # the text is the expected one
+  DONE
+expect:
+  1 STORE_V 4=nan 5=inf 6=-inf
+  2 CALL1 1=es
+  3 EQ_S 110=1
+  4 DONE 1=0
+  done
+
+== vtos_negative_nan
+spec: BUILTIN-7.7
+builtins: engine
+strings: "'  nan   1.5  -2.0'"
+globals: 100=0xffc00000 101=1.5 102=-2 103=i1 120=i2
+functions:
+  2: builtin=27
+code:
+  STORE_V 100 4
+  CALL1 120             # a NaN with its sign bit set is `  nan` too
+  EQ_S 1 103 110
+  DONE
+expect:
+  1 STORE_V 4=nan 5=1.5 6=-2
+  2 CALL1 1=es
+  3 EQ_S 110=1
+  4 DONE 1=0
+  done

@@ -318,13 +318,20 @@ void PF_setspawnparms(void);
 
 // Every translation unit except pr_exec.c is built with QS_ENGINE. In them a call into QuakeC
 // goes through the oracle's run wrapper, which writes the trace's run and exit records, and
-// the argument accessors check entity and string values as builtins.md BUILTIN-2.3 and
-// BUILTIN-2.5 fix (and field indexes, BUILTIN-8.3), at the point id's code reads them.
+// the argument accessors check entity and string values as builtins.md BUILTIN-2.7, BUILTIN-2.5
+// and BUILTIN-2.8 fix (and field indexes, BUILTIN-8.3), at the point id's code reads them
+// (BUILTIN-2.9). PF_makestatic reads its entity's model as `pr_strings + ent->v.model`, with
+// no accessor; in the file of id's pr_cmds.c functions that text is checked as it is passed
+// to SV_ModelIndex, which is where id's code reads it.
 #ifdef QS_ENGINE
 void qs_run(func_t fnum);
 edict_t *qs_edict(int value);
 char *qs_string(int value);
 char *qs_field_string(edict_t *ed, int field);
+char *qs_checked_text(char *text);
+#ifdef QS_EXTRACTED_PR_CMDS
+#define SV_ModelIndex(name) SV_ModelIndex(qs_checked_text(name))
+#endif
 #define PR_ExecuteProgram qs_run
 #undef G_EDICT
 #define G_EDICT(o) qs_edict(G_INT(o))
