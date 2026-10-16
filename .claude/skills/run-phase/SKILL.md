@@ -2,7 +2,7 @@
 name: run-phase
 description: Drive a whole QuakeC Studio phase to completion, gate included, by delegating every unblocked issue to the right subagent (implementer or reviewer) until plan/status.py reports the phase complete or waiting on people. Use with /goal for unattended runs.
 argument-hint: "[phase, e.g. P1] [track: agents (default), build or review]"
-allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh issue edit *)
+allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh issue edit *) Bash(wt remove -y *)
 ---
 
 # Run a phase
@@ -23,7 +23,7 @@ You are the orchestrator. You do not implement issues yourself; you keep the que
    - `[review]` (readiness reviews and the phase gate) -> `reviewer`
    Give the subagent the issue number and the instruction to use its skills. Never hand a reviewer the implementer's notes; it works from the evidence.
 3. Issues with no dependency between them can run in parallel, at most three at a time. Do not run two implementers on issues that change the same crate at once.
-4. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, add the `escalated` label, comment on the issue with what is needed, mention @jplock and move on (`status.py` then counts it as waiting on people). If the gate reviewer reports stragglers that can be finished in this phase, work them before retrying the gate.
+4. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). Once both are confirmed, remove the agent's worktree with `wt remove -y <path>` (the path the Agent tool reported, under `.claude/worktrees/`): each finished worktree keeps its own `target/`, and about 60 of them once used 64 GB. Skip a worktree with uncommitted changes (`git -C <path> status --porcelain` prints anything) or whose agent is still running; worktrees Claude Code has locked clear when the session ends. If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, add the `escalated` label, comment on the issue with what is needed, mention @jplock and move on (`status.py` then counts it as waiting on people). If the gate reviewer reports stragglers that can be finished in this phase, work them before retrying the gate.
 5. Run the status again and repeat.
 
 ## Preparing people's work

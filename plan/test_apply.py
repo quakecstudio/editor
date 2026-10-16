@@ -22,6 +22,11 @@ class FakeGitHub:
     def __init__(self):
         self.labels, self.milestones, self.issues = {}, {}, {}
         self.fields, self.views, self.items = {}, {}, {}
+        # GitHub's built-in Status field: people and start.sh set it, the plan never does.
+        self.fields["Status"] = {"id": "F_status", "name": "Status", "dataType": "SINGLE_SELECT",
+                                 "options": [{"id": "O_todo", "name": "Todo"},
+                                             {"id": "O_in_progress", "name": "In Progress"},
+                                             {"id": "O_done", "name": "Done"}]}
         self.writes = []
         self.ids = 0
 
@@ -116,8 +121,7 @@ class FakeGitHub:
         nodes.append({"id": "PVTI_draft", "content": {}, "fieldValues": {"nodes": []}})
         return {
             "id": "PVT_1",
-            "fields": {"nodes": [{"id": "F_status", "name": "Status", "dataType": "SINGLE_SELECT",
-                                  "options": []}, {}, *self.fields.values()]},
+            "fields": {"nodes": [{}, *self.fields.values()]},
             "views": {"nodes": [{"id": x["id"], "name": x["name"], "layout": x["layout"], "filter": x["filter"],
                                  "fields": {"nodes": [{"id": i} for i in x["visible"]]}}
                                 for x in self.views.values()]},
@@ -180,6 +184,16 @@ class Apply(unittest.TestCase):
         self.fake.writes.clear()
         run(self.fake)
         self.assertEqual(sorted(w[0] for w in self.fake.writes), ["SetValue", "SetValue", "UpdateView"])
+
+    def test_status_set_on_the_board_is_left_alone(self):
+        run(self.fake)
+        item = next(iter(self.fake.items.values()))
+        item["values"]["Status"] = "O_in_progress"
+        del item["values"]["Size"]
+        self.fake.writes.clear()
+        run(self.fake)
+        self.assertEqual([w[0] for w in self.fake.writes], ["SetValue"])
+        self.assertEqual(item["values"]["Status"], "O_in_progress")
 
     def test_changed_options_keep_their_ids(self):
         run(self.fake)

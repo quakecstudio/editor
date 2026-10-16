@@ -2,7 +2,7 @@
 name: readiness-review
 description: Run an independent readiness review of one layer's test suite against the bar in docs/testing.md and write docs/readiness/<phase>-<layer>.md. Use for type:readiness issues; the reviewer must not have written the layer's code.
 argument-hint: "[issue-number]"
-allowed-tools: Bash(gh issue view *) Bash(gh pr *) Bash(gh run *)
+allowed-tools: Bash(.claude/skills/work-issue/scripts/start.sh *) Bash(gh issue view *) Bash(gh pr *) Bash(gh run *)
 ---
 
 # Readiness review
@@ -11,7 +11,7 @@ Issue: #$ARGUMENTS
 
 You are the independent reviewer (TEST-9). You did not write this layer's code, and you are here to break it.
 
-1. `gh issue view $ARGUMENTS`. Note the phase, the layer and the issues it depends on (all must be closed). Read `docs/testing.md` in full: the bar, the layer notes and the report template.
+1. `gh issue view $ARGUMENTS`. Note the phase, the layer and the issues it depends on (all must be closed). Read `docs/testing.md` in full: the bar, the layer notes and the report template. Mark the issue In Progress on the project board: `.claude/skills/work-issue/scripts/start.sh $ARGUMENTS`.
 2. List the layer's crates and the `docs/spec/` sections they implement.
 3. Collect the evidence for every TEST requirement from CI, not from memory: coverage, mutation score, spec citations, property tests, fuzzing (24 hours), differential results, the 20-run flake job on each OS, performance against budget. Link each CI run. A number that has not been measured is a failure, not a pass.
 4. Spend real effort trying to break the layer: edge cases from the spec, malformed inputs, limits, error paths. Write at least five new tests; keep every one that is meaningful.

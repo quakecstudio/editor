@@ -2,7 +2,7 @@
 name: work-issue
 description: Take one QuakeC Studio GitHub issue from open to merged - read it, check its dependencies, implement it on a branch to its acceptance criteria and the definition of done, open a PR, wait for CI and add it to the merge queue. Use for any single plan issue.
 argument-hint: "[issue-number]"
-allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/land.sh *) Bash(python3 plan/*) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh issue comment *) Bash(gh pr *)
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/start.sh *) Bash(${CLAUDE_SKILL_DIR}/scripts/land.sh *) Bash(python3 plan/*) Bash(gh issue view *) Bash(gh issue edit *) Bash(gh issue comment *) Bash(gh pr *)
 ---
 
 # Work one issue
@@ -24,7 +24,7 @@ Issue: #$ARGUMENTS
 
 ## 2. Build it
 
-1. `git switch main && git pull --ff-only`, then `git switch -c <type>/<issue-number>-<short-slug>`, for example `feat/45-qc-types`.
+1. `git switch main && git pull --ff-only`, then `git switch -c <type>/<issue-number>-<short-slug>`, for example `feat/45-qc-types`. Mark the issue In Progress on the project board: `${CLAUDE_SKILL_DIR}/scripts/start.sh $ARGUMENTS` (quiet on success; closing the issue moves it to Done).
 2. Do exactly what the deliverable says, at the paths it names. Follow `docs/conventions.md`: no panics, `unwrap` or `expect` in shipped crates; a crate depends only on lower layers; every source file starts with the `GPL-3.0-or-later` SPDX line.
    - Porting from id's source is encouraged (the project is GPL-3.0-or-later, ADR-0002). Keep id's copyright line in the file header, cite the file and function you ported, write the behaviour up in `docs/spec/`, and prove it with a differential test against the oracle. Follow `docs/porting.md` once #9 lands.
 3. Meet every acceptance criterion with a test or a recorded result. Tests that pin a spec rule cite the spec section.
