@@ -22,6 +22,12 @@ the run described under "Evidence for BSP-9.11 and BSP-9.12" in [`../../bsp.md`]
 each row also gives the result the other evaluations give. The other vectors' texture
 coordinates are exact in single precision, so every evaluation gives them the same result.
 
+`extents-65552`, `extents-32784` and `texturemins-32768` (2026-10-16) were loaded by the
+harness above with `WinQuake/model.c` unchanged, built for arm64 with Apple clang and for
+x86-64 with gcc 14.4 in an emulated `linux/amd64` container; both builds gave the results
+below, which are those of `WINQUAKE.EXE`'s 16-bit code (the evidence for BSP-9.14 in
+[`../../bsp.md`](../../bsp.md)).
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
@@ -94,3 +100,6 @@ result it records.
 | `x87-order` | Vertexes (1, 0, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1); s axis (2048, 2^-42, -(1024 - 2^-14)) offset 0 | Loads; `texturemins` 1024 0, extents 16 16 (single precision, or C's order of the additions at 53 bits, gives extents 0 16) | BSP-9.11 |
 | `x87-pc64` | Vertexes as `x87-order`; s axis (0, 2^-14, 2^-50) offset 1024 | Loads; `texturemins` 1024 0, extents 0 16 (additions at 64 bits give extents 16 16) | BSP-9.11 |
 | `nan-vertex` | Vertex 0 (NaN, 0, 0), the float bits `7fc00000` | Loads; `texturemins` 0 0, extents 0 0 (C's comparisons give `texturemins` 64 0, extents 0 64) | BSP-9.12 |
+| `extents-65552` | s axis (1024.25, 0, 0) offset 0 | Loads; extents 16 64: the extent 65552 keeps its low 16 bits | BSP-9.4, BSP-9.14 |
+| `extents-32784` | s axis (512.25, 0, 0) offset 0 | Loads; extents -32752 64: the extent 32784 keeps its low 16 bits, a negative value that passes the check | BSP-9.4, BSP-9.14 |
+| `texturemins-32768` | s axis (1, 0, 0) offset 32768 | Loads; `texturemins` -32768 0 | BSP-9.14 |

@@ -781,18 +781,90 @@ fn face_fields() {
     assert_eq!(BSP_MAXLIGHTMAPS, 4);
 }
 
-// spec BSP-9.9: extents out of the int range take x86's integer indefinite value.
+// spec BSP-9.13, BSP-9.14: a minimum out of the int range takes x86's integer indefinite
+// value; the maximum stays -99999, so the extent is (-6249 - 2^31) * 16, whose low 16 bits are
+// 31088, and only TEX_SPECIAL lets the face load.
 #[test]
 fn huge_extents() {
     let mut spec = BspSpec::default();
-    spec.texinfo[0].flags = 1;
     spec.texinfo[0].vecs[0][3] = -1.0e30;
     spec.faces[0].lightofs = -1;
+    assert_eq!(error(&spec), "Bad surface extents");
+    spec.texinfo[0].flags = 1;
     let face = read(&spec).unwrap().faces[0];
-    assert_eq!(face.texturemins[0], i32::MIN.wrapping_mul(16));
+    assert_eq!((face.texturemins, face.extents), ([0, 0], [31088, 64]));
     assert_eq!(x86_double_to_int(f64::NAN), i32::MIN);
     assert_eq!(x86_double_to_int(-3.7), -3);
     assert_eq!(x86_double_to_int(2_147_483_648.0), i32::MIN);
+    assert_eq!(x86_double_to_int(-2_147_483_648.0), i32::MIN);
+    assert_eq!(x86_double_to_int(2_147_483_647.9), i32::MAX);
+}
+
+/// The base with texinfo 0's s axis `s`, which spans the square's 64 units.
+fn s_axis(s: [f32; 4]) -> BspSpec {
+    let mut spec = BspSpec::default();
+    spec.texinfo[0].vecs[0] = s;
+    spec
+}
+
+// spec BSP-9.4, BSP-9.7, BSP-9.14: an extent of 65536 + 16 keeps its low 16 bits, 16, so
+// the face passes the check and has a lightmap 2 samples wide (vector `extents-65552`).
+#[test]
+fn extents_65552() {
+    let face = read(&s_axis([1024.25, 0.0, 0.0, 0.0])).unwrap().faces[0];
+    assert_eq!((face.texturemins, face.extents), ([0, 0], [16, 64]));
+    assert_eq!(face.lightmap_size, [2, 5]);
+    // One step less, 65536, is 0.
+    let face = read(&s_axis([1024.0, 0.0, 0.0, 0.0])).unwrap().faces[0];
+    assert_eq!(face.extents, [0, 64]);
+    // 65536 + 272 is 272, which fails as 272 does.
+    assert_eq!(
+        error(&s_axis([1028.25, 0.0, 0.0, 0.0])),
+        "Bad surface extents"
+    );
+}
+
+// spec BSP-9.14: a texturemins of 32768 is stored as -32768 (vector `texturemins-32768`);
+// 32752 is kept.
+#[test]
+fn texturemins_32768() {
+    let face = read(&s_axis([1.0, 0.0, 0.0, 32768.0])).unwrap().faces[0];
+    assert_eq!((face.texturemins, face.extents), ([-32768, 0], [64, 64]));
+    let face = read(&s_axis([1.0, 0.0, 0.0, 32752.0])).unwrap().faces[0];
+    assert_eq!(face.texturemins, [32752, 0]);
+    let face = read(&s_axis([1.0, 0.0, 0.0, -32784.0])).unwrap().faces[0];
+    assert_eq!(face.texturemins, [32752, 0]);
+}
+
+// spec BSP-9.4, BSP-9.14: an extent of 32784 is stored as -32752, which the signed check
+// passes, so the face loads (vector `extents-32784`); 32752 is kept and fails.
+#[test]
+fn extents_32784() {
+    let face = read(&s_axis([512.25, 0.0, 0.0, 0.0])).unwrap().faces[0];
+    assert_eq!(face.extents, [-32752, 64]);
+    assert_eq!(
+        error(&s_axis([511.75, 0.0, 0.0, 0.0])),
+        "Bad surface extents"
+    );
+}
+
+// spec BSP-9.14: the stored value is the low 16 bits read as two's complement.
+#[test]
+fn low_16_bits() {
+    for (value, low) in [
+        (0, 0),
+        (32767, 32767),
+        (32768, -32768),
+        (65535, -1),
+        (65536, 0),
+        (65552, 16),
+        (-1, -1),
+        (-32769, 32767),
+        (i32::MIN, 0),
+        (i32::MAX, -1),
+    ] {
+        assert_eq!(low_16(value), low, "{value}");
+    }
 }
 
 /// The base with vertex 0 at (1, 0, 1), the others at (1, 1, 1), and texinfo 0's s axis

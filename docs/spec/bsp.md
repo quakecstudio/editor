@@ -366,8 +366,9 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
 
 ## BSP-9 Faces
 
-**Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.c`,
-`Mod_LoadFaces`, `CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`
+**Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.h` and
+`WinQuake/gl_model.h`, `msurface_t`; `WinQuake/model.c`, `Mod_LoadFaces`,
+`CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -404,12 +405,12 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   another from `lightofs`.
 - **BSP-9.8** `planenum`, `numedges` and `texinfo` are signed 16-bit and `firstedge` signed
   32-bit; a negative value, or one that names no element, fails to load (BSP-1.8).
-- **BSP-9.9** `CalcSurfaceExtents` stores `floor(min / 16)` and `ceil(max / 16)` in `int`
-  variables, which is undefined in C when the value is NaN or outside the `int` range. This
-  spec takes the answer of the original x86 build, whose conversion gives the integer
-  indefinite value 0x80000000 (-2147483648) there; the products and the difference that
-  follow wrap as x86 integers do. Such a face fails BSP-9.4 unless its texinfo has
-  `TEX_SPECIAL`.
+- **BSP-9.9** **Withdrawn** 2026-10-16: it said the products and the difference that follow
+  the conversion wrap as 32-bit x86 integers and that such a face fails BSP-9.4 unless its
+  texinfo has `TEX_SPECIAL`, but id's loader stores `texturemins` and `extents` in 16-bit
+  fields and checks the stored value, so an extent of 65536 + 16 loads, and a face whose
+  bounds both convert to the indefinite value has extent 0 and loads; replaced by BSP-9.13
+  and BSP-9.14.
 - **BSP-9.10** The face's texture extents are computed from its vertices' texture
   coordinates (BSP-8.1, BSP-9.11). For each axis the running minimum starts at 999999 and the
   maximum at -99999, and each vertex's coordinate in turn may replace them (BSP-9.12); then
@@ -429,7 +430,22 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   to it, and the running maximum unless the maximum is greater than or equal to it, as
   WinQuake's and GLQuake's x86 code compares: a NaN coordinate replaces both, and the next
   coordinate replaces a NaN minimum or maximum. A bound that is still NaN after the last
-  vertex gives the integer indefinite value of BSP-9.9.
+  vertex gives the integer indefinite value of BSP-9.13.
+- **BSP-9.13** `CalcSurfaceExtents` stores `floor(min / 16)` and `ceil(max / 16)` in `int`
+  variables, which is undefined in C when the value is NaN or outside the `int` range. This
+  spec takes the answer of the original x86 build, whose conversion gives the integer
+  indefinite value 0x80000000 (-2147483648) there; BSP-9.14 then keeps the low 16 bits of
+  what BSP-9.10 computes from it.
+- **BSP-9.14** `texturemins` and `extents` are `short` fields of `msurface_t`
+  (`WinQuake/model.h` and `WinQuake/gl_model.h`: `short texturemins[2];` and
+  `short extents[2];`), so `CalcSurfaceExtents` stores the low 16 bits of each value
+  BSP-9.10 computes, read as a signed two's-complement value: a value from -32768 to 32767
+  is kept, an extent of 65552 is stored as 16 and one of 32784 as -32752, and a
+  `texturemins` of 32768 as -32768. The check of BSP-9.4 and the lightmap size of BSP-9.7
+  use the stored value, so a stored extent of 256 or less, negative ones included, passes
+  BSP-9.4. The conversion to `short` is implementation-defined in C; this spec takes the
+  answer of id's x86 builds, which compute, store and compare the 16-bit value (see the
+  evidence below).
 
 ### Evidence for BSP-9.11 and BSP-9.12
 
@@ -511,6 +527,53 @@ another value and 247 faces of ten maps another `texturemins` or extent. `crates
 printed every face as the WinQuake sequence at 53 bits with its comparisons did, on all 23
 maps and the three vectors `x87-order`, `x87-pc64` and `nan-vertex`.
 
+### Evidence for BSP-9.14
+
+`CalcSurfaceExtents` ends:
+
+```c
+		s->texturemins[i] = bmins[i] * 16;
+		s->extents[i] = (bmaxs[i] - bmins[i]) * 16;
+		if ( !(tex->flags & TEX_SPECIAL) && s->extents[i] > 256)
+			Sys_Error ("Bad surface extents");
+```
+
+`WINQUAKE.EXE` (the executable in the table above) does this in 16-bit registers, from
+`0x417bc9`, after the calls to `floor` and `ceil` and the conversions to `int`, with `%esi`
+pointing at `extents[i]`:
+
+```
+movw   0x30(%esp,%edi), %cx  ; low 16 bits of bmins[i]
+movl   0x14(%esp), %ebx      ; tex
+movl   %eax, 0x18(%esp,%edi) ; bmaxs[i], from ceil
+movw   %cx, %ax
+movl   0x28(%ebx), %edx      ; tex->flags
+shlw   $0x4, %ax             ; * 16
+movw   %ax, -0x4(%esi)       ; texturemins[i]
+movl   0x18(%esp,%edi), %eax
+subw   %cx, %ax              ; bmaxs[i] - bmins[i], 16 bits
+shlw   $0x4, %ax             ; * 16
+testb  $0x1, %dl             ; TEX_SPECIAL
+movw   %ax, (%esi)           ; extents[i]
+jne    ...
+cmpw   $0x100, %ax           ; the 16-bit extent against 256
+jle    ...                   ; signed: not greater, no error
+```
+
+`GLQUAKE.EXE` has the same sequence from `0x42c419`, comparing with `cmpw $0x200`: GLQuake's
+`WinQuake/gl_model.c` checks `s->extents[i] > 512 /* 256 */`. The low 16 bits of a product or
+difference do not depend on the bits above them, so computing in 32 bits and keeping the low
+16 bits, as BSP-9.10 and BSP-9.14 state it, gives the same values.
+
+**Checked:** on 2026-10-16 the vectors `extents-65552`, `extents-32784` and
+`texturemins-32768` were loaded by id's `Mod_LoadBrushModel`, in `WinQuake/model.c` copied
+unchanged from the pinned commit and built for arm64 with Apple clang and for x86-64 with gcc
+14.4 (in an emulated `linux/amd64` container), in the harness the vectors' README describes;
+both builds gave the results the README records. The same x86-64 build, given the base with
+the s axis offset -1e30 and `lightofs` -1, failed with `Bad surface extents`, and with
+texinfo flags 1 loaded with `texturemins` 0 0 and extents 31088 64 (BSP-9.13: the minimum's
+indefinite value, and a maximum still -99999).
+
 ### Constants
 
 | Name | Value | Source |
@@ -525,7 +588,7 @@ maps and the three vectors `x87-order`, `x87-pc64` and `nan-vertex`.
 See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-256`,
 `extents-272`, `extents-272-special` (BSP-9.4, BSP-9.10), `sky` and `turb` (BSP-9.5),
 `nolight-back` (BSP-9.1, BSP-9.6), `x87-order` and `x87-pc64` (BSP-9.11), `nan-vertex`
-(BSP-9.12).
+(BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14).
 
 ## BSP-10 Lighting
 
