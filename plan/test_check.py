@@ -182,7 +182,7 @@ class RiskRule(unittest.TestCase):
         self.assertIn("R-8: risk not in the design doc's risk table: Tiny audience", errors)
 
     def test_mitigation_drift(self):
-        risks = self.risks.replace("Pin versions; keep UI", "Pin versions; keep the UI")
+        risks = self.risks.replace("`muda` menus; P2-17", "`muda` menus only; P2-17")
         self.assertEqual(self.risk_errors(risks), ["R-7: impact or mitigation differs from the design doc"])
 
     def test_owner_must_be_area(self):

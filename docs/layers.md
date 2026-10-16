@@ -9,7 +9,7 @@ learn about the editor above them and each layer can be tested, and pass its rea
 ```mermaid
 flowchart TB
   apps["Apps: desktop app, quakec-ide CLI, LSP server, MCP server, preview host"]
-  ui["L7 UI (gpui, swappable): editor, map views, panels, diff review, debugger and entity views"]
+  ui["L7 UI (egui, swappable): editor, map views, panels, diff review, debugger and entity views"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, MCP tools"]
   cmd["L5 Command engine: session, undo, one registry for UI, CLI, agent and MCP"]
   eb["L4 Engine bridge: the preview host's bridge client, simulation and sound"]
