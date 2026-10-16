@@ -778,6 +778,85 @@ fn gl_extents() {
     assert_eq!(gl(&spec).unwrap_err(), BspError::BadSurfaceExtents);
 }
 
+/// The base with leaf 1's contents `contents`, and leaf 0 listing face 0 too when
+/// `solid_lists`.
+fn leaf_contents(contents: i32, solid_lists: bool) -> BspSpec {
+    let mut spec = BspSpec::default();
+    spec.leafs[1].contents = contents;
+    if solid_lists {
+        spec.leafs[0].nummarksurfaces = 1;
+    }
+    spec
+}
+
+/// Face 0's flags as WinQuake's and GLQuake's loaders give them.
+fn flags_by_loader(spec: &BspSpec) -> (u32, u32) {
+    let bytes: &'static [u8] = Vec::leak(spec.build());
+    let flags = |loader| Bsp::read(bytes, loader).unwrap().faces[0].flags;
+    (flags(BspLoader::WinQuake), flags(BspLoader::GlQuake))
+}
+
+// spec BSP-12.6: GLQuake's loader gives every face a leaf that is not empty lists
+// SURF_UNDERWATER (0x80), WinQuake's never does: `water-leaf`, `water-leaf-turb`,
+// `solid-leaf-face` and `contents-unknown`, against `base`, whose only face is in an empty leaf.
+#[test]
+fn gl_underwater() {
+    assert_eq!(SURF_UNDERWATER, 0x80);
+    assert_eq!(flags_by_loader(&BspSpec::default()), (0, 0));
+    assert_eq!(
+        flags_by_loader(&leaf_contents(BSP_CONTENTS_WATER, false)),
+        (0, SURF_UNDERWATER)
+    );
+    let mut turb = leaf_contents(BSP_CONTENTS_WATER, false);
+    turb.textures = Some(vec![texture(b"*water")]);
+    turb.texinfo[0].flags = 1;
+    assert_eq!(flags_by_loader(&turb), (0x30, 0xB0));
+    // Listed by the solid leaf 0 and the empty leaf 1: the empty leaf does not clear it.
+    assert_eq!(
+        flags_by_loader(&leaf_contents(BSP_CONTENTS_EMPTY, true)),
+        (0, SURF_UNDERWATER)
+    );
+    // Every value but -1, not only the CONTENTS_ values (`contents-unknown` is -7).
+    for contents in [
+        -2,
+        BSP_CONTENTS_SLIME,
+        BSP_CONTENTS_LAVA,
+        BSP_CONTENTS_SKY,
+        -7,
+        i32::MIN,
+    ] {
+        assert_eq!(
+            flags_by_loader(&leaf_contents(contents, false)),
+            (0, SURF_UNDERWATER),
+            "contents {contents}"
+        );
+    }
+    // A face that no leaf lists keeps its flags, and so does one only an empty leaf lists.
+    let mut spec = leaf_contents(BSP_CONTENTS_WATER, false);
+    spec.leafs[1].nummarksurfaces = 0;
+    assert_eq!(flags_by_loader(&spec), (0, 0));
+    let mut spec = leaf_contents(BSP_CONTENTS_WATER, false);
+    spec.faces.push(spec.faces[0].clone());
+    spec.marksurfaces = vec![1, 0];
+    spec.leafs[0] = leaf(BSP_CONTENTS_EMPTY, -1, 1, 1);
+    spec.leafs[1].nummarksurfaces = 1;
+    let bytes: &'static [u8] = Vec::leak(spec.build());
+    let gl = Bsp::read(bytes, BspLoader::GlQuake).unwrap();
+    assert_eq!((gl.faces[0].flags, gl.faces[1].flags), (0, SURF_UNDERWATER));
+}
+
+// spec BSP-12.6: GLQuake's flag applies to BSP2's leaves as to BSP29's.
+#[test]
+fn gl_underwater_bsp2() {
+    for version in [BspVersion::Bsp2Psb, BspVersion::Bsp2] {
+        let spec = BspSpec {
+            version,
+            ..leaf_contents(BSP_CONTENTS_WATER, false)
+        };
+        assert_eq!(flags_by_loader(&spec), (0, SURF_UNDERWATER), "{version:?}");
+    }
+}
+
 // spec BSP-9.1, BSP-9.6, BSP-10.1: a face on its plane's back with no light samples.
 #[test]
 fn nolight_back() {

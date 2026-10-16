@@ -12,7 +12,8 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   `hull_for_size` is the hull choice of `SV_HullForEntity`. Ported from `WinQuake/model.c`
   and `world.c` at the commit pinned in [`docs/porting.md`](../../docs/porting.md). The caller
   names a `BspLoader`: `WinQuake` fails a face extent over 256 as `model.c` does, `GlQuake`
-  one over 512 as `gl_model.c` does (BSP-9.15). BSP2 follows QuakeSpasm's loader, cited for
+  one over 512 as `gl_model.c` does (BSP-9.15) and also gives every face a leaf that is not
+  empty lists `SURF_UNDERWATER` (BSP-12.6). BSP2 follows QuakeSpasm's loader, cited for
   description only.
 - **`lit`**: `Lit::read` checks a `.lit` file as QuakeSpasm does and gives each lighting
   byte's colour; `grey` is the colour without one.
@@ -59,5 +60,6 @@ pin that against the arm64 and x86-64 builds, and `extents-512` and its neighbou
 GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.15). A
 face with a negative stored extent has no lightmap (BSP-9.16): the vectors for it were run
 through id's own renderer code, WinQuake's surface cache and GLQuake's lightmap builder,
-neither of which draws light from such a face. The harness is not committed, as id's C never
+neither of which draws light from such a face. The vectors `water-leaf` and its neighbours pin
+GLQuake's `SURF_UNDERWATER` against both loaders built the same two ways (BSP-12.6). The harness is not committed, as id's C never
 is.

@@ -3,7 +3,7 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/model.c, Mod_LoadBrushModel, Mod_LoadVertexes, Mod_LoadEdges, Mod_LoadSurfedges, Mod_LoadTextures, Mod_LoadLighting, Mod_LoadPlanes, Mod_LoadTexinfo, CalcSurfaceExtents, Mod_LoadFaces, Mod_LoadMarksurfaces, Mod_LoadVisibility, Mod_LoadLeafs, Mod_LoadNodes, Mod_LoadClipnodes, Mod_LoadEntities, Mod_LoadSubmodels, Mod_MakeHull0, RadiusFromBounds, Mod_DecompressVis, Mod_LeafPVS
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents, Mod_LoadLeafs
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
 //! Reads compiled maps: BSP29 as id's engine loads it, the two BSP2 variants, and `.lit`
@@ -11,7 +11,7 @@
 //!
 //! [`Bsp::read`] is id's `Mod_LoadBrushModel` and the loaders it calls, in the same order,
 //! with the bounds and index checks id's engine leaves out, and with WinQuake's or GLQuake's
-//! limit on face extents as its caller's [`BspLoader`] says. It rejects malformed input with
+//! limit on face extents and face flags as its caller's [`BspLoader`] says. It rejects malformed input with
 //! a [`BspError`], never a panic. Textures, lighting, visibility and the entity text borrow
 //! the file's bytes. BSP2 follows QuakeSpasm's loader, cited for description only; nothing
 //! is ported from it. [`lit`] reads `.lit` files and [`ent`] names `.ent` files, and
@@ -216,6 +216,9 @@ pub const SURF_DRAWSKY: u32 = 4;
 pub const SURF_DRAWTURB: u32 = 0x10;
 /// Face flag `SURF_DRAWTILED` (BSP-9.5).
 pub const SURF_DRAWTILED: u32 = 0x20;
+/// Face flag `SURF_UNDERWATER`, GLQuake's only: a leaf that is not empty lists the face
+/// (BSP-12.6).
+pub const SURF_UNDERWATER: u32 = 0x80;
 
 /// Which format a file is (BSP-1.2, BSP-17.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,12 +231,14 @@ pub enum BspVersion {
     Bsp2,
 }
 
-/// Whose loader [`Bsp::read`] follows where id's two differ (BSP-9.15).
+/// Whose loader [`Bsp::read`] follows where id's two differ (BSP-9.15, BSP-12.6).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BspLoader {
-    /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4).
+    /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4), and no face has
+    /// [`SURF_UNDERWATER`].
     WinQuake,
-    /// GLQuake's `WinQuake/gl_model.c`: an extent over 512 fails (BSP-9.15).
+    /// GLQuake's `WinQuake/gl_model.c`: an extent over 512 fails (BSP-9.15), and a face a
+    /// leaf that is not empty lists has [`SURF_UNDERWATER`] (BSP-12.6).
     GlQuake,
 }
 
@@ -509,7 +514,7 @@ pub struct Face {
     pub texturemins: [i16; 2],
     /// `extents`, kept in 16 bits as id's `short` field (BSP-9.5, BSP-9.10, BSP-9.14).
     pub extents: [i16; 2],
-    /// `SURF_` flags (BSP-9.1, BSP-9.5).
+    /// `SURF_` flags (BSP-9.1, BSP-9.5, BSP-12.6).
     pub flags: u32,
     /// Lightmap width and height in samples, from the extents before BSP-9.5 (BSP-9.7);
     /// 0 by 0 when either stored extent is negative (BSP-9.16).
@@ -794,7 +799,8 @@ impl<'a> Bsp<'a> {
     ///
     /// Implements BSP-1 to BSP-17: checks the version, then loads the lumps in id's order
     /// (BSP-1.5), each with id's checks and the bounds and index checks the spec adds.
-    /// `loader` picks WinQuake's or GLQuake's limit on face extents (BSP-9.4, BSP-9.15).
+    /// `loader` picks WinQuake's or GLQuake's limit on face extents (BSP-9.4, BSP-9.15) and
+    /// whether faces in leaves that are not empty get [`SURF_UNDERWATER`] (BSP-12.6).
     ///
     /// # Errors
     ///
@@ -857,7 +863,7 @@ impl<'a> Bsp<'a> {
         bsp.mod_load_faces(&reader, loader)?;
         bsp.mod_load_marksurfaces(&reader)?;
         bsp.visibility = reader.lump(BSP_LUMP_VISIBILITY);
-        bsp.mod_load_leafs(&reader)?;
+        bsp.mod_load_leafs(&reader, loader)?;
         bsp.mod_load_nodes(&reader)?;
         bsp.mod_load_clipnodes(&reader)?;
         bsp.entity_lump = reader.lump(BSP_LUMP_ENTITIES);
@@ -1231,8 +1237,9 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadLeafs` (BSP-12, BSP-17.4).
-    fn mod_load_leafs(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadLeafs` (BSP-12, BSP-17.4), and GLQuake's flag on the faces of a leaf
+    /// that is not empty (BSP-12.6).
+    fn mod_load_leafs(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
             BspVersion::Bsp29 => BSP_LEAF_SIZE,
             BspVersion::Bsp2Psb => BSP_2PSB_LEAF_SIZE,
@@ -1277,8 +1284,21 @@ impl<'a> Bsp<'a> {
                     element,
                 )?;
             }
+            let contents = i32_at(chunk, 0);
+            if loader == BspLoader::GlQuake && contents != BSP_CONTENTS_EMPTY {
+                let marks = self
+                    .marksurfaces
+                    .iter()
+                    .skip(firstmarksurface)
+                    .take(nummarksurfaces);
+                for &face in marks {
+                    if let Some(face) = self.faces.get_mut(face) {
+                        face.flags |= SURF_UNDERWATER;
+                    }
+                }
+            }
             leafs.push(Leaf {
-                contents: i32_at(chunk, 0),
+                contents,
                 visofs,
                 mins,
                 maxs,
