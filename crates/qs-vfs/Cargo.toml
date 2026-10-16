@@ -1,0 +1,19 @@
+[package]
+name = "qs-vfs"
+description = "The game filesystem: id's search path of game directories and PAK archives, and file lookup on it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qs-pak = { workspace = true }
+qs-wad = { workspace = true }
+
+[dev-dependencies]
+qc-progs = { workspace = true }
+
+[lints]
+workspace = true

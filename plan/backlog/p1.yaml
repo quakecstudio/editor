@@ -301,7 +301,7 @@ issues:
   - P1-16
   - P1-26
   deliverable:
-  - 'tests/differential: runs each corpus progs function in qc-vm and the oracle, compares traces statement by statement, reports the first divergence with context'
+  - 'tests/differential: writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
   - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
   acceptance:
   - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
@@ -405,10 +405,12 @@ issues:
   depends:
   - P1-17
   - P1-08
+  - P1-26
   deliverable:
   - 'crates/qc-lno: read and write statement-to-line maps'
   acceptance:
   - Round-trips every .lno file in the corpus
+  - The corpus .lno files include those the pinned FTEQCC (P1-26) writes beside the progs it builds; GMQCC's column layout, which no oracle writes, is covered by every docs/spec/lno.md test vector passing
   verify:
   - cargo test -p qc-lno
 - key: P1-18
@@ -425,10 +427,10 @@ issues:
   deliverable:
   - crates/qs-pak, crates/qs-wad, crates/qs-vfs with spec search-path order
   acceptance:
-  - Lists and reads every file in a real id1 and rerelease install
   - Fuzzed readers never panic
+  - The walk example (crates/qs-vfs/examples/walk.rs) lists and reads every file in the LibreQuake lite test asset; the run against a real id1 and rerelease install is P1-30
   verify:
-  - cargo test; local test against the developer's install documented
+  - cargo test; fuzz targets; the walk example's output on the LibreQuake lite asset recorded in the PR
 - key: P1-19
   title: Find the user's Quake game data
   labels:
@@ -585,6 +587,7 @@ issues:
   - P1-28
   - P1-27
   - P1-26
+  - P1-30
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -653,3 +656,25 @@ issues:
   - Fuzzed readers never panic
   verify:
   - cargo test; fuzz targets in make test-fuzz
+- key: P1-30
+  title: Verify the virtual filesystem against a real id1 and rerelease install
+  labels:
+  - repo
+  - area:vm
+  - type:test
+  - needs:human
+  size: S
+  reqs:
+  - FND-11
+  - LIC-4
+  depends:
+  - P1-18
+  deliverable:
+  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. No game data is committed (LIC-4)'
+  acceptance:
+  - Every run ends with `read N files, ...` and prints no `failed:` lines
+  - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
+  - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
+  - Any failure is filed as a type:bug issue against qs-pak, qs-wad or qs-vfs and fixed before this issue closes
+  verify:
+  - Walk output for all six runs attached to the issue; the install-detection check on the same machine is P1-19's manual verification, recorded on that issue

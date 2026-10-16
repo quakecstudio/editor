@@ -1,0 +1,18 @@
+[package]
+name = "qs-pak"
+description = "PAK archive reader: id's COM_LoadPackFile with bounds checks, in memory or from a seekable file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-progs = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

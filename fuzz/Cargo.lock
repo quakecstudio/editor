@@ -98,7 +98,20 @@ dependencies = [
  "libfuzzer-sys",
  "qc-progs",
  "qc-syntax",
+ "qs-pak",
+ "qs-wad",
 ]
+
+[[package]]
+name = "qs-pak"
+version = "2026.10.0"
+dependencies = [
+ "qc-progs",
+]
+
+[[package]]
+name = "qs-wad"
+version = "2026.10.0"
 
 [[package]]
 name = "r-efi"

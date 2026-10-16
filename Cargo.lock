@@ -380,6 +380,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-pak"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+ "qc-progs",
+]
+
+[[package]]
 name = "qs-paths"
 version = "2026.10.0"
 
@@ -392,6 +400,22 @@ name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
  "qs-paths",
+]
+
+[[package]]
+name = "qs-vfs"
+version = "2026.10.0"
+dependencies = [
+ "qc-progs",
+ "qs-pak",
+ "qs-wad",
+]
+
+[[package]]
+name = "qs-wad"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]
