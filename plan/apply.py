@@ -96,6 +96,9 @@ def gh_list(path: str) -> list:
         page += 1
 
 
+BUG_SECTIONS = (("summary", "What happens"), ("environment", "Environment"))
+
+
 def render_body(issue: dict, reqs: dict, meta: dict, numbers: dict[str, int], titles: dict[str, str]) -> str:
     ms = {m["key"]: m for m in meta["milestones"]}[issue["milestone"]]
     lines = [
@@ -104,6 +107,12 @@ def render_body(issue: dict, reqs: dict, meta: dict, numbers: dict[str, int], ti
         "**Requirements**",
         *[f"- `{r}` {reqs[r]['text']}" for r in issue["reqs"]],
         "",
+    ]
+    # A bug carries the two sections of .github/ISSUE_TEMPLATE/bug.yml the other types lack.
+    for field, heading in BUG_SECTIONS:
+        if issue.get(field):
+            lines += [f"## {heading}", issue[field].rstrip(), ""]
+    lines += [
         "## Deliverable",
         *[f"- {d}" for d in issue["deliverable"]],
         "",
