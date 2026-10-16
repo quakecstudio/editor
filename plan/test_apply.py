@@ -63,7 +63,7 @@ class FakeGitHub:
         self.issues[number] = {
             "number": number, "node_id": old["node_id"], "title": body["title"], "body": body["body"],
             "labels": [{"name": l} for l in body["labels"]],
-            "milestone": {"number": body["milestone"]}}
+            "milestone": {"number": body["milestone"]}, "state": old.get("state", "open")}
         return self.issues[number]
 
     def graphql(self, op, v):
@@ -199,13 +199,17 @@ class Apply(unittest.TestCase):
         self.assertEqual(sorted({w[0] for w in self.fake.writes}), ["AddItem", "SetValue"])
         self.assertEqual(len(self.fake.items), len(self.plan))
 
-    def test_issue_whose_key_left_the_plan_is_reported(self):
+    def test_open_issue_whose_key_left_the_plan_is_reported(self):
         run(self.fake)
         self.fake.issues[999] = {"number": 999, "node_id": "I_x", "title": "gone", "labels": [],
-                                 "milestone": None, "body": "<!-- plan-key: P9-99 -->"}
+                                 "milestone": None, "body": "<!-- plan-key: P9-99 -->", "state": "open"}
         code, out = run(self.fake)
         self.assertEqual(code, 1)
         self.assertIn("#999 P9-99", out)
+        self.fake.issues[999]["state"] = "closed"
+        code, out = run(self.fake)
+        self.assertEqual(code, 0)
+        self.assertNotIn("P9-99", out)
 
     def test_dry_run_touches_nothing(self):
         code, out = run(self.fake, "--dry-run")

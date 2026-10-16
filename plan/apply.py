@@ -365,9 +365,10 @@ def main() -> int:
 
     numbers = scan()
     node_ids = {key: gi["node_id"] for key, gi in current.items()}
-    orphans = sorted(set(numbers) - set(titles))
+    # an open issue whose key left the plan would otherwise be worked on but never synced
+    orphans = sorted(k for k in set(numbers) - set(titles) if current[k]["state"] == "open")
     if orphans:
-        print(f"issues on GitHub whose plan key is not in plan/backlog: "
+        print(f"open issues on GitHub whose plan key is not in plan/backlog (close them): "
               f"{', '.join(f'#{numbers[k]} {k}' for k in orphans)}", file=sys.stderr)
 
     # pass 1: create missing issues; pass 2: write bodies with dependency links
