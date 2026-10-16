@@ -114,8 +114,8 @@ scripts/refresh-specs.sh                  # refresh specs/ from the origins
 prek run                                  # the pre-commit hooks
 ```
 
-`make ci` runs every `cargo` and `cargo xtask` step above except `refresh-specs.sh`; the
-individual commands are for narrowing down a failure.
+`make ci` runs every `cargo` and `cargo xtask` step above and `refresh-specs.sh --verify`,
+but never a refresh; the individual commands are for narrowing down a failure.
 
 The plan:
 
