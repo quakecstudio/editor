@@ -18,7 +18,7 @@ We are building a native, cross-platform QuakeC IDE in pure Rust with Zed's edit
 
 **Non-goals for v1**
 
-- Quake 2, Quake 3 and Half-Life map formats.
+- Quake 2 and Quake 3 map formats, and writing Half-Life's. Reading Half-Life's BSP version 30 and WAD3 comes after the MVP, in Phase 5 (see Map editor).
 - GMQCC-only syntax (planned after the MVP).
 - A web/WASM build (revisit after the editor widget decision in Editor and UI).
 - Supporting Quake 2/3 game code.
@@ -251,6 +251,7 @@ The IDE includes its own map editor and map compiler, so building a level, like 
 | Entities | Place, move and edit entities, with keys typed and completed from QuakeC; MDL and BSP model previews |
 | Textures | WAD2 browser with palette-correct preview and usage counts; import PNG images into the project's WAD, quantized to the Quake palette with mipmaps |
 | Formats | Read and write .map (standard and Valve 220); write BSP29, BSP2 and .lit |
+| Half-Life maps | Read BSP version 30 and WAD3 textures with their own palettes, as QuakeSpasm loads them, for QuakeC mods that run on Half-Life maps such as FreeHL and FreeCS (Phase 5); never Valve's game data in the repository |
 | Diagnostics | Leaks drawn as a path in the 3D view; missing textures; unknown classnames, keys and targets |
 
 **Our own map compiler.** `qmap-bsp`, `qmap-vis` and `qmap-light` in Rust turn a .map into a playable BSP, replacing the qbsp, vis and light stages. They are ported from id's GPL [quake-tools](https://github.com/id-Software/quake-tools) and checked in CI against id's originals and [ericw-tools](https://github.com/ericwa/ericw-tools) (GPLv2+), neither of which is shipped. BSP2 and coloured light are in scope because modern maps need them; ericw-tools' advanced lighting comes later.

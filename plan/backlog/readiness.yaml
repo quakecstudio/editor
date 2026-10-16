@@ -749,6 +749,41 @@ groups:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
 - milestone: P5
   issues:
+  - key: P5-R0
+    title: L0 formats test-suite readiness (P5)
+    labels:
+    - L0-formats
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-1
+    - TEST-2
+    - TEST-3
+    - TEST-4
+    - TEST-5
+    - TEST-6
+    - TEST-7
+    - TEST-8
+    - TEST-9
+    - TEST-10
+    - TEST-11
+    - TEST-12
+    depends:
+    - P5-11
+    - P5-12
+    - P4-R0
+    - P0-24
+    deliverable:
+    - 'docs/readiness/p5-r0.md following docs/readiness/_template.md, covering: P5-11, P5-12'
+    - Ratchet values for every crate in the layer committed to CI
+    acceptance:
+    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
+    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
+    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
+    - Defects reported against this layer from higher layers are all closed
+    verify:
+    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P5-R3
     title: L3 semantics test-suite readiness (P5)
     labels:
@@ -911,7 +946,7 @@ groups:
     - TEST-12
     depends:
     - P6-15
-    - P4-R0
+    - P5-R0
     - P0-24
     deliverable:
     - 'docs/readiness/p6-r0.md following docs/readiness/_template.md, covering: P6-15'
