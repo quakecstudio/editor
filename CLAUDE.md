@@ -108,6 +108,7 @@ cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and w
 cargo xtask layers                        # no crate depends on a higher layer (layers.toml)
 cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
+cargo xtask oracles                       # build the oracles from id's sources and run the VM vectors (network, C compiler)
 cargo xtask fuzz qc-progs --time 10m      # one fuzz target (nightly, cargo-fuzz); no target runs all
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)

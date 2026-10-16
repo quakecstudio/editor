@@ -195,9 +195,12 @@ agree. Together they must cover:
 - **Sensitivity.** A deliberately broken port fails the differential test. cargo-mutants on
   the port finds no surviving mutant that the differential test should catch.
 
-Before the oracles exist, build id's function from the pinned commit locally, run it on the
-vectors, and record the command, the inputs and the result in the PR and the spec's test
-vectors section. The port joins the oracle suite when #35 lands.
+The oracles are built by `cargo xtask oracles` ([`oracles/README.md`](../oracles/README.md)):
+id's VM as a trace runner, with id's engine functions extracted unchanged from the pinned
+source where the mock engine runs them, and id's qcc. A function the oracles do not compile
+yet is checked as the earlier ports were: build it from the pinned commit locally, run it on
+the vectors, and record the command, the inputs and the result in the PR and the spec's test
+vectors section; then add it to the oracles.
 
 ## Porting PR checklist
 
@@ -205,7 +208,8 @@ vectors section. The port joins the oracle suite when #35 lands.
 - [ ] The rustdoc names id's function and says which spec section it implements.
 - [ ] The spec section exists, cites the file, function and commit, and every statement has
       a test that cites it.
-- [ ] Differential result: the oracle suite, or before #35 the recorded local run.
+- [ ] Differential result: the oracle suite, or for a function the oracles do not compile
+      yet, the recorded local run.
 - [ ] The PR body lists `Spec:` IDs and the upstream commit.
 
 ## Worked example

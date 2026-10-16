@@ -81,6 +81,18 @@ jobs:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --locked --workspace --all-features
+      # P1-11: the oracles (oracles/README.md), built from id's sources fetched by checksum
+      # with the system C compiler, then the VM oracle checked against the VM vectors. The
+      # fetched sources and binaries are cached; a stamp of every input decides whether the
+      # cached binaries are rebuilt.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Build and check the oracles
+        run: cargo xtask oracles
 
   build:
     name: Build (${{ matrix.name }})
@@ -277,3 +289,14 @@ jobs:
       - name: Lex and preprocess id 1.01
         if: runner.os == 'Linux'
         run: cargo xtask lex-corpus "$QS_TEST_ASSETS/codebase/id-1.01"
+      # P1-11: id's qcc compiles id 1.01 and the VM oracle traces the result.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.os == 'Linux'
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Compile and trace id 1.01 with the oracles
+        if: runner.os == 'Linux'
+        run: cargo xtask oracles id101 "$QS_TEST_ASSETS/codebase/id-1.01"

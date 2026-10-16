@@ -12,6 +12,7 @@ absolute-paths-allowed-crates = [
     "core",
     "alloc",
     "proc_macro",
+    "cc",
     "criterion",
     "proptest",
     "serde",

@@ -91,7 +91,7 @@ Each section holds, in this order:
    file, function and identifier it comes from. Code uses the constant's name, never a bare
    number.
 4. **Test vectors:** inputs and expected outputs, each checked against id's code (through the
-   oracles once [#35](https://github.com/quakecstudio/editor/issues/35) lands). Short vectors go in a table in the
+   oracles, [`oracles/README.md`](../../oracles/README.md)). Short vectors go in a table in the
    section; larger ones go in `docs/spec/vectors/<spec>/` and the section links them.
 
 ## Registry

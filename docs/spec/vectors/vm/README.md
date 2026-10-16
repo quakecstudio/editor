@@ -104,4 +104,11 @@ clang and the same flags, every vector matched except `bitand_out_of_range` and
 and `store_v_overlap_forward` (VM-5.1, VM-10.2).
 
 The harness is not committed: it contains id's C, which the oracles fetch by commit and
-checksum instead (P1-11).
+checksum instead.
+
+Since P1-11, `cargo xtask oracles` runs every vector without `oracle: no` through the VM oracle
+([`oracles/README.md`](../../../../oracles/README.md)) on every CI run, on Linux, macOS and
+Windows: each vector becomes a progs.dat written by `qc-progs`, the oracle traces it, and the
+trace's statements, changes, builtin numbers, ending and `after:` values must match. On
+2026-10-16 all 128 passed on macOS arm64 except the two VM-9.2 vectors, reported there as
+expected divergences (DIFF-10.1); the x86-64 runs must pass all 128.

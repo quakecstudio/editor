@@ -534,8 +534,8 @@ Checked on 2026-10-16 by running the 128 vectors that have a defined answer in i
 `pr_comp.h`, `progs.h` and `progdefs.q1`, in a local harness on x86-64 (GCC 14.4,
 `-O2 -fno-strict-aliasing -ffp-contract=off`): every vector matched. The same harness built
 for arm64 (Apple clang) matched every vector except the two for VM-9.2, as VM-9.2 says. The
-other 14 vectors pin the divergences of VM-19.4 and expect only an error. The vectors join
-the oracle suite when P1-11 lands.
+other 14 vectors pin the divergences of VM-19.4 and expect only an error. CI now runs the
+128 through the VM oracle (`cargo xtask oracles`, see the vectors' README).
 
 | Group | File | Statements |
 | --- | --- | --- |
