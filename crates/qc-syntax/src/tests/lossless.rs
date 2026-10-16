@@ -6,7 +6,7 @@ use proptest::prelude::*;
 
 use super::SAMPLE;
 use crate::ast::AstNode as _;
-use crate::{SyntaxKind, SyntaxNode, parse};
+use crate::{SyntaxKind, parse};
 
 /// Checks that the tokens of `root` tile `source` exactly and give it back.
 fn assert_lossless(source: &[u8]) {
@@ -194,15 +194,6 @@ fn debug_tree_format() {
     );
 }
 
-#[test]
-fn nodes_and_tokens_compare_by_position() {
-    let root: SyntaxNode = parse(b"float a; float a;").syntax();
-    let decls: Vec<_> = root.children().collect();
-    assert_ne!(decls[0], decls[1]);
-    assert_eq!(decls[0].green(), decls[1].green());
-    assert_eq!(decls[0], root.children().next().unwrap());
-}
-
 /// Tokens of vanilla QuakeC and of other dialects, for generated sources.
 fn fragment() -> impl Strategy<Value = String> {
     prop_oneof![
@@ -254,4 +245,38 @@ proptest! {
         let text = parts.join(" ");
         prop_assert_eq!(parse(text.as_bytes()), parse(text.as_bytes()));
     }
+}
+
+// spec QC-7.2: unknown bytes are skipped up to the next whitespace, comment or `$` command
+#[test]
+fn skipped_bytes_stop_at_comments_and_commands() {
+    assert_eq!(
+        trivia("float a; %%// c\n"),
+        vec![
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Skipped, "%%".to_owned()),
+            (SyntaxKind::LineComment, "// c".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+        ]
+    );
+    assert_eq!(
+        trivia("float a; %/* c */"),
+        vec![
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Skipped, "%".to_owned()),
+            (SyntaxKind::BlockComment, "/* c */".to_owned()),
+        ]
+    );
+    assert_eq!(
+        trivia("float a; %$cd x\n"),
+        vec![
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Skipped, "%".to_owned()),
+            (SyntaxKind::Skipped, "$cd x".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+        ]
+    );
 }

@@ -216,3 +216,16 @@ fn one_error_per_statement() {
     );
     assert_eq!(statements(&parsed).len(), 4);
 }
+
+// spec QC-4.5: the `-` that starts no term is kept in an error node inside the expression
+#[test]
+fn stray_minus_stays_in_the_expression() {
+    let parsed = body("a = -b;");
+    let error = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::Error)
+        .unwrap();
+    assert_eq!(error.text(), b"-");
+    assert_eq!(error.parent().unwrap().kind(), SyntaxKind::BinaryExpr);
+}

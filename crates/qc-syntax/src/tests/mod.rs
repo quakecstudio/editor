@@ -16,6 +16,7 @@ mod expressions;
 mod lossless;
 mod recovery;
 mod statements;
+mod tree_api;
 
 use std::fmt::Write as _;
 

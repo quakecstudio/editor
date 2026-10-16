@@ -229,3 +229,16 @@ fn deep_input_does_not_overflow() {
         assert!(codes.contains(&Code::E0509), "{codes:?} {}", &source[..40]);
     }
 }
+
+// spec QCD-1.4: a field declaration in a body is an error, parsed as a local
+#[test]
+fn field_declaration_in_a_body() {
+    let parsed = body("\t.float x;\n\ta = 1;");
+    assert_eq!(
+        errors(&parsed),
+        vec![(Code::E0201, "not a name".to_owned())]
+    );
+    let stmts = statements(&parsed);
+    assert!(matches!(&stmts[0], ast::Stmt::Local(l) if l.local_token().is_none()));
+    assert_eq!(stmts.len(), 2);
+}

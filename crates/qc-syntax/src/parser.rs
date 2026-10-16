@@ -353,7 +353,7 @@ impl<'a> Parser<'a> {
             }
             match kind {
                 K::LBrace => depth = depth.saturating_add(1),
-                K::RBrace if depth == 0 && in_block && !first => break,
+                K::RBrace if depth == 0 && in_block => break,
                 K::RBrace => depth = depth.saturating_sub(1),
                 _ => {}
             }
@@ -531,9 +531,7 @@ impl<'a> Parser<'a> {
             self.finish_node();
         } else {
             self.error(Code::E0210, "state frame must be a number");
-            if !(self.at(K::Comma) || self.at(K::RBracket) || self.at(K::LBrace)) {
-                self.expression();
-            }
+            self.expression();
         }
         self.expect(K::Comma, ",");
         self.name();

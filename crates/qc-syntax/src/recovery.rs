@@ -23,13 +23,13 @@ pub struct DeletionReport {
 }
 
 /// A top-level item: a declaration or a run of tokens that is not one.
-fn items(root: &SyntaxNode) -> Vec<SyntaxNode> {
+pub(crate) fn items(root: &SyntaxNode) -> Vec<SyntaxNode> {
     root.children()
         .filter(|n| matches!(n.kind(), SyntaxKind::Declaration | SyntaxKind::Error))
         .collect()
 }
 
-fn greens(items: &[SyntaxNode]) -> Vec<GreenNode> {
+pub(crate) fn greens(items: &[SyntaxNode]) -> Vec<GreenNode> {
     items.iter().map(|n| n.green().clone()).collect()
 }
 
@@ -80,7 +80,11 @@ pub fn check_deletions(source: &[u8]) -> DeletionReport {
 
 /// Checks one edited source whose deleted token was in item `damaged` of the original, and
 /// returns how many errors it has.
-fn check_one(edited: &[u8], before: &[GreenNode], damaged: usize) -> Result<usize, String> {
+pub(crate) fn check_one(
+    edited: &[u8],
+    before: &[GreenNode],
+    damaged: usize,
+) -> Result<usize, String> {
     let parsed: Parse = parse(edited);
     let root = parsed.syntax();
     if root.text() != edited {

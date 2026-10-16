@@ -140,3 +140,107 @@ proptest! {
         prop_assert_eq!(report.failures, Vec::<String>::new());
     }
 }
+
+/// The statement kinds of the body of `f` in `source`.
+fn body_kinds(source: &str) -> Vec<crate::SyntaxKind> {
+    use crate::ast::AstNode as _;
+    super::statements(&parse(source.as_bytes()))
+        .iter()
+        .map(|s| s.syntax().kind())
+        .collect()
+}
+
+// spec QCD-1.4: recovery stops at a statement keyword that starts a line
+#[test]
+fn recovery_stops_at_a_statement_line() {
+    use crate::SyntaxKind::{ExprStmt, IfStmt};
+    let source = "float a, b;\nvoid() f =\n{\n\ta = 1 b\n\tif (a) b = 2;\n};";
+    assert_eq!(
+        errors(&parse(source.as_bytes())),
+        vec![(Code::E0204, "expected ;, found b".to_owned())]
+    );
+    assert_eq!(body_kinds(source), [ExprStmt, IfStmt]);
+    // Not first on its line, or not a statement word: skipped with the rest.
+    let source = "float a, b;\nvoid() f =\n{\n\ta = 1 b if (a) b = 2;\n\tb = 3;\n};";
+    assert_eq!(body_kinds(source), [ExprStmt, ExprStmt]);
+    let source = "float a, b;\nvoid() f =\n{\n\ta = 1 b\n\tiff (a) b = 2;\n\tb = 3;\n};";
+    assert_eq!(body_kinds(source), [ExprStmt, ExprStmt]);
+}
+
+// spec QCD-1.4: recovery skips a braced group whole, and stops at the `}` closing the block
+#[test]
+fn recovery_tracks_braces() {
+    use crate::SyntaxKind::{Block, ExprStmt, IfStmt};
+    let source = "float a, b;\nvoid() f =\n{\n\ta = 1 b {\n\treturn;\n\t};\n\tb = 2;\n};";
+    assert_eq!(body_kinds(source), [ExprStmt, ExprStmt]);
+    let source = "float a, b;\nvoid() f =\n{\n\tif (a) { a = 1 b }\n\tb = 2;\n};";
+    let parsed = parse(source.as_bytes());
+    assert_eq!(
+        errors(&parsed),
+        vec![(Code::E0204, "expected ;, found b".to_owned())]
+    );
+    assert_eq!(body_kinds(source), [IfStmt, ExprStmt]);
+    let inner = parsed
+        .syntax()
+        .descendants()
+        .filter(|n| n.kind() == Block)
+        .nth(1)
+        .unwrap();
+    assert_eq!(inner.text(), b"{ a = 1 b }");
+}
+
+mod checker {
+    use crate::recovery::{check_one, greens, items};
+    use crate::{GreenNode, parse};
+
+    fn before(source: &str) -> Vec<GreenNode> {
+        greens(&items(&parse(source.as_bytes()).syntax()))
+    }
+
+    const FOUR: &str = "float a;\nfloat b;\nfloat c;\nfloat d;\n";
+
+    #[test]
+    fn counts_errors() {
+        assert_eq!(check_one(FOUR.as_bytes(), &before(FOUR), 1), Ok(0));
+        let edited = "float a;\nfloat b\nfloat c;\nfloat d;\n";
+        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 1), Ok(1));
+    }
+
+    #[test]
+    fn a_changed_declaration_before_the_damage_fails() {
+        let edited = "float x;\nfloat b;\nfloat c;\nfloat d;\n";
+        let result = check_one(edited.as_bytes(), &before(FOUR), 2);
+        assert_eq!(
+            result,
+            Err("declaration 0 before the deletion changed".to_owned())
+        );
+        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 0), Ok(0));
+    }
+
+    #[test]
+    fn at_most_the_next_declaration_may_change() {
+        let edited = "float a;\nfloat b;\nfloat x;\nfloat d;\n";
+        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 1), Ok(0));
+        let result = check_one(edited.as_bytes(), &before(FOUR), 0);
+        assert_eq!(
+            result,
+            Err("declaration 2 changed, more than one after the deletion".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_error_outside_the_damage_fails() {
+        let original = "x1;\nfloat a;\nfloat b;\nfloat c;\n";
+        let result = check_one(original.as_bytes(), &before(original), 2);
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|e| e.starts_with("error E0203 \"x1\" is not a type at 0")),
+            "{result:?}"
+        );
+        assert_eq!(check_one(original.as_bytes(), &before(original), 0), Ok(1));
+        let late = "float a;\nfloat b;\nfloat c;\nx1;\n";
+        let result = check_one(late.as_bytes(), &before(late), 0);
+        assert!(result.is_err(), "{result:?}");
+    }
+}

@@ -340,3 +340,24 @@ fn function_initialiser_needs_a_body() {
         vec![(Code::E0204, "expected {, found g".to_owned())]
     );
 }
+
+// spec QC-10.4: after `"..." is not a type`, the rest of the parameter is skipped and the
+// declaration keeps its name
+#[test]
+fn bad_parameter_is_skipped() {
+    let parsed = parse(b"void(float a, ... x) f;\nfloat b;");
+    assert_eq!(
+        errors(&parsed),
+        vec![(Code::E0203, "\"...\" is not a type".to_owned())]
+    );
+    let decl = parsed.tree().unwrap().declarations().next().unwrap();
+    let name = decl.declarators().next().unwrap().name().unwrap();
+    assert_eq!(name.text(), b"f");
+    let skipped = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::Error)
+        .unwrap();
+    assert_eq!(skipped.text(), b"... x");
+    assert_eq!(skipped.parent().unwrap().kind(), SyntaxKind::Param);
+}
