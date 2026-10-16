@@ -1,8 +1,8 @@
 # QuakeC IDE - Design Document
 
-Justin Plock · revision 37, 2026-10-15 (license decided; mod export, texture import, Mac game data; Rust preview host)
+Justin Plock · revision 38, 2026-10-15 (license decided; mod export, texture import, Mac game data; Rust preview host; no outside engines)
 
-> **Snapshot.** A copy of the design document as approved on 2026-10-15 (revision 34), updated in revision 35 for the license decision in ADR-0002 in revision 36 for mod export, texture import and getting the game files onto a Mac, and in revision 37 for the Rust preview host in ADR-0004. The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
+> **Snapshot.** A copy of the design document as approved on 2026-10-15 (revision 34), updated in revision 35 for the license decision in ADR-0002 in revision 36 for mod export, texture import and getting the game files onto a Mac, in revision 37 for the Rust preview host in ADR-0004, and in revision 38 for running only our own engine (ADR-0005). The plan in [`plan/`](../../plan/README.md) is derived from it and is what the build follows: every requirement here has an ID in [`plan/requirements.yaml`](../../plan/requirements.yaml) and is covered by at least one GitHub issue. Change the design with a PR to this file and the matching requirement, or record a decision in `docs/adr/`.
 
 ## Summary and goals
 
@@ -31,8 +31,8 @@ No QuakeC tool today combines dialect-aware semantics, cross-engine live preview
 | --- | --- | --- |
 | Semantics | The only LSP-style tool ([vscode-quakec](https://github.com/joshuaskelly/vscode-quakec)) supports vanilla QuakeC only; modders rename `.qc` to `.c` to get Visual Studio navigation | Multi-dialect semantic engine + LSP |
 | Navigation | fteqccgui go-to-definition reported as unreliable (Func\_Msgboard, 2023) | Indexed, incremental cross-file navigation |
-| Debugging | Only fteqccgui + FTEQW; DarkPlaces breakpoints print stack traces | Debugger UI over FTEQW's protocol, plus our own preview host |
-| Hot reload | Only FTEQW `applycompile` keeps the map running | Reload-on-save per engine, with clear state-loss warnings |
+| Debugging | Only fteqccgui + FTEQW; DarkPlaces breakpoints print stack traces | Debugger UI over our own engine, the preview host |
+| Hot reload | Only FTEQW `applycompile` keeps the map running | Reload-on-save in our preview host, with clear state-loss warnings |
 | Engine extensions | Nothing tells you which DP\_/FTE\_ builtins a target supports | Engine-target database with diagnostics |
 | Agents | None | Built-in agent + MCP server over one command registry |
 
@@ -54,7 +54,7 @@ Yes, the Quake engine is open source: John Carmack released it on December 21, 1
 
 1. **Port from the real thing.** We port id's formats, VM and tools to Rust with the C open beside us. Ported files keep id's copyright notice and cite the file and function they came from, and the behaviour is written up in `docs/spec/` so tests can cite it and agents have it as context.
 2. **Differential testing against the original.** We build id's original VM and qcc from source as test oracles (in `oracles/`, CI only) and compare results instruction by instruction on the same progs.dat. A port is only done when it matches.
-3. **Preview host: our own engine.** The engine is ported from id's source to Rust like the foundations, renders through wgpu and runs our own VM crates ([ADR-0004](../adr/0004-preview-host-base.md)). It runs as a separate program beside the IDE and talks to it over a local socket. A pinned QuakeSpasm, built from source as an oracle in CI only, is what its behaviour is compared against.
+3. **Preview host: our own engine.** The engine is ported from id's source to Rust like the foundations, renders through wgpu and runs our own VM crates ([ADR-0004](../adr/0004-preview-host-base.md)). It runs as a separate program beside the IDE and talks to it over a local socket, and it is the only engine the IDE runs ([ADR-0005](../adr/0005-default-preview-target.md)). id's own engine, built from the pinned source as an oracle in CI only, is what its behaviour is compared against.
 
 A permissive core behind a clean room was considered and rejected: it needed separate spec authors and implementers and a legal review of the process boundary, for a benefit (closed forks) the project does not need. Every package ships the GPL-3.0 text, notices and a corresponding-source link; a license compliance review comes before the first public release.
 
@@ -64,14 +64,14 @@ Yes, Quake runs natively on Apple silicon Macs, but only through community sourc
 
 | Engine | macOS | Windows | Linux | Role in the IDE |
 | --- | --- | --- | --- | --- |
-| vkQuake | Native, Apple silicon + Intel, via [Mac Source Ports](https://github.com/Novum/vkQuake) (Vulkan on Metal) | Yes | AppImage | Restart-loop preview; compatibility checks |
-| QuakeSpasm / Ironwail | Native QuakeSpasm.app ([guide](https://swissmacuser.ch/macos-game-steam-quake-30th-anniversary-dawn-of-the-machine-mg3/)) | Yes | Yes | Restart-loop preview; QuakeSpasm is the engine oracle for our preview host (CI only) |
-| FTEQW | Unverified on Apple silicon | Yes | Yes | Flagship live debug on Windows/Linux |
+| vkQuake | Native, Apple silicon + Intel, via [Mac Source Ports](https://github.com/Novum/vkQuake) (Vulkan on Metal) | Yes | AppImage | None: an engine players use |
+| QuakeSpasm / Ironwail | Native QuakeSpasm.app ([guide](https://swissmacuser.ch/macos-game-steam-quake-30th-anniversary-dawn-of-the-machine-mg3/)) | Yes | Yes | None: engines players use |
+| FTEQW | Unverified on Apple silicon | Yes | Yes | None: an engine players use |
 | KEX rerelease | None (CrossOver only) | Yes | No | Compile target only |
 
 Steam and GOG both sell Quake as a Windows-only game, but its `id1` and `rerelease` data folders work with the native Mac ports. On a Mac there is usually no store install to find: players download the Steam files with `steamcmd` (forcing the Windows platform) or extract the GOG installer with `innoextract`, and Epic and Game Pass sell only the rerelease, without the original game's `pak1.pak`. The IDE detects Steam and GOG installs on Windows and Linux, recognises the steamcmd and innoextract layouts on macOS, accepts any folder that contains `id1/pak0.pak`, and walks the player through it on first run. Game data is always read where it is, never copied.
 
-Because FTEQW's Mac story is unclear, the preview host (see Engine bridge) is what guarantees live preview on macOS. The IDE itself targets macOS universal, Windows x64/arm64 and Linux x86\_64/aarch64 from one codebase.
+The IDE launches none of these: live preview always runs our own engine, the preview host (see Engine bridge), the same on every OS. The IDE itself targets macOS universal, Windows x64/arm64 and Linux x86\_64/aarch64 from one codebase.
 
 ## Product principles
 
@@ -95,7 +95,7 @@ flowchart TB
   ui["L7 UI (gpui, swappable): editor, map views, panels, diff review, debugger and entity views"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, MCP tools"]
   cmd["L5 Command engine: session, undo, one registry for UI, CLI, agent and MCP"]
-  eb["L4 Engine bridge: adapters for the preview host, FTEQW, QuakeSpasm; the host's simulation and sound"]
+  eb["L4 Engine bridge: the preview host's bridge client, simulation and sound"]
   cb["L4 Compilers (ours): QuakeC; map bsp, vis, light"]
   sema["L3 Semantics: resolution, types, dialects, engine-target database, LSP"]
   syn["L2 Syntax + project: preprocessor, lossless CST, progs.src module graph"]
@@ -103,7 +103,7 @@ flowchart TB
   fmt["L0 Formats: progs.dat, .lno, .map, BSP29/BSP2, WAD2 and MDL, as id defined them"]
   subgraph gpl["Separate processes (C programs, CI only)"]
     oracles["id qcc + qbsp: oracles"]
-    engine["QuakeSpasm: engine oracle"]
+    engine["id's engine: oracle"]
     idvm["id's VM: oracle"]
   end
   host["Preview host (Rust, wgpu): separate process"]
@@ -172,16 +172,13 @@ We write our own QuakeC compiler in Rust and run it in-process. The IDE never in
 
 ## Engine bridge and live preview
 
-Live preview means save, compile, reload, and see it in the running game in about a second, without leaving the editor. One `EngineAdapter` trait hides each engine's mechanics behind the same commands: `launch`, `reload`, `set_breakpoint`, `step`, `inspect`, `console`, `screenshot`.
+Live preview means save, compile, reload, and see it in the running game in about a second, without leaving the editor. The IDE runs one engine, our own preview host, and never launches an outside engine ([ADR-0005](../adr/0005-default-preview-target.md)). A bridge client in the IDE speaks to it with the same commands everywhere: `launch`, `reload`, `set_breakpoint`, `step`, `inspect`, `console`, `screenshot`.
 
-| Adapter | Reload | Debug | How it talks |
+| Engine | Reload | Debug | How it talks |
 | --- | --- | --- | --- |
 | **Preview host** (ours) | Hot reload keeping the map; migrates fields by name where types match | Breakpoints, step, watch, entity tree | Versioned JSON over a local socket |
-| FTEQW | `applycompile` (quick save + reload, keeps the map) | fteqccgui protocol: `qcbreakpoint`, `qcresume`, `qcinspect`, `qcreloaded` over stdin/stdout with `-qcdebug` | stdin/stdout |
-| DarkPlaces | Recompile + `restart` | `prvm_edict`, `prvm_global`, `prvm_breakpoint` (stack trace only) | rcon / stdin |
-| QuakeSpasm, Ironwail, vkQuake | Recompile + `restart` | None | stdin console |
 
-**The preview host** is our own engine, written in Rust from id's GPL source ([ADR-0004](../adr/0004-preview-host-base.md)). It runs `qc-vm`, `qc-edict` and `qc-builtins`, renders through wgpu (Metal, DX12, Vulkan) with the same renderer as the map editor, and includes the IDE bridge. It reports every progs load, edict change and QC error as structured events, and accepts reload and debug commands. It is what makes live preview identical on macOS, Windows and Linux, so FTEQW and the QuakeSpasm-lineage engines are optional adapters. Its server simulation is compared frame by frame with a pinned QuakeSpasm built as an oracle in CI; its rendering and sound are compared within stated tolerances.
+**The preview host** is our own engine, written in Rust from id's GPL source ([ADR-0004](../adr/0004-preview-host-base.md)). It runs `qc-vm`, `qc-edict` and `qc-builtins`, renders through wgpu (Metal, DX12, Vulkan) with the same renderer as the map editor, and includes the IDE bridge. It reports every progs load, edict change and QC error as structured events, and accepts reload and debug commands. It is what makes live preview identical on macOS, Windows and Linux. Its server simulation is compared frame by frame with id's engine built from the pinned source as an oracle in CI; its rendering and sound are compared within stated tolerances.
 
 **Docking.** v1 runs the engine in its own window, placed beside the IDE and following focus. Embedding the frame inside the IDE (shared texture or frame streaming) is a later option, not a v1 requirement.
 
@@ -224,7 +221,7 @@ Recommendation: build v1 on gpui, the framework Zed is built on, keep the UI a t
 
 **Layout: the game in the middle.**
 
-- **Toolbar:** Play, Pause, Step, Restart map, and the target engine picker.
+- **Toolbar:** Play, Pause, Step and Restart map, always running our preview host.
 - **Left:** Project (files and symbols) and the **Entities** outliner, a live tree of edicts grouped by classname, filterable and updated by the preview host.
 - **Centre:** the code editor beside the live game view. In v1 the game runs in its own window docked next to the IDE.
 - **Right:** **Properties** for the selected entity (fields and values, editable while paused) above the agent panel.
@@ -297,7 +294,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 - Semantic core for vanilla and FTEQCC dialects, SSQC module only.
 - Editor with navigation, diagnostics, completion and hover docs.
 - Our own compiler for vanilla plus the FTEQCC features the rerelease uses; no outside toolchain.
-- Preview host with reload-on-save, breakpoints and an entity inspector; FTEQW adapter on Windows and Linux.
+- Preview host with reload-on-save, breakpoints and an entity inspector.
 - Agent panel with diff review, checkpoints and the tools in Agent harness; MCP server.
 - Signed builds for all three OSes.
 - Export a mod as a zip players can install: progs.dat, maps and the project's own assets, optionally in a PAK, with a README and license notices, never id's game data.
@@ -306,7 +303,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 
 - GMQCC dialect, CSQC and MenuQC modules.
 - Compiler optimizations beyond constant folding.
-- DarkPlaces adapter, embedded game view, web build, and the map editor (Phases 5 to 7).
+- Embedded game view, web build, and the map editor (Phases 5 to 7).
 
 ## Milestones
 
@@ -315,7 +312,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 | 0: decisions and spikes | gpui vs egui spike against the acceptance test; license model (decided: GPL-3.0-or-later); porting process; repo, `cargo xtask ci`, layering check, signing accounts for macOS and Windows | UI framework and license chosen |
 | 1: foundations | qc-progs, qc-types, qc-vm, qc-edict ported from id's source with specs; oracle runner in CI; lossless parser, preprocessor and progs.src project graph; parser fuzzing | qc-vm matches id's VM on the id 1.01 and rerelease corpus |
 | 2: language core and editor | Semantic model with vanilla and FTEQCC dialects; engine-target database; LSP; editor shell, navigation, diagnostics; our compiler for vanilla, then the rerelease's FTEQCC features | The rerelease QuakeC compiles with our compiler and behaves identically in qc-vm |
-| 3: live preview | Rust preview host (simulation, wgpu renderer, sound) with IDE bridge, proved against an engine oracle; reload-on-save, breakpoints, entity inspector; FTEQW adapter on Windows and Linux; state-loss warnings | Save-to-game in about a second on macOS, Windows and Linux |
+| 3: live preview | Rust preview host (simulation, wgpu renderer, sound) with IDE bridge, proved against an engine oracle; reload-on-save, breakpoints, entity inspector; state-loss warnings | Save-to-game in about a second on macOS, Windows and Linux |
 | 4: agent and MVP release | Agent panel, diff review, checkpoints, vm.run and scenario.run tools; MCP server; signed builds for all three OSes; agent evals | **MVP:** the agent adds a weapon to the rerelease and it fires in a live game |
 
 *Five phases to the MVP, each closed by a testable gate. The gates the plan enforces are in [`plan/backlog/_meta.yaml`](../../plan/backlog/_meta.yaml).*
@@ -331,21 +328,20 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 | Map compiler output differs from established tools | Maps leak, break or light differently than with ericw-tools | Differential checks against id's tools and ericw-tools in CI; compile a public map corpus |
 | Map editor scope rivals the rest of the IDE | Effort pulled from the code and preview work | Map editor phases start only after the MVP; entity editing ships before brush editing |
 | License non-compliance | Distribution blocked or takedown requests | GPL-3.0-or-later throughout (ADR-0002); notices and a source link in every package; compliance review before the first public release |
-| FTEQW unavailable or weak on macOS | No live debug on Mac | Preview host covers all three OSes |
+| FTEQW unavailable or weak on macOS | No live debug on Mac | Retired: the IDE runs only our own preview host, on all three OSes (ADR-0005) |
 | gpui API churn | Rework when Zed changes it | Pin versions; keep UI as a thin top layer |
 | Small audience | Slow adoption | LSP + tree-sitter + MCP reach users in their existing editors and agents |
 | Agent invents builtins or semantics | Broken mods, lost trust | Engine-target database in context; nothing is done without a clean compile and passing tests |
 | No redistributable test assets | Weak CI | Open asset set for CI; user's own data for local runs |
-| Our Rust preview host is a whole engine on the MVP path | MVP slips; movement, rendering or mods behave differently than in the engines players use | Port from id's source with specs; server simulation compared frame by frame with a QuakeSpasm engine oracle, rendering and sound within stated tolerances; renderer shared with the map editor |
+| Our Rust preview host is a whole engine on the MVP path | MVP slips; movement, rendering or mods behave differently than in the engines players use | Port from id's source with specs; server simulation compared frame by frame with id's engine as an oracle, rendering and sound within stated tolerances; renderer shared with the map editor |
 
 **Open questions**
 
 - [x] License: GPL-3.0-or-later for the whole project (ADR-0002).
 - [x] Product name: QuakeC Studio, kept ([ADR-0006](../adr/0006-product-name.md)).
-- [ ] Which engine is the default preview target: our host, or FTEQW where available?
+- [x] Default preview target: our host, always; the IDE runs no outside engine ([ADR-0005](../adr/0005-default-preview-target.md)).
 - [ ] Does a web build matter enough to choose egui?
 - [x] Conformance corpus: id 1.01, the rerelease, 14 public mods and 26 maps, each with a license read from its own files, fetched by checksum and never kept in the repo ([`corpus/manifest.toml`](../../corpus/manifest.toml)).
-- [ ] Verify FTEQW's Apple silicon status before relying on it.
 
 ## Sources
 

@@ -12,7 +12,7 @@ flowchart TB
   ui["L7 UI (gpui, swappable): editor, map views, panels, diff review, debugger and entity views"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, MCP tools"]
   cmd["L5 Command engine: session, undo, one registry for UI, CLI, agent and MCP"]
-  eb["L4 Engine bridge: adapters for the preview host, FTEQW, QuakeSpasm; the host's simulation and sound"]
+  eb["L4 Engine bridge: the preview host's bridge client, simulation and sound"]
   cb["L4 Compilers (ours): QuakeC; map bsp, vis, light"]
   sema["L3 Semantics: resolution, types, dialects, engine-target database, LSP"]
   syn["L2 Syntax + project: preprocessor, lossless CST, progs.src module graph"]
@@ -20,7 +20,7 @@ flowchart TB
   fmt["L0 Formats: progs.dat, .lno, .map, BSP29/BSP2, WAD2 and MDL, as id defined them"]
   subgraph gpl["Separate processes (C programs, CI only)"]
     oracles["id qcc + qbsp: oracles"]
-    engine["QuakeSpasm: engine oracle"]
+    engine["id's engine: oracle"]
     idvm["id's VM: oracle"]
   end
   host["Preview host (Rust, wgpu): separate process"]
@@ -46,7 +46,7 @@ binary that runs as its own process.*
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge and adapters; the preview host's simulation (`qs-sim`) and sound (`qs-sound`) |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge client; the preview host's simulation (`qs-sim`) and sound (`qs-sound`) |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework; the wgpu renderer (`qs-render`) |
