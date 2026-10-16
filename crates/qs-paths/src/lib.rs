@@ -428,4 +428,9 @@ mod tests {
         };
         assert_eq!(Platform::current(), expected);
     }
+
+    #[test]
+    fn deliberately_failing_test_for_issue_3() {
+        assert_eq!(std::env::consts::FAMILY, "deliberately-failing");
+    }
 }
