@@ -4,8 +4,9 @@
 
 Offline (default): the manifest's shape, that every entry records a license
 with pinned evidence, that only GPL-3.0-or-later compatible items are marked
-`vendor`, that QuakeC 1.06 is listed as never fetched, and that no corpus file
-or game data is tracked in git.
+`vendor`, that QuakeC 1.06 and id's game data are listed as never fetched, that
+every test asset archive is pinned and carries its source's license files, and
+that no corpus file or game data is tracked in git.
 
 --online: also downloads every pinned file at its commit and compares SHA-256,
 which checks the URLs, the commits and the checksums.
@@ -54,6 +55,8 @@ CONTENT_EXTS = frozenset(
     {".qc", ".qh", ".src", ".map", ".bsp", ".pak", ".pk3", ".dat", ".wad", ".lmp", ".mdl", ".spr"}
 )
 REQUIRED_IDS = ("id-1.01", "rerelease")
+# The never entry for id's pak0/pak1, which no tool fetches and CI never uses.
+ID_GAME_DATA = "id1-paks"
 MIN_MODS = 10
 MIN_MAPS = 20
 
@@ -61,6 +64,7 @@ URL_RE = re.compile(r"^https://(github\.com|gitlab\.com)/[^/]+/[^/]+$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RELEASE_RE = re.compile(r"^(https://github\.com/[^/]+/[^/]+)/releases/download/[^/]+/[^/]+\.zip$")
 LICENSE_RE = re.compile(r"^(NONE|LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9.+-]+)$")
 
 
@@ -70,7 +74,7 @@ def load(path: Path = MANIFEST) -> dict:
 
 
 def _entries(m: dict) -> list[tuple[str, dict]]:
-    return [("codebase", e) for e in m.get("codebase", [])] + [("map", e) for e in m.get("map", [])]
+    return [(t, e) for t in ("codebase", "map", "asset") for e in m.get(t, [])]
 
 
 def check(m: dict) -> list[str]:
@@ -86,7 +90,10 @@ def check(m: dict) -> list[str]:
             errs.append(f"{where}: duplicate id")
         seen.add(e.get("id", ""))
         _check_entry(table, e, where, errs)
-        if e.get("use") in ("vendor", "fetch-at-test"):
+        if table == "asset":
+            if e.get("use") != "never":
+                _check_asset(e, where, sources, errs)
+        elif e.get("use") in ("vendor", "fetch-at-test"):
             _check_pins(table, e, where, sources, errs)
     _check_policy(m, errs)
     return errs
@@ -139,6 +146,8 @@ def _check_entry(table: str, e: dict, where: str, errs: list[str]) -> None:
             errs.append(f"{where}: a never entry needs a reason")
     elif use == "vendor" and lic not in GPL3_COMPATIBLE:
         errs.append(f"{where}: {lic} is not GPL-3.0-or-later compatible, so use cannot be vendor")
+    if table == "asset" and use == "vendor":
+        errs.append(f"{where}: assets are binary game data, so use must be fetch-at-test or never")
 
 
 def _check_pins(table: str, e: dict, where: str, sources: dict, errs: list[str]) -> None:
@@ -167,6 +176,54 @@ def _check_pins(table: str, e: dict, where: str, sources: dict, errs: list[str])
             errs.append(f"{where}: evidence {ev} has no pinned checksum")
 
 
+def safe_member(path: str) -> bool:
+    """A relative archive path with no empty, `.`, `..`, drive or backslash parts."""
+    return (
+        bool(path)
+        and "\\" not in path
+        and ":" not in path
+        and all(p not in ("", ".", "..") for p in path.split("/"))
+    )
+
+
+def _check_asset(e: dict, where: str, sources: dict, errs: list[str]) -> None:
+    """A test asset is a pinned release archive of a pinned source. Every member that is
+    extracted is pinned too, and the source's license evidence is among them, which ties
+    the archive to the license files read at the pinned commit."""
+    src = sources.get(e.get("source", ""))
+    if src is None:
+        errs.append(f"{where}: unknown source {e.get('source')!r}")
+        return
+    match = RELEASE_RE.match(e.get("url", ""))
+    if match is None or match.group(1) != src.get("url"):
+        errs.append(f"{where}: url must be a .zip release download of {src.get('url')}")
+    if not SHA256_RE.match(e.get("sha256", "")):
+        errs.append(f"{where}: bad sha256")
+    if not safe_member(e.get("game_dir", "")):
+        errs.append(f"{where}: game_dir must be a relative directory such as id1")
+    strip = e.get("strip", "")
+    members = e.get("members", {})
+    if not members:
+        errs.append(f"{where}: no pinned members")
+    for p, h in members.items():
+        if not safe_member(p) or not p.startswith(strip) or p == strip:
+            errs.append(f"{where}: member {p!r} must be a safe path under {strip!r}")
+        if not SHA256_RE.match(h):
+            errs.append(f"{where}: member {p}: bad sha256")
+    evidence = e.get("evidence", [])
+    if not evidence:
+        errs.append(f"{where}: no license evidence")
+    for ev in evidence:
+        want = src.get("checksums", {}).get(ev)
+        if want is None:
+            errs.append(f"{where}: evidence {ev} has no pinned checksum")
+        elif want not in members.values():
+            errs.append(f"{where}: evidence {ev} is not among the archive's pinned members")
+    for name, stand_in in e.get("stand_ins", {}).items():
+        if not (safe_member(name) and safe_member(stand_in)):
+            errs.append(f"{where}: stand-in {name!r} = {stand_in!r} must be relative paths")
+
+
 def _check_policy(m: dict, errs: list[str]) -> None:
     """The never list matches the never entries, and the corpus meets its minimums."""
     never = set(m.get("never", []))
@@ -179,8 +236,19 @@ def _check_policy(m: dict, errs: list[str]) -> None:
     )
     if "quakec-1.06" not in never:
         errs.append("never list must include quakec-1.06 (LIC-5)")
-    usable = {e.get("id") for _, e in _entries(m) if e.get("use") != "never"}
+    if ID_GAME_DATA not in never:
+        errs.append(f"never list must include {ID_GAME_DATA} (LIC-4)")
+    usable = {e.get("id") for e in m.get("codebase", []) if e.get("use") != "never"}
     errs.extend(f"missing required codebase {r}" for r in REQUIRED_IDS if r not in usable)
+    assets = [e for e in m.get("asset", []) if e.get("use") != "never"]
+    errs.extend(
+        f"asset {e.get('id')}: covers unknown codebase {c}"
+        for e in assets
+        for c in e.get("covers", [])
+        if c not in usable
+    )
+    if not any("rerelease" in e.get("covers", []) for e in assets):
+        errs.append("no test asset covers the rerelease codebase's precaches (QA-4)")
     mods = [e for e in m.get("codebase", []) if e.get("kind") == "mod" and e.get("use") != "never"]
     if len(mods) < MIN_MODS:
         errs.append(f"{len(mods)} usable mods; need at least {MIN_MODS}")
@@ -276,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     mode = "online" if args.online else "offline"
     print(
         f"corpus {mode}: {len(m.get('codebase', []))} codebases, {len(m.get('map', []))} maps, "
-        f"{len(m.get('source', []))} sources, {n_files} pinned files, {len(errs)} errors"
+        f"{len(m.get('asset', []))} assets, {len(m.get('source', []))} sources, {n_files} pinned files, {len(errs)} errors"
     )
     return 1 if errs else 0
 
