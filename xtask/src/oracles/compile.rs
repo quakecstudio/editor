@@ -32,7 +32,8 @@ pub(crate) const MSVC_FLAGS: [&str; 6] = [
 ];
 
 /// The flags that add clang's source-based coverage to our files and to the link, for the C
-/// coverage the Readiness workflow measures (`docs/testing.md`, TEST-1).
+/// coverage the Readiness workflow measures (`docs/testing.md`, TEST-1). Our files are also
+/// compiled with `QS_COVERAGE` defined, so that a crash writes the profile before it exits.
 pub(crate) const COVERAGE_FLAGS: [&str; 2] = ["-fprofile-instr-generate", "-fcoverage-mapping"];
 
 /// The compiler, and the environment it needs (MSVC's `INCLUDE`, `LIB` and `PATH`).
@@ -165,7 +166,7 @@ impl Compiler {
             if unit.code == Code::Ours {
                 command.args(["-Wall", "-Wextra", "-Werror"]);
                 if self.coverage {
-                    command.args(COVERAGE_FLAGS);
+                    command.args(COVERAGE_FLAGS).arg("-DQS_COVERAGE");
                 }
             } else {
                 command.arg("-w");
