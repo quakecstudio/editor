@@ -511,7 +511,8 @@ pub struct Face {
     pub extents: [i16; 2],
     /// `SURF_` flags (BSP-9.1, BSP-9.5).
     pub flags: u32,
-    /// Lightmap width and height in samples, from the extents before BSP-9.5 (BSP-9.7).
+    /// Lightmap width and height in samples, from the extents before BSP-9.5 (BSP-9.7);
+    /// 0 by 0 when either stored extent is negative (BSP-9.16).
     pub lightmap_size: [usize; 2],
 }
 
@@ -1166,9 +1167,7 @@ impl<'a> Bsp<'a> {
                 return Err(BspError::BadSurfaceExtents);
             }
         }
-        face.lightmap_size = face.extents.map(|extent| {
-            usize::try_from(i32::from(extent).wrapping_shr(4).wrapping_add(1)).unwrap_or(0)
-        });
+        face.lightmap_size = lightmap_size(face.extents);
         Ok(())
     }
 
@@ -1197,7 +1196,8 @@ impl<'a> Bsp<'a> {
     }
 
     /// The light samples of `face`: `smax * tmax` for each style, or `None` when it has
-    /// none (BSP-9.6, BSP-9.7, BSP-10.1).
+    /// none (BSP-9.6, BSP-9.7, BSP-10.1); empty for a face with a negative stored extent
+    /// (BSP-9.16).
     #[must_use]
     pub fn face_samples(&self, face: &Face) -> Option<&'a [u8]> {
         let start = usize::try_from(face.lightofs).ok()?;
@@ -1743,6 +1743,15 @@ fn link(
         }
     }
     Ok(())
+}
+
+/// A face's lightmap size in samples: `(extent >> 4) + 1` on each axis (BSP-9.7), or 0 by 0
+/// when either stored extent is negative, which no id renderer draws light from (BSP-9.16).
+fn lightmap_size(extents: [i16; 2]) -> [usize; 2] {
+    if extents.iter().any(|&extent| extent < 0) {
+        return [0, 0];
+    }
+    extents.map(|extent| usize::from(extent.unsigned_abs() >> 4).saturating_add(1))
 }
 
 /// A BSP with its entity lump replaced by `text` and a NUL, as `qbsp` writes it (BSP-2.2):

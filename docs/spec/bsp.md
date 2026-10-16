@@ -370,7 +370,9 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
 **Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.h` and
 `WinQuake/gl_model.h`, `msurface_t`; `WinQuake/model.c`, `Mod_LoadFaces`,
 `CalcSurfaceExtents`; `WinQuake/gl_model.c`, `CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`,
-`R_BuildLightMap`
+`R_BuildLightMap`, `AllocBlock`, `GL_CreateSurfaceLightmap`, `GL_BuildLightmaps`;
+`WinQuake/d_surf.c`, `D_SCAlloc`, `D_CacheSurface`; `WinQuake/r_surf.c`, `R_BuildLightMap`;
+`WinQuake/r_light.c` and `WinQuake/gl_rlight.c`, `RecursiveLightPoint`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -454,6 +456,17 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   fails with `Bad surface extents` and 512 loads, so a face with an extent from 272 to 512
   loads in GLQuake and fails in WinQuake. `crates/qs-bsp` applies the limit of the loader its
   caller names, WinQuake's or GLQuake's, and has no default.
+- **BSP-9.16** A face whose stored extent (BSP-9.14) is negative on either axis has no
+  lightmap: this spec gives it 0 by 0 samples, so it has no samples and BSP-10.2 requires only
+  that its `lightofs` is -1 or at most the size of the lighting lump. BSP-9.7 would give that
+  axis `(extent >> 4) + 1` samples, 0 or fewer (id's x86 builds shift the `short`
+  arithmetically), and neither of id's renderers draws light from the face's samples:
+  WinQuake stops with `D_SCAlloc: bad cache width` or `D_SCAlloc: bad cache size` the first
+  time it caches the face to draw it, before it reads a sample; GLQuake stops with
+  `AllocBlock: full` when a map starts if `smax` is below 0 and `tmax` above 0, and otherwise
+  stores none of the face's samples in its lightmap texture; and neither lights a model from
+  the face. id's loaders load the face (BSP-9.14); what each renderer does is in the
+  evidence below.
 
 ### Evidence for BSP-9.11 and BSP-9.12
 
@@ -614,6 +627,107 @@ the WinQuake build of `WinQuake/model.c`. Both builds of each loader gave the re
 README records for `extents-256`, `extents-272`, `extents-272-special`, `extents-512`,
 `extents-528` and `extents-528-special`.
 
+### Evidence for BSP-9.16
+
+The functions that build a face's lightmap compute its size from the stored extents as
+`CalcSurfaceExtents` leaves them, without a check: `smax = (surf->extents[0]>>4)+1;`
+and `tmax = (surf->extents[1]>>4)+1;` in `R_BuildLightMap` (`WinQuake/r_surf.c` and
+`WinQuake/gl_rsurf.c`) and `GL_CreateSurfaceLightmap`. Shifting a negative value right is
+implementation-defined in C; `GLQUAKE.EXE` (the executable in the table under "Evidence for
+BSP-9.11 and BSP-9.12") shifts arithmetically, `sarw $0x4, %ax` then `movswl` and `incl`, in
+`GL_CreateSurfaceLightmap` from `0x418c1e` and in `R_BuildLightMap` from `0x417539`, so an
+extent of -32752 gives `smax` -2046, -16 gives 0 and -32 gives -1.
+
+**WinQuake.** The software renderer reads a face's samples only to draw it, through
+`D_CacheSurface` (`WinQuake/d_surf.c`), which first allocates the face's surface cache:
+
+```c
+	r_drawsurf.surfwidth = surface->extents[0] >> miplevel;
+	r_drawsurf.rowbytes = r_drawsurf.surfwidth;
+	r_drawsurf.surfheight = surface->extents[1] >> miplevel;
+	...
+		cache = D_SCAlloc (r_drawsurf.surfwidth,
+						   r_drawsurf.surfwidth * r_drawsurf.surfheight);
+```
+
+and `D_SCAlloc` begins:
+
+```c
+	if ((width < 0) || (width > 256))
+		Sys_Error ("D_SCAlloc: bad cache width %d\n", width);
+
+	if ((size <= 0) || (size > 0x10000))
+		Sys_Error ("D_SCAlloc: bad cache size %d\n", size);
+```
+
+A negative `extents[0]` gives a negative width at every mip level, and a negative
+`extents[1]` with `extents[0]` of 0 or more gives a size of 0 or less, so the first time
+WinQuake draws the face it stops with one of these errors, before `R_DrawSurface` and
+`R_BuildLightMap` run. `WINQUAKE.EXE` does the same: `D_CacheSurface` shifts with
+`sarw %cl, %dx` and `movswl` from `0x4328a9` and calls `D_SCAlloc` at `0x4328dc`, which tests
+`testl %ebx, %ebx; jl` and `cmpl $0x100, %ebx; jle` for the width and `testl %ebp, %ebp; jle`
+and `cmpl $0x10000, %ebp; jle` for the size before calling `Sys_Error` (from `0x43258b`). A
+face drawn as sky (BSP-9.5) is drawn without a surface cache, and so is every face when the
+`r_drawflat` cvar (0 by default, `WinQuake/r_main.c`) is set; a liquid's extents are 16384.
+
+**GLQuake.** When a map starts, `GL_BuildLightmaps` calls `GL_CreateSurfaceLightmap` for every
+face of the world and the other models it has loaded, which skips sky and liquids
+(`if (surf->flags & (SURF_DRAWSKY|SURF_DRAWTURB)) return;`) and otherwise calls
+`AllocBlock (smax, tmax, &surf->light_s, &surf->light_t)` and then `R_BuildLightMap`.
+`AllocBlock` looks for a place `w` texels wide in each of the 64 lightmap textures:
+
+```c
+		best = BLOCK_HEIGHT;
+
+		for (i=0 ; i<BLOCK_WIDTH-w ; i++)
+		{
+			best2 = 0;
+
+			for (j=0 ; j<w ; j++)
+			{
+				...
+			}
+			if (j == w)
+			{	// this is a valid spot
+				*x = i;
+				*y = best = best2;
+			}
+		}
+
+		if (best + h > BLOCK_HEIGHT)
+			continue;
+```
+
+With `w` below 0 the inner loop never runs and `j == w` never holds, so `best` stays
+`BLOCK_HEIGHT` (128): when `h` is above 0 every texture is skipped and it ends in
+`Sys_Error ("AllocBlock: full")`; when `h` is 0 or less it returns texture 0 without setting
+the position. With `w` of 0 every column is a valid spot and it returns the last, column 127.
+With `w` above 0 and `h` below 0 it finds a place and sets the columns' height to `best + h`,
+lower than before. `R_BuildLightMap` then stores the lightmap row by row,
+`for (i=0 ; i<tmax ; i++, dest += stride)` and `for (j=0 ; j<smax ; j++)`, so with either
+count 0 or less it stores nothing. When both are below 0 it first adds `size = smax*tmax`
+samples into `unsigned blocklights[18*18];`, a positive count that passes the array's 324
+entries for a product over 324, but stores none of them.
+
+**Lighting a model.** `RecursiveLightPoint` (`WinQuake/r_light.c` and `WinQuake/gl_rlight.c`)
+takes the light under a model from the first face below it whose texture position lies in
+the face: after `if (s < surf->texturemins[0] || t < surf->texturemins[1]) continue;` it
+computes `ds = s - surf->texturemins[0];` and `dt` alike, both 0 or more, and
+`if ( ds > surf->extents[0] || dt > surf->extents[1] ) continue;` skips a face with a
+negative extent.
+
+**Checked:** on 2026-10-16 id's `D_CacheSurface` with `D_SCAlloc` (`WinQuake/d_surf.c`) and
+`R_DrawSurface` (`WinQuake/r_surf.c`), and id's `GL_BuildLightmaps` with `AllocBlock`,
+`GL_CreateSurfaceLightmap` and `R_BuildLightMap` (`WinQuake/gl_rsurf.c`), were built
+unchanged from the pinned commit with id's own headers, each with its loader
+(`WinQuake/model.c` or `WinQuake/gl_model.c`) and stubs for the engine around them, for arm64
+with Apple clang and for x86-64 with gcc 14.4 in an emulated `linux/amd64` container. The
+WinQuake harness caches the face at mip levels 0 to 3; the GLQuake harness builds the
+lightmaps and prints each face's block and texels. Both builds of both gave the results the
+vectors' README records for `base`, `extents-32784`, `extents-65520`, `extents-32784-t` and
+`extents-65504-st`. `extents-32784-st` was run through WinQuake's harness only: GLQuake would
+add 4,186,116 samples into `blocklights`, which C leaves undefined.
+
 ### Constants
 
 | Name | Value | Source |
@@ -631,7 +745,8 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 `nolight-back` (BSP-9.1, BSP-9.6), `x87-order` and `x87-pc64` (BSP-9.11), `nan-vertex`
 (BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14),
 `extents-512`, `extents-528` and `extents-528-special` (BSP-9.15, with `extents-256`,
-`extents-272` and `extents-272-special` as GLQuake loads them).
+`extents-272` and `extents-272-special` as GLQuake loads them), `extents-32784`,
+`extents-65520`, `extents-32784-t`, `extents-65504-st` and `extents-32784-st` (BSP-9.16).
 
 ## BSP-10 Lighting
 
