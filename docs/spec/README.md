@@ -43,9 +43,40 @@ Rules:
 | `#[expect]` reason | `reason = "spec VM-12.3: exact IEEE comparison"` |
 | Issue or PR | `Spec: VM-12, VM-13` in the body |
 
-A test cites the statements it pins, not just the section. The spec-citation ratchet
-([#4](https://github.com/quakecstudio/editor/issues/4)) counts a statement as covered when a
-test cites its ID, and readiness requires 100% (TEST-3 in [`../testing.md`](../testing.md)).
+A test cites the statements it pins, not just the section. Readiness requires every active
+statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
+
+## The spec-citation ratchet
+
+`crates/qs-tests/tests/it/spec_coverage.rs` checks, on every `cargo test`:
+
+- Every active statement in `docs/spec/*.md` (all but `README.md` and `_`-prefixed templates)
+  is cited by a line starting `// spec <ID>` in a Rust file under `crates/` or `apps/`, or
+  is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv).
+- Every citation names a statement that exists and is not withdrawn. A citation names
+  statements (`PREFIX-n.m`), never just a section.
+- No statement in the baseline is cited: once a test cites it, it leaves the baseline in the
+  same PR. The baseline only shrinks, and a crate passing readiness has none.
+- [`requirements.tsv`](requirements.tsv) matches the spec files. On a mismatch the test
+  prints the file's expected contents.
+
+`requirements.tsv` is the index of every statement, one row each in file order,
+tab-separated:
+
+| Column | Meaning |
+| --- | --- |
+| `id` | The statement ID, `PREFIX-n.m` |
+| `spec` | The spec file it is in, such as `vm.md` |
+| `section` | Its section ID, `PREFIX-n` |
+| `status` | `active`, or `withdrawn` when the text starts with `**Withdrawn**` |
+| `statement` | The statement's text, continuation lines joined and whitespace collapsed |
+
+`coverage-baseline.tsv` has the header `id` and one statement ID per line. A statement
+written ahead of the code that implements it goes there, and the PR that adds the code
+and its tests removes it.
+
+Statements inside HTML comments are not read, which is how `_template.md` shows a withdrawn
+statement without defining one.
 
 ## Writing a section
 

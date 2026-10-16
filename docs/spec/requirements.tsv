@@ -1,0 +1,8 @@
+id	spec	section	status	statement
+EXAMPLE-1.1	example.md	EXAMPLE-1	active	The input is the bytes before its first NUL byte; anything after it is ignored.
+EXAMPLE-1.2	example.md	EXAMPLE-1	active	A backslash followed by `n` (0x6E) becomes one newline byte (0x0A).
+EXAMPLE-1.3	example.md	EXAMPLE-1	active	A backslash followed by any byte other than `n` becomes one backslash, and that byte is dropped. In particular `\\` becomes `\`, `\t` becomes `\` and `\N` becomes `\`.
+EXAMPLE-1.4	example.md	EXAMPLE-1	active	A backslash that is the last byte of the input stays a backslash.
+EXAMPLE-1.5	example.md	EXAMPLE-1	active	Every byte that is not part of an escape is copied unchanged, including control bytes and bytes 0x80 to 0xFF.
+EXAMPLE-1.6	example.md	EXAMPLE-1	active	Escapes do not chain: the input is scanned once, left to right, and the output is never re-scanned. `\\n` becomes `\n` (two bytes, backslash and `n`).
+EXAMPLE-1.7	example.md	EXAMPLE-1	active	The output is never longer than the input.

@@ -1,0 +1,57 @@
+name: Behaviour spec
+description: Write a docs/spec/ section describing what id's engine or tools do, from their source.
+title: "Specify ..."
+labels: ["type:spec"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A spec is written with id's source open, at the pinned commit in `docs/porting.md`, and follows `docs/spec/README.md` and `docs/spec/_template.md`: stable IDs, numbered statements covering the edge cases, named constants with citations, and test vectors.
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: The IDs from plan/requirements.yaml this serves, comma-separated.
+      placeholder: "VM-3, LIC-2"
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: The id file(s) and function(s) the spec describes, with the upstream and commit.
+      placeholder: "WinQuake/pr_exec.c, PR_ExecuteProgram (id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d)"
+    validations:
+      required: true
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: The spec file and sections, the prefix to register in docs/spec/README.md, and any vectors.
+      placeholder: |
+        - docs/spec/<file>.md: sections <PREFIX>-1 ... with statements, constants and test vectors
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Each one checkable by a test or a recorded result.
+      placeholder: |
+        - [ ] Every section cites the file, function and commit it comes from
+        - [ ] Test vectors checked against id's code (oracle or recorded local run)
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How the criteria are checked.
+      placeholder: "Review against id's source at the pinned commit; vectors run through the oracle"
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issues that must close first, as #numbers.

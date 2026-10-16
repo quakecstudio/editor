@@ -1,0 +1,60 @@
+name: Decision
+description: A question a person decides, recorded as an ADR in docs/adr/.
+title: "Decide ..."
+labels: ["type:decision", "needs:human"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Decisions belong to a person. An agent prepares the ADR from `docs/adr/0000-template.md` with options and a recommendation as a draft PR (`/prepare-decision`); Justin decides and merges it.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: The decision, in one sentence.
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: The IDs from plan/requirements.yaml this decision serves, comma-separated.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options known so far
+      description: The options to compare, including the plain manual one where it applies.
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: The ADR file, and anything that changes in plan/ once it is accepted.
+      placeholder: |
+        - docs/adr/00NN-<slug>.md, status Accepted
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What the ADR must contain for this to close.
+      placeholder: |
+        - [ ] The ADR compares at least two options with their consequences for the plan
+        - [ ] The decision is recorded and the plan changes it implies are made
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How the decision is checked.
+      placeholder: "cargo xtask adr passes; the ADR is Accepted and merged by Justin"
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issues that must close first, as #numbers.
