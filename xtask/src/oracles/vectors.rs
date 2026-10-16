@@ -1065,4 +1065,58 @@ mod tests {
         let plain = parse("t.txt", "== v\ncode:\n  DONE\n").unwrap();
         assert!(init_text(plain.first().unwrap()).starts_with("edicts 3\nentry 1\n"));
     }
+
+    #[test]
+    fn rejects_values_outside_32_bits() {
+        assert_eq!(
+            parse_value("0xffffffff", true).unwrap(),
+            Value::Bits(u32::MAX)
+        );
+        assert!(parse_value("0x100000000", true).is_err());
+        assert_eq!(
+            parse_value("i-2147483648", true).unwrap(),
+            Value::Bits(0x8000_0000)
+        );
+        assert!(parse_value("i2147483648", true).is_err());
+        assert!(parse_value("p1", true).is_err());
+        assert!(parse_value("e", true).is_err());
+        assert_eq!(parse_value("inf", true).unwrap(), Value::Bits(0x7f80_0000));
+    }
+
+    #[test]
+    fn rejects_malformed_string_escapes_and_trailing_text() {
+        assert!(parse_strings(r#""\x4""#).is_err());
+        assert!(parse_strings(r#""\xzz""#).is_err());
+        assert!(parse_strings(r#""a" b"#).is_err());
+        assert_eq!(parse_strings("").unwrap(), Vec::<Vec<u8>>::new());
+        let hash = parse("t.txt", "== v\nstrings: \"a#b\"\n").unwrap();
+        assert_eq!(hash.first().unwrap().strings, vec![b"a#b".to_vec()]);
+    }
+
+    #[test]
+    fn keeps_a_quoted_error_message_and_a_bare_error() {
+        let quoted = parse("t.txt", "== v\nexpect:\n  error \"NULL function\"\n").unwrap();
+        assert_eq!(
+            quoted.first().unwrap().end,
+            Some(End::Error(Some("NULL function".to_owned())))
+        );
+        let bare = parse("t.txt", "== v\nexpect:\n  error\n").unwrap();
+        assert_eq!(bare.first().unwrap().end, Some(End::Error(None)));
+    }
+
+    #[test]
+    fn keeps_a_well_formed_after_line() {
+        let vectors = parse("t.txt", "== v\nafter: depth=0 localstack=2\n").unwrap();
+        assert_eq!(vectors.first().unwrap().after, Some((0, 2)));
+        assert!(parse("t.txt", "== v\nafter: stack=2\n").is_err());
+    }
+
+    #[test]
+    fn rejects_bad_operands_and_function_fields() {
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 x 3\n").is_err());
+        assert!(parse("t.txt", "== v\ncode:\n  NOT_AN_OPCODE 1\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  2: first=1 colour=3\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  2: builtin=-2147483648\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  x: first=1\n").is_err());
+    }
 }

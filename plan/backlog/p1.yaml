@@ -623,6 +623,112 @@ issues:
   - cargo xtask project-corpus reports no error for FreeCS and Xonotic in CI
   verify:
   - cargo xtask project-corpus in CI
+- key: P1-35
+  title: Measure the oracles against the readiness bar
+  labels:
+  - c-tools
+  - area:process
+  - type:test
+  size: M
+  reqs:
+  - TEST-1
+  - TEST-2
+  - TEST-3
+  - TEST-5
+  - TEST-7
+  - TEST-10
+  depends:
+  - P1-11
+  - P1-26
+  - P1-32
+  deliverable:
+  - 'The Readiness workflow (.github/workflows/readiness.yml, cargo xtask readiness) measures the C tools layer: line and branch coverage of our C (oracles/vm/*.c) under every vector and the id 1.01 scenarios, built with source-based coverage; cargo xtask oracles run 20 times on each OS; and the spec statements oracles/README.md lists as implemented, cited by tests'
+  - 'Tests that bring our C to the bar: every refusal of DIFF-2.3 and every exit status of oracles/README.md (2 refused, 3 cannot write, 4 crashed), run through the built oracle in CI; tests citing the DIFF and TRACE-5 statements the oracle implements, which are all in docs/spec/coverage-baseline.tsv today'
+  - 'Unit tests for the Rust driver in xtask/src/oracles.rs and xtask/src/oracles/ (oracles.rs, compile.rs and id101.rs had no unit-test coverage, vectors.rs 47%, rerelease.rs 56% on 2026-10-16), and the three xtask tests that need a git checkout (attribution, licenses, corpus verify) made to pass in the copy cargo mutants tests, so the xtask mutation run can start'
+  - 'A fuzz target for each parser of the layer that reads a file: the scenario file (DIFF-2), the progs loader and init file of vm-oracle, and the vector parser in xtask/src/oracles/vectors.rs; or an exception with its reason in oracles/README.md and ratchets.toml'
+  - Any part of the bar that cannot apply to C (for example mutation testing) recorded as an exception with its reason in oracles/README.md and under exceptions in ratchets.toml
+  acceptance:
+  - 'A Readiness run on main reports every check for the C tools layer: lines at least 90%, branches at least 80%, mutation at least 90% or an exception, spec citations 100%, 20 of 20 runs of cargo xtask oracles on Linux, macOS and Windows'
+  - 'On 2026-10-16 the readiness review (docs/readiness/p1-rg.md) measured our C at 80.6% of lines and 64.5% of branches locally, the xtask crate at 71.6% of lines in CI, and the xtask mutation run failed before testing any mutant; each is at or above the bar'
+  verify:
+  - The Readiness workflow run linked in the PR
+- key: P1-36
+  title: vm-oracle accepts malformed scenario and init files
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - FND-8
+  - LIC-3
+  depends:
+  - P1-11
+  - P1-37
+  deliverable:
+  - 'oracles/vm/scenario.c: a scenario with a NUL byte is read as DIFF-2.1 says (lines of bytes), so an unknown key after it is refused; integers are read as DIFF-2.3 says, so `frames 0000000000000000001` (19 digits, value 1) is accepted rather than refused'
+  - 'oracles/vm/host.c: the init file of vector mode (oracles/README.md) refuses a value that is not the number its line takes, instead of reading it with atoi or strtoul: `global 100x bits zz` and `seed abc` run today with slot 100 and value 0, and `bits 1ffffffff` is truncated to 32 bits'
+  - A regression test for each, run through the built oracle in CI
+  acceptance:
+  - 'Each input above gets the exit status DIFF-2.3 and oracles/README.md give it: 2 for a refused file, 0 for the accepted integer; the review''s probe (docs/readiness/p1-rg.md) reproduces each case'
+  verify:
+  - cargo xtask oracles in CI on all three OSes
+- key: P1-37
+  title: Say which number texts a differential scenario accepts
+  labels:
+  - c-tools
+  - area:vm
+  - type:spec
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'docs/spec/differential.md: a statement (withdrawing and replacing DIFF-2.3 as docs/spec/README.md says) fixing the syntax of the `frametime`, `model` and `input` numbers. DIFF-2.3 says only that they are rounded once from the decimal text; vm-oracle accepts `.1` and `5.` and refuses `+0.1`, `inf` and `nan` (scenario.c, decimal_syntax), while Rust''s f64 and f32 parsing, which the P1-13 runner would use, accepts all of them'
+  - Test vectors for each accepted and refused form, and vm-oracle changed in the same PR if it disagrees
+  acceptance:
+  - The oracle's refusals match the statement on every form in its vectors
+  verify:
+  - Implementer review from both sides (the oracle and the P1-13 runner)
+- key: P1-38
+  title: The vector checker loosens malformed after and error lines
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'xtask/src/oracles/vectors.rs (parse): an `after:` line whose numbers do not parse, or that lacks depth or localstack, is an error, not a vector with no after check (`after: depth=x localstack=2` parses today and checks nothing); an `error` line other than `error` and `error "<message>"` is an error, not one that accepts any message (`error "open`, `errors`, and `error "a # b"`, which the comment rule cuts to `error "a `, all accept any message today)'
+  - The same rules in crates/qs-tests/tests/it/spec_vectors.rs, which today accepts `error "open`
+  - 'Regression tests: refuses_a_malformed_after_line and refuses_a_malformed_error_line, as written in the readiness report, docs/readiness/p1-rg.md'
+  acceptance:
+  - Every vector file still parses, and each malformed line above is an error in both parsers
+  verify:
+  - cargo test -p xtask; cargo test -p qs-tests
+- key: P1-39
+  title: The oracle build copies a comment or declaration as a function
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - LIC-3
+  - LIC-7
+  depends:
+  - P1-11
+  deliverable:
+  - 'xtask/src/oracles/extract.rs (function): a column-0 line inside a block comment that names the function before `(` (id''s comment headers often show a call, such as `setorigin (entity, origin)`) is not taken as the definition''s start, and neither is a declaration followed by a comment (`void f (void); // declared`). Today both start the copy, which then runs on into the next function body'
+  - 'Regression tests: skips_a_comment_line_naming_the_function and skips_a_declaration_with_a_trailing_comment, as written in the readiness report, docs/readiness/p1-rg.md'
+  acceptance:
+  - Both tests pass and cargo xtask oracles builds the same vm-oracle from the pinned sources
+  verify:
+  - cargo test -p xtask; cargo xtask oracles in CI
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -669,6 +775,11 @@ issues:
   - P1-32
   - P1-33
   - P1-34
+  - P1-35
+  - P1-36
+  - P1-37
+  - P1-38
+  - P1-39
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:

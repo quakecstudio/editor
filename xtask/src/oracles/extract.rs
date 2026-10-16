@@ -195,4 +195,38 @@ void after (void)
         let source = "void PF_WriteByte2 (void)\n{\n}\nvoid PF_WriteByte (void)\n{\n}\n";
         assert_eq!(function(source, "PF_WriteByte").unwrap().line, 4);
     }
+
+    #[test]
+    fn copies_one_line_and_same_line_brace_definitions() {
+        let source = "void one (void) { }\nvoid two (void) {\n\tx ();\n}\n";
+        assert_eq!(
+            function(source, "one").unwrap().text,
+            "void one (void) { }\n"
+        );
+        let two = function(source, "two").unwrap();
+        assert_eq!(two.line, 2);
+        assert_eq!(two.text, "void two (void) {\n\tx ();\n}\n");
+    }
+
+    #[test]
+    fn ignores_directives_and_braces_inside_block_comments() {
+        let source = "void f (void)\n{\n/*\n#if 0\n}\n*/\n\tg ();\n}\nvoid h (void)\n{\n}\n";
+        let f = function(source, "f").unwrap();
+        assert!(f.text.ends_with("\tg ();\n}\n"));
+        assert!(!f.text.contains("void h"));
+    }
+
+    #[test]
+    fn handles_escaped_quotes_and_char_literals() {
+        let source = "void f (void)\n{\n\tp (\"\\\"{\");\n\tq ('}');\n\tr ('\\'');\n}\n\
+                      void g (void)\n{\n}\n";
+        let f = function(source, "f").unwrap();
+        assert!(f.text.ends_with("\tr ('\\'');\n}\n"));
+    }
+
+    #[test]
+    fn skips_an_assignment_naming_the_function() {
+        let source = "builtin_t table[] = {f (0)};\nfp x = f (1),\nvoid f (int a)\n{\n}\n";
+        assert_eq!(function(source, "f").unwrap().line, 3);
+    }
 }
