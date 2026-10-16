@@ -1,0 +1,22 @@
+[package]
+name = "qc-progs"
+description = "Zero-copy progs.dat reader, writer and validation, with FTE version 7 behind a feature"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Reading and writing FTEQCC's version 7 format (docs/spec/progs.md, PROGS-19 to PROGS-21).
+fte = []
+
+[dependencies]
+qc-types = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

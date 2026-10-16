@@ -112,6 +112,7 @@ similar_names = "allow"
 [workspace.dependencies]
 criterion = { version = "=0.8.2", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
+qc-types = { path = "crates/qc-types" }
 qs-log = { path = "crates/qs-log" }
 qs-paths = { path = "crates/qs-paths" }
 serde = { version = "=1.0.229", default-features = false }
