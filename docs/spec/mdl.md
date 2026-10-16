@@ -9,8 +9,8 @@ loads it, as implemented by `WinQuake/modelgen.h` and `WinQuake/model.c` in
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the renderers' use of the fields from
 `WinQuake/r_alias.c` and `WinQuake/gl_mesh.c`. GLQuake's loader in `WinQuake/gl_model.c`
 differs in a few checks, which MDL-1.8 lists. Implemented by `crates/qs-mdl`
-([#143](https://github.com/quakecstudio/editor/issues/143), P5-02); every statement in this
-file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until that crate cites it.
+([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
+every statement.
 
 All integers are 32-bit two's-complement signed little-endian values read through
 `LittleLong`, all floats 32-bit IEEE 754 little-endian values read through `LittleFloat`,

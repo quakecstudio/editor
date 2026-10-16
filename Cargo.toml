@@ -122,7 +122,9 @@ qc-project = { path = "crates/qc-project" }
 qc-syntax = { path = "crates/qc-syntax" }
 qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }
+qs-bsp = { path = "crates/qs-bsp" }
 qs-log = { path = "crates/qs-log" }
+qs-map = { path = "crates/qs-map" }
 qs-mdl = { path = "crates/qs-mdl" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }

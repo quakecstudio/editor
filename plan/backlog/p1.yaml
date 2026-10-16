@@ -729,6 +729,24 @@ issues:
   - Both tests pass and cargo xtask oracles builds the same vm-oracle from the pinned sources
   verify:
   - cargo test -p xtask; cargo xtask oracles in CI
+- key: P1-40
+  title: Pin the precision of face texture extents to id's original x86 build
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P5-02
+  deliverable:
+  - 'docs/spec/bsp.md: a statement saying in what precision id''s original x86 builds of WinQuake and GLQuake evaluate the texture coordinates in CalcSurfaceExtents (BSP-9.3 says single precision; an x87 build may keep wider intermediates), with the evidence, and BSP-9.3 withdrawn and replaced if they differ. P5-02 found that id''s code built on arm64 with fused multiply-adds gives 131 faces of nine LibreQuake maps an extent one 16-texel step apart from single precision, which changes their lightmap size'
+  - crates/qs-bsp follows the statement, with a test that cites it
+  acceptance:
+  - The statement quotes its evidence (the original build's code generation, or a run of id's loader built as the original was) and qs-bsp agrees with id's loader so built on the LibreQuake lite BSPs
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -780,6 +798,7 @@ issues:
   - P1-37
   - P1-38
   - P1-39
+  - P1-40
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -866,15 +885,16 @@ issues:
   - P1-18
   - P1-19
   - P1-29
+  - P5-02
   deliverable:
-  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model it reads (P1-29). No game data is committed (LIC-4)'
+  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model (P1-29), and every alias model and BSP with its .lit and entity text (P5-02), it reads. No game data is committed (LIC-4)'
   - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
   acceptance:
   - Every run ends with `read N files, ...` and prints no `failed:` lines
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
   - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
-  - Every run's `decoded` line counts every `.spr` and `.wav` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3)
+  - Every run's `decoded` line counts every `.spr`, `.wav`, `.mdl` and `.bsp` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3, MDL-1 to MDL-5, BSP-1 to BSP-18, MAP-1, MAP-2)
   - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
-  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-wav or qs-install and fixed before this issue closes
+  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-bsp, qs-map, qs-wav or qs-install and fixed before this issue closes
   verify:
   - Walk output for all six runs and find output for the three OSes attached to the issue

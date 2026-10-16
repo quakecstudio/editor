@@ -16,6 +16,8 @@ libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["li
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
 qc-project = { path = "../crates/qc-project" }
 qc-syntax = { path = "../crates/qc-syntax" }
+qs-bsp = { path = "../crates/qs-bsp" }
+qs-map = { path = "../crates/qs-map" }
 qs-mdl = { path = "../crates/qs-mdl" }
 qs-pak = { path = "../crates/qs-pak" }
 qs-wad = { path = "../crates/qs-wad" }
@@ -38,6 +40,20 @@ bench = false
 [[bin]]
 name = "qc-syntax"
 path = "fuzz_targets/qc_syntax.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-bsp"
+path = "fuzz_targets/qs_bsp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qs-map"
+path = "fuzz_targets/qs_map.rs"
 test = false
 doc = false
 bench = false

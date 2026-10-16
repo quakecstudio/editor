@@ -6,8 +6,8 @@ never renumbered, never reused, withdrawn rather than deleted.
 Describes the `.map` file a level editor saves and a BSP compiler reads: its tokens, its
 entities and key-value pairs, its brushes in the standard (QuakeEd) and Valve 220 forms, and
 the conventions of the world entity. Implemented by `crates/qs-map`
-([#143](https://github.com/quakecstudio/editor/issues/143), P5-02); every statement in this
-file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until that crate cites it.
+([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
+every statement.
 
 id's engine never reads a `.map`; its format is what id's map compiler, `qbsp`, accepts.
 `qbsp` is in `qutils/` of id-Software/Quake-Tools, which is not a portable upstream until the
@@ -18,7 +18,7 @@ code is ported from either:
 
 | Short name | Repository and commit | Files read |
 | --- | --- | --- |
-| qbsp | [id-Software/Quake-Tools](https://github.com/id-Software/Quake-Tools)@`c0d1b91c74eb654365ac7755bc837e497caaca73` | `qutils/QBSP/MAP.C`, `GetToken`, `ParseEpair`, `ParseBrush`, `TextureAxisFromPlane`, `FindMiptex`, `FindTexinfo`, `ParseEntity`, `LoadMapFile`, `GetVectorForKey`, `WriteEntitiesToString`; `qutils/QBSP/QBSP.C`, `ProcessEntity`, `UpdateEntLump`; `qutils/QBSP/WRITEBSP.C`, `WriteMiptex`; `qutils/QBSP/BSP5.H`, `ON_EPSILON` |
+| qbsp | [id-Software/Quake-Tools](https://github.com/id-Software/Quake-Tools)@`c0d1b91c74eb654365ac7755bc837e497caaca73` | `qutils/QBSP/MAP.C`, `GetToken`, `ParseEpair`, `ParseBrush`, `TextureAxisFromPlane`, `FindMiptex`, `FindTexinfo`, `ParseEntity`, `LoadMapFile`, `GetVectorForKey`, `WriteEntitiesToString`; `qutils/QBSP/QBSP.C`, `ProcessEntity`, `UpdateEntLump`; `qutils/QBSP/WRITEBSP.C`, `WriteMiptex`, `AddAnimatingTextures`, `LoadLump`, `TEX_InitFromWad`, `CleanupName`; `qutils/QBSP/BSP5.H`, `ON_EPSILON` |
 | ericw-tools | [ericwa/ericw-tools](https://github.com/ericwa/ericw-tools)@`36eec1da2a194467e6baac2f444c2dd04b57d266` (GPL-2.0-or-later) | `common/parser.cc`, `parser_t::parse_token`; `common/mapfile.cc`, `brush_side_t::parse_plane_def`, `parse_texture_def`, `parse_valve_220`, `parse_quake_ed`, `set_texinfo`, `brush_t::parse_brush_face`, `map_entity_t::parse`, `parse_brush`, `parse_entity_dict`; `common/entdata.cc`, `entdict_t::set`; `qbsp/map.cc`, the texture loading that reads `_wad` and `wad` |
 
 The engine's side of the same entities, once `qbsp` has written them to the BSP's entity
@@ -59,6 +59,11 @@ ends first.
   other than `\n`, `\'`, `\r`, `\t`, `\\`, `\b`, `\x` and `\0` to `\9`. A file that qbsp
   reads gives the same tokens in ericw-tools unless it holds `;` outside quotes or `\"`
   inside them.
+- **MAP-1.9** The line number in qbsp's errors (`Line <n> is incomplete`, `Token too large
+  on line <n>`) counts only the LFs `GetToken` skips between tokens (`if (*script_p++ ==
+  '\n') ... scriptline++;`). The LF that ends a `//` comment is consumed with the comment
+  (`while (*script_p++ != '\n')`) and a LF inside a quoted token is copied into it, and
+  neither is counted, so after a comment qbsp's line numbers fall behind the file's.
 
 ### Constants
 
@@ -70,7 +75,7 @@ ends first.
 
 See [`vectors/map/`](vectors/map/README.md): `crlf-highbyte` (MAP-1.2), `eof-in-quote`
 and `escape` (MAP-1.4), `token-127` and `token-128` (MAP-1.6), `comment-mid-line` (MAP-1.3,
-MAP-1.7).
+MAP-1.7). The line numbers of MAP-1.9 are tested in `crates/qs-map`.
 
 ## MAP-2 Entities and key-value pairs
 
@@ -282,7 +287,8 @@ See [`vectors/map/`](vectors/map/README.md): `valve220` (MAP-5.1 to MAP-5.3, MAP
 ## MAP-6 The world and brush entities
 
 **Source:** qbsp `qutils/QBSP/QBSP.C`, `ProcessEntity`, `UpdateEntLump`;
-`qutils/QBSP/WRITEBSP.C`, `WriteMiptex`; ericw-tools `qbsp/map.cc` (texture loading);
+`qutils/QBSP/WRITEBSP.C`, `WriteMiptex`, `AddAnimatingTextures`, `LoadLump`,
+`TEX_InitFromWad`, `CleanupName`; ericw-tools `qbsp/map.cc` (texture loading);
 `WinQuake/sv_main.c`, `SV_SpawnServer`, `SV_SendServerinfo`; `WinQuake/cl_parse.c`,
 `CL_ParseServerInfo`, `svc_cdtrack` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
@@ -299,10 +305,9 @@ See [`vectors/map/`](vectors/map/README.md): `valve220` (MAP-5.1 to MAP-5.3, MAP
   empty, its `wad` key: one path, relative to the game directory. With neither it prints
   `WARNING: no wadfile specified` and writes an empty textures lump. ericw-tools reads the
   same keys as a list of paths separated by `;`.
-- **MAP-6.4** A texture qbsp cannot find in the WAD gets the slot offset -1 (BSP-4.2) with
-  `WARNING: texture <name> not found`. For each texture whose name starts with `+`, qbsp also
-  adds every other frame of its animation (`+0` to `+9`, `+A` to `+J`) that the WAD holds
-  (BSP-4.8).
+- **MAP-6.4** **Withdrawn** 2026-10-16: it said qbsp adds every frame of a `+` animation
+  that the WAD holds, but `AddAnimatingTextures` compares the name as the map spells it with
+  the WAD's upper-cased names; replaced by MAP-6.8.
 - **MAP-6.5** The world's `message` is the level's title: the server sends it to each client
   when it connects. id's server passes it to `sprintf` as the format string (`sprintf
   (message, pr_strings+sv.edicts->v.message)`), so a `%` in it is undefined; this spec fixes
@@ -313,10 +318,20 @@ See [`vectors/map/`](vectors/map/README.md): `valve220` (MAP-5.1 to MAP-5.3, MAP
 - **MAP-6.7** Every other key of the world, and every key of other entities, is the game's:
   the engine applies it to a field of the QuakeC entity by name (EDICT-8.2), and a key that
   starts with `_` is ignored by the engine and left for the tools.
+- **MAP-6.8** qbsp's textures lump has a slot for each texture name the map uses (MAP-4.7)
+  and then, from `AddAnimatingTextures`, for each name that starts with `+`, each frame `+0`
+  to `+9` and `+A` to `+J` of its animation (the name with its second byte replaced) that
+  equals a lump name of the WAD byte for byte. `TEX_InitFromWad` upper-cases the WAD's lump
+  names (`CleanupName`), so a frame is added only when the rest of the map's name is upper
+  case: `+0LAVA` finds a lump `+1lava`, `+0lava` finds none. `LoadLump` upper-cases the name
+  it looks for, so each slot's lookup ignores case; a texture the WAD lacks gets the slot
+  offset -1 (BSP-4.2) and `WARNING: texture <name> not found`.
 
 ### Test vectors
 
-See [`vectors/map/`](vectors/map/README.md): `standard` (MAP-6.1, MAP-6.2).
+See [`vectors/map/`](vectors/map/README.md): `standard` (MAP-6.1, MAP-6.2). The lump names of
+MAP-6.8 were read from `qutils/QBSP/WRITEBSP.C`, `CleanupName`, `TEX_InitFromWad`,
+`LoadLump`, `AddAnimatingTextures` and `WriteMiptex`, and are tested in `crates/qs-map`.
 
 ## MAP-7 Text both compilers read
 
