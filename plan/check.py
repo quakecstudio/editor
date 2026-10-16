@@ -12,6 +12,8 @@ Fails (exit 1) if:
   - a type:decision issue is not labelled needs:human
   - a label description is longer than GitHub's 100-character limit
   - a LATER issue is not linked from docs/scope.md as [KEY](https://github.com/quakecstudio/editor/issues/N)
+  - docs/risks.md and the design doc's risk table differ in risk, impact or mitigation, or a
+    register row lacks an area:* owner, a linked issue or a known status
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -29,6 +31,9 @@ import yaml
 
 PLAN = Path(__file__).resolve().parent
 SCOPE = PLAN.parent / "docs" / "scope.md"
+RISKS = PLAN.parent / "docs" / "risks.md"
+DESIGN_DOC = PLAN.parent / "docs" / "design" / "design-doc.md"
+RISK_STATUSES = {"Open", "Mitigating", "Mitigated", "Retired"}
 ISSUE_URL = r"https://github\.com/quakecstudio/editor/issues/\d+"
 PHASE_ORDER = ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "LATER"]
 
@@ -219,6 +224,52 @@ def check_scope(issues: list[dict], scope: Path = SCOPE) -> list[str]:
             and not re.search(rf"\[{re.escape(i['key'])}\]\({ISSUE_URL}\)", text)]
 
 
+def table_rows(text: str, heading: str) -> list[list[str]]:
+    """The body rows of the first Markdown table after `heading`, as lists of stripped cells."""
+    start = text.find(heading)
+    if start < 0:
+        return []
+    rows: list[list[str]] = []
+    for line in text[start + len(heading):].splitlines():
+        if line.startswith("|"):
+            rows.append([c.strip() for c in line.strip().strip("|").split("|")])
+        elif rows:
+            break
+    return rows[2:]
+
+
+def check_risks(meta: dict, risks: Path = RISKS, design: Path = DESIGN_DOC) -> list[str]:
+    """docs/risks.md holds every design-doc risk with an owner, linked issues and a status (OPEN-5)."""
+    if not risks.is_file():
+        return [f"{risks}: missing; it must hold every risk in the design doc"]
+    designed = {r[0]: r[1:3] for r in table_rows(design.read_text(), "## Risks and open questions")}
+    if not designed:
+        return [f"{design}: no risk table under '## Risks and open questions'"]
+    register = table_rows(risks.read_text(), "## Register")
+    areas = {a["name"] for a in meta["labels"]["area"]}
+    errors: list[str] = []
+    seen: set[str] = set()
+    for row in register:
+        if len(row) != 7:
+            errors.append(f"docs/risks.md: register row needs 7 cells, got {len(row)}: {row[:2]}")
+            continue
+        rid, risk, impact, mitigation, owner, links, status = row
+        seen.add(risk)
+        if risk not in designed:
+            errors.append(f"{rid}: risk not in the design doc's risk table: {risk}")
+        elif [impact, mitigation] != designed[risk]:
+            errors.append(f"{rid}: impact or mitigation differs from the design doc")
+        if owner not in areas:
+            errors.append(f"{rid}: owner must be an area:* label, got {owner!r}")
+        if not re.search(ISSUE_URL, links):
+            errors.append(f"{rid}: no linked issue")
+        if status not in RISK_STATUSES:
+            errors.append(f"{rid}: status must be one of {sorted(RISK_STATUSES)}, got {status!r}")
+    errors += [f"docs/risks.md: design-doc risk missing from the register: {r}"
+               for r in designed if r not in seen]
+    return errors
+
+
 def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
     by_req: dict[str, list[str]] = {r: [] for r in reqs}
     for i in issues:
@@ -241,7 +292,7 @@ def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
 def main() -> int:
     reqs = load_requirements()
     meta, issues = load_backlog()
-    errors = check(reqs, meta, issues) + check_scope(issues)
+    errors = check(reqs, meta, issues) + check_scope(issues) + check_risks(meta)
     if "--write-coverage" in sys.argv:
         (PLAN / "coverage.md").write_text(coverage_md(reqs, meta, issues))
     if errors:

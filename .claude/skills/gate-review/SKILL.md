@@ -32,7 +32,8 @@ Write `docs/gates/<phase>.md`:
 - the readiness reports for each layer in the phase (`docs/readiness/`), with their verdicts;
 - the acceptance criteria of this gate issue, each with its evidence;
 - the straggler checks from step 1, with their output;
-- the updated risk register and anything the next phase should know.
+- the updated risk register: review every row of `docs/risks.md` (status, linked issues, any new risk, added to the design doc first), add a line to its review log, and link the result;
+- anything the next phase should know.
 
 A criterion without evidence fails the gate: file the missing work as an issue in this phase, leave the gate open and report it. Do not weaken a criterion to pass it.
 
