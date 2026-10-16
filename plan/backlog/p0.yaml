@@ -239,6 +239,7 @@ issues:
   - L7-ui
   - area:editor
   - type:spike
+  - needs:human
   size: L
   reqs:
   - UI-1

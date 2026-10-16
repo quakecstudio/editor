@@ -1,0 +1,11 @@
+egui on ref-mac: frame CPU time in ms (budget 8.33 ms at p99)
+phase        frames    p50    p95    p99    max  over
+all            2725   1.47   1.91   2.12   3.52     0
+diff            488   1.44   1.82   2.04   3.52     0
+ime             140   1.51   1.81   1.88   1.90     0
+multicursor     256   1.74   2.11   2.21   2.61     0
+scroll         1200   1.46   1.88   2.10   2.25     0
+type            641   1.46   1.85   2.14   2.77     0
+warmup          120   1.11   1.36   1.54  29.44     1
+
+startup: 50000 lines loaded in 32.2 ms, first frame built 132.2 ms after launch
