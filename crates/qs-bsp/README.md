@@ -43,10 +43,15 @@ records for id's loader.
 
 On 2026-10-16 id's `Mod_LoadBrushModel` and `Mod_LoadAliasModel`, in `WinQuake/model.c`
 copied unchanged from the pinned commit and built with Apple clang on arm64 with
-`-ffp-contract=off` (single precision without fused multiply-adds, as BSP-9.3 states), loaded
-the 23 BSPs and 81 alias models of LibreQuake's `lite` release (the `librequake-lite` test
-asset), and printed every plane, texture and animation link, texinfo, face extent and flag,
-model bound and radius, hull 0 clipnode and visibility row. `qs-bsp` and `qs-mdl` printed the
-same for all 104 files. Built with clang's default `-ffp-contract=on`, which fuses
-multiply-adds on arm64, id's code gives 131 faces of nine maps an extent one 16-texel step
-apart from single precision; the harness is not committed, as id's C never is.
+`-ffp-contract=off`, loaded the 23 BSPs and 81 alias models of LibreQuake's `lite` release
+(the `librequake-lite` test asset), and printed every plane, texture and animation link,
+texinfo, face extent and flag, model bound and radius, hull 0 clipnode and visibility row.
+`qs-mdl` printed the same for all 81 models. The same day the BSP loader was built for x86-64
+with `CalcSurfaceExtents` computing each texture coordinate with WinQuake's own x87
+instructions at 53 bits and comparing as WinQuake does (BSP-9.11, BSP-9.12; the run is under
+"Evidence for BSP-9.11 and BSP-9.12" in `docs/spec/bsp.md`), and `qs-bsp` printed the same
+for all 23 maps; single-precision arithmetic would give 247 of their faces another
+`texturemins` or extent. `texturemins` and extents are kept in 16 bits, as id's `short` fields
+hold them (BSP-9.14); the vectors `extents-65552`, `extents-32784` and `texturemins-32768`
+pin that against the arm64 and x86-64 builds. The harness is not committed, as id's C never
+is.

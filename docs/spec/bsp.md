@@ -366,8 +366,9 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
 
 ## BSP-9 Faces
 
-**Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.c`,
-`Mod_LoadFaces`, `CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`
+**Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.h` and
+`WinQuake/gl_model.h`, `msurface_t`; `WinQuake/model.c`, `Mod_LoadFaces`,
+`CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -386,10 +387,10 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   the plane's front when `side` is 0 and its back for any other value.
 - **BSP-9.2** The face's vertices are the `numedges` surfedges from `firstedge` (BSP-14.2),
   in order.
-- **BSP-9.3** The face's texture extents are computed from its vertices' texture
-  coordinates (BSP-8.1), in single precision: for each axis, `bmin = floor(min / 16)` and
-  `bmax = ceil(max / 16)`, `texturemins = bmin * 16` and `extents = (bmax - bmin) * 16`. The
-  running minimum starts at 999999 and the maximum at -99999.
+- **BSP-9.3** **Withdrawn** 2026-10-16: it said the texture coordinates are computed in
+  single precision, but id's original x86 builds compute them on the x87 with exact products
+  and one rounding to single precision, which gives 247 faces of LibreQuake's maps another
+  `texturemins` or extent; replaced by BSP-9.10, BSP-9.11 and BSP-9.12.
 - **BSP-9.4** When the texinfo's flags (after BSP-8.4) do not have `TEX_SPECIAL`, an extent
   over 256 fails with the error `Bad surface extents` (fatal in id's engine); 256 loads.
 - **BSP-9.5** A face whose texture name starts with `sky` is drawn as sky; one whose name
@@ -404,12 +405,174 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   another from `lightofs`.
 - **BSP-9.8** `planenum`, `numedges` and `texinfo` are signed 16-bit and `firstedge` signed
   32-bit; a negative value, or one that names no element, fails to load (BSP-1.8).
-- **BSP-9.9** `CalcSurfaceExtents` stores `floor(min / 16)` and `ceil(max / 16)` in `int`
+- **BSP-9.9** **Withdrawn** 2026-10-16: it said the products and the difference that follow
+  the conversion wrap as 32-bit x86 integers and that such a face fails BSP-9.4 unless its
+  texinfo has `TEX_SPECIAL`, but id's loader stores `texturemins` and `extents` in 16-bit
+  fields and checks the stored value, so an extent of 65536 + 16 loads, and a face whose
+  bounds both convert to the indefinite value has extent 0 and loads; replaced by BSP-9.13
+  and BSP-9.14.
+- **BSP-9.10** The face's texture extents are computed from its vertices' texture
+  coordinates (BSP-8.1, BSP-9.11). For each axis the running minimum starts at 999999 and the
+  maximum at -99999, and each vertex's coordinate in turn may replace them (BSP-9.12); then
+  `bmin = floor(min / 16)` and `bmax = ceil(max / 16)`, `texturemins = bmin * 16` and
+  `extents = (bmax - bmin) * 16`.
+- **BSP-9.11** A vertex `(x, y, z)`'s texture coordinate on an axis `(s0, s1, s2, offset)`
+  is computed as id's x86 builds of WinQuake and GLQuake compute it: the three products, each
+  exact, are added in the order `((x * s0 + z * s2) + y * s1) + offset`, each sum rounded to
+  53 bits (double precision, round to nearest even), and the result is rounded once to single
+  precision. It is not single-precision arithmetic, and the order is not C's. Once WinQuake
+  has drawn a frame it adds at 64 bits instead, and id's DOS and Linux builds add in C's
+  order (see the evidence below); these answers differ only when a sum lies so close to a
+  midpoint of two singles that the order or the precision of the additions decides how it
+  rounds (vectors `x87-order` and `x87-pc64`), which no face of LibreQuake's maps does. This
+  spec takes 53 bits, the precision GLQuake always uses.
+- **BSP-9.12** A coordinate replaces the running minimum unless it is greater than or equal
+  to it, and the running maximum unless the maximum is greater than or equal to it, as
+  WinQuake's and GLQuake's x86 code compares: a NaN coordinate replaces both, and the next
+  coordinate replaces a NaN minimum or maximum. A bound that is still NaN after the last
+  vertex gives the integer indefinite value of BSP-9.13.
+- **BSP-9.13** `CalcSurfaceExtents` stores `floor(min / 16)` and `ceil(max / 16)` in `int`
   variables, which is undefined in C when the value is NaN or outside the `int` range. This
   spec takes the answer of the original x86 build, whose conversion gives the integer
-  indefinite value 0x80000000 (-2147483648) there; the products and the difference that
-  follow wrap as x86 integers do. Such a face fails BSP-9.4 unless its texinfo has
-  `TEX_SPECIAL`.
+  indefinite value 0x80000000 (-2147483648) there; BSP-9.14 then keeps the low 16 bits of
+  what BSP-9.10 computes from it.
+- **BSP-9.14** `texturemins` and `extents` are `short` fields of `msurface_t`
+  (`WinQuake/model.h` and `WinQuake/gl_model.h`: `short texturemins[2];` and
+  `short extents[2];`), so `CalcSurfaceExtents` stores the low 16 bits of each value
+  BSP-9.10 computes, read as a signed two's-complement value: a value from -32768 to 32767
+  is kept, an extent of 65552 is stored as 16 and one of 32784 as -32752, and a
+  `texturemins` of 32768 as -32768. The check of BSP-9.4 and the lightmap size of BSP-9.7
+  use the stored value, so a stored extent of 256 or less, negative ones included, passes
+  BSP-9.4. The conversion to `short` is implementation-defined in C; this spec takes the
+  answer of id's x86 builds, which compute, store and compare the 16-bit value (see the
+  evidence below).
+
+### Evidence for BSP-9.11 and BSP-9.12
+
+`CalcSurfaceExtents` declares `val` a `float` and writes the sum as one C expression, which
+leaves the precision of the evaluation to the compiler. The answer is taken from id's own x86
+executables, disassembled with `llvm-objdump` from the archives id released (fetched
+2026-10-16 from `https://ftp.idtech.space/idstuff/`; not committed):
+
+| Build | Archive, file and SHA-256 | Compiler |
+| --- | --- | --- |
+| WinQuake 1.00 | `quake/wq100.zip`, `WINQUAKE.EXE` `e0f12ec4dc4026d7aaa949f96b237fdc773e1546fb99d44be707f01c1f28b3b9` | Microsoft Visual C++ |
+| GLQuake, March 1997 | `unsup/glq3_28.zip`, `GLQUAKE.EXE` `1d0ef75e8ee8de9a760dfbbd5862fbaa7b4d1e2740c726e29dd37bd5208adb3e` | Microsoft Visual C++ |
+| Quake 1.08 for DOS | `quake/quake108.zip`, `quake.exe` `e0a1936400ca56e94d44d585097bd9e490035fcfb6e7d806d7e879f423928642` | DJGPP (gcc) |
+| Quake for Linux 1.0 | `unsup/unix/quake.x11-1.0-i386-unknown-linux2.0.tar.gz`, `quake.x11` `b89c9b5fbdedc86e719429b02fb363cbc2785f8e984e79ab6493375c2985cfee` | gcc (symbols kept) |
+
+`CalcSurfaceExtents` is found by its reference to `Bad surface extents`, and in `quake.x11`
+by its symbol. WinQuake and GLQuake compute `val` with the same instructions (WinQuake from
+`0x417b22`, GLQuake from `0x42c372`; `edi` points at `vecs[j][1]` and `ebx` at the vertex):
+
+```
+flds   -0x4(%edi)      ; s0
+fmuls  (%ebx)          ; * x
+flds   0x4(%edi)       ; s2
+fmuls  0x8(%ebx)       ; * z
+flds   (%edi)          ; s1
+fmuls  0x4(%ebx)       ; * y
+fxch   %st(1)
+faddp  %st, %st(2)     ; x*s0 + z*s2
+faddp  %st, %st(1)     ; + y*s1
+fadds  0x8(%edi)       ; + offset
+fcoms  0x20(%esp,%ebp) ; compare with mins[j]
+fstps  0x10(%esp)      ; store val, rounded to single
+fnstsw %ax
+testb  $0x1, %ah       ; C0: less than, or unordered
+je     ...             ; if set, mins[j] = val
+flds   0x28(%esp,%ebp) ; maxs[j]
+fcomps 0x10(%esp)      ; compare with val
+fnstsw %ax
+testb  $0x1, %ah       ; C0: maxs[j] less than val, or unordered
+```
+
+- **Exact products, one rounding to single.** The products and sums stay in x87 registers,
+  at the precision the control word sets, and `val` is rounded to single precision only when
+  `fstps` stores it. A product of two singles has at most 48 significant bits, so it is exact
+  at 53 or 64 bits. `floor` and `ceil` are given `mins` and `maxs` reloaded from memory,
+  already single.
+- **53 bits.** Both executables' C run-time start-up calls `_controlfp(0x10000, 0x30000)`
+  (`WINQUAKE.EXE` from `0x458bef`, reached through the floating-point initialisation pointer
+  that `0x459260` calls; `GLQUAKE.EXE` from `0x43a6af`), which is `_PC_53` under the mask
+  `_MCW_PC` in the table of Microsoft's
+  [`_control87`, `_controlfp`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/control87-controlfp-control87-2)
+  ("`_PC_53` (53 bits)" 0x00010000, "`_MCW_PC` (Precision control)" 0x00030000). In the
+  Windows builds' source, `fldcw` appears only in `WinQuake/sys_wina.s` and in the software
+  renderer's `r_drawa.s` and `d_polysa.s` (`sys_dosa.s` is DOS's). `Sys_SetFPCW` computes
+  `full_cw` ("round mode, 64-bit precision") and `single_cw` ("chop mode, single precision")
+  without loading either; `Sys_PushFPCW_SetHigh` and `Sys_PopFPCW` put back what they found;
+  and the only callers of `Sys_LowFPPrecision` and `Sys_HighFPPrecision` are in the software
+  renderer's `R_RenderView` (`WinQuake/r_main.c`), which loads `single_cw` before it draws
+  and `full_cw` after. GLQuake's renderer (`WinQuake/gl_rmain.c`) calls neither, so GLQuake
+  loads every map at 53 bits (unless an OpenGL driver changes the control word, which is
+  outside id's code); WinQuake loads at 53 bits until it has drawn its first frame
+  and at 64 bits after. The start-up precision of the DOS and Linux builds was not checked.
+- **The order.** Visual C++ adds `x * s0 + z * s2` first; the gcc builds add in C's order
+  (`quake.x11` from `0x8066a71`, `quake.exe` from `0x1be78`).
+- **The comparisons.** `fcom` sets C0 when the first operand is less than the second or the
+  two are unordered, and Visual C++ tests C0 alone, so a NaN replaces the bound (BSP-9.12).
+  The gcc builds test C3, C2 and C0 together and follow C, where a NaN replaces nothing.
+
+**Checked:** on 2026-10-16 id's `Mod_LoadBrushModel` (`WinQuake/model.c` from the pinned
+commit, in the harness the vectors' README describes) was built with gcc 14.4 for x86-64 and
+run in an emulated `linux/amd64` container on Apple silicon, with `val` computed by the
+instruction sequences above in inline x87 assembly under control word 0x027F (53 bits) or
+0x037F (64 bits), and with C's or Visual C++'s comparisons. A probe first showed that the
+emulated x87 honours the precision field: `(1 + 2^-60) - 1` gives 2^-60 at 64 bits and 0 at
+53 and 24 bits, and `1 / 3` at 24 bits differs from the double. Over the 23 BSPs of
+LibreQuake's `lite` release, WinQuake's and the gcc builds' sequences at 53 and at 64 bits
+give every coordinate the same value; single precision gives 8,585 coordinate evaluations
+another value and 247 faces of ten maps another `texturemins` or extent. `crates/qs-bsp`
+printed every face as the WinQuake sequence at 53 bits with its comparisons did, on all 23
+maps and the three vectors `x87-order`, `x87-pc64` and `nan-vertex`.
+
+### Evidence for BSP-9.14
+
+`CalcSurfaceExtents` ends:
+
+```c
+		s->texturemins[i] = bmins[i] * 16;
+		s->extents[i] = (bmaxs[i] - bmins[i]) * 16;
+		if ( !(tex->flags & TEX_SPECIAL) && s->extents[i] > 256)
+			Sys_Error ("Bad surface extents");
+```
+
+`WINQUAKE.EXE` (the executable in the table above) does this in 16-bit registers, from
+`0x417bc9`, after the calls to `floor` and `ceil` and the conversions to `int`, with `%esi`
+pointing at `extents[i]`:
+
+```
+movw   0x30(%esp,%edi), %cx  ; low 16 bits of bmins[i]
+movl   0x14(%esp), %ebx      ; tex
+movl   %eax, 0x18(%esp,%edi) ; bmaxs[i], from ceil
+movw   %cx, %ax
+movl   0x28(%ebx), %edx      ; tex->flags
+shlw   $0x4, %ax             ; * 16
+movw   %ax, -0x4(%esi)       ; texturemins[i]
+movl   0x18(%esp,%edi), %eax
+subw   %cx, %ax              ; bmaxs[i] - bmins[i], 16 bits
+shlw   $0x4, %ax             ; * 16
+testb  $0x1, %dl             ; TEX_SPECIAL
+movw   %ax, (%esi)           ; extents[i]
+jne    ...
+cmpw   $0x100, %ax           ; the 16-bit extent against 256
+jle    ...                   ; signed: not greater, no error
+```
+
+`GLQUAKE.EXE` has the same sequence from `0x42c419`, comparing with `cmpw $0x200`: GLQuake's
+`WinQuake/gl_model.c` checks `s->extents[i] > 512 /* 256 */`. The low 16 bits of a product or
+difference do not depend on the bits above them, so computing in 32 bits and keeping the low
+16 bits, as BSP-9.10 and BSP-9.14 state it, gives the same values.
+
+**Checked:** on 2026-10-16 the vectors `extents-65552`, `extents-32784` and
+`texturemins-32768` were loaded by id's `Mod_LoadBrushModel`, in `WinQuake/model.c` copied
+unchanged from the pinned commit and built for arm64 with Apple clang and for x86-64 with gcc
+14.4 (in an emulated `linux/amd64` container), in the harness the vectors' README describes;
+both builds gave the results the README records. The same x86-64 build, given the base with
+the s axis offset -1e30 and `lightofs` -1, failed with `Bad surface extents`, and with
+texinfo flags 1 loaded with `texturemins` 0 0 and extents 31088 64 (BSP-9.13: the minimum's
+indefinite value, and a maximum still -99999).
 
 ### Constants
 
@@ -423,8 +586,9 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
 ### Test vectors
 
 See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-256`,
-`extents-272`, `extents-272-special` (BSP-9.3, BSP-9.4), `sky` and `turb` (BSP-9.5),
-`nolight-back` (BSP-9.1, BSP-9.6).
+`extents-272`, `extents-272-special` (BSP-9.4, BSP-9.10), `sky` and `turb` (BSP-9.5),
+`nolight-back` (BSP-9.1, BSP-9.6), `x87-order` and `x87-pc64` (BSP-9.11), `nan-vertex`
+(BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14).
 
 ## BSP-10 Lighting
 

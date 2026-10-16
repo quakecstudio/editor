@@ -16,11 +16,23 @@ cache as `calloc`-like buffers, `Sys_Error` printing its message and stopping,
 little-endian swaps as no-ops. It printed every loaded field; the results below are its
 output. BSP2 and `.lit` have no vectors: QS was read, not run.
 
+`x87-order`, `x87-pc64` and `nan-vertex` (2026-10-16) were loaded by the same harness built
+for x86-64 with `val` computed by WinQuake's x87 instructions and compared as WinQuake does,
+the run described under "Evidence for BSP-9.11 and BSP-9.12" in [`../../bsp.md`](../../bsp.md);
+each row also gives the result the other evaluations give. The other vectors' texture
+coordinates are exact in single precision, so every evaluation gives them the same result.
+
+`extents-65552`, `extents-32784` and `texturemins-32768` (2026-10-16) were loaded by the
+harness above with `WinQuake/model.c` unchanged, built for arm64 with Apple clang and for
+x86-64 with gcc 14.4 in an emulated `linux/amd64` container; both builds gave the results
+below, which are those of `WINQUAKE.EXE`'s 16-bit code (the evidence for BSP-9.14 in
+[`../../bsp.md`](../../bsp.md)).
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
 model for a door. Statements: BSP-1.1, BSP-1.3, BSP-2.1, BSP-3.1, BSP-4.3, BSP-5.1,
-BSP-6.2, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1 to BSP-9.3, BSP-9.6, BSP-9.7, BSP-11.1,
+BSP-6.2, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1, BSP-9.2, BSP-9.6, BSP-9.7, BSP-9.10, BSP-11.1,
 BSP-12.1, BSP-13.1, BSP-14.1, BSP-14.2, BSP-15.1 to BSP-15.4.
 
 | Lump | `fileofs` | `filelen` | Contents |
@@ -72,8 +84,8 @@ result it records.
 | `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 | BSP-9.4 |
 | `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` | BSP-9.4 |
 | `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 | BSP-9.4 |
-| `texture-offset` | Texinfo offsets -8 (s) and 24 (t), lighting of 36 bytes | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.3 |
-| `mipadjust` | Texinfo axes (0.5, 0, 0) and (0, 0.5, 0) | Loads; mip bias 2; extents 32 32 | BSP-8.6, BSP-9.3 |
+| `texture-offset` | Texinfo offsets -8 (s) and 24 (t), lighting of 36 bytes | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.10 |
+| `mipadjust` | Texinfo axes (0.5, 0, 0) and (0, 0.5, 0) | Loads; mip bias 2; extents 32 32 | BSP-8.6, BSP-9.10 |
 | `bad-miptex` | Texinfo miptex 1 | Error `miptex >= loadmodel->numtextures` | BSP-8.3 |
 | `bad-marksurface` | Marksurface 1 | Error `Mod_ParseMarksurfaces: bad surface number` | BSP-13.2 |
 | `anim` | Textures `+0lava`, `+1lava`, `+Alava`, `wall` | Loads; `+0lava` total 4, 0 to 2, next `+1lava`, alternate `+Alava`; `+1lava` 2 to 4, next `+0lava`, alternate `+Alava`; `+Alava` total 2, 0 to 2, next itself, alternate `+0lava`; `wall` not animated | BSP-4.8, BSP-4.9 |
@@ -85,3 +97,9 @@ result it records.
 | `planes` | Second plane: normal (-0.6, 0, -0.8), dist 5, type 9 | Loads; plane 1 `signbits` 5, type 9 kept | BSP-3.2, BSP-3.3 |
 | `vis` | Model 0 `visleafs` 20; 21 leaves, leaf 2 with visofs 4 and leaves 3 to 20 with visofs -1; visibility bytes `05 00 01 80 00 05` | Loads; rows of 3 bytes: leaf 0 `ff ff ff`, leaf 1 `05 00 80`, leaf 2 `00 00 00` (its run of 5 ends past the row) | BSP-6.2 to BSP-6.4, BSP-15.2 |
 | `no-entities` | Empty entities lump | Loads; no entity text | BSP-2.3 |
+| `x87-order` | Vertexes (1, 0, 1), (1, 1, 1), (1, 1, 1), (1, 1, 1); s axis (2048, 2^-42, -(1024 - 2^-14)) offset 0 | Loads; `texturemins` 1024 0, extents 16 16 (single precision, or C's order of the additions at 53 bits, gives extents 0 16) | BSP-9.11 |
+| `x87-pc64` | Vertexes as `x87-order`; s axis (0, 2^-14, 2^-50) offset 1024 | Loads; `texturemins` 1024 0, extents 0 16 (additions at 64 bits give extents 16 16) | BSP-9.11 |
+| `nan-vertex` | Vertex 0 (NaN, 0, 0), the float bits `7fc00000` | Loads; `texturemins` 0 0, extents 0 0 (C's comparisons give `texturemins` 64 0, extents 0 64) | BSP-9.12 |
+| `extents-65552` | s axis (1024.25, 0, 0) offset 0 | Loads; extents 16 64: the extent 65552 keeps its low 16 bits | BSP-9.4, BSP-9.14 |
+| `extents-32784` | s axis (512.25, 0, 0) offset 0 | Loads; extents -32752 64: the extent 32784 keeps its low 16 bits, a negative value that passes the check | BSP-9.4, BSP-9.14 |
+| `texturemins-32768` | s axis (1, 0, 0) offset 32768 | Loads; `texturemins` -32768 0 | BSP-9.14 |
