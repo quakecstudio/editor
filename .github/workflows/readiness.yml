@@ -1,0 +1,207 @@
+# Measures the readiness bar (docs/testing.md, ADR-0009) for the crates of one
+# layer: line and branch coverage, the full mutation score, spec citations and
+# 20 test runs on each OS, then judges them against the bar and ratchets.toml
+# with `cargo xtask ratchet`. A readiness reviewer runs it on demand and links
+# the run in the report (docs/readiness/_template.md).
+#
+# It never runs on pull requests, in the merge queue or on a schedule, and it is
+# not a required check (docs/ci.md). Pull-request CI runs only the xtask unit
+# tests that prove each check fails on its fixture crate.
+name: Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      crates:
+        description: "Crates to measure, by package name or directory, separated by spaces (for example: qs-paths crates/qs-porting-example)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  CRATES: ${{ inputs.crates }}
+  # Branch coverage needs nightly. This date-pinned nightly is the only one
+  # outside fuzzing (docs/conventions.md); xtask's readiness::NIGHTLY must match.
+  NIGHTLY: nightly-2026-10-01
+
+jobs:
+  coverage:
+    name: Readiness coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchains
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools-preview
+          rustup toolchain install "$NIGHTLY" --profile minimal --component llvm-tools-preview
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-llvm-cov@0.9.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: readiness-coverage-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Measure line coverage
+        run: |
+          read -ra crates <<< "$CRATES"
+          cargo xtask readiness lines --os linux --out measured/lines.json "${crates[@]}"
+      - name: Measure branch coverage
+        run: |
+          read -ra crates <<< "$CRATES"
+          cargo xtask readiness branches --os linux --out measured/branches.json "${crates[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: measured-coverage
+          path: measured/
+          if-no-files-found: error
+
+  mutation:
+    name: Readiness mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-mutants@27.1.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: readiness-mutation-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Measure the mutation score
+        run: |
+          read -ra crates <<< "$CRATES"
+          cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: measured-mutation
+          path: measured/
+          if-no-files-found: error
+
+  flakes:
+    name: Readiness flakes (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            runner: ubuntu-latest
+          - name: macos
+            runner: macos-latest
+          - name: windows
+            runner: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: readiness-flakes-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run the tests 20 times
+        env:
+          OS_NAME: ${{ matrix.name }}
+        run: |
+          read -ra crates <<< "$CRATES"
+          cargo xtask readiness flakes --os "$OS_NAME" --out "measured/flakes-$OS_NAME.json" "${crates[@]}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: measured-flakes-${{ matrix.name }}
+          path: measured/
+          if-no-files-found: error
+
+  ratchet:
+    name: Readiness ratchet
+    needs: [coverage, mutation, flakes]
+    # Judge whatever was measured, so a failed measurement is reported as
+    # missing instead of hiding the other results.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # The full history: `cargo xtask ratchet` checks every change ever made
+      # to ratchets.toml.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: readiness-ratchet-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: measured-*
+          path: measured
+          merge-multiple: true
+      - name: Measure spec citations
+        run: |
+          read -ra crates <<< "$CRATES"
+          cargo xtask readiness spec --os linux --out measured/spec.json "${crates[@]}"
+      - name: Restore the readiness history
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/readiness-history
+          key: readiness-history-${{ github.run_id }}
+          restore-keys: readiness-history-
+      - name: Judge against the bar and ratchets.toml
+        run: |
+          set -o pipefail
+          cargo xtask ratchet --history "$RUNNER_TEMP/readiness-history/history.json" measured/*.json | tee ratchet.txt
+      - name: Write the step summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '```'
+            cat ratchet.txt || echo "cargo xtask ratchet did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Gather the results
+        if: ${{ !cancelled() }}
+        run: |
+          for file in ratchet.txt "$RUNNER_TEMP/readiness-history/history.json"; do
+            if [ -f "$file" ]; then cp "$file" measured/; fi
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: readiness
+          path: measured/
+          if-no-files-found: error
+      - name: Save the readiness history
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/readiness-history
+          key: readiness-history-${{ github.run_id }}

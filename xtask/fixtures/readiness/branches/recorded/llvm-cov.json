@@ -1,0 +1,87 @@
+{
+  "data": [
+    {
+      "files": [
+        {
+          "filename": "xtask/fixtures/readiness/branches/src/lib.rs",
+          "summary": {
+            "branches": {
+              "count": 4,
+              "covered": 2,
+              "notcovered": 2,
+              "percent": 50.0
+            },
+            "mcdc": {
+              "count": 0,
+              "covered": 0,
+              "notcovered": 0,
+              "percent": 0.0
+            },
+            "functions": {
+              "count": 3,
+              "covered": 3,
+              "percent": 100.0
+            },
+            "instantiations": {
+              "count": 6,
+              "covered": 3,
+              "percent": 50.0
+            },
+            "lines": {
+              "count": 10,
+              "covered": 10,
+              "percent": 100.0
+            },
+            "regions": {
+              "count": 18,
+              "covered": 16,
+              "notcovered": 2,
+              "percent": 88.88888888888889
+            }
+          }
+        }
+      ],
+      "totals": {
+        "branches": {
+          "count": 4,
+          "covered": 2,
+          "notcovered": 2,
+          "percent": 50
+        },
+        "functions": {
+          "count": 3,
+          "covered": 3,
+          "percent": 100
+        },
+        "instantiations": {
+          "count": 6,
+          "covered": 3,
+          "percent": 50
+        },
+        "lines": {
+          "count": 10,
+          "covered": 10,
+          "percent": 100
+        },
+        "mcdc": {
+          "count": 0,
+          "covered": 0,
+          "notcovered": 0,
+          "percent": 0
+        },
+        "regions": {
+          "count": 18,
+          "covered": 16,
+          "notcovered": 2,
+          "percent": 88.88888888888889
+        }
+      }
+    }
+  ],
+  "type": "llvm.coverage.json.export",
+  "version": "3.1.0",
+  "cargo_llvm_cov": {
+    "version": "0.9.1",
+    "manifest_path": "xtask/fixtures/readiness/branches/Cargo.toml"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "check": "flakes",
+  "os": "macos",
+  "crates": {
+    "fx-flakes": {
+      "passed": 9,
+      "total": 20,
+      "failures": [
+        "run 1 of 20 failed",
+        "run 2 of 20 failed",
+        "run 3 of 20 failed",
+        "run 7 of 20 failed",
+        "run 9 of 20 failed",
+        "run 10 of 20 failed",
+        "run 11 of 20 failed",
+        "run 17 of 20 failed",
+        "run 18 of 20 failed",
+        "run 19 of 20 failed",
+        "run 20 of 20 failed"
+      ]
+    }
+  }
+}

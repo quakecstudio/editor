@@ -1,0 +1,22 @@
+# Per-crate readiness minimums (TEST-10, ADR-0009, docs/testing.md).
+#
+# A readiness review that passes records its crates' numbers here, and
+# `cargo xtask ratchet` (run by the Readiness workflow) fails any crate that
+# measures below its minimums or below the bar. No crate has passed a review
+# yet, so there are no tables.
+#
+# One table per crate, the whole percentage measured, rounded down:
+#
+#   [crates.qs-example]
+#   readiness = "P1-R1"   # plan key of the readiness issue that set these numbers
+#   lines = 94            # line coverage, bar 90
+#   branches = 83         # branch coverage, bar 80
+#   mutation = 92         # mutants caught, bar 90
+#   spec = 100            # active spec statements cited, bar 100
+#   reason = "..."        # required whenever a minimum goes down
+#   exceptions = { branches = "why; also stated in the crate README" }
+#   equivalent_mutants = { "src/lib.rs: replace f -> u8 with 0" = "why it cannot be killed" }
+#
+# Changing a crate's numbers needs a new `readiness` key; lowering one, or
+# adding an exception or equivalent mutant, also needs a new `reason`.
+# `cargo xtask ratchet` checks this over the file's whole git history.
