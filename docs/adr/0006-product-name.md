@@ -1,8 +1,8 @@
-# ADR-0006: Name the product without the Quake trademark
+# ADR-0006: Keep the name QuakeC Studio
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, choosing option A over the recommended option C
 - **Issue:** [#15](https://github.com/quakecstudio/editor/issues/15)
 - **Requirements:** OPEN-1
 
@@ -73,47 +73,34 @@ The project crates `qs-*` and `qc-*` checked (`qs-paths`, `qc-vm`, `qc-progs`, `
 
 ## Decision
 
-Recommendation: **option C, a neutral name with "an IDE for QuakeC" as its tagline**, with
-Progsmith as the proposed name (a progs smith: it builds `progs.dat`) if it passes the official
-USPTO and EUIPO searches. ZeniMax's published guidelines name exactly this case, a product and a
-domain carrying its mark, as needing a license, and this is the cheapest moment to avoid it:
-nothing is signed, published or packaged yet, and every place the name will be fixed is still an
-open issue. Option A is a bet that tolerance shown to source ports extends to a signed IDE; option
-B is right only if Justin wants to keep the name enough to wait for an answer. The names to fix:
+Decided: **option A. The product stays QuakeC Studio**, with a non-affiliation notice, and the name
+is not registered as a trademark. The agent's recommendation was option C (a neutral name such as
+Progsmith, for the reasons under Options); Justin chose to keep the name, accepting the risk that a
+rename request after release would reach the packages, bundle identifiers, crates and domain at
+once (risk R-5). "QuakeC" is used as the name of the language the tool works with.
 
 | Item | Name |
 | --- | --- |
-| Product (display) | Progsmith, tagline "an IDE for QuakeC" |
-| Desktop app binary | `progsmith` |
-| CLI and MCP server | `progsmith` (subcommands `build`, `check`, `run`, `mcp`; the design document's `quakec-ide` is retired) |
-| LSP server | `progsmith-lsp` |
-| Crate prefix | `ps-` for project crates (replacing `qs-`); `qc-` stays for the QuakeC formats, VM and builtins, which describe the language and contain no mark |
-| Bundle identifier | `dev.progsmith.Progsmith` (macOS), with `progsmith.dev` registered first; Linux app id the same |
-| Application directories | `Progsmith` on macOS and Windows, `progsmith` on Linux (ADR-0011's layout unchanged) |
-
-If Justin prefers another neutral name, the same table applies with that name, after the same
-checks. If he chooses A or B instead, the table becomes `QuakeC Studio`, `quakec-studio`,
-`quakec-ide`, `quakec-lsp`, `qs-` and `com.quakecstudio.QuakeCStudio`.
+| Product (display) | QuakeC Studio |
+| Desktop app binary | `quakec-studio` |
+| CLI and MCP server | `quakec-ide` (subcommands `build`, `check`, `run`, `mcp`), as in the design document |
+| LSP server | `quakec-lsp` |
+| Crate prefix | `qs-` for project crates and `qc-` for the QuakeC formats, VM and builtins, unchanged |
+| Bundle identifier | `com.quakecstudio.QuakeCStudio` (macOS); Linux app id the same |
+| Application directories | as [ADR-0011](0011-app-directories.md): `QuakeC Studio` on macOS and Windows, `quakec-studio` on Linux |
 
 ## Consequences
 
-If accepted as recommended:
-
-- **Before acceptance:** official USPTO and EUIPO searches for the chosen name (word mark, classes 9
-  and 42) attached to #15; register `progsmith.dev` and an organization name.
-- `docs/design/design-doc.md`: the title, the open question checked off, `quakec-ide` replaced in the
-  Architecture diagram and Agent harness; `plan/requirements.yaml` unchanged (OPEN-1 is answered,
-  not reworded).
-- `plan/backlog/p2.yaml`: P2-13 and P2-14 name `progsmith` and `progsmith-lsp`; P2-16's extensions
-  use the new name. `plan/backlog/p0.yaml`: P0-23's bundle identifier. These are wording changes, no
-  new issues or dependencies.
-- A follow-up chore issue: rename `crates/qs-*` to `ps-*`, update ADR-0011's directory names and
-  `qs-paths`, and update README, CONTRIBUTING, SECURITY, CLAUDE.md and docs. ADR-0011's decision
-  (native per-OS directories) is unchanged, so its names are corrected in place.
-- The GitHub organization `quakecstudio` is renamed by Justin (agents cannot), and
-  `quakecstudio.com` either kept as a redirect or let lapse.
-- Every package and the README carry the notice "Quake is a trademark of ZeniMax Media Inc.;
-  this project is not affiliated with or endorsed by ZeniMax or id Software" (checked in P4-22).
+- No rename: the GitHub organization, crates, binaries, `quakecstudio.com` and ADR-0011 stay as
+  they are.
+- `docs/design/design-doc.md`: OPEN-1 is checked off; `plan/requirements.yaml` is unchanged.
+- P0-23 ([#23](https://github.com/quakecstudio/editor/issues/23)) signs with the bundle identifier
+  above; P2-13 and P2-14 keep `quakec-ide` and `quakec-lsp`.
+- Every package, the README and the About box carry the notice "Quake is a trademark of ZeniMax
+  Media Inc.; this project is not affiliated with or endorsed by ZeniMax or id Software" (checked
+  in the license review, P4-22). No logo, artwork or trade dress from id or ZeniMax is used.
+- If ZeniMax ever asks for a rename, the names to change are the ones in the table above; a new ADR
+  supersedes this one.
 
 ## Links
 

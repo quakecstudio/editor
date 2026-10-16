@@ -338,7 +338,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 **Open questions**
 
 - [x] License: GPL-3.0-or-later for the whole project (ADR-0002).
-- [ ] Product name (QuakeC Studio is unclaimed in search, worth a trademark check).
+- [x] Product name: QuakeC Studio, kept ([ADR-0006](../adr/0006-product-name.md)).
 - [ ] Which engine is the default preview target: our host, or FTEQW where available?
 - [ ] Does a web build matter enough to choose egui?
 - [x] Conformance corpus: id 1.01, the rerelease, 14 public mods and 26 maps, each with a license read from its own files, fetched by checksum and never kept in the repo ([`corpus/manifest.toml`](../../corpus/manifest.toml)).
