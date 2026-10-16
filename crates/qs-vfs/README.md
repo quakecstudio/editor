@@ -24,7 +24,9 @@ lengths or the number of archives (FS-3.9, FS-3.10). `-cachedir` is not implemen
 ## Walking an install
 
 The `walk` example builds the search path from the engine's arguments, then lists and reads
-every file on it and prints a digest:
+every file on it and prints a digest. It also decodes every `.spr` and MD5 model with `qs-mdl`
+and every `.wav` with `qs-wav`, and prints a `failed:` line for each file it cannot read or
+decode:
 
 ```bash
 cargo run --release -p qs-vfs --example walk -- -basedir <install> [-game <dir>]
@@ -38,5 +40,6 @@ archive <asset>/id1/pak1.pak: 60 entries, directory CRC 47719, modified true
 archive <asset>/id1/pak0.pak: 353 entries, directory CRC 34223, modified true
 directory <asset>/id1
 gfx.wad: 149 lumps, conchars at Ok(23996)
+decoded 3 sprites, 226 sounds, 0 MD5 meshes, 0 MD5 animations
 read 424 files, 99848012 bytes, digest ae8822040b6eab21
 ```
