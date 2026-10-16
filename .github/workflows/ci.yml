@@ -348,7 +348,7 @@ jobs:
       # Rad-Therapy (FreeHL) beside it (about 120 MB in the macOS downloads cache). FreeCS
       # runs on macOS: its shared/defs.h includes "animations.h" and the file is
       # Animations.h, which only a case-insensitive file system opens, as FTEQCC's fopen
-      # would (PRJ-6 test vectors).
+      # would (PRJ-7.1); its client and server modules each get warning W0402 there (PRJ-7.2).
       - name: Open Xonotic as a project
         if: runner.os == 'Linux'
         run: |
@@ -358,7 +358,8 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cargo xtask corpus fetch freecs-tree
-          cargo xtask project-corpus "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src"
+          cargo xtask project-corpus --expect-warning W0402=2 \
+            "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src"
       # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
       # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
       - name: Write the corpus maps to the asset cache

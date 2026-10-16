@@ -3,24 +3,27 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/model.c, Mod_LoadBrushModel, Mod_LoadVertexes, Mod_LoadEdges, Mod_LoadSurfedges, Mod_LoadTextures, Mod_LoadLighting, Mod_LoadPlanes, Mod_LoadTexinfo, CalcSurfaceExtents, Mod_LoadFaces, Mod_LoadMarksurfaces, Mod_LoadVisibility, Mod_LoadLeafs, Mod_LoadNodes, Mod_LoadClipnodes, Mod_LoadEntities, Mod_LoadSubmodels, Mod_MakeHull0, RadiusFromBounds, Mod_DecompressVis, Mod_LeafPVS
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents, Mod_LoadLeafs
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
 //! Reads compiled maps: BSP29 as id's engine loads it, the two BSP2 variants, and `.lit`
 //! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-19).
 //!
 //! [`Bsp::read`] is id's `Mod_LoadBrushModel` and the loaders it calls, in the same order,
-//! with the bounds and index checks id's engine leaves out, and with WinQuake's or GLQuake's
-//! limit on face extents as its caller's [`BspLoader`] says. It rejects malformed input with
+//! with the bounds and index checks id's engine leaves out. Its caller's [`BspLoader`] picks
+//! whose rules apply where loaders differ: WinQuake's, GLQuake's, or by default the FitzQuake
+//! lineage's as QuakeSpasm has them (BSP-20, ADR-0012). It rejects malformed input with
 //! a [`BspError`], never a panic. Textures, lighting, visibility and the entity text borrow
-//! the file's bytes. BSP2 follows QuakeSpasm's loader, cited for description only; nothing
-//! is ported from it. [`lit`] reads `.lit` files and [`ent`] names `.ent` files, and
+//! the file's bytes. BSP2 and the FitzQuake-lineage rules follow QuakeSpasm's loader, cited for
+//! description only; nothing is ported from it. [`lit`] reads `.lit` files and [`ent`] names `.ent` files, and
 //! [`replace_entities`] writes a BSP with a new entity lump: the two ways to edit the
 //! entities of a shipped map that has no `.map` source.
 
 pub mod ent;
 pub mod lit;
 
+#[cfg(test)]
+mod fitz_tests;
 #[cfg(test)]
 mod fixtures;
 #[cfg(test)]
@@ -110,8 +113,15 @@ pub const BSP_FACE_SIZE: usize = 20;
 pub const BSP_MAXLIGHTMAPS: usize = 4;
 /// The largest extent of a face without `TEX_SPECIAL` in WinQuake (BSP-9.4).
 pub const BSP_MAX_SURFACE_EXTENT: i32 = 256;
-/// The largest extent of a face without `TEX_SPECIAL` in GLQuake (BSP-9.15).
+/// The largest extent of a face without `TEX_SPECIAL` in GLQuake (BSP-9.17).
 pub const BSP_GL_MAX_SURFACE_EXTENT: i32 = 512;
+/// The largest extent of a face without `TEX_SPECIAL` in the FitzQuake lineage (BSP-20.10).
+pub const BSP_FITZ_MAX_SURFACE_EXTENT: i32 = 2000;
+/// The most leaves a BSP29 file may have in the FitzQuake lineage (BSP-20.13).
+pub const BSP_FITZ_MAX_LEAFS: usize = 32767;
+/// The texinfo flag the FitzQuake lineage sets when its texture is missing, QuakeSpasm's
+/// `TEX_MISSING` (BSP-20.7).
+pub const BSP_TEX_MISSING: i32 = 2;
 /// Texels per lightmap sample (BSP-9.7).
 pub const BSP_LIGHTMAP_SCALE: i32 = 16;
 /// Bytes in a BSP29 clipnode, `sizeof(dclipnode_t)` (BSP-11.1).
@@ -216,6 +226,22 @@ pub const SURF_DRAWSKY: u32 = 4;
 pub const SURF_DRAWTURB: u32 = 0x10;
 /// Face flag `SURF_DRAWTILED` (BSP-9.5).
 pub const SURF_DRAWTILED: u32 = 0x20;
+/// Face flag `SURF_UNDERWATER`, GLQuake's only: a leaf that is not empty lists the face
+/// (BSP-12.6).
+pub const SURF_UNDERWATER: u32 = 0x80;
+/// Face flag `SURF_NOTEXTURE`, the FitzQuake lineage's: its texinfo has
+/// [`BSP_TEX_MISSING`] (BSP-20.11).
+pub const SURF_NOTEXTURE: u32 = 0x100;
+/// Face flag `SURF_DRAWFENCE`, the FitzQuake lineage's: a `{` texture (BSP-20.11).
+pub const SURF_DRAWFENCE: u32 = 0x200;
+/// Face flag `SURF_DRAWLAVA`, the FitzQuake lineage's (BSP-20.11).
+pub const SURF_DRAWLAVA: u32 = 0x400;
+/// Face flag `SURF_DRAWSLIME`, the FitzQuake lineage's (BSP-20.11).
+pub const SURF_DRAWSLIME: u32 = 0x800;
+/// Face flag `SURF_DRAWTELE`, the FitzQuake lineage's (BSP-20.11).
+pub const SURF_DRAWTELE: u32 = 0x1000;
+/// Face flag `SURF_DRAWWATER`, the FitzQuake lineage's (BSP-20.11).
+pub const SURF_DRAWWATER: u32 = 0x2000;
 
 /// Which format a file is (BSP-1.2, BSP-17.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,24 +254,43 @@ pub enum BspVersion {
     Bsp2,
 }
 
-/// Whose loader [`Bsp::read`] follows where id's two differ (BSP-9.15).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Whose loader [`Bsp::read`] follows where loaders differ (BSP-9.17, BSP-12.6, BSP-20).
+///
+/// The default is [`BspLoader::FitzQuake`], the rules of the engines modders play on
+/// (ADR-0012); [`BspLoader::WinQuake`] and [`BspLoader::GlQuake`] answer exactly whether id's
+/// own engines load a map.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "spec BSP-20.1: each variant is the engine's own name"
+)]
 pub enum BspLoader {
-    /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4).
+    /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4), and no face has
+    /// [`SURF_UNDERWATER`].
     WinQuake,
-    /// GLQuake's `WinQuake/gl_model.c`: an extent over 512 fails (BSP-9.15).
+    /// GLQuake's `WinQuake/gl_model.c`: an extent over 512 fails (BSP-9.17), and a face a
+    /// leaf that is not empty lists has [`SURF_UNDERWATER`] (BSP-12.6).
     GlQuake,
+    /// The FitzQuake lineage (FitzQuake, QuakeSpasm, Ironwail, vkQuake), as QuakeSpasm's
+    /// `Quake/gl_model.c` loads a map: BSP-20 says where it differs from GLQuake.
+    #[default]
+    FitzQuake,
 }
 
 impl BspLoader {
     /// The largest extent of a face without `TEX_SPECIAL` this loader accepts (BSP-9.4,
-    /// BSP-9.15).
+    /// BSP-9.17, BSP-20.10).
     #[must_use]
     pub const fn max_surface_extent(self) -> i32 {
         match self {
             Self::WinQuake => BSP_MAX_SURFACE_EXTENT,
             Self::GlQuake => BSP_GL_MAX_SURFACE_EXTENT,
+            Self::FitzQuake => BSP_FITZ_MAX_SURFACE_EXTENT,
         }
+    }
+
+    const fn fitz(self) -> bool {
+        matches!(self, Self::FitzQuake)
     }
 }
 
@@ -330,8 +375,13 @@ pub enum BspError {
     /// A texinfo's `miptex` names no texture slot (BSP-8.3).
     BadMiptex,
     /// A face without `TEX_SPECIAL` spans more texels than the loader accepts: 256 in
-    /// WinQuake, 512 in GLQuake (BSP-9.4, BSP-9.15).
+    /// WinQuake, 512 in GLQuake, 2000 in the FitzQuake lineage (BSP-9.4, BSP-9.17, BSP-20.10).
     BadSurfaceExtents,
+    /// A BSP29 file has more leaves than the FitzQuake lineage accepts (BSP-20.13).
+    TooManyLeafs {
+        /// The number of leaves.
+        count: usize,
+    },
     /// A marksurface names no face (BSP-13.2).
     BadMarksurface,
     /// The BSP has no nodes (BSP-7.6).
@@ -380,6 +430,9 @@ impl BspError {
             }
             Self::BadMiptex => "miptex >= loadmodel->numtextures".to_owned(),
             Self::BadSurfaceExtents => "Bad surface extents".to_owned(),
+            Self::TooManyLeafs { count } => {
+                format!("Mod_LoadLeafs: {count} leafs exceeds limit of {BSP_FITZ_MAX_LEAFS}.")
+            }
             Self::BadMarksurface => "Mod_ParseMarksurfaces: bad surface number".to_owned(),
             Self::NoNodes => format!("{name} has no nodes"),
             Self::NoModels => format!("{name} has no models"),
@@ -446,16 +499,21 @@ pub struct Texture<'a> {
     pub height: u32,
     /// Each mip level's offset from the start of the `miptex_t`.
     pub offsets: [u32; BSP_MIPLEVELS],
-    /// The `width * height / 64 * 85` bytes after the header (BSP-4.5).
+    /// The `width * height / 64 * 85` bytes after the header (BSP-4.5); for the FitzQuake
+    /// lineage the `width * height` bytes of level 0 only, cut short at the end of the lump
+    /// (BSP-20.5).
     pub pixels: &'a [u8],
-    /// Whether the name starts with `sky`, case included (BSP-4.7).
+    /// Whether the name starts with `sky`: case included for WinQuake and GLQuake (BSP-4.7),
+    /// in any case for the FitzQuake lineage (BSP-20.6).
     pub sky: bool,
     /// Its animation, for a `+` texture in a cycle (BSP-4.8 to BSP-4.10).
     pub animation: Option<Animation>,
 }
 
 impl Texture<'_> {
-    /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes.
+    /// Mip level `level`'s pixels, `(width >> level) * (height >> level)` bytes at
+    /// `offsets[level]`, when they lie in [`Texture::pixels`]. A texture the FitzQuake lineage
+    /// read has only level 0 (BSP-20.5).
     #[must_use]
     pub fn mip(&self, level: usize) -> Option<&[u8]> {
         let offset = usize::try_from(*self.offsets.get(level)?).ok()?;
@@ -480,11 +538,13 @@ pub struct Texinfo {
     pub vecs: [[f32; 4]; 2],
     /// The stored `miptex`.
     pub miptex: i32,
-    /// The texture slot used, or `None` for the engine's checkerboard (BSP-8.4).
+    /// The texture slot used, or `None` for the engine's checkerboard (BSP-8.4, BSP-20.7).
     pub texture: Option<usize>,
-    /// The flags, 0 when the checkerboard is used (BSP-8.4, BSP-8.5).
+    /// The flags: 0 when WinQuake or GLQuake use the checkerboard (BSP-8.4, BSP-8.5); the
+    /// stored flags, with [`BSP_TEX_MISSING`] when the texture is missing, for the FitzQuake
+    /// lineage (BSP-20.7).
     pub flags: i32,
-    /// The mip bias, 1 to 4 (BSP-8.6).
+    /// The mip bias, 1 to 4 (BSP-8.6); the FitzQuake lineage computes none (BSP-20.7).
     pub mipadjust: i32,
 }
 
@@ -509,7 +569,7 @@ pub struct Face {
     pub texturemins: [i16; 2],
     /// `extents`, kept in 16 bits as id's `short` field (BSP-9.5, BSP-9.10, BSP-9.14).
     pub extents: [i16; 2],
-    /// `SURF_` flags (BSP-9.1, BSP-9.5).
+    /// `SURF_` flags (BSP-9.1, BSP-9.5, BSP-12.6).
     pub flags: u32,
     /// Lightmap width and height in samples, from the extents before BSP-9.5 (BSP-9.7);
     /// 0 by 0 when either stored extent is negative (BSP-9.16).
@@ -532,7 +592,8 @@ impl Face {
 pub struct Node {
     /// The splitting plane.
     pub planenum: usize,
-    /// Front and back: a node when 0 or more, else leaf `-1 - c` (BSP-7.2).
+    /// Front and back: a node when 0 or more, else leaf `-1 - c` (BSP-7.2), after the
+    /// FitzQuake lineage's reading of the stored value (BSP-20.15, BSP-20.16).
     pub children: [i32; 2],
     /// The bounding box's minimum.
     pub mins: [f32; 3],
@@ -549,7 +610,8 @@ pub struct Node {
 pub struct ClipNode {
     /// The splitting plane.
     pub planenum: i32,
-    /// Front and back: a clipnode when 0 or more, else a contents value.
+    /// Front and back: a clipnode when 0 or more, else a contents value, after the FitzQuake
+    /// lineage's reading of the stored value (BSP-20.17).
     pub children: [i32; 2],
 }
 
@@ -705,6 +767,48 @@ fn child_ok(child: i32, nodes: usize, leaves: Option<usize>) -> bool {
     }
 }
 
+/// A node child as QuakeSpasm's `Mod_LoadNodes_S`, `_L1` and `_L2` read the stored `child`
+/// of a node in a lump of `nodes` nodes, given `leaves` leaves, written as BSP-7.2 writes it:
+/// node `n` as `n` and leaf `l` as `-1 - l`. A leaf that does not exist is leaf 0
+/// (BSP-20.15, BSP-20.16).
+fn fitz_node_child(child: i32, version: BspVersion, nodes: usize, leaves: usize) -> i32 {
+    let leaf = match version {
+        BspVersion::Bsp29 => {
+            // `p = (unsigned short)LittleShort(in->children[j])`, then `p = 65535 - p`.
+            let stored = u16::from_le_bytes(low_16(child).to_le_bytes());
+            if usize::from(stored) < nodes {
+                return i32::from(stored);
+            }
+            i64::from(u16::MAX).wrapping_sub(i64::from(stored))
+        }
+        BspVersion::Bsp2Psb | BspVersion::Bsp2 => {
+            let first = if version == BspVersion::Bsp2 { 1 } else { 0 };
+            if usize::try_from(child).is_ok_and(|node| node >= first && node < nodes) {
+                return child;
+            }
+            // `p = 0xffffffff - p`, stored back in an int: -1 - p.
+            i64::from(child.wrapping_neg().wrapping_sub(1))
+        }
+    };
+    usize::try_from(leaf)
+        .ok()
+        .filter(|&leaf| leaf < leaves)
+        .and_then(|leaf| i32::try_from(leaf).ok())
+        .map_or(-1, |leaf| leaf.wrapping_neg().wrapping_sub(1))
+}
+
+/// A BSP29 clipnode child as QuakeSpasm's `Mod_LoadClipnodes` reads the stored `child` in a
+/// lump of `clipnodes` clipnodes: unsigned, less 65536 when it is not below `clipnodes`
+/// (BSP-20.17).
+fn fitz_clipnode_child(child: i32, clipnodes: usize) -> i32 {
+    let stored = u16::from_le_bytes(low_16(child).to_le_bytes());
+    if usize::from(stored) < clipnodes {
+        i32::from(stored)
+    } else {
+        i32::from(stored).wrapping_sub(65536)
+    }
+}
+
 /// A vertex's texture coordinate on one axis as WinQuake's and GLQuake's x86 builds compute
 /// it: each product exact, added in the order `((x * s[0] + z * s[2]) + y * s[1]) + s[3]` at
 /// 53-bit precision, then rounded once to single precision (BSP-9.11).
@@ -729,6 +833,20 @@ fn x87_texture_coordinate(vertex: [f32; 3], vecs: [f32; 4]) -> f32 {
 )]
 fn x87_replaces(lower: f32, upper: f32) -> bool {
     !(lower >= upper)
+}
+
+/// A vertex's texture coordinate on one axis as QuakeSpasm computes it: every product and sum
+/// in double precision, added in C's order `((x * s[0] + y * s[1]) + z * s[2]) + s[3]`, then
+/// rounded once to single precision (BSP-20.9).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec BSP-20.9: QuakeSpasm stores the double sum in a float"
+)]
+fn double_texture_coordinate(vertex: [f32; 3], vecs: [f32; 4]) -> f32 {
+    let [x, y, z] = vertex.map(f64::from);
+    let [s0, s1, s2, offset] = vecs.map(f64::from);
+    let sum = x * s0 + y * s1 + z * s2 + offset;
+    sum as f32
 }
 
 /// A `double` converted to `int` as the original x86 build does it: in range it truncates,
@@ -792,9 +910,11 @@ impl<'a> Reader<'a> {
 impl<'a> Bsp<'a> {
     /// Loads a BSP held in memory, id's `Mod_LoadBrushModel`.
     ///
-    /// Implements BSP-1 to BSP-17: checks the version, then loads the lumps in id's order
-    /// (BSP-1.5), each with id's checks and the bounds and index checks the spec adds.
-    /// `loader` picks WinQuake's or GLQuake's limit on face extents (BSP-9.4, BSP-9.15).
+    /// Implements BSP-1 to BSP-17 and BSP-20: checks the version, then loads the lumps in id's
+    /// order (BSP-1.5), each with id's checks and the bounds and index checks the spec adds.
+    /// `loader` picks WinQuake's, GLQuake's or the FitzQuake lineage's rules where they differ:
+    /// the limit on face extents (BSP-9.4, BSP-9.17, BSP-20.10), whether faces in leaves that
+    /// are not empty get [`SURF_UNDERWATER`] (BSP-12.6), and the rest of BSP-20.
     ///
     /// # Errors
     ///
@@ -850,16 +970,16 @@ impl<'a> Bsp<'a> {
         bsp.mod_load_vertexes(&reader)?;
         bsp.mod_load_edges(&reader)?;
         bsp.mod_load_surfedges(&reader)?;
-        bsp.mod_load_textures(&reader)?;
+        bsp.mod_load_textures(&reader, loader)?;
         bsp.lighting = reader.lump(BSP_LUMP_LIGHTING);
         bsp.mod_load_planes(&reader)?;
-        bsp.mod_load_texinfo(&reader)?;
+        bsp.mod_load_texinfo(&reader, loader)?;
         bsp.mod_load_faces(&reader, loader)?;
         bsp.mod_load_marksurfaces(&reader)?;
         bsp.visibility = reader.lump(BSP_LUMP_VISIBILITY);
-        bsp.mod_load_leafs(&reader)?;
-        bsp.mod_load_nodes(&reader)?;
-        bsp.mod_load_clipnodes(&reader)?;
+        bsp.mod_load_leafs(&reader, loader)?;
+        bsp.mod_load_nodes(&reader, loader)?;
+        bsp.mod_load_clipnodes(&reader, loader)?;
         bsp.entity_lump = reader.lump(BSP_LUMP_ENTITIES);
         bsp.mod_load_submodels(&reader)?;
         Ok(bsp)
@@ -899,8 +1019,12 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadTextures`: the slots, then the animations (BSP-4).
-    fn mod_load_textures(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadTextures`: the slots, then the animations (BSP-4, BSP-20.3 to BSP-20.6).
+    fn mod_load_textures(
+        &mut self,
+        reader: &Reader<'a>,
+        loader: BspLoader,
+    ) -> Result<(), BspError> {
         let lump = reader.lump(BSP_LUMP_TEXTURES);
         if lump.is_empty() {
             return Ok(());
@@ -922,7 +1046,7 @@ impl<'a> Bsp<'a> {
                 textures.push(None);
                 continue;
             }
-            textures.push(Some(load_texture(lump, offset, index)?));
+            textures.push(load_texture(lump, offset, index, loader)?);
         }
         sequence_animations(&mut textures)?;
         self.textures = textures;
@@ -954,8 +1078,8 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadTexinfo` (BSP-8).
-    fn mod_load_texinfo(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadTexinfo` (BSP-8, BSP-20.7).
+    fn mod_load_texinfo(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let mut texinfo = Vec::new();
         for chunk in reader.elements(BSP_LUMP_TEXINFO, BSP_TEXINFO_SIZE)? {
             let mut vecs = [[0.0_f32; 4]; 2];
@@ -982,7 +1106,18 @@ impl<'a> Bsp<'a> {
             let miptex = i32_at(chunk, 32);
             let mut flags = i32_at(chunk, 36);
             let mut texture = None;
-            if reader.lump(BSP_LUMP_TEXTURES).is_empty() {
+            if loader.fitz() {
+                // BSP-20.7: slot `nummiptex` is QuakeSpasm's checkerboard for lit faces, and
+                // a slot past it, or an empty one, is missing.
+                let slots = self.textures.len();
+                let slot = usize::try_from(miptex).map_err(|_| BspError::BadMiptex)?;
+                match self.textures.get(slot) {
+                    Some(Some(_)) => texture = Some(slot),
+                    Some(None) => flags |= BSP_TEX_MISSING,
+                    None if slot == slots => {}
+                    None => flags |= BSP_TEX_MISSING,
+                }
+            } else if reader.lump(BSP_LUMP_TEXTURES).is_empty() {
                 flags = 0;
             } else {
                 let slot = usize::try_from(miptex)
@@ -1061,15 +1196,16 @@ impl<'a> Bsp<'a> {
             };
             self.calc_surface_extents(&mut face, element, loader)?;
             self.check_light(&face, element)?;
-            let name = self
-                .texinfo
-                .get(texinfo)
+            let info = self.texinfo.get(texinfo);
+            let name = info
                 .and_then(|info| info.texture)
                 .and_then(|slot| self.textures.get(slot))
                 .and_then(Option::as_ref)
                 .map(|texture| texture.name.as_slice())
                 .unwrap_or_default();
-            if name.starts_with(b"sky") {
+            if loader.fitz() {
+                face.flags |= fitz_face_flags(name, info.map_or(0, |info| info.flags), lightofs);
+            } else if name.starts_with(b"sky") {
                 face.flags |= SURF_DRAWSKY | SURF_DRAWTILED;
             } else if name.starts_with(b"*") {
                 face.flags |= SURF_DRAWTURB | SURF_DRAWTILED;
@@ -1115,15 +1251,19 @@ impl<'a> Bsp<'a> {
     }
 
     /// id's `CalcSurfaceExtents` as WinQuake's and GLQuake's x86 builds run it (BSP-9.4,
-    /// BSP-9.7, BSP-9.10 to BSP-9.15).
+    /// BSP-9.7, BSP-9.10 to BSP-9.14, BSP-9.17), or QuakeSpasm's as its x86-64 build runs it
+    /// (BSP-20.8 to BSP-20.10).
     fn calc_surface_extents(
         &self,
         face: &mut Face,
         element: usize,
         loader: BspLoader,
     ) -> Result<(), BspError> {
-        let mut mins = [999_999.0_f32; 2];
-        let mut maxs = [-99_999.0_f32; 2];
+        let (mut mins, mut maxs) = if loader.fitz() {
+            ([f32::MAX; 2], [f32::MIN; 2])
+        } else {
+            ([999_999.0_f32; 2], [-99_999.0_f32; 2])
+        };
         let texinfo = self
             .texinfo
             .get(face.texinfo)
@@ -1135,16 +1275,26 @@ impl<'a> Bsp<'a> {
         for edge in face.firstedge..face.firstedge.saturating_add(face.numedges) {
             let vertex = self.surfedge_vertex(edge, element)?;
             for (axis, vecs) in texinfo.vecs.iter().enumerate() {
-                let value = x87_texture_coordinate(vertex, *vecs);
-                if let Some(min) = mins.get_mut(axis)
-                    && x87_replaces(value, *min)
-                {
-                    *min = value;
-                }
-                if let Some(max) = maxs.get_mut(axis)
-                    && x87_replaces(*max, value)
-                {
-                    *max = value;
+                let (Some(min), Some(max)) = (mins.get_mut(axis), maxs.get_mut(axis)) else {
+                    continue;
+                };
+                if loader.fitz() {
+                    // BSP-20.8: C's comparisons, so a NaN replaces neither bound.
+                    let value = double_texture_coordinate(vertex, *vecs);
+                    if value < *min {
+                        *min = value;
+                    }
+                    if value > *max {
+                        *max = value;
+                    }
+                } else {
+                    let value = x87_texture_coordinate(vertex, *vecs);
+                    if x87_replaces(value, *min) {
+                        *min = value;
+                    }
+                    if x87_replaces(*max, value) {
+                        *max = value;
+                    }
                 }
             }
         }
@@ -1231,15 +1381,21 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadLeafs` (BSP-12, BSP-17.4).
-    fn mod_load_leafs(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadLeafs` (BSP-12, BSP-17.4), GLQuake's flag on the faces of a leaf that is
+    /// not empty (BSP-12.6), and the FitzQuake lineage's limit on leaves (BSP-20.13).
+    fn mod_load_leafs(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
             BspVersion::Bsp29 => BSP_LEAF_SIZE,
             BspVersion::Bsp2Psb => BSP_2PSB_LEAF_SIZE,
             BspVersion::Bsp2 => BSP_BSP2_LEAF_SIZE,
         };
-        let mut leafs = Vec::new();
-        for (element, chunk) in reader.elements(BSP_LUMP_LEAFS, size)?.enumerate() {
+        let chunks = reader.elements(BSP_LUMP_LEAFS, size)?;
+        let count = chunks.len();
+        if loader.fitz() && reader.version == BspVersion::Bsp29 && count > BSP_FITZ_MAX_LEAFS {
+            return Err(BspError::TooManyLeafs { count });
+        }
+        let mut leafs = Vec::with_capacity(count);
+        for (element, chunk) in chunks.enumerate() {
             let (mins, maxs, marks_at) = match reader.version {
                 BspVersion::Bsp29 | BspVersion::Bsp2Psb => {
                     (short3_at(chunk, 8), short3_at(chunk, 14), 20)
@@ -1277,8 +1433,21 @@ impl<'a> Bsp<'a> {
                     element,
                 )?;
             }
+            let contents = i32_at(chunk, 0);
+            if loader == BspLoader::GlQuake && contents != BSP_CONTENTS_EMPTY {
+                let marks = self
+                    .marksurfaces
+                    .iter()
+                    .skip(firstmarksurface)
+                    .take(nummarksurfaces);
+                for &face in marks {
+                    if let Some(face) = self.faces.get_mut(face) {
+                        face.flags |= SURF_UNDERWATER;
+                    }
+                }
+            }
             leafs.push(Leaf {
-                contents: i32_at(chunk, 0),
+                contents,
                 visofs,
                 mins,
                 maxs,
@@ -1291,8 +1460,9 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadNodes` (BSP-7, BSP-17.4).
-    fn mod_load_nodes(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadNodes` (BSP-7, BSP-17.4), with the FitzQuake lineage's reading of the
+    /// children (BSP-20.15, BSP-20.16).
+    fn mod_load_nodes(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
             BspVersion::Bsp29 => BSP_NODE_SIZE,
             BspVersion::Bsp2Psb => BSP_2PSB_NODE_SIZE,
@@ -1341,6 +1511,12 @@ impl<'a> Bsp<'a> {
             )?;
             let (firstface, numfaces) =
                 range(first, numfaces, self.faces.len(), BSP_LUMP_NODES, element)?;
+            let children = if loader.fitz() {
+                children
+                    .map(|child| fitz_node_child(child, reader.version, count, self.leafs.len()))
+            } else {
+                children
+            };
             if !children
                 .iter()
                 .all(|&child| child_ok(child, count, Some(self.leafs.len())))
@@ -1366,8 +1542,13 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
-    /// id's `Mod_LoadClipnodes` (BSP-11, BSP-17.3).
-    fn mod_load_clipnodes(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    /// id's `Mod_LoadClipnodes` (BSP-11, BSP-17.3), with the FitzQuake lineage's reading of a
+    /// BSP29 clipnode's children (BSP-20.17).
+    fn mod_load_clipnodes(
+        &mut self,
+        reader: &Reader<'a>,
+        loader: BspLoader,
+    ) -> Result<(), BspError> {
         let size = if reader.bsp2() {
             BSP_BSP2_CLIPNODE_SIZE
         } else {
@@ -1379,6 +1560,8 @@ impl<'a> Bsp<'a> {
         for (element, chunk) in chunks.enumerate() {
             let children = if reader.bsp2() {
                 [i32_at(chunk, 4), i32_at(chunk, 8)]
+            } else if loader.fitz() {
+                [4, 6].map(|at| fitz_clipnode_child(i32::from(i16_at(chunk, at)), count))
             } else {
                 [i32::from(i16_at(chunk, 4)), i32::from(i16_at(chunk, 6))]
             };
@@ -1579,8 +1762,14 @@ fn length<const N: usize>(vector: [f32; N]) -> f32 {
     f64::from(sum).sqrt() as f32
 }
 
-/// Loads the texture at `offset` in the textures lump (BSP-4.3 to BSP-4.5).
-fn load_texture(lump: &[u8], offset: i32, index: usize) -> Result<Texture<'_>, BspError> {
+/// Loads the texture at `offset` in the textures lump (BSP-4.3 to BSP-4.5), or leaves its slot
+/// empty where the FitzQuake lineage does (BSP-20.3).
+fn load_texture(
+    lump: &[u8],
+    offset: i32,
+    index: usize,
+    loader: BspLoader,
+) -> Result<Option<Texture<'_>>, BspError> {
     let bad = BspError::BadTexture { index };
     let start = usize::try_from(offset).map_err(|_| bad.clone())?;
     let header = start
@@ -1593,6 +1782,9 @@ fn load_texture(lump: &[u8], offset: i32, index: usize) -> Result<Texture<'_>, B
     let width = u32_at(header, 16);
     let height = u32_at(header, 20);
     let offsets = [24, 28, 32, 36].map(|at| u32_at(header, at));
+    if loader.fitz() {
+        return fitz_texture(lump, start, name, width, height, offsets, index);
+    }
     if width & 15 != 0 || height & 15 != 0 {
         return Err(BspError::NotAligned { name });
     }
@@ -1621,7 +1813,44 @@ fn load_texture(lump: &[u8], offset: i32, index: usize) -> Result<Texture<'_>, B
             return Err(bad);
         }
     }
-    Ok(texture)
+    Ok(Some(texture))
+}
+
+/// QuakeSpasm's `Mod_LoadTextures` for one texture whose header lies at `start`: a texture
+/// with no pixels leaves its slot empty, any size loads, and only level 0's
+/// `width * height` bytes are kept, cut short at the end of the lump (BSP-20.3 to BSP-20.6).
+fn fitz_texture(
+    lump: &[u8],
+    start: usize,
+    name: Vec<u8>,
+    width: u32,
+    height: u32,
+    offsets: [u32; BSP_MIPLEVELS],
+    index: usize,
+) -> Result<Option<Texture<'_>>, BspError> {
+    if width == 0 || height == 0 {
+        return Ok(None);
+    }
+    // BSP-20.5: `int pixels = mt->width*mt->height` multiplies as unsigned; a product that
+    // does not fit an int would make QuakeSpasm copy a negative count.
+    let pixels = usize::try_from(width.wrapping_mul(height))
+        .ok()
+        .filter(|&pixels| i32::try_from(pixels).is_ok())
+        .ok_or(BspError::BadTexture { index })?;
+    let data_start = start.saturating_add(BSP_MIPTEX_HEADER_SIZE);
+    let available = lump.len().saturating_sub(data_start);
+    let data = lump
+        .get(data_start..data_start.saturating_add(pixels.min(available)))
+        .unwrap_or_default();
+    Ok(Some(Texture {
+        sky: fitz_sky(&name),
+        name,
+        width,
+        height,
+        offsets,
+        pixels: data,
+        animation: None,
+    }))
 }
 
 /// The frame a `+` texture's second character names: `(false, n)` for frame `n` of the
@@ -1743,6 +1972,49 @@ fn link(
         }
     }
     Ok(())
+}
+
+/// Whether `name` starts with `sky` in any case, QuakeSpasm's `q_strncasecmp(name, "sky", 3)`
+/// (BSP-20.6).
+fn fitz_sky(name: &[u8]) -> bool {
+    name.get(..3)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"sky"))
+}
+
+/// The flags QuakeSpasm's `Mod_LoadFaces` adds to a face from its texture's name, its
+/// texinfo's flags and its `lightofs` (BSP-20.6, BSP-20.11).
+fn fitz_face_flags(name: &[u8], texinfo_flags: i32, lightofs: i32) -> u32 {
+    if fitz_sky(name) {
+        return SURF_DRAWSKY | SURF_DRAWTILED;
+    }
+    match name.first() {
+        Some(b'*' | b'!') => {
+            let mut flags = SURF_DRAWTURB;
+            if texinfo_flags & BSP_TEX_SPECIAL != 0 {
+                flags |= SURF_DRAWTILED;
+            }
+            let liquid = name.get(1..).unwrap_or_default();
+            flags |= if liquid.starts_with(b"lava") {
+                SURF_DRAWLAVA
+            } else if liquid.starts_with(b"slime") {
+                SURF_DRAWSLIME
+            } else if liquid.starts_with(b"tele") {
+                SURF_DRAWTELE
+            } else {
+                SURF_DRAWWATER
+            };
+            flags
+        }
+        Some(b'{') => SURF_DRAWFENCE,
+        _ if texinfo_flags & BSP_TEX_MISSING != 0 => {
+            if lightofs == -1 {
+                SURF_NOTEXTURE | SURF_DRAWTILED
+            } else {
+                SURF_NOTEXTURE
+            }
+        }
+        _ => 0,
+    }
 }
 
 /// A face's lightmap size in samples: `(extent >> 4) + 1` on each axis (BSP-9.7), or 0 by 0

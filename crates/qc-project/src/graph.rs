@@ -610,6 +610,32 @@ impl<L: Loader> Builder<'_, L> {
         }
     }
 
+    /// The components of `path` that the name `name` spells, as the directories holding them
+    /// spell them, joined with `/`, when one differs from the name's (PRJ-7.2). The
+    /// directory the name was resolved against is not compared.
+    fn stored_spelling(&mut self, name: &Path, path: &Path) -> Option<String> {
+        let spelt = normalize(name)
+            .components()
+            .filter(|c| matches!(c, Component::Normal(_)))
+            .count();
+        let components: Vec<Component<'_>> = path.components().collect();
+        let first = components.len().saturating_sub(spelt);
+        let mut prefix: PathBuf = components.iter().take(first).collect();
+        let mut differs = false;
+        let mut stored = Vec::new();
+        for component in components.iter().skip(first) {
+            prefix.push(component);
+            let name = component.as_os_str();
+            let on_disk = self
+                .loader
+                .stored_name(&prefix)
+                .unwrap_or_else(|| name.to_os_string());
+            differs |= on_disk != name;
+            stored.push(on_disk.to_string_lossy().into_owned());
+        }
+        differs.then(|| stored.join("/"))
+    }
+
     /// Finds `word` (PRJ-5.2) and starts reading it.
     fn bring_in(&mut self, word: &str, line: u32, via: Via) {
         let Some(cursor) = self.stack.last() else {
@@ -654,6 +680,10 @@ impl<L: Loader> Builder<'_, L> {
             self.report(code, message, &from, line);
             return;
         };
+        if let Some(stored) = self.stored_spelling(relative, &path) {
+            let message = format!("{word} differs in case from the file it opens, {stored}");
+            self.report(Code::W0402, message, &from, line);
+        }
         if self.once.contains(&path) {
             return;
         }

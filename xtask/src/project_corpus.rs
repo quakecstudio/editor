@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `cargo xtask project-corpus [--progs <progs.dat>] <dir>...`: opens each codebase as a
+//! `cargo xtask project-corpus [--progs <progs.dat>] [--expect-warning <code>=<n>] <dir>...`:
+//! opens each codebase as a
 //! project with `qc-project` and checks every module's file graph (P1-23).
 //!
 //! A codebase with `quakec.toml` is opened through it. Otherwise every `.src` file that no
@@ -10,7 +11,9 @@
 //! have one module, and the source files of the functions in that `progs.dat`, in function
 //! order, must appear in the module's graph in the same order: the program id's `qcc`
 //! compiled from the same `progs.src` (`cargo xtask oracles id101`) is the oracle. With
-//! `--files`, every file of every graph is printed, in order.
+//! `--files`, every file of every graph is printed, in order. With `--expect-warning`, exactly
+//! `n` modules, over all the directories, must have a warning with that code; warnings are
+//! otherwise printed and never fail the check.
 //!
 //! The codebases come from `cargo xtask corpus fetch <id>`.
 
@@ -19,11 +22,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use qc_progs::Progs;
-use qc_project::{Form, Module, Project, Via, open};
+use qc_project::{Code, Form, Module, Project, Via, open};
 
 use crate::lex_corpus::progs_src_names;
 
-const USAGE: &str = "usage: cargo xtask project-corpus [--files] [--progs <progs.dat>] <dir>...";
+const USAGE: &str = "usage: cargo xtask project-corpus [--files] [--progs <progs.dat>] \
+                     [--expect-warning <code>=<modules>] <dir>...";
 
 /// Every `.src` file under `dir`, sorted.
 fn src_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
@@ -159,11 +163,14 @@ fn check_progs_order(module: &Module, progs_path: &Path) -> Result<bool, String>
 fn report(module: &Module) -> bool {
     let mut ok = true;
     for d in &module.graph.diagnostics {
-        if d.code.is_error() {
+        let label = if d.code.is_error() {
             ok = false;
-        }
+            "FAIL"
+        } else {
+            "warn"
+        };
         println!(
-            "FAIL  {}:{}: {} {}",
+            "{label}  {}:{}: {} {}",
             d.file.display(),
             d.line,
             d.code.as_str(),
@@ -191,16 +198,30 @@ fn report(module: &Module) -> bool {
     ok
 }
 
+/// Parses `<code>=<modules>`, the code a warning.
+fn parse_expected(arg: &str) -> Result<(Code, usize), String> {
+    let bad = || format!("--expect-warning takes <warning code>=<modules>, not {arg}\n{USAGE}");
+    let (code, count) = arg.split_once('=').ok_or_else(bad)?;
+    let code = Code::ALL
+        .into_iter()
+        .find(|c| c.as_str() == code && !c.is_error())
+        .ok_or_else(bad)?;
+    Ok((code, count.parse().map_err(|_| bad())?))
+}
+
 /// Runs the check on the directories in `args`.
 pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     let mut progs = None;
     let mut files = false;
+    let mut expected: Option<(Code, usize)> = None;
+    let mut warned = 0_usize;
     let mut dirs = Vec::new();
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--progs" => progs = Some(PathBuf::from(rest.next().ok_or(USAGE)?)),
             "--files" => files = true,
+            "--expect-warning" => expected = Some(parse_expected(rest.next().ok_or(USAGE)?)?),
             flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
             dir => dirs.push(PathBuf::from(dir)),
         }
@@ -217,6 +238,11 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
             ok = false;
         }
         for module in &modules {
+            if expected
+                .is_some_and(|(code, _)| module.graph.diagnostics.iter().any(|d| d.code == code))
+            {
+                warned = warned.saturating_add(1);
+            }
             ok &= report(module);
             ok &= check_list_order(module)?;
             if files {
@@ -243,6 +269,14 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
             modules.len(),
             modules.iter().map(|m| m.graph.files.len()).sum::<usize>()
         );
+    }
+    if let Some((code, count)) = expected {
+        let verdict = if warned == count { "ok  " } else { "FAIL" };
+        println!(
+            "{verdict}  {warned} modules have {}, {count} expected",
+            code.as_str()
+        );
+        ok &= warned == count;
     }
     println!(
         "project-corpus: {}",

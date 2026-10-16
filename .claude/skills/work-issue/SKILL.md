@@ -36,6 +36,7 @@ Issue: #$ARGUMENTS
 1. Commit with Conventional Commits. No Co-Authored-By trailers. Plain hyphens, not em or en dashes.
 2. Push and open the PR: `gh pr create --title "<conventional title>" --body "<what changed, how each acceptance criterion is met>\n\nCloses #$ARGUMENTS"`.
 3. Land it: `${CLAUDE_SKILL_DIR}/scripts/land.sh <pr-number>`. It waits for CI, adds the PR to the merge queue (agents may do this once CI passes) and waits for the merge.
-4. If CI fails, fix the cause on the branch and run `land.sh` again. Never skip, disable or loosen a test, a lint or a ratchet to get green.
+4. Never wait on CI or GitHub with a long `sleep` (such as `sleep 600; gh run view ...`). Watch instead: `gh pr checks <pr> --watch --fail-fast` for a PR's checks, `gh run watch <run-id> --exit-status` for a workflow run. Run long local jobs (cargo-mutants, fuzzing, differential runs) in the background with a completion notification instead of sleep-polling them.
+5. If CI fails, fix the cause on the branch and run `land.sh` again. Never skip, disable or loosen a test, a lint or a ratchet to get green.
    If you cannot finish without a person (a missing repository, a credential, a decision the plan does not cover), add the `escalated` label (`gh issue edit $ARGUMENTS --add-label escalated`), comment with exactly what is needed, mention @jplock and stop.
-5. When it has merged, confirm the issue closed (`gh issue view $ARGUMENTS --json state`). Report the PR, what it delivered and any follow-up issues you filed.
+6. When it has merged, confirm the issue closed (`gh issue view $ARGUMENTS --json state`). Report the PR, what it delivered and any follow-up issues you filed.

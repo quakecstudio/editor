@@ -65,7 +65,7 @@ fn decode_bsp(
     data: &[u8],
     decoded: &mut Decoded,
 ) -> Result<(), String> {
-    let bsp = Bsp::read(data, BspLoader::WinQuake).map_err(|error| error.to_string())?;
+    let bsp = Bsp::read(data, BspLoader::default()).map_err(|error| error.to_string())?;
     let entities = MapFile::parse(bsp.entities()).map_err(|error| format!("entities: {error}"))?;
     if entities.to_bytes() != bsp.entities() {
         return Err("the entity text does not write back unchanged".to_owned());

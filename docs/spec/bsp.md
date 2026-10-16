@@ -10,17 +10,23 @@ BSP29 is described from `WinQuake/bspfile.h` and `WinQuake/model.c` in
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the server's use of the result from
 `WinQuake/sv_main.c` and `WinQuake/world.c`. GLQuake's loader in `WinQuake/gl_model.c` makes
 the same checks with the same messages, except that it accepts larger face extents
-(BSP-9.15). Implemented by `crates/qs-bsp`
+(BSP-9.17) and flags the faces of leaves that are not empty (BSP-12.6). Implemented by `crates/qs-bsp`
 ([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
 every statement.
 
-id never defined BSP2 or `.lit`. They are described from the programs that read and write
-them, cited for description only; neither is a registered upstream for porting
-([`../porting.md`](../porting.md#upstreams)) and no code is ported from them:
+The editor's default loader follows the engines modders play on, the FitzQuake lineage, with
+QS's loader as the reference ([ADR-0012](../adr/0012-bsp-loader-default.md)); BSP-20 lists
+every way it differs from GLQuake's, and WinQuake's and GLQuake's rules stay selectable as
+compatibility modes.
+
+id never defined BSP2 or `.lit`. They and the FitzQuake lineage's rules are described from the
+programs that read and write them, cited for description only; neither is a registered
+upstream for porting ([`../porting.md`](../porting.md#upstreams)) and no code is ported from
+them:
 
 | Short name | Repository and commit | Files read |
 | --- | --- | --- |
-| QS | [sezero/quakespasm](https://github.com/sezero/quakespasm)@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` (QuakeSpasm, GPL-2.0-or-later) | `Quake/bspfile.h`; `Quake/gl_model.c`, `Mod_LoadBrushModel`, `Mod_LoadLighting` and the `Mod_Load*` lump readers |
+| QS | [sezero/quakespasm](https://github.com/sezero/quakespasm)@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` (QuakeSpasm, GPL-2.0-or-later) | `Quake/bspfile.h`; `Quake/quakedef.h`; `Quake/gl_model.h`; `Quake/gl_model.c`, `Mod_Init`, `Mod_LoadBrushModel`, `Mod_DecompressVis`, `Mod_LoadLighting`, `CalcSurfaceExtents`, `Mod_SetParent`, `Mod_MakeHull0` and the `Mod_Load*` and `Mod_ProcessLeafs_*` lump readers; `Quake/common.c`, `q_strncasecmp` |
 | ericw-tools | [ericwa/ericw-tools](https://github.com/ericwa/ericw-tools)@`36eec1da2a194467e6baac2f444c2dd04b57d266` (GPL-2.0-or-later) | `include/common/bspfile_q1.hh`; `common/bspfile.cc`, `bspver_bsp2`, `bspver_bsp2rmq`; `include/common/litfile.hh`, `common/litfile.cc` (the writer) |
 
 All integers are two's-complement little-endian values read through `LittleLong` (32-bit) or
@@ -450,12 +456,8 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   BSP-9.4. The conversion to `short` is implementation-defined in C; this spec takes the
   answer of id's x86 builds, which compute, store and compare the 16-bit value (see the
   evidence below).
-- **BSP-9.15** GLQuake's `CalcSurfaceExtents` (`WinQuake/gl_model.c`) checks
-  `s->extents[i] > 512 /* 256 */` where WinQuake's checks `s->extents[i] > 256` (BSP-9.4):
-  when the texinfo's flags do not have `TEX_SPECIAL`, a stored extent (BSP-9.14) over 512
-  fails with `Bad surface extents` and 512 loads, so a face with an extent from 272 to 512
-  loads in GLQuake and fails in WinQuake. `crates/qs-bsp` applies the limit of the loader its
-  caller names, WinQuake's or GLQuake's, and has no default.
+- **BSP-9.15** **Withdrawn** 2026-10-16: it said `crates/qs-bsp` has no default loader, but
+  ADR-0012 made the FitzQuake lineage's the default; replaced by BSP-9.17.
 - **BSP-9.16** A face whose stored extent (BSP-9.14) is negative on either axis has no
   lightmap: this spec gives it 0 by 0 samples, so it has no samples and BSP-10.2 requires only
   that its `lightofs` is -1 or at most the size of the lighting lump. BSP-9.7 would give that
@@ -467,6 +469,13 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   stores none of the face's samples in its lightmap texture; and neither lights a model from
   the face. id's loaders load the face (BSP-9.14); what each renderer does is in the
   evidence below.
+- **BSP-9.17** GLQuake's `CalcSurfaceExtents` (`WinQuake/gl_model.c`) checks
+  `s->extents[i] > 512 /* 256 */` where WinQuake's checks `s->extents[i] > 256` (BSP-9.4):
+  when the texinfo's flags do not have `TEX_SPECIAL`, a stored extent (BSP-9.14) over 512
+  fails with `Bad surface extents` and 512 loads, so a face with an extent from 272 to 512
+  loads in GLQuake and fails in WinQuake. `crates/qs-bsp` applies the limit of the loader its
+  caller names: 256 for `BspLoader::WinQuake`, 512 for `BspLoader::GlQuake`, and 2000 for
+  `BspLoader::FitzQuake`, the default (BSP-20.10).
 
 ### Evidence for BSP-9.11 and BSP-9.12
 
@@ -595,7 +604,7 @@ the s axis offset -1e30 and `lightofs` -1, failed with `Bad surface extents`, an
 texinfo flags 1 loaded with `texturemins` 0 0 and extents 31088 64 (BSP-9.13: the minimum's
 indefinite value, and a maximum still -99999).
 
-### Evidence for BSP-9.15
+### Evidence for BSP-9.17
 
 `WinQuake/model.c` and `WinQuake/gl_model.c` at the pinned commit differ in
 `CalcSurfaceExtents` only in the check:
@@ -609,7 +618,7 @@ The released executables agree: `WINQUAKE.EXE` compares the stored 16-bit extent
 `cmpw $0x100, %ax` and `GLQUAKE.EXE` with `cmpw $0x200, %ax` at `0x42c447`, each followed by
 a signed `jle` past the call to `Sys_Error` (the sequences under "Evidence for BSP-9.14").
 Which limit a map must keep to is a property of the engine that loads it, so `qs-bsp` takes
-it from its caller rather than choosing one engine for everyone.
+it from its caller, and by default follows the engines modders play on (ADR-0012, BSP-20).
 
 GLQuake loads such a face, but its renderer then builds the face's lightmap in
 `WinQuake/gl_rsurf.c`'s `unsigned blocklights[18*18];`, and `R_BuildLightMap` writes
@@ -744,7 +753,7 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 `extents-272`, `extents-272-special` (BSP-9.4, BSP-9.10), `sky` and `turb` (BSP-9.5),
 `nolight-back` (BSP-9.1, BSP-9.6), `x87-order` and `x87-pc64` (BSP-9.11), `nan-vertex`
 (BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14),
-`extents-512`, `extents-528` and `extents-528-special` (BSP-9.15, with `extents-256`,
+`extents-512`, `extents-528` and `extents-528-special` (BSP-9.17, with `extents-256`,
 `extents-272` and `extents-272-special` as GLQuake loads them), `extents-32784`,
 `extents-65520`, `extents-32784-t`, `extents-65504-st` and `extents-32784-st` (BSP-9.16).
 
@@ -797,7 +806,8 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 ## BSP-12 Leaves
 
 **Source:** `WinQuake/bspfile.h`, `dleaf_t`, `CONTENTS_*`, `AMBIENT_*`, `NUM_AMBIENTS`;
-`WinQuake/model.c`, `Mod_LoadLeafs`; `WinQuake/common.c`, `ShortNoSwap`
+`WinQuake/model.c`, `Mod_LoadLeafs`; `WinQuake/common.c`, `ShortNoSwap`;
+`WinQuake/gl_model.h`, `SURF_UNDERWATER`; `WinQuake/gl_model.c`, `Mod_LoadLeafs`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -827,6 +837,46 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
   id's loader reads them through `LittleShort`, which returns a signed `short`, so a value
   of 32768 or more indexes before the array, which is undefined; this spec reads them as the
   file declares them, as QS does.
+- **BSP-12.6** GLQuake's `Mod_LoadLeafs` (`WinQuake/gl_model.c`) sets `SURF_UNDERWATER` (0x80, `WinQuake/gl_model.h`) in the flags of every face that a leaf whose `contents` is not -1 (`CONTENTS_EMPTY`) lists among its marksurfaces (BSP-13.1), whatever the face's texture and other flags: a face listed by a water, slime, lava, sky or solid leaf, or by a leaf whose value is no `CONTENTS_` value, has it, and keeps it when an empty leaf lists it too. WinQuake's `Mod_LoadLeafs` (`WinQuake/model.c`) has no such code and `WinQuake/model.h` defines no such flag, so no face WinQuake loads has 0x80. `crates/qs-bsp` sets the flag when its caller names GLQuake's loader (BSP-9.17), over the marksurfaces BSP-12.5 reads and for BSP2 as for BSP29, and never when it names WinQuake's.
+
+### Evidence for BSP-12.6
+
+GLQuake's `Mod_LoadLeafs` ends the loop over the leaves with:
+
+```c
+		// gl underwater warp
+		if (out->contents != CONTENTS_EMPTY)
+		{
+			for (j=0 ; j<out->nummarksurfaces ; j++)
+				out->firstmarksurface[j]->flags |= SURF_UNDERWATER;
+		}
+```
+
+with `#define SURF_UNDERWATER		0x80` in `WinQuake/gl_model.h`, whose `msurface_t` notes
+`int		flags;			// for SURF_UNDERWATER`. `Mod_LoadBrushModel` calls
+`Mod_LoadFaces` and `Mod_LoadMarksurfaces` before `Mod_LoadLeafs`, so the flag is ORed into the
+flags `Mod_LoadFaces` gave (BSP-9.1, BSP-9.5) and nothing later clears it. WinQuake's
+`Mod_LoadLeafs` is the same function without those lines, and `WinQuake/model.h` defines the
+`SURF_` flags up to `SURF_DRAWBACKGROUND` 0x40 only. QS, which reads BSP2, removed the code
+(`//johnfitz -- removed code to mark surfaces as SURF_UNDERWATER` in each of its
+`Mod_ProcessLeafs_` functions); GLQuake reads no BSP2, and `qs-bsp` applies GLQuake's rule to
+BSP2 as it applies GLQuake's extent limit.
+
+The flag changes only how GLQuake draws the face (`WinQuake/gl_rsurf.c`): `R_RenderBrushPoly`
+draws it with `DrawGLWaterPoly`, warped, instead of `DrawGLPoly`; `R_DrawSequentialPoly` does
+not draw it as a normal lightmapped polygon; `R_BlendLightmaps` blends its lightmap with
+`DrawGLWaterPolyLightmap`; `R_RecursiveWorldNode` does not cull it when it faces away
+("don't backface underwater surfaces, because they warp"); and `BuildSurfaceDisplayList` keeps
+its colinear vertices when `gl_keeptjunctions` is 0. WinQuake warps the whole view instead,
+from the viewer's leaf, not a face's flag: `R_SetupFrame` (`WinQuake/r_misc.c`) sets
+`r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);`. Neither changes
+what the server or the editor reads from the map.
+
+**Checked:** on 2026-10-16 id's `Mod_LoadBrushModel` in `WinQuake/model.c` and in
+`WinQuake/gl_model.c`, each built unchanged from the pinned commit in the harness of the
+vectors' README, for arm64 with Apple clang and for x86-64 with gcc 14.4, loaded `base`,
+`water-leaf`, `water-leaf-turb`, `solid-leaf-face` and `contents-unknown`; all four builds
+gave the face flags the README records.
 
 ### Constants
 
@@ -840,6 +890,13 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 | `BSP_CONTENTS_LAVA` | -5 | `WinQuake/bspfile.h`, `CONTENTS_LAVA` |
 | `BSP_CONTENTS_SKY` | -6 | `WinQuake/bspfile.h`, `CONTENTS_SKY` |
 | `BSP_NUM_AMBIENTS` | 4 | `WinQuake/bspfile.h`, `NUM_AMBIENTS`, `AMBIENT_WATER` 0 to `AMBIENT_LAVA` 3 |
+| `SURF_UNDERWATER` | 0x80 | `WinQuake/gl_model.h`, `SURF_UNDERWATER` |
+
+### Test vectors
+
+See [`vectors/bsp/`](vectors/bsp/README.md): `water-leaf`, `water-leaf-turb`,
+`solid-leaf-face` and `contents-unknown` (BSP-12.6), with `base`, whose face only an empty
+leaf lists.
 
 ## BSP-13 Marksurfaces
 
@@ -994,8 +1051,14 @@ BSP-1.2.
   marksurface range are unsigned 32-bit.
 - **BSP-17.4** A `2PSB` node or leaf keeps 16-bit integer bounds; a `BSP2` node or leaf has
   float bounds, `mins[3]` then `maxs[3]`.
-- **BSP-17.5** Every rule of BSP-1 to BSP-15 that does not concern a field's width applies
-  to BSP2 unchanged.
+- **BSP-17.5** **Withdrawn** 2026-10-16: it applied BSP-1 to BSP-15 to BSP2 whatever the
+  loader, but the FitzQuake lineage's loader, the default, reads BSP2 by BSP-20; replaced by
+  BSP-17.6.
+- **BSP-17.6** id's WinQuake and GLQuake read no BSP2 (BSP-1.2); `crates/qs-bsp` reads it
+  with every loader. With `BspLoader::WinQuake` or `BspLoader::GlQuake`, every rule of BSP-1
+  to BSP-15 that does not concern a field's width applies to BSP2 unchanged. With
+  `BspLoader::FitzQuake`, the default, BSP2 is read as QS reads it: those rules as BSP-20
+  changes them, BSP-20.16 for node children and no limit on leaves (BSP-20.13).
 
 ### Constants
 
@@ -1046,6 +1109,11 @@ byte of the lighting lump. The format comes from LordHavoc's engines (QS's comme
   base game's `.lit`.
 - **BSP-18.5** Without a usable `.lit`, each lighting byte stands for the grey triple of
   that value.
+- **BSP-18.6** Only the FitzQuake lineage's loader reads a `.lit` (QS's `Mod_LoadLighting`,
+  called from `Mod_LoadBrushModel`); id's WinQuake and GLQuake `Mod_LoadLighting` copy the
+  lighting lump alone, so a map loaded by their rules is lit grey. `crates/qs-bsp` reads a
+  `.lit` with `Lit::read`, apart from `Bsp::read`, whichever loader read the BSP; the caller
+  decides whether it applies, as it does for a map the default loader read.
 
 ### Constants
 
@@ -1086,3 +1154,198 @@ engine reads only the lump.
 | Name | Value | Source |
 | --- | --- | --- |
 | `BSP_ENT_EXTENSION` | `.ent` | QS `Mod_LoadEntities` |
+
+## BSP-20 The FitzQuake lineage's loader
+
+**Source:** QS `Quake/gl_model.c`, `Mod_Init`, `Mod_LoadBrushModel`, `Mod_LoadTextures`,
+`Mod_LoadTexinfo`, `CalcSurfaceExtents`, `Mod_LoadFaces`, `Mod_LoadNodes_S`, `Mod_LoadNodes_L1`,
+`Mod_LoadNodes_L2`, `Mod_ProcessLeafs_S`, `Mod_ProcessLeafs_L1`, `Mod_ProcessLeafs_L2`,
+`Mod_LoadClipnodes`, `Mod_LoadMarksurfaces`, `Mod_LoadEntities`, `Mod_DecompressVis`;
+`Quake/gl_model.h`, `SURF_*`, `msurface_t`, `mtexinfo_t`; `Quake/bspfile.h`, `TEX_MISSING`,
+`BSPVERSION_VALVE`, `BSPVERSION_QUAKE64`; `Quake/quakedef.h`, `BSP29_VALVE`; `Quake/common.c`,
+`q_strncasecmp` (sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`). Compared with
+`WinQuake/gl_model.c` (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
+
+FitzQuake, QuakeSpasm, Ironwail and vkQuake load maps by rules that depart from id's on
+purpose, and modders test on them, so they are the editor's default
+([ADR-0012](../adr/0012-bsp-loader-default.md)). `crates/qs-bsp` implements them as
+`BspLoader::FitzQuake`, which `BspLoader::default()` returns, from this description; QS's code
+is read, not ported. Each statement quotes QS and the GLQuake code it differs from, and says
+what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con_DWarning`,
+`Con_Printf`, `Con_DPrintf`); only `Sys_Error` and `Host_Error` stop a load.
+
+### Behaviour
+
+- **BSP-20.1** `BspLoader::FitzQuake` is the default loader. It loads a BSP by BSP-1 to
+  BSP-17 except where BSP-20.2 to BSP-20.17 say otherwise. Where QS, like id, uses an index or
+  offset from the file without checking it (a plane, texinfo, edge, vertex, face or
+  marksurface range, a visibility or lighting offset, a texture's header), the answer this
+  spec fixes for id's loaders holds (BSP-1.6, BSP-1.8, BSP-4.6, BSP-6.5, BSP-10.2, BSP-14.3).
+  `BspLoader::WinQuake` and `BspLoader::GlQuake` are unchanged.
+- **BSP-20.2** QS's `Mod_LoadBrushModel` also accepts version 30 (`case BSPVERSION_VALVE:`,
+  Half-Life's format, compiled in because `Quake/quakedef.h` has
+  `#define BSP29_VALVE			// enable Half-Life map support`) and `Q64 `
+  (`case BSPVERSION_QUAKE64:`, Quake 64's), and fails any other with
+  `Mod_LoadBrushModel: %s has unsupported version number (%i)`. `qs-bsp` reads neither format
+  with any loader and fails both, and every other version that is not BSP29 or BSP2, with
+  BSP-1.2's error: MAP-6 asks for Quake's formats only. The vector `version-30` loads in QS and
+  fails in `qs-bsp`, a difference the differential run expects.
+- **BSP-20.3** A texture whose width or height is 0 leaves its slot empty:
+  `if (mt->width == 0 || mt->height == 0)` then
+  `Con_Warning ("Zero sized texture %s in %s!\n", mt->name, loadmodel->name);` and
+  `continue;`, so a texinfo naming it has a missing texture (BSP-20.7). GLQuake loads it, with
+  no pixels. `qs-bsp` leaves the slot `None`.
+- **BSP-20.4** A texture whose width or height is not a multiple of 16 loads:
+  `Con_Warning ("Texture %s (%d x %d) is not 16 aligned\n", mt->name, mt->width, mt->height);`
+  where GLQuake has `Sys_Error ("Texture %s is not 16 aligned", mt->name);` (BSP-4.4).
+- **BSP-20.5** QS copies only mip level 0,
+  `pixels = mt->width*mt->height; // only copy the first mip, the rest are auto-generated`,
+  from right after the 40-byte header, and never reads `offsets` except to see whether
+  `offsets[0]` is 0 (`// an offset of zero indicates an external texture`, which QS looks up
+  in the WADs the world's `wad` key names when its `external_textures` cvar is set, and reads
+  from the BSP when none has it). Bytes past the end of the lump are not copied
+  (`if (((byte*)(mt+1) + lump_bytes) > (mod_base + l->fileofs + l->filelen))`, then
+  `Con_DPrintf("Texture %s extends past end of lump\n", mt->name);` and the count cut to what
+  is left), so level 0 may be short or empty. GLQuake copies `mt->width*mt->height/64*85`
+  bytes unchecked (BSP-4.5). `qs-bsp` keeps level 0's `width * height` bytes, cut at the end
+  of the lump, as `Texture::pixels`, and reads only the BSP. `width * height` is a C
+  `unsigned` product stored in an `int`; one over 2^31 - 1 would make QS copy a negative
+  count, and this spec fixes the answer as an error.
+- **BSP-20.6** A texture is a sky when its name starts with `sky` in any case:
+  `if (!q_strncasecmp(tx->name,"sky",3)) //sky texture //also note -- was Q_strncmp, changed to match qbsp`
+  in `Mod_LoadTextures` and the same test in `Mod_LoadFaces`, where GLQuake has
+  `if (!Q_strncmp(mt->name,"sky",3))` (BSP-4.7, BSP-9.5). `q_strncasecmp` folds only ASCII
+  `A` to `Z`. `qs-bsp` sets `Texture::sky` and the face flags of BSP-20.11 by this test.
+- **BSP-20.7** `Mod_LoadTexinfo` never fails on `miptex`. QS allocates
+  `loadmodel->numtextures = nummiptex + 2` slots, the last two the checkerboard textures
+  `r_notexture_mip` and `r_notexture_mip2`, and has
+  `if (miptex >= loadmodel->numtextures-1 || !loadmodel->textures[miptex])` then the
+  checkerboard (`r_notexture_mip2` with `TEX_SPECIAL`, otherwise `r_notexture_mip`) and
+  `out->flags |= TEX_MISSING;`
+  (`#define TEX_MISSING		2		// johnfitz -- this texinfo does not have a texture`),
+  keeping the file's flags. So a `miptex` greater than `nummiptex`, or naming an empty slot,
+  is missing; a `miptex` equal to `nummiptex` names `r_notexture_mip` itself and is not; with
+  an empty textures lump `nummiptex` is 0. GLQuake fails a `miptex` of `nummiptex` or more
+  (BSP-8.3) and zeroes the flags of a missing texture (BSP-8.4). A negative `miptex` indexes
+  before the array, which is undefined; this spec fixes the answer as BSP-8.3's error. QS's
+  `mtexinfo_t` has no mip bias; `qs-bsp` still gives BSP-8.6's.
+- **BSP-20.8** `CalcSurfaceExtents` starts the bounds at `mins[0] = mins[1] = FLT_MAX;` and
+  `maxs[0] = maxs[1] = -FLT_MAX;` where GLQuake starts them at 999999 and -99999 (BSP-9.10),
+  and compares in C, `if (val < mins[j])` and `if (val > maxs[j])`, so a NaN coordinate
+  replaces neither (against BSP-9.12). A bound no coordinate replaced, as in a face with no
+  edges, stays `FLT_MAX` or `-FLT_MAX`, and `floor` or `ceil` of it divided by 16 is out of
+  the `int` range; this spec takes the answer of the x86-64 build, whose conversion gives
+  0x80000000 as in BSP-9.13 (an arm64 build saturates instead and gives another answer).
+  BSP-9.14 holds: QS's `msurface_t` has `short		texturemins[2];` and
+  `short		extents[2];`.
+- **BSP-20.9** Each texture coordinate is computed in double precision in C's order,
+  `val = ((double)v->position[0] * (double)tex->vecs[j][0]) + ((double)v->position[1] * (double)tex->vecs[j][1]) + ((double)v->position[2] * (double)tex->vecs[j][2]) + (double)tex->vecs[j][3];`,
+  and rounded once to single precision when stored in `float val`; QS's comment above it says
+  the calculation "needs to produce the same result that the light compiler does". GLQuake
+  writes the same sum in `float`, which id's x86 build evaluates as BSP-9.11 says. The
+  products are exact in both; the answers differ only when the order of the additions
+  decides a rounding (vector `x87-order`). `qs-bsp` computes the double sum in C's order.
+- **BSP-20.10** The limit on extents is 2000:
+  `if ( !(tex->flags & TEX_SPECIAL) && s->extents[i] > 2000) //johnfitz -- was 512 in glquake, 256 in winquake`,
+  where GLQuake has `s->extents[i] > 512 /* 256 */` (BSP-9.17). Extents are multiples of 16,
+  so 1984 is the largest that loads without `TEX_SPECIAL` and 2016 the smallest that fails.
+- **BSP-20.11** `Mod_LoadFaces` sets these flags by the texture's name, the first that
+  applies, where GLQuake sets only the sky and liquid flags of BSP-9.5: a name starting with
+  `sky` in any case (BSP-20.6) gets `SURF_DRAWSKY | SURF_DRAWTILED`; one starting with `*` or
+  `!` (`else if (out->texinfo->texture->name[0] == '*' || out->texinfo->texture->name[0] == '!') // warp surface`)
+  gets `SURF_DRAWTURB`, `SURF_DRAWTILED` only when the texinfo has `TEX_SPECIAL`
+  (`if (out->texinfo->flags & TEX_SPECIAL)`), and `SURF_DRAWLAVA`, `SURF_DRAWSLIME` or
+  `SURF_DRAWTELE` when the name starts, case included (`strncmp`), with `*lava` or `!lava`,
+  `*slime` or `!slime`, `*tele` or `!tele`, otherwise `SURF_DRAWWATER`; its extents and
+  `texturemins` stay as BSP-20.8 computes them, where GLQuake sets 16384 and -8192, so a
+  liquid without `TEX_SPECIAL` keeps its lightmap (`Con_DPrintf ("Map has lit water\n")`) and
+  BSP-10.2 applies to it; a name starting with `{` (`// ericw -- fence textures`) gets
+  `SURF_DRAWFENCE`; otherwise a face whose texinfo's flags have `TEX_MISSING` (set by
+  BSP-20.7 or stored in the file) gets `SURF_NOTEXTURE`, and `SURF_DRAWTILED` too when its
+  `lightofs` is -1. The values are QS's `Quake/gl_model.h`: `SURF_NOTEXTURE` 0x100,
+  `SURF_DRAWFENCE` 0x200, `SURF_DRAWLAVA` 0x400, `SURF_DRAWSLIME` 0x800, `SURF_DRAWTELE`
+  0x1000, `SURF_DRAWWATER` 0x2000; `SURF_PLANEBACK` (BSP-9.1) is set as before.
+- **BSP-20.12** No face gets `SURF_UNDERWATER`: each of QS's `Mod_ProcessLeafs_S`, `_L1` and
+  `_L2` ends with `//johnfitz -- removed code to mark surfaces as SURF_UNDERWATER`, where
+  GLQuake's `Mod_LoadLeafs` sets it (BSP-12.6).
+- **BSP-20.13** A BSP29 file with more than 32767 leaves fails: `if (count > 32767)` then
+  `Host_Error ("Mod_LoadLeafs: %i leafs exceeds limit of 32767.", count);` in
+  `Mod_ProcessLeafs_S`, after the lump-size check. GLQuake has no limit, and neither have QS's
+  BSP2 readers. `qs-bsp` gives `BspError::TooManyLeafs` with that message.
+- **BSP-20.14** A BSP29 leaf's marksurface range and the marksurfaces lump are read as
+  unsigned 16-bit values
+  (`out->firstmarksurface = loadmodel->marksurfaces + (unsigned short)LittleShort(in->firstmarksurface); //johnfitz -- unsigned short`,
+  and `j = (unsigned short)LittleShort(in[i]); //johnfitz -- explicit cast as unsigned short`
+  in `Mod_LoadMarksurfaces`), where GLQuake's `LittleShort` gives a signed value. BSP-12.5 and
+  BSP-13.1 already read them unsigned for every loader, so the loaders agree.
+- **BSP-20.15** A BSP29 node child is read unsigned and is a node when it is below the node
+  count, otherwise leaf 65535 minus it, and leaf 0 when that leaf does not exist:
+  `p = (unsigned short)LittleShort(in->children[j]);`, `if (p < count)` a node, else
+  `p = 65535 - p; //note this uses 65535 intentionally, -1 is leaf 0` and
+  `if (p < loadmodel->numleafs)` that leaf, else
+  `Con_Printf("Mod_LoadNodes: invalid leaf index %i (file has only %i leafs)\n", p, loadmodel->numleafs);`
+  and `out->children[j] = (mnode_t *)(loadmodel->leafs); //map it to the solid leaf`. So a map
+  of more than 32768 nodes can name nodes above 32767, which GLQuake reads as leaves (BSP-7.2,
+  BSP-16.2). GLQuake uses a leaf that does not exist unchecked, and this spec fails it
+  (BSP-1.8). `qs-bsp` writes the child it reads as BSP-7.2 does, node `n` as `n` and leaf `l`
+  as `-1 - l`, so `Bsp::hull0` follows it.
+- **BSP-20.16** A BSP2 node child is a node when it is below the node count and at least 0
+  (`2PSB`, `if (p >= 0 && p < count)`) or at least 1 (`BSP2`, `if (p > 0 && p < count)`),
+  otherwise leaf `-1 - child`, computed as `p = 0xffffffff - p;`, and leaf 0 when that leaf
+  does not exist, with the message of BSP-20.15. So a `BSP2` child of 0 is leaf 0, where
+  BSP-17.3 reads node 0. `qs-bsp` writes the result as BSP-20.15 does.
+- **BSP-20.17** A BSP29 clipnode child is read unsigned and is a clipnode when it is below the
+  clipnode count, otherwise it less 65536, a negative contents value:
+  `out->children[0] = (unsigned short)LittleShort(ins->children[0]);` then
+  `if (out->children[0] >= count)` `out->children[0] -= 65536;`
+  (`//johnfitz -- support clipnodes > 32k`). No BSP29 child fails, and a map of more than
+  32768 clipnodes can name those above 32767. GLQuake reads the child signed and uses one past
+  the clipnodes unchecked, which this spec fails (BSP-1.8). BSP2 clipnode children are read as
+  BSP-17.3 says (QS: `//Spike: FIXME: bounds check`).
+- **BSP-20.18** These differences change no result `qs-bsp` gives: QS loads the entities
+  before the textures, and no entity text fails to load; it appends a NUL to the entity text,
+  which BSP-2.2 already ends at the lump; `Mod_DecompressVis` stops a run at the end of the row
+  (`Mod_DecompressVis: output overrun on model`) and grows its row buffer, where id's writes
+  past the row into a buffer of `MAX_MAP_LEAFS/8` bytes, and BSP-6.3 keeps the row's bytes
+  only, for every loader; it warns about more than 32767 faces, nodes, clipnodes or
+  marksurfaces, more than 8192 `visleafs`, and a face of fewer than 3 edges; its messages for
+  some lumps of the wrong size, and for a bad marksurface, name other functions
+  (`Mod_ProcessLeafs: funny lump size in %s`, `Mod_LoadClipnodes: funny lump size in %s`,
+  `Mod_LoadMarksurfaces: bad surface number`), where `qs-bsp` gives id's message for every
+  loader; and it reads the files beside the map that BSP-18 (`.lit`) and BSP-19 (`.ent`)
+  describe, and a `.vis` file when its `external_vis` cvar is set, which `Bsp::read` does not
+  open.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `BSP_FITZ_MAX_SURFACE_EXTENT` | 2000 | QS `CalcSurfaceExtents`: `s->extents[i] > 2000` |
+| `BSP_FITZ_MAX_LEAFS` | 32767 | QS `Mod_ProcessLeafs_S`: `if (count > 32767)` |
+| `BSP_TEX_MISSING` | 2 | QS `Quake/bspfile.h`, `TEX_MISSING` |
+| `SURF_NOTEXTURE`, `SURF_DRAWFENCE`, `SURF_DRAWLAVA`, `SURF_DRAWSLIME`, `SURF_DRAWTELE`, `SURF_DRAWWATER` | 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000 | QS `Quake/gl_model.h` |
+
+### Test vectors
+
+See [`vectors/bsp/`](vectors/bsp/README.md), the FitzQuake column: `version-30` (BSP-20.2),
+`texture-zero` (BSP-20.3), `not-aligned` and `texture-8x8` (BSP-20.4), `sky-upper`
+(BSP-20.6), `bad-miptex`, `miptex-past`, `missing-texture` and `no-textures` (BSP-20.7),
+`far-offset`, `no-edges` and `nan-vertex` (BSP-20.8), `double-sum` and `x87-order`
+(BSP-20.9), `extents-1984` and `extents-2016` (BSP-20.10), `turb`, `turb-lit`, `turb-lava`,
+`turb-slime`, `turb-tele`, `fence`, `texinfo-flag-2` and `missing-unlit` (BSP-20.11),
+`water-leaf` and its neighbours (BSP-20.12), `leafs-32768` (BSP-20.13), `nodes-32769` and
+`node-bad-leaf` (BSP-20.15), `bsp2-child-0` and `bsp2-bad-leaf` (BSP-20.16), `clipnode-past`
+(BSP-20.17).
+
+### Evidence for BSP-20
+
+**Checked:** on 2026-10-16 QS's `Quake/gl_model.c` and every header of its `Quake/`
+directory, copied unchanged from the pinned commit (the tarball
+`https://codeload.github.com/sezero/quakespasm/tar.gz/c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
+SHA-256 `139d85c096ebec6b62425584be570daa5830323ff6eac6cd7ed94400bec3deba`; not committed),
+were built with stubs for the rest of the engine, for x86-64 and for arm64 with gcc 14.4, and
+loaded every vector of the vectors' README and the 23 BSPs of LibreQuake's `lite` release; the
+README records the harness and the results. `qs-bsp` with `BspLoader::default()` printed the
+same as the x86-64 build for every input but `version-30` (BSP-20.2) and the message of
+`bad-marksurface` (BSP-20.18); the arm64 build differed from the x86-64 build only on
+`no-edges` (BSP-20.8).

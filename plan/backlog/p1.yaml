@@ -835,12 +835,12 @@ issues:
   - 'docs/spec/bsp.md: a section on the FitzQuake-lineage loader (ADR-0012), described from QS (sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5, Quake/gl_model.c, Mod_LoadBrushModel and the readers it calls), not ported: one statement per way it differs from GLQuake''s Mod_LoadBrushModel, quoting both. At least: the extent limit of 2000 in CalcSurfaceExtents (`s->extents[i] > 2000) //johnfitz -- was 512 in glquake, 256 in winquake`), bounds starting at FLT_MAX and -FLT_MAX and texture coordinates computed in double precision (against BSP-9.10 and BSP-9.11), no SURF_UNDERWATER flag (`//johnfitz -- removed code to mark surfaces as SURF_UNDERWATER`, against P1-44''s statement), a texture not 16 aligned warned about rather than failing (against BSP-4.4), the 32767-leaf limit of Mod_LoadLeafs, the `sky` prefix compared with q_strncasecmp (against BSP-4.7), unsigned 16-bit marksurface indices in leaves, and every other difference found by reading those functions, each with what our loader does; the BSP2 and .lit statements (BSP-17, BSP-18) say which loaders they apply to'
   - 'docs/porting.md: the authoritative-sources table says the default BSP rules follow QS as described in docs/spec/bsp.md (ADR-0012), and id''s model.c and gl_model.c stay authoritative for the WinQuake and GLQuake modes'
   - 'crates/qs-bsp: a third BspLoader variant for the FitzQuake lineage, BspLoader::default() returning it (BspLoader derives Default with #[default] on it), and every statement above implemented for it; BspLoader::WinQuake and BspLoader::GlQuake unchanged. Callers in the workspace that do not mean a specific compatibility mode (crates/qs-vfs/examples/walk.rs and any later editor-side caller) use BspLoader::default(); the crate README says which loader is the default and why'
-  - 'Vectors under docs/spec/vectors/bsp/ for each new statement where the loaders'' results differ (at least an extent of 2000 and of 2016, a face in a leaf of water, a texture 8 by 8, and a coordinate whose single- and double-precision extents differ), with tests citing each statement'
+  - 'Vectors under docs/spec/vectors/bsp/ for each new statement where the loaders'' results differ (at least an extent of 1984, the largest multiple of 16 not over 2000, and of 2016, a face in a leaf of water, a texture 8 by 8, and a coordinate whose single- and double-precision extents differ), with tests citing each statement'
   - 'A differential run recorded in docs/spec/vectors/bsp/README.md: QS''s Mod_LoadBrushModel and the readers it calls, copied unchanged from the pinned commit with its headers into a harness that stubs the rest of the engine, as the GLQuake rows were built, run on every vector and on the LibreQuake lite BSPs, giving the same result as qs-bsp read with the new variant'
   acceptance:
   - Every new statement in docs/spec/bsp.md quotes QS's code at the pinned commit and the GLQuake code it differs from, and has a citing test; the spec-citation ratchet passes
   - BspLoader::default() is the FitzQuake-lineage variant, shown by a test, and Bsp::read with BspLoader::WinQuake or BspLoader::GlQuake gives the same result on every existing vector as before, shown by the existing tests passing unchanged
-  - A face with an extent of 2000 and no TEX_SPECIAL loads with the default loader and fails with GlQuake, and one of 2016 fails with all three, as the recorded QS run gives
+  - A face with an extent of 1984 (extents are multiples of 16, so the largest under the limit of 2000) and no TEX_SPECIAL loads with the default loader and fails with GlQuake, and one of 2016 fails with all three, as the recorded QS run gives
   - The recorded QS run (command, compiler, inputs and results) agrees with qs-bsp on every vector and every LibreQuake lite BSP
   verify:
   - cargo test -p qs-bsp; cargo test -p qs-tests; the recorded run in the vectors' README and the PR
@@ -863,6 +863,41 @@ issues:
   - A test opens a name that differs in case from its file and gets the warning where the file system is case-insensitive, and the error where it is case-sensitive; FreeCS's two modules that include animations.h get the warning on macOS in CI
   verify:
   - cargo test -p qc-project; cargo xtask project-corpus in CI
+- key: P1-47
+  title: Record what id's loader does with a leaf whose contents is 0 or more
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-44
+  deliverable:
+  - 'docs/spec/bsp.md: a statement for a leaf whose contents is 0 or more, which id''s loader takes for a node because it tells nodes from leaves by contents < 0 (WinQuake/model.c and gl_model.c, Mod_SetParent: if (node->contents < 0) return; and Mod_MakeHull0: if (child->contents < 0)); BSP-12.2 says the loader copies contents without checking, and qs-bsp loads such a leaf and gives hull 0 its contents as a clipnode number; found while doing P1-44, where id''s loaders built from the pinned commit crashed on a vector whose leaf 1 has contents 0'
+  - crates/qs-bsp follows the statement, with a test that cites it and a vector whose leaf has contents 0
+  acceptance:
+  - A BSP whose node tree reaches a leaf of contents 0 gives the result the statement fixes, and the vectors' README records what id's model.c and gl_model.c built from the pinned commit do with it
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-48
+  title: Make agents watch CI instead of sleeping on it
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-13
+  deliverable:
+  - '.claude/rules/development-discipline.md, .claude/skills/work-issue/SKILL.md, .claude/agents/implementer.md and .claude/agents/reviewer.md: agents never wait on CI or GitHub with a long sleep (such as `sleep 600; gh run view ...`); they use `gh pr checks <pr> --watch --fail-fast` for a PR''s checks and `gh run watch <run-id> --exit-status` for a workflow run, and run long local jobs (cargo-mutants, fuzzing, differential runs) in the background with a completion notification (Justin, 2026-10-16)'
+  - '.claude/skills/work-issue/scripts/land.sh: after `gh pr merge --auto` it watches the merge queue''s runs for the PR''s queue entry with `gh run watch --exit-status` and confirms the PR state, keeping a short poll only where no watch exists; its timeout bounds the checks watch too, and it stops with a reason when the PR conflicts with main or the queue removes it, instead of waiting out the timeout with auto-merge enabled'
+  acceptance:
+  - The rule appears in each of the four files named
+  - land.sh passes shellcheck and shfmt -i 2 -d, keeps its timeout argument and exit codes (0 merged, 1 otherwise with the reason printed), and lands the PR that delivers this issue
+  verify:
+  - shellcheck and shfmt output and the land.sh run recorded in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -921,6 +956,8 @@ issues:
   - P1-44
   - P1-45
   - P1-46
+  - P1-47
+  - P1-48
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
