@@ -3,13 +3,16 @@
 //! `cargo xtask corpus fetch`: downloads codebases and maps by checksum.
 //!
 //! A codebase is its source repository's archive at the pinned commit, kept as
-//! `<cache>/downloads/<source>-<commit>.tar.gz`. Only the files under the codebase's `path` are
-//! read from it, and every pinned checksum under that path must match before anything is
-//! written to `<cache>/codebase/<id>/`; so from Quake-Tools only `qcc/v101qc/` becomes corpus,
-//! and id's compiler and engine sources stay with the oracles build. A map is one pinned file,
-//! kept as `<cache>/map/<id>.map` and checked against its SHA-256. Anything already in the cache
-//! with the right content is not downloaded again, so a second run works offline. An entry
-//! marked `never` is refused.
+//! `<cache>/downloads/<source>-<commit>.tar.gz`; from GitLab only the codebase's directory is
+//! downloaded, kept as `<source>-<commit>-<path>.tar.gz` with `_` for `/`. Only the files under
+//! the codebase's `path` are read from it, and every pinned checksum under that path must match
+//! before anything is written to `<cache>/codebase/<id>/`; so from Quake-Tools only
+//! `qcc/v101qc/` becomes corpus, and id's compiler and engine sources stay with the oracles
+//! build. A codebase with a `project` gets that file of this repository as its `quakec.toml`.
+//! A tree writes each of its codebases to its directory under `<cache>/tree/<id>/`. A map is one
+//! pinned file, kept as `<cache>/map/<id>.map` and checked against its SHA-256. Anything already
+//! in the cache with the right content is not downloaded again, so a second run works offline.
+//! An entry marked `never` is refused.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -19,19 +22,17 @@ use std::path::{Path, PathBuf};
 use super::archive::read_tar_gz;
 use super::manifest::{Entry, Manifest, Source};
 use super::safe_member;
-use super::verify::{archive_url, raw_url};
+use super::verify::{archive_scope, archive_url, raw_url};
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
 
-/// Fetches the codebases and maps named in `ids`, or every usable one when `ids` is empty.
+/// Fetches the codebases, maps and trees named in `ids`, or every usable one when `ids` is
+/// empty.
 pub(crate) fn cmd_fetch(m: &Manifest, dest: &Path, ids: &[String], net: &dyn Net) -> Vec<String> {
     let ids: Vec<String> = if ids.is_empty() {
-        m.codebase
-            .iter()
-            .chain(&m.map)
-            .filter(|e| e.usable())
-            .map(|e| e.id.clone())
-            .collect()
+        let entries = m.codebase.iter().chain(&m.map).filter(|e| e.usable());
+        let entries = entries.map(|e| e.id.clone());
+        entries.chain(m.tree.iter().map(|t| t.id.clone())).collect()
     } else {
         ids.to_vec()
     };
@@ -41,6 +42,9 @@ pub(crate) fn cmd_fetch(m: &Manifest, dest: &Path, ids: &[String], net: &dyn Net
         let fetched = match table {
             Some("map") => fetch_map(m, id, dest, net).map(|path| {
                 println!("map {id}: {}", path.display());
+            }),
+            None if m.tree(id).is_some() => write_tree(m, id, dest, net).map(|(dir, count)| {
+                println!("tree {id}: {count} files in {}", dir.display());
             }),
             _ => write_codebase(m, id, dest, net).map(|(dir, count)| {
                 println!("codebase {id}: {count} files in {}", dir.display());
@@ -84,15 +88,25 @@ pub(crate) fn codebase_files(
 ) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let (e, src) = usable(m, "codebase", id)?;
     let base = base_dir(e);
-    let archive = dest
-        .join("downloads")
-        .join(format!("{}-{}.tar.gz", src.id, src.commit));
+    let scope = archive_scope(&src.url, &base);
+    let name = if scope.is_empty() {
+        format!("{}-{}.tar.gz", src.id, src.commit)
+    } else {
+        format!(
+            "{}-{}-{}.tar.gz",
+            src.id,
+            src.commit,
+            scope.replace('/', "_")
+        )
+    };
+    let archive = dest.join("downloads").join(name);
     if archive.is_file()
         && let Ok(files) = read_codebase(&archive, src, &base)
     {
         return Ok(files);
     }
-    let url = archive_url(&src.url, &src.commit).map_err(|e| format!("codebase {id}: {e}"))?;
+    let url =
+        archive_url(&src.url, &src.commit, scope).map_err(|e| format!("codebase {id}: {e}"))?;
     let part = archive.with_extension("part");
     let downloaded = net.download(&url, &part);
     if let Err(e) = downloaded {
@@ -163,8 +177,21 @@ pub(crate) fn write_codebase(
     dest: &Path,
     net: &dyn Net,
 ) -> Result<(PathBuf, usize), String> {
-    let files = codebase_files(m, id, dest, net)?;
     let dir = dest.join("codebase").join(id);
+    let count = write_codebase_to(m, id, &dir, dest, net)?;
+    Ok((dir, count))
+}
+
+/// Writes every file of codebase `id` to `dir`, and its `project` file as `quakec.toml`;
+/// returns the number of files.
+fn write_codebase_to(
+    m: &Manifest,
+    id: &str,
+    dir: &Path,
+    dest: &Path,
+    net: &dyn Net,
+) -> Result<usize, String> {
+    let files = codebase_files(m, id, dest, net)?;
     for (rel, data) in &files {
         if !safe_member(rel) {
             return Err(format!(
@@ -173,7 +200,38 @@ pub(crate) fn write_codebase(
         }
         write_file(&dir.join(rel), data)?;
     }
-    Ok((dir, files.len()))
+    let project = m.entry(id).and_then(|(_, e)| e.project.as_deref());
+    let Some(project) = project else {
+        return Ok(files.len());
+    };
+    let path = m.dir.join(project);
+    let data = fs::read(&path).map_err(|e| format!("codebase {id}: {}: {e}", path.display()))?;
+    write_file(&dir.join("quakec.toml"), &data)?;
+    Ok(files.len().saturating_add(1))
+}
+
+/// Writes each codebase of tree `id` to its directory under `<dest>/tree/<id>/`; returns the
+/// tree's directory and the number of files.
+pub(crate) fn write_tree(
+    m: &Manifest,
+    id: &str,
+    dest: &Path,
+    net: &dyn Net,
+) -> Result<(PathBuf, usize), String> {
+    let tree = m
+        .tree(id)
+        .ok_or_else(|| format!("tree {id}: no such tree in the manifest"))?;
+    let root = dest.join("tree").join(id);
+    let mut count = 0_usize;
+    for (sub, codebase) in &tree.dirs {
+        if !safe_member(sub) {
+            return Err(format!("tree {id}: {sub:?} is not a safe relative path"));
+        }
+        let written = write_codebase_to(m, codebase, &root.join(sub), dest, net)
+            .map_err(|e| format!("tree {id}: {e}"))?;
+        count = count.saturating_add(written);
+    }
+    Ok((root, count))
 }
 
 /// Downloads map `id` to `<dest>/map/<id>.map` unless it is already there with its pinned

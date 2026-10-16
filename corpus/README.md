@@ -34,6 +34,15 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 | `evidence` | Files the license was read from: `path` in the entry's source, or `source-id:path` in another |
 | `reason` | Required for `use = "never"` |
 | `notes` | What the evidence says, in a sentence |
+| `project` | Codebases only, optional. A `quakec.toml` in this repository, relative to this directory, that `corpus fetch` writes into the codebase: for a codebase whose build gives its modules defines no `progs.src` states, such as Xonotic's (`projects/xonotic/quakec.toml`) |
+
+`[[tree]]` lays codebases out together as the directory tree their sources expect, such as FreeCS, whose `progs.src` files reach into the Nuclide SDK and Rad-Therapy beside it. `corpus fetch <tree>` writes each codebase to its directory under `<cache>/tree/<id>/`.
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Unique across codebases, maps, assets and trees |
+| `name`, `notes` | For people: what the tree is, and where its layout comes from |
+| `[tree.dirs]` | The usable codebase written to each directory of the tree; no directory is inside another |
 
 `use` is what the license permits:
 
@@ -58,7 +67,9 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 
 **id Software:** QuakeC 1.01 from Quake-Tools, and the six rerelease codebases (base campaign, Scourge of Armagon, Dissolution of Eternity, Dimension of the Machine, Capture the Flag, Dawn of the Machine).
 
-**Mods (14):** Copper, Alkaline, Arcane Dimensions, progs_dump, LibreQuake, Re:Mobilize, Conduit, Quake Reignited, Nuclide, FreeCS, Nazi Zombies: Portable, CRMod 7, Starts with a Bang and Xonotic. Together they cover vanilla QuakeC, the FTEQCC dialect with CSQC (Nuclide, FreeCS, Copper, Arcane Dimensions) and GMQCC (Xonotic).
+**Mods (15):** Copper, Alkaline, Arcane Dimensions, progs_dump, LibreQuake, Re:Mobilize, Conduit, Quake Reignited, Nuclide, FreeCS, Rad-Therapy (FreeHL, the Half-Life game FreeCS builds against), Nazi Zombies: Portable, CRMod 7, Starts with a Bang and Xonotic. Together they cover vanilla QuakeC, the FTEQCC dialect with CSQC (Nuclide, FreeCS, Copper, Arcane Dimensions) and GMQCC (Xonotic).
+
+**Trees:** `freecs-tree`, FreeCS at `cstrike/src` in the Nuclide SDK's `src`, with Rad-Therapy at `valve/src`, as FreeCS's README builds it. It opens with no error only on a case-insensitive file system, such as macOS's default (CI runs it there): FreeCS's `shared/defs.h` includes `animations.h` and the file is `Animations.h`.
 
 **Maps (26):** 20 LibreQuake maps (BSD-3-Clause), four ericw-tools test maps (GPL-2.0-or-later) and two progs_dump maps (no commercial use, so `fetch-at-test`).
 
@@ -68,12 +79,13 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 
 ## Checking
 
-The cache is `--dest <dir>`, else `$QS_TEST_ASSETS`, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME` or `~/.cache`, and never inside the source tree. Everything downloaded stays in `<cache>/downloads/` and is checked again before use, so a second run works offline. An entry marked `never` is refused by name. A codebase is read from its source's archive at the pinned commit, and only the files under its `path` are written: from Quake-Tools that is `qcc/v101qc/` (its `.qc` files and `progs.src`), while id's compiler and engine sources are fetched by the oracles build (`oracles/sources.toml`).
+The cache is `--dest <dir>`, else `$QS_TEST_ASSETS`, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME` or `~/.cache`, and never inside the source tree. Everything downloaded stays in `<cache>/downloads/` and is checked again before use, so a second run works offline. An entry marked `never` is refused by name. A codebase is read from its source's archive at the pinned commit (from GitLab, an archive of its `path` only, so Xonotic's `qcsrc/` is a 2 MB download, not the 800 MB repository), and only the files under its `path` are written: from Quake-Tools that is `qcc/v101qc/` (its `.qc` files and `progs.src`), while id's compiler and engine sources are fetched by the oracles build (`oracles/sources.toml`).
 
 ```bash
 cargo xtask corpus verify              # offline: manifest rules and the repository scan
 cargo xtask corpus verify --online     # also downloads every pinned file and compares SHA-256
-cargo xtask corpus fetch [<id>...]     # write codebases to <cache>/codebase/<id>, maps to <cache>/map/<id>.map
+cargo xtask corpus fetch [<id>...]     # write codebases to <cache>/codebase/<id>, maps to <cache>/map/<id>.map,
+                                       # trees to <cache>/tree/<id>
 cargo xtask corpus build [<id>...]     # compile id 1.01 (id's qcc) and the rerelease (FTEQCC) into
                                        # <cache>/progs/<id>/ and check each progs.dat round-trips
 cargo xtask assets fetch               # download, checksum and extract the test assets
@@ -84,6 +96,7 @@ cargo xtask lex-corpus <cache>/codebase/id-1.01  # lex it and preprocess progs.s
 cargo xtask parse-corpus --vanilla --deletions <cache>/codebase/id-1.01  # parse it, check recovery
 cargo xtask parse-corpus <cache>/codebase/<id>...  # every file round-trips through the tree
 cargo xtask project-corpus <cache>/codebase/<id>...  # open each as a project; check its file graphs
+cargo xtask project-corpus <cache>/tree/freecs-tree/cstrike/src  # FreeCS, with what it builds against
 cargo xtask map-corpus <cache>/map     # every map reads and writes back byte for byte (qs-map)
 cargo test -p xtask corpus            # the commands' offline tests
 (cd corpus && python3.11 -m unittest test_language_coverage.py)

@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::super::archive::tests::tar_gz;
-use super::super::manifest::{Entry, Manifest, Source};
-use super::{cmd_fetch, codebase_files, write_codebase};
+use super::super::manifest::{Entry, Manifest, Source, Tree};
+use super::{cmd_fetch, codebase_files, write_codebase, write_tree};
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
 
@@ -368,4 +368,122 @@ fn no_ids_fetches_every_usable_codebase_and_map() {
     assert!(tmp.0.join("codebase/rr/defs.qc").is_file());
     assert!(tmp.0.join("map/m1.map").is_file());
     assert!(!tmp.0.join("codebase/quakec-1.06").exists());
+}
+
+/// [`manifest`] with a second codebase `other` in `qcother/`, and tree `t` laying `rr` out at
+/// `src` and `other` at `game/src`.
+fn tree_manifest() -> Manifest {
+    let mut m = manifest(&hex_digest(DEFS));
+    m.codebase.push(Entry {
+        id: "other".to_owned(),
+        source: Some("s".to_owned()),
+        path: Some("qcother".to_owned()),
+        use_: "vendor".to_owned(),
+        ..Entry::default()
+    });
+    m.tree.push(Tree {
+        id: "t".to_owned(),
+        dirs: [
+            ("src".to_owned(), "rr".to_owned()),
+            ("game/src".to_owned(), "other".to_owned()),
+        ]
+        .into(),
+        ..Tree::default()
+    });
+    m
+}
+
+#[test]
+fn a_tree_writes_each_codebase_to_its_directory() {
+    let tmp = TempDir::new();
+    let m = tree_manifest();
+    let net = FakeNet::serving(&archive_url(), &standard_archive());
+    assert_eq!(
+        cmd_fetch(&m, &tmp.0, &["t".to_owned()], &net),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        written(&tmp.0.join("tree/t")),
+        [
+            "game/src/x.qc",
+            "src/defs.qc",
+            "src/progs.src",
+            "src/sub/world.qc",
+        ]
+    );
+    assert_eq!(net.calls(), 1);
+    assert!(!tmp.0.join("codebase").exists());
+    let (dir, count) = write_tree(&m, "t", &tmp.0, &FakeNet::default()).unwrap();
+    assert_eq!((dir, count), (tmp.0.join("tree/t"), 4));
+}
+
+// No ids fetches every tree too; a tree's failures name the tree.
+#[test]
+fn a_tree_is_fetched_with_everything_and_fails_by_name() {
+    let tmp = TempDir::new();
+    let mut m = tree_manifest();
+    let mut net = FakeNet::serving(&archive_url(), &standard_archive());
+    net.bodies
+        .insert(map_url(), b"{ \"classname\" \"worldspawn\" }".to_vec());
+    assert_eq!(cmd_fetch(&m, &tmp.0, &[], &net), Vec::<String>::new());
+    assert!(tmp.0.join("tree/t/game/src/x.qc").is_file());
+
+    let other = TempDir::new();
+    let err = write_tree(&m, "t", &other.0, &FakeNet::default()).unwrap_err();
+    assert!(err.starts_with("tree t: codebase "), "{err}");
+    let err = write_tree(&m, "nosuch", &other.0, &FakeNet::default()).unwrap_err();
+    assert!(err.contains("tree nosuch: no such tree"), "{err}");
+    m.tree[0].dirs = [("../up".to_owned(), "rr".to_owned())].into();
+    let err = write_tree(&m, "t", &other.0, &net).unwrap_err();
+    assert!(
+        err.contains("\"../up\" is not a safe relative path"),
+        "{err}"
+    );
+    assert!(!other.0.join("up").exists());
+}
+
+// A codebase's project file from this repository becomes its quakec.toml.
+#[test]
+fn a_project_file_is_written_as_quakec_toml() {
+    let tmp = TempDir::new();
+    let mut m = manifest(&hex_digest(DEFS));
+    m.dir = tmp.0.join("repo");
+    fs::create_dir_all(m.dir.join("projects")).unwrap();
+    fs::write(m.dir.join("projects/rr.toml"), b"[[module]]\n").unwrap();
+    m.codebase[0].project = Some("projects/rr.toml".to_owned());
+    let cache = tmp.0.join("cache");
+    let net = FakeNet::serving(&archive_url(), &standard_archive());
+    let (dir, count) = write_codebase(&m, "rr", &cache, &net).unwrap();
+    assert_eq!(count, 4);
+    assert_eq!(fs::read(dir.join("quakec.toml")).unwrap(), b"[[module]]\n");
+
+    m.codebase[0].project = Some("projects/gone.toml".to_owned());
+    let err = write_codebase(&m, "rr", &cache, &net).unwrap_err();
+    assert!(
+        err.contains("codebase rr: ") && err.contains("gone.toml"),
+        "{err}"
+    );
+}
+
+// From GitLab only the codebase's directory is downloaded, and cached under its own name.
+#[test]
+fn a_gitlab_codebase_downloads_only_its_directory() {
+    let tmp = TempDir::new();
+    let mut m = manifest(&hex_digest(DEFS));
+    m.source[0].url = "https://gitlab.com/o/r".to_owned();
+    m.codebase[0].path = Some("qc/".to_owned());
+    let url = format!(
+        "https://gitlab.com/api/v4/projects/o%2Fr/repository/archive.tar.gz?sha={COMMIT}&path=qc"
+    );
+    let scoped = repo_archive(&[("qc/defs.qc", DEFS), ("qc/progs.src", b"defs.qc")]);
+    let net = FakeNet::serving(&url, &scoped);
+    let (dir, count) = write_codebase(&m, "rr", &tmp.0, &net).unwrap();
+    assert_eq!(count, 2);
+    assert_eq!(written(&dir), ["defs.qc", "progs.src"]);
+    assert_eq!(*net.requests.borrow(), [url]);
+    let cached = tmp
+        .0
+        .join("downloads")
+        .join(format!("s-{COMMIT}-qc.tar.gz"));
+    assert!(cached.is_file());
 }

@@ -6,8 +6,9 @@
 //! - `corpus verify [--online]` checks the manifest and the repository against the corpus
 //!   policy ([`verify`]).
 //! - `corpus fetch [<id>...]` downloads codebases and maps by checksum into the cache and
-//!   writes each codebase to `<cache>/codebase/<id>/` and each map to `<cache>/map/<id>.map`
-//!   ([`fetch`]). With no ids it fetches every usable codebase and map.
+//!   writes each codebase to `<cache>/codebase/<id>/`, each map to `<cache>/map/<id>.map` and
+//!   each tree of codebases to `<cache>/tree/<id>/` ([`fetch`]). With no ids it fetches every
+//!   usable codebase and map, and every tree.
 //! - `corpus build [<id>...]` fetches the codebases an oracle compiler builds, compiles them
 //!   with the oracles into `<cache>/progs/<id>/` and checks that each progs.dat round-trips
 //!   through `qc-progs` byte for byte ([`build`]).

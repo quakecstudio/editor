@@ -9,9 +9,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::super::manifest::{Entry, Manifest, Source};
+use super::super::manifest::{Entry, Manifest, Source, Tree};
 use super::super::{MANIFEST, tracked_files};
-use super::{archive_url, check, check_online, check_repo, raw_url};
+use super::{archive_scope, archive_url, check, check_online, check_repo, raw_url};
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
 
@@ -641,16 +641,37 @@ fn raw_and_archive_urls_follow_the_host() {
     );
     assert!(raw_url("https://example.com/o/r", COMMIT, "x").is_err());
     assert_eq!(
-        archive_url("https://github.com/o/r", COMMIT).unwrap(),
+        archive_url("https://github.com/o/r", COMMIT, "").unwrap(),
         format!("https://github.com/o/r/archive/{COMMIT}.tar.gz")
     );
     assert_eq!(
-        archive_url("https://gitlab.com/o/r.pk3dir", COMMIT).unwrap(),
+        archive_url("https://gitlab.com/o/r.pk3dir", COMMIT, "").unwrap(),
         format!(
             "https://gitlab.com/api/v4/projects/o%2Fr.pk3dir/repository/archive.tar.gz?sha={COMMIT}"
         )
     );
-    assert!(archive_url("https://example.com/o/r", COMMIT).is_err());
+    assert!(archive_url("https://example.com/o/r", COMMIT, "").is_err());
+}
+
+// GitLab archives are limited to the codebase's directory; GitHub archives are always whole.
+#[test]
+fn only_gitlab_archives_are_limited_to_a_directory() {
+    assert_eq!(
+        archive_scope("https://gitlab.com/o/r", "qcsrc/sub/"),
+        "qcsrc/sub"
+    );
+    assert_eq!(archive_scope("https://gitlab.com/o/r", ""), "");
+    assert_eq!(archive_scope("https://github.com/o/r", "qcsrc/"), "");
+    assert_eq!(archive_scope("https://example.com/o/r", "qcsrc/"), "");
+    assert_eq!(
+        archive_url("https://gitlab.com/o/r", COMMIT, "qc src/sub").unwrap(),
+        format!(
+            "https://gitlab.com/api/v4/projects/o%2Fr/repository/archive.tar.gz?sha={COMMIT}\
+             &path=qc%20src%2Fsub"
+        )
+    );
+    let err = archive_url("https://github.com/o/r", COMMIT, "qcsrc").unwrap_err();
+    assert!(err.contains("cannot be limited"), "{err}");
 }
 
 /// Serves the same bytes for every URL, or fails every request.
@@ -704,4 +725,70 @@ fn an_online_fetch_failure_is_reported() {
     m.source[0].url = "https://example.com/o/r".to_owned();
     let out = check_online(&m, &Fixed(Ok(b"ok".to_vec())));
     assert_has(&out[0], "unsupported host");
+}
+
+fn tree(id: &str, dirs: &[(&str, &str)]) -> Tree {
+    Tree {
+        id: id.to_owned(),
+        dirs: map(dirs),
+        ..Tree::default()
+    }
+}
+
+#[test]
+fn a_tree_lays_out_usable_codebases_in_separate_directories() {
+    let mut m = base();
+    m.tree
+        .push(tree("t", &[("src", "mod0"), ("game/src", "mod1")]));
+    assert_eq!(check(&m), Vec::<String>::new());
+
+    m.tree.push(tree("T!", &[]));
+    m.tree.push(tree("t", &[("src", "mod0")]));
+    m.tree.push(tree("mod2", &[("src", "mod0")]));
+    m.tree.push(tree(
+        "u",
+        &[
+            ("../up", "mod0"),
+            ("a", "mod1"),
+            ("a/b", "mod2"),
+            ("n", "quakec-1.06"),
+            ("x", "nosuch"),
+        ],
+    ));
+    let text = errs(&m);
+    assert_has(&text, "tree T!: bad id");
+    assert_has(&text, "tree T!: no dirs");
+    assert_has(&text, "tree t: duplicate id");
+    assert_has(&text, "tree mod2: duplicate id");
+    assert_has(&text, "tree u: \"../up\" must be a relative directory");
+    assert_has(&text, "tree u: a/b is inside a");
+    assert_has(&text, "tree u: n: no usable codebase quakec-1.06");
+    assert_has(&text, "tree u: x: no usable codebase nosuch");
+    assert!(!text.contains("a is inside"), "{text}");
+}
+
+#[test]
+fn a_project_file_is_a_tracked_relative_path_on_a_codebase() {
+    let mut m = base();
+    cb(&mut m, "mod0").project = Some("projects/mod0.toml".to_owned());
+    assert_eq!(check(&m), Vec::<String>::new());
+    let read = |_: &str| Ok(Vec::new());
+    let tracked = strings(&["corpus/projects/mod0.toml"]);
+    assert_eq!(check_repo(&m, &tracked, &read), Vec::<String>::new());
+    assert_eq!(
+        check_repo(&m, &strings(&["projects/mod0.toml"]), &read),
+        ["codebase mod0: project corpus/projects/mod0.toml is not tracked in git"]
+    );
+
+    cb(&mut m, "mod1").project = Some("/etc/quakec.toml".to_owned());
+    m.map[0].project = Some("p.toml".to_owned());
+    let text = errs(&m);
+    assert_has(
+        &text,
+        "codebase mod1: project \"/etc/quakec.toml\" must be a relative path, on a codebase",
+    );
+    assert_has(
+        &text,
+        "map map0: project \"p.toml\" must be a relative path, on a codebase",
+    );
 }
