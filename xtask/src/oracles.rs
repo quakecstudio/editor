@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `cargo xtask oracles`: fetches id's sources by commit and checksum, builds the oracles in
-//! `oracles/` with the system C compiler, and checks them (P1-11, `oracles/README.md`).
+//! `cargo xtask oracles`: fetches id's sources and FTEQCC's by commit and checksum, builds the
+//! oracles with the system C compiler, and checks them (P1-11, P1-26, `oracles/README.md`).
 //!
-//! - `cargo xtask oracles` builds both oracles and checks the VM oracle against every vector in
+//! - `cargo xtask oracles` builds every oracle and checks the VM oracle against every vector in
 //!   `docs/spec/vectors/vm/` that id's C defines.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
 //! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
 //!   `python corpus/assets.py codebase` writes it) with id's qcc, and runs the VM oracle on the
 //!   result.
+//! - `cargo xtask oracles rerelease <dir>` builds them and compiles the six rerelease codebases
+//!   under `<dir>` with FTEQCC into `target/oracles/rerelease/`, checking each progs.dat and
+//!   .lno.
 //! - `cargo xtask oracles json <trace>` prints a binary trace in the JSON form (TRACE-6).
 //!
 //! Everything lives under `target/oracles/`: `src/` holds the fetched files, `build/` the
 //! objects and the generated files that hold id's extracted functions, `bin/` the binaries
-//! (`qcc` and `vm-oracle`). A stamp of every input lets an unchanged build, such as one
-//! restored by CI's cache, skip the compile. Nothing here is part of the shipped app.
+//! (`qcc`, `vm-oracle` and `fteqcc`), `rerelease/` the progs FTEQCC built. A stamp of every input
+//! lets an unchanged build, such as one restored by CI's cache, skip the compile. Nothing here
+//! is part of the shipped app.
 
 mod compile;
 mod extract;
 mod id101;
+mod rerelease;
 mod sha256;
 mod vectors;
 
@@ -44,6 +49,21 @@ const VM_HARNESS: [&str; 5] = [
 
 /// The files of id's qcc, compiled unchanged.
 const QCC_FILES: [&str; 4] = ["qcc/qcc.c", "qcc/pr_lex.c", "qcc/pr_comp.c", "qcc/cmdlib.c"];
+
+/// The files of FTEQCC's command-line compiler, compiled unchanged: the `qcc` target of
+/// `engine/qclib/Makefile` (`QCC_OBJS`, `COMMON_OBJS` and `TUI_OBJS`).
+const FTEQCC_FILES: [&str; 10] = [
+    "engine/qclib/qccmain.c",
+    "engine/qclib/qcc_pr_comp.c",
+    "engine/qclib/qcc_pr_lex.c",
+    "engine/qclib/packager.c",
+    "engine/qclib/decomp.c",
+    "engine/qclib/comprout.c",
+    "engine/qclib/hash.c",
+    "engine/qclib/qcc_cmdlib.c",
+    "engine/qclib/qcd_main.c",
+    "engine/qclib/qcctui.c",
+];
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -72,10 +92,12 @@ struct Extract {
 pub(crate) struct Oracles {
     pub(crate) qcc: PathBuf,
     pub(crate) vm: PathBuf,
+    pub(crate) fteqcc: PathBuf,
     pub(crate) work: PathBuf,
+    pub(crate) rerelease: PathBuf,
 }
 
-/// Runs `cargo xtask oracles [build | id101 <dir>]`.
+/// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -87,11 +109,16 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             let oracles = build(root)?;
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
+            println!("oracles: fteqcc at {}", oracles.fteqcc.display());
             Ok(true)
         }
         ["id101", dir] => {
             let oracles = build(root)?;
             id101::check(&oracles, Path::new(dir))
+        }
+        ["rerelease", dir] => {
+            let oracles = build(root)?;
+            rerelease::check(&oracles, Path::new(dir))
         }
         ["json", trace] => {
             let bytes = fs::read(trace).map_err(|e| format!("{trace}: {e}"))?;
@@ -100,7 +127,8 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             Ok(true)
         }
         _ => Err(
-            "usage: cargo xtask oracles [build | id101 <codebase directory> | json <trace>]"
+            "usage: cargo xtask oracles [build | id101 <codebase directory> \
+             | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),
     }
@@ -243,7 +271,7 @@ fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// Fetches, generates and compiles both oracles, unless the stamp shows they are current.
+/// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
 pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     let sources = read_sources(root)?;
     let out = root.join(OUT);
@@ -257,13 +285,16 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     let oracles = Oracles {
         qcc: bin.join(Compiler::executable("qcc")),
         vm: bin.join(Compiler::executable("vm-oracle")),
+        fteqcc: bin.join(Compiler::executable("fteqcc")),
         work,
+        rerelease: out.join("rerelease"),
     };
     let compiler = Compiler::find(&objects)?;
     let stamp_now = stamp(root, &compiler)?;
     let stamp_file = bin.join("stamp");
     if oracles.qcc.is_file()
         && oracles.vm.is_file()
+        && oracles.fteqcc.is_file()
         && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
     {
         println!("oracles: up to date in {}", bin.display());
@@ -286,7 +317,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         compiler.object(
             &Unit {
                 source: &source,
-                code: Code::Id,
+                code: Code::Upstream,
                 includes: &qcc_includes,
                 defines: &[],
                 forced_include: Some(&qcc_compat),
@@ -297,6 +328,33 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     }
     compiler.link(&qcc_objects, &oracles.qcc)?;
 
+    // FTEQCC, unchanged, without zlib: it then cannot read or write compressed archives, which
+    // compiling a progs.src never needs. `qcc_pr_comp.c` calls the POSIX `strcasecmp`, which
+    // the Windows C runtime names `_stricmp`.
+    let fteqcc_dir = cache.join("fteqcc");
+    let fteqcc_defines: &[&str] = if cfg!(windows) {
+        &["NO_ZLIB", "strcasecmp=_stricmp"]
+    } else {
+        &["NO_ZLIB"]
+    };
+    let mut fteqcc_objects = Vec::new();
+    for file in FTEQCC_FILES {
+        let source = fteqcc_dir.join(file);
+        let object = objects.join(format!("fteqcc_{}.o", stem(&source)));
+        compiler.object(
+            &Unit {
+                source: &source,
+                code: Code::Upstream,
+                includes: &[],
+                defines: fteqcc_defines,
+                forced_include: None,
+            },
+            &object,
+        )?;
+        fteqcc_objects.push(object);
+    }
+    compiler.link(&fteqcc_objects, &oracles.fteqcc)?;
+
     // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
     let includes = vec![root.join("oracles/vm"), quake.clone()];
     let mut vm_objects = Vec::new();
@@ -305,7 +363,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     compiler.object(
         &Unit {
             source: &pr_exec,
-            code: Code::Id,
+            code: Code::Upstream,
             includes: &includes,
             defines: &["QS_PR_EXEC"],
             forced_include: None,
@@ -318,7 +376,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         compiler.object(
             &Unit {
                 source: &source,
-                code: Code::Id,
+                code: Code::Upstream,
                 includes: &includes,
                 defines: &["QS_ENGINE"],
                 forced_include: None,
@@ -345,7 +403,10 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     compiler.link(&vm_objects, &oracles.vm)?;
     fs::write(&stamp_file, format!("{stamp_now}\n"))
         .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
-    println!("oracles: built qcc and vm-oracle in {}", bin.display());
+    println!(
+        "oracles: built qcc, vm-oracle and fteqcc in {}",
+        bin.display()
+    );
     Ok(oracles)
 }
 

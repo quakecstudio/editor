@@ -147,9 +147,15 @@ dependencies = [
  "qc-progs",
  "qc-project",
  "qc-syntax",
+ "qs-mdl",
  "qs-pak",
  "qs-wad",
+ "qs-wav",
 ]
+
+[[package]]
+name = "qs-mdl"
+version = "2026.10.0"
 
 [[package]]
 name = "qs-pak"
@@ -160,6 +166,10 @@ dependencies = [
 
 [[package]]
 name = "qs-wad"
+version = "2026.10.0"
+
+[[package]]
+name = "qs-wav"
 version = "2026.10.0"
 
 [[package]]

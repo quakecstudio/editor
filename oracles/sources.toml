@@ -1,6 +1,7 @@
 # The third-party sources the oracles build from. cargo xtask oracles downloads each file at its
 # pinned commit and refuses it unless its SHA-256 matches; none of them is committed (LIC-7).
-# The commits are the upstreams of docs/porting.md. README.md describes the build.
+# id's commits are the upstreams of docs/porting.md. FTEQCC is built, never ported: its commit is
+# the one docs/spec/progs.md and docs/spec/lno.md cite. README.md describes the build.
 
 [[upstream]]
 id = "quake"
@@ -34,6 +35,35 @@ commit = "c0d1b91c74eb654365ac7755bc837e497caaca73"
 "qcc/pr_comp.h" = "5bb00ba926012e83e53a8c7e107a91aace3b7b39815d7deab21dc42a91b980f8"
 "qcc/cmdlib.c" = "453c7420942ee875405484a481a0bad4b050f6d61207e14aed76553566f709bb"
 "qcc/cmdlib.h" = "200f170215e2bddb66cb2cbe5e39720a06cdeaaf9eadadbc86cec5901f1a632d"
+
+# FTEQCC, the command-line compiler of FTE's qclib, built without zlib (P1-26, LIC-8). It compiles
+# the rerelease QuakeC, which id's qcc cannot. engine/qclib/LICENSE is the GPL version 2 text and
+# the files carry no "or later" grant, so FTEQCC is only ever run as a separate program in CI,
+# never linked into or shipped with anything of ours.
+[[upstream]]
+id = "fteqcc"
+repo = "fte-team/fteqw"
+commit = "f937b9d88f71fc4429db5fe56c6a98d922711b2e"
+
+[upstream.files]
+"engine/qclib/qccmain.c" = "4b41ec390dd7adb4c16569981231b82c4ada8eacb79e51ef6cba4777a4b2519a"
+"engine/qclib/qcc_pr_comp.c" = "ce09da8459cbc4f183b9cc9cd6691493fcf8d88e048eec53b75e9ee908ffa0ab"
+"engine/qclib/qcc_pr_lex.c" = "1780a1c2689445b3ef5f1bb8e59aad1dd4939727a5c5e2f64db58c666573f772"
+"engine/qclib/packager.c" = "b455679fa7240c75d755354331316dce4c4de67b1caad8b900130cd1c3c37ae9"
+"engine/qclib/decomp.c" = "7a93c457fd73f6f1ba0cddb5659dba8101e25e8e40dd140e196a8fe4eaffa782"
+"engine/qclib/comprout.c" = "94298eedaaae0c825e38db7b05bd64099db13f4207496df6d209bfebca1adddb"
+"engine/qclib/hash.c" = "09f4d28810a08faebf1d2e4ad885ff97725b1ed5655899a98d08d4c1ed67dc7d"
+"engine/qclib/qcc_cmdlib.c" = "e4087ea1eb917032c586ef929d5cd4ff3f78f6f772367d59713fbfe53f704606"
+"engine/qclib/qcd_main.c" = "2a72832c68bfd2d0446869efe91bdc03d94cd690f0dffc4254999bd36c939be6"
+"engine/qclib/qcctui.c" = "ad9ae2456799e58df0bdd2a011c839d62390a74e1b20987320fc273665eaddbf"
+"engine/qclib/qcc.h" = "5d9ebb8be5168af6e3d24d598a4fc2c608d4c42cd40008b7f03a5d44d9f4efc9"
+"engine/qclib/cmdlib.h" = "b1a6bde8a4ef664411adda9c75c6fa4a031a09bf83dbad9ee7233c5a32b741e4"
+"engine/qclib/progsint.h" = "b8620b04e9e6c58206b6734c10b3e279f4ebd0642057369976f3193b0a505dce"
+"engine/qclib/progslib.h" = "8576c3e4c26af7ee4ed14b8d5ad769f9566df0f7121468ea0a2dd2a818775cad"
+"engine/qclib/progtype.h" = "8e56d540e35f15ba246730b7e9209fccc1d038f1cae0faa2246eed8514bf835f"
+"engine/qclib/pr_comp.h" = "490202c446ed8e31edda04f10bbff2aeb4f38e3c5258161943318466e0dd9b59"
+"engine/qclib/hash.h" = "3ad55ca4b4b07965bedf0afd000c42edbbc81e178945bf696a9f50b81e093d81"
+"engine/qclib/qcd.h" = "adaa6042d728d00f0983ac96e194fd530db6dfdf004f9dac43264172192ae90b"
 
 # The VM oracle compiles WinQuake/pr_exec.c whole, and these functions of the other files,
 # copied unchanged from the fetched file into a generated source file; oracles/vm/ holds the

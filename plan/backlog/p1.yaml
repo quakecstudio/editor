@@ -734,10 +734,10 @@ issues:
   - docs/spec/spr.md, docs/spec/wav.md (the subset Quake reads, with loop points) and docs/spec/md5.md (the rerelease's enhanced models), each citing id's or QuakeSpasm's file and function
   - SPR and MD5 reading in crates/qs-mdl; crates/qs-wav
   acceptance:
-  - Every SPR and WAV in id1 and every MD5 model in the rerelease loads (fixtures hold layouts and checksums only; no game data is committed)
+  - The walk example (crates/qs-vfs/examples/walk.rs) decodes every SPR and WAV in the LibreQuake lite test asset with no `failed:` lines, and id's sprite and WAV loaders built from the pinned commit agree with the readers on those files and on the spec's vectors; the run against every SPR and WAV in id1 and every MD5 model in the rerelease is P1-30 (no game data is committed)
   - Fuzzed readers never panic
   verify:
-  - cargo test; fuzz targets in make test-fuzz
+  - cargo test; fuzz targets in make test-fuzz; the walk example's output on the LibreQuake lite asset and the differential result recorded in the PR
 - key: P1-30
   title: Verify the virtual filesystem and install detection against real installs
   labels:
@@ -754,14 +754,16 @@ issues:
   depends:
   - P1-18
   - P1-19
+  - P1-29
   deliverable:
-  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. No game data is committed (LIC-4)'
+  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model it reads (P1-29). No game data is committed (LIC-4)'
   - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
   acceptance:
   - Every run ends with `read N files, ...` and prints no `failed:` lines
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
   - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
+  - Every run's `decoded` line counts every `.spr` and `.wav` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3)
   - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
-  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs or qs-install and fixed before this issue closes
+  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-wav or qs-install and fixed before this issue closes
   verify:
   - Walk output for all six runs and find output for the three OSes attached to the issue

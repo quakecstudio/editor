@@ -38,10 +38,11 @@ pub(crate) struct Compiler {
     msvc: bool,
 }
 
-/// Whose code a file is: id's is compiled without warnings, ours with every warning an error.
+/// Whose code a file is: upstream code (id's, FTEQCC's) is compiled without warnings, ours with
+/// every warning an error.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Code {
-    Id,
+    Upstream,
     Ours,
 }
 

@@ -7,7 +7,7 @@ FUZZ_SECONDS ?= 60
 
 .DEFAULT_GOAL := help
 .PHONY: help fmt lint check test test-integration test-fuzz test-coverage test-mutants \
-	audit docs-build bench ci
+	audit docs-build bench oracles ci
 
 help: ## List the targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -47,6 +47,9 @@ docs-build: ## Build the API docs with warnings denied, and the mdBook once docs
 
 bench: ## Run the performance-budget benchmarks and record them in the history (docs/perf-budgets.md)
 	$(CARGO) xtask bench
+
+oracles: ## Build the test-only oracles (id's VM and qcc, FTEQCC) and check the VM oracle (needs curl and a C compiler)
+	$(CARGO) xtask oracles
 
 ci: ## Run exactly what CI runs (cargo xtask ci)
 	$(CARGO) xtask ci
