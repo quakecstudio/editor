@@ -378,8 +378,8 @@ static void physics_client(edict_t *ent, int num) {
     qs_run(pr_global_struct->PlayerPostThink);
 }
 
-// DIFF-5.3: SV_Physics without the movement.
-static void physics(double frametime) {
+// DIFF-5.3: SV_Physics without the movement. Vector mode runs it too (host.c).
+void qs_physics(double frametime) {
     host_frametime = frametime;
     pr_global_struct->self = (int)EDICT_TO_PROG(sv.edicts);
     pr_global_struct->other = (int)EDICT_TO_PROG(sv.edicts);
@@ -433,12 +433,12 @@ static void apply_inputs(long frame) {
     }
 }
 
-// DIFF-5.1.
-static void server_frame(long frame) {
-    pr_global_struct->frametime = (float)scenario.frametime;
+// DIFF-5.1. Vector mode runs it with frame 0, which no input names.
+void qs_server_frame(double frametime, long frame) {
+    pr_global_struct->frametime = (float)frametime;
     SZ_Clear(&sv.datagram);
     apply_inputs(frame);
-    physics(scenario.frametime);
+    qs_physics(frametime);
     SZ_Clear(&sv.reliable_datagram);
     for (int i = 1; i < sv.num_edicts; i++) {
         edict_t *ent = edict_num(i);
@@ -530,8 +530,8 @@ static void start_map(void) {
     // DIFF-3.6: the two settle frames.
     sv.active = true;
     sv.state = ss_active;
-    physics(0.1);
-    physics(0.1);
+    qs_physics(0.1);
+    qs_physics(0.1);
 }
 
 static void run_scenario(void) {
@@ -539,7 +539,7 @@ static void run_scenario(void) {
     for (int slot = 0; slot < scenario.clients; slot++)
         client_enters(slot);
     for (long frame = 1; frame <= scenario.frames; frame++)
-        server_frame(frame);
+        qs_server_frame(scenario.frametime, frame);
 }
 
 // DIFF-8.3: Host_ShutdownServer's ClientDisconnect runs, which save and restore self.

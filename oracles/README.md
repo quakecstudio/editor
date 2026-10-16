@@ -93,16 +93,26 @@ file that xtask writes:
 
 ```text
 edicts 3
+maxclients <n>                # optional: client slots with no player, 0 to 16
+seed <n>                      # optional: the random state of DIFF-6.2, 1 when absent
 loading                       # optional: the server is loading
 builtins engine               # optional: the scenario table of id's builtins, not the stubs
 entry 1
 global <slot> bits <hex> | entity <n> | pointer <n> <field>
 field <edict> <field> bits <hex> | entity <n> | pointer <n> <field>
+host clock <seconds> | run <function> | think <edict> <seconds> | push <edict> <seconds>
+host physics <seconds> <count> | frame <seconds> <count> | edict <n> <slot>
 ```
 
-Entity and pointer values are resolved by the oracle, since they depend on its edict layout. At
+Entity and pointer values are resolved by the oracle, since they depend on its edict layout.
+Without `host` lines the oracle runs the entry function once; with them it does what they say,
+in order, as the vectors' README describes: set the clock, run a function, run id's
+`SV_RunThink` or `SV_Physics_Pusher` on one edict, run physics or server frames as scenario mode
+does, or write the entity value of id's `EDICT_NUM(n)` to a global. An error ends the actions. At
 the end it prints the call depth and the local stack in use (`depth=0 localstack=2`), which the
-vectors' `after:` lines check. `--console` copies the console to standard error.
+vectors' `after:` lines check, and on a second line the bytes of the unreliable datagram in hex
+(`datagram=40ff00c0`), which their `datagram:` lines check. `--console` copies the console to
+standard error.
 
 The exit status is 0 when the run was traced, QuakeC errors included (they are error records);
 2 when the command line, scenario or progs is refused, before any trace is written; 3 when a file
