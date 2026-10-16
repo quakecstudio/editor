@@ -9,6 +9,29 @@ Reference: vouch `main` as of 2026-10-15 (`Cargo.toml`, `.rustfmt.toml`, `.clipp
 `deny.toml`, `rust-toolchain.toml`, `.pre-commit-config.yaml`, `.github/workflows/`,
 `CLAUDE.md`, `AGENTS.md`, `.claude/rules/`).
 
+**Status:** adopted by P0-01 ([#1](https://github.com/quakecstudio/editor/issues/1)) on
+2026-10-15, with every "differs from vouch" item below confirmed.
+
+## Checking conformance
+
+This document is the source of the workspace configuration, and three commands check that
+the files agree with it:
+
+- `cargo xtask conventions` compares every fenced block here whose info string names a file
+  (` ```toml file=deny.toml `) with that file: each key in the block must have the same value
+  in the file, and arrays must match exactly. A block marked `exact` also forbids extra keys
+  in every table it spells out with plain keys only. The clippy table below, between its
+  `conventions:clippy-deny` markers, must list exactly the lints that are `deny`. The command
+  also checks the rules that are not single values: CalVer, the exact toolchain, pinned
+  workspace dependencies, inherited package fields and lints, and reasons on cargo-deny skips.
+- `cargo xtask clippy-fixtures` runs clippy with the workspace lints over the fixtures in
+  `xtask/fixtures/clippy/`. Each fixture names the one lint it must trigger, or `pass`.
+- `cargo xtask deny-fixtures` runs `cargo deny` with `deny.toml` over scratch crates that use a
+  GPL-incompatible license or a wildcard version, plus a control that must pass. It needs
+  network access to the crates.io index.
+
+Change this document and the configuration in the same PR.
+
 ## Toolchain and workspace (CONV-1)
 
 - `rust-toolchain.toml` pins an exact stable channel (vouch: `1.99.0`) with `rustfmt` and `clippy` components.
@@ -17,12 +40,33 @@ Reference: vouch `main` as of 2026-10-15 (`Cargo.toml`, `.rustfmt.toml`, `.clipp
   `repository`, `publish = false`; every crate inherits them with `*.workspace = true`.
 - Version is CalVer `YYYY.MM.N`, as in vouch.
 - Every crate has `[lints] workspace = true`.
+- `fuzz/` is excluded from the workspace.
+
+```toml file=Cargo.toml
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+exclude = ["fuzz"]
+
+[workspace.package]
+edition = "2024"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/quakecstudio/editor"
+publish = false
+```
+
+The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
+
+```toml file=rust-toolchain.toml
+[toolchain]
+components = ["rustfmt", "clippy"]
+```
 
 ## Formatting (CONV-2)
 
 `.rustfmt.toml`, identical to vouch:
 
-```toml
+```toml file=.rustfmt.toml exact
 edition = "2024"
 max_width = 100
 hard_tabs = false
@@ -35,12 +79,24 @@ newline_style = "Unix"
 
 ## Lints (CONV-3)
 
-`[workspace.lints.rust]`, as in vouch: `unsafe_code = "deny"`, `unreachable_pub = "warn"`,
-`non_ascii_idents = "deny"`, `trivial_casts`, `trivial_numeric_casts`, `unused_lifetimes`,
-`single_use_lifetimes` = `"warn"`.
+`[workspace.lints.rust]`, as in vouch (vouch's `linker_messages = "allow"` works around a
+vouch-server linker note and is not copied):
 
-`[workspace.lints.clippy]`, the vouch no-panic set, all `deny`:
+```toml file=Cargo.toml exact
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+non_ascii_idents = "deny"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+single_use_lifetimes = "warn"
+```
 
+`[workspace.lints.clippy]`, the vouch no-panic set, all `deny` (vouch's
+`disallowed_methods = "allow"` serves its request-time rules and is not copied):
+
+<!-- conventions:clippy-deny -->
 | Group | Lints |
 | --- | --- |
 | Explicit panics | `unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`, `unimplemented`, `exit` |
@@ -55,16 +111,30 @@ newline_style = "Unix"
 | Hygiene | `dbg_macro`, `print_stdout`, `print_stderr`, `let_underscore_must_use`, `map_unwrap_or`, `allow_attributes_without_reason` |
 | Concurrency | `await_holding_lock`, `large_futures`, `mem_forget`, `mutex_atomic`, `rc_buffer` |
 | Paths | `absolute_paths` (configured in `.clippy.toml`) |
+<!-- /conventions:clippy-deny -->
 
 `too_many_lines = "warn"` with a threshold of 150 in `.clippy.toml`, enforced by `-D warnings`;
 a longer function carries `#[expect(clippy::too_many_lines, reason = "...")]`.
 `module_name_repetitions` and `similar_names` are allowed.
 
-`.clippy.toml` copies vouch's `absolute-paths-max-segments = 2`, an
-`absolute-paths-allowed-crates` list naming every external crate,
-`cognitive-complexity-threshold = 30`, `too-many-lines-threshold = 150`,
-`allowed-idents-below-min-chars = ["x", "y", "z", "i", "j", "k", "n", "s", "e"]` and
-`avoid-breaking-exported-api = false`.
+```toml file=Cargo.toml
+[workspace.lints.clippy]
+too_many_lines = "warn"
+module_name_repetitions = "allow"
+similar_names = "allow"
+```
+
+`.clippy.toml` copies vouch's settings below, plus an `absolute-paths-allowed-crates` list
+naming `std`, `core`, `alloc`, `proc_macro` and every external crate in
+`[workspace.dependencies]`:
+
+```toml file=.clippy.toml
+absolute-paths-max-segments = 2
+cognitive-complexity-threshold = 30
+too-many-lines-threshold = 150
+allowed-idents-below-min-chars = ["x", "y", "z", "i", "j", "k", "n", "s", "e"]
+avoid-breaking-exported-api = false
+```
 
 Exceptions are made with `#[expect(lint, reason = "...")]`, never `#[allow]`, and never
 crate-wide in a shipped crate.
@@ -74,10 +144,14 @@ and float behaviour exactly. `arithmetic_side_effects` and the cast lints force 
 wrap, saturate or checked conversion to be spelled out, which is how the spec's
 semantics become visible in the code.
 
-**Differs from vouch, to be confirmed in P0-01:** rendering and windowing (wgpu surfaces,
-platform window handles) may need `unsafe`. If so, it is confined to one platform crate
-with a module-level `#[expect(unsafe_code, reason = "...")]` and a `SAFETY:` comment on
-every block. No other crate may use `unsafe`.
+**Same as vouch, settled in P0-01: no crate needs `unsafe`.** Windowing and rendering do not
+require it: wgpu's `Instance::create_surface` is a safe function that takes any window
+implementing the `raw-window-handle` traits (winit's windows do), so only the deprecated
+`create_surface_unsafe` path needs `unsafe`. The editor's UI framework (ADR-0003) does
+its own platform work inside its own crates. `unsafe_code` therefore stays `deny` in every crate. If a
+later need is proven, the `unsafe` goes in one platform crate with a module-level
+`#[expect(unsafe_code, reason = "...")]` and a `SAFETY:` comment on every block, and this
+section changes in the same PR.
 
 Test code keeps `[lints] workspace = true`. As in vouch, each test module opts out of the
 no-panic lints locally with
@@ -107,15 +181,65 @@ semantics require exact IEEE comparison. There the lint is expected per site wit
 system graphics stack, so Linux builds use glibc; and vouch has no `x86_64-apple-darwin`, which
 this project adds for the universal macOS build);
 `[advisories]` with every ignore justified in a comment; `[licenses]` allowing only licenses compatible with GPL-3.0-or-later
-(**differs from vouch**: no GPL-2.0-only, no proprietary; ADR-0002) and `confidence-threshold = 0.8`; `[bans]` with `wildcards = "deny"` and
+(**differs from vouch**: no GPL-2.0-only, no proprietary, and vouch's `OpenSSL` dropped because the
+OpenSSL license is not GPL-compatible; `GPL-3.0-or-later` added for our own crates; ADR-0002) and
+`confidence-threshold = 0.8`; `[bans]` with `wildcards = "deny"` and
 `multiple-versions = "warn"`, each `skip` carrying a `reason`; `[sources]` with
 `unknown-registry = "deny"`, `unknown-git = "warn"`, crates.io as the only registry and every git
 source pinned to a rev. Runs as `make audit` and in CI via `cargo-deny-action` with
 `check advisories bans licenses sources`.
 
+As in vouch, `allow-wildcard-paths = true` lets our own unpublished crates depend on each other
+by path without a version. **Differs from vouch:** `unused-allowed-license = "allow"`, because
+the allow list states which licenses are compatible, not which ones the graph uses today.
+
+```toml file=deny.toml
+[graph]
+all-features = true
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+
+[licenses]
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+```
+
 ## Build profiles (CONV-6)
 
-```toml
+```toml file=Cargo.toml exact
 [profile.release]
 strip = true
 lto = true
@@ -250,8 +374,10 @@ and function it came from.
   binary's crate root. Log output is English.
 - All file locations come from one `paths` module (vouch: `vouch-common/src/paths.rs`). No
   ad-hoc home-directory joins.
-- **Open question (P0-01):** vouch uses XDG directories on every platform, including macOS.
-  A desktop app usually uses `~/Library/Application Support` on macOS and `%APPDATA%` on
-  Windows. P0-01 records the choice in an ADR.
+  Here that module is the `qs-paths` crate.
+- **Differs from vouch:** vouch uses XDG directories on every platform, including macOS.
+  QuakeC Studio is a desktop app and uses each OS's native locations instead:
+  `~/Library/...` on macOS, `%APPDATA%` and `%LOCALAPPDATA%` on Windows, XDG on Linux
+  ([ADR-0011](adr/0011-app-directories.md)).
 - User-facing strings go through one catalog so translation is possible later (vouch uses
   Fluent via `vouch-i18n`). Translations themselves are not in scope for v1.
