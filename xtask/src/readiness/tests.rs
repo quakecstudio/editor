@@ -604,7 +604,9 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         let fake = Fake::new(reply(code));
         let score = mutation(&root(), &target, &fake).unwrap();
         assert_eq!(score.total, 2);
-        assert!(fake.seen.borrow()[0].contains("--copy-vcs=true"));
+        let line = fake.seen.borrow()[0].clone();
+        assert!(line.contains("--copy-vcs=true"), "{line}");
+        assert!(line.contains("--jobs "), "{line}");
     }
     let failed = Fake::new(reply(4));
     let error = mutation(&root(), &target, &failed).unwrap_err();

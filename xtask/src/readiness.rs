@@ -427,6 +427,9 @@ fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, Stri
     // cargo mutants tests a copy of the tree, which without `.git` fails the
     // tests that read the repository through git (xtask's licenses,
     // attribution and corpus checks), so no mutant would be tested.
+    // One build directory per core: a crate of a few thousand mutants (xtask)
+    // tested one at a time outlasts the workflow's time limit.
+    let jobs = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     command
         .args([
             "mutants",
@@ -436,6 +439,8 @@ fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, Stri
             "--manifest-path",
         ])
         .arg(manifest(target))
+        .arg("--jobs")
+        .arg(jobs.to_string())
         .arg("--output")
         .arg(&out);
     let output = run(exec, &mut command, "cargo mutants")?;
