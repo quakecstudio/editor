@@ -13,13 +13,13 @@ at commit `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, the WinQuake tree built wi
 another.
 
 Implemented by `qc-edict` (P1-09). The physics that moves entities (`sv_phys.c`, `sv_move.c`,
-`world.c`) belongs to the preview host's simulation (`qs-sim`, P3-24) and is described here
-only as far as it writes system fields and calls QuakeC. Opcode semantics, including
-`OP_STATE` and the store through `OP_ADDRESS`, are in `vm.md` (P1-02); builtins are in `builtins.md` (P1-04); the file
-layout of globals and fields is in [`progs.md`](progs.md); limits are in
+`world.c`) belongs to the preview host's simulation (`qs-sim`, P3-24) and is described here only
+as far as it writes system fields and calls QuakeC. Opcode semantics, including `OP_STATE` and
+the store through `OP_ADDRESS`, are in [`vm.md`](vm.md); builtins are in `builtins.md` (P1-04);
+the file layout of globals and fields is in [`progs.md`](progs.md); limits are in
 [`limits.md`](limits.md). Saved games (`ED_Write`, `ED_ParseGlobals`) are not covered. Every
-statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until
-`qc-edict` cites it.
+statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-edict`
+cites it.
 
 Times are seconds. `sv.time` is the server clock, a C `double`; the `time` global and every
 float field are `f32`, so storing the clock in them rounds it to the nearest `f32`.
@@ -61,7 +61,7 @@ the progs' field slots, and QuakeC refers to an edict by its byte offset in that
   number is negative or not less than 600. Turning an edict back into a number fails with
   `NUM_FOR_EDICT: bad pointer` when the number is negative or not less than `num_edicts`.
   An entity value is not checked when QuakeC uses it (`PROG_TO_EDICT` only adds); what an
-  invalid one does is in `vm.md`.
+  invalid one does is in VM-11.4 and VM-12.5.
 - **EDICT-1.8** Every map gets a new array: `SV_SpawnServer` reloads the progs, which resets
   every global to its value in the file (PROGS-12.1), and allocates the edicts zero-filled,
   so every field of every edict is 0 and no edict is free until the map's entities are
@@ -182,11 +182,11 @@ globals, so each one is at a fixed slot. It never looks them up by name.
   id's engine would write them past the edict's fields into the next edict, which is
   undefined; this spec fixes the answer: such a progs is refused with a typed error when the
   edict store is set up. A progs id's qcc wrote with CRC 5927 always has at least 105.
-- **EDICT-3.4** The engine reads these non-system fields by name, and only if the progs
-  defines them: `gravity` (scales gravity, `SV_AddGravity`), `items2`
-  (`SV_WriteClientdataToMessage`), and the mission-pack ammo fields set by the `give` cheat (`Host_Give_f`). Lookup is by
-  exact name over the field definitions, first match (`ED_FindField`); a missing field is
-  skipped, not an error.
+- **EDICT-3.4** The engine reads these non-system fields by name, and only if the progs defines
+  them: `gravity` (scales gravity, `SV_AddGravity`), `items2` (`SV_WriteClientdataToMessage`),
+  and the mission-pack ammo fields set by the `give` cheat (`Host_Give_f`). Lookup is by exact
+  name over the field definitions, first match (`ED_FindField`); a missing field is skipped, not
+  an error.
 
 ### Constants
 
@@ -210,7 +210,8 @@ globals, so each one is at a fixed slot. It never looks them up by name.
   later entity is cleared first (EDICT-8.2).
 - **EDICT-4.3** QuakeC may store into the world's fields only while the map is loading; once
   the server is active, `OP_ADDRESS` on edict 0 fails with `assignment to world entity`
-  (`vm.md`). Engine code writes the world's fields at any time.
+  (VM-12.2; a pointer made while loading still writes later, VM-12.6). Engine code writes
+  the world's fields at any time.
 - **EDICT-4.4** The world is never handed out by allocation (EDICT-6.1), is never linked into
   the area tree, and gets physics like any other edict: `MOVETYPE_PUSH` (EDICT-10.4).
 - **EDICT-4.5** The global `world` (slot 30) is never written by the engine; it is entity 0
@@ -412,7 +413,7 @@ keeps whatever value it had.
   `touch` is not 0. A collision runs each side's `touch` only if it is not 0 and the side is
   not `SOLID_NOT` (0), the moving entity first.
 - **EDICT-9.4** The engine calls the function in the global or field even when it is 0 or out
-  of range, which fails with `PR_ExecuteProgram: NULL function` (`vm.md`): a progs with no
+  of range, which fails with `PR_ExecuteProgram: NULL function` (VM-2.1): a progs with no
   `StartFrame` fails on the first frame, and an entity with `nextthink` due and `think` 0
   fails when it would think. The function global `main` is never called.
 
@@ -444,10 +445,11 @@ keeps whatever value it had.
   `other`, and calls `think`. A `nextthink` of 0 or less never thinks, which is why a freed edict
   (`nextthink` -1) does not.
 - **EDICT-10.4** A `MOVETYPE_PUSH` entity thinks by its own clock `ltime` instead: when
-  `nextthink` is less than `ltime` plus the frame's length, it moves only up to `nextthink`
-  (not at all if `nextthink` is behind `ltime`); after the move, if `nextthink` is above the
-  old `ltime` and not above the new one, it sets `nextthink` to 0, `time` to the server clock (not `nextthink`), `self` and `other`, and
-  calls `think`. A pusher that is blocked does not advance `ltime`, so it does not think.
+  `nextthink` is less than `ltime` plus the frame's length, it moves only up to `nextthink` (not
+  at all if `nextthink` is behind `ltime`); after the move, if `nextthink` is above the old
+  `ltime` and not above the new one, it sets `nextthink` to 0, `time` to the server clock (not
+  `nextthink`), `self` and `other`, and calls `think`. A pusher that is blocked does not advance
+  `ltime`, so it does not think.
 - **EDICT-10.5** Where in its turn an entity thinks depends on `movetype`: `MOVETYPE_NONE`,
   `NOCLIP`, `TOSS`, `BOUNCE`, `FLY` and `FLYMISSILE` think before moving and do not move if
   the think freed them; `MOVETYPE_STEP` thinks after moving. A client edict thinks after
@@ -481,7 +483,7 @@ write any of them at any time; the engine's writes are listed here.
   functions, and restores it after. The engine reads `self` in builtins that act on it.
 - **EDICT-11.2** `world`: never written by the engine (EDICT-4.5).
 - **EDICT-11.3** `time`: written by the engine before each call into QuakeC as EDICT-9.1
-  says. The engine reads it only in `OP_STATE` (`vm.md`).
+  says. The engine reads it only in `OP_STATE` (VM-17.1).
 - **EDICT-11.4** `deathmatch`, `coop`, `mapname`, `serverflags`: written once per map, before
   the entities spawn. If the `coop` setting is non-zero the engine writes `coop` from it and
   leaves `deathmatch` alone (the `deathmatch` setting is forced to 0); otherwise it writes
@@ -558,7 +560,7 @@ zeroed by allocation (EDICT-6.5).
   when the move carries a non-zero impulse, so QuakeC must clear it. `button1` is never
   written by the engine.
 - **EDICT-12.9** `classname`: never written by the engine except by map keys. `frame`,
-  `skin`: written by freeing (to 0); `frame` also by `OP_STATE` (`vm.md`). `effects`: its
+  `skin`: written by freeing (to 0); `frame` also by `OP_STATE` (VM-17.2). `effects`: its
   `EF_MUZZLEFLASH` bit is cleared after every frame's updates (EDICT-10.7).
 - **EDICT-12.10** `mins`, `maxs`, `size`: written by the `setsize` and `setmodel` builtins
   (`size` is `maxs - mins`). When a pusher is blocked by a `SOLID_NOT` or `SOLID_TRIGGER`
@@ -574,9 +576,9 @@ zeroed by allocation (EDICT-6.5).
   `enemy`, `goalentity` and `yaw_speed` (the movement builtins), `view_ofs` (water level, the
   `checkclient` builtin and the client update), `movedir` (water jumps), `takedamage` (the
   `aim` builtin), `frags` and the status-bar fields (client update). `use` is never read.
-- **EDICT-12.12** `think`, `nextthink`: `think` is written only by `OP_STATE`; `nextthink` by
-  `OP_STATE`, set to 0 just before each think (EDICT-10.3, EDICT-10.4), and set to -1 by
-  freeing.
+- **EDICT-12.12** `think`, `nextthink`: `think` is written only by `OP_STATE` (VM-17.3);
+  `nextthink` by `OP_STATE` (VM-17.1), set to 0 just before each think (EDICT-10.3, EDICT-10.4),
+  and set to -1 by freeing.
 - **EDICT-12.13** `groundentity`: written by physics and by the `droptofloor`, `walkmove` and
   `movetogoal` builtins when the entity lands on something.
 - **EDICT-12.14** `health`, `weapon`, `items`, `ammo_shells`, `ammo_nails`, `ammo_rockets`,
@@ -610,11 +612,11 @@ zeroed by allocation (EDICT-6.5).
 
 ### Behaviour
 
-- **EDICT-13.1** A string value the engine makes (`mapname`, `netname`, the world's `model`,
-  and every string value set from a map key) is the address of engine-owned text minus the
-  address of the string table. It is not 0 and does not lie inside the string table; its
-  number depends on memory layout and is not part of this spec. The strings builtins return
-  are in `builtins.md`.
+- **EDICT-13.1** A string value the engine makes (`mapname`, `netname`, the world's `model`, and
+  every string value set from a map key) is the address of engine-owned text minus the address
+  of the string table (PROGS-11.6). It is not 0 and does not lie inside the string table; its
+  number depends on memory layout and is not part of this spec. The strings builtins return are
+  in `builtins.md`.
 - **EDICT-13.2** An engine-made string value is true in a condition unless its text is empty
   (`OP_NOT_S` tests both the value and the first byte).
 - **EDICT-13.3** QuakeC Studio represents engine-made strings in a range of values that cannot
