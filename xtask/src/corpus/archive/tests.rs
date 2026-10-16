@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use miniz_oxide::deflate::compress_to_vec;
 
-use super::{Zip, read_tar_gz};
+use super::{Gunzip, Zip, read_tar_gz};
 
 /// A tar header for `name`, `size` bytes of type `kind`, with a valid checksum.
 fn header(name: &str, prefix: &str, size: usize, kind: u8) -> [u8; 512] {
@@ -326,4 +326,67 @@ fn malformed_zips_are_errors() {
     corrupt[34] = 0xff;
     corrupt[35] = 0xff;
     assert!(read_err("corrupt.zip", &corrupt).contains("deflate"));
+}
+
+/// A reader that gives one byte per call, as a slow network or pipe may.
+struct Trickle(Cursor<Vec<u8>>);
+
+impl std::io::Read for Trickle {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let one = out.len().min(1);
+        self.0.read(&mut out[..one])
+    }
+}
+
+/// What a [`Gunzip`] gives through `out`-sized reads, and the error that stopped it, if any.
+fn gunzip_pieces(input: impl std::io::Read, out: usize) -> (Vec<u8>, Option<String>) {
+    use std::io::Read;
+    let mut gunzip = Gunzip::new(input).unwrap();
+    let mut data = Vec::new();
+    let mut buffer = vec![0; out];
+    loop {
+        match gunzip.read(&mut buffer) {
+            Ok(0) => return (data, None),
+            Ok(n) => data.extend_from_slice(&buffer[..n]),
+            Err(error) => return (data, Some(error.to_string())),
+        }
+    }
+}
+
+/// Everything a [`Gunzip`] gives through `out`-sized reads, or its error.
+fn gunzip_in_pieces(input: impl std::io::Read, out: usize) -> Result<Vec<u8>, String> {
+    match gunzip_pieces(input, out) {
+        (data, None) => Ok(data),
+        (_, Some(error)) => Err(error),
+    }
+}
+
+#[test]
+fn gzip_read_a_byte_at_a_time_inflates_whole() {
+    let data: Vec<u8> = (0..5000_u32).map(|i| (i * 7 % 251) as u8).collect();
+    let packed = gzip(&data);
+    for out in [1, 7, 4096] {
+        assert_eq!(
+            gunzip_in_pieces(Trickle(Cursor::new(packed.clone())), out).unwrap(),
+            data
+        );
+        assert_eq!(
+            gunzip_in_pieces(Cursor::new(packed.clone()), out).unwrap(),
+            data
+        );
+    }
+    let cut = packed[..packed.len() - 20].to_vec();
+    for out in [1, 4096] {
+        let error = gunzip_in_pieces(Trickle(Cursor::new(cut.clone())), out).unwrap_err();
+        assert!(error.contains("truncated"), "{error}");
+    }
+    // A truncated stream still gives every byte its input holds before the error.
+    let (one, _) = gunzip_pieces(Trickle(Cursor::new(cut.clone())), 1);
+    let (whole, _) = gunzip_pieces(Trickle(Cursor::new(cut)), 4096);
+    assert!(
+        data.starts_with(&one) && one.len() >= whole.len(),
+        "{} {}",
+        one.len(),
+        whole.len()
+    );
 }

@@ -481,3 +481,11 @@ fn precache_before_fetch_or_without_the_codebase_fails() {
     let errs = cmd_precache(&m, &tmp.0, &FakeNet::default());
     assert!(errs[0].contains("pak0.pak"), "{}", errs[0]);
 }
+
+#[test]
+fn a_string_ends_at_its_closing_quote_or_the_line() {
+    assert_eq!(super::string_len(b"\"ab\" x\n"), 4);
+    assert_eq!(super::string_len(b"\"a\\\"b\" x"), 6);
+    assert_eq!(super::string_len(b"\"ab\nc\""), 3);
+    assert_eq!(super::string_len(b"\"ab"), 3);
+}

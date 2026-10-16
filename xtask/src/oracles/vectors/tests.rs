@@ -715,3 +715,15 @@ fn a_step_must_name_the_builtin_its_call_calls() {
     let error = outcome("vectors-builtin", &v, encoded(&v, records), "", 0).unwrap_err();
     assert!(error.contains("TRACE-4.3"), "{error}");
 }
+
+#[test]
+fn a_line_names_its_statement_and_a_run_none() {
+    let v = Vector::default();
+    let step = super::step_line(&v, 5, BTreeMap::new());
+    assert_eq!(super::statement_of(&step), 5);
+    let run = super::Line {
+        head: Head::Run(3),
+        changes: BTreeMap::new(),
+    };
+    assert_eq!(super::statement_of(&run), 0);
+}
