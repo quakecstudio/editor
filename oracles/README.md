@@ -142,6 +142,12 @@ DIFF-6 and DIFF-7, the errors and shutdown of DIFF-8, and the records and binary
 trace. `cargo xtask oracles` runs them after the vectors and probes, so CI runs them on Linux,
 macOS and Windows; the cases that write a trace to `/dev/full` run on Linux only.
 
+xtask's own tests replay what the oracle gave, without building it:
+[`xtask/fixtures/oracles/`](../xtask/fixtures/oracles/record.py) records each vector's trace
+and each scenario test's exit status, output and traces, except the few traces over 8 KiB, and
+`cargo test -p xtask` checks every vector and case against them. After changing a vector or a
+case, run `cargo xtask oracles`, then `python3 xtask/fixtures/oracles/record.py`.
+
 ### How the VM is observed
 
 `pr_exec.c` is compiled byte for byte as fetched, and the build defines `QS_PR_EXEC`, under which
@@ -253,8 +259,10 @@ The oracles' C is the C tools layer's own code, and the readiness bar of
   (`QS_ORACLE_COVERAGE`), run on every vector, number vector and probe (`cargo xtask oracles`)
   and on the id 1.01 scenarios (`cargo xtask oracles id101`, from the corpus under
   `QS_TEST_ASSETS`), counting the files of this directory and not id's. It needs clang and the
-  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `LLVM_PROFDATA` and `LLVM_COV` choose
-  them; on macOS `xcrun` finds Xcode's).
+  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `QS_ORACLE_LLVM_PROFDATA` and
+  `QS_ORACLE_LLVM_COV` choose them; on macOS `xcrun` finds Xcode's). They are not
+  `LLVM_PROFDATA` and `LLVM_COV`, which cargo-llvm-cov reads for the Rust crates measured in the
+  same run.
 - **Flakes:** `cargo xtask oracles`, 20 times on each OS after one build.
 - **Mutation:** an exception, recorded in [`ratchets.toml`](../ratchets.toml). The bar's
   mutation tool, cargo-mutants (TEST-2), mutates Rust only. The C is held instead by tests

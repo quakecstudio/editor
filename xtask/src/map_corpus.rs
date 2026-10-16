@@ -104,3 +104,65 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     );
     Ok(ok)
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::main;
+
+    fn dir(name: &str) -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/xtask-tests")
+            .join(name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        dir
+    }
+
+    fn vector(name: &str) -> Vec<u8> {
+        fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../docs/spec/vectors/map")
+                .join(name),
+        )
+        .unwrap()
+    }
+
+    fn run(dir: &Path) -> Result<bool, String> {
+        main(Path::new("."), &[dir.display().to_string()])
+    }
+
+    #[test]
+    fn maps_of_both_formats_round_trip() {
+        let maps = dir("map-corpus-ok");
+        fs::write(maps.join("standard.map"), vector("standard.txt")).unwrap();
+        fs::write(maps.join("sub/valve.MAP"), vector("valve220.txt")).unwrap();
+        assert!(run(&maps).unwrap());
+    }
+
+    #[test]
+    fn a_map_that_does_not_parse_fails() {
+        let maps = dir("map-corpus-bad");
+        fs::write(maps.join("standard.map"), vector("standard.txt")).unwrap();
+        fs::write(maps.join("broken.map"), vector("eof-in-entity.txt")).unwrap();
+        assert!(!run(&maps).unwrap());
+    }
+
+    #[test]
+    fn no_maps_or_a_flag_is_an_error() {
+        let maps = dir("map-corpus-empty");
+        assert!(run(&maps).unwrap_err().contains("no .map files"));
+        assert!(run(&maps.join("nowhere")).is_err());
+        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(main(Path::new("."), &["--all".to_owned()]).is_err());
+    }
+}

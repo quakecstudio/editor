@@ -65,8 +65,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang-18 llvm-18
           {
             echo "CC=clang-18"
-            echo "LLVM_PROFDATA=llvm-profdata-18"
-            echo "LLVM_COV=llvm-cov-18"
+            echo "QS_ORACLE_LLVM_PROFDATA=llvm-profdata-18"
+            echo "QS_ORACLE_LLVM_COV=llvm-cov-18"
             echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets"
           } >> "$GITHUB_ENV"
           QS_TEST_ASSETS="$RUNNER_TEMP_DIR/test-assets" cargo xtask corpus fetch id-1.01
@@ -103,6 +103,14 @@ jobs:
         with:
           shared-key: readiness-mutation-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # xtask's tests of `cargo xtask oracles fuzz` go past its check for clang
+      # only when the C compiler is clang, so that its mutants are tested.
+      - name: Set up clang for xtask
+        if: ${{ contains(format(' {0} ', inputs.crates), ' xtask ') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18
+          echo "CC=clang-18" >> "$GITHUB_ENV"
       - name: Measure the mutation score
         run: |
           read -ra crates <<< "$CRATES"

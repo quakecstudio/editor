@@ -102,3 +102,79 @@ fn preprocess(dir: &Path, progs_src: &Path) -> Result<bool, String> {
     );
     Ok(ok)
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::{main, progs_src_names};
+
+    fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/xtask-tests")
+            .join(name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir_all(&dir).unwrap();
+        for (file, text) in files {
+            fs::write(dir.join(file), text).unwrap();
+        }
+        dir
+    }
+
+    fn run(dir: &Path) -> Result<bool, String> {
+        main(Path::new("."), &[dir.display().to_string()])
+    }
+
+    #[test]
+    fn a_clean_codebase_lexes_and_preprocesses() {
+        let dir = codebase(
+            "lex-clean",
+            &[
+                ("progs.src", "../progs.dat // out\n\"defs.qc\"\nworld.qc\n"),
+                ("defs.qc", "float x;\n"),
+                ("world.qc", "void() main = { x = 1; };\n"),
+            ],
+        );
+        assert!(run(&dir).unwrap());
+        assert_eq!(
+            progs_src_names(&dir.join("progs.src")).unwrap(),
+            ["defs.qc", "world.qc"]
+        );
+    }
+
+    #[test]
+    fn a_lexical_or_preprocessor_error_fails() {
+        let lexical = codebase("lex-error", &[("bad.qc", "string s = \"open;\n")]);
+        assert!(!run(&lexical).unwrap());
+        let preprocessor = codebase(
+            "lex-preprocess-error",
+            &[("progs.src", "progs.dat\nbad.qc\n"), ("bad.qc", "#endif\n")],
+        );
+        assert!(!run(&preprocessor).unwrap());
+        let missing = codebase(
+            "lex-missing",
+            &[
+                ("progs.src", "progs.dat\nnowhere.qc\n"),
+                ("a.qc", "float x;\n"),
+            ],
+        );
+        assert!(run(&missing).is_err());
+    }
+
+    #[test]
+    fn a_directory_without_qc_files_or_the_wrong_arguments_is_an_error() {
+        let empty = codebase("lex-empty", &[("readme.txt", "x")]);
+        assert!(run(&empty).unwrap_err().contains("no .qc files"));
+        assert!(run(&empty.join("nowhere")).is_err());
+        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        assert!(progs_src_names(&empty.join("progs.src")).is_err());
+    }
+}

@@ -450,6 +450,15 @@ fn the_cpu_model_is_read_from_the_os() {
     assert_eq!(cpuinfo_model(cpuinfo).unwrap().trim(), "AMD EPYC 7763");
     assert_eq!(cpuinfo_model("processor\t: 0\nCPU part\t: 0xd0c\n"), None);
     let model = cpu_model();
+    assert_eq!(model, cpu_model_on(std::env::consts::OS, read_cpu_source));
+    // Each OS has its own source and not the others'.
+    let os = std::env::consts::OS;
+    assert_eq!(read_cpu_source(CpuSource::Sysctl).is_some(), os == "macos");
+    assert_eq!(read_cpu_source(CpuSource::CpuInfo).is_some(), os == "linux");
+    assert_eq!(
+        read_cpu_source(CpuSource::ProcessorIdentifier).is_some(),
+        os == "windows"
+    );
     if let Some(model) = &model {
         assert!(!model.is_empty() && model.trim() == model, "{model:?}");
     }
@@ -457,6 +466,36 @@ fn the_cpu_model_is_read_from_the_os() {
     if matches!(std::env::consts::OS, "macos" | "windows") {
         assert!(model.is_some());
     }
+}
+
+#[test]
+fn each_os_reads_its_own_cpu_source() {
+    let read = |source: CpuSource| {
+        Some(match source {
+            CpuSource::Sysctl => " Apple M2 \n".to_owned(),
+            CpuSource::CpuInfo => "model name\t: AMD EPYC 7763\n".to_owned(),
+            CpuSource::ProcessorIdentifier => "Intel64 Family 6".to_owned(),
+        })
+    };
+    assert_eq!(cpu_model_on("macos", read).as_deref(), Some("Apple M2"));
+    assert_eq!(
+        cpu_model_on("linux", read).as_deref(),
+        Some("AMD EPYC 7763")
+    );
+    assert_eq!(
+        cpu_model_on("windows", read).as_deref(),
+        Some("Intel64 Family 6")
+    );
+    assert_eq!(cpu_model_on("freebsd", read), None);
+    assert_eq!(cpu_model_on("macos", |_| Some("  ".to_owned())), None);
+    assert_eq!(cpu_model_on("windows", |_| None), None);
+}
+
+#[test]
+fn only_a_true_github_actions_variable_means_github() {
+    assert!(on_github(Some(std::ffi::OsStr::new("true"))));
+    assert!(!on_github(Some(std::ffi::OsStr::new("false"))));
+    assert!(!on_github(None));
 }
 
 #[test]

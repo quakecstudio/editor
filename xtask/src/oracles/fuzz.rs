@@ -19,6 +19,8 @@ use std::process::{Command, Stdio};
 use super::compile::{Compiler, Instrument};
 use super::scenarios::{Input, all_cases};
 use super::{OUT, Sources, compile_vm, fetch, read_sources, vectors};
+use crate::download::Net;
+use crate::exec::Exec;
 
 /// The targets: a name and the define that selects it in `oracles/vm/fuzz.c`.
 pub(crate) const TARGETS: [(&str, &str); 3] = [
@@ -40,22 +42,29 @@ struct Options {
     seconds: u64,
 }
 
-pub(crate) fn main(root: &Path, args: &[&str]) -> Result<bool, String> {
+/// Builds and runs the targets `args` names, with the programs `exec` runs and the files `net`
+/// fetches.
+pub(crate) fn run(
+    root: &Path,
+    args: &[&str],
+    exec: &dyn Exec,
+    net: &dyn Net,
+) -> Result<bool, String> {
     let options = parse_args(args)?;
     let sources = read_sources(root)?;
     let cache = root.join(OUT).join("src");
-    fetch(&sources, &cache)?;
+    fetch(&sources, &cache, net)?;
     let mut ok = true;
     for (name, define) in options.targets {
         let dir = root.join(OUT).join("fuzz").join(name);
-        let binary = build(root, &sources, &cache, &dir, define)?;
+        let binary = build(root, &sources, &cache, &dir, define, exec)?;
         let corpus = dir.join("corpus");
         let seeded = seed(&corpus, &seeds(root, name)?)?;
         println!(
             "oracles: fuzzing {name} for {}s ({seeded} seeds)",
             options.seconds
         );
-        let passed = run(&binary, &dir, options.seconds)?;
+        let passed = fuzz(exec, &binary, &dir, options.seconds)?;
         println!(
             "oracles: fuzz target {name} {}",
             if passed { "passed" } else { "failed" }
@@ -101,10 +110,11 @@ fn build(
     cache: &Path,
     dir: &Path,
     define: &str,
+    exec: &dyn Exec,
 ) -> Result<PathBuf, String> {
     let objects = dir.join("build");
     fs::create_dir_all(&objects).map_err(|e| format!("{}: {e}", objects.display()))?;
-    let compiler = Compiler::find(&objects, Instrument::Fuzz)?;
+    let compiler = Compiler::find(&objects, Instrument::Fuzz, exec)?;
     let defines = ["QS_ENGINE", define];
     let extra = [(root.join("oracles/vm/fuzz.c"), &defines[..])];
     let objects = compile_vm(root, sources, cache, &objects, &compiler, &extra)?;
@@ -171,16 +181,18 @@ fn run_args(dir: &Path, seconds: u64) -> Vec<String> {
 }
 
 /// Runs the target, its output into `fuzz.log`; prints the log's end when it fails.
-fn run(binary: &Path, dir: &Path, seconds: u64) -> Result<bool, String> {
+fn fuzz(exec: &dyn Exec, binary: &Path, dir: &Path, seconds: u64) -> Result<bool, String> {
     let artifacts = dir.join("artifacts");
     fs::create_dir_all(&artifacts).map_err(|e| format!("{}: {e}", artifacts.display()))?;
     let log_path = dir.join("fuzz.log");
     let log = fs::File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
-    let status = Command::new(binary)
-        .args(run_args(dir, seconds))
-        .stdout(Stdio::null())
-        .stderr(log)
-        .status()
+    let status = exec
+        .status(
+            Command::new(binary)
+                .args(run_args(dir, seconds))
+                .stdout(Stdio::null())
+                .stderr(log),
+        )
         .map_err(|e| format!("cannot run {}: {e}", binary.display()))?;
     if status.success() {
         return Ok(true);

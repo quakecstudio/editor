@@ -175,7 +175,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let outcome = evaluate(&results, baseline);
     let passed = outcome.passed(options.accept);
     print!("{}", format_results(&host, &results, baseline));
-    let github = std::env::var_os("GITHUB_ACTIONS").is_some_and(|value| value == "true");
+    let github = on_github(std::env::var_os("GITHUB_ACTIONS").as_deref());
     print!("{}", outcome.report(options.accept, github));
     history.runs.push(Run {
         unix_time: unix_time(),
@@ -188,6 +188,11 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     save_history(&history_path, &history)?;
     println!("bench: recorded in {}", history_path.display());
     Ok(passed)
+}
+
+/// Whether the `GITHUB_ACTIONS` variable says the run is on GitHub Actions.
+fn on_github(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| value == "true")
 }
 
 /// The last passing run recorded on the host with this key.
@@ -617,12 +622,34 @@ fn host_key(named: Option<String>, os: &str, arch: &str, cpu: Option<&str>) -> S
 
 /// The CPU's model name, from the OS.
 fn cpu_model() -> Option<String> {
-    let model = match std::env::consts::OS {
-        "macos" => command_output("sysctl", &["-n", "machdep.cpu.brand_string"]),
-        "linux" => fs::read_to_string("/proc/cpuinfo")
-            .ok()
-            .and_then(|info| cpuinfo_model(&info)),
-        "windows" => std::env::var("PROCESSOR_IDENTIFIER").ok(),
+    cpu_model_on(std::env::consts::OS, read_cpu_source)
+}
+
+/// Where an OS keeps the CPU's model name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CpuSource {
+    /// macOS: `sysctl -n machdep.cpu.brand_string`.
+    Sysctl,
+    /// Linux: the text of `/proc/cpuinfo`.
+    CpuInfo,
+    /// Windows: the `PROCESSOR_IDENTIFIER` environment variable.
+    ProcessorIdentifier,
+}
+
+fn read_cpu_source(source: CpuSource) -> Option<String> {
+    match source {
+        CpuSource::Sysctl => command_output("sysctl", &["-n", "machdep.cpu.brand_string"]),
+        CpuSource::CpuInfo => fs::read_to_string("/proc/cpuinfo").ok(),
+        CpuSource::ProcessorIdentifier => std::env::var("PROCESSOR_IDENTIFIER").ok(),
+    }
+}
+
+/// The CPU's model name on `os`, read through `read`.
+fn cpu_model_on(os: &str, read: impl Fn(CpuSource) -> Option<String>) -> Option<String> {
+    let model = match os {
+        "macos" => read(CpuSource::Sysctl),
+        "linux" => read(CpuSource::CpuInfo).and_then(|info| cpuinfo_model(&info)),
+        "windows" => read(CpuSource::ProcessorIdentifier),
         _ => None,
     }?;
     let model = model.trim();

@@ -18,6 +18,7 @@
 //! fails because a number is low; only a tool that cannot run fails it.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,6 +26,7 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::exec::{Exec, System};
 use crate::oracles::{COVERAGE_ENV, vm_oracle};
 
 /// The date-pinned nightly that measures branch coverage, the only check that
@@ -137,6 +139,22 @@ struct Options {
 }
 
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    let tools = Tools {
+        exec: &System,
+        assets: std::env::var_os("QS_TEST_ASSETS"),
+    };
+    run_check(root, args, &tools)
+}
+
+/// What a measurement runs: the programs `exec` runs, and the corpus directory
+/// `QS_TEST_ASSETS` names, for the oracles' coverage.
+struct Tools<'a> {
+    exec: &'a dyn Exec,
+    assets: Option<OsString>,
+}
+
+/// [`main`] with these tools.
+fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, String> {
     let options = parse_args(args)?;
     // The tools write their reports here and do not create it themselves.
     let scratch = scratch(root);
@@ -148,7 +166,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     };
     for name in &options.crates {
         let target = resolve(root, name)?;
-        let Some(score) = measure(root, options.check, &target)? else {
+        let Some(score) = measure(root, options.check, &target, tools)? else {
             println!(
                 "{} {}: not measured: {NO_C_MUTATION}",
                 target.name,
@@ -285,17 +303,22 @@ const NO_C_MUTATION: &str = "cargo mutants mutates Rust, and the oracles are C; 
 
 /// The score of `check` for `target`, or `None` when no tool measures it
 /// (the oracles' mutation score).
-fn measure(root: &Path, check: Check, target: &Target) -> Result<Option<Score>, String> {
+fn measure(
+    root: &Path,
+    check: Check,
+    target: &Target,
+    tools: &Tools<'_>,
+) -> Result<Option<Score>, String> {
     let score = match (check, target.kind) {
-        (Check::Lines | Check::Branches, Kind::Oracles) => c_coverage(root, check)?,
+        (Check::Lines | Check::Branches, Kind::Oracles) => c_coverage(root, check, tools)?,
         (Check::Lines | Check::Branches, Kind::Member | Kind::Standalone) => {
-            coverage(root, target, check)?
+            coverage(root, target, check, tools.exec)?
         }
         (Check::Mutation, Kind::Oracles) => return Ok(None),
-        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target)?,
+        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target, tools.exec)?,
         (Check::Spec, _) => spec(&target.dir)?,
-        (Check::Flakes, Kind::Oracles) => oracle_flakes(root)?,
-        (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target)?,
+        (Check::Flakes, Kind::Oracles) => oracle_flakes(root, tools.exec)?,
+        (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target, tools.exec)?,
     };
     Ok(Some(score))
 }
@@ -331,13 +354,12 @@ fn manifest(target: &Target) -> PathBuf {
     target.dir.join("Cargo.toml")
 }
 
-fn run(command: &mut Command, what: &str) -> Result<std::process::Output, String> {
-    command
-        .output()
+fn run(exec: &dyn Exec, command: &mut Command, what: &str) -> Result<std::process::Output, String> {
+    exec.output(command)
         .map_err(|error| format!("cannot run {what}: {error}"))
 }
 
-fn coverage(root: &Path, target: &Target, check: Check) -> Result<Score, String> {
+fn coverage(root: &Path, target: &Target, check: Check, exec: &dyn Exec) -> Result<Score, String> {
     let report = scratch(root).join(format!("{}-{}.json", check.name(), target.name));
     let branches = check == Check::Branches;
     let mut command = cargo_for(root, target, branches.then_some(NIGHTLY));
@@ -349,7 +371,7 @@ fn coverage(root: &Path, target: &Target, check: Check) -> Result<Score, String>
     if branches {
         command.arg("--branch");
     }
-    let output = run(&mut command, "cargo llvm-cov")?;
+    let output = run(exec, &mut command, "cargo llvm-cov")?;
     if !output.status.success() {
         return Err(format!(
             "{}: cargo llvm-cov failed (a failing test fails it too):\n{}",
@@ -399,12 +421,15 @@ pub(crate) fn parse_llvm_cov(text: &str, check: Check) -> Result<Score, String> 
     })
 }
 
-fn mutation(root: &Path, target: &Target) -> Result<Score, String> {
+fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, String> {
     let out = scratch(root).join(format!("mutants-{}", target.name));
     let mut command = cargo_for(root, target, None);
     // cargo mutants tests a copy of the tree, which without `.git` fails the
     // tests that read the repository through git (xtask's licenses,
     // attribution and corpus checks), so no mutant would be tested.
+    // One build directory per core: a crate of a few thousand mutants (xtask)
+    // tested one at a time outlasts the workflow's time limit.
+    let jobs = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     command
         .args([
             "mutants",
@@ -414,9 +439,11 @@ fn mutation(root: &Path, target: &Target) -> Result<Score, String> {
             "--manifest-path",
         ])
         .arg(manifest(target))
+        .arg("--jobs")
+        .arg(jobs.to_string())
         .arg("--output")
         .arg(&out);
-    let output = run(&mut command, "cargo mutants")?;
+    let output = run(exec, &mut command, "cargo mutants")?;
     // 0: every mutant caught; 2: some missed; 3: some timed out. Anything else
     // (a usage error, a failing baseline) means there is no score.
     if !matches!(output.status.code(), Some(0 | 2 | 3)) {
@@ -502,7 +529,7 @@ pub(crate) fn mutant_key(name: &str) -> String {
     format!("{file}: {description}")
 }
 
-fn flakes(root: &Path, target: &Target) -> Result<Score, String> {
+fn flakes(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, String> {
     let test = |no_run: bool| {
         let mut command = cargo_for(root, target, None);
         command
@@ -511,7 +538,7 @@ fn flakes(root: &Path, target: &Target) -> Result<Score, String> {
         if no_run {
             command.arg("--no-run");
         }
-        run(&mut command, "cargo test")
+        run(exec, &mut command, "cargo test")
     };
     let build = test(true)?;
     if !build.status.success() {
@@ -535,8 +562,8 @@ fn xtask(root: &Path, args: &[&str]) -> Result<Command, String> {
 }
 
 /// Runs `command`, failing with its output unless it succeeds.
-fn run_ok(command: &mut Command, what: &str) -> Result<(), String> {
-    let output = run(command, what)?;
+fn run_ok(exec: &dyn Exec, command: &mut Command, what: &str) -> Result<(), String> {
+    let output = run(exec, command, what)?;
     if output.status.success() {
         return Ok(());
     }
@@ -550,13 +577,14 @@ fn run_ok(command: &mut Command, what: &str) -> Result<(), String> {
 
 /// The oracles' flake check: `cargo xtask oracles`, every vector, number
 /// vector and probe through the VM oracle, [`FLAKE_RUNS`] times after one build.
-fn oracle_flakes(root: &Path) -> Result<Score, String> {
+fn oracle_flakes(root: &Path, exec: &dyn Exec) -> Result<Score, String> {
     run_ok(
+        exec,
         &mut xtask(root, &[ORACLES, "build"])?,
         "cargo xtask oracles build",
     )?;
     repeat(FLAKE_RUNS, || {
-        run(&mut xtask(root, &[ORACLES])?, "cargo xtask oracles")
+        run(exec, &mut xtask(root, &[ORACLES])?, "cargo xtask oracles")
             .map(|output| output.status.success())
     })
 }
@@ -566,8 +594,9 @@ fn oracle_flakes(root: &Path) -> Result<Score, String> {
 /// probe (`cargo xtask oracles`) and on the id 1.01 scenarios
 /// (`cargo xtask oracles id101`, from the corpus under `QS_TEST_ASSETS`).
 /// id's files in the build are not ours and are not counted.
-fn c_coverage(root: &Path, check: Check) -> Result<Score, String> {
-    let assets = std::env::var_os("QS_TEST_ASSETS").ok_or(
+fn c_coverage(root: &Path, check: Check, tools: &Tools<'_>) -> Result<Score, String> {
+    let exec = tools.exec;
+    let assets = tools.assets.as_ref().ok_or(
         "the oracles' coverage runs id 1.01: set QS_TEST_ASSETS and run \
          cargo xtask corpus fetch id-1.01",
     )?;
@@ -592,7 +621,11 @@ fn c_coverage(root: &Path, check: Check) -> Result<Score, String> {
         command
             .env(COVERAGE_ENV, "1")
             .env("LLVM_PROFILE_FILE", &profile_file);
-        run_ok(&mut command, &format!("cargo xtask {}", args.join(" ")))?;
+        run_ok(
+            exec,
+            &mut command,
+            &format!("cargo xtask {}", args.join(" ")),
+        )?;
     }
     let mut raw = Vec::new();
     for entry in
@@ -611,20 +644,20 @@ fn c_coverage(root: &Path, check: Check) -> Result<Score, String> {
         ));
     }
     let merged = dir.join("vm-oracle.profdata");
-    let mut merge = llvm_tool("LLVM_PROFDATA", "llvm-profdata");
+    let mut merge = llvm_tool("QS_ORACLE_LLVM_PROFDATA", "llvm-profdata");
     merge
         .args(["merge", "-sparse", "-o"])
         .arg(&merged)
         .args(&raw);
-    run_ok(&mut merge, "llvm-profdata merge")?;
+    run_ok(exec, &mut merge, "llvm-profdata merge")?;
     let sources = c_sources(&root.join(ORACLES))?;
-    let mut export = llvm_tool("LLVM_COV", "llvm-cov");
+    let mut export = llvm_tool("QS_ORACLE_LLVM_COV", "llvm-cov");
     export
         .args(["export", "-summary-only", "-instr-profile"])
         .arg(&merged)
         .arg(vm_oracle(root))
         .args(&sources);
-    let output = run(&mut export, "llvm-cov export")?;
+    let output = run(exec, &mut export, "llvm-cov export")?;
     if !output.status.success() {
         return Err(format!(
             "llvm-cov export failed ({}):\n{}",

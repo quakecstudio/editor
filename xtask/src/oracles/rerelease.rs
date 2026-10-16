@@ -140,32 +140,12 @@ fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result
     let progs = fs::read(&progs_path).map_err(|e| format!("{}: {e}", progs_path.display()))?;
     let lno = fs::read(&lno_path).map_err(|e| format!("{}: {e}", lno_path.display()))?;
 
-    let mut problems = Vec::new();
     let loaded = Progs::read(&progs).map_err(|e| format!("{id}: qc-progs refuses it: {e:?}"))?;
-    let header = *loaded.header();
-    if header.version != PROGS_VERSION {
-        problems.push(format!("progs.dat is version {}, not 6", header.version));
-    }
-    problems.extend(extended_opcodes(&loaded));
-    problems.extend(lno_problems(&lno, &header));
-    let progs_got = progs_digest(&progs).unwrap_or_default();
-    if progs_got != codebase.progs {
-        problems.push(format!(
-            "progs.dat has sha256 {progs_got} (header text zeroed), expected {}",
-            codebase.progs
-        ));
-    }
-    let lno_got = sha256::hex_digest(&lno);
-    if lno_got != codebase.lno {
-        problems.push(format!(
-            "progs.lno has sha256 {lno_got}, expected {}",
-            codebase.lno
-        ));
-    }
+    let problems = problems(&loaded, &progs, &lno, (codebase.progs, codebase.lno));
     if problems.is_empty() {
         println!(
             "ok    {id}: {} statements, version 6, vanilla opcodes only, .lno matches{}",
-            header.numstatements,
+            loaded.header().numstatements,
             if cached { " (cached)" } else { "" }
         );
         return Ok(true);
@@ -174,6 +154,32 @@ fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result
         println!("FAIL  {id}: {problem}");
     }
     Ok(false)
+}
+
+/// What is wrong with FTEQCC's outputs: the progs `loaded` from `progs`, and `lno`, whose
+/// digests should be `want` ([`Codebase::progs`] and [`Codebase::lno`]).
+fn problems(loaded: &Progs, progs: &[u8], lno: &[u8], want: (&str, &str)) -> Vec<String> {
+    let (want_progs, want_lno) = want;
+    let mut problems = Vec::new();
+    let header = *loaded.header();
+    if header.version != PROGS_VERSION {
+        problems.push(format!("progs.dat is version {}, not 6", header.version));
+    }
+    problems.extend(extended_opcodes(loaded));
+    problems.extend(lno_problems(lno, &header));
+    let progs_got = progs_digest(progs).unwrap_or_default();
+    if progs_got != want_progs {
+        problems.push(format!(
+            "progs.dat has sha256 {progs_got} (header text zeroed), expected {want_progs}"
+        ));
+    }
+    let lno_got = sha256::hex_digest(lno);
+    if lno_got != want_lno {
+        problems.push(format!(
+            "progs.lno has sha256 {lno_got}, expected {want_lno}"
+        ));
+    }
+    problems
 }
 
 /// Copies the codebase to a scratch directory, compiles it there and copies the outputs to
@@ -193,11 +199,14 @@ fn compile(
     }
     let src = work.join("src");
     copy_tree(source, &src)?;
-    let output = Command::new(&oracles.fteqcc)
-        .args(FLAGS)
-        .args(codebase.extra)
-        .current_dir(&src)
-        .output()
+    let output = oracles
+        .exec
+        .output(
+            Command::new(&oracles.fteqcc)
+                .args(FLAGS)
+                .args(codebase.extra)
+                .current_dir(&src),
+        )
         .map_err(|e| format!("cannot run fteqcc: {e}"))?;
     if !output.status.success() || !work.join("progs.dat").is_file() {
         println!(
@@ -326,9 +335,110 @@ mod tests {
         reason = "test code: a failed unwrap, index or sum is a failed test"
     )]
 
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
     use qc_progs::{Header, Progs, ProgsFile, Statement, write};
 
-    use super::{extended_opcodes, lno_problems, progs_digest};
+    use super::super::testing::{fake_oracles, fresh_dir};
+    use super::{
+        CODEBASES, build, check, compiles, extended_opcodes, lno_problems, problems, progs_digest,
+    };
+    use crate::exec::{Fake, Reply};
+
+    /// A fake FTEQCC that writes `progs` and `lno` where `-o ../progs.dat` puts them.
+    fn fteqcc(progs: Vec<u8>, lno: Vec<u8>) -> impl Fn(&Command) -> Reply {
+        move |command: &Command| {
+            let work = command.get_current_dir().unwrap().parent().unwrap();
+            Reply {
+                files: vec![
+                    (work.join("progs.dat"), progs.clone()),
+                    (work.join("progs.lno"), lno.clone()),
+                ],
+                ..Reply::default()
+            }
+        }
+    }
+
+    /// A directory of the six codebases, each a `progs.src` and a file in a subdirectory.
+    fn codebases(dir: &Path) -> std::path::PathBuf {
+        let codebases = dir.join("codebases");
+        for codebase in &CODEBASES {
+            let source = codebases.join(codebase.id);
+            fs::create_dir_all(source.join("sub")).unwrap();
+            fs::write(source.join("progs.src"), "../progs.dat\nsub/a.qc\n").unwrap();
+            fs::write(source.join("sub/a.qc"), "void() main = {};\n").unwrap();
+        }
+        codebases
+    }
+
+    #[test]
+    fn every_codebase_is_compiled_in_a_copy_and_checked() {
+        let dir = fresh_dir("rerelease-check");
+        let codebases = codebases(&dir);
+        let bytes = progs(&[0, 66]);
+        let header = *Progs::read(&bytes).unwrap().header();
+        let fake = Fake::new(fteqcc(bytes, lno(&header)));
+        let oracles = fake_oracles(&dir.join("work"), &fake);
+        // FTEQCC's outputs differ from the recorded ones, and hold an extended opcode.
+        assert!(!check(&oracles, &codebases).unwrap());
+        {
+            let seen = fake.seen.borrow();
+            assert_eq!(seen.len(), 6);
+            assert!(
+                seen.iter()
+                    .all(|line| line.starts_with("fteqcc -Tid -flno -o ../progs.dat"))
+            );
+            assert!(seen.iter().any(|line| line.ends_with("-Fautoproto")));
+        }
+        let kept = oracles.rerelease.join("rerelease-mg1");
+        assert!(kept.join("progs.dat").is_file() && kept.join("progs.lno").is_file());
+        assert!(
+            oracles
+                .work
+                .join("rerelease/rerelease/src/sub/a.qc")
+                .is_file()
+        );
+        // Built again: the outputs do not have the recorded digests, so FTEQCC runs again.
+        let (out, cached) = build(&oracles, &codebases, "rerelease").unwrap();
+        assert!(!cached);
+        assert_eq!(out, oracles.rerelease.join("rerelease"));
+    }
+
+    #[test]
+    fn a_codebase_that_does_not_compile_is_an_error() {
+        let dir = fresh_dir("rerelease-errors");
+        let codebases = codebases(&dir);
+        let fails = Fake::new(|_: &Command| Reply {
+            code: 1,
+            stdout: "error".to_owned(),
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &fails);
+        let error = build(&oracles, &codebases, "rerelease").unwrap_err();
+        assert!(error.contains("fteqcc did not compile"), "{error}");
+        assert!(
+            build(&oracles, &codebases, "quake")
+                .unwrap_err()
+                .contains("not a rerelease")
+        );
+        fs::remove_file(codebases.join("rerelease-ctf/progs.src")).unwrap();
+        let error = build(&oracles, &codebases, "rerelease-ctf").unwrap_err();
+        assert!(error.contains("no progs.src"), "{error}");
+        let cannot_run = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &cannot_run);
+        assert!(
+            build(&oracles, &codebases, "rerelease")
+                .unwrap_err()
+                .contains("cannot run")
+        );
+        assert!(compiles("rerelease-mg3"));
+        assert!(!compiles("id-1.01"));
+    }
 
     /// A version 6 progs.dat holding statements with these opcodes.
     fn progs(ops: &[u32]) -> Vec<u8> {
@@ -405,6 +515,23 @@ mod tests {
         let other = with_lead(&progs(&[1, 3]), b"Compiled [2026/10/16]\0\0\0");
         assert_ne!(progs_digest(&a), progs_digest(&other));
         assert_eq!(progs_digest(b"not a progs"), None);
+    }
+
+    #[test]
+    fn outputs_with_the_recorded_digests_pass_and_each_difference_is_named() {
+        let bytes = progs(&[0, 1, 2]);
+        let loaded = Progs::read(&bytes).unwrap();
+        let good_lno = lno(loaded.header());
+        let progs_sha = progs_digest(&bytes).unwrap();
+        let lno_sha = super::sha256::hex_digest(&good_lno);
+        let found = |want: (&str, &str)| problems(&loaded, &bytes, &good_lno, want);
+        assert_eq!(found((&progs_sha, &lno_sha)), Vec::<String>::new());
+        let wrong = found(("00", &lno_sha));
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].starts_with("progs.dat has sha256"), "{wrong:?}");
+        let wrong = found((&progs_sha, "00"));
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].starts_with("progs.lno has sha256"), "{wrong:?}");
     }
 
     #[test]

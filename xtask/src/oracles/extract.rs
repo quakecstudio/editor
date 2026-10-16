@@ -251,6 +251,8 @@ void after (void)
     fn matches_whole_names_only() {
         let source = "void PF_WriteByte2 (void)\n{\n}\nvoid PF_WriteByte (void)\n{\n}\n";
         assert_eq!(function(source, "PF_WriteByte").unwrap().line, 4);
+        let source = "void SV_PF_WriteByte (void)\n{\n}\nvoid PF_WriteByte (void)\n{\n}\n";
+        assert_eq!(function(source, "PF_WriteByte").unwrap().line, 4);
     }
 
     #[test]

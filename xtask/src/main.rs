@@ -66,6 +66,7 @@ mod contrast;
 mod conventions;
 mod corpus;
 mod download;
+mod exec;
 mod fixtures;
 mod fuzz;
 mod layers;
@@ -93,50 +94,56 @@ type Command = fn(&Path, &[String]) -> Result<bool, String>;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let root = workspace_root();
-    if let Some((name, rest)) = args.split_first() {
-        let command: Option<Command> = match name.as_str() {
-            "assets" => Some(corpus::assets_main),
-            "bench" => Some(bench::main),
-            "corpus" => Some(corpus::main),
-            "fuzz" => Some(fuzz::main),
-            "lex-corpus" => Some(lex_corpus::main),
-            "map-corpus" => Some(map_corpus::main),
-            "oracles" => Some(oracles::main),
-            "parse-corpus" => Some(parse_corpus::main),
-            "project-corpus" => Some(project_corpus::main),
-            "readiness" => Some(readiness::main),
-            "ratchet" => Some(ratchet::main),
-            _ => None,
-        };
-        if let Some(command) = command {
-            return match command(&root, rest) {
-                Ok(true) => ExitCode::SUCCESS,
-                Ok(false) => ExitCode::FAILURE,
-                Err(error) => {
-                    eprintln!("{name}: {error}");
-                    ExitCode::FAILURE
-                }
-            };
-        }
-    }
-    let [command] = args.as_slice() else {
-        eprintln!("{USAGE}");
-        return ExitCode::FAILURE;
-    };
-    let ok = if command == "ci" {
-        ci::run(&root)
-    } else {
-        let Some(check) = in_process_check(command) else {
-            eprintln!("unknown command {command:?}\n{USAGE}");
-            return ExitCode::FAILURE;
-        };
-        print_outcome(command, check(&root))
-    };
-    if ok {
+    if run(&workspace_root(), &args, &ci::STEPS) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+/// Runs the command `args` names from `root`, with `ci_steps` as the steps of
+/// `ci`; returns whether it passed.
+fn run(root: &Path, args: &[String], ci_steps: &[ci::Step]) -> bool {
+    if let Some((name, rest)) = args.split_first()
+        && let Some(command) = command(name)
+    {
+        return match command(root, rest) {
+            Ok(passed) => passed,
+            Err(error) => {
+                eprintln!("{name}: {error}");
+                false
+            }
+        };
+    }
+    let [command] = args else {
+        eprintln!("{USAGE}");
+        return false;
+    };
+    if command == "ci" {
+        return ci::run(root, ci_steps);
+    }
+    let Some(check) = in_process_check(command) else {
+        eprintln!("unknown command {command:?}\n{USAGE}");
+        return false;
+    };
+    print_outcome(command, check(root))
+}
+
+/// The command named `name`, if it takes arguments.
+fn command(name: &str) -> Option<Command> {
+    match name {
+        "assets" => Some(corpus::assets_main),
+        "bench" => Some(bench::main),
+        "corpus" => Some(corpus::main),
+        "fuzz" => Some(fuzz::main),
+        "lex-corpus" => Some(lex_corpus::main),
+        "map-corpus" => Some(map_corpus::main),
+        "oracles" => Some(oracles::main),
+        "parse-corpus" => Some(parse_corpus::main),
+        "project-corpus" => Some(project_corpus::main),
+        "readiness" => Some(readiness::main),
+        "ratchet" => Some(ratchet::main),
+        _ => None,
     }
 }
 
@@ -148,8 +155,8 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
     match command {
         "adr" => Some(adr::check),
         "conventions" => Some(conventions::check),
-        "clippy-fixtures" => Some(fixtures::clippy),
-        "deny-fixtures" => Some(fixtures::deny),
+        "clippy-fixtures" => Some(|root| fixtures::clippy(root, &exec::System)),
+        "deny-fixtures" => Some(|root| fixtures::deny(root, &exec::System)),
         "layers" => Some(layers::check),
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
@@ -204,5 +211,73 @@ impl Report {
         } else {
             self.problems.push(line);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ci::Step;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|arg| (*arg).to_owned()).collect()
+    }
+
+    const PASSING: [Step; 1] = [Step::Cargo(&["--version"])];
+    const FAILING: [Step; 1] = [Step::Cargo(&["no-such-command-xtask-main"])];
+
+    #[test]
+    fn every_command_with_arguments_is_found() {
+        for name in [
+            "assets",
+            "bench",
+            "corpus",
+            "fuzz",
+            "lex-corpus",
+            "map-corpus",
+            "oracles",
+            "parse-corpus",
+            "project-corpus",
+            "readiness",
+            "ratchet",
+        ] {
+            assert!(command(name).is_some(), "{name}");
+            assert!(USAGE.contains(name), "{name}");
+        }
+        assert!(command("ci").is_none());
+        assert!(command("layers").is_none());
+    }
+
+    #[test]
+    fn ci_runs_the_steps_it_is_given() {
+        let root = workspace_root();
+        assert!(run(&root, &args(&["ci"]), &PASSING));
+        assert!(!run(&root, &args(&["ci"]), &FAILING));
+    }
+
+    #[test]
+    fn an_in_process_check_runs_without_the_ci_steps() {
+        assert!(run(&workspace_root(), &args(&["layers"]), &FAILING));
+    }
+
+    #[test]
+    fn a_command_with_arguments_reports_its_outcome() {
+        let root = workspace_root();
+        assert!(!run(&root, &args(&["ratchet", "--no-such-flag"]), &PASSING));
+        assert!(run(&root, &args(&["ratchet"]), &FAILING));
+    }
+
+    #[test]
+    fn a_missing_or_unknown_command_fails() {
+        let root = workspace_root();
+        assert!(!run(&root, &[], &PASSING));
+        assert!(!run(&root, &args(&["no-such-command"]), &PASSING));
+        assert!(!run(&root, &args(&["layers", "extra"]), &PASSING));
+    }
+
+    #[test]
+    fn the_workspace_root_holds_the_workspace_manifest() {
+        let manifest = std::fs::read_to_string(workspace_root().join("Cargo.toml"));
+        assert!(manifest.is_ok_and(|text| text.contains("[workspace]")));
     }
 }

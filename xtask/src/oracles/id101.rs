@@ -112,9 +112,9 @@ pub(crate) fn compile(oracles: &Oracles, codebase: &Path) -> Result<(Vec<u8>, u3
     }
 
     // id's qcc reads progs.src in the current directory and writes ../progs.dat.
-    let output = Command::new(&oracles.qcc)
-        .current_dir(&src)
-        .output()
+    let output = oracles
+        .exec
+        .output(Command::new(&oracles.qcc).current_dir(&src))
         .map_err(|e| format!("cannot run qcc: {e}"))?;
     let log = String::from_utf8_lossy(&output.stdout);
     let progs_path = work.join("progs.dat");
@@ -163,11 +163,14 @@ fn run_scenario(
     let mut traces = Vec::new();
     for run in ["a", "b"] {
         let trace = dir.join(format!("{name}.{run}.trace"));
-        let output = Command::new(&oracles.vm)
-            .arg("scenario")
-            .arg(&scenario)
-            .arg(&trace)
-            .output()
+        let output = oracles
+            .exec
+            .output(
+                Command::new(&oracles.vm)
+                    .arg("scenario")
+                    .arg(&scenario)
+                    .arg(&trace),
+            )
             .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
         if !output.status.success() {
             return Err(format!(
@@ -234,4 +237,221 @@ fn run_scenario(
         println!("FAIL  scenario {name}: {problem}");
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::cell::Cell;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use qc_progs::crc::crc_block;
+    use qc_progs::{ProgsFile, Statement, write};
+    use qc_trace::{Changes, Header, Record, Step, Text, Trace, encode};
+
+    use super::super::testing::{fake_oracles, fresh_dir, last_arg};
+    use super::{check, compile, run_scenario};
+    use crate::exec::{Fake, Reply};
+
+    /// A small progs, standing for the one id's qcc writes.
+    fn progs() -> Vec<u8> {
+        write(&ProgsFile {
+            statements: vec![Statement::default(); 2],
+            strings: vec![0],
+            ..ProgsFile::default()
+        })
+        .unwrap()
+    }
+
+    /// A codebase directory with a `progs.src`, unless `with_src` is false.
+    fn codebase(dir: &Path, with_src: bool) -> PathBuf {
+        let codebase = dir.join("id-1.01");
+        fs::create_dir_all(codebase.join("subdir")).unwrap();
+        fs::write(codebase.join("world.qc"), "void() main = {};\n").unwrap();
+        if with_src {
+            fs::write(codebase.join("progs.src"), "../progs.dat\nworld.qc\n").unwrap();
+        }
+        codebase
+    }
+
+    /// A trace of `progs` that runs one statement, or ends in an error record.
+    fn trace(progs: &[u8], error: bool) -> Vec<u8> {
+        let mut records = vec![Record::Run {
+            function: 2,
+            changes: Changes::default(),
+        }];
+        if error {
+            records.push(Record::Error {
+                function: 2,
+                statement: 1,
+                message: Text::new(&b"no spot"[..]).unwrap(),
+                changes: Changes::default(),
+            });
+        } else {
+            records.push(Record::Step(Step {
+                function: 2,
+                statement: 1,
+                opcode: 0,
+                builtin: None,
+                changes: Changes::default(),
+            }));
+            records.push(Record::String {
+                value: 70000,
+                text: Text::new(&b"start"[..]).unwrap(),
+            });
+            records.push(Record::Exit {
+                changes: Changes::default(),
+            });
+        }
+        encode(&Trace {
+            header: Header::new(crc_block(progs), 548, 108, 110, 1).unwrap(),
+            records,
+        })
+    }
+
+    /// Fake qcc and VM oracle: qcc writes `progs` beside its source directory, and the oracle
+    /// writes `trace` for every scenario.
+    fn tools(progs: Vec<u8>, trace: Vec<u8>) -> impl Fn(&Command) -> Reply {
+        move |command: &Command| {
+            if command.get_program() == "qcc" {
+                let src = command.get_current_dir().unwrap();
+                return Reply {
+                    stdout: "compiling world.qc".to_owned(),
+                    files: vec![(src.parent().unwrap().join("progs.dat"), progs.clone())],
+                    ..Reply::default()
+                };
+            }
+            Reply {
+                files: vec![(last_arg(command), trace.clone())],
+                ..Reply::default()
+            }
+        }
+    }
+
+    #[test]
+    fn id101_is_compiled_in_a_copy_and_each_scenario_traced_twice() {
+        let dir = fresh_dir("id101-check");
+        let codebase = codebase(&dir, true);
+        let fake = Fake::new(tools(progs(), trace(&progs(), false)));
+        let oracles = fake_oracles(&dir.join("work"), &fake);
+        let (bytes, copied) = compile(&oracles, &codebase).unwrap();
+        assert_eq!(bytes, progs());
+        assert_eq!(copied, 2, "the files, not the subdirectory");
+        // This progs is not the one id's qcc writes, so the check fails on its digest; the
+        // scenarios still run, two runs each.
+        assert!(!check(&oracles, &codebase).unwrap());
+        let seen = fake.seen.borrow();
+        assert_eq!(
+            seen.iter()
+                .filter(|line| line.starts_with("vm-oracle scenario "))
+                .count(),
+            4
+        );
+        assert!(
+            oracles
+                .work
+                .join("id-1.01/scenarios/small-map.ent")
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn a_scenario_passes_with_two_equal_traces_of_its_progs() {
+        let dir = fresh_dir("id101-scenario");
+        let work = dir.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let ok = Fake::new(tools(progs(), trace(&progs(), false)));
+        let oracles = fake_oracles(&work, &ok);
+        assert!(run_scenario(&oracles, &work, "s", "progs ../progs.dat\n", &progs()).unwrap());
+        let stopped = Fake::new(tools(progs(), trace(&progs(), true)));
+        let oracles = fake_oracles(&work, &stopped);
+        // An error record ends a scenario normally, but this one executed no statement.
+        assert!(!run_scenario(&oracles, &work, "s", "", &progs()).unwrap());
+        // The header names another progs.
+        let other = write(&ProgsFile {
+            strings: vec![0],
+            ..ProgsFile::default()
+        })
+        .unwrap();
+        let wrong = Fake::new(tools(progs(), trace(&other, false)));
+        let oracles = fake_oracles(&work, &wrong);
+        assert!(!run_scenario(&oracles, &work, "s", "", &progs()).unwrap());
+    }
+
+    #[test]
+    fn a_second_run_that_differs_fails_and_a_bad_trace_is_an_error() {
+        let dir = fresh_dir("id101-runs");
+        let work = dir.join("work");
+        fs::create_dir_all(&work).unwrap();
+        let runs = Cell::new(0_u32);
+        let differs = Fake::new(|command: &Command| {
+            runs.set(runs.get() + 1);
+            Reply {
+                files: vec![(last_arg(command), trace(&progs(), runs.get() == 2))],
+                ..Reply::default()
+            }
+        });
+        let oracles = fake_oracles(&work, &differs);
+        assert!(!run_scenario(&oracles, &work, "s", "", &progs()).unwrap());
+        let garbage = Fake::new(|command: &Command| Reply {
+            files: vec![(last_arg(command), b"QCTR".to_vec())],
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&work, &garbage);
+        assert!(
+            run_scenario(&oracles, &work, "s", "", &progs())
+                .unwrap_err()
+                .contains("bad trace")
+        );
+        let fails = Fake::new(|_: &Command| Reply::exit(2));
+        let oracles = fake_oracles(&work, &fails);
+        assert!(
+            run_scenario(&oracles, &work, "s", "", &progs())
+                .unwrap_err()
+                .contains("failed")
+        );
+        let cannot = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&work, &cannot);
+        assert!(run_scenario(&oracles, &work, "s", "", &progs()).is_err());
+    }
+
+    #[test]
+    fn a_codebase_qcc_cannot_compile_is_an_error() {
+        let dir = fresh_dir("id101-compile");
+        let fake = Fake::new(tools(progs(), Vec::new()));
+        let oracles = fake_oracles(&dir.join("work"), &fake);
+        let error = compile(&oracles, &codebase(&dir, false)).unwrap_err();
+        assert!(error.contains("no progs.src"), "{error}");
+        let codebase = codebase(&dir, true);
+        let errors = Fake::new(|_: &Command| Reply {
+            stdout: "world.qc:1: ERROR: unknown value".to_owned(),
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &errors);
+        assert!(
+            compile(&oracles, &codebase)
+                .unwrap_err()
+                .contains("did not compile")
+        );
+        let cannot = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &cannot);
+        assert!(
+            compile(&oracles, &codebase)
+                .unwrap_err()
+                .contains("cannot run qcc")
+        );
+        assert!(compile(&oracles, &dir.join("nowhere")).is_err());
+    }
 }

@@ -23,21 +23,21 @@ pub(crate) trait Net {
 }
 
 /// [`Net`] through the system `curl`: redirects followed, an HTTP error status a failure, and
-/// three retries on any error.
-pub(crate) struct Curl;
+/// `retries` retries on any error.
+pub(crate) struct Curl {
+    pub(crate) retries: u32,
+}
+
+/// The `curl` every command fetches with: three retries.
+pub(crate) const CURL: Curl = Curl { retries: 3 };
 
 impl Curl {
-    fn command(url: &str) -> Command {
+    fn command(&self, url: &str) -> Command {
         let mut command = Command::new("curl");
         command
-            .args([
-                "-fsSL",
-                "--retry",
-                "3",
-                "--retry-all-errors",
-                "-A",
-                USER_AGENT,
-            ])
+            .args(["-fsSL", "--retry"])
+            .arg(self.retries.to_string())
+            .args(["--retry-all-errors", "-A", USER_AGENT])
             .arg(url);
         command
     }
@@ -45,7 +45,8 @@ impl Curl {
 
 impl Net for Curl {
     fn get(&self, url: &str) -> Result<Vec<u8>, String> {
-        let output = Self::command(url)
+        let output = self
+            .command(url)
             .output()
             .map_err(|e| format!("cannot run curl: {e}"))?;
         if output.status.success() {
@@ -62,7 +63,8 @@ impl Net for Curl {
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
-        let status = Self::command(url)
+        let status = self
+            .command(url)
             .arg("-o")
             .arg(out)
             .status()
@@ -72,5 +74,60 @@ impl Net for Curl {
         } else {
             Err(format!("curl {url}: {status}"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::{CURL, Curl, Net};
+
+    /// A `file:` URL for `path`, which curl reads with no network.
+    fn file_url(path: &Path) -> String {
+        let path = path.to_string_lossy().replace('\\', "/");
+        if path.starts_with('/') {
+            format!("file://{path}")
+        } else {
+            format!("file:///{path}")
+        }
+    }
+
+    fn dir(name: &str) -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/xtask-tests")
+            .join(name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn curl_fetches_and_downloads_a_file() {
+        let dir = dir("curl-fetch");
+        let source = dir.join("source.txt");
+        fs::write(&source, b"body").unwrap();
+        assert_eq!(CURL.get(&file_url(&source)).unwrap(), b"body");
+        let out = dir.join("nested/out.txt");
+        CURL.download(&file_url(&source), &out).unwrap();
+        assert_eq!(fs::read(&out).unwrap(), b"body");
+    }
+
+    #[test]
+    fn a_missing_file_is_an_error() {
+        let dir = dir("curl-missing");
+        let url = file_url(&dir.join("nowhere.txt"));
+        // No retries: a missing file is missing however often it is asked for.
+        let curl = Curl { retries: 0 };
+        assert!(curl.get(&url).unwrap_err().contains("curl"));
+        assert!(curl.download(&url, &dir.join("out.txt")).is_err());
     }
 }

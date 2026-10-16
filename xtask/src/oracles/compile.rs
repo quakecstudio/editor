@@ -14,6 +14,8 @@ use std::process::Command;
 
 use cc::Build;
 
+use crate::exec::Exec;
+
 /// The flags every file is compiled with, recorded in the build stamp.
 pub(crate) const GNU_FLAGS: [&str; 5] = [
     "-std=gnu99",
@@ -62,11 +64,12 @@ pub(crate) enum Instrument {
 }
 
 /// The compiler, and the environment it needs (MSVC's `INCLUDE`, `LIB` and `PATH`).
-pub(crate) struct Compiler {
+pub(crate) struct Compiler<'a> {
     path: PathBuf,
     env: Vec<(OsString, OsString)>,
     msvc: bool,
     instrument: Instrument,
+    exec: &'a dyn Exec,
 }
 
 /// Whose code a file is: upstream code (id's, FTEQCC's) is compiled without warnings, ours with
@@ -100,10 +103,26 @@ fn host_triple() -> Result<&'static str, String> {
     Ok(triple)
 }
 
-impl Compiler {
+/// Refuses `instrument` unless the compiler at `path` is clang (`is_clang`): coverage and
+/// fuzzing use clang's instrumentation.
+fn needs_clang(instrument: Instrument, is_clang: bool, path: &Path) -> Result<(), String> {
+    if instrument != Instrument::None && !is_clang {
+        return Err(format!(
+            "C coverage and fuzzing need clang, and the C compiler is {} (set CC=clang)",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+impl<'a> Compiler<'a> {
     /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents). Coverage
     /// and fuzzing need clang (for fuzzing, one with libFuzzer).
-    pub(crate) fn find(scratch: &Path, instrument: Instrument) -> Result<Self, String> {
+    pub(crate) fn find(
+        scratch: &Path,
+        instrument: Instrument,
+        exec: &'a dyn Exec,
+    ) -> Result<Self, String> {
         let triple = host_triple()?;
         let tool = Build::new()
             .target(triple)
@@ -116,12 +135,7 @@ impl Compiler {
             .emit_rerun_if_env_changed(false)
             .try_get_compiler()
             .map_err(|e| format!("no C compiler found: {e}"))?;
-        if instrument != Instrument::None && !tool.is_like_clang() {
-            return Err(format!(
-                "C coverage and fuzzing need clang, and the C compiler is {} (set CC=clang)",
-                tool.path().display()
-            ));
-        }
+        needs_clang(instrument, tool.is_like_clang(), tool.path())?;
         Ok(Self {
             path: tool.path().to_path_buf(),
             env: tool
@@ -130,6 +144,7 @@ impl Compiler {
                 .collect(),
             msvc: tool.is_like_msvc(),
             instrument,
+            exec,
         })
     }
 
@@ -217,7 +232,11 @@ impl Compiler {
             }
             command.arg("-c").arg(unit.source).arg("-o").arg(out);
         }
-        run(command, &format!("compile {}", unit.source.display()))
+        run(
+            self.exec,
+            command,
+            &format!("compile {}", unit.source.display()),
+        )
     }
 
     /// Links `objects` into the executable `out`.
@@ -240,13 +259,13 @@ impl Compiler {
             }
             command.arg("-o").arg(out).arg("-lm");
         }
-        run(command, &format!("link {}", out.display()))
+        run(self.exec, command, &format!("link {}", out.display()))
     }
 }
 
-fn run(mut command: Command, what: &str) -> Result<(), String> {
-    let output = command
-        .output()
+fn run(exec: &dyn Exec, mut command: Command, what: &str) -> Result<(), String> {
+    let output = exec
+        .output(&mut command)
         .map_err(|e| format!("{what}: cannot run the compiler: {e}"))?;
     if output.status.success() {
         return Ok(());
@@ -257,4 +276,196 @@ fn run(mut command: Command, what: &str) -> Result<(), String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
+    )]
+
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use super::super::testing::fresh_dir;
+    use super::*;
+    use crate::exec::{Fake, Reply, System};
+
+    fn compiler(exec: &dyn Exec, msvc: bool, instrument: Instrument) -> Compiler<'_> {
+        Compiler {
+            path: PathBuf::from(if msvc { "cl.exe" } else { "cc" }),
+            env: vec![("INCLUDE".into(), "inc".into())],
+            msvc,
+            instrument,
+            exec,
+        }
+    }
+
+    fn unit<'a>(code: Code, includes: &'a [PathBuf], forced: Option<&'a Path>) -> Unit<'a> {
+        Unit {
+            source: Path::new("a.c"),
+            code,
+            includes,
+            defines: &["QS_ENGINE"],
+            forced_include: forced,
+        }
+    }
+
+    #[test]
+    fn only_an_instrumented_build_needs_clang() {
+        let path = Path::new("/usr/bin/gcc");
+        assert!(needs_clang(Instrument::None, false, path).is_ok());
+        assert!(needs_clang(Instrument::None, true, path).is_ok());
+        assert!(needs_clang(Instrument::Coverage, true, path).is_ok());
+        assert!(needs_clang(Instrument::Fuzz, true, path).is_ok());
+        for instrument in [Instrument::Coverage, Instrument::Fuzz] {
+            let error = needs_clang(instrument, false, path).unwrap_err();
+            assert!(error.contains("/usr/bin/gcc (set CC=clang)"), "{error}");
+        }
+    }
+
+    #[test]
+    fn our_files_are_strict_and_upstream_files_quiet() {
+        let fake = Fake::new(|_: &Command| Reply::exit(0));
+        let includes = [PathBuf::from("inc")];
+        let gnu = compiler(&fake, false, Instrument::None);
+        gnu.object(&unit(Code::Ours, &includes, None), Path::new("a.o"))
+            .unwrap();
+        gnu.object(
+            &unit(Code::Upstream, &[], Some(Path::new("compat.h"))),
+            Path::new("b.o"),
+        )
+        .unwrap();
+        gnu.link(&[PathBuf::from("a.o")], Path::new("bin")).unwrap();
+        let msvc = compiler(&fake, true, Instrument::None);
+        msvc.object(&unit(Code::Ours, &includes, None), Path::new("a.obj"))
+            .unwrap();
+        msvc.object(
+            &unit(Code::Upstream, &[], Some(Path::new("compat.h"))),
+            Path::new("b.obj"),
+        )
+        .unwrap();
+        msvc.link(&[PathBuf::from("a.obj")], Path::new("bin.exe"))
+            .unwrap();
+        let seen = fake.seen.borrow();
+        let gnu_flags = GNU_FLAGS.join(" ");
+        assert_eq!(
+            seen[0],
+            format!("cc {gnu_flags} -Wall -Wextra -Werror -I inc -DQS_ENGINE -c a.c -o a.o")
+        );
+        assert_eq!(
+            seen[1],
+            format!("cc {gnu_flags} -w -DQS_ENGINE -include compat.h -c a.c -o b.o")
+        );
+        assert_eq!(seen[2], "cc a.o -o bin -lm");
+        let msvc_flags = MSVC_FLAGS.join(" ");
+        assert_eq!(
+            seen[3],
+            format!("cl.exe {msvc_flags} /W3 /WX /Iinc /DQS_ENGINE /c a.c /Foa.obj")
+        );
+        assert_eq!(
+            seen[4],
+            format!("cl.exe {msvc_flags} /w /DQS_ENGINE /FIcompat.h /c a.c /Fob.obj")
+        );
+        assert_eq!(seen[5], "cl.exe /nologo a.obj /Febin.exe");
+    }
+
+    #[test]
+    fn coverage_and_fuzz_builds_add_their_flags() {
+        let fake = Fake::new(|_: &Command| Reply::exit(0));
+        let coverage = compiler(&fake, false, Instrument::Coverage);
+        coverage
+            .object(&unit(Code::Ours, &[], None), Path::new("a.o"))
+            .unwrap();
+        coverage
+            .object(&unit(Code::Upstream, &[], None), Path::new("b.o"))
+            .unwrap();
+        coverage.link(&[], Path::new("bin")).unwrap();
+        let fuzz = compiler(&fake, false, Instrument::Fuzz);
+        fuzz.object(&unit(Code::Upstream, &[], None), Path::new("c.o"))
+            .unwrap();
+        fuzz.link(&[], Path::new("fuzz")).unwrap();
+        let seen = fake.seen.borrow();
+        assert!(seen[0].contains("-fprofile-instr-generate -fcoverage-mapping -DQS_COVERAGE"));
+        assert!(
+            !seen[1].contains("-fprofile-instr-generate"),
+            "id's files are not counted"
+        );
+        assert!(seen[2].contains("-fprofile-instr-generate"));
+        assert!(seen[3].contains("-fsanitize=fuzzer-no-link,address,undefined"));
+        assert!(seen[3].contains("-DQS_FUZZ"));
+        assert!(seen[4].contains("-fsanitize=fuzzer,address,undefined"));
+        assert!(
+            compiler(&fake, false, Instrument::Coverage)
+                .describe()
+                .ends_with("coverage -fprofile-instr-generate -fcoverage-mapping")
+        );
+        assert!(
+            compiler(&fake, false, Instrument::Fuzz)
+                .describe()
+                .contains(" fuzz ")
+        );
+        assert!(
+            compiler(&fake, true, Instrument::None)
+                .describe()
+                .contains("/fp:precise")
+        );
+    }
+
+    #[test]
+    fn a_failed_compile_says_what_and_why() {
+        let fails = Fake::new(|_: &Command| Reply {
+            code: 1,
+            stderr: "a.c:1: error".to_owned(),
+            ..Reply::default()
+        });
+        let error = compiler(&fails, false, Instrument::None)
+            .object(&unit(Code::Ours, &[], None), Path::new("a.o"))
+            .unwrap_err();
+        assert!(
+            error.contains("compile a.c failed") && error.contains("a.c:1: error"),
+            "{error}"
+        );
+        let cannot = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        let error = compiler(&cannot, false, Instrument::None)
+            .link(&[], Path::new("bin"))
+            .unwrap_err();
+        assert!(error.contains("cannot run the compiler"), "{error}");
+    }
+
+    #[test]
+    fn the_system_compiler_is_found_and_builds_a_program() {
+        let dir = fresh_dir("compile-system");
+        let compiler = Compiler::find(&dir, Instrument::None, &System).unwrap();
+        assert!(
+            compiler
+                .describe()
+                .contains(if cfg!(windows) { "/O2" } else { "-O2" })
+        );
+        let source = dir.join("main.c");
+        std::fs::write(&source, "int main(void) { return 0; }\n").unwrap();
+        let object = dir.join(if cfg!(windows) { "main.obj" } else { "main.o" });
+        compiler
+            .object(
+                &Unit {
+                    source: &source,
+                    code: Code::Ours,
+                    includes: &[],
+                    defines: &[],
+                    forced_include: None,
+                },
+                &object,
+            )
+            .unwrap();
+        let program = dir.join(Compiler::executable("main"));
+        compiler.link(&[object], &program).unwrap();
+        assert!(Command::new(&program).status().unwrap().success());
+        assert!(Compiler::executable("x").starts_with('x'));
+        assert!(host_triple().is_ok());
+    }
 }
