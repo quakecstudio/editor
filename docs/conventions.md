@@ -376,8 +376,8 @@ Every source file starts with an SPDX line, as in vouch, but with this project's
 copyright line, `// Copyright (C) 1996-1997 Id Software, Inc.`, above ours, and cites the file
 and function it came from ([`porting.md`](porting.md#file-headers)).
 `cargo xtask licenses` (run by `make audit` and `make ci`) fails a file without one. It
-classifies every file: source files (Rust, Python, shell, C and the `Makefile`) need the SPDX
-line first, after a `#!` line if there is one; docs and config files are covered by `LICENSE`;
+classifies every file: source files (Rust, Python, shell, C, QuakeC and the `Makefile`) need
+the SPDX line first, after a `#!` line if there is one; docs and config files are covered by `LICENSE`;
 assets (images, fonts, sounds, Quake formats) are listed in `ATTRIBUTION.md` and checked by
 `cargo xtask attribution`; cached specifications listed in `specs/manifest.tsv` keep their own
 licenses, recorded in `specs/README.md`, and are not scanned. A file of a type with no rule fails until it is classified in

@@ -1158,6 +1158,19 @@ differential suite lists each of these as an expected divergence.
 - **QC-27.14** A `,` or `;` on a `$cd`, `$origin`, `$base`, `$flags`, `$scale` or `$skin`
   line makes id's `qcc` loop forever, as on a `$frame` line (QC-8.9). This compiler ignores
   the whole rest of such a line, `,` and `;` included (QC-8.4).
+- **QC-27.15** Constructs nested more than `QC_MAX_NESTING` levels deep are an error, "nesting
+  too deep", at the token where the limit is passed. Each of these is one level inside the
+  construct around it: a statement, a type, an expression (a whole statement's or
+  initialiser's, a parenthesised one, the operand of `!`, a call argument, the right operand
+  of a binary operator), and each binary operator, field access or call, which nests the
+  expression before it one level deeper. id's `qcc` has no such limit; this compiler bounds
+  the depth of its syntax tree so that no input can exhaust its stack.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `QC_MAX_NESTING` | 256 | this project (QC-27.15) |
 
 ## Coverage of id 1.01
 

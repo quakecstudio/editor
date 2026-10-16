@@ -27,6 +27,14 @@
 //!   each; `make test-fuzz` and the nightly `Fuzz` workflow call it.
 //! - `lex-corpus`: lexes every `.qc` file of a codebase directory and
 //!   preprocesses the files its `progs.src` lists, failing on any error.
+//! - `oracles`: fetches id's sources by checksum, builds the oracles in
+//!   `oracles/` (id's VM as a trace runner, and id's qcc) with the system C
+//!   compiler and checks them; `oracles id101 <dir>` also compiles and runs id's
+//!   QuakeC 1.01. CI runs it; it is not part of `ci`, which runs offline.
+//! - `parse-corpus`: parses every `.qc` and `.qh` file under codebase
+//!   directories and checks the tree gives back each file; `--vanilla` fails on
+//!   any error and `--deletions` checks that recovery from each deleted token is
+//!   local.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -48,6 +56,8 @@ mod fuzz;
 mod layers;
 mod lex_corpus;
 mod licenses;
+mod oracles;
+mod parse_corpus;
 mod ported;
 mod ratchet;
 mod readiness;
@@ -58,7 +68,8 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
-                     readiness | ratchet | fuzz | lex-corpus>";
+                     readiness | ratchet | fuzz | lex-corpus | oracles | \
+                     parse-corpus>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -71,6 +82,8 @@ fn main() -> ExitCode {
             "bench" => Some(bench::main),
             "fuzz" => Some(fuzz::main),
             "lex-corpus" => Some(lex_corpus::main),
+            "oracles" => Some(oracles::main),
+            "parse-corpus" => Some(parse_corpus::main),
             "readiness" => Some(readiness::main),
             "ratchet" => Some(ratchet::main),
             _ => None,

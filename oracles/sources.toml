@@ -1,0 +1,82 @@
+# The third-party sources the oracles build from. cargo xtask oracles downloads each file at its
+# pinned commit and refuses it unless its SHA-256 matches; none of them is committed (LIC-7).
+# The commits are the upstreams of docs/porting.md. README.md describes the build.
+
+[[upstream]]
+id = "quake"
+repo = "id-Software/Quake"
+commit = "bf4ac424ce754894ac8f1dae6a3981954bc9852d"
+
+[upstream.files]
+"WinQuake/pr_exec.c" = "43cc7181ee0a74f43e32045fb77f05767041fa1d94ef69f4cc8532d933340b8b"
+"WinQuake/pr_comp.h" = "30c8f32cb84bdb6ab31b79873390526e4a7bcc56ee14ea2b6b98dc274f5639ff"
+"WinQuake/progs.h" = "2ba22bcae0bf4915970876e902064448c4191653968b3a2a2c5bdfade8005596"
+"WinQuake/progdefs.h" = "19f6787c93bde2fddacb956b8130eb14f4f891516f846166608fab15522e0f36"
+"WinQuake/progdefs.q1" = "e81793ac2f78dc2a461d5de78c65937060ebb272c876bdf12250aec2b673d30c"
+"WinQuake/mathlib.h" = "d738ca0d4a2c0179b552854481afb324004d95e3fe578ce9fd7c2eed0a5afc87"
+"WinQuake/pr_edict.c" = "90467fdbc99ffb557afae0a828e82c6d2e3d38e7509707fe4a6842578798f28c"
+"WinQuake/pr_cmds.c" = "24be89ddb3a27ba2bcc90868f6bb884b069490d97d2c84c631844d63bd38b075"
+"WinQuake/common.c" = "0c0d2cb048f2a088ff8e478d0642d594c0cdb27cf222eeacd68fcdf79e9631e0"
+"WinQuake/mathlib.c" = "68bbe9d6f50c1dcb0ce4adde75dd97a162e8d957ef9e65506b93880cbe6f4115"
+"WinQuake/sv_phys.c" = "4c65e087e2a86fa6fb1883e0ec050ce0469cb31242f4c2243ac28d974826952e"
+"WinQuake/sv_main.c" = "8cd794da3c9173888a2b72f60b1ba0d244c32a6fddc0e326ba03f5f7ae17714b"
+
+[[upstream]]
+id = "quake-tools"
+repo = "id-Software/Quake-Tools"
+commit = "c0d1b91c74eb654365ac7755bc837e497caaca73"
+
+[upstream.files]
+"qcc/qcc.c" = "75274defe1a5012b6b86d3d8a3dee933beba070382d992362ec2ab4293f0612c"
+"qcc/qcc.h" = "4764368c9d4c0bfaa152772508c919893af7215a35adbcdddcad1c678638a836"
+"qcc/pr_lex.c" = "8bfcf395bc027918a8c421370318d99e8611c7a531503df95b7d068afc5db987"
+"qcc/pr_comp.c" = "2daa81bbb038383219a9b0aa0011b00c083fa70410602a775ccd44d70e524d79"
+"qcc/pr_comp.h" = "5bb00ba926012e83e53a8c7e107a91aace3b7b39815d7deab21dc42a91b980f8"
+"qcc/cmdlib.c" = "453c7420942ee875405484a481a0bad4b050f6d61207e14aed76553566f709bb"
+"qcc/cmdlib.h" = "200f170215e2bddb66cb2cbe5e39720a06cdeaaf9eadadbc86cec5901f1a632d"
+
+# The VM oracle compiles WinQuake/pr_exec.c whole, and these functions of the other files,
+# copied unchanged from the fetched file into a generated source file; oracles/vm/ holds the
+# rest. Each is a function the mock engine runs exactly as id's server does (differential.md
+# DIFF-1.3).
+
+[[extract]]
+file = "WinQuake/pr_edict.c"
+functions = [
+  "ED_ClearEdict", "ED_Alloc", "ED_Free", "ED_FindField", "ED_FindFunction", "ED_NewString",
+  "ED_ParseEdict", "ED_LoadFromFile", "EDICT_NUM", "NUM_FOR_EDICT",
+]
+
+[[extract]]
+file = "WinQuake/common.c"
+functions = [
+  "Q_atof", "COM_Parse", "SZ_Write", "MSG_WriteChar", "MSG_WriteByte", "MSG_WriteShort",
+  "MSG_WriteLong", "MSG_WriteString", "MSG_WriteCoord", "MSG_WriteAngle",
+]
+
+[[extract]]
+file = "WinQuake/mathlib.c"
+functions = ["AngleVectors", "anglemod", "Length"]
+
+[[extract]]
+file = "WinQuake/sv_phys.c"
+functions = ["SV_RunThink", "SV_Physics_Pusher"]
+
+[[extract]]
+file = "WinQuake/sv_main.c"
+functions = ["SV_StartParticle", "SV_StartSound", "SV_ModelIndex"]
+
+[[extract]]
+file = "WinQuake/pr_cmds.c"
+functions = [
+  "PF_makevectors", "PF_setorigin", "SetMinMaxSize", "PF_setsize", "PF_setmodel", "PF_bprint",
+  "PF_sprint", "PF_centerprint", "PF_normalize", "PF_vlen", "PF_vectoyaw", "PF_vectoangles",
+  "PF_random", "PF_particle", "PF_ambientsound", "PF_sound", "PF_traceline", "PF_stuffcmd",
+  "PF_localcmd", "PF_cvar", "PF_cvar_set", "PF_findradius", "PF_fabs", "PF_Spawn",
+  "PF_Remove", "PF_Find", "PR_CheckEmptyString", "PF_precache_file", "PF_precache_sound",
+  "PF_precache_model", "PF_lightstyle", "PF_rint", "PF_floor", "PF_ceil", "PF_checkbottom",
+  "PF_pointcontents", "PF_nextent", "PF_changeyaw", "WriteDest", "PF_WriteByte",
+  "PF_WriteChar", "PF_WriteShort", "PF_WriteLong", "PF_WriteAngle", "PF_WriteCoord",
+  "PF_WriteString", "PF_WriteEntity", "PF_makestatic", "PF_setspawnparms", "PF_changelevel",
+  "PF_Fixme",
+]

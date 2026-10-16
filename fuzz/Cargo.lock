@@ -70,10 +70,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-lexer"
+version = "2026.10.0"
+
+[[package]]
 name = "qc-progs"
 version = "2026.10.0"
 dependencies = [
  "qc-types",
+]
+
+[[package]]
+name = "qc-syntax"
+version = "2026.10.0"
+dependencies = [
+ "qc-lexer",
 ]
 
 [[package]]
@@ -86,6 +97,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "qc-progs",
+ "qc-syntax",
  "qs-mdl",
  "qs-pak",
  "qs-wad",
