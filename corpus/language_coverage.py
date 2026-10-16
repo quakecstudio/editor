@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Check that docs/spec/language.md covers every construct id's QuakeC 1.01 uses.
 
-Fetches the id-1.01 codebase from corpus/manifest.toml at its pinned commit (or reads
-a local directory with --source-dir), splits every .qc file into tokens the way id's
+Reads the id-1.01 codebase from --source-dir, the directory `cargo xtask corpus fetch
+id-1.01` writes (<cache>/codebase/id-1.01), splits every .qc file into tokens the way id's
 qcc does (Quake-Tools qcc/pr_lex.c, PR_Lex), and lists every keyword, operator and
 other punctuation, `$` command and kind of literal it finds. Each must appear in the
 coverage table of the spec, a row `| `<construct>` | QC-n[, QC-m] |`, and every
@@ -19,11 +19,8 @@ import argparse
 import re
 import sys
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-
-import assets
-import verify
 
 REPO = Path(__file__).resolve().parent.parent
 SPEC = REPO / "docs" / "spec" / "language.md"
@@ -205,19 +202,19 @@ def local_sources(directory: Path) -> dict[str, str]:
     }
 
 
-def main(argv: list[str] | None = None, get: Callable[[str], bytes] = verify.fetch) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--spec", type=Path, default=SPEC, help="the spec to check")
     ap.add_argument(
-        "--source-dir", type=Path, help="read the .qc files here instead of fetching them"
+        "--source-dir",
+        type=Path,
+        required=True,
+        help="the id-1.01 codebase, as cargo xtask corpus fetch id-1.01 writes it",
     )
     args = ap.parse_args(argv)
     try:
-        if args.source_dir:
-            sources = local_sources(args.source_dir)
-        else:
-            sources = assets.codebase_sources(verify.load(), CODEBASE, get)
-    except (OSError, assets.AssetError) as exc:
+        sources = local_sources(args.source_dir)
+    except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     if not sources:

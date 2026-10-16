@@ -7,7 +7,7 @@
 //!   `docs/spec/vectors/vm/` that id's C defines.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
 //! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
-//!   `python corpus/assets.py codebase` writes it) with id's qcc, and runs the VM oracle on the
+//!   `cargo xtask corpus fetch id-1.01` writes it) with id's qcc, and runs the VM oracle on the
 //!   result.
 //! - `cargo xtask oracles rerelease <dir>` builds them and compiles the six rerelease codebases
 //!   under `<dir>` with FTEQCC into `target/oracles/rerelease/`, checking each progs.dat and
@@ -22,17 +22,16 @@
 
 mod compile;
 mod extract;
-mod id101;
-mod rerelease;
-mod sha256;
+pub(crate) mod id101;
+pub(crate) mod rerelease;
+pub(crate) mod sha256;
 mod vectors;
 
+use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use serde::Deserialize;
-
+use crate::download::{Curl, Net};
 use compile::{Code, Compiler, Unit};
 
 const SOURCES: &str = "oracles/sources.toml";
@@ -172,15 +171,7 @@ fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
                 upstream.repo, upstream.commit
             );
             let partial = path.with_extension("partial");
-            let status = Command::new("curl")
-                .args(["-fsSL", "--retry", "3", "--retry-all-errors", "-o"])
-                .arg(&partial)
-                .arg(&url)
-                .status()
-                .map_err(|e| format!("cannot run curl to fetch {url}: {e}"))?;
-            if !status.success() {
-                return Err(format!("fetching {url} failed ({status})"));
-            }
+            Curl.download(&url, &partial)?;
             let bytes = fs::read(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
             let got = sha256::hex_digest(&bytes);
             if got != *want {

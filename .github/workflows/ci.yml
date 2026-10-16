@@ -266,25 +266,24 @@ jobs:
         with:
           path: ${{ runner.temp }}/test-assets/downloads
           key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
-      - name: Test the corpus scripts
-        working-directory: corpus
-        run: python -m unittest test_verify.py test_assets.py test_language_coverage.py
-      - name: Check the corpus manifest
-        run: python corpus/verify.py
-      - name: Fetch the test assets
-        run: python corpus/assets.py fetch
-      - name: Check the rerelease precaches
-        run: python corpus/assets.py precache
-      # The source is the same on every OS, so one runner checks it.
-      - name: Check the language spec covers id 1.01
-        if: runner.os == 'Linux'
-        run: python corpus/language_coverage.py
       - name: Set up the Rust toolchain
-        if: runner.os == 'Linux'
         run: rustup toolchain install
+      - name: Test the language coverage script
+        working-directory: corpus
+        run: python -m unittest test_language_coverage.py
+      - name: Check the corpus manifest
+        run: cargo xtask corpus verify
+      - name: Fetch the test assets
+        run: cargo xtask assets fetch
+      - name: Check the rerelease precaches
+        run: cargo xtask assets precache
+      # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
         if: runner.os == 'Linux'
-        run: python corpus/assets.py codebase --codebase id-1.01
+        run: cargo xtask corpus fetch id-1.01
+      - name: Check the language spec covers id 1.01
+        if: runner.os == 'Linux'
+        run: python corpus/language_coverage.py --source-dir "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-20: every vanilla corpus file lexes, and progs.src preprocesses, with no errors.
       - name: Lex and preprocess id 1.01
         if: runner.os == 'Linux'
@@ -302,10 +301,7 @@ jobs:
         run: cargo xtask oracles id101 "$QS_TEST_ASSETS/codebase/id-1.01"
       - name: Write the rerelease and two FTEQCC mods to the asset cache
         if: runner.os == 'Linux'
-        run: |
-          python corpus/assets.py codebase --codebase rerelease
-          python corpus/assets.py codebase --codebase copper
-          python corpus/assets.py codebase --codebase arcane-dimensions
+        run: cargo xtask corpus fetch rerelease copper arcane-dimensions
       # P1-21: id 1.01 parses with no errors and every single-token deletion leaves a local
       # error; every file of each codebase, FTEQCC ones included, round-trips through the tree.
       - name: Parse the corpus
@@ -320,10 +316,8 @@ jobs:
       - name: Write the rerelease codebases to the asset cache
         if: runner.os == 'Linux'
         run: |
-          for codebase in rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
-            rerelease-ctf rerelease-mg3; do
-            python corpus/assets.py codebase --codebase "$codebase"
-          done
+          cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
+            rerelease-ctf rerelease-mg3
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.os == 'Linux'
         with:
@@ -332,3 +326,8 @@ jobs:
       - name: Compile the rerelease with FTEQCC
         if: runner.os == 'Linux'
         run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
+      # P1-14: every progs.dat an oracle compiler builds from the corpus (id 1.01 with id's qcc,
+      # the rerelease with FTEQCC) is kept in the cache and round-trips through qc-progs.
+      - name: Build the corpus progs and round-trip them through qc-progs
+        if: runner.os == 'Linux'
+        run: cargo xtask corpus build

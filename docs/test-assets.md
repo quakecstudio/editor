@@ -6,9 +6,9 @@ The headless preview host runs scripted engine scenarios in CI on all three OSes
 
 **id's `pak0.pak` and `pak1.pak` never enter CI or this repository.** Quake's game data is commercial. Nothing fetches it, nothing commits it, and no CI job reads it:
 
-- [`corpus/manifest.toml`](../corpus/manifest.toml) lists it as the `id1-paks` asset with `use = "never"`, and `corpus/verify.py` fails if that entry or its place in the `never` list is removed.
-- `corpus/verify.py` fails on any tracked `.pak` file.
-- `corpus/assets.py fetch` downloads only the archives the manifest pins, keeps an archive only if its SHA-256 matches, and extracts only the members the manifest pins by SHA-256. id's files cannot come through it.
+- [`corpus/manifest.toml`](../corpus/manifest.toml) lists it as the `id1-paks` asset with `use = "never"`, and `cargo xtask corpus verify` fails if that entry or its place in the `never` list is removed.
+- `cargo xtask corpus verify` fails on any tracked `.pak` file.
+- `cargo xtask assets fetch` downloads only the archives the manifest pins, keeps an archive only if its SHA-256 matches, and extracts only the members the manifest pins by SHA-256. id's files cannot come through it.
 - On a developer's machine the preview host reads the user's own Steam or GOG install in place ([P0-22](../plan/backlog/p0.yaml)); that never happens in CI.
 
 ## Chosen assets
@@ -44,10 +44,11 @@ Both licenses are compatible with GPL-3.0-or-later (ADR-0002). We still never co
 
 ## What a headless scenario gets
 
-`corpus/assets.py fetch` puts the assets in a cache outside the source tree: `$QS_TEST_ASSETS` if set, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME` or `~/.cache`. The layout is
+`cargo xtask assets fetch` puts the assets in a cache outside the source tree: `--dest <dir>`, else `$QS_TEST_ASSETS` if set, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME` or `~/.cache`; it refuses a directory inside the source tree. The layout is
 
 ```
 <cache>/downloads/<sha256>.zip      the release archive, kept so later runs work offline
+<cache>/downloads/<source>-<commit>.tar.gz   a repository archive cargo xtask corpus fetch keeps
 <cache>/librequake-lite/id1/        pak0.pak, pak1.pak, docs/, and the stand-ins below
 ```
 
@@ -55,9 +56,9 @@ so an engine starts with `-basedir <cache>/librequake-lite`. After extracting, `
 
 ## Rerelease precache coverage
 
-`corpus/assets.py precache` downloads the rerelease QuakeC (corpus codebase `rerelease`, the base campaign) at its pinned commit, checks the pinned `defs.qc` checksum, lists every `precache_model`, `precache_model2`, `precache_sound` and `precache_sound2` call, and fails if a precached file is neither in the paks nor given a stand-in. Calls inside comments and strings are skipped.
+`cargo xtask assets precache` reads the rerelease QuakeC (corpus codebase `rerelease`, the base campaign) at its pinned commit through the same download cache as `cargo xtask corpus fetch`, checks the pinned `defs.qc` checksum, lists every `precache_model`, `precache_model2`, `precache_sound` and `precache_sound2` call, and fails if a precached file is neither in the paks nor given a stand-in. Calls inside comments and strings are skipped.
 
-Recorded result, 2026-10-15:
+Recorded result, 2026-10-16 (the same as the Python script it replaced recorded on 2026-10-15):
 
 ```
 asset librequake-lite covers rerelease: 33 .qc files, 373 precache calls, 318 files, 313 present, 5 by stand-in, 0 missing
@@ -81,18 +82,16 @@ The check covers the base campaign. The mission packs and the other rerelease co
 
 ## Commands
 
-Needs Python 3.11 or later (for `tomllib`):
-
 ```bash
-python3.11 corpus/assets.py fetch       # download, checksum, extract, check the scenario minimum
-python3.11 corpus/assets.py precache    # list the rerelease's precaches and check coverage
-(cd corpus && python3.11 -m unittest test_assets.py)   # offline tests
+cargo xtask assets fetch       # download, checksum, extract, check the scenario minimum
+cargo xtask assets precache    # list the rerelease's precaches and check coverage
+cargo test -p xtask corpus     # offline tests
 ```
 
-CI runs `fetch` on macOS, Windows and Linux and caches `<cache>/downloads` keyed on the SHA-256 of `corpus/manifest.toml` ([P0-03](../plan/backlog/p0.yaml)). `cargo xtask assets fetch` replaces the script in [P1-14](../plan/backlog/p1.yaml), keeping every check.
+CI runs `fetch` and `precache` on macOS, Windows and Linux and caches `<cache>/downloads` keyed on the SHA-256 of `corpus/manifest.toml` ([P0-03](../plan/backlog/p0.yaml)). Both commands work offline once the cache holds the archives.
 
 ## Adding or changing an asset
 
 1. Read the release's license files and record them in this page's review. The asset's `source` must be in the manifest with those files pinned as evidence.
 2. Add an `[[asset]]` entry: the release `url` and `sha256`, the `members` to extract with their SHA-256 (the evidence files among them), `strip`, `game_dir`, `covers` and any `stand_ins`. `corpus/README.md` explains the fields.
-3. Run `fetch`, `precache` and `corpus/verify.py`, and paste the new `precache` output above.
+3. Run `cargo xtask assets fetch`, `cargo xtask assets precache` and `cargo xtask corpus verify`, and paste the new `precache` output above.

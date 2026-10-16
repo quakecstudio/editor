@@ -158,7 +158,7 @@ anything of ours.
 `cargo xtask oracles rerelease <dir>` compiles the six codebases of id's
 `quake-rerelease-qc` (corpus ids `rerelease`, `rerelease-hipnotic`, `rerelease-rogue`,
 `rerelease-mg1`, `rerelease-ctf` and `rerelease-mg3`), each a directory of `<dir>` as
-`python corpus/assets.py codebase --codebase <id>` writes it. Each is copied to
+`cargo xtask corpus fetch <id>` writes it. Each is copied to
 `target/oracles/work/rerelease/<id>/src` and compiled there with
 
 ```text
