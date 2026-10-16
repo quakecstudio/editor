@@ -9,7 +9,8 @@ BSP29 is described from `WinQuake/bspfile.h` and `WinQuake/model.c` in
 [id-Software/Quake](https://github.com/id-Software/Quake) at commit
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the server's use of the result from
 `WinQuake/sv_main.c` and `WinQuake/world.c`. GLQuake's loader in `WinQuake/gl_model.c` makes
-the same checks with the same messages. Implemented by `crates/qs-bsp`
+the same checks with the same messages, except that it accepts larger face extents
+(BSP-9.15). Implemented by `crates/qs-bsp`
 ([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
 every statement.
 
@@ -368,7 +369,8 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
 
 **Source:** `WinQuake/bspfile.h`, `dface_t`, `MAXLIGHTMAPS`; `WinQuake/model.h` and
 `WinQuake/gl_model.h`, `msurface_t`; `WinQuake/model.c`, `Mod_LoadFaces`,
-`CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`
+`CalcSurfaceExtents`; `WinQuake/gl_model.c`, `CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`,
+`R_BuildLightMap`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -446,6 +448,12 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   BSP-9.4. The conversion to `short` is implementation-defined in C; this spec takes the
   answer of id's x86 builds, which compute, store and compare the 16-bit value (see the
   evidence below).
+- **BSP-9.15** GLQuake's `CalcSurfaceExtents` (`WinQuake/gl_model.c`) checks
+  `s->extents[i] > 512 /* 256 */` where WinQuake's checks `s->extents[i] > 256` (BSP-9.4):
+  when the texinfo's flags do not have `TEX_SPECIAL`, a stored extent (BSP-9.14) over 512
+  fails with `Bad surface extents` and 512 loads, so a face with an extent from 272 to 512
+  loads in GLQuake and fails in WinQuake. `crates/qs-bsp` applies the limit of the loader its
+  caller names, WinQuake's or GLQuake's, and has no default.
 
 ### Evidence for BSP-9.11 and BSP-9.12
 
@@ -574,6 +582,38 @@ the s axis offset -1e30 and `lightofs` -1, failed with `Bad surface extents`, an
 texinfo flags 1 loaded with `texturemins` 0 0 and extents 31088 64 (BSP-9.13: the minimum's
 indefinite value, and a maximum still -99999).
 
+### Evidence for BSP-9.15
+
+`WinQuake/model.c` and `WinQuake/gl_model.c` at the pinned commit differ in
+`CalcSurfaceExtents` only in the check:
+
+```c
+		if ( !(tex->flags & TEX_SPECIAL) && s->extents[i] > 256)          /* model.c */
+		if ( !(tex->flags & TEX_SPECIAL) && s->extents[i] > 512 /* 256 */ ) /* gl_model.c */
+```
+
+The released executables agree: `WINQUAKE.EXE` compares the stored 16-bit extent with
+`cmpw $0x100, %ax` and `GLQUAKE.EXE` with `cmpw $0x200, %ax` at `0x42c447`, each followed by
+a signed `jle` past the call to `Sys_Error` (the sequences under "Evidence for BSP-9.14").
+Which limit a map must keep to is a property of the engine that loads it, so `qs-bsp` takes
+it from its caller rather than choosing one engine for everyone.
+
+GLQuake loads such a face, but its renderer then builds the face's lightmap in
+`WinQuake/gl_rsurf.c`'s `unsigned blocklights[18*18];`, and `R_BuildLightMap` writes
+`smax * tmax` entries there (`size = smax*tmax;` ... `blocklights[i] = 255*256;`), more
+than its 324 for a face of more than 324 samples, such as one of 512 by 512 texels (33 by 33
+samples): the load succeeds and the drawing runs past the array. This section describes the
+load only.
+
+**Checked:** on 2026-10-16 id's `Mod_LoadBrushModel` in `WinQuake/gl_model.c`, copied
+unchanged from the pinned commit with `gl_model.h`, `bspfile.h`, `modelgen.h` and
+`spritegn.h`, was built in the harness the vectors' README describes, with the GL calls it
+makes (`GL_LoadTexture`, `GL_SubdivideSurface`, `Cvar_RegisterVariable`) stubbed, for arm64
+with Apple clang and for x86-64 with gcc 14.4 in an emulated `linux/amd64` container, beside
+the WinQuake build of `WinQuake/model.c`. Both builds of each loader gave the results the
+README records for `extents-256`, `extents-272`, `extents-272-special`, `extents-512`,
+`extents-528` and `extents-528-special`.
+
 ### Constants
 
 | Name | Value | Source |
@@ -581,6 +621,7 @@ indefinite value, and a maximum still -99999).
 | `BSP_FACE_SIZE` | 20 | `WinQuake/bspfile.h`, `sizeof(dface_t)` |
 | `BSP_MAXLIGHTMAPS` | 4 | `WinQuake/bspfile.h`, `MAXLIGHTMAPS` |
 | `BSP_MAX_SURFACE_EXTENT` | 256 | `WinQuake/model.c`, `CalcSurfaceExtents`: `s->extents[i] > 256` |
+| `BSP_GL_MAX_SURFACE_EXTENT` | 512 | `WinQuake/gl_model.c`, `CalcSurfaceExtents`: `s->extents[i] > 512 /* 256 */` |
 | `BSP_LIGHTMAP_SCALE` | 16 | `WinQuake/model.c`, `CalcSurfaceExtents`; `WinQuake/gl_rsurf.c`, `R_BuildLightMap`: `(surf->extents[0]>>4)+1` |
 
 ### Test vectors
@@ -588,7 +629,9 @@ indefinite value, and a maximum still -99999).
 See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-256`,
 `extents-272`, `extents-272-special` (BSP-9.4, BSP-9.10), `sky` and `turb` (BSP-9.5),
 `nolight-back` (BSP-9.1, BSP-9.6), `x87-order` and `x87-pc64` (BSP-9.11), `nan-vertex`
-(BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14).
+(BSP-9.12), `extents-65552`, `extents-32784` and `texturemins-32768` (BSP-9.14),
+`extents-512`, `extents-528` and `extents-528-special` (BSP-9.15, with `extents-256`,
+`extents-272` and `extents-272-special` as GLQuake loads them).
 
 ## BSP-10 Lighting
 

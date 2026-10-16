@@ -3,13 +3,15 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/model.c, Mod_LoadBrushModel, Mod_LoadVertexes, Mod_LoadEdges, Mod_LoadSurfedges, Mod_LoadTextures, Mod_LoadLighting, Mod_LoadPlanes, Mod_LoadTexinfo, CalcSurfaceExtents, Mod_LoadFaces, Mod_LoadMarksurfaces, Mod_LoadVisibility, Mod_LoadLeafs, Mod_LoadNodes, Mod_LoadClipnodes, Mod_LoadEntities, Mod_LoadSubmodels, Mod_MakeHull0, RadiusFromBounds, Mod_DecompressVis, Mod_LeafPVS
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/gl_model.c, CalcSurfaceExtents
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
 //! Reads compiled maps: BSP29 as id's engine loads it, the two BSP2 variants, and `.lit`
 //! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-19).
 //!
 //! [`Bsp::read`] is id's `Mod_LoadBrushModel` and the loaders it calls, in the same order,
-//! with the bounds and index checks id's engine leaves out. It rejects malformed input with
+//! with the bounds and index checks id's engine leaves out, and with WinQuake's or GLQuake's
+//! limit on face extents as its caller's [`BspLoader`] says. It rejects malformed input with
 //! a [`BspError`], never a panic. Textures, lighting, visibility and the entity text borrow
 //! the file's bytes. BSP2 follows QuakeSpasm's loader, cited for description only; nothing
 //! is ported from it. [`lit`] reads `.lit` files and [`ent`] names `.ent` files, and
@@ -106,8 +108,10 @@ pub const BSP_TEX_SPECIAL: i32 = 1;
 pub const BSP_FACE_SIZE: usize = 20;
 /// Light styles per face, `MAXLIGHTMAPS` (BSP-9.6).
 pub const BSP_MAXLIGHTMAPS: usize = 4;
-/// The largest extent of a face without `TEX_SPECIAL` (BSP-9.4).
+/// The largest extent of a face without `TEX_SPECIAL` in WinQuake (BSP-9.4).
 pub const BSP_MAX_SURFACE_EXTENT: i32 = 256;
+/// The largest extent of a face without `TEX_SPECIAL` in GLQuake (BSP-9.15).
+pub const BSP_GL_MAX_SURFACE_EXTENT: i32 = 512;
 /// Texels per lightmap sample (BSP-9.7).
 pub const BSP_LIGHTMAP_SCALE: i32 = 16;
 /// Bytes in a BSP29 clipnode, `sizeof(dclipnode_t)` (BSP-11.1).
@@ -224,6 +228,27 @@ pub enum BspVersion {
     Bsp2,
 }
 
+/// Whose loader [`Bsp::read`] follows where id's two differ (BSP-9.15).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BspLoader {
+    /// WinQuake's `WinQuake/model.c`: an extent over 256 fails (BSP-9.4).
+    WinQuake,
+    /// GLQuake's `WinQuake/gl_model.c`: an extent over 512 fails (BSP-9.15).
+    GlQuake,
+}
+
+impl BspLoader {
+    /// The largest extent of a face without `TEX_SPECIAL` this loader accepts (BSP-9.4,
+    /// BSP-9.15).
+    #[must_use]
+    pub const fn max_surface_extent(self) -> i32 {
+        match self {
+            Self::WinQuake => BSP_MAX_SURFACE_EXTENT,
+            Self::GlQuake => BSP_GL_MAX_SURFACE_EXTENT,
+        }
+    }
+}
+
 /// The lump names in id's messages and the reader's errors.
 const LUMP_NAMES: [&str; BSP_HEADER_LUMPS] = [
     "entities",
@@ -304,7 +329,8 @@ pub enum BspError {
     },
     /// A texinfo's `miptex` names no texture slot (BSP-8.3).
     BadMiptex,
-    /// A face without `TEX_SPECIAL` spans more than 256 texels (BSP-9.4).
+    /// A face without `TEX_SPECIAL` spans more texels than the loader accepts: 256 in
+    /// WinQuake, 512 in GLQuake (BSP-9.4, BSP-9.15).
     BadSurfaceExtents,
     /// A marksurface names no face (BSP-13.2).
     BadMarksurface,
@@ -767,11 +793,12 @@ impl<'a> Bsp<'a> {
     ///
     /// Implements BSP-1 to BSP-17: checks the version, then loads the lumps in id's order
     /// (BSP-1.5), each with id's checks and the bounds and index checks the spec adds.
+    /// `loader` picks WinQuake's or GLQuake's limit on face extents (BSP-9.4, BSP-9.15).
     ///
     /// # Errors
     ///
     /// The first [`BspError`] in load order.
-    pub fn read(bytes: &'a [u8]) -> Result<Self, BspError> {
+    pub fn read(bytes: &'a [u8], loader: BspLoader) -> Result<Self, BspError> {
         let header = bytes.get(..BSP_HEADER_SIZE).ok_or(BspError::TooShort)?;
         let version = match i32_at(header, 0) {
             BSP_VERSION => BspVersion::Bsp29,
@@ -826,7 +853,7 @@ impl<'a> Bsp<'a> {
         bsp.lighting = reader.lump(BSP_LUMP_LIGHTING);
         bsp.mod_load_planes(&reader)?;
         bsp.mod_load_texinfo(&reader)?;
-        bsp.mod_load_faces(&reader)?;
+        bsp.mod_load_faces(&reader, loader)?;
         bsp.mod_load_marksurfaces(&reader)?;
         bsp.visibility = reader.lump(BSP_LUMP_VISIBILITY);
         bsp.mod_load_leafs(&reader)?;
@@ -980,7 +1007,7 @@ impl<'a> Bsp<'a> {
     }
 
     /// id's `Mod_LoadFaces` with `CalcSurfaceExtents` (BSP-9, BSP-10, BSP-14).
-    fn mod_load_faces(&mut self, reader: &Reader<'a>) -> Result<(), BspError> {
+    fn mod_load_faces(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = if reader.bsp2() {
             BSP_BSP2_FACE_SIZE
         } else {
@@ -1031,7 +1058,7 @@ impl<'a> Bsp<'a> {
                 flags: if side == 0 { 0 } else { SURF_PLANEBACK },
                 lightmap_size: [0; 2],
             };
-            self.calc_surface_extents(&mut face, element)?;
+            self.calc_surface_extents(&mut face, element, loader)?;
             self.check_light(&face, element)?;
             let name = self
                 .texinfo
@@ -1087,8 +1114,13 @@ impl<'a> Bsp<'a> {
     }
 
     /// id's `CalcSurfaceExtents` as WinQuake's and GLQuake's x86 builds run it (BSP-9.4,
-    /// BSP-9.7, BSP-9.10 to BSP-9.14).
-    fn calc_surface_extents(&self, face: &mut Face, element: usize) -> Result<(), BspError> {
+    /// BSP-9.7, BSP-9.10 to BSP-9.15).
+    fn calc_surface_extents(
+        &self,
+        face: &mut Face,
+        element: usize,
+        loader: BspLoader,
+    ) -> Result<(), BspError> {
         let mut mins = [999_999.0_f32; 2];
         let mut maxs = [-99_999.0_f32; 2];
         let texinfo = self
@@ -1128,7 +1160,9 @@ impl<'a> Bsp<'a> {
             if let Some(slot) = face.extents.get_mut(axis) {
                 *slot = extents;
             }
-            if texinfo.flags & BSP_TEX_SPECIAL == 0 && i32::from(extents) > BSP_MAX_SURFACE_EXTENT {
+            if texinfo.flags & BSP_TEX_SPECIAL == 0
+                && i32::from(extents) > loader.max_surface_extent()
+            {
                 return Err(BspError::BadSurfaceExtents);
             }
         }
@@ -1718,10 +1752,10 @@ fn link(
 ///
 /// # Errors
 ///
-/// Any [`BspError`] the original file gives [`Bsp::read`], or [`BspError::LumpOutOfBounds`]
-/// when the new file would pass 2 GiB.
-pub fn replace_entities(bytes: &[u8], text: &[u8]) -> Result<Vec<u8>, BspError> {
-    let bsp = Bsp::read(bytes)?;
+/// Any [`BspError`] the original file gives [`Bsp::read`] with `loader`, or
+/// [`BspError::LumpOutOfBounds`] when the new file would pass 2 GiB.
+pub fn replace_entities(bytes: &[u8], text: &[u8], loader: BspLoader) -> Result<Vec<u8>, BspError> {
+    let bsp = Bsp::read(bytes, loader)?;
     let mut entities = text.to_vec();
     entities.push(0);
     let mut order: Vec<usize> = (0..BSP_HEADER_LUMPS).collect();
