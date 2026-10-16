@@ -6,7 +6,7 @@
 //! - `cargo xtask oracles` builds every oracle and checks the VM oracle against every vector in
 //!   `docs/spec/vectors/vm/` that id's C defines, and its scenario reader against the number
 //!   vectors of `docs/spec/vectors/scenario/numbers.txt`, and runs the input file probes of
-//!   `oracles/probes.rs`.
+//!   `oracles/probes.rs` and the scenario tests of `oracles/scenarios.rs`.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
 //! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
 //!   `cargo xtask corpus fetch id-1.01` writes it) with id's qcc, and runs the VM oracle on the
@@ -14,6 +14,8 @@
 //! - `cargo xtask oracles rerelease <dir>` builds them and compiles the six rerelease codebases
 //!   under `<dir>` with FTEQCC into `target/oracles/rerelease/`, checking each progs.dat and
 //!   .lno.
+//! - `cargo xtask oracles scenarios [<name>...]` builds them and runs only the scenario tests of
+//!   `oracles/scenarios.rs`, or the ones named.
 //! - `cargo xtask oracles json <trace>` prints a binary trace in the JSON form (TRACE-6).
 //!
 //! Everything lives under `target/oracles/`: `src/` holds the fetched files, `build/` the
@@ -28,6 +30,7 @@ pub(crate) mod id101;
 mod numbers;
 mod probes;
 pub(crate) mod rerelease;
+mod scenarios;
 pub(crate) mod sha256;
 mod vectors;
 
@@ -119,7 +122,12 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             let vectors = vectors::check(root, &oracles)?;
             let numbers = numbers::check(root, &oracles)?;
             let probes = probes::check(&oracles)?;
-            Ok(vectors && numbers && probes)
+            let scenarios = scenarios::check(&oracles, None)?;
+            Ok(vectors && numbers && probes && scenarios)
+        }
+        ["scenarios", names @ ..] => {
+            let oracles = build(root)?;
+            scenarios::check(&oracles, Some(names))
         }
         ["build"] => {
             let oracles = build(root)?;
@@ -143,7 +151,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             Ok(true)
         }
         _ => Err(
-            "usage: cargo xtask oracles [build | id101 <codebase directory> \
+            "usage: cargo xtask oracles [build | scenarios [<name>...] | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),

@@ -27,9 +27,12 @@ id's server does, the section cites the function, in
 `GLQUAKE` or `IDGODS`. The trace format is [`trace.md`](trace.md); what the VM does is
 [`vm.md`](vm.md); edicts, map spawning and the engine's entry points are
 [`edicts.md`](edicts.md); the builtins are [`builtins.md`](builtins.md); limits are
-[`limits.md`](limits.md). This page does not repeat them. Every statement in this file is in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-builtins` or the runner cites it,
-except DIFF-2.7 to DIFF-2.9, whose vectors `crates/qs-tests` checks.
+[`limits.md`](limits.md). This page does not repeat them. The oracle's scenario tests
+(`xtask/src/oracles/scenarios/`, run through the built oracle by `cargo xtask oracles`) cite
+DIFF-1 to DIFF-8 and DIFF-10, and `crates/qs-tests` checks the vectors of DIFF-2.7 to
+DIFF-2.9; DIFF-9 and DIFF-11, which compare and count traces, are in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) until the runner cites them. `qc-builtins`
+and the runner cite the statements they implement as well.
 
 "The clock" is the server clock `sv.time`, a C `double`; "(f32)x" is `x` rounded to the
 nearest `f32`, as C's assignment of a `double` to a `float` rounds it.

@@ -55,8 +55,9 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 ## Building
 
 ```bash
-cargo xtask oracles                 # build all three, then run every VM vector and scenario number vector through the VM oracle
+cargo xtask oracles                 # build all three, then run every VM vector, scenario number vector, probe and scenario test through the VM oracle
 cargo xtask oracles build           # build only; prints where the binaries are
+cargo xtask oracles scenarios [<name>...] # build, then run only the scenario tests, or the ones named
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
 cargo xtask oracles rerelease <dir> # also compile the six rerelease codebases with FTEQCC
 cargo xtask oracles json <trace>    # print a binary trace as JSON Lines (TRACE-6)
@@ -125,6 +126,20 @@ The exit status is 0 when the run was traced, QuakeC errors included (they are e
 2 when the command line, scenario or progs is refused, before any trace is written; 3 when a file
 cannot be written; 4 when id's code crashed on undefined behaviour, after writing the records so
 far (DIFF-10.1).
+
+### Scenario tests
+
+The scenario tests in [`xtask/src/oracles/scenarios/`](../xtask/src/oracles/scenarios.rs) hold
+the oracle's own C to the specs it implements. Each builds a small progs (with `qc-progs`) and
+the scenario, map or init file around it, runs the VM oracle, and checks what
+[`differential.md`](../docs/spec/differential.md) and [`trace.md`](../docs/spec/trace.md) say
+the run does: the exit status, and records and values of the trace, which `qc-trace`'s strict
+decoder must read and encode back to the same bytes. Each cites the statements it pins
+(`// spec DIFF-5.6: ...`). They cover every refusal of DIFF-2.9 and of the progs (DIFF-3.1),
+every exit status above, the setup of the map, clients and frames, every mock builtin of
+DIFF-6 and DIFF-7, the errors and shutdown of DIFF-8, and the records and binary form of the
+trace. `cargo xtask oracles` runs them after the vectors and probes, so CI runs them on Linux,
+macOS and Windows; the cases that write a trace to `/dev/full` run on Linux only.
 
 ### How the VM is observed
 
