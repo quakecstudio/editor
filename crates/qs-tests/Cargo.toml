@@ -1,0 +1,20 @@
+[package]
+name = "qs-tests"
+description = "The single integration test binary for tests that span several QuakeC Studio crates"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+autotests = false
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[dev-dependencies]
+qs-paths = { workspace = true }
+
+[lints]
+workspace = true

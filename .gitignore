@@ -1,1 +1,19 @@
 __pycache__/
+
+# Cargo build output, including the xtask scratch workspaces under target/xtask/
+/target/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local environment
+.env
+
+# Quake game data is never committed: bring your own copy of Quake
+*.pak

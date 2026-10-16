@@ -1,0 +1,71 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally: cargo deny check advisories bans licenses sources
+
+[graph]
+all-features = true
+# Resolve dependencies for every supported target so platform-specific
+# duplicates and licenses are caught on any host OS. Differs from vouch: Linux
+# uses glibc (a GPU desktop app links the system graphics stack), and
+# x86_64-apple-darwin is added for the universal macOS build.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+
+[advisories]
+# Every ignore names the advisory and says in a comment why it does not apply.
+ignore = []
+
+[licenses]
+confidence-threshold = 0.8
+# Only licenses compatible with GPL-3.0-or-later (ADR-0002). Differs from
+# vouch: OpenSSL is not GPL-compatible and is left out, and GPL-3.0-or-later is
+# allowed because it is this project's own license.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+exceptions = []
+# The allow list states policy, not what the graph uses today, so an allowed
+# license that no dependency uses yet is not reported.
+unused-allowed-license = "allow"
+
+[bans]
+# Duplicate versions are reported but do not fail the check: a dependency bump
+# that transiently splits a crate would otherwise block unrelated PRs in the
+# merge queue. Wildcards always fail; the workspace pins exact versions.
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies between this workspace's own unpublished crates carry no
+# version; that is not a wildcard on a registry crate.
+allow-wildcard-paths = true
+# Every entry carries a `reason`.
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Every git source is pinned to a `rev` in Cargo.toml and listed here with why
+# it is not taken from crates.io.
+allow-git = []

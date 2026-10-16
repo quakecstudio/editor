@@ -1,0 +1,31 @@
+# Clippy configuration for the QuakeC Studio workspace.
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Items from our own crates are brought in with `use`, not spelled inline as
+# `crate::a::b::c(..)` or `qs_paths::a::b()`. `clippy::absolute_paths` flags any
+# path of more than two segments rooted at a crate; every external crate is
+# listed below so the lint reports only `crate::` and `qs_*::` paths. A new
+# external dependency named by an absolute path belongs in this list.
+absolute-paths-max-segments = 2
+absolute-paths-allowed-crates = [
+    "std",
+    "core",
+    "alloc",
+    "proc_macro",
+    "toml",
+]
+
+# Allow breaking the exported API (we're pre-1.0)
+avoid-breaking-exported-api = false
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 30
+
+# Maximum lines in a function before triggering too_many_lines
+too-many-lines-threshold = 150
+
+# Allow certain common names for single-char variables
+allowed-idents-below-min-chars = ["x", "y", "z", "i", "j", "k", "n", "s", "e"]
+
+# MSRV comes from each package's `rust-version`, inherited via
+# `rust-version.workspace = true`.
