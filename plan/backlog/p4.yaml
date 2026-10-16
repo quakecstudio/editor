@@ -418,6 +418,8 @@ issues:
   - P0-16
   deliverable:
   - docs/adr/00NN-license-review.md summarizing the review of notices, corresponding source, dependency licenses and corpus handling
+  - 'A ruling on id''s map tools in Quake-Tools/qutils, whose files carry no license notice and whose COPYING is GPL-2.0 without an "or later" grant: whether P6 may port them under GPL-3.0-or-later
+    (see docs/porting.md)'
   acceptance:
   - Sign-off received before the first public release
   verify:

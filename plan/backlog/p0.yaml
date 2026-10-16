@@ -49,8 +49,10 @@ issues:
   - ARCH-1
   - QA-1
   - CONV-8
+  - LIC-2
   depends:
   - P0-01
+  - P0-09
   deliverable:
   - xtask/ crate with subcommands ci, layers, licenses, attribution
   - layers.toml mapping every crate to L0-L7 or apps, with the rule that a crate may depend only on lower layers
@@ -63,6 +65,8 @@ issues:
   - A crate missing from layers.toml fails the check
   - An asset file not listed in ATTRIBUTION.md fails cargo xtask attribution
   - Every committed file is license-scanned (e.g. askalono) and carries an allowed SPDX header; a file without one fails
+  - 'cargo xtask licenses enforces the ported-file header rule in docs/porting.md: a file that says it is ported from id''s code but lacks id''s copyright line, or does not cite the file, function
+    and commit, fails; fixtures are the passing and failing headers in docs/porting.md'
   - make ci runs exactly what CI runs
   verify:
   - xtask self-tests with fixture workspaces for each failure case
@@ -221,9 +225,11 @@ issues:
   - 'docs/spec/README.md and docs/spec/_template.md: numbered sections, behaviour statements, named constants with citations, test vectors'
   acceptance:
   - Each spec section has a stable ID that implementation PRs and tests cite
-  - cargo xtask licenses (P0-02) fails a file that says it is ported from id's code but lacks id's copyright line
+  - docs/porting.md states the ported-file header rule precisely enough for cargo xtask licenses (P0-02) to enforce it, with a passing header and failing headers to use as its fixtures
+  - The worked example's tests cite its spec statements and pass, and it matches id's function on recorded vectors
   verify:
-  - The worked example compiles and its test passes once the workspace exists; the licenses check is tested against a fixture
+  - The worked example builds clean under the docs/conventions.md lints and its tests pass in a scratch workspace now, and in cargo xtask ci once P0-01 and P0-02 land; P0-02 tests the header rule against
+    the fixtures
 - key: P0-10
   title: 'Spike: gpui vs egui against the editor acceptance test'
   labels:

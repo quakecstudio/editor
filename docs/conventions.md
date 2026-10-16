@@ -86,7 +86,7 @@ no-panic lints locally with
 **Float comparisons in the VM and compiler are exact by specification.** vouch's comment on
 `float_cmp` says to compare with an epsilon; that is wrong for `qc-vm` and `qc-codegen`, whose
 semantics require exact IEEE comparison. There the lint is expected per site with
-`#[expect(clippy::float_cmp, reason = "spec vm §n: exact comparison")]`, never replaced by an epsilon.
+`#[expect(clippy::float_cmp, reason = "spec VM-n.m: exact comparison")]`, never replaced by an epsilon.
 
 ## Dependencies (CONV-4)
 
@@ -187,8 +187,9 @@ From vouch's CLAUDE.md:
   case; tests spell out only the axis they test.
 - Tests never wait on the wall clock. Rust crates take an injected clock; the preview host
   is covered instead by its fixed-timestep headless mode (P3-05).
-- **A test that pins a normative statement cites it**, e.g. `// spec vm §4.3: division by
-  zero yields ...`. This project applies the rule to `docs/spec/` sections.
+- **A test that pins a normative statement cites it** by its stable ID, e.g. `// spec VM-12.3:
+  division by zero yields ...`. This project applies the rule to `docs/spec/` statements; the
+  ID scheme is in [`spec/README.md`](spec/README.md).
   `docs/spec/requirements.tsv` lists every normative statement, and a coverage test
   ratchets it, as `specs/requirements.tsv` and `spec_coverage.rs` do in vouch.
 
