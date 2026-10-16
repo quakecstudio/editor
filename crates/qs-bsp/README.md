@@ -56,5 +56,8 @@ for all 23 maps; single-precision arithmetic would give 247 of their faces anoth
 `texturemins` or extent. `texturemins` and extents are kept in 16 bits, as id's `short` fields
 hold them (BSP-9.14); the vectors `extents-65552`, `extents-32784` and `texturemins-32768`
 pin that against the arm64 and x86-64 builds, and `extents-512` and its neighbours pin
-GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.15). The
-harness is not committed, as id's C never is.
+GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.15). A
+face with a negative stored extent has no lightmap (BSP-9.16): the vectors for it were run
+through id's own renderer code, WinQuake's surface cache and GLQuake's lightmap builder,
+neither of which draws light from such a face. The harness is not committed, as id's C never
+is.

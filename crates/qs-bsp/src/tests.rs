@@ -885,6 +885,53 @@ fn extents_32784() {
     );
 }
 
+/// The base with texinfo 0's axes scaled by `s` and `t`.
+fn st_axes(s: f32, t: f32) -> BspSpec {
+    let mut spec = s_axis([s, 0.0, 0.0, 0.0]);
+    spec.texinfo[0].vecs[1] = [0.0, t, 0.0, 0.0];
+    spec
+}
+
+// spec BSP-9.16: a face with a negative stored extent on either axis has a lightmap of 0 by 0
+// samples, so it has no samples and BSP-10.2 asks only that lightofs is at most the lump's
+// size (vectors `extents-32784`, `extents-65520`, `extents-32784-t`, `extents-65504-st` and
+// `extents-32784-st`).
+#[test]
+fn negative_extent_lightmap() {
+    for (s, t, extents) in [
+        (512.25, 1.0, [-32752, 64]),
+        (1023.75, 1.0, [-16, 64]),
+        (1.0, 512.25, [64, -32752]),
+        (1023.5, 1023.5, [-32, -32]),
+        (512.25, 512.25, [-32752, -32752]),
+    ] {
+        let bsp = read(&st_axes(s, t)).unwrap();
+        let face = bsp.faces[0];
+        assert_eq!(face.extents, extents);
+        assert_eq!(face.lightmap_size, [0, 0], "{extents:?}");
+        assert_eq!(bsp.face_samples(&face), Some(&[][..]));
+        // The lump has 25 bytes: lightofs 25 is its end, 26 is past it.
+        let mut spec = st_axes(s, t);
+        spec.faces[0].lightofs = 25;
+        let face = read(&spec).unwrap().faces[0];
+        assert_eq!(face.lightmap_size, [0, 0]);
+        spec.faces[0].lightofs = 26;
+        assert_eq!(
+            read(&spec),
+            Err(BspError::BadIndex {
+                lump: BSP_LUMP_FACES,
+                element: 0
+            })
+        );
+    }
+    // An extent of 0 is not negative: one sample on that axis.
+    let face = read(&st_axes(1024.0, 1.0)).unwrap().faces[0];
+    assert_eq!((face.extents, face.lightmap_size), ([0, 64], [1, 5]));
+    assert_eq!(lightmap_size([32767, 0]), [2048, 1]);
+    assert_eq!(lightmap_size([0, -1]), [0, 0]);
+    assert_eq!(lightmap_size([i16::MIN, 16]), [0, 0]);
+}
+
 // spec BSP-9.14: the stored value is the low 16 bits read as two's complement.
 #[test]
 fn low_16_bits() {
