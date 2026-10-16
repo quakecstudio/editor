@@ -2,6 +2,7 @@
 
 //! `cargo xtask`: build automation for the workspace.
 //!
+//! - `adr`: checks the decision records in `docs/adr/` and their index.
 //! - `conventions`: checks every config value against `docs/conventions.md`.
 //! - `clippy-fixtures`: proves the workspace lints reject the code they target.
 //! - `deny-fixtures`: proves `deny.toml` rejects incompatible licenses and
@@ -13,13 +14,14 @@
     reason = "xtask is a command-line tool; this is its crate root"
 )]
 
+mod adr;
 mod conventions;
 mod fixtures;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: cargo xtask <conventions | clippy-fixtures | deny-fixtures>";
+const USAGE: &str = "usage: cargo xtask <adr | conventions | clippy-fixtures | deny-fixtures>";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -29,6 +31,7 @@ fn main() -> ExitCode {
     };
     let root = workspace_root();
     let result = match command.as_str() {
+        "adr" => adr::check(&root),
         "conventions" => conventions::check(&root),
         "clippy-fixtures" => fixtures::clippy(&root),
         "deny-fixtures" => fixtures::deny(&root),

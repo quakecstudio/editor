@@ -11,6 +11,24 @@
 Does QuakeC Studio keep its configuration, data, caches and logs in XDG directories on every
 platform, as vouch does, or in each operating system's native locations?
 
+## Context
+
+P0-01 scaffolds the workspace on the conventions of vouch, a command-line tool that keeps its
+files in XDG directories on every platform. Its deliverable asks for a single paths module,
+`crates/qs-paths`, and an ADR choosing between XDG everywhere and each OS's native directories
+(CONV-16). Every crate that reads or writes configuration, data, caches or logs depends on the
+answer.
+
+## Options
+
+The options not chosen, and why not:
+
+| Option | Why not |
+| --- | --- |
+| XDG everywhere, as in vouch | Unexpected for a Mac or Windows desktop app; Console.app, Time Machine exclusions and Windows roaming profiles would not treat the files as users expect |
+| The `dirs` or `directories` crate | Same layout, but adds a dependency and can only be tested on the host OS. Windows' `SHGetKnownFolderPath` would also honour folder redirection that `%APPDATA%` already reflects |
+| Native on macOS and Windows, but honour `XDG_*` variables there when set | Two sources of truth on one platform; a stray variable set for a command-line tool would move the app's settings |
+
 ## Decision
 
 **Native per OS.** The `qs-paths` crate is the only code that decides where files live, and it
@@ -43,14 +61,6 @@ product name; if ADR-0006 renames the product, the two constants in `qs-paths` c
   platform's rules are tested on every CI host, which a crate that asks the running OS
   (`dirs`, `directories`) cannot do.
 
-## Alternatives considered
-
-| Option | Why not |
-| --- | --- |
-| XDG everywhere, as in vouch | Unexpected for a Mac or Windows desktop app; Console.app, Time Machine exclusions and Windows roaming profiles would not treat the files as users expect |
-| The `dirs` or `directories` crate | Same layout, but adds a dependency and can only be tested on the host OS. Windows' `SHGetKnownFolderPath` would also honour folder redirection that `%APPDATA%` already reflects |
-| Native on macOS and Windows, but honour `XDG_*` variables there when set | Two sources of truth on one platform; a stray variable set for a command-line tool would move the app's settings |
-
 ## Consequences
 
 - No crate builds a path from the home directory itself; it asks `qs-paths`
@@ -58,3 +68,10 @@ product name; if ADR-0006 renames the product, the two constants in `qs-paths` c
 - Resolving a directory never creates it; the code that writes there creates it.
 - The game-install directories (Steam, GOG, the user's Quake folder) are a different question,
   answered by ADR-0008.
+
+## Links
+
+- Issue: [#1](https://github.com/quakecstudio/editor/issues/1)
+- Conventions: [`docs/conventions.md`](../conventions.md) (CONV-16)
+- [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/)
+- Related: ADR-0006 (product name), ADR-0008 (game directories)

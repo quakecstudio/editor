@@ -11,7 +11,7 @@ QuakeC Studio: a Rust IDE for QuakeC with its own compiler, live in-game preview
 - Every piece of work is a GitHub issue generated from [`plan/`](plan/README.md). Each issue states its deliverable, acceptance criteria, verification, requirements and dependencies, and carries the shared definition of done from `plan/backlog/_meta.yaml`.
 - Phases run in order (P0 to P7, then LATER). An issue depends on the previous phase's gate, and on the readiness review of any lower layer it builds on (`docs/testing.md`). Do not start an issue whose dependencies are open.
 - To change the plan, edit `plan/requirements.yaml` or `plan/backlog/*.yaml`, run the checks below, open a PR, and sync GitHub with `plan/apply.py` after it merges. Do not edit issue bodies by hand; the sync overwrites them.
-- Decisions go in `docs/adr/` (set up by [#7](https://github.com/quakecstudio/editor/issues/7)).
+- Decisions go in `docs/adr/`, from `docs/adr/0000-template.md`; [ADR-0001](docs/adr/0001-record-decisions.md) is the process and `cargo xtask adr` checks it.
 - `python3 plan/status.py --phase P0` shows what is closed, ready and waiting in a phase.
 
 ## Working autonomously

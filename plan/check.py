@@ -8,7 +8,8 @@ Fails (exit 1) if:
   - an issue has no type:* label, or more than one
   - an issue depends on an issue in a later phase, or dependencies form a cycle
   - a gate issue does not depend on every other issue in its phase
-  - a type:decision issue does not name a docs/adr/ file in its deliverable
+  - a type:decision issue does not name its docs/adr/NNNN-slug.md file in its deliverable
+    (NNNN is four digits, or 00NN when the number is taken when the ADR is written; ADR-0001)
   - a type:decision issue is not labelled needs:human
   - a label description is longer than GitHub's 100-character limit
   - a LATER issue is not linked from docs/scope.md as [KEY](https://github.com/quakecstudio/editor/issues/N)
@@ -30,6 +31,7 @@ import yaml
 PLAN = Path(__file__).resolve().parent
 SCOPE = PLAN.parent / "docs" / "scope.md"
 ISSUE_URL = r"https://github\.com/quakecstudio/editor/issues/\d+"
+ADR_FILE = re.compile(r"docs/adr/(?!0000-)(\d{4}|00NN)-[a-z0-9-]+\.md")
 PHASE_ORDER = ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "LATER"]
 
 
@@ -194,8 +196,8 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
                 errors.append(f"{k}: gate does not depend on {sorted(missing)}")
 
     for k, i in by_key.items():
-        if "type:decision" in i["labels"] and not any("docs/adr/" in d for d in i.get("deliverable", [])):
-            errors.append(f"{k}: decision issue must name a docs/adr/ file in its deliverable")
+        if "type:decision" in i["labels"] and not any(ADR_FILE.search(d) for d in i.get("deliverable", [])):
+            errors.append(f"{k}: decision issue must name a docs/adr/ file (docs/adr/NNNN-slug.md) in its deliverable")
 
     for k, i in by_key.items():
         if "type:decision" in i["labels"] and "needs:human" not in i["labels"]:
