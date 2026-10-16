@@ -104,12 +104,12 @@ cargo xtask adr                           # ADRs follow the template and are ind
 cargo xtask clippy-fixtures               # the lints reject what they target
 cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)
 cargo xtask layers                        # no crate depends on a higher layer (layers.toml)
-cargo xtask licenses                      # SPDX lines, ported-file headers, cached specs listed in the manifest
+cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
 cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
-prek run                                  # the pre-commit hooks, once #3 adds .pre-commit-config.yaml
+prek run                                  # the pre-commit hooks
 ```
 
 `make ci` runs every `cargo` and `cargo xtask` step above except `refresh-specs.sh`; the

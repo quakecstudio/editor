@@ -558,14 +558,12 @@ issues:
   - P0-03
   - P0-04
   deliverable:
-  - A CI step on Linux running scripts/refresh-specs.sh --verify, which fails when a file under specs/ no longer matches the sha256 in specs/manifest.tsv or is missing from it
-  - The pre-commit hooks that rewrite files (trailing whitespace, end-of-file, mixed line endings) exclude specs/, as docs/conventions.md CONV-9 states
+  - A required CI check on Linux running scripts/refresh-specs.sh --verify, which fails when a file under specs/ no longer matches the sha256 in specs/manifest.tsv or is missing from it; docs/ci.md lists it
   acceptance:
   - A PR that changes one byte of a cached specification fails CI with the file named
   - A PR that adds a file under specs/ without a manifest row fails CI
-  - prek run --all-files leaves specs/ unchanged
   verify:
-  - Links to the two failing CI runs from deliberately broken PRs, and the prek output, attached to the issue
+  - Links to the two failing CI runs from deliberately broken PRs attached to the issue
 - key: P0-20
   title: Phase 0 gate review
   labels:

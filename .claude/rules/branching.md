@@ -33,7 +33,7 @@ Run what CI runs, from the repository root:
 
 ```bash
 make ci        # cargo xtask ci: fmt, clippy -D warnings, tests, layering, licenses, conventions, ...
-prek run       # the pre-commit hooks, once #3 adds .pre-commit-config.yaml
+prek run       # the pre-commit hooks
 python3 plan/check.py --write-coverage && (cd plan && python3 -m unittest test_check.py test_status.py)
 ```
 

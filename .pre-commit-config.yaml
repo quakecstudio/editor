@@ -1,0 +1,75 @@
+# prek hooks (docs/conventions.md, CONV-9): https://github.com/j178/prek
+#   Install for pre-commit and pre-push: prek install
+#   Run every hook on every file:        prek run --all-files
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+# specs/ holds public specifications cached verbatim and checked by SHA-256, so
+# the hygiene hooks must not rewrite them.
+exclude: ^specs/
+
+repos:
+  # File hygiene and private-key detection, SHA-pinned like the workflow actions.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+      - id: check-toml
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Locally installed tools; no third-party hook code.
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt --all --check
+        entry: cargo fmt --all --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+
+      - id: shfmt
+        name: shfmt (diff)
+        entry: shfmt -i 2 -d
+        language: system
+        types: [shell]
+
+      - id: actionlint
+        name: actionlint
+        entry: actionlint
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
+      - id: zizmor
+        name: zizmor
+        entry: zizmor
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$
+
+      - id: cargo-clippy
+        name: cargo clippy --all-targets --all-features -D warnings
+        entry: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: cargo-test
+        name: cargo test --all-features
+        entry: cargo test --locked --workspace --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
