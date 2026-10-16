@@ -681,22 +681,27 @@ fn run(oracles: &Oracles, work: &Path, case: &Case) -> Result<Outcome, String> {
     } else {
         work.to_path_buf()
     };
-    let mut outcome = invoke(oracles, &cwd, &args, &trace)?;
+    let readable = match case.trace {
+        TracePath::Normal | TracePath::Missing => Some(trace.as_path()),
+        TracePath::Device(_) => None,
+    };
+    let mut outcome = invoke(oracles, &cwd, &args, readable)?;
     if case.checks.contains(&Check::SameTwice) {
-        outcome.again = invoke(oracles, &cwd, &args, &trace)?.trace;
+        outcome.again = invoke(oracles, &cwd, &args, readable)?.trace;
     }
     Ok(outcome)
 }
 
 /// One run of the oracle, from `cwd`, which is not the case's directory, so that a path in
-/// a scenario is read relative to the scenario (DIFF-2.1).
+/// a scenario is read relative to the scenario (DIFF-2.1). `trace` is the file the run's trace
+/// is read from, removed first, or `None` for a device, which is neither.
 fn invoke(
     oracles: &Oracles,
     cwd: &Path,
     args: &[PathBuf],
-    trace: &Path,
+    trace: Option<&Path>,
 ) -> Result<Outcome, String> {
-    if trace.exists() {
+    if let Some(trace) = trace.filter(|trace| trace.exists()) {
         fs::remove_file(trace).map_err(|e| format!("{}: {e}", trace.display()))?;
     }
     let output = Command::new(&oracles.vm)
@@ -708,7 +713,7 @@ fn invoke(
         status: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        trace: fs::read(trace).ok(),
+        trace: trace.and_then(|trace| fs::read(trace).ok()),
         again: None,
     })
 }
