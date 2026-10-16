@@ -7,6 +7,8 @@
 
 use core::fmt;
 
+use crate::BspLoader;
+
 /// The four bytes a `.lit` file starts with (BSP-18.1).
 pub const BSP_LIT_MAGIC: [u8; 4] = *b"QLIT";
 
@@ -144,4 +146,98 @@ pub fn companion_name(bsp_name: &str, extension: &str) -> String {
 #[must_use]
 pub const fn companion_applies(bsp_path_id: u32, found_path_id: u32) -> bool {
     found_path_id >= bsp_path_id
+}
+
+/// A `.lit` file found on the search path for a map: its bytes and the path id of its game
+/// directory, which is larger for a game directory of higher priority, as QuakeSpasm's
+/// `path_id` is (BSP-18.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoundLit<'a> {
+    /// The file's bytes.
+    pub bytes: &'a [u8],
+    /// Its game directory's path id.
+    pub path_id: u32,
+}
+
+/// What a loader does with a map's `.lit` file (BSP-18.6 to BSP-18.8). None of these stops
+/// the map loading.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LitChoice<'a> {
+    /// The loader reads no `.lit`: id's WinQuake and GLQuake (BSP-18.6).
+    NotRead,
+    /// No `.lit` was found.
+    Missing,
+    /// The `.lit` is from a game directory of lower priority than the map's (BSP-18.4).
+    LowerPriority,
+    /// The `.lit` is ignored for this reason (BSP-18.2, BSP-18.3).
+    Ignored(LitError),
+    /// The `.lit` gives the map's light.
+    Used(Lit<'a>),
+}
+
+impl LitChoice<'_> {
+    /// The colour of each lighting byte: the `.lit`'s samples when it is used, else the grey
+    /// triples of the lighting lump (BSP-18.5, BSP-18.8).
+    #[must_use]
+    pub fn rgb(&self, lighting: &[u8]) -> Vec<[u8; 3]> {
+        match self {
+            Self::Used(lit) => lit.rgb.as_chunks::<3>().0.to_vec(),
+            Self::NotRead | Self::Missing | Self::LowerPriority | Self::Ignored(_) => {
+                grey(lighting)
+            }
+        }
+    }
+
+    /// The line QuakeSpasm prints with `Con_Printf` for the `.lit` named `name`: only for a
+    /// `.lit` it ignores for what it holds (BSP-18.7). Its line for a lower-priority one is
+    /// [`Self::developer_message`].
+    #[must_use]
+    pub fn message(&self, name: &str) -> Option<String> {
+        match self {
+            Self::Ignored(error) => Some(error.message(name)),
+            Self::NotRead | Self::Missing | Self::LowerPriority | Self::Used(_) => None,
+        }
+    }
+
+    /// The line QuakeSpasm prints with `Con_DPrintf`, only when its `developer` cvar is set,
+    /// for a `.lit` from a game directory of lower priority (BSP-18.4, BSP-18.7).
+    #[must_use]
+    pub fn developer_message(&self, name: &str) -> Option<String> {
+        match self {
+            Self::LowerPriority => {
+                Some(format!("ignored {name} from a gamedir with lower priority"))
+            }
+            Self::NotRead | Self::Missing | Self::Ignored(_) | Self::Used(_) => None,
+        }
+    }
+}
+
+/// The `.lit` choice QuakeSpasm's `Mod_LoadLighting` makes for a map loaded from the game
+/// directory with path id `bsp_path_id`, whose lighting lump is `lighting_len` bytes, given
+/// the `.lit` the search path found: the priority first, then the magic, the version and the
+/// size, and the first check that fails ignores the file and leaves the map lit grey.
+/// Loaders other than [`BspLoader::FitzQuake`] read no `.lit`.
+///
+/// Implements BSP-18.
+#[must_use]
+pub fn mod_load_lighting<'a>(
+    loader: BspLoader,
+    bsp_path_id: u32,
+    lighting_len: usize,
+    found: Option<FoundLit<'a>>,
+) -> LitChoice<'a> {
+    match loader {
+        BspLoader::WinQuake | BspLoader::GlQuake => return LitChoice::NotRead,
+        BspLoader::FitzQuake => {}
+    }
+    let Some(found) = found else {
+        return LitChoice::Missing;
+    };
+    if !companion_applies(bsp_path_id, found.path_id) {
+        return LitChoice::LowerPriority;
+    }
+    match Lit::read(found.bytes, lighting_len) {
+        Ok(lit) => LitChoice::Used(lit),
+        Err(error) => LitChoice::Ignored(error),
+    }
 }

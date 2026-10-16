@@ -1147,6 +1147,22 @@ byte of the lighting lump. The format comes from LordHavoc's engines (QS's comme
   lighting lump alone, so a map loaded by their rules is lit grey. `crates/qs-bsp` reads a
   `.lit` with `Lit::read`, apart from `Bsp::read`, whichever loader read the BSP; the caller
   decides whether it applies, as it does for a map the default loader read.
+- **BSP-18.7** QS checks a `.lit` it finds in this order and stops at the first check that
+  fails: the game directory's priority (BSP-18.4), the magic, the version (BSP-18.3), then
+  the size (BSP-18.2). `Mod_LoadLighting` reads `if (path_id < loadmodel->path_id)` first,
+  then `else if (data[0] == 'Q' && data[1] == 'L' && data[2] == 'I' && data[3] == 'T')`,
+  `if (i == 1)` and `if (8+l->filelen*3 == com_filesize)`. So a `.lit` from a game directory
+  of lower priority is ignored whatever it holds, and its message is printed with
+  `Con_DPrintf`, which prints nothing unless the `developer` cvar is set (`if
+  (!developer.value) return;`); the messages of BSP-18.2 and BSP-18.3 are printed with
+  `Con_Printf`, always.
+- **BSP-18.8** A `.lit` QS ignores never stops the map loading. Each branch of BSP-18.7 that
+  ignores the file frees it (`Hunk_FreeToLowMark(mark);`), prints its message and falls
+  through to `// LordHavoc: no .lit found, expand the white lighting data to color`, the
+  grey light of BSP-18.5; only the size check that passes returns early, after
+  `loadmodel->lightdata = data + 8;`. `crates/qs-bsp`'s `mod_load_lighting` makes this
+  choice for a map: the `.lit` used, or why it is ignored with QS's message, and never an
+  error. For `BspLoader::WinQuake` and `BspLoader::GlQuake` it reads no `.lit` (BSP-18.6).
 
 ### Constants
 
@@ -1155,6 +1171,31 @@ byte of the lighting lump. The format comes from LordHavoc's engines (QS's comme
 | `BSP_LIT_MAGIC` | `QLIT` | QS `Mod_LoadLighting`; ericw-tools `litheader_t::v1_t::ident` |
 | `BSP_LIT_VERSION` | 1 | ericw-tools `LIT_VERSION` |
 | `BSP_LIT_HEADER_SIZE` | 8 | QS `Mod_LoadLighting`: `data + 8` |
+
+### Test vectors
+
+The lighting lump of these vectors is 4 bytes, `00 40 80 ff`, so a usable `.lit` is 20
+bytes. "Priority" is the `.lit`'s game directory against the map's, as QS's `path_id`
+compares them.
+
+**Checked:** on 2026-10-16 QS's `Mod_LoadLighting`, copied unchanged from
+sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` (the tarball of BSP-20's
+evidence, SHA-256 `139d85c096ebec6b62425584be570daa5830323ff6eac6cd7ed94400bec3deba`), was
+built with the system C compiler (Apple clang, arm64) with stubs for the engine around it:
+`COM_LoadHunkFile` returning the vector's `.lit` and its path id, the hunk as `malloc`,
+`Con_Printf` printing, `Con_DPrintf` printing with `developer` set, and `loadmodel` a
+`qmodel_t` of BSP29 named `maps/a.bsp`. It printed each message and the light it kept;
+`mod_load_lighting` with `BspLoader::FitzQuake` gave the same for every vector.
+
+| Name | `.lit` | Priority | QS prints | Light |
+| --- | --- | --- | --- | --- |
+| `lit-used` | `QLIT`, version 1, 12 bytes of samples | Same | Nothing | The `.lit`'s samples |
+| `lit-higher` | As `lit-used` | Higher | Nothing | The `.lit`'s samples |
+| `lit-short` | As `lit-used` less its last byte (19 bytes) | Same | `Outdated .lit file (maps/a.lit should be 20 bytes, not 19)` | Grey |
+| `lit-long` | As `lit-used` and one more byte (21 bytes) | Same | `Outdated .lit file (maps/a.lit should be 20 bytes, not 21)` | Grey |
+| `lit-version-2` | As `lit-used` with version 2 | Same | `Unknown .lit file version (2)` | Grey |
+| `lit-corrupt` | As `lit-used` starting `QLIX` | Same | `Corrupt .lit file (old version?), ignoring` | Grey |
+| `lit-lower` | As `lit-corrupt` | Lower | `ignored maps/a.lit from a gamedir with lower priority` (developer only) | Grey |
 
 ## BSP-19 .ent files
 

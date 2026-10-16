@@ -22,7 +22,10 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   `SURF_UNDERWATER` (BSP-12.6). BSP2 and the `FitzQuake` rules follow QuakeSpasm's loader,
   cited for description only; nothing is ported from it.
 - **`lit`**: `Lit::read` checks a `.lit` file as QuakeSpasm does and gives each lighting
-  byte's colour; `grey` is the colour without one.
+  byte's colour; `grey` is the colour without one. `mod_load_lighting` makes the choice
+  QuakeSpasm's `Mod_LoadLighting` makes for a map: the `.lit` used, or why one is ignored
+  with QuakeSpasm's message, never an error, and no `.lit` for the `WinQuake` and `GlQuake`
+  loaders (BSP-18.6 to BSP-18.8).
 - **`ent`** and **`replace_entities`**: `ent_file_names` gives the `.ent` names QuakeSpasm
   tries for a map, and `replace_entities` writes a BSP with new entity text and every other
   lump unchanged. With `qs-map`, which reads and edits the entity text without losing a byte,
