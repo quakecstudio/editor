@@ -48,11 +48,13 @@ if ! command -v prek >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/prek" ]]; then
     python3 -m pip install --user --quiet --break-system-packages prek >/dev/null 2>&1
 fi
 
-# uv runs the plan/ scripts with their dependency (PyYAML) supplied per run
-# (`uv run --no-project --with pyyaml python3 plan/check.py`), so the checks work with no
-# system or $HOME site-packages install. This matters where $HOME is read-only (some
-# sandboxes), where a plain `python3 plan/check.py` cannot import yaml. astral.sh ships a
-# prebuilt installer; the step skips if uv is already present or the download is blocked.
+# The system PyYAML above is how plan/ gets its dependency on a normal machine. Where that
+# apt install is unavailable or cannot write the system site-packages (no apt, no root, or a
+# read-only system, as in some sandboxes), a plain `python3 plan/check.py` cannot import
+# yaml. uv covers that case without a persistent install: it supplies PyYAML per run in its
+# own throwaway environment, so `uv run --no-project --with pyyaml python3 plan/check.py`
+# works. astral.sh ships a prebuilt installer; the step skips if uv is already present or the
+# download is blocked.
 if ! command -v uv >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/uv" ]]; then
   curl --proto '=https' --tlsv1.2 -sSf https://astral.sh/uv/install.sh |
     sh >/dev/null 2>&1

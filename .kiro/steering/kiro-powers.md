@@ -100,14 +100,17 @@ The `.claude/` skills and agents use a few Claude Code conventions. When followi
 - **The Claude `Agent` tool / subagents** - delegation to the `implementer` and `reviewer`
   subagents. In Kiro, delegate by invoking the `implementer` and `reviewer` agents defined
   in `.kiro/agents/`.
-- **Running the `plan/` scripts** - they need PyYAML. The session hook
-  (`.claude/hooks/session-setup.sh`) installs `uv`, so when a plain `python3 plan/check.py`
-  cannot import yaml (a sandbox with a read-only `HOME`, where the hook could not install
-  PyYAML into `$HOME`), run the same script through uv instead, which supplies the
-  dependency per run: `uv run --no-project --with pyyaml python3 plan/check.py` (and the same
-  for `status.py`, `apply.py`, `gen_readiness.py` and the `plan` unittests). Where a normal
-  `python3` already imports yaml, keep using it; the commands in the `.claude/` procedures,
-  `AGENTS.md` and `CLAUDE.md` stay as written.
+- **Running the `plan/` scripts** - they need PyYAML. On a normal machine the session hook
+  (`.claude/hooks/session-setup.sh`) installs it system-wide with `apt` (`python3-yaml`), and
+  CI installs it with pip, so `python3 plan/check.py` just works. Where that apt install is
+  unavailable or cannot write the system site-packages (no apt, no root, or a read-only
+  system, as in some sandboxes), nothing installs PyYAML and a plain `python3 plan/check.py`
+  cannot import yaml. The hook also installs `uv` for exactly this case: run the script
+  through uv, which supplies PyYAML per run in a throwaway environment (it does not make a
+  bare `python3` import yaml afterwards): `uv run --no-project --with pyyaml python3
+  plan/check.py` (and the same for `status.py`, `apply.py`, `gen_readiness.py` and the `plan`
+  unittests). Where a normal `python3` already imports yaml, keep using it; the commands in
+  the `.claude/` procedures, `AGENTS.md` and `CLAUDE.md` stay as written.
 - **The `/goal ...` run block** - the `README.md` "Next run" block and the examples in
   `docs/agents/README.md` are Claude Code auto-mode commands (`/goal Run /run-phase ...`).
   Kiro has the same unattended, goal-driven loop as its Autonomous mode, so run the identical
