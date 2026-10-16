@@ -33,8 +33,8 @@ const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
 const SOURCE_EXTENSIONS: [&str; 5] = ["rs", "py", "sh", "c", "h"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
-const TEXT_EXTENSIONS: [&str; 10] = [
-    "md", "toml", "yaml", "yml", "json", "lock", "html", "txt", "tsv", "csv",
+const TEXT_EXTENSIONS: [&str; 12] = [
+    "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
 ];
 const TEXT_NAMES: [&str; 3] = [LICENSE_FILE, ".gitignore", ".gitattributes"];
 const COMMENT_OPENERS: [&str; 6] = ["//", "#", "<!--", "/*", "*", "--"];

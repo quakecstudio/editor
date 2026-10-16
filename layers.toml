@@ -5,6 +5,7 @@
 
 [crates]
 qc-progs = "L0"
+qc-trace = "L1"
 qc-types = "L0"
 qs-bench = "tests"
 qs-log = "L0"
