@@ -48,9 +48,11 @@ editor/
 | apps | Desktop app, CLI, LSP server |
 
 **Separate processes.** The oracles (id's VM and qcc, a pinned FTEQCC, later id's map tools
-and ericw-tools) are C programs in `oracles/`, run only in CI to prove our ports match. The
-preview host is a GPL engine fork in `quakecstudio/preview-host`, talking to the IDE over a
-local socket. The game runs in its own docked window in v1; the embedded game view is
+and ericw-tools, and a pinned QuakeSpasm build as the engine oracle) are C programs in
+`oracles/`, run only in CI to prove our ports match. The preview host is our own Rust app in
+`apps/preview-host` ([ADR-0004](docs/adr/0004-preview-host-base.md)), built on our QuakeC VM,
+`qs-sim`, `qs-sound` and the wgpu renderer, and runs as its own process, talking to the IDE over
+a local socket. The game runs in its own docked window in v1; the embedded game view is
 post-MVP.
 
 **Two kinds of spec.** Engine and format behaviour is written up in
@@ -112,8 +114,8 @@ scripts/refresh-specs.sh                  # refresh specs/ from the origins
 prek run                                  # the pre-commit hooks
 ```
 
-`make ci` runs every `cargo` and `cargo xtask` step above except `refresh-specs.sh`; the
-individual commands are for narrowing down a failure.
+`make ci` runs every `cargo` and `cargo xtask` step above and `refresh-specs.sh --verify`,
+but never a refresh; the individual commands are for narrowing down a failure.
 
 The plan:
 

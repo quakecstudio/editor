@@ -23,9 +23,9 @@ issues:
   verify:
   - Schema validation tests in both repos
 - key: P3-02
-  title: Fork the preview host and add the bridge module
+  title: Build the preview host app
   labels:
-  - c-tools
+  - apps
   - area:preview
   - type:feature
   size: L
@@ -36,38 +36,41 @@ issues:
   depends:
   - P3-01
   - P0-14
+  - P3-24
+  - P3-26
+  - P3-27
   deliverable:
-  - Separate repo quakecstudio/preview-host (GPL-3.0-or-later, keeping the upstream engine's notices), forked from the engine chosen in ADR-0004, with a bridge module implementing docs/spec/bridge-protocol.md events
+  - 'apps/preview-host (ADR-0004): window and input, the host loop at a fixed server tick, id1 and the rerelease loaded from the user''s install (P1-19), qs-sim, qs-render and qs-sound composed, and a bridge server implementing docs/spec/bridge-protocol.md events'
   - Builds for macOS universal, Windows x64/arm64, Linux x86_64/aarch64 as CI artifacts with checksums
   acceptance:
-  - Loads id1 and rerelease from the user's install and streams events to a test client
-  - Every change outside bridge/ is listed in PATCHES.md with its reason
+  - Loads id1 and the rerelease from the user's install, plays e1m1 from start to exit with keyboard and mouse on all three OSes, and streams events to a test client
   - 'Implements every command in bridge-protocol.md except reload (P3-03) and debugging (P3-04): pause, resume, step, set field, pick, inspect, console, screenshot, spawn player at; each with a conformance
     test'
   verify:
-  - Protocol conformance tests in the host repo CI on all three OSes
+  - Protocol conformance tests in CI on all three OSes
 - key: P3-03
   title: Hot reload with field migration in the preview host
   labels:
-  - c-tools
+  - L4-bridges
   - area:preview
   - type:feature
   size: L
   reqs:
   - ENG-3
   depends:
-  - P3-02
+  - P3-24
+  - P3-01
   deliverable:
   - 'Reload command that swaps progs.dat while keeping the map: maps globals and fields by name and type, rebinds function references by name, reports every value it could not migrate'
   acceptance:
   - Changing a monster's think function while the map runs takes effect without a restart
   - Adding a field, changing a field type and removing a function each produce a precise migration report
   verify:
-  - Host-repo tests driving reload through the bridge test client; the IDE-side reload scenario is in P3-17
+  - qs-sim tests driving reload through the bridge commands; the IDE-side reload scenario is in P3-17
 - key: P3-04
   title: Debugging in the preview host
   labels:
-  - c-tools
+  - L4-bridges
   - area:preview
   - type:feature
   size: M
@@ -75,7 +78,8 @@ issues:
   - ENG-4
   - GOAL-3
   depends:
-  - P3-02
+  - P3-24
+  - P3-01
   - P1-28
   deliverable:
   - Breakpoints by source line via .lno, step in/over/out, call stack, watch expressions, entity tree snapshot
@@ -86,7 +90,7 @@ issues:
 - key: P3-05
   title: Headless mode for the preview host
   labels:
-  - c-tools
+  - apps
   - area:preview
   - type:feature
   size: S
@@ -111,11 +115,11 @@ issues:
   - AGT-10
   - AGT-2
   depends:
-  - P3-05
+  - P3-24
   - P3-06
   deliverable:
   - 'docs/spec/scenario.md: scenario file (map, seed, player start, timed inputs, console commands, assertions on edicts and globals, screenshots)'
-  - scenario.run command executing a scenario in the headless host and returning structured pass/fail with evidence
+  - scenario.run command executing a scenario in qs-sim in process (fixed timestep, no window or audio) and returning structured pass/fail with evidence; screenshot steps go through the EngineAdapter to the headless host app (P3-05)
   acceptance:
   - The same scenario gives identical results on ten consecutive runs on each OS
   verify:
@@ -405,6 +409,15 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - P0-13
+  - P5-05
+  - P3-22
+  - P3-23
+  - P3-24
+  - P3-25
+  - P3-26
+  - P3-27
+  - P3-28
   - P3-21
   - P3-01
   - P3-02
@@ -432,3 +445,178 @@ issues:
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - The gate report merged with `Closes`, linking the CI runs and recordings; the reviewer's closing comment lists the phase's issues, all closed
+- key: P0-13
+  title: Verify FTEQW on Apple silicon
+  labels:
+  - c-tools
+  - area:preview
+  - type:spike
+  - needs:human
+  size: S
+  reqs:
+  - PLAT-4
+  deliverable:
+  - 'docs/spikes/fteqw-macos.md: build steps, whether it runs natively, whether -qcdebug and applycompile work'
+  acceptance:
+  - 'A clear yes, no or partial for each of: builds, runs, debugs, reloads'
+  verify:
+  - Screenshots and console logs attached
+- key: P5-05
+  title: Build the wgpu renderer for BSPs and models
+  labels:
+  - L7-ui
+  - area:map
+  - type:feature
+  size: L
+  reqs:
+  - MAP-17
+  depends:
+  - P5-02
+  - P0-10
+  deliverable:
+  - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
+  acceptance:
+  - Renders every id1 map at 120 Hz on the reference Mac
+  verify:
+  - Image comparison tests; benchmark
+- key: P3-22
+  title: 'Spec: preview host engine'
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:spec
+  size: L
+  reqs:
+  - ENG-2
+  - ENG-15
+  - LIC-2
+  depends:
+  - P0-12
+  - P5-01
+  deliverable:
+  - 'docs/spec/engine/: the server frame and physics (sv_phys.c), movement and collision (world.c, sv_move.c, sv_user.c), the engine side of the builtins (pr_cmds.c), client state, view and temporary entities (cl_*.c, view.c), lightstyles, particles and sound, and the rerelease''s engine behaviour (QuakeSpasm''s rerelease support: builtins, messages, localization), each citing id''s or QuakeSpasm''s file and function'
+  - Named constants for every limit and tuning value (gravity, step height, friction, edict limits) with their citations
+  acceptance:
+  - Every subsystem that P3-24, P3-26 and P3-27 implement has a section with normative statements tests can cite
+  verify:
+  - Implementer review; spec-citation ratchet
+- key: P3-23
+  title: 'Engine oracle: a pinned QuakeSpasm that traces every server frame'
+  labels:
+  - c-tools
+  - area:preview
+  - type:test
+  size: M
+  reqs:
+  - ENG-15
+  - LIC-7
+  - ARCH-2
+  depends:
+  - P1-11
+  deliverable:
+  - 'oracles/engine: QuakeSpasm fetched by pinned tag and checksum and built by cargo xtask oracles, with a headless harness that steps server frames from a scripted input file and writes a per-frame trace of edicts and globals (docs/spec/trace.md extended), offscreen screenshots at given frames and the mixed audio buffer'
+  acceptance:
+  - A scripted route through a corpus map gives the same trace on two runs and on all three OSes
+  - The oracle is never part of the shipped app or required to build it
+  verify:
+  - cargo xtask oracles in CI on all three OSes
+- key: P3-24
+  title: Implement the preview host's server simulation
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: L
+  reqs:
+  - ENG-2
+  - ENG-15
+  depends:
+  - P3-22
+  - P1-16
+  - P5-02
+  deliverable:
+  - 'crates/qs-sim: server frame, physics, movement, collision against BSP hulls, the engine side of qc-builtins, spawning entities from the map, level changes and intermission, save and load; ported from id''s source under docs/porting.md and running qc-vm and qc-edict'
+  acceptance:
+  - id1 and rerelease progs run on every corpus map without a QC error the oracle does not also report
+  - No panics on any input; errors are values
+  verify:
+  - cargo test -p qs-sim; the differential suite (P3-25)
+- key: P3-25
+  title: Server simulation differential suite against the engine oracle
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:test
+  size: M
+  reqs:
+  - ENG-15
+  - QA-1
+  depends:
+  - P3-24
+  - P3-23
+  deliverable:
+  - 'tests/differential engine mode: the same map, progs and scripted inputs in qs-sim and the engine oracle, compared frame by frame; a fast subset in cargo xtask ci and the full corpus nightly'
+  acceptance:
+  - Zero divergences in edicts and globals over scripted routes through every id1 map and the rerelease start map
+  - A deliberate physics bug is caught with the frame and edict reported
+  verify:
+  - CI runs on all three OSes
+- key: P3-26
+  title: Render the game in the preview host
+  labels:
+  - L7-ui
+  - area:preview
+  - type:feature
+  size: L
+  reqs:
+  - ENG-2
+  - ENG-16
+  - PLAT-3
+  depends:
+  - P5-05
+  - P3-22
+  - P1-29
+  deliverable:
+  - 'qs-render extended for play: alias, MD5 and sprite models with interpolation, particles, sky, liquids, fog, lightstyles and dynamic lights, view blends, the HUD, console and centerprint with the rerelease''s localization'
+  acceptance:
+  - id1 maps and the rerelease start map render at 120 Hz on the reference Mac, through Metal on macOS, DX12 or Vulkan on Windows and Vulkan on Linux
+  verify:
+  - Offscreen snapshot tests; the fidelity checks (P3-28)
+- key: P3-27
+  title: Sound and music in the preview host
+  labels:
+  - L4-bridges
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-2
+  - ENG-16
+  depends:
+  - P3-22
+  - P1-29
+  deliverable:
+  - 'crates/qs-sound: mixer, spatialization and attenuation, ambient and looping sounds, music tracks, and a null output for headless runs'
+  acceptance:
+  - The mixed output of a scripted route matches the engine oracle's within the tolerance stated in docs/spec/engine/
+  verify:
+  - Tests against oracle audio buffers
+- key: P3-28
+  title: Render and sound fidelity checks against the engine oracle
+  labels:
+  - L7-ui
+  - area:preview
+  - type:test
+  size: M
+  reqs:
+  - ENG-15
+  depends:
+  - P3-26
+  - P3-27
+  - P3-23
+  deliverable:
+  - Screenshot comparisons with the engine oracle at fixed frames of scripted routes, with per-map tolerances recorded in docs/spec/engine/, and the same for audio
+  acceptance:
+  - Every id1 map and the rerelease start map pass within the recorded tolerances; a deliberate lighting bug fails
+  verify:
+  - Nightly job on all three OSes

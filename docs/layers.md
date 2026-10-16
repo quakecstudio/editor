@@ -8,21 +8,22 @@ learn about the editor above them and each layer can be tested, and pass its rea
 
 ```mermaid
 flowchart TB
-  apps["Apps: desktop app, quakec-ide CLI, LSP server, MCP server"]
+  apps["Apps: desktop app, quakec-ide CLI, LSP server, MCP server, preview host"]
   ui["L7 UI (gpui, swappable): editor, map views, panels, diff review, debugger and entity views"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, MCP tools"]
   cmd["L5 Command engine: session, undo, one registry for UI, CLI, agent and MCP"]
-  eb["L4 Engine bridge: adapters for the preview host, FTEQW, QuakeSpasm"]
+  eb["L4 Engine bridge: adapters for the preview host, FTEQW, QuakeSpasm; the host's simulation and sound"]
   cb["L4 Compilers (ours): QuakeC; map bsp, vis, light"]
   sema["L3 Semantics: resolution, types, dialects, engine-target database, LSP"]
   syn["L2 Syntax + project: preprocessor, lossless CST, progs.src module graph"]
   vm["L1 VM: qc-vm, qc-edict, qc-builtins, what the engine executes"]
   fmt["L0 Formats: progs.dat, .lno, .map, BSP29/BSP2, WAD2 and MDL, as id defined them"]
-  subgraph gpl["Separate processes (C programs)"]
-    oracles["id qcc + qbsp: oracles, CI only"]
-    host["Preview host: engine fork, local socket"]
-    idvm["id's VM: oracle, CI only"]
+  subgraph gpl["Separate processes (C programs, CI only)"]
+    oracles["id qcc + qbsp: oracles"]
+    engine["QuakeSpasm: engine oracle"]
+    idvm["id's VM: oracle"]
   end
+  host["Preview host (Rust, wgpu): separate process"]
   apps --> ui --> agent --> cmd
   cmd --> eb
   cmd --> cb
@@ -31,11 +32,13 @@ flowchart TB
   sema --> syn --> vm --> fmt
   cb -. compared in CI .-> oracles
   eb -. local socket .-> host
+  host -. compared in CI .-> engine
   vm -. compared in CI .-> idvm
 ```
 
 *The diagram is the one in the design doc. Arrows point down to what a layer uses; the C
-programs are separate processes, not crates, and are not layered.*
+oracles are separate processes, not crates, and are not layered. The preview host is an `apps`
+binary that runs as its own process.*
 
 | Layer | What it holds |
 | --- | --- |
@@ -43,11 +46,11 @@ programs are separate processes, not crates, and are not layered.*
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge and adapters |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge and adapters; the preview host's simulation (`qs-sim`) and sound (`qs-sound`) |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
-| L7 UI | The app on the chosen framework |
-| apps | Desktop app, CLI, LSP server |
+| L7 UI | The app on the chosen framework; the wgpu renderer (`qs-render`) |
+| apps | Desktop app, CLI, LSP server, preview host |
 
 ## The rules
 
