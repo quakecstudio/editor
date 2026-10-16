@@ -4,5 +4,6 @@
 
 mod map_entities;
 mod paths;
+mod scenario_numbers;
 mod spec_coverage;
 mod spec_vectors;

@@ -94,7 +94,9 @@ number, for an invalid one.
 `expect:` lists every statement executed, in order, each with exactly the globals and fields
 whose 32-bit pattern changed during it, then how the run ended: `done` when the entry
 function returned, or the error. A bare `error` accepts any message; it is used for the
-divergences, whose message is the implementation's. When `expect:` starts with `...`, only
+divergences, whose message is the implementation's. A quoted message holds no `"` and, since
+`#` starts a comment, no `#`; any other text after `error`, and an `after:` line without both
+numbers in the order shown, is a malformed file, not a looser check. When `expect:` starts with `...`, only
 the last statements are listed and `steps:` gives the total; the runaway and stack overflow
 vectors use it.
 

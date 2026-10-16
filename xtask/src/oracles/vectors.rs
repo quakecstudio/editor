@@ -248,23 +248,28 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
             "builtins" if rest == "engine" => vector.engine_builtins = true,
             "entry" => vector.entry = Some(rest.parse().map_err(|_| at("bad entry"))?),
             "steps" => vector.steps = Some(rest.parse().map_err(|_| at("bad steps"))?),
-            "after" => {
-                let mut depth = None;
-                let mut localstack = None;
-                for item in rest.split_whitespace() {
-                    match item.split_once('=') {
-                        Some(("depth", v)) => depth = v.parse().ok(),
-                        Some(("localstack", v)) => localstack = v.parse().ok(),
-                        _ => return Err(at("bad after")),
-                    }
-                }
-                vector.after = depth.zip(localstack);
-            }
+            "after" => vector.after = Some(parse_after(rest).map_err(|e| at(&e))?),
             "oracle" if rest == "no" => vector.oracle = false,
             _ => return Err(at(&format!("unknown key `{key}`"))),
         }
     }
     Ok(vectors)
+}
+
+/// `depth=<d> localstack=<n>` (README, "Format"): both, each once, in that order.
+fn parse_after(rest: &str) -> Result<(i32, i32), String> {
+    let bad = || format!("bad after `{rest}`: want `depth=<d> localstack=<n>`");
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let [depth, localstack] = words.as_slice() else {
+        return Err(bad());
+    };
+    let number = |word: &str, key: &str| {
+        word.strip_prefix(key)
+            .and_then(|v| v.strip_prefix('='))
+            .and_then(|v| v.parse::<i32>().ok())
+            .ok_or_else(bad)
+    };
+    Ok((number(depth, "depth")?, number(localstack, "localstack")?))
 }
 
 fn opcode_number(word: &str) -> Result<u32, String> {
@@ -283,6 +288,9 @@ fn parse_statement(body: &str) -> Result<Statement, String> {
         if let Some(word) = words.next() {
             *slot = word.parse().map_err(|_| format!("bad operand {word}"))?;
         }
+    }
+    if let Some(word) = words.next() {
+        return Err(format!("text after the operands: {word}"));
     }
     let [a, b, c] = operands;
     Ok(Statement { op, a, b, c })
@@ -427,6 +435,17 @@ fn parse_strings(text: &str) -> Result<Vec<Vec<u8>>, String> {
     Ok(strings)
 }
 
+/// The `"<message>"` of an `error "<message>"` line: one quoted string with no quote inside it
+/// and nothing after it. The comment rule cuts a message at `#`, which leaves it unterminated,
+/// so such a line is refused rather than read as a shorter message.
+fn parse_error_message(text: &str) -> Result<String, String> {
+    text.strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .filter(|message| !message.contains('"'))
+        .map(str::to_owned)
+        .ok_or_else(|| format!("bad error line `error {text}`: want `error \"<message>\"`"))
+}
+
 fn parse_expect_line(vector: &mut Vector, body: &str) -> Result<(), String> {
     if body == "..." {
         vector.partial = true;
@@ -436,13 +455,12 @@ fn parse_expect_line(vector: &mut Vector, body: &str) -> Result<(), String> {
         vector.end = Some(End::Done);
         return Ok(());
     }
-    if let Some(rest) = body.strip_prefix("error") {
-        let rest = rest.trim();
-        let message = rest
-            .strip_prefix('"')
-            .and_then(|r| r.strip_suffix('"'))
-            .map(str::to_owned);
-        vector.end = Some(End::Error(message));
+    if body == "error" {
+        vector.end = Some(End::Error(None));
+        return Ok(());
+    }
+    if let Some(rest) = body.strip_prefix("error ") {
+        vector.end = Some(End::Error(Some(parse_error_message(rest)?)));
         return Ok(());
     }
     let mut words = body.split_whitespace();
@@ -1109,6 +1127,66 @@ mod tests {
         let vectors = parse("t.txt", "== v\nafter: depth=0 localstack=2\n").unwrap();
         assert_eq!(vectors.first().unwrap().after, Some((0, 2)));
         assert!(parse("t.txt", "== v\nafter: stack=2\n").is_err());
+    }
+
+    #[test]
+    fn refuses_a_malformed_error_line() {
+        for bad in ["error \"open", "errors", "error \"a # b\""] {
+            let text = format!("== v\nexpect:\n  {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        for bad in ["error \"a\" b", "error \"a\"b\"", "error x", "error \""] {
+            let text = format!("== v\nexpect:\n  {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        let empty = parse("t.txt", "== v\nexpect:\n  error \"\"\n").unwrap();
+        assert_eq!(
+            empty.first().unwrap().end,
+            Some(End::Error(Some(String::new())))
+        );
+    }
+
+    #[test]
+    fn refuses_a_malformed_after_line() {
+        for bad in ["depth=x localstack=2", "depth=0", "localstack=2"] {
+            let text = format!("== v\nafter: {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        for bad in [
+            "",
+            "localstack=2 depth=0",
+            "depth=0 localstack=2 depth=1",
+            "depth=0 localstack=y",
+            "depth=0 localstack=",
+            "depth0 localstack=2",
+            "depth=99999999999 localstack=2",
+        ] {
+            let text = format!("== v\nafter: {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+    }
+
+    #[test]
+    fn parses_every_vector_file() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(super::VECTORS);
+        let mut count = 0_usize;
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "txt") {
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                let text = std::fs::read_to_string(&path).unwrap();
+                count = count.saturating_add(parse(&name, &text).unwrap().len());
+            }
+        }
+        assert!(count > 0, "no vectors in {}", dir.display());
+    }
+
+    #[test]
+    fn refuses_text_after_the_operands() {
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3 4\n").is_err());
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3\n").is_ok());
     }
 
     #[test]
