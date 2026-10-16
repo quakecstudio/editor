@@ -25,9 +25,10 @@ lengths or the number of archives (FS-3.9, FS-3.10). `-cachedir` is not implemen
 
 The `walk` example builds the search path from the engine's arguments, then lists and reads
 every file on it and prints a digest. It also decodes every `.spr`, `.mdl` and MD5 model with
-`qs-mdl`, every `.wav` with `qs-wav`, and every `.bsp` with `qs-bsp`, with its entity text
-read and written back by `qs-map`, and prints a `failed:` line for each file it cannot read
-or decode. A BSP that a lookup reaches has its `.lit` chosen as QuakeSpasm's loader chooses
+`qs-mdl`, every `.wav` under `sound/` with `qs-wav` (the only place `S_LoadSound` loads a
+sound from, WAV-3.5; the others are counted on a `not sounds:` line), and every `.bsp` with
+`qs-bsp`, with its entity text read and written back by `qs-map`, and prints a `failed:` line
+for each file it cannot read or decode. A BSP that a lookup reaches has its `.lit` chosen as QuakeSpasm's loader chooses
 it (BSP-18); a `.lit` QuakeSpasm ignores is a `warning:` line, since the map still loads:
 
 ```bash
@@ -43,5 +44,6 @@ archive <asset>/id1/pak0.pak: 353 entries, directory CRC 34223, modified true
 directory <asset>/id1
 gfx.wad: 149 lumps, conchars at Ok(23996)
 decoded 3 sprites, 226 sounds, 0 MD5 meshes, 0 MD5 animations, 81 alias models, 23 BSPs, 8 .lit files (0 from a game directory of lower priority, ignored)
+not sounds: 0 .wav files outside sound/, which S_LoadSound never loads
 read 424 files, 99848012 bytes, digest ae8822040b6eab21
 ```

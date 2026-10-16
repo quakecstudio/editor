@@ -12,15 +12,16 @@
 //! with each archive's entry count, directory CRC and whether it marks the game as modified,
 //! then what `gfx.wad` holds, the number of files and bytes read, and a 64-bit FNV-1a digest
 //! of every name and its contents, so two runs on the same install can be compared. Every
-//! `.spr` is loaded as `Mod_LoadSpriteModel` does (SPR-1, SPR-2), every `.wav` as
-//! `S_LoadSound` does (WAV-1 to WAV-3), every `.md5mesh` with its `.md5anim` (MD5-1 to
+//! `.spr` is loaded as `Mod_LoadSpriteModel` does (SPR-1, SPR-2), every `.wav` under
+//! `sound/` as `S_LoadSound` does (WAV-1 to WAV-3), every `.md5mesh` with its `.md5anim` (MD5-1 to
 //! MD5-3), every `.mdl` as `Mod_LoadAliasModel` does (MDL-1 to MDL-5), and every `.bsp` as
 //! `Mod_LoadBrushModel` does (BSP-1 to BSP-17), and its entity text read and written back by
 //! `qs-map` (BSP-2, MAP-1, MAP-2); the counts are printed. A BSP that a lookup reaches has its
 //! `.lit` chosen as QuakeSpasm's `Mod_LoadLighting` chooses it, game directory priority
 //! included (BSP-18); a `.lit` it ignores never stops the map loading (BSP-18.8), so its
 //! message is printed as a `warning:` line. Any file that cannot be read or decoded is
-//! printed as a `failed:` line, and makes the run fail.
+//! printed as a `failed:` line, and makes the run fail. A `.wav` outside `sound/` is never
+//! loaded as a sound (WAV-3.5), so it is only counted, on a `not sounds:` line.
 
 #![expect(
     clippy::print_stdout,
@@ -36,7 +37,7 @@ use qs_mdl::md5::md5_anim_path;
 use qs_mdl::{Md5Anim, Md5Mesh, Mdl, Sprite};
 use qs_vfs::{Element, FileRef, StdFs, Vfs};
 use qs_wad::{WAD_GFX_NAME, Wad};
-use qs_wav::s_load_sound;
+use qs_wav::{s_load_sound, sound_name};
 
 /// FNV-1a, 64 bits.
 fn fnv1a(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -58,6 +59,7 @@ struct Decoded {
     bsps: u64,
     lits: u64,
     lower_priority_lits: u64,
+    not_sounds: u64,
 }
 
 /// The path id QuakeSpasm gives each element's game directory, as its
@@ -149,8 +151,12 @@ fn decode(
         Sprite::read(data).map_err(|error| error.to_string())?;
         decoded.sprites = decoded.sprites.saturating_add(1);
     } else if lower.ends_with(b".wav") {
-        s_load_sound(data).map_err(|error| error.to_string())?;
-        decoded.sounds = decoded.sounds.saturating_add(1);
+        if sound_name(name).is_some() {
+            s_load_sound(data).map_err(|error| error.to_string())?;
+            decoded.sounds = decoded.sounds.saturating_add(1);
+        } else {
+            decoded.not_sounds = decoded.not_sounds.saturating_add(1);
+        }
     } else if lower.ends_with(b".md5mesh") {
         let mesh = Md5Mesh::read(data).map_err(|error| error.to_string())?;
         decoded.meshes = decoded.meshes.saturating_add(1);
@@ -235,6 +241,10 @@ fn main() -> Result<(), String> {
         decoded.bsps,
         decoded.lits,
         decoded.lower_priority_lits
+    );
+    println!(
+        "not sounds: {} .wav files outside sound/, which S_LoadSound never loads",
+        decoded.not_sounds
     );
     println!("read {files} files, {bytes} bytes, digest {digest:016x}");
     if failed > 0 {

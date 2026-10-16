@@ -268,6 +268,28 @@ impl Sound<'_> {
     }
 }
 
+/// The directory id's `S_LoadSound` loads every sound from (WAV-3.5).
+pub const WAV_SOUND_DIR: &str = "sound/";
+
+/// The path id's `S_LoadSound` loads the sound `name` from: [`WAV_SOUND_DIR`] followed by the
+/// name, as its `Q_strcpy(namebuffer, "sound/")` and `Q_strcat(namebuffer, s->name)` build it.
+///
+/// Implements WAV-3.5.
+#[must_use]
+pub fn s_load_sound_path(name: &str) -> String {
+    format!("{WAV_SOUND_DIR}{name}")
+}
+
+/// The sound name the file at `path` on the search path is loaded by, the inverse of
+/// [`s_load_sound_path`]: `None` for a file outside [`WAV_SOUND_DIR`], which `S_LoadSound`
+/// never loads.
+///
+/// Implements WAV-3.5.
+#[must_use]
+pub fn sound_name(path: &[u8]) -> Option<&[u8]> {
+    path.strip_prefix(WAV_SOUND_DIR.as_bytes())
+}
+
 /// Reads a WAV file and checks it is one the engine plays, as id's `S_LoadSound` does.
 ///
 /// Implements WAV-3 on top of [`get_wavinfo`]: one channel, a width of 1 or 2 bytes and a

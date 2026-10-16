@@ -11,7 +11,8 @@ use proptest::prelude::*;
 use crate::fixtures::{ChunkSpec, WavSpec, chunk, cue, fmt, list};
 use crate::{
     Sound, WAV_CHUNK_HEADER_SIZE, WAV_CUE_LOOPSTART_OFFSET, WAV_FORMAT_PCM, WAV_LIST_LENGTH_OFFSET,
-    WAV_LIST_MARK_OFFSET, WAV_NO_LOOP, WavError, WavInfo, get_wavinfo, s_load_sound,
+    WAV_LIST_MARK_OFFSET, WAV_NO_LOOP, WAV_SOUND_DIR, WavError, WavInfo, get_wavinfo, s_load_sound,
+    s_load_sound_path, sound_name,
 };
 
 /// The header of the default fixture: 11025, 1, 1, no loop, 5 samples at 44.
@@ -410,6 +411,35 @@ fn stereo_is_rejected() {
     );
     // A file GetWavinfo rejects is not loaded either.
     assert_eq!(s_load_sound(b"junk"), Err(WavError::MissingRiff));
+}
+
+// spec WAV-3.5: `S_LoadSound` loads `sound/<name>` only, so a `.wav` elsewhere (the
+// rerelease's haptics clips) is never loaded as a sound.
+#[test]
+fn sounds_load_from_sound_only() {
+    assert_eq!(WAV_SOUND_DIR, "sound/");
+    assert_eq!(
+        s_load_sound_path("weapons/ax1.wav"),
+        "sound/weapons/ax1.wav"
+    );
+    assert_eq!(
+        sound_name(b"sound/weapons/ax1.wav"),
+        Some(b"weapons/ax1.wav".as_slice())
+    );
+    assert_eq!(sound_name(b"sound/"), Some(b"".as_slice()));
+    for elsewhere in [
+        b"tactile/dualsense/weapons/ax1_vb.wav".as_slice(),
+        b"sounds/ax1.wav",
+        b"music/track02.wav",
+        b"progs/sound/x.wav",
+        b"sound",
+        b"",
+    ] {
+        assert_eq!(sound_name(elsewhere), None, "{}", elsewhere.escape_ascii());
+    }
+    let name = "misc/talk.wav";
+    let path = s_load_sound_path(name);
+    assert_eq!(sound_name(path.as_bytes()), Some(name.as_bytes()));
 }
 
 // spec WAV-3.2: 8-bit samples are unsigned around 128 and 16-bit samples signed.
