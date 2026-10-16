@@ -16,6 +16,8 @@
 //!   .lno.
 //! - `cargo xtask oracles scenarios [<name>...]` builds them and runs only the scenario tests of
 //!   `oracles/scenarios.rs`, or the ones named.
+//! - `cargo xtask oracles fuzz <scenario | init | progs | all> [--time <seconds>]` builds the
+//!   libFuzzer targets of `oracles/vm/fuzz.c` and runs them (`oracles/fuzz.rs`).
 //! - `cargo xtask oracles json <trace>` prints a binary trace in the JSON form (TRACE-6).
 //!
 //! Everything lives under `target/oracles/`: `src/` holds the fetched files, `build/` the
@@ -26,6 +28,7 @@
 
 mod compile;
 mod extract;
+mod fuzz;
 pub(crate) mod id101;
 mod numbers;
 mod probes;
@@ -39,7 +42,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::download::{Curl, Net};
-use compile::{Code, Compiler, Unit};
+use compile::{Code, Compiler, Instrument, Unit};
 
 const SOURCES: &str = "oracles/sources.toml";
 const OUT: &str = "target/oracles";
@@ -83,7 +86,7 @@ const FTEQCC_FILES: [&str; 10] = [
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Sources {
+pub(crate) struct Sources {
     upstream: Vec<Upstream>,
     extract: Vec<Extract>,
 }
@@ -125,6 +128,7 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             let scenarios = scenarios::check(&oracles, None)?;
             Ok(vectors && numbers && probes && scenarios)
         }
+        ["fuzz", rest @ ..] => fuzz::main(root, rest),
         ["scenarios", names @ ..] => {
             let oracles = build(root)?;
             scenarios::check(&oracles, Some(names))
@@ -151,14 +155,15 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             Ok(true)
         }
         _ => Err(
-            "usage: cargo xtask oracles [build | scenarios [<name>...] | id101 <codebase directory> \
+            "usage: cargo xtask oracles [build | scenarios [<name>...] | fuzz <target> [--time <s>] \
+             | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),
     }
 }
 
-fn read_sources(root: &Path) -> Result<Sources, String> {
+pub(crate) fn read_sources(root: &Path) -> Result<Sources, String> {
     let path = root.join(SOURCES);
     let text = fs::read_to_string(&path).map_err(|e| format!("{SOURCES}: {e}"))?;
     let sources: Sources = toml::from_str(&text).map_err(|e| format!("{SOURCES}: {e}"))?;
@@ -181,7 +186,7 @@ fn read_sources(root: &Path) -> Result<Sources, String> {
 }
 
 /// Downloads every pinned file that is missing from the cache, and checks every file's SHA-256.
-fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
+pub(crate) fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
     for upstream in &sources.upstream {
         for (file, want) in &upstream.files {
             let path = cache.join(&upstream.id).join(file);
@@ -322,7 +327,12 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     for dir in [&cache, &objects, &bin, &oracles.work] {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let compiler = Compiler::find(&objects, coverage_requested())?;
+    let instrument = if coverage_requested() {
+        Instrument::Coverage
+    } else {
+        Instrument::None
+    };
+    let compiler = Compiler::find(&objects, instrument)?;
     let stamp_now = stamp(root, &compiler)?;
     let stamp_file = bin.join("stamp");
     if oracles.qcc.is_file()
@@ -334,7 +344,6 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         return Ok(oracles);
     }
     fetch(&sources, &cache)?;
-    let quake = cache.join("quake").join("WinQuake");
     let tools = cache.join("quake-tools");
 
     // id's qcc, unchanged.
@@ -389,6 +398,29 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     compiler.link(&fteqcc_objects, &oracles.fteqcc)?;
 
     // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
+    let vm_objects = compile_vm(root, &sources, &cache, &objects, &compiler, &[])?;
+    compiler.link(&vm_objects, &oracles.vm)?;
+    fs::write(&stamp_file, format!("{stamp_now}\n"))
+        .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
+    println!(
+        "oracles: built qcc, vm-oracle and fteqcc in {}",
+        bin.display()
+    );
+    Ok(oracles)
+}
+
+/// Compiles the VM oracle's objects into `objects`: `pr_exec.c` whole, id's extracted
+/// functions, our harness, and `extra`, each of our files with the defines given; returns the
+/// objects to link. `cargo xtask oracles fuzz` adds a fuzz target as `extra`.
+pub(crate) fn compile_vm(
+    root: &Path,
+    sources: &Sources,
+    cache: &Path,
+    objects: &Path,
+    compiler: &Compiler,
+    extra: &[(PathBuf, &[&str])],
+) -> Result<Vec<PathBuf>, String> {
+    let quake = cache.join("quake").join("WinQuake");
     let includes = vec![root.join("oracles/vm"), quake.clone()];
     let mut vm_objects = Vec::new();
     let pr_exec = quake.join("pr_exec.c");
@@ -404,7 +436,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         &object,
     )?;
     vm_objects.push(object);
-    for source in generate(&sources, &cache, &objects)? {
+    for source in generate(sources, cache, objects)? {
         let object = objects.join(format!("vm_{}.o", stem(&source)));
         compiler.object(
             &Unit {
@@ -418,29 +450,25 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         )?;
         vm_objects.push(object);
     }
-    for file in VM_HARNESS {
-        let source = root.join(file);
+    let harness = VM_HARNESS
+        .iter()
+        .map(|file| (root.join(file), &["QS_ENGINE"][..]));
+    let extra = extra.iter().map(|(file, defines)| (file.clone(), *defines));
+    for (source, defines) in harness.chain(extra) {
         let object = objects.join(format!("vm_{}.o", stem(&source)));
         compiler.object(
             &Unit {
                 source: &source,
                 code: Code::Ours,
                 includes: &includes,
-                defines: &["QS_ENGINE"],
+                defines,
                 forced_include: None,
             },
             &object,
         )?;
         vm_objects.push(object);
     }
-    compiler.link(&vm_objects, &oracles.vm)?;
-    fs::write(&stamp_file, format!("{stamp_now}\n"))
-        .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
-    println!(
-        "oracles: built qcc, vm-oracle and fteqcc in {}",
-        bin.display()
-    );
-    Ok(oracles)
+    Ok(vm_objects)
 }
 
 fn stem(path: &Path) -> String {

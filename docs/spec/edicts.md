@@ -197,6 +197,13 @@ globals, so each one is at a fixed slot. It never looks them up by name.
   and the mission-pack ammo fields set by the `give` cheat (`Host_Give_f`). Lookup is by exact
   name over the field definitions, first match (`ED_FindField`); a missing field is skipped, not
   an error.
+- **EDICT-3.5** With more than 894760 field slots, `LIMIT_MAX_EDICTS` edicts of EDICT-1.1's
+  size take more than 2147483647 bytes, so an entity value (EDICT-1.5), a 32-bit integer, cannot
+  name every edict, and id's `PR_LoadProgs` computes `entityfields * 4` as an `int`, which
+  overflows for a large enough count, which is undefined. This spec fixes the answer: a progs
+  whose `entityfields` is greater than 894760 is refused with a typed error when the edict store
+  is set up, whether or not the header CRC was checked. No progs a compiler writes comes near
+  it. 894760 is `(2147483647 / 600 - 96) / 4`, each division rounded down.
 
 ### Constants
 

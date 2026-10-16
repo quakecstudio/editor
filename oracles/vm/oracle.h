@@ -19,6 +19,8 @@
 // One arena holds the progs, the edicts and every engine string, so every string value is a
 // 32-bit offset from pr_strings on a 64-bit host too (EDICT-13.1).
 void *qs_alloc(size_t size);
+qboolean qs_arena_init(void);
+void qs_arena_reset(void);
 
 // Engine strings (EDICT-13): text outside the string table. The trace writer emits a string
 // record for each before the next change-carrying record, and again whenever its text
@@ -79,6 +81,7 @@ qboolean qs_decimal_syntax(const char *text);
 void qs_set_cvar(const char *name, const char *text);
 void qs_set_random_state(unsigned state);
 void qs_add_model_bounds(const char *name, const float *mins, const float *maxs);
+void qs_clear_model_bounds(void);
 void qs_init_buffers(void);
 
 // Loading (host.c).
@@ -87,12 +90,22 @@ typedef struct {
     int size;
 } qs_progs_file_t;
 const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t *out);
+const char *qs_check_progs(byte *file, long size, qboolean check_crc, qs_progs_file_t *out);
 unsigned qs_crc16(const byte *data, int size);
 void qs_alloc_edicts(int max_edicts);
 
 // Server frames (scenario.c): a physics frame (DIFF-5.3) and a server frame (DIFF-5.1).
 void qs_physics(double frametime);
 void qs_server_frame(double frametime, long frame);
+
+// Reading the input files (scenario.c, host.c): a scenario of DIFF-2 whose text, which the
+// reader may change, is the `size` bytes at `text`; and the init file of vector mode.
+int qs_parse_scenario(const char *path, char *text, long size);
+typedef struct {
+    int entry;
+    builtin_t *builtins;
+} qs_vector_setup_t;
+int qs_parse_init(const char *init_path, const char *data, long size, qs_vector_setup_t *out);
 
 // Entry points.
 int qs_scenario_main(const char *scenario_path, const char *trace_path);

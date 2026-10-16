@@ -599,11 +599,16 @@ pub(super) struct Outcome {
     pub(super) again: Option<Vec<u8>>,
 }
 
+/// Every case, in the order `cargo xtask oracles` runs them.
+pub(super) fn all_cases() -> Vec<Case> {
+    cases::all()
+}
+
 /// Runs every case, or only the cases `names` names; `Ok(false)` when one fails.
 pub(crate) fn check(oracles: &Oracles, names: Option<&[&str]>) -> Result<bool, String> {
     let work = oracles.work.join("scenarios");
     let (mut passed, mut failed) = (0_u32, 0_u32);
-    let mut cases = cases::all();
+    let mut cases = all_cases();
     if let Some(names) = names.filter(|names| !names.is_empty()) {
         cases.retain(|case| names.contains(&case.name.as_str()));
         if cases.len() != names.len() {

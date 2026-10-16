@@ -58,6 +58,7 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 cargo xtask oracles                 # build all three, then run every VM vector, scenario number vector, probe and scenario test through the VM oracle
 cargo xtask oracles build           # build only; prints where the binaries are
 cargo xtask oracles scenarios [<name>...] # build, then run only the scenario tests, or the ones named
+cargo xtask oracles fuzz <target | all> [--time <s>] # build and run the libFuzzer targets (Fuzzing, below)
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
 cargo xtask oracles rerelease <dir> # also compile the six rerelease codebases with FTEQCC
 cargo xtask oracles json <trace>    # print a binary trace as JSON Lines (TRACE-6)
@@ -261,3 +262,27 @@ The oracles' C is the C tools layer's own code, and the readiness bar of
   probe and scenario test states the trace or exit status the spec gives, so a fault in the C
   fails one of them. The Rust that drives the oracles is in `xtask`, which cargo-mutants
   measures.
+- **Fuzzing:** every reader of a file has a target (Fuzzing, below); TEST-5's day of fuzzing is
+  `cargo xtask oracles fuzz all --time 86400`, whose result the readiness review records.
+
+## Fuzzing
+
+[`vm/fuzz.c`](vm/fuzz.c) holds a libFuzzer target for each of the VM oracle's readers of a
+file: `scenario` (the scenario file, DIFF-2), `init` (vector mode's init file, read against a
+small progs) and `progs` (the progs loader of DIFF-3.1 and EDICT-3.5, with the header CRC checked
+and without). `cargo xtask oracles fuzz <target | all> --time <seconds>` builds each, the whole
+oracle compiled with the address and undefined-behaviour sanitizers (not the alignment check:
+id's edicts sit at multiples of the edict size, which a 64-bit host does not align to 8) and
+linked with libFuzzer, so it needs a clang that has libFuzzer (`CC`: Linux's clang with its
+runtime package, or Homebrew's LLVM on macOS, whose own clang has none). Each target's corpus is
+`target/oracles/fuzz/<target>/corpus`, seeded from the inputs the scenario tests and the VM
+vectors write, and an input that fails is kept in `artifacts/`. The nightly `Fuzz` workflow runs
+each for 10 minutes. The readers set their state back to its defaults before each file, which is
+what lets one process read file after file.
+
+A finding becomes a scenario test or probe that runs through the built oracle: the first runs
+found a progs whose edict size overflowed an `int`, which EDICT-3.5 now refuses
+(`progs-too-many-fields`).
+
+The vectors' own parser, in `xtask`, has a cargo-fuzz target, `xtask-vectors`, in
+[`fuzz/`](../fuzz), which `cargo xtask fuzz` runs with the others.

@@ -17,6 +17,8 @@ qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
 qc-project = { path = "../crates/qc-project" }
 qc-syntax = { path = "../crates/qc-syntax" }
+qc-trace = { path = "../crates/qc-trace" }
+qc-types = { path = "../crates/qc-types" }
 qs-bsp = { path = "../crates/qs-bsp" }
 qs-map = { path = "../crates/qs-map" }
 qs-mdl = { path = "../crates/qs-mdl" }
@@ -83,6 +85,13 @@ bench = false
 [[bin]]
 name = "qs-wav"
 path = "fuzz_targets/qs_wav.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xtask-vectors"
+path = "fuzz_targets/xtask_vectors.rs"
 test = false
 doc = false
 bench = false
