@@ -36,6 +36,14 @@ check:
 | --- | --- | --- |
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
+[`.github/workflows/fuzz.yml`](../.github/workflows/fuzz.yml) runs nightly and on demand
+(`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
+check:
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust; on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
+
 [`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
 (`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,
 in the merge queue or on a schedule, and is **not** a required check (ADR-0009). A readiness

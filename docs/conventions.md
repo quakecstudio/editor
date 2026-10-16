@@ -57,7 +57,8 @@ publish = false
 
 The channel is `1.99.0`, the same as vouch, and `rust-version` equals it.
 
-Nightly Rust is allowed in two places only: `make test-fuzz` (cargo-fuzz), and branch coverage
+Nightly Rust is allowed in two places only: fuzzing with cargo-fuzz (`cargo xtask fuzz`, which
+`make test-fuzz` and the scheduled `Fuzz` workflow call), and branch coverage
 in the `Readiness` workflow, which pins a dated nightly (`NIGHTLY` in
 `.github/workflows/readiness.yml`, equal to `readiness::NIGHTLY` in xtask; ADR-0009).
 

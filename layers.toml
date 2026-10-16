@@ -6,6 +6,7 @@
 [crates]
 qc-lexer = "L2"
 qc-preproc = "L2"
+qc-progs = "L0"
 qc-trace = "L1"
 qc-types = "L0"
 qs-bench = "tests"

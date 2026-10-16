@@ -1,0 +1,58 @@
+# Runs every cargo-fuzz target in fuzz/ for 10 minutes each, nightly and on
+# demand, with `cargo xtask fuzz` (docs/testing.md, TEST-5). A crash fails the
+# run and uploads the crashing input as the `fuzz-artifacts` artifact; minimise
+# it into a regression test in the crate it found.
+#
+# It does not run on pull requests or in the merge queue, and is not a required
+# check (docs/ci.md): pull requests still build and test the crates the targets
+# call. Fuzzing needs nightly Rust (docs/conventions.md).
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchains
+        run: |
+          rustup toolchain install
+          rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-fuzz@0.13.2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: fuzz-${{ runner.os }}
+          workspaces: |
+            .
+            fuzz
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run every fuzz target
+        run: cargo xtask fuzz --time 10m
+      - name: Upload crashing inputs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
