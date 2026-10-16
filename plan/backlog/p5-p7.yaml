@@ -1,47 +1,6 @@
 groups:
 - milestone: P5
   issues:
-  - key: P5-01
-    title: 'Spec: BSP29, BSP2, MDL and .map formats'
-    labels:
-    - L0-formats
-    - area:map
-    - type:spec
-    size: M
-    reqs:
-    - MAP-6
-    - MAP-4
-    - LIC-2
-    depends:
-    - P0-09
-    deliverable:
-    - docs/spec/bsp.md (BSP29 and BSP2 lumps, .lit), docs/spec/mdl.md, docs/spec/map.md (standard and Valve 220 brush formats, entity syntax, worldspawn conventions)
-    - Test vectors under docs/spec/vectors/
-    acceptance:
-    - Every lump and structure field described
-    verify:
-    - Implementer review
-  - key: P5-02
-    title: Implement .map, BSP and MDL readers and the .map writer
-    labels:
-    - L0-formats
-    - area:map
-    - type:feature
-    size: L
-    reqs:
-    - MAP-6
-    - MAP-4
-    - MAP-22
-    depends:
-    - P5-01
-    deliverable:
-    - crates/qs-map (read/write standard and Valve 220, preserving comments and formatting), crates/qs-bsp (read BSP29/BSP2, .lit), crates/qs-mdl (read)
-    - Entity-lump writing for BSPs and .ent override files, for shipped maps with no .map source
-    acceptance:
-    - Every corpus .map round-trips with only formatting changes allowed by the spec; every corpus BSP and id1 MDL loads
-    - Fuzzed readers never panic
-    verify:
-    - cargo test; fuzz targets
   - key: P5-03
     title: Derive entity definitions from QuakeC
     labels:
@@ -81,24 +40,6 @@ groups:
     - Renaming a field in QC rewrites that key in open maps after confirmation
     verify:
     - cargo test
-  - key: P5-05
-    title: Build the wgpu renderer for BSPs and models
-    labels:
-    - L7-ui
-    - area:map
-    - type:feature
-    size: L
-    reqs:
-    - MAP-17
-    depends:
-    - P5-02
-    - P0-10
-    deliverable:
-    - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
-    acceptance:
-    - Renders every id1 map at 120 Hz on the reference Mac
-    verify:
-    - Image comparison tests; benchmark
   - key: P5-06
     title: Map view with entity editing
     labels:
@@ -144,7 +85,7 @@ groups:
   - key: P5-10
     title: 'Preview host: live entity operations'
     labels:
-    - c-tools
+    - L4-bridges
     - area:map
     - type:feature
     size: M
@@ -188,11 +129,8 @@ groups:
     - OPEN-5
     - MAP-18
     depends:
-    - P5-01
-    - P5-02
     - P5-03
     - P5-04
-    - P5-05
     - P5-06
     - P5-07
     - P5-08

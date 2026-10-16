@@ -29,9 +29,11 @@ groups:
     - P1-18
     - P1-19
     - P1-24
+    - P5-02
+    - P1-29
     - P0-24
     deliverable:
-    - 'docs/readiness/p1-r0.md following docs/readiness/_template.md, covering: P1-07, P1-08, P1-28, P1-18, P1-19, P1-24'
+    - 'docs/readiness/p1-r0.md following docs/readiness/_template.md, covering: P1-07, P1-08, P1-28, P1-18, P1-19, P1-24, P5-02, P1-29'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -423,15 +425,20 @@ groups:
     - TEST-11
     - TEST-12
     depends:
+    - P3-03
+    - P3-04
     - P3-19
     - P3-06
     - P3-07
     - P3-08
     - P3-20
+    - P3-24
+    - P3-25
+    - P3-27
     - P2-R4
     - P0-24
     deliverable:
-    - 'docs/readiness/p3-r4.md following docs/readiness/_template.md, covering: P3-19, P3-06, P3-07, P3-08, P3-20'
+    - 'docs/readiness/p3-r4.md following docs/readiness/_template.md, covering: P3-03, P3-04, P3-19, P3-06, P3-07, P3-08, P3-20, P3-24, P3-25, P3-27'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -468,10 +475,48 @@ groups:
     - P3-15
     - P3-16
     - P3-21
+    - P5-05
+    - P3-26
+    - P3-28
     - P2-R7
     - P0-24
     deliverable:
-    - 'docs/readiness/p3-r7.md following docs/readiness/_template.md, covering: P3-11, P3-12, P3-13, P3-14, P3-15, P3-16, P3-21'
+    - 'docs/readiness/p3-r7.md following docs/readiness/_template.md, covering: P3-11, P3-12, P3-13, P3-14, P3-15, P3-16, P3-21, P5-05, P3-26, P3-28'
+    - Ratchet values for every crate in the layer committed to CI
+    acceptance:
+    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
+    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
+    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
+    - Defects reported against this layer from higher layers are all closed
+    verify:
+    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
+  - key: P3-RA
+    title: apps test-suite readiness (P3)
+    labels:
+    - apps
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-1
+    - TEST-2
+    - TEST-3
+    - TEST-4
+    - TEST-5
+    - TEST-6
+    - TEST-7
+    - TEST-8
+    - TEST-9
+    - TEST-10
+    - TEST-11
+    - TEST-12
+    depends:
+    - P3-02
+    - P3-05
+    - P2-RA
+    - P0-24
+    deliverable:
+    - 'docs/readiness/p3-ra.md following docs/readiness/_template.md, covering: P3-02, P3-05'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -501,14 +546,11 @@ groups:
     - TEST-11
     - TEST-12
     depends:
-    - P3-02
-    - P3-03
-    - P3-04
-    - P3-05
+    - P3-23
     - P1-RG
     - P0-24
     deliverable:
-    - 'docs/readiness/p3-rg.md following docs/readiness/_template.md, covering: P3-02, P3-03, P3-04, P3-05'
+    - 'docs/readiness/p3-rg.md following docs/readiness/_template.md, covering: P3-23'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -690,7 +732,7 @@ groups:
     depends:
     - P4-17
     - P4-19
-    - P2-RA
+    - P3-RA
     - P0-24
     deliverable:
     - 'docs/readiness/p4-ra.md following docs/readiness/_template.md, covering: P4-17, P4-19'
@@ -704,40 +746,6 @@ groups:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
 - milestone: P5
   issues:
-  - key: P5-R0
-    title: L0 formats test-suite readiness (P5)
-    labels:
-    - L0-formats
-    - area:process
-    - type:readiness
-    size: S
-    reqs:
-    - TEST-1
-    - TEST-2
-    - TEST-3
-    - TEST-4
-    - TEST-5
-    - TEST-6
-    - TEST-7
-    - TEST-8
-    - TEST-9
-    - TEST-10
-    - TEST-11
-    - TEST-12
-    depends:
-    - P5-02
-    - P4-R0
-    - P0-24
-    deliverable:
-    - 'docs/readiness/p5-r0.md following docs/readiness/_template.md, covering: P5-02'
-    - Ratchet values for every crate in the layer committed to CI
-    acceptance:
-    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
-    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
-    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
-    - Defects reported against this layer from higher layers are all closed
-    verify:
-    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P5-R3
     title: L3 semantics test-suite readiness (P5)
     labels:
@@ -795,10 +803,11 @@ groups:
     - TEST-12
     depends:
     - P5-07
+    - P5-10
     - P3-R4
     - P0-24
     deliverable:
-    - 'docs/readiness/p5-r4.md following docs/readiness/_template.md, covering: P5-07'
+    - 'docs/readiness/p5-r4.md following docs/readiness/_template.md, covering: P5-07, P5-10'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -862,46 +871,11 @@ groups:
     - TEST-11
     - TEST-12
     depends:
-    - P5-05
     - P5-06
     - P4-R7
     - P0-24
     deliverable:
-    - 'docs/readiness/p5-r7.md following docs/readiness/_template.md, covering: P5-05, P5-06'
-    - Ratchet values for every crate in the layer committed to CI
-    acceptance:
-    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
-    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
-    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
-    - Defects reported against this layer from higher layers are all closed
-    verify:
-    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
-  - key: P5-RG
-    title: C tools test-suite readiness (P5)
-    labels:
-    - c-tools
-    - area:process
-    - type:readiness
-    size: S
-    reqs:
-    - TEST-1
-    - TEST-2
-    - TEST-3
-    - TEST-4
-    - TEST-5
-    - TEST-6
-    - TEST-7
-    - TEST-8
-    - TEST-9
-    - TEST-10
-    - TEST-11
-    - TEST-12
-    depends:
-    - P5-10
-    - P3-RG
-    - P0-24
-    deliverable:
-    - 'docs/readiness/p5-rg.md following docs/readiness/_template.md, covering: P5-10'
+    - 'docs/readiness/p5-r7.md following docs/readiness/_template.md, covering: P5-06'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -934,7 +908,7 @@ groups:
     - TEST-12
     depends:
     - P6-15
-    - P5-R0
+    - P4-R0
     - P0-24
     deliverable:
     - 'docs/readiness/p6-r0.md following docs/readiness/_template.md, covering: P6-15'
@@ -1078,7 +1052,7 @@ groups:
     - TEST-12
     depends:
     - P6-03
-    - P5-RG
+    - P3-RG
     - P0-24
     deliverable:
     - 'docs/readiness/p6-rg.md following docs/readiness/_template.md, covering: P6-03'

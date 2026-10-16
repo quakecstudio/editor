@@ -299,22 +299,6 @@ issues:
   - Scored criteria table (license, Apple silicon, rerelease support, code size, bridge invasiveness, upstream activity) with each candidate built and run on all three OSes
   verify:
   - Build logs and screenshots attached to the issue
-- key: P0-13
-  title: Verify FTEQW on Apple silicon
-  labels:
-  - c-tools
-  - area:preview
-  - type:spike
-  - needs:human
-  size: S
-  reqs:
-  - PLAT-4
-  deliverable:
-  - 'docs/spikes/fteqw-macos.md: build steps, whether it runs natively, whether -qcdebug and applycompile work'
-  acceptance:
-  - 'A clear yes, no or partial for each of: builds, runs, debugs, reloads'
-  verify:
-  - Screenshots and console logs attached
 - key: P0-14
   title: Decide the default preview target
   labels:
@@ -327,7 +311,6 @@ issues:
   - OPEN-2
   depends:
   - P0-12
-  - P0-13
   deliverable:
   - docs/adr/0005-default-preview-target.md
   acceptance:
@@ -569,7 +552,6 @@ issues:
   - P0-10
   - P0-11
   - P0-12
-  - P0-13
   - P0-14
   - P0-15
   - P0-16

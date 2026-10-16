@@ -60,7 +60,7 @@ sections:
     title: Architecture
     requirements:
       - {id: ARCH-1, kind: stated, text: "Crate layers L0-L7 plus apps; a crate depends only on lower layers, enforced by cargo xtask layers"}
-      - {id: ARCH-2, kind: stated, text: "C programs (the preview host engine; the id VM, id qcc and map-tool oracles) run as separate processes and talk to the IDE over protocols"}
+      - {id: ARCH-2, kind: stated, text: "C programs (the id VM, id qcc, engine and map-tool oracles) and the preview host run as separate processes and talk to the IDE over protocols"}
       - {id: ARCH-3, kind: implied, text: "Cargo workspace scaffold, toolchain pin, rustfmt/clippy config and pinned dependency policy"}
 
   - id: FND
@@ -109,7 +109,7 @@ sections:
     title: Engine bridge and live preview
     requirements:
       - {id: ENG-1, kind: stated, text: "EngineAdapter trait: launch, reload, set_breakpoint, step, inspect, console, screenshot"}
-      - {id: ENG-2, kind: stated, text: "Preview host: small GPL QuakeSpasm-lineage fork with an IDE bridge module emitting structured events over a versioned JSON local-socket protocol"}
+      - {id: ENG-2, kind: stated, text: "Preview host: our own engine in Rust, ported from id's GPL source, rendering through wgpu and running qc-vm, qc-edict and qc-builtins, with an IDE bridge emitting structured events over a versioned JSON local-socket protocol (ADR-0004)"}
       - {id: ENG-3, kind: stated, text: "Preview host hot reload keeps the map and migrates fields by name where types match"}
       - {id: ENG-4, kind: stated, text: "Preview host debugging: breakpoints, step, watch, entity tree"}
       - {id: ENG-5, kind: stated, text: "FTEQW adapter: applycompile reload and the fteqccgui debug protocol over stdin/stdout with -qcdebug"}
@@ -122,6 +122,8 @@ sections:
       - {id: ENG-12, kind: implied, text: "Headless preview host mode for scenario runs and CI"}
       - {id: ENG-13, kind: stated, text: "Save, compile, reload and see it in the running game in about a second"}
       - {id: ENG-14, kind: implied, text: "Bridge operations the UI needs beyond ENG-1: pause/resume, set field, pick, spawn/remove/edit entity, each capability-flagged"}
+      - {id: ENG-15, kind: implied, text: "Preview host fidelity: its server simulation matches the engine oracle frame by frame on the corpus; rendering and sound match within stated tolerances"}
+      - {id: ENG-16, kind: implied, text: "The preview host reads every asset the game uses: BSP29, BSP2, .lit, MDL, SPR, WAV, the rerelease's MD5 models and QuakeEX.kpf"}
 
   - id: AGT
     title: Agent harness
