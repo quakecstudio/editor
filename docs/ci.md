@@ -28,6 +28,13 @@ queue merges a group only when every required check below has passed on it.
 | `Pinned Actions` | fails if any workflow uses an action not pinned to a full commit SHA (`zgosalvez/github-actions-ensure-sha-pinned-actions`) |
 | `zizmor` | audits every workflow with zizmor and fails on any finding |
 
+[`.github/workflows/bench.yml`](../.github/workflows/bench.yml) runs on pull requests and pushes
+to `main`, not in the merge queue, and is **not** a required check:
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
+
 Every action is pinned to a commit SHA with its version in a comment, every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
@@ -43,7 +50,7 @@ applies to `main`:
 - **Pull request required**, with squash as the only merge method. No approving review is
   required: agents land their own PRs once CI passes, except `needs:human` issues.
 - **Merge queue**, squash, building up to 5 groups.
-- **Required status checks**: every check in the two tables above, by the exact name it
+- **Required status checks**: every check in the `ci.yml` and `secure_workflows.yml` tables above (not `Benchmarks`), by the exact name it
   reports. A required check whose name never reports holds the queue until it times out,
   so a job is renamed, added or removed in the same change as the ruleset.
 - **No force pushes** and **no deletion**. Nobody can bypass the ruleset.

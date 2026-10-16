@@ -96,6 +96,14 @@ The history records each host's CPU model and core count, so the exact machine b
 number is in the data. [#134](https://github.com/quakecstudio/editor/issues/134) (P4-23) measures
 every budget on these machines for the MVP and writes `docs/gates/perf-mvp.md`.
 
-The CI runners (GitHub-hosted Linux) run the harness on every change to catch regressions
-between runs on the same runner class; their absolute numbers do not decide whether a budget is
-met.
+### In CI
+
+The `Benchmarks` workflow ([`.github/workflows/bench.yml`](../.github/workflows/bench.yml)) runs
+`cargo xtask bench` on a GitHub-hosted Linux runner for every pull request and every push to
+`main`, with `QS_BENCH_HOST` set to the runner class (`ci-Linux-X64`). It restores the history
+saved by the last run on `main` from the Actions cache, so a pull request is compared with
+`main`, prints the history, uploads it as the `bench-history` artifact, and saves it back to the
+cache only from `main`. A regression or over-budget result fails the job with an error
+annotation on the pull request. The job is not a required check: shared runners vary too much
+for a 10% threshold to block merges, and their absolute numbers do not decide whether a budget
+is met; the reference machines do.
