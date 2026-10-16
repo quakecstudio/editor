@@ -149,6 +149,13 @@ the preview host's sound system, not to the reader.
   or a negative allocation; this spec fixes the answer as an error.
 - **WAV-3.4** `loopstart` -1 means the sound does not loop; any other value is the sample
   the sound loops back to, and is not checked against `samples`.
+- **WAV-3.5** `S_LoadSound` loads the sound named `<name>` (the name `precache_sound` and
+  `sound` give) from the file `sound/<name>` only: `Q_strcpy(namebuffer, "sound/");` then
+  `Q_strcat(namebuffer, s->name);`, and `COM_LoadStackFile(namebuffer, ...)`. A `.wav` file
+  anywhere else on the search path is never loaded as a sound, so the checks of WAV-3.1 to
+  WAV-3.4 say nothing about it. The 2021 rerelease ships such files, its DualSense haptics
+  clips under `tactile/dualsense/` (stereo, which WAV-3.1 would reject), read only by its own
+  engine.
 
 ### Test vectors
 

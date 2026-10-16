@@ -7,11 +7,13 @@ id's `GetWavinfo` with the bounds checks id's engine leaves out: it finds the `R
 `s_load_sound` adds the checks of id's `S_LoadSound` (one channel) and those this project
 fixes where id's code is undefined (a width of 1 or 2 bytes, a positive rate), and returns
 the sample bytes as a zero-copy `Sound`. Resampling and mixing are the sound system's.
+`s_load_sound_path` and `sound_name` say where `S_LoadSound` looks: `sound/<name>`, never
+anywhere else (WAV-3.5).
 Ported from `WinQuake/snd_mem.c` at the commit pinned in
 [`docs/porting.md`](../../docs/porting.md).
 
 - **Layer:** L0 formats, with no dependencies. The `qs-vfs` example `walk` decodes every
-  `.wav` of an install with it.
+  `.wav` under an install's `sound/` with it.
 - **Spec sections:** WAV-1 to WAV-3 in [`wav.md`](../../docs/spec/wav.md).
 - **Shipped:** yes.
 
