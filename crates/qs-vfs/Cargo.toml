@@ -14,6 +14,8 @@ qs-wad = { workspace = true }
 
 [dev-dependencies]
 qc-progs = { workspace = true }
+qs-mdl = { workspace = true }
+qs-wav = { workspace = true }
 
 [lints]
 workspace = true
