@@ -520,6 +520,13 @@ unchanged from `WinQuake/sv_phys.c` at the pinned commit, with the zero-velocity
 `pr_global_struct`, built with Apple clang 21 at `-O0 -ffp-contract=off -fno-strict-aliasing`
 on arm64 macOS. The frame length is 0.1; floats are printed with 9 significant digits.
 
+Since P1-32 every row of this table and the next is a vector in
+[`vectors/vm/frames.txt`](vectors/vm/frames.txt), which `cargo xtask oracles` runs through the
+VM oracle on Linux, macOS and Windows in CI: the host sets the clock and calls id's
+`SV_RunThink` and `SV_Physics_Pusher`, compiled from the pinned commit, on one edict, or runs
+the oracle's physics and server frames, and the trace shows what changed. On 2026-10-16 all 15
+passed on macOS arm64.
+
 | Input | Output | Statements |
 | --- | --- | --- |
 | Think, clock 1, `nextthink` 1.05 | runs; `time` 1.04999995, `nextthink` 0 | DIFF-5.6 |

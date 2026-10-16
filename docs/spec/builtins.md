@@ -778,8 +778,18 @@ Checked on 2026-10-16 by a local harness holding the bodies of `PF_makevectors` 
 unchanged from `WinQuake/pr_cmds.c` and `WinQuake/mathlib.c` at the pinned commit with the
 global and parameter accesses replaced by arguments and results, built with Apple clang 21 at
 `-O0 -ffp-contract=off -fno-strict-aliasing` on arm64 macOS. No row converts an out-of-range
-float to an integer, so they do not depend on BUILTIN-2.2; the oracle (P1-11) rechecks them on
-x86-64. Floats are printed with 9 significant digits.
+float to an integer, so they do not depend on BUILTIN-2.2. Floats are printed with 9 significant
+digits.
+
+Since P1-32 every row of this table and the next is a vector in
+[`vectors/vm/math.txt`](vectors/vm/math.txt), one per input, which `cargo xtask oracles` runs
+through the VM oracle on Linux, macOS and Windows in CI; on 2026-10-16 all 78 passed on macOS
+arm64. The oracle runs id's `PF_` functions and `anglemod` from the pinned commit, and its own
+`ftos` and `vtos` (BUILTIN-7.5 to BUILTIN-7.7). A string result is compared by `EQ_S` with the
+vector's own text. `anglemod` has no builtin of its own: its rows run `ChangeYaw` with
+`yaw_speed` 0 and an `ideal_yaw` the angle is not at, which stores `anglemod(anglemod(a))`, the
+same value for each of these angles. The `random` row runs with the random states 2433918595 and
+3889997443, whose first `rand() & 0x7fff` (DIFF-6.2) is 32767 and 1.
 
 | Input | Output | Statements |
 | --- | --- | --- |
@@ -807,8 +817,11 @@ x86-64. Floats are printed with 9 significant digits.
 | `ChangeYaw`, `angles_y` 45.5, `ideal_yaw` 45.5, `yaw_speed` 0 | 45.4998779 | BUILTIN-15.5 |
 | `random()` with `rand() & 0x7fff` of 32767, 1 | 1, 3.05185094e-05 | BUILTIN-6.6 |
 
-These rows follow from BUILTIN-2.2 and BUILTIN-7.6 and were not run, because the local host
-is not x86 (an arm64 build saturates the conversion instead):
+These rows follow from BUILTIN-2.2 and BUILTIN-7.6 and were not run by the local harness,
+because the local host is not x86 (an arm64 build saturates the conversion instead). The oracle
+runs them on every host: its `ftos` converts with BUILTIN-2.2's rule wherever it runs, and the
+`WriteAngle` and `WriteCoord` inputs are in the range of `int`. Their bytes are checked in the
+unreliable datagram (`MSG_BROADCAST`, the vectors' `datagram:`).
 
 | Input | Output | Statements |
 | --- | --- | --- |

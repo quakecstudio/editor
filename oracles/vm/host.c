@@ -559,17 +559,114 @@ static int split(char *line, char **words, int max) {
     return n;
 }
 
-// The run is in a function of its own so that no local variable lives across setjmp.
-static int vector_entry;
+// What the host does, in order (the vectors' README, "Host actions"). Without any, it runs
+// the entry function once.
+typedef enum {
+    HOST_CLOCK,
+    HOST_RUN,
+    HOST_THINK,
+    HOST_PUSH,
+    HOST_PHYSICS,
+    HOST_FRAME,
+    HOST_EDICT,
+} host_kind_t;
 
-static void run_vector_entry(void) {
+typedef struct {
+    host_kind_t kind;
+    double seconds;
+    int a;
+    int b;
+} host_action_t;
+
+#define QS_MAX_HOST_ACTIONS 256
+static host_action_t host_actions[QS_MAX_HOST_ACTIONS];
+static int num_host_actions;
+
+static edict_t *vector_edict(int n) {
+    return (edict_t *)((byte *)sv.edicts + (size_t)n * (size_t)pr_edict_size);
+}
+
+static void run_host_action(const host_action_t *action) {
+    switch (action->kind) {
+    case HOST_CLOCK:
+        sv.time = action->seconds;
+        break;
+    case HOST_RUN:
+        qs_run(action->a);
+        break;
+    case HOST_THINK:
+        host_frametime = action->seconds;
+        SV_RunThink(vector_edict(action->a));
+        break;
+    case HOST_PUSH:
+        host_frametime = action->seconds;
+        SV_Physics_Pusher(vector_edict(action->a));
+        break;
+    case HOST_PHYSICS:
+        for (int i = 0; i < action->a; i++)
+            qs_physics(action->seconds);
+        break;
+    case HOST_FRAME:
+        for (int i = 0; i < action->a; i++)
+            qs_server_frame(action->seconds, 0);
+        break;
+    case HOST_EDICT:
+        ((int *)pr_globals)[action->b] = (int)EDICT_TO_PROG(EDICT_NUM(action->a));
+        break;
+    }
+}
+
+// The actions are in a function of their own so that no local variable lives across setjmp.
+static int next_host_action;
+
+static void run_host_actions(void) {
     static jmp_buf catch_point;
     if (!setjmp(catch_point)) {
         qs_catch = &catch_point;
-        qs_run(vector_entry);
+        for (next_host_action = 0; next_host_action < num_host_actions; next_host_action++)
+            run_host_action(&host_actions[next_host_action]);
     }
     qs_catch = NULL;
 }
+
+static qboolean parse_seconds(const char *text, double *out) {
+    char *end;
+    *out = strtod(text, &end);
+    return end != text && *end == 0;
+}
+
+static qboolean parse_host_action(char **w, int n, int edicts, host_action_t *out) {
+    if (n == 3 && strcmp(w[1], "clock") == 0) {
+        out->kind = HOST_CLOCK;
+        return parse_seconds(w[2], &out->seconds);
+    }
+    if (n == 3 && strcmp(w[1], "run") == 0) {
+        out->kind = HOST_RUN;
+        out->a = atoi(w[2]);
+        return true;
+    }
+    if (n == 4 && (strcmp(w[1], "think") == 0 || strcmp(w[1], "push") == 0)) {
+        out->kind = strcmp(w[1], "think") == 0 ? HOST_THINK : HOST_PUSH;
+        out->a = atoi(w[2]);
+        return out->a >= 0 && out->a < edicts && parse_seconds(w[3], &out->seconds);
+    }
+    if (n == 4 && (strcmp(w[1], "physics") == 0 || strcmp(w[1], "frame") == 0)) {
+        out->kind = strcmp(w[1], "physics") == 0 ? HOST_PHYSICS : HOST_FRAME;
+        out->a = atoi(w[3]);
+        return out->a >= 1 && parse_seconds(w[2], &out->seconds);
+    }
+    if (n == 4 && strcmp(w[1], "edict") == 0) {
+        out->kind = HOST_EDICT;
+        out->a = atoi(w[2]);
+        out->b = atoi(w[3]);
+        return out->b >= 0 && out->b < progs->numglobals;
+    }
+    return false;
+}
+
+// DIFF-2.2: maxclients is at most 16.
+#define QS_MAX_VECTOR_CLIENTS 16
+static client_t vector_clients[QS_MAX_VECTOR_CLIENTS];
 
 int qs_vector_main(const char *progs_path, const char *init_path, const char *trace_path) {
     qs_progs_file_t file;
@@ -588,28 +685,37 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     int line = 0;
     int entry = 1;
     int edicts = 3;
+    int maxclients = 0;
     builtin_t *builtins = qs_vector_builtins;
     sv.state = ss_active;
-    // The edicts are allocated first, then the values are applied.
+    // The edicts and client slots are set up first, then the values are applied.
     long start = ftell(init);
     while (fgets(text, sizeof(text), init)) {
         int n = split(text, w, 8);
         if (n == 2 && strcmp(w[0], "edicts") == 0)
             edicts = atoi(w[1]);
+        if (n == 2 && strcmp(w[0], "maxclients") == 0)
+            maxclients = atoi(w[1]);
     }
-    if (edicts < 1 || edicts > MAX_EDICTS) {
-        fprintf(stderr, "vm-oracle: %s: bad edict count\n", init_path);
+    if (edicts < 1 || edicts > MAX_EDICTS || maxclients < 0 ||
+        maxclients > QS_MAX_VECTOR_CLIENTS) {
+        fprintf(stderr, "vm-oracle: %s: bad edict or client count\n", init_path);
         return QS_EXIT_REFUSED;
     }
     // The array has all LIMIT_MAX_EDICTS edicts, as the server's does (EDICT-1.4); `edicts`
-    // of them are in use.
+    // of them are in use. No client slot has a player.
     qs_alloc_edicts(MAX_EDICTS);
     sv.num_edicts = edicts;
+    svs.maxclients = maxclients;
+    svs.clients = vector_clients;
+    for (int i = 0; i < maxclients; i++)
+        svs.clients[i].edict = vector_edict(i + 1);
+    qs_init_buffers();
     fseek(init, start, SEEK_SET);
     while (fgets(text, sizeof(text), init)) {
         line++;
         int n = split(text, w, 8);
-        if (n == 0 || strcmp(w[0], "edicts") == 0)
+        if (n == 0 || strcmp(w[0], "edicts") == 0 || strcmp(w[0], "maxclients") == 0)
             continue;
         if (n == 1 && strcmp(w[0], "loading") == 0) {
             sv.state = ss_loading;
@@ -617,6 +723,15 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
             builtins = qs_scenario_builtins;
         } else if (n == 2 && strcmp(w[0], "entry") == 0) {
             entry = atoi(w[1]);
+        } else if (n == 2 && strcmp(w[0], "seed") == 0) {
+            qs_set_random_state((unsigned)strtoul(w[1], NULL, 10));
+        } else if (n >= 2 && strcmp(w[0], "host") == 0) {
+            if (num_host_actions == QS_MAX_HOST_ACTIONS ||
+                !parse_host_action(w, n, edicts, &host_actions[num_host_actions])) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad host action\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+            num_host_actions++;
         } else if (n >= 4 && strcmp(w[0], "global") == 0) {
             int slot = atoi(w[1]);
             if (slot < 0 || slot >= progs->numglobals) {
@@ -631,14 +746,18 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
                 fprintf(stderr, "vm-oracle: %s:%d: bad field\n", init_path, line);
                 return QS_EXIT_REFUSED;
             }
-            edict_t *ed = (edict_t *)((byte *)sv.edicts + (size_t)e * (size_t)pr_edict_size);
-            parse_value(init_path, line, n - 3, w + 3, &((int *)&ed->v)[field]);
+            parse_value(init_path, line, n - 3, w + 3, &((int *)&vector_edict(e)->v)[field]);
         } else {
             fprintf(stderr, "vm-oracle: %s:%d: unknown line\n", init_path, line);
             return QS_EXIT_REFUSED;
         }
     }
     fclose(init);
+    if (num_host_actions == 0) {
+        host_actions[0].kind = HOST_RUN;
+        host_actions[0].a = entry;
+        num_host_actions = 1;
+    }
 
     pr_builtins = builtins;
     pr_numbuiltins = QS_NUM_BUILTINS;
@@ -647,9 +766,12 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
         return QS_EXIT_IO;
     }
     qs_trace_header(pr_crc, progs->numstrings);
-    vector_entry = entry;
-    run_vector_entry();
+    run_host_actions();
     printf("depth=%d localstack=%d\n", pr_depth, localstack_used);
+    printf("datagram=");
+    for (int i = 0; i < sv.datagram.cursize; i++)
+        printf("%02x", sv.datagram.data[i]);
+    printf("\n");
     if (!qs_trace_close()) {
         fprintf(stderr, "vm-oracle: cannot write %s\n", trace_path);
         return QS_EXIT_IO;

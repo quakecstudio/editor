@@ -1,0 +1,308 @@
+# The rows of differential.md "Frames and thinking" and "Random numbers" (DIFF-3.6, DIFF-5.1,
+# DIFF-5.2, DIFF-5.5, DIFF-5.6, DIFF-6.2), run by the host (`host:`): id's SV_RunThink and
+# SV_Physics_Pusher on one edict, and the oracle's physics and server frames. Format:
+# README.md.
+#
+# Function 2 is an empty function the host runs to show what changed (its run line lists every
+# change since the last record); function 3 is the think function. `self` is global 28, `time`
+# 31, `frametime` 32, `StartFrame` 83; `ltime` is field 7, `think` 44, `nextthink` 46.
+
+== think_runs
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3 e1.46=1.05
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1
+  think e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 3 28=e1 31=1.04999995 e1.46=0
+  2 DONE
+  run 2
+  1 DONE
+  done
+
+== think_waits_above_the_frame
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3 e1.46=1.1
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1
+  think e1 0.1          # nextthink is 1.10000002, above 1 + 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2
+  1 DONE
+  done
+
+== think_runs_after_the_settle_frames
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3 e1.46=1.3
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1.2000000000000002
+  think e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 3 28=e1 31=1.29999995 e1.46=0
+  2 DONE
+  run 2
+  1 DONE
+  done
+
+== think_in_the_past
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3 e1.46=0.5
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1
+  think e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 3 28=e1 31=1 e1.46=0
+  2 DONE
+  run 2
+  1 DONE
+  done
+
+== think_not_at_0
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1
+  think e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2
+  1 DONE
+  done
+
+== think_not_below_0
+spec: DIFF-5.6
+builtins: engine
+fields: e1.44=i3 e1.46=-1
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 1
+  think e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2
+  1 DONE
+  done
+
+== pusher_thinks_within_the_move
+spec: DIFF-5.5
+builtins: engine
+fields: e1.44=i3 e1.46=0.05
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 5
+  push e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 3 28=e1 31=5 e1.7=0.0500000007 e1.46=0
+  2 DONE
+  run 2
+  1 DONE
+  done
+
+== pusher_without_nextthink
+spec: DIFF-5.5
+builtins: engine
+fields: e1.44=i3
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 5
+  push e1 0.1           # movetime 0: ltime stays 0
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2
+  1 DONE
+  done
+
+== pusher_nextthink_behind_ltime
+spec: DIFF-5.5
+builtins: engine
+fields: e1.7=0.3 e1.44=i3 e1.46=0.25
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 5
+  push e1 0.1           # movetime 0: ltime stays 0.300000012, and the think never runs
+  run 2
+  push e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2
+  1 DONE
+  run 2
+  1 DONE
+  done
+
+== pusher_thinks_at_the_end_of_the_move
+spec: DIFF-5.5
+builtins: engine
+fields: e1.44=i3 e1.46=0.1
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 5
+  push e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 3 28=e1 31=5 e1.7=0.100000001 e1.46=0
+  2 DONE
+  run 2
+  1 DONE
+  done
+
+== pusher_thinks_later
+spec: DIFF-5.5
+builtins: engine
+fields: e1.44=i3 e1.46=2
+functions:
+  2: first=1
+  3: first=2
+host:
+  clock 5
+  push e1 0.1
+  run 2
+code:
+  DONE
+  DONE
+expect:
+  run 2 e1.7=0.100000001
+  1 DONE
+  done
+
+== clock_after_the_settle_frames
+spec: DIFF-5.2, DIFF-3.6
+builtins: engine
+globals: 83=i2
+functions:
+  2: first=1
+host:
+  clock 1
+  physics 0.1 3         # the two settle frames, then the StartFrame of the next
+code:
+  DONE
+expect:
+  run 2 31=1
+  1 DONE
+  run 2 31=1.10000002
+  1 DONE
+  run 2 31=0x3f99999a
+  1 DONE
+  done
+
+== clock_after_100_frames
+spec: DIFF-5.2
+builtins: engine
+globals: 83=i2
+functions:
+  2: first=1
+host:
+  clock 1
+  physics 0.1 2
+  frame 0.1 100
+  physics 0.1           # StartFrame with the clock at 11.199999999999978
+code:
+  DONE
+steps: 103
+expect:
+  ...
+  run 2 31=0x41333333
+  1 DONE
+  done
+
+== frametime_of_a_server_frame
+spec: DIFF-5.1
+builtins: engine
+globals: 83=i2
+functions:
+  2: first=1
+host:
+  clock 1
+  frame 0.1
+code:
+  DONE
+expect:
+  run 2 31=1 32=0x3dcccccd
+  1 DONE
+  done
+
+== random_from_seed_1
+spec: DIFF-6.2, BUILTIN-6.6
+builtins: engine
+seed: 1
+globals: 120=i2
+functions:
+  2: builtin=7
+code:
+  CALL0 120             # random(): rand() is 16838
+  CALL0 120             # 5758
+  CALL0 120             # 10113
+  CALL0 120             # 17515
+  DONE
+expect:
+  1 CALL0 1=0x3f038d07
+  2 CALL0 1=0x3e33f168
+  3 CALL0 1=0x3e9e053c
+  4 CALL0 1=0x3f08d712
+  5 DONE 1=0
+  done
