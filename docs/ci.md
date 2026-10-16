@@ -1,8 +1,41 @@
 # CI and the protection of main
 
-CI runs on every pull request, every merge-queue group and every push to `main`
-(QA-1, PM-4, CONV-7). Nothing reaches `main` except through the merge queue, and the
-queue merges a group only when every required check below has passed on it.
+CI runs on every pull request and every merge-queue group (QA-1, PM-4, CONV-7). Nothing
+reaches `main` except through the merge queue, and the queue merges a group only when every
+required check below has passed on it, so a push to `main` is not checked again.
+
+## When each run happens
+
+| Run | Ref | What runs | Why |
+| --- | --- | --- | --- |
+| Pull request | `refs/pull/<n>/merge` | every job; `Test Assets (linux)` without the deletion check | finds a problem on every platform before the change is queued |
+| Merge group | `refs/heads/gh-readonly-queue/main/...` | every job and every step except `Dependency Review` | checks exactly what lands on `main` |
+| Cache run on `main` (`ci.yml` only) | `refs/heads/main` | every job except `Format`, `cargo-deny` and `Dependency Review`, as on a pull request | fills the caches; see below |
+
+The single-token deletion check of id 1.01 (`cargo xtask parse-corpus --deletions`, P1-21)
+reparses each file once per token and is the one step that took minutes, so it runs only in
+the merge group, which every change passes before it reaches `main`. In that run the
+`Test Assets (linux)` job builds xtask at `opt-level` 3 (`CARGO_PROFILE_DEV_OPT_LEVEL`), once
+for all its steps, with debug assertions and overflow checks still on. Every other step and
+job runs on the pull request too, so a platform problem still shows before queueing. A
+step skipped this way still lets its job report success, so the required check names never
+change.
+
+### Caches
+
+A cache is scoped to the ref of the run that saves it, and a run can restore only caches of
+its own ref, of `main` and, for a pull request, of its base branch ([GitHub's dependency
+caching reference](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)).
+A merge group runs on its own temporary branch, so a cache saved there can be restored by no
+pull request and no later group. Every cache in `ci.yml` is therefore saved only by a run on
+`main` (`save-if` for `Swatinem/rust-cache`, `actions/cache/save` with an `if` for the
+others) and only restored elsewhere. A cache changes only when its key does, so `ci.yml`
+runs on a push to `main` only when a file a key depends on changes (`Cargo.lock`, any
+`Cargo.toml`, `.cargo/config.toml`, `rust-toolchain.toml`, `oracles/`, the xtask oracle code,
+`corpus/manifest.toml` or `ci.yml` itself, whose `env` is part of the Rust cache keys). It
+also runs weekly, so a cache evicted after seven days unused or one whose key changed with
+the runner image is refilled, and on demand (`workflow_dispatch`). The push paths must list
+every input of every cache key.
 
 ## Workflows
 
@@ -18,8 +51,8 @@ queue merges a group only when every required check below has passed on it.
 | `Build (macos-universal)` | macOS | builds `aarch64-apple-darwin` and `x86_64-apple-darwin`, then joins every binary with `lipo` and checks both architectures are in it |
 | `cargo xtask ci` | Linux | the same command as `make ci`: fmt, the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, clippy, tests, clippy fixtures, cargo-deny and deny fixtures |
 | `cargo-deny` | Linux | `cargo-deny-action` with `check advisories bans licenses sources` |
-| `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and pushes, which a required check accepts |
-| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors, deletes each of its tokens in turn to check that recovery stays local, and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` |
+| `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and cache runs, which a required check accepts |
+| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, in the merge group only, `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
 
 [`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml):
 

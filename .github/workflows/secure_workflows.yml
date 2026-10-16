@@ -6,16 +6,16 @@
 name: Secure workflows
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
     types: [checks_requested]
 
+# Every run is a pull request's or a merge group's, each with its own ref, so a
+# newer run of the same ref always supersedes the older one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 permissions: {}
 
