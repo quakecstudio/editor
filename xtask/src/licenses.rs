@@ -12,10 +12,14 @@
 //! - **Text** (docs, config, data): covered by `LICENSE`; needs no header.
 //! - **Asset** (images, fonts, sounds, game formats): its license is recorded in
 //!   `ATTRIBUTION.md` and checked by `cargo xtask attribution`.
+//! - **Cached** (a file listed in `specs/manifest.tsv`): a public specification
+//!   cached verbatim under its own license, recorded in `specs/README.md`; it is
+//!   not scanned, since its bytes must match the upstream file.
 //!
 //! Every source and text file is also scanned for SPDX tags in comments, and
 //! each one must name an allowed license. `LICENSE` must be the GPL-3.0 text.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::{Report, attribution, ported, repo};
@@ -25,6 +29,7 @@ const ALLOWED: [&str; 1] = ["GPL-3.0-or-later"];
 const SPDX_TAG: &str = "SPDX-License-Identifier:";
 const LICENSE_FILE: &str = "LICENSE";
 const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"];
+const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
 const SOURCE_EXTENSIONS: [&str; 5] = ["rs", "py", "sh", "c", "h"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
@@ -40,6 +45,7 @@ enum Kind {
     Source,
     Text,
     Asset,
+    Cached,
     Unknown,
 }
 
@@ -50,11 +56,16 @@ pub(crate) fn run(root: &Path) -> Result<Report, String> {
 /// Checks `files` (paths relative to `root`).
 pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
     let upstreams = ported::upstreams(&repo::read(root, ported::DOC)?)?;
+    let cached = cached_specs(root, files)?;
     let mut report = Report::default();
     let (mut sources, mut texts, mut assets) = (0_usize, 0_usize, 0_usize);
     for path in files {
         let before = report.problems.len();
-        let kind = classify(path);
+        let kind = if cached.contains(path) {
+            Kind::Cached
+        } else {
+            classify(path)
+        };
         match kind {
             Kind::Unknown => {
                 report.problems.push(format!(
@@ -67,6 +78,7 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
                 assets = assets.saturating_add(1);
                 continue;
             }
+            Kind::Cached => continue,
             Kind::Source | Kind::Text => {}
         }
         let text = match repo::read(root, path) {
@@ -119,12 +131,31 @@ pub(crate) fn check(root: &Path, files: &[String]) -> Result<Report, String> {
     report.passed.push(format!(
         "{assets} asset files are left to cargo xtask attribution"
     ));
+    report.passed.push(format!(
+        "{} cached specification files are listed in {SPECS_MANIFEST}",
+        cached.len()
+    ));
 
     let license_ok = files.iter().any(|path| path == LICENSE_FILE)
         && repo::read(root, LICENSE_FILE)
             .is_ok_and(|text| LICENSE_MARKERS.iter().all(|marker| text.contains(marker)));
     report.record(license_ok, format!("{LICENSE_FILE} is the GPL-3.0 text"));
     Ok(report)
+}
+
+/// The paths `specs/manifest.tsv` lists (its first column), if the file is in `files`.
+fn cached_specs(root: &Path, files: &[String]) -> Result<BTreeSet<String>, String> {
+    if !files.iter().any(|path| path == SPECS_MANIFEST) {
+        return Ok(BTreeSet::new());
+    }
+    let manifest = repo::read(root, SPECS_MANIFEST)?;
+    Ok(manifest
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split('\t').next())
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 fn classify(path: &str) -> Kind {
@@ -284,6 +315,30 @@ mod tests {
         assert!(
             found[1].starts_with("b.md:3: SPDX license \"GPL-2.0-only\""),
             "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_cached_spec_is_classified_by_the_specs_manifest() {
+        let manifest = "path\tspec\nspecs/mcp/index.mdx\tMCP\nspecs/mcp/schema.ts\tMCP\n";
+        let files = [
+            (SPECS_MANIFEST, manifest.to_owned()),
+            ("specs/mcp/index.mdx", format!("{{/* {} */}}\n", tag("MIT"))),
+            ("specs/mcp/schema.ts", "export {};\n".to_owned()),
+            ("specs/mcp/unlisted.mdx", String::new()),
+        ];
+        let (root, listed) = fixture("cached", &files);
+        let report = check(&root, &listed).unwrap();
+        assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
+        assert!(
+            report.problems[0].starts_with("specs/mcp/unlisted.mdx: no license rule"),
+            "{:?}",
+            report.problems
+        );
+        assert!(
+            report.passed[3].starts_with("2 cached specification files"),
+            "{:?}",
+            report.passed
         );
     }
 

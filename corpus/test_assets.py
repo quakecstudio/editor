@@ -403,7 +403,11 @@ class Dest(unittest.TestCase):
             self.assertEqual(assets.default_dest(), Path("/c/quakecstudio/test-assets"))
 
     def test_outside_the_source_tree(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
+        # Only the overrides are removed: Windows finds the home directory
+        # through USERPROFILE, so clearing the whole environment breaks Path.home().
+        with mock.patch.dict(os.environ):
+            os.environ.pop("QS_TEST_ASSETS", None)
+            os.environ.pop("XDG_CACHE_HOME", None)
             self.assertFalse(assets.default_dest().is_relative_to(verify.REPO))
 
 

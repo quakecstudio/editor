@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/quakecstudio/editor/security/policy
+    about: Please do not report security problems in public issues.
+  - name: The plan
+    url: https://github.com/quakecstudio/editor/blob/main/plan/README.md
+    about: Planned work is generated from plan/; change it there.

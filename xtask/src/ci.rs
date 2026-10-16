@@ -5,6 +5,9 @@
 //! `make ci` and CI both run this command, so a local run is the same as CI.
 //! Every step runs even after one fails, so one run reports every failure; the
 //! command fails if any step failed.
+//!
+//! The plan checks (`plan/check.py` and its tests, P0-05) need `python3` with
+//! PyYAML.
 
 use std::path::Path;
 use std::process::Command;
@@ -17,11 +20,26 @@ enum Step {
     Cargo(&'static [&'static str]),
     /// An xtask check, run in this process.
     Xtask(&'static str),
+    /// Another program and its arguments, run from the workspace root.
+    Program(&'static str, &'static [&'static str]),
 }
 
 /// The steps, cheapest first.
-const STEPS: [Step; 11] = [
+const STEPS: [Step; 13] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
+    Step::Program("python3", &["plan/check.py"]),
+    Step::Program(
+        "python3",
+        &[
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "plan",
+            "-p",
+            "test_*.py",
+        ],
+    ),
     Step::Xtask("conventions"),
     Step::Xtask("adr"),
     Step::Xtask("layers"),
@@ -56,6 +74,7 @@ impl Step {
         match self {
             Step::Cargo(args) => format!("cargo {}", args.join(" ")),
             Step::Xtask(name) => format!("cargo xtask {name}"),
+            Step::Program(program, args) => format!("{program} {}", args.join(" ")),
         }
     }
 
@@ -63,14 +82,9 @@ impl Step {
         match self {
             Step::Cargo(args) => {
                 let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-                match Command::new(cargo).args(*args).current_dir(root).status() {
-                    Ok(status) => status.success(),
-                    Err(error) => {
-                        eprintln!("cannot run {}: {error}", self.label());
-                        false
-                    }
-                }
+                self.spawn(Command::new(cargo).args(*args), root)
             }
+            Step::Program(program, args) => self.spawn(Command::new(program).args(*args), root),
             Step::Xtask(name) => match in_process_check(name) {
                 Some(check) => print_outcome(name, check(root)),
                 None => {
@@ -78,6 +92,16 @@ impl Step {
                     false
                 }
             },
+        }
+    }
+
+    fn spawn(&self, command: &mut Command, root: &Path) -> bool {
+        match command.current_dir(root).status() {
+            Ok(status) => status.success(),
+            Err(error) => {
+                eprintln!("cannot run {}: {error}", self.label());
+                false
+            }
         }
     }
 }
@@ -134,6 +158,8 @@ mod tests {
             "cargo xtask licenses",
             "cargo xtask attribution",
             "cargo deny --locked check advisories bans licenses sources",
+            "python3 plan/check.py",
+            "python3 -m unittest discover -s plan -p test_*.py",
         ] {
             assert!(labels.iter().any(|label| label == expected), "{expected}");
         }
@@ -156,7 +182,11 @@ mod tests {
 
     #[test]
     fn passing_steps_pass() {
-        let steps = [Step::Cargo(&["--version"]), Step::Xtask("layers")];
+        let steps = [
+            Step::Cargo(&["--version"]),
+            Step::Xtask("layers"),
+            Step::Program("python3", &["--version"]),
+        ];
         assert!(run_steps(root(), &steps));
     }
 
@@ -167,6 +197,10 @@ mod tests {
             &[Step::Cargo(&["no-such-command-xtask-ci"])]
         ));
         assert!(!run_steps(root(), &[Step::Xtask("no-such-check")]));
+        assert!(!run_steps(
+            root(),
+            &[Step::Program("no-such-program-xtask-ci", &[])]
+        ));
         let steps = [Step::Xtask("no-such-check"), Step::Cargo(&["--version"])];
         assert!(!run_steps(root(), &steps));
         let steps = [Step::Cargo(&["--version"]), Step::Xtask("no-such-check")];

@@ -4,6 +4,7 @@
 # may depend on anything, and nothing may depend on them.
 
 [crates]
+qs-bench = "tests"
 qs-paths = "L0"
 qs-porting-example = "L1"
 qs-tests = "tests"

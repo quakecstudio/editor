@@ -191,24 +191,6 @@ issues:
   - Undo after accepting restores the original in one step
   verify:
   - UI tests with a fake model
-- key: P4-11
-  title: Next-edit suggestions
-  labels:
-  - L7-ui
-  - area:agent
-  - type:feature
-  size: M
-  reqs:
-  - UI-7
-  depends:
-  - P4-10
-  - P2-02
-  deliverable:
-  - Suggestions on Tab derived from the semantic model (rename propagation, matching declarations) with optional model assistance
-  acceptance:
-  - Renaming a field suggests every use site; Tab walks through them
-  verify:
-  - Tests on the rerelease
 - key: P4-12
   title: '@ mentions and Ask about this'
   labels:
@@ -249,24 +231,6 @@ issues:
   - Claude Code completes a compile-and-scenario task through MCP
   verify:
   - MCP conformance tests; recorded session
-- key: P4-14
-  title: Host external agents over ACP
-  labels:
-  - L7-ui
-  - area:agent
-  - type:feature
-  size: M
-  reqs:
-  - UI-11
-  - PRIN-6
-  depends:
-  - P4-09
-  deliverable:
-  - Agent Client Protocol host so Claude Code, Codex and others run in the agent panel with the IDE's tools available
-  acceptance:
-  - At least two external agents complete a task in the panel
-  verify:
-  - Recorded sessions; protocol tests
 - key: P4-15
   title: Agent evals
   labels:
@@ -345,24 +309,6 @@ issues:
   - From the Flatpak sandbox, Steam detection, preview host launch and keychain access all work
   verify:
   - Release dry run with install tests
-- key: P4-19
-  title: Update mechanism
-  labels:
-  - apps
-  - area:release
-  - type:feature
-  size: S
-  reqs:
-  - QA-11
-  - PRIN-9
-  depends:
-  - P4-18
-  deliverable:
-  - Opt-in update check against GitHub releases with signature verification; AppImage zsync
-  acceptance:
-  - No network call unless the user enabled update checks
-  verify:
-  - Update test against a fake release feed
 - key: P4-20
   title: User documentation
   labels:
@@ -376,7 +322,7 @@ issues:
   - P4-09
   - P3-12
   deliverable:
-  - 'docs/guide/: getting started, opening a mod, the play loop, debugging, the agent, MCP and ACP, troubleshooting; screenshots from the snapshot harness'
+  - 'docs/guide/: getting started, opening a mod, the play loop, debugging, the agent, MCP, troubleshooting; screenshots from the snapshot harness'
   acceptance:
   - A new user follows getting started to a running mod without other help (tested with one person)
   verify:
@@ -535,15 +481,12 @@ issues:
   - P4-08
   - P4-09
   - P4-10
-  - P4-11
   - P4-12
   - P4-13
-  - P4-14
   - P4-15
   - P4-16
   - P4-17
   - P4-18
-  - P4-19
   - P4-20
   - P4-21
   - P4-22
