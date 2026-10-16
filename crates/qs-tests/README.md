@@ -7,6 +7,11 @@ The single integration test binary for tests that exercise more than one crate
 - **Spec sections:** whichever the tests in each module cite.
 - **Shipped:** no.
 
+| Module | What it checks |
+| --- | --- |
+| `paths` | `qs-paths` resolves absolute application directories in the real environment |
+| `spec_coverage` | The spec-citation ratchet: every statement in `docs/spec/` is cited by a `// spec` test or listed in `docs/spec/coverage-baseline.tsv`, and `docs/spec/requirements.tsv` matches the specs (`docs/spec/README.md`) |
+
 Add a module to `tests/it/` and declare it in `tests/it/main.rs`; never add a file directly
 under `tests/`, which would link another binary. Keep `[lints] workspace = true`; a test module
 opts out of the no-panic lints it uses with a module-level

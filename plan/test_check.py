@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 import check
 
 
@@ -195,6 +197,75 @@ class RiskRule(unittest.TestCase):
         errors = self.risk_errors(design=design)
         self.assertEqual(len(errors), 1)
         self.assertIn("no risk table", errors[0])
+
+
+class TemplateRule(unittest.TestCase):
+    """Issue templates ask for deliverable, acceptance, verification and requirement IDs; the
+    PR template carries the definition of done (P0-04, PM-5)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.meta, _ = check.load_backlog()
+
+    def template_errors(self, edit_name=None, edit=None, pr_edit=None):
+        with tempfile.TemporaryDirectory() as d:
+            templates = Path(d) / "ISSUE_TEMPLATE"
+            templates.mkdir()
+            for name in check.TEMPLATE_NAMES:
+                text = (check.ISSUE_TEMPLATES / f"{name}.yml").read_text()
+                if name == edit_name:
+                    if edit is None:
+                        continue
+                    text = edit(text)
+                (templates / f"{name}.yml").write_text(text)
+            pr = Path(d) / "pull_request_template.md"
+            text = check.PR_TEMPLATE.read_text()
+            pr.write_text(pr_edit(text) if pr_edit else text)
+            return check.check_templates(self.meta, templates, pr)
+
+    def test_templates_pass(self):
+        self.assertEqual(check.check_templates(self.meta), [])
+        self.assertEqual(self.template_errors(), [])
+
+    def test_every_template_shows_the_required_sections(self):
+        for name in check.TEMPLATE_NAMES:
+            form = yaml.safe_load((check.ISSUE_TEMPLATES / f"{name}.yml").read_text())
+            labels = {f["id"]: f["attributes"]["label"] for f in form["body"] if "id" in f}
+            with self.subTest(template=name):
+                self.assertEqual(labels["deliverable"], "Deliverable")
+                self.assertEqual(labels["acceptance"], "Acceptance criteria")
+                self.assertEqual(labels["verification"], "Verification")
+                self.assertEqual(labels["requirements"], "Requirement IDs")
+
+    def test_missing_template(self):
+        self.assertEqual(self.template_errors("spike"), ["spike.yml: issue template missing"])
+
+    def test_missing_field(self):
+        errors = self.template_errors("bug", lambda t: t.replace("id: verification", "id: checks"))
+        self.assertEqual(errors, ["bug.yml: no verification field"])
+
+    def test_optional_field(self):
+        def make_deliverable_optional(text):
+            head, tail = text.split("id: deliverable", 1)
+            return head + "id: deliverable" + tail.replace("required: true", "required: false", 1)
+
+        errors = self.template_errors("feature", make_deliverable_optional)
+        self.assertEqual(errors, ["feature.yml: the deliverable field is not required"])
+
+    def test_type_label(self):
+        errors = self.template_errors("spec", lambda t: t.replace('["type:spec"]', '["type:nope"]'))
+        self.assertEqual(errors, ["spec.yml: needs exactly one known type:* label, has ['type:nope']"])
+        errors = self.template_errors("spec", lambda t: t.replace('["type:spec"]', "[]"))
+        self.assertEqual(errors, ["spec.yml: needs exactly one known type:* label, has []"])
+
+    def test_definition_of_done_drift(self):
+        item = self.meta["definition_of_done"][0]
+        errors = self.template_errors(pr_edit=lambda t: t.replace(f"- [ ] {item}\n", ""))
+        self.assertEqual(errors, [f"pull_request_template.md: definition-of-done item missing: {item}"])
+
+    def test_missing_pr_template(self):
+        errors = check.check_templates(self.meta, check.ISSUE_TEMPLATES, Path("/nonexistent/pr.md"))
+        self.assertEqual(errors, ["pr.md: pull request template missing"])
 
 
 if __name__ == "__main__":

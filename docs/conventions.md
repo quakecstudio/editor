@@ -333,10 +333,17 @@ it with section and source. Here that means:
 
 As in vouch: `CLAUDE.md` holds the project overview, architecture, conventions and
 commands; `AGENTS.md` points to it and covers environment setup; `.claude/rules/` holds
-`branching.md`, `commits-and-issues.md`, `continuous-improvement.md`,
-`development-discipline.md`, `specs-are-source-of-truth.md`, plus this project's `porting.md`,
-`layering.md` and `testing.md` (the readiness rule in `docs/testing.md`).
-`.claude/hooks/session-setup.sh` installs the toolchain in remote sessions.
+`branching.md`, `commits-and-issues.md`, `development-discipline.md`,
+`specs-are-source-of-truth.md`, plus this project's `porting.md`, `layering.md` and
+`testing.md` (the readiness rule in `docs/testing.md`).
+`.claude/hooks/session-setup.sh`, registered in `.claude/settings.json`, installs the
+toolchain in remote Linux sessions.
+
+**Differs from vouch:** no `continuous-improvement.md`. vouch's file configures its
+dev-agents plugin cycle; here the `plan/` skills (`/work-issue`, `/run-phase`,
+`/plan-change`) and `docs/agents/README.md` fill that role. Issue forms and the PR template
+live in `.github/`, and `plan/check.py` checks that they ask for a deliverable, acceptance
+criteria, verification and requirement IDs and carry the definition of done.
 
 ## Repository layout (CONV-14)
 

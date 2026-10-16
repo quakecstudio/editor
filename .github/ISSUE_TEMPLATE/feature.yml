@@ -1,0 +1,55 @@
+name: Feature
+description: Build a capability. Planned work is generated from plan/; use this for work the plan does not cover yet.
+title: "Build ..."
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues for planned work come from `plan/` and are overwritten by `plan/apply.py`. If this belongs in the plan, add it there with `/plan-change` and link this issue from the PR. An issue without a deliverable, acceptance criteria and verification cannot be closed.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What the capability is and who it is for, in two or three sentences.
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: The IDs from plan/requirements.yaml this serves, comma-separated. Add a requirement first if none fits.
+      placeholder: "LANG-7, ARCH-1"
+    validations:
+      required: true
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: What will exist when this is done, with paths.
+      placeholder: |
+        - crates/qs-.../src/...: ...
+        - docs/...: ...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Each one checkable by a test or a recorded result.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How the criteria are checked, in CI (cargo xtask ci) or by a recorded manual run.
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issues that must close first, as #numbers.
