@@ -180,3 +180,27 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.15** `W0401` "exceeds a limit of id's qcc: LIMIT": the program needs more of one
   of `qcc`'s tables than it has (LIMIT-7.1, LIMIT-7.3), so it would not build reliably with
   id's `qcc`. This compiler is not bound by those limits.
+
+## QCD-8 Preprocessor errors
+
+**Source:** this project, for the rules in QC-9, which has no id source.
+
+### Behaviour
+
+- **QCD-8.1** `E0108` "unknown directive #NAME": a directive name the vanilla preprocessor
+  does not know, outside a skipped block (QC-9.9).
+- **QCD-8.2** `E0109` "#NAME without #ifdef or #ifndef": a `#else` or `#endif` with no open
+  block (QC-9.6).
+- **QCD-8.3** `E0110` "#ifdef or #ifndef without #endif": a block still open at the end of
+  the file that opened it, at the directive that opened it (QC-9.6, QC-9.12).
+- **QCD-8.4** `E0111` "cannot include PATH: REASON": an `#include` of a file that cannot be
+  read (QC-9.11).
+- **QCD-8.5** `E0112` "recursive #include of PATH": an `#include` of a file already being
+  included (QC-9.11).
+- **QCD-8.6** `E0113` "#include expects a file name in quotes" (QC-9.9).
+- **QCD-8.7** `E0114` "#NAME expects a macro name": a `#define`, `#undef`, `#ifdef` or
+  `#ifndef` without one (QC-9.9).
+- **QCD-8.8** `E0115` "bad parameter list for macro NAME" (QC-9.9).
+- **QCD-8.9** `E0116` "macro NAME expects N arguments, found M": a function-like macro use
+  with the wrong argument count (QC-9.10).
+- **QCD-8.10** `E0117` "unterminated argument list for macro NAME" (QC-9.10).

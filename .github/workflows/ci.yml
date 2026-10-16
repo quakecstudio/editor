@@ -267,3 +267,13 @@ jobs:
       - name: Check the language spec covers id 1.01
         if: runner.os == 'Linux'
         run: python corpus/language_coverage.py
+      - name: Set up the Rust toolchain
+        if: runner.os == 'Linux'
+        run: rustup toolchain install
+      - name: Write id 1.01 to the asset cache
+        if: runner.os == 'Linux'
+        run: python corpus/assets.py codebase --codebase id-1.01
+      # P1-20: every vanilla corpus file lexes, and progs.src preprocesses, with no errors.
+      - name: Lex and preprocess id 1.01
+        if: runner.os == 'Linux'
+        run: cargo xtask lex-corpus "$QS_TEST_ASSETS/codebase/id-1.01"

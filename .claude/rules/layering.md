@@ -10,7 +10,7 @@ including why crates in one layer may build on each other.
 | --- | --- | --- |
 | L0 formats | File formats as id defined them: progs.dat, .lno, PAK, WAD2, .map, BSP29/BSP2, MDL; the paths module; logging; the game filesystem | `qs-paths`, `qs-log`, `qc-progs`, `qc-types`, `qc-lno`, `qs-pak`, `qs-wad`, `qs-vfs` |
 | L1 VM | What the engine executes: the VM, edicts, builtins | `qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`, `qs-porting-example` |
-| L2 syntax | Preprocessor, lossless CST, `progs.src` project graph | |
+| L2 syntax | Preprocessor, lossless CST, `progs.src` project graph | `qc-lexer`, `qc-preproc` |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions | |
 | L4 bridges | Our QuakeC and map compilers; the engine bridge | |
 | L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP | |
