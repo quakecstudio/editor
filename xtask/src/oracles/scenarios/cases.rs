@@ -826,9 +826,7 @@ fn too_many_field_slots() -> Vec<Case> {
     ] {
         let mut p = Program::new();
         p.entityfields = 894_761;
-        cases.push(
-            Case::new(name, p, input).check(Check::Exit(2, "more than 894760 field slots")),
-        );
+        cases.push(Case::new(name, p, input).check(Check::Exit(2, "more than 894760 field slots")));
     }
     cases
 }

@@ -51,7 +51,10 @@ pub(crate) fn main(root: &Path, args: &[&str]) -> Result<bool, String> {
         let binary = build(root, &sources, &cache, &dir, define)?;
         let corpus = dir.join("corpus");
         let seeded = seed(&corpus, &seeds(root, name)?)?;
-        println!("oracles: fuzzing {name} for {}s ({seeded} seeds)", options.seconds);
+        println!(
+            "oracles: fuzzing {name} for {}s ({seeded} seeds)",
+            options.seconds
+        );
         let passed = run(&binary, &dir, options.seconds)?;
         println!(
             "oracles: fuzz target {name} {}",
@@ -130,7 +133,11 @@ pub(crate) fn seeds(root: &Path, target: &str) -> Result<Vec<Vec<u8>>, String> {
         }
     }
     if target == "init" {
-        seeds.extend(vectors::init_texts(root)?.into_iter().map(String::into_bytes));
+        seeds.extend(
+            vectors::init_texts(root)?
+                .into_iter()
+                .map(String::into_bytes),
+        );
     }
     seeds.sort();
     seeds.dedup();
@@ -242,12 +249,22 @@ mod tests {
     fn each_target_has_seeds_of_its_own_kind() {
         let scenario = seeds(&root(), "scenario").unwrap();
         assert!(scenario.len() > 50, "{}", scenario.len());
-        assert!(scenario.iter().any(|seed| seed.starts_with(b"progs progs.dat\n")));
+        assert!(
+            scenario
+                .iter()
+                .any(|seed| seed.starts_with(b"progs progs.dat\n"))
+        );
         let init = seeds(&root(), "init").unwrap();
         assert!(init.len() > 200, "{}", init.len());
-        assert!(init.iter().all(|seed| seed.starts_with(b"edicts ")), "every init file says edicts first");
+        assert!(
+            init.iter().all(|seed| seed.starts_with(b"edicts ")),
+            "every init file says edicts first"
+        );
         let progs = seeds(&root(), "progs").unwrap();
-        assert!(progs.iter().any(|seed| seed.len() < 60), "a short progs is a seed");
+        assert!(
+            progs.iter().any(|seed| seed.len() < 60),
+            "a short progs is a seed"
+        );
         assert!(progs.iter().any(|seed| qc_progs::Progs::read(seed).is_ok()));
         assert!(seeds(&root(), "other").unwrap().is_empty());
     }
@@ -261,15 +278,25 @@ mod tests {
         let seeds = [b"a".to_vec(), b"b".to_vec()];
         assert_eq!(seed(&corpus, &seeds).unwrap(), 2);
         assert_eq!(fs::read(corpus.join("seed-0001")).unwrap(), b"b");
-        assert_eq!(seed(&corpus, &seeds).unwrap(), 0, "a corpus that has inputs is kept");
+        assert_eq!(
+            seed(&corpus, &seeds).unwrap(),
+            0,
+            "a corpus that has inputs is kept"
+        );
     }
 
     #[test]
     fn a_run_is_timed_and_keeps_its_artifacts_beside_its_corpus() {
         let dir = Path::new("t");
         let args = run_args(dir, 30);
-        assert_eq!(args.first().unwrap(), &dir.join("corpus").display().to_string());
+        assert_eq!(
+            args.first().unwrap(),
+            &dir.join("corpus").display().to_string()
+        );
         assert!(args.contains(&"-max_total_time=30".to_owned()));
-        assert!(args.iter().any(|arg| arg.starts_with("-artifact_prefix=") && arg.ends_with('/')));
+        assert!(
+            args.iter()
+                .any(|arg| arg.starts_with("-artifact_prefix=") && arg.ends_with('/'))
+        );
     }
 }
