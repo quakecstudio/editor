@@ -7,7 +7,7 @@ Describes how the engine turns a base directory and command-line options into a 
 path of directories and PAK archives, and how it finds a file on that path, as implemented
 by `WinQuake/common.c` in [id-Software/Quake](https://github.com/id-Software/Quake) at
 commit `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the 2021 rerelease's layout in
-FS-5. The archive format is [`pak.md`](pak.md). To be implemented by `crates/qs-vfs`
+FS-5. The archive format is [`pak.md`](pak.md). Implemented by `crates/qs-vfs`
 ([#42](https://github.com/quakecstudio/editor/issues/42)); finding the install itself is
 [#43](https://github.com/quakecstudio/editor/issues/43).
 
@@ -243,6 +243,11 @@ Same build and tree as FS-1: the shareware row of FS-3's table was run with
 `gfx/pop.lmp`; LibreQuake ships one under the GPL (`corpus/manifest.toml`), and the
 filesystem's tests in [#42](https://github.com/quakecstudio/editor/issues/42) check it
 against these statements.
+
+On 2026-10-16 `qs-vfs` found LibreQuake's `gfx/pop.lmp` (256 bytes in `id1/pak1.pak`)
+equal to id's table and reported the game as registered and modified (by PAK-4.2), with
+`-basedir` set to the `librequake-lite` asset (`cargo run --release -p qs-vfs --example
+walk -- -basedir <asset>`).
 
 ## FS-5 The 2021 rerelease's layout
 
