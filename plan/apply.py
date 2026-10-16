@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Create or update milestones, labels and issues on GitHub from the plan.
 
 Idempotent: each issue body carries <!-- plan-key: KEY -->; existing issues are

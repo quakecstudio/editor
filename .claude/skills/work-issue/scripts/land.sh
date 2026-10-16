@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Wait for CI on a pull request, add it to the merge queue, and wait until it merges.
 # Usage: land.sh <pr-number> [timeout-minutes]
 # Exit 0 when merged; 1 on a CI failure, a close, or the timeout (the reason is printed).

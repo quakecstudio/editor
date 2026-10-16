@@ -28,7 +28,7 @@ Still open, all in Phase 0: the UI framework ([#10](https://github.com/quakecstu
 
 ## How the code is layered
 
-Each layer may depend only on layers below it; `cargo xtask layers` enforces this once [#2](https://github.com/quakecstudio/editor/issues/2) lands.
+Each layer may depend only on layers below it; `cargo xtask layers` enforces this ([`layers.md`](layers.md)).
 
 | Layer | What it holds |
 | --- | --- |

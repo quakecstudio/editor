@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Validate the plan and generate plan/coverage.md.
 
 Fails (exit 1) if:

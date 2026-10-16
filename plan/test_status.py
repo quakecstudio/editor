@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Tests for plan/status.py on a small synthetic plan."""
 
 import unittest

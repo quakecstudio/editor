@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Render the plan as a single self-contained HTML review page.
 
 Usage: python3 plan/review_page.py OUT.html
