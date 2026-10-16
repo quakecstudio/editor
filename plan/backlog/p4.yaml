@@ -456,6 +456,27 @@ issues:
   - Exporting twice from the same sources produces the same zip
   verify:
   - Integration test in CI with open test assets; manual install-and-play check recorded on macOS
+- key: P0-23
+  title: Add the code-signing credentials to CI
+  labels:
+  - repo
+  - area:release
+  - type:chore
+  - needs:human
+  size: S
+  reqs:
+  - QA-14
+  deliverable:
+  - 'docs/releasing.md: the secret names, the protected `release` GitHub environment that holds them, who owns each credential and when it renews (an agent writes this and the signing workflow)'
+  - Justin's existing Apple Developer ID (application and installer certificates, notarization API key) and Azure code-signing credentials entered as secrets of the `release` environment under those names (Justin enters the values; agents never handle them)
+  acceptance:
+  - '`gh api repos/quakecstudio/editor/environments/release/secrets` lists every name in docs/releasing.md'
+  - A test binary is signed and notarized on macOS and signed on Windows from CI
+  verify:
+  - CI run link
+  depends:
+  - P0-02
+  - P0-15
 - key: P4-25
   title: Phase 4 gate review and MVP release
   labels:
@@ -470,6 +491,7 @@ issues:
   - GOAL-6
   - MVP-4
   depends:
+  - P0-23
   - P4-27
   - P4-28
   - P4-02
