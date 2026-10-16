@@ -203,6 +203,12 @@ fn put_i16(out: &mut Vec<u8>, value: i32) {
     out.extend_from_slice(&i16::try_from(value).unwrap().to_le_bytes());
 }
 
+/// A BSP29 child: a signed value, or one from 32768 to 65535 as its unsigned bits.
+fn put_child(out: &mut Vec<u8>, value: i32) {
+    let bits = if value < 0 { value + 65536 } else { value };
+    out.extend_from_slice(&u16::try_from(bits).unwrap().to_le_bytes());
+}
+
 fn put_u16(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&u16::try_from(value).unwrap().to_le_bytes());
 }
@@ -266,7 +272,7 @@ impl BspSpec {
                 if wide {
                     put_i32(out, child);
                 } else {
-                    put_i16(out, child);
+                    put_child(out, child);
                 }
             }
             for value in node.mins.iter().chain(&node.maxs) {
@@ -320,7 +326,7 @@ impl BspSpec {
                 if wide {
                     put_i32(&mut lumps[9], *child);
                 } else {
-                    put_i16(&mut lumps[9], *child);
+                    put_child(&mut lumps[9], *child);
                 }
             }
         }

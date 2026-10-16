@@ -42,7 +42,8 @@ files carry.
 | L0 formats | progs.dat header, statements, defs, functions, strings | `WinQuake/pr_comp.h`, `progs.h`, `pr_edict.c` (`PR_LoadProgs`) |
 | L0 formats | PAK | `WinQuake/common.c` (`COM_LoadPackFile`) |
 | L0 formats | WAD2 | `WinQuake/wad.c`, `wad.h` |
-| L0 formats | BSP29, MDL | `WinQuake/bspfile.h`, `modelgen.h`, `model.c` (`Mod_LoadBrushModel`, `Mod_LoadAliasModel`) |
+| L0 formats | BSP29, MDL | `WinQuake/bspfile.h`, `modelgen.h`, `model.c` (`Mod_LoadBrushModel`, `Mod_LoadAliasModel`); for BSPs, `model.c` and `gl_model.c` are authoritative for the WinQuake and GLQuake loader modes |
+| L0 formats | BSP loading by default | QuakeSpasm (`sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, `Quake/gl_model.c`) as `docs/spec/bsp.md` BSP-20 describes it, read for description and not ported ([ADR-0012](adr/0012-bsp-loader-default.md)) |
 | L0 formats | .lno, BSP2, .map | No portable id source: `.lno` and BSP2 come from FTEQCC, GMQCC and ericw-tools once registered above; `.map` from `qutils/QBSP/MAP.C` after the P4-22 ruling |
 | L1 VM | Opcodes, calls, local stack, runaway guard | `WinQuake/pr_exec.c` |
 | L1 VM | Edicts, fields, system globals, entity lump parsing | `WinQuake/pr_edict.c`, `progdefs.h`, `progs.h` |

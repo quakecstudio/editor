@@ -11,10 +11,16 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   `Mod_LeafPVS` with `Mod_DecompressVis`, `Bsp::hull0` is `Mod_MakeHull0`, and
   `hull_for_size` is the hull choice of `SV_HullForEntity`. Ported from `WinQuake/model.c`
   and `world.c` at the commit pinned in [`docs/porting.md`](../../docs/porting.md). The caller
-  names a `BspLoader`: `WinQuake` fails a face extent over 256 as `model.c` does, `GlQuake`
-  one over 512 as `gl_model.c` does (BSP-9.15) and also gives every face a leaf that is not
-  empty lists `SURF_UNDERWATER` (BSP-12.6). BSP2 follows QuakeSpasm's loader, cited for
-  description only.
+  names a `BspLoader`. `BspLoader::default()` is `FitzQuake`, the rules of the engines
+  modders play and test on (FitzQuake, QuakeSpasm, Ironwail, vkQuake), so the editor accepts
+  and judges maps as they do ([ADR-0012](../../docs/adr/0012-bsp-loader-default.md)): it
+  follows QuakeSpasm's loader as BSP-20 describes it, with an extent limit of 2000, no
+  `SURF_UNDERWATER`, any texture size, and the other differences listed there. `WinQuake`
+  and `GlQuake` are compatibility modes that answer whether id's own engines load a map:
+  `WinQuake` fails a face extent over 256 as `model.c` does, `GlQuake` one over 512 as
+  `gl_model.c` does (BSP-9.17) and also gives every face a leaf that is not empty lists
+  `SURF_UNDERWATER` (BSP-12.6). BSP2 and the `FitzQuake` rules follow QuakeSpasm's loader,
+  cited for description only; nothing is ported from it.
 - **`lit`**: `Lit::read` checks a `.lit` file as QuakeSpasm does and gives each lighting
   byte's colour; `grey` is the colour without one.
 - **`ent`** and **`replace_entities`**: `ent_file_names` gives the `.ent` names QuakeSpasm
@@ -24,12 +30,12 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
 
 - **Layer:** L0 formats. It depends on `qc-progs` for id's CRC. `qs-vfs`'s `walk` example loads
   every BSP and `.lit` of an install with it.
-- **Spec sections:** BSP-1 to BSP-19 in [`bsp.md`](../../docs/spec/bsp.md).
+- **Spec sections:** BSP-1 to BSP-20 in [`bsp.md`](../../docs/spec/bsp.md).
 - **Shipped:** yes.
 
 ## Invariants
 
-Property tests in `src/tests.rs` and the fuzz target `fuzz/fuzz_targets/qs_bsp.rs`
+Property tests in `src/tests.rs` and `src/fitz_tests.rs`, with every loader, and the fuzz target `fuzz/fuzz_targets/qs_bsp.rs`
 (`cargo xtask fuzz qs-bsp`), which writes the input over the spec's `base` vector so every
 lump is reached:
 
@@ -57,9 +63,16 @@ for all 23 maps; single-precision arithmetic would give 247 of their faces anoth
 `texturemins` or extent. `texturemins` and extents are kept in 16 bits, as id's `short` fields
 hold them (BSP-9.14); the vectors `extents-65552`, `extents-32784` and `texturemins-32768`
 pin that against the arm64 and x86-64 builds, and `extents-512` and its neighbours pin
-GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.15). A
+GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.17). A
 face with a negative stored extent has no lightmap (BSP-9.16): the vectors for it were run
 through id's own renderer code, WinQuake's surface cache and GLQuake's lightmap builder,
 neither of which draws light from such a face. The vectors `water-leaf` and its neighbours pin
 GLQuake's `SURF_UNDERWATER` against both loaders built the same two ways (BSP-12.6). The harness is not committed, as id's C never
 is.
+
+The default loader was checked the same way against QuakeSpasm's own `Quake/gl_model.c` and
+headers, unchanged from the commit BSP-20 cites and built for x86-64 and arm64 with gcc 14.4
+(BSP-20, the evidence there, and the vectors' README): over every vector and the 23 LibreQuake
+`lite` BSPs, `qs-bsp` with `BspLoader::default()` printed what the x86-64 build printed, but for
+`version-30`, a Half-Life BSP QuakeSpasm reads and `qs-bsp` does not (BSP-20.2), and the
+wording of one error (BSP-20.18). Tests of the default loader are in `src/fitz_tests.rs`.

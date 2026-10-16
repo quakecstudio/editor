@@ -31,7 +31,7 @@ fn base() -> Vec<u8> {
 
 fn check(bytes: &[u8]) {
     let _lit = Lit::read(bytes, bytes.len() / 3);
-    for loader in [BspLoader::WinQuake, BspLoader::GlQuake] {
+    for loader in [BspLoader::WinQuake, BspLoader::GlQuake, BspLoader::FitzQuake] {
         check_with(bytes, loader);
     }
 }

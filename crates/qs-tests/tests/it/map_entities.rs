@@ -41,7 +41,7 @@ fn base_bsp() -> Vec<u8> {
 #[test]
 fn entities_of_a_shipped_map_are_edited() {
     let bytes = base_bsp();
-    let bsp = Bsp::read(&bytes, BspLoader::WinQuake).expect("the base vector loads");
+    let bsp = Bsp::read(&bytes, BspLoader::default()).expect("the base vector loads");
     let mut map = MapFile::parse(bsp.entities()).expect("the entity text reads");
     assert_eq!(map.to_bytes(), bsp.entities());
     map.entities
@@ -61,8 +61,8 @@ fn entities_of_a_shipped_map_are_edited() {
 {\n\"classname\" \"func_door\"\n\"model\" \"*1\"\n}\n"
     );
     let edited =
-        replace_entities(&bytes, &text, BspLoader::WinQuake).expect("the BSP is rewritten");
-    let reread = Bsp::read(&edited, BspLoader::WinQuake).expect("the edited BSP loads");
+        replace_entities(&bytes, &text, BspLoader::default()).expect("the BSP is rewritten");
+    let reread = Bsp::read(&edited, BspLoader::default()).expect("the edited BSP loads");
     assert_eq!(reread.entities(), text.as_slice());
     assert_eq!(reread.faces, bsp.faces);
     let [with_crc, plain] = ent_file_names("maps/base.bsp", bsp.entity_lump);

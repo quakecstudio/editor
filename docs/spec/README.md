@@ -100,7 +100,7 @@ Each section holds, in this order:
 
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
-| `BSP` | [`bsp.md`](bsp.md) | BSP29 maps: the header and every lump and field, what id's loader checks, visibility, lightmaps and hulls; the two BSP2 variants; `.lit` and `.ent` files | [#142](https://github.com/quakecstudio/editor/issues/142) |
+| `BSP` | [`bsp.md`](bsp.md) | BSP29 maps: the header and every lump and field, what id's loader checks, visibility, lightmaps and hulls; the two BSP2 variants; `.lit` and `.ent` files; the FitzQuake lineage's loader, the default | [#142](https://github.com/quakecstudio/editor/issues/142) |
 | `BUILTIN` | [`builtins.md`](builtins.md) | Every vanilla builtin, numbers 1 to 78: prototype, arguments, result, effects on edicts, globals and the engine, failures, and how faithfully each can be mocked | [#28](https://github.com/quakecstudio/editor/issues/28) |
 | `DIFF` | [`differential.md`](differential.md) | The differential harness: scenarios, the deterministic mock engine both VMs run in (map setup, clients, server frames, mock builtins), errors and the end of a run, comparing two traces, expected divergences, statement coverage | [#51](https://github.com/quakecstudio/editor/issues/51) |
 | `EDICT` | [`edicts.md`](edicts.md) | Edict memory and numbering, the world and client edicts, spawn and remove with reuse timing, map entity spawning, QuakeC entry points and think timing, and the system globals and fields with who writes each | [#27](https://github.com/quakecstudio/editor/issues/27) |

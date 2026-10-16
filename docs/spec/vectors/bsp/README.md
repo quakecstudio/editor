@@ -14,7 +14,7 @@ from the same commit. The harness stubs only the engine around the loader: the h
 cache as `calloc`-like buffers, `Sys_Error` printing its message and stopping,
 `COM_LoadStackFile` returning the file, `R_InitSky` printing the texture name, and the
 little-endian swaps as no-ops. It printed every loaded field; the results below are its
-output. BSP2 and `.lit` have no vectors: QS was read, not run.
+output. `.lit` has no vectors. QS's loader was run on every vector, and on the BSP2 ones, for the FitzQuake lineage's rules (BSP-20), as the last section says.
 
 `x87-order`, `x87-pc64` and `nan-vertex` (2026-10-16) were loaded by the same harness built
 for x86-64 with `val` computed by WinQuake's x87 instructions and compared as WinQuake does,
@@ -138,3 +138,70 @@ result it records.
 | `water-leaf-turb` | Leaf 1 contents -3, texture `*water`, texinfo flags 1 | Loads; WinQuake: face flags 0x30. GLQuake: face flags 0xb0 | BSP-12.6 |
 | `solid-leaf-face` | Leaf 0 (contents -2) lists marksurface 0 too: marksurfaces 0 + 1 | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80, though the empty leaf 1 lists the face too | BSP-12.6 |
 | `contents-unknown` | Leaf 1 contents -7, no `CONTENTS_` value | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80 | BSP-12.6 |
+
+## The FitzQuake lineage (BSP-20)
+
+**Checked:** on 2026-10-16 every vector in this file was loaded by QuakeSpasm's
+`Mod_ForName`, `Mod_LoadBrushModel` and the functions they call, in `Quake/gl_model.c` copied
+unchanged with every header of `Quake/` from
+sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` (the tarball
+`https://codeload.github.com/sezero/quakespasm/tar.gz/c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`,
+SHA-256 `139d85c096ebec6b62425584be570daa5830323ff6eac6cd7ed94400bec3deba`). It was built with
+`gcc -O1 -w $(sdl2-config --cflags)` (gcc 14.4.0, Debian's `libsdl2-dev` 2.32.4 for the
+headers) for x86-64 and for arm64 in `linux/amd64` and `linux/arm64` containers. The harness
+stubs only the engine around the loader: the hunk as a zeroed buffer, `Sys_Error` and
+`Host_Error` printing their message and stopping, the console printing to standard error,
+`COM_LoadStackFile` returning the file and every other file lookup (`.lit`, `.ent`, `.vis`,
+WADs, external images) finding nothing, the cvars at 0, `isDedicated` false, the texture
+manager and `Sky_LoadTexture` recording without uploading, `q_strncasecmp` and
+`q_strcasecmp` as the C library's, and `VectorLength` as in QuakeSpasm's `Quake/mathlib.c`.
+It printed every texture (name, size, sky, animation, and a hash of the `width * height`
+bytes kept), texinfo (flags and texture), face (`texturemins`, extents, flags), leaf,
+node, clipnode, hull 0 clipnode, model (bounds, radius, `visleafs`, faces, head nodes) and
+visibility row. `qs-bsp` read with `BspLoader::default()` printed the same as the x86-64 build
+for every vector and the 23 BSPs of LibreQuake's `lite` release (267,924 lines), except:
+
+- `version-30`: QuakeSpasm loads it as a Half-Life BSP and `qs-bsp` fails it (BSP-20.2).
+- `bad-marksurface`: both fail; QuakeSpasm's message is
+  `Mod_LoadMarksurfaces: bad surface number` and `qs-bsp`'s is id's (BSP-20.18).
+
+The arm64 build printed the same as the x86-64 build for every input but `no-edges`, where its
+conversion of an out-of-range `floor` saturates (BSP-20.8). The GLQuake and WinQuake columns of
+the new rows come from the `WinQuake/model.c` and `WinQuake/gl_model.c` builds above;
+`double-sum` was also loaded by the x87 harness of BSP-9.11, whose 53-bit and 64-bit
+evaluations give extents 32 16 (single precision gives 16 16).
+
+| Name | Change | Result with the FitzQuake lineage's loader | GLQuake and WinQuake | Statements |
+| --- | --- | --- | --- | --- |
+| `base` | None | Loads as the base, with level 0's 256 pixels of `wall` kept | Loads | BSP-20.1, BSP-20.5 |
+| `version-30` | As above | Loads in QuakeSpasm as Half-Life's format; `qs-bsp` fails with BSP-1.2's error | Error | BSP-20.2 |
+| `texture-zero` | Texture `wall` 0 by 16 | Loads; slot 0 empty; texinfo 0 flags 2 (`TEX_MISSING`), the checkerboard; face flags 0x100 | Load; the texture has no pixels; face flags 0 | BSP-20.3, BSP-20.7, BSP-20.11 |
+| `not-aligned` | As above | Loads; `wall` 24 by 16, its 384 bytes kept | Error `Texture wall is not 16 aligned` | BSP-20.4, BSP-20.5 |
+| `texture-8x8` | Texture `wall` 8 by 8 | Loads; `wall` 8 by 8, its 64 bytes kept | Error `Texture wall is not 16 aligned` | BSP-20.4, BSP-20.5 |
+| `sky-upper` | Texture `SKY1` | Loads; a sky; face flags 0x24 | Load; not a sky; face flags 0 | BSP-20.6, BSP-20.11 |
+| `bad-miptex` | As above | Loads; texinfo 0 the checkerboard, flags 0 | Error `miptex >= loadmodel->numtextures` | BSP-20.7 |
+| `miptex-past` | Texinfo miptex 2 | Loads; texinfo 0 the checkerboard, flags 2; face flags 0x100 | Error `miptex >= loadmodel->numtextures` | BSP-20.7, BSP-20.11 |
+| `missing-texture` | As above | Loads; texinfo 0 flags 3, `r_notexture_mip2`; face flags 0x100 | Load; flags 0 | BSP-20.7, BSP-20.11 |
+| `no-textures` | As above | Loads; texinfo 0 the checkerboard, flags 0 | Load; flags 0 | BSP-20.7 |
+| `far-offset` | s axis offset 2000000 | Loads; `texturemins` -31616 0, extents 64 64 | Error `Bad surface extents` | BSP-20.8 |
+| `no-edges` | Face 0 `numedges` 0 | Loads; `texturemins` 0 0, extents 0 0 (the arm64 build: -16 -16, 16 16) | Error `Bad surface extents` | BSP-20.8 |
+| `nan-vertex` | As above | Loads; `texturemins` 64 0, extents 0 64 | Load; `texturemins` 0 0, extents 0 0 | BSP-20.8 |
+| `double-sum` | Vertexes (0, 0, 0) and three of (1, 1, 1); s axis (16, 2^-20, 2^-26) offset 0 | Loads; extents 32 16 | Load; extents 32 16 | BSP-20.9 |
+| `x87-order` | As above | Loads; `texturemins` 1024 0, extents 0 16 | Load; extents 16 16 | BSP-20.9 |
+| `extents-1984` | Square of side 1984, lighting of 15625 bytes | Loads; extents 1984 1984 | Error `Bad surface extents` | BSP-20.10 |
+| `extents-2016` | Square of side 2016, lighting of 16129 bytes | Error `Bad surface extents` | Error `Bad surface extents` | BSP-20.10 |
+| `turb` | As above | Loads; face flags 0x2030; `texturemins` 0 0, extents 64 64 | Load; flags 0x30; extents 16384 16384 | BSP-20.11 |
+| `turb-lit` | Texture `*water`, texinfo flags 0 | Loads; face flags 0x2010; extents 64 64 | Load; flags 0x30; extents 16384 16384 | BSP-20.11 |
+| `turb-lava` | Texture `*lava1`, texinfo flags 1 | Loads; face flags 0x430 | Load; flags 0x30 | BSP-20.11 |
+| `turb-slime` | Texture `!slime0`, texinfo flags 1 | Loads; face flags 0x830 | Load; flags 0 | BSP-20.11 |
+| `turb-tele` | Texture `*teleport`, texinfo flags 1 | Loads; face flags 0x1030 | Load; flags 0x30 | BSP-20.11 |
+| `fence` | Texture `{grate` | Loads; face flags 0x200 | Load; flags 0 | BSP-20.11 |
+| `texinfo-flag-2` | Texinfo flags 2 | Loads; texinfo 0 `wall`, flags 2; face flags 0x100 | Load; flags 0 | BSP-20.11 |
+| `missing-unlit` | Texture slot offset -1; face 0 `lightofs` -1 | Loads; texinfo 0 flags 2; face flags 0x120 | Load; flags 0 | BSP-20.11 |
+| `water-leaf`, `water-leaf-turb`, `solid-leaf-face`, `contents-unknown` | As above | Load; face flags 0, 0x2030, 0 and 0 | GLQuake 0x80, 0xb0, 0x80, 0x80 | BSP-20.12 |
+| `leafs-32768` | 32768 leaves, those after leaf 1 solid with no faces | Error `Mod_LoadLeafs: 32768 leafs exceeds limit of 32767.` | Load | BSP-20.13 |
+| `nodes-32769` | 32769 nodes; node 0 children 32768 and -2; the others -1 and -1 | Loads; node 0's front is node 32768 | `qs-bsp` fails (leaf 32767 does not exist, BSP-1.8); id's not run | BSP-20.15 |
+| `node-bad-leaf` | Node 0 children -3 and -1 | Loads; node 0's front is leaf 0 | `qs-bsp` fails (BSP-1.8); id's not run | BSP-20.15 |
+| `bsp2-child-0` | The base as `BSP2`; node 0 children 0 and -1 | Loads; node 0's front is leaf 0 | id's read no BSP2; `qs-bsp` loads with node 0 as its front | BSP-20.16 |
+| `bsp2-bad-leaf` | The base as `BSP2`; node 0 children -5 and -1 | Loads; node 0's front is leaf 0 | id's read no BSP2; `qs-bsp` fails (BSP-1.8) | BSP-20.16 |
+| `clipnode-past` | Clipnode 0 children 5 and -2 | Loads; clipnode 0 children -65531 and -2 | id's loaders load it; `qs-bsp` fails (BSP-1.8) | BSP-20.17 |
