@@ -150,7 +150,8 @@ pins them in the specs so that `qc-builtins` makes the same choice:
 FTEQCC is built from the files of the `qcc` target of `engine/qclib/Makefile` (`QCC_OBJS`,
 `COMMON_OBJS` and `TUI_OBJS`), with `NO_ZLIB` defined so it needs no library beyond the C
 runtime; without zlib it cannot read or write compressed archives, which compiling a
-`progs.src` never needs. Its `engine/qclib/LICENSE` is the GPL version 2 text and its files
+`progs.src` never needs. On Windows the build also defines `strcasecmp` as `_stricmp`, the
+Windows C runtime's name for the POSIX function `qcc_pr_comp.c` calls. Its `engine/qclib/LICENSE` is the GPL version 2 text and its files
 carry no "or later" grant, so it is only ever run as a separate program, never linked with
 anything of ours.
 

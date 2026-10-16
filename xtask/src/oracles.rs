@@ -329,8 +329,14 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     compiler.link(&qcc_objects, &oracles.qcc)?;
 
     // FTEQCC, unchanged, without zlib: it then cannot read or write compressed archives, which
-    // compiling a progs.src never needs.
+    // compiling a progs.src never needs. `qcc_pr_comp.c` calls the POSIX `strcasecmp`, which
+    // the Windows C runtime names `_stricmp`.
     let fteqcc_dir = cache.join("fteqcc");
+    let fteqcc_defines: &[&str] = if cfg!(windows) {
+        &["NO_ZLIB", "strcasecmp=_stricmp"]
+    } else {
+        &["NO_ZLIB"]
+    };
     let mut fteqcc_objects = Vec::new();
     for file in FTEQCC_FILES {
         let source = fteqcc_dir.join(file);
@@ -340,7 +346,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
                 source: &source,
                 code: Code::Upstream,
                 includes: &[],
-                defines: &["NO_ZLIB"],
+                defines: fteqcc_defines,
                 forced_include: None,
             },
             &object,
