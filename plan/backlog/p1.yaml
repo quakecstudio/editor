@@ -714,6 +714,7 @@ issues:
   - Entity-lump writing for BSPs and .ent override files, for shipped maps with no .map source
   acceptance:
   - Every corpus .map round-trips with only formatting changes allowed by the spec; every corpus BSP and id1 MDL loads
+  - Every vector in docs/spec/vectors/bsp, mdl and map gives the result its README records, and every BSP, MAP and MDL statement leaves docs/spec/coverage-baseline.tsv
   - Fuzzed readers never panic
   verify:
   - cargo test; fuzz targets
