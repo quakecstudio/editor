@@ -10,8 +10,10 @@ coloured light; and writes a BSP's entities back, for shipped maps with no `.map
   extents, flags and lightmap sizes, and model bounds and radii. `Bsp::leaf_pvs` is
   `Mod_LeafPVS` with `Mod_DecompressVis`, `Bsp::hull0` is `Mod_MakeHull0`, and
   `hull_for_size` is the hull choice of `SV_HullForEntity`. Ported from `WinQuake/model.c`
-  and `world.c` at the commit pinned in [`docs/porting.md`](../../docs/porting.md). BSP2
-  follows QuakeSpasm's loader, cited for description only.
+  and `world.c` at the commit pinned in [`docs/porting.md`](../../docs/porting.md). The caller
+  names a `BspLoader`: `WinQuake` fails a face extent over 256 as `model.c` does, `GlQuake`
+  one over 512 as `gl_model.c` does (BSP-9.15). BSP2 follows QuakeSpasm's loader, cited for
+  description only.
 - **`lit`**: `Lit::read` checks a `.lit` file as QuakeSpasm does and gives each lighting
   byte's colour; `grey` is the colour without one.
 - **`ent`** and **`replace_entities`**: `ent_file_names` gives the `.ent` names QuakeSpasm
@@ -53,5 +55,6 @@ instructions at 53 bits and comparing as WinQuake does (BSP-9.11, BSP-9.12; the 
 for all 23 maps; single-precision arithmetic would give 247 of their faces another
 `texturemins` or extent. `texturemins` and extents are kept in 16 bits, as id's `short` fields
 hold them (BSP-9.14); the vectors `extents-65552`, `extents-32784` and `texturemins-32768`
-pin that against the arm64 and x86-64 builds. The harness is not committed, as id's C never
-is.
+pin that against the arm64 and x86-64 builds, and `extents-512` and its neighbours pin
+GLQuake's extent limit against `WinQuake/gl_model.c` built the same two ways (BSP-9.15). The
+harness is not committed, as id's C never is.
