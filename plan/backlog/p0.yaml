@@ -85,6 +85,7 @@ issues:
   - CONV-9
   depends:
   - P0-02
+  - P0-17
   deliverable:
   - .github/workflows/ci.yml with separate Format, Clippy (--locked --all-targets --all-features -D warnings), Unit Tests (Linux, macOS, Windows), Build (every target, --profile ci --locked), cargo-deny
     and dependency-review jobs
@@ -92,10 +93,12 @@ issues:
   - '.github/workflows/secure_workflows.yml failing any unpinned third-party action; zizmor lint; least-privilege permissions and persist-credentials: false'
   - .pre-commit-config.yaml for prek, SHA-pinned, pre-commit and pre-push hooks as in docs/conventions.md
   - 'Branch protection on main: PR required, all CI jobs required, squash merge only, no force push'
+  - A Test Assets job on Linux, macOS and Windows running python3 corpus/assets.py fetch and precache (P0-17), with the download cache keyed on the SHA-256 of corpus/manifest.toml
   acceptance:
   - A PR that breaks fmt, clippy, tests, layering, licenses or deny cannot be merged
   - A PR adding an action pinned by tag instead of SHA fails
   - All six targets and the universal macOS binary build on every PR
+  - The Test Assets job fetches and checks the test assets on all three OSes
   verify:
   - A deliberately failing test PR is blocked; screenshot of the protection settings attached
 - key: P0-04
@@ -387,12 +390,12 @@ issues:
   - P0-16
   deliverable:
   - 'docs/test-assets.md: chosen assets (e.g. LibreQuake) with license review, and the rule that id''s pak0/pak1 never enter CI'
-  - cargo xtask assets fetch to download and checksum them
+  - '[[asset]] entries in corpus/manifest.toml, and corpus/assets.py fetch to download and checksum them and precache to check coverage (P1-14 moves it into cargo xtask assets fetch, as the Cargo workspace and xtask do not exist yet)'
   acceptance:
   - A map, models, textures and sounds sufficient for a headless scenario
   - Every model and sound the rerelease QuakeC precaches at spawn is present in the asset set or has a stand-in (checked by listing precache calls)
   verify:
-  - Fetch runs in CI on all three OSes
+  - corpus/assets.py fetch and precache output recorded in docs/test-assets.md; their unit tests run without network; P0-03 runs fetch in CI on all three OSes
 - key: P0-18
   title: Write the scope document and post-MVP list
   labels:

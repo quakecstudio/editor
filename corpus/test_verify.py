@@ -16,7 +16,7 @@ def base() -> dict:
     """A minimal manifest that passes every offline check."""
     m = {
         "schema": 1,
-        "never": ["quakec-1.06"],
+        "never": ["quakec-1.06", "id1-paks"],
         "blocked_urls": ["https://github.com/maddes-b/QuakeC-releases"],
         "source": [
             {
@@ -36,6 +36,28 @@ def base() -> dict:
             },
         ],
         "map": [],
+        "asset": [
+            {
+                "id": "lq",
+                "source": "src",
+                "url": "https://github.com/o/r/releases/download/v1/lite.zip",
+                "sha256": H2,
+                "license": "BSD-3-Clause",
+                "use": "fetch-at-test",
+                "evidence": ["LICENSE"],
+                "covers": ["rerelease"],
+                "strip": "lite/",
+                "game_dir": "id1",
+                "members": {"lite/id1/pak0.pak": H2, "lite/id1/docs/LICENSE": H1},
+                "stand_ins": {"sound/a.wav": "sound/b.wav"},
+            },
+            {
+                "id": "id1-paks",
+                "license": "LicenseRef-id-Quake-EULA",
+                "use": "never",
+                "reason": "commercial game data",
+            },
+        ],
     }
     for cid in ("id-1.01", "rerelease"):
         m["codebase"].append(_cb(cid, "id"))
@@ -249,6 +271,121 @@ class Check(unittest.TestCase):
         del cb(m, "id-1.01")["source"], cb(m, "id-1.01")["path"]
         m["never"].append("id-1.01")
         self.assertIn("missing required codebase id-1.01", self.errs(m))
+
+
+def asset(m: dict, aid: str = "lq") -> dict:
+    return next(e for e in m["asset"] if e["id"] == aid)
+
+
+class CheckAsset(unittest.TestCase):
+    def errs(self, m: dict) -> str:
+        return "\n".join(verify.check(m))
+
+    def test_real_manifest_pins_librequake_and_never_id_paks(self):
+        m = verify.load()
+        self.assertIn("id1-paks", m["never"])
+        self.assertEqual(asset(m, "id1-paks")["use"], "never")
+        lq = asset(m, "librequake-lite")
+        self.assertIn("rerelease", lq["covers"])
+        self.assertNotIn("vendor", {e["use"] for e in m["asset"]})
+
+    def test_url_must_be_release_zip_of_source(self):
+        for url in (
+            "https://github.com/other/r/releases/download/v1/lite.zip",
+            "https://github.com/o/r/archive/v1.zip",
+            "https://github.com/o/r/releases/download/v1/lite.tar.gz",
+            "http://github.com/o/r/releases/download/v1/lite.zip",
+        ):
+            m = base()
+            asset(m)["url"] = url
+            self.assertIn("url must be a .zip release download", self.errs(m), url)
+
+    def test_hashes(self):
+        m = base()
+        asset(m)["sha256"] = "x"
+        asset(m)["members"]["lite/id1/pak1.pak"] = "y"
+        out = self.errs(m)
+        self.assertIn("asset lq: bad sha256", out)
+        self.assertIn("member lite/id1/pak1.pak: bad sha256", out)
+
+    def test_unsafe_members(self):
+        for name in (
+            "lite/../x",
+            "/etc/passwd",
+            "lite/a\\b",
+            "C:/x",
+            "lite/",
+            "other/x",
+            "lite//x",
+        ):
+            m = base()
+            asset(m)["members"][name] = H2
+            self.assertIn("must be a safe path", self.errs(m), name)
+
+    def test_no_members(self):
+        m = base()
+        asset(m)["members"] = {}
+        self.assertIn("no pinned members", self.errs(m))
+
+    def test_evidence_must_be_in_archive(self):
+        m = base()
+        del asset(m)["members"]["lite/id1/docs/LICENSE"]
+        self.assertIn("evidence LICENSE is not among the archive's pinned members", self.errs(m))
+        m = base()
+        asset(m)["evidence"] = ["NOTICE"]
+        self.assertIn("evidence NOTICE has no pinned checksum", self.errs(m))
+        m = base()
+        asset(m)["evidence"] = []
+        self.assertIn("asset lq: no license evidence", self.errs(m))
+
+    def test_unknown_source(self):
+        m = base()
+        asset(m)["source"] = "nosuch"
+        self.assertIn("asset lq: unknown source 'nosuch'", self.errs(m))
+
+    def test_game_dir(self):
+        for bad in ("", "../id1", "/id1"):
+            m = base()
+            asset(m)["game_dir"] = bad
+            self.assertIn("game_dir must be", self.errs(m), bad)
+
+    def test_stand_ins_are_relative(self):
+        m = base()
+        asset(m)["stand_ins"] = {"../x.wav": "sound/b.wav"}
+        self.assertIn("stand-in", self.errs(m))
+
+    def test_asset_cannot_be_vendor(self):
+        m = base()
+        asset(m)["use"] = "vendor"
+        self.assertIn("use must be fetch-at-test or never", self.errs(m))
+
+    def test_id_game_data_must_be_never(self):
+        m = base()
+        m["never"].remove("id1-paks")
+        out = self.errs(m)
+        self.assertIn("never list must include id1-paks", out)
+        self.assertIn("id1-paks: use = never but missing from the never list", out)
+
+    def test_never_asset_needs_reason_and_no_source(self):
+        m = base()
+        e = asset(m, "id1-paks")
+        del e["reason"]
+        e["source"] = "src"
+        out = self.errs(m)
+        self.assertIn("asset id1-paks: a never entry needs a reason", out)
+        self.assertIn("asset id1-paks: a never entry must not name a source", out)
+
+    def test_covers(self):
+        m = base()
+        asset(m)["covers"] = ["nosuch"]
+        out = self.errs(m)
+        self.assertIn("asset lq: covers unknown codebase nosuch", out)
+        self.assertIn("no test asset covers the rerelease", out)
+
+    def test_duplicate_id_across_tables(self):
+        m = base()
+        asset(m)["id"] = "mod0"
+        self.assertIn("asset mod0: duplicate id", self.errs(m))
 
 
 class CheckRepo(unittest.TestCase):

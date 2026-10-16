@@ -4,7 +4,9 @@
 # conformance tests run against. Nothing listed here is committed to this
 # repository; entries are fetched at the pinned commit and checked against the
 # recorded SHA-256 (LIC-7). corpus/README.md explains the fields and the policy,
-# and `python3.11 corpus/verify.py` checks this file.
+# and `python3.11 corpus/verify.py` checks this file. The [[asset]] entries at
+# the end are the open game data CI runs engine scenarios with (QA-4); see
+# docs/test-assets.md and corpus/assets.py.
 #
 # Every license below was read from the item's own files at the pinned commit;
 # `evidence` names those files and [source.checksums] pins their contents.
@@ -12,9 +14,9 @@
 
 schema = 1
 
-# Never fetched by any tool and never committed (LIC-5). The ids here must
-# also appear as `use = "never"` entries below.
-never = ["quakec-1.06", "quoth"]
+# Never fetched by any tool and never committed (LIC-4, LIC-5). The ids here
+# must also appear as `use = "never"` entries below.
+never = ["quakec-1.06", "quoth", "id1-paks"]
 
 # Never fetch from these hosts or repositories: they carry QuakeC 1.06.
 blocked_urls = [
@@ -657,3 +659,53 @@ license = "LicenseRef-progs-dump-readme"
 use = "fetch-at-test"
 evidence = ["readme.txt"]
 notes = "As pd-elevator."
+
+# ---------------------------------------------------------------------------
+# Test assets: open game data the headless preview host runs CI scenarios
+# with (QA-4). Each is a release archive of a pinned source, fetched by
+# `python3.11 corpus/assets.py fetch` and checked against `sha256`. Only the
+# listed `members` are extracted, each checked against its own SHA-256, with
+# `strip` removed from the front of its path; `game_dir` is the directory an
+# engine's -basedir points above (pak0.pak, pak1.pak, ...). The source's license evidence
+# must be among the members, so the archive carries the license files read at
+# the pinned commit. `covers` names codebases whose literal precache_model and
+# precache_sound calls the members must satisfy, by name or through a
+# `stand_ins` entry (`corpus/assets.py precache` checks it). docs/test-assets.md
+# has the license review.
+# ---------------------------------------------------------------------------
+
+[[asset]]
+id = "librequake-lite"
+name = "LibreQuake v0.09-beta, lite build"
+source = "librequake"
+url = "https://github.com/lavenderdotpet/LibreQuake/releases/download/v0.09-beta/lite.zip"
+sha256 = "428e736b2f01d953e09a08c60bee975bdc4a0ac2219e97fa095c8af41754da83"
+license = "BSD-3-Clause"
+use = "fetch-at-test"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO", "docs/misc-docs/COPYING"]
+covers = ["rerelease"]
+strip = "lite/"
+game_dir = "id1"
+notes = "README-IMPORTANT-LICENCE-INFO: every model, texture and sound is BSD-3-Clause; the QuakeC, progs.dat and pop.lmp are GPL v2 (docs/misc-docs/COPYING), both GPL-3.0-or-later compatible. The release's license files are byte-identical to those at the pinned commit. Music tracks are in the archive but not extracted."
+[asset.members]
+"lite/id1/pak0.pak" = "0dd895a425e75d9908025dcfe340f75f5b8166ada68b2d7ee54d8d91d29378ff"
+"lite/id1/pak1.pak" = "28423c01836341d9e3c6465b407a44ae94e4e29e954544a67739686850e39365"
+"lite/id1/docs/COPYING" = "c3426ae10fd52ab1a3c3d4de4f2fae60543403e3cfd09ae5dc2ec16ae4717d28"
+"lite/id1/docs/README-IMPORTANT-LICENCE-INFO" = "121e4f2bbae888f442be76795c7e1b431bbfce9c7dd968407b4da969ccb50eae"
+"lite/id1/docs/misc-docs/COPYING" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+"lite/id1/docs/CREDITS" = "60b632851de3e5d02cb96ed158ff06700ced1c9fb6425f2d5d10509392021bd0"
+# The rerelease precaches these and LibreQuake has no file of that name.
+# `fetch` writes each one into id1/ as a loose copy of its stand-in.
+[asset.stand_ins]
+"sound/boss2/death.wav" = "sound/boss1/death.wav"
+"sound/boss2/idle.wav" = "sound/boss1/out1.wav"
+"sound/boss2/pop2.wav" = "sound/player/udeath.wav"
+"sound/boss2/sight.wav" = "sound/boss1/sight1.wav"
+"sound/player/slimbrn2.wav" = "sound/player/slmbrn2.wav"
+
+[[asset]]
+id = "id1-paks"
+name = "id Software Quake game data (pak0.pak, pak1.pak)"
+license = "LicenseRef-id-Quake-EULA"
+use = "never"
+reason = "Commercial game data (LIC-4). No tool fetches it and CI never uses it; local runs read the user's own Steam or GOG install in place. librequake-lite stands in for it in CI."
