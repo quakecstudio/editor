@@ -9,7 +9,7 @@ Agents take an issue from open to merged on their own: they read it, build it on
 Issues labelled `needs:human` wait for Justin. They are:
 
 - every decision (`type:decision`): the agent drafts the ADR with options and a recommendation as a draft PR; Justin decides and merges it;
-- work that needs hardware, credentials or a lawyer: entering your existing Apple and Azure signing credentials as CI secrets (#23), the MVP demo on three OSes (#135), the license compliance review before release;
+- work that needs hardware, credentials or a lawyer: the MVP demo on three OSes (#135), the license compliance review before release;
 - the MVP gate (#136), because it publishes the release.
 
 Other phase gates are not yours: the reviewer agent closes a gate once every issue in the phase's milestone is closed, including follow-ups filed along the way, nothing was deferred to a later phase, and every gate criterion has evidence in `docs/gates/<phase>.md`. If something would have to be deferred, it labels the gate `escalated` and asks you instead.
@@ -64,7 +64,7 @@ Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues 
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
 | 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
 | 3 | The preview host is our Rust app in `apps/preview-host` (ADR-0004), checked against id's engine built in `oracles/`. Engine integration tests need the redistributable test assets chosen in #17. |
-| 4 | Autonomous up to signing and release, which need the credentials from #23 (moved here from Phase 0; it blocks only the release pipeline, P4-18), then the license review, the demo and the MVP gate. |
+| 4 | Autonomous through signing (#23: the secrets are set; agents build the signing workflow) and release, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
 ## Watching a run
