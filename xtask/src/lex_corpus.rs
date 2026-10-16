@@ -3,8 +3,8 @@
 //! `cargo xtask lex-corpus <dir>`: lexes every `.qc` file of a QuakeC codebase and
 //! preprocesses the files its `progs.src` lists, failing on any error (P1-20).
 //!
-//! The codebase comes from `python corpus/assets.py codebase`, which writes id's QuakeC 1.01
-//! at its pinned commit. `cargo xtask corpus` (P1-14) will fetch it instead.
+//! The codebase comes from `cargo xtask corpus fetch id-1.01`, which writes id's QuakeC 1.01
+//! at its pinned commit.
 
 use std::fs;
 use std::path::{Path, PathBuf};

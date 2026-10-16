@@ -127,10 +127,10 @@ class Check(unittest.TestCase):
 
 
 class Main(unittest.TestCase):
-    def run_main(self, argv, get=None):
+    def run_main(self, argv):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = lc.main(argv, get) if get else lc.main(argv)
+            code = lc.main(argv)
         return code, out.getvalue(), err.getvalue()
 
     def test_local_directory(self):
@@ -161,14 +161,9 @@ class Main(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error:", err)
 
-    def test_download_failure(self):
-        def fail(url: str) -> bytes:
-            raise OSError("network down")
-
-        code, _, err = self.run_main([], fail)
-        self.assertEqual(code, 1)
-        self.assertIn("network down", err)
-
+    def test_source_dir_is_required(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            lc.main([])
 
 if __name__ == "__main__":
     unittest.main()

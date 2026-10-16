@@ -4,9 +4,9 @@
 # conformance tests run against. Nothing listed here is committed to this
 # repository; entries are fetched at the pinned commit and checked against the
 # recorded SHA-256 (LIC-7). corpus/README.md explains the fields and the policy,
-# and `python3.11 corpus/verify.py` checks this file. The [[asset]] entries at
+# and `cargo xtask corpus verify` checks this file. The [[asset]] entries at
 # the end are the open game data CI runs engine scenarios with (QA-4); see
-# docs/test-assets.md and corpus/assets.py.
+# docs/test-assets.md and `cargo xtask assets`.
 #
 # Every license below was read from the item's own files at the pinned commit;
 # `evidence` names those files and [source.checksums] pins their contents.
@@ -669,14 +669,14 @@ notes = "As pd-elevator."
 # ---------------------------------------------------------------------------
 # Test assets: open game data the headless preview host runs CI scenarios
 # with (QA-4). Each is a release archive of a pinned source, fetched by
-# `python3.11 corpus/assets.py fetch` and checked against `sha256`. Only the
+# `cargo xtask assets fetch` and checked against `sha256`. Only the
 # listed `members` are extracted, each checked against its own SHA-256, with
 # `strip` removed from the front of its path; `game_dir` is the directory an
 # engine's -basedir points above (pak0.pak, pak1.pak, ...). The source's license evidence
 # must be among the members, so the archive carries the license files read at
 # the pinned commit. `covers` names codebases whose literal precache_model and
 # precache_sound calls the members must satisfy, by name or through a
-# `stand_ins` entry (`corpus/assets.py precache` checks it). docs/test-assets.md
+# `stand_ins` entry (`cargo xtask assets precache` checks it). docs/test-assets.md
 # has the license review.
 # ---------------------------------------------------------------------------
 

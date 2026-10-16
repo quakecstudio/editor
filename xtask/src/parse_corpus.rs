@@ -7,7 +7,7 @@
 //! `--deletions`, each token of each file is deleted in turn and the damage must stay local
 //! (`qc_syntax::recovery`).
 //!
-//! The codebases come from `python corpus/assets.py codebase --codebase <id>`.
+//! The codebases come from `cargo xtask corpus fetch <id>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

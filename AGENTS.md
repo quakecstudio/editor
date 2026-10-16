@@ -60,4 +60,4 @@ take minutes to build; install them when a task needs them.
   `scripts/refresh-specs.sh` write it.
 - Quake's game data (`pak0.pak`, `pak1.pak`) is never in the repository or CI; CI uses the
   open assets in [`docs/test-assets.md`](docs/test-assets.md), fetched by checksum with
-  `corpus/assets.py fetch`.
+  `cargo xtask assets fetch`.
