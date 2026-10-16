@@ -1,8 +1,8 @@
 # ADR-0008: Launch engines from a linked run directory inside the project
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, accepting the recommendation (option A) on the source reading; the recorded launches become P3-06's acceptance test
 - **Issue:** [#22](https://github.com/quakecstudio/editor/issues/22)
 - **Requirements:** PLAT-6, LIC-4
 
@@ -34,7 +34,7 @@ Read from each engine's source at its default branch on 2026-10-15 (`COM_InitFil
 | Ironwail | Several `-basedir` flags: the first must hold `id1/pak0.pak`, each further one is added as another root | `-game NAME`, a single name searched in every root | A per-user preferences directory on every OS |
 | vkQuake | One `-basedir`; finds Steam, GOG and Epic installs itself | `-game NAME`, a single name | `-userdir` on macOS and Linux; on Windows `%APPDATA%\vkQuake` for store installs or with `-multiuser` |
 | FTEQW | `-basedir` | `-game NAME` | `-homedir PATH`, searched on top of the basedir and used for writes |
-| Our preview host (a QuakeSpasm fork, ADR-0004 proposed) | as QuakeSpasm | as QuakeSpasm | whatever the fork adds |
+| Our preview host (Rust, [ADR-0004](0004-preview-host-base.md), option D) | `-basedir`, as QuakeSpasm | `-game NAME`, as QuakeSpasm | ours to define |
 | KEX rerelease | not launched: a compile target only (ENG-8) | - | - |
 
 The store layouts: the original game is `<install>/id1/` (`pak0.pak`, `pak1.pak`); the 2021
@@ -72,7 +72,7 @@ ADR is accepted.
 
 ## Decision
 
-Recommendation: **option A, a linked run directory inside the project, used for every engine.**
+Decided: **option A, a linked run directory inside the project, used for every engine.**
 It is the only recipe every engine accepts on every OS without touching or copying the install. It
 keeps the user's mod in the project, where the build, the git checkpoints and mod export already
 look. Concretely:
@@ -90,8 +90,8 @@ look. Concretely:
   detection, so they cannot pick the install instead (read from `COM_InitBaseDir` and
   `COM_InitFilesystem`).
 - **`QuakeEX.kpf`:** on macOS and Linux a symbolic link in the rerelease run root. On Windows a
-  junction cannot link a file, so the preview host fork gains one patch: look for `QuakeEX.kpf` next
-  to the real `id1` it was given (a `-kpf PATH` option), listed in its `PATCHES.md`. Stock QuakeSpasm
+  junction cannot link a file, so our preview host takes a `-kpf PATH` option and the IDE passes
+  the install's `QuakeEX.kpf` to it directly. Stock QuakeSpasm
   on Windows then runs the rerelease without localized strings, which the restart-loop adapter
   reports as a known limitation.
 - **Never:** the IDE never writes inside the install, never copies a file out of it, and refuses to
@@ -99,11 +99,11 @@ look. Concretely:
 
 ## Consequences
 
-If accepted as recommended:
+Plan changes to make after this ADR merges:
 
 - `plan/backlog/p3.yaml`: P3-06 gains "creates and repairs the run roots (`build/run/original`,
-  `build/run/rerelease`) and launches with `-basedir` and `-game`"; P3-02 gains the `-kpf` patch in
-  its `PATCHES.md`; P3-08's acceptance notes the Windows rerelease localization limit for stock
+  `build/run/rerelease`) and launches with `-basedir` and `-game`"; P3-02 (the preview host) accepts
+  `-kpf PATH`; P3-08's acceptance notes the Windows rerelease localization limit for stock
   engines.
 - `crates/qs-paths` (P0-01, ADR-0011) or the install crate (P1-19): one function that makes a
   directory link per OS, with tests for symbolic links, junctions, a broken link and a missing
@@ -111,14 +111,14 @@ If accepted as recommended:
   already allows; otherwise the `junction` crate (MIT) is added under the conventions.
 - P4-17 templates ignore `build/`; P4-28 export reads `build/<mod>/` and never follows the run-root
   links.
-- The acceptance criterion's recorded launches (Steam and GOG, three OSes, `id1` and rerelease) are
-  run by a person before acceptance, or become the acceptance test of P3-06 if Justin prefers to
-  accept on the source reading.
+- The acceptance criterion's recorded launches (Steam and GOG, three OSes, `id1` and rerelease)
+  were not run before acceptance: Justin accepted on the source reading, so they become the
+  acceptance test of P3-06.
 
 ## Links
 
 - Issue: [#22](https://github.com/quakecstudio/editor/issues/22); pull request: this ADR's draft PR.
-- Related: [ADR-0011](0011-app-directories.md) (application directories), ADR-0004 proposed in [#221](https://github.com/quakecstudio/editor/pull/221) (preview host base).
+- Related: [ADR-0011](0011-app-directories.md) (application directories), [ADR-0004](0004-preview-host-base.md) in [#221](https://github.com/quakecstudio/editor/pull/221) (preview host base, option D: a Rust preview host).
 - Design document: [Platform support](../design/design-doc.md#platform-support), [Source and licensing](../design/design-doc.md#source-and-licensing).
 - Engine sources read: [sezero/quakespasm](https://github.com/sezero/quakespasm) (`Quake/common.c` `COM_InitFilesystem`, `COM_AddGameDirectory`, `LOC_Init`; `Quake/sys_sdl_unix.c`, `Quake/sys_sdl_win.c`; `Quakespasm.txt` 0.97.0 notes), [andrei-drexler/ironwail](https://github.com/andrei-drexler/ironwail) (`Quake/common.c` `COM_InitBaseDir`), [Novum/vkQuake](https://github.com/Novum/vkQuake) (`Quake/common.c` `COM_InitFilesystem`, readme), [fte-team/fteqw](https://github.com/fte-team/fteqw) (`engine/common/fs.c`, `-homedir`).
 - Microsoft, [Hard links and junctions](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions).
