@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -35,6 +35,27 @@ pub(crate) struct Manifest {
     pub(crate) map: Vec<Entry>,
     #[serde(default)]
     pub(crate) asset: Vec<Entry>,
+    #[serde(default)]
+    pub(crate) tree: Vec<Tree>,
+    /// The directory the manifest was read from, which a codebase's `project` is relative to.
+    #[serde(skip)]
+    pub(crate) dir: PathBuf,
+}
+
+/// Codebases laid out together as the directory tree their sources expect.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Tree {
+    #[serde(default)]
+    pub(crate) id: String,
+    // Read only by people.
+    #[serde(default, rename = "name")]
+    pub(crate) _name: String,
+    #[serde(default, rename = "notes")]
+    pub(crate) _notes: String,
+    /// The codebase written to each directory of the tree, by path in the tree.
+    #[serde(default)]
+    pub(crate) dirs: BTreeMap<String, String>,
 }
 
 /// A repository at a pinned commit.
@@ -92,6 +113,8 @@ pub(crate) struct Entry {
     /// Precached file, and the file in the paks that stands in for it.
     #[serde(default)]
     pub(crate) stand_ins: BTreeMap<String, String>,
+    /// A codebase's `quakec.toml` in this repository, relative to the manifest's directory.
+    pub(crate) project: Option<String>,
 }
 
 impl Entry {
@@ -105,7 +128,9 @@ impl Manifest {
     /// Reads and parses the manifest at `path`.
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+        let mut m: Self = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        m.dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        Ok(m)
     }
 
     /// Every codebase, map and asset, with the name of its table.
@@ -119,6 +144,11 @@ impl Manifest {
     /// The source called `id`.
     pub(crate) fn source(&self, id: &str) -> Option<&Source> {
         self.source.iter().find(|s| s.id == id)
+    }
+
+    /// The tree called `id`.
+    pub(crate) fn tree(&self, id: &str) -> Option<&Tree> {
+        self.tree.iter().find(|t| t.id == id)
     }
 
     /// The codebase, map or asset called `id`, with its table.

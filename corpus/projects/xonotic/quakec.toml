@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The project file `cargo xtask corpus fetch xonotic` writes into Xonotic's qcsrc/ (the
+# xonotic codebase's `project` in corpus/manifest.toml). Xonotic builds with the C
+# preprocessor (qcsrc/Makefile: `CPP := cc -xc -E`), and qcsrc/tools/qcc.sh runs it with
+# `-I.`, `-DGMQCC` (the default compiler) and its QCCDEFS at their defaults, then the defines
+# of each mode. WATERMARK is `git describe` there; any string does here. `__STDC__=1` is what
+# the C preprocessor defines itself.
+
+[project]
+name = "Xonotic"
+mod = "xonotic"
+dialect = "gmqcc"
+target = "dp"
+
+[[module]]
+kind = "ssqc"
+name = "server"
+src = "server/progs.inc"
+include_dirs = ["."]
+defines = [
+  "__STDC__=1",
+  "GMQCC",
+  "NDEBUG=1",
+  "XONOTIC=1",
+  "WATERMARK=\"corpus\"",
+  "ENABLE_EFFECTINFO=0",
+  "ENABLE_DEBUGDRAW=0",
+  "ENABLE_DEBUGTRACE=0",
+  "GAMEQC",
+  "SVQC",
+]
+
+[[module]]
+kind = "csqc"
+name = "client"
+src = "client/progs.inc"
+include_dirs = ["."]
+defines = [
+  "__STDC__=1",
+  "GMQCC",
+  "NDEBUG=1",
+  "XONOTIC=1",
+  "WATERMARK=\"corpus\"",
+  "ENABLE_EFFECTINFO=0",
+  "ENABLE_DEBUGDRAW=0",
+  "ENABLE_DEBUGTRACE=0",
+  "GAMEQC",
+  "CSQC",
+]
+
+[[module]]
+kind = "menuqc"
+name = "menu"
+src = "menu/progs.inc"
+include_dirs = ["."]
+defines = [
+  "__STDC__=1",
+  "GMQCC",
+  "NDEBUG=1",
+  "XONOTIC=1",
+  "WATERMARK=\"corpus\"",
+  "ENABLE_EFFECTINFO=0",
+  "ENABLE_DEBUGDRAW=0",
+  "ENABLE_DEBUGTRACE=0",
+  "MENUQC",
+]

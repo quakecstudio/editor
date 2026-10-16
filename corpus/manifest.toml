@@ -155,6 +155,16 @@ commit = "79893de18d34e9f55cbf4877283145e63bfab5f1"
 [source.checksums]
 "COPYING" = "4e8827b98e3ae6417b08420a89afce6728597c36fe02d403d4a3ce526b160c17"
 
+# Rad-Therapy (FreeHL), the GitHub mirror of code.idtech.space/fn/valve, at its last commit
+# before FreeCS's pinned one was a day old (2025-10-12).
+[[source]]
+id = "freehl"
+url = "https://github.com/eukara/freehl"
+commit = "041a3fdcafec26e0bdde595e9b8f76caacbfd1fe"
+[source.checksums]
+"COPYING" = "a118c789d9f494c447ff5f6e3f1c4aadf9b541d2f5ae9fbdf646d93112c875e0"
+"README.md" = "fc4d06d528c1ac6581e6e02b8bec8fc75801b22f591e57c90a0fc4d2619fd7b2"
+
 [[source]]
 id = "nzp"
 url = "https://github.com/nzp-team/quakec"
@@ -390,7 +400,18 @@ path = "src"
 license = "ISC"
 use = "vendor"
 evidence = ["COPYING"]
-notes = "Builds against the nuclide entry; game data is fetched by the user's own install scripts and is not part of the corpus."
+notes = "Builds against the nuclide and freehl entries, laid out by the freecs-tree tree; game data is fetched by the user's own install scripts and is not part of the corpus."
+
+[[codebase]]
+id = "freehl"
+name = "Rad-Therapy (FreeHL)"
+kind = "mod"
+source = "freehl"
+path = "src"
+license = "ISC"
+use = "vendor"
+evidence = ["COPYING", "README.md"]
+notes = "The valve game FreeCS builds against (its progs.src files list files under valve/src). COPYING and the README's Source Code section: ISC. Only src/ is corpus; the repository's game data and compiled progs are not."
 
 [[codebase]]
 id = "nzp"
@@ -434,7 +455,8 @@ path = "qcsrc"
 license = "GPL-3.0-or-later"
 use = "vendor"
 evidence = ["xonotic:COPYING", "xonotic:GPL-3"]
-notes = "GMQCC dialect. Xonotic's COPYING covers the Team Xonotic-owned branches of its repositories, including xonotic-data master: GPL version 3 or any later version."
+project = "projects/xonotic/quakec.toml"
+notes = "GMQCC dialect. Xonotic's COPYING covers the Team Xonotic-owned branches of its repositories, including xonotic-data master: GPL version 3 or any later version. Built with the C preprocessor, so its modules are opened through the quakec.toml in project."
 
 [[codebase]]
 id = "quakec-1.06"
@@ -451,6 +473,21 @@ kind = "mod"
 license = "LicenseRef-Quoth-readme"
 use = "never"
 reason = "No QuakeC source is published, only compiled progs in pak files. quoth2_2.txt in quoth2pt2full.zip (sha256 b822648bbac7a2a46e091d0ca38698d190252d814fd4ddb207fe823be1520399) permits redistributing the unmodified zip only. Recorded so it is not re-proposed."
+
+# ---------------------------------------------------------------------------
+# Trees: codebases laid out together as the directory tree their sources
+# expect. `dirs` maps each directory of the tree to the codebase written there;
+# `cargo xtask corpus fetch <tree>` writes them under <cache>/tree/<id>/.
+# ---------------------------------------------------------------------------
+
+[[tree]]
+id = "freecs-tree"
+name = "FreeCS in a Nuclide SDK tree"
+notes = "FreeCS's README builds it in a clone of the Nuclide SDK, with Rad-Therapy cloned as valve/ and FreeCS as cstrike/; its progs.src files list ../../../src/, ../../../valve/src/ and ../../../cstrike/src/. Open cstrike/src, on a case-insensitive file system: shared/defs.h includes animations.h and the file is Animations.h."
+[tree.dirs]
+"src" = "nuclide"
+"valve/src" = "freehl"
+"cstrike/src" = "freecs"
 
 # ---------------------------------------------------------------------------
 # Maps (.map sources) for the map-compiler differential tests (MAP-19).

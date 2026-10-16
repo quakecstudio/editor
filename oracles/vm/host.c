@@ -87,6 +87,25 @@ void *qs_alloc(size_t size) {
     return arena + start;
 }
 
+// The arena starts all zero, which the edicts rely on (EDICT-1.8).
+qboolean qs_arena_init(void) {
+    arena_size = QS_ARENA_SIZE;
+    arena = calloc(1, arena_size);
+    return arena != NULL;
+}
+
+static int num_engine_strings;
+static int num_dirty;
+
+// Empties the arena, and with it the engine strings, so that a fuzz target can load file after
+// file in one process (oracles/vm/fuzz.c).
+void qs_arena_reset(void) {
+    memset(arena, 0, arena_used);
+    arena_used = 0;
+    num_engine_strings = 0;
+    num_dirty = 0;
+}
+
 // --- Engine strings (EDICT-13, TRACE-4.10) ---
 
 typedef struct {
@@ -97,10 +116,8 @@ typedef struct {
 } engine_string_t;
 
 static engine_string_t *engine_strings;
-static int num_engine_strings;
 static int max_engine_strings;
 static int *dirty_strings;
-static int num_dirty;
 
 static int find_engine_string(int value) {
     int lo = 0;
@@ -433,11 +450,14 @@ static qboolean table_fits(int size, int ofs, int count, int record) {
     return end <= size;
 }
 
-// Loads a progs as id's PR_LoadProgs does, into the arena, on a little-endian host. id checks
-// only the version and, when check_crc is set, the header CRC; this loader also refuses a file
-// whose tables lie outside it, which id would read past (PROGS-15), and with check_crc a progs
-// too small for the system globals and fields (EDICT-2.4, EDICT-3.3). Returns NULL or why the
-// progs is refused.
+#define QS_MAX_PROGS_SIZE (64L << 20)
+
+// EDICT-3.5: the most field slots whose LIMIT_MAX_EDICTS edicts of EDICT-1.1's size (a 96-byte
+// header) fit in 2147483647 bytes, (2147483647 / 600 - 96) / 4.
+#define QS_MAX_ENTITYFIELDS ((INT_MAX / MAX_EDICTS - 96) / 4)
+
+// Loads a progs as id's PR_LoadProgs does, into the arena, on a little-endian host, and checks
+// it with qs_check_progs. Returns NULL or why the progs is refused.
 const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t *out) {
     FILE *f = fopen(path, "rb");
     if (!f)
@@ -447,7 +467,7 @@ const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t 
         return "cannot read the progs";
     }
     long size = ftell(f);
-    if (size < (long)sizeof(dprograms_t) || size > (64L << 20)) {
+    if (size < (long)sizeof(dprograms_t) || size > QS_MAX_PROGS_SIZE) {
         fclose(f);
         return "the progs is too short or too large";
     }
@@ -458,6 +478,17 @@ const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t 
         return "cannot read the progs";
     }
     fclose(f);
+    return qs_check_progs(file, size, check_crc, out);
+}
+
+// Checks the progs of `size` bytes at `file`, which lies in the arena, and makes it the one
+// the VM runs. id checks only the version and, when check_crc is set, the header CRC; this also
+// refuses a file whose tables lie outside it, which id would read past (PROGS-15), and with
+// check_crc a progs too small for the system globals and fields (EDICT-2.4, EDICT-3.3).
+// Returns NULL or why the progs is refused.
+const char *qs_check_progs(byte *file, long size, qboolean check_crc, qs_progs_file_t *out) {
+    if (size < (long)sizeof(dprograms_t) || size > QS_MAX_PROGS_SIZE)
+        return "the progs is too short or too large";
     out->file = file;
     out->size = (int)size;
 
@@ -482,6 +513,8 @@ const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t 
         return "the progs has fewer than 92 global slots";
     if (check_crc && progs->entityfields < 105)
         return "the progs has fewer than 105 field slots";
+    if (progs->entityfields > QS_MAX_ENTITYFIELDS)
+        return "the progs has more than 894760 field slots";
 
     pr_functions = (dfunction_t *)(file + progs->ofs_functions);
     pr_strings = (char *)file + progs->ofs_strings;
@@ -537,6 +570,7 @@ char *qs_checked_text(char *text) {
 int __llvm_profile_write_file(void);
 #endif
 
+#ifndef QS_FUZZ
 static void on_crash(int sig) {
     qs_trace_flush_on_crash();
     fprintf(stderr, "vm-oracle: crashed with signal %d (id's code hit undefined behaviour)\n",
@@ -546,6 +580,7 @@ static void on_crash(int sig) {
 #endif
     _Exit(4);
 }
+#endif
 
 // --- Vector mode: the environment of docs/spec/vectors/vm/README.md ---
 
@@ -748,19 +783,10 @@ static qboolean parse_host_action(char **w, int n, int edicts, host_action_t *ou
 #define QS_MAX_VECTOR_CLIENTS 16
 static client_t vector_clients[QS_MAX_VECTOR_CLIENTS];
 
-int qs_vector_main(const char *progs_path, const char *init_path, const char *trace_path) {
-    qs_progs_file_t file;
-    const char *refused = qs_load_progs(progs_path, false, &file);
-    if (refused) {
-        fprintf(stderr, "vm-oracle: %s: %s\n", progs_path, refused);
-        return QS_EXIT_REFUSED;
-    }
-    long size;
-    char *data = qs_read_file(init_path, &size);
-    if (!data) {
-        fprintf(stderr, "vm-oracle: cannot open %s\n", init_path);
-        return QS_EXIT_REFUSED;
-    }
+// Reads the init file of vector mode (oracles/README.md) from the `size` bytes at `data`, for
+// the progs already loaded: sets up the edicts and client slots, then applies each value and
+// collects the host actions. Returns QS_EXIT_TRACED, or QS_EXIT_REFUSED after saying why.
+int qs_parse_init(const char *init_path, const char *data, long size, qs_vector_setup_t *out) {
     // A NUL byte would end the C string of its line early and hide the rest of it.
     const char *nul = memchr(data, 0, (size_t)size);
     if (nul) {
@@ -776,10 +802,11 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     char *w[8];
     int got;
     int line = 0;
-    int entry = 1;
     int edicts = 3;
     int maxclients = 0;
-    builtin_t *builtins = qs_vector_builtins;
+    out->entry = 1;
+    out->builtins = qs_vector_builtins;
+    num_host_actions = 0;
     sv.state = ss_active;
     // The edicts and client slots are set up first, then the values are applied.
     while ((got = next_line(&cursor, stop, text, sizeof(text))) != 0) {
@@ -826,9 +853,9 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
         if (n == 1 && strcmp(w[0], "loading") == 0) {
             sv.state = ss_loading;
         } else if (n == 2 && strcmp(w[0], "builtins") == 0 && strcmp(w[1], "engine") == 0) {
-            builtins = qs_scenario_builtins;
+            out->builtins = qs_scenario_builtins;
         } else if (n == 2 && strcmp(w[0], "entry") == 0) {
-            if (!parse_int(w[1], INT_MIN, INT_MAX, &entry)) {
+            if (!parse_int(w[1], INT_MIN, INT_MAX, &out->entry)) {
                 fprintf(stderr, "vm-oracle: %s:%d: bad entry\n", init_path, line);
                 return QS_EXIT_REFUSED;
             }
@@ -871,14 +898,34 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
             return QS_EXIT_REFUSED;
         }
     }
-    free(data);
     if (num_host_actions == 0) {
         host_actions[0].kind = HOST_RUN;
-        host_actions[0].a = entry;
+        host_actions[0].a = out->entry;
         num_host_actions = 1;
     }
+    return QS_EXIT_TRACED;
+}
 
-    pr_builtins = builtins;
+int qs_vector_main(const char *progs_path, const char *init_path, const char *trace_path) {
+    qs_progs_file_t file;
+    const char *refused = qs_load_progs(progs_path, false, &file);
+    if (refused) {
+        fprintf(stderr, "vm-oracle: %s: %s\n", progs_path, refused);
+        return QS_EXIT_REFUSED;
+    }
+    long size;
+    char *data = qs_read_file(init_path, &size);
+    if (!data) {
+        fprintf(stderr, "vm-oracle: cannot open %s\n", init_path);
+        return QS_EXIT_REFUSED;
+    }
+    qs_vector_setup_t setup;
+    int parsed = qs_parse_init(init_path, data, size, &setup);
+    free(data);
+    if (parsed != QS_EXIT_TRACED)
+        return parsed;
+
+    pr_builtins = setup.builtins;
     pr_numbuiltins = QS_NUM_BUILTINS;
     if (!qs_trace_open(trace_path)) {
         fprintf(stderr, "vm-oracle: cannot write %s\n", trace_path);
@@ -898,14 +945,14 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     return QS_EXIT_TRACED;
 }
 
+// A fuzz target (oracles/vm/fuzz.c) brings libFuzzer's main instead.
+#ifndef QS_FUZZ
 static const char usage[] =
     "usage: vm-oracle [--console] scenario <scenario> <trace>\n"
     "       vm-oracle [--console] vector <progs.dat> <init> <trace>\n";
 
 int main(int argc, char **argv) {
-    arena_size = QS_ARENA_SIZE;
-    arena = calloc(1, arena_size);
-    if (!arena) {
+    if (!qs_arena_init()) {
         fprintf(stderr, "vm-oracle: out of memory\n");
         return QS_EXIT_IO;
     }
@@ -929,3 +976,4 @@ int main(int argc, char **argv) {
     fputs(usage, stderr);
     return QS_EXIT_REFUSED;
 }
+#endif

@@ -845,6 +845,25 @@ issues:
   verify:
   - cargo test -p qs-bsp; cargo test -p qs-tests; the recorded run in the vectors' README and the PR
 - key: P1-46
+  title: State how the project graph matches the case of file names
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  depends:
+  - P1-23
+  deliverable:
+  - 'docs/spec/project-file.md: a PRJ statement on how a list, #include or #includelist name is matched to a file. FTEQCC at the commit QC-9 cites opens files with fopen (QCC_FileSize and QCC_ReadFile in engine/qclib/qcctui.c, called from QCC_FindBestInclude), so a name whose case differs from the file''s opens on a case-insensitive file system and fails on a case-sensitive one. FreeCS is the corpus case: its shared/defs.h includes "animations.h" and the file is Animations.h, so the freecs-tree project opens with no error on macOS and with E0111 on Linux (P1-34)'
+  - 'crates/qc-project: a warning on a graph entry whose name differs in case from the file it opened, so a project that would fail on a case-sensitive file system says so on every OS'
+  acceptance:
+  - The statement quotes FTEQCC's code and has citing tests; the spec-citation ratchet passes
+  - A test opens a name that differs in case from its file and gets the warning where the file system is case-insensitive, and the error where it is case-sensitive; FreeCS's two modules that include animations.h get the warning on macOS in CI
+  verify:
+  - cargo test -p qc-project; cargo xtask project-corpus in CI
+- key: P1-47
   title: Record what id's loader does with a leaf whose contents is 0 or more
   labels:
   - L0-formats
@@ -920,6 +939,7 @@ issues:
   - P1-44
   - P1-45
   - P1-46
+  - P1-47
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
