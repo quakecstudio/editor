@@ -959,6 +959,10 @@ int main(int argc, char **argv) {
     signal(SIGSEGV, on_crash);
     signal(SIGILL, on_crash);
     signal(SIGFPE, on_crash);
+#ifdef SIGBUS
+    // macOS raises SIGBUS, not SIGSEGV, for an address in a reserved region it has not mapped.
+    signal(SIGBUS, on_crash);
+#endif
     int first = 1;
     if (argc > 1 && strcmp(argv[1], "--console") == 0) {
         echo_console = true;
