@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Kiro pointer guard",
+      "trigger": "PostFileSave",
+      "description": "Warns when a .kiro/ pointer skill or agent is edited directly, since the authoritative source lives in .claude/ (see .kiro/steering/kiro-powers.md, \"The one rule\").",
+      "matcher": "\\.kiro/(skills|agents)/",
+      "action": {
+        "type": "command",
+        "command": "f=$(cat | sed -n 's/.*\"\\(file_path\\|path\\|filePath\\)\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\2/p' | head -n1); case \"$f\" in *.kiro/skills/*|*.kiro/agents/*) rel=${f##*.kiro/}; src=\".claude/${rel%/SKILL.md}\"; case \"$f\" in *SKILL.md) src=\".claude/skills/$(basename \"$(dirname \"$f\")\")/SKILL.md\";; *agents/*.json) src=\".claude/agents/$(basename \"${f%.json}\").md\";; esac; echo \"WARNING: $f is a Kiro pointer, not the source of truth. Per .kiro/steering/kiro-powers.md (\\\"The one rule\\\"), edit the authoritative file in .claude/ instead: $src . The pointer only names and summarises its .claude/ counterpart.\" >&2;; esac; exit 0",
+        "timeout": 15
+      }
+    }
+  ]
+}

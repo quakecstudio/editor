@@ -63,16 +63,24 @@ Each is summarised in `.kiro/steering/rules.md` and inlined where it is a hard g
 | `.kiro/agents/implementer.json` | `.claude/agents/implementer.md` |
 | `.kiro/agents/reviewer.json` | `.claude/agents/reviewer.md` |
 
-### Hook
+### Hooks
 
 | Kiro wiring | Authoritative source |
 | --- | --- |
 | `agentSpawn` hook in each `.kiro/agents/*.json` | `.claude/hooks/session-setup.sh` |
+| `.kiro/hooks/session-setup.json` (`SessionStart`) | `.claude/hooks/session-setup.sh` |
+| `.kiro/hooks/kiro-pointer-guard.json` (`PostFileSave`) | (Kiro-only; enforces "The one rule") |
 
-The script is referenced in place, not copied. In Claude Code it runs from
-`.claude/settings.json` `SessionStart`; in Kiro it runs from the `agentSpawn` hook of each
-agent. It is Linux-only, idempotent and always exits 0, so running it under either tool is
-safe.
+The setup script is referenced in place, not copied. In Claude Code it runs from
+`.claude/settings.json` `SessionStart`; in Kiro the `implementer` and `reviewer` agents run
+it on `agentSpawn`, and `.kiro/hooks/session-setup.json` runs it at the start of a plain
+Kiro session too, so an interactive session in a cloud sandbox gets the same prep (rustup,
+prek, uv for the plan checks, git hooks). It is Linux-only, idempotent and always exits 0,
+so running it under either tool, and more than once, is safe.
+
+`.kiro/hooks/kiro-pointer-guard.json` is Kiro-only: it has no `.claude/` counterpart because
+it exists to protect this pointer scheme, warning when a `.kiro/` skill or agent is edited
+instead of its `.claude/` source.
 
 ### Scripts
 
@@ -100,5 +108,26 @@ The `.claude/` skills and agents use a few Claude Code conventions. When followi
 - **The Claude `Agent` tool / subagents** - delegation to the `implementer` and `reviewer`
   subagents. In Kiro, delegate by invoking the `implementer` and `reviewer` agents defined
   in `.kiro/agents/`.
+- **Running the `plan/` scripts** - they need PyYAML. On a normal machine the session hook
+  (`.claude/hooks/session-setup.sh`) installs it system-wide with `apt` (`python3-yaml`), and
+  CI installs it with pip, so `python3 plan/check.py` just works. Where that apt install is
+  unavailable or cannot write the system site-packages (no apt, no root, or a read-only
+  system, as in some sandboxes), nothing installs PyYAML and a plain `python3 plan/check.py`
+  cannot import yaml. The hook also installs `uv` for exactly this case: run the script
+  through uv, which supplies PyYAML per run in a throwaway environment (it does not make a
+  bare `python3` import yaml afterwards): `uv run --no-project --with pyyaml python3
+  plan/check.py` (and the same for `status.py`, `apply.py`, `gen_readiness.py` and the `plan`
+  unittests). Where a normal `python3` already imports yaml, keep using it; the commands in
+  the `.claude/` procedures, `AGENTS.md` and `CLAUDE.md` stay as written.
+- **The `/goal ...` run block** - the `README.md` "Next run" block and the examples in
+  `docs/agents/README.md` are Claude Code auto-mode commands (`/goal Run /run-phase ...`).
+  Kiro has the same unattended, goal-driven loop as its Autonomous mode, so run the identical
+  instruction as the session goal there: `Run run-phase <phase> <track> until python3
+  plan/status.py ... prints a last line starting "STATUS ... COMPLETE" or "... WAITING ON
+  PEOPLE". Run that command at the end of every turn. Stop after 150 turns.` The verbatim
+  text of the instruction and its stop condition are the same; only the invocation differs
+  (a session goal in Autonomous mode, not a `/goal` slash command). Kiro's mode is chosen when
+  the session starts and does not change within it, so start a new Autonomous session to run a
+  phase rather than switching mode mid-session.
 
 See `docs/agents/README.md` for how the pieces fit together and how a whole phase is run.
