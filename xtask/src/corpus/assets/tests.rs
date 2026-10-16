@@ -489,3 +489,9 @@ fn a_string_ends_at_its_closing_quote_or_the_line() {
     assert_eq!(super::string_len(b"\"ab\nc\""), 3);
     assert_eq!(super::string_len(b"\"ab"), 3);
 }
+
+#[test]
+fn each_kind_names_its_precache_builtin() {
+    assert_eq!(Kind::Model.name(), "model");
+    assert_eq!(Kind::Sound.name(), "sound");
+}
