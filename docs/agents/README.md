@@ -64,7 +64,7 @@ Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues 
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
 | 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
 | 3 | The preview host is our Rust app in `apps/preview-host` (ADR-0004), checked against id's engine built in `oracles/`. Engine integration tests need the redistributable test assets chosen in #17. |
-| 4 | Autonomous up to signing and release, which need the credentials from #23, then the license review, the demo and the MVP gate. |
+| 4 | Autonomous up to signing and release, which need the credentials from #23 (moved here from Phase 0; it blocks only the release pipeline, P4-18), then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
 ## Watching a run

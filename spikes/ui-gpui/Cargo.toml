@@ -1,0 +1,25 @@
+[package]
+name = "ui-gpui"
+description = "gpui prototype for the UI framework spike (P0-10); not shipped"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# gpui is not published from Zed's repository any more (crates.io `gpui` stops at 0.2.2,
+# 2025-10-22). `gpui-pre` is a snapshot of Zed's gpui crates published by the gpui-component
+# maintainers; see docs/spikes/ui-framework.md. `profiler` gives per-frame draw and present
+# timings.
+gpui = { package = "gpui-pre", version = "=0.3.7", features = ["profiler"] }
+# runtime_shaders: compile the Metal shaders at startup, so the build does not need Xcode's
+# separately downloaded Metal toolchain. Zed precompiles them for release.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+# The same versions gpui already depends on, so they add no crates.
+image = { version = "=0.25.10", default-features = false }
+pollster = { version = "=0.4.0" }
+wgpu = { version = "=29.0.4" }
+ui-common = { workspace = true }
+
+[lints]
+workspace = true

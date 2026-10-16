@@ -239,6 +239,7 @@ issues:
   - L7-ui
   - area:editor
   - type:spike
+  - needs:human
   size: L
   reqs:
   - UI-1
@@ -450,27 +451,6 @@ issues:
   - Recorded launches per OS
   depends:
   - P0-07
-- key: P0-23
-  title: Add the code-signing credentials to CI
-  labels:
-  - repo
-  - area:release
-  - type:chore
-  - needs:human
-  size: S
-  reqs:
-  - QA-14
-  deliverable:
-  - 'docs/releasing.md: the secret names, the protected `release` GitHub environment that holds them, who owns each credential and when it renews (an agent writes this and the signing workflow)'
-  - Justin's existing Apple Developer ID (application and installer certificates, notarization API key) and Azure code-signing credentials entered as secrets of the `release` environment under those names (Justin enters the values; agents never handle them)
-  acceptance:
-  - '`gh api repos/quakecstudio/editor/environments/release/secrets` lists every name in docs/releasing.md'
-  - A test binary is signed and notarized on macOS and signed on Windows from CI
-  verify:
-  - CI run link
-  depends:
-  - P0-02
-  - P0-15
 - key: P0-24
   title: Set the test-suite readiness bar and its CI tooling
   labels:
@@ -577,7 +557,6 @@ issues:
   - P0-19
   - P0-21
   - P0-22
-  - P0-23
   - P0-25
   - P0-24
   - P0-26

@@ -1,0 +1,29 @@
+# The UI framework spike (P0-10, issue #10). A workspace of its own, outside the main one, so
+# `cargo` commands at the repository root and in CI never build gpui or egui. See README.md.
+
+[workspace]
+resolver = "3"
+members = ["ui-common", "ui-gpui", "ui-egui"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+todo = "deny"
+allow_attributes_without_reason = "deny"
+
+[workspace.dependencies]
+ui-common = { path = "ui-common" }
+
+[profile.release]
+debug = "line-tables-only"

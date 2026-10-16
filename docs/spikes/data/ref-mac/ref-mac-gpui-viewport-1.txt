@@ -1,0 +1,12 @@
+gpui on ref-mac: frame CPU time in ms (budget 8.33 ms at p99)
+phase        frames    p50    p95    p99    max  over
+all            2725   4.43   5.87   6.70  11.93     2
+diff            488   4.25   5.42   5.64   7.08     0
+ime             140   4.49   5.66   9.16  11.93     2
+multicursor     256   5.01   6.78   7.32   7.64     0
+scroll         1200   4.38   5.65   6.61   7.26     0
+type            641   4.55   5.84   6.07   6.37     0
+warmup          120   2.77   3.57   3.73   3.79     0
+
+startup: 50000 lines open, loaded in 40 ms, first frame built 146.0 ms after launch
+frame delivery stalled 0 times
