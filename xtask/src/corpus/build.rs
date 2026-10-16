@@ -26,6 +26,18 @@ fn has_oracle(id: &str) -> bool {
     id == ID_QCC || rerelease::compiles(id)
 }
 
+/// The codebases `ids` names, or when it names none, every usable one an oracle compiler builds.
+fn targets(m: &Manifest, ids: &[String]) -> Vec<String> {
+    if !ids.is_empty() {
+        return ids.to_vec();
+    }
+    m.codebase
+        .iter()
+        .filter(|e| e.usable() && has_oracle(&e.id))
+        .map(|e| e.id.clone())
+        .collect()
+}
+
 /// Builds the codebases in `ids`, or every one an oracle compiler builds when `ids` is empty.
 pub(crate) fn cmd_build(
     root: &Path,
@@ -34,15 +46,7 @@ pub(crate) fn cmd_build(
     ids: &[String],
     net: &dyn Net,
 ) -> Vec<String> {
-    let ids: Vec<String> = if ids.is_empty() {
-        m.codebase
-            .iter()
-            .filter(|e| e.usable() && has_oracle(&e.id))
-            .map(|e| e.id.clone())
-            .collect()
-    } else {
-        ids.to_vec()
-    };
+    let ids = targets(m, ids);
     let mut errs: Vec<String> = ids
         .iter()
         .filter(|id| !has_oracle(id))
@@ -122,7 +126,18 @@ mod tests {
 
     use qc_progs::{Def, ProgsFile, Statement, write};
 
-    use super::{has_oracle, round_trip};
+    use std::path::Path;
+
+    use std::process::Command;
+
+    use super::super::fetch::tests::{
+        DEFS, FakeNet, TempDir, archive_url, manifest, standard_archive,
+    };
+    use super::super::manifest::Manifest;
+    use super::{build_one, cmd_build, has_oracle, round_trip, targets};
+    use crate::exec::{Fake, Reply};
+    use crate::oracles::sha256::hex_digest;
+    use crate::oracles::testing::fake_oracles;
 
     #[test]
     fn only_codebases_an_oracle_compiles_are_built() {
@@ -130,6 +145,72 @@ mod tests {
         assert!(has_oracle("rerelease-mg3"));
         assert!(!has_oracle("copper"));
         assert!(!has_oracle("quakec-1.06"));
+    }
+
+    #[test]
+    fn with_no_ids_every_usable_codebase_an_oracle_builds_is_built() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let manifest = Manifest::load(&root.join(super::super::MANIFEST)).unwrap();
+        let all = targets(&manifest, &[]);
+        assert!(all.contains(&"id-1.01".to_owned()), "{all:?}");
+        for id in &all {
+            assert!(has_oracle(id), "{id}");
+            let entry = manifest.codebase.iter().find(|e| &e.id == id).unwrap();
+            assert!(entry.usable(), "{id}");
+        }
+        let named = ["copper".to_owned()];
+        assert_eq!(targets(&manifest, &named), named);
+    }
+
+    #[test]
+    fn id_1_01_is_written_out_compiled_by_qcc_and_kept() {
+        let progs = write(&ProgsFile {
+            statements: vec![Statement::default(); 3],
+            strings: vec![0],
+            ..ProgsFile::default()
+        })
+        .unwrap();
+        let mut m = manifest(&hex_digest(DEFS));
+        m.codebase[0].id = "id-1.01".to_owned();
+        let net = FakeNet::serving(&archive_url(), &standard_archive());
+        let written = progs.clone();
+        let qcc = Fake::new(move |command: &Command| Reply {
+            files: vec![(
+                command
+                    .get_current_dir()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("progs.dat"),
+                written.clone(),
+            )],
+            ..Reply::default()
+        });
+        let tmp = TempDir::new();
+        let oracles = fake_oracles(&tmp.0.join("work"), &qcc);
+        let dest = tmp.0.join("cache");
+        assert_eq!(
+            build_one(&oracles, &m, &dest, "id-1.01", &net),
+            Ok(progs.len())
+        );
+        let kept = std::fs::read(dest.join("progs/id-1.01/progs.dat")).unwrap();
+        assert_eq!(kept, progs);
+        assert_eq!(qcc.seen.borrow().as_slice(), ["qcc"]);
+    }
+
+    #[test]
+    fn a_codebase_no_oracle_builds_is_refused_before_any_build() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let manifest = Manifest::load(&root.join(super::super::MANIFEST)).unwrap();
+        let ids = ["copper".to_owned(), "quakec-1.06".to_owned()];
+        let dest = root.join("target/xtask-tests/corpus-build");
+        assert_eq!(
+            cmd_build(root, &manifest, &dest, &ids, &FakeNet::default()),
+            [
+                "codebase copper: no oracle compiler builds it",
+                "codebase quakec-1.06: no oracle compiler builds it",
+            ]
+        );
     }
 
     // spec PROGS-22.1: a file the reader accepts is written back byte for byte.
@@ -160,7 +241,7 @@ mod tests {
         let globaldefs: [u8; 4] = bytes[16..20].try_into().unwrap();
         bytes[24..28].copy_from_slice(&globaldefs);
         let err = round_trip(&bytes).unwrap_err();
-        assert!(err.contains("differing first at byte"), "{err}");
+        assert!(err.contains("differing first at byte 24"), "{err}");
         assert!(err.contains(&format!("against {}", bytes.len())), "{err}");
     }
 }

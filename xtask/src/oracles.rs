@@ -36,7 +36,7 @@ pub(crate) mod rerelease;
 mod scenarios;
 pub(crate) mod sha256;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;
 mod vectors;
