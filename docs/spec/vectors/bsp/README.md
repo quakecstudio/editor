@@ -28,6 +28,25 @@ x86-64 with gcc 14.4 in an emulated `linux/amd64` container; both builds gave th
 below, which are those of `WINQUAKE.EXE`'s 16-bit code (the evidence for BSP-9.14 in
 [`../../bsp.md`](../../bsp.md)).
 
+The rows marked GLQuake (2026-10-16) also give the result of GLQuake's loader:
+`Mod_LoadBrushModel` in `WinQuake/gl_model.c`, copied unchanged from the pinned commit with
+`gl_model.h`, in the same harness with `GL_LoadTexture`, `GL_SubdivideSurface`,
+`GL_MakeAliasModelDisplayLists` and `Cvar_RegisterVariable` stubbed, built for arm64 with
+Apple clang and for x86-64 with gcc 14.4; both builds, and both builds of `WinQuake/model.c`,
+gave the results below (BSP-9.15). Every other vector's face extents are 256 or less, or its
+texinfo has `TEX_SPECIAL`, so GLQuake's limit does not change its result.
+
+The rows for BSP-9.16 (2026-10-16) also give what id's renderers do with the loaded face, and
+the lightmap `qs-bsp` gives it. WinQuake: `D_CacheSurface` and `D_SCAlloc` from
+`WinQuake/d_surf.c` with `WinQuake/r_surf.c`, caching the face at mip levels 0 to 3 as the
+software renderer does when it draws it. GLQuake: `GL_BuildLightmaps`, `AllocBlock`,
+`GL_CreateSurfaceLightmap` and `R_BuildLightMap` from `WinQuake/gl_rsurf.c`, as GLQuake runs
+them when a map starts. Both were built from the pinned commit unchanged with id's own
+headers, each beside its loader, with stubs for the rest of the engine, for arm64 with Apple
+clang and for x86-64 with gcc 14.4; all four builds gave the results below. Given `base`, the
+WinQuake build caches surfaces 64, 32, 16 and 8 bytes wide, and the GLQuake build puts the
+5 by 5 lightmap at column 0, row 0 of lightmap texture 0, its texels 255 - 2 * sample.
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
@@ -81,9 +100,12 @@ result it records.
 | `not-aligned` | Texture `wall` 24 by 16 | Error `Texture wall is not 16 aligned` | BSP-4.4 |
 | `missing-texture` | Texture slot offset -1; texinfo flags 1 | Loads; slot 0 empty; texinfo 0 uses the checkerboard with flags 0 | BSP-4.2, BSP-8.4 |
 | `no-textures` | Empty textures lump | Loads; no textures; texinfo 0 uses the checkerboard with flags 0 | BSP-4.1, BSP-8.4 |
-| `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 | BSP-9.4 |
-| `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` | BSP-9.4 |
-| `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 | BSP-9.4 |
+| `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` (GLQuake loads; extents 272 272) | BSP-9.4, BSP-9.15 |
+| `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-512` | Square of side 512, lighting of 1089 bytes | Error `Bad surface extents` (GLQuake loads; extents 512 512, a 33 by 33 lightmap) | BSP-9.4, BSP-9.15 |
+| `extents-528` | Square of side 528, lighting of 1156 bytes | Error `Bad surface extents` (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-528-special` | Square of side 528, lighting of 1156 bytes, texinfo flags 1 | Loads; extents 528 528 (GLQuake the same) | BSP-9.4, BSP-9.15 |
 | `texture-offset` | Texinfo offsets -8 (s) and 24 (t), lighting of 36 bytes | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.10 |
 | `mipadjust` | Texinfo axes (0.5, 0, 0) and (0, 0.5, 0) | Loads; mip bias 2; extents 32 32 | BSP-8.6, BSP-9.10 |
 | `bad-miptex` | Texinfo miptex 1 | Error `miptex >= loadmodel->numtextures` | BSP-8.3 |
@@ -101,5 +123,9 @@ result it records.
 | `x87-pc64` | Vertexes as `x87-order`; s axis (0, 2^-14, 2^-50) offset 1024 | Loads; `texturemins` 1024 0, extents 0 16 (additions at 64 bits give extents 16 16) | BSP-9.11 |
 | `nan-vertex` | Vertex 0 (NaN, 0, 0), the float bits `7fc00000` | Loads; `texturemins` 0 0, extents 0 0 (C's comparisons give `texturemins` 64 0, extents 0 64) | BSP-9.12 |
 | `extents-65552` | s axis (1024.25, 0, 0) offset 0 | Loads; extents 16 64: the extent 65552 keeps its low 16 bits | BSP-9.4, BSP-9.14 |
-| `extents-32784` | s axis (512.25, 0, 0) offset 0 | Loads; extents -32752 64: the extent 32784 keeps its low 16 bits, a negative value that passes the check | BSP-9.4, BSP-9.14 |
+| `extents-32784` | s axis (512.25, 0, 0) offset 0 | Loads; extents -32752 64: the extent 32784 keeps its low 16 bits, a negative value that passes the check. WinQuake drawing it: error `D_SCAlloc: bad cache width -32752`. GLQuake starting the map: `smax` -2046, `tmax` 5, error `AllocBlock: full`. `qs-bsp`: lightmap 0 by 0 | BSP-9.4, BSP-9.14, BSP-9.16 |
+| `extents-65520` | s axis (1023.75, 0, 0) offset 0 | Loads; extents -16 64. WinQuake drawing it: error `D_SCAlloc: bad cache width -16`. GLQuake: `smax` 0, `tmax` 5, a block at column 127, row 0 of texture 0 and nothing stored in it. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
+| `extents-32784-t` | t axis (0, 512.25, 0) offset 0 | Loads; extents 64 -32752. WinQuake drawing it: error `D_SCAlloc: bad cache size -2096128`. GLQuake: `smax` 5, `tmax` -2046, a block at column 0, row 0 of texture 0, whose five columns' height becomes -2046, and nothing stored in it. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
+| `extents-65504-st` | s axis (1023.5, 0, 0) and t axis (0, 1023.5, 0), offsets 0 | Loads; extents -32 -32. WinQuake drawing it: error `D_SCAlloc: bad cache width -32`. GLQuake: `smax` and `tmax` -1, texture 0 with no position set, 1 sample added and nothing stored. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
+| `extents-32784-st` | s axis (512.25, 0, 0) and t axis (0, 512.25, 0), offsets 0 | Loads; extents -32752 -32752. WinQuake drawing it: error `D_SCAlloc: bad cache width -32752`. GLQuake not run: it would add 2046 * 2046 samples into `blocklights[18*18]`, undefined in C. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
 | `texturemins-32768` | s axis (1, 0, 0) offset 32768 | Loads; `texturemins` -32768 0 | BSP-9.14 |

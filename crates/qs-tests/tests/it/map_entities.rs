@@ -12,7 +12,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use qs_bsp::{Bsp, ent_file_names, replace_entities};
+use qs_bsp::{Bsp, BspLoader, ent_file_names, replace_entities};
 use qs_map::MapFile;
 
 /// The spec's `base` BSP vector, from its `xxd` dump.
@@ -41,7 +41,7 @@ fn base_bsp() -> Vec<u8> {
 #[test]
 fn entities_of_a_shipped_map_are_edited() {
     let bytes = base_bsp();
-    let bsp = Bsp::read(&bytes).expect("the base vector loads");
+    let bsp = Bsp::read(&bytes, BspLoader::WinQuake).expect("the base vector loads");
     let mut map = MapFile::parse(bsp.entities()).expect("the entity text reads");
     assert_eq!(map.to_bytes(), bsp.entities());
     map.entities
@@ -60,8 +60,9 @@ fn entities_of_a_shipped_map_are_edited() {
         b"{\n\"classname\" \"worldspawn\"\n\"wad\" \"gfx/base.wad\"\n\"message\" \"Edited\"\n}\n\
 {\n\"classname\" \"func_door\"\n\"model\" \"*1\"\n}\n"
     );
-    let edited = replace_entities(&bytes, &text).expect("the BSP is rewritten");
-    let reread = Bsp::read(&edited).expect("the edited BSP loads");
+    let edited =
+        replace_entities(&bytes, &text, BspLoader::WinQuake).expect("the BSP is rewritten");
+    let reread = Bsp::read(&edited, BspLoader::WinQuake).expect("the edited BSP loads");
     assert_eq!(reread.entities(), text.as_slice());
     assert_eq!(reread.faces, bsp.faces);
     let [with_crc, plain] = ent_file_names("maps/base.bsp", bsp.entity_lump);
