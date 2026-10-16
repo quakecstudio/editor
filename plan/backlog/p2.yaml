@@ -379,6 +379,7 @@ issues:
     Debugger) panels as placeholders wired to commands'
   - 'eframe (0.36 or later) and egui in [workspace.dependencies] with default-features = false, so egui''s bundled default_fonts (OFL-1.1 AND Ubuntu-font-1.0) are not built in, and deny.toml ignoring the
     paste advisory (RUSTSEC-2024-0436, unmaintained) with its reason: wgpu''s Metal backend and image pull it in, with no maintained replacement upstream (ADR-0003)'
+  - 'The fonts and icons ADR-0010 chose, IBM Plex Sans and JetBrains Mono (OFL-1.1) and Lucide (ISC), bundled and listed in ATTRIBUTION.md, with OFL-1.1 and ISC added to the asset licenses cargo xtask attribution accepts'
   acceptance:
   - Layout persists across restarts; every panel toggle is a command
   - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
@@ -402,7 +403,7 @@ issues:
   - P2-27
   deliverable:
   - Editor built on crates/qs-editor-view (P2-27) with rope buffer, text shaped by a shaping library (cosmic-text or parley) with system font fallback and a bundled CJK fallback font (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
-  - 'The bundled CJK fallback font (OFL-1.1, such as Noto Sans CJK) is listed in ATTRIBUTION.md, with OFL-1.1 added to the asset licenses cargo xtask attribution accepts (ADR-0003)'
+  - 'The bundled CJK fallback font (OFL-1.1, such as Noto Sans CJK) is listed in ATTRIBUTION.md (ADR-0003)'
   acceptance:
   - Meets the keystroke and open-project budgets on a 50,000-line project
   - IME composition works for Japanese and Chinese input through each OS's real input method
