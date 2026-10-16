@@ -27,7 +27,8 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Ten targets of ten minutes each, and the builds.
+    timeout-minutes: 150
     permissions:
       contents: read
     steps:
