@@ -551,6 +551,9 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - P5-01
+  - P5-02
+  - P1-29
   - P1-01
   - P1-02
   - P1-03
@@ -585,3 +588,64 @@ issues:
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
+- key: P5-01
+  title: 'Spec: BSP29, BSP2, MDL and .map formats'
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: M
+  reqs:
+  - MAP-6
+  - MAP-4
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - docs/spec/bsp.md (BSP29 and BSP2 lumps, .lit), docs/spec/mdl.md, docs/spec/map.md (standard and Valve 220 brush formats, entity syntax, worldspawn conventions)
+  - Test vectors under docs/spec/vectors/
+  acceptance:
+  - Every lump and structure field described
+  verify:
+  - Implementer review
+- key: P5-02
+  title: Implement .map, BSP and MDL readers and the .map writer
+  labels:
+  - L0-formats
+  - area:map
+  - type:feature
+  size: L
+  reqs:
+  - MAP-6
+  - MAP-4
+  - MAP-22
+  depends:
+  - P5-01
+  deliverable:
+  - crates/qs-map (read/write standard and Valve 220, preserving comments and formatting), crates/qs-bsp (read BSP29/BSP2, .lit), crates/qs-mdl (read)
+  - Entity-lump writing for BSPs and .ent override files, for shipped maps with no .map source
+  acceptance:
+  - Every corpus .map round-trips with only formatting changes allowed by the spec; every corpus BSP and id1 MDL loads
+  - Fuzzed readers never panic
+  verify:
+  - cargo test; fuzz targets
+- key: P1-29
+  title: 'Spec and readers: SPR sprites, WAV sounds and MD5 models'
+  labels:
+  - L0-formats
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-16
+  - LIC-2
+  depends:
+  - P0-09
+  deliverable:
+  - docs/spec/spr.md, docs/spec/wav.md (the subset Quake reads, with loop points) and docs/spec/md5.md (the rerelease's enhanced models), each citing id's or QuakeSpasm's file and function
+  - SPR and MD5 reading in crates/qs-mdl; crates/qs-wav
+  acceptance:
+  - Every SPR and WAV in id1 and every MD5 model in the rerelease loads (fixtures hold layouts and checksums only; no game data is committed)
+  - Fuzzed readers never panic
+  verify:
+  - cargo test; fuzz targets in make test-fuzz
