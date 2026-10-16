@@ -101,6 +101,8 @@ Each section holds, in this order:
 | `EXAMPLE` | [`example.md`](example.md) | The worked porting example: entity-string escapes | [#9](https://github.com/quakecstudio/editor/issues/9) |
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
+| `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
+| `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |
 
 Specs planned in Phase 1 (`vm.md`, `edicts.md`, `builtins.md`,
 `trace.md`, `differential.md`) register their prefix here when they are written.
