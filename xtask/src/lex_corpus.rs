@@ -58,17 +58,22 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// Preprocesses the source files `progs.src` lists, in order (QC-23.3).
-fn preprocess(dir: &Path, progs_src: &Path) -> Result<bool, String> {
+/// The source files `progs.src` lists, in order, without the output file (QC-23.1).
+pub(crate) fn progs_src_names(progs_src: &Path) -> Result<Vec<String>, String> {
     let list =
         fs::read_to_string(progs_src).map_err(|e| format!("{}: {e}", progs_src.display()))?;
-    let names: Vec<&str> = list
+    Ok(list
         .lines()
         .map(|line| line.split_once("//").map_or(line, |(code, _)| code))
         .flat_map(str::split_whitespace)
-        .map(|word| word.trim_matches('"'))
+        .map(|word| word.trim_matches('"').to_owned())
         .skip(1)
-        .collect();
+        .collect())
+}
+
+/// Preprocesses the source files `progs.src` lists, in order (QC-23.3).
+fn preprocess(dir: &Path, progs_src: &Path) -> Result<bool, String> {
+    let names = progs_src_names(progs_src)?;
     let mut pp = Preprocessor::new(FsLoader);
     let mut ok = true;
     for name in &names {

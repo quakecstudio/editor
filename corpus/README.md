@@ -8,7 +8,7 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 
 - **QuakeC 1.06 is never fetched, built, vendored or bundled.** id released it with no license (LIC-5). It is in the manifest's `never` list, it has no source, and `blocked_urls` names the repository that carries it so no entry can point there. id's QuakeC 1.01 (GPL, in Quake-Tools) and the rerelease QuakeC stand in for it.
 - **id's game data (pak0/pak1) never enters the repository or CI** (LIC-4). It is the `id1-paks` entry in the `never` list, `verify.py` fails on any tracked `.pak` file, and `assets.py` extracts only archive members pinned by SHA-256.
-- **Corpus files are fetched, not committed.** `verify.py` fails on any tracked Quake content file (`.qc`, `.src`, `.map`, `.bsp`, `.wad` and so on) outside the directories listed in the manifest's `fixture_dirs`, and on any tracked file that is a byte-for-byte copy of a pinned corpus file. `fixture_dirs` is empty: a later issue that adds test fixtures lists its directory there in the same PR.
+- **Corpus files are fetched, not committed.** `verify.py` fails on any tracked Quake content file (`.qc`, `.src`, `.map`, `.bsp`, `.wad` and so on) outside the directories listed in the manifest's `fixture_dirs`, and on any tracked file that is a byte-for-byte copy of a pinned corpus file. An issue that adds test fixtures lists their directory in `fixture_dirs` in the same PR; `crates/qc-syntax/src/tests/` holds the parser's hand-written QuakeC sample.
 - **Licenses come from the item's own files.** Every entry names the files its license was read from (`evidence`), and each of those files is pinned by SHA-256, so a license change upstream fails `verify.py --online`. When an item ships only the GPL text with no "or any later version" grant from its authors, it is recorded as `-only`: the conservative reading, which never claims more rights than the files give.
 
 ## Fields
@@ -78,5 +78,7 @@ python3.11 corpus/assets.py precache   # check they cover the rerelease's precac
 python3.11 corpus/language_coverage.py # check docs/spec/language.md covers every construct in id 1.01
 python3.11 corpus/assets.py codebase   # write id 1.01 to <cache>/codebase/id-1.01
 cargo xtask lex-corpus <cache>/codebase/id-1.01  # lex it and preprocess progs.src with no errors
+cargo xtask parse-corpus --vanilla --deletions <cache>/codebase/id-1.01  # parse it, check recovery
+cargo xtask parse-corpus <cache>/codebase/<id>...  # every file round-trips through the tree
 (cd corpus && python3.11 -m unittest test_verify.py test_assets.py test_language_coverage.py)
 ```

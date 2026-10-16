@@ -336,6 +336,7 @@ QCD-6.5	language-diagnostics.md	QCD-6	active	`E0505` "more than eight parameters
 QCD-6.6	language-diagnostics.md	QCD-6	active	`E0506` "initialiser is not a constant": a declaration initialiser that is not a literal or frame macro reference (QC-27.8).
 QCD-6.7	language-diagnostics.md	QCD-6	active	`E0507` "builtin number must be positive": `#0` or `#-n` (QC-27.9).
 QCD-6.8	language-diagnostics.md	QCD-6	active	`E0508` "cannot assign to this expression": the left side of `=` is a literal, a call, or an operator's result (QC-27.10).
+QCD-6.9	language-diagnostics.md	QCD-6	active	`E0509` "nesting too deep": statements, types or expressions nested more than `QC_MAX_NESTING` levels (QC-27.15).
 QCD-7.1	language-diagnostics.md	QCD-7	active	`W0101` "frame name longer than 15 bytes; id's qcc cannot look it up" (QC-27.6).
 QCD-7.2	language-diagnostics.md	QCD-7	active	`W0102` "macro NAME redefined" when a `#define` changes a macro's body (QC-9.3).
 QCD-7.3	language-diagnostics.md	QCD-7	active	`W0201` "local NAME is the global NAME": a `local` or parameter whose name resolves to an earlier global (QC-12.3).
@@ -543,6 +544,7 @@ QC-27.11	language.md	QC-27	active	Only a field access on the left of `=` is turn
 QC-27.12	language.md	QC-27	active	A `string` initialiser stores the offset of its own text in the string table (QC-20.6).
 QC-27.13	language.md	QC-27	active	`progdefs.h` generation skips component definitions only for vectors that have them (QC-25.7).
 QC-27.14	language.md	QC-27	active	A `,` or `;` on a `$cd`, `$origin`, `$base`, `$flags`, `$scale` or `$skin` line makes id's `qcc` loop forever, as on a `$frame` line (QC-8.9). This compiler ignores the whole rest of such a line, `,` and `;` included (QC-8.4).
+QC-27.15	language.md	QC-27	active	Constructs nested more than `QC_MAX_NESTING` levels deep are an error, "nesting too deep", at the token where the limit is passed. Each of these is one level inside the construct around it: a statement, a type, an expression (a whole statement's or initialiser's, a parenthesised one, the operand of `!`, a call argument, the right operand of a binary operator), and each binary operator, field access or call, which nests the expression before it one level deeper. id's `qcc` has no such limit; this compiler bounds the depth of its syntax tree so that no input can exhaust its stack.
 LIMIT-1.1	limits.md	LIMIT-1	active	A version 6 statement operand is a signed 16-bit value, so a statement can name global slots 0 to 32767 only (PROGS-7.2); a program with more globals cannot reach the rest from code.
 LIMIT-1.2	limits.md	LIMIT-1	active	A definition's `ofs` is unsigned 16-bit, so a definition can name global or field slots 0 to 65535 (PROGS-9.2).
 LIMIT-1.3	limits.md	LIMIT-1	active	A definition's type has 15 bits once `DEF_SAVEGLOBAL` is removed: 0 to 32767.

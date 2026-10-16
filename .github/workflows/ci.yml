@@ -300,6 +300,20 @@ jobs:
       - name: Compile and trace id 1.01 with the oracles
         if: runner.os == 'Linux'
         run: cargo xtask oracles id101 "$QS_TEST_ASSETS/codebase/id-1.01"
+      - name: Write the rerelease and two FTEQCC mods to the asset cache
+        if: runner.os == 'Linux'
+        run: |
+          python corpus/assets.py codebase --codebase rerelease
+          python corpus/assets.py codebase --codebase copper
+          python corpus/assets.py codebase --codebase arcane-dimensions
+      # P1-21: id 1.01 parses with no errors and every single-token deletion leaves a local
+      # error; every file of each codebase, FTEQCC ones included, round-trips through the tree.
+      - name: Parse the corpus
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask parse-corpus --vanilla --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
+          cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
       # target/oracles/rerelease, cached on everything that decides their bytes.
