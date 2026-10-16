@@ -377,6 +377,8 @@ issues:
   deliverable:
   - 'apps/desktop (name from ADR-0006) on egui (eframe with the wgpu renderer, ADR-0003), with the native macOS menu bar through muda: window, docking layout with toolbar, left (Project, Entities), centre (editor, game), right (Properties, agent), bottom (Problems, Console,
     Debugger) panels as placeholders wired to commands'
+  - 'eframe (0.36 or later) and egui in [workspace.dependencies] with default-features = false, so egui''s bundled default_fonts (OFL-1.1 AND Ubuntu-font-1.0) are not built in, and deny.toml ignoring the
+    paste advisory (RUSTSEC-2024-0436, unmaintained) with its reason: wgpu''s Metal backend and image pull it in, with no maintained replacement upstream (ADR-0003)'
   acceptance:
   - Layout persists across restarts; every panel toggle is a command
   - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
@@ -397,13 +399,40 @@ issues:
   depends:
   - P2-17
   - P2-14
+  - P2-27
   deliverable:
-  - Editor with rope buffer, text shaped by a shaping library (cosmic-text or parley) with system font fallback and a bundled CJK fallback font (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
+  - Editor built on crates/qs-editor-view (P2-27) with rope buffer, text shaped by a shaping library (cosmic-text or parley) with system font fallback and a bundled CJK fallback font (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
+  - 'The bundled CJK fallback font (OFL-1.1, such as Noto Sans CJK) is listed in ATTRIBUTION.md, with OFL-1.1 added to the asset licenses cargo xtask attribution accepts (ADR-0003)'
   acceptance:
   - Meets the keystroke and open-project budgets on a 50,000-line project
   - IME composition works for Japanese and Chinese input through each OS's real input method
   verify:
   - Benchmarks; UI snapshot tests; recorded IME test
+- key: P2-27
+  title: Build the editor view widget
+  labels:
+  - L7-ui
+  - area:editor
+  - type:feature
+  size: L
+  reqs:
+  - UI-4
+  - PRIN-5
+  - QA-9
+  depends:
+  - P0-10
+  - P2-17
+  deliverable:
+  - 'crates/qs-editor-view (ADR-0003): the spike''s custom editor widget (spikes/ui-common document model and spikes/ui-egui editor) grown into a shipped egui crate: virtualised line drawing with a text
+    layout cache invalidated per edited line, selections and multiple cursors, IME composition (preedit, commit and candidate-window placement) through egui and winit events, and AccessKit text runs
+    publishing the visible text, caret and selection'
+  - 'crates/qs-editor-view/README.md: purpose, layer (L7) and the editor behaviour P2-18 builds on'
+  acceptance:
+  - Selection and multi-cursor edits, IME preedit and commit sequences and layout cache invalidation are covered by headless egui tests
+  - The AccessKit tree for an open file contains the text runs, caret position and selection, checked by a test
+  - Typing and scrolling a 50,000-line file with the spike's scripted input keeps p99 frame time at most 8.33 ms on the reference Mac, results committed under docs/spikes/data/
+  verify:
+  - cargo test -p qs-editor-view; benchmark run attached to the issue
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -528,6 +557,7 @@ issues:
   - P2-23
   - P2-25
   - P2-26
+  - P2-27
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:

@@ -409,8 +409,10 @@ issues:
   - P0-10
   deliverable:
   - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
+  - The map view and model previews draw inside the UI's render pass through egui_wgpu paint callbacks on the UI's wgpu device, with no copy or readback (ADR-0003)
   acceptance:
   - Renders every id1 map at 120 Hz on the reference Mac
+  - The map view renders through an egui_wgpu paint callback in the app window, checked by a snapshot test
   verify:
   - Image comparison tests; benchmark
 - key: P3-22
