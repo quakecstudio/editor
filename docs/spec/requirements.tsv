@@ -189,6 +189,16 @@ QCD-7.12	language-diagnostics.md	QCD-7	active	`W0308` "return type does not matc
 QCD-7.13	language-diagnostics.md	QCD-7	active	`W0309` "expression has no effect": an expression statement with no call and no assignment (QC-14.9).
 QCD-7.14	language-diagnostics.md	QCD-7	active	`W0310` "`&&` and `||` evaluate both sides": the right operand of `&&` or `||` contains a call or assignment (QC-15.10).
 QCD-7.15	language-diagnostics.md	QCD-7	active	`W0401` "exceeds a limit of id's qcc: LIMIT": the program needs more of one of `qcc`'s tables than it has (LIMIT-7.1, LIMIT-7.3), so it would not build reliably with id's `qcc`. This compiler is not bound by those limits.
+QCD-8.1	language-diagnostics.md	QCD-8	active	`E0108` "unknown directive #NAME": a directive name the vanilla preprocessor does not know, outside a skipped block (QC-9.9).
+QCD-8.2	language-diagnostics.md	QCD-8	active	`E0109` "#NAME without #ifdef or #ifndef": a `#else` or `#endif` with no open block (QC-9.6).
+QCD-8.3	language-diagnostics.md	QCD-8	active	`E0110` "#ifdef or #ifndef without #endif": a block still open at the end of the file that opened it, at the directive that opened it (QC-9.6, QC-9.12).
+QCD-8.4	language-diagnostics.md	QCD-8	active	`E0111` "cannot include PATH: REASON": an `#include` of a file that cannot be read (QC-9.11).
+QCD-8.5	language-diagnostics.md	QCD-8	active	`E0112` "recursive #include of PATH": an `#include` of a file already being included (QC-9.11).
+QCD-8.6	language-diagnostics.md	QCD-8	active	`E0113` "#include expects a file name in quotes" (QC-9.9).
+QCD-8.7	language-diagnostics.md	QCD-8	active	`E0114` "#NAME expects a macro name": a `#define`, `#undef`, `#ifdef` or `#ifndef` without one (QC-9.9).
+QCD-8.8	language-diagnostics.md	QCD-8	active	`E0115` "bad parameter list for macro NAME" (QC-9.9).
+QCD-8.9	language-diagnostics.md	QCD-8	active	`E0116` "macro NAME expects N arguments, found M": a function-like macro use with the wrong argument count (QC-9.10).
+QCD-8.10	language-diagnostics.md	QCD-8	active	`E0117` "unterminated argument list for macro NAME" (QC-9.10).
 QC-1.1	language.md	QC-1	active	A source file is a sequence of bytes with no encoding. The text ends at the first NUL byte; anything after it is ignored.
 QC-1.2	language.md	QC-1	active	Line numbers start at 1 and increase by one at each LF (0x0A) byte. CR (0x0D) is whitespace and never starts a line, so CRLF and LF files have the same line numbers.
 QC-1.3	language.md	QC-1	active	Bytes 0x80 to 0xFF outside a string literal are whitespace. `PR_LexWhitespace` skips every byte whose `char` value is `<= ' '`, and `char` is signed on the x86 build, so these bytes are negative.
@@ -238,6 +248,10 @@ QC-9.5	language.md	QC-9	active	`#undef NAME` removes a macro; removing one that 
 QC-9.6	language.md	QC-9	active	`#ifdef NAME` and `#ifndef NAME` start a conditional block that is kept when the name is (or is not) a defined macro. `#else` flips it and `#endif` closes it. Blocks nest; directives inside a skipped block are only counted for nesting. A `#else` or `#endif` without an open block, or a block still open at the end of the file, is an error.
 QC-9.7	language.md	QC-9	active	Every token produced by expansion keeps the span of the macro use it came from, and the span of its text in the macro definition, so a diagnostic can point at both (LANG-1).
 QC-9.8	language.md	QC-9	active	Macros and conditional state run on across the files of one `progs.src`, in compilation order (QC-23.3); frame macros do not (QC-8.3).
+QC-9.9	language.md	QC-9	active	A directive name other than `include`, `define`, `undef`, `ifdef`, `ifndef`, `else` and `endif` is an error outside a skipped block, and so is a directive whose operand is missing or malformed: `#include` without a string literal, `#define`, `#undef`, `#ifdef` or `#ifndef` without a name, or a parameter list that is not names separated by `,` and closed by `)`. The directive line is then dropped. Tokens after the operand of `#include`, `#undef`, `#ifdef`, `#ifndef`, `#else` and `#endif` are ignored.
+QC-9.10	language.md	QC-9	active	A function-like macro name not followed by `(` is an ordinary name and is not replaced. A use whose argument count differs from the parameter count, or whose argument list is not closed by `)` before the end of the file, is an error; the use is left unreplaced. Arguments are split at commas outside parentheses, and `F()` passes no arguments.
+QC-9.11	language.md	QC-9	active	An `#include` of a file that cannot be read, or of a file that is already being included (directly or through other includes), is an error, and the directive is dropped.
+QC-9.12	language.md	QC-9	active	A conditional block is closed in the file that opens it, whether that file is listed in `progs.src` or included. At the end of each file, every block it opened that is still open is reported (QC-9.6) and closed, so the next file starts outside it.
 QC-10.1	language.md	QC-10	active	The simple types are `void`, `float`, `vector`, `string` and `entity`. A `vector` is three floats; every other type is one 32-bit word.
 QC-10.2	language.md	QC-10	active	`.T` is the type of a field holding a `T`, for any type `T`, including a function type and another field type (`..float` is accepted).
 QC-10.3	language.md	QC-10	active	`T(T1 n1, T2 n2, ...)` is the type of a function returning the simple type `T` with those parameters; `T()` takes none. A parameter's type may itself be a field or function type. The parameter names are part of the declaration, not the type (QC-13.2).
@@ -366,6 +380,7 @@ QC-27.10	language.md	QC-27	active	The left side of `=` must be a name or a field
 QC-27.11	language.md	QC-27	active	Only a field access on the left of `=` is turned into an address; an earlier statement's field load is never rewritten (QC-17.4).
 QC-27.12	language.md	QC-27	active	A `string` initialiser stores the offset of its own text in the string table (QC-20.6).
 QC-27.13	language.md	QC-27	active	`progdefs.h` generation skips component definitions only for vectors that have them (QC-25.7).
+QC-27.14	language.md	QC-27	active	A `,` or `;` on a `$cd`, `$origin`, `$base`, `$flags`, `$scale` or `$skin` line makes id's `qcc` loop forever, as on a `$frame` line (QC-8.9). This compiler ignores the whole rest of such a line, `,` and `;` included (QC-8.4).
 LIMIT-1.1	limits.md	LIMIT-1	active	A version 6 statement operand is a signed 16-bit value, so a statement can name global slots 0 to 32767 only (PROGS-7.2); a program with more globals cannot reach the rest from code.
 LIMIT-1.2	limits.md	LIMIT-1	active	A definition's `ofs` is unsigned 16-bit, so a definition can name global or field slots 0 to 65535 (PROGS-9.2).
 LIMIT-1.3	limits.md	LIMIT-1	active	A definition's type has 15 bits once `DEF_SAVEGLOBAL` is removed: 0 to 32767.

@@ -12,6 +12,9 @@ precache: lists every precache_model and precache_sound call in each codebase an
 asset `covers` (the rerelease QuakeC) and fails if a precached file is neither in
 the asset's pak files nor given a stand-in.
 
+codebase: writes every file of one codebase (`--codebase`, id 1.01 by default) at its
+pinned commit to <dest>/codebase/<id>, for `cargo xtask lex-corpus`.
+
 Needs Python 3.11 or later (tomllib). cargo xtask assets fetch replaces this
 script in P1-14. docs/test-assets.md has the license review and the policy.
 """
@@ -246,11 +249,12 @@ def archive_url(src: dict) -> str:
     return f"{src['url']}/archive/{src['commit']}.tar.gz"
 
 
-def codebase_sources(
+def codebase_files(
     m: dict, codebase_id: str, get: Callable[[str], bytes] = verify.fetch
-) -> dict[str, str]:
-    """The .qc files of a codebase at its source's pinned commit, by path in the source.
-    Every pinned checksum under the codebase's path is checked against the archive."""
+) -> dict[str, bytes]:
+    """Every file of a codebase at its source's pinned commit, by path relative to the
+    codebase's directory. Every pinned checksum under that directory is checked against the
+    archive."""
     cb = next((c for c in m.get("codebase", []) if c.get("id") == codebase_id), None)
     if cb is None or cb.get("use") == "never":
         raise AssetError(f"no usable codebase {codebase_id}")
@@ -274,7 +278,37 @@ def codebase_sources(
             got = hashlib.sha256(files.get(p, b"")).hexdigest()
             if got != want:
                 raise AssetError(f"{src['id']}:{p}: sha256 {got}, manifest says {want}")
-    return {p: d.decode("latin-1") for p, d in sorted(files.items()) if p.lower().endswith(".qc")}
+    return {p[len(base) :]: d for p, d in sorted(files.items())}
+
+
+def codebase_sources(
+    m: dict, codebase_id: str, get: Callable[[str], bytes] = verify.fetch
+) -> dict[str, str]:
+    """The .qc files of a codebase at its source's pinned commit, by path in the source.
+    Every pinned checksum under the codebase's path is checked against the archive."""
+    files = codebase_files(m, codebase_id, get)
+    cb = next(c for c in m["codebase"] if c["id"] == codebase_id)
+    base = "" if cb["path"] == "." else cb["path"].rstrip("/") + "/"
+    return {base + p: d.decode("latin-1") for p, d in files.items() if p.lower().endswith(".qc")}
+
+
+def cmd_codebase(
+    m: dict, codebase_id: str, out: Path, get: Callable[[str], bytes] = verify.fetch
+) -> list[str]:
+    """Writes every file of a codebase under `out`, for tools that read a source tree."""
+    try:
+        files = codebase_files(m, codebase_id, get)
+    except AssetError as exc:
+        return [f"codebase {codebase_id}: {exc}"]
+    root = out.resolve()
+    for rel, data in files.items():
+        target = (root / rel).resolve()
+        if not target.is_relative_to(root):
+            return [f"codebase {codebase_id}: {rel} is outside {out}"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    print(f"codebase {codebase_id}: {len(files)} files in {out}")
+    return []
 
 
 def cmd_fetch(m: dict, dest: Path, get: Callable[[str, Path], None] = download) -> list[str]:
@@ -328,7 +362,12 @@ def cmd_precache(m: dict, dest: Path, get: Callable[[str], bytes] = verify.fetch
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("command", choices=("fetch", "precache"))
+    ap.add_argument("command", choices=("fetch", "precache", "codebase"))
+    ap.add_argument(
+        "--codebase",
+        default="id-1.01",
+        help="codebase for the codebase command, written to <dest>/codebase/<id>",
+    )
     ap.add_argument("--manifest", type=Path, default=verify.MANIFEST)
     ap.add_argument(
         "--dest",
@@ -342,7 +381,12 @@ def main(argv: list[str] | None = None) -> int:
     m = verify.load(args.manifest)
     errs = verify.check(m)
     if not errs:
-        errs = cmd_fetch(m, dest) if args.command == "fetch" else cmd_precache(m, dest)
+        if args.command == "fetch":
+            errs = cmd_fetch(m, dest)
+        elif args.command == "precache":
+            errs = cmd_precache(m, dest)
+        else:
+            errs = cmd_codebase(m, args.codebase, dest / "codebase" / args.codebase)
     for e in errs:
         print(f"error: {e}", file=sys.stderr)
     return 1 if errs else 0

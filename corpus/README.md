@@ -76,5 +76,7 @@ python3.11 corpus/verify.py --online   # also downloads every pinned file and co
 python3.11 corpus/assets.py fetch      # download, checksum and extract the test assets
 python3.11 corpus/assets.py precache   # check they cover the rerelease's precaches
 python3.11 corpus/language_coverage.py # check docs/spec/language.md covers every construct in id 1.01
+python3.11 corpus/assets.py codebase   # write id 1.01 to <cache>/codebase/id-1.01
+cargo xtask lex-corpus <cache>/codebase/id-1.01  # lex it and preprocess progs.src with no errors
 (cd corpus && python3.11 -m unittest test_verify.py test_assets.py test_language_coverage.py)
 ```
