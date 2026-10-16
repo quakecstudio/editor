@@ -15,6 +15,7 @@ Build automation for the workspace, run as `cargo xtask <command>` (the alias is
 | `deny-fixtures` | `deny.toml` rejects a GPL-incompatible license and a wildcard version, and passes a control; needs the crates.io index |
 | `layers` | Every workspace crate is in `layers.toml`, and depends only on crates in its own layer or lower ([`docs/layers.md`](../docs/layers.md)) |
 | `licenses` | Every file is classified; source files start with an allowed SPDX line and pass the ported-file header rule (H1 to H5 in [`docs/porting.md`](../docs/porting.md)); no file carries a disallowed SPDX tag; `LICENSE` is the GPL-3.0 text |
+| `bench` | Runs the performance-budget benchmarks in `crates/qs-bench`, fails when an active budget in [`docs/perf-budgets.md`](../docs/perf-budgets.md) is over budget or more than 10% slower than the last passing run on the same host, and appends the run to the JSON history (`target/bench/history.json`, or `--history <path>`); `--accept` records an intended slowdown. `bench history` prints the history. Not part of `ci` |
 | `attribution` | Every asset file (images, fonts, sounds, Quake formats) has a row in [`ATTRIBUTION.md`](../ATTRIBUTION.md) with an allowed license, and every row names a file in the repository |
 
 `licenses` and `attribution` check the tracked files plus untracked files that are not
