@@ -665,6 +665,16 @@ harness with `sv`, `svs` and `progs` reduced to the members those functions read
 `SV_UnlinkEdict` stubbed out and `Sys_Error` printing its message. The edicts had 105 field
 slots. Each row starts from a new map: `num_edicts` is `maxclients + 1` and nothing is free.
 
+Since P1-32 every row is a vector in [`vectors/vm/edicts.txt`](vectors/vm/edicts.txt), which
+`cargo xtask oracles` runs through the VM oracle on Linux, macOS and Windows in CI: `spawn`,
+`remove` and `nextent` are id's `PF_` functions, the host sets the clock between runs, and the
+`EDICT_NUM` rows call id's function from the host. On 2026-10-16 all 17 passed on macOS arm64.
+The trace shows fields and globals, not the edict header, so the vectors show the header through
+what reads it: the free flag through `nextent`, which skips free edicts, and `freetime` through
+the time at which `spawn` reuses the edict. Edict 2 of the `freetime` 3.25 row starts in use with
+every field slot 7 rather than being spawned and stored to; "`freetime` still 3.25" is not
+visible to QuakeC, since only allocation reads `freetime` and only of a free edict.
+
 | `maxclients` | Steps (time: action) | Result | Statements |
 | --- | --- | --- | --- |
 | 1 | 1.0: spawn, spawn | edicts 2, 3; `num_edicts` 4 | EDICT-6.2, EDICT-1.4 |

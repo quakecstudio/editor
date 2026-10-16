@@ -1,0 +1,551 @@
+# The rows of edicts.md "Allocation and freeing" (EDICT-1.4, EDICT-1.7, EDICT-5.3, EDICT-6,
+# EDICT-7), run on id's builtins (`builtins: engine`), with the host setting the clock between
+# runs (`host:`). Format: README.md.
+#
+# Each vector starts from a new map: `edicts:` is `maxclients + 1` and nothing is free.
+# Builtin numbers (BUILTIN-5): spawn 14, remove 15, nextent 47. PARM0 is slot 4, RETURN
+# slot 1; `nextthink` is field 46, which ED_Free sets to -1 and ED_ClearEdict back to 0.
+
+== alloc_after_the_clients
+spec: EDICT-6.2, EDICT-1.4
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=47
+host:
+  clock 1
+  run 1
+code:
+  CALL0 120             # spawn(): edict 2
+  CALL0 120             # spawn(): edict 3, so num_edicts is 4
+  STORE_ENT 1 4
+  CALL1 121             # nextent(e3): edict 4 is past num_edicts, so the world
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 CALL0 1=e3
+  3 STORE_ENT 4=e3
+  4 CALL1 1=e0
+  5 DONE
+  done
+
+== alloc_reuses_in_the_first_seconds
+spec: EDICT-6.4, EDICT-8.7
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+host:
+  clock 1
+  run 1
+code:
+  CALL0 120             # spawn(): edict 2
+  STORE_ENT 1 4
+  CALL0 120             # spawn(): edict 3
+  CALL1 121             # remove(e2) at 1.0: freetime 1
+  CALL0 120             # spawn(): edict 2 again, freetime is below 2
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 STORE_ENT 4=e2
+  3 CALL0 1=e3
+  4 CALL1 e2.46=-1
+  5 CALL0 1=e2 e2.46=0
+  6 DONE 1=0
+  done
+
+== alloc_reuses_before_2
+spec: EDICT-6.4
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 100=e3 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: first=4
+  5: first=7
+host:
+  clock 1
+  run 1
+  clock 1.9
+  run 4
+  clock 1.95
+  run 5
+code:
+  CALL0 120             # 1.0: spawn(), edict 2
+  CALL0 120             # spawn(), edict 3
+  DONE
+  STORE_ENT 100 4
+  CALL1 121             # 1.9: remove(e3)
+  DONE
+  CALL0 120             # 1.95: spawn(), edict 3 again
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 CALL0 1=e3
+  3 DONE 1=0
+  run 4
+  4 STORE_ENT 4=e3
+  5 CALL1 e3.46=-1
+  6 DONE
+  run 5
+  7 CALL0 1=e3 e3.46=0
+  8 DONE 1=0
+  done
+
+== alloc_waits_half_a_second
+spec: EDICT-6.1, EDICT-6.3
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: first=6
+host:
+  clock 5
+  run 1
+  clock 5.5
+  run 4
+  clock 5.6
+  run 4
+code:
+  CALL0 120             # 5.0: spawn(), edict 2
+  STORE_ENT 1 4
+  CALL1 121             # remove(e2): freetime 5
+  CALL0 120             # spawn(): edict 3, edict 2 was freed 0 seconds ago
+  DONE
+  CALL0 120             # 5.5: edict 4, 0.5 is not more than 0.5; 5.6: edict 2
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 STORE_ENT 4=e2
+  3 CALL1 e2.46=-1
+  4 CALL0 1=e3
+  5 DONE 1=0
+  run 4
+  6 CALL0 1=e4
+  7 DONE 1=0
+  run 4
+  6 CALL0 1=e2 e2.46=0
+  7 DONE 1=0
+  done
+
+== alloc_waits_from_2
+spec: EDICT-6.1, EDICT-6.4
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+host:
+  clock 2
+  run 1
+code:
+  CALL0 120             # 2.0: spawn(), edict 2
+  STORE_ENT 1 4
+  CALL1 121             # remove(e2): freetime 2, which is not below 2
+  CALL0 120             # spawn(): edict 3
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 STORE_ENT 4=e2
+  3 CALL1 e2.46=-1
+  4 CALL0 1=e3
+  5 DONE 1=0
+  done
+
+== alloc_takes_the_lowest
+spec: EDICT-6.1
+builtins: engine
+maxclients: 4
+edicts: 5
+globals: 100=e8 101=e6 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: first=10
+host:
+  clock 10
+  run 1
+  clock 11
+  run 4
+code:
+  CALL0 120             # 10.0: spawn() four times, edicts 5 to 8
+  CALL0 120
+  CALL0 120
+  CALL0 120
+  STORE_ENT 100 4
+  CALL1 121             # remove(e8)
+  STORE_ENT 101 4
+  CALL1 121             # remove(e6)
+  DONE
+  CALL0 120             # 11.0: spawn(), edict 6, the lower of the two
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e5
+  2 CALL0 1=e6
+  3 CALL0 1=e7
+  4 CALL0 1=e8
+  5 STORE_ENT 4=e8
+  6 CALL1 e8.46=-1
+  7 STORE_ENT 4=e6
+  8 CALL1 e6.46=-1
+  9 DONE 1=0
+  run 4
+  10 CALL0 1=e6 e6.46=0
+  11 DONE 1=0
+  done
+
+== alloc_freetime_is_f32
+spec: EDICT-6.3, EDICT-7.1
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: first=5
+host:
+  clock 100000.3
+  run 1
+  clock 100000.8
+  run 4
+code:
+  CALL0 120             # 100000.3: spawn(), edict 2
+  STORE_ENT 1 4
+  CALL1 121             # remove(e2): freetime is 100000.296875
+  DONE
+  CALL0 120             # 100000.8: edict 2, freed 0.503125 seconds ago
+  DONE
+expect:
+  run 1
+  1 CALL0 1=e2
+  2 STORE_ENT 4=e2
+  3 CALL1 e2.46=-1
+  4 DONE 1=0
+  run 4
+  5 CALL0 1=e2 e2.46=0
+  6 DONE 1=0
+  done
+
+== alloc_fails_at_600
+spec: EDICT-6.2
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 100=598 101=1 120=i2
+functions:
+  2: builtin=14
+  3: first=6
+host:
+  clock 10
+  run 1
+  run 3
+code:
+  IFNOT 100 4           # while (n) {
+  CALL0 120             #   spawn(): edicts 2 to 599
+  SUB_F 100 101 100     #   n = n - 1
+  GOTO -3               # }
+  DONE
+  CALL0 120             # spawn() with num_edicts 600
+  DONE
+steps: 2395
+expect:
+  ...
+  2 CALL0 1=e599
+  3 SUB_F 100=0
+  4 GOTO
+  1 IFNOT
+  5 DONE 1=0
+  run 3
+  6 CALL0
+  error "ED_Alloc: no free edicts"
+
+== alloc_fails_with_one_too_recently_freed
+spec: EDICT-6.2
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 100=598 101=1 102=e300 120=i2 121=i5
+functions:
+  2: builtin=14
+  3: first=6
+  4: first=8
+  5: builtin=15
+host:
+  clock 10
+  run 1
+  run 4
+  clock 10.2
+  run 3
+code:
+  IFNOT 100 4           # while (n) {
+  CALL0 120             #   spawn(): edicts 2 to 599
+  SUB_F 100 101 100     #   n = n - 1
+  GOTO -3               # }
+  DONE
+  CALL0 120             # 10.2: spawn(), edict 300 was freed 0.2 seconds ago
+  DONE
+  STORE_ENT 102 4
+  CALL1 121             # 10.0: remove(e300)
+  DONE
+steps: 2398
+expect:
+  ...
+  2 CALL0 1=e599
+  3 SUB_F 100=0
+  4 GOTO
+  1 IFNOT
+  5 DONE 1=0
+  run 4
+  8 STORE_ENT 4=e300
+  9 CALL1 e300.46=-1
+  10 DONE
+  run 3
+  6 CALL0
+  error "ED_Alloc: no free edicts"
+
+== alloc_reuses_at_600
+spec: EDICT-6.2
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 100=598 101=1 102=e300 120=i2 121=i5
+functions:
+  2: builtin=14
+  3: first=6
+  4: first=8
+  5: builtin=15
+host:
+  clock 10
+  run 1
+  run 4
+  clock 10.6
+  run 3
+code:
+  IFNOT 100 4           # while (n) {
+  CALL0 120             #   spawn(): edicts 2 to 599
+  SUB_F 100 101 100     #   n = n - 1
+  GOTO -3               # }
+  DONE
+  CALL0 120             # 10.6: spawn(), edict 300
+  DONE
+  STORE_ENT 102 4
+  CALL1 121             # 10.0: remove(e300)
+  DONE
+steps: 2399
+expect:
+  ...
+  2 CALL0 1=e599
+  3 SUB_F 100=0
+  4 GOTO
+  1 IFNOT
+  5 DONE 1=0
+  run 4
+  8 STORE_ENT 4=e300
+  9 CALL1 e300.46=-1
+  10 DONE
+  run 3
+  6 CALL0 1=e300 e300.46=0
+  7 DONE 1=0
+  done
+
+# Edict 2 is in use with every field slot 7 (the float), as after a spawn at 3.0 and a store
+# to each slot.
+== free_clears_some_fields
+spec: EDICT-7.1, EDICT-7.2, EDICT-6.5, EDICT-7.4
+builtins: engine
+maxclients: 1
+edicts: 3
+globals: 1=e1 100=e2 101=e1 120=i2 121=i3 122=i4
+fields: e2.0=7 e2.1=7 e2.2=7 e2.3=7 e2.4=7 e2.5=7 e2.6=7 e2.7=7 e2.8=7 e2.9=7 e2.10=7 e2.11=7 e2.12=7 e2.13=7 e2.14=7
+fields: e2.15=7 e2.16=7 e2.17=7 e2.18=7 e2.19=7 e2.20=7 e2.21=7 e2.22=7 e2.23=7 e2.24=7 e2.25=7 e2.26=7 e2.27=7 e2.28=7 e2.29=7
+fields: e2.30=7 e2.31=7 e2.32=7 e2.33=7 e2.34=7 e2.35=7 e2.36=7 e2.37=7 e2.38=7 e2.39=7 e2.40=7 e2.41=7 e2.42=7 e2.43=7 e2.44=7
+fields: e2.45=7 e2.46=7 e2.47=7 e2.48=7 e2.49=7 e2.50=7 e2.51=7 e2.52=7 e2.53=7 e2.54=7 e2.55=7 e2.56=7 e2.57=7 e2.58=7 e2.59=7
+fields: e2.60=7 e2.61=7 e2.62=7 e2.63=7 e2.64=7 e2.65=7 e2.66=7 e2.67=7 e2.68=7 e2.69=7 e2.70=7 e2.71=7 e2.72=7 e2.73=7 e2.74=7
+fields: e2.75=7 e2.76=7 e2.77=7 e2.78=7 e2.79=7 e2.80=7 e2.81=7 e2.82=7 e2.83=7 e2.84=7 e2.85=7 e2.86=7 e2.87=7 e2.88=7 e2.89=7
+fields: e2.90=7 e2.91=7 e2.92=7 e2.93=7 e2.94=7 e2.95=7 e2.96=7 e2.97=7 e2.98=7 e2.99=7 e2.100=7 e2.101=7 e2.102=7 e2.103=7 e2.104=7
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: builtin=47
+  5: first=1
+  6: first=6
+  7: first=8
+host:
+  clock 3.25
+  run 5
+  clock 4
+  run 6
+  run 7
+  clock 4.4
+  run 7
+  clock 4.6
+  run 6
+  clock 5
+  run 6
+code:
+  STORE_ENT 100 4
+  CALL1 121             # 3.25: remove(e2)
+  STORE_ENT 101 4
+  CALL1 122             # nextent(e1): edict 2 is free, so the world
+  DONE
+  CALL0 120             # spawn()
+  DONE
+  STORE_ENT 100 4
+  CALL1 121             # remove(e2)
+  DONE
+expect:
+  run 5
+  1 STORE_ENT 4=e2
+  2 CALL1 e2.0=0 e2.9=0 e2.10=0 e2.11=0 e2.12=0 e2.19=0 e2.20=0 e2.21=0 e2.29=0 e2.30=0 e2.31=0 e2.59=0 e2.77=0 e2.46=-1
+  3 STORE_ENT 4=e1
+  4 CALL1 1=e0
+  5 DONE
+  run 6
+  6 CALL0 1=e2 e2.1=0 e2.2=0 e2.3=0 e2.4=0 e2.5=0 e2.6=0 e2.7=0 e2.8=0 e2.13=0 e2.14=0 e2.15=0 e2.16=0 e2.17=0 e2.18=0 e2.22=0 e2.23=0 e2.24=0 e2.25=0 e2.26=0 e2.27=0 e2.28=0 e2.32=0 e2.33=0 e2.34=0 e2.35=0 e2.36=0 e2.37=0 e2.38=0 e2.39=0 e2.40=0 e2.41=0 e2.42=0 e2.43=0 e2.44=0 e2.45=0 e2.46=0 e2.47=0 e2.48=0 e2.49=0 e2.50=0 e2.51=0 e2.52=0 e2.53=0 e2.54=0 e2.55=0 e2.56=0 e2.57=0 e2.58=0 e2.60=0 e2.61=0 e2.62=0 e2.63=0 e2.64=0 e2.65=0 e2.66=0 e2.67=0 e2.68=0 e2.69=0 e2.70=0 e2.71=0 e2.72=0 e2.73=0 e2.74=0 e2.75=0 e2.76=0 e2.78=0 e2.79=0 e2.80=0 e2.81=0 e2.82=0 e2.83=0 e2.84=0 e2.85=0 e2.86=0 e2.87=0 e2.88=0 e2.89=0 e2.90=0 e2.91=0 e2.92=0 e2.93=0 e2.94=0 e2.95=0 e2.96=0 e2.97=0 e2.98=0 e2.99=0 e2.100=0 e2.101=0 e2.102=0 e2.103=0 e2.104=0
+  7 DONE 1=0
+  run 7
+  8 STORE_ENT 4=e2
+  9 CALL1 e2.46=-1
+  10 DONE
+  run 7
+  8 STORE_ENT
+  9 CALL1
+  10 DONE
+  run 6
+  6 CALL0 1=e3
+  7 DONE 1=0
+  run 6
+  6 CALL0 1=e2 e2.46=0
+  7 DONE 1=0
+  done
+
+== free_sets_freetime
+spec: EDICT-7.1, EDICT-6.1
+builtins: engine
+maxclients: 1
+edicts: 3
+globals: 100=e2 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+  4: first=4
+host:
+  clock 3.25
+  run 1
+  clock 3.75
+  run 4
+  clock 3.76
+  run 4
+code:
+  STORE_ENT 100 4
+  CALL1 121             # 3.25: remove(e2): freetime 3.25
+  DONE
+  CALL0 120             # 3.75: edict 3, 0.5 is not more than 0.5; 3.76: edict 2
+  DONE
+expect:
+  run 1
+  1 STORE_ENT 4=e2
+  2 CALL1 e2.46=-1
+  3 DONE
+  run 4
+  4 CALL0 1=e3
+  5 DONE 1=0
+  run 4
+  4 CALL0 1=e2 e2.46=0
+  5 DONE 1=0
+  done
+
+== client_edicts_are_never_reused
+spec: EDICT-5.3, EDICT-6.1
+builtins: engine
+maxclients: 8
+edicts: 9
+globals: 100=e3 120=i2 121=i3
+functions:
+  2: builtin=14
+  3: builtin=15
+host:
+  clock 1
+  run 1
+code:
+  STORE_ENT 100 4
+  CALL1 121             # remove(e3), a client's edict
+  CALL0 120             # spawn(): edict 9, the scan starts after the clients
+  DONE
+expect:
+  run 1
+  1 STORE_ENT 4=e3
+  2 CALL1 e3.46=-1
+  3 CALL0 1=e9
+  4 DONE 1=0
+  done
+
+== edict_num_600
+spec: EDICT-1.7
+builtins: engine
+host:
+  edict 600 100         # id's EDICT_NUM(600), called by the host
+code:
+  DONE
+expect:
+  error "EDICT_NUM: bad number 600"
+
+== edict_num_minus_1
+spec: EDICT-1.7
+builtins: engine
+host:
+  edict -1 100
+code:
+  DONE
+expect:
+  error "EDICT_NUM: bad number -1"
+
+== edict_num_599
+spec: EDICT-1.7
+builtins: engine
+host:
+  edict 599 100         # writes the entity value of EDICT_NUM(599) to global 100
+  run 1
+code:
+  DONE
+expect:
+  run 1 100=e599
+  1 DONE
+  done
+
+== num_for_edict_at_num_edicts
+spec: EDICT-1.7
+builtins: engine
+maxclients: 1
+edicts: 2
+globals: 100=e2 120=i2
+functions:
+  2: builtin=47
+code:
+  STORE_ENT 100 4
+  CALL1 120             # nextent(e2): NUM_FOR_EDICT of edict num_edicts
+  DONE
+expect:
+  1 STORE_ENT 4=e2
+  2 CALL1
+  error "NUM_FOR_EDICT: bad pointer"

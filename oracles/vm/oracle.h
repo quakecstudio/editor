@@ -84,6 +84,10 @@ const char *qs_load_progs(const char *path, qboolean check_crc, qs_progs_file_t 
 unsigned qs_crc16(const byte *data, int size);
 void qs_alloc_edicts(int max_edicts);
 
+// Server frames (scenario.c): a physics frame (DIFF-5.3) and a server frame (DIFF-5.1).
+void qs_physics(double frametime);
+void qs_server_frame(double frametime, long frame);
+
 // Entry points.
 int qs_scenario_main(const char *scenario_path, const char *trace_path);
 int qs_vector_main(const char *progs_path, const char *init_path, const char *trace_path);

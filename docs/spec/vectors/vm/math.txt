@@ -1,0 +1,1194 @@
+# The rows of builtins.md "Math and strings" (BUILTIN-6, BUILTIN-7, BUILTIN-13.2,
+# BUILTIN-15.4, BUILTIN-15.5), one vector per input, run on id's builtins
+# (`builtins: engine`). Format: README.md.
+#
+# Builtin numbers (BUILTIN-5): makevectors 1, random 7, normalize 9, vlen 12, vectoyaw 13,
+# ftos 26, vtos 27, rint 36, floor 37, ceil 38, fabs 43, ChangeYaw 49, vectoangles 51,
+# WriteCoord 56, WriteAngle 57. PARM0 is slot 4, PARM1 slot 7, RETURN slot 1; `self` is
+# global 28, `v_forward` 59, `v_up` 62, `v_right` 65; `angles_y` is field 20, `ideal_yaw` 85,
+# `yaw_speed` 86. A string result is compared with the vector's own string by EQ_S
+# (VM-7.1), which writes 1 when the texts are the same.
+
+== ftos_zero
+spec: BUILTIN-7.1
+builtins: engine
+strings: "0"
+globals: 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(0)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_minus_zero
+spec: BUILTIN-7.1
+builtins: engine
+strings: "0"
+globals: 4=-0 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(-0)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_1
+spec: BUILTIN-7.1
+builtins: engine
+strings: "1"
+globals: 4=1 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(1)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_minus_5
+spec: BUILTIN-7.1
+builtins: engine
+strings: "-5"
+globals: 4=-5 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(-5)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_0_5
+spec: BUILTIN-7.1
+builtins: engine
+strings: "  0.5"
+globals: 4=0.5 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(0.5)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_1_25
+spec: BUILTIN-7.1
+builtins: engine
+strings: "  1.2"
+globals: 4=1.25 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(1.25)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_1_35
+spec: BUILTIN-7.1
+builtins: engine
+strings: "  1.4"
+globals: 4=1.35 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(1.35)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_0_05
+spec: BUILTIN-7.1
+builtins: engine
+strings: "  0.1"
+globals: 4=0.05 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(0.05)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_minus_0_04
+spec: BUILTIN-7.1
+builtins: engine
+strings: " -0.0"
+globals: 4=-0.04 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(-0.04)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_123456_7
+spec: BUILTIN-7.1
+builtins: engine
+strings: "123456.7"
+globals: 4=123456.7 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(123456.7)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_16777216
+spec: BUILTIN-7.1
+builtins: engine
+strings: "16777216"
+globals: 4=16777216 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(16777216)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_2147483520
+spec: BUILTIN-7.1
+builtins: engine
+strings: "2147483520"
+globals: 4=2147483520 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(2147483520)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_minus_2147483648
+spec: BUILTIN-7.1
+builtins: engine
+strings: "-2147483648"
+globals: 4=-2147483648 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(-2147483648)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_1e10
+spec: BUILTIN-7.1, BUILTIN-2.2
+builtins: engine
+strings: "10000000000.0"
+globals: 4=1e10 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(1e10)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_2147483648
+spec: BUILTIN-7.1, BUILTIN-2.2
+builtins: engine
+strings: "2147483648.0"
+globals: 4=2147483648 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(2147483648)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_nan
+spec: BUILTIN-7.6
+builtins: engine
+strings: "  nan"
+globals: 4=nan 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(nan)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_inf
+spec: BUILTIN-7.6
+builtins: engine
+strings: "  inf"
+globals: 4=inf 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(inf)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== ftos_minus_inf
+spec: BUILTIN-7.6
+builtins: engine
+strings: " -inf"
+globals: 4=-inf 100=i1 120=i2
+functions:
+  2: builtin=26
+code:
+  CALL1 120             # ftos(-inf)
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== vtos_zero
+spec: BUILTIN-7.2
+builtins: engine
+strings: "'  0.0   0.0   0.0'"
+globals: 100=i1 120=i2
+functions:
+  2: builtin=27
+code:
+  CALL1 120             # vtos('0 0 0')
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== vtos_mixed
+spec: BUILTIN-7.2
+builtins: engine
+strings: "'  1.0  -2.0   3.5'"
+globals: 4=1 5=-2 6=3.5 100=i1 120=i2
+functions:
+  2: builtin=27
+code:
+  CALL1 120             # vtos('1 -2 3.5')
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== vtos_130_characters
+spec: BUILTIN-7.5
+builtins: engine
+strings: "'-340282346638528859811704183484516925440.0 -340282346638528859811704183484516925440.0 -340282346638528859811704183484516925440.0'"
+globals: 4=-3.4028235e38 5=-3.4028235e38 6=-3.4028235e38 100=i1 120=i2
+functions:
+  2: builtin=27
+code:
+  CALL1 120             # vtos of three -3.4028235e38
+  EQ_S 1 100 101
+  DONE
+expect:
+  1 CALL1 1=es
+  2 EQ_S 101=1
+  3 DONE 1=0
+  done
+
+== rint_zero
+spec: BUILTIN-6.7
+builtins: engine
+globals: 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(0)
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== rint_minus_zero
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=-0 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(-0)
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== rint_0_5
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=0.5 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(0.5)
+  DONE
+expect:
+  1 CALL1 1=1
+  2 DONE 1=0
+  done
+
+== rint_minus_0_5
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=-0.5 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(-0.5)
+  DONE
+expect:
+  1 CALL1 1=-1
+  2 DONE 1=0
+  done
+
+== rint_1_5
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=1.5 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(1.5)
+  DONE
+expect:
+  1 CALL1 1=2
+  2 DONE 1=0
+  done
+
+== rint_2_5
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=2.5 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(2.5)
+  DONE
+expect:
+  1 CALL1 1=3
+  2 DONE 1=0
+  done
+
+== rint_minus_2_5
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=-2.5 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(-2.5)
+  DONE
+expect:
+  1 CALL1 1=-3
+  2 DONE 1=0
+  done
+
+== rint_0_49999997
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=0.49999997 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(0.49999997)
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== rint_minus_1_7
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=-1.7 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(-1.7)
+  DONE
+expect:
+  1 CALL1 1=-2
+  2 DONE 1=0
+  done
+
+== rint_3_2
+spec: BUILTIN-6.7
+builtins: engine
+globals: 4=3.2 120=i2
+functions:
+  2: builtin=36
+code:
+  CALL1 120             # rint(3.2)
+  DONE
+expect:
+  1 CALL1 1=3
+  2 DONE 1=0
+  done
+
+== floor_minus_0_5
+spec: BUILTIN-6.8
+builtins: engine
+globals: 4=-0.5 120=i2
+functions:
+  2: builtin=37
+code:
+  CALL1 120             # floor(-0.5)
+  DONE
+expect:
+  1 CALL1 1=-1
+  2 DONE 1=0
+  done
+
+== ceil_minus_0_5
+spec: BUILTIN-6.8
+builtins: engine
+globals: 4=-0.5 120=i2
+functions:
+  2: builtin=38
+code:
+  CALL1 120             # ceil(-0.5)
+  DONE
+expect:
+  1 CALL1 1=-0
+  2 DONE 1=0
+  done
+
+== ceil_1_2
+spec: BUILTIN-6.8
+builtins: engine
+globals: 4=1.2 120=i2
+functions:
+  2: builtin=38
+code:
+  CALL1 120             # ceil(1.2)
+  DONE
+expect:
+  1 CALL1 1=2
+  2 DONE 1=0
+  done
+
+== floor_1_8
+spec: BUILTIN-6.8
+builtins: engine
+globals: 4=1.8 120=i2
+functions:
+  2: builtin=37
+code:
+  CALL1 120             # floor(1.8)
+  DONE
+expect:
+  1 CALL1 1=1
+  2 DONE 1=0
+  done
+
+== fabs_minus_zero
+spec: BUILTIN-6.8
+builtins: engine
+globals: 4=-0 120=i2
+functions:
+  2: builtin=43
+code:
+  CALL1 120             # fabs(-0)
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== vlen_3_4_0
+spec: BUILTIN-6.2
+builtins: engine
+globals: 4=3 5=4 120=i2
+functions:
+  2: builtin=12
+code:
+  CALL1 120             # vlen('3 4 0')
+  DONE
+expect:
+  1 CALL1 1=5
+  2 DONE 1=0
+  done
+
+== vlen_1_1_1
+spec: BUILTIN-6.2
+builtins: engine
+globals: 4=1 5=1 6=1 120=i2
+functions:
+  2: builtin=12
+code:
+  CALL1 120             # vlen('1 1 1')
+  DONE
+expect:
+  1 CALL1 1=1.73205078
+  2 DONE 1=0
+  done
+
+== vlen_0_0_0
+spec: BUILTIN-6.2
+builtins: engine
+globals: 120=i2
+functions:
+  2: builtin=12
+code:
+  CALL1 120             # vlen('0 0 0')
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== normalize_3_4_0
+spec: BUILTIN-6.3
+builtins: engine
+globals: 4=3 5=4 120=i2
+functions:
+  2: builtin=9
+code:
+  CALL1 120             # normalize('3 4 0')
+  DONE
+expect:
+  1 CALL1 1=0.600000024 2=0.800000012
+  2 DONE 1=0 2=0
+  done
+
+== normalize_1_1_1
+spec: BUILTIN-6.3
+builtins: engine
+globals: 4=1 5=1 6=1 120=i2
+functions:
+  2: builtin=9
+code:
+  CALL1 120             # normalize('1 1 1')
+  DONE
+expect:
+  1 CALL1 1=0.577350259 2=0.577350259 3=0.577350259
+  2 DONE 1=0 2=0 3=0
+  done
+
+== normalize_0_0_minus_2
+spec: BUILTIN-6.3
+builtins: engine
+globals: 6=-2 120=i2
+functions:
+  2: builtin=9
+code:
+  CALL1 120             # normalize('0 0 -2')
+  DONE
+expect:
+  1 CALL1 3=-1
+  2 DONE 3=0
+  done
+
+== normalize_0_0_0
+spec: BUILTIN-6.3
+builtins: engine
+globals: 120=i2
+functions:
+  2: builtin=9
+code:
+  CALL1 120             # normalize('0 0 0')
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== vectoyaw_1_0_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 4=1 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('1 0 0')
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== vectoyaw_0_1_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 5=1 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('0 1 0')
+  DONE
+expect:
+  1 CALL1 1=90
+  2 DONE 1=0
+  done
+
+== vectoyaw_minus_1_0_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 4=-1 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('-1 0 0')
+  DONE
+expect:
+  1 CALL1 1=180
+  2 DONE 1=0
+  done
+
+== vectoyaw_0_minus_1_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 5=-1 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('0 -1 0')
+  DONE
+expect:
+  1 CALL1 1=270
+  2 DONE 1=0
+  done
+
+== vectoyaw_1_minus_1_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 4=1 5=-1 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('1 -1 0')
+  DONE
+expect:
+  1 CALL1 1=315
+  2 DONE 1=0
+  done
+
+== vectoyaw_1_0_01_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 4=1 5=0.01 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('1 0.01 0')
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== vectoyaw_minus_1_minus_0_01_0
+spec: BUILTIN-6.4
+builtins: engine
+globals: 4=-1 5=-0.01 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('-1 -0.01 0')
+  DONE
+expect:
+  1 CALL1 1=181
+  2 DONE 1=0
+  done
+
+== vectoyaw_0_0_5
+spec: BUILTIN-6.4
+builtins: engine
+globals: 6=5 120=i2
+functions:
+  2: builtin=13
+code:
+  CALL1 120             # vectoyaw('0 0 5')
+  DONE
+expect:
+  1 CALL1
+  2 DONE
+  done
+
+== vectoangles_0_0_1
+spec: BUILTIN-6.5
+builtins: engine
+globals: 6=1 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('0 0 1')
+  DONE
+expect:
+  1 CALL1 1=90
+  2 DONE 1=0
+  done
+
+== vectoangles_0_0_minus_1
+spec: BUILTIN-6.5
+builtins: engine
+globals: 6=-1 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('0 0 -1')
+  DONE
+expect:
+  1 CALL1 1=270
+  2 DONE 1=0
+  done
+
+== vectoangles_0_0_0
+spec: BUILTIN-6.5
+builtins: engine
+globals: 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('0 0 0')
+  DONE
+expect:
+  1 CALL1 1=270
+  2 DONE 1=0
+  done
+
+== vectoangles_1_0_1
+spec: BUILTIN-6.5
+builtins: engine
+globals: 4=1 6=1 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('1 0 1')
+  DONE
+expect:
+  1 CALL1 1=45
+  2 DONE 1=0
+  done
+
+== vectoangles_1_0_minus_1
+spec: BUILTIN-6.5
+builtins: engine
+globals: 4=1 6=-1 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('1 0 -1')
+  DONE
+expect:
+  1 CALL1 1=315
+  2 DONE 1=0
+  done
+
+== vectoangles_minus_3_4_5
+spec: BUILTIN-6.5
+builtins: engine
+globals: 4=-3 5=4 6=5 120=i2
+functions:
+  2: builtin=51
+code:
+  CALL1 120             # vectoangles('-3 4 5')
+  DONE
+expect:
+  1 CALL1 1=45 2=126
+  2 DONE 1=0 2=0
+  done
+
+== makevectors_0_0_0
+spec: BUILTIN-6.1
+builtins: engine
+globals: 120=i2
+functions:
+  2: builtin=1
+code:
+  CALL1 120             # makevectors('0 0 0')
+  DONE
+expect:
+  1 CALL1 59=1 61=-0 64=1 66=-1 67=-0
+  2 DONE
+  done
+
+== makevectors_0_90_0
+spec: BUILTIN-6.1
+builtins: engine
+globals: 5=90 120=i2
+functions:
+  2: builtin=1
+code:
+  CALL1 120             # makevectors('0 90 0')
+  DONE
+expect:
+  1 CALL1 59=-4.37113883e-08 60=1 61=-0 64=1 65=1 66=4.37113883e-08 67=-0
+  2 DONE
+  done
+
+== makevectors_30_45_0
+spec: BUILTIN-6.1
+builtins: engine
+globals: 4=30 5=45 120=i2
+functions:
+  2: builtin=1
+code:
+  CALL1 120             # makevectors('30 45 0')
+  DONE
+expect:
+  1 CALL1 59=0.612372398 60=0.612372398 61=-0.5 62=0.353553385 63=0.353553385 64=0.866025388 65=0.707106769 66=-0.707106769 67=-0
+  2 DONE
+  done
+
+== makevectors_minus_45_180_10
+spec: BUILTIN-6.1
+builtins: engine
+globals: 4=-45 5=180 6=10 120=i2
+functions:
+  2: builtin=1
+code:
+  CALL1 120             # makevectors('-45 180 10')
+  DONE
+expect:
+  1 CALL1 59=-0.707106769 60=-6.18172393e-08 61=0.707106769 62=0.696364224 63=0.173648238 64=0.696364224 65=-0.122787893 66=0.98480773 67=-0.122787803
+  2 DONE
+  done
+
+== anglemod_zero
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=0 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 0, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0
+  2 DONE
+  done
+
+== anglemod_20
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=20 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 20, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=19.9951172
+  2 DONE
+  done
+
+== anglemod_minus_90
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=-90 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y -90, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=270
+  2 DONE
+  done
+
+== anglemod_360
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=360 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 360, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=0
+  2 DONE
+  done
+
+== anglemod_45_5
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=45.5 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 45.5, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=45.4998779
+  2 DONE
+  done
+
+== anglemod_minus_0_001
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=-0.001 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y -0.001, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=0
+  2 DONE
+  done
+
+== anglemod_720_5
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=720.5 e1.85=1000
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 720.5, ideal_yaw 1000, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=0.49987793
+  2 DONE
+  done
+
+== changeyaw_toward_90
+spec: BUILTIN-15.4, BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.85=90 e1.86=20
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 0, ideal_yaw 90, yaw_speed 20
+  DONE
+expect:
+  1 CALL0 e1.20=19.9951172
+  2 DONE
+  done
+
+== changeyaw_toward_270
+spec: BUILTIN-15.4
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.85=270 e1.86=20
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 0, ideal_yaw 270, yaw_speed 20
+  DONE
+expect:
+  1 CALL0 e1.20=340.004883
+  2 DONE
+  done
+
+== changeyaw_across_zero
+spec: BUILTIN-15.4
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=350 e1.85=10 e1.86=45
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 350, ideal_yaw 10, yaw_speed 45
+  DONE
+expect:
+  1 CALL0 e1.20=9.99755859
+  2 DONE
+  done
+
+== changeyaw_from_negative
+spec: BUILTIN-15.4
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=-30 e1.85=0 e1.86=10
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y -30, ideal_yaw 0, yaw_speed 10
+  DONE
+expect:
+  1 CALL0 e1.20=339.99939
+  2 DONE
+  done
+
+== changeyaw_already_there
+spec: BUILTIN-15.4
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=90 e1.85=90 e1.86=20
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 90, ideal_yaw 90, yaw_speed 20
+  DONE
+expect:
+  1 CALL0
+  2 DONE
+  done
+
+== changeyaw_speed_0
+spec: BUILTIN-15.5
+builtins: engine
+globals: 28=e1 120=i2
+fields: e1.20=45.5 e1.85=45.5 e1.86=0
+functions:
+  2: builtin=49
+code:
+  CALL0 120             # ChangeYaw: angles_y 45.5, ideal_yaw 45.5, yaw_speed 0
+  DONE
+expect:
+  1 CALL0 e1.20=45.4998779
+  2 DONE
+  done
+
+== random_32767
+spec: BUILTIN-6.6
+builtins: engine
+seed: 2433918595
+globals: 120=i2
+functions:
+  2: builtin=7
+code:
+  CALL0 120             # random() with rand() & 0x7fff = 32767
+  DONE
+expect:
+  1 CALL0 1=1
+  2 DONE 1=0
+  done
+
+== random_1
+spec: BUILTIN-6.6
+builtins: engine
+seed: 3889997443
+globals: 120=i2
+functions:
+  2: builtin=7
+code:
+  CALL0 120             # random() with rand() & 0x7fff = 1
+  DONE
+expect:
+  1 CALL0 1=3.05185094e-05
+  2 DONE 1=0
+  done
+
+== writeangle
+spec: BUILTIN-13.2
+builtins: engine
+datagram: 64 255 0 192
+globals: 7=90 100=359.9 101=-1 102=-90 120=i2
+functions:
+  2: builtin=57
+code:
+  CALL2 120             # WriteAngle(MSG_BROADCAST, 90)
+  STORE_F 100 7
+  CALL2 120             # 359.9
+  STORE_F 101 7
+  CALL2 120             # -1
+  STORE_F 102 7
+  CALL2 120             # -90
+  DONE
+expect:
+  1 CALL2
+  2 STORE_F 7=359.9
+  3 CALL2
+  4 STORE_F 7=-1
+  5 CALL2
+  6 STORE_F 7=-90
+  7 CALL2
+  8 DONE
+  done
+
+== writecoord
+spec: BUILTIN-13.2
+builtins: engine
+datagram: 8 0
+globals: 7=1.06 120=i2
+functions:
+  2: builtin=56
+code:
+  CALL2 120             # WriteCoord(MSG_BROADCAST, 1.06): the short (int)8.48
+  DONE
+expect:
+  1 CALL2
+  2 DONE
+  done

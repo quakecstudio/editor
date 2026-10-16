@@ -86,20 +86,28 @@ const OPCODES: [&str; 66] = [
     "BITOR",
 ];
 
-const KEYS: [&str; 12] = [
+const KEYS: [&str; 17] = [
     "spec",
     "builtins",
     "globals",
     "fields",
     "strings",
     "numglobals",
+    "edicts",
+    "maxclients",
+    "seed",
     "server",
     "entry",
     "steps",
     "after",
+    "datagram",
     "oracle",
     "functions",
+    "host",
 ];
+
+/// The first word of each line of a `host:` block (README, "Host actions").
+const HOST_ACTIONS: [&str; 7] = ["clock", "run", "think", "push", "physics", "frame", "edict"];
 
 /// One vector, with only what these checks need.
 #[derive(Debug, Default)]
@@ -147,6 +155,12 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                 }
                 "expect" => vector.expect.push(body.trim().to_owned()),
                 "functions" => {}
+                "host" => {
+                    let action = body.split_whitespace().next().unwrap_or_default();
+                    if !HOST_ACTIONS.contains(&action) {
+                        return Err(format!("{}: unknown host action `{action}`", at()));
+                    }
+                }
                 _ => return Err(format!("{}: indented line outside a block", at())),
             }
             continue;
@@ -162,7 +176,8 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                     .extend(rest.split(',').map(|id| id.trim().to_owned()));
                 block = "";
             }
-            _ if KEYS.contains(&key) => block = if key == "functions" { "functions" } else { "" },
+            "functions" | "host" => block = key,
+            _ if KEYS.contains(&key) => block = "",
             _ => return Err(format!("{}: unknown key `{key}`", at())),
         }
     }
@@ -267,6 +282,14 @@ fn parse_rejects_malformed_files() {
     assert!(
         parse("t", "== a\nno colon here\n").is_err(),
         "line without a key"
+    );
+    assert!(
+        parse("t", "== a\nhost:\n  sleep 1\n").is_err(),
+        "unknown host action"
+    );
+    assert!(
+        parse("t", "== a\nhost:\n  clock 1\n  run 1\ncode:\n  DONE\n").is_ok(),
+        "a host block"
     );
     let parsed = parse(
         "t",
