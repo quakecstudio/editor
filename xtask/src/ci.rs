@@ -7,7 +7,8 @@
 //! command fails if any step failed.
 //!
 //! The plan checks (`plan/check.py` and its tests, P0-05) need `python3` with
-//! PyYAML.
+//! PyYAML. The cached-spec check (`scripts/refresh-specs.sh --verify`, P0-26)
+//! needs `bash` and `sha256sum` or `shasum`, and no network.
 
 use std::path::Path;
 use std::process::Command;
@@ -25,7 +26,7 @@ enum Step {
 }
 
 /// The steps, cheapest first.
-const STEPS: [Step; 13] = [
+const STEPS: [Step; 14] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("python3", &["plan/check.py"]),
     Step::Program(
@@ -40,6 +41,7 @@ const STEPS: [Step; 13] = [
             "test_*.py",
         ],
     ),
+    Step::Program("bash", &["scripts/refresh-specs.sh", "--verify"]),
     Step::Xtask("conventions"),
     Step::Xtask("adr"),
     Step::Xtask("layers"),
@@ -160,6 +162,7 @@ mod tests {
             "cargo deny --locked check advisories bans licenses sources",
             "python3 plan/check.py",
             "python3 -m unittest discover -s plan -p test_*.py",
+            "bash scripts/refresh-specs.sh --verify",
         ] {
             assert!(labels.iter().any(|label| label == expected), "{expected}");
         }
@@ -211,5 +214,109 @@ mod tests {
     fn the_verdict_counts_failures() {
         assert_eq!(verdict(0, 11), "ci: all 11 steps passed");
         assert_eq!(verdict(2, 11), "ci: 2 of 11 steps failed");
+    }
+
+    /// `scripts/refresh-specs.sh --verify` run on a copy of the script and a
+    /// one-file cache, so the failures CI must report are exercised without
+    /// touching `specs/`.
+    #[cfg(unix)]
+    mod verify_specs {
+        #![expect(
+            clippy::unwrap_used,
+            reason = "test code: a failed unwrap is a failed test"
+        )]
+
+        use std::fs;
+        use std::path::PathBuf;
+
+        use super::*;
+
+        const SPEC: &str = "specs/demo/1.0/page.md";
+        const TEXT: &str = "The server MUST reply.\n";
+        /// SHA-256 of `TEXT`.
+        const SHA: &str = "c787ce0f8a9a52b4e471a68e684d7c836d364336b082f7b2f9818c235faa2c36";
+
+        /// A scratch repository holding the script, a README, a manifest with
+        /// one row for `SPEC`, and `SPEC` itself containing `text`.
+        fn fixture(name: &str, text: &str) -> PathBuf {
+            let dir = root()
+                .join("target")
+                .join("xtask-tests")
+                .join("verify-specs")
+                .join(name);
+            if dir.exists() {
+                fs::remove_dir_all(&dir).unwrap();
+            }
+            fs::create_dir_all(dir.join("scripts")).unwrap();
+            fs::create_dir_all(dir.join("specs/demo/1.0")).unwrap();
+            fs::copy(
+                root().join("scripts/refresh-specs.sh"),
+                dir.join("scripts/refresh-specs.sh"),
+            )
+            .unwrap();
+            fs::write(dir.join("specs/README.md"), "# Cached specifications\n").unwrap();
+            fs::write(
+                dir.join("specs/manifest.tsv"),
+                format!(
+                    "path\tspec\turl\tsha256\tbytes\tfetched\n\
+                     {SPEC}\tDemo 1.0\thttps://example.com/page.md\t{SHA}\t{}\t2026-10-15\n",
+                    TEXT.len()
+                ),
+            )
+            .unwrap();
+            fs::write(dir.join(SPEC), text).unwrap();
+            dir
+        }
+
+        /// Runs the verify step in `dir`; returns whether it passed and its stderr.
+        fn verify(dir: &Path) -> (bool, String) {
+            let output = Command::new("bash")
+                .args(["scripts/refresh-specs.sh", "--verify"])
+                .current_dir(dir)
+                .output()
+                .unwrap();
+            (
+                output.status.success(),
+                String::from_utf8_lossy(&output.stderr).into_owned(),
+            )
+        }
+
+        #[test]
+        fn a_cache_that_matches_its_manifest_passes() {
+            let (ok, stderr) = verify(&fixture("clean", TEXT));
+            assert!(ok, "{stderr}");
+            assert!(stderr.contains("every cached file matches"), "{stderr}");
+        }
+
+        #[test]
+        fn one_changed_byte_fails_and_names_the_file() {
+            let (ok, stderr) = verify(&fixture("changed", "The server MAY reply.\n"));
+            assert!(!ok);
+            assert!(stderr.contains(&format!("{SPEC}: sha256 is")), "{stderr}");
+        }
+
+        #[test]
+        fn a_file_without_a_manifest_row_fails_and_names_the_file() {
+            let dir = fixture("unlisted", TEXT);
+            fs::write(dir.join("specs/demo/1.0/extra.md"), "extra\n").unwrap();
+            let (ok, stderr) = verify(&dir);
+            assert!(!ok);
+            assert!(
+                stderr.contains("specs/demo/1.0/extra.md: cached but not in the manifest"),
+                "{stderr}"
+            );
+        }
+
+        #[test]
+        fn a_listed_file_that_is_missing_fails_and_names_the_file() {
+            let dir = fixture("missing", TEXT);
+            fs::remove_file(dir.join(SPEC)).unwrap();
+            let (ok, stderr) = verify(&dir);
+            assert!(!ok);
+            assert!(
+                stderr.contains(&format!("{SPEC}: listed in the manifest but missing")),
+                "{stderr}"
+            );
+        }
     }
 }
