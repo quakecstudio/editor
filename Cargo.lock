@@ -394,6 +394,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-mdl"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
 name = "qs-pak"
 version = "2026.10.0"
 dependencies = [
@@ -421,12 +428,21 @@ name = "qs-vfs"
 version = "2026.10.0"
 dependencies = [
  "qc-progs",
+ "qs-mdl",
  "qs-pak",
  "qs-wad",
+ "qs-wav",
 ]
 
 [[package]]
 name = "qs-wad"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+]
+
+[[package]]
+name = "qs-wav"
 version = "2026.10.0"
 dependencies = [
  "proptest",

@@ -105,12 +105,15 @@ Each section holds, in this order:
 | `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout, recognising an install and its files by checksum | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `LNO` | [`lno.md`](lno.md) | `.lno` line maps: which compilers write them, the header, the line and GMQCC column tables, matching a progs.dat, reading and writing | [#41](https://github.com/quakecstudio/editor/issues/41) |
+| `MD5` | [`md5.md`](md5.md) | The rerelease's MD5 models: tokens, the `.md5mesh` joints and meshes, the `.md5anim` hierarchy and frames, as QuakeSpasm-Spiked reads them | [#235](https://github.com/quakecstudio/editor/issues/235) |
 | `PAK` | [`pak.md`](pak.md) | PAK archives: header, directory, reading entries, the modified-game CRC | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
 | `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |
+| `SPR` | [`spr.md`](spr.md) | SPR sprites: header, frames and frame groups | [#235](https://github.com/quakecstudio/editor/issues/235) |
 | `TRACE` | [`trace.md`](trace.md) | The shared VM trace format: per-statement records, binary and JSON forms, reading engine-specific values | [#36](https://github.com/quakecstudio/editor/issues/36) |
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
 | `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
+| `WAV` | [`wav.md`](wav.md) | WAV sounds: chunks, the header and loop points `GetWavinfo` reads, what `S_LoadSound` plays | [#235](https://github.com/quakecstudio/editor/issues/235) |
 
 A new spec registers its prefix here in the PR that adds it.

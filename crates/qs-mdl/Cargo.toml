@@ -1,0 +1,15 @@
+[package]
+name = "qs-mdl"
+description = "Model readers: id's sprite loader (Mod_LoadSpriteModel) with bounds checks, and the rerelease's MD5 meshes and animations"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
