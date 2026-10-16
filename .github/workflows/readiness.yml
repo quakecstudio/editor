@@ -103,6 +103,14 @@ jobs:
         with:
           shared-key: readiness-mutation-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # xtask's tests of `cargo xtask oracles fuzz` go past its check for clang
+      # only when the C compiler is clang, so that its mutants are tested.
+      - name: Set up clang for xtask
+        if: ${{ contains(format(' {0} ', inputs.crates), ' xtask ') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18
+          echo "CC=clang-18" >> "$GITHUB_ENV"
       - name: Measure the mutation score
         run: |
           read -ra crates <<< "$CRATES"

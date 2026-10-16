@@ -277,6 +277,13 @@ fn a_trace_prints_as_json() {
 fn the_fuzz_targets_build_seed_and_run() {
     let (dir, files) = fake_root("oracles-fuzz");
     let fake = Fake::new(tools(0));
+    // Where the C compiler is not clang (gcc on Linux, MSVC on Windows, unless CC says
+    // otherwise), fuzzing stops before building anything.
+    if Compiler::find(&dir, Instrument::Fuzz, &fake).is_err() {
+        let error = run(&dir, &words("fuzz scenario --time 5"), &fake, &files).unwrap_err();
+        assert!(error.contains("need clang"), "{error}");
+        return;
+    }
     assert!(run(&dir, &words("fuzz scenario --time 5"), &fake, &files).unwrap());
     let corpus = dir.join(OUT).join("fuzz/scenario/corpus");
     assert!(fs::read_dir(&corpus).unwrap().count() > 50);
