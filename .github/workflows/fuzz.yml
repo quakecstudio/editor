@@ -27,7 +27,8 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # Ten targets of ten minutes each, and the builds.
+    timeout-minutes: 150
     permissions:
       contents: read
     steps:
@@ -48,6 +49,21 @@ jobs:
             .
             fuzz
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      # P1-22: the parser target's grammar-aware mutator starts from real QuakeC.
+      - name: Seed the parser corpus with id 1.01 and the rerelease
+        run: |
+          cargo xtask corpus fetch id-1.01 rerelease
+          mkdir -p fuzz/corpus/parser
+          find "$QS_TEST_ASSETS/codebase/id-1.01" "$QS_TEST_ASSETS/codebase/rerelease" \
+            -type f -name '*.qc' -print0 |
+            while IFS= read -r -d '' file; do
+              name=${file#"$QS_TEST_ASSETS"/codebase/}
+              cp "$file" "fuzz/corpus/parser/${name//\//_}"
+            done
       - name: Run every fuzz target
         run: cargo xtask fuzz --time 10m
       - name: Upload crashing inputs

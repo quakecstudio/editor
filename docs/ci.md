@@ -42,7 +42,7 @@ check:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust; on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
+| `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust, the `parser` target seeded with the `.qc` files of id 1.01 and the rerelease (`cargo xtask corpus fetch`); on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
 
 [`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
 (`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,

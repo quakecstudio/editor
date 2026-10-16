@@ -802,6 +802,24 @@ issues:
   - A face with an extent of 512 and no TEX_SPECIAL gives the result the statement names for each engine, recorded in the vectors' README from id's loaders built from the pinned commit
   verify:
   - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-44
+  title: Record GLQuake's SURF_UNDERWATER face flag
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-43
+  deliverable:
+  - 'docs/spec/bsp.md: a statement that GLQuake''s Mod_LoadLeafs (WinQuake/gl_model.c: if (out->contents != CONTENTS_EMPTY) ... out->firstmarksurface[j]->flags |= SURF_UNDERWATER, with SURF_UNDERWATER 0x80 in gl_model.h) sets a flag on every face of a leaf that is not empty, which WinQuake''s model.c does not; found while doing P1-43, whose BspLoader::GlQuake follows GLQuake''s extent limit but not this flag'
+  - crates/qs-bsp follows the statement when read with BspLoader::GlQuake, with a test that cites it and a vector whose face lies in a leaf of water
+  acceptance:
+  - A face listed by a leaf of CONTENTS_WATER has the flags id's gl_model.c gives it, and those model.c gives it, recorded in the vectors' README from id's loaders built from the pinned commit
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -857,6 +875,7 @@ issues:
   - P1-41
   - P1-42
   - P1-43
+  - P1-44
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
