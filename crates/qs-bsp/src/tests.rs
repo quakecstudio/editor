@@ -1126,11 +1126,12 @@ fn bad_marksurface() {
 #[test]
 fn leaves() {
     let mut spec = BspSpec::default();
-    spec.leafs[1].contents = 42;
+    spec.leafs[1].contents = -42;
+    spec.leafs.push(leaf(42, -1, 0, 0));
     spec.marksurfaces = vec![0; 32769];
     spec.leafs[1].firstmarksurface = 32768;
     let bsp = read(&spec).unwrap();
-    assert_eq!(bsp.leafs[1].contents, 42);
+    assert_eq!((bsp.leafs[1].contents, bsp.leafs[2].contents), (-42, 42));
     assert_eq!(bsp.leafs[1].firstmarksurface, 32768);
     assert_eq!(
         [
@@ -1145,6 +1146,85 @@ fn leaves() {
     );
     assert_eq!(BSP_NUM_AMBIENTS, 4);
     assert_eq!(BSP_LEAF_SIZE, 28);
+}
+
+/// The `contents-0` vectors: the base with a leaf of contents `contents` that node 0 names
+/// (`Named`), that only the door's head node names (`Submodel`), or that no node names
+/// (`Unnamed`).
+#[derive(Clone, Copy)]
+pub(crate) enum ContentsLeaf {
+    Named,
+    Submodel,
+    Unnamed,
+}
+
+pub(crate) fn contents_leaf(contents: i32, place: ContentsLeaf) -> BspSpec {
+    let mut spec = BspSpec::default();
+    match place {
+        ContentsLeaf::Named => spec.leafs[1].contents = contents,
+        ContentsLeaf::Submodel => {
+            spec.leafs.push(leaf(contents, -1, 0, 0));
+            let mut node = spec.nodes[0].clone();
+            node.children = [-3, -1];
+            node.numfaces = 0;
+            spec.nodes.push(node);
+            spec.models[1].headnode[0] = 1;
+        }
+        ContentsLeaf::Unnamed => spec.leafs.push(leaf(contents, -1, 0, 0)),
+    }
+    spec
+}
+
+// spec BSP-12.7: a node that names a leaf whose contents is 0 or more fails to load, with every
+// loader, whether node 0's tree reaches it (`contents-0`) or only a brush model's
+// (`contents-0-submodel`); a leaf no node names loads with its contents (`contents-0-unnamed`).
+#[test]
+fn leaf_contents_0_or_more() {
+    for loader in [
+        BspLoader::WinQuake,
+        BspLoader::GlQuake,
+        BspLoader::FitzQuake,
+    ] {
+        for contents in [0, 1, 42, i32::MAX] {
+            let bytes = Vec::leak(contents_leaf(contents, ContentsLeaf::Named).build());
+            assert_eq!(
+                Bsp::read(bytes, loader),
+                Err(BspError::LeafContents {
+                    node: 0,
+                    leaf: 1,
+                    contents
+                })
+            );
+        }
+        let bytes = Vec::leak(contents_leaf(0, ContentsLeaf::Submodel).build());
+        assert_eq!(
+            Bsp::read(bytes, loader),
+            Err(BspError::LeafContents {
+                node: 1,
+                leaf: 2,
+                contents: 0
+            })
+        );
+        let bytes = Vec::leak(contents_leaf(0, ContentsLeaf::Unnamed).build());
+        let bsp = Bsp::read(bytes, loader).unwrap();
+        assert_eq!(bsp.leafs[2].contents, 0);
+        assert!(bsp.hull0().iter().all(|node| node.children == [-1, -2]));
+        // -1, the largest negative value, still loads.
+        let bytes = Vec::leak(contents_leaf(-1, ContentsLeaf::Submodel).build());
+        assert_eq!(
+            Bsp::read(bytes, loader).unwrap().hull0()[1].children,
+            [-1, -2]
+        );
+    }
+    assert_eq!(
+        BspError::LeafContents {
+            node: 0,
+            leaf: 1,
+            contents: 0
+        }
+        .message("maps/test.bsp"),
+        "maps/test.bsp: node 0 names leaf 1, whose contents 0 is not negative"
+    );
 }
 
 // spec BSP-6.1, BSP-6.2, BSP-6.3, BSP-6.4, BSP-15.2: the vis variant's rows.
