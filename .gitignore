@@ -16,9 +16,6 @@ __pycache__/
 # Local environment
 .env
 
-# Workspace-local Python deps the Kiro ensure-pydeps hook installs when HOME is read-only
-/.agent-pydeps/
-
 # Quake game data is never committed: bring your own copy of Quake
 *.pak
 
