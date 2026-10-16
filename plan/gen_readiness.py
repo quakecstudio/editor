@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Generate plan/backlog/readiness.yaml: one test-suite readiness issue per layer per phase.
 
 Rerun after adding or relabelling feature/test issues. See docs/testing.md.

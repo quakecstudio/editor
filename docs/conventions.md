@@ -273,6 +273,8 @@ As in vouch:
 - `Swatinem/rust-cache` for caching; `--locked` on every cargo command; `CARGO_BUILD_WARNINGS: deny`
   in the workflow environment, as in vouch.
 
+The workflows, the required checks on `main` and the ruleset are in [`ci.md`](ci.md).
+
 ## Make targets (CONV-8)
 
 `Makefile` is the entry point, as in vouch; logic that needs Rust lives in `xtask` and is
@@ -333,10 +335,17 @@ it with section and source. Here that means:
 
 As in vouch: `CLAUDE.md` holds the project overview, architecture, conventions and
 commands; `AGENTS.md` points to it and covers environment setup; `.claude/rules/` holds
-`branching.md`, `commits-and-issues.md`, `continuous-improvement.md`,
-`development-discipline.md`, `specs-are-source-of-truth.md`, plus this project's `porting.md`,
-`layering.md` and `testing.md` (the readiness rule in `docs/testing.md`).
-`.claude/hooks/session-setup.sh` installs the toolchain in remote sessions.
+`branching.md`, `commits-and-issues.md`, `development-discipline.md`,
+`specs-are-source-of-truth.md`, plus this project's `porting.md`, `layering.md` and
+`testing.md` (the readiness rule in `docs/testing.md`).
+`.claude/hooks/session-setup.sh`, registered in `.claude/settings.json`, installs the
+toolchain in remote Linux sessions.
+
+**Differs from vouch:** no `continuous-improvement.md`. vouch's file configures its
+dev-agents plugin cycle; here the `plan/` skills (`/work-issue`, `/run-phase`,
+`/plan-change`) and `docs/agents/README.md` fill that role. Issue forms and the PR template
+live in `.github/`, and `plan/check.py` checks that they ask for a deliverable, acceptance
+criteria, verification and requirement IDs and carry the definition of done.
 
 ## Repository layout (CONV-14)
 
@@ -360,8 +369,14 @@ Every source file starts with an SPDX line, as in vouch, but with this project's
 (**differs from vouch**, which is Apache-2.0 OR MIT; ADR-0002):
 `// SPDX-License-Identifier: GPL-3.0-or-later`. A file ported from id's code keeps id's
 copyright line, `// Copyright (C) 1996-1997 Id Software, Inc.`, above ours, and cites the file
-and function it came from.
-`make audit` fails a file without one.
+and function it came from ([`porting.md`](porting.md#file-headers)).
+`cargo xtask licenses` (run by `make audit` and `make ci`) fails a file without one. It
+classifies every file: source files (Rust, Python, shell, C and the `Makefile`) need the SPDX
+line first, after a `#!` line if there is one; docs and config files are covered by `LICENSE`;
+assets (images, fonts, sounds, Quake formats) are listed in `ATTRIBUTION.md` and checked by
+`cargo xtask attribution`; cached specifications listed in `specs/manifest.tsv` keep their own
+licenses, recorded in `specs/README.md`, and are not scanned. A file of a type with no rule fails until it is classified in
+`xtask/src/licenses.rs`.
 
 ## Repository files (CONV-15)
 

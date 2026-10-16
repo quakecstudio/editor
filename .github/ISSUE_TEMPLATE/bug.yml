@@ -1,0 +1,57 @@
+name: Bug
+description: Something that merged behaves wrongly. Security problems go to SECURITY.md instead.
+title: "<what goes wrong>"
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem, not the fix, in the title. Never report a security vulnerability here; follow `SECURITY.md`.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happens
+      description: Steps to reproduce, what you expected and what happened, with logs or screenshots.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS and version, QuakeC Studio version or commit, and the engine and game directory if relevant.
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: The requirement from plan/requirements.yaml, or the spec statement from docs/spec/, that the behaviour breaks.
+      placeholder: "VM-12.3, LANG-7"
+    validations:
+      required: true
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: The fix and the regression test, with paths if known. A defect that starts in a lower layer is fixed there (docs/testing.md, TEST-11).
+      placeholder: |
+        - crates/qs-.../src/...: the fix
+        - a regression test citing the statement it pins
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] A test reproduces the bug and fails before the fix
+        - [ ] The test passes after the fix
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      placeholder: "The regression test runs in cargo xtask ci"
+    validations:
+      required: true

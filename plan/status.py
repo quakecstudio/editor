@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Report a phase's progress from the plan and GitHub, for people and for /goal.
 
 Issues are grouped into tracks by who may work them:
