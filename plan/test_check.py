@@ -197,7 +197,7 @@ class RiskRule(unittest.TestCase):
 
     def test_unknown_status(self):
         row = next(l for l in self.risks.splitlines() if l.startswith("| R-7 |"))
-        errors = self.risk_errors(self.risks.replace(row, row.replace("| Open |", "| Done |")))
+        errors = self.risk_errors(self.risks.replace(row, row.rsplit("|", 2)[0] + "| Done |"))
         self.assertEqual(len(errors), 1)
         self.assertTrue(errors[0].startswith("R-7: status must be one of"))
 
