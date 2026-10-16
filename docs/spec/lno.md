@@ -46,15 +46,15 @@ These statements say when a `.lno` exists, so a reader knows which files to expe
   written). That optimisation is off with no `-O` option (it lacks `FLAG_ASDEFAULT`) and on
   from `-O1` (its level is 1); `-flno` turns it back off with the warning "Disabling
   -Ofilenames to satisfy -flno request".
-- **LNO-1.2** FTEQCC writes no `.lno` for the `fte_debug` target (`QCF_FTEDEBUG`): that target
+- **LNO-1.2** FTEQCC writes no `.lno` for its debug target (`QCF_FTEDEBUG`): that target
   stores the line table inside the progs (PROGS-21.1) and sets `statement_linenums = NULL`
   after doing so.
 - **LNO-1.3** GMQCC writes a `.lno` only with `-flno`, which `-g` also turns on (`case 'g':
   opts_setflag("LNO", true)`), and only when it has exactly one line entry per statement
   (otherwise it prints `Linecounter wrong` and writes the progs without a `.lno`).
 - **LNO-1.4** The `.lno` path is the output progs path with its last extension replaced by
-  `.lno`: `progs.dat` gives `progs.lno`, `qwprogs.dat` gives `qwprogs.lno`. GMQCC appends
-  `.lno` to a name with no `.`. FTEQCC also strips a trailing `.gz` first and appends it again
+  `.lno`: `progs.dat` gives `progs.lno`, `qwprogs.dat` gives `qwprogs.lno`. Both compilers
+  append `.lno` to a name with no extension. FTEQCC also strips a trailing `.gz` first and appends it again
   (`progs.dat.gz` gives `progs.lno.gz`); a compressed `.lno` is outside this spec.
 - **LNO-1.5** The readers look for the `.lno` beside the progs they load, by the same name
   rule (FTE `StripExtension` then `.lno`; DarkPlaces `FS_StripExtension` then `.lno`),
