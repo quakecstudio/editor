@@ -310,7 +310,7 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
 - **VM-11.4** id does not check the entity value or the field index (`PARANOID` is off), so a
   value that does not name an edict, or a field slot outside `0` to `entityfields - 1`, reads
   other memory, which is undefined in C. This spec fixes the answer: such a load fails with a
-  runtime error (VM-19.4). Which entity values name an edict is in `edicts.md` (P1-03).
+  runtime error (VM-19.4). Which entity values name an edict is EDICT-1.9.
 
 ## VM-12 Field addresses and pointer stores
 

@@ -5,13 +5,16 @@
 //! of P1-11 that the oracle passes every vector without `oracle: no`, the VM-9.2 vectors on an
 //! x86-64 host.
 //!
+//! A vector marked `builtins: engine` runs id's builtins instead of the stubs, for the argument
+//! checks of P1-31 (`builtins.txt`).
+//!
 //! Each vector becomes a progs.dat (written by `qc-progs`) and an init file holding the
 //! initial globals and fields, which the oracle resolves itself because entity and pointer
 //! values depend on its edict layout. The oracle's binary trace is decoded by `qc-trace`'s
 //! strict decoder, which also checks the oracle's C encoder: encoding the decoded trace must
 //! give back the same bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -36,6 +39,7 @@ enum Value {
     AnyNan,
     Entity(u32),
     Pointer(u32, u32),
+    EngineString,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,6 +70,7 @@ struct Vector {
     strings: Vec<Vec<u8>>,
     numglobals: Option<usize>,
     loading: bool,
+    engine_builtins: bool,
     entry: Option<i32>,
     functions: BTreeMap<usize, Function>,
     steps: Option<usize>,
@@ -204,6 +209,7 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                 vector.numglobals = Some(rest.parse().map_err(|_| at("bad numglobals"))?);
             }
             "server" if rest == "loading" => vector.loading = true,
+            "builtins" if rest == "engine" => vector.engine_builtins = true,
             "entry" => vector.entry = Some(rest.parse().map_err(|_| at("bad entry"))?),
             "steps" => vector.steps = Some(rest.parse().map_err(|_| at("bad steps"))?),
             "after" => {
@@ -288,6 +294,9 @@ fn parse_target(text: &str) -> Result<Target, String> {
 
 /// The forms of the README's "Values" table; `nan` is 0x7FC00000 as an initial value.
 fn parse_value(text: &str, initial: bool) -> Result<Value, String> {
+    if text == "es" && !initial {
+        return Ok(Value::EngineString);
+    }
     if text == "nan" {
         return Ok(if initial {
             Value::Bits(0x7fc0_0000)
@@ -431,6 +440,9 @@ fn init_text(vector: &Vector) -> String {
     if vector.loading {
         text.push_str("loading\n");
     }
+    if vector.engine_builtins {
+        text.push_str("builtins engine\n");
+    }
     text.push_str(&format!("entry {}\n", vector.entry.unwrap_or(1)));
     for (target, value) in &vector.initial {
         let place = match target {
@@ -440,6 +452,8 @@ fn init_text(vector: &Vector) -> String {
         let value = match value {
             Value::Bits(bits) => format!("bits {bits:08x}"),
             Value::AnyNan => "bits 7fc00000".to_owned(),
+            // Only an expected value (parse_value).
+            Value::EngineString => continue,
             Value::Entity(edict) => format!("entity {edict}"),
             Value::Pointer(edict, field) => format!("pointer {edict} {field}"),
         };
@@ -476,7 +490,18 @@ fn run(oracles: &Oracles, work: &Path, vector: &Vector) -> Result<(), String> {
     }
     check_header(&trace.header, &progs)?;
     let (lines, end) = trace_lines(&trace, vector)?;
-    compare(vector, &trace.header, &lines, &end)?;
+    let known = Known {
+        header: &trace.header,
+        engine_strings: trace
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                Record::String { value, .. } => Some(*value),
+                _ => None,
+            })
+            .collect(),
+    };
+    compare(vector, &known, &lines, &end)?;
     if let Some((depth, localstack)) = vector.after {
         let want = format!("depth={depth} localstack={localstack}");
         let got = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -700,12 +725,20 @@ fn abort_lines(
 
 // --- Comparing ---
 
-fn matches(header: &Header, value: Value, bits: u32) -> bool {
+/// What a trace says about its values: its edict layout and the engine strings it made.
+struct Known<'a> {
+    header: &'a Header,
+    engine_strings: BTreeSet<u32>,
+}
+
+fn matches(known: &Known<'_>, value: Value, bits: u32) -> bool {
+    let header = known.header;
     match value {
         Value::Bits(want) => bits == want,
         Value::AnyNan => f32::from_bits(bits).is_nan(),
         Value::Entity(edict) => header.entity_number(bits) == Some(edict),
         Value::Pointer(edict, field) => header.pointer_target(bits) == Some((edict, field)),
+        Value::EngineString => known.engine_strings.contains(&bits),
     }
 }
 
@@ -720,12 +753,12 @@ fn describe(line: &Line) -> String {
     text
 }
 
-fn compare_line(header: &Header, want: &ExpectLine, got: &Line) -> Result<(), String> {
+fn compare_line(known: &Known<'_>, want: &ExpectLine, got: &Line) -> Result<(), String> {
     let same_changes = want.changes.len() == got.changes.len()
         && want.changes.iter().all(|(target, value)| {
             got.changes
                 .get(target)
-                .is_some_and(|bits| matches(header, *value, *bits))
+                .is_some_and(|bits| matches(known, *value, *bits))
         });
     if want.statement == got.statement && want.opcode == got.opcode && same_changes {
         return Ok(());
@@ -739,7 +772,7 @@ fn compare_line(header: &Header, want: &ExpectLine, got: &Line) -> Result<(), St
     ))
 }
 
-fn compare(vector: &Vector, header: &Header, lines: &[Line], end: &End) -> Result<(), String> {
+fn compare(vector: &Vector, known: &Known<'_>, lines: &[Line], end: &End) -> Result<(), String> {
     if vector.partial {
         let steps = vector.steps.ok_or("a partial expectation without steps")?;
         if lines.len() != steps {
@@ -758,7 +791,7 @@ fn compare(vector: &Vector, header: &Header, lines: &[Line], end: &End) -> Resul
     }
     let skip = lines.len().saturating_sub(vector.lines.len());
     for (index, (want, got)) in vector.lines.iter().zip(lines.iter().skip(skip)).enumerate() {
-        compare_line(header, want, got).map_err(|e| {
+        compare_line(known, want, got).map_err(|e| {
             format!(
                 "statement {}: {e}",
                 index.saturating_add(skip).saturating_add(1)
@@ -793,6 +826,8 @@ mod tests {
             parse_value("p1.105", false).unwrap(),
             Value::Pointer(1, 105)
         );
+        assert_eq!(parse_value("es", false).unwrap(), Value::EngineString);
+        assert!(parse_value("es", true).is_err());
         assert!(parse_value("x", false).is_err());
     }
 
@@ -813,6 +848,7 @@ mod tests {
         let vectors = parse("t.txt", text).unwrap();
         let v = vectors.first().unwrap();
         assert!(!v.oracle);
+        assert!(!v.engine_builtins);
         assert_eq!(v.code.len(), 2);
         assert_eq!(v.initial.first().unwrap().0, Target::Global(100));
         assert_eq!(
@@ -822,5 +858,8 @@ mod tests {
         assert_eq!(v.end, Some(End::Error(None)));
         assert!(parse("t.txt", "loose\n").is_err());
         assert!(parse("t.txt", "== v\nwhat: 1\n").is_err());
+        let engine = parse("t.txt", "== v\nbuiltins: engine\n").unwrap();
+        assert!(engine.first().unwrap().engine_builtins);
+        assert!(parse("t.txt", "== v\nbuiltins: stubs\n").is_err());
     }
 }

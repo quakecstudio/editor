@@ -1,9 +1,11 @@
 # VM test vectors
 
-Small QuakeC programs for [`../../vm.md`](../../vm.md), written as statements, with the
-globals and entity fields every statement changes. They are hand-written, not compiler
-output, so each one isolates a single rule. `qc-vm` (P1-10) runs them as unit tests and the
-differential suite runs them against the id VM oracle (P1-11).
+Small QuakeC programs for [`../../vm.md`](../../vm.md), and for the argument checks of id's
+builtins in [`../../builtins.md`](../../builtins.md), written as statements, with the globals and
+entity fields every statement changes. They are hand-written, not compiler
+output, so each one isolates a single rule. `qc-vm` (P1-10) runs them as unit tests, with
+`qc-builtins` (P1-16) for those marked `builtins: engine`, and the differential suite runs them
+against the id VM oracle (P1-11).
 
 | File | Statements | Vectors |
 | --- | --- | --- |
@@ -12,6 +14,7 @@ differential suite runs them against the id VM oracle (P1-11).
 | [`bitwise.txt`](bitwise.txt) | VM-9 | 8 |
 | [`store.txt`](store.txt) | VM-10 to VM-12 | 27 |
 | [`flow.txt`](flow.txt) | VM-1 to VM-3, VM-13 to VM-19 | 56 |
+| [`builtins.txt`](builtins.txt) | EDICT-1.9, BUILTIN-2.4, BUILTIN-2.5, BUILTIN-2.7 to BUILTIN-2.10, BUILTIN-7.7, BUILTIN-8.3, BUILTIN-8.8 | 26 |
 
 Every vanilla opcode (PROGS-8.1) appears in at least one vector; `spec_vectors` in
 `crates/qs-tests` checks that and the format below on every `cargo test`.
@@ -23,7 +26,8 @@ Every vector runs in the same machine, so a vector only states what differs from
 - 128 global slots, all 0 (`numglobals:` changes the count). Slots 28 to 91 are id's system
   globals from `WinQuake/progdefs.q1`: `self` is slot 28 and `time` slot 31. Vectors keep
   their own data in slots 100 to 127.
-- Three edicts, all fields 0: `e0` (the world), `e1` and `e2`. Each has 110 field slots: the
+- Three edicts in use (`num_edicts` is 3), all fields 0: `e0` (the world), `e1` and `e2`; the
+  array has all `LIMIT_MAX_EDICTS` edicts (EDICT-1.4). Each has 110 field slots: the
   105 of id's `entvars_t` (`origin` is 10 to 12, `frame` 30, `think` 44, `nextthink` 46) and
   105 to 109 for the vector's own fields.
 - A string table holding only the empty string at offset 0, unless `strings:` says otherwise.
@@ -34,7 +38,9 @@ Every vector runs in the same machine, so a vector only states what differs from
 - 79 builtins, numbers 0 to 78 (`LIMIT_NUM_BUILTINS`). These are test stubs, not id's
   builtins: builtin 2 runs a nested `PR_ExecuteProgram` of the function whose index is in
   `OFS_PARM0`; every other number writes the argument count as a float to slot 1 and copies
-  slot 4 to slot 2.
+  slot 4 to slot 2. `builtins: engine` replaces them with id's builtins as the differential
+  mock has them (`differential.md` DIFF-6, DIFF-7), with no client slots, no settings, empty
+  precache lists and message buffers that never overflow.
 
 ## Format
 
@@ -48,6 +54,7 @@ fields: e<n>.<field>=<value> ...     optional, repeatable: initial entity fields
 strings: "<text>" ...                optional: strings after the empty one, \xNN escapes
 numglobals: <count>                  optional
 server: loading                      optional
+builtins: engine                     optional: id's builtins instead of the stubs
 entry: <function index>              optional
 functions:                           optional: one line per function index
   <n>: first=<s> parm_start=<p> locals=<l> parms=<size>,<size>,...
@@ -87,6 +94,7 @@ Values:
 | `0x3f800000` | That exact 32-bit pattern |
 | `i5` | The integer 5: a string offset, a field index or a function index |
 | `e1` | The entity value of edict 1 (PROGS-17.4); its number is engine-specific |
+| `es` | Any engine-made string (EDICT-13.1), as an expected value only; its number is engine-specific |
 | `p1.105` | A pointer to field 105 of edict 1 (VM-12.1); its number is engine-specific |
 
 ## How they were checked
@@ -112,3 +120,9 @@ Windows: each vector becomes a progs.dat written by `qc-progs`, the oracle trace
 trace's statements, changes, builtin numbers, ending and `after:` values must match. On
 2026-10-16 all 128 passed on macOS arm64 except the two VM-9.2 vectors, reported there as
 expected divergences (DIFF-10.1); the x86-64 runs must pass all 128.
+
+The 26 vectors of `builtins.txt` (`builtins: engine`) were added on 2026-10-16 for P1-31 and
+checked only through the VM oracle, which runs id's `PF_` functions from the same commit with
+the argument checks of BUILTIN-2.9: all 26 passed on macOS arm64. Where a builtin returns an
+engine-made string (`es`), the vector compares its text with one of its own strings by `EQ_S`
+(VM-7.1).

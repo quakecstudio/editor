@@ -3,9 +3,10 @@
 //
 // The builtin tables. The scenario table is id's pr_builtin (builtins.md BUILTIN-5) with id's
 // PF_ functions where they are compiled from the pinned source, and this file's own where
-// builtins.md fixes an answer id's C leaves undefined (BUILTIN-7.5, BUILTIN-7.6, BUILTIN-12.6,
-// BUILTIN-16.3), where the error message is differential.md's (DIFF-8.2), or where DIFF-7
-// mocks a world builtin. The vector table holds the stubs of docs/spec/vectors/vm/README.md.
+// builtins.md fixes an answer id's C leaves undefined or to the compiler (BUILTIN-2.10,
+// BUILTIN-7.5 to BUILTIN-7.7, BUILTIN-12.6, BUILTIN-16.3), where the error message is
+// differential.md's (DIFF-8.2), or where DIFF-7 mocks a world builtin. The vector table holds
+// the stubs of docs/spec/vectors/vm/README.md.
 
 #include "oracle.h"
 
@@ -54,7 +55,7 @@ static char *temp_buffer(void) {
     return string_temp;
 }
 
-// BUILTIN-7.6: a NaN or an infinity is printed the same way by every C library.
+// BUILTIN-7.6 and BUILTIN-7.7: a NaN or an infinity is printed the same way by every C library.
 static int format_float(char *out, size_t size, float v) {
     if (v != v)
         return snprintf(out, size, "  nan");
@@ -93,7 +94,7 @@ void PF_dprint(void) {
 
 // --- Errors and debugging (BUILTIN-16, DIFF-8.2) ---
 
-// BUILTIN-16.1: the message, then self is printed (read with BUILTIN-2.3's check), then a
+// BUILTIN-16.1: the message, then self is printed (read with BUILTIN-2.7's check), then a
 // host error whose record carries the joined text.
 void PF_error(void) {
     char *s = PF_VarString(0);
@@ -143,6 +144,20 @@ static void qs_lightstyle(void) {
     if (style < 0 || style >= MAX_LIGHTSTYLES)
         PR_RunError("invalid lightstyle");
     PF_lightstyle();
+}
+
+// --- Network messages (BUILTIN-13) ---
+
+// BUILTIN-2.10: the destination is read before the value, so of two failures the
+// destination's comes first; one C call with both as arguments would leave it to the compiler.
+void PF_WriteString(void) {
+    sizebuf_t *dest = WriteDest();
+    MSG_WriteString(dest, G_STRING(OFS_PARM1));
+}
+
+void PF_WriteEntity(void) {
+    sizebuf_t *dest = WriteDest();
+    MSG_WriteShort(dest, G_EDICTNUM(OFS_PARM1));
 }
 
 // --- World builtins (DIFF-7) ---

@@ -107,6 +107,5 @@ functions = [
   "PF_precache_model", "PF_lightstyle", "PF_rint", "PF_floor", "PF_ceil", "PF_checkbottom",
   "PF_pointcontents", "PF_nextent", "PF_changeyaw", "WriteDest", "PF_WriteByte",
   "PF_WriteChar", "PF_WriteShort", "PF_WriteLong", "PF_WriteAngle", "PF_WriteCoord",
-  "PF_WriteString", "PF_WriteEntity", "PF_makestatic", "PF_setspawnparms", "PF_changelevel",
-  "PF_Fixme",
+  "PF_makestatic", "PF_setspawnparms", "PF_changelevel", "PF_Fixme",
 ]
