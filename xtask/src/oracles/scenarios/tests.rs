@@ -41,8 +41,9 @@ fn unhex(value: &serde_json::Value) -> Option<Vec<u8>> {
 }
 
 /// `xtask/fixtures/oracles/scenario-outcomes.json`: what the VM oracle gave for each case
-/// (`record.py`), by name, with the repository's path put back in its messages.
-fn recorded_outcomes() -> BTreeMap<String, Outcome> {
+/// (`record.py`), by name, with the repository's path put back in its messages, and the
+/// digest of the inputs it was given.
+fn recorded_outcomes() -> BTreeMap<String, (String, Outcome)> {
     let root = super::super::testing::root();
     let path = root.join("xtask/fixtures/oracles/scenario-outcomes.json");
     let json: serde_json::Value =
@@ -63,9 +64,24 @@ fn recorded_outcomes() -> BTreeMap<String, Outcome> {
             trace: unhex(&entry["trace"]),
             again: unhex(&entry["again"]),
         };
-        outcomes.insert(name.clone(), outcome);
+        let inputs = entry["inputs"].as_str().unwrap().to_owned();
+        outcomes.insert(name.clone(), (inputs, outcome));
     }
     outcomes
+}
+
+/// What `record.py` digests: the case's progs.dat, then its scenario or init file.
+fn inputs_digest(case: &Case) -> String {
+    let mut bytes = match &case.progs {
+        Some(progs) => progs.clone(),
+        None => case.program.bytes().unwrap(),
+    };
+    match &case.input {
+        Input::Scenario { text, .. } | Input::Relative(text) => bytes.extend_from_slice(text),
+        Input::Vector { init } => bytes.extend_from_slice(init.as_bytes()),
+        Input::Args(_) => {}
+    }
+    super::super::sha256::hex_digest(&bytes)
 }
 
 #[test]
@@ -74,7 +90,13 @@ fn every_case_passes_on_what_the_oracle_gave() {
     let mut unrecorded = Vec::new();
     for case in cases::all() {
         match outcomes.remove(&case.name) {
-            Some(outcome) => {
+            Some((inputs, outcome)) => {
+                assert_eq!(
+                    inputs_digest(&case),
+                    inputs,
+                    "{}: the case changed since record.py ran",
+                    case.name
+                );
                 if let Err(problem) = verify(&case, &outcome) {
                     panic!("{}: {problem}", case.name);
                 }
@@ -218,6 +240,28 @@ fn a_program_has_noop_worldspawn_and_its_system_functions() {
     );
     p.truncate_globals(91);
     assert_eq!(p.initial(95), 0);
+}
+
+#[test]
+fn a_record_matches_only_when_every_part_matches() {
+    let program = Program::new();
+    let reader = Reader {
+        program: &program,
+        trace: None,
+    };
+    let matches = |record: &Record, want: Want| reader.matches(0, record, &want);
+    let s = step(4, 7, None, &[(2, 10, 5)]);
+    assert!(matches(&s, Want::StepIn(4, 7)));
+    assert!(!matches(&s, Want::StepIn(4, 8)));
+    assert!(!matches(&s, Want::StepIn(5, 7)));
+    assert!(matches(&s, Want::Field(2, 10, Val::Bits(5))));
+    assert!(!matches(&s, Want::Field(3, 10, Val::Bits(5))));
+    assert!(!matches(&s, Want::Field(2, 11, Val::Bits(5))));
+    assert!(!matches(&s, Want::Field(2, 10, Val::Bits(6))));
+    let r = run(4, &[(30, 9)]);
+    assert!(matches(&r, Want::Global(30, Val::Bits(9))));
+    assert!(!matches(&r, Want::Global(31, Val::Bits(9))));
+    assert!(!matches(&r, Want::Global(30, Val::Bits(8))));
 }
 
 #[test]

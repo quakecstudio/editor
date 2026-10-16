@@ -140,32 +140,12 @@ fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result
     let progs = fs::read(&progs_path).map_err(|e| format!("{}: {e}", progs_path.display()))?;
     let lno = fs::read(&lno_path).map_err(|e| format!("{}: {e}", lno_path.display()))?;
 
-    let mut problems = Vec::new();
     let loaded = Progs::read(&progs).map_err(|e| format!("{id}: qc-progs refuses it: {e:?}"))?;
-    let header = *loaded.header();
-    if header.version != PROGS_VERSION {
-        problems.push(format!("progs.dat is version {}, not 6", header.version));
-    }
-    problems.extend(extended_opcodes(&loaded));
-    problems.extend(lno_problems(&lno, &header));
-    let progs_got = progs_digest(&progs).unwrap_or_default();
-    if progs_got != codebase.progs {
-        problems.push(format!(
-            "progs.dat has sha256 {progs_got} (header text zeroed), expected {}",
-            codebase.progs
-        ));
-    }
-    let lno_got = sha256::hex_digest(&lno);
-    if lno_got != codebase.lno {
-        problems.push(format!(
-            "progs.lno has sha256 {lno_got}, expected {}",
-            codebase.lno
-        ));
-    }
+    let problems = problems(&loaded, &progs, &lno, (codebase.progs, codebase.lno));
     if problems.is_empty() {
         println!(
             "ok    {id}: {} statements, version 6, vanilla opcodes only, .lno matches{}",
-            header.numstatements,
+            loaded.header().numstatements,
             if cached { " (cached)" } else { "" }
         );
         return Ok(true);
@@ -174,6 +154,32 @@ fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result
         println!("FAIL  {id}: {problem}");
     }
     Ok(false)
+}
+
+/// What is wrong with FTEQCC's outputs: the progs `loaded` from `progs`, and `lno`, whose
+/// digests should be `want` ([`Codebase::progs`] and [`Codebase::lno`]).
+fn problems(loaded: &Progs, progs: &[u8], lno: &[u8], want: (&str, &str)) -> Vec<String> {
+    let (want_progs, want_lno) = want;
+    let mut problems = Vec::new();
+    let header = *loaded.header();
+    if header.version != PROGS_VERSION {
+        problems.push(format!("progs.dat is version {}, not 6", header.version));
+    }
+    problems.extend(extended_opcodes(loaded));
+    problems.extend(lno_problems(lno, &header));
+    let progs_got = progs_digest(progs).unwrap_or_default();
+    if progs_got != want_progs {
+        problems.push(format!(
+            "progs.dat has sha256 {progs_got} (header text zeroed), expected {want_progs}"
+        ));
+    }
+    let lno_got = sha256::hex_digest(lno);
+    if lno_got != want_lno {
+        problems.push(format!(
+            "progs.lno has sha256 {lno_got}, expected {want_lno}"
+        ));
+    }
+    problems
 }
 
 /// Copies the codebase to a scratch directory, compiles it there and copies the outputs to
@@ -336,7 +342,9 @@ mod tests {
     use qc_progs::{Header, Progs, ProgsFile, Statement, write};
 
     use super::super::testing::{fake_oracles, fresh_dir};
-    use super::{CODEBASES, build, check, compiles, extended_opcodes, lno_problems, progs_digest};
+    use super::{
+        CODEBASES, build, check, compiles, extended_opcodes, lno_problems, problems, progs_digest,
+    };
     use crate::exec::{Fake, Reply};
 
     /// A fake FTEQCC that writes `progs` and `lno` where `-o ../progs.dat` puts them.
@@ -507,6 +515,23 @@ mod tests {
         let other = with_lead(&progs(&[1, 3]), b"Compiled [2026/10/16]\0\0\0");
         assert_ne!(progs_digest(&a), progs_digest(&other));
         assert_eq!(progs_digest(b"not a progs"), None);
+    }
+
+    #[test]
+    fn outputs_with_the_recorded_digests_pass_and_each_difference_is_named() {
+        let bytes = progs(&[0, 1, 2]);
+        let loaded = Progs::read(&bytes).unwrap();
+        let good_lno = lno(loaded.header());
+        let progs_sha = progs_digest(&bytes).unwrap();
+        let lno_sha = super::sha256::hex_digest(&good_lno);
+        let found = |want: (&str, &str)| problems(&loaded, &bytes, &good_lno, want);
+        assert_eq!(found((&progs_sha, &lno_sha)), Vec::<String>::new());
+        let wrong = found(("00", &lno_sha));
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].starts_with("progs.dat has sha256"), "{wrong:?}");
+        let wrong = found((&progs_sha, "00"));
+        assert_eq!(wrong.len(), 1, "{wrong:?}");
+        assert!(wrong[0].starts_with("progs.lno has sha256"), "{wrong:?}");
     }
 
     #[test]

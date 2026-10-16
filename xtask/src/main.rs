@@ -155,8 +155,8 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
     match command {
         "adr" => Some(adr::check),
         "conventions" => Some(conventions::check),
-        "clippy-fixtures" => Some(fixtures::clippy),
-        "deny-fixtures" => Some(fixtures::deny),
+        "clippy-fixtures" => Some(|root| fixtures::clippy(root, &exec::System)),
+        "deny-fixtures" => Some(|root| fixtures::deny(root, &exec::System)),
         "layers" => Some(layers::check),
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),

@@ -103,6 +103,18 @@ fn host_triple() -> Result<&'static str, String> {
     Ok(triple)
 }
 
+/// Refuses `instrument` unless the compiler at `path` is clang (`is_clang`): coverage and
+/// fuzzing use clang's instrumentation.
+fn needs_clang(instrument: Instrument, is_clang: bool, path: &Path) -> Result<(), String> {
+    if instrument != Instrument::None && !is_clang {
+        return Err(format!(
+            "C coverage and fuzzing need clang, and the C compiler is {} (set CC=clang)",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
 impl<'a> Compiler<'a> {
     /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents). Coverage
     /// and fuzzing need clang (for fuzzing, one with libFuzzer).
@@ -123,12 +135,7 @@ impl<'a> Compiler<'a> {
             .emit_rerun_if_env_changed(false)
             .try_get_compiler()
             .map_err(|e| format!("no C compiler found: {e}"))?;
-        if instrument != Instrument::None && !tool.is_like_clang() {
-            return Err(format!(
-                "C coverage and fuzzing need clang, and the C compiler is {} (set CC=clang)",
-                tool.path().display()
-            ));
-        }
+        needs_clang(instrument, tool.is_like_clang(), tool.path())?;
         Ok(Self {
             path: tool.path().to_path_buf(),
             env: tool
@@ -303,6 +310,19 @@ mod tests {
             includes,
             defines: &["QS_ENGINE"],
             forced_include: forced,
+        }
+    }
+
+    #[test]
+    fn only_an_instrumented_build_needs_clang() {
+        let path = Path::new("/usr/bin/gcc");
+        assert!(needs_clang(Instrument::None, false, path).is_ok());
+        assert!(needs_clang(Instrument::None, true, path).is_ok());
+        assert!(needs_clang(Instrument::Coverage, true, path).is_ok());
+        assert!(needs_clang(Instrument::Fuzz, true, path).is_ok());
+        for instrument in [Instrument::Coverage, Instrument::Fuzz] {
+            let error = needs_clang(instrument, false, path).unwrap_err();
+            assert!(error.contains("/usr/bin/gcc (set CC=clang)"), "{error}");
         }
     }
 

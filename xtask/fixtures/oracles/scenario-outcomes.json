@@ -1,6 +1,7 @@
 {
  "bad-client-movetype": {
   "again": null,
+  "inputs": "5d82545e6eb65c2d2d0de2e9c317a845586773104dd783d50b1486dd53c6f971",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -8,6 +9,7 @@
  },
  "bad-command-line": {
   "again": null,
+  "inputs": "3fbc16da7ee678ee133e5ab62ab6b77f22f76791fe7e8537084d18a8f00bdb72",
   "status": 2,
   "stderr": "usage: vm-oracle [--console] scenario <scenario> <trace>\n       vm-oracle [--console] vector <progs.dat> <init> <trace>\n",
   "stdout": "",
@@ -15,6 +17,7 @@
  },
  "bad-movetype": {
   "again": null,
+  "inputs": "29daa36d91625087a08a2ca920a1add29de867afcf726f1ced9f5df76f09d833",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -22,6 +25,7 @@
  },
  "bad-movetype-7-5": {
   "again": null,
+  "inputs": "21172244e309f0d5c6aaf1d5d86c5c119126797433239e3da79fa8a625455f70",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -29,6 +33,7 @@
  },
  "binary-form": {
   "again": null,
+  "inputs": "0196fc022de3bc4a790b3bfdccfd9d12cd2d83ac8d50908c1970ec327e713d37",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -36,6 +41,7 @@
  },
  "break": {
   "again": null,
+  "inputs": "3d8cf7e28eadea134d0061ac55248faf1cbc45a09897e62fdefb74986011b4b4",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -43,6 +49,7 @@
  },
  "builtin-table": {
   "again": null,
+  "inputs": "c71b58d57b17d04b57104798e61f93f85ae58f57d1596beafa6af454b01a5185",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -50,6 +57,7 @@
  },
  "change-sets": {
   "again": null,
+  "inputs": "9b1e4fe20706b1d7ad98b776cb7da0c33d0cc9a93d1968ea115af72a783538e4",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -57,6 +65,7 @@
  },
  "checkbottom-and-aim": {
   "again": null,
+  "inputs": "8540a6f2a9ae2beca475731c477e92aa2108df43488b88f23b1f5a700d0f5072",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -64,6 +73,7 @@
  },
  "checkclient": {
   "again": null,
+  "inputs": "bc7d7eb9e89b5b0fcfb5d1b3f0940f7679d2722e09f1d78d851704f65a29f502",
   "status": 0,
   "stderr": "",
   "stdout": "depth=0 localstack=0\ndatagram=\n",
@@ -71,6 +81,7 @@
  },
  "client-enters": {
   "again": null,
+  "inputs": "e261f3624afe7a5b1ab573b43321d53d920e74dd3df1ad5630a18b59530f56d2",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -78,6 +89,7 @@
  },
  "client-freed": {
   "again": null,
+  "inputs": "894960b776c49b1ef8611c74e372082ba08a53f99bba2688381dc9938052882e",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -85,6 +97,7 @@
  },
  "client-movetype-0": {
   "again": null,
+  "inputs": "a385c4cb0781976ce214281a1f8f76e7fb04d79117951662861b70e298b5f9aa",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -92,6 +105,7 @@
  },
  "client-movetype-6": {
   "again": null,
+  "inputs": "57346151a1fdff1c4e9d8a4ded0295773868cb1995bfcef081eee24bf502fe7e",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -99,6 +113,7 @@
  },
  "client-movetype-8": {
   "again": null,
+  "inputs": "29f9712b8808b0db17a6518ed9d5c1c4052ad378c945a6924e27dbf0053a4d23",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -106,6 +121,7 @@
  },
  "client-turn": {
   "again": null,
+  "inputs": "6530e1ae7c9da8f49a20bc429358a3fab446e9f40bad4b34c197e5b17f70ebe5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -113,6 +129,7 @@
  },
  "clients-17": {
   "again": null,
+  "inputs": "db892e04af28893a275cc4869ca93f906db80fd408fc75c12f60203e41c3d0e1",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/clients-17/case.scn:2: clients takes an integer from 0 to maxclients\n",
   "stdout": "",
@@ -120,6 +137,7 @@
  },
  "clients-above-maxclients": {
   "again": null,
+  "inputs": "efb401dbd5fa5a4cacd79761bea6c5b8250fa0e0a9da3b83177a5a848b10554d",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/clients-above-maxclients/case.scn: clients is more than maxclients\n",
   "stdout": "",
@@ -127,6 +145,7 @@
  },
  "clients-none": {
   "again": null,
+  "inputs": "510fed08325d20802036637a4bd8141a1f3f553651dc404ecf14c148a5d62fe2",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/clients-none/case.scn:2: clients takes an integer from 0 to maxclients\n",
   "stdout": "",
@@ -134,6 +153,7 @@
  },
  "clock-after-100-frames": {
   "again": null,
+  "inputs": "46262231bcafac82fdcc836685659e1f374e15e673a53584d4c942e113e49a38",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -141,6 +161,7 @@
  },
  "closing-brace-without-data": {
   "again": null,
+  "inputs": "3276f1bbc17760c974c4ffe915ce4a361dbac83e85142e5e60ce3126554bf676",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -148,6 +169,7 @@
  },
  "command-buffer-full": {
   "again": null,
+  "inputs": "09b1458f61353abe610ce62c02df2f5528d59160e02b4811fcee24806fd07d23",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -155,6 +177,7 @@
  },
  "commands-never-run": {
   "again": null,
+  "inputs": "20b7853d198b2526f2da70937e0457f3363c21f89e2cf0a2ccfa2e42e04b2b87",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -162,6 +185,7 @@
  },
  "console-copied": {
   "again": null,
+  "inputs": "3fcef3175a810a13e6adccf48886b6840772ea7b178f097b20fe5fd999400a06",
   "status": 0,
   "stderr": "======SERVER ERROR in worldspawn:\nshown\n",
   "stdout": "",
@@ -169,6 +193,7 @@
  },
  "crash": {
   "again": null,
+  "inputs": "4b04893a016e6fda45b62c781824bbfcfc4335235e541a9ad6f567f1d8d4ced0",
   "status": 4,
   "stderr": "vm-oracle: crashed with signal 11 (id's code hit undefined behaviour)\n",
   "stdout": "",
@@ -176,6 +201,7 @@
  },
  "cvar-one-argument": {
   "again": null,
+  "inputs": "2a7189236a03be3a15cd818cf7d2a190159872624e2d14ba92b90bacb759c769",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/cvar-one-argument/case.scn:2: cvar takes a name and a text\n",
   "stdout": "",
@@ -183,6 +209,7 @@
  },
  "cvar-three": {
   "again": null,
+  "inputs": "0a794b0f794f8c8d7050ed1e5d691fef6fdb539df92d078f7c41a0fe8e336d11",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/cvar-three/case.scn:2: cvar takes a name and a text\n",
   "stdout": "",
@@ -190,6 +217,7 @@
  },
  "deathmatch-global": {
   "again": null,
+  "inputs": "7483f680906594e5b90cceec20140e8898ba5410b58683ae193e5327e7f0745d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -197,6 +225,7 @@
  },
  "default-clients-and-seed": {
   "again": null,
+  "inputs": "80978e2c26a49013233b0390ae1fc9827ac675d30f9050df11bfcb7b1bb55b39",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -204,6 +233,7 @@
  },
  "default-entities": {
   "again": null,
+  "inputs": "a7049f0edfee762958b2c57b00bd9f95b09c176661513b6b6b84b0407143b48d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -211,6 +241,7 @@
  },
  "default-settings": {
   "again": null,
+  "inputs": "c5885c0d2c2d6296f3bf4a1d75e471b6caf1a45099b448bcbd1dee272b767816",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -218,6 +249,7 @@
  },
  "defaults": {
   "again": null,
+  "inputs": "0421dda14f28c4b0b106ac5384e83a5373c2ffb7b7339f750d178b1132e40e5d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -225,6 +257,7 @@
  },
  "depth-kept": {
   "again": null,
+  "inputs": "88d8527340e8502b395162517893cef617fe7e7cb3744a3dc1b291df3978ea8e",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -232,6 +265,7 @@
  },
  "depth-reset": {
   "again": null,
+  "inputs": "70d473f90af42a766045deac3a08dc16057d431f8bcbfd7fc289c820394fb63d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -239,6 +273,7 @@
  },
  "deterministic": {
   "again": "51435452010000000b6f0000240200006c0000006e00000034000000058c0705000d6d6170732f746573742e627370059c070500047465737405a40705000a776f726c64737061776e0104021f0000803f229c0705000500000000803f00080000e040000900008040001ca4070500001d8c07050002040400000000030000010800000208063301070101bf615f3f000208081f000165bf615f3f0002080a0000010100000000000300000108011fcdcc8c3f0002080633010701018ce9453e000208081f0001658ce9453e0002080a0000010100000000000300000108021f9a99993f20cdcccc3d0002080633010701015f492f3f000208081f0001655f492f3f0002080a0000010100000000000300000108011f6666a63f0002080633010701018cd1453f000208081f0001658cd1453f0002080a0000010100000000000300000108011f3333b33f0002080633010701016825b43e000208081f0001656825b43e0002080a0000010100000000000300000108011f0000c03f0002080633010701018355c13e000208081f0001658355c13e0002080a0000010100000000000300000108011fcdcccc3f0002080633010701011199083f000208081f0001651199083f0002080a000001010000000000030000",
+  "inputs": "66fff2dbec434f65902de5fcc6c04a266191111749a8c9465108062a8950c5b5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -246,6 +281,7 @@
  },
  "droptofloor": {
   "again": null,
+  "inputs": "df972ec7f067790391cd0c560e0a671a737c8ce65b4acc4bd23855bf413f2266",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -253,6 +289,7 @@
  },
  "ends-normally": {
   "again": null,
+  "inputs": "d995c70251b80311d77963875797e3fb56b39d131c330c3a13e0e839916d08ce",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -260,6 +297,7 @@
  },
  "engine-state": {
   "again": null,
+  "inputs": "d4da8cef5c43974f641e210f093ca35953781eed4e346f052eb0d158b1cd2922",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -267,6 +305,7 @@
  },
  "entities-file": {
   "again": null,
+  "inputs": "ab705290121a57874d1ce2a9a228c521ee969f08250045be350b87873275b4c1",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -274,6 +313,7 @@
  },
  "entities-no-path": {
   "again": null,
+  "inputs": "6f3556cd18161523cdb879b8ea86bdeb783f2046736dc30d0557f2de67e7c5b8",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/entities-no-path/case.scn:2: entities takes a path\n",
   "stdout": "",
@@ -281,6 +321,7 @@
  },
  "entities-two-paths": {
   "again": null,
+  "inputs": "961cef6258aa8755eb269cb797c8773b49b55c87e8b08eabfae144121745dba6",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/entities-two-paths/case.scn:2: entities takes a path\n",
   "stdout": "",
@@ -288,6 +329,7 @@
  },
  "entity-and-field-keys": {
   "again": null,
+  "inputs": "019d69f7093153a8f9563e38ca72a0670130ac0c731e1b07edf7962602564c01",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -295,6 +337,7 @@
  },
  "error-during-shutdown": {
   "again": null,
+  "inputs": "ab4460a753a51dea7d167ae79c1f78471a70aa85040fda7773e58b1c7f960d7c",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -302,6 +345,7 @@
  },
  "error-text": {
   "again": null,
+  "inputs": "1aac979e51073f261c0cc8a057000b5ee41b8a11d5cb188a9c2e318c370605a4",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -309,6 +353,7 @@
  },
  "error-while-loading": {
   "again": null,
+  "inputs": "0560b2598172394428ff0c0e746f84e184d8bc8692f7cbc739df039348922649",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -316,6 +361,7 @@
  },
  "extra-argument": {
   "again": null,
+  "inputs": "73bd5e0155ace2bcf48ed1666092fb0a10f834dd60c2460abbd68dcde706c252",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/extra-argument/case.scn:2: frames takes an integer from 0 to 1000000\n",
   "stdout": "",
@@ -323,6 +369,7 @@
  },
  "fixed-answers": {
   "again": null,
+  "inputs": "5d62df8a29667e06835181d6ffb10e4a2372962338cb900002b823d6ddb8ef7c",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -330,6 +377,7 @@
  },
  "force-retouch": {
   "again": null,
+  "inputs": "9422ea3fbfec9f49a315e63c4dbbafef87d7b2456c9d10f5457c8b3433a56460",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -337,6 +385,7 @@
  },
  "frames-too-many": {
   "again": null,
+  "inputs": "6046d0a2831a01143849d865a48141b3a41c7b6cdcc0ce184be378cc85089862",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/frames-too-many/case.scn:2: frames takes an integer from 0 to 1000000\n",
   "stdout": "",
@@ -344,6 +393,7 @@
  },
  "frametime-above-one": {
   "again": null,
+  "inputs": "6a41f1b2b75e1f5f9b39ac54e613a90a60f6da0306475f9b903e683a861869b0",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/frametime-above-one/case.scn:2: frametime is greater than 0 and at most 1\n",
   "stdout": "",
@@ -351,6 +401,7 @@
  },
  "frametime-text": {
   "again": null,
+  "inputs": "e1cbd33e2f9824124599bd34c7b9a6ff36489f75b69325d0c0bf5ee8062223fc",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/frametime-text/case.scn:2: frametime takes a number\n",
   "stdout": "",
@@ -358,6 +409,7 @@
  },
  "frametime-two": {
   "again": null,
+  "inputs": "4dccbc105f17721a0564340e2869d388958fce18dc4d13edf9d4a6c94ca61989",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/frametime-two/case.scn:2: frametime takes a number\n",
   "stdout": "",
@@ -365,6 +417,7 @@
  },
  "frametime-zero": {
   "again": null,
+  "inputs": "d4db80bd1dd1df663f3f2f78f02c477dbbbe0cb9e23eeb1433506bb353df6604",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/frametime-zero/case.scn:2: frametime is greater than 0 and at most 1\n",
   "stdout": "",
@@ -372,6 +425,7 @@
  },
  "free-edicts-skipped": {
   "again": null,
+  "inputs": "24cd58d8371f326e25279a7e03de9230d3b5127cd88d66435241777d6123a6e5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -379,6 +433,7 @@
  },
  "header": {
   "again": null,
+  "inputs": "bd3407e372aac0bf2229d96f9937b4870843066d7f933f38f2e097f07fe14458",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -386,6 +441,7 @@
  },
  "input-after-last-frame": {
   "again": null,
+  "inputs": "67d3da7c135c3f3625c8bed3891c6a2258549ca3b4fda7c19245a7e5e419db97",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-after-last-frame/case.scn: an input's frame is after the last frame\n",
   "stdout": "",
@@ -393,6 +449,7 @@
  },
  "input-button-two": {
   "again": null,
+  "inputs": "4c99b6cee5b1cba79a942abb968bc97839ecf806f53652b9e326ee97e524e723",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-button-two/case.scn:3: a button takes 0 or 1\n",
   "stdout": "",
@@ -400,6 +457,7 @@
  },
  "input-button-two-values": {
   "again": null,
+  "inputs": "caeb0d4ca32d4ea04b21f9fabdba05172d4fbb42b7552884bfb234078b987bdd",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-button-two-values/case.scn:3: a button takes 0 or 1\n",
   "stdout": "",
@@ -407,6 +465,7 @@
  },
  "input-edict-no-client": {
   "again": null,
+  "inputs": "81d3c2700c63645e41f4849713d9bdeb17bb56ada4eda681e0d670cf02833af5",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-edict-no-client/case.scn: an input's edict is not a client that enters\n",
   "stdout": "",
@@ -414,6 +473,7 @@
  },
  "input-edict-zero": {
   "again": null,
+  "inputs": "6f3d65148ab5178ccf3e12668d11ce268b97314fa23a5e5f3c629b0ce73097dd",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-edict-zero/case.scn:3: input takes an edict from 1 to clients\n",
   "stdout": "",
@@ -421,6 +481,7 @@
  },
  "input-field": {
   "again": null,
+  "inputs": "c43103df053f00afb3e83d17876122836021838de67de986f54156870803e5da",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-field/case.scn:3: input field is button0, button2, impulse or v_angle\n",
   "stdout": "",
@@ -428,6 +489,7 @@
  },
  "input-frame-text": {
   "again": null,
+  "inputs": "ea1a4c7324ca5d51012fbda23387ef0c6e11f5cdef94de4a2a5c1e3c1dcd9475",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-frame-text/case.scn:3: input takes a frame, an edict, a field and values\n",
   "stdout": "",
@@ -435,6 +497,7 @@
  },
  "input-frame-zero": {
   "again": null,
+  "inputs": "5d504c72656f134ecf538ec389915377e23fa2d84ed3408b348743aad1ece83c",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-frame-zero/case.scn:3: input takes a frame, an edict, a field and values\n",
   "stdout": "",
@@ -442,6 +505,7 @@
  },
  "input-impulse-256": {
   "again": null,
+  "inputs": "e0fcc4d143ce4b229b2e5b6decc6c98b877b880e4c868e818450bc615c56ea31",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-impulse-256/case.scn:3: impulse takes an integer from 1 to 255\n",
   "stdout": "",
@@ -449,6 +513,7 @@
  },
  "input-impulse-two-values": {
   "again": null,
+  "inputs": "d585ac7bbe58d6eebc91caea67447a36261da021545e065397b7d46dda953b5c",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-impulse-two-values/case.scn:3: impulse takes an integer from 1 to 255\n",
   "stdout": "",
@@ -456,6 +521,7 @@
  },
  "input-impulse-zero": {
   "again": null,
+  "inputs": "34c9d2f1dba42b418a498a4b552f47c619d5184e0e4d02bdd1760af2f7dbc19f",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-impulse-zero/case.scn:3: impulse takes an integer from 1 to 255\n",
   "stdout": "",
@@ -463,6 +529,7 @@
  },
  "input-lines": {
   "again": null,
+  "inputs": "4d7f2bd3cf12879fcaec40071ba5cefd61cd791ddbd86ea204e031cdf0bae58c",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -470,6 +537,7 @@
  },
  "input-short": {
   "again": null,
+  "inputs": "af4a69e4b8aa3344499688ec3bbf9386079af5e429d40da6169672ed1eb72bda",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-short/case.scn:3: input takes a frame, an edict, a field and values\n",
   "stdout": "",
@@ -477,6 +545,7 @@
  },
  "input-v-angle-text": {
   "again": null,
+  "inputs": "00a3ca9fa2eefe8abf1246c42c00e8963fcab2e83ac65f79a06ee90f1eb86924",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-v-angle-text/case.scn:3: v_angle takes three numbers\n",
   "stdout": "",
@@ -484,6 +553,7 @@
  },
  "input-v-angle-two": {
   "again": null,
+  "inputs": "d647cffa40a2ee956c0b31e5b31701a31b4d87becc3fa6577a863c1d6ffe3466",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/input-v-angle-two/case.scn:3: v_angle takes three numbers\n",
   "stdout": "",
@@ -491,6 +561,7 @@
  },
  "invalid-entity": {
   "again": null,
+  "inputs": "0928c8d617a9542911ab6f9d0bfb754b31857cd3242b848026cb168ead43c5f3",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -498,6 +569,7 @@
  },
  "invalid-field": {
   "again": null,
+  "inputs": "78556747250adac332765a5b0cbd322d52e9f5c56808a394eca9f6d4601010bc",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -505,6 +577,7 @@
  },
  "invalid-string": {
   "again": null,
+  "inputs": "f8e94e78cb03e251173299223a5a8afff1c2eac903c6f51ea1846873d777b857",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -512,6 +585,7 @@
  },
  "last-line-without-a-line-feed": {
   "again": null,
+  "inputs": "e6f5b1daa99cb9ee3bd9c706cb42737e80aead3831c1b745e0844b637a988153",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -519,6 +593,7 @@
  },
  "linking": {
   "again": null,
+  "inputs": "77dbae093ac49484dd9f9dc20066178250e0bdb52e67226f6532b2996592b3f0",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -526,6 +601,7 @@
  },
  "locals-restored": {
   "again": null,
+  "inputs": "fc033f185608ee5a00ea7af85b2026a5e01934be51d92a24143c07ecca8289cf",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -533,6 +609,7 @@
  },
  "long-joined-text": {
   "again": null,
+  "inputs": "aa390181180dc900ef67927818f651747906eb81f4a8dac43047963748d5799d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -540,6 +617,7 @@
  },
  "map-name": {
   "again": null,
+  "inputs": "a7ab35fd91ced1f36bdd5b6d668fc0fed60ddc990813b2a27422338c8f6d81e4",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/map-name/case.scn:2: map takes a name of 1 to 63 bytes from a-z, 0-9, _\n",
   "stdout": "",
@@ -547,6 +625,7 @@
  },
  "map-name-too-long": {
   "again": null,
+  "inputs": "ed37fc01a66e3fc9bd86494f40c617782c11ea0abaf9c559503096d73b47b1d7",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/map-name-too-long/case.scn:2: map takes a name of 1 to 63 bytes from a-z, 0-9, _\n",
   "stdout": "",
@@ -554,6 +633,7 @@
  },
  "map-two-names": {
   "again": null,
+  "inputs": "3999c71d195f08883b82d4dcb63a11101698cb4363ff670d38c9fcb87b8cc638",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/map-two-names/case.scn:2: map takes a name of 1 to 63 bytes from a-z, 0-9, _\n",
   "stdout": "",
@@ -561,6 +641,7 @@
  },
  "maxclients-17": {
   "again": null,
+  "inputs": "7fae90d1dd6d1024411e6744b92305d6a34fd58731e532639b933457e6d8ec17",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/maxclients-17/case.scn:2: maxclients takes an integer from 1 to 16\n",
   "stdout": "",
@@ -568,6 +649,7 @@
  },
  "maxclients-two": {
   "again": null,
+  "inputs": "e4baaaba6a82b2b62ea1d0d2ab38d11cde8040ae6edb89d936519dc675156dc3",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/maxclients-two/case.scn:2: maxclients takes an integer from 1 to 16\n",
   "stdout": "",
@@ -575,6 +657,7 @@
  },
  "maxclients-zero": {
   "again": null,
+  "inputs": "61bf3773f29f8334972fd8deb36fdc80fc1e032214c94eb2f7b3c7cc54d7634e",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/maxclients-zero/case.scn:2: maxclients takes an integer from 1 to 16\n",
   "stdout": "",
@@ -582,6 +665,7 @@
  },
  "message-to-non-client": {
   "again": null,
+  "inputs": "6051fe476d26acfead7c7be9b38448d788a91a3580dbbe12cb4b1921967f59c9",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -589,6 +673,7 @@
  },
  "missing-argument": {
   "again": null,
+  "inputs": "106ace31949bc8cd1f892ab3baee46cc9f4af203de4817c7affd50ba81957afd",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/missing-argument/case.scn:2: frames takes an integer from 0 to 1000000\n",
   "stdout": "",
@@ -596,6 +681,7 @@
  },
  "missing-entities": {
   "again": null,
+  "inputs": "0e2483a707619c78410807505d28cc8dd2af0a39d89a7a05f14adfb17b6e41df",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/missing-entities/nowhere.ent: cannot read the entities\n",
   "stdout": "",
@@ -603,6 +689,7 @@
  },
  "model-bounds": {
   "again": null,
+  "inputs": "778b335328ace95b050c81bdca3a3b4d70c2cc6dce6f17c9791ed82a98efb0e3",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -610,6 +697,7 @@
  },
  "model-five-numbers": {
   "again": null,
+  "inputs": "139958001afb2d164d782e1e249001a1be72ad9770d2bce10c770de40d1e3849",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/model-five-numbers/case.scn:2: model takes a name and six numbers\n",
   "stdout": "",
@@ -617,6 +705,7 @@
  },
  "model-infinite": {
   "again": null,
+  "inputs": "0d5c0f9ce79e159b1538ea0a17052c7da8d243b5d7819543829636128bc8f9cb",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/model-infinite/case.scn:2: model takes a name and six numbers\n",
   "stdout": "",
@@ -624,6 +713,7 @@
  },
  "model-not-a-number": {
   "again": null,
+  "inputs": "8c727dbc9a420f063c3ce983586bd631588f5c91f7d6facf2d23141e4b1aa23a",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/model-not-a-number/case.scn:2: model takes a name and six numbers\n",
   "stdout": "",
@@ -631,6 +721,7 @@
  },
  "model-repeated": {
   "again": null,
+  "inputs": "6f73e383252fbb653a1f4021ae1b19d81ba48d9ea40d5b87cb58c0ca720318f5",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/model-repeated/case.scn:3: a model name is repeated\n",
   "stdout": "",
@@ -638,6 +729,7 @@
  },
  "movetogoal": {
   "again": null,
+  "inputs": "765420750a788bfc13676a128921115eb3094da915f0a602195824cac7e34c26",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -645,6 +737,7 @@
  },
  "movetogoal-turned-away": {
   "again": null,
+  "inputs": "53a8d9be718848654688ec14ed05b17462adc005672fa2a1065cb8883ff9b6d4",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -652,6 +745,7 @@
  },
  "movetogoal-without-flags": {
   "again": null,
+  "inputs": "adecd53d82cd4cf9c020a8867a02e4b7f0661af71e94e6229936deb98a040563",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -659,6 +753,7 @@
  },
  "movetypes-that-think": {
   "again": null,
+  "inputs": "9cc3799f56bfbde2a7cdb0d4dc4790f8420446eeccecb948ba69da2e877d34e3",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -666,6 +761,7 @@
  },
  "muzzle-flash-cleared": {
   "again": null,
+  "inputs": "98ac2562fa210e7ecb728301d2e0746ee2d372231368212454d85ecba5f61115",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -673,6 +769,7 @@
  },
  "negative-frames": {
   "again": null,
+  "inputs": "bd60593759010b9ee9949ce9b2d0497b285b7203332435bee2b7574ad54c36ac",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/negative-frames/case.scn:2: frames takes an integer from 0 to 1000000\n",
   "stdout": "",
@@ -680,6 +777,7 @@
  },
  "nested-runs": {
   "again": null,
+  "inputs": "473ae8ee0a72fe4cbf810f048516d77b32bafad9c1235b2885f280881e9873dc",
   "status": 0,
   "stderr": "",
   "stdout": "depth=0 localstack=0\ndatagram=\n",
@@ -687,6 +785,7 @@
  },
  "new-edicts": {
   "again": null,
+  "inputs": "c720640d15ee2152909e07707f85ec88c479186cf108a9ac1f77b2a4ab5e216f",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -694,6 +793,7 @@
  },
  "no-progs": {
   "again": null,
+  "inputs": "dacd70fe230cf8cb1f8d64a20fb3962f5a20bfc86a94a833dd9bbcba148ac8fe",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/no-progs/case.scn: no progs\n",
   "stdout": "",
@@ -701,6 +801,7 @@
  },
  "no-record-after-an-error": {
   "again": null,
+  "inputs": "9e4f3a8b30bc01c8eb919fea03ac2c8ac5e7e6ba4847de8df27d93b72dd308cf",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -708,6 +809,7 @@
  },
  "not-an-entity": {
   "again": null,
+  "inputs": "3276f1bbc17760c974c4ffe915ce4a361dbac83e85142e5e60ce3126554bf676",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -715,6 +817,7 @@
  },
  "not-an-integer": {
   "again": null,
+  "inputs": "1c176eed55a92e74cc1434d73b7e41ea82705b9eb901d2cc2be959b749e618c5",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/not-an-integer/case.scn:2: frames takes an integer from 0 to 1000000\n",
   "stdout": "",
@@ -722,6 +825,7 @@
  },
  "nothing-moves": {
   "again": null,
+  "inputs": "33b0f8fbbaa5d23f9888db76533949fcf61625f5042ff39ca11a9ef69d511f16",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -729,6 +833,7 @@
  },
  "null-function": {
   "again": null,
+  "inputs": "2c629ef221472f5f8cbf82160947fe0fc4e8c3af21dc39673932ea6283171159",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -736,6 +841,7 @@
  },
  "objerror": {
   "again": null,
+  "inputs": "823e03973a04650574c43ea00f6074c0f11644c0755c27adf7010a94a871d9e2",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -743,6 +849,7 @@
  },
  "pointcontents": {
   "again": null,
+  "inputs": "190cd57f01d79dffe796587e71b1bf3abfd102e5890c4ccb07c76d72fcb066d1",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -750,6 +857,7 @@
  },
  "precache-lists": {
   "again": null,
+  "inputs": "96a8d9aa135f9ec5f5eab4600142d245d72b2299381751bd8c20b796ace48b16",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -757,6 +865,7 @@
  },
  "printing-builtins": {
   "again": null,
+  "inputs": "7efe6ea8b21c564d9da473178b0c5c13aa20effbd85f2b6518820524cbc48fe3",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -764,6 +873,7 @@
  },
  "progs-104-fields": {
   "again": null,
+  "inputs": "0925be99b6a0357fafa5446620afa64ad0ef0cf3222b7570917f2a845a48ef4a",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-104-fields/progs.dat: the progs has fewer than 105 field slots\n",
   "stdout": "",
@@ -771,6 +881,7 @@
  },
  "progs-91-globals": {
   "again": null,
+  "inputs": "6981f5c92d78c8d599758390904ab68ab43871afc9def7803fbce0c8a68af624",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-91-globals/progs.dat: the progs has fewer than 92 global slots\n",
   "stdout": "",
@@ -778,6 +889,7 @@
  },
  "progs-crc": {
   "again": null,
+  "inputs": "ca6c8b88a8e3717f4716970c3a2e39c2dd902d366654a065efd7e302847ec666",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-crc/progs.dat: progs.dat system vars have been modified, progdefs.h is out of date\n",
   "stdout": "",
@@ -785,6 +897,7 @@
  },
  "progs-extra": {
   "again": null,
+  "inputs": "febc5403ff3dfea8b3ad4b10c5beb75bb3157d9b9c799d73b038abc808fea535",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-extra/case.scn:1: progs takes a path\n",
   "stdout": "",
@@ -792,6 +905,7 @@
  },
  "progs-fielddefs-misaligned": {
   "again": null,
+  "inputs": "ff1d283b778e8cf1f4d7634648d606c9ea2811e03be0494c778236ff0830a992",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-fielddefs-misaligned/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -799,6 +913,7 @@
  },
  "progs-fielddefs-outside": {
   "again": null,
+  "inputs": "9e444e454254baed59174b6b5d470ed196ebdf0e84d6b8f5ca2065a99375710a",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-fielddefs-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -806,6 +921,7 @@
  },
  "progs-functions-misaligned": {
   "again": null,
+  "inputs": "4977869905d96e3558eb52539ef4cc7c4595f80c5960a9d2ae0b9666ba303f46",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-functions-misaligned/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -813,6 +929,7 @@
  },
  "progs-functions-outside": {
   "again": null,
+  "inputs": "4ce745a60bb50292ad2bddef2838466f7304db4b47fc5bb2e1d3bbf77cea43c3",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-functions-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -820,6 +937,7 @@
  },
  "progs-globaldefs-misaligned": {
   "again": null,
+  "inputs": "be6e883b1c3f3c1e821d75364be06c7a33c3dcc3c4aabb2793b677899286ccb1",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-globaldefs-misaligned/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -827,6 +945,7 @@
  },
  "progs-globaldefs-outside": {
   "again": null,
+  "inputs": "4090d6319b62dd714845ee1322b5c1bceec109a8da25b3993014e1af05b822a0",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-globaldefs-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -834,6 +953,7 @@
  },
  "progs-globals-misaligned": {
   "again": null,
+  "inputs": "91abf746b31b5ffccf0beab194de2cab90dd8bcd2309d4fb1ec5c77637c2df24",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-globals-misaligned/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -841,6 +961,7 @@
  },
  "progs-globals-outside": {
   "again": null,
+  "inputs": "cdb748c4ebb1e9f9eb41303bb56834cfe9f3161cdb76c9d8b2b6b246b71b4484",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-globals-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -848,6 +969,7 @@
  },
  "progs-missing": {
   "again": null,
+  "inputs": "67f55e6d5fee31f16b4bc53d7dc13fe591e55f883d4dd68f2c69a4d1c8ad6380",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-missing/nowhere.dat: cannot open the progs\n",
   "stdout": "",
@@ -855,6 +977,7 @@
  },
  "progs-negative-entityfields": {
   "again": null,
+  "inputs": "57d2ab7c2d97cee9839615d2b1a486fd8997a12a4ce9b37b2b18a79b5d981fd0",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-negative-entityfields/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -862,6 +985,7 @@
  },
  "progs-no-strings": {
   "again": null,
+  "inputs": "e4b096e4581d7c041bee1c5c339c0c449a69d797b9106551cd89a43afbf8ef75",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-no-strings/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -869,6 +993,7 @@
  },
  "progs-short": {
   "again": null,
+  "inputs": "c0fc50018d2552277489af618c377327486c5be22d45ffe90760988472c9d98c",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-short/progs.dat: the progs is too short or too large\n",
   "stdout": "",
@@ -876,6 +1001,7 @@
  },
  "progs-statements-before-the-file": {
   "again": null,
+  "inputs": "63aee19b6a23475e247baee7c55b8656fb94718dc4d0e7f0fa11435eb0c46a50",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-statements-before-the-file/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -883,6 +1009,7 @@
  },
  "progs-statements-misaligned": {
   "again": null,
+  "inputs": "278330f4e50bbbc8bd1d951e98c76aa813fe6beb4398711fecb71f7d6de3004d",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-statements-misaligned/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -890,6 +1017,7 @@
  },
  "progs-strings-outside": {
   "again": null,
+  "inputs": "32096340719859e763d48bc6aede0517335e6b0d74629a70ffb21f2bef7aac84",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-strings-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -897,6 +1025,7 @@
  },
  "progs-table-outside": {
   "again": null,
+  "inputs": "c2cdf143986ae6f3fe1023a9e48768c8e70928fbc6daa63b322816ba54e64eec",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-table-outside/progs.dat: a table of the progs lies outside the file\n",
   "stdout": "",
@@ -904,6 +1033,7 @@
  },
  "progs-too-many-fields": {
   "again": null,
+  "inputs": "ef3ba9748513853dc90978ab6882f450928c35c561de36ce7ab40178ce67038a",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-too-many-fields/progs.dat: the progs has more than 894760 field slots\n",
   "stdout": "",
@@ -911,6 +1041,7 @@
  },
  "progs-version": {
   "again": null,
+  "inputs": "274064280a45c479e29c42c967f9a061aaaa46bc48f1a616073b2407f2fcc467",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/progs-version/progs.dat: progs.dat has wrong version number\n",
   "stdout": "",
@@ -918,6 +1049,7 @@
  },
  "pure-builtins": {
   "again": null,
+  "inputs": "e38d194e24794c28e40afb5f4495168bdba91801b5598855e8ce42d36cc14003",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -925,6 +1057,7 @@
  },
  "pusher": {
   "again": null,
+  "inputs": "1a45fb218dd8f50398dfb5249cb494925b51416243b30d8c14cb0db2c27d9ea5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -932,6 +1065,7 @@
  },
  "random-numbers": {
   "again": null,
+  "inputs": "234626f8738d82607034b7069b8e1b6432706ca879521a47d7a24d96d465312f",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -939,6 +1073,7 @@
  },
  "records-of-calls": {
   "again": null,
+  "inputs": "8531e3f57b888b0f78a621cfe7c112a2c52df38328e8b8d431a3317fbd33f8ae",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -946,6 +1081,7 @@
  },
  "relative-scenario-path": {
   "again": null,
+  "inputs": "a2f139910ddb774a4d470a8221f3fe66320cae57ff2016e9404a34dd9e58dec5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -953,6 +1089,7 @@
  },
  "repeated-key": {
   "again": null,
+  "inputs": "8a6dde89d10730db0951b81ad08534dc21a537952c88e50ae6045c79297c25d8",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/repeated-key/case.scn:3: a key that may appear once is repeated\n",
   "stdout": "",
@@ -960,6 +1097,7 @@
  },
  "runtime-error": {
   "again": null,
+  "inputs": "6d62f0196be85707cccb2cd83bc5b9d1eb452965bc76251249e2133042fed688",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -967,6 +1105,7 @@
  },
  "scenario-lines": {
   "again": null,
+  "inputs": "5d4e3ef19adfe381379ed5f02df9d2253fcdd78afd9bab921fee4579ece7de0d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -974,6 +1113,7 @@
  },
  "seed-negative": {
   "again": null,
+  "inputs": "89bbadec7eae6d39b58627d2844805709f1b40d93d138814679e0352ce97b46f",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/seed-negative/case.scn:2: seed takes an integer from 0 to 4294967295\n",
   "stdout": "",
@@ -981,6 +1121,7 @@
  },
  "seed-two": {
   "again": null,
+  "inputs": "7253f436fdf7b008c438ae3b6b817024905d1e94df294067b7e52a4e92516f4d",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/seed-two/case.scn:2: seed takes an integer from 0 to 4294967295\n",
   "stdout": "",
@@ -988,6 +1129,7 @@
  },
  "settings": {
   "again": null,
+  "inputs": "0d7995740ecc2f282a6a612d240b5467422ef0a43afc23638eedb606b355bffe",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -995,6 +1137,7 @@
  },
  "settle-frames": {
   "again": null,
+  "inputs": "cd1404abb79de3d6dbd1ba087f47c8215da0d15c4df4a9e58ac63343f28a646d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1002,6 +1145,7 @@
  },
  "shutdown": {
   "again": null,
+  "inputs": "50b5ee5117feca193730877a185cb3e9c245c15b2640244f09a1f30c35a66ac0",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1009,6 +1153,7 @@
  },
  "skill-above-3": {
   "again": null,
+  "inputs": "ed2a2d6a55e6929a5d40aed06e4cc5a90e30d4f5d9892e05b734673218cc8d8d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1016,6 +1161,7 @@
  },
  "skill-below-0": {
   "again": null,
+  "inputs": "e3863e0e430baaf8272e18a362462bb97dccad69a3cb3312af9c4c20a43c117b",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1023,6 +1169,7 @@
  },
  "skill-rounded": {
   "again": null,
+  "inputs": "fd013d75804f3252a3b77262d8e564f08db466463a458d2cbd9e3f339b120d04",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1030,6 +1177,7 @@
  },
  "slots-without-players": {
   "again": null,
+  "inputs": "b65b4ebd80d740bd884b5c3f7f8e1fa1551c46fa1c2e85d85fe88435604de5d1",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1037,6 +1185,7 @@
  },
  "spawn-inhibited": {
   "again": null,
+  "inputs": "b7974e978921d19ec2fdbb13d374ca89c7da2239c5776855de018c8f921546b7",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1044,6 +1193,7 @@
  },
  "string-records": {
   "again": null,
+  "inputs": "d09dec53ce3feefbf23e2ef13c50c993d0bbeded42970e3cfef4dceb860d5066",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1051,6 +1201,7 @@
  },
  "strings-of-floats": {
   "again": null,
+  "inputs": "205ad0a03c95a23d2a59eaf2572f76e184382916f588fd3c52d0a9817e3ec56b",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1058,6 +1209,7 @@
  },
  "submodels-255": {
   "again": null,
+  "inputs": "8db97706ce8d8e0655046df1259b952d94875932cfadfc23623722155d1057e1",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/submodels-255/case.scn:2: submodels takes an integer from 0 to 254\n",
   "stdout": "",
@@ -1065,6 +1217,7 @@
  },
  "submodels-two": {
   "again": null,
+  "inputs": "cc6042e6be1bb983c2c7ccfbbade0b96c398cadf02d758405222e884f73691fb",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/submodels-two/case.scn:2: submodels takes an integer from 0 to 254\n",
   "stdout": "",
@@ -1072,6 +1225,7 @@
  },
  "thinking": {
   "again": null,
+  "inputs": "4b7ead8cc4bf7ebcdf42d576845d6fec4f57ee5b2f23549eda811206868eef88",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1079,6 +1233,7 @@
  },
  "too-many-words": {
   "again": null,
+  "inputs": "ae29da0dc9e913670657381683bcffcb4b57c9b1c95f2a9be097204f51990cdc",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/too-many-words/case.scn:2: too many arguments\n",
   "stdout": "",
@@ -1086,6 +1241,7 @@
  },
  "tossed-client-freed": {
   "again": null,
+  "inputs": "41bf829822f7a508c59893d20b2e97ddac4f7c61b299b0d3a3255c4564c85790",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1093,6 +1249,7 @@
  },
  "trace-flag": {
   "again": null,
+  "inputs": "2ba078aa50c505d4ff7e32740913d9d79c86dd3478ec9fabe726eff0378f6e80",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1100,6 +1257,7 @@
  },
  "traceline": {
   "again": null,
+  "inputs": "2165c29146ee3d17822c42d0b2f49f478c62a996c7f5cf7abd534fee139223e5",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1107,6 +1265,7 @@
  },
  "two-clients-enter": {
   "again": null,
+  "inputs": "c1dec0b186851a672526ef412fcb9af58ebcd581665e4a7ff7e2be4a46261893",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1114,6 +1273,7 @@
  },
  "unimplemented-builtin": {
   "again": null,
+  "inputs": "d6a63d8e5d54de41f1927de50d528fc803e62318b80747435cde572bc353de9d",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1121,6 +1281,7 @@
  },
  "unknown-field-key": {
   "again": null,
+  "inputs": "b4d974b21e7de5dd20593ac2d559130286bce51e27271bed606b51780b32b495",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1128,6 +1289,7 @@
  },
  "unknown-function-key": {
   "again": null,
+  "inputs": "5f3927574cd3727f63628e0fb336a931dde1aa98a9cc27fdb718dabfc42fd7ca",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1135,6 +1297,7 @@
  },
  "unknown-key": {
   "again": null,
+  "inputs": "62ee71c2d38cb969b3a5da2ddd1ffc6da02b54fe9d72f91720c7d8f7a21c267d",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/unknown-key/case.scn:2: unknown key\n",
   "stdout": "",
@@ -1142,6 +1305,7 @@
  },
  "unused-edicts": {
   "again": null,
+  "inputs": "72b095c5dfd18fbad65814126326b73f01f9f01a09fb4eea9665a84c7ec4fb8f",
   "status": 0,
   "stderr": "",
   "stdout": "depth=0 localstack=0\ndatagram=\n",
@@ -1149,6 +1313,7 @@
  },
  "unwritable-trace": {
   "again": null,
+  "inputs": "e7e833c5653d31613e7eecb52a3ad59889d89a987c4061e8f33ff44f271a010f",
   "status": 3,
   "stderr": "vm-oracle: cannot write <root>/target/oracles/work/scenarios/unwritable-trace/missing/trace.bin\n",
   "stdout": "",
@@ -1156,6 +1321,7 @@
  },
  "unwritable-vector-trace": {
   "again": null,
+  "inputs": "69245a0525c4c475c8347a624a4336e415b1bd5557bd143ce153becc7c5a5015",
   "status": 3,
   "stderr": "vm-oracle: cannot write <root>/target/oracles/work/scenarios/unwritable-vector-trace/missing/trace.bin\n",
   "stdout": "",
@@ -1163,6 +1329,7 @@
  },
  "vector-bad-field-value": {
   "again": null,
+  "inputs": "3e2ff5e55090a838dec77d80f59b6a1a4f70964562e22c8142b92a0f4eefff9a",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-bad-field-value/init.txt:2: bad value\n",
   "stdout": "",
@@ -1170,6 +1337,7 @@
  },
  "vector-entity-past-int": {
   "again": null,
+  "inputs": "80eb6c77b93b614781b61b497404a0158a0d9f8cff415fbb1e6f50b8d26304f4",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-entity-past-int/init.txt:2: bad value\n",
   "stdout": "",
@@ -1177,6 +1345,7 @@
  },
  "vector-init-missing": {
   "again": null,
+  "inputs": "3fbc16da7ee678ee133e5ab62ab6b77f22f76791fe7e8537084d18a8f00bdb72",
   "status": 2,
   "stderr": "vm-oracle: cannot open vector-init-missing/nowhere.txt\n",
   "stdout": "",
@@ -1184,6 +1353,7 @@
  },
  "vector-key": {
   "again": null,
+  "inputs": "eaf6bcbe0867bd24f4e5634b62a38b17c08bbefc2660f4d4e919052c2501cf6e",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1191,6 +1361,7 @@
  },
  "vector-long-line": {
   "again": null,
+  "inputs": "6974ae24b3302e8b0368e0c4de7f9c1920df72fd976358db4da86688057a090c",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-long-line/init.txt:2: line too long or more than eight words\n",
   "stdout": "",
@@ -1198,6 +1369,7 @@
  },
  "vector-pointer-past-int": {
   "again": null,
+  "inputs": "b8d10e17d300ee1a16b702199479157a8064dda110dd703ac586206ee03f40d8",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-pointer-past-int/init.txt:2: bad value\n",
   "stdout": "",
@@ -1205,6 +1377,7 @@
  },
  "vector-progs-refused": {
   "again": null,
+  "inputs": "25d6a694f5e9ff208dbb46442aad01fb73f5c0584816dcb04af6168b58ed5fcd",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-progs-refused/progs.dat: the progs is too short or too large\n",
   "stdout": "",
@@ -1212,6 +1385,7 @@
  },
  "vector-progs-too-many-fields": {
   "again": null,
+  "inputs": "80ff4d5467c8939366fafebfd5e0dbbc0ab592c3b44b19f6ed0ee2a60bd11ea8",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-progs-too-many-fields/progs.dat: the progs has more than 894760 field slots\n",
   "stdout": "",
@@ -1219,6 +1393,7 @@
  },
  "vector-unknown-line": {
   "again": null,
+  "inputs": "d025a5875fe0b11af6b65d5637cc6ead1d4610119a0aa72d22455ed09cb816c9",
   "status": 2,
   "stderr": "vm-oracle: <root>/target/oracles/work/scenarios/vector-unknown-line/init.txt:2: unknown line\n",
   "stdout": "",
@@ -1226,6 +1401,7 @@
  },
  "vector-upper-case-hex": {
   "again": null,
+  "inputs": "aa53dfaf5b6ecb1722548965f3d77a2df7cc74a26777da69ed5bef8093f2e3ef",
   "status": 0,
   "stderr": "",
   "stdout": "depth=0 localstack=0\ndatagram=\n",
@@ -1233,6 +1409,7 @@
  },
  "walkmove": {
   "again": null,
+  "inputs": "a0a0e59b3c2a61dd2a8849d37fcaf29edd0b95b26d1c528586c54bcff66571d9",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1240,6 +1417,7 @@
  },
  "walkmove-without-flags": {
   "again": null,
+  "inputs": "ab54b6762710ce1b5bf5d0d8d1f18823a2ee69bd1af85acec4fd89d6afd8d49b",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1247,6 +1425,7 @@
  },
  "whole-scenario": {
   "again": null,
+  "inputs": "c51ef13bf4977981ee3f771508e59d791e65df7848f23b26bcb259a0b1b01a26",
   "status": 0,
   "stderr": "",
   "stdout": "",
@@ -1254,6 +1433,7 @@
  },
  "world-fields": {
   "again": null,
+  "inputs": "fade19447930b6f386a70e17f6ccda8310ed03212396992a682eda47e4dd72da",
   "status": 0,
   "stderr": "",
   "stdout": "",

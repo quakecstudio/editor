@@ -12,6 +12,7 @@ It writes vector-traces.json and scenario-outcomes.json beside itself.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 
@@ -51,6 +52,19 @@ def hex_or_none(data: list | None) -> str | None:
     return None if data is None else bytes(data).hex()
 
 
+def inputs_digest(case: pathlib.Path) -> str:
+    """SHA-256 of the case's progs.dat, then its scenario or init file if it has one.
+
+    The replay test computes the same from the case, so a case changed since the recording
+    fails until it is recorded again.
+    """
+    digest = hashlib.sha256((case / "progs.dat").read_bytes())
+    for name in ("case.scn", "init.txt"):
+        if (case / name).is_file():
+            digest.update((case / name).read_bytes())
+    return digest.hexdigest()
+
+
 def scenarios() -> None:
     """Writes one entry per scenario test: its exit status, output and traces in hex.
 
@@ -63,6 +77,7 @@ def scenarios() -> None:
         if size > MAX_SCENARIO_TRACE:
             continue
         recorded[path.parent.name] = {
+            "inputs": inputs_digest(path.parent),
             "status": outcome["status"],
             "stdout": outcome["stdout"].replace(str(ROOT), "<root>"),
             "stderr": outcome["stderr"].replace(str(ROOT), "<root>"),

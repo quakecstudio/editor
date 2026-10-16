@@ -16,18 +16,14 @@ use std::process::{Command, Output};
 use toml::{Table, Value};
 
 use crate::Report;
-use crate::exec::{Exec, System};
+use crate::exec::Exec;
 
 const CLIPPY_FIXTURES: &str = "xtask/fixtures/clippy";
 const EXPECT_PREFIX: &str = "// expect: ";
 const CLIPPY_LINT_ANCHOR: &str = "index.html#";
 
-pub(crate) fn clippy(root: &Path) -> Result<Report, String> {
-    clippy_with(root, &System)
-}
-
-/// [`clippy`] with the programs `exec` runs.
-fn clippy_with(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
+/// `cargo xtask clippy-fixtures`, with the programs `exec` runs.
+pub(crate) fn clippy(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
     let cargo = read_toml(&root.join("Cargo.toml"))?;
     let work = fresh_dir(root, "clippy-fixtures")?;
 
@@ -131,12 +127,8 @@ const DENY_CASES: [DenyCase; 4] = [
     },
 ];
 
-pub(crate) fn deny(root: &Path) -> Result<Report, String> {
-    deny_with(root, &System)
-}
-
-/// [`deny`] with the programs `exec` runs.
-fn deny_with(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
+/// `cargo xtask deny-fixtures`, with the programs `exec` runs.
+pub(crate) fn deny(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
     let work = fresh_dir(root, "deny-fixtures")?;
     let config = fs::read_to_string(root.join("deny.toml"))
         .map_err(|error| format!("deny.toml: {error}"))?;
@@ -378,7 +370,7 @@ mod tests {
     #[test]
     fn the_clippy_fixtures_pass_only_when_each_fires_its_lint_alone() {
         let fake = Fake::new(clippy_that_agrees);
-        let report = clippy_with(&root(), &fake).unwrap();
+        let report = clippy(&root(), &fake).unwrap();
         assert_eq!(report.problems, Vec::<String>::new());
         assert_eq!(report.passed.len(), fake.seen.borrow().len());
         let work = root().join("target/xtask/clippy-fixtures");
@@ -390,14 +382,14 @@ mod tests {
         );
 
         let silent = Fake::new(|_: &Command| Reply::exit(0));
-        let report = clippy_with(&root(), &silent).unwrap();
+        let report = clippy(&root(), &silent).unwrap();
         assert!(!report.problems.is_empty());
         let two = Fake::new(|_: &Command| Reply {
             code: 101,
             stderr: format!("{CLIPPY_LINT_ANCHOR}unwrap_used {CLIPPY_LINT_ANCHOR}panic"),
             ..Reply::default()
         });
-        let report = clippy_with(&root(), &two).unwrap();
+        let report = clippy(&root(), &two).unwrap();
         assert_eq!(
             report.passed.len(),
             0,
@@ -408,7 +400,7 @@ mod tests {
             cannot_run: true,
             ..Reply::default()
         });
-        assert!(clippy_with(&root(), &cannot).is_err());
+        assert!(clippy(&root(), &cannot).is_err());
     }
 
     /// cargo deny as `deny.toml` makes it: each case reports its error code.
@@ -429,7 +421,7 @@ mod tests {
     #[test]
     fn the_deny_cases_pass_when_each_reports_its_error() {
         let fake = Fake::new(deny_that_agrees);
-        let report = deny_with(&root(), &fake).unwrap();
+        let report = deny(&root(), &fake).unwrap();
         assert_eq!(report.problems, Vec::<String>::new());
         assert_eq!(report.passed.len(), DENY_CASES.len());
         let wildcard = root().join("target/xtask/deny-fixtures/wildcard/fx/Cargo.toml");
@@ -439,13 +431,13 @@ mod tests {
                 .contains("itoa = \"*\"")
         );
         let passes = Fake::new(|_: &Command| Reply::exit(0));
-        let report = deny_with(&root(), &passes).unwrap();
+        let report = deny(&root(), &passes).unwrap();
         assert_eq!(
             report.passed,
             ["control (GPL-3.0-or-later) passes cargo deny check licenses bans sources"]
         );
         let refuses = Fake::new(|_: &Command| Reply::exit(1));
-        let report = deny_with(&root(), &refuses).unwrap();
+        let report = deny(&root(), &refuses).unwrap();
         assert!(report.passed.is_empty(), "{:?}", report.passed);
     }
 

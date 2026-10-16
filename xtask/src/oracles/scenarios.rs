@@ -306,9 +306,7 @@ impl Program {
     /// Makes the progs at least `slots` globals long, and its next new slot at least `slots`.
     pub(super) fn reserve_globals(&mut self, slots: u32) {
         let size = usize::try_from(slots).unwrap_or(usize::MAX);
-        if self.globals.len() < size {
-            self.globals.resize(size, 0);
-        }
+        self.globals.resize(self.globals.len().max(size), 0);
         self.next_slot = self.next_slot.max(slots);
     }
 
