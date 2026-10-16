@@ -16,6 +16,14 @@ Fails (exit 1) if:
   - a LATER issue is not linked from docs/scope.md as [KEY](https://github.com/quakecstudio/editor/issues/N)
   - docs/risks.md and the design doc's risk table differ in risk, impact or mitigation, or a
     register row lacks an area:* owner, a linked issue or a known status
+  - an issue template in .github/ISSUE_TEMPLATE/ (feature, spec, decision, spike, bug) is
+    missing, lacks a required deliverable, acceptance, verification or requirements field, or
+    does not carry exactly one known type:* label; or .github/pull_request_template.md does not
+    list every definition-of-done item from _meta.yaml, or does not ask whether requirements.yaml
+    was reviewed against a changed design doc
+  - docs/design/design-doc.md changed since requirements.yaml was last reviewed against it: its
+    SHA-256 (line endings normalised to LF) differs from design_doc_sha256 in requirements.yaml
+  - plan/coverage.md is out of date (run with --write-coverage to refresh it)
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -25,6 +33,7 @@ Usage: python3 plan/check.py [--write-coverage]
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -32,9 +41,16 @@ from pathlib import Path
 import yaml
 
 PLAN = Path(__file__).resolve().parent
+REQUIREMENTS = PLAN / "requirements.yaml"
+COVERAGE = PLAN / "coverage.md"
 SCOPE = PLAN.parent / "docs" / "scope.md"
 RISKS = PLAN.parent / "docs" / "risks.md"
 DESIGN_DOC = PLAN.parent / "docs" / "design" / "design-doc.md"
+ISSUE_TEMPLATES = PLAN.parent / ".github" / "ISSUE_TEMPLATE"
+PR_TEMPLATE = PLAN.parent / ".github" / "pull_request_template.md"
+TEMPLATE_NAMES = ("feature", "spec", "decision", "spike", "bug")
+TEMPLATE_FIELDS = ("deliverable", "acceptance", "verification", "requirements")
+DESIGN_HASH_KEY = "design_doc_sha256"
 RISK_STATUSES = {"Open", "Mitigating", "Mitigated", "Retired"}
 ISSUE_URL = r"https://github\.com/quakecstudio/editor/issues/\d+"
 ADR_FILE = re.compile(r"docs/adr/(?!0000-)(\d{4}|00NN)-[a-z0-9-]+\.md")
@@ -42,7 +58,7 @@ PHASE_ORDER = ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "LATER"]
 
 
 def load_requirements() -> dict[str, dict]:
-    data = yaml.safe_load((PLAN / "requirements.yaml").read_text())
+    data = yaml.safe_load(REQUIREMENTS.read_text())
     reqs: dict[str, dict] = {}
     for section in data["sections"]:
         for r in section["requirements"]:
@@ -273,6 +289,72 @@ def check_risks(meta: dict, risks: Path = RISKS, design: Path = DESIGN_DOC) -> l
     return errors
 
 
+def check_templates(meta: dict, templates: Path = ISSUE_TEMPLATES, pr: Path = PR_TEMPLATE) -> list[str]:
+    """The issue forms ask for what every issue needs, and the PR template carries the
+    definition of done (PM-5, CONV-13)."""
+    errors: list[str] = []
+    labels = {l["name"] for group in meta["labels"].values() for l in group}
+    for name in TEMPLATE_NAMES:
+        path = templates / f"{name}.yml"
+        if not path.is_file():
+            errors.append(f"{path.name}: issue template missing")
+            continue
+        form = yaml.safe_load(path.read_text()) or {}
+        types = [l for l in form.get("labels", []) if l.startswith("type:")]
+        if len(types) != 1 or types[0] not in labels:
+            errors.append(f"{path.name}: needs exactly one known type:* label, has {types}")
+        fields = {f.get("id"): f for f in form.get("body", []) if isinstance(f, dict)}
+        for field in TEMPLATE_FIELDS:
+            spec = fields.get(field)
+            if spec is None:
+                errors.append(f"{path.name}: no {field} field")
+            elif not (spec.get("validations") or {}).get("required"):
+                errors.append(f"{path.name}: the {field} field is not required")
+    if not pr.is_file():
+        errors.append(f"{pr.name}: pull request template missing")
+    else:
+        text = pr.read_text()
+        for item in meta["definition_of_done"]:
+            if f"- [ ] {item}\n" not in text:
+                errors.append(f"{pr.name}: definition-of-done item missing: {item}")
+        if DESIGN_HASH_KEY not in text:
+            errors.append(f"{pr.name}: does not ask whether requirements.yaml was reviewed "
+                          f"against a changed design doc ({DESIGN_HASH_KEY})")
+    return errors
+
+
+def design_doc_sha256(design: Path = DESIGN_DOC) -> str:
+    """SHA-256 of the design doc with CRLF line endings normalised, so a Windows checkout agrees."""
+    return hashlib.sha256(design.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def check_design_hash(requirements: Path = REQUIREMENTS, design: Path = DESIGN_DOC) -> list[str]:
+    """requirements.yaml was reviewed against the current design doc (PM-6).
+
+    requirements.yaml records the design doc's hash, so a change to the design doc fails the check
+    until someone reviews the requirements against it and records the new hash in the same PR.
+    """
+    if not design.is_file():
+        return [f"{design}: missing; it is the source of the requirements"]
+    recorded = (yaml.safe_load(requirements.read_text()) or {}).get(DESIGN_HASH_KEY)
+    actual = design_doc_sha256(design)
+    if recorded == actual:
+        return []
+    if recorded is None:
+        problem = f"{requirements.name} records no {DESIGN_HASH_KEY}"
+    else:
+        problem = f"{design.name} changed since {requirements.name} was last reviewed against it"
+    return [f"{problem}; review the requirements against the design doc, then set "
+            f"{DESIGN_HASH_KEY}: {actual}"]
+
+
+def check_coverage(expected: str, coverage: Path = COVERAGE) -> list[str]:
+    """plan/coverage.md matches the plan; it is generated, so a stale copy misleads readers."""
+    if coverage.is_file() and coverage.read_text() == expected:
+        return []
+    return [f"{coverage.name}: out of date; run python3 plan/check.py --write-coverage"]
+
+
 def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
     by_req: dict[str, list[str]] = {r: [] for r in reqs}
     for i in issues:
@@ -295,9 +377,11 @@ def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
 def main() -> int:
     reqs = load_requirements()
     meta, issues = load_backlog()
-    errors = check(reqs, meta, issues) + check_scope(issues) + check_risks(meta)
+    coverage = coverage_md(reqs, meta, issues)
     if "--write-coverage" in sys.argv:
-        (PLAN / "coverage.md").write_text(coverage_md(reqs, meta, issues))
+        COVERAGE.write_text(coverage)
+    errors = (check(reqs, meta, issues) + check_scope(issues) + check_risks(meta)
+              + check_templates(meta) + check_design_hash() + check_coverage(coverage))
     if errors:
         print(f"{len(errors)} problem(s):")
         for e in errors:

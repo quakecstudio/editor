@@ -51,8 +51,8 @@ docs-build: ## Build the API docs with warnings denied, and the mdBook once docs
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --workspace --no-deps --all-features
 	@if [ -f docs/book.toml ]; then mdbook build docs; fi
 
-bench: ## Run the benchmarks
-	$(CARGO) bench --locked --workspace
+bench: ## Run the performance-budget benchmarks and record them in the history (docs/perf-budgets.md)
+	$(CARGO) xtask bench
 
 ci: ## Run exactly what CI runs (cargo xtask ci)
 	$(CARGO) xtask ci

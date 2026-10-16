@@ -54,6 +54,7 @@ labels:
     - {name: "type:chore", color: "ededed", description: "Repo and process setup"}
     - {name: "type:gate", color: "b60205", description: "Phase gate review"}
     - {name: "type:readiness", color: "d4c5f9", description: "Layer test-suite readiness review (docs/testing.md)"}
+    - {name: "type:bug", color: "d73a4a", description: "A defect in merged work; fixed with a regression test"}
   size:
   - {name: "size:S", color: "c2e0c6", description: "Up to 2 days"}
   - {name: "size:M", color: "fef2c0", description: "Up to 1 week"}

@@ -6,6 +6,11 @@
 # kind: stated  = written in the design doc
 #       implied = needed to deliver a stated requirement but not written down;
 #                 listed so it is decided, not silently assumed
+#
+# design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
+# requirements were last reviewed against. plan/check.py fails when the design doc changes until
+# the requirements are reviewed and the new hash, which the failure prints, is recorded here.
+design_doc_sha256: 4e1a0e0610a00ad7cd45e4da66bc613a0643734ee03a67280ee0027d9504a89e
 
 sections:
   - id: GOAL
