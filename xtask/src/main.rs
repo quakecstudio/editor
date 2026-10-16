@@ -19,6 +19,13 @@
 //! - `bench`: runs the performance-budget benchmarks, checks them against
 //!   `docs/perf-budgets.md` and the last run, and records them in the JSON
 //!   history; `bench history` prints the history.
+//! - `readiness`: measures one readiness check (coverage, mutation score, spec
+//!   citations or flakes) for a list of crates and writes the numbers as JSON.
+//! - `ratchet`: judges those numbers against the bar in ADR-0009 and the
+//!   minimums in `ratchets.toml`, and checks how `ratchets.toml` has changed.
+//!
+//! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
+//! `ci` (ADR-0009).
 
 #![expect(
     clippy::print_stdout,
@@ -36,29 +43,40 @@ mod fixtures;
 mod layers;
 mod licenses;
 mod ported;
+mod ratchet;
+mod readiness;
 mod repo;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
-                     deny-fixtures | layers | licenses | attribution | contrast | bench>";
+                     deny-fixtures | layers | licenses | attribution | contrast | bench | \
+                     readiness | ratchet>";
+
+/// A command that takes arguments and says itself whether it passed.
+type Command = fn(&Path, &[String]) -> Result<bool, String>;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let root = workspace_root();
-    if let Some(("bench", rest)) = args
-        .split_first()
-        .map(|(command, rest)| (command.as_str(), rest))
-    {
-        return match bench::main(&root, rest) {
-            Ok(true) => ExitCode::SUCCESS,
-            Ok(false) => ExitCode::FAILURE,
-            Err(error) => {
-                eprintln!("bench: {error}");
-                ExitCode::FAILURE
-            }
+    if let Some((name, rest)) = args.split_first() {
+        let command: Option<Command> = match name.as_str() {
+            "bench" => Some(bench::main),
+            "readiness" => Some(readiness::main),
+            "ratchet" => Some(ratchet::main),
+            _ => None,
         };
+        if let Some(command) = command {
+            return match command(&root, rest) {
+                Ok(true) => ExitCode::SUCCESS,
+                Ok(false) => ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("{name}: {error}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
     }
     let [command] = args.as_slice() else {
         eprintln!("{USAGE}");

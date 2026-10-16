@@ -638,7 +638,7 @@ fn cpuinfo_model(cpuinfo: &str) -> Option<String> {
         .map(|(_, value)| value.to_owned())
 }
 
-fn commit(root: &Path) -> Option<String> {
+pub(crate) fn commit(root: &Path) -> Option<String> {
     let root = root.to_str()?;
     command_output("git", &["-C", root, "rev-parse", "HEAD"]).map(|sha| sha.trim().to_owned())
 }
@@ -651,7 +651,7 @@ fn command_output(program: &str, args: &[&str]) -> Option<String> {
     String::from_utf8(output.stdout).ok()
 }
 
-fn unix_time() -> u64 {
+pub(crate) fn unix_time() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())

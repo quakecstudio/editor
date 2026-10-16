@@ -36,6 +36,18 @@ check:
 | --- | --- | --- |
 | `Benchmarks` | Linux | `cargo xtask bench` against the history saved from `main`, then uploads the history as the `bench-history` artifact ([perf-budgets.md](perf-budgets.md#in-ci)) |
 
+[`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
+(`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,
+in the merge queue or on a schedule, and is **not** a required check (ADR-0009). A readiness
+reviewer runs it and links the run in the report ([testing.md](testing.md#measuring-a-layer)):
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
+| `Readiness mutation` | Linux | `cargo xtask readiness mutation` (a full cargo-mutants run per crate) |
+| `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
+| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement, `ratchets.toml` and its history; uploads the `readiness` artifact |
+
 Every action is pinned to a commit SHA with its version in a comment, every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.
 
