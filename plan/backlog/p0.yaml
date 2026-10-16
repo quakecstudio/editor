@@ -366,7 +366,7 @@ issues:
   - Every entry has a license recorded from the item's own files, not guessed
   - Nothing unlicensed (such as QuakeC 1.06) or incompatible with GPL-3.0-or-later is vendored into the repo
   verify:
-  - cargo xtask corpus verify checks URLs and checksums
+  - corpus/verify.py --online checks URLs and checksums; its offline checks and unit tests run without network (P1-14 moves them into cargo xtask corpus verify)
 - key: P0-17
   title: Choose redistributable test assets for CI
   labels:

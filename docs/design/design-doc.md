@@ -341,7 +341,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 - [ ] Product name (QuakeC Studio is unclaimed in search, worth a trademark check).
 - [ ] Which engine is the default preview target: our host, or FTEQW where available?
 - [ ] Does a web build matter enough to choose egui?
-- [ ] Which public mods form the compiler conformance corpus, and are their licenses OK to keep in the repo?
+- [x] Conformance corpus: id 1.01, the rerelease, 14 public mods and 26 maps, each with a license read from its own files, fetched by checksum and never kept in the repo ([`corpus/manifest.toml`](../../corpus/manifest.toml)).
 - [ ] Verify FTEQW's Apple silicon status before relying on it.
 
 ## Sources
