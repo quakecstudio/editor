@@ -18,6 +18,12 @@ schema = 1
 # must also appear as `use = "never"` entries below.
 never = ["quakec-1.06", "quoth", "id1-paks"]
 
+# Directories whose tracked Quake content files are this project's own test
+# fixtures, written for its tests and carrying its SPDX line, not corpus files.
+fixture_dirs = [
+  "crates/qc-syntax/src/tests/",
+]
+
 # Never fetch from these hosts or repositories: they carry QuakeC 1.06.
 blocked_urls = [
   "https://github.com/maddes-b/QuakeC-releases",

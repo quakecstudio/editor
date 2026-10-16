@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Diagnostic codes raised before parsing.
+//! Diagnostic codes raised by the lexer, the preprocessor and the parser.
 
 /// A diagnostic code from `docs/spec/language-diagnostics.md` for an error or warning the
-/// lexer or preprocessor reports.
+/// lexer, the preprocessor or the parser (`qc-syntax`) reports.
 ///
 /// Implements QCD-1.1: a code is `E` or `W` and four digits, the first two its group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -42,6 +42,20 @@ pub enum Code {
     E0116,
     /// "unterminated argument list for macro NAME" (QCD-8.10).
     E0117,
+    /// "not a name" (QCD-3.1).
+    E0201,
+    /// "name too long" (QCD-3.2).
+    E0202,
+    /// "\"TOKEN\" is not a type" (QCD-3.3).
+    E0203,
+    /// "expected X, found Y" (QCD-3.4).
+    E0204,
+    /// "Fields and functions must be global" (QCD-3.8).
+    E0208,
+    /// "Bad builtin immediate" (QCD-3.9).
+    E0209,
+    /// "state frame must be a number" (QCD-3.10).
+    E0210,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -50,6 +64,16 @@ pub enum Code {
     E0503,
     /// "too many frames" (QCD-6.4).
     E0504,
+    /// "more than eight parameters in a function type" (QCD-6.5).
+    E0505,
+    /// "initialiser is not a constant" (QCD-6.6).
+    E0506,
+    /// "builtin number must be positive" (QCD-6.7).
+    E0507,
+    /// "cannot assign to this expression" (QCD-6.8).
+    E0508,
+    /// "nesting too deep" (QCD-6.9).
+    E0509,
     /// "frame name longer than 15 bytes; id's qcc cannot look it up" (QCD-7.1).
     W0101,
     /// "macro NAME redefined" (QCD-7.2).
@@ -58,7 +82,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 35] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -76,10 +100,22 @@ impl Code {
         Self::E0115,
         Self::E0116,
         Self::E0117,
+        Self::E0201,
+        Self::E0202,
+        Self::E0203,
+        Self::E0204,
+        Self::E0208,
+        Self::E0209,
+        Self::E0210,
         Self::E0501,
         Self::E0502,
         Self::E0503,
         Self::E0504,
+        Self::E0505,
+        Self::E0506,
+        Self::E0507,
+        Self::E0508,
+        Self::E0509,
         Self::W0101,
         Self::W0102,
     ];
@@ -105,10 +141,22 @@ impl Code {
             Self::E0115 => "E0115",
             Self::E0116 => "E0116",
             Self::E0117 => "E0117",
+            Self::E0201 => "E0201",
+            Self::E0202 => "E0202",
+            Self::E0203 => "E0203",
+            Self::E0204 => "E0204",
+            Self::E0208 => "E0208",
+            Self::E0209 => "E0209",
+            Self::E0210 => "E0210",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
             Self::E0503 => "E0503",
             Self::E0504 => "E0504",
+            Self::E0505 => "E0505",
+            Self::E0506 => "E0506",
+            Self::E0507 => "E0507",
+            Self::E0508 => "E0508",
+            Self::E0509 => "E0509",
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
         }
@@ -136,10 +184,22 @@ impl Code {
             | Self::E0115
             | Self::E0116
             | Self::E0117
+            | Self::E0201
+            | Self::E0202
+            | Self::E0203
+            | Self::E0204
+            | Self::E0208
+            | Self::E0209
+            | Self::E0210
             | Self::E0501
             | Self::E0502
             | Self::E0503
-            | Self::E0504 => true,
+            | Self::E0504
+            | Self::E0505
+            | Self::E0506
+            | Self::E0507
+            | Self::E0508
+            | Self::E0509 => true,
         }
     }
 }

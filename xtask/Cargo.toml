@@ -13,6 +13,7 @@ cc = { workspace = true }
 qc-lexer = { workspace = true }
 qc-preproc = { workspace = true }
 qc-progs = { workspace = true }
+qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
