@@ -301,7 +301,7 @@ issues:
   - P1-16
   - P1-26
   deliverable:
-  - 'tests/differential: runs each corpus progs function in qc-vm and the oracle, compares traces statement by statement, reports the first divergence with context'
+  - 'tests/differential: writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
   - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
   acceptance:
   - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
