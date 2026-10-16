@@ -96,6 +96,7 @@ name = "qs-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "qc-lexer",
  "qc-progs",
  "qc-syntax",
  "qs-mdl",

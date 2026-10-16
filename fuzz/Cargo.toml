@@ -13,6 +13,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
+qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
 qc-syntax = { path = "../crates/qc-syntax" }
 qs-mdl = { path = "../crates/qs-mdl" }
@@ -21,15 +22,15 @@ qs-wad = { path = "../crates/qs-wad" }
 qs-wav = { path = "../crates/qs-wav" }
 
 [[bin]]
-name = "qc-progs"
-path = "fuzz_targets/qc_progs.rs"
+name = "parser"
+path = "fuzz_targets/parser.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "qc-syntax"
-path = "fuzz_targets/qc_syntax.rs"
+name = "qc-progs"
+path = "fuzz_targets/qc_progs.rs"
 test = false
 doc = false
 bench = false
