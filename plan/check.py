@@ -16,6 +16,10 @@ Fails (exit 1) if:
   - a LATER issue is not linked from docs/scope.md as [KEY](https://github.com/quakecstudio/editor/issues/N)
   - docs/risks.md and the design doc's risk table differ in risk, impact or mitigation, or a
     register row lacks an area:* owner, a linked issue or a known status
+  - an issue template in .github/ISSUE_TEMPLATE/ (feature, spec, decision, spike, bug) is
+    missing, lacks a required deliverable, acceptance, verification or requirements field, or
+    does not carry exactly one known type:* label; or .github/pull_request_template.md does not
+    list every definition-of-done item from _meta.yaml
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -35,6 +39,10 @@ PLAN = Path(__file__).resolve().parent
 SCOPE = PLAN.parent / "docs" / "scope.md"
 RISKS = PLAN.parent / "docs" / "risks.md"
 DESIGN_DOC = PLAN.parent / "docs" / "design" / "design-doc.md"
+ISSUE_TEMPLATES = PLAN.parent / ".github" / "ISSUE_TEMPLATE"
+PR_TEMPLATE = PLAN.parent / ".github" / "pull_request_template.md"
+TEMPLATE_NAMES = ("feature", "spec", "decision", "spike", "bug")
+TEMPLATE_FIELDS = ("deliverable", "acceptance", "verification", "requirements")
 RISK_STATUSES = {"Open", "Mitigating", "Mitigated", "Retired"}
 ISSUE_URL = r"https://github\.com/quakecstudio/editor/issues/\d+"
 ADR_FILE = re.compile(r"docs/adr/(?!0000-)(\d{4}|00NN)-[a-z0-9-]+\.md")
@@ -273,6 +281,37 @@ def check_risks(meta: dict, risks: Path = RISKS, design: Path = DESIGN_DOC) -> l
     return errors
 
 
+def check_templates(meta: dict, templates: Path = ISSUE_TEMPLATES, pr: Path = PR_TEMPLATE) -> list[str]:
+    """The issue forms ask for what every issue needs, and the PR template carries the
+    definition of done (PM-5, CONV-13)."""
+    errors: list[str] = []
+    labels = {l["name"] for group in meta["labels"].values() for l in group}
+    for name in TEMPLATE_NAMES:
+        path = templates / f"{name}.yml"
+        if not path.is_file():
+            errors.append(f"{path.name}: issue template missing")
+            continue
+        form = yaml.safe_load(path.read_text()) or {}
+        types = [l for l in form.get("labels", []) if l.startswith("type:")]
+        if len(types) != 1 or types[0] not in labels:
+            errors.append(f"{path.name}: needs exactly one known type:* label, has {types}")
+        fields = {f.get("id"): f for f in form.get("body", []) if isinstance(f, dict)}
+        for field in TEMPLATE_FIELDS:
+            spec = fields.get(field)
+            if spec is None:
+                errors.append(f"{path.name}: no {field} field")
+            elif not (spec.get("validations") or {}).get("required"):
+                errors.append(f"{path.name}: the {field} field is not required")
+    if not pr.is_file():
+        errors.append(f"{pr.name}: pull request template missing")
+    else:
+        text = pr.read_text()
+        for item in meta["definition_of_done"]:
+            if f"- [ ] {item}\n" not in text:
+                errors.append(f"{pr.name}: definition-of-done item missing: {item}")
+    return errors
+
+
 def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
     by_req: dict[str, list[str]] = {r: [] for r in reqs}
     for i in issues:
@@ -295,7 +334,7 @@ def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
 def main() -> int:
     reqs = load_requirements()
     meta, issues = load_backlog()
-    errors = check(reqs, meta, issues) + check_scope(issues) + check_risks(meta)
+    errors = check(reqs, meta, issues) + check_scope(issues) + check_risks(meta) + check_templates(meta)
     if "--write-coverage" in sys.argv:
         (PLAN / "coverage.md").write_text(coverage_md(reqs, meta, issues))
     if errors:
