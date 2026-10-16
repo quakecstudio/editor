@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Session setup",
+      "trigger": "SessionStart",
+      "description": "Runs the authoritative setup .claude/hooks/session-setup.sh at the start of a plain Kiro session, so it gets the same cloud-sandbox prep (rustup, prek, uv for the plan checks, git hooks) the implementer and reviewer agents get on agentSpawn. The script is idempotent, Linux-only and always exits 0.",
+      "action": {
+        "type": "command",
+        "command": "d=\"${CLAUDE_PROJECT_DIR:-$PWD}\"; s=\"$d/.claude/hooks/session-setup.sh\"; [ -f \"$s\" ] && bash \"$s\"; exit 0",
+        "timeout": 300
+      }
+    }
+  ]
+}

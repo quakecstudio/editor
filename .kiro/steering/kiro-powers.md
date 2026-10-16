@@ -63,16 +63,24 @@ Each is summarised in `.kiro/steering/rules.md` and inlined where it is a hard g
 | `.kiro/agents/implementer.json` | `.claude/agents/implementer.md` |
 | `.kiro/agents/reviewer.json` | `.claude/agents/reviewer.md` |
 
-### Hook
+### Hooks
 
 | Kiro wiring | Authoritative source |
 | --- | --- |
 | `agentSpawn` hook in each `.kiro/agents/*.json` | `.claude/hooks/session-setup.sh` |
+| `.kiro/hooks/session-setup.json` (`SessionStart`) | `.claude/hooks/session-setup.sh` |
+| `.kiro/hooks/kiro-pointer-guard.json` (`PostFileSave`) | (Kiro-only; enforces "The one rule") |
 
-The script is referenced in place, not copied. In Claude Code it runs from
-`.claude/settings.json` `SessionStart`; in Kiro it runs from the `agentSpawn` hook of each
-agent. It is Linux-only, idempotent and always exits 0, so running it under either tool is
-safe.
+The setup script is referenced in place, not copied. In Claude Code it runs from
+`.claude/settings.json` `SessionStart`; in Kiro the `implementer` and `reviewer` agents run
+it on `agentSpawn`, and `.kiro/hooks/session-setup.json` runs it at the start of a plain
+Kiro session too, so an interactive session in a cloud sandbox gets the same prep (rustup,
+prek, uv for the plan checks, git hooks). It is Linux-only, idempotent and always exits 0,
+so running it under either tool, and more than once, is safe.
+
+`.kiro/hooks/kiro-pointer-guard.json` is Kiro-only: it has no `.claude/` counterpart because
+it exists to protect this pointer scheme, warning when a `.kiro/` skill or agent is edited
+instead of its `.claude/` source.
 
 ### Scripts
 
