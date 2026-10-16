@@ -343,3 +343,16 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-rogue" "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
             "$QS_TEST_ASSETS/codebase/rerelease-ctf" "$QS_TEST_ASSETS/codebase/rerelease-mg3" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
+      # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
+      - name: Write the corpus maps to the asset cache
+        if: runner.os == 'Linux'
+        run: |
+          awk '/^\[\[/ { map = ($0 == "[[map]]") } map && $1 == "id" { gsub(/"/, "", $3); print $3 }' \
+            corpus/manifest.toml | xargs cargo xtask corpus fetch
+      - name: Round-trip the corpus maps
+        if: runner.os == 'Linux'
+        run: cargo xtask map-corpus "$QS_TEST_ASSETS/map"
+      - name: Decode the LibreQuake lite asset
+        if: runner.os == 'Linux'
+        run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"

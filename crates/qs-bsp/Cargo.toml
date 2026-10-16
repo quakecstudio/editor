@@ -1,0 +1,18 @@
+[package]
+name = "qs-bsp"
+description = "BSP29, BSP2 and .lit readers: id's Mod_LoadBrushModel with bounds checks, and entity lump writing for maps with no .map source"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-progs = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

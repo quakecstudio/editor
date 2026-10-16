@@ -57,7 +57,10 @@ id's loader gives:
 ## Variants
 
 Each row changes the base as described; "loads" means the loader finished, and the values
-given are those that differ from the base.
+given are those that differ from the base. A variant whose face needs more light samples
+than the base's 25 gives the lighting lump's size, so that the samples lie in it (BSP-10.2);
+id's loader copies the lighting lump without reading it, so the size does not change the
+result it records.
 
 | Name | Change | Result | Statements |
 | --- | --- | --- | --- |
@@ -68,8 +71,8 @@ given are those that differ from the base.
 | `no-textures` | Empty textures lump | Loads; no textures; texinfo 0 uses the checkerboard with flags 0 | BSP-4.1, BSP-8.4 |
 | `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 | BSP-9.4 |
 | `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` | BSP-9.4 |
-| `extents-272-special` | Square of side 272, texinfo flags 1 | Loads; extents 272 272 | BSP-9.4 |
-| `texture-offset` | Texinfo offsets -8 (s) and 24 (t) | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.3 |
+| `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 | BSP-9.4 |
+| `texture-offset` | Texinfo offsets -8 (s) and 24 (t), lighting of 36 bytes | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.3 |
 | `mipadjust` | Texinfo axes (0.5, 0, 0) and (0, 0.5, 0) | Loads; mip bias 2; extents 32 32 | BSP-8.6, BSP-9.3 |
 | `bad-miptex` | Texinfo miptex 1 | Error `miptex >= loadmodel->numtextures` | BSP-8.3 |
 | `bad-marksurface` | Marksurface 1 | Error `Mod_ParseMarksurfaces: bad surface number` | BSP-13.2 |

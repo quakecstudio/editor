@@ -10,8 +10,8 @@ BSP29 is described from `WinQuake/bspfile.h` and `WinQuake/model.c` in
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the server's use of the result from
 `WinQuake/sv_main.c` and `WinQuake/world.c`. GLQuake's loader in `WinQuake/gl_model.c` makes
 the same checks with the same messages. Implemented by `crates/qs-bsp`
-([#143](https://github.com/quakecstudio/editor/issues/143), P5-02); every statement in this
-file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until that crate cites it.
+([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
+every statement.
 
 id never defined BSP2 or `.lit`. They are described from the programs that read and write
 them, cited for description only; neither is a registered upstream for porting
@@ -85,11 +85,17 @@ from the first four bytes (SPR-1): a file that is neither `IDPO` nor `IDSP` goes
   negative or whose bytes run past the end of the file, fails to load. id's code reads the
   header and lumps from the loaded buffer without checking them, which is undefined; this
   spec fixes the answer as an error.
-- **BSP-1.7** An index stored in one lump that refers to another (a plane, texinfo, edge,
+- **BSP-1.7** **Withdrawn** 2026-10-16: it made every visibility offset name a byte of the
+  lump, but `qbsp` gives leaf 0 the offset 0 even when the visibility lump is empty, which
+  id's loader never reads; replaced by BSP-1.8 and BSP-6.6.
+- **BSP-1.8** An index stored in one lump that refers to another (a plane, texinfo, edge,
   surfedge, face, node, leaf, clipnode or vertex number, or an offset into the visibility or
-  lighting lump) must name an element that exists; one that does not fails to load. id's
-  code checks only the cases BSP-8.3 and BSP-13.2 name and uses every other index unchecked,
-  which is undefined; this spec fixes the answer as an error.
+  lighting lump) must name an element that exists; one that does not fails to load, except
+  for the visibility offsets of BSP-6.6. An index is checked where the loader uses it: an
+  edge's vertices and a surfedge's edge when a face uses them, and a model's first node or
+  clipnode for hulls 0 to 2, since hull 3 is not used (BSP-11.3). id's code checks only the
+  cases BSP-8.3 and BSP-13.2 name and uses every other index unchecked, which is undefined;
+  this spec fixes the answer as an error.
 
 ### Constants
 
@@ -193,7 +199,7 @@ names (MAP-6.3). Each texture is the same `miptex_t` a WAD2 texture lump holds (
   them unchecked, which is undefined, and this spec fixes the answer as an error. `qbsp`
   writes the levels in order right after the header (offsets 40, `40 + w*h`, and so on).
 - **BSP-4.6** A negative `nummiptex`, or one whose offset table runs past the lump, fails to
-  load, as does an offset other than -1 that points outside the lump (BSP-1.7).
+  load, as does an offset other than -1 that points outside the lump (BSP-1.8).
 - **BSP-4.7** A texture whose name starts with `sky` (compared exactly, case included) is a
   sky: the loader hands it to the renderer's `R_InitSky`.
 - **BSP-4.8** A texture whose name starts with `+` is a frame of an animation. The second
@@ -260,6 +266,13 @@ when one of the entity's leaves is in the set of the client's leaf.
 - **BSP-6.5** A set whose compressed bytes run past the end of the lump before the row is
   full fails to decompress. id's code reads past the lump, which is undefined; this spec
   fixes the answer as an error for that leaf's set.
+- **BSP-6.6** Leaf 0's `visofs` is never read (BSP-6.4), so any value loads. When the
+  visibility lump is empty, `Mod_LoadVisibility` keeps no data (`loadmodel->visdata = NULL`)
+  and `Mod_LoadLeafs` sets a leaf's set to `loadmodel->visdata + p`, so a `visofs` of 0 gives
+  no set, which `Mod_DecompressVis` reads as every leaf visible, as -1 does. Any other
+  `visofs` but -1 into an empty lump fails to load (BSP-1.8). `qbsp`'s `BeginBSPFile` sets
+  only leaf 0's `contents` in its zeroed leaf array, so leaf 0's `visofs` is 0, also in a
+  BSP that `vis` has not processed.
 
 ### Constants
 
@@ -390,7 +403,13 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `bad-miptex` (BSP-8.3), `missing-te
   one lightmap of `smax * tmax` samples for each style before the first 255, one after
   another from `lightofs`.
 - **BSP-9.8** `planenum`, `numedges` and `texinfo` are signed 16-bit and `firstedge` signed
-  32-bit; a negative value, or one that names no element, fails to load (BSP-1.7).
+  32-bit; a negative value, or one that names no element, fails to load (BSP-1.8).
+- **BSP-9.9** `CalcSurfaceExtents` stores `floor(min / 16)` and `ceil(max / 16)` in `int`
+  variables, which is undefined in C when the value is NaN or outside the `int` range. This
+  spec takes the answer of the original x86 build, whose conversion gives the integer
+  indefinite value 0x80000000 (-2147483648) there; the products and the difference that
+  follow wrap as x86 integers do. Such a face fails BSP-9.4 unless its texinfo has
+  `TEX_SPECIAL`.
 
 ### Constants
 
@@ -418,7 +437,7 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
   index it by `lightofs` (BSP-9.6, BSP-9.7). An empty lump means the map has no light data
   and is drawn fully bright.
 - **BSP-10.2** A face's samples (`smax * tmax` times its number of styles from `lightofs`)
-  must lie in the lump; otherwise it fails to load (BSP-1.7).
+  must lie in the lump; otherwise it fails to load (BSP-1.8).
 
 ## BSP-11 Clipnodes and hulls
 
@@ -713,3 +732,35 @@ byte of the lighting lump. The format comes from LordHavoc's engines (QS's comme
 | `BSP_LIT_MAGIC` | `QLIT` | QS `Mod_LoadLighting`; ericw-tools `litheader_t::v1_t::ident` |
 | `BSP_LIT_VERSION` | 1 | ericw-tools `LIT_VERSION` |
 | `BSP_LIT_HEADER_SIZE` | 8 | QS `Mod_LoadLighting`: `data + 8` |
+
+## BSP-19 .ent files
+
+**Source:** QS `Quake/gl_model.c`, `Mod_LoadEntities`, `external_ents`; QS `Quake/common.c`,
+`COM_StripExtension`; QS `Quake/crc.c`, `CRC_Block`.
+
+A shipped map has no `.map` source, so its entities are edited in the BSP's entity lump or in
+a `.ent` file beside it, which engines descended from QS read in place of the lump. id's
+engine reads only the lump.
+
+### Behaviour
+
+- **BSP-19.1** When its `external_ents` cvar is set (its default is `"1"`), QS looks for the
+  entity text in `<map>@<crc>.ent` and then in `<map>.ent`, where `<map>` is the BSP's name
+  with its extension removed by `COM_StripExtension` (the last `.` after the last `/` or `\`,
+  and not the name's first byte), and uses the first it finds instead of the entity lump.
+  `<crc>` is `CRC_Block` (the CRC of PROGS-4) of the lump's first `filelen - 1` bytes, which
+  leaves out the NUL `qbsp` writes (BSP-2.2), formatted with `%04x`; it is 0 for an empty
+  lump.
+- **BSP-19.2** QS ignores a `.ent` file found in a game directory of lower priority than the
+  BSP's (`ignored <name> from a gamedir with lower priority`), as it does a `.lit`
+  (BSP-18.4).
+- **BSP-19.3** This project writes edited entities in either place. A BSP is rewritten with
+  the new text and a NUL as its entity lump and every other lump's bytes unchanged, the
+  lumps in the order of their offsets in the original file, each at an offset that is a
+  multiple of 4; a `.ent` file is the text alone.
+
+### Constants
+
+| Name | Value | Source |
+| --- | --- | --- |
+| `BSP_ENT_EXTENSION` | `.ent` | QS `Mod_LoadEntities` |
