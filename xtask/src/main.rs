@@ -35,6 +35,9 @@
 //!   directories and checks the tree gives back each file; `--vanilla` fails on
 //!   any error and `--deletions` checks that recovery from each deleted token is
 //!   local.
+//! - `project-corpus`: opens codebase directories as projects with
+//!   `qc-project` and checks each module's file graph; `--progs` also checks it
+//!   against the order of the functions in a `progs.dat` id's qcc compiled.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -59,6 +62,7 @@ mod licenses;
 mod oracles;
 mod parse_corpus;
 mod ported;
+mod project_corpus;
 mod ratchet;
 mod readiness;
 mod repo;
@@ -69,7 +73,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | lex-corpus | oracles | \
-                     parse-corpus>";
+                     parse-corpus | project-corpus>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -84,6 +88,7 @@ fn main() -> ExitCode {
             "lex-corpus" => Some(lex_corpus::main),
             "oracles" => Some(oracles::main),
             "parse-corpus" => Some(parse_corpus::main),
+            "project-corpus" => Some(project_corpus::main),
             "readiness" => Some(readiness::main),
             "ratchet" => Some(ratchet::main),
             _ => None,

@@ -117,6 +117,7 @@ proptest = { version = "=1.11.0", default-features = false }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-preproc = { path = "crates/qc-preproc" }
 qc-progs = { path = "crates/qc-progs" }
+qc-project = { path = "crates/qc-project" }
 qc-syntax = { path = "crates/qc-syntax" }
 qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }

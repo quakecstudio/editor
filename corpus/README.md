@@ -80,5 +80,6 @@ python3.11 corpus/assets.py codebase   # write id 1.01 to <cache>/codebase/id-1.
 cargo xtask lex-corpus <cache>/codebase/id-1.01  # lex it and preprocess progs.src with no errors
 cargo xtask parse-corpus --vanilla --deletions <cache>/codebase/id-1.01  # parse it, check recovery
 cargo xtask parse-corpus <cache>/codebase/<id>...  # every file round-trips through the tree
+cargo xtask project-corpus <cache>/codebase/<id>...  # open each as a project; check its file graphs
 (cd corpus && python3.11 -m unittest test_verify.py test_assets.py test_language_coverage.py)
 ```

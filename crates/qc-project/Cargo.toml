@@ -1,0 +1,21 @@
+[package]
+name = "qc-project"
+description = "QuakeC projects: quakec.toml, bare progs.src projects, and each module's ordered file graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-lexer = { workspace = true }
+qc-preproc = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+toml = { workspace = true, features = ["parse", "serde", "std"] }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

@@ -314,3 +314,12 @@ jobs:
           cargo xtask parse-corpus --vanilla --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P1-23: every module of each codebase opens with no error in its file graph, and id
+      # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
+      - name: Open the corpus as projects
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask project-corpus --progs target/oracles/work/id-1.01/progs.dat \
+            "$QS_TEST_ASSETS/codebase/id-1.01"
+          cargo xtask project-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"

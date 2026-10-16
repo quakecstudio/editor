@@ -106,6 +106,7 @@ Each section holds, in this order:
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `LNO` | [`lno.md`](lno.md) | `.lno` line maps: which compilers write them, the header, the line and GMQCC column tables, matching a progs.dat, reading and writing | [#41](https://github.com/quakecstudio/editor/issues/41) |
 | `PAK` | [`pak.md`](pak.md) | PAK archives: header, directory, reading entries, the modified-game CRC | [#29](https://github.com/quakecstudio/editor/issues/29) |
+| `PRJ` | [`project-file.md`](project-file.md) | Projects: `quakec.toml` and its modules, bare projects, output paths, the two forms of `progs.src`, the directives that decide which files are read, and each module's ordered file graph | [#47](https://github.com/quakecstudio/editor/issues/47) |
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
 | `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |
