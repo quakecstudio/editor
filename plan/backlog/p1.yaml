@@ -445,8 +445,11 @@ issues:
   - 'crates/qs-install: finds Steam library installs and GOG installs (including GOG Galaxy) on Windows and Linux; on macOS, where both stores sell Quake as Windows-only, finds folders downloaded with steamcmd (Windows platform forced) and folders extracted from the GOG installer with innoextract; reports the id1, rerelease and expansion paths'
   - Accepts any folder containing id1/pak0.pak as a manual override, and validates what it finds by checksum (shareware, registered original, rerelease), reporting what is missing, such as pak1.pak when only the rerelease is installed (Epic, Game Pass)
   - 'docs/game-data.md: where each store puts the files on each OS and how to get them onto a Mac (GOG installer and innoextract, or steamcmd), written for players'
+  - 'One function that makes a directory link per OS for the run roots (ADR-0008): a symbolic link on macOS and Linux, a junction on Windows, which needs no privileges; it calls the Windows API through crates
+    the workspace already allows, or adds the junction crate (MIT) under docs/conventions.md'
   acceptance:
   - Detects installs on all three OSes in tests using fixture directory layouts, including steamcmd and innoextract layouts on macOS
+  - The directory-link function has tests for a symbolic link (macOS and Linux), a junction (Windows), a broken link and a missing install, each run in CI on its OS
   - Fixtures contain directory layouts and checksums only; no game data is copied, bundled or committed
   verify:
   - Fixture tests; manual check recorded on macOS against Justin's GOG purchase extracted with innoextract, and on Windows and Linux

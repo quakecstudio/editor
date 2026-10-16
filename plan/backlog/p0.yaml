@@ -445,9 +445,9 @@ issues:
   - 'docs/adr/0008-game-directories.md: where compiled progs.dat and maps go, and how each engine is launched against the user''s Steam or GOG install (e.g. -basedir plus a mod dir in the project) without
     modifying or copying the install'
   acceptance:
-  - Prototype launch works with Steam and GOG installs on all three OSes for id1 and the rerelease
+  - Prototype launch works with Steam and GOG installs on all three OSes for id1 and the rerelease. The recorded launches moved to P3-06's acceptance (ADR-0008), accepted on the engine source reading
   verify:
-  - Recorded launches per OS
+  - Recorded launches per OS, now attached to P3-06
   depends:
   - P0-07
 - key: P0-24
