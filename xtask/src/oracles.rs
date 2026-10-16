@@ -35,6 +35,10 @@ mod probes;
 pub(crate) mod rerelease;
 mod scenarios;
 pub(crate) mod sha256;
+#[cfg(test)]
+mod testing;
+#[cfg(test)]
+mod tests;
 mod vectors;
 
 use serde::Deserialize;
@@ -42,6 +46,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::download::{Curl, Net};
+use crate::exec::{Exec, System};
 use compile::{Code, Compiler, Instrument, Unit};
 
 const SOURCES: &str = "oracles/sources.toml";
@@ -108,44 +113,52 @@ struct Extract {
 }
 
 /// Where the built oracles are.
-pub(crate) struct Oracles {
+pub(crate) struct Oracles<'a> {
     pub(crate) qcc: PathBuf,
     pub(crate) vm: PathBuf,
     pub(crate) fteqcc: PathBuf,
     pub(crate) work: PathBuf,
     pub(crate) rerelease: PathBuf,
+    /// What runs them: the system, or a test's fake.
+    pub(crate) exec: &'a dyn Exec,
 }
 
 /// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    run(root, args, &System, &Curl)
+}
+
+/// [`main`] with the programs `exec` runs and the files `net` fetches.
+fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<bool, String> {
+    let build = || build_with(root, exec, net);
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
         [] => {
-            let oracles = build(root)?;
+            let oracles = build()?;
             let vectors = vectors::check(root, &oracles)?;
             let numbers = numbers::check(root, &oracles)?;
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
             Ok(vectors && numbers && probes && scenarios)
         }
-        ["fuzz", rest @ ..] => fuzz::main(root, rest),
+        ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
         ["scenarios", names @ ..] => {
-            let oracles = build(root)?;
+            let oracles = build()?;
             scenarios::check(&oracles, Some(names))
         }
         ["build"] => {
-            let oracles = build(root)?;
+            let oracles = build()?;
             println!("oracles: qcc at {}", oracles.qcc.display());
             println!("oracles: vm-oracle at {}", oracles.vm.display());
             println!("oracles: fteqcc at {}", oracles.fteqcc.display());
             Ok(true)
         }
         ["id101", dir] => {
-            let oracles = build(root)?;
+            let oracles = build()?;
             id101::check(&oracles, Path::new(dir))
         }
         ["rerelease", dir] => {
-            let oracles = build(root)?;
+            let oracles = build()?;
             rerelease::check(&oracles, Path::new(dir))
         }
         ["json", trace] => {
@@ -186,7 +199,7 @@ pub(crate) fn read_sources(root: &Path) -> Result<Sources, String> {
 }
 
 /// Downloads every pinned file that is missing from the cache, and checks every file's SHA-256.
-pub(crate) fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
+pub(crate) fn fetch(sources: &Sources, cache: &Path, net: &dyn Net) -> Result<(), String> {
     for upstream in &sources.upstream {
         for (file, want) in &upstream.files {
             let path = cache.join(&upstream.id).join(file);
@@ -201,7 +214,7 @@ pub(crate) fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
                 upstream.repo, upstream.commit
             );
             let partial = path.with_extension("partial");
-            Curl.download(&url, &partial)?;
+            net.download(&url, &partial)?;
             let bytes = fs::read(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
             let got = sha256::hex_digest(&bytes);
             if got != *want {
@@ -299,7 +312,7 @@ fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
 }
 
 /// Where the oracles are built.
-fn locate(root: &Path) -> Oracles {
+fn locate<'a>(root: &Path, exec: &'a dyn Exec) -> Oracles<'a> {
     let out = root.join(OUT);
     let bin = out.join("bin");
     Oracles {
@@ -308,22 +321,28 @@ fn locate(root: &Path) -> Oracles {
         fteqcc: bin.join(Compiler::executable("fteqcc")),
         work: out.join("work"),
         rerelease: out.join("rerelease"),
+        exec,
     }
 }
 
 /// The VM oracle's executable, once built.
 pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
-    locate(root).vm
+    locate(root, &System).vm
 }
 
 /// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
-pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
+pub(crate) fn build(root: &Path) -> Result<Oracles<'static>, String> {
+    build_with(root, &System, &Curl)
+}
+
+/// [`build`] with the programs `exec` runs and the files `net` fetches.
+fn build_with<'a>(root: &Path, exec: &'a dyn Exec, net: &dyn Net) -> Result<Oracles<'a>, String> {
     let sources = read_sources(root)?;
     let out = root.join(OUT);
     let cache = out.join("src");
     let objects = out.join("build");
     let bin = out.join("bin");
-    let oracles = locate(root);
+    let oracles = locate(root, exec);
     for dir in [&cache, &objects, &bin, &oracles.work] {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
@@ -332,7 +351,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
     } else {
         Instrument::None
     };
-    let compiler = Compiler::find(&objects, instrument)?;
+    let compiler = Compiler::find(&objects, instrument, exec)?;
     let stamp_now = stamp(root, &compiler)?;
     let stamp_file = bin.join("stamp");
     if oracles.qcc.is_file()
@@ -343,7 +362,7 @@ pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
         println!("oracles: up to date in {}", bin.display());
         return Ok(oracles);
     }
-    fetch(&sources, &cache)?;
+    fetch(&sources, &cache, net)?;
     let tools = cache.join("quake-tools");
 
     // id's qcc, unchanged.

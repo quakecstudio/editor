@@ -606,20 +606,40 @@ pub(super) fn init_text(vector: &Vector) -> String {
     text
 }
 
+/// The directory under `work` that keeps one vector's files, its progs, init file, trace and
+/// what the oracle printed, for a look after a failure: `<file stem>/<vector name>`.
+pub(super) fn vector_dir(work: &Path, vector: &Vector) -> PathBuf {
+    let safe = |text: &str| -> String {
+        text.chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect()
+    };
+    let stem = vector.file.strip_suffix(".txt").unwrap_or(&vector.file);
+    work.join(safe(stem)).join(safe(&vector.name))
+}
+
 fn run(oracles: &Oracles, work: &Path, vector: &Vector) -> Result<(), String> {
     let progs = build_progs(vector)?;
-    let progs_path = work.join("progs.dat");
-    let init_path = work.join("init.txt");
-    let trace_path = work.join("trace.bin");
+    let dir = vector_dir(work, vector);
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let progs_path = dir.join("progs.dat");
+    let init_path = dir.join("init.txt");
+    let trace_path = dir.join("trace.bin");
     fs::write(&progs_path, &progs).map_err(|e| e.to_string())?;
     fs::write(&init_path, init_text(vector)).map_err(|e| e.to_string())?;
-    let output = Command::new(&oracles.vm)
-        .arg("vector")
-        .arg(&progs_path)
-        .arg(&init_path)
-        .arg(&trace_path)
-        .output()
+    let output = oracles
+        .exec
+        .output(
+            Command::new(&oracles.vm)
+                .arg("vector")
+                .arg(&progs_path)
+                .arg(&init_path)
+                .arg(&trace_path),
+        )
         .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
+    let stdout_path = dir.join("stdout.txt");
+    fs::write(&stdout_path, &output.stdout)
+        .map_err(|e| format!("{}: {e}", stdout_path.display()))?;
     if !output.status.success() {
         return Err(format!(
             "the VM oracle failed ({}): {}",
@@ -993,315 +1013,4 @@ fn compare(vector: &Vector, known: &Known<'_>, lines: &[Line], end: &End) -> Res
 }
 
 #[cfg(test)]
-mod tests {
-    #![expect(
-        clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
-    )]
-
-    use super::{
-        End, Head, HostAction, Known, Target, Value, Vector, Verdict, init_text, matches, parse,
-        parse_host_action, parse_strings, parse_value, verdict,
-    };
-    use qc_trace::Header;
-
-    fn vector(spec: &str) -> Vector {
-        Vector {
-            spec: vec![spec.to_owned()],
-            ..Vector::default()
-        }
-    }
-
-    // spec DIFF-10.1: a VM-9.2 vector that fails on a host that is not x86-64 is an expected
-    // divergence, reported as such; on x86-64 it is a failure.
-    #[test]
-    fn an_out_of_range_conversion_is_expected_to_diverge_only_off_x86() {
-        let bitand = vector("VM-9.2");
-        let failure = || Err("line 1".to_owned());
-        assert_eq!(
-            verdict(&bitand, failure(), false),
-            Verdict::Expected("line 1".to_owned())
-        );
-        assert_eq!(
-            verdict(&bitand, failure(), true),
-            Verdict::Failed("line 1".to_owned())
-        );
-        assert_eq!(verdict(&bitand, Ok(()), false), Verdict::Passed);
-    }
-
-    // spec DIFF-10.3: any divergence DIFF-10.1 does not list is a failure, on every host.
-    #[test]
-    fn any_other_divergence_is_a_failure() {
-        for x86_64 in [false, true] {
-            assert_eq!(
-                verdict(&vector("VM-4.1"), Err("line 2".to_owned()), x86_64),
-                Verdict::Failed("line 2".to_owned())
-            );
-        }
-    }
-
-    // spec DIFF-10.2: NaN payloads, the edict layout and engine string numbers are no
-    // divergence: a value is compared through its reading.
-    #[test]
-    fn values_are_compared_through_their_readings() {
-        let layouts = [
-            Header::new(0, 516, 96, 105, 1000).unwrap(),
-            Header::new(0, 528, 108, 105, 1000).unwrap(),
-        ];
-        for header in &layouts {
-            let known = Known {
-                header,
-                engine_strings: [2000, 70000].into(),
-            };
-            let size = header.edict_size();
-            assert!(matches(&known, Value::AnyNan, 0x7fc0_0000));
-            assert!(matches(&known, Value::AnyNan, 0xffc0_0001));
-            assert!(!matches(&known, Value::AnyNan, 0x7f80_0000));
-            assert!(matches(&known, Value::Entity(2), size * 2));
-            assert!(!matches(&known, Value::Entity(2), size * 3));
-            let nextthink = size * 2 + header.field_offset() + 4 * 46;
-            assert!(matches(&known, Value::Pointer(2, 46), nextthink));
-            assert!(matches(&known, Value::EngineString, 2000));
-            assert!(matches(&known, Value::EngineString, 70000));
-            assert!(!matches(&known, Value::EngineString, 500));
-            assert!(matches(&known, Value::Bits(0x8000_0000), 0x8000_0000));
-            assert!(!matches(&known, Value::Bits(0x8000_0000), 0));
-        }
-    }
-
-    #[test]
-    fn parses_values_as_the_readme_defines_them() {
-        assert_eq!(parse_value("1.5", false).unwrap(), Value::Bits(0x3fc0_0000));
-        assert_eq!(parse_value("-0", false).unwrap(), Value::Bits(0x8000_0000));
-        assert_eq!(parse_value("nan", false).unwrap(), Value::AnyNan);
-        assert_eq!(parse_value("nan", true).unwrap(), Value::Bits(0x7fc0_0000));
-        assert_eq!(parse_value("i-1", false).unwrap(), Value::Bits(u32::MAX));
-        assert_eq!(parse_value("e2", false).unwrap(), Value::Entity(2));
-        assert_eq!(
-            parse_value("p1.105", false).unwrap(),
-            Value::Pointer(1, 105)
-        );
-        assert_eq!(parse_value("es", false).unwrap(), Value::EngineString);
-        assert!(parse_value("es", true).is_err());
-        assert!(parse_value("x", false).is_err());
-    }
-
-    #[test]
-    fn parses_strings_with_escapes() {
-        let strings = parse_strings(r#""abc" "" "\x80\x7fz""#).unwrap();
-        assert_eq!(
-            strings,
-            vec![b"abc".to_vec(), Vec::new(), vec![0x80, 0x7f, b'z']]
-        );
-        assert!(parse_strings(r#""open"#).is_err());
-    }
-
-    #[test]
-    fn parses_a_vector() {
-        let text = "== v\nspec: VM-1.1\nglobals: 100=e1\nfields: e1.30=2\noracle: no\n\
-                    code:\n  STATE 100 101\n  66\nexpect:\n  1 STATE e1.30=nan\n  error\n";
-        let vectors = parse("t.txt", text).unwrap();
-        let v = vectors.first().unwrap();
-        assert!(!v.oracle);
-        assert!(!v.engine_builtins);
-        assert_eq!(v.code.len(), 2);
-        assert_eq!(v.initial.first().unwrap().0, Target::Global(100));
-        assert_eq!(
-            v.lines.first().unwrap().changes.first().unwrap().0,
-            Target::Field(1, 30)
-        );
-        assert_eq!(v.end, Some(End::Error(None)));
-        assert!(parse("t.txt", "loose\n").is_err());
-        assert!(parse("t.txt", "== v\nwhat: 1\n").is_err());
-        let engine = parse("t.txt", "== v\nbuiltins: engine\n").unwrap();
-        assert!(engine.first().unwrap().engine_builtins);
-        assert!(parse("t.txt", "== v\nbuiltins: stubs\n").is_err());
-    }
-
-    #[test]
-    fn parses_host_actions() {
-        assert_eq!(
-            parse_host_action("clock 1.2000000000000002").unwrap(),
-            HostAction::Clock(1.200_000_000_000_000_2)
-        );
-        assert_eq!(parse_host_action("run 3").unwrap(), HostAction::Run(3));
-        assert_eq!(
-            parse_host_action("think e1 0.1").unwrap(),
-            HostAction::Think(1, 0.1)
-        );
-        assert_eq!(
-            parse_host_action("push e2 0.1").unwrap(),
-            HostAction::Push(2, 0.1)
-        );
-        assert_eq!(
-            parse_host_action("physics 0.1").unwrap(),
-            HostAction::Physics(0.1, 1)
-        );
-        assert_eq!(
-            parse_host_action("frame 0.1 100").unwrap(),
-            HostAction::Frame(0.1, 100)
-        );
-        assert_eq!(
-            parse_host_action("edict -1 100").unwrap(),
-            HostAction::Edict(-1, 100)
-        );
-        for bad in [
-            "",
-            "sleep 1",
-            "clock",
-            "clock soon",
-            "think 1 0.1",
-            "push e1",
-            "frame 0.1 0",
-            "physics 0.1 -1",
-            "edict 1 -1",
-            "run 1 2",
-        ] {
-            assert!(parse_host_action(bad).is_err(), "{bad:?} parsed");
-        }
-    }
-
-    #[test]
-    fn parses_a_host_vector() {
-        let text = "== v\nspec: DIFF-5.6\nedicts: 2\nmaxclients: 1\nseed: 7\n\
-                    datagram: 64 255\nhost:\n  clock 1\n  run 1\ncode:\n  DONE\n\
-                    expect:\n  run 1 31=1\n  1 DONE\n  done\n";
-        let vectors = parse("t.txt", text).unwrap();
-        let v = vectors.first().unwrap();
-        assert_eq!(v.edicts, Some(2));
-        assert_eq!(v.maxclients, Some(1));
-        assert_eq!(v.seed, Some(7));
-        assert_eq!(v.datagram, Some(vec![64, 255]));
-        assert_eq!(v.host, [HostAction::Clock(1.0), HostAction::Run(1)]);
-        assert_eq!(v.lines.first().unwrap().head, Head::Run(1));
-        assert_eq!(
-            v.lines.last().unwrap().head,
-            Head::Step {
-                statement: 1,
-                opcode: 0
-            }
-        );
-        let init = init_text(v);
-        assert!(init.starts_with("edicts 2\nmaxclients 1\nseed 7\n"));
-        assert!(init.contains("host clock 1\nhost run 1\n"));
-        assert!(parse("t.txt", "== v\ndatagram: 256\n").is_err());
-        assert!(parse("t.txt", "== v\nhost:\n  wait\n").is_err());
-        assert!(parse("t.txt", "== v\nexpect:\n  run x\n").is_err());
-        let plain = parse("t.txt", "== v\ncode:\n  DONE\n").unwrap();
-        assert!(init_text(plain.first().unwrap()).starts_with("edicts 3\nentry 1\n"));
-    }
-
-    #[test]
-    fn rejects_values_outside_32_bits() {
-        assert_eq!(
-            parse_value("0xffffffff", true).unwrap(),
-            Value::Bits(u32::MAX)
-        );
-        assert!(parse_value("0x100000000", true).is_err());
-        assert_eq!(
-            parse_value("i-2147483648", true).unwrap(),
-            Value::Bits(0x8000_0000)
-        );
-        assert!(parse_value("i2147483648", true).is_err());
-        assert!(parse_value("p1", true).is_err());
-        assert!(parse_value("e", true).is_err());
-        assert_eq!(parse_value("inf", true).unwrap(), Value::Bits(0x7f80_0000));
-    }
-
-    #[test]
-    fn rejects_malformed_string_escapes_and_trailing_text() {
-        assert!(parse_strings(r#""\x4""#).is_err());
-        assert!(parse_strings(r#""\xzz""#).is_err());
-        assert!(parse_strings(r#""a" b"#).is_err());
-        assert_eq!(parse_strings("").unwrap(), Vec::<Vec<u8>>::new());
-        let hash = parse("t.txt", "== v\nstrings: \"a#b\"\n").unwrap();
-        assert_eq!(hash.first().unwrap().strings, vec![b"a#b".to_vec()]);
-    }
-
-    #[test]
-    fn keeps_a_quoted_error_message_and_a_bare_error() {
-        let quoted = parse("t.txt", "== v\nexpect:\n  error \"NULL function\"\n").unwrap();
-        assert_eq!(
-            quoted.first().unwrap().end,
-            Some(End::Error(Some("NULL function".to_owned())))
-        );
-        let bare = parse("t.txt", "== v\nexpect:\n  error\n").unwrap();
-        assert_eq!(bare.first().unwrap().end, Some(End::Error(None)));
-    }
-
-    #[test]
-    fn keeps_a_well_formed_after_line() {
-        let vectors = parse("t.txt", "== v\nafter: depth=0 localstack=2\n").unwrap();
-        assert_eq!(vectors.first().unwrap().after, Some((0, 2)));
-        assert!(parse("t.txt", "== v\nafter: stack=2\n").is_err());
-    }
-
-    #[test]
-    fn refuses_a_malformed_error_line() {
-        for bad in ["error \"open", "errors", "error \"a # b\""] {
-            let text = format!("== v\nexpect:\n  {bad}\n");
-            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
-        }
-        for bad in ["error \"a\" b", "error \"a\"b\"", "error x", "error \""] {
-            let text = format!("== v\nexpect:\n  {bad}\n");
-            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
-        }
-        let empty = parse("t.txt", "== v\nexpect:\n  error \"\"\n").unwrap();
-        assert_eq!(
-            empty.first().unwrap().end,
-            Some(End::Error(Some(String::new())))
-        );
-    }
-
-    #[test]
-    fn refuses_a_malformed_after_line() {
-        for bad in ["depth=x localstack=2", "depth=0", "localstack=2"] {
-            let text = format!("== v\nafter: {bad}\n");
-            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
-        }
-        for bad in [
-            "",
-            "localstack=2 depth=0",
-            "depth=0 localstack=2 depth=1",
-            "depth=0 localstack=y",
-            "depth=0 localstack=",
-            "depth0 localstack=2",
-            "depth=99999999999 localstack=2",
-        ] {
-            let text = format!("== v\nafter: {bad}\n");
-            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
-        }
-    }
-
-    #[test]
-    fn parses_every_vector_file() {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join(super::VECTORS);
-        let mut count = 0_usize;
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_some_and(|ext| ext == "txt") {
-                let name = path.file_name().unwrap().to_string_lossy().into_owned();
-                let text = std::fs::read_to_string(&path).unwrap();
-                count = count.saturating_add(parse(&name, &text).unwrap().len());
-            }
-        }
-        assert!(count > 0, "no vectors in {}", dir.display());
-    }
-
-    #[test]
-    fn refuses_text_after_the_operands() {
-        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3 4\n").is_err());
-        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3\n").is_ok());
-    }
-
-    #[test]
-    fn rejects_bad_operands_and_function_fields() {
-        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 x 3\n").is_err());
-        assert!(parse("t.txt", "== v\ncode:\n  NOT_AN_OPCODE 1\n").is_err());
-        assert!(parse("t.txt", "== v\nfunctions:\n  2: first=1 colour=3\n").is_err());
-        assert!(parse("t.txt", "== v\nfunctions:\n  2: builtin=-2147483648\n").is_err());
-        assert!(parse("t.txt", "== v\nfunctions:\n  x: first=1\n").is_err());
-    }
-}
+mod tests;

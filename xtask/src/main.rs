@@ -66,6 +66,7 @@ mod contrast;
 mod conventions;
 mod corpus;
 mod download;
+mod exec;
 mod fixtures;
 mod fuzz;
 mod layers;

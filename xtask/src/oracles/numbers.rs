@@ -164,11 +164,14 @@ fn run(oracles: &Oracles, work: &Path, vector: &Vector) -> Result<(), String> {
     let (text, line) = scenario(vector);
     let path = work.join("scenario.scn");
     fs::write(&path, text).map_err(|e| e.to_string())?;
-    let output = Command::new(&oracles.vm)
-        .arg("scenario")
-        .arg(&path)
-        .arg(work.join("trace.bin"))
-        .output()
+    let output = oracles
+        .exec
+        .output(
+            Command::new(&oracles.vm)
+                .arg("scenario")
+                .arg(&path)
+                .arg(work.join("trace.bin")),
+        )
         .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stderr = stderr.trim();
@@ -199,7 +202,56 @@ mod tests {
         reason = "test code: a failed unwrap or index is a failed test"
     )]
 
-    use super::{Directive, Vector, parse, progs, scenario};
+    use std::process::Command;
+
+    use super::super::testing::{args, fake_oracles, fresh_dir, root};
+    use super::{Directive, VECTORS, Vector, check, parse, progs, scenario};
+    use crate::exec::{Fake, Reply};
+
+    /// A fake VM oracle that refuses exactly the vectors marked `refused`, at their line.
+    fn agreeing(command: &Command) -> Reply {
+        let written = std::fs::read_to_string(&args(command)[1]).unwrap();
+        let vectors = parse(&std::fs::read_to_string(root().join(VECTORS)).unwrap()).unwrap();
+        let vector = vectors
+            .iter()
+            .find(|vector| scenario(vector).0 == written)
+            .unwrap();
+        if vector.refused {
+            Reply {
+                code: 2,
+                stderr: format!("vm-oracle: scenario.scn:{}: refused", scenario(vector).1),
+                ..Reply::default()
+            }
+        } else {
+            Reply::exit(0)
+        }
+    }
+
+    #[test]
+    fn every_number_vector_passes_an_oracle_that_agrees() {
+        let work = fresh_dir("numbers-agree");
+        let fake = Fake::new(agreeing);
+        assert!(check(&root(), &fake_oracles(&work, &fake)).unwrap());
+        assert!(fake.seen.borrow().len() > 100);
+    }
+
+    #[test]
+    fn a_number_vector_fails_on_the_wrong_status_or_line() {
+        let work = fresh_dir("numbers-disagree");
+        let runs = Fake::new(|_: &Command| Reply::exit(0));
+        assert!(!check(&root(), &fake_oracles(&work, &runs)).unwrap());
+        let wrong_line = Fake::new(|_: &Command| Reply {
+            code: 2,
+            stderr: "vm-oracle: scenario.scn:99: refused".to_owned(),
+            ..Reply::default()
+        });
+        assert!(!check(&root(), &fake_oracles(&work, &wrong_line)).unwrap());
+        let cannot_run = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        assert!(!check(&root(), &fake_oracles(&work, &cannot_run)).unwrap());
+    }
 
     #[test]
     fn parses_vectors_and_comments() {

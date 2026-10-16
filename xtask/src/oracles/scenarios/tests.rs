@@ -13,7 +13,9 @@ use qc_progs::crc::crc_block;
 use qc_progs::{Progs, ReadOptions};
 use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Step, Text, Trace, encode};
 
+use super::super::testing::{args, fake_oracles, fresh_dir, last_arg};
 use super::*;
+use crate::exec::{Fake, Reply};
 
 #[test]
 fn every_case_builds_a_progs_qc_progs_reads_and_has_a_unique_name() {
@@ -380,4 +382,131 @@ fn a_case_names_its_inputs() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+// --- Running cases, against a fake VM oracle ---
+
+#[test]
+fn checking_runs_every_case_and_counts_the_failures() {
+    let work = fresh_dir("scenarios-check");
+    let fake = Fake::new(|_: &std::process::Command| Reply::exit(0));
+    let oracles = fake_oracles(&work, &fake);
+    // A run that exits 0 and writes no trace fails every case that reads the trace.
+    assert!(!check(&oracles, None).unwrap());
+    let cases = all_cases();
+    let twice = cases
+        .iter()
+        .filter(|case| case.checks.contains(&Check::SameTwice))
+        .count();
+    assert_eq!(fake.seen.borrow().len(), cases.len() + twice);
+    assert!(check(&oracles, Some(&["no-such-case"])).is_err());
+    assert!(
+        check(&oracles, Some(&[][..])).is_ok(),
+        "no names is every case"
+    );
+}
+
+#[test]
+fn a_refusal_passes_an_oracle_that_refuses_with_its_message() {
+    let work = fresh_dir("scenarios-refusal");
+    let fake = Fake::new(|_: &std::process::Command| Reply {
+        code: 2,
+        stderr: "vm-oracle: case.scn:2: frames takes an integer".to_owned(),
+        ..Reply::default()
+    });
+    let oracles = fake_oracles(&work, &fake);
+    assert!(check(&oracles, Some(&["frames-too-many"])).unwrap());
+    let seen = fake.seen.borrow();
+    assert!(seen[0].starts_with("vm-oracle scenario "), "{}", seen[0]);
+    assert!(seen[0].ends_with("trace.bin"), "{}", seen[0]);
+    assert!(work.join("scenarios/frames-too-many/case.scn").is_file());
+    assert!(work.join("scenarios/frames-too-many/progs.dat").is_file());
+}
+
+#[test]
+fn a_case_reads_the_trace_the_oracle_wrote() {
+    let work = fresh_dir("scenarios-trace");
+    let records = vec![
+        run(WORLDSPAWN, &[]),
+        exit(),
+        run(NOOP, &[]),
+        exit(),
+        run(NOOP, &[]),
+        exit(),
+    ];
+    let fake = Fake::new(|command: &std::process::Command| Reply {
+        files: vec![(last_arg(command), encode(&trace(records.clone())))],
+        ..Reply::default()
+    });
+    let oracles = fake_oracles(&work, &fake);
+    assert!(check(&oracles, Some(&["default-entities"])).unwrap());
+    // A map file is written where the scenario names it.
+    assert!(!check(&oracles, Some(&["entities-file"])).unwrap());
+    assert!(work.join("scenarios/entities-file/map.ent").is_file());
+    // A second run, for a case that compares two, writes the trace again.
+    assert!(!check(&oracles, Some(&["deterministic"])).unwrap());
+    assert_eq!(fake.seen.borrow().len(), 4);
+}
+
+#[test]
+fn each_input_reaches_the_oracle_as_its_mode_says() {
+    let work = fresh_dir("scenarios-modes");
+    let fake = Fake::new(|command: &std::process::Command| {
+        let cwd = command.get_current_dir().map(Path::to_path_buf);
+        let args = args(command);
+        let first = args.first().map(|arg| arg.to_string_lossy().into_owned());
+        match first.as_deref() {
+            Some("vector") => Reply {
+                code: 2,
+                stderr: "too short".to_owned(),
+                ..Reply::default()
+            },
+            Some("--console") => Reply {
+                stderr: "SERVER ERROR".to_owned(),
+                files: vec![(last_arg(command), encode(&trace(vec![error("shown")])))],
+                ..Reply::default()
+            },
+            Some("scenario")
+                if cwd
+                    .as_ref()
+                    .is_some_and(|dir| dir.ends_with("relative-scenario-path")) =>
+            {
+                assert_eq!(args[1], PathBuf::from("case.scn"));
+                Reply::exit(4)
+            }
+            _ => Reply {
+                code: 2,
+                stderr: "usage: vm-oracle".to_owned(),
+                ..Reply::default()
+            },
+        }
+    });
+    let oracles = fake_oracles(&work, &fake);
+    assert!(check(&oracles, Some(&["vector-progs-refused"])).unwrap());
+    assert!(check(&oracles, Some(&["console-copied"])).unwrap());
+    assert!(check(&oracles, Some(&["bad-command-line"])).unwrap());
+    assert!(!check(&oracles, Some(&["relative-scenario-path"])).unwrap());
+    // A trace in a missing directory: the oracle cannot open it, as the fake says.
+    assert!(!check(&oracles, Some(&["unwritable-trace"])).unwrap());
+}
+
+#[test]
+fn a_trace_on_a_device_is_neither_removed_nor_read() {
+    let work = fresh_dir("scenarios-device");
+    let device = work.join("full-device");
+    std::fs::write(&device, b"kept").unwrap();
+    let fake = Fake::new(|_: &std::process::Command| Reply {
+        code: 3,
+        stderr: "vm-oracle: cannot write".to_owned(),
+        ..Reply::default()
+    });
+    let oracles = fake_oracles(&work, &fake);
+    let mut case = Case::new("device", Program::new(), scenario("frames 1\n"))
+        .check(Check::Exit(3, "cannot write"));
+    let leaked: &'static str = Box::leak(device.display().to_string().into_boxed_str());
+    case.trace = TracePath::Device(leaked);
+    let outcome = super::run(&oracles, &work, &case).unwrap();
+    assert_eq!(outcome.trace, None);
+    verify(&case, &outcome).unwrap();
+    assert_eq!(std::fs::read(&device).unwrap(), b"kept");
 }

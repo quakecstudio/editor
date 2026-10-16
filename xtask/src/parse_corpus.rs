@@ -141,3 +141,87 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     );
     Ok(ok)
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use super::main;
+
+    fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/xtask-tests")
+            .join(name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        for (file, text) in files {
+            fs::write(dir.join(file), text).unwrap();
+        }
+        dir
+    }
+
+    fn run(flags: &[&str], dir: &Path) -> Result<bool, String> {
+        let mut args: Vec<String> = flags.iter().map(|flag| (*flag).to_owned()).collect();
+        args.push(dir.display().to_string());
+        main(Path::new("."), &args)
+    }
+
+    #[test]
+    fn a_codebase_round_trips_and_its_deletions_stay_local() {
+        let dir = codebase(
+            "parse-clean",
+            &[
+                ("progs.src", "progs.dat\nworld.qc\n"),
+                ("world.qc", "float x;\nvoid() main = { x = 1; };\n"),
+                ("sub/defs.qh", "float y;\n"),
+            ],
+        );
+        assert!(run(&["--vanilla", "--deletions"], &dir).unwrap());
+        assert!(run(&[], &dir).unwrap());
+    }
+
+    #[test]
+    fn a_syntax_error_fails_only_a_listed_file_under_vanilla() {
+        let dir = codebase(
+            "parse-error",
+            &[
+                ("progs.src", "progs.dat\nbad.qc\n"),
+                ("bad.qc", "void() main = { x = ; };\n"),
+                ("unlisted.qc", "float = ;\n"),
+            ],
+        );
+        assert!(!run(&["--vanilla"], &dir).unwrap());
+        assert!(
+            run(&[], &dir).unwrap(),
+            "without --vanilla an error is counted, not failed"
+        );
+        fs::write(dir.join("progs.src"), "progs.dat\n").unwrap();
+        assert!(
+            run(&["--vanilla"], &dir).unwrap(),
+            "the error is in no listed file"
+        );
+    }
+
+    #[test]
+    fn bad_arguments_and_empty_directories_are_errors() {
+        let dir = codebase("parse-empty", &[("readme.txt", "x")]);
+        assert!(run(&[], &dir).unwrap_err().contains("no .qc or .qh"));
+        assert!(run(&["--fast"], &dir).unwrap_err().contains("unknown flag"));
+        assert!(main(Path::new("."), &[]).unwrap_err().contains("usage"));
+        let unlisted = codebase("parse-no-src", &[("a.qc", "float x;\n")]);
+        assert!(
+            run(&["--vanilla"], &unlisted)
+                .unwrap_err()
+                .contains("needs")
+        );
+        assert!(run(&[], &dir.join("nowhere")).is_err());
+    }
+}

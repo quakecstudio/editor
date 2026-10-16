@@ -709,10 +709,9 @@ fn invoke(
     if let Some(trace) = trace.filter(|trace| trace.exists()) {
         fs::remove_file(trace).map_err(|e| format!("{}: {e}", trace.display()))?;
     }
-    let output = Command::new(&oracles.vm)
-        .args(args)
-        .current_dir(cwd)
-        .output()
+    let output = oracles
+        .exec
+        .output(Command::new(&oracles.vm).args(args).current_dir(cwd))
         .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
     Ok(Outcome {
         status: output.status.code(),

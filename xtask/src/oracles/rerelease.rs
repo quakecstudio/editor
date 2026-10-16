@@ -193,11 +193,14 @@ fn compile(
     }
     let src = work.join("src");
     copy_tree(source, &src)?;
-    let output = Command::new(&oracles.fteqcc)
-        .args(FLAGS)
-        .args(codebase.extra)
-        .current_dir(&src)
-        .output()
+    let output = oracles
+        .exec
+        .output(
+            Command::new(&oracles.fteqcc)
+                .args(FLAGS)
+                .args(codebase.extra)
+                .current_dir(&src),
+        )
         .map_err(|e| format!("cannot run fteqcc: {e}"))?;
     if !output.status.success() || !work.join("progs.dat").is_file() {
         println!(
@@ -326,9 +329,108 @@ mod tests {
         reason = "test code: a failed unwrap, index or sum is a failed test"
     )]
 
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
     use qc_progs::{Header, Progs, ProgsFile, Statement, write};
 
-    use super::{extended_opcodes, lno_problems, progs_digest};
+    use super::super::testing::{fake_oracles, fresh_dir};
+    use super::{CODEBASES, build, check, compiles, extended_opcodes, lno_problems, progs_digest};
+    use crate::exec::{Fake, Reply};
+
+    /// A fake FTEQCC that writes `progs` and `lno` where `-o ../progs.dat` puts them.
+    fn fteqcc(progs: Vec<u8>, lno: Vec<u8>) -> impl Fn(&Command) -> Reply {
+        move |command: &Command| {
+            let work = command.get_current_dir().unwrap().parent().unwrap();
+            Reply {
+                files: vec![
+                    (work.join("progs.dat"), progs.clone()),
+                    (work.join("progs.lno"), lno.clone()),
+                ],
+                ..Reply::default()
+            }
+        }
+    }
+
+    /// A directory of the six codebases, each a `progs.src` and a file in a subdirectory.
+    fn codebases(dir: &Path) -> std::path::PathBuf {
+        let codebases = dir.join("codebases");
+        for codebase in &CODEBASES {
+            let source = codebases.join(codebase.id);
+            fs::create_dir_all(source.join("sub")).unwrap();
+            fs::write(source.join("progs.src"), "../progs.dat\nsub/a.qc\n").unwrap();
+            fs::write(source.join("sub/a.qc"), "void() main = {};\n").unwrap();
+        }
+        codebases
+    }
+
+    #[test]
+    fn every_codebase_is_compiled_in_a_copy_and_checked() {
+        let dir = fresh_dir("rerelease-check");
+        let codebases = codebases(&dir);
+        let bytes = progs(&[0, 66]);
+        let header = *Progs::read(&bytes).unwrap().header();
+        let fake = Fake::new(fteqcc(bytes, lno(&header)));
+        let oracles = fake_oracles(&dir.join("work"), &fake);
+        // FTEQCC's outputs differ from the recorded ones, and hold an extended opcode.
+        assert!(!check(&oracles, &codebases).unwrap());
+        {
+            let seen = fake.seen.borrow();
+            assert_eq!(seen.len(), 6);
+            assert!(
+                seen.iter()
+                    .all(|line| line.starts_with("fteqcc -Tid -flno -o ../progs.dat"))
+            );
+            assert!(seen.iter().any(|line| line.ends_with("-Fautoproto")));
+        }
+        let kept = oracles.rerelease.join("rerelease-mg1");
+        assert!(kept.join("progs.dat").is_file() && kept.join("progs.lno").is_file());
+        assert!(
+            oracles
+                .work
+                .join("rerelease/rerelease/src/sub/a.qc")
+                .is_file()
+        );
+        // Built again: the outputs do not have the recorded digests, so FTEQCC runs again.
+        let (out, cached) = build(&oracles, &codebases, "rerelease").unwrap();
+        assert!(!cached);
+        assert_eq!(out, oracles.rerelease.join("rerelease"));
+    }
+
+    #[test]
+    fn a_codebase_that_does_not_compile_is_an_error() {
+        let dir = fresh_dir("rerelease-errors");
+        let codebases = codebases(&dir);
+        let fails = Fake::new(|_: &Command| Reply {
+            code: 1,
+            stdout: "error".to_owned(),
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &fails);
+        let error = build(&oracles, &codebases, "rerelease").unwrap_err();
+        assert!(error.contains("fteqcc did not compile"), "{error}");
+        assert!(
+            build(&oracles, &codebases, "quake")
+                .unwrap_err()
+                .contains("not a rerelease")
+        );
+        fs::remove_file(codebases.join("rerelease-ctf/progs.src")).unwrap();
+        let error = build(&oracles, &codebases, "rerelease-ctf").unwrap_err();
+        assert!(error.contains("no progs.src"), "{error}");
+        let cannot_run = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        let oracles = fake_oracles(&dir.join("work"), &cannot_run);
+        assert!(
+            build(&oracles, &codebases, "rerelease")
+                .unwrap_err()
+                .contains("cannot run")
+        );
+        assert!(compiles("rerelease-mg3"));
+        assert!(!compiles("id-1.01"));
+    }
 
     /// A version 6 progs.dat holding statements with these opcodes.
     fn progs(ops: &[u32]) -> Vec<u8> {

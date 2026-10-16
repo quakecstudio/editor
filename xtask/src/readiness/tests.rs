@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::exec::{Fake, Reply};
 use crate::ratchet::judge;
 
 fn root() -> PathBuf {
@@ -365,22 +366,39 @@ fn crates_resolve_by_name_or_by_directory_inside_the_repository() {
     assert_eq!(by_dir.kind, Kind::Member);
 }
 
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let path = entry.unwrap().path();
+        let target = to.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy_dir(&path, &target);
+        } else {
+            fs::copy(&path, &target).unwrap();
+        }
+    }
+}
+
 #[test]
 fn measuring_writes_a_measurement_file() {
-    let out = root()
+    let base = root()
         .join("target")
         .join("xtask-tests")
-        .join("readiness-main")
-        .join("spec.json");
+        .join("readiness-main");
+    if base.exists() {
+        fs::remove_dir_all(&base).unwrap();
+    }
+    // A fresh copy of the spec fixture's small repository, which has no scratch directory
+    // yet, as a fresh checkout has none: the tools need it to exist.
+    let repo = base.join("repo");
+    copy_dir(&root().join(FIXTURES).join("spec"), &repo);
+    let out = base.join("spec.json");
     let mut command = args("spec --os linux --out");
     command.push(out.display().to_string());
-    command.push(format!("{FIXTURES}/spec/crates/fx-spec"));
-    // The tools need the scratch directory to exist; a fresh checkout has none.
-    if scratch(&root()).exists() {
-        fs::remove_dir_all(scratch(&root())).unwrap();
-    }
-    assert!(main(&root(), &command).unwrap());
-    assert!(scratch(&root()).is_dir());
+    command.push("crates/fx-spec".to_owned());
+    assert!(!scratch(&repo).exists());
+    assert!(main(&repo, &command).unwrap());
+    assert!(scratch(&repo).is_dir());
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.check, Check::Spec);
@@ -390,7 +408,7 @@ fn measuring_writes_a_measurement_file() {
     let mut command = args("spec --out");
     command.push(missing.display().to_string());
     command.push("no-such-crate".to_owned());
-    assert!(main(&root(), &command).is_err());
+    assert!(main(&repo, &command).is_err());
     assert!(
         !missing.exists(),
         "nothing is written when a crate cannot be measured"
@@ -443,7 +461,11 @@ fn the_oracles_c_is_every_source_and_header_under_oracles() {
 #[test]
 fn the_oracles_have_no_mutation_score_and_say_why() {
     let target = resolve(&root(), ORACLES).unwrap();
-    assert_eq!(measure(&root(), Check::Mutation, &target).unwrap(), None);
+    let fake = Fake::new(|_: &Command| Reply::exit(0));
+    assert_eq!(
+        measure(&root(), Check::Mutation, &target, &tools(&fake)).unwrap(),
+        None
+    );
     let out = root()
         .join("target")
         .join("xtask-tests")
@@ -473,7 +495,10 @@ fn the_oracles_spec_sections_come_from_their_readme() {
             "{sections:?}"
         );
     }
-    let score = measure(&root(), Check::Spec, &target).unwrap().unwrap();
+    let fake = Fake::new(|_: &Command| Reply::exit(0));
+    let score = measure(&root(), Check::Spec, &target, &tools(&fake))
+        .unwrap()
+        .unwrap();
     assert!(score.total > 0, "{score:?}");
 }
 
@@ -485,4 +510,256 @@ fn citations_are_read_from_xtask_too() {
         cited.extend(citations(&fs::read_to_string(file).unwrap()));
     }
     assert!(cited.contains("PROGS-22.1"), "{cited:?}");
+}
+
+// --- Measuring with fakes of the tools ---
+
+/// The value after `flag` in `command`'s arguments.
+fn after(command: &Command, flag: &str) -> Option<PathBuf> {
+    let args: Vec<_> = command.get_args().collect();
+    args.iter()
+        .position(|arg| *arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .map(PathBuf::from)
+}
+
+fn has_arg(command: &Command, arg: &str) -> bool {
+    command.get_args().any(|a| a == arg)
+}
+
+fn fixture(check: &str) -> Target {
+    resolve(&root(), &format!("{FIXTURES}/{check}")).unwrap()
+}
+
+fn tools(exec: &dyn Exec) -> Tools<'_> {
+    Tools { exec, assets: None }
+}
+
+#[test]
+fn coverage_reads_the_report_cargo_llvm_cov_writes() {
+    let report = recorded("branches", "llvm-cov.json");
+    let fake = Fake::new(|command: &Command| Reply {
+        files: vec![(
+            after(command, "--output-path").unwrap(),
+            report.clone().into_bytes(),
+        )],
+        ..Reply::default()
+    });
+    let target = fixture("branches");
+    let score = coverage(&root(), &target, Check::Branches, &fake).unwrap();
+    assert_eq!(score, self::score(2, 4));
+    let lines = coverage(&root(), &target, Check::Lines, &fake).unwrap();
+    assert_eq!(lines.passed, lines.total, "every line of the fixture runs");
+    let seen = fake.seen.borrow();
+    assert!(
+        seen[0].starts_with(&format!("cargo +{NIGHTLY} llvm-cov")),
+        "{}",
+        seen[0]
+    );
+    assert!(seen[0].ends_with("--branch"), "{}", seen[0]);
+    assert!(!seen[1].contains("--branch"), "{}", seen[1]);
+}
+
+#[test]
+fn coverage_fails_when_cargo_llvm_cov_does() {
+    let fake = Fake::new(|_: &Command| Reply {
+        code: 101,
+        stderr: "test failed".to_owned(),
+        ..Reply::default()
+    });
+    let error = coverage(&root(), &fixture("lines"), Check::Lines, &fake).unwrap_err();
+    assert!(
+        error.contains("cargo llvm-cov failed") && error.contains("test failed"),
+        "{error}"
+    );
+    let silent = Fake::new(|_: &Command| Reply::exit(0));
+    assert!(coverage(&root(), &fixture("lines"), Check::Lines, &silent).is_err());
+    let cannot = Fake::new(|_: &Command| Reply {
+        cannot_run: true,
+        ..Reply::default()
+    });
+    let error = coverage(&root(), &fixture("lines"), Check::Lines, &cannot).unwrap_err();
+    assert!(error.contains("cannot run cargo llvm-cov"), "{error}");
+}
+
+#[test]
+fn mutation_reads_the_outcomes_cargo_mutants_writes() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let reply = |code: i32| {
+        let outcomes = outcomes.clone();
+        move |command: &Command| Reply {
+            code,
+            files: vec![(
+                after(command, "--output")
+                    .unwrap()
+                    .join("mutants.out/outcomes.json"),
+                outcomes.clone().into_bytes(),
+            )],
+            ..Reply::default()
+        }
+    };
+    let target = fixture("mutation");
+    for code in [0, 2, 3] {
+        let fake = Fake::new(reply(code));
+        let score = mutation(&root(), &target, &fake).unwrap();
+        assert_eq!(score.total, 2);
+        assert!(fake.seen.borrow()[0].contains("--copy-vcs=true"));
+    }
+    let failed = Fake::new(reply(4));
+    let error = mutation(&root(), &target, &failed).unwrap_err();
+    assert!(error.contains("cargo mutants failed"), "{error}");
+}
+
+#[test]
+fn flakes_build_once_then_run_the_tests_twenty_times() {
+    let runs = std::cell::Cell::new(0_u32);
+    let fake = Fake::new(|command: &Command| {
+        if has_arg(command, "--no-run") {
+            return Reply::exit(0);
+        }
+        runs.set(runs.get() + 1);
+        Reply::exit(i32::from(runs.get() == 3))
+    });
+    let score = flakes(&root(), &fixture("flakes"), &fake).unwrap();
+    assert_eq!(score.total, FLAKE_RUNS);
+    assert_eq!(score.passed, FLAKE_RUNS - 1);
+    assert_eq!(score.failures, ["run 3 of 20 failed"]);
+    let broken = Fake::new(|_: &Command| Reply {
+        code: 101,
+        stderr: "error[E0425]".to_owned(),
+        ..Reply::default()
+    });
+    let error = flakes(&root(), &fixture("flakes"), &broken).unwrap_err();
+    assert!(error.contains("do not build"), "{error}");
+}
+
+#[test]
+fn the_oracles_flake_check_builds_then_runs_cargo_xtask_oracles() {
+    let fake = Fake::new(|_: &Command| Reply::exit(0));
+    let score = oracle_flakes(&root(), &fake).unwrap();
+    assert_eq!(score, self::score(FLAKE_RUNS, FLAKE_RUNS));
+    let seen = fake.seen.borrow();
+    assert!(seen[0].ends_with("oracles build"), "{}", seen[0]);
+    assert!(seen[1].ends_with("oracles"), "{}", seen[1]);
+    let broken = Fake::new(|_: &Command| Reply::exit(1));
+    assert!(
+        oracle_flakes(&root(), &broken)
+            .unwrap_err()
+            .contains("failed")
+    );
+}
+
+/// A directory holding the corpus layout the oracles' coverage reads.
+fn assets(name: &str, with_id101: bool) -> PathBuf {
+    let dir = root().join("target/xtask-tests").join(name);
+    if dir.exists() {
+        fs::remove_dir_all(&dir).unwrap();
+    }
+    let id101 = dir.join(ID101);
+    fs::create_dir_all(&id101).unwrap();
+    if with_id101 {
+        fs::write(id101.join("progs.src"), "progs.dat\n").unwrap();
+    }
+    dir
+}
+
+/// A fake of the oracles' coverage tools: `cargo xtask oracles` writes a profile where
+/// `LLVM_PROFILE_FILE` says (unless `profile` is false), and `llvm-cov export` prints
+/// `report`.
+fn coverage_tools(profile: bool, report: String) -> impl Fn(&Command) -> Reply {
+    move |command: &Command| {
+        let program = command.get_program().to_string_lossy().into_owned();
+        let profile_file = command
+            .get_envs()
+            .find(|(key, _)| *key == "LLVM_PROFILE_FILE")
+            .and_then(|(_, value)| value.map(PathBuf::from));
+        if let Some(path) = profile_file.filter(|_| profile) {
+            return Reply {
+                files: vec![(path.with_file_name("vm-oracle-1.profraw"), b"raw".to_vec())],
+                ..Reply::default()
+            };
+        }
+        if has_arg(command, "export") || program.ends_with("llvm-cov") {
+            return Reply {
+                stdout: report.clone(),
+                ..Reply::default()
+            };
+        }
+        Reply::exit(0)
+    }
+}
+
+#[test]
+fn the_oracles_coverage_runs_every_check_then_exports_our_files() {
+    let report = recorded("lines", "llvm-cov.json");
+    let fake = Fake::new(coverage_tools(true, report));
+    let tools = Tools {
+        exec: &fake,
+        assets: Some(assets("readiness-assets", true).into_os_string()),
+    };
+    let score = c_coverage(&root(), Check::Lines, &tools).unwrap();
+    assert_eq!(score, self::score(6, 18));
+    let seen = fake.seen.borrow();
+    assert!(seen[0].ends_with(" oracles"), "{}", seen[0]);
+    assert!(seen[1].contains(" oracles id101 "), "{}", seen[1]);
+    assert!(seen[2].contains("merge -sparse"), "{}", seen[2]);
+    let export = &seen[3];
+    assert!(export.contains("export -summary-only"), "{export}");
+    assert!(
+        export.contains("host.c") && !export.contains("pr_exec.c"),
+        "{export}"
+    );
+}
+
+#[test]
+fn the_oracles_coverage_needs_id101_and_a_profile() {
+    let fake = Fake::new(coverage_tools(true, String::new()));
+    let error = c_coverage(&root(), Check::Lines, &tools(&fake)).unwrap_err();
+    assert!(error.contains("QS_TEST_ASSETS"), "{error}");
+    let without = Tools {
+        exec: &fake,
+        assets: Some(assets("readiness-no-id101", false).into_os_string()),
+    };
+    let error = c_coverage(&root(), Check::Lines, &without).unwrap_err();
+    assert!(error.contains("no id 1.01"), "{error}");
+    let with = Some(assets("readiness-with-id101", true).into_os_string());
+    let silent = Fake::new(coverage_tools(false, String::new()));
+    let no_profile = Tools {
+        exec: &silent,
+        assets: with.clone(),
+    };
+    // Branches, not lines, so as not to share a directory with the test above.
+    let error = c_coverage(&root(), Check::Branches, &no_profile).unwrap_err();
+    assert!(error.contains("wrote no profile"), "{error}");
+    let export_fails = Fake::new(|command: &Command| {
+        if has_arg(command, "export") {
+            return Reply::exit(1);
+        }
+        coverage_tools(true, String::new())(command)
+    });
+    let failing = Tools {
+        exec: &export_fails,
+        assets: with,
+    };
+    let error = c_coverage(&root(), Check::Branches, &failing).unwrap_err();
+    assert!(error.contains("llvm-cov export failed"), "{error}");
+}
+
+#[test]
+fn a_measurement_runs_the_check_for_each_crate_named() {
+    let out = root()
+        .join("target")
+        .join("xtask-tests")
+        .join("readiness-run")
+        .join("flakes.json");
+    let fake = Fake::new(|_: &Command| Reply::exit(0));
+    let mut command = args("flakes --os linux --out");
+    command.push(out.display().to_string());
+    command.push(format!("{FIXTURES}/flakes"));
+    command.push(ORACLES.to_owned());
+    assert!(run_check(&root(), &command, &tools(&fake)).unwrap());
+    let measurement: Measurement =
+        serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(measurement.crates.len(), 2);
+    assert_eq!(measurement.crates["oracles"].passed, FLAKE_RUNS);
 }
