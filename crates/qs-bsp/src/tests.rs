@@ -21,7 +21,7 @@ const BASE_XXD: &str = include_str!("../../../docs/spec/vectors/bsp/base.txt");
 
 fn read(spec: &BspSpec) -> Result<Bsp<'static>, BspError> {
     let bytes: &'static [u8] = Vec::leak(spec.build());
-    Bsp::read(bytes)
+    Bsp::read(bytes, BspLoader::WinQuake)
 }
 
 fn error(spec: &BspSpec) -> String {
@@ -52,7 +52,7 @@ fn factory_builds_the_base_vector() {
     assert_eq!(BspSpec::default().build(), base);
     assert_eq!(BSP_HEADER_SIZE, 124);
     assert_eq!(BSP_HEADER_LUMPS, 15);
-    let bsp = Bsp::read(&base).unwrap();
+    let bsp = Bsp::read(&base, BspLoader::WinQuake).unwrap();
     assert_eq!(bsp.version, BspVersion::Bsp29);
     assert_eq!(
         bsp.lumps[BSP_LUMP_MODELS],
@@ -241,7 +241,7 @@ fn funny_lump_size() {
     // Shorten the planes lump by one byte.
     bytes[16..20].copy_from_slice(&19_i32.to_le_bytes());
     assert_eq!(
-        Bsp::read(&bytes),
+        Bsp::read(&bytes, BspLoader::WinQuake),
         Err(BspError::FunnyLumpSize {
             lump: BSP_LUMP_PLANES
         })
@@ -307,9 +307,12 @@ fn load_order() {
 #[test]
 fn bounds() {
     let base = BspSpec::default().build();
-    assert_eq!(Bsp::read(&base[..123]), Err(BspError::TooShort));
     assert_eq!(
-        Bsp::read(&base[..1019]),
+        Bsp::read(&base[..123], BspLoader::WinQuake),
+        Err(BspError::TooShort)
+    );
+    assert_eq!(
+        Bsp::read(&base[..1019], BspLoader::WinQuake),
         Err(BspError::LumpOutOfBounds {
             lump: BSP_LUMP_MODELS
         })
@@ -318,7 +321,7 @@ fn bounds() {
         let mut bytes = base.clone();
         bytes[at..at + 4].copy_from_slice(&i32::to_le_bytes(value));
         assert_eq!(
-            Bsp::read(&bytes),
+            Bsp::read(&bytes, BspLoader::WinQuake),
             Err(BspError::LumpOutOfBounds { lump: 0 }),
             "{at} {value}"
         );
@@ -530,7 +533,7 @@ fn texture_bounds() {
     let set = |at: usize, value: i32| {
         let mut bytes = base.clone();
         bytes[lump + at..lump + at + 4].copy_from_slice(&value.to_le_bytes());
-        Bsp::read(Vec::leak(bytes)).map(|_| ())
+        Bsp::read(Vec::leak(bytes), BspLoader::WinQuake).map(|_| ())
     };
     assert_eq!(set(0, -1), Err(BspError::BadTexturesLump));
     assert_eq!(set(0, 97), Err(BspError::BadTexturesLump));
@@ -549,7 +552,7 @@ fn texture_bounds() {
     };
     let bytes = short.build();
     assert!(
-        Bsp::read(&bytes).is_err(),
+        Bsp::read(&bytes, BspLoader::WinQuake).is_err(),
         "nummiptex 0 rejects every miptex"
     );
 }
@@ -739,6 +742,40 @@ fn extents() {
             element: 0
         })
     );
+}
+
+// spec BSP-9.15: GLQuake's loader accepts extents up to 512 where WinQuake's stops at 256:
+// `extents-272` and `extents-512` load in GLQuake and fail in WinQuake, and `extents-528`
+// fails in both unless special.
+#[test]
+fn gl_extents() {
+    let gl = |spec: &BspSpec| Bsp::read(Vec::leak(spec.build()), BspLoader::GlQuake);
+    for (side, extent, lighting) in [(256.0, 256, 289), (272.0, 272, 324), (512.0, 512, 1089)] {
+        let face = gl(&sized(side, lighting)).unwrap().faces[0];
+        assert_eq!(face.extents, [extent, extent]);
+    }
+    assert_eq!(
+        gl(&sized(512.0, 1089)).unwrap().faces[0].lightmap_size,
+        [33, 33]
+    );
+    assert_eq!(error(&sized(512.0, 1089)), "Bad surface extents");
+    assert_eq!(
+        gl(&sized(528.0, 1156)).unwrap_err(),
+        BspError::BadSurfaceExtents
+    );
+    let mut spec = sized(528.0, 1156);
+    spec.texinfo[0].flags = 1;
+    assert_eq!(gl(&spec).unwrap().faces[0].extents, [528, 528]);
+    assert_eq!(read(&spec).unwrap().faces[0].extents, [528, 528]);
+    assert_eq!(BSP_GL_MAX_SURFACE_EXTENT, 512);
+    assert_eq!(BspLoader::GlQuake.max_surface_extent(), 512);
+    assert_eq!(BspLoader::WinQuake.max_surface_extent(), 256);
+    // The stored 16-bit extent is checked (BSP-9.14): 65536 + 512 loads, 65536 + 528 fails.
+    let mut spec = s_axis([1032.0, 0.0, 0.0, 0.0]);
+    spec.faces[0].lightofs = -1;
+    assert_eq!(gl(&spec).unwrap().faces[0].extents, [512, 64]);
+    spec.texinfo[0].vecs[0][0] = 1032.25;
+    assert_eq!(gl(&spec).unwrap_err(), BspError::BadSurfaceExtents);
 }
 
 // spec BSP-9.1, BSP-9.6, BSP-10.1: a face on its plane's back with no light samples.
@@ -1275,9 +1312,9 @@ fn ent_names() {
 fn replaced_entities() {
     let base = BspSpec::default().build();
     let text = b"{\n\"classname\" \"worldspawn\"\n\"message\" \"edited\"\n}\n";
-    let edited = replace_entities(&base, text).unwrap();
-    let before = Bsp::read(&base).unwrap();
-    let after = Bsp::read(&edited).unwrap();
+    let edited = replace_entities(&base, text, BspLoader::WinQuake).unwrap();
+    let before = Bsp::read(&base, BspLoader::WinQuake).unwrap();
+    let after = Bsp::read(&edited, BspLoader::WinQuake).unwrap();
     assert_eq!(after.entities(), text);
     assert_eq!(after.entity_lump.last(), Some(&0));
     assert_eq!(after.faces, before.faces);
@@ -1287,8 +1324,11 @@ fn replaced_entities() {
     for lump in after.lumps {
         assert_eq!(lump.fileofs.checked_rem(4), Some(0));
     }
-    assert_eq!(replace_entities(&edited, &base_entities()).unwrap(), base);
-    assert!(replace_entities(&base[..100], b"").is_err());
+    assert_eq!(
+        replace_entities(&edited, &base_entities(), BspLoader::WinQuake).unwrap(),
+        base
+    );
+    assert!(replace_entities(&base[..100], b"", BspLoader::WinQuake).is_err());
 }
 
 fn base_entities() -> Vec<u8> {
@@ -1314,7 +1354,13 @@ proptest! {
 }
 
 fn exercise(bytes: &[u8]) {
-    if let Ok(bsp) = Bsp::read(bytes) {
+    for loader in [BspLoader::WinQuake, BspLoader::GlQuake] {
+        exercise_with(bytes, loader);
+    }
+}
+
+fn exercise_with(bytes: &[u8], loader: BspLoader) {
+    if let Ok(bsp) = Bsp::read(bytes, loader) {
         for leaf in 0..bsp.leafs.len().min(64) {
             let _row = bsp.leaf_pvs(leaf);
         }
@@ -1324,6 +1370,6 @@ fn exercise(bytes: &[u8]) {
         }
         let _hull = bsp.hull0();
         let _entities = bsp.entities();
-        let _edited = replace_entities(bytes, b"{\n}\n");
+        let _edited = replace_entities(bytes, b"{\n}\n", loader);
     }
 }
