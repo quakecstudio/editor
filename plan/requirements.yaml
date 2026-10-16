@@ -258,8 +258,8 @@ sections:
   - id: TEST
     title: Test-suite readiness (see docs/testing.md)
     requirements:
-      - {id: TEST-1, kind: stated, text: "Line and branch coverage per crate meets the bar in ADR-0009 (proposed lines 90%, branches 80%)"}
-      - {id: TEST-2, kind: stated, text: "Mutation score per crate meets the bar (proposed 90%); every surviving mutant killed or justified"}
+      - {id: TEST-1, kind: stated, text: "Line and branch coverage per crate meets the bar in ADR-0009 (lines 90%, branches 80%)"}
+      - {id: TEST-2, kind: stated, text: "Mutation score per crate meets the bar in ADR-0009 (90%); every surviving mutant killed or justified"}
       - {id: TEST-3, kind: stated, text: "Every normative spec statement for a crate has a citing test (100%)"}
       - {id: TEST-4, kind: stated, text: "Property tests for every encoder/decoder round trip and every stated invariant"}
       - {id: TEST-5, kind: stated, text: "Fuzzing of every parser or decoder of external input, 24 h clean, findings kept as regression tests"}

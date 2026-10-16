@@ -1,8 +1,8 @@
-# ADR-0009: Adopt the readiness bar, with branch coverage and full mutation runs nightly
+# ADR-0009: Adopt the readiness bar, measured at readiness reviews
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, choosing option E (keep CI lean until there is product code) over the recommended option B
 - **Issue:** [#24](https://github.com/quakecstudio/editor/issues/24)
 - **Requirements:** TEST-1, TEST-2, TEST-3, TEST-7, TEST-10, TEST-12
 
@@ -24,8 +24,8 @@ issues, so these numbers set the pace of the whole build.
 
 What exists: `make test-coverage` (`cargo llvm-cov`) and `make test-mutants` (`cargo mutants`) are
 in the Makefile from #2, and `make test-fuzz` already uses a nightly toolchain. The workspace pins
-stable Rust 1.99.0 (`rust-toolchain.toml`). CI on three operating systems is
-[#3](https://github.com/quakecstudio/editor/issues/3), still open, so no workflow exists yet.
+stable Rust 1.99.0 (`rust-toolchain.toml`). CI on three operating systems landed with
+[#3](https://github.com/quakecstudio/editor/issues/3) ([`docs/ci.md`](../ci.md)).
 
 Facts the choice rests on, from the tools' documentation (fetched 2026-10-15):
 
@@ -46,58 +46,50 @@ Facts the choice rests on, from the tools' documentation (fetched 2026-10-15):
 | B. Adopt the numbers as written, split by where they run (recommended) | Same bar as A. Pull requests gate on line coverage (stable), mutants in the diff and spec citations. A nightly job on a pinned nightly measures branch coverage, the full mutation score and the 20-run flake check, and a readiness review requires green nightly results. A regression in a nightly-only number can land and is caught the next morning, not at merge |
 | C. Lower the bar (for example lines 80%, no branch number, mutation 75%) | Faster readiness reviews and earlier phase starts, but weaker evidence for layers that are meant to be proved (the VM, the compiler). The plan's premise that higher layers can trust lower ones weakens |
 | D. Raise the bar (mutation 100%, every survivor killed, no "equivalent" exemptions) | Some mutants are truly equivalent and cannot be killed, so 100% would force contorted tests or `#[mutants::skip]` noise. Not recommended |
+| E. Adopt the numbers as written, measured only when a layer's readiness review runs (decided) | Same bar as A and B. No new pull-request gates, no nightly job: the reviewer runs one on-demand workflow that measures everything for the layer's crates. Pull-request CI stays as fast as it is now. A regression between reviews is not caught at merge; it is caught at the layer's next readiness review, or turned into a pull-request gate later by its own decision |
 
 ## Decision
 
-Recommendation: **option B. Confirm every threshold in `docs/testing.md` unchanged, and run each
-check where it can run well.** The numbers are reasonable for code that is ported against a spec
-and an oracle, and lowering them now would cost more later, once layers are built on weak suites.
-What needs deciding is placement:
+Decided: **option E. Confirm every threshold in `docs/testing.md` unchanged, and measure them only
+when a layer's readiness review runs.** The agent recommended option B (pull-request gates plus a
+nightly job); Justin chose to keep CI lean until the product has real code, so nothing new runs on
+pull requests or on a schedule.
 
-| Check | Threshold | Pull requests | Nightly (pinned nightly toolchain, three OSes where noted) |
+| Check | Threshold | Pull requests | Readiness review (on-demand workflow, three OSes where noted) |
 | --- | --- | --- | --- |
-| Line coverage (TEST-1) | at least 90% per crate | Gate, stable, `cargo llvm-cov` | Recorded |
-| Branch coverage (TEST-1) | at least 80% per crate | Not run (needs nightly) | Gate for readiness, `cargo llvm-cov --branch` |
-| Mutation score (TEST-2) | at least 90% caught; every survivor killed or listed as equivalent with a reason | Gate on `--in-diff`: every mutant in changed code caught or justified | Full run per crate; the score is recorded |
-| Spec citations (TEST-3) | 100% of normative statements cited | Gate | Recorded |
+| Line coverage (TEST-1) | at least 90% per crate | Not run | Gate, `cargo llvm-cov` |
+| Branch coverage (TEST-1) | at least 80% per crate | Not run | Gate, `cargo llvm-cov --branch` on a date-pinned nightly |
+| Mutation score (TEST-2) | at least 90% caught; every survivor killed or listed as equivalent with a reason | Not run | Gate, full `cargo mutants` run per crate |
+| Spec citations (TEST-3) | 100% of normative statements cited | The existing spec-citation ratchet test in `qs-tests` (already part of the unit tests) | Gate |
 | Flakes (TEST-7) | 20 consecutive passing runs | Not run | 20 runs on macOS, Windows and Linux |
-| Ratchets (TEST-10) | per-crate minimums | Gate | Gate |
+| Ratchets (TEST-10) | per-crate minimums | Not run | Gate: no crate below its recorded minimum |
 
-The ratchet mechanism:
+How it works:
 
-- **File:** `ratchets.toml` at the repository root, one table per crate with `lines`, `branches`,
-  `mutation` and `spec` minimums and a `readiness` key naming the readiness issue that set them
-  (for example `readiness = "P1-R1"`). A crate with no entry has no minimum yet.
-- **Check:** `cargo xtask ratchet` (part of `cargo xtask ci`) compares the measured numbers with the
-  file and fails below a minimum. It also compares the file with the merge base: a raised or lowered
-  value must change that crate's `readiness` key to a key that exists in
-  `plan/backlog/readiness.yaml`, and a lowered value also needs a `reason`. The check runs offline,
-  against the plan data, without calling GitHub.
-- **History:** every CI run writes the per-crate numbers as JSON (`target/metrics/<run>.json`) and
-  uploads it as an artifact. The readiness report copies the numbers it relied on, with run links.
-  `ratchets.toml` is the durable record. A committed history file would put a bot commit on `main`
-  for every run, which the merge queue does not allow.
-- **Fixtures:** as with the clippy fixtures from #1, a fixture crate under `xtask/fixtures/` sits
-  below each threshold, and `cargo xtask ci` asserts that each matching check fails on it. That is
-  the issue's acceptance test.
-
-The nightly job pins its nightly toolchain by date, as `rust-toolchain.toml` pins stable, and
-updates it on purpose, never through `nightly` floating.
+- **Workflow:** one `workflow_dispatch` workflow, `Readiness`, taking a list of crates. It is not a
+  required check and has no schedule. The readiness reviewer runs it and links the run in the
+  report.
+- **Ratchets:** `ratchets.toml` at the repository root, one table per crate with `lines`,
+  `branches`, `mutation` and `spec` minimums and a `readiness` key naming the readiness issue that
+  set them. `cargo xtask ratchet` compares measured numbers with the file; the readiness workflow
+  runs it. A passing review records its numbers there.
+- **Fixtures:** a fixture crate under `xtask/fixtures/` sits below each threshold, and a unit test
+  asserts that each check fails on it. That is the issue's acceptance test, and it is cheap enough
+  for pull-request CI.
+- **Later:** moving any of these checks into pull-request CI (TEST-10's "CI ratchets") is a new
+  decision once layers hold real code; until then a ready layer's decay is caught at its next
+  readiness review.
 
 ## Consequences
 
-If accepted as recommended:
-
-- `docs/testing.md`: "proposed" becomes "confirmed in ADR-0009", and the Measured-by column names
-  the pull-request and nightly jobs above. No threshold changes. `plan/requirements.yaml` TEST-1 and
-  TEST-2 drop "(proposed ...)" from their text.
-- The rest of #24's deliverable is then built on the issue's branch, after this ADR is accepted:
-  `docs/readiness/_template.md`, the coverage, mutation, flake and spec-citation jobs, `ratchets.toml`
-  and `cargo xtask ratchet`, and the fixture crates. The workflow files need #3's CI. If #3 has not
-  landed, the jobs are `cargo xtask` subcommands that #3's workflows call, and the CI run links
-  follow when #3 merges.
-- `docs/conventions.md`: one line allowing a date-pinned nightly toolchain in the nightly job only
-  (fuzzing already uses nightly).
+- `docs/testing.md`: "proposed" becomes "confirmed in ADR-0009"; the Measured-by column names the
+  readiness workflow instead of nightly jobs. No threshold changes. `plan/requirements.yaml`
+  TEST-1 and TEST-2 drop "(proposed ...)".
+- The rest of #24's deliverable is built on the issue's branch after this ADR merges:
+  `docs/readiness/_template.md`, the `Readiness` workflow, `ratchets.toml`, `cargo xtask ratchet`
+  and the fixture crates. No new required checks.
+- `docs/conventions.md`: one line allowing a date-pinned nightly toolchain in the readiness
+  workflow only (fuzzing already uses nightly).
 - Every readiness issue (`plan/backlog/readiness.yaml`) already cites ADR-0009's thresholds; no plan
   change is needed.
 
