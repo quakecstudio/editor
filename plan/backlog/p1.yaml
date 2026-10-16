@@ -326,6 +326,7 @@ issues:
   - P1-08
   deliverable:
   - 'cargo xtask corpus fetch|build|verify: downloads entries in corpus/manifest.toml by checksum into a cache outside the source tree; builds progs with the oracle qcc where needed'
+  - cargo xtask corpus verify replaces corpus/verify.py and its tests, keeping every check (manifest rules, repository scan, online checksums); the Python script is removed
   acceptance:
   - Works offline from cache; refuses entries marked never
   - From Quake-Tools only qcc/v101qc/*.qc is extracted into the corpus; compiler and engine sources belong to the oracles build

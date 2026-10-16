@@ -1,0 +1,659 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The conformance corpus: QuakeC codebases and maps the differential and
+# conformance tests run against. Nothing listed here is committed to this
+# repository; entries are fetched at the pinned commit and checked against the
+# recorded SHA-256 (LIC-7). corpus/README.md explains the fields and the policy,
+# and `python3.11 corpus/verify.py` checks this file.
+#
+# Every license below was read from the item's own files at the pinned commit;
+# `evidence` names those files and [source.checksums] pins their contents.
+# Licenses were recorded on 2026-10-15.
+
+schema = 1
+
+# Never fetched by any tool and never committed (LIC-5). The ids here must
+# also appear as `use = "never"` entries below.
+never = ["quakec-1.06", "quoth"]
+
+# Never fetch from these hosts or repositories: they carry QuakeC 1.06.
+blocked_urls = [
+  "https://github.com/maddes-b/QuakeC-releases",
+]
+
+# ---------------------------------------------------------------------------
+# Sources: a repository at a pinned commit, and the files in it whose content
+# is pinned by SHA-256 (license evidence and maps).
+# ---------------------------------------------------------------------------
+
+[[source]]
+id = "quake-tools"
+url = "https://github.com/id-Software/Quake-Tools"
+commit = "c0d1b91c74eb654365ac7755bc837e497caaca73"
+[source.checksums]
+"qcc/COPYING" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+"qcc/v101qc/defs.qc" = "6197249ed7202bfaf5f150c42fba64add4916484aefd7df3608a3618a65e5c30"
+
+[[source]]
+id = "quake-rerelease-qc"
+url = "https://github.com/id-Software/quake-rerelease-qc"
+commit = "634eefab09a77eb7b5f5ca7078ba3d8784a91142"
+[source.checksums]
+"COPYING.txt" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+"README.md" = "26d4a9b91b856a264fc345047129a0379fc02719383e069d2f8eba62d04afe72"
+"quakec/defs.qc" = "7694c006223ec43f05b923c8fe7691a6ed8298141d1562d98d6c86162de6129d"
+"quakec_hipnotic/defs.qc" = "9f3a8d0d37e142abf957c0924e8911bdb795de26b3117d1665f12c3d4d9d03a6"
+"quakec_rogue/defs.qc" = "9d746de82e9316d2eb767d3923ee6c60909d226b24b9786fbc707463f7546d1a"
+"quakec_mg1/defs.qc" = "7f5237a83d1ba8192ef197ad94554bdd5a103a2e7c68da1e08491b5e7197230b"
+"quakec_ctf/defs.qc" = "71cb5dae690e7c9d32bae991d55941971624c64888d1a7f0804a2c509f4d192e"
+"quakec_mg3/defs.qc" = "6e6571276449d31a1cf62624e3ba9b11b8341034d9d1c8db20843f1d698c4632"
+
+[[source]]
+id = "copper"
+url = "https://github.com/itslunaranyo/copper"
+commit = "68f6a69ca94ff1f5e9ad30b0cddbe87face743c6"
+[source.checksums]
+"LICENSE" = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+"README.md" = "3f056ea4a065f4593ac56330f40e6447c62e619bafe8ea9e2cc7ac256fdcedaf"
+
+[[source]]
+id = "alkaline"
+url = "https://github.com/fabiolimamp/alkaline"
+commit = "9f361fdeae40b7210c0986a79eb95ee43251a223"
+[source.checksums]
+"LICENSE" = "6852c5660e8b1091694e5350f2cbb7fff8f0e067d5fb1581982d5c78f90a655c"
+
+[[source]]
+id = "arcane-dimensions"
+url = "https://github.com/SimsOCallaghan/ArcaneDimensions"
+commit = "320f1cec4545563e70027450f2d6d4f08f527c69"
+[source.checksums]
+"LICENSE" = "1be990a929b50ca91d815cea1cd3cebb5c49e86076ade82b1103f2b9cd71a3af"
+"README.md" = "481cc306176c453e3b9cf3138a33772542e670a9046ccdcc1c9e68e814d18c76"
+
+[[source]]
+id = "progs-dump"
+url = "https://github.com/progs-dump-dev/progs_dump"
+commit = "b0359dec015ca038f4f8813c3171e5c7be21d798"
+[source.checksums]
+"qc/LICENSE" = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+"readme.txt" = "746cfbd4ce9af99e0883763a661a370cfd0d9a3e7c1bde54b3879c3d7196d269"
+"mapsrc/pd_elevator.map" = "b14081b3040ffa9f42bbd6af91d0d6055c6ff6196b709929f586b4d40f98593b"
+"mapsrc/pd_lava.map" = "f77ca3ef9c05f926be07f6e51428e69e16717d42f1c5349689df12c1a701812b"
+
+[[source]]
+id = "librequake"
+url = "https://github.com/lavenderdotpet/LibreQuake"
+commit = "681890f1216d339a989b55d7c6a6cfd95db0b33e"
+[source.checksums]
+"docs/COPYING" = "c3426ae10fd52ab1a3c3d4de4f2fae60543403e3cfd09ae5dc2ec16ae4717d28"
+"docs/README-IMPORTANT-LICENCE-INFO" = "121e4f2bbae888f442be76795c7e1b431bbfce9c7dd968407b4da969ccb50eae"
+"docs/misc-docs/COPYING" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+"qcsrc/README" = "ee75d14e444872db7d4933accc9f7c4a98cc987ba6c0efe72ca4ec6cc5b6548b"
+"qcsrc/defs.qc" = "43ad2832672e4334c1b59dcb52c0d4b63a121513f102ea624bb6f9aba8792bf3"
+"lq1/maps/src/e0/lq_e0m1.map" = "cdccb0af72ad7e9903abc050b081ac7ade18967057353c0179814d9f1636d0f0"
+"lq1/maps/src/e0/lq_e0m2.map" = "47ec1ba13ddad7e5aaef6716fd6af05b5c6c6f9cce0131387349155618dc2eb2"
+"lq1/maps/src/e0/lq_e0m3.map" = "00c024a1ce9192c513ccce0e4af4153f8b7fc4f069b1b7d5047f3d49167d8f71"
+"lq1/maps/src/e0/lq_e0m4.map" = "f7fca2507abf183904c6348477011f6cae82030cc7b1920d290c4da88ff993fb"
+"lq1/maps/src/e0/lq_e0m5.map" = "3b3b38a77bb74974156aa739cc83a866bc121ff47ee7f476e181bfe8733046ad"
+"lq1/maps/src/e0/lq_e0m6.map" = "81cf3c666f9e07e2c0f23a8247e8efd5cf2f603f1d57d8bb652c64d503ff1af3"
+"lq1/maps/src/e0/lq_e0m7.map" = "1cbb8cfe0c22945e92cff8dcc254de8707c10935e876d42925b0fbe07ed828e3"
+"lq1/maps/src/e0/lq_e0m8.map" = "ba486981f9537fc41f26620d6bd4c03e883c1f6a0917833be61a51f619f61c15"
+"lq1/maps/src/e1/lq_e1m1.map" = "84bf3a4d039e479f4823829a9e80ec2f95398743504348cac9d15c922795074a"
+"lq1/maps/src/e1/lq_e1m2.map" = "d8f1af68d7b029daa91e0fd83c3cbe3d495fc586d1b7ee7ffb41e845b0b1b324"
+"lq1/maps/src/e1/lq_e1m3.map" = "724013103536fae8c1db0ea96cbdc865e764a8aa7a7d00db0628e98aa4cd403c"
+"lq1/maps/src/e2/lq_e2m5.map" = "866ae072677c77e48a044dba101b71058228c470a976d83c717e22ccb5d8bdf0"
+"lq1/maps/src/e3/lq_e3m4.map" = "c1bd66d58fd3d775c2ca5ef8581f48c70e9a185d54b5c62023b83df1ce32e58b"
+"lq1/maps/src/e4/lq_e4m5.map" = "c00cae637e076ab0391867c127abc33d911765873fb2078c2ce8e1da5aa81e1b"
+"lq1/maps/src/dm/lqdm1.map" = "34cc096a1cab438af97bcb4326299cfb0bb7278eaeceb5f93878005bd3e02b37"
+"lq1/maps/src/dm/lqdm3.map" = "638b55fac74c87690e2cf02d4417b6ef67c144bad8f019bc9dbdd8af8804555b"
+"lq1/maps/src/dm/lqdm5.map" = "6e7dcb29b1c8418654aee1c909041f9681666bc5e1675a3793eec41fd4a95e39"
+"lq1/maps/src/dm/lqdm13.map" = "1b7a9807664806a26a17b6f2e3f50b3911ab69482dad878be7077f611b69b17e"
+"lq1/maps/src/misc/start.map" = "53bad9a15ec3f0dfb7e5129d24b3c694cc7de8cd5bd1e416ae58c17b7556cd3d"
+"lq1/maps/src/misc/lq_end.map" = "17110a89e109c6ea14e80adc1663fd5eddd48377f739e788167cd55dd9cac4eb"
+
+[[source]]
+id = "re-mobilize"
+url = "https://github.com/EmeraldTiger/Re-Mobilize"
+commit = "1738732d67e6c0726270abe9a7b6a43337502873"
+[source.checksums]
+"LICENSE" = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+
+[[source]]
+id = "qc-conduit"
+url = "https://github.com/4LT/qc-conduit"
+commit = "9292bc53b04078d19dac84f69a9c95b7c7986a0f"
+[source.checksums]
+"COPYING" = "c9f8084cad363d87503c7628838e57d46bc8334fe82b57487c0d25145e898aca"
+
+[[source]]
+id = "quake-reignited"
+url = "https://github.com/Boondorl/Quake-Reignited"
+commit = "eebce61948cc35cfe23e2dc40e8d4bf71a5057a2"
+[source.checksums]
+"LICENSE" = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+
+[[source]]
+id = "nuclide"
+url = "https://github.com/VeraVisions/nuclide"
+commit = "03ea0bdc43471a05032cb1bc35803c146e225df0"
+[source.checksums]
+"COPYING" = "d77b5a0c5bfec62257d99618876d466e1545dbbc1902ad4c743dd23f29e57799"
+
+[[source]]
+id = "freecs"
+url = "https://github.com/eukara/freecs"
+commit = "79893de18d34e9f55cbf4877283145e63bfab5f1"
+[source.checksums]
+"COPYING" = "4e8827b98e3ae6417b08420a89afce6728597c36fe02d403d4a3ce526b160c17"
+
+[[source]]
+id = "nzp"
+url = "https://github.com/nzp-team/quakec"
+commit = "302b792815881cda81f28aa2e46585de132ac473"
+[source.checksums]
+"LICENSE" = "0e7fefc61601f8dd519347d10d688cad4708b1cefc3a1fe740a81f662ef3e3e4"
+
+[[source]]
+id = "crmod7"
+url = "https://github.com/quakeone/CRMod7"
+commit = "3c1249f910086df6d752c8e0c9e1d12443c17b3f"
+[source.checksums]
+"LICENSE" = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+
+[[source]]
+id = "swab"
+url = "https://github.com/4LT/swab"
+commit = "813b880d9b5ac39612577b1563b347f5716d939a"
+[source.checksums]
+"LICENSE" = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+"README.md" = "3f056ea4a065f4593ac56330f40e6447c62e619bafe8ea9e2cc7ac256fdcedaf"
+
+[[source]]
+id = "xonotic"
+url = "https://gitlab.com/xonotic/xonotic"
+commit = "aa02ae2df43a1a57bb4f77322a7776b4ada79ccf"
+[source.checksums]
+"COPYING" = "9c6d680aa6e9daac858e86786637043ffd17d4007a20b57871836444ccace4bc"
+"GPL-3" = "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+
+[[source]]
+id = "xonotic-data"
+url = "https://gitlab.com/xonotic/xonotic-data.pk3dir"
+commit = "7068eb6bb838b97064a4e55646f3df9c3bd633e6"
+[source.checksums]
+"qcsrc/Makefile" = "93acc4ab69f5b37cef11dd858c3ac9277ac0ac6dbd9c3ba7dfba38f4a04a1751"
+
+[[source]]
+id = "ericw-tools"
+url = "https://github.com/ericwa/ericw-tools"
+commit = "36eec1da2a194467e6baac2f444c2dd04b57d266"
+[source.checksums]
+"COPYING" = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+"README.md" = "d6bb1cf9fbdf4a27e29ae794f32d81b0cf1f79f74765e02e3fb023302f178487"
+"testmaps/q1_cube.map" = "1e508f871835ac7e12bb235bb7ea6e14578fa9d4c483914d1f4feb8e7ec141c6"
+"testmaps/q1_csg.map" = "cf9ea843febcda2a899d37a20c7e62f31190d9db796345e5752278154c48bec9"
+"testmaps/q1_bmodel_liquid.map" = "2eb4ef8a5b19f1ddfbee5b7b2f8ba501dccd1c917d885d77b52ba48eb618d100"
+"testmaps/q1_clip_func_wall.map" = "57920e84f2ce1dfe920ab2fb0734f983b37f009a0d4abbcfd6e6ca6b8619572b"
+
+# ---------------------------------------------------------------------------
+# QuakeC codebases. `kind` is "id" for id Software's code and "mod" for a
+# community mod. `path` is the codebase's directory inside the source.
+# Evidence is "path" in the entry's source, or "source-id:path" in another.
+# ---------------------------------------------------------------------------
+
+[[codebase]]
+id = "id-1.01"
+name = "id Software QuakeC 1.01"
+kind = "id"
+source = "quake-tools"
+path = "qcc/v101qc"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["qcc/COPYING", "qcc/v101qc/defs.qc"]
+notes = "GPL v2 text in qcc/COPYING; each .qc carries id's header granting version 2 or any later version. Only qcc/v101qc is corpus; the compiler and tools belong to the oracles build."
+
+[[codebase]]
+id = "rerelease"
+name = "Quake rerelease QuakeC (base campaign)"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec/defs.qc"]
+notes = "README: released under the GPLv2; the defs.qc header grants version 2 or any later version."
+
+[[codebase]]
+id = "rerelease-hipnotic"
+name = "Quake rerelease QuakeC: Scourge of Armagon"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec_hipnotic"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec_hipnotic/defs.qc"]
+
+[[codebase]]
+id = "rerelease-rogue"
+name = "Quake rerelease QuakeC: Dissolution of Eternity"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec_rogue"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec_rogue/defs.qc"]
+
+[[codebase]]
+id = "rerelease-mg1"
+name = "Quake rerelease QuakeC: Dimension of the Machine"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec_mg1"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec_mg1/defs.qc"]
+
+[[codebase]]
+id = "rerelease-ctf"
+name = "Quake rerelease QuakeC: Capture the Flag"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec_ctf"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec_ctf/defs.qc"]
+
+[[codebase]]
+id = "rerelease-mg3"
+name = "Quake rerelease QuakeC: Dawn of the Machine"
+kind = "id"
+source = "quake-rerelease-qc"
+path = "quakec_mg3"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING.txt", "README.md", "quakec_mg3/defs.qc"]
+
+[[codebase]]
+id = "copper"
+name = "Copper"
+kind = "mod"
+source = "copper"
+path = "."
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["LICENSE", "README.md"]
+notes = "README: QC based on id's 1.06 source, released under the GPL v2 or later."
+
+[[codebase]]
+id = "alkaline"
+name = "Alkaline"
+kind = "mod"
+source = "alkaline"
+path = "."
+license = "GPL-3.0-only"
+use = "vendor"
+evidence = ["LICENSE"]
+notes = "GPL v3 text only, with no version clause, so recorded as -only."
+
+[[codebase]]
+id = "arcane-dimensions"
+name = "Arcane Dimensions"
+kind = "mod"
+source = "arcane-dimensions"
+path = "."
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["LICENSE", "README.md"]
+notes = "Repository of the mod's code lead. README: QC released under the GPL v2 or later. Code only; AD's assets are not in this repository."
+
+[[codebase]]
+id = "progs-dump"
+name = "progs_dump"
+kind = "mod"
+source = "progs-dump"
+path = "qc"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["qc/LICENSE", "readme.txt"]
+notes = "readme.txt: QC files released under the GPL v2 or later. The mod's assets and maps are under a separate no-commercial-use notice (see the progs_dump maps)."
+
+[[codebase]]
+id = "librequake"
+name = "LibreQuake"
+kind = "mod"
+source = "librequake"
+path = "qcsrc"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["qcsrc/README", "qcsrc/defs.qc", "docs/misc-docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+notes = "qcsrc/README: everything in the folder is GPL v2; the defs.qc header grants version 2 or any later version."
+
+[[codebase]]
+id = "re-mobilize"
+name = "Re:Mobilize"
+kind = "mod"
+source = "re-mobilize"
+path = "."
+license = "GPL-2.0-only"
+use = "fetch-at-test"
+evidence = ["LICENSE"]
+notes = "GPL v2 text only, with no version clause, so recorded as -only; not GPL-3.0-or-later compatible, so never copied into this repository."
+
+[[codebase]]
+id = "qc-conduit"
+name = "Conduit (entity I/O for Quake)"
+kind = "mod"
+source = "qc-conduit"
+path = "."
+license = "GPL-2.0-only"
+use = "fetch-at-test"
+evidence = ["COPYING"]
+notes = "GPL v2 text only; files inherited from id keep id's or-later header, but the mod's own grant has no version clause, so recorded as -only."
+
+[[codebase]]
+id = "quake-reignited"
+name = "Quake Reignited"
+kind = "mod"
+source = "quake-reignited"
+path = "qc"
+license = "GPL-3.0-only"
+use = "vendor"
+evidence = ["LICENSE"]
+notes = "GPL v3 text only, with no version clause, so recorded as -only."
+
+[[codebase]]
+id = "nuclide"
+name = "Nuclide SDK"
+kind = "mod"
+source = "nuclide"
+path = "src"
+license = "ISC"
+use = "vendor"
+evidence = ["COPYING"]
+notes = "FTEQCC extended dialect with CSQC and menu modules."
+
+[[codebase]]
+id = "freecs"
+name = "FreeCS"
+kind = "mod"
+source = "freecs"
+path = "src"
+license = "ISC"
+use = "vendor"
+evidence = ["COPYING"]
+notes = "Builds against the nuclide entry; game data is fetched by the user's own install scripts and is not part of the corpus."
+
+[[codebase]]
+id = "nzp"
+name = "Nazi Zombies: Portable"
+kind = "mod"
+source = "nzp"
+path = "source"
+license = "GPL-2.0-only"
+use = "fetch-at-test"
+evidence = ["LICENSE"]
+notes = "GPL v2 text only, with no version clause, so recorded as -only."
+
+[[codebase]]
+id = "crmod7"
+name = "CRMod 7"
+kind = "mod"
+source = "crmod7"
+path = "src"
+license = "GPL-3.0-only"
+use = "vendor"
+evidence = ["LICENSE"]
+notes = "GPL v3 text only, with no version clause, so recorded as -only."
+
+[[codebase]]
+id = "swab"
+name = "Starts with a Bang (sm231 progs)"
+kind = "mod"
+source = "swab"
+path = "."
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["LICENSE", "README.md"]
+notes = "Copper-based; README: GPL v2 or later."
+
+[[codebase]]
+id = "xonotic"
+name = "Xonotic QuakeC"
+kind = "mod"
+source = "xonotic-data"
+path = "qcsrc"
+license = "GPL-3.0-or-later"
+use = "vendor"
+evidence = ["xonotic:COPYING", "xonotic:GPL-3"]
+notes = "GMQCC dialect. Xonotic's COPYING covers the Team Xonotic-owned branches of its repositories, including xonotic-data master: GPL version 3 or any later version."
+
+[[codebase]]
+id = "quakec-1.06"
+name = "id Software QuakeC 1.06"
+kind = "id"
+license = "NONE"
+use = "never"
+reason = "id released QuakeC 1.06 with no license (LIC-5). It is never fetched, built, vendored or bundled; id 1.01 and the rerelease stand in for it."
+
+[[codebase]]
+id = "quoth"
+name = "Quoth 2.2"
+kind = "mod"
+license = "LicenseRef-Quoth-readme"
+use = "never"
+reason = "No QuakeC source is published, only compiled progs in pak files. quoth2_2.txt in quoth2pt2full.zip (sha256 b822648bbac7a2a46e091d0ca38698d190252d814fd4ddb207fe823be1520399) permits redistributing the unmodified zip only. Recorded so it is not re-proposed."
+
+# ---------------------------------------------------------------------------
+# Maps (.map sources) for the map-compiler differential tests (MAP-19).
+# ---------------------------------------------------------------------------
+
+[[map]]
+id = "lq-e0m1"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m1.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m2"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m2.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m3"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m3.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m4"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m4.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m5"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m5.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m6"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m6.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m7"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m7.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e0m8"
+source = "librequake"
+path = "lq1/maps/src/e0/lq_e0m8.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e1m1"
+source = "librequake"
+path = "lq1/maps/src/e1/lq_e1m1.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e1m2"
+source = "librequake"
+path = "lq1/maps/src/e1/lq_e1m2.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e1m3"
+source = "librequake"
+path = "lq1/maps/src/e1/lq_e1m3.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e2m5"
+source = "librequake"
+path = "lq1/maps/src/e2/lq_e2m5.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e3m4"
+source = "librequake"
+path = "lq1/maps/src/e3/lq_e3m4.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-e4m5"
+source = "librequake"
+path = "lq1/maps/src/e4/lq_e4m5.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lqdm1"
+source = "librequake"
+path = "lq1/maps/src/dm/lqdm1.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lqdm3"
+source = "librequake"
+path = "lq1/maps/src/dm/lqdm3.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lqdm5"
+source = "librequake"
+path = "lq1/maps/src/dm/lqdm5.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lqdm13"
+source = "librequake"
+path = "lq1/maps/src/dm/lqdm13.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-start"
+source = "librequake"
+path = "lq1/maps/src/misc/start.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "lq-end"
+source = "librequake"
+path = "lq1/maps/src/misc/lq_end.map"
+license = "BSD-3-Clause"
+use = "vendor"
+evidence = ["docs/COPYING", "docs/README-IMPORTANT-LICENCE-INFO"]
+
+[[map]]
+id = "ericw-q1-cube"
+source = "ericw-tools"
+path = "testmaps/q1_cube.map"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING", "README.md"]
+
+[[map]]
+id = "ericw-q1-csg"
+source = "ericw-tools"
+path = "testmaps/q1_csg.map"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING", "README.md"]
+
+[[map]]
+id = "ericw-q1-bmodel-liquid"
+source = "ericw-tools"
+path = "testmaps/q1_bmodel_liquid.map"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING", "README.md"]
+
+[[map]]
+id = "ericw-q1-clip-func-wall"
+source = "ericw-tools"
+path = "testmaps/q1_clip_func_wall.map"
+license = "GPL-2.0-or-later"
+use = "vendor"
+evidence = ["COPYING", "README.md"]
+
+[[map]]
+id = "pd-elevator"
+source = "progs-dump"
+path = "mapsrc/pd_elevator.map"
+license = "LicenseRef-progs-dump-readme"
+use = "fetch-at-test"
+evidence = ["readme.txt"]
+notes = "readme.txt: no use in any commercial project, credit required, redistribution only at no charge with the readme. Not GPL compatible, so never copied into this repository."
+
+[[map]]
+id = "pd-lava"
+source = "progs-dump"
+path = "mapsrc/pd_lava.map"
+license = "LicenseRef-progs-dump-readme"
+use = "fetch-at-test"
+evidence = ["readme.txt"]
+notes = "As pd-elevator."
