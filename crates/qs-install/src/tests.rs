@@ -670,6 +670,106 @@ fn rerelease_only_install_reports_the_original_game_missing() {
     assert_eq!(validation.files[0].status, FileStatus::Known(table[0]));
 }
 
+/// GOG's Quake Enhanced as Justin's install lays it out (FS-6.6): the rerelease at the top,
+/// and the original DOS game in `dos`, its names in the case GOG wrote them.
+fn gog_quake_enhanced(fs: MemFs, root: &str) -> MemFs {
+    fs.paks(root, &RERELEASE)
+        .paks(root, &["mg3/pak0.pak", "ctf/pak0.pak"])
+        .file(format!("{root}/QuakeEX.kpf"), b"PK")
+        .file(
+            format!("{root}/goggame-{GOG_QUAKE_ENHANCED_ID}.info"),
+            b"{}",
+        )
+        .dir(format!("{root}/app"))
+        .paks(
+            format!("{root}/dos"),
+            &[
+                "id1/PAK0.PAK",
+                "id1/PAK1.PAK",
+                "hipnotic/pak0.pak",
+                "rogue/pak0.pak",
+            ],
+        )
+        .file(format!("{root}/dos/quake.exe"), b"MZ")
+}
+
+// spec FS-6.6: GOG's Quake Enhanced has the original DOS game in its `dos` folder, so both
+// bases are reported, and the registered and rerelease editions with nothing missing.
+#[test]
+fn gog_quake_enhanced_holds_the_original_game_in_dos() {
+    let (fs, install) = examined(
+        gog_quake_enhanced(MemFs::default(), "/q/quake-enhanced-gog"),
+        "/q/quake-enhanced-gog",
+    );
+    assert_eq!(install.source, Source::Folder);
+    let original = install.original.as_ref().unwrap();
+    assert_eq!(original.path, p("/q/quake-enhanced-gog/dos"));
+    assert_eq!(original.id1, p("/q/quake-enhanced-gog/dos/id1"));
+    assert_eq!(original.pak0, p("/q/quake-enhanced-gog/dos/id1/PAK0.PAK"));
+    assert_eq!(
+        original.pak1,
+        Some(p("/q/quake-enhanced-gog/dos/id1/PAK1.PAK"))
+    );
+    assert_eq!(original.kpf, None);
+    assert_eq!(names(&install, false), ["hipnotic", "rogue"]);
+    let rerelease = install.rerelease.as_ref().unwrap();
+    assert_eq!(rerelease.path, p("/q/quake-enhanced-gog"));
+    assert_eq!(
+        names(&install, true),
+        ["ctf", "dopa", "hipnotic", "mg1", "mg3", "rogue"]
+    );
+    let table = [
+        known("id1", "pak0.pak", Release::Original, &pak("id1/PAK0.PAK")),
+        known("id1", "pak1.pak", Release::Original, &pak("id1/PAK1.PAK")),
+        known("id1", "pak0.pak", Release::Rerelease, &pak("id1/pak0.pak")),
+    ];
+    let validation = checked(&fs, &install, &table);
+    assert_eq!(
+        validation.editions,
+        [Edition::Registered, Edition::Rerelease]
+    );
+    assert_eq!(validation.missing, []);
+    assert_eq!(validation.files[0].status, FileStatus::Known(table[0]));
+    assert_eq!(validation.files[1].status, FileStatus::Known(table[1]));
+}
+
+// spec FS-6.6: the GOG layout is found from the store too, and a `dos` folder that is not a
+// base directory, or one beside an original game rather than a rerelease, is no original game.
+#[test]
+fn dos_folder_counts_only_beside_a_rerelease() {
+    let root = "C:/GOG Games/Quake Enhanced";
+    let fs = gog_quake_enhanced(MemFs::default(), root);
+    let registry = MemRegistry::default().with(
+        &format!(r"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\GOG.com\Games\{GOG_QUAKE_ENHANCED_ID}"),
+        "path",
+        root,
+    );
+    let installs = find(&fs, &registry, Platform::Windows);
+    assert_eq!(installs.len(), 1, "{installs:#?}");
+    assert_eq!(
+        installs[0].original.as_ref().unwrap().path,
+        p(&format!("{root}/dos"))
+    );
+
+    let (_, no_paks) = examined(
+        MemFs::default()
+            .paks("/q", &RERELEASE)
+            .file("/q/QuakeEX.kpf", b"PK")
+            .paks("/q/dos", &["hipnotic/pak0.pak"]),
+        "/q",
+    );
+    assert!(no_paks.original.is_none());
+
+    let (_, beside_original) = examined(
+        MemFs::default()
+            .paks("/q", &STEAM_ORIGINAL)
+            .paks("/q/dos", &["id1/pak0.pak"]),
+        "/q",
+    );
+    assert_eq!(beside_original.original.unwrap().path, p("/q"));
+    assert!(beside_original.rerelease.is_none());
+}
+
 // spec FS-6.3: a file that is not a PAK archive is unusable, with the PAK error.
 // spec FS-6.4: an unusable rerelease pak0.pak does not make the rerelease edition.
 #[test]

@@ -355,6 +355,16 @@ result. None of this was checked against a real install for this spec; the manua
   as missing. An install with a rerelease and no original base reports the original game's
   `id1/pak0.pak` and `id1/pak1.pak` as missing, since the rerelease's `id1` holds only its
   own `pak0.pak` (FS-5.1); this is what the Epic Games Store and Game Pass sell.
+- **FS-6.6** A rerelease base directory (one that holds `QuakeEX.kpf`) whose `dos` folder,
+  matched as FS-3.7 matches names, is a base directory has that folder as the original game
+  of the same install, with its own `id1` and game directories by FS-6.1. GOG's Quake
+  Enhanced (product `1739637082`) installs this way: the rerelease at the top, beside
+  `goggame-1739637082.info`, `QuakeEX.kpf`, `id1`, `hipnotic`, `rogue`, `dopa`, `mg1`, `mg3`
+  and `ctf`, and the original DOS game in `dos`, with `dos/id1/PAK0.PAK` of 18,689,235 bytes
+  and `dos/id1/PAK1.PAK` of 34,257,856 bytes (the 1.06 `pak0.pak` and the registered
+  `pak1.pak` of `FS_KNOWN_FILES`), `dos/hipnotic/pak0.pak` and `dos/rogue/pak0.pak`. No
+  published source gives this layout; it was read from Justin's GOG install on 2026-10-16,
+  [#277](https://github.com/quakecstudio/editor/issues/277#issuecomment-6221264809).
 
 ### Constants
 
