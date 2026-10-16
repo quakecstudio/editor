@@ -410,6 +410,7 @@ issues:
   deliverable:
   - 'crates/qs-render: BSP with lightmaps and .lit, MDL with skins and frames, palette handling, picking; shared by the map view and model previews'
   - The map view and model previews draw inside the UI's render pass through egui_wgpu paint callbacks on the UI's wgpu device, with no copy or readback (ADR-0003)
+  - 'Lightmaps are RGB throughout, as .lit already needs, and each texture may carry its own palette (Half-Life''s BSP version 30 and WAD3, P5-11 and P5-12, MAP-24), so the renderer assumes neither one global palette nor greyscale lightmaps'
   acceptance:
   - Renders every id1 map at 120 Hz on the reference Mac
   - The map view renders through an egui_wgpu paint callback in the app window, checked by a snapshot test
@@ -514,6 +515,7 @@ issues:
   - P1-29
   deliverable:
   - 'qs-render extended for play: alias, MD5 and sprite models with interpolation, particles, sky, liquids, fog, lightstyles and dynamic lights, view blends, the HUD, console and centerprint with the rerelease''s localization'
+  - 'Lightstyles and dynamic lights are applied to RGB lightmaps and textures are drawn through their own palette where they carry one, as P5-05 sets up for Half-Life''s BSP version 30 and WAD3 (MAP-24); nothing assumes one global palette or greyscale lightmaps'
   acceptance:
   - id1 maps and the rerelease start map render at 120 Hz on the reference Mac, through Metal on macOS, DX12 or Vulkan on Windows and Vulkan on Linux
   verify:

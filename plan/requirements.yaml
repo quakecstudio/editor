@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: 146aa34886233e7a042df3c0cacc2b219a6cff3e3a70fa0c93da227a181e9185
+design_doc_sha256: 8c52ab7a9afd54e8f57e935674ac8af19d45de8d213040f239789295c6fa79cd
 
 sections:
   - id: GOAL
@@ -182,6 +182,7 @@ sections:
       - {id: MAP-21, kind: stated, text: "ericw-tools' advanced lighting features come later"}
       - {id: MAP-22, kind: implied, text: "Entity edits to shipped maps that have no .map source (BSP entity lump or .ent override)"}
       - {id: MAP-23, kind: stated, text: "Import PNG images as textures into the project's WAD2, quantized to the Quake palette with mipmaps and Quake's texture naming rules"}
+      - {id: MAP-24, kind: stated, text: "Read Half-Life's BSP version 30 and WAD3 (textures carrying their own palettes, RGB lightmaps) as QuakeSpasm loads them, for QuakeC mods on Half-Life maps such as FreeHL and FreeCS; Phase 5, after the MVP; writing either format is not planned"}
       - {id: MAP-19, kind: implied, text: "Public map corpus with known-good licenses for compiler differential tests"}
 
   - id: QA
