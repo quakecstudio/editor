@@ -1,0 +1,12 @@
+{"trace":"qc-trace","version":1,"progs_crc":12345,"edict_size":516,"field_offset":96,"entityfields":105,"numstrings":16}
+{"t":"run","function":1,"globals":[[31,"3f800000"]],"fields":[]}
+{"t":"step","function":1,"statement":1,"opcode":6,"globals":[[100,"40000000"]],"fields":[]}
+{"t":"string","value":"00000100","text":"a\\x5cb\\x0a"}
+{"t":"run","function":2,"globals":[[1,"00000100"]],"fields":[]}
+{"t":"step","function":2,"statement":5,"opcode":37,"globals":[],"fields":[[1,30,"3f800000"],[2,44,"00000002"]]}
+{"t":"step","function":2,"statement":6,"opcode":0,"globals":[[1,"00000000"]],"fields":[]}
+{"t":"exit","globals":[],"fields":[]}
+{"t":"step","function":1,"statement":2,"opcode":52,"builtin":2,"globals":[[1,"00000204"]],"fields":[]}
+{"t":"error","function":1,"statement":3,"message":"Bad opcode 70","globals":[],"fields":[]}
+{"t":"run","function":-5,"globals":[],"fields":[]}
+{"t":"error","function":-5,"statement":-1,"message":"PR_ExecuteProgram: NULL function","globals":[],"fields":[]}
