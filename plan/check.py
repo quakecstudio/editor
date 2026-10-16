@@ -152,6 +152,7 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
     errors: list[str] = []
     milestones = {m["key"] for m in meta["milestones"]}
     labels = {l["name"] for group in meta["labels"].values() for l in group}
+    layers = {l["name"] for l in meta["labels"]["layer"]}
     sizes = set(meta["sizes"])
     by_key: dict[str, dict] = {}
 
@@ -179,6 +180,9 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
         types = [l for l in i.get("labels", []) if l.startswith("type:")]
         if len(types) != 1:
             errors.append(f"{k}: needs exactly one type:* label, has {types}")
+        own_layers = [l for l in i.get("labels", []) if l in layers]
+        if len(own_layers) != 1:  # the Project board's Layer field holds one value
+            errors.append(f"{k}: needs exactly one layer label, has {own_layers}")
         for r in i.get("reqs", []):
             if r not in reqs:
                 errors.append(f"{k}: unknown requirement {r}")
