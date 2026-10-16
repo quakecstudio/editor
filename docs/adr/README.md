@@ -15,7 +15,7 @@ index below lists every ADR, in order, with the title and status its file states
 | --- | --- | --- |
 | [0001](0001-record-decisions.md) | Record decisions as ADRs resolved from decision issues | Accepted |
 | [0002](0002-license-model.md) | License the whole project GPL-3.0-or-later | Accepted |
-| [0004](0004-preview-host-base.md) | Fork QuakeSpasm as the base of the preview host | Proposed |
+| [0004](0004-preview-host-base.md) | Fork QuakeSpasm for the MVP preview host and plan a Rust host after it | Proposed |
 | [0011](0011-app-directories.md) | Use each OS's native application directories | Accepted |
 <!-- /adr:index -->
 
