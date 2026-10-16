@@ -766,9 +766,9 @@ groups:
     depends:
     - P0-10
     deliverable:
-    - WebAssembly build if ADR-0003 kept it in scope; otherwise this issue is closed with a link to the ADR
+    - 'WebAssembly build of the app on egui''s web target (WebGL2 and WebGPU). ADR-0003 kept it out of the MVP (OPEN-3) and chose egui, which supports it, so it stays in LATER'
     acceptance:
-    - Matches whatever ADR-0003 decided
+    - The app shell and editor open a project in a current browser
     verify:
     - ADR link
   - key: L-12
