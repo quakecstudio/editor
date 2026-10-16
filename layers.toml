@@ -5,6 +5,7 @@
 
 [crates]
 qs-bench = "tests"
+qs-log = "L0"
 qs-paths = "L0"
 qs-porting-example = "L1"
 qs-tests = "tests"

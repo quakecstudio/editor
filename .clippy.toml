@@ -16,6 +16,8 @@ absolute-paths-allowed-crates = [
     "serde",
     "serde_json",
     "toml",
+    "tracing",
+    "tracing_subscriber",
 ]
 
 # Allow breaking the exported API (we're pre-1.0)
