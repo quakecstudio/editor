@@ -16,7 +16,7 @@ use std::process::Command;
 use crate::{in_process_check, print_outcome};
 
 /// One step of the CI run.
-enum Step {
+pub(crate) enum Step {
     /// A cargo command, run from the workspace root.
     Cargo(&'static [&'static str]),
     /// An xtask check, run in this process.
@@ -26,7 +26,7 @@ enum Step {
 }
 
 /// The steps, cheapest first.
-const STEPS: [Step; 15] = [
+pub(crate) const STEPS: [Step; 15] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("python3", &["plan/check.py"]),
     Step::Program(
@@ -110,11 +110,7 @@ impl Step {
 }
 
 /// Runs every step and prints a summary; returns whether all passed.
-pub(crate) fn run(root: &Path) -> bool {
-    run_steps(root, &STEPS)
-}
-
-fn run_steps(root: &Path, steps: &[Step]) -> bool {
+pub(crate) fn run(root: &Path, steps: &[Step]) -> bool {
     let mut results = Vec::new();
     for (index, step) in steps.iter().enumerate() {
         println!(
@@ -192,24 +188,21 @@ mod tests {
             Step::Xtask("layers"),
             Step::Program("python3", &["--version"]),
         ];
-        assert!(run_steps(root(), &steps));
+        assert!(run(root(), &steps));
     }
 
     #[test]
     fn one_failing_step_fails_the_run_and_the_rest_still_run() {
-        assert!(!run_steps(
-            root(),
-            &[Step::Cargo(&["no-such-command-xtask-ci"])]
-        ));
-        assert!(!run_steps(root(), &[Step::Xtask("no-such-check")]));
-        assert!(!run_steps(
+        assert!(!run(root(), &[Step::Cargo(&["no-such-command-xtask-ci"])]));
+        assert!(!run(root(), &[Step::Xtask("no-such-check")]));
+        assert!(!run(
             root(),
             &[Step::Program("no-such-program-xtask-ci", &[])]
         ));
         let steps = [Step::Xtask("no-such-check"), Step::Cargo(&["--version"])];
-        assert!(!run_steps(root(), &steps));
+        assert!(!run(root(), &steps));
         let steps = [Step::Cargo(&["--version"]), Step::Xtask("no-such-check")];
-        assert!(!run_steps(root(), &steps));
+        assert!(!run(root(), &steps));
     }
 
     #[test]

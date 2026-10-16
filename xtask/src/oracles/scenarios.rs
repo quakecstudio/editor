@@ -306,9 +306,7 @@ impl Program {
     /// Makes the progs at least `slots` globals long, and its next new slot at least `slots`.
     pub(super) fn reserve_globals(&mut self, slots: u32) {
         let size = usize::try_from(slots).unwrap_or(usize::MAX);
-        if self.globals.len() < size {
-            self.globals.resize(size, 0);
-        }
+        self.globals.resize(self.globals.len().max(size), 0);
         self.next_slot = self.next_slot.max(slots);
     }
 
@@ -587,8 +585,9 @@ impl Case {
     }
 }
 
-/// What one run of the oracle gave.
-#[derive(Debug, Default)]
+/// What one run of the oracle gave. [`run`] keeps it in the case's directory as
+/// `outcome.json`, which `xtask/fixtures/oracles/record.py` records for the replay tests.
+#[derive(Debug, Default, serde::Serialize)]
 pub(super) struct Outcome {
     pub(super) status: Option<i32>,
     pub(super) stdout: String,
@@ -694,6 +693,8 @@ fn run(oracles: &Oracles, work: &Path, case: &Case) -> Result<Outcome, String> {
     if case.checks.contains(&Check::SameTwice) {
         outcome.again = invoke(oracles, &cwd, &args, readable)?.trace;
     }
+    let json = serde_json::to_vec(&outcome).map_err(|e| format!("{}: {e}", case.name))?;
+    write_file(&dir.join("outcome.json"), &json)?;
     Ok(outcome)
 }
 
@@ -709,10 +710,9 @@ fn invoke(
     if let Some(trace) = trace.filter(|trace| trace.exists()) {
         fs::remove_file(trace).map_err(|e| format!("{}: {e}", trace.display()))?;
     }
-    let output = Command::new(&oracles.vm)
-        .args(args)
-        .current_dir(cwd)
-        .output()
+    let output = oracles
+        .exec
+        .output(Command::new(&oracles.vm).args(args).current_dir(cwd))
         .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
     Ok(Outcome {
         status: output.status.code(),

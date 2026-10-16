@@ -284,3 +284,140 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     );
     Ok(ok)
 }
+
+#[cfg(test)]
+mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "test code: a failed unwrap is a failed test"
+    )]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use qc_progs::{Function, ProgsFile, write};
+
+    use super::main;
+
+    fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../target/xtask-tests")
+            .join(name);
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        fs::create_dir_all(&dir).unwrap();
+        for (file, text) in files {
+            fs::write(dir.join(file), text).unwrap();
+        }
+        dir
+    }
+
+    fn run(args: &[String]) -> Result<bool, String> {
+        main(Path::new("."), args)
+    }
+
+    fn path(dir: &Path) -> String {
+        dir.display().to_string()
+    }
+
+    /// A progs whose functions come from `files`, in that order.
+    fn progs(dir: &Path, files: &[&str]) -> String {
+        let mut strings = vec![0_u8];
+        let mut functions = vec![Function::default()];
+        for file in files {
+            let s_file = i32::try_from(strings.len()).unwrap();
+            strings.extend_from_slice(file.as_bytes());
+            strings.push(0);
+            functions.push(Function {
+                s_file,
+                ..Function::default()
+            });
+        }
+        let bytes = write(&ProgsFile {
+            functions,
+            strings,
+            ..ProgsFile::default()
+        })
+        .unwrap();
+        let out = dir.join("progs.dat");
+        fs::write(&out, bytes).unwrap();
+        path(&out)
+    }
+
+    fn list() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("progs.src", "../progs.dat\ndefs.qc\nworld.qc\n"),
+            ("defs.qc", "float x;\n"),
+            ("world.qc", "void() main = {};\n"),
+        ]
+    }
+
+    #[test]
+    fn a_list_form_codebase_opens_in_its_order() {
+        let dir = codebase("project-list", &list());
+        assert!(run(&[path(&dir)]).unwrap());
+        assert!(run(&["--files".to_owned(), path(&dir)]).unwrap());
+        let progs = progs(&dir, &["defs.qc", "defs.qc", "world.qc"]);
+        assert!(run(&["--progs".to_owned(), progs, path(&dir)]).unwrap());
+    }
+
+    #[test]
+    fn functions_out_of_the_graph_s_order_fail() {
+        let dir = codebase("project-progs-order", &list());
+        let reversed = progs(&dir, &["world.qc", "defs.qc"]);
+        assert!(!run(&["--progs".to_owned(), reversed, path(&dir)]).unwrap());
+        let missing = codebase("project-progs-missing", &list());
+        let elsewhere = progs(&missing, &["other.qc"]);
+        assert!(!run(&["--progs".to_owned(), elsewhere, path(&missing)]).unwrap());
+        let bad = missing.join("bad.dat");
+        fs::write(&bad, b"not a progs").unwrap();
+        assert!(run(&["--progs".to_owned(), path(&bad), path(&missing)]).is_err());
+    }
+
+    #[test]
+    fn a_file_the_list_names_but_lacks_fails() {
+        let dir = codebase(
+            "project-missing-file",
+            &[("progs.src", "../progs.dat\nnowhere.qc\n")],
+        );
+        assert!(!run(&[path(&dir)]).unwrap());
+    }
+
+    #[test]
+    fn a_source_form_codebase_with_directives_is_not_checked_against_a_list() {
+        let dir = codebase(
+            "project-directives",
+            &[
+                (
+                    "progs.src",
+                    "#pragma progs_dat \"progs.dat\"\n#include \"world.qc\"\n",
+                ),
+                ("world.qc", "void() main = {};\n"),
+            ],
+        );
+        assert!(run(&[path(&dir)]).unwrap());
+    }
+
+    #[test]
+    fn a_codebase_without_a_module_or_with_bad_arguments_fails() {
+        let empty = codebase("project-empty", &[("readme.txt", "x")]);
+        assert!(!run(&[path(&empty)]).unwrap());
+        assert!(run(&[]).unwrap_err().contains("usage"));
+        assert!(
+            run(&["--fast".to_owned()])
+                .unwrap_err()
+                .contains("unknown flag")
+        );
+        assert!(run(&["--progs".to_owned()]).is_err());
+        let two = [
+            "--progs".to_owned(),
+            "p.dat".to_owned(),
+            path(&empty),
+            path(&empty),
+        ];
+        assert!(run(&two).unwrap_err().contains("usage"));
+        assert!(run(&["--progs".to_owned(), "p.dat".to_owned(), path(&empty)]).is_err());
+        assert!(run(&[path(&empty.join("nowhere"))]).is_err());
+    }
+}

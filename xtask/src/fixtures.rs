@@ -16,12 +16,14 @@ use std::process::{Command, Output};
 use toml::{Table, Value};
 
 use crate::Report;
+use crate::exec::Exec;
 
 const CLIPPY_FIXTURES: &str = "xtask/fixtures/clippy";
 const EXPECT_PREFIX: &str = "// expect: ";
 const CLIPPY_LINT_ANCHOR: &str = "index.html#";
 
-pub(crate) fn clippy(root: &Path) -> Result<Report, String> {
+/// `cargo xtask clippy-fixtures`, with the programs `exec` runs.
+pub(crate) fn clippy(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
     let cargo = read_toml(&root.join("Cargo.toml"))?;
     let work = fresh_dir(root, "clippy-fixtures")?;
 
@@ -51,14 +53,17 @@ pub(crate) fn clippy(root: &Path) -> Result<Report, String> {
 
     let mut report = Report::default();
     for fixture in &fixtures {
-        let output = run(cargo_command()
-            .args(["clippy", "--quiet", "--all-targets", "--package"])
-            .arg(format!("fx-{}", fixture.name))
-            .arg("--manifest-path")
-            .arg(work.join("Cargo.toml"))
-            .args(["--", "-D", "warnings"])
-            .env("CLIPPY_CONF_DIR", &work)
-            .env("CARGO_TARGET_DIR", work.join("target")))?;
+        let output = run(
+            exec,
+            cargo_command()
+                .args(["clippy", "--quiet", "--all-targets", "--package"])
+                .arg(format!("fx-{}", fixture.name))
+                .arg("--manifest-path")
+                .arg(work.join("Cargo.toml"))
+                .args(["--", "-D", "warnings"])
+                .env("CLIPPY_CONF_DIR", &work)
+                .env("CARGO_TARGET_DIR", work.join("target")),
+        )?;
         let fired = fired_lints(&output);
         let (ok, outcome) = match &fixture.expect {
             None => (
@@ -122,7 +127,8 @@ const DENY_CASES: [DenyCase; 4] = [
     },
 ];
 
-pub(crate) fn deny(root: &Path) -> Result<Report, String> {
+/// `cargo xtask deny-fixtures`, with the programs `exec` runs.
+pub(crate) fn deny(root: &Path, exec: &dyn Exec) -> Result<Report, String> {
     let work = fresh_dir(root, "deny-fixtures")?;
     let config = fs::read_to_string(root.join("deny.toml"))
         .map_err(|error| format!("deny.toml: {error}"))?;
@@ -141,12 +147,15 @@ pub(crate) fn deny(root: &Path) -> Result<Report, String> {
             &deny_member_manifest(case.license, case.dependencies),
         )?;
         write(&dir.join("fx").join("src").join("lib.rs"), "")?;
-        let output = run(Command::new(cargo_bin())
-            .current_dir(&dir)
-            .args(["deny", "--manifest-path"])
-            .arg(dir.join("Cargo.toml"))
-            .arg("check")
-            .args(case.checks))?;
+        let output = run(
+            exec,
+            Command::new(cargo_bin())
+                .current_dir(&dir)
+                .args(["deny", "--manifest-path"])
+                .arg(dir.join("Cargo.toml"))
+                .arg("check")
+                .args(case.checks),
+        )?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         let checks = case.checks.join(" ");
         let (ok, outcome) = match case.expect {
@@ -273,9 +282,8 @@ fn cargo_command() -> Command {
     command
 }
 
-fn run(command: &mut Command) -> Result<Output, String> {
-    command
-        .output()
+fn run(exec: &dyn Exec, command: &mut Command) -> Result<Output, String> {
+    exec.output(command)
         .map_err(|error| format!("cannot run {command:?}: {error}"))
 }
 
@@ -312,10 +320,146 @@ fn copy(from: &Path, to: &Path) -> Result<(), String> {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        clippy::arithmetic_side_effects,
+        reason = "test code: a failed unwrap, index or sum is a failed test"
     )]
 
     use super::*;
+    use crate::exec::{Fake, Reply};
+
+    fn root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    /// The value after `flag` in `command`'s arguments.
+    fn after(command: &Command, flag: &str) -> String {
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let index = args.iter().position(|arg| arg == flag).unwrap();
+        args[index + 1].clone()
+    }
+
+    /// clippy as the configuration makes it: each fixture fires the lint it expects.
+    fn clippy_that_agrees(command: &Command) -> Reply {
+        let package = after(command, "--package");
+        let name = package.strip_prefix("fx-").unwrap();
+        let fixtures = clippy_fixtures(&root().join(CLIPPY_FIXTURES)).unwrap();
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == name)
+            .unwrap();
+        match &fixture.expect {
+            None => Reply::exit(0),
+            Some(lint) => Reply {
+                code: 101,
+                stderr: format!(
+                    "error: help: see https://rust-lang.github.io/x/{CLIPPY_LINT_ANCHOR}{lint}\n"
+                ),
+                ..Reply::default()
+            },
+        }
+    }
+
+    // One test, not two: every run of the check rebuilds the same scratch workspace.
+    #[test]
+    fn the_clippy_fixtures_pass_only_when_each_fires_its_lint_alone() {
+        let fake = Fake::new(clippy_that_agrees);
+        let report = clippy(&root(), &fake).unwrap();
+        assert_eq!(report.problems, Vec::<String>::new());
+        assert_eq!(report.passed.len(), fake.seen.borrow().len());
+        let work = root().join("target/xtask/clippy-fixtures");
+        assert!(work.join(".clippy.toml").is_file());
+        assert!(
+            fs::read_to_string(work.join("Cargo.toml"))
+                .unwrap()
+                .contains("[workspace.lints")
+        );
+
+        let silent = Fake::new(|_: &Command| Reply::exit(0));
+        let report = clippy(&root(), &silent).unwrap();
+        assert!(!report.problems.is_empty());
+        let two = Fake::new(|_: &Command| Reply {
+            code: 101,
+            stderr: format!("{CLIPPY_LINT_ANCHOR}unwrap_used {CLIPPY_LINT_ANCHOR}panic"),
+            ..Reply::default()
+        });
+        let report = clippy(&root(), &two).unwrap();
+        assert_eq!(
+            report.passed.len(),
+            0,
+            "every fixture fails: {:?}",
+            report.passed
+        );
+        let cannot = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        assert!(clippy(&root(), &cannot).is_err());
+    }
+
+    /// cargo deny as `deny.toml` makes it: each case reports its error code.
+    fn deny_that_agrees(command: &Command) -> Reply {
+        let dir = command.get_current_dir().unwrap();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let case = DENY_CASES.iter().find(|case| case.name == name).unwrap();
+        match case.expect {
+            None => Reply::exit(0),
+            Some(code) => Reply {
+                code: 1,
+                stderr: format!("error[{code}]: refused\n"),
+                ..Reply::default()
+            },
+        }
+    }
+
+    #[test]
+    fn the_deny_cases_pass_when_each_reports_its_error() {
+        let fake = Fake::new(deny_that_agrees);
+        let report = deny(&root(), &fake).unwrap();
+        assert_eq!(report.problems, Vec::<String>::new());
+        assert_eq!(report.passed.len(), DENY_CASES.len());
+        let wildcard = root().join("target/xtask/deny-fixtures/wildcard/fx/Cargo.toml");
+        assert!(
+            fs::read_to_string(wildcard)
+                .unwrap()
+                .contains("itoa = \"*\"")
+        );
+        let passes = Fake::new(|_: &Command| Reply::exit(0));
+        let report = deny(&root(), &passes).unwrap();
+        assert_eq!(
+            report.passed,
+            ["control (GPL-3.0-or-later) passes cargo deny check licenses bans sources"]
+        );
+        let refuses = Fake::new(|_: &Command| Reply::exit(1));
+        let report = deny(&root(), &refuses).unwrap();
+        assert!(report.passed.is_empty(), "{:?}", report.passed);
+    }
+
+    #[test]
+    fn a_lint_fixture_crate_inherits_the_workspace_lints() {
+        let manifest: Table = lint_member_manifest("fx-a").parse().unwrap();
+        let name = manifest
+            .get("package")
+            .and_then(|package| package.get("name"));
+        assert_eq!(name.and_then(Value::as_str), Some("fx-a"));
+        let lints = manifest
+            .get("lints")
+            .and_then(|lints| lints.get("workspace"));
+        assert_eq!(lints.and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn cargo_is_the_one_running_xtask() {
+        let expected = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+        assert_eq!(cargo_bin(), expected);
+        assert!(!cargo_bin().is_empty());
+    }
 
     #[test]
     fn fixture_expectation_is_a_clippy_lint_or_pass() {

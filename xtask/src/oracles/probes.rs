@@ -206,9 +206,9 @@ fn run(oracles: &Oracles, work: &Path, probe: &Probe) -> Result<(), String> {
             .arg(work.join("progs.dat"))
             .arg(&input),
     };
-    let output = command
-        .arg(work.join("trace.bin"))
-        .output()
+    let output = oracles
+        .exec
+        .output(command.arg(work.join("trace.bin")))
         .map_err(|e| format!("cannot run the VM oracle: {e}"))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stderr = stderr.trim();
@@ -237,10 +237,72 @@ fn run(oracles: &Oracles, work: &Path, probe: &Probe) -> Result<(), String> {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
     )]
 
-    use super::{PROBES, progs};
+    use std::process::Command;
+
+    use super::super::testing::{args, fake_oracles, fresh_dir};
+    use super::{Mode, PROBES, check, progs};
+    use crate::exec::{Fake, Reply};
+
+    /// A fake VM oracle that does what each probe says: refuses at its line, or runs.
+    fn agreeing(command: &Command) -> Reply {
+        let args = args(command);
+        let vector = args[0].as_os_str() == "vector";
+        let input = std::fs::read(&args[if vector { 2 } else { 1 }]).unwrap();
+        let probe = PROBES.iter().find(|probe| probe.text == input).unwrap();
+        let name = match probe.mode {
+            Mode::Scenario => "probe.scn",
+            Mode::Vector => "probe.init",
+        };
+        match probe.refused_at {
+            Some(line) => Reply {
+                code: 2,
+                stderr: format!("vm-oracle: {name}:{line}: refused"),
+                ..Reply::default()
+            },
+            None => Reply::exit(0),
+        }
+    }
+
+    #[test]
+    fn the_progs_has_a_function_1_that_returns_at_once() {
+        let bytes = progs().unwrap();
+        let read = qc_progs::Progs::read(&bytes).unwrap();
+        assert_eq!(read.header().entityfields, 110);
+        assert_eq!(read.functions().get(1).unwrap().first_statement, 1);
+        assert_eq!(read.statements().len(), 2);
+        assert_eq!(read.globals().len(), 128);
+    }
+
+    #[test]
+    fn every_probe_passes_an_oracle_that_does_what_it_says() {
+        let work = fresh_dir("probes-agree");
+        let fake = Fake::new(agreeing);
+        assert!(check(&fake_oracles(&work, &fake)).unwrap());
+        assert_eq!(fake.seen.borrow().len(), PROBES.len());
+        assert!(work.join("probes/progs.dat").is_file());
+    }
+
+    #[test]
+    fn a_probe_fails_on_the_wrong_status_or_line() {
+        let work = fresh_dir("probes-disagree");
+        let runs = Fake::new(|_: &Command| Reply::exit(0));
+        assert!(!check(&fake_oracles(&work, &runs)).unwrap());
+        let wrong_line = Fake::new(|_: &Command| Reply {
+            code: 2,
+            stderr: "vm-oracle: probe.scn:99: refused".to_owned(),
+            ..Reply::default()
+        });
+        assert!(!check(&fake_oracles(&work, &wrong_line)).unwrap());
+        let cannot_run = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        assert!(!check(&fake_oracles(&work, &cannot_run)).unwrap());
+    }
 
     #[test]
     fn writes_a_progs_qc_progs_reads() {
