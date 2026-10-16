@@ -99,6 +99,8 @@ Each section holds, in this order:
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
 | `EXAMPLE` | [`example.md`](example.md) | The worked porting example: entity-string escapes | [#9](https://github.com/quakecstudio/editor/issues/9) |
+| `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
+| `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
 
-Specs planned in Phase 1 (`progs.md`, `limits.md`, `vm.md`, `edicts.md`, `builtins.md`,
+Specs planned in Phase 1 (`vm.md`, `edicts.md`, `builtins.md`,
 `trace.md`, `differential.md`) register their prefix here when they are written.
