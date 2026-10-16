@@ -1,0 +1,87 @@
+{
+  "total_mutants": 2,
+  "missed": 2,
+  "caught": 0,
+  "timeout": 0,
+  "unviable": 0,
+  "success": 0,
+  "cargo_mutants_version": "27.1.0",
+  "outcomes": [
+    {
+      "scenario": "Baseline",
+      "summary": "Success"
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:7:5: replace add -> u32 with 0",
+          "package": "fx-mutation",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "add",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 6,
+                "column": 1
+              },
+              "end": {
+                "line": 8,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 7,
+              "column": 5
+            },
+            "end": {
+              "line": 7,
+              "column": 31
+            }
+          },
+          "replacement": "0",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant"
+    },
+    {
+      "scenario": {
+        "Mutant": {
+          "name": "src/lib.rs:7:5: replace add -> u32 with 1",
+          "package": "fx-mutation",
+          "file": "src/lib.rs",
+          "function": {
+            "function_name": "add",
+            "return_type": "-> u32",
+            "span": {
+              "start": {
+                "line": 6,
+                "column": 1
+              },
+              "end": {
+                "line": 8,
+                "column": 2
+              }
+            }
+          },
+          "span": {
+            "start": {
+              "line": 7,
+              "column": 5
+            },
+            "end": {
+              "line": 7,
+              "column": 31
+            }
+          },
+          "replacement": "1",
+          "genre": "FnValue"
+        }
+      },
+      "summary": "MissedMutant"
+    }
+  ]
+}

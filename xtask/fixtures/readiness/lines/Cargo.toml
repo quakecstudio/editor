@@ -1,0 +1,10 @@
+# A readiness fixture (docs/testing.md): a crate below the lines threshold.
+# It is its own workspace, outside the main one, so it never builds in CI.
+[workspace]
+
+[package]
+name = "fx-lines"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
