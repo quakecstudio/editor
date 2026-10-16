@@ -273,6 +273,8 @@ As in vouch:
 - `Swatinem/rust-cache` for caching; `--locked` on every cargo command; `CARGO_BUILD_WARNINGS: deny`
   in the workflow environment, as in vouch.
 
+The workflows, the required checks on `main` and the ruleset are in [`ci.md`](ci.md).
+
 ## Make targets (CONV-8)
 
 `Makefile` is the entry point, as in vouch; logic that needs Rust lives in `xtask` and is
@@ -372,7 +374,8 @@ and function it came from ([`porting.md`](porting.md#file-headers)).
 classifies every file: source files (Rust, Python, shell, C and the `Makefile`) need the SPDX
 line first, after a `#!` line if there is one; docs and config files are covered by `LICENSE`;
 assets (images, fonts, sounds, Quake formats) are listed in `ATTRIBUTION.md` and checked by
-`cargo xtask attribution`. A file of a type with no rule fails until it is classified in
+`cargo xtask attribution`; cached specifications listed in `specs/manifest.tsv` keep their own
+licenses, recorded in `specs/README.md`, and are not scanned. A file of a type with no rule fails until it is classified in
 `xtask/src/licenses.rs`.
 
 ## Repository files (CONV-15)
