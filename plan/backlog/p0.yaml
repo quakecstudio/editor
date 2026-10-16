@@ -545,6 +545,25 @@ issues:
   verify:
   - A contrast check over docs/design/tokens.toml runs in CI and fails below AA
   - Approval comment linked from the ADR
+- key: P0-26
+  title: Verify the cached specifications against their manifest hashes in CI
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-12
+  depends:
+  - P0-03
+  - P0-04
+  deliverable:
+  - A required CI check on Linux running scripts/refresh-specs.sh --verify, which fails when a file under specs/ no longer matches the sha256 in specs/manifest.tsv or is missing from it; docs/ci.md lists it
+  acceptance:
+  - A PR that changes one byte of a cached specification fails CI with the file named
+  - A PR that adds a file under specs/ without a manifest row fails CI
+  verify:
+  - Links to the two failing CI runs from deliberately broken PRs attached to the issue
 - key: P0-20
   title: Phase 0 gate review
   labels:
@@ -581,6 +600,7 @@ issues:
   - P0-23
   - P0-25
   - P0-24
+  - P0-26
   deliverable:
   - 'docs/gates/p0.md: gate criteria, evidence for each, updated risk register'
   - Sized, dated roadmap for Phases 1 to 7 based on the spike results (docs/roadmap.md)

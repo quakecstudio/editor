@@ -14,6 +14,9 @@
 //! - `licenses`: checks the SPDX header of every file and the ported-file
 //!   header rule in `docs/porting.md`.
 //! - `attribution`: checks every asset file is listed in `ATTRIBUTION.md`.
+//! - `bench`: runs the performance-budget benchmarks, checks them against
+//!   `docs/perf-budgets.md` and the last run, and records them in the JSON
+//!   history; `bench history` prints the history.
 
 #![expect(
     clippy::print_stdout,
@@ -23,6 +26,7 @@
 
 mod adr;
 mod attribution;
+mod bench;
 mod ci;
 mod conventions;
 mod fixtures;
@@ -35,23 +39,36 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
-                     deny-fixtures | layers | licenses | attribution>";
+                     deny-fixtures | layers | licenses | attribution | bench>";
 
 fn main() -> ExitCode {
-    let mut args = std::env::args().skip(1);
-    let (Some(command), None) = (args.next(), args.next()) else {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let root = workspace_root();
+    if let Some(("bench", rest)) = args
+        .split_first()
+        .map(|(command, rest)| (command.as_str(), rest))
+    {
+        return match bench::main(&root, rest) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) => {
+                eprintln!("bench: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    let [command] = args.as_slice() else {
         eprintln!("{USAGE}");
         return ExitCode::FAILURE;
     };
-    let root = workspace_root();
     let ok = if command == "ci" {
         ci::run(&root)
     } else {
-        let Some(check) = in_process_check(&command) else {
+        let Some(check) = in_process_check(command) else {
             eprintln!("unknown command {command:?}\n{USAGE}");
             return ExitCode::FAILURE;
         };
-        print_outcome(&command, check(&root))
+        print_outcome(command, check(&root))
     };
     if ok {
         ExitCode::SUCCESS

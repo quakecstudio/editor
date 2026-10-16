@@ -124,7 +124,8 @@ const DENY_CASES: [DenyCase; 4] = [
 
 pub(crate) fn deny(root: &Path) -> Result<Report, String> {
     let work = fresh_dir(root, "deny-fixtures")?;
-    let config = root.join("deny.toml");
+    let config = fs::read_to_string(root.join("deny.toml"))
+        .map_err(|error| format!("deny.toml: {error}"))?;
     let mut report = Report::default();
     for case in &DENY_CASES {
         let dir = work.join(case.name);
@@ -132,16 +133,19 @@ pub(crate) fn deny(root: &Path) -> Result<Report, String> {
             &dir.join("Cargo.toml"),
             "[workspace]\nresolver = \"3\"\nmembers = [\"fx\"]\n",
         )?;
+        // cargo-deny 0.20 moved `--config` from `check` to the top level, so the
+        // config is copied next to the manifest, where every version finds it.
+        write(&dir.join("deny.toml"), &config)?;
         write(
             &dir.join("fx").join("Cargo.toml"),
             &deny_member_manifest(case.license, case.dependencies),
         )?;
         write(&dir.join("fx").join("src").join("lib.rs"), "")?;
         let output = run(Command::new(cargo_bin())
+            .current_dir(&dir)
             .args(["deny", "--manifest-path"])
             .arg(dir.join("Cargo.toml"))
-            .args(["check", "--config"])
-            .arg(&config)
+            .arg("check")
             .args(case.checks))?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         let checks = case.checks.join(" ");
