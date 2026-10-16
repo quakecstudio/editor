@@ -69,16 +69,40 @@ flowchart LR
 
 The [project board](https://github.com/orgs/quakecstudio/projects/1) has the live state; its Roadmap view groups the issues by phase.
 
+## Schedule
+
+Dated at the Phase 0 gate ([`gates/p0.md`](gates/p0.md)) as MVP-5 requires. Each later gate re-dates the phases after it from that phase's actual duration.
+
+**How it is sized.** Every issue carries a size label whose upper bound is S = 2, M = 5 and L = 10 person-days (`plan/backlog/_meta.yaml`). *Effort* is the sum of a phase's upper bounds. The *critical path* is the longest chain of dependencies inside the phase, summed the same way. It bounds the phase's length however many issues run in parallel.
+
+**How it is dated.** There are two dates per gate:
+
+- **Target**: the critical path at Phase 0's measured rate, plus one day for each readiness review on that path. Phase 0's 21-day critical path took about 6 hours from the plan's merge (#201, 2026-10-15 22:03 UTC) to the gate (2026-10-16). That is 0.29 hours per nominal day. The extra day per review is its 24-hour fuzzing run (TEST-5). The target assumes agents work every day and that people answer `needs:human` steps the same day.
+- **Latest**: the critical path at the full size bounds, counted in working days. This is what the phase would take if each issue on its path used its whole size.
+
+Phase 0 was mostly documents and decisions. Phase 1 is the first phase of ported code under the readiness bar, so the Phase 1 gate is the first real test of the target rate.
+
+| Phase | Issues (S / M / L) | Effort, person-days | Critical path, days | Readiness reviews on the path | People needed for | Target gate | Latest gate |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0. Decisions and spikes | 27 (22 / 4 / 1) | 74 | 21 | 0 | 6 decisions, all made | 2026-10-16 (met) | n/a |
+| 1. Foundations | 35 (14 / 15 / 6) | 163 | 51 | 2 | the manual game-data check on macOS, Windows and Linux (P1-19) | 2026-10-19 | 2026-12-28 |
+| 2. Language core and editor | 33 (12 / 11 / 10) | 179 | 75 | 3 | Windows and Linux frame-time runs (P2-17), real IME input (P2-18), screen readers (P2-23) | 2026-10-23 | 2027-04-12 |
+| 3. Live preview | 31 (9 / 16 / 6) | 158 | 73 | 2 | the recorded Steam and GOG launches on three OSes (P3-06) | 2026-10-26 | 2027-07-22 |
+| 4. Agent and MVP release | 30 (16 / 11 / 3) | 117 | 47 | 3 | signing credentials (P0-23), license review (P4-22), MVP demo (P4-24), release (P4-25) | 2026-10-30 | 2027-09-27 |
+| 5. Map entity editing | 11 (6 / 4 / 1) | 42 | 31 | 2 | none planned | 2026-11-02 | 2027-11-09 |
+| 6. Brushes and map compiler | 21 (12 / 5 / 4) | 89 | 38 | 2 | none planned | 2026-11-05 | 2027-12-31 |
+| 7. Lighting and performance | 9 (4 / 4 / 1) | 38 | 19 | 1 | none planned | 2026-11-07 | 2028-01-27 |
+| Post-MVP | 13 (1 / 5 / 7) | 97 | 30 | 0 | | scheduled by ADR | |
+
+Each phase starts when the previous gate closes, so a slip in one phase moves every date after it. The `needs:human` steps are the likeliest cause of a slip in the target dates. Phases 2 to 4 each need Justin at the reference machines.
+
 ## Where we are
 
-Phase 0. The plan, the issues, the board, the design document and the approved mockups exist; there is no code yet.
+Phase 0 is closed ([gate report](gates/p0.md)). The repo, `cargo xtask ci`, CI on three OSes with a protected `main`, the plan and board, and the ADR, porting and readiness processes are all in place. Every Phase 0 decision is recorded as an accepted ADR (0001 to 0011).
 
-Two tracks run in parallel:
+Phase 1 is next: specs and Rust ports of id's formats and VM, the oracles and the differential runner, and the lexer, preprocessor and lossless parser. `python3 plan/status.py --phase P1` lists what is ready.
 
-1. **Repo foundation:** [#1](https://github.com/quakecstudio/editor/issues/1) workspace scaffold, then [#2](https://github.com/quakecstudio/editor/issues/2) Makefile and xtask, [#3](https://github.com/quakecstudio/editor/issues/3) CI on three OSes, [#24](https://github.com/quakecstudio/editor/issues/24) the readiness tooling, [#7](https://github.com/quakecstudio/editor/issues/7) the ADR process.
-2. **Decisions:** the license is decided ([ADR-0002](adr/0002-license-model.md)); next are [#15](https://github.com/quakecstudio/editor/issues/15) name, [#12](https://github.com/quakecstudio/editor/issues/12) preview host base, [#21](https://github.com/quakecstudio/editor/issues/21) MVP scope, [#14](https://github.com/quakecstudio/editor/issues/14) default preview target.
-
-The largest risk in Phase 0 is the two-week UI framework spike ([#10](https://github.com/quakecstudio/editor/issues/10)).
+The largest risk in Phase 1 is proving qc-vm against id's VM statement by statement (R-1). The largest risk on the way to the MVP is the Rust preview host (R-11).
 
 ## Working an issue
 
