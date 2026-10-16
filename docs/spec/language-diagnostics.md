@@ -122,6 +122,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   parameter's offset (QC-13.5).
 - **QCD-5.5** `E0405` "PrecacheSound: numsounds == MAX_SOUNDS", "PrecacheModels: numsounds ==
   MAX_SOUNDS" or "PrecacheFile: numfiles == MAX_FILES": a precache list is full (QC-26.4).
+- **QCD-5.6** `E0406` "#includelist without #endlist": a file ends inside an `#includelist`
+  (PRJ-5.3). This project's own; FTEQCC's text is "eof in includelist".
+- **QCD-5.7** `E0407` "too many files in the project graph": a module's file graph would hold
+  more than `PRJ_MAX_FILES` entries (PRJ-6.4). This project's own.
+- **QCD-5.8** `E0408` "files nested too deeply to read PATH": bringing a file in would make
+  more than `PRJ_MAX_DEPTH` files being read at once (PRJ-6.3). This project's own.
 
 ## QCD-6 Errors this compiler adds
 

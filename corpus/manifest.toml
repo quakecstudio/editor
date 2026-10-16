@@ -397,11 +397,11 @@ id = "nzp"
 name = "Nazi Zombies: Portable"
 kind = "mod"
 source = "nzp"
-path = "source"
+path = "."
 license = "GPL-2.0-only"
 use = "fetch-at-test"
 evidence = ["LICENSE"]
-notes = "GPL v2 text only, with no version clause, so recorded as -only."
+notes = "GPL v2 text only, with no version clause, so recorded as -only. The whole repository, because the progs/*.src files that list the source/ tree are outside it."
 
 [[codebase]]
 id = "crmod7"

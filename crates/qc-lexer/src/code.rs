@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Diagnostic codes raised by the lexer, the preprocessor and the parser.
+//! Diagnostic codes raised by the lexer, the preprocessor, the parser and the project graph.
 
 /// A diagnostic code from `docs/spec/language-diagnostics.md` for an error or warning the
-/// lexer, the preprocessor or the parser (`qc-syntax`) reports.
+/// lexer, the preprocessor, the parser (`qc-syntax`) or the project graph (`qc-project`)
+/// reports.
 ///
 /// Implements QCD-1.1: a code is `E` or `W` and four digits, the first two its group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -74,6 +75,16 @@ pub enum Code {
     E0508,
     /// "nesting too deep" (QCD-6.9).
     E0509,
+    /// "No destination filename.  qcc -help for info." (QCD-5.1).
+    E0401,
+    /// "Error opening PATH: REASON" (QCD-5.2).
+    E0402,
+    /// "#includelist without #endlist" (QCD-5.6).
+    E0406,
+    /// "too many files in the project graph" (QCD-5.7).
+    E0407,
+    /// "files nested too deeply to read PATH" (QCD-5.8).
+    E0408,
     /// "frame name longer than 15 bytes; id's qcc cannot look it up" (QCD-7.1).
     W0101,
     /// "macro NAME redefined" (QCD-7.2).
@@ -82,7 +93,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 35] = [
+    pub const ALL: [Self; 40] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -116,6 +127,11 @@ impl Code {
         Self::E0507,
         Self::E0508,
         Self::E0509,
+        Self::E0401,
+        Self::E0402,
+        Self::E0406,
+        Self::E0407,
+        Self::E0408,
         Self::W0101,
         Self::W0102,
     ];
@@ -157,6 +173,11 @@ impl Code {
             Self::E0507 => "E0507",
             Self::E0508 => "E0508",
             Self::E0509 => "E0509",
+            Self::E0401 => "E0401",
+            Self::E0402 => "E0402",
+            Self::E0406 => "E0406",
+            Self::E0407 => "E0407",
+            Self::E0408 => "E0408",
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
         }
@@ -199,7 +220,12 @@ impl Code {
             | Self::E0506
             | Self::E0507
             | Self::E0508
-            | Self::E0509 => true,
+            | Self::E0509
+            | Self::E0401
+            | Self::E0402
+            | Self::E0406
+            | Self::E0407
+            | Self::E0408 => true,
         }
     }
 }

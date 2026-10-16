@@ -366,6 +366,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-project"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+ "qc-lexer",
+ "qc-preproc",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "qc-syntax"
 version = "2026.10.0"
 dependencies = [
@@ -843,6 +854,7 @@ dependencies = [
  "qc-lexer",
  "qc-preproc",
  "qc-progs",
+ "qc-project",
  "qc-syntax",
  "qc-trace",
  "qc-types",
