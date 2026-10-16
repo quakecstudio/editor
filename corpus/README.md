@@ -75,5 +75,6 @@ python3.11 corpus/verify.py            # offline: manifest rules and the reposit
 python3.11 corpus/verify.py --online   # also downloads every pinned file and compares SHA-256
 python3.11 corpus/assets.py fetch      # download, checksum and extract the test assets
 python3.11 corpus/assets.py precache   # check they cover the rerelease's precaches
-(cd corpus && python3.11 -m unittest test_verify.py test_assets.py)
+python3.11 corpus/language_coverage.py # check docs/spec/language.md covers every construct in id 1.01
+(cd corpus && python3.11 -m unittest test_verify.py test_assets.py test_language_coverage.py)
 ```

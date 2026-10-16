@@ -256,10 +256,14 @@ jobs:
           key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
       - name: Test the corpus scripts
         working-directory: corpus
-        run: python -m unittest test_verify.py test_assets.py
+        run: python -m unittest test_verify.py test_assets.py test_language_coverage.py
       - name: Check the corpus manifest
         run: python corpus/verify.py
       - name: Fetch the test assets
         run: python corpus/assets.py fetch
       - name: Check the rerelease precaches
         run: python corpus/assets.py precache
+      # The source is the same on every OS, so one runner checks it.
+      - name: Check the language spec covers id 1.01
+        if: runner.os == 'Linux'
+        run: python corpus/language_coverage.py
