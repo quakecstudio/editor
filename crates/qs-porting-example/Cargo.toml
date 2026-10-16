@@ -1,0 +1,12 @@
+[package]
+name = "qs-porting-example"
+description = "Worked example of the porting process: id's ED_NewString ported to Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
