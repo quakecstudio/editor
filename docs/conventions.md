@@ -273,6 +273,8 @@ As in vouch:
 - `Swatinem/rust-cache` for caching; `--locked` on every cargo command; `CARGO_BUILD_WARNINGS: deny`
   in the workflow environment, as in vouch.
 
+The workflows, the required checks on `main` and the ruleset are in [`ci.md`](ci.md).
+
 ## Make targets (CONV-8)
 
 `Makefile` is the entry point, as in vouch; logic that needs Rust lives in `xtask` and is
