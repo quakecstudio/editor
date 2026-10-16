@@ -7,6 +7,7 @@
     reason = "test code: a failed index, unwrap or panic is a failed test"
 )]
 
+mod case;
 mod cond;
 mod directives;
 mod forms;
@@ -26,6 +27,8 @@ struct GraphSpec<'a> {
     src: &'a str,
     defines: &'a [&'a str],
     include_dirs: &'a [&'a str],
+    /// Whether the files are on a file system that ignores case.
+    ignore_case: bool,
 }
 
 impl Default for GraphSpec<'_> {
@@ -35,12 +38,16 @@ impl Default for GraphSpec<'_> {
             src: "progs.src",
             defines: &[],
             include_dirs: &[],
+            ignore_case: false,
         }
     }
 }
 
 fn loader(files: &[(&str, &str)]) -> MemoryLoader {
-    let mut loader = MemoryLoader::new();
+    fill(MemoryLoader::new(), files)
+}
+
+fn fill(mut loader: MemoryLoader, files: &[(&str, &str)]) -> MemoryLoader {
     for (path, text) in files {
         loader.insert(*path, text.as_bytes());
     }
@@ -48,7 +55,12 @@ fn loader(files: &[(&str, &str)]) -> MemoryLoader {
 }
 
 fn build(spec: &GraphSpec<'_>) -> FileGraph {
-    let mut loader = loader(spec.files);
+    let empty = if spec.ignore_case {
+        MemoryLoader::case_insensitive()
+    } else {
+        MemoryLoader::new()
+    };
+    let mut loader = fill(empty, spec.files);
     let defines: Vec<Define> = spec
         .defines
         .iter()
