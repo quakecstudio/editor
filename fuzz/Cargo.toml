@@ -1,0 +1,26 @@
+# Fuzz targets, run with cargo-fuzz on nightly: `cargo xtask fuzz` or `make test-fuzz`.
+# Outside the workspace (docs/conventions.md), so it has its own lock file.
+
+[package]
+name = "qs-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
+qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
+
+[[bin]]
+name = "qc-progs"
+path = "fuzz_targets/qc_progs.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

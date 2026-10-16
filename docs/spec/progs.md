@@ -417,6 +417,12 @@ only files that id's qcc never writes.
   engine: what an out-of-range value does when executed is in `vm.md`.
 - **PROGS-15.8** A reader may skip the header CRC check (PROGS-3.2) when asked to, so the
   editor can open a mod whose system definitions differ from id's; the default is to check.
+- **PROGS-15.9** Within one step of PROGS-15.5 the first failure in this order is reported:
+  table bounds in header order (statements, global definitions, field definitions, functions,
+  strings, globals); field definitions in table order; string references of the global
+  definitions, then of the field definitions, then of the functions, each in table order, with
+  a function's `s_name` before its `s_file`; parameter counts in function order. id's engine
+  has no such checks, so the order is ours; it follows the header and the loader's loops.
 
 ## PROGS-16 The eight QC types
 
@@ -613,6 +619,50 @@ far for 16 bits.
   records (`typeinfo_t`): seven i32 fields `type`, `next`, `aux_type`, `num_parms`, `ofs`,
   `size` and `name`, the last a string reference. FTEQCC at the pinned commit never writes
   the table (`types` is always false in `WriteData`).
+- **PROGS-21.9** A version 7 file is checked in this order, and the first failure is reported:
+  a size of at least 60 bytes (PROGS-15.1), the version, a size of at least 92 bytes, the
+  header CRC (PROGS-3.2, which PROGS-15.8 may skip), `secondaryversion` (PROGS-19.3),
+  `blockscompressed` (PROGS-21.4), the bounds of the six tables (PROGS-15.9), the bounds of the
+  line number table when `ofslinenums` is not 0 (`numstatements` 4-byte entries, as
+  PROGS-15.2), the bodyless function names (every name's NUL inside the file, and a table of no
+  names still at an offset no greater than the file size), then the remaining steps of
+  PROGS-15.5. The embedded files and the type table are not checked (PROGS-21.5). FTE's loader
+  checks none of the bounds, so the order is ours.
+
+## PROGS-22 Writing a progs.dat
+
+**Source:** `qcc/qcc.c`, `WriteData`, for the table order of PROGS-22.2. The rest is the
+editor's own behaviour: id's engine never writes a progs.dat.
+
+The writer turns the records of a progs.dat back into a file, for the editor's own tools and so
+that a file read and written back can be compared byte for byte.
+
+### Behaviour
+
+- **PROGS-22.1** When no non-empty table overlaps another or the header, a file the reader
+  accepts and the writer writes back unchanged is the same byte for byte: the writer places the
+  non-empty tables in the order the file had them, with the bytes before, between and after them
+  that the file had (PROGS-1.4), and gives each empty table the offset the file stored.
+- **PROGS-22.2** Without a source layout (a file built in memory, or one with overlapping
+  tables) the writer uses qcc's order (PROGS-1.3): header, strings, statements, functions,
+  global definitions, field definitions, globals, then for version 7 the line numbers and the
+  bodyless function names. It pads the string table with NUL bytes to a multiple of 4 and
+  `numstrings` counts the padding. An empty table's offset is where it would start, except that
+  an empty bodyless function table has offset 0.
+- **PROGS-22.3** The writer computes every count and offset in the header from the tables,
+  `version` and `secondaryversion` from the format, and writes `blockscompressed` as 0; `crc`,
+  `entityfields`, `ofsfiles`, `ofs_types` and `numtypes` are written as given. With a source
+  layout, a table the source did not have, or had empty, and that now has records goes after
+  the source's last byte. A version 7 file with no line number table has `ofslinenums` 0.
+- **PROGS-22.4** The writer rejects a value that does not fit its field, with a typed error and
+  no output: in version 6 an opcode above 65535, an operand outside -32768 to 32767, or a
+  definition type or `ofs` above 65535; in the 16-bit version 7 layout also an operand outside
+  0 to 65535; a count or offset above 2147483647; a line number table whose length is not the
+  number of statements; a bodyless function name containing a NUL; version 7 parts in a version
+  6 file; and `ofsfiles` or `ofs_types` other than 0 without a source layout, since the bytes
+  they point at would not be kept.
+- **PROGS-22.5** When the records given to the writer pass the checks of PROGS-15, reading the
+  written file gives back every record exactly as given.
 
 ## Test vectors
 
@@ -622,6 +672,22 @@ from the pinned commit into a local harness with the file system calls stubbed, 
 vector and printing every decoded field; the output matched the expected values in the
 vectors' README. The FTE vectors were checked against the FTEQW structures above by reading
 them, not by running FTE.
+
+The `qc-progs` reader was checked against id's loader on 2026-10-16, before the oracle suite
+exists. A local harness included `WinQuake/pr_comp.h` unchanged and `PR_LoadProgs`,
+`ED_GlobalAtOfs`, `ED_FieldAtOfs`, `ED_FindField`, `ED_FindGlobal` and `ED_FindFunction` of
+`WinQuake/pr_edict.c` and the CRC functions and table of `WinQuake/crc.c`, each copied verbatim
+from the pinned commit, with `Sys_Error`, `Con_DPrintf` and the file loading stubbed (the file
+followed by one NUL, as `COM_LoadFile` returns it), and was built with Apple clang 21 for 64-bit
+macOS. For each file it printed the error, or every header field, `pr_crc`, every field of every
+record with each name's bytes, the result of each lookup for every definition's name and slot
+and every function's name, and every global. A Rust program printed the same from `qc-progs`
+(default features). Over the four vectors and 3,000 generated files (random tables in a random
+order with random gaps, valid string references, and in a fifth of them a wrong version, a
+wrong CRC, a field definition with `DEF_SAVEGLOBAL` or a function with more than 8
+parameters), 2,771 outputs were identical and the other 233 were the expected divergence of
+PROGS-15.6: id's loader accepts more than 8 parameters and `qc-progs` rejects them. Making the
+reader zero-extend the operand `a` instead of sign-extending it produced 1,568 divergences.
 
 Statement decoding (PROGS-7):
 

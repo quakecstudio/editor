@@ -28,13 +28,7 @@ test-integration: ## Run the cross-crate integration tests (qs-tests)
 	$(CARGO) test --locked --package qs-tests
 
 test-fuzz: ## Run each fuzz target for FUZZ_SECONDS (needs nightly and cargo-fuzz)
-	@if [ -d fuzz ]; then \
-		for target in $$($(CARGO) +nightly fuzz list); do \
-			$(CARGO) +nightly fuzz run "$$target" -- -max_total_time=$(FUZZ_SECONDS) || exit 1; \
-		done; \
-	else \
-		echo "test-fuzz: there is no fuzz/ directory yet"; \
-	fi
+	$(CARGO) xtask fuzz --time $(FUZZ_SECONDS)
 
 test-coverage: ## Measure test coverage (needs cargo-llvm-cov)
 	$(CARGO) llvm-cov --locked --workspace --all-features
