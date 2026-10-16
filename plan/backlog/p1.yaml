@@ -223,6 +223,7 @@ issues:
   acceptance:
   - Running the oracle on id 1.01 progs produces traces
   - The oracles are never part of the shipped app or required to build it
+  - 'The id VM oracle is built as docs/spec/vm.md "Reference build" requires (-fno-strict-aliasing, -ffp-contract=off) and passes every docs/spec/vectors/vm vector without oracle: no, the VM-9.2 vectors on an x86-64 host'
   verify:
   - cargo xtask oracles in CI on all three OSes
 - key: P1-26

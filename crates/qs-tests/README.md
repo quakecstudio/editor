@@ -11,6 +11,7 @@ The single integration test binary for tests that exercise more than one crate
 | --- | --- |
 | `paths` | `qs-paths` resolves absolute application directories in the real environment |
 | `spec_coverage` | The spec-citation ratchet: every statement in `docs/spec/` is cited by a `// spec` test or listed in `docs/spec/coverage-baseline.tsv`, and `docs/spec/requirements.tsv` matches the specs (`docs/spec/README.md`) |
+| `spec_vectors` | The VM test vectors in `docs/spec/vectors/vm/` are well formed, cite active statements, and cover every vanilla opcode |
 
 Add a module to `tests/it/` and declare it in `tests/it/main.rs`; never add a file directly
 under `tests/`, which would link another binary. Keep `[lints] workspace = true`; a test module

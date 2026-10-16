@@ -4,3 +4,4 @@
 
 mod paths;
 mod spec_coverage;
+mod spec_vectors;

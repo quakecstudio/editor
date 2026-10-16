@@ -1,0 +1,400 @@
+# Comparisons and logical operators: vm.md VM-6 to VM-8. Format: README.md.
+
+== eq_f
+spec: VM-6.1, VM-6.2
+globals: 100=2 101=2 102=3 103=-0
+code:
+  EQ_F 100 101 110
+  EQ_F 100 102 111      # unequal: 0, no change
+  EQ_F 103 104 112      # -0 == +0
+  DONE
+expect:
+  1 EQ_F 110=1
+  2 EQ_F
+  3 EQ_F 112=1
+  4 DONE
+  done
+
+== eq_f_nan
+spec: VM-6.2
+globals: 100=nan 110=7
+code:
+  EQ_F 100 100 110      # NaN is not equal to itself
+  DONE
+expect:
+  1 EQ_F 110=0
+  2 DONE
+  done
+
+== ne_f
+spec: VM-6.1, VM-6.2
+globals: 100=2 101=3 102=nan 103=-0
+code:
+  NE_F 100 101 110
+  NE_F 102 102 111
+  NE_F 103 104 112      # -0 != +0 is false
+  DONE
+expect:
+  1 NE_F 110=1
+  2 NE_F 111=1
+  3 NE_F
+  4 DONE
+  done
+
+== le
+spec: VM-6.1, VM-6.2
+globals: 100=1 101=2 102=nan
+code:
+  LE 100 101 110
+  LE 100 100 111
+  LE 101 100 112
+  LE 102 100 113
+  DONE
+expect:
+  1 LE 110=1
+  2 LE 111=1
+  3 LE
+  4 LE
+  5 DONE
+  done
+
+== ge
+spec: VM-6.1, VM-6.2
+globals: 100=1 101=2 102=nan 103=-0
+code:
+  GE 101 100 110
+  GE 100 101 111
+  GE 102 102 112
+  GE 103 104 113        # -0 >= +0
+  DONE
+expect:
+  1 GE 110=1
+  2 GE
+  3 GE
+  4 GE 113=1
+  5 DONE
+  done
+
+== lt
+spec: VM-6.1, VM-6.2
+globals: 100=-1 101=2 102=nan 111=5
+code:
+  LT 100 101 110
+  LT 101 100 111        # false overwrites 5 with 0
+  LT 100 102 112
+  DONE
+expect:
+  1 LT 110=1
+  2 LT 111=0
+  3 LT
+  4 DONE
+  done
+
+== gt
+spec: VM-6.1, VM-6.2
+globals: 100=-inf 101=inf 102=nan
+code:
+  GT 101 100 110
+  GT 100 101 111
+  GT 102 100 112
+  DONE
+expect:
+  1 GT 110=1
+  2 GT
+  3 GT
+  4 DONE
+  done
+
+== eq_v
+spec: VM-6.3
+globals: 100=1 101=2 102=3 103=1 104=2 105=3 106=1 107=2 108=4 115=-0
+code:
+  EQ_V 100 103 110
+  EQ_V 100 106 111      # differs in z
+  EQ_V 115 118 120      # (-0,0,0) == (0,0,0)
+  DONE
+expect:
+  1 EQ_V 110=1
+  2 EQ_V
+  3 EQ_V 120=1
+  4 DONE
+  done
+
+== ne_v
+spec: VM-6.3
+globals: 100=1 101=2 102=3 103=1 104=2 105=4 106=0 107=nan 108=0
+code:
+  NE_V 100 103 110
+  NE_V 100 100 111
+  NE_V 106 106 112      # a NaN component makes the vector unequal to itself
+  DONE
+expect:
+  1 NE_V 110=1
+  2 NE_V
+  3 NE_V 112=1
+  4 DONE
+  done
+
+== eq_v_into_operand
+spec: VM-6.4
+globals: 100=5 101=5 102=5
+code:
+  EQ_V 100 100 101      # all inputs read before c (inside a) is written
+  DONE
+expect:
+  1 EQ_V 101=1
+  2 DONE
+  done
+
+== eq_s
+spec: VM-7.1
+strings: "abc" "abd" "" "abc"
+globals: 100=i1 101=i10 102=i5 103=i9
+code:
+  EQ_S 100 101 110      # same text at different offsets
+  EQ_S 100 102 111
+  EQ_S 103 104 112      # the empty string at 9 equals offset 0
+  EQ_S 100 100 113
+  DONE
+expect:
+  1 EQ_S 110=1
+  2 EQ_S
+  3 EQ_S 112=1
+  4 EQ_S 113=1
+  5 DONE
+  done
+
+== ne_s_unsigned_bytes
+spec: VM-7.1, VM-7.2
+strings: "\x80" "\x7f"
+globals: 100=i1 101=i3
+code:
+  NE_S 100 101 110      # 0x80 is above 0x7f as an unsigned byte: positive
+  DONE
+expect:
+  1 NE_S 110=1
+  2 DONE
+  done
+
+== ne_s
+spec: VM-7.1, VM-7.2
+strings: "abc" "abd" "abc" ""
+globals: 100=i1 101=i5 102=i9 103=i13
+code:
+  NE_S 100 102 110      # same text: 0
+  NE_S 103 104 111      # empty at 13 and offset 0: 0
+  NE_S 100 101 112      # differ: true (sign of the difference)
+  DONE
+expect:
+  1 NE_S
+  2 NE_S
+  3 NE_S 112=-1
+  4 DONE
+  done
+
+== ne_s_byte_difference
+spec: VM-7.2
+strings: "abc" "abz" "ab"
+globals: 100=i1 101=i5 102=i9
+code:
+  NE_S 100 101 110      # 'c' - 'z'
+  NE_S 101 100 111
+  NE_S 102 100 112      # the NUL ending "ab" against 'c'
+  DONE
+expect:
+  1 NE_S 110=-23
+  2 NE_S 111=23
+  3 NE_S 112=-99
+  4 DONE
+  done
+
+== eq_e
+spec: VM-7.4
+globals: 100=e1 101=e1 102=e2
+code:
+  EQ_E 100 101 110
+  EQ_E 100 102 111
+  EQ_E 103 104 112      # world == world
+  DONE
+expect:
+  1 EQ_E 110=1
+  2 EQ_E
+  3 EQ_E 112=1
+  4 DONE
+  done
+
+== eq_e_compares_bits
+spec: VM-7.4
+globals: 100=-0 101=nan
+code:
+  EQ_E 100 102 110      # 0x80000000 and 0x00000000 differ as bit patterns
+  EQ_E 101 101 111      # a NaN pattern equals itself
+  DONE
+expect:
+  1 EQ_E
+  2 EQ_E 111=1
+  3 DONE
+  done
+
+== ne_e
+spec: VM-7.4
+globals: 100=e1 101=e2
+code:
+  NE_E 100 101 110
+  NE_E 100 100 111
+  DONE
+expect:
+  1 NE_E 110=1
+  2 NE_E
+  3 DONE
+  done
+
+== eq_fnc
+spec: VM-7.4
+globals: 100=i3 101=i3 102=i4 103=i99999
+code:
+  EQ_FNC 100 101 110
+  EQ_FNC 100 102 111
+  EQ_FNC 103 103 112    # the index is not checked against the function table
+  DONE
+expect:
+  1 EQ_FNC 110=1
+  2 EQ_FNC
+  3 EQ_FNC 112=1
+  4 DONE
+  done
+
+== ne_fnc
+spec: VM-7.4
+globals: 100=i3 101=i4
+code:
+  NE_FNC 100 101 110
+  NE_FNC 101 101 111
+  DONE
+expect:
+  1 NE_FNC 110=1
+  2 NE_FNC
+  3 DONE
+  done
+
+== not_f
+spec: VM-8.1
+globals: 100=0 101=-0 102=nan 103=0x00000001 110=9
+code:
+  NOT_F 100 0 111
+  NOT_F 101 0 112       # -0 is zero
+  NOT_F 102 0 110       # NaN is not zero: 0 overwrites 9
+  NOT_F 103 0 113       # the smallest subnormal is not zero
+  DONE
+expect:
+  1 NOT_F 111=1
+  2 NOT_F 112=1
+  3 NOT_F 110=0
+  4 NOT_F
+  5 DONE
+  done
+
+== not_v
+spec: VM-8.2
+globals: 100=0 101=-0 102=0 103=0 104=0 105=1
+code:
+  NOT_V 100 0 110
+  NOT_V 103 0 111
+  DONE
+expect:
+  1 NOT_V 110=1
+  2 NOT_V
+  3 DONE
+  done
+
+== not_s
+spec: VM-8.3
+strings: "abc" ""
+globals: 100=i0 101=i5 102=i1 103=i3
+code:
+  NOT_S 100 0 110       # offset 0
+  NOT_S 101 0 111       # an empty string at offset 5
+  NOT_S 102 0 112       # "abc"
+  NOT_S 103 0 113       # "c", the tail of "abc"
+  DONE
+expect:
+  1 NOT_S 110=1
+  2 NOT_S 111=1
+  3 NOT_S
+  4 NOT_S
+  5 DONE
+  done
+
+== not_ent
+spec: VM-8.4
+globals: 100=e0 101=e1
+code:
+  NOT_ENT 100 0 110
+  NOT_ENT 101 0 111
+  DONE
+expect:
+  1 NOT_ENT 110=1
+  2 NOT_ENT
+  3 DONE
+  done
+
+== not_fnc
+spec: VM-8.5
+globals: 100=i0 101=i2
+code:
+  NOT_FNC 100 0 110
+  NOT_FNC 101 0 111
+  DONE
+expect:
+  1 NOT_FNC 110=1
+  2 NOT_FNC
+  3 DONE
+  done
+
+== and
+spec: VM-8.6
+globals: 100=1 101=2 102=0 103=nan 104=-0
+code:
+  AND 100 101 110
+  AND 100 102 111
+  AND 103 100 112       # NaN is true
+  AND 104 100 113       # -0 is false
+  DONE
+expect:
+  1 AND 110=1
+  2 AND
+  3 AND 112=1
+  4 AND
+  5 DONE
+  done
+
+== or
+spec: VM-8.6
+globals: 100=1 101=0 102=-0 103=nan
+code:
+  OR 100 101 110
+  OR 101 102 111        # +0 or -0
+  OR 101 103 112
+  DONE
+expect:
+  1 OR 110=1
+  2 OR
+  3 OR 112=1
+  4 DONE
+  done
+
+== float_test_reads_bits_as_float
+spec: VM-8.7
+globals: 100=-0 101=i5
+code:
+  NOT_F 100 0 110       # -0 is false as a float
+  IF 100 2              # but its bit pattern is non-zero, so IF jumps
+  GOTO 2
+  NOT_F 101 0 111       # an integer value read as a float is a subnormal, not zero
+  DONE
+expect:
+  1 NOT_F 110=1
+  2 IF
+  4 NOT_F
+  5 DONE
+  done
