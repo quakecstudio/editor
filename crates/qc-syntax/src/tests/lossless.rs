@@ -1,0 +1,257 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Every byte is in the tree once, in order, and trivia is classified.
+
+use proptest::prelude::*;
+
+use super::SAMPLE;
+use crate::ast::AstNode as _;
+use crate::{SyntaxKind, SyntaxNode, parse};
+
+/// Checks that the tokens of `root` tile `source` exactly and give it back.
+fn assert_lossless(source: &[u8]) {
+    let root = parse(source).syntax();
+    assert_eq!(root.kind(), SyntaxKind::SourceFile);
+    assert_eq!(root.text(), source);
+    assert_eq!(root.span().start, 0);
+    assert_eq!(root.span().end, source.len());
+    let mut at = 0;
+    for token in root.tokens() {
+        assert_eq!(token.span().start, at, "{token:?}");
+        assert_eq!(source.get(token.span().range()), Some(token.text()));
+        at = token.span().end;
+    }
+    assert_eq!(at, source.len());
+    for node in root.descendants() {
+        for child in node.children() {
+            assert!(node.span().contains(child.span()));
+            assert_eq!(child.parent().as_ref(), Some(&node));
+        }
+    }
+}
+
+/// The trivia tokens of a parse, as `(kind, text)`.
+fn trivia(source: &str) -> Vec<(SyntaxKind, String)> {
+    parse(source.as_bytes())
+        .syntax()
+        .tokens()
+        .filter(|t| t.kind().is_trivia())
+        .map(|t| (t.kind(), t.text_lossless()))
+        .collect()
+}
+
+#[test]
+fn empty_file() {
+    let parsed = parse(b"");
+    assert_eq!(parsed.syntax().debug_tree(), "SourceFile@0..0\n");
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
+fn sample_is_lossless() {
+    assert_lossless(SAMPLE.as_bytes());
+}
+
+#[test]
+fn comments_and_whitespace_are_trivia() {
+    assert_eq!(
+        trivia("// a\nfloat /*b*/ x;\t\r\n/* c */"),
+        vec![
+            (SyntaxKind::LineComment, "// a".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::BlockComment, "/*b*/".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, "\t\r\n".to_owned()),
+            (SyntaxKind::BlockComment, "/* c */".to_owned()),
+        ]
+    );
+}
+
+// spec QC-2.3: the search for `*/` starts at the `*` of `/*`, so `/*/` is a whole comment
+#[test]
+fn slash_star_slash_is_a_comment() {
+    assert_eq!(
+        trivia("/*/ float x;").first(),
+        Some(&(SyntaxKind::BlockComment, "/*/".to_owned()))
+    );
+}
+
+// spec QC-2.4: an unterminated comment runs to the end of the file; it is kept as trivia
+#[test]
+fn unterminated_comment_is_trivia() {
+    let parsed = parse(b"float a;\n/* abc");
+    assert_eq!(
+        trivia("float a;\n/* abc").last(),
+        Some(&(SyntaxKind::BlockComment, "/* abc".to_owned()))
+    );
+    assert_eq!(parsed.errors().count(), 1);
+}
+
+// spec QC-1.3: bytes 0x80 to 0xFF outside a string are whitespace
+#[test]
+fn high_bytes_are_whitespace() {
+    let source = b"float\xa0a;";
+    assert_lossless(source);
+    let parsed = parse(source);
+    assert_eq!(parsed.errors().count(), 0);
+    let ws: Vec<_> = parsed
+        .syntax()
+        .tokens()
+        .filter(|t| t.kind() == SyntaxKind::Whitespace)
+        .map(|t| t.text().to_vec())
+        .collect();
+    assert_eq!(ws, vec![b"\xa0".to_vec()]);
+}
+
+// spec QC-1.1: the text ends at the first NUL byte; what follows is kept as skipped bytes
+#[test]
+fn text_after_nul_is_skipped() {
+    let source = b"float a;\0float b junk";
+    assert_lossless(source);
+    let parsed = parse(source);
+    assert_eq!(parsed.errors().count(), 0);
+    let tokens: Vec<_> = parsed.syntax().tokens().collect();
+    let last = tokens.last().unwrap();
+    assert_eq!(last.kind(), SyntaxKind::Skipped);
+    assert_eq!(last.text(), b"\0float b junk");
+}
+
+// spec QC-8.4, QC-8.2: ignored `$` commands are skipped with their line; `$frame` lines are
+// kept
+#[test]
+fn dollar_commands_are_trivia() {
+    let source = "$cd /a/b, c;\n$frame s1 s2\nfloat x = $s2;\n";
+    assert_eq!(
+        trivia(source),
+        vec![
+            (SyntaxKind::Skipped, "$cd /a/b, c;".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+            (SyntaxKind::Frames, "$frame s1 s2".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, " ".to_owned()),
+            (SyntaxKind::Whitespace, "\n".to_owned()),
+        ]
+    );
+    assert_eq!(parse(source.as_bytes()).errors().count(), 0);
+}
+
+// spec QC-7.2: an unknown byte is an error; the tree keeps it as skipped bytes
+#[test]
+fn unknown_bytes_are_skipped() {
+    let parsed = parse(b"float a;\nfloat b % c;\nfloat d;");
+    assert!(
+        parsed
+            .syntax()
+            .tokens()
+            .any(|t| t.kind() == SyntaxKind::Skipped && t.text() == b"%")
+    );
+    assert_lossless(b"%%%`~?@\\");
+}
+
+// spec QC-9.1: a line whose first token is `#` and a name is a directive, kept whole as trivia
+#[test]
+fn directives_are_nodes_the_parser_steps_over() {
+    let source = "#define X 1 // one\nfloat a;\nvoid() f = {\n#ifdef X\n\ta = 1;\n#endif\n};\n";
+    let parsed = parse(source.as_bytes());
+    assert_eq!(super::errors(&parsed), vec![]);
+    let directives: Vec<String> = parsed
+        .tree()
+        .unwrap()
+        .syntax()
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::Directive)
+        .map(|n| String::from_utf8(n.text()).unwrap())
+        .collect();
+    assert_eq!(directives, vec!["#define X 1", "#ifdef X", "#endif"]);
+    assert_eq!(parsed.tree().unwrap().directives().count(), 1);
+}
+
+// spec QC-9.1: `#` followed by a number is the builtin marker, even first on its line
+#[test]
+fn hash_number_is_not_a_directive() {
+    let parsed = parse(b"void() f =\n#1;\n");
+    assert_eq!(super::errors(&parsed), vec![]);
+    assert!(!super::kinds(&parsed).contains(&SyntaxKind::Directive));
+    assert!(super::kinds(&parsed).contains(&SyntaxKind::Builtin));
+}
+
+#[test]
+fn directive_at_end_of_file() {
+    assert_lossless(b"#define X");
+    assert_lossless(b"#define X \"a\n");
+    assert_lossless(b"#define X 'a\n1 2 3'\nfloat a;");
+}
+
+#[test]
+fn debug_tree_format() {
+    assert_eq!(
+        parse(b"float a;").syntax().debug_tree(),
+        "SourceFile@0..8\n  Declaration@0..8\n    SimpleType@0..5\n      FloatKw@0..5 \"float\"\n    \
+         Whitespace@5..6 \" \"\n    Declarator@6..7\n      Name@6..7 \"a\"\n    Semicolon@7..8 \";\"\n"
+    );
+}
+
+#[test]
+fn nodes_and_tokens_compare_by_position() {
+    let root: SyntaxNode = parse(b"float a; float a;").syntax();
+    let decls: Vec<_> = root.children().collect();
+    assert_ne!(decls[0], decls[1]);
+    assert_eq!(decls[0].green(), decls[1].green());
+    assert_eq!(decls[0], root.children().next().unwrap());
+}
+
+/// Tokens of vanilla QuakeC and of other dialects, for generated sources.
+fn fragment() -> impl Strategy<Value = String> {
+    prop_oneof![
+        Just("float".to_owned()),
+        Just("void".to_owned()),
+        Just("vector".to_owned()),
+        Just("entity".to_owned()),
+        Just("string".to_owned()),
+        Just("local".to_owned()),
+        Just("if".to_owned()),
+        Just("else".to_owned()),
+        Just("while".to_owned()),
+        Just("do".to_owned()),
+        Just("return".to_owned()),
+        Just("for".to_owned()),
+        "[a-z_][a-z0-9_]{0,6}",
+        "-?[0-9]{1,3}(\\.[0-9]{1,2})?",
+        Just("'1 2 3'".to_owned()),
+        Just("\"s\"".to_owned()),
+        Just("$frame a b\n".to_owned()),
+        Just("$a".to_owned()),
+        Just("#define X 1\n".to_owned()),
+        Just("// c\n".to_owned()),
+        Just("/* c */".to_owned()),
+        "[-+*/&|!=<>;,.(){}\\[\\]#:?%]{1,2}",
+        Just("...".to_owned()),
+        Just("\n".to_owned()),
+    ]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    // The tree gives back any bytes, and parsing always ends.
+    #[test]
+    fn any_bytes_round_trip(source in proptest::collection::vec(any::<u8>(), 0..512)) {
+        assert_lossless(&source);
+    }
+
+    // Token soup in the shape of QuakeC round-trips too.
+    #[test]
+    fn token_soup_round_trips(parts in proptest::collection::vec(fragment(), 0..80)) {
+        assert_lossless(parts.join(" ").as_bytes());
+    }
+
+    // Parsing the same text twice gives the same tree.
+    #[test]
+    fn parsing_is_deterministic(parts in proptest::collection::vec(fragment(), 0..40)) {
+        let text = parts.join(" ");
+        prop_assert_eq!(parse(text.as_bytes()), parse(text.as_bytes()));
+    }
+}

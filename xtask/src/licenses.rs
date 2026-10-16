@@ -5,7 +5,7 @@
 //! Every file is classified by name or extension, and a file of a type with no
 //! rule fails, so a new kind of file cannot slip past unscanned:
 //!
-//! - **Source** (Rust, Python, shell, C, `Makefile`): starts with an
+//! - **Source** (Rust, Python, shell, C, QuakeC, `Makefile`): starts with an
 //!   `SPDX-License-Identifier` line (after a `#!` line, if any) naming an
 //!   allowed license, and passes the ported-file header rule of
 //!   `docs/porting.md` (rules H1 to H5, in [`crate::ported`]).
@@ -31,7 +31,7 @@ const LICENSE_FILE: &str = "LICENSE";
 const LICENSE_MARKERS: [&str; 2] = ["GNU GENERAL PUBLIC LICENSE", "Version 3, 29 June 2007"];
 const SPECS_MANIFEST: &str = "specs/manifest.tsv";
 
-const SOURCE_EXTENSIONS: [&str; 5] = ["rs", "py", "sh", "c", "h"];
+const SOURCE_EXTENSIONS: [&str; 6] = ["rs", "py", "sh", "c", "h", "qc"];
 const SOURCE_NAMES: [&str; 1] = ["Makefile"];
 const TEXT_EXTENSIONS: [&str; 12] = [
     "md", "toml", "yaml", "yml", "json", "jsonl", "lock", "html", "txt", "tsv", "csv", "hex",
@@ -403,6 +403,7 @@ mod tests {
     fn files_are_classified_by_name_then_extension() {
         assert_eq!(classify("Makefile"), Kind::Source);
         assert_eq!(classify("x/y.RS"), Kind::Source);
+        assert_eq!(classify("src/tests/sample.qc"), Kind::Source);
         assert_eq!(classify("LICENSE"), Kind::Text);
         assert_eq!(classify(".gitignore"), Kind::Text);
         assert_eq!(classify("Cargo.lock"), Kind::Text);

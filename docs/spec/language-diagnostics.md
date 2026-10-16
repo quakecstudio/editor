@@ -141,6 +141,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-6.7** `E0507` "builtin number must be positive": `#0` or `#-n` (QC-27.9).
 - **QCD-6.8** `E0508` "cannot assign to this expression": the left side of `=` is a
   literal, a call, or an operator's result (QC-27.10).
+- **QCD-6.9** `E0509` "nesting too deep": statements, types or expressions nested more than
+  `QC_MAX_NESTING` levels (QC-27.15).
 
 ## QCD-7 Warnings
 
