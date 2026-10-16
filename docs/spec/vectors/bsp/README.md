@@ -28,6 +28,14 @@ x86-64 with gcc 14.4 in an emulated `linux/amd64` container; both builds gave th
 below, which are those of `WINQUAKE.EXE`'s 16-bit code (the evidence for BSP-9.14 in
 [`../../bsp.md`](../../bsp.md)).
 
+The rows marked GLQuake (2026-10-16) also give the result of GLQuake's loader:
+`Mod_LoadBrushModel` in `WinQuake/gl_model.c`, copied unchanged from the pinned commit with
+`gl_model.h`, in the same harness with `GL_LoadTexture`, `GL_SubdivideSurface`,
+`GL_MakeAliasModelDisplayLists` and `Cvar_RegisterVariable` stubbed, built for arm64 with
+Apple clang and for x86-64 with gcc 14.4; both builds, and both builds of `WinQuake/model.c`,
+gave the results below (BSP-9.15). Every other vector's face extents are 256 or less, or its
+texinfo has `TEX_SPECIAL`, so GLQuake's limit does not change its result.
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
@@ -81,9 +89,12 @@ result it records.
 | `not-aligned` | Texture `wall` 24 by 16 | Error `Texture wall is not 16 aligned` | BSP-4.4 |
 | `missing-texture` | Texture slot offset -1; texinfo flags 1 | Loads; slot 0 empty; texinfo 0 uses the checkerboard with flags 0 | BSP-4.2, BSP-8.4 |
 | `no-textures` | Empty textures lump | Loads; no textures; texinfo 0 uses the checkerboard with flags 0 | BSP-4.1, BSP-8.4 |
-| `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 | BSP-9.4 |
-| `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` | BSP-9.4 |
-| `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 | BSP-9.4 |
+| `extents-256` | Square of side 256, lighting of 289 bytes | Loads; extents 256 256 (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-272` | Square of side 272, lighting of 324 bytes | Error `Bad surface extents` (GLQuake loads; extents 272 272) | BSP-9.4, BSP-9.15 |
+| `extents-272-special` | Square of side 272, lighting of 324 bytes, texinfo flags 1 | Loads; extents 272 272 (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-512` | Square of side 512, lighting of 1089 bytes | Error `Bad surface extents` (GLQuake loads; extents 512 512, a 33 by 33 lightmap) | BSP-9.4, BSP-9.15 |
+| `extents-528` | Square of side 528, lighting of 1156 bytes | Error `Bad surface extents` (GLQuake the same) | BSP-9.4, BSP-9.15 |
+| `extents-528-special` | Square of side 528, lighting of 1156 bytes, texinfo flags 1 | Loads; extents 528 528 (GLQuake the same) | BSP-9.4, BSP-9.15 |
 | `texture-offset` | Texinfo offsets -8 (s) and 24 (t), lighting of 36 bytes | Loads; `texturemins` -16 16, extents 80 80 | BSP-8.1, BSP-9.10 |
 | `mipadjust` | Texinfo axes (0.5, 0, 0) and (0, 0.5, 0) | Loads; mip bias 2; extents 32 32 | BSP-8.6, BSP-9.10 |
 | `bad-miptex` | Texinfo miptex 1 | Error `miptex >= loadmodel->numtextures` | BSP-8.3 |

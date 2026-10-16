@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use qs_bsp::{Bsp, Lit, replace_entities};
+use qs_bsp::{Bsp, BspLoader, Lit, replace_entities};
 
 /// The `base` vector of `docs/spec/vectors/bsp/`, an `xxd` dump.
 const BASE: &str = include_str!("../../docs/spec/vectors/bsp/base.txt");
@@ -31,7 +31,13 @@ fn base() -> Vec<u8> {
 
 fn check(bytes: &[u8]) {
     let _lit = Lit::read(bytes, bytes.len() / 3);
-    let Ok(bsp) = Bsp::read(bytes) else {
+    for loader in [BspLoader::WinQuake, BspLoader::GlQuake] {
+        check_with(bytes, loader);
+    }
+}
+
+fn check_with(bytes: &[u8], loader: BspLoader) {
+    let Ok(bsp) = Bsp::read(bytes, loader) else {
         return;
     };
     for face in &bsp.faces {
@@ -47,9 +53,10 @@ fn check(bytes: &[u8]) {
         }
     }
     let _hull = bsp.hull0();
-    let edited = replace_entities(bytes, b"{\n\"classname\" \"worldspawn\"\n}\n").unwrap();
+    let edited =
+        replace_entities(bytes, b"{\n\"classname\" \"worldspawn\"\n}\n", loader).unwrap();
     assert_eq!(
-        Bsp::read(&edited).unwrap().entities(),
+        Bsp::read(&edited, loader).unwrap().entities(),
         b"{\n\"classname\" \"worldspawn\"\n}\n"
     );
 }
