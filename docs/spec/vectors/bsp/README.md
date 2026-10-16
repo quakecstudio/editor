@@ -47,6 +47,11 @@ clang and for x86-64 with gcc 14.4; all four builds gave the results below. Give
 WinQuake build caches surfaces 64, 32, 16 and 8 bytes wide, and the GLQuake build puts the
 5 by 5 lightmap at column 0, row 0 of lightmap texture 0, its texels 255 - 2 * sample.
 
+The rows for BSP-12.6 (2026-10-16) give the face flags of both loaders: `WinQuake/model.c`
+and `WinQuake/gl_model.c`, unchanged from the pinned commit in the harness above, each built for
+arm64 with Apple clang and for x86-64 with gcc 14.4; all four builds gave the results below. Both
+loaders give `base`'s face, which only the empty leaf 1 lists, flags 0.
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
@@ -129,3 +134,7 @@ result it records.
 | `extents-65504-st` | s axis (1023.5, 0, 0) and t axis (0, 1023.5, 0), offsets 0 | Loads; extents -32 -32. WinQuake drawing it: error `D_SCAlloc: bad cache width -32`. GLQuake: `smax` and `tmax` -1, texture 0 with no position set, 1 sample added and nothing stored. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
 | `extents-32784-st` | s axis (512.25, 0, 0) and t axis (0, 512.25, 0), offsets 0 | Loads; extents -32752 -32752. WinQuake drawing it: error `D_SCAlloc: bad cache width -32752`. GLQuake not run: it would add 2046 * 2046 samples into `blocklights[18*18]`, undefined in C. `qs-bsp`: lightmap 0 by 0 | BSP-9.16 |
 | `texturemins-32768` | s axis (1, 0, 0) offset 32768 | Loads; `texturemins` -32768 0 | BSP-9.14 |
+| `water-leaf` | Leaf 1 contents -3 (water) | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80 (`SURF_UNDERWATER`) | BSP-12.6 |
+| `water-leaf-turb` | Leaf 1 contents -3, texture `*water`, texinfo flags 1 | Loads; WinQuake: face flags 0x30. GLQuake: face flags 0xb0 | BSP-12.6 |
+| `solid-leaf-face` | Leaf 0 (contents -2) lists marksurface 0 too: marksurfaces 0 + 1 | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80, though the empty leaf 1 lists the face too | BSP-12.6 |
+| `contents-unknown` | Leaf 1 contents -7, no `CONTENTS_` value | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80 | BSP-12.6 |

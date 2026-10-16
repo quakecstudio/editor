@@ -10,7 +10,7 @@ BSP29 is described from `WinQuake/bspfile.h` and `WinQuake/model.c` in
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the server's use of the result from
 `WinQuake/sv_main.c` and `WinQuake/world.c`. GLQuake's loader in `WinQuake/gl_model.c` makes
 the same checks with the same messages, except that it accepts larger face extents
-(BSP-9.15). Implemented by `crates/qs-bsp`
+(BSP-9.15) and flags the faces of leaves that are not empty (BSP-12.6). Implemented by `crates/qs-bsp`
 ([#143](https://github.com/quakecstudio/editor/issues/143), P5-02), whose tests cite
 every statement.
 
@@ -797,7 +797,8 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 ## BSP-12 Leaves
 
 **Source:** `WinQuake/bspfile.h`, `dleaf_t`, `CONTENTS_*`, `AMBIENT_*`, `NUM_AMBIENTS`;
-`WinQuake/model.c`, `Mod_LoadLeafs`; `WinQuake/common.c`, `ShortNoSwap`
+`WinQuake/model.c`, `Mod_LoadLeafs`; `WinQuake/common.c`, `ShortNoSwap`;
+`WinQuake/gl_model.h`, `SURF_UNDERWATER`; `WinQuake/gl_model.c`, `Mod_LoadLeafs`
 (id-Software/Quake@`bf4ac424ce754894ac8f1dae6a3981954bc9852d`).
 
 | Offset | Size | Type | Field |
@@ -827,6 +828,46 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
   id's loader reads them through `LittleShort`, which returns a signed `short`, so a value
   of 32768 or more indexes before the array, which is undefined; this spec reads them as the
   file declares them, as QS does.
+- **BSP-12.6** GLQuake's `Mod_LoadLeafs` (`WinQuake/gl_model.c`) sets `SURF_UNDERWATER` (0x80, `WinQuake/gl_model.h`) in the flags of every face that a leaf whose `contents` is not -1 (`CONTENTS_EMPTY`) lists among its marksurfaces (BSP-13.1), whatever the face's texture and other flags: a face listed by a water, slime, lava, sky or solid leaf, or by a leaf whose value is no `CONTENTS_` value, has it, and keeps it when an empty leaf lists it too. WinQuake's `Mod_LoadLeafs` (`WinQuake/model.c`) has no such code and `WinQuake/model.h` defines no such flag, so no face WinQuake loads has 0x80. `crates/qs-bsp` sets the flag when its caller names GLQuake's loader (BSP-9.15), over the marksurfaces BSP-12.5 reads and for BSP2 as for BSP29, and never when it names WinQuake's.
+
+### Evidence for BSP-12.6
+
+GLQuake's `Mod_LoadLeafs` ends the loop over the leaves with:
+
+```c
+		// gl underwater warp
+		if (out->contents != CONTENTS_EMPTY)
+		{
+			for (j=0 ; j<out->nummarksurfaces ; j++)
+				out->firstmarksurface[j]->flags |= SURF_UNDERWATER;
+		}
+```
+
+with `#define SURF_UNDERWATER		0x80` in `WinQuake/gl_model.h`, whose `msurface_t` notes
+`int		flags;			// for SURF_UNDERWATER`. `Mod_LoadBrushModel` calls
+`Mod_LoadFaces` and `Mod_LoadMarksurfaces` before `Mod_LoadLeafs`, so the flag is ORed into the
+flags `Mod_LoadFaces` gave (BSP-9.1, BSP-9.5) and nothing later clears it. WinQuake's
+`Mod_LoadLeafs` is the same function without those lines, and `WinQuake/model.h` defines the
+`SURF_` flags up to `SURF_DRAWBACKGROUND` 0x40 only. QS, which reads BSP2, removed the code
+(`//johnfitz -- removed code to mark surfaces as SURF_UNDERWATER` in each of its
+`Mod_ProcessLeafs_` functions); GLQuake reads no BSP2, and `qs-bsp` applies GLQuake's rule to
+BSP2 as it applies GLQuake's extent limit.
+
+The flag changes only how GLQuake draws the face (`WinQuake/gl_rsurf.c`): `R_RenderBrushPoly`
+draws it with `DrawGLWaterPoly`, warped, instead of `DrawGLPoly`; `R_DrawSequentialPoly` does
+not draw it as a normal lightmapped polygon; `R_BlendLightmaps` blends its lightmap with
+`DrawGLWaterPolyLightmap`; `R_RecursiveWorldNode` does not cull it when it faces away
+("don't backface underwater surfaces, because they warp"); and `BuildSurfaceDisplayList` keeps
+its colinear vertices when `gl_keeptjunctions` is 0. WinQuake warps the whole view instead,
+from the viewer's leaf, not a face's flag: `R_SetupFrame` (`WinQuake/r_misc.c`) sets
+`r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);`. Neither changes
+what the server or the editor reads from the map.
+
+**Checked:** on 2026-10-16 id's `Mod_LoadBrushModel` in `WinQuake/model.c` and in
+`WinQuake/gl_model.c`, each built unchanged from the pinned commit in the harness of the
+vectors' README, for arm64 with Apple clang and for x86-64 with gcc 14.4, loaded `base`,
+`water-leaf`, `water-leaf-turb`, `solid-leaf-face` and `contents-unknown`; all four builds
+gave the face flags the README records.
 
 ### Constants
 
@@ -840,6 +881,13 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
 | `BSP_CONTENTS_LAVA` | -5 | `WinQuake/bspfile.h`, `CONTENTS_LAVA` |
 | `BSP_CONTENTS_SKY` | -6 | `WinQuake/bspfile.h`, `CONTENTS_SKY` |
 | `BSP_NUM_AMBIENTS` | 4 | `WinQuake/bspfile.h`, `NUM_AMBIENTS`, `AMBIENT_WATER` 0 to `AMBIENT_LAVA` 3 |
+| `SURF_UNDERWATER` | 0x80 | `WinQuake/gl_model.h`, `SURF_UNDERWATER` |
+
+### Test vectors
+
+See [`vectors/bsp/`](vectors/bsp/README.md): `water-leaf`, `water-leaf-turb`,
+`solid-leaf-face` and `contents-unknown` (BSP-12.6), with `base`, whose face only an empty
+leaf lists.
 
 ## BSP-13 Marksurfaces
 

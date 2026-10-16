@@ -863,6 +863,24 @@ issues:
   - A test opens a name that differs in case from its file and gets the warning where the file system is case-insensitive, and the error where it is case-sensitive; FreeCS's two modules that include animations.h get the warning on macOS in CI
   verify:
   - cargo test -p qc-project; cargo xtask project-corpus in CI
+- key: P1-47
+  title: Record what id's loader does with a leaf whose contents is 0 or more
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-44
+  deliverable:
+  - 'docs/spec/bsp.md: a statement for a leaf whose contents is 0 or more, which id''s loader takes for a node because it tells nodes from leaves by contents < 0 (WinQuake/model.c and gl_model.c, Mod_SetParent: if (node->contents < 0) return; and Mod_MakeHull0: if (child->contents < 0)); BSP-12.2 says the loader copies contents without checking, and qs-bsp loads such a leaf and gives hull 0 its contents as a clipnode number; found while doing P1-44, where id''s loaders built from the pinned commit crashed on a vector whose leaf 1 has contents 0'
+  - crates/qs-bsp follows the statement, with a test that cites it and a vector whose leaf has contents 0
+  acceptance:
+  - A BSP whose node tree reaches a leaf of contents 0 gives the result the statement fixes, and the vectors' README records what id's model.c and gl_model.c built from the pinned commit do with it
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -921,6 +939,7 @@ issues:
   - P1-44
   - P1-45
   - P1-46
+  - P1-47
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
