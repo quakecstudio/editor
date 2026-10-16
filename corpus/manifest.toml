@@ -483,7 +483,7 @@ reason = "No QuakeC source is published, only compiled progs in pak files. quoth
 [[tree]]
 id = "freecs-tree"
 name = "FreeCS in a Nuclide SDK tree"
-notes = "FreeCS's README builds it in a clone of the Nuclide SDK, with Rad-Therapy cloned as valve/ and FreeCS as cstrike/; its progs.src files list ../../../src/, ../../../valve/src/ and ../../../cstrike/src/. Open cstrike/src."
+notes = "FreeCS's README builds it in a clone of the Nuclide SDK, with Rad-Therapy cloned as valve/ and FreeCS as cstrike/; its progs.src files list ../../../src/, ../../../valve/src/ and ../../../cstrike/src/. Open cstrike/src, on a case-insensitive file system: shared/defs.h includes animations.h and the file is Animations.h."
 [tree.dirs]
 "src" = "nuclide"
 "valve/src" = "freehl"

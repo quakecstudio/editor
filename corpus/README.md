@@ -69,7 +69,7 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 
 **Mods (15):** Copper, Alkaline, Arcane Dimensions, progs_dump, LibreQuake, Re:Mobilize, Conduit, Quake Reignited, Nuclide, FreeCS, Rad-Therapy (FreeHL, the Half-Life game FreeCS builds against), Nazi Zombies: Portable, CRMod 7, Starts with a Bang and Xonotic. Together they cover vanilla QuakeC, the FTEQCC dialect with CSQC (Nuclide, FreeCS, Copper, Arcane Dimensions) and GMQCC (Xonotic).
 
-**Trees:** `freecs-tree`, FreeCS at `cstrike/src` in the Nuclide SDK's `src`, with Rad-Therapy at `valve/src`, as FreeCS's README builds it.
+**Trees:** `freecs-tree`, FreeCS at `cstrike/src` in the Nuclide SDK's `src`, with Rad-Therapy at `valve/src`, as FreeCS's README builds it. It opens with no error only on a case-insensitive file system, such as macOS's default (CI runs it there): FreeCS's `shared/defs.h` includes `animations.h` and the file is `Animations.h`.
 
 **Maps (26):** 20 LibreQuake maps (BSD-3-Clause), four ericw-tools test maps (GPL-2.0-or-later) and two progs_dump maps (no commercial use, so `fetch-at-test`).
 
