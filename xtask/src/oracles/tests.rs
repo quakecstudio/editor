@@ -2,8 +2,8 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap or sum is a failed test"
 )]
 
 use std::cell::RefCell;

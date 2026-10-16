@@ -30,13 +30,18 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::download::{Curl, Net};
+use crate::download::{CURL, Net};
 use manifest::Manifest;
 
 const MANIFEST: &str = "corpus/manifest.toml";
 
 /// Runs `cargo xtask corpus <verify | fetch | build> ...`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    run(root, args, &CURL)
+}
+
+/// [`main`] with the files `net` fetches.
+fn run(root: &Path, args: &[String], net: &dyn Net) -> Result<bool, String> {
     let usage = "usage: cargo xtask corpus verify [--online] \
                  | fetch [--dest <dir>] [<id>...] | build [--dest <dir>] [<id>...]";
     let Some((command, rest)) = args.split_first() else {
@@ -50,16 +55,16 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
                 [flag] if flag == "--online" => true,
                 _ => return Err(usage.to_owned()),
             };
-            Ok(report(cmd_verify(root, &m, online.then_some(&Curl))))
+            Ok(report(cmd_verify(root, &m, online.then_some(net))))
         }
         "fetch" | "build" => {
             let (dest, ids) = dest_and_ids(root, rest)?;
             let mut errs = verify::check(&m);
             if errs.is_empty() {
                 errs = if command == "fetch" {
-                    fetch::cmd_fetch(&m, &dest, &ids, &Curl)
+                    fetch::cmd_fetch(&m, &dest, &ids, net)
                 } else {
-                    build::cmd_build(root, &m, &dest, &ids, &Curl)
+                    build::cmd_build(root, &m, &dest, &ids, net)
                 };
             }
             Ok(report(errs))
@@ -70,6 +75,11 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
 
 /// Runs `cargo xtask assets <fetch | precache> [--dest <dir>]`.
 pub(crate) fn assets_main(root: &Path, args: &[String]) -> Result<bool, String> {
+    assets_run(root, args, &CURL)
+}
+
+/// [`assets_main`] with the files `net` fetches.
+fn assets_run(root: &Path, args: &[String], net: &dyn Net) -> Result<bool, String> {
     let usage = "usage: cargo xtask assets <fetch | precache> [--dest <dir>]";
     let Some((command, rest)) = args.split_first() else {
         return Err(usage.to_owned());
@@ -82,8 +92,8 @@ pub(crate) fn assets_main(root: &Path, args: &[String]) -> Result<bool, String> 
     let mut errs = verify::check(&m);
     if errs.is_empty() {
         errs = match command.as_str() {
-            "fetch" => assets::cmd_fetch(&m, &dest, &Curl),
-            "precache" => assets::cmd_precache(&m, &dest, &Curl),
+            "fetch" => assets::cmd_fetch(&m, &dest, net),
+            "precache" => assets::cmd_precache(&m, &dest, net),
             _ => return Err(usage.to_owned()),
         };
     }
@@ -206,7 +216,89 @@ mod tests {
 
     use std::path::{Path, PathBuf};
 
-    use super::{default_dest, dest_and_ids, safe_member};
+    use super::{assets_run, default_dest, dest_and_ids, run, safe_member};
+    use crate::download::Net;
+
+    /// A network where every file is missing.
+    struct Offline;
+
+    impl Net for Offline {
+        fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+            Err(format!("{url}: offline"))
+        }
+
+        fn download(&self, url: &str, _out: &Path) -> Result<(), String> {
+            Err(format!("{url}: offline"))
+        }
+    }
+
+    fn root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    fn args(text: &str) -> Vec<String> {
+        text.split_whitespace().map(str::to_owned).collect()
+    }
+
+    /// A cache directory outside the repository.
+    fn cache() -> String {
+        std::env::temp_dir()
+            .join("quakecstudio-xtask-tests-cache")
+            .display()
+            .to_string()
+    }
+
+    #[test]
+    fn verify_checks_the_manifest_and_the_repository() {
+        assert!(run(&root(), &args("verify"), &Offline).unwrap());
+        assert!(!run(&root(), &args("verify --online"), &Offline).unwrap());
+        assert!(run(&root(), &args("verify --fast"), &Offline).is_err());
+        assert!(run(&root(), &args("unknown"), &Offline).is_err());
+        assert!(run(&root(), &[], &Offline).is_err());
+    }
+
+    #[test]
+    fn fetch_and_build_report_what_they_cannot_do() {
+        let dest = cache();
+        assert!(
+            !run(
+                &root(),
+                &args(&format!("fetch --dest {dest} id-1.01")),
+                &Offline
+            )
+            .unwrap()
+        );
+        assert!(
+            !run(
+                &root(),
+                &args(&format!("build --dest {dest} copper")),
+                &Offline
+            )
+            .unwrap()
+        );
+        assert!(run(&root(), &args("fetch --dest"), &Offline).is_err());
+        assert!(run(&root(), &args("fetch --quick"), &Offline).is_err());
+    }
+
+    #[test]
+    fn assets_run_their_commands() {
+        let dest = cache();
+        assert!(!assets_run(&root(), &args(&format!("fetch --dest {dest}")), &Offline).unwrap());
+        assert!(!assets_run(&root(), &args(&format!("precache --dest {dest}")), &Offline).unwrap());
+        assert!(assets_run(&root(), &args(&format!("check --dest {dest}")), &Offline).is_err());
+        assert!(
+            assets_run(
+                &root(),
+                &args(&format!("fetch --dest {dest} extra")),
+                &Offline
+            )
+            .is_err()
+        );
+        assert!(assets_run(&root(), &[], &Offline).is_err());
+    }
 
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
         move |key| {

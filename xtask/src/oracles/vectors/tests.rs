@@ -2,7 +2,7 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects,
     clippy::panic,
     reason = "test code: a failed unwrap, index or panic is a failed test"
 )]

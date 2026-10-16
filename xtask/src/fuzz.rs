@@ -13,6 +13,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::exec::{Exec, System};
+
 const USAGE: &str = "usage: cargo xtask fuzz [<target>...] [--time <duration>]\n       \
                      <duration> is seconds, or a number with s, m or h (default 60s)";
 const DEFAULT_SECONDS: u64 = 60;
@@ -27,22 +29,29 @@ struct Options {
 }
 
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    run(root, args, &System)
+}
+
+/// [`main`] with the programs `exec` runs.
+fn run(root: &Path, args: &[String], exec: &dyn Exec) -> Result<bool, String> {
     let options = parse_args(args)?;
     let targets = if options.targets.is_empty() {
-        list_targets(root)?
+        list_targets(root, exec)?
     } else {
         options.targets
     };
     if targets.is_empty() {
         return Err("fuzz/ has no targets".to_owned());
     }
-    let host = host_triple(root)?;
+    let host = host_triple(root, exec)?;
     for target in &targets {
         println!("fuzz: running {target} for {}s", options.seconds);
-        let status = Command::new("cargo")
-            .args(run_args(target, &host, options.seconds))
-            .current_dir(root)
-            .status()
+        let status = exec
+            .status(
+                Command::new("cargo")
+                    .args(run_args(target, &host, options.seconds))
+                    .current_dir(root),
+            )
             .map_err(|error| format!("could not run cargo fuzz: {error}"))?;
         if !status.success() {
             println!("fuzz: {target} failed");
@@ -52,11 +61,13 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     Ok(true)
 }
 
-fn list_targets(root: &Path) -> Result<Vec<String>, String> {
-    let output = Command::new("cargo")
-        .args([TOOLCHAIN, "fuzz", "list"])
-        .current_dir(root)
-        .output()
+fn list_targets(root: &Path, exec: &dyn Exec) -> Result<Vec<String>, String> {
+    let output = exec
+        .output(
+            Command::new("cargo")
+                .args([TOOLCHAIN, "fuzz", "list"])
+                .current_dir(root),
+        )
         .map_err(|error| format!("could not run cargo fuzz list: {error}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -73,11 +84,13 @@ fn list_targets(root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// The host triple of the nightly toolchain, from `rustc -vV`.
-fn host_triple(root: &Path) -> Result<String, String> {
-    let output = Command::new("rustc")
-        .args([TOOLCHAIN, "-vV"])
-        .current_dir(root)
-        .output()
+fn host_triple(root: &Path, exec: &dyn Exec) -> Result<String, String> {
+    let output = exec
+        .output(
+            Command::new("rustc")
+                .args([TOOLCHAIN, "-vV"])
+                .current_dir(root),
+        )
         .map_err(|error| format!("could not run rustc -vV: {error}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -163,10 +176,101 @@ fn parse_duration(text: &str) -> Result<u64, String> {
 mod tests {
     #![expect(
         clippy::unwrap_used,
-        reason = "test code: a failed unwrap is a failed test"
+        clippy::indexing_slicing,
+        reason = "test code: a failed unwrap or index is a failed test"
     )]
 
-    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, parse_host, run_args};
+    use std::path::Path;
+    use std::process::Command;
+
+    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, parse_host, run, run_args};
+    use crate::exec::{Fake, Reply};
+
+    /// cargo-fuzz and rustc as `fails` says: listing two targets, the first run passing and the
+    /// second failing when `fails` is set.
+    fn tools(fails: bool) -> impl Fn(&Command) -> Reply {
+        move |command: &Command| {
+            let args: Vec<String> = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            if command.get_program() == "rustc" {
+                return Reply {
+                    stdout: "rustc 1.99.0-nightly\nhost: x86_64-unknown-linux-gnu\n".to_owned(),
+                    ..Reply::default()
+                };
+            }
+            if args.contains(&"list".to_owned()) {
+                return Reply {
+                    stdout: "qs-map\n\nqs-pak\n".to_owned(),
+                    ..Reply::default()
+                };
+            }
+            Reply::exit(i32::from(fails && args.contains(&"qs-pak".to_owned())))
+        }
+    }
+
+    #[test]
+    fn every_listed_target_runs_for_the_host() {
+        let fake = Fake::new(tools(false));
+        assert!(run(Path::new("."), &args(&["--time", "2m"]), &fake).unwrap());
+        let seen = fake.seen.borrow();
+        assert_eq!(seen[0], "cargo +nightly fuzz list");
+        assert_eq!(seen[1], "rustc +nightly -vV");
+        assert!(
+            seen[2].contains("--target x86_64-unknown-linux-gnu qs-map -- -max_total_time=120")
+        );
+        assert!(seen[3].contains(" qs-pak "));
+    }
+
+    #[test]
+    fn a_failing_target_stops_the_run() {
+        let fake = Fake::new(tools(true));
+        assert!(!run(Path::new("."), &args(&[]), &fake).unwrap());
+        let named = Fake::new(tools(false));
+        assert!(run(Path::new("."), &args(&["qs-map"]), &named).unwrap());
+        assert_eq!(
+            named.seen.borrow().len(),
+            2,
+            "a named target needs no listing"
+        );
+    }
+
+    #[test]
+    fn the_tools_failing_is_an_error() {
+        let fails = Fake::new(|_: &Command| Reply {
+            code: 1,
+            stderr: "no fuzz".to_owned(),
+            ..Reply::default()
+        });
+        assert!(
+            run(Path::new("."), &args(&[]), &fails)
+                .unwrap_err()
+                .contains("cargo fuzz list failed")
+        );
+        assert!(
+            run(Path::new("."), &args(&["qs-map"]), &fails)
+                .unwrap_err()
+                .contains("rustc -vV failed")
+        );
+        let empty = Fake::new(|_: &Command| Reply::exit(0));
+        assert!(
+            run(Path::new("."), &args(&[]), &empty)
+                .unwrap_err()
+                .contains("no targets")
+        );
+        assert!(
+            run(Path::new("."), &args(&["qs-map"]), &empty)
+                .unwrap_err()
+                .contains("no host")
+        );
+        let cannot = Fake::new(|_: &Command| Reply {
+            cannot_run: true,
+            ..Reply::default()
+        });
+        assert!(run(Path::new("."), &args(&[]), &cannot).is_err());
+        assert!(run(Path::new("."), &args(&["qs-map"]), &cannot).is_err());
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|arg| (*arg).to_owned()).collect()

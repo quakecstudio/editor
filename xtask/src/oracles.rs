@@ -45,7 +45,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::download::{Curl, Net};
+use crate::download::{CURL, Net};
 use crate::exec::{Exec, System};
 use compile::{Code, Compiler, Instrument, Unit};
 
@@ -125,7 +125,7 @@ pub(crate) struct Oracles<'a> {
 
 /// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    run(root, args, &System, &Curl)
+    run(root, args, &System, &CURL)
 }
 
 /// [`main`] with the programs `exec` runs and the files `net` fetches.
@@ -332,7 +332,7 @@ pub(crate) fn vm_oracle(root: &Path) -> PathBuf {
 
 /// Fetches, generates and compiles every oracle, unless the stamp shows they are current.
 pub(crate) fn build(root: &Path) -> Result<Oracles<'static>, String> {
-    build_with(root, &System, &Curl)
+    build_with(root, &System, &CURL)
 }
 
 /// [`build`] with the programs `exec` runs and the files `net` fetches.
