@@ -309,7 +309,7 @@ The MVP is done when a modder can open the rerelease QuakeC, ask the agent for a
 
 | Phase | Work | Gate |
 | --- | --- | --- |
-| 0: decisions and spikes | gpui vs egui spike against the acceptance test; license model (decided: GPL-3.0-or-later); porting process; repo, `cargo xtask ci`, layering check, signing accounts for macOS and Windows | UI framework and license chosen |
+| 0: decisions and spikes | gpui vs egui spike against the acceptance test; license model (decided: GPL-3.0-or-later); porting process; repo, `cargo xtask ci`, layering check | UI framework and license chosen |
 | 1: foundations | qc-progs, qc-types, qc-vm, qc-edict ported from id's source with specs; oracle runner in CI; lossless parser, preprocessor and progs.src project graph; parser fuzzing | qc-vm matches id's VM on the id 1.01 and rerelease corpus |
 | 2: language core and editor | Semantic model with vanilla and FTEQCC dialects; engine-target database; LSP; editor shell, navigation, diagnostics; our compiler for vanilla, then the rerelease's FTEQCC features | The rerelease QuakeC compiles with our compiler and behaves identically in qc-vm |
 | 3: live preview | Rust preview host (simulation, wgpu renderer, sound) with IDE bridge, proved against an engine oracle; reload-on-save, breakpoints, entity inspector; state-loss warnings | Save-to-game in about a second on macOS, Windows and Linux |

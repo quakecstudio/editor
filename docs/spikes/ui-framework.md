@@ -2,8 +2,9 @@
 
 Issue: [#10](https://github.com/quakecstudio/editor/issues/10) (P0-10). Requirements: UI-1,
 OPEN-3, PRIN-5. Prototypes: [`spikes/`](../../spikes/README.md). Raw data:
-[`data/`](data/README.md). Decision: ADR-0003, proposed in draft
-[#250](https://github.com/quakecstudio/editor/pull/250) (`docs/adr/0003-ui-framework.md`).
+[`data/`](data/README.md). Decision: egui, in
+[ADR-0003](../adr/0003-ui-framework.md) (accepted, merged in
+[#250](https://github.com/quakecstudio/editor/pull/250)).
 
 ## Result
 

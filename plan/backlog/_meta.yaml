@@ -31,7 +31,7 @@ labels:
     - {name: "L6-agent", color: "1d76db", description: "Agent loop, providers, MCP, ACP"}
     - {name: "L7-ui", color: "1d76db", description: "UI on the chosen framework"}
     - {name: "apps", color: "1d76db", description: "Desktop app, CLI, LSP binary"}
-    - {name: "c-tools", color: "5319e7", description: "C programs: the oracles in oracles/ and the preview host engine fork"}
+    - {name: "c-tools", color: "5319e7", description: "C programs: the oracles in oracles/, including id's engine as the engine oracle"}
     - {name: "repo", color: "1d76db", description: "Workspace, CI, process"}
   area:
     - {name: "area:compiler", color: "0e8a16", description: ""}

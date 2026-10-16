@@ -53,6 +53,7 @@ This is not legal advice; the license compliance review before the first public 
 
 ## Links
 
+- Partly overridden by [ADR-0004](0004-preview-host-base.md): the preview host is a Rust program in this repository (`apps/preview-host`), not a separate C engine fork and repository.
 - Issue: [#8](https://github.com/quakecstudio/editor/issues/8)
 - id Software, Quake source, [`WinQuake/pr_exec.c`](https://raw.githubusercontent.com/id-Software/Quake/master/WinQuake/pr_exec.c) license header
 - Zed, [`crates/gpui/Cargo.toml`](https://raw.githubusercontent.com/zed-industries/zed/main/crates/gpui/Cargo.toml) license field
