@@ -251,6 +251,7 @@ fn every_command_of_cargo_xtask_oracles_runs() {
             .contains("usage")
     );
     assert!(run(&dir, &words("fuzz"), &fake, &files).is_err());
+    assert!(super::main(&dir, &words("unknown")).is_err());
 }
 
 #[test]

@@ -227,6 +227,18 @@ mod tests {
         }
     }
 
+    // spec DIFF-3.1: the number vectors' progs is the smallest the oracle accepts, with 92
+    // globals and 105 fields.
+    #[test]
+    fn the_progs_has_the_fewest_globals_and_fields_accepted() {
+        let bytes = progs().unwrap();
+        let read = qc_progs::Progs::read(&bytes).unwrap();
+        assert_eq!(read.header().entityfields, super::MIN_FIELDS);
+        assert_eq!(read.globals().len(), super::MIN_GLOBALS);
+        assert_eq!(read.statements().len(), 1);
+        assert_eq!(read.functions().len(), 1);
+    }
+
     #[test]
     fn every_number_vector_passes_an_oracle_that_agrees() {
         let work = fresh_dir("numbers-agree");

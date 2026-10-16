@@ -268,6 +268,16 @@ mod tests {
     }
 
     #[test]
+    fn the_progs_has_a_function_1_that_returns_at_once() {
+        let bytes = progs().unwrap();
+        let read = qc_progs::Progs::read(&bytes).unwrap();
+        assert_eq!(read.header().entityfields, 110);
+        assert_eq!(read.functions().get(1).unwrap().first_statement, 1);
+        assert_eq!(read.statements().len(), 2);
+        assert_eq!(read.globals().len(), 128);
+    }
+
+    #[test]
     fn every_probe_passes_an_oracle_that_does_what_it_says() {
         let work = fresh_dir("probes-agree");
         let fake = Fake::new(agreeing);

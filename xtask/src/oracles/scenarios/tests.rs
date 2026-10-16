@@ -88,6 +88,61 @@ fn every_case_passes_on_what_the_oracle_gave() {
 }
 
 #[test]
+fn the_progs_keeps_the_header_crc_the_program_gives() {
+    let mut p = Program::new();
+    p.crc = 1234;
+    let bytes = p.bytes().unwrap();
+    let options = ReadOptions {
+        check_header_crc: false,
+    };
+    assert_eq!(
+        Progs::read_with(&bytes, &options).unwrap().header().crc,
+        1234
+    );
+}
+
+#[test]
+fn a_function_reference_holds_the_function_index() {
+    let mut p = Program::new();
+    let slot = p.fref(7);
+    assert_eq!(p.initial(slot), 7);
+}
+
+// spec DIFF-3.1: each header refusal changes the word its name says: a table before the file
+// has a negative offset, and a misaligned one an offset inside the file that is not a multiple
+// of its record's alignment.
+#[test]
+fn each_header_refusal_breaks_what_its_name_says() {
+    let good = Program::new().bytes().unwrap();
+    let word = |bytes: &[u8], offset: usize| {
+        i32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap())
+    };
+    let cases: BTreeMap<String, Case> = cases::all()
+        .into_iter()
+        .map(|case| (case.name.clone(), case))
+        .collect();
+    let progs = |name: &str| cases[name].progs.clone().unwrap();
+    assert!(word(&progs("progs-statements-before-the-file"), 8) < 0);
+    let len = i32::try_from(good.len()).unwrap();
+    for (name, offset) in [
+        ("progs-statements-misaligned", 8),
+        ("progs-globaldefs-misaligned", 16),
+        ("progs-fielddefs-misaligned", 24),
+        ("progs-functions-misaligned", 32),
+        ("progs-globals-misaligned", 48),
+    ] {
+        let value = word(&progs(name), offset);
+        assert!(value > 0 && value < len, "{name}: {value}");
+        assert_eq!(
+            value,
+            word(&good, offset) - if offset == 8 { 1 } else { 2 },
+            "{name}"
+        );
+    }
+    assert_eq!(word(&progs("progs-negative-entityfields"), 56), -1);
+}
+
+#[test]
 fn every_case_builds_a_progs_qc_progs_reads_and_has_a_unique_name() {
     let mut names = BTreeSet::new();
     let cases = cases::all();
@@ -402,7 +457,10 @@ fn exit_statuses_and_missing_traces_are_checked() {
         status: Some(0),
         ..Outcome::default()
     };
-    assert!(verify(&case(vec![Check::Never(Want::Exit)]), &untraced).is_err());
+    let error = verify(&case(vec![Check::Never(Want::Exit)]), &untraced).unwrap_err();
+    assert_eq!(error, "no trace was written");
+    let error = verify(&case(vec![Check::SameTwice]), &untraced).unwrap_err();
+    assert_eq!(error, "no trace was written");
     assert!(verify(&case(vec![Check::Prefix(Vec::new())]), &untraced).is_err());
 }
 

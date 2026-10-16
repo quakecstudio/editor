@@ -451,6 +451,11 @@ fn the_cpu_model_is_read_from_the_os() {
     assert_eq!(cpuinfo_model("processor\t: 0\nCPU part\t: 0xd0c\n"), None);
     let model = cpu_model();
     assert_eq!(model, cpu_model_on(std::env::consts::OS, read_cpu_source));
+    // No OS has both sysctl's brand string and /proc/cpuinfo.
+    assert!(
+        read_cpu_source(CpuSource::Sysctl).is_none()
+            || read_cpu_source(CpuSource::CpuInfo).is_none()
+    );
     if let Some(model) = &model {
         assert!(!model.is_empty() && model.trim() == model, "{model:?}");
     }

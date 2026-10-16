@@ -136,6 +136,20 @@ fn a_call_expects_the_builtin_it_calls() {
     assert_eq!(super::expected_builtin(&v, &globals, 3), None);
 }
 
+/// Function 1 starts at statement 1 unless the vector declares it
+/// (`docs/spec/vectors/vm/README.md`).
+#[test]
+fn a_function_starts_where_the_vector_says() {
+    let v = parse("t.txt", "== v\nfunctions:\n  2: first=5\n")
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(super::first_statement(&v, 2), 5);
+    assert_eq!(super::first_statement(&v, 1), 1);
+    assert_eq!(super::first_statement(&v, 3), 0);
+    assert_eq!(super::first_statement(&v, -1), 0);
+}
+
 #[test]
 fn parses_a_vector() {
     let text = "== v\nspec: VM-1.1\nglobals: 100=e1\nfields: e1.30=2\noracle: no\n\
