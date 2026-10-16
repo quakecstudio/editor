@@ -14,6 +14,8 @@
 //! - `licenses`: checks the SPDX header of every file and the ported-file
 //!   header rule in `docs/porting.md`.
 //! - `attribution`: checks every asset file is listed in `ATTRIBUTION.md`.
+//! - `contrast`: checks every colour pair in `docs/design/tokens.toml` meets
+//!   WCAG AA in both themes.
 //! - `bench`: runs the performance-budget benchmarks, checks them against
 //!   `docs/perf-budgets.md` and the last run, and records them in the JSON
 //!   history; `bench history` prints the history.
@@ -35,6 +37,7 @@ mod adr;
 mod attribution;
 mod bench;
 mod ci;
+mod contrast;
 mod conventions;
 mod fixtures;
 mod layers;
@@ -48,7 +51,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
-                     deny-fixtures | layers | licenses | attribution | bench | readiness | ratchet>";
+                     deny-fixtures | layers | licenses | attribution | contrast | bench | \
+                     readiness | ratchet>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -107,6 +111,7 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "layers" => Some(layers::check),
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
+        "contrast" => Some(contrast::check),
         _ => None,
     }
 }

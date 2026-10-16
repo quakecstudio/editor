@@ -1,0 +1,238 @@
+# QuakeC Studio theme tokens: the single source the UI layer (L7) reads its theme from (UI-15).
+#
+# docs/design/visual.md explains every token and where it may be used. `cargo xtask contrast`
+# (a step of `cargo xtask ci`) checks every pair listed under [[contrast]] in both themes against
+# WCAG 2.2 AA (4.5:1 for text and icons, QA-9), and fails when a colour token is in no rule and
+# not listed as decorative. Both themes must define the same colour tokens.
+#
+# The dark values are the ones on the approved theme board (mockups/06-theme-and-chrome.png,
+# approved on #199); the light values extend the light sample on that board.
+
+# Colours, per theme, as #RRGGBB.
+
+[color.dark]
+# Surfaces, from the outermost in.
+"surface.chrome" = "#161514"       # title bar and status bar
+"surface.toolbar" = "#1D1B1A"
+"surface.tabs" = "#1E1D1B"         # tab strip above the editor
+"surface.editor" = "#1A1918"       # editor, console, text inputs
+"surface.panel" = "#211F1E"        # side and bottom panels
+"surface.raised" = "#2A2826"       # popovers, the command palette, chips, hover rows
+"surface.viewport" = "#121110"     # map editor 3D and top views
+"surface.current_line" = "#222120"
+# Highlighted rows.
+"select.focus" = "#2E3640"         # the keyboard selection in trees and lists, editor selection
+"select.accent" = "#3A2A1E"        # the selected entity, with a 2 px accent bar
+"diff.added" = "#24331F"           # added lines in an inline edit or a hunk
+"debug.paused_line" = "#3A3122"    # the line the debugger is paused on, the Paused button
+"status.error_bg" = "#3A2220"      # an inline diagnostic
+# Text and icons.
+"text" = "#E8E3DC"
+"text.code" = "#D9D2C7"            # plain code and agent prose
+"text.muted" = "#ABA49A"
+"text.faint" = "#8E877D"           # line numbers, counts; editor, panel and bar surfaces only
+"text.on_accent" = "#1A1918"
+"text.on_select" = "#F2E9DE"
+"text.on_diff" = "#C7E0B6"
+"text.on_error" = "#F2D2CC"
+"accent" = "#EE8B45"               # ember: Play, primary actions, the selected entity
+"focus" = "#6FA8DC"                # focus rings, selection outline, links
+"focus.hover" = "#9CC4E8"          # a hovered link
+"status.ok" = "#8CC47E"
+"status.warn" = "#E2B04A"
+"status.error" = "#EC7A6C"
+# Code.
+"code.keyword" = "#E0956A"
+"code.type" = "#86BFD0"
+"code.function" = "#E8C77E"
+"code.constant" = "#CDA4DE"
+"code.string" = "#A9CB82"
+"code.comment" = "#938C82"
+# Lines, not text.
+"border" = "#33302D"
+"border.strong" = "#423F3B"        # buttons and key caps
+"border.window" = "#3A3734"
+"border.warn" = "#5A4A2A"
+
+[color.light]
+"surface.chrome" = "#F1EEEA"
+"surface.toolbar" = "#F4F2EE"
+"surface.tabs" = "#F1EEEA"
+"surface.editor" = "#FCFBF9"
+"surface.panel" = "#F4F2EE"
+"surface.raised" = "#ECE8E2"
+"surface.viewport" = "#E4DFD8"
+"surface.current_line" = "#F6F4F0"
+"select.focus" = "#EEF3F8"
+"select.accent" = "#F8E9DC"
+"diff.added" = "#EFF6E9"
+"debug.paused_line" = "#FBF3DF"
+"status.error_bg" = "#FAE6E2"
+"text" = "#22201D"
+"text.code" = "#2E2B27"
+"text.muted" = "#5C564F"
+"text.faint" = "#6E6860"
+"text.on_accent" = "#FFFFFF"
+"text.on_select" = "#3A2414"
+"text.on_diff" = "#2C4A1C"
+"text.on_error" = "#6E1F17"
+"accent" = "#A84D16"
+"focus" = "#24609A"
+"focus.hover" = "#1B4C7A"
+"status.ok" = "#346B27"
+"status.warn" = "#7F5708"
+"status.error" = "#AA3529"
+"code.keyword" = "#A84F1C"
+"code.type" = "#21708A"
+"code.function" = "#8A6512"
+"code.constant" = "#8547A0"
+"code.string" = "#4F7A2A"
+"code.comment" = "#6E6860"
+"border" = "#E0DCD5"
+"border.strong" = "#CFC9C0"
+"border.window" = "#D6D1C9"
+"border.warn" = "#E3CC94"
+
+# The colour pairs the UI draws. Every foreground on every background in a rule must reach `min`
+# in both themes; `min` may not be below 4.5. A pair not listed here must not be drawn.
+
+[[contrast]]
+name = "interface text and icons"
+min = 4.5
+foreground = ["text", "text.muted", "accent", "focus", "focus.hover", "status.ok", "status.warn"]
+background = [
+  "surface.chrome", "surface.toolbar", "surface.tabs", "surface.editor", "surface.panel",
+  "surface.raised", "surface.current_line", "select.focus", "select.accent", "diff.added",
+  "debug.paused_line", "status.error_bg",
+]
+
+[[contrast]]
+# Not on select.focus: a selected problem row keeps its message in text.
+name = "error text and icons"
+min = 4.5
+foreground = ["status.error"]
+background = [
+  "surface.chrome", "surface.toolbar", "surface.tabs", "surface.editor", "surface.panel",
+  "surface.raised", "surface.current_line", "select.accent", "diff.added", "debug.paused_line",
+  "status.error_bg",
+]
+
+[[contrast]]
+# Not on raised or highlighted rows: there they are drawn in text.muted.
+name = "faint text and comments"
+min = 4.5
+foreground = ["text.faint", "code.comment"]
+background = [
+  "surface.chrome", "surface.toolbar", "surface.tabs", "surface.editor", "surface.panel",
+  "surface.current_line",
+]
+
+[[contrast]]
+name = "code"
+min = 4.5
+foreground = [
+  "text.code", "code.keyword", "code.type", "code.function", "code.constant", "code.string",
+]
+background = [
+  "surface.editor", "surface.panel", "surface.current_line", "select.focus", "diff.added",
+  "debug.paused_line",
+]
+
+[[contrast]]
+name = "labels over the map views"
+min = 4.5
+foreground = ["text", "text.muted"]
+background = ["surface.viewport"]
+
+[[contrast]]
+name = "text on accent fills"
+min = 4.5
+foreground = ["text.on_accent"]
+background = ["accent"]
+
+[[contrast]]
+name = "text on the selected entity"
+min = 4.5
+foreground = ["text.on_select"]
+background = ["select.accent"]
+
+[[contrast]]
+name = "text on added lines"
+min = 4.5
+foreground = ["text.on_diff"]
+background = ["diff.added"]
+
+[[contrast]]
+name = "text on inline diagnostics"
+min = 4.5
+foreground = ["text.on_error"]
+background = ["status.error_bg"]
+
+# Colours that never carry text or a meaningful icon: dividers and outlines whose component is
+# also told apart by its fill or its label (see visual.md, "Contrast").
+[decorative]
+tokens = ["border", "border.strong", "border.window", "border.warn"]
+
+# Code colours by syntax category. Builtins are functions drawn in italic.
+[syntax]
+keyword = { color = "code.keyword" }
+type = { color = "code.type" }
+function = { color = "code.function" }
+builtin = { color = "code.function", italic = true }
+constant = { color = "code.constant" }
+number = { color = "code.constant" }
+string = { color = "code.string" }
+vector = { color = "code.type" }
+comment = { color = "code.comment", italic = true }
+plain = { color = "text.code" }
+
+# Type. Sizes in px; ligatures are off so QuakeC reads literally.
+[font.ui]
+family = "IBM Plex Sans"
+fallback = ["system-ui", "Segoe UI", "Cantarell", "sans-serif"]
+
+[font.code]
+family = "JetBrains Mono"
+fallback = ["SF Mono", "Cascadia Mono", "DejaVu Sans Mono", "monospace"]
+ligatures = false
+
+[type_scale]
+title = { font = "ui", size = 20, weight = 600 }
+body = { font = "ui", size = 13, weight = 400 }
+panel_heading = { font = "ui", size = 12, weight = 600 }
+caption = { font = "ui", size = 12, weight = 400 }
+code = { font = "code", size = 13, weight = 400, line_height = 20 }
+code_small = { font = "code", size = 12, weight = 400, line_height = 18 }
+
+# Spacing and density, in px.
+[space]
+scale = [4, 8, 12, 16, 24]
+
+[size]
+row = 24
+code_line = 20
+panel_header = 30
+control = 30
+status_bar = 26
+tabs = 36
+title_bar = 38
+toolbar = 44
+
+[radius]
+key = 4
+input = 5
+control = 6
+card = 8
+window = 10
+
+# Shadows, as CSS-style offset-x offset-y blur and alpha of black.
+[elevation]
+flat = { y = 0, blur = 0, alpha = 0.0 }
+popover = { y = 8, blur = 24, alpha = 0.4 }
+dialog = { y = 24, blur = 60, alpha = 0.6 }
+
+# Durations in ms. Zero when the OS asks for reduced motion.
+[motion]
+fast = 100
+standard = 160
+easing = "ease-out"

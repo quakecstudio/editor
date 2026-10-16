@@ -26,7 +26,7 @@ enum Step {
 }
 
 /// The steps, cheapest first.
-const STEPS: [Step; 14] = [
+const STEPS: [Step; 15] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("python3", &["plan/check.py"]),
     Step::Program(
@@ -47,6 +47,7 @@ const STEPS: [Step; 14] = [
     Step::Xtask("layers"),
     Step::Xtask("licenses"),
     Step::Xtask("attribution"),
+    Step::Xtask("contrast"),
     Step::Cargo(&[
         "clippy",
         "--locked",
@@ -159,6 +160,7 @@ mod tests {
             "cargo xtask layers",
             "cargo xtask licenses",
             "cargo xtask attribution",
+            "cargo xtask contrast",
             "cargo deny --locked check advisories bans licenses sources",
             "python3 plan/check.py",
             "python3 -m unittest discover -s plan -p test_*.py",
