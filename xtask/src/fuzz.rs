@@ -5,6 +5,10 @@
 //! Fuzzing needs nightly Rust and cargo-fuzz (docs/conventions.md). With no target named,
 //! every target `cargo fuzz list` reports runs, one after another; the command fails at the
 //! first target that finds a crash. `make test-fuzz` and the nightly `Fuzz` workflow call it.
+//!
+//! It builds for the host triple nightly `rustc` reports. Left to itself, cargo-fuzz builds for
+//! the triple it was compiled for, and the prebuilt Linux cargo-fuzz is a musl binary, whose
+//! static libc the sanitizers reject.
 
 use std::path::Path;
 use std::process::Command;
@@ -32,10 +36,11 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     if targets.is_empty() {
         return Err("fuzz/ has no targets".to_owned());
     }
+    let host = host_triple(root)?;
     for target in &targets {
         println!("fuzz: running {target} for {}s", options.seconds);
         let status = Command::new("cargo")
-            .args(run_args(target, options.seconds))
+            .args(run_args(target, &host, options.seconds))
             .current_dir(root)
             .status()
             .map_err(|error| format!("could not run cargo fuzz: {error}"))?;
@@ -67,15 +72,44 @@ fn list_targets(root: &Path) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// The cargo arguments that fuzz `target` for `seconds`.
+/// The host triple of the nightly toolchain, from `rustc -vV`.
+fn host_triple(root: &Path) -> Result<String, String> {
+    let output = Command::new("rustc")
+        .args([TOOLCHAIN, "-vV"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("could not run rustc -vV: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "rustc -vV failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_host(&String::from_utf8_lossy(&output.stdout))
+        .map(str::to_owned)
+        .ok_or_else(|| "rustc -vV printed no host line".to_owned())
+}
+
+/// The triple on the `host:` line of `rustc -vV` output.
+fn parse_host(version: &str) -> Option<&str> {
+    version
+        .lines()
+        .find_map(|line| line.strip_prefix("host:"))
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+}
+
+/// The cargo arguments that fuzz `target`, built for `host`, for `seconds`.
 ///
 /// `-print_funcs=0` stops libFuzzer symbolizing each newly covered function, which on macOS
 /// runs `atos` and can hang the run.
-fn run_args(target: &str, seconds: u64) -> Vec<String> {
+fn run_args(target: &str, host: &str, seconds: u64) -> Vec<String> {
     vec![
         TOOLCHAIN.to_owned(),
         "fuzz".to_owned(),
         "run".to_owned(),
+        "--target".to_owned(),
+        host.to_owned(),
         target.to_owned(),
         "--".to_owned(),
         format!("-max_total_time={seconds}"),
@@ -132,7 +166,7 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, run_args};
+    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, parse_host, run_args};
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|arg| (*arg).to_owned()).collect()
@@ -173,16 +207,27 @@ mod tests {
     #[test]
     fn run_command() {
         assert_eq!(
-            run_args("qc-progs", 600),
+            run_args("qc-progs", "x86_64-unknown-linux-gnu", 600),
             args(&[
                 "+nightly",
                 "fuzz",
                 "run",
+                "--target",
+                "x86_64-unknown-linux-gnu",
                 "qc-progs",
                 "--",
                 "-max_total_time=600",
                 "-print_funcs=0"
             ])
         );
+    }
+
+    #[test]
+    fn host_line() {
+        let version = "rustc 1.99.0-nightly (abc 2026-10-01)\nbinary: rustc\n\
+                       host: x86_64-unknown-linux-gnu\nrelease: 1.99.0-nightly\n";
+        assert_eq!(parse_host(version), Some("x86_64-unknown-linux-gnu"));
+        assert_eq!(parse_host("rustc 1.99.0\nrelease: 1.99.0\n"), None);
+        assert_eq!(parse_host("host:   \n"), None);
     }
 }

@@ -51,3 +51,6 @@ Each has a test in `src/tests/`:
   `cargo xtask parse-corpus --deletions` on id's QuakeC 1.01 in CI).
 - Every file of the corpus, FTEQCC codebases included, round-trips
   (`cargo xtask parse-corpus`).
+- Parsing never panics or overflows the stack and round-trips every input, under the
+  grammar-aware fuzz target `fuzz/fuzz_targets/parser.rs` (`cargo xtask fuzz parser`), which
+  mutates whole tokens and nests brackets past the nesting limit.
