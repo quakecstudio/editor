@@ -838,6 +838,39 @@ See [`vectors/bsp/`](vectors/bsp/README.md): `base`, `texture-offset`, `extents-
   of 32768 or more indexes before the array, which is undefined; this spec reads them as the
   file declares them, as QS does.
 - **BSP-12.6** GLQuake's `Mod_LoadLeafs` (`WinQuake/gl_model.c`) sets `SURF_UNDERWATER` (0x80, `WinQuake/gl_model.h`) in the flags of every face that a leaf whose `contents` is not -1 (`CONTENTS_EMPTY`) lists among its marksurfaces (BSP-13.1), whatever the face's texture and other flags: a face listed by a water, slime, lava, sky or solid leaf, or by a leaf whose value is no `CONTENTS_` value, has it, and keeps it when an empty leaf lists it too. WinQuake's `Mod_LoadLeafs` (`WinQuake/model.c`) has no such code and `WinQuake/model.h` defines no such flag, so no face WinQuake loads has 0x80. `crates/qs-bsp` sets the flag when its caller names GLQuake's loader (BSP-9.17), over the marksurfaces BSP-12.5 reads and for BSP2 as for BSP29, and never when it names WinQuake's.
+- **BSP-12.7** id's loaders tell a leaf from a node by its `contents` alone: `Mod_SetParent`
+  has `if (node->contents < 0)` `return;` and `Mod_MakeHull0` has
+  `if (child->contents < 0)` `out->children[j] = child->contents;` `else`
+  `out->children[j] = child - loadmodel->nodes;`, in `WinQuake/model.c` and
+  `WinQuake/gl_model.c` alike. A leaf whose `contents` is 0 or more is copied without a check
+  (BSP-12.2), and a node that names it hands it to those functions as a node. When node 0's
+  tree reaches it, `Mod_SetParent` (called from `Mod_LoadNodes` with
+  `Mod_SetParent (loadmodel->nodes, NULL);`) reads the leaf's `efrags`, which `Mod_LoadLeafs`
+  sets to `NULL`, as the node's first child and writes through it: both loaders crash. When
+  only another model's nodes name it, the load completes and `Mod_MakeHull0` gives that hull 0
+  child the distance between the leaf and the node array, a subtraction of pointers into two
+  arrays that C leaves undefined. A leaf no node names loads with its contents. `crates/qs-bsp`
+  fails a BSP in which any node names a leaf whose contents is 0 or more, with every loader
+  (`BspError::LeafContents`), and loads one whose only such leaves no node names.
+
+### Evidence for BSP-12.7
+
+The layouts of `mnode_t` and `mleaf_t` (`WinQuake/model.h` and `WinQuake/gl_model.h`) share
+`contents`, `visframe`, `minmaxs` and `parent`; after them `mnode_t` has
+`mplane_t	*plane;` and `struct mnode_s	*children[2];` where `mleaf_t` has
+`byte		*compressed_vis;`, `efrag_t		*efrags;` and `msurface_t	**firstmarksurface;`, so
+a leaf read as a node has `efrags` as its first child, and `Mod_LoadLeafs` sets
+`out->efrags = NULL;`. `Mod_SetParent`'s first statement, `node->parent = parent;`, then
+writes through the null pointer.
+
+**Checked:** on 2026-10-16 id's `Mod_LoadBrushModel` in `WinQuake/model.c` and in
+`WinQuake/gl_model.c`, built unchanged from the pinned commit in the harness of the vectors'
+README for arm64 with Apple clang and for x86-64 with gcc 14.4, loaded `contents-0`,
+`contents-0-submodel` and `contents-0-unnamed`. All four builds stopped on `contents-0` with a
+segmentation fault; `lldb` puts it in `Mod_SetParent`, at address 0x18 (WinQuake, whose
+`minmaxs` are `short`) and 0x20 (GLQuake, `float`), the offset of `parent`. All four loaded
+`contents-0-submodel` with node 1's front child in hull 0 a different value in each build (-1,
+-1, -2 and 29126), and loaded `contents-0-unnamed` with leaf 2's contents 0.
 
 ### Evidence for BSP-12.6
 
@@ -896,7 +929,7 @@ gave the face flags the README records.
 
 See [`vectors/bsp/`](vectors/bsp/README.md): `water-leaf`, `water-leaf-turb`,
 `solid-leaf-face` and `contents-unknown` (BSP-12.6), with `base`, whose face only an empty
-leaf lists.
+leaf lists; `contents-0`, `contents-0-submodel` and `contents-0-unnamed` (BSP-12.7).
 
 ## BSP-13 Marksurfaces
 
@@ -1315,6 +1348,14 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
   loader; and it reads the files beside the map that BSP-18 (`.lit`) and BSP-19 (`.ent`)
   describe, and a `.vis` file when its `external_vis` cvar is set, which `Bsp::read` does not
   open.
+- **BSP-20.19** QS tells a leaf from a node as id does (BSP-12.7): its `Mod_SetParent` has
+  `if (node->contents < 0)` `return;`, its `Mod_MakeHull0` `if (child->contents < 0)`, and
+  its `mnode_t` and `mleaf_t` (`Quake/gl_model.h`) share the layout BSP-12.7 describes, with
+  `out->efrags = NULL;` in each `Mod_ProcessLeafs_` function. So a leaf whose `contents` is 0
+  or more crashes QS when node 0's tree reaches it, and gives an undefined hull 0 child when
+  only another model's nodes name it; that includes leaf 0 when BSP-20.15 or BSP-20.16 puts it
+  in place of a leaf that does not exist. `qs-bsp` fails such a BSP with the default loader as
+  with id's, after reading the children by BSP-20.15 and BSP-20.16.
 
 ### Constants
 
@@ -1335,7 +1376,7 @@ See [`vectors/bsp/`](vectors/bsp/README.md), the FitzQuake column: `version-30` 
 `turb-slime`, `turb-tele`, `fence`, `texinfo-flag-2` and `missing-unlit` (BSP-20.11),
 `water-leaf` and its neighbours (BSP-20.12), `leafs-32768` (BSP-20.13), `nodes-32769` and
 `node-bad-leaf` (BSP-20.15), `bsp2-child-0` and `bsp2-bad-leaf` (BSP-20.16), `clipnode-past`
-(BSP-20.17).
+(BSP-20.17), `contents-0`, `contents-0-submodel` and `contents-0-unnamed` (BSP-20.19).
 
 ### Evidence for BSP-20
 
@@ -1349,3 +1390,7 @@ README records the harness and the results. `qs-bsp` with `BspLoader::default()`
 same as the x86-64 build for every input but `version-30` (BSP-20.2) and the message of
 `bad-marksurface` (BSP-20.18); the arm64 build differed from the x86-64 build only on
 `no-edges` (BSP-20.8).
+
+The same two builds loaded the vectors of BSP-12.7 (2026-10-16): both stopped on `contents-0`
+with a segmentation fault, loaded `contents-0-submodel` with node 1's front child in hull 0
+-954437178, and loaded `contents-0-unnamed` with leaf 2's contents 0 (BSP-20.19).

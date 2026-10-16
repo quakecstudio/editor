@@ -15,6 +15,7 @@ use proptest::prelude::*;
 
 use super::fixtures::{BspSpec, NodeSpec, TextureSpec, leaf, square, texture};
 use super::lit::grey;
+use super::tests::{ContentsLeaf, contents_leaf};
 use super::*;
 
 fn read_with(spec: &BspSpec, loader: BspLoader) -> Result<Bsp<'static>, BspError> {
@@ -633,6 +634,49 @@ fn otherwise_as_glquake() {
 fn lit_with_default_loader() {
     let bsp = fitz(&BspSpec::default()).unwrap();
     assert_eq!(grey(bsp.lighting).len(), 25);
+}
+
+// spec BSP-20.19: as in id's loaders, a node naming a leaf of contents 0 or more fails
+// (`contents-0`, `contents-0-submodel`), including leaf 0 named in place of a leaf that does not
+// exist (BSP-20.15) and a BSP2 node's leaf.
+#[test]
+fn leaf_contents_0_or_more() {
+    for place in [ContentsLeaf::Named, ContentsLeaf::Submodel] {
+        assert!(matches!(
+            fitz(&contents_leaf(0, place)),
+            Err(BspError::LeafContents { contents: 0, .. })
+        ));
+    }
+    assert_eq!(
+        fitz(&contents_leaf(0, ContentsLeaf::Unnamed))
+            .unwrap()
+            .leafs[2]
+            .contents,
+        0
+    );
+    let mut spec = BspSpec::default();
+    spec.leafs[0].contents = 0;
+    spec.nodes[0].children = [-3, -2];
+    assert_eq!(
+        fitz(&spec),
+        Err(BspError::LeafContents {
+            node: 0,
+            leaf: 0,
+            contents: 0
+        })
+    );
+    let spec = BspSpec {
+        version: BspVersion::Bsp2,
+        ..contents_leaf(5, ContentsLeaf::Named)
+    };
+    assert_eq!(
+        fitz(&spec),
+        Err(BspError::LeafContents {
+            node: 0,
+            leaf: 1,
+            contents: 5
+        })
+    );
 }
 
 // spec BSP-17.6: both BSP2 variants of the base load with the FitzQuake lineage's rules.

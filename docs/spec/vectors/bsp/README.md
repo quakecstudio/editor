@@ -52,6 +52,10 @@ and `WinQuake/gl_model.c`, unchanged from the pinned commit in the harness above
 arm64 with Apple clang and for x86-64 with gcc 14.4; all four builds gave the results below. Both
 loaders give `base`'s face, which only the empty leaf 1 lists, flags 0.
 
+The rows for BSP-12.7 (2026-10-16) were loaded by the same four builds of `WinQuake/model.c`
+and `WinQuake/gl_model.c`, each run to its end or to a crash; `lldb` placed the arm64 builds'
+crashes in `Mod_SetParent`.
+
 ## base
 
 One square face on the plane z = 0, in a world of one node and two leaves, plus a second
@@ -138,6 +142,9 @@ result it records.
 | `water-leaf-turb` | Leaf 1 contents -3, texture `*water`, texinfo flags 1 | Loads; WinQuake: face flags 0x30. GLQuake: face flags 0xb0 | BSP-12.6 |
 | `solid-leaf-face` | Leaf 0 (contents -2) lists marksurface 0 too: marksurfaces 0 + 1 | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80, though the empty leaf 1 lists the face too | BSP-12.6 |
 | `contents-unknown` | Leaf 1 contents -7, no `CONTENTS_` value | Loads; WinQuake: face flags 0. GLQuake: face flags 0x80 | BSP-12.6 |
+| `contents-0` | Leaf 1 contents 0 | Both loaders crash in `Mod_SetParent` (segmentation fault, all four builds). `qs-bsp`: error `node 0 names leaf 1, whose contents 0 is not negative`, with every loader | BSP-12.7 |
+| `contents-0-submodel` | A leaf 2 of contents 0 with no faces; a node 1 like node 0 with no faces and children -3 and -1; model 1's head node 1 | Loads; hull 0 node 1's front child is a pointer difference, -1, -1, -2 and 29126 in the four builds. `qs-bsp`: error `node 1 names leaf 2, whose contents 0 is not negative` | BSP-12.7 |
+| `contents-0-unnamed` | A leaf 2 of contents 0 with no faces, which no node names | Loads; leaf 2 contents 0, hull 0 as the base's. `qs-bsp` the same | BSP-12.7 |
 
 ## The FitzQuake lineage (BSP-20)
 
@@ -205,3 +212,4 @@ evaluations give extents 32 16 (single precision gives 16 16).
 | `bsp2-child-0` | The base as `BSP2`; node 0 children 0 and -1 | Loads; node 0's front is leaf 0 | id's read no BSP2; `qs-bsp` loads with node 0 as its front | BSP-20.16 |
 | `bsp2-bad-leaf` | The base as `BSP2`; node 0 children -5 and -1 | Loads; node 0's front is leaf 0 | id's read no BSP2; `qs-bsp` fails (BSP-1.8) | BSP-20.16 |
 | `clipnode-past` | Clipnode 0 children 5 and -2 | Loads; clipnode 0 children -65531 and -2 | id's loaders load it; `qs-bsp` fails (BSP-1.8) | BSP-20.17 |
+| `contents-0`, `contents-0-submodel`, `contents-0-unnamed` | As above | QuakeSpasm, both builds: crashes on `contents-0`; loads `contents-0-submodel` with hull 0 node 1's front child -954437178; loads `contents-0-unnamed`. `qs-bsp`: the errors and load of BSP-12.7 | As above | BSP-20.19 |

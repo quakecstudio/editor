@@ -386,6 +386,16 @@ pub enum BspError {
     BadMarksurface,
     /// The BSP has no nodes (BSP-7.6).
     NoNodes,
+    /// A node names a leaf whose contents is 0 or more, which every loader would take for a
+    /// node (BSP-12.7, BSP-20.19).
+    LeafContents {
+        /// The node.
+        node: usize,
+        /// The leaf it names.
+        leaf: usize,
+        /// The leaf's contents.
+        contents: i32,
+    },
     /// The BSP has no models (BSP-15.6).
     NoModels,
     /// A leaf's visibility runs past the lump (BSP-6.5).
@@ -435,6 +445,13 @@ impl BspError {
             }
             Self::BadMarksurface => "Mod_ParseMarksurfaces: bad surface number".to_owned(),
             Self::NoNodes => format!("{name} has no nodes"),
+            Self::LeafContents {
+                node,
+                leaf,
+                contents,
+            } => format!(
+                "{name}: node {node} names leaf {leaf}, whose contents {contents} is not negative"
+            ),
             Self::NoModels => format!("{name} has no models"),
             Self::VisTruncated { leaf } => {
                 format!("{name}: the visibility of leaf {leaf} runs past the lump")
@@ -618,7 +635,8 @@ pub struct ClipNode {
 /// A leaf, id's `mleaf_t` as read (BSP-12, BSP-17).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Leaf {
-    /// A `CONTENTS_` value, not checked (BSP-12.2).
+    /// A `CONTENTS_` value, not checked (BSP-12.2), except that a leaf a node names has a
+    /// negative one (BSP-12.7).
     pub contents: i32,
     /// The offset of its visibility set, or -1 (BSP-6.1).
     pub visofs: i32,
@@ -1460,8 +1478,30 @@ impl<'a> Bsp<'a> {
         Ok(())
     }
 
+    /// Fails when a child of node `node` is a leaf whose contents is 0 or more, which id's
+    /// `Mod_SetParent` and `Mod_MakeHull0`, and QuakeSpasm's, take for a node (BSP-12.7,
+    /// BSP-20.19).
+    fn check_leaf_children(&self, children: [i32; 2], node: usize) -> Result<(), BspError> {
+        for child in children {
+            let Ok(leaf) = usize::try_from(child.wrapping_neg().wrapping_sub(1)) else {
+                continue;
+            };
+            if let Some(found) = self.leafs.get(leaf)
+                && found.contents >= 0
+            {
+                return Err(BspError::LeafContents {
+                    node,
+                    leaf,
+                    contents: found.contents,
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// id's `Mod_LoadNodes` (BSP-7, BSP-17.4), with the FitzQuake lineage's reading of the
-    /// children (BSP-20.15, BSP-20.16).
+    /// children (BSP-20.15, BSP-20.16), and no child a leaf whose contents is 0 or more
+    /// (BSP-12.7, BSP-20.19).
     fn mod_load_nodes(&mut self, reader: &Reader<'a>, loader: BspLoader) -> Result<(), BspError> {
         let size = match reader.version {
             BspVersion::Bsp29 => BSP_NODE_SIZE,
@@ -1526,6 +1566,7 @@ impl<'a> Bsp<'a> {
                     element,
                 });
             }
+            self.check_leaf_children(children, element)?;
             nodes.push(Node {
                 planenum,
                 children,
