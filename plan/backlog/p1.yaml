@@ -939,6 +939,24 @@ issues:
   verify:
   - cargo test -p xtask; the PR's CI run
 - key: P1-51
+  title: Mark issues In Progress on the board and remove finished worktrees
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-13
+  deliverable:
+  - '.claude/skills/work-issue/scripts/start.sh: sets the issue''s item on the GitHub project (quakecstudio/1) to Status In Progress with gh project item-edit, looking the project, field, option and item ids up; idempotent and quiet on success; the work-issue, readiness-review, gate-review and prepare-decision skills run it when work on an issue starts, since nothing set In Progress before and only closing moved an item to Done (Justin, 2026-10-16)'
+  - 'plan/apply.py and plan/test_apply.py: a sync never writes the Status field, so the status an agent or person set survives it; a test pins this'
+  - '.claude/skills/run-phase/SKILL.md, step 4: after confirming an agent''s PR merged and its issue closed, the orchestrator removes the agent''s worktree with wt remove -y <path>, skipping one with uncommitted changes or a still-running agent; about 60 finished worktrees had used 64 GB (Justin, 2026-10-16)'
+  acceptance:
+  - start.sh passes shellcheck and shfmt -i 2 -d, exits 0 without output when the item is already In Progress, and sets In Progress on an issue being worked
+  - A test shows apply.py leaves a Status value set on the board unchanged, and a real sync after the merge leaves Status values alone
+  verify:
+  - shellcheck and shfmt output, the start.sh run and the apply.py sync recorded in the PR
+- key: P1-52
   title: The walk example fails a map whose .lit QuakeSpasm ignores
   labels:
   - L0-formats
@@ -963,7 +981,7 @@ issues:
   - The walk example run on the rerelease with -game hipnotic, rogue, dopa and mg1 prints no `failed:` line for `maps/start.lit`
   verify:
   - cargo test -p qs-bsp; the walk runs posted on P1-30
-- key: P1-52
+- key: P1-53
   title: The walk example counts the rerelease's haptics clips as failed sounds
   labels:
   - L0-formats
@@ -985,7 +1003,7 @@ issues:
   - The walk example on the rerelease prints no `failed:` line for `tactile/`, and its count of `.wav` files outside `sound/`
   verify:
   - cargo test -p qs-wav; the walk runs posted on P1-30
-- key: P1-53
+- key: P1-54
   title: Install detection misses the original game GOG ships with Quake Enhanced
   labels:
   - L0-formats
@@ -1073,6 +1091,7 @@ issues:
   - P1-51
   - P1-52
   - P1-53
+  - P1-54
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1160,9 +1179,9 @@ issues:
   - P1-19
   - P1-29
   - P5-02
-  - P1-51
   - P1-52
   - P1-53
+  - P1-54
   deliverable:
   - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model (P1-29), and every alias model and BSP with its .lit and entity text (P5-02), it reads. No game data is committed (LIC-4)'
   - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'

@@ -204,7 +204,8 @@ def project_fields(meta: dict) -> dict[str, list[dict]]:
 def project_values(issue: dict, meta: dict) -> dict[str, str]:
     """The field values the plan sets on an issue's project item: option names, or text.
 
-    check.py ensures every issue carries exactly one layer label.
+    check.py ensures every issue carries exactly one layer label. Status is deliberately absent:
+    work-issue's start.sh sets In Progress and GitHub sets Done on close, so a sync must keep it.
     """
     layers = [l["name"] for l in meta["labels"]["layer"]]
     return {"Phase": issue["milestone"], "Layer": next(l for l in issue["labels"] if l in layers),

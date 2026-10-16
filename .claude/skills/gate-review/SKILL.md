@@ -2,7 +2,7 @@
 name: gate-review
 description: Review and close a QuakeC Studio phase gate (type:gate) - check that nothing in the phase straggles, prove each gate criterion with evidence in docs/gates/<phase>.md, and land the report with Closes. Escalates to Justin instead of deferring anything.
 argument-hint: "[issue-number]"
-allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue *) Bash(gh pr *) Bash(gh run *) Bash(gh api *) Bash(.claude/skills/work-issue/scripts/land.sh *)
+allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue *) Bash(gh pr *) Bash(gh run *) Bash(gh api *) Bash(.claude/skills/work-issue/scripts/start.sh *) Bash(.claude/skills/work-issue/scripts/land.sh *)
 ---
 
 # Gate review
@@ -13,7 +13,7 @@ Justin does not sign gates off. You close the gate yourself when the phase is fi
 
 ## 1. Nothing straggles
 
-1. `gh issue view $ARGUMENTS`. Find the phase and its gate text in `plan/backlog/_meta.yaml`. If the gate is labelled `needs:human` (the MVP gate, which publishes the release), assemble the evidence below, open the PR without `Closes`, mention @jplock on the issue and stop.
+1. `gh issue view $ARGUMENTS`, then mark it In Progress on the project board: `.claude/skills/work-issue/scripts/start.sh $ARGUMENTS`. Find the phase and its gate text in `plan/backlog/_meta.yaml`. If the gate is labelled `needs:human` (the MVP gate, which publishes the release), assemble the evidence below, open the PR without `Closes`, mention @jplock on the issue and stop.
 2. `python3 plan/status.py --phase <phase> --track all`: every issue other than this gate must be closed.
 3. Every issue in the phase's GitHub milestone must be closed, including follow-ups agents filed during the phase that are not in the plan:
    `gh api "repos/quakecstudio/editor/issues?milestone=<milestone-number>&state=open" -q '.[] | select(.pull_request|not) | "#\(.number) \(.title)"'` must print only this gate.

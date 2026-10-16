@@ -2,7 +2,7 @@
 name: prepare-decision
 description: Prepare a needs:human decision issue for Justin - research the options, draft the ADR with a recommendation, open it as a draft PR and summarise it on the issue. Never decides or merges. Use for type:decision issues.
 argument-hint: "[issue-number]"
-allowed-tools: Bash(gh issue view *) Bash(gh issue comment *) Bash(gh pr *)
+allowed-tools: Bash(.claude/skills/work-issue/scripts/start.sh *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh pr *)
 ---
 
 # Prepare a decision
@@ -11,7 +11,7 @@ Issue: #$ARGUMENTS
 
 A decision belongs to a person. Your job is to make it a five-minute read.
 
-1. `gh issue view $ARGUMENTS --comments`. If a comment already links a draft ADR PR, update that PR instead of opening another.
+1. `gh issue view $ARGUMENTS --comments`. If a comment already links a draft ADR PR, update that PR instead of opening another. Mark the issue In Progress on the project board: `.claude/skills/work-issue/scripts/start.sh $ARGUMENTS`.
 2. Read the requirement IDs it cites in `plan/requirements.yaml`, the matching sections of `docs/design/design-doc.md`, and any open question about it in the design doc's "Risks and open questions".
 3. Research what the decision depends on: licenses, prices, platform support, prior art. Fetch the pages you rely on and cite them. Label anything you could not verify.
 4. Write the ADR at the path the issue's deliverable names (in `docs/adr/`, from `docs/adr/0000-template.md`, following ADR-0001) with status **Proposed**, add its row to the index in `docs/adr/README.md`, and run `cargo xtask adr`:
