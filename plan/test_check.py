@@ -57,6 +57,18 @@ class CheckRules(unittest.TestCase):
     def test_decision_without_adr(self):
         self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["a decision"]), "must name a docs/adr/")
 
+    def test_decision_naming_only_the_adr_directory(self):
+        self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["an entry in docs/adr/"]), "must name a docs/adr/")
+
+    def test_decision_naming_the_template(self):
+        self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["docs/adr/0000-template.md"]), "must name a docs/adr/")
+
+    def test_decision_adr_file_patterns(self):
+        for ok in ["docs/adr/0012-ui.md: the answer", "docs/adr/00NN-license-review.md"]:
+            self.assertTrue(check.ADR_FILE.search(ok), ok)
+        for bad in ["docs/adr/12-ui.md", "docs/adr/0012-UI.md", "docs/adr/0012.md", "docs/adr/README.md"]:
+            self.assertFalse(check.ADR_FILE.search(bad), bad)
+
     def test_readiness_injected(self):
         # qc-edict (L1) builds on qc-progs (L0), so it must wait for L0 readiness in Phase 1.
         self.assertIn("P1-R0", {i["key"]: i for i in self.issues}["P1-09"]["depends"])

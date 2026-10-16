@@ -54,13 +54,13 @@ issues:
   - P0-01
   - P0-09
   deliverable:
-  - xtask/ crate (started by P0-01 with conventions, clippy-fixtures and deny-fixtures) gains subcommands ci, layers, licenses, attribution
+  - xtask/ crate (started by P0-01 with conventions, clippy-fixtures and deny-fixtures, and P0-07 with adr) gains subcommands ci, layers, licenses, attribution
   - layers.toml mapping every crate to L0-L7 or apps, with the rule that a crate may depend only on lower layers
   - ATTRIBUTION.md format and checker for bundled assets
   - docs/layers.md explaining the layer model with the architecture diagram
   - Makefile with fmt, lint, check, test, test-integration, test-fuzz, test-coverage (cargo-llvm-cov), test-mutants (cargo-mutants), audit, docs-build, bench, ci and help targets, calling cargo and xtask
   acceptance:
-  - cargo xtask ci runs fmt --check, clippy -D warnings, tests, conventions, clippy-fixtures, deny-fixtures, layers, licenses, attribution and exits non-zero on any failure
+  - cargo xtask ci runs fmt --check, clippy -D warnings, tests, conventions, adr, clippy-fixtures, deny-fixtures, layers, licenses, attribution and exits non-zero on any failure
   - Adding a dependency from an L1 crate to an L3 crate fails cargo xtask layers with a message naming both crates
   - A crate missing from layers.toml fails the check
   - An asset file not listed in ATTRIBUTION.md fails cargo xtask attribution

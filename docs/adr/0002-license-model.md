@@ -10,6 +10,23 @@
 
 Is QuakeC Studio licensed permissively, with id's GPL code kept at arm's length, or GPL throughout?
 
+## Context
+
+The design document originally recommended a permissive `MIT OR Apache-2.0` core, re-deriving
+id's VM, formats and tools through a clean room and keeping GPL tools out of process. The plan
+needed the license settled before any code was written, because it decides whether id's source
+can be read and ported (LIC-1 to LIC-3), which dependencies are allowed (LIC-6, ARCH-2) and how
+the map tools and the preview host are built (MAP-11).
+
+## Options
+
+The options not chosen, and why not:
+
+| Option | Why not |
+| --- | --- |
+| MIT OR Apache-2.0 core with a clean room, GPL tools out of process (the design document's original recommendation) | Needs separate spec authors and implementers, a reader log, a process boundary and a legal review of that boundary; slower and riskier, for a benefit (closed forks) the project does not need |
+| GPL-2.0-or-later | Cannot combine with Apache-2.0-only dependencies such as gpui |
+
 ## Decision
 
 The whole project is licensed **GPL-3.0-or-later**: the IDE, its crates and binaries, the oracles in `oracles/`, and the preview host fork. Every source file carries `SPDX-License-Identifier: GPL-3.0-or-later`; files ported from id's code also keep id's copyright line. `LICENSE` holds the GPL-3.0 text.
@@ -19,13 +36,6 @@ The whole project is licensed **GPL-3.0-or-later**: the IDE, its crates and bina
 - **We can build on the real thing.** id released the Quake engine and tools under the GPL, "version 2 of the License, or (at your option) any later version" ([`pr_exec.c` header](https://raw.githubusercontent.com/id-Software/Quake/master/WinQuake/pr_exec.c)). Under the GPL we can port id's VM, formats and tools directly instead of re-deriving them through a clean room, which removes a whole layer of process, roles and risk.
 - **Version 3, not version 2.** The recommended UI framework, gpui, is licensed Apache-2.0 only ([`crates/gpui/Cargo.toml`](https://raw.githubusercontent.com/zed-industries/zed/main/crates/gpui/Cargo.toml)), as are other Rust crates we are likely to use. Apache-2.0 is compatible with GPLv3 but not with GPLv2, so a GPL-2.0-only project could not use them. id's "or later" grant lets us use their code under version 3.
 - **It matches the community.** FTEQCC, QuakeSpasm and most Quake source ports are GPL, and so is Zed itself.
-
-## Alternatives considered
-
-| Option | Why not |
-| --- | --- |
-| MIT OR Apache-2.0 core with a clean room, GPL tools out of process (the design document's original recommendation) | Needs separate spec authors and implementers, a reader log, a process boundary and a legal review of that boundary; slower and riskier, for a benefit (closed forks) the project does not need |
-| GPL-2.0-or-later | Cannot combine with Apache-2.0-only dependencies such as gpui |
 
 ## Consequences
 
@@ -40,3 +50,10 @@ The whole project is licensed **GPL-3.0-or-later**: the IDE, its crates and bina
 - P4-22 becomes a license compliance review (notices, corresponding source, dependency licenses) rather than a legal review of a process boundary.
 
 This is not legal advice; the license compliance review before the first public release (P4-22) confirms the details.
+
+## Links
+
+- Issue: [#8](https://github.com/quakecstudio/editor/issues/8)
+- id Software, Quake source, [`WinQuake/pr_exec.c`](https://raw.githubusercontent.com/id-Software/Quake/master/WinQuake/pr_exec.c) license header
+- Zed, [`crates/gpui/Cargo.toml`](https://raw.githubusercontent.com/zed-industries/zed/main/crates/gpui/Cargo.toml) license field
+- The porting process: [`docs/porting.md`](../porting.md)

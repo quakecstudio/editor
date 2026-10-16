@@ -14,7 +14,7 @@ A decision belongs to a person. Your job is to make it a five-minute read.
 1. `gh issue view $ARGUMENTS --comments`. If a comment already links a draft ADR PR, update that PR instead of opening another.
 2. Read the requirement IDs it cites in `plan/requirements.yaml`, the matching sections of `docs/design/design-doc.md`, and any open question about it in the design doc's "Risks and open questions".
 3. Research what the decision depends on: licenses, prices, platform support, prior art. Fetch the pages you rely on and cite them. Label anything you could not verify.
-4. Write the ADR at the path the issue's deliverable names (in `docs/adr/`, from `docs/adr/0000-template.md` once #7 exists) with status **Proposed**:
+4. Write the ADR at the path the issue's deliverable names (in `docs/adr/`, from `docs/adr/0000-template.md`, following ADR-0001) with status **Proposed**, add its row to the index in `docs/adr/README.md`, and run `cargo xtask adr`:
    - the question, in one sentence;
    - two to four real options, each with its consequences for the plan (which issues, layers or phases it changes);
    - your recommendation and why, in one paragraph;
