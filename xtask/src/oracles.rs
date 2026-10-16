@@ -1,0 +1,357 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! `cargo xtask oracles`: fetches id's sources by commit and checksum, builds the oracles in
+//! `oracles/` with the system C compiler, and checks them (P1-11, `oracles/README.md`).
+//!
+//! - `cargo xtask oracles` builds both oracles and checks the VM oracle against every vector in
+//!   `docs/spec/vectors/vm/` that id's C defines.
+//! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
+//! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
+//!   `python corpus/assets.py codebase` writes it) with id's qcc, and runs the VM oracle on the
+//!   result.
+//! - `cargo xtask oracles json <trace>` prints a binary trace in the JSON form (TRACE-6).
+//!
+//! Everything lives under `target/oracles/`: `src/` holds the fetched files, `build/` the
+//! objects and the generated files that hold id's extracted functions, `bin/` the binaries
+//! (`qcc` and `vm-oracle`). A stamp of every input lets an unchanged build, such as one
+//! restored by CI's cache, skip the compile. Nothing here is part of the shipped app.
+
+mod compile;
+mod extract;
+mod id101;
+mod sha256;
+mod vectors;
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde::Deserialize;
+
+use compile::{Code, Compiler, Unit};
+
+const SOURCES: &str = "oracles/sources.toml";
+const OUT: &str = "target/oracles";
+
+/// Our harness files, compiled with every warning an error.
+const VM_HARNESS: [&str; 5] = [
+    "oracles/vm/host.c",
+    "oracles/vm/trace.c",
+    "oracles/vm/engine.c",
+    "oracles/vm/builtins.c",
+    "oracles/vm/scenario.c",
+];
+
+/// The files of id's qcc, compiled unchanged.
+const QCC_FILES: [&str; 4] = ["qcc/qcc.c", "qcc/pr_lex.c", "qcc/pr_comp.c", "qcc/cmdlib.c"];
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Sources {
+    upstream: Vec<Upstream>,
+    extract: Vec<Extract>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Upstream {
+    id: String,
+    repo: String,
+    commit: String,
+    files: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Extract {
+    file: String,
+    functions: Vec<String>,
+}
+
+/// Where the built oracles are.
+pub(crate) struct Oracles {
+    pub(crate) qcc: PathBuf,
+    pub(crate) vm: PathBuf,
+    pub(crate) work: PathBuf,
+}
+
+/// Runs `cargo xtask oracles [build | id101 <dir>]`.
+pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        [] => {
+            let oracles = build(root)?;
+            vectors::check(root, &oracles)
+        }
+        ["build"] => {
+            let oracles = build(root)?;
+            println!("oracles: qcc at {}", oracles.qcc.display());
+            println!("oracles: vm-oracle at {}", oracles.vm.display());
+            Ok(true)
+        }
+        ["id101", dir] => {
+            let oracles = build(root)?;
+            id101::check(&oracles, Path::new(dir))
+        }
+        ["json", trace] => {
+            let bytes = fs::read(trace).map_err(|e| format!("{trace}: {e}"))?;
+            let trace = qc_trace::decode(&bytes).map_err(|e| format!("{trace}: {e:?}"))?;
+            print!("{}", qc_trace::to_json(&trace));
+            Ok(true)
+        }
+        _ => Err(
+            "usage: cargo xtask oracles [build | id101 <codebase directory> | json <trace>]"
+                .to_owned(),
+        ),
+    }
+}
+
+fn read_sources(root: &Path) -> Result<Sources, String> {
+    let path = root.join(SOURCES);
+    let text = fs::read_to_string(&path).map_err(|e| format!("{SOURCES}: {e}"))?;
+    let sources: Sources = toml::from_str(&text).map_err(|e| format!("{SOURCES}: {e}"))?;
+    for upstream in &sources.upstream {
+        let commit_ok =
+            upstream.commit.len() == 40 && upstream.commit.bytes().all(|b| b.is_ascii_hexdigit());
+        if !commit_ok {
+            return Err(format!(
+                "{SOURCES}: {} is not pinned to a full commit",
+                upstream.id
+            ));
+        }
+        if upstream.files.keys().any(|f| f.ends_with("quakedef.h")) {
+            return Err(format!(
+                "{SOURCES}: id's quakedef.h must not be fetched; oracles/vm/quakedef.h stands in"
+            ));
+        }
+    }
+    Ok(sources)
+}
+
+/// Downloads every pinned file that is missing from the cache, and checks every file's SHA-256.
+fn fetch(sources: &Sources, cache: &Path) -> Result<(), String> {
+    for upstream in &sources.upstream {
+        for (file, want) in &upstream.files {
+            let path = cache.join(&upstream.id).join(file);
+            if fs::read(&path).is_ok_and(|bytes| sha256::hex_digest(&bytes) == *want) {
+                continue;
+            }
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+            }
+            let url = format!(
+                "https://raw.githubusercontent.com/{}/{}/{file}",
+                upstream.repo, upstream.commit
+            );
+            let partial = path.with_extension("partial");
+            let status = Command::new("curl")
+                .args(["-fsSL", "--retry", "3", "--retry-all-errors", "-o"])
+                .arg(&partial)
+                .arg(&url)
+                .status()
+                .map_err(|e| format!("cannot run curl to fetch {url}: {e}"))?;
+            if !status.success() {
+                return Err(format!("fetching {url} failed ({status})"));
+            }
+            let bytes = fs::read(&partial).map_err(|e| format!("{}: {e}", partial.display()))?;
+            let got = sha256::hex_digest(&bytes);
+            if got != *want {
+                return Err(format!(
+                    "{}:{file}: sha256 {got}, {SOURCES} says {want}",
+                    upstream.repo
+                ));
+            }
+            fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+            println!(
+                "oracles: fetched {}@{}:{file}",
+                upstream.repo, upstream.commit
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Writes one generated file per `[[extract]]` entry: the named functions, copied unchanged.
+fn generate(sources: &Sources, cache: &Path, out: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut generated = Vec::new();
+    for entry in &sources.extract {
+        let upstream = sources
+            .upstream
+            .iter()
+            .find(|u| u.files.contains_key(&entry.file))
+            .ok_or_else(|| format!("{SOURCES}: {} is not a fetched file", entry.file))?;
+        let path = cache.join(&upstream.id).join(&entry.file);
+        let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text = String::from_utf8_lossy(&bytes);
+        let mut c = format!(
+            "/* Generated by cargo xtask oracles: functions copied unchanged from\n   \
+             {}@{}: {}.\n   Not part of the repository. */\n#include \"quakedef.h\"\n",
+            upstream.repo, upstream.commit, entry.file
+        );
+        for name in &entry.functions {
+            let function =
+                extract::function(&text, name).map_err(|e| format!("{}: {e}", entry.file))?;
+            c.push_str(&format!(
+                "#line {} \"{}\"\n{}",
+                function.line, entry.file, function.text
+            ));
+        }
+        let stem = Path::new(&entry.file)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("extract");
+        let file = out.join(format!("id_{stem}.c"));
+        fs::write(&file, c).map_err(|e| format!("{}: {e}", file.display()))?;
+        generated.push(file);
+    }
+    Ok(generated)
+}
+
+/// The stamp of every input to the build: the pinned sources, our C files and the compiler.
+fn stamp(root: &Path, compiler: &Compiler) -> Result<String, String> {
+    // The xtask code that extracts id's functions and drives the compiler is an input too.
+    let mut inputs = vec![
+        compiler.describe(),
+        sha256::hex_digest(include_str!("oracles.rs").as_bytes()),
+        sha256::hex_digest(include_str!("oracles/extract.rs").as_bytes()),
+        sha256::hex_digest(include_str!("oracles/compile.rs").as_bytes()),
+    ];
+    let mut files = Vec::new();
+    collect_files(&root.join("oracles"), &mut files)?;
+    files.sort();
+    for file in files {
+        let bytes = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        let name = file
+            .strip_prefix(root)
+            .unwrap_or(&file)
+            .display()
+            .to_string();
+        inputs.push(format!("{name} {}", sha256::hex_digest(&bytes)));
+    }
+    Ok(sha256::hex_digest(inputs.join("\n").as_bytes()))
+}
+
+fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.is_dir() {
+            collect_files(&path, files)?;
+        } else {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Fetches, generates and compiles both oracles, unless the stamp shows they are current.
+pub(crate) fn build(root: &Path) -> Result<Oracles, String> {
+    let sources = read_sources(root)?;
+    let out = root.join(OUT);
+    let cache = out.join("src");
+    let objects = out.join("build");
+    let bin = out.join("bin");
+    let work = out.join("work");
+    for dir in [&cache, &objects, &bin, &work] {
+        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    let oracles = Oracles {
+        qcc: bin.join(Compiler::executable("qcc")),
+        vm: bin.join(Compiler::executable("vm-oracle")),
+        work,
+    };
+    let compiler = Compiler::find(&objects)?;
+    let stamp_now = stamp(root, &compiler)?;
+    let stamp_file = bin.join("stamp");
+    if oracles.qcc.is_file()
+        && oracles.vm.is_file()
+        && fs::read_to_string(&stamp_file).is_ok_and(|s| s.trim() == stamp_now)
+    {
+        println!("oracles: up to date in {}", bin.display());
+        return Ok(oracles);
+    }
+    fetch(&sources, &cache)?;
+    let quake = cache.join("quake").join("WinQuake");
+    let tools = cache.join("quake-tools");
+
+    // id's qcc, unchanged.
+    let qcc_compat = root.join("oracles/qcc/compat.h");
+    let mut qcc_includes = Vec::new();
+    if cfg!(windows) {
+        qcc_includes.push(root.join("oracles/qcc/win32"));
+    }
+    let mut qcc_objects = Vec::new();
+    for file in QCC_FILES {
+        let source = tools.join(file);
+        let object = objects.join(format!("qcc_{}.o", stem(&source)));
+        compiler.object(
+            &Unit {
+                source: &source,
+                code: Code::Id,
+                includes: &qcc_includes,
+                defines: &[],
+                forced_include: Some(&qcc_compat),
+            },
+            &object,
+        )?;
+        qcc_objects.push(object);
+    }
+    compiler.link(&qcc_objects, &oracles.qcc)?;
+
+    // The VM oracle: pr_exec.c whole, id's extracted functions, and our harness.
+    let includes = vec![root.join("oracles/vm"), quake.clone()];
+    let mut vm_objects = Vec::new();
+    let pr_exec = quake.join("pr_exec.c");
+    let object = objects.join("vm_pr_exec.o");
+    compiler.object(
+        &Unit {
+            source: &pr_exec,
+            code: Code::Id,
+            includes: &includes,
+            defines: &["QS_PR_EXEC"],
+            forced_include: None,
+        },
+        &object,
+    )?;
+    vm_objects.push(object);
+    for source in generate(&sources, &cache, &objects)? {
+        let object = objects.join(format!("vm_{}.o", stem(&source)));
+        compiler.object(
+            &Unit {
+                source: &source,
+                code: Code::Id,
+                includes: &includes,
+                defines: &["QS_ENGINE"],
+                forced_include: None,
+            },
+            &object,
+        )?;
+        vm_objects.push(object);
+    }
+    for file in VM_HARNESS {
+        let source = root.join(file);
+        let object = objects.join(format!("vm_{}.o", stem(&source)));
+        compiler.object(
+            &Unit {
+                source: &source,
+                code: Code::Ours,
+                includes: &includes,
+                defines: &["QS_ENGINE"],
+                forced_include: None,
+            },
+            &object,
+        )?;
+        vm_objects.push(object);
+    }
+    compiler.link(&vm_objects, &oracles.vm)?;
+    fs::write(&stamp_file, format!("{stamp_now}\n"))
+        .map_err(|e| format!("{}: {e}", stamp_file.display()))?;
+    println!("oracles: built qcc and vm-oracle in {}", bin.display());
+    Ok(oracles)
+}
+
+fn stem(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file")
+        .to_owned()
+}

@@ -10,3 +10,8 @@ and logs on macOS, Windows and Linux. No other crate joins a path onto the home 
 
 `qs_paths::current()` resolves the directories for the running OS; `qs_paths::resolve()` takes
 the platform and an environment lookup, which is how the tests cover every OS on every host.
+
+`qs_paths::store_dirs()` (and `current_store_dirs()`) give the folders where game stores and
+launchers keep their files on each OS: the Steam client folders, GOG Galaxy's and the offline
+installers' libraries, and the Heroic launcher's configuration. `qs-install` looks for Quake
+there, so it never joins a path onto the home directory itself.

@@ -91,7 +91,7 @@ Each section holds, in this order:
    file, function and identifier it comes from. Code uses the constant's name, never a bare
    number.
 4. **Test vectors:** inputs and expected outputs, each checked against id's code (through the
-   oracles once [#35](https://github.com/quakecstudio/editor/issues/35) lands). Short vectors go in a table in the
+   oracles, [`oracles/README.md`](../../oracles/README.md)). Short vectors go in a table in the
    section; larger ones go in `docs/spec/vectors/<spec>/` and the section links them.
 
 ## Registry
@@ -102,7 +102,7 @@ Each section holds, in this order:
 | `DIFF` | [`differential.md`](differential.md) | The differential harness: scenarios, the deterministic mock engine both VMs run in (map setup, clients, server frames, mock builtins), errors and the end of a run, comparing two traces, expected divergences, statement coverage | [#51](https://github.com/quakecstudio/editor/issues/51) |
 | `EDICT` | [`edicts.md`](edicts.md) | Edict memory and numbering, the world and client edicts, spawn and remove with reuse timing, map entity spawning, QuakeC entry points and think timing, and the system globals and fields with who writes each | [#27](https://github.com/quakecstudio/editor/issues/27) |
 | `EXAMPLE` | [`example.md`](example.md) | The worked porting example: entity-string escapes | [#9](https://github.com/quakecstudio/editor/issues/9) |
-| `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout | [#29](https://github.com/quakecstudio/editor/issues/29) |
+| `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout, recognising an install and its files by checksum | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `LNO` | [`lno.md`](lno.md) | `.lno` line maps: which compilers write them, the header, the line and GMQCC column tables, matching a progs.dat, reading and writing | [#41](https://github.com/quakecstudio/editor/issues/41) |
 | `PAK` | [`pak.md`](pak.md) | PAK archives: header, directory, reading entries, the modified-game CRC | [#29](https://github.com/quakecstudio/editor/issues/29) |

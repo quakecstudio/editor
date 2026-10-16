@@ -110,16 +110,20 @@ module_name_repetitions = "allow"
 similar_names = "allow"
 
 [workspace.dependencies]
+cc = { version = "=1.8.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
+junction = { version = "=2.1.0", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-preproc = { path = "crates/qc-preproc" }
 qc-progs = { path = "crates/qc-progs" }
 qc-syntax = { path = "crates/qc-syntax" }
+qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }
 qs-log = { path = "crates/qs-log" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }
+qs-vfs = { path = "crates/qs-vfs" }
 qs-wad = { path = "crates/qs-wad" }
 serde = { version = "=1.0.229", default-features = false }
 serde_json = { version = "=1.0.151", default-features = false }
