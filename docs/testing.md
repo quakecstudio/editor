@@ -86,8 +86,9 @@ Running the workflow on the fixture directories shows the same failures with the
 - **L6 agent:** tests use a scripted fake model; evals (P4-15) measure quality, not correctness.
 - **L7 UI and apps:** coverage applies to non-rendering code; every command and panel has
   an offscreen snapshot test; accessibility checks run in CI.
-- **C tools (`oracles/` and the preview host repo):** the same bar,
-  with protocol conformance tests shared with the editor repo.
+- **C tools (`oracles/`, including id's engine as the engine oracle):** the same bar. The
+  preview host is Rust, `apps/preview-host` in this repository ([ADR-0004](adr/0004-preview-host-base.md)),
+  and is covered by the L4 and apps notes above.
 
 ## Readiness report
 
