@@ -24,7 +24,7 @@ A native Rust IDE for QuakeC on macOS, Windows and Linux. A modder edits code, p
 | A layer's dependants wait until its test suite passes the readiness bar | [`testing.md`](testing.md) |
 | The visual design and mockups | [`design/`](design/README.md); approved on [#199](https://github.com/quakecstudio/editor/issues/199) |
 
-Still open, all in Phase 0: the UI framework ([#10](https://github.com/quakecstudio/editor/issues/10), gpui recommended), the preview host base ([#12](https://github.com/quakecstudio/editor/issues/12)) and default target ([#14](https://github.com/quakecstudio/editor/issues/14)), the product name ([#15](https://github.com/quakecstudio/editor/issues/15)), the MVP scope ([#21](https://github.com/quakecstudio/editor/issues/21)) and the game directory strategy ([#22](https://github.com/quakecstudio/editor/issues/22)).
+Phase 0's decisions are made: the UI framework is egui ([ADR-0003](adr/0003-ui-framework.md)), the preview host is our own Rust engine and the only one the IDE runs ([ADR-0004](adr/0004-preview-host-base.md), [ADR-0005](adr/0005-default-preview-target.md)), the name stays QuakeC Studio ([ADR-0006](adr/0006-product-name.md)), and the MVP scope and game directories are set ([ADR-0007](adr/0007-mvp-scope.md), [ADR-0008](adr/0008-game-directories.md)).
 
 ## How the code is layered
 

@@ -1,8 +1,8 @@
 # ADR-0003: Build the editor UI on egui
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, in the run-phase session: "if you're confident we can achieve a usage editor that looks good in egui let's go with that", on the reference Mac results
 - **Issue:** [#10](https://github.com/quakecstudio/editor/issues/10)
 - **Requirements:** UI-1, OPEN-3, PRIN-5
 
@@ -89,9 +89,9 @@ composition, an inline diff, a virtualised project panel and a wgpu viewport, dr
 
 | Option | Consequences |
 | --- | --- |
-| **A. egui (recommended)** | P2-17 builds the shell on `eframe` with the wgpu renderer; the editor is the custom widget from the spike, grown into a crate in L7. P5-05's renderer draws inside the UI through `egui_wgpu` callbacks with no copy, and so could an in-process embedded game view after the MVP. The fonts ADR-0010 bundles are loaded into egui, plus fallback fonts (CJK and symbols) that gpui would take from the OS. The macOS menu bar needs a separate crate such as `muda`; the Windows and Linux title bars are drawn by the app. Web build (L-07) stays feasible with little extra work |
+| **A. egui (decided)** | P2-17 builds the shell on `eframe` with the wgpu renderer; the editor is the custom widget from the spike, grown into a crate in L7. P5-05's renderer draws inside the UI through `egui_wgpu` callbacks with no copy, and so could an in-process embedded game view after the MVP. The fonts ADR-0010 bundles are loaded into egui, plus fallback fonts (CJK and symbols) that gpui would take from the OS. The macOS menu bar needs a separate crate such as `muda`; the Windows and Linux title bars are drawn by the app. Web build (L-07) stays feasible with little extra work |
 | B. gpui | P2-17 builds on gpui, pinned to a `gpui-pre` snapshot or a Zed commit (`allow-git` in `deny.toml`) until Zed publishes; each bump is manual work against a pre-1.0 API. The editor is the same custom element, or GPUI Kit's `Editor` if it passes the harness (it follows the same snapshots). P5-05 needs per-OS texture sharing with `unsafe` in one platform crate (an exception to CONV-3's `unsafe_code = "deny"`), or pays a per-frame readback. `deny.toml` gains `bzip2-1.0.6` and two advisory ignores. Native text with system font fallback, the platform IME client and the macOS menu bar come with the framework |
-| C. Decide after the Windows and Linux runs | Nothing in P2 starts until a person runs `spikes/bench.sh` on `ref-windows` and `ref-linux`. If either framework fails there, that decides it; if both pass, the trade-offs above decide it |
+| C. Decide after the Windows and Linux runs (not chosen: the runs move to P2-17's acceptance instead) | Nothing in P2 starts until a person runs `spikes/bench.sh` on `ref-windows` and `ref-linux`. If either framework fails there, that decides it; if both pass, the trade-offs above decide it |
 
 If neither framework passes on all three machines, the fallback is the closer framework with
 the editor widget's text path replaced by our own glyph cache and shaping (for example
@@ -102,23 +102,21 @@ so that is where the margin is.
 
 ## Decision
 
-While Proposed: **egui, confirmed by measuring both prototypes on the Windows and Linux
-reference machines before P2-17 starts (option A, with option C's measurement).** Both
-frameworks meet the frame budget on the reference Mac, egui with three times the margin, and
-neither framework gives us a code editor, so the editor widget is our work on either (GPUI
-Kit's untested `Editor` is the one possible exception). What separates them is everything
-around the editor: egui hosts the wgpu renderer that the map editor and previews depend on
-without copies or `unsafe`, it is published and maintained on crates.io, it has fewer than half
-the dependencies and needs no new license exceptions in `deny.toml`, and it already runs on the
-web if L-07 is ever taken up. gpui's real advantages are native text rendering, the platform
-IME client and the macOS menu bar that ADR-0010 asks for, which matter to how the editor feels;
-on egui they are work we will have to schedule (font fallback, IME edge cases, menus), and they
-are listed as consequences below. The answer to OPEN-3 is that a web build is not required for
-v1 and does not decide the framework.
+Decided: **egui, built on `eframe` with the wgpu renderer (option A).** Both frameworks meet the
+frame budget on the reference Mac, egui with three times the margin, and neither gives us a code
+editor, so the editor widget is our work on either. egui hosts the wgpu renderer that the
+preview host and map editor share without copies or `unsafe`, is published and maintained on
+crates.io, has fewer than half the dependencies and needs no new license exceptions. gpui's
+advantages, native text, the platform IME client and the macOS menu bar, become work we
+schedule: the editor shapes its text with a shaping library and system font fallback, takes IME
+through winit, exposes its text to screen readers through AccessKit, and gets the macOS menu bar
+from `muda`. The Windows and Linux frame-time runs, real IME input and screen-reader checks the
+spike could not do are acceptance criteria of P2-17, P2-18 and P2-23, so they are recorded before
+the shell and editor ship. A web build is not required for v1 and did not decide this (OPEN-3).
 
 ## Consequences
 
-If accepted as recommended:
+In this ADR's pull request and the issues named:
 
 - **Plan.** P2-17 (app shell) is built on `eframe` 0.36 or later with the wgpu renderer. A new
   L7 issue turns the spike's editor widget into `crates/qs-editor-view` (text layout cache,
@@ -135,10 +133,10 @@ If accepted as recommended:
   IME behaviour (reconversion, replacement ranges) and the macOS menu bar are not provided by
   egui and must be built, added (`muda` for menus) or accepted as limits. egui lays out the
   whole UI every frame it draws, so panels must stay virtualised as the spike's are.
-- **Not yet known.** Windows and Linux frame times, real IME input and VoiceOver, Narrator and
-  Orca behaviour. These are listed in the spike report's checklist and must be recorded before
-  this ADR is accepted. If gpui is preferred instead, GPUI Kit's `Editor` should also be put
-  under the spike's harness first.
+- **Carried forward.** Windows and Linux frame times (`spikes/bench.sh` on `ref-windows` and
+  `ref-linux`) are P2-17 acceptance; real IME input on each OS is P2-18 acceptance; VoiceOver,
+  NVDA and Orca reading the editor's text are P2-23 acceptance. If any fails, the fallback above
+  (our own glyph cache and shaping) is the plan, not a switch of framework.
 
 ## Links
 

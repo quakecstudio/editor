@@ -375,10 +375,11 @@ issues:
   - P0-15
   - P0-25
   deliverable:
-  - 'apps/desktop (name from ADR-0006) on the chosen framework: window, docking layout with toolbar, left (Project, Entities), centre (editor, game), right (Properties, agent), bottom (Problems, Console,
+  - 'apps/desktop (name from ADR-0006) on egui (eframe with the wgpu renderer, ADR-0003), with the native macOS menu bar through muda: window, docking layout with toolbar, left (Project, Entities), centre (editor, game), right (Properties, agent), bottom (Problems, Console,
     Debugger) panels as placeholders wired to commands'
   acceptance:
   - Layout persists across restarts; every panel toggle is a command
+  - spikes/bench.sh run on the Windows and Linux reference machines shows p99 frame time at most 8.33 ms for the egui prototype; results committed under docs/spikes/data/ (ADR-0003)
   - Theme, type and spacing come from docs/design/tokens.toml and match the approved mockups (P0-25)
   - Every user-facing string comes from the single string catalog (CONV-16); a lint or test fails on string literals in UI code
   verify:
@@ -397,10 +398,10 @@ issues:
   - P2-17
   - P2-14
   deliverable:
-  - Editor with rope buffer, semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
+  - Editor with rope buffer, text shaped by a shaping library (cosmic-text or parley) with system font fallback and a bundled CJK fallback font (ADR-0003), semantic highlighting, multi-cursor, IME, find and replace, inline diff rendering, go-to-definition, references, rename, hover, completion
   acceptance:
   - Meets the keystroke and open-project budgets on a 50,000-line project
-  - IME composition works for Japanese and Chinese input on each OS
+  - IME composition works for Japanese and Chinese input through each OS's real input method
   verify:
   - Benchmarks; UI snapshot tests; recorded IME test
 - key: P2-19
@@ -488,7 +489,7 @@ issues:
   deliverable:
   - Screen-reader names, roles and values (AccessKit or framework equivalent) for every panel and control; keyboard navigation between panels; contrast-checked themes
   acceptance:
-  - VoiceOver, NVDA and Orca each read every control in the shell; WCAG AA contrast in light and dark
+  - VoiceOver, NVDA and Orca each read every control in the shell and the editor's text and caret; WCAG AA contrast in light and dark
   verify:
   - Automated contrast check; recorded screen-reader passes
 - key: P2-24

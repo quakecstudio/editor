@@ -92,7 +92,7 @@ We borrow from three references: the ArtCraft Crafting Apps for engineering qual
 ```mermaid
 flowchart TB
   apps["Apps: desktop app, quakec-ide CLI, LSP server, MCP server, preview host"]
-  ui["L7 UI (gpui, swappable): editor, map views, panels, diff review, debugger and entity views"]
+  ui["L7 UI (egui, swappable): editor, map views, panels, diff review, debugger and entity views"]
   agent["L6 Agent + MCP: agent loop, model providers, checkpoints, MCP tools"]
   cmd["L5 Command engine: session, undo, one registry for UI, CLI, agent and MCP"]
   eb["L4 Engine bridge: the preview host's bridge client, simulation and sound"]
@@ -208,7 +208,7 @@ The agent is a client of the command registry, not a special subsystem: it sees 
 
 ## Editor and UI
 
-Recommendation: build v1 on gpui, the framework Zed is built on, keep the UI a thin top layer, and settle it with a two-week spike before committing.
+Decided: build v1 on egui ([ADR-0003](../adr/0003-ui-framework.md)), after a spike in which both frameworks met the frame budget and egui hosted the wgpu renderer without copies; keep the UI a thin top layer. The editor widget, text shaping with font fallback, IME and screen-reader text are our own work on egui.
 
 |  | gpui (Zed's framework) | egui (Crafting Apps) |
 | --- | --- | --- |
@@ -217,7 +217,7 @@ Recommendation: build v1 on gpui, the framework Zed is built on, keep the UI a t
 | Matches ArtCraft stack | No | Yes |
 | Risk | API churn outside Zed; check Windows and Linux maturity | Months of editor-widget work before it feels like Cursor |
 
-**Spike acceptance test.** Open a 50,000-line QC project, type with semantic highlighting on, use multi-cursor and IME, scroll at 120 Hz, and render an inline diff. Measure frame times on an M-series Mac, a mid-range Windows laptop and Linux under Wayland. Pick the framework that passes on all three.
+**Spike acceptance test.** Open a 50,000-line QC project, type with semantic highlighting on, use multi-cursor and IME, scroll at 120 Hz, and render an inline diff. Measure frame times on an M-series Mac, a mid-range Windows laptop and Linux under Wayland. Pick the framework that passes on all three. (The Mac run decided it; the Windows and Linux runs are P2-17 acceptance, [ADR-0003](../adr/0003-ui-framework.md).)
 
 **Layout: the game in the middle.**
 
@@ -329,7 +329,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 | Map editor scope rivals the rest of the IDE | Effort pulled from the code and preview work | Map editor phases start only after the MVP; entity editing ships before brush editing |
 | License non-compliance | Distribution blocked or takedown requests | GPL-3.0-or-later throughout (ADR-0002); notices and a source link in every package; compliance review before the first public release |
 | FTEQW unavailable or weak on macOS | No live debug on Mac | Retired: the IDE runs only our own preview host, on all three OSes (ADR-0005) |
-| gpui API churn | Rework when Zed changes it | Pin versions; keep UI as a thin top layer |
+| Editor text and native feel fall short on egui | The editor looks or types worse than Zed | Shaping library with font fallback, IME through winit, AccessKit text, `muda` menus; P2-17, P2-18 and P2-23 acceptance; keep UI as a thin top layer |
 | Small audience | Slow adoption | LSP + tree-sitter + MCP reach users in their existing editors and agents |
 | Agent invents builtins or semantics | Broken mods, lost trust | Engine-target database in context; nothing is done without a clean compile and passing tests |
 | No redistributable test assets | Weak CI | Open asset set for CI; user's own data for local runs |
@@ -340,7 +340,7 @@ Phases run in order and a gate must pass before the next phase starts. Dates sta
 - [x] License: GPL-3.0-or-later for the whole project (ADR-0002).
 - [x] Product name: QuakeC Studio, kept ([ADR-0006](../adr/0006-product-name.md)).
 - [x] Default preview target: our host, always; the IDE runs no outside engine ([ADR-0005](../adr/0005-default-preview-target.md)).
-- [ ] Does a web build matter enough to choose egui?
+- [x] Web build: not required for v1, and it did not decide the UI framework ([ADR-0003](../adr/0003-ui-framework.md)).
 - [x] Conformance corpus: id 1.01, the rerelease, 14 public mods and 26 maps, each with a license read from its own files, fetched by checksum and never kept in the repo ([`corpus/manifest.toml`](../../corpus/manifest.toml)).
 
 ## Sources

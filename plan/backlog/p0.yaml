@@ -239,7 +239,6 @@ issues:
   - L7-ui
   - area:editor
   - type:spike
-  - needs:human
   size: L
   reqs:
   - UI-1
@@ -252,11 +251,11 @@ issues:
   deliverable:
   - spikes/ui-gpui and spikes/ui-egui prototypes (not shipped) opening a 50,000-line QC project, each also rendering a wgpu 3D viewport inside the UI; semantic highlighting simulated from lexer tokens since
     the semantic model comes later
-  - docs/spikes/ui-framework.md with frame-time measurements on an M-series Mac, a mid-range Windows laptop and Linux Wayland, IME and multi-cursor results, inline-diff rendering, accessibility support
+  - docs/spikes/ui-framework.md with frame-time measurements on an M-series Mac (the Windows and Linux runs moved to P2-17 by ADR-0003), IME and multi-cursor results, inline-diff rendering, accessibility support
   - docs/adr/0003-ui-framework.md, including whether a web build is required (answers OPEN-3)
   acceptance:
   - Both prototypes measured with the same scripted input and harness
-  - 'Pass threshold: p99 frame time at most 8.3 ms (120 Hz) while typing and scrolling on all three machines; IME and multi-cursor work; a wgpu viewport renders inside the window'
+  - 'Pass threshold: p99 frame time at most 8.3 ms (120 Hz) while typing and scrolling on the reference Mac; multi-cursor works and IME composition renders; a wgpu viewport renders inside the window. The Windows and Linux runs, real IME input and screen readers are P2-17, P2-18 and P2-23 acceptance (ADR-0003)'
   - If neither passes, the ADR names the fallback (e.g. custom editor widget on the closer framework) and its cost
   verify:
   - Raw benchmark data committed under docs/spikes/data/

@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: 3ada43681ada8374465d1135f35eef286ee16c8a474e95e131fede87c625d431
+design_doc_sha256: 4a0faa3ed0530eb33bd67ae7a3cda5bdc3f23156eac850ae086bc7c90a019d34
 
 sections:
   - id: GOAL
@@ -141,7 +141,7 @@ sections:
   - id: UI
     title: Editor and UI
     requirements:
-      - {id: UI-1, kind: stated, text: "Two-week gpui vs egui spike against the acceptance test on Mac, Windows and Linux; decision recorded"}
+      - {id: UI-1, kind: stated, text: "Two-week gpui vs egui spike against the acceptance test; decision recorded (ADR-0003: egui, decided on the Mac run, with the Windows and Linux runs in P2-17 acceptance)"}
       - {id: UI-2, kind: stated, text: "Layout: toolbar (Play, Pause, Step, Restart map); Project and Entities left; editor and game centre; Properties and agent right; Problems, Console, Debugger bottom"}
       - {id: UI-3, kind: stated, text: "Play loop: Play launches the preview host; save hot-reloads; clicking an entity selects it everywhere; Pause freezes for inspection"}
       - {id: UI-4, kind: stated, text: "Code editor: semantic highlighting, multi-cursor, IME, large files, inline diff rendering"}
