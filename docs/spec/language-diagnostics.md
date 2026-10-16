@@ -188,6 +188,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.15** `W0401` "exceeds a limit of id's qcc: LIMIT": the program needs more of one
   of `qcc`'s tables than it has (LIMIT-7.1, LIMIT-7.3), so it would not build reliably with
   id's `qcc`. This compiler is not bound by those limits.
+- **QCD-7.16** `W0402` "NAME differs in case from the file it opens, STORED": a list entry,
+  `#include` or `#includelist` entry opened a file whose stored name differs in case from the
+  name, so a case-sensitive file system would not open it (PRJ-7.2).
 
 ## QCD-8 Preprocessor errors
 

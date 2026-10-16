@@ -16,8 +16,9 @@ and `qcc/cmdlib.c`, `COM_Parse` in
 `#if` are FTEQCC's, read on 2026-10-16 from `engine/qclib/qccmain.c` (`QCC_main`,
 `QCC_ContinueCompile`, `QCC_RegisterSourceFile`), `engine/qclib/qcc_pr_lex.c`
 (`QCC_PR_Precompiler`, `ParsePrecompilerIf`, `QCC_PR_FalsePreProcessorIf`,
-`QCC_FindBestInclude`, `QCC_JoinPaths`, `QCC_PR_SimpleGetToken`) and
-`engine/qclib/qcc_cmdlib.c` (`QCC_COM_Parse`) of [fte-team/fteqw](https://github.com/fte-team/fteqw)
+`QCC_FindBestInclude`, `QCC_JoinPaths`, `QCC_PR_SimpleGetToken`),
+`engine/qclib/qcc_cmdlib.c` (`QCC_COM_Parse`) and `engine/qclib/qcctui.c` (`QCC_FileSize`,
+`QCC_ReadFile`) of [fte-team/fteqw](https://github.com/fte-team/fteqw)
 at commit `f937b9d88f71fc4429db5fe56c6a98d922711b2e`, the commit QC-9 cites. FTEQCC is not a
 registered upstream ([`../porting.md`](../porting.md#upstreams)), so nothing here is ported
 from it: these statements are this project's rules, written to agree with FTEQCC on every
@@ -279,6 +280,82 @@ The unit tests in `crates/qc-project` hold the small cases. The corpus was check
 | LibreQuake | `progs.src`, `__QW__` undefined | 35 | FTEQCC: 34 same |
 | Conduit, Quake Reignited | `progs.src` (list) | 44, 31 | FTEQCC: all same |
 | Nuclide | 11 root `.src` files, menu modules from `menu.dat` | 604 | FTEQCC: `hud.src` 13 and `menu-fn` 95 same, `menu-vgui` prefix of 53 (crash) |
-| FreeCS, in a Nuclide tree at `cstrike/src` | top-level `progs.src` lists 3 programs; 8 modules in all | 843 without FreeHL; 855, with no error, in the `freecs-tree` tree that adds it at `valve/src` (in CI, on macOS) | FTEQCC, without FreeHL: `hud` and the 4 rules same; `client` and `server` prefixes of 14 and 211; the 20 files of FreeHL were E0402. `shared/defs.h` includes `"animations.h"` and the file is `Animations.h`: on a case-sensitive file system (Linux) both client and server have E0111 there and 853 entries, as FTEQCC, which opens files with `fopen` (`QCC_FileSize` in `engine/qclib/qcctui.c`, called from `QCC_FindBestInclude`), would fail to open it |
+| FreeCS, in a Nuclide tree at `cstrike/src` | top-level `progs.src` lists 3 programs; 8 modules in all | 843 without FreeHL; 855, with no error, in the `freecs-tree` tree that adds it at `valve/src` (in CI, on macOS) | FTEQCC, without FreeHL: `hud` and the 4 rules same; `client` and `server` prefixes of 14 and 211; the 20 files of FreeHL were E0402. `shared/defs.h` includes `"animations.h"` and the file is `Animations.h`: on macOS client and server each have warning W0402 there (PRJ-7.2, checked in CI), and on a case-sensitive file system (Linux) both have E0111 there and 853 entries, as FTEQCC would fail to open it (PRJ-7.1) |
 | Nazi Zombies: Portable | `progs/ssqc.src`, `csqc.src`, `menu.src` with `#pragma includedir` | 113 | FTEQCC: `menu` 21 same, `csqc` and `ssqc` prefixes of 19 and 4 (crash); `hash_table.qc`, which `tools/qc-compiler-gnu.sh` generates before compiling, is E0402 |
 | Xonotic | `quakec.toml` (`corpus/projects/xonotic/`): server, client, menu `progs.inc` | 1764, 1195, 1006 | C preprocessor: all three the same order (in CI: no error) |
+
+## PRJ-7 Matching a name to a file
+
+**Source:** FTEQCC at the commit above: `QCC_FindBestInclude` in `engine/qclib/qcc_pr_lex.c`,
+which `QCC_PR_Precompiler` calls for `#include` and each `#includelist` entry and
+`QCC_ContinueCompile` (`engine/qclib/qccmain.c`) for each list entry, and `QCC_FileSize` and
+`QCC_ReadFile` in `engine/qclib/qcctui.c`, which `QCC_FinishCompile` installs as
+`funcs.funcs.parms->FileSize = QCC_FileSize;` and `funcs.funcs.parms->ReadFile =
+QCC_ReadFile;`. id's `qcc`: `main` in `qcc/qcc.c` and `LoadFile` and `SafeOpenRead` in
+`qcc/cmdlib.c` (Quake-Tools at the commit above).
+
+`QCC_FindBestInclude` joins the name to the including file's directory, then to each include
+directory, and takes the first path the file size probe accepts:
+
+```c
+if (qccprogfuncs->funcs.parms->FileSize(fullname) == -1)
+{
+	includepath++;
+	continue;
+}
+```
+
+and when none does, `QCC_Error(ERR_COULDNTOPENFILE, "Couldn't open file %s", newfile);`. The
+probe and the read are both a plain `fopen`, with no case folding and no directory listing:
+
+```c
+static int PDECL QCC_FileSize (const char *fname)
+{
+	long    length;
+	FILE *f;
+	f = fopen(fname, "rb");
+	if (!f)
+		return -1;
+```
+
+and `QCC_ReadFile` opens with `f = fopen(fname, "rb");`. id's `qcc` builds each list entry's
+path with `sprintf (filename, "%s%s", sourcedir, com_token);` and reads it with `LoadFile`,
+whose `SafeOpenRead` does `handle = open(filename,O_RDONLY | O_BINARY);` and, when that fails,
+`Error ("Error opening %s: %s",filename,strerror(errno));`. Neither compiler matches case
+itself: each leaves it to the host file system, so the same project opens on a file system
+that ignores case (macOS and Windows by default) and fails on one that does not (Linux).
+
+### Behaviour
+
+- **PRJ-7.1** A name that brings a file into the graph (a list entry, PRJ-4.3; an
+  `#include`, PRJ-5.2; an `#includelist` entry, PRJ-5.3), once resolved, is opened as the
+  host file system opens that path, as both compilers do: exactly where the file system
+  matches case, and ignoring case where it does not. The entry's path is the resolved name
+  in the name's own case. So a name that differs in case from its file opens on macOS and
+  Windows and is `E0402` or `E0111` on Linux, where FTEQCC and id's `qcc` fail too.
+- **PRJ-7.2** When a name opens a file, each path component the name spells (the components
+  it adds to the directory it was resolved against, once `.` and `..` are folded away) is
+  compared with the entry the directory holding it stores. When an entry with exactly that
+  name exists it matches; otherwise the entry whose name differs only in case is the stored
+  one. If any component differs, the graph reports warning `W0402` (QCD-7.16) at the line of
+  the entry or directive, naming the name and the stored spelling of the components it
+  spells, once per entry brought in. The stored names are read from the directory, not
+  inferred from whether the file opened, so the warning is the same on every OS where the
+  file opens: a project that would fail on a case-sensitive file system says so on macOS and
+  Windows too. The directory the name was resolved against is not compared.
+- **PRJ-7.3** Names that bring no file into the graph are opened as PRJ-7.1 says and not
+  compared: a module's `src`, the `progs.src` and `csprogs.src` of PRJ-1.2, `#pragma
+  sourcefile` entries, include directories and declared outputs.
+
+### Why not FS-3.7
+
+The game's file system matches loose files ignoring case on every OS (FS-3.7, a deliberate
+divergence): it fixes the answer of id's DOS and Windows engine builds, so that an install
+copied from a CD in upper case or a mod made on Windows runs the same everywhere, and nothing
+else reads those files. A project's source names are different: they are read by a compiler
+on the modder's own machine or a build machine, and both compilers above take that host's
+answer. Matching them ignoring case would open, with no
+error, a project that FTEQCC cannot build on Linux, and would have to pick one of two files
+whose names differ only in case, which a case-sensitive file system allows. So the graph
+agrees with the compilers on the host it runs on (PRJ-7.1) and warns where the answer would
+change on another host (PRJ-7.2).
