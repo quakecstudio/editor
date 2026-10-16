@@ -466,16 +466,16 @@ issues:
   - repo
   - area:release
   - type:chore
-  - needs:human
   size: S
   reqs:
   - QA-14
   deliverable:
-  - 'docs/releasing.md: the secret names, the protected `release` GitHub environment that holds them, who owns each credential and when it renews (an agent writes this and the signing workflow)'
-  - Justin's existing Apple Developer ID (application and installer certificates, notarization API key) and Azure code-signing credentials entered as secrets of the `release` environment under those names (Justin enters the values; agents never handle them)
+  - 'docs/releasing.md: the twelve repository-level secrets Justin entered on 2026-10-16, following vouch and quack (APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_CERTIFICATE_NAME, MACOS_KEYCHAIN_PASSWORD, APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID for codesign and notarytool; AZURE_CLIENT_ID, AZURE_TENANT_ID, TRUSTED_SIGNING_ENDPOINT, TRUSTED_SIGNING_ACCOUNT, CERTIFICATE_PROFILE for Azure Trusted Signing over OIDC), who owns each credential and when it renews; that they are repository-level by Justin''s choice, so only workflows that sign may reference them'
+  - A signing workflow modelled on vouch's reusable-build.yml (temporary keychain, codesign with the hardened runtime, notarytool with the Apple ID; azure/login over OIDC and Trusted Signing), started by hand (workflow_dispatch) and reused by P4-18; agents never handle the secret values
   acceptance:
-  - '`gh api repos/quakecstudio/editor/environments/release/secrets` lists every name in docs/releasing.md'
+  - '`gh api repos/quakecstudio/editor/actions/secrets` lists every name in docs/releasing.md'
   - A test binary is signed and notarized on macOS and signed on Windows from CI
+  - 'If the Azure login fails because no federated credential trusts quakecstudio/editor, the issue is escalated to Justin with the subject to add, not worked around'
   verify:
   - CI run link
   depends:
