@@ -297,7 +297,22 @@ mod tests {
 
     use qc_progs::{Function, ProgsFile, write};
 
-    use super::main;
+    use super::{main, parse_expected};
+    use qc_project::Code;
+
+    #[test]
+    fn an_expected_warning_names_a_warning_code() {
+        let warnings: Vec<Code> = Code::ALL.into_iter().filter(|c| !c.is_error()).collect();
+        for code in &warnings {
+            let parsed = parse_expected(&format!("{}=2", code.as_str())).unwrap();
+            assert_eq!(parsed, (*code, 2));
+        }
+        for code in Code::ALL.into_iter().filter(|c| c.is_error()) {
+            assert!(parse_expected(&format!("{}=1", code.as_str())).is_err());
+        }
+        assert!(parse_expected("no-such-code=1").is_err());
+        assert!(parse_expected(warnings.first().unwrap().as_str()).is_err());
+    }
 
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
