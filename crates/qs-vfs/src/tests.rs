@@ -212,7 +212,7 @@ fn base_directory_trailing_separator() {
     assert_eq!(lookup(&vfs, "a.txt").as_deref(), Some("id1-pak1"));
     let vfs = Vfs::new(spec_tree("../base"), &["-basedir", "../base\\"], ".").unwrap();
     assert_eq!(path_names(&vfs)[2], "../base/id1");
-    let vfs = Vfs::new(spec_tree("/"), &["-basedir", ""], ".").unwrap();
+    let vfs = Vfs::new(spec_tree(""), &["-basedir", ""], ".").unwrap();
     assert_eq!(path_names(&vfs), ["/id1/pak1.pak", "/id1/pak0.pak", "/id1"]);
     assert_eq!(lookup(&vfs, "b.txt").as_deref(), Some("id1-loose-b"));
 }
