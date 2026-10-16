@@ -94,7 +94,7 @@ static void flush_out(void) {
 }
 
 static void end_record(void) {
-    if (out.used >= (1u << 20))
+    if (out.used >= ((size_t)1 << 20))
         flush_out();
 }
 
