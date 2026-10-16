@@ -233,7 +233,14 @@ jobs:
         with:
           shared-key: xtask-ci-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo xtask ci
+      # Format, Clippy, Unit Tests (linux) and cargo-deny run these steps of
+      # cargo xtask ci with the same command, so this job skips them and each
+      # runs once (docs/ci.md). A run on main skips Format and cargo-deny, so
+      # there this job runs fmt and deny itself. make ci runs every step.
+      - name: cargo xtask ci, less the steps other jobs run
+        env:
+          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,test' || 'fmt,clippy,test,deny' }}
+        run: cargo xtask ci --skip "$SKIP"
 
   deny:
     name: cargo-deny
@@ -246,9 +253,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      # The cargo-deny version and command of the deny step of cargo xtask ci,
+      # which the cargo xtask ci job skips because this job runs it.
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          command: check advisories bans licenses sources
+          tool: cargo-deny@0.20.2
+      - run: cargo deny --locked --all-features check advisories bans licenses sources
 
   dependency-review:
     name: Dependency Review

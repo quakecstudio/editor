@@ -2,9 +2,11 @@
 
 //! `cargo xtask ci`: every check a change must pass before it merges (QA-1).
 //!
-//! `make ci` and CI both run this command, so a local run is the same as CI.
-//! Every step runs even after one fails, so one run reports every failure; the
-//! command fails if any step failed.
+//! `make ci` runs every step. CI runs it as `cargo xtask ci --skip <names>`,
+//! leaving out the steps another required job runs with the same command, so
+//! each runs once per CI run (`docs/ci.md`). Every step that runs does so even
+//! after one fails, so one run reports every failure; the command fails if any
+//! step failed.
 //!
 //! The plan checks (`plan/check.py` and its tests, P0-05) need `python3` with
 //! PyYAML. The cached-spec check (`scripts/refresh-specs.sh --verify`, P0-26)
@@ -21,15 +23,17 @@ pub(crate) enum Step {
     Cargo(&'static [&'static str]),
     /// An xtask check, run in this process.
     Xtask(&'static str),
-    /// Another program and its arguments, run from the workspace root.
-    Program(&'static str, &'static [&'static str]),
+    /// Another program and its arguments, run from the workspace root, after
+    /// the name `--skip` knows the step by.
+    Program(&'static str, &'static str, &'static [&'static str]),
 }
 
 /// The steps, cheapest first.
 pub(crate) const STEPS: [Step; 15] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
-    Step::Program("python3", &["plan/check.py"]),
+    Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
+        "plan-tests",
         "python3",
         &[
             "-m",
@@ -41,7 +45,7 @@ pub(crate) const STEPS: [Step; 15] = [
             "test_*.py",
         ],
     ),
-    Step::Program("bash", &["scripts/refresh-specs.sh", "--verify"]),
+    Step::Program("specs", "bash", &["scripts/refresh-specs.sh", "--verify"]),
     Step::Xtask("conventions"),
     Step::Xtask("adr"),
     Step::Xtask("layers"),
@@ -63,6 +67,7 @@ pub(crate) const STEPS: [Step; 15] = [
     Step::Cargo(&[
         "deny",
         "--locked",
+        "--all-features",
         "check",
         "advisories",
         "bans",
@@ -73,11 +78,20 @@ pub(crate) const STEPS: [Step; 15] = [
 ];
 
 impl Step {
+    /// The name `--skip` takes: the cargo subcommand, the xtask check or the
+    /// program step's name.
+    fn name(&self) -> &'static str {
+        match self {
+            Step::Cargo(args) => args.first().copied().unwrap_or_default(),
+            Step::Xtask(name) | Step::Program(name, _, _) => name,
+        }
+    }
+
     fn label(&self) -> String {
         match self {
             Step::Cargo(args) => format!("cargo {}", args.join(" ")),
             Step::Xtask(name) => format!("cargo xtask {name}"),
-            Step::Program(program, args) => format!("{program} {}", args.join(" ")),
+            Step::Program(_, program, args) => format!("{program} {}", args.join(" ")),
         }
     }
 
@@ -87,7 +101,7 @@ impl Step {
                 let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
                 self.spawn(Command::new(cargo).args(*args), root)
             }
-            Step::Program(program, args) => self.spawn(Command::new(program).args(*args), root),
+            Step::Program(_, program, args) => self.spawn(Command::new(program).args(*args), root),
             Step::Xtask(name) => match in_process_check(name) {
                 Some(check) => print_outcome(name, check(root)),
                 None => {
@@ -109,24 +123,79 @@ impl Step {
     }
 }
 
-/// Runs every step and prints a summary; returns whether all passed.
-pub(crate) fn run(root: &Path, steps: &[Step]) -> bool {
+const USAGE: &str = "usage: cargo xtask ci [--skip <step>[,<step>...]]";
+
+/// Runs `cargo xtask ci` with the arguments `args`: every step of `steps`
+/// except those `--skip` names. Returns whether every step run passed, or an
+/// error for a malformed argument or a name no step has.
+pub(crate) fn main(root: &Path, args: &[String], steps: &[Step]) -> Result<bool, String> {
+    let skip = parse_skip(args, steps)?;
+    Ok(run(root, steps, &skip))
+}
+
+/// The names of the steps `args` skips; each must name a step of `steps`.
+fn parse_skip<'a>(args: &'a [String], steps: &[Step]) -> Result<Vec<&'a str>, String> {
+    let list = match args {
+        [] => return Ok(Vec::new()),
+        [flag, list] if flag == "--skip" => list,
+        _ => return Err(USAGE.to_owned()),
+    };
+    let mut skip = Vec::new();
+    for name in list.split(',') {
+        if !steps.iter().any(|step| step.name() == name) {
+            let names: Vec<&str> = steps.iter().map(Step::name).collect();
+            return Err(format!(
+                "no step is named {name:?}; the steps are {}\n{USAGE}",
+                names.join(", ")
+            ));
+        }
+        skip.push(name);
+    }
+    Ok(skip)
+}
+
+/// What became of one step.
+enum Outcome {
+    Passed,
+    Failed,
+    Skipped,
+}
+
+/// Runs every step not named in `skip` and prints a summary; returns whether
+/// every step run passed.
+pub(crate) fn run(root: &Path, steps: &[Step], skip: &[&str]) -> bool {
+    let skipped = |step: &Step| skip.contains(&step.name());
+    let total = steps.iter().filter(|step| !skipped(step)).count();
     let mut results = Vec::new();
-    for (index, step) in steps.iter().enumerate() {
-        println!(
-            "\n==> [{}/{}] {}",
-            index.saturating_add(1),
-            steps.len(),
-            step.label()
-        );
-        results.push((step.label(), step.run(root)));
+    let mut index = 0_usize;
+    for step in steps {
+        if skipped(step) {
+            results.push((step.label(), Outcome::Skipped));
+            continue;
+        }
+        index = index.saturating_add(1);
+        println!("\n==> [{index}/{total}] {}", step.label());
+        let outcome = if step.run(root) {
+            Outcome::Passed
+        } else {
+            Outcome::Failed
+        };
+        results.push((step.label(), outcome));
     }
     println!("\n==> cargo xtask ci summary");
-    for (label, ok) in &results {
-        println!("{}  {label}", if *ok { "ok  " } else { "FAIL" });
+    let mut failed = 0_usize;
+    for (label, outcome) in &results {
+        let tag = match outcome {
+            Outcome::Passed => "ok  ",
+            Outcome::Failed => {
+                failed = failed.saturating_add(1);
+                "FAIL"
+            }
+            Outcome::Skipped => "skip",
+        };
+        println!("{tag}  {label}");
     }
-    let failed = results.iter().filter(|(_, ok)| !ok).count();
-    println!("{}", verdict(failed, results.len()));
+    println!("{}", verdict(failed, total));
     failed == 0
 }
 
@@ -157,7 +226,7 @@ mod tests {
             "cargo xtask licenses",
             "cargo xtask attribution",
             "cargo xtask contrast",
-            "cargo deny --locked check advisories bans licenses sources",
+            "cargo deny --locked --all-features check advisories bans licenses sources",
             "python3 plan/check.py",
             "python3 -m unittest discover -s plan -p test_*.py",
             "bash scripts/refresh-specs.sh --verify",
@@ -186,23 +255,146 @@ mod tests {
         let steps = [
             Step::Cargo(&["--version"]),
             Step::Xtask("layers"),
-            Step::Program("python3", &["--version"]),
+            Step::Program("python", "python3", &["--version"]),
         ];
-        assert!(run(root(), &steps));
+        assert!(run(root(), &steps, &[]));
     }
 
     #[test]
     fn one_failing_step_fails_the_run_and_the_rest_still_run() {
-        assert!(!run(root(), &[Step::Cargo(&["no-such-command-xtask-ci"])]));
-        assert!(!run(root(), &[Step::Xtask("no-such-check")]));
         assert!(!run(
             root(),
-            &[Step::Program("no-such-program-xtask-ci", &[])]
+            &[Step::Cargo(&["no-such-command-xtask-ci"])],
+            &[]
+        ));
+        assert!(!run(root(), &[Step::Xtask("no-such-check")], &[]));
+        assert!(!run(
+            root(),
+            &[Step::Program("missing", "no-such-program-xtask-ci", &[])],
+            &[]
         ));
         let steps = [Step::Xtask("no-such-check"), Step::Cargo(&["--version"])];
-        assert!(!run(root(), &steps));
+        assert!(!run(root(), &steps, &[]));
         let steps = [Step::Cargo(&["--version"]), Step::Xtask("no-such-check")];
-        assert!(!run(root(), &steps));
+        assert!(!run(root(), &steps, &[]));
+    }
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|arg| (*arg).to_owned()).collect()
+    }
+
+    #[test]
+    fn every_step_has_its_own_name() {
+        let names: Vec<&str> = STEPS.iter().map(Step::name).collect();
+        for (index, name) in names.iter().enumerate() {
+            assert!(!name.is_empty());
+            assert!(
+                !names.get(..index).unwrap_or_default().contains(name),
+                "{name}"
+            );
+        }
+        for name in [
+            "fmt",
+            "clippy",
+            "test",
+            "deny",
+            "plan",
+            "plan-tests",
+            "specs",
+        ] {
+            assert!(names.contains(&name), "{name}");
+        }
+    }
+
+    #[test]
+    fn skip_names_exactly_the_steps_it_lists() {
+        assert_eq!(parse_skip(&[], &STEPS), Ok(Vec::new()));
+        let skip = args(&["--skip", "fmt,clippy,test,deny"]);
+        let names = parse_skip(&skip, &STEPS).unwrap_or_default();
+        assert_eq!(names, ["fmt", "clippy", "test", "deny"]);
+        let skip = args(&["--skip", "clippy-fixtures"]);
+        assert_eq!(parse_skip(&skip, &STEPS), Ok(vec!["clippy-fixtures"]));
+    }
+
+    #[test]
+    fn skip_rejects_an_unknown_step_and_a_malformed_argument() {
+        for bad in [
+            &["--skip", "no-such-step"][..],
+            &["--skip", "fmt,no-such-step"],
+            &["--skip", ""],
+            &["--skip", "fmt,"],
+            &["--skip", "cargo fmt --all --check"],
+        ] {
+            let error = parse_skip(&args(bad), &STEPS).err().unwrap_or_default();
+            assert!(error.contains("no step is named"), "{bad:?}: {error}");
+            assert!(error.contains("fmt, plan, plan-tests"), "{bad:?}: {error}");
+        }
+        for bad in [
+            &["--skip"][..],
+            &["--only", "fmt"],
+            &["fmt"],
+            &["--skip", "fmt", "--skip", "test"],
+        ] {
+            assert_eq!(
+                parse_skip(&args(bad), &STEPS),
+                Err(USAGE.to_owned()),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_skipped_step_does_not_run_and_the_others_do() {
+        let steps = [Step::Cargo(&["--version"]), Step::Xtask("no-such-check")];
+        assert!(main(root(), &args(&["--skip", "no-such-check"]), &steps).unwrap_or(false));
+        assert!(!main(root(), &args(&["--skip", "--version"]), &steps).unwrap_or(true));
+        assert!(!main(root(), &[], &steps).unwrap_or(true));
+        let steps = [
+            Step::Xtask("no-such-check"),
+            Step::Program("missing", "no-such-program-xtask-ci", &[]),
+        ];
+        assert!(!main(root(), &args(&["--skip", "no-such-check"]), &steps).unwrap_or(true));
+        assert!(!main(root(), &args(&["--skip", "missing"]), &steps).unwrap_or(true));
+        let skip = args(&["--skip", "missing,no-such-check"]);
+        assert!(main(root(), &skip, &steps).unwrap_or(false));
+        assert!(main(root(), &args(&["--skip", "nothing"]), &steps).is_err());
+    }
+
+    #[test]
+    fn make_ci_runs_every_step() {
+        let makefile = std::fs::read_to_string(root().join("Makefile")).unwrap_or_default();
+        let recipe: Vec<&str> = makefile
+            .lines()
+            .skip_while(|line| !line.starts_with("ci:"))
+            .skip(1)
+            .take_while(|line| line.starts_with('\t'))
+            .collect();
+        assert_eq!(recipe, ["\t$(CARGO) xtask ci"]);
+    }
+
+    /// Every step CI's `cargo xtask ci` job skips is a `run:` line of
+    /// `ci.yml` with the step's exact command, so another job runs it.
+    #[test]
+    fn every_step_ci_skips_runs_in_another_job_with_the_same_command() {
+        let workflow =
+            std::fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap_or_default();
+        let skip_line = workflow
+            .lines()
+            .find(|line| line.trim_start().starts_with("SKIP: "))
+            .unwrap_or_default();
+        let quoted: Vec<&str> = skip_line.split('\'').skip(1).step_by(2).collect();
+        assert_eq!(
+            quoted,
+            ["refs/heads/main", "clippy,test", "fmt,clippy,test,deny"]
+        );
+        let lists = quoted.get(1..).unwrap_or_default();
+        for list in lists {
+            for name in parse_skip(&args(&["--skip", list]), &STEPS).unwrap_or_default() {
+                let step = STEPS.iter().find(|step| step.name() == name);
+                let label = step.map(Step::label).unwrap_or_default();
+                assert!(workflow.contains(&format!("run: {label}\n")), "{label}");
+            }
+        }
     }
 
     #[test]

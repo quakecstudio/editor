@@ -3,7 +3,8 @@
 //! `cargo xtask`: build automation for the workspace.
 //!
 //! - `ci`: runs every check below plus fmt, clippy, the tests and cargo-deny;
-//!   `make ci` calls it, and so does CI.
+//!   `make ci` calls it, and so does CI, with `--skip` leaving out the steps
+//!   another CI job runs.
 //! - `adr`: checks the decision records in `docs/adr/` and their index.
 //! - `conventions`: checks every config value against `docs/conventions.md`.
 //! - `clippy-fixtures`: proves the workspace lints reject the code they target.
@@ -115,13 +116,21 @@ fn run(root: &Path, args: &[String], ci_steps: &[ci::Step]) -> bool {
             }
         };
     }
+    if let Some((name, rest)) = args.split_first()
+        && name == "ci"
+    {
+        return match ci::main(root, rest, ci_steps) {
+            Ok(passed) => passed,
+            Err(error) => {
+                eprintln!("ci: {error}");
+                false
+            }
+        };
+    }
     let [command] = args else {
         eprintln!("{USAGE}");
         return false;
     };
-    if command == "ci" {
-        return ci::run(root, ci_steps);
-    }
     let Some(check) = in_process_check(command) else {
         eprintln!("unknown command {command:?}\n{USAGE}");
         return false;
@@ -253,6 +262,14 @@ mod tests {
         let root = workspace_root();
         assert!(run(&root, &args(&["ci"]), &PASSING));
         assert!(!run(&root, &args(&["ci"]), &FAILING));
+        let skip = args(&["ci", "--skip", "no-such-command-xtask-main"]);
+        assert!(run(&root, &skip, &FAILING));
+        assert!(!run(
+            &root,
+            &args(&["ci", "--skip", "no-such-step"]),
+            &PASSING
+        ));
+        assert!(!run(&root, &args(&["ci", "--no-such-flag"]), &PASSING));
     }
 
     #[test]

@@ -37,7 +37,7 @@ test-mutants: ## Run mutation testing (needs cargo-mutants)
 	$(CARGO) mutants --workspace
 
 audit: ## Check dependencies (cargo-deny), SPDX and ported-file headers, and asset attribution
-	$(CARGO) deny --locked check advisories bans licenses sources
+	$(CARGO) deny --locked --all-features check advisories bans licenses sources
 	$(CARGO) xtask licenses
 	$(CARGO) xtask attribution
 
