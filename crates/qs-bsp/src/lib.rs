@@ -678,6 +678,32 @@ fn child_ok(child: i32, nodes: usize, leaves: Option<usize>) -> bool {
     }
 }
 
+/// A vertex's texture coordinate on one axis as WinQuake's and GLQuake's x86 builds compute
+/// it: each product exact, added in the order `((x * s[0] + z * s[2]) + y * s[1]) + s[3]` at
+/// 53-bit precision, then rounded once to single precision (BSP-9.11).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "spec BSP-9.11: the sum is rounded to single precision when id's build stores it"
+)]
+fn x87_texture_coordinate(vertex: [f32; 3], vecs: [f32; 4]) -> f32 {
+    let [x, y, z] = vertex.map(f64::from);
+    let [s0, s1, s2, offset] = vecs.map(f64::from);
+    // A product of two singles has at most 48 significant bits, so a double holds it exactly.
+    let sum = x * s0 + z * s2 + y * s1 + offset;
+    sum as f32
+}
+
+/// Whether the original x86 build replaces `bound` with a coordinate when it compares `lower`
+/// with `upper`: unless `lower >= upper`, so an unordered (NaN) comparison replaces it
+/// (BSP-9.12).
+#[expect(
+    clippy::neg_cmp_op_on_partial_ord,
+    reason = "spec BSP-9.12: id's build treats an unordered comparison as less"
+)]
+fn x87_replaces(lower: f32, upper: f32) -> bool {
+    !(lower >= upper)
+}
+
 /// A `double` converted to `int` as the original x86 build does it: in range it truncates,
 /// otherwise it gives the integer indefinite value, `i32::MIN` (BSP-9.9).
 #[expect(
@@ -1053,7 +1079,8 @@ impl<'a> Bsp<'a> {
             .collect()
     }
 
-    /// id's `CalcSurfaceExtents`, in single precision (BSP-9.3, BSP-9.4, BSP-9.7).
+    /// id's `CalcSurfaceExtents` as WinQuake's and GLQuake's x86 builds run it (BSP-9.4,
+    /// BSP-9.7, BSP-9.10 to BSP-9.12).
     fn calc_surface_extents(&self, face: &mut Face, element: usize) -> Result<(), BspError> {
         let mut mins = [999_999.0_f32; 2];
         let mut maxs = [-99_999.0_f32; 2];
@@ -1068,15 +1095,14 @@ impl<'a> Bsp<'a> {
         for edge in face.firstedge..face.firstedge.saturating_add(face.numedges) {
             let vertex = self.surfedge_vertex(edge, element)?;
             for (axis, vecs) in texinfo.vecs.iter().enumerate() {
-                let value =
-                    vertex[0] * vecs[0] + vertex[1] * vecs[1] + vertex[2] * vecs[2] + vecs[3];
+                let value = x87_texture_coordinate(vertex, *vecs);
                 if let Some(min) = mins.get_mut(axis)
-                    && value < *min
+                    && x87_replaces(value, *min)
                 {
                     *min = value;
                 }
                 if let Some(max) = maxs.get_mut(axis)
-                    && value > *max
+                    && x87_replaces(*max, value)
                 {
                     *max = value;
                 }
