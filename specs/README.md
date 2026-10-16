@@ -34,8 +34,10 @@ images, examples, and draft versions. Add a draft only when an issue implements 
 | `fetched` | UTC date of the fetch that last changed the file |
 
 Every file is byte-identical to its origin, so `shasum -a 256 <path>` equals the `sha256`
-column, and a quote from the file is a quote from the origin. `.gitattributes` marks
-`specs/` as binary-safe so line-ending normalisation never changes a byte.
+column, and a quote from the file is a quote from the origin. The files carry their
+upstream's license, not ours, so `cargo xtask licenses` does not scan the files the manifest
+lists. `.gitattributes` marks `specs/` as binary-safe and the pre-commit hooks exclude it, so
+nothing rewrites a byte.
 
 ## Refreshing
 

@@ -2,8 +2,9 @@
 
 Read before adding a crate or a dependency between crates.
 
-**A crate may depend only on layers below it** (ARCH-1, design doc "Architecture"). Never
-upward.
+**A crate may depend only on crates in its own layer or a lower one** (ARCH-1, design doc
+"Architecture"). Never upward. [`docs/layers.md`](../../docs/layers.md) explains the model,
+including why crates in one layer may build on each other.
 
 | Layer | Holds | Crates (existing or planned) |
 | --- | --- | --- |
@@ -26,10 +27,9 @@ project prefix from ADR-0006 (`docs/conventions.md`, Repository layout).
 ## Enforcement
 
 - `layers.toml` maps every crate to a layer and `cargo xtask layers` fails on an upward or
-  unmapped dependency ([#2](https://github.com/quakecstudio/editor/issues/2)). A new crate is
-  added to `layers.toml` in the same PR.
-- Test-only crates (`qs-tests`) and tooling (`xtask`) are outside the layers and may depend on
-  anything; nothing shipped depends on them.
+  unmapped dependency. A new crate is added to `layers.toml` in the same PR.
+- Test-only crates (`qs-tests`, layer `tests`) and tooling (`xtask`, layer `tooling`) may depend
+  on anything; nothing may depend on them.
 
 ## What follows from it
 

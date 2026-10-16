@@ -40,7 +40,7 @@ take minutes to build; install them when a task needs them.
 
 | Task | Command |
 | --- | --- |
-| Everything CI runs | `make ci` (from [#2](https://github.com/quakecstudio/editor/issues/2); until then the commands in `CLAUDE.md`) |
+| Everything CI runs | `make ci` (`cargo xtask ci`) |
 | Format | `cargo fmt --all` |
 | Lint | `cargo clippy --locked --all-targets --all-features -- -D warnings` |
 | Tests | `cargo test --locked` |
