@@ -39,10 +39,15 @@
 //!   and runs id's QuakeC 1.01, and `oracles rerelease <dir>` compiles the
 //!   rerelease with FTEQCC. CI and `make oracles` run it; it is not part of
 //!   `ci`, which runs offline.
+//! - `map-corpus`: reads every `.map` file under map directories with `qs-map` and
+//!   checks that each writes back byte for byte.
 //! - `parse-corpus`: parses every `.qc` and `.qh` file under codebase
 //!   directories and checks the tree gives back each file; `--vanilla` fails on
 //!   any error and `--deletions` checks that recovery from each deleted token is
 //!   local.
+//! - `project-corpus`: opens codebase directories as projects with
+//!   `qc-project` and checks each module's file graph; `--progs` also checks it
+//!   against the order of the functions in a `progs.dat` id's qcc compiled.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -66,9 +71,11 @@ mod fuzz;
 mod layers;
 mod lex_corpus;
 mod licenses;
+mod map_corpus;
 mod oracles;
 mod parse_corpus;
 mod ported;
+mod project_corpus;
 mod ratchet;
 mod readiness;
 mod repo;
@@ -79,7 +86,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     parse-corpus>";
+                     map-corpus | parse-corpus | project-corpus>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -94,8 +101,10 @@ fn main() -> ExitCode {
             "corpus" => Some(corpus::main),
             "fuzz" => Some(fuzz::main),
             "lex-corpus" => Some(lex_corpus::main),
+            "map-corpus" => Some(map_corpus::main),
             "oracles" => Some(oracles::main),
             "parse-corpus" => Some(parse_corpus::main),
+            "project-corpus" => Some(project_corpus::main),
             "readiness" => Some(readiness::main),
             "ratchet" => Some(ratchet::main),
             _ => None,

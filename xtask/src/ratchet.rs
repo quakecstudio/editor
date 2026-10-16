@@ -51,16 +51,23 @@ pub(crate) struct Ratchets {
     crates: BTreeMap<String, Minimums>,
 }
 
-/// One crate's table in `ratchets.toml`.
+/// One crate's table in `ratchets.toml`: the minimums a passing readiness
+/// review recorded, or, before any review has passed, only exceptions.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Minimums {
-    /// The plan key of the readiness issue that set these numbers.
-    readiness: String,
-    lines: u64,
-    branches: u64,
-    mutation: u64,
-    spec: u64,
+    /// The plan key of the readiness issue that set these numbers; absent
+    /// with them.
+    #[serde(default)]
+    readiness: Option<String>,
+    #[serde(default)]
+    lines: Option<u64>,
+    #[serde(default)]
+    branches: Option<u64>,
+    #[serde(default)]
+    mutation: Option<u64>,
+    #[serde(default)]
+    spec: Option<u64>,
     /// Why a minimum went down; required whenever one does.
     #[serde(default)]
     reason: Option<String>,
@@ -76,12 +83,19 @@ pub(crate) struct Minimums {
 impl Minimums {
     fn minimum(&self, check: Check) -> Option<u64> {
         match check {
-            Check::Lines => Some(self.lines),
-            Check::Branches => Some(self.branches),
-            Check::Mutation => Some(self.mutation),
-            Check::Spec => Some(self.spec),
+            Check::Lines => self.lines,
+            Check::Branches => self.branches,
+            Check::Mutation => self.mutation,
+            Check::Spec => self.spec,
             Check::Flakes => None,
         }
+    }
+
+    /// Whether a review has recorded numbers: any ratcheted minimum is there.
+    fn recorded(&self) -> bool {
+        RATCHETED
+            .into_iter()
+            .any(|check| self.minimum(check).is_some())
     }
 }
 
@@ -173,14 +187,38 @@ fn layer_crates(root: &Path) -> Result<BTreeSet<String>, String> {
 pub(crate) fn validate(ratchets: &Ratchets, keys: &BTreeSet<String>) -> Vec<String> {
     let mut problems = Vec::new();
     for (name, minimums) in &ratchets.crates {
-        if !keys.contains(&minimums.readiness) {
-            problems.push(format!(
-                "{FILE}: {name}: readiness {:?} is not a readiness issue in {READINESS_PLAN}",
-                minimums.readiness
-            ));
+        if minimums.recorded() {
+            match &minimums.readiness {
+                Some(key) if keys.contains(key) => {}
+                Some(key) => problems.push(format!(
+                    "{FILE}: {name}: readiness {key:?} is not a readiness issue in {READINESS_PLAN}"
+                )),
+                None => problems.push(format!(
+                    "{FILE}: {name}: minimums need the readiness issue that set them"
+                )),
+            }
+        } else {
+            if minimums.readiness.is_some() {
+                problems.push(format!(
+                    "{FILE}: {name}: a readiness issue but no minimums; a review records both"
+                ));
+            }
+            if minimums.exceptions.is_empty() {
+                problems.push(format!(
+                    "{FILE}: {name}: a table needs the minimums of a review, or an exception"
+                ));
+            }
         }
         for check in RATCHETED {
-            let minimum = minimums.minimum(check).unwrap_or_default();
+            let Some(minimum) = minimums.minimum(check) else {
+                if minimums.recorded() {
+                    problems.push(format!(
+                        "{FILE}: {name}: {} has no minimum; a review records all four",
+                        check.name()
+                    ));
+                }
+                continue;
+            };
             if minimum > 100 {
                 problems.push(format!(
                     "{FILE}: {name}: {} is {minimum}, over 100",
@@ -231,11 +269,14 @@ pub(crate) fn check_change(
         if after == before {
             continue;
         }
-        if after.readiness == before.readiness {
+        // A table of exceptions alone, before any review, changes with a new
+        // reason (below); recorded minimums change only with a new review.
+        let reviewed = before.recorded() || after.recorded();
+        if reviewed && after.readiness == before.readiness {
             problems.push(format!(
                 "{name}: minimums changed without naming the readiness issue that set them \
                  (readiness is still {})",
-                after.readiness
+                after.readiness.as_deref().unwrap_or("absent")
             ));
         }
         let lowered: Vec<&str> = RATCHETED
@@ -369,9 +410,21 @@ fn evaluate(
                 .collect()
         };
         if required.is_empty() {
-            report
-                .problems
-                .push(format!("{name} {}: not measured", check.name()));
+            // A check no tool can measure for the crate (the oracles' C has no
+            // mutation tool) passes unmeasured only under an exception that
+            // leaves no minimum to hold.
+            let waiver = minimums
+                .filter(|minimums| minimums.minimum(check).unwrap_or_default() == 0)
+                .and_then(|minimums| minimums.exceptions.get(&check));
+            match waiver {
+                Some(reason) => report.passed.push(format!(
+                    "{name} {}: not measured, waived by an exception: {reason}",
+                    check.name()
+                )),
+                None => report
+                    .problems
+                    .push(format!("{name} {}: not measured", check.name())),
+            }
         }
         for os in required {
             match scores.and_then(|scores| scores.get(&os)) {

@@ -120,7 +120,11 @@ fn every_fixture_is_a_standalone_crate_with_a_readme() {
     ] {
         let path = format!("{FIXTURES}/{dir}");
         let target = resolve(&root(), &path).unwrap();
-        assert!(target.standalone, "{path} must be its own workspace");
+        assert_eq!(
+            target.kind,
+            Kind::Standalone,
+            "{path} must be its own workspace"
+        );
         assert!(target.name.starts_with("fx-"), "{}", target.name);
         assert!(
             target.dir.join("Cargo.lock").is_file(),
@@ -134,7 +138,7 @@ fn every_fixture_is_a_standalone_crate_with_a_readme() {
 #[test]
 fn a_real_crate_is_measured_for_spec_citations() {
     let target = resolve(&root(), "qs-porting-example").unwrap();
-    assert!(!target.standalone);
+    assert_eq!(target.kind, Kind::Member);
     let score = spec(&target.dir).unwrap();
     assert_eq!(score, self::score(7, 7));
 }
@@ -358,7 +362,7 @@ fn crates_resolve_by_name_or_by_directory_inside_the_repository() {
     let by_name = resolve(&root, "qs-paths").unwrap();
     assert_eq!(by_dir.name, "qs-paths");
     assert_eq!(by_dir.dir, by_name.dir.canonicalize().unwrap());
-    assert!(!by_dir.standalone);
+    assert_eq!(by_dir.kind, Kind::Member);
 }
 
 #[test]
@@ -391,4 +395,94 @@ fn measuring_writes_a_measurement_file() {
         !missing.exists(),
         "nothing is written when a crate cannot be measured"
     );
+}
+
+#[test]
+fn the_oracles_resolve_to_the_c_tools_layer() {
+    for name in ["oracles", "oracles/"] {
+        let target = resolve(&root(), name).unwrap();
+        assert_eq!(target.name, ORACLES);
+        assert_eq!(target.kind, Kind::Oracles);
+        assert_eq!(target.dir, root().join("oracles"));
+    }
+}
+
+#[test]
+fn the_oracles_c_is_every_source_and_header_under_oracles() {
+    let sources = c_sources(&root().join(ORACLES)).unwrap();
+    let names: Vec<String> = sources
+        .iter()
+        .map(|path| {
+            path.strip_prefix(root())
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    for want in [
+        "oracles/vm/host.c",
+        "oracles/vm/trace.c",
+        "oracles/vm/scenario.c",
+        "oracles/vm/oracle.h",
+        "oracles/qcc/compat.h",
+    ] {
+        assert!(names.iter().any(|name| name == want), "{want}: {names:?}");
+    }
+    assert!(
+        names
+            .iter()
+            .all(|name| name.ends_with(".c") || name.ends_with(".h")),
+        "{names:?}"
+    );
+    let mut sorted = names.clone();
+    sorted.sort();
+    assert_eq!(names, sorted);
+    assert!(c_sources(&root().join("no-such-dir")).is_err());
+}
+
+#[test]
+fn the_oracles_have_no_mutation_score_and_say_why() {
+    let target = resolve(&root(), ORACLES).unwrap();
+    assert_eq!(measure(&root(), Check::Mutation, &target).unwrap(), None);
+    let out = root()
+        .join("target")
+        .join("xtask-tests")
+        .join("readiness-oracles")
+        .join("mutation.json");
+    let mut command = args("mutation --os linux --out");
+    command.push(out.display().to_string());
+    command.push(ORACLES.to_owned());
+    assert!(main(&root(), &command).unwrap());
+    let measurement: Measurement =
+        serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    assert!(measurement.crates.is_empty(), "{measurement:?}");
+    assert!(NO_C_MUTATION.contains("ratchets.toml"));
+}
+
+#[test]
+fn the_oracles_spec_sections_come_from_their_readme() {
+    let target = resolve(&root(), ORACLES).unwrap();
+    let readme = fs::read_to_string(target.dir.join("README.md")).unwrap();
+    let sections = spec_sections(&readme).unwrap();
+    for want in ["DIFF-1", "DIFF-8", "DIFF-10", "TRACE-1", "TRACE-5"] {
+        assert!(sections.iter().any(|s| s == want), "{want}: {sections:?}");
+    }
+    for compared_by_the_runner in ["DIFF-9", "DIFF-11"] {
+        assert!(
+            !sections.iter().any(|s| s == compared_by_the_runner),
+            "{sections:?}"
+        );
+    }
+    let score = measure(&root(), Check::Spec, &target).unwrap().unwrap();
+    assert!(score.total > 0, "{score:?}");
+}
+
+#[test]
+fn citations_are_read_from_xtask_too() {
+    assert_eq!(CITING_TREES, ["crates", "apps", "xtask"]);
+    let mut cited = BTreeSet::new();
+    for file in rust_files(&root().join("xtask").join("src")).unwrap() {
+        cited.extend(citations(&fs::read_to_string(file).unwrap()));
+    }
+    assert!(cited.contains("PROGS-22.1"), "{cited:?}");
 }

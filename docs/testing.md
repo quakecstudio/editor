@@ -87,8 +87,14 @@ Running the workflow on the fixture directories shows the same failures with the
 - **L7 UI and apps:** coverage applies to non-rendering code; every command and panel has
   an offscreen snapshot test; accessibility checks run in CI.
 - **C tools (`oracles/`, including id's engine as the engine oracle):** the same bar. The
-  preview host is Rust, `apps/preview-host` in this repository ([ADR-0004](adr/0004-preview-host-base.md)),
-  and is covered by the L4 and apps notes above.
+  workflow measures the C when `oracles` is among its crates (`gh workflow run readiness.yml
+  -f crates="oracles xtask"`, with `xtask` for the Rust that drives the oracles): clang's
+  source-based coverage of our C under every vector and the id 1.01 scenarios, the spec
+  sections [`oracles/README.md`](../oracles/README.md) lists, and `cargo xtask oracles` 20
+  times on each OS. No mutation tool of the bar runs on C; that exception, with its reason,
+  is in `oracles/README.md` and `ratchets.toml`. The preview host is Rust,
+  `apps/preview-host` in this repository ([ADR-0004](adr/0004-preview-host-base.md)), and is
+  covered by the L4 and apps notes above.
 
 ## Readiness report
 

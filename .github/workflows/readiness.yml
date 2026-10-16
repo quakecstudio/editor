@@ -2,7 +2,8 @@
 # layer: line and branch coverage, the full mutation score, spec citations and
 # 20 test runs on each OS, then judges them against the bar and ratchets.toml
 # with `cargo xtask ratchet`. A readiness reviewer runs it on demand and links
-# the run in the report (docs/readiness/_template.md).
+# the run in the report (docs/readiness/_template.md). `oracles` in the list
+# measures the C tools layer's C (oracles/README.md, Readiness).
 #
 # It never runs on pull requests, in the merge queue or on a schedule, and it is
 # not a required check (docs/ci.md). Pull-request CI runs only the xtask unit
@@ -52,6 +53,23 @@ jobs:
         with:
           shared-key: readiness-coverage-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The oracles' C (oracles/README.md, Readiness) is measured with clang's
+      # source-based coverage, read by the llvm-profdata and llvm-cov of the
+      # same LLVM, on every vector and on the id 1.01 scenarios.
+      - name: Set up clang and id 1.01 for the oracles
+        if: ${{ contains(format(' {0} ', inputs.crates), ' oracles ') }}
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 llvm-18
+          {
+            echo "CC=clang-18"
+            echo "LLVM_PROFDATA=llvm-profdata-18"
+            echo "LLVM_COV=llvm-cov-18"
+            echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets"
+          } >> "$GITHUB_ENV"
+          QS_TEST_ASSETS="$RUNNER_TEMP_DIR/test-assets" cargo xtask corpus fetch id-1.01
       - name: Measure line coverage
         run: |
           read -ra crates <<< "$CRATES"

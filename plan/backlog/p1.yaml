@@ -307,6 +307,7 @@ issues:
   - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
   - At least 90% of statements executed per corpus codebase, measured from traces
   - A deliberate opcode bug is caught with the right statement reported
+  - The runner's scenario reader gives every vector in docs/spec/vectors/scenario/numbers.txt its result (DIFF-2.7 to DIFF-2.9)
   verify:
   - Mutation test in CI
 - key: P1-14
@@ -584,6 +585,223 @@ issues:
   - Every row of those tables is checked in CI on the three OSes, the x86-only rows on an x86-64 host, and a row that disagrees fails the run or is a divergence the spec lists (BUILTIN-6.9 for C library differences)
   verify:
   - cargo xtask oracles in CI on all three OSes
+- key: P1-33
+  title: Check the project graph's file order against the pinned FTEQCC
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-3
+  - COMP-8
+  depends:
+  - P1-23
+  - P1-26
+  deliverable:
+  - 'cargo xtask project-corpus gains a check that runs the pinned FTEQCC from cargo xtask oracles on each module of a codebase and compares the files it reports compiling and including (list and #includelist entries) with the module''s graph from qc-project, in order'
+  - CI runs it on every corpus codebase with a progs.src that the oracle job fetches
+  acceptance:
+  - Every module's list and #includelist entries match FTEQCC's in order, or the difference is a statement in docs/spec/project-file.md that the check lists as expected (the recorded local run in PRJ-6's test vectors stopped early on compile errors and on crashes of the pinned build on arm64 macOS, whose cause is part of this issue)
+  verify:
+  - cargo xtask project-corpus in CI
+- key: P1-34
+  title: Open FreeCS and Xonotic whole in the corpus project check
+  labels:
+  - repo
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-3
+  - FND-9
+  depends:
+  - P1-23
+  deliverable:
+  - 'corpus/manifest.toml: FreeHL (the valve game FreeCS builds against, files under valve/src), with its license read from its own files, and a way to lay out Nuclide, FreeHL and FreeCS as the tree FreeCS''s progs.src files expect'
+  - 'CI writes both codebases to the asset cache and runs cargo xtask project-corpus on them, Xonotic through a quakec.toml giving the defines of its qcsrc/tools/qcc.sh'
+  acceptance:
+  - cargo xtask project-corpus reports no error for FreeCS and Xonotic in CI
+  verify:
+  - cargo xtask project-corpus in CI
+- key: P1-35
+  title: Measure the oracles against the readiness bar
+  labels:
+  - c-tools
+  - area:process
+  - type:test
+  size: M
+  reqs:
+  - TEST-1
+  - TEST-2
+  - TEST-3
+  - TEST-5
+  - TEST-7
+  - TEST-10
+  depends:
+  - P1-11
+  - P1-26
+  - P1-32
+  deliverable:
+  - 'The Readiness workflow (.github/workflows/readiness.yml, cargo xtask readiness) measures the C tools layer: line and branch coverage of our C (oracles/vm/*.c) under every vector and the id 1.01 scenarios, built with source-based coverage; cargo xtask oracles run 20 times on each OS; and the spec statements oracles/README.md lists as implemented, cited by tests'
+  - 'Tests that bring our C to the bar: every refusal of DIFF-2.9 and every exit status of oracles/README.md (2 refused, 3 cannot write, 4 crashed), run through the built oracle in CI; tests citing the DIFF and TRACE-5 statements the oracle implements, which are all in docs/spec/coverage-baseline.tsv today'
+  - 'Unit tests for the Rust driver in xtask/src/oracles.rs and xtask/src/oracles/ (oracles.rs, compile.rs and id101.rs had no unit-test coverage, vectors.rs 47%, rerelease.rs 56% on 2026-10-16), and the three xtask tests that need a git checkout (attribution, licenses, corpus verify) made to pass in the copy cargo mutants tests, so the xtask mutation run can start'
+  - 'A fuzz target for each parser of the layer that reads a file: the scenario file (DIFF-2), the progs loader and init file of vm-oracle, and the vector parser in xtask/src/oracles/vectors.rs; or an exception with its reason in oracles/README.md and ratchets.toml'
+  - Any part of the bar that cannot apply to C (for example mutation testing) recorded as an exception with its reason in oracles/README.md and under exceptions in ratchets.toml
+  acceptance:
+  - 'A Readiness run on main reports every check for the C tools layer: lines at least 90%, branches at least 80%, mutation at least 90% or an exception, spec citations 100%, 20 of 20 runs of cargo xtask oracles on Linux, macOS and Windows'
+  - 'On 2026-10-16 the readiness review (docs/readiness/p1-rg.md) measured our C at 80.6% of lines and 64.5% of branches locally, the xtask crate at 71.6% of lines in CI, and the xtask mutation run failed before testing any mutant; each is at or above the bar'
+  verify:
+  - The Readiness workflow run linked in the PR
+- key: P1-36
+  title: vm-oracle accepts malformed scenario and init files
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - FND-8
+  - LIC-3
+  depends:
+  - P1-11
+  - P1-37
+  deliverable:
+  - 'oracles/vm/scenario.c: a scenario with a NUL byte is read as DIFF-2.1 says (lines of bytes), so an unknown key after it is refused; integers are read as DIFF-2.7 says, so `frames 0000000000000000001` (19 digits, value 1) is accepted rather than refused'
+  - 'oracles/vm/host.c: the init file of vector mode (oracles/README.md) refuses a value that is not the number its line takes, instead of reading it with atoi or strtoul: `global 100x bits zz` and `seed abc` run today with slot 100 and value 0, and `bits 1ffffffff` is truncated to 32 bits'
+  - A regression test for each, run through the built oracle in CI
+  acceptance:
+  - 'Each input above gets the exit status DIFF-2.9 and oracles/README.md give it: 2 for a refused file, 0 for the accepted integer; the review''s probe (docs/readiness/p1-rg.md) reproduces each case'
+  verify:
+  - cargo xtask oracles in CI on all three OSes
+- key: P1-37
+  title: Say which number texts a differential scenario accepts
+  labels:
+  - c-tools
+  - area:vm
+  - type:spec
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'docs/spec/differential.md: a statement (withdrawing and replacing DIFF-2.3 as docs/spec/README.md says) fixing the syntax of the `frametime`, `model` and `input` numbers. DIFF-2.3 says only that they are rounded once from the decimal text; vm-oracle accepts `.1` and `5.` and refuses `+0.1`, `inf` and `nan` (scenario.c, decimal_syntax), while Rust''s f64 and f32 parsing, which the P1-13 runner would use, accepts all of them'
+  - Test vectors for each accepted and refused form, and vm-oracle changed in the same PR if it disagrees
+  acceptance:
+  - The oracle's refusals match the statement on every form in its vectors
+  verify:
+  - Implementer review from both sides (the oracle and the P1-13 runner)
+- key: P1-38
+  title: The vector checker loosens malformed after and error lines
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'xtask/src/oracles/vectors.rs (parse): an `after:` line whose numbers do not parse, or that lacks depth or localstack, is an error, not a vector with no after check (`after: depth=x localstack=2` parses today and checks nothing); an `error` line other than `error` and `error "<message>"` is an error, not one that accepts any message (`error "open`, `errors`, and `error "a # b"`, which the comment rule cuts to `error "a `, all accept any message today)'
+  - The same rules in crates/qs-tests/tests/it/spec_vectors.rs, which today accepts `error "open`
+  - 'Regression tests: refuses_a_malformed_after_line and refuses_a_malformed_error_line, as written in the readiness report, docs/readiness/p1-rg.md'
+  acceptance:
+  - Every vector file still parses, and each malformed line above is an error in both parsers
+  verify:
+  - cargo test -p xtask; cargo test -p qs-tests
+- key: P1-39
+  title: The oracle build copies a comment or declaration as a function
+  labels:
+  - c-tools
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - LIC-3
+  - LIC-7
+  depends:
+  - P1-11
+  deliverable:
+  - 'xtask/src/oracles/extract.rs (function): a column-0 line inside a block comment that names the function before `(` (id''s comment headers often show a call, such as `setorigin (entity, origin)`) is not taken as the definition''s start, and neither is a declaration followed by a comment (`void f (void); // declared`). Today both start the copy, which then runs on into the next function body'
+  - 'Regression tests: skips_a_comment_line_naming_the_function and skips_a_declaration_with_a_trailing_comment, as written in the readiness report, docs/readiness/p1-rg.md'
+  acceptance:
+  - Both tests pass and cargo xtask oracles builds the same vm-oracle from the pinned sources
+  verify:
+  - cargo test -p xtask; cargo xtask oracles in CI
+- key: P1-40
+  title: Pin the precision of face texture extents to id's original x86 build
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P5-02
+  deliverable:
+  - 'docs/spec/bsp.md: a statement saying in what precision id''s original x86 builds of WinQuake and GLQuake evaluate the texture coordinates in CalcSurfaceExtents (BSP-9.3 says single precision; an x87 build may keep wider intermediates), with the evidence, and BSP-9.3 withdrawn and replaced if they differ. P5-02 found that id''s code built on arm64 with fused multiply-adds gives 131 faces of nine LibreQuake maps an extent one 16-texel step apart from single precision, which changes their lightmap size'
+  - crates/qs-bsp follows the statement, with a test that cites it
+  acceptance:
+  - The statement quotes its evidence (the original build's code generation, or a run of id's loader built as the original was) and qs-bsp agrees with id's loader so built on the LibreQuake lite BSPs
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-41
+  title: Store face texturemins and extents in 16 bits as id's loader does
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-40
+  deliverable:
+  - 'docs/spec/bsp.md: a statement that CalcSurfaceExtents stores texturemins and extents in the short fields of msurface_t (WinQuake/model.h, gl_model.h), so a value outside -32768 to 32767 keeps its low 16 bits before the check of BSP-9.4 and the lightmap size of BSP-9.7 (WINQUAKE.EXE compares the 16-bit value: cmpw $0x100), with BSP-9.9 withdrawn and replaced where it says the results wrap as 32-bit integers; found while doing P1-40'
+  - crates/qs-bsp keeps the 16-bit values, with a test that cites the statement and a BSP vector whose extent is 65536 + 16
+  acceptance:
+  - A face with an extent of 65552 and no TEX_SPECIAL loads with extent 16, as id's loader built for x86 gives, recorded in the vectors' README
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-42
+  title: Define the lightmap of a face whose stored extent is negative
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-41
+  deliverable:
+  - 'docs/spec/bsp.md: a statement saying what lightmap a face has when its stored extent is negative (BSP-9.14 lets an extent of 32784, stored as -32752, pass BSP-9.4, and BSP-9.7 then gives smax = (extent >> 4) + 1 <= 0), from what id''s WinQuake and GLQuake renderers do with it (WinQuake/r_surf.c, gl_rsurf.c, GL_CreateSurfaceLightmap), and how BSP-10.2 checks its samples; found while doing P1-41'
+  - crates/qs-bsp follows the statement (Face::lightmap_size, check_light, face_samples), with a test that cites it and the vector extents-32784
+  acceptance:
+  - The statement quotes id's renderer code for a negative smax, and qs-bsp's lightmap size and sample check for the vector extents-32784 follow it, recorded in the vectors' README
+  verify:
+  - cargo test -p qs-bsp
+- key: P1-43
+  title: Record GLQuake's face extent limit of 512 beside WinQuake's 256
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-41
+  deliverable:
+  - 'docs/spec/bsp.md: a statement that GLQuake''s CalcSurfaceExtents (WinQuake/gl_model.c: s->extents[i] > 512 /* 256 */, GLQUAKE.EXE cmpw $0x200) accepts extents up to 512 where WinQuake''s (BSP-9.4) accepts 256, and which limit qs-bsp applies or how a caller chooses; found while doing P1-41'
+  - crates/qs-bsp follows the statement, with a test that cites it and a vector whose extent is 272 to 512
+  acceptance:
+  - A face with an extent of 512 and no TEX_SPECIAL gives the result the statement names for each engine, recorded in the vectors' README from id's loaders built from the pinned commit
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -628,6 +846,17 @@ issues:
   - P1-30
   - P1-31
   - P1-32
+  - P1-33
+  - P1-34
+  - P1-35
+  - P1-36
+  - P1-37
+  - P1-38
+  - P1-39
+  - P1-40
+  - P1-41
+  - P1-42
+  - P1-43
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -673,6 +902,7 @@ issues:
   - Entity-lump writing for BSPs and .ent override files, for shipped maps with no .map source
   acceptance:
   - Every corpus .map round-trips with only formatting changes allowed by the spec; every corpus BSP and id1 MDL loads
+  - Every vector in docs/spec/vectors/bsp, mdl and map gives the result its README records, and every BSP, MAP and MDL statement leaves docs/spec/coverage-baseline.tsv
   - Fuzzed readers never panic
   verify:
   - cargo test; fuzz targets
@@ -713,15 +943,16 @@ issues:
   - P1-18
   - P1-19
   - P1-29
+  - P5-02
   deliverable:
-  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model it reads (P1-29). No game data is committed (LIC-4)'
+  - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model (P1-29), and every alias model and BSP with its .lit and entity text (P5-02), it reads. No game data is committed (LIC-4)'
   - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
   acceptance:
   - Every run ends with `read N files, ...` and prints no `failed:` lines
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
   - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
-  - Every run's `decoded` line counts every `.spr` and `.wav` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3)
+  - Every run's `decoded` line counts every `.spr`, `.wav`, `.mdl` and `.bsp` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3, MDL-1 to MDL-5, BSP-1 to BSP-18, MAP-1, MAP-2)
   - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
-  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-wav or qs-install and fixed before this issue closes
+  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-bsp, qs-map, qs-wav or qs-install and fixed before this issue closes
   verify:
   - Walk output for all six runs and find output for the three OSes attached to the issue

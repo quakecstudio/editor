@@ -28,7 +28,8 @@ id's server does, the section cites the function, in
 [`vm.md`](vm.md); edicts, map spawning and the engine's entry points are
 [`edicts.md`](edicts.md); the builtins are [`builtins.md`](builtins.md); limits are
 [`limits.md`](limits.md). This page does not repeat them. Every statement in this file is in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-builtins` or the runner cites it.
+[`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-builtins` or the runner cites it,
+except DIFF-2.7 to DIFF-2.9, whose vectors `crates/qs-tests` checks.
 
 "The clock" is the server clock `sv.time`, a C `double`; "(f32)x" is `x` rounded to the
 nearest `f32`, as C's assignment of a `double` to a `float` rounds it.
@@ -53,8 +54,9 @@ nearest `f32`, as C's assignment of a `double` to a `float` rounds it.
   say the mock does what an id function does, the oracle may compile that function from the
   pinned commit (for example `ED_Alloc`, `ED_Free`, `ED_LoadFromFile`, `SV_RunThink` or a
   class pure `PF_` function), and QuakeC Studio uses its own port. Where those specs fix an
-  answer that id's C leaves undefined or platform-dependent (BUILTIN-2.3, BUILTIN-2.5,
-  BUILTIN-7.5, BUILTIN-7.6, BUILTIN-8.3, BUILTIN-12.6, BUILTIN-16.3, EDICT-8.3), both mocks
+  answer that id's C leaves undefined or platform-dependent (BUILTIN-2.5, BUILTIN-2.7,
+  BUILTIN-2.10, BUILTIN-7.5, BUILTIN-7.6, BUILTIN-7.7, BUILTIN-8.3, BUILTIN-12.6,
+  BUILTIN-16.3, EDICT-8.3), both mocks
   implement the fixed answer, so for that case the oracle does not run id's code. The float to
   integer conversion of BUILTIN-2.2 is the exception: its fixed answer is what id's code gives
   on x86, so the oracle may use C's conversion. `pr_exec.c` is never changed, so the VM's own
@@ -100,12 +102,10 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
   | `input` | frame, edict, field, values | | A client input (DIFF-4.3) |
 
   `model`, `cvar` and `input` may appear any number of times; every other key at most once.
-- **DIFF-2.3** Integers are decimal digits with an optional leading `-`. `frametime` is read
-  to the nearest `double`, and the numbers of `model` and `input` to the nearest `f32`, each
-  rounded once from the decimal text (as C's `strtod` and `strtof` and Rust's `f64` and `f32`
-  parsing do). A scenario with an unknown key, a missing or extra argument, a value that is
-  malformed or out of range, a repeated key that may appear once, a model name repeated, or no
-  `progs`, is refused before anything runs, and no trace is written.
+- **DIFF-2.3** **Withdrawn** 2026-10-16: it did not say which texts are numbers, so the two
+  runners could read one scenario differently: C's `strtod` and Rust's `f64` parsing both
+  accept `+0.1` and `inf`, and `strtod` accepts hexadecimal; replaced by DIFF-2.7 (integers),
+  DIFF-2.8 (numbers) and DIFF-2.9 (refusal).
 - **DIFF-2.4** The mock's settings are `skill`, `deathmatch`, `coop` and `teamplay`, with the
   texts `1`, `0`, `0` and `0`, and each name a `cvar` line gives; a `cvar` line for one of the
   four replaces its text, and a later line for a name replaces an earlier one. A setting's
@@ -118,6 +118,25 @@ The runner of P1-13 writes scenarios for each corpus codebase; both runners read
 - **DIFF-2.6** An `input` line is `input <frame> <edict> <field> <values>`: `<frame>` from 1 to
   `frames`; `<edict>` from 1 to `clients`; `<field>` one of `button0` and `button2` with one
   value, 0 or 1, `impulse` with one integer from 1 to 255, or `v_angle` with three numbers.
+- **DIFF-2.7** An integer (the arguments DIFF-2.2 and DIFF-2.6 call integers, and the values of
+  `button0`, `button2` and `impulse`) is an optional `-` followed by one or more of the digits
+  `0` to `9`, and nothing else: no `+`, no `.`, no exponent. Its value is the digits read in
+  base 10, leading zeros included, and a value outside the argument's range is refused.
+- **DIFF-2.8** A number (the argument of `frametime`, the six of `model` and the three of
+  `v_angle`) is, in order: an optional `-`; one or more digits, with at most one `.` before,
+  among or after them; and optionally an exponent, `e` or `E`, then an optional `+` or `-`,
+  then one or more digits. Nothing else is a number: not a leading `+`, `inf`, `infinity` or
+  `nan` in any case, hexadecimal, or a `.` without a digit. `frametime` is the `double`
+  nearest the exact decimal value of the text, and a `model` or `v_angle` number the `f32`
+  nearest it, ties to even, each rounded once (never through `double` on the way to `f32`); a
+  value whose magnitude rounds below the smallest subnormal is a zero with the text's sign.
+  A `model` or `v_angle` number whose nearest `f32` is infinite is refused, so every number a
+  scenario gives is finite; `frametime` is refused unless its `double` is greater than 0 and
+  at most 1.
+- **DIFF-2.9** A scenario with an unknown key, a missing or extra argument, a value that is
+  not an integer or a number as DIFF-2.7 and DIFF-2.8 say or is out of range, a repeated key
+  that may appear once, a model name repeated, or no `progs`, is refused before anything runs,
+  and no trace is written.
 
 ### Constants
 
@@ -321,7 +340,7 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
   and never drops the client. No output, console text included, is compared.
 - **DIFF-6.6** The errors that builtins.md fixes where id's C is undefined are runtime errors
   (VM-19.4) with these messages in the mock, so both mocks write the same error record:
-  `invalid entity` (BUILTIN-2.3), `invalid string` (BUILTIN-2.5), `invalid field`
+  `invalid entity` (BUILTIN-2.7), `invalid string` (BUILTIN-2.5), `invalid field`
   (BUILTIN-8.3) and `invalid lightstyle` (BUILTIN-12.6).
 - **DIFF-6.7** No mock builtin starts a nested run: `walkmove` and `movetogoal` touch nothing
   (DIFF-7.7, DIFF-7.8). `traceon` and `traceoff` change only the trace flag (BUILTIN-16.4),
@@ -344,7 +363,8 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
 The class world builtins (BUILTIN-4.4) answer as if the map were empty space with a floor
 just under every entity: no trace hits anything, every point is visible from every other,
 and every step succeeds. Each reads its entity arguments, and `self` where id's reads it,
-with BUILTIN-2.3's check, except that `checkclient` does not read `self` (DIFF-7.3).
+with BUILTIN-2.7's check (BUILTIN-2.9), except that `checkclient` does not read `self`
+(DIFF-7.3).
 
 ### Behaviour
 
@@ -510,6 +530,50 @@ corpus codebase executed; this is how the runner measures it.
 
 ## Test vectors
 
+### Scenario numbers
+
+id's code is silent here: the scenario format is this project's, so DIFF-2.7 and DIFF-2.8 are
+our decision. They take the decimal forms that C's `strtod` and `strtof` and Rust's `f64`
+and `f32` parsing read alike, and refuse what only one of them reads (hexadecimal, for
+`strtod`) or what no runner should need: a leading `+`, `inf` and `nan`, and a value that
+rounds to an infinite `f32`, so that every number in a trace's inputs is finite. `.1` and `5.`
+stay numbers because both libraries read them the same way and the oracle has accepted them
+since P1-11. Each runner checks the syntax first, then converts with its library.
+
+[`vectors/scenario/numbers.txt`](vectors/scenario/numbers.txt) has 107 vectors, each a text
+in the place of a `frames`, `frametime`, `model` or `v_angle` argument with the value it is
+read as or `refused`; its [README](vectors/scenario/README.md) has the format. `cargo xtask
+oracles` runs each through the VM oracle in CI, which must refuse exactly the `refused` ones;
+`scenario_numbers` in `crates/qs-tests` checks the verdicts and the values from Rust. On
+2026-10-16 all 107 passed through the oracle on macOS arm64. The edges:
+
+| Text | Read as | Statement |
+| --- | --- | --- |
+| `frames 0100`, `frames -0` | 100, 0 | DIFF-2.7 |
+| `frames 0000000000000000001`, `frames -0000000000000000000` | 1, 0: leading zeros, however many | DIFF-2.7 |
+| `frames +1`, `frames 1.0`, `frames 1e2` | refused | DIFF-2.7 |
+| `frametime .1`, `frametime 100e-3` | the `double` nearest 0.1, `0x3fb999999999999a` | DIFF-2.8 |
+| `frametime 1.0000000000000001` | 1 (the nearest `double`), so accepted | DIFF-2.8 |
+| `frametime 1.0000000000000002`, `frametime 1e-400` | refused: above 1, and rounds to 0 | DIFF-2.8 |
+| `+0.1`, `inf`, `nan`, `0x1p-4`, `.`, `1e`, `1e1.5` | refused | DIFF-2.8 |
+| `model 1.000000059604644775390625001` | `0x3f800001`: rounded once; through `double` it would be `0x3f800000` | DIFF-2.8 |
+| `model 340282356779733661637539395458142568447` | `0x7f7fffff`, the largest `f32` | DIFF-2.8 |
+| `model 340282356779733661637539395458142568448`, `model 1e39` | refused: the nearest `f32` is infinite | DIFF-2.8 |
+| `model 1e-46`, `model -1e-46` | `0x00000000`, `0x80000000` | DIFF-2.8 |
+
+### Scenario bytes
+
+DIFF-2.1 makes a scenario lines of bytes, so a NUL byte is a byte of its line: it ends neither
+the line nor the file, and what follows it is read. What a NUL byte in a word means follows
+from the statements that word falls under. A key holding one is unknown, and an integer,
+number or map name holding one is not one (DIFF-2.2, DIFF-2.7, DIFF-2.8), so each is refused
+(DIFF-2.9); a path holding one names no file, so the runner cannot read it. A `model` or
+`cvar` name holding one is a name, but one no QuakeC string gives, since QuakeC's strings end
+at their first NUL: the bounds or setting it names are never used, and two such names differ
+when their bytes do. A `cvar` text holding one has the value `Q_atof` reads from it, which
+stops at the NUL (DIFF-2.4). `cargo xtask oracles` runs these cases through the VM oracle
+(`xtask/src/oracles/probes.rs`).
+
 ### Frames and thinking
 
 Checked on 2026-10-16 by a local harness holding `SV_RunThink` and `SV_Physics_Pusher` copied
@@ -517,6 +581,13 @@ unchanged from `WinQuake/sv_phys.c` at the pinned commit, with the zero-velocity
 `SV_PushMove` (the whole of the mock's, DIFF-5.5) and stubs for `PR_ExecuteProgram`, `sv` and
 `pr_global_struct`, built with Apple clang 21 at `-O0 -ffp-contract=off -fno-strict-aliasing`
 on arm64 macOS. The frame length is 0.1; floats are printed with 9 significant digits.
+
+Since P1-32 every row of this table and the next is a vector in
+[`vectors/vm/frames.txt`](vectors/vm/frames.txt), which `cargo xtask oracles` runs through the
+VM oracle on Linux, macOS and Windows in CI: the host sets the clock and calls id's
+`SV_RunThink` and `SV_Physics_Pusher`, compiled from the pinned commit, on one edict, or runs
+the oracle's physics and server frames, and the trace shows what changed. On 2026-10-16 all 15
+passed on macOS arm64.
 
 | Input | Output | Statements |
 | --- | --- | --- |

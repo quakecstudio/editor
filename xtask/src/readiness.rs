@@ -25,6 +25,8 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::oracles::{COVERAGE_ENV, vm_oracle};
+
 /// The date-pinned nightly that measures branch coverage, the only check that
 /// needs nightly. The `Readiness` workflow installs the same toolchain, and a
 /// test keeps the two equal (`docs/conventions.md`).
@@ -104,10 +106,27 @@ pub(crate) struct Measurement {
 struct Target {
     name: String,
     dir: PathBuf,
-    /// The crate is its own workspace (a fixture), so it gets its own target
-    /// directory under `target/xtask/readiness/`.
-    standalone: bool,
+    kind: Kind,
 }
+
+/// What kind of code a target is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// A member of the workspace.
+    Member,
+    /// A crate that is its own workspace (a fixture), so it gets its own
+    /// target directory under `target/xtask/readiness/`.
+    Standalone,
+    /// The C of the oracles, [`ORACLES`]: the C tools layer's own code, which
+    /// `cargo xtask oracles` builds and checks.
+    Oracles,
+}
+
+/// The name, and the directory, of the C tools layer's code (`oracles/README.md`).
+pub(crate) const ORACLES: &str = "oracles";
+
+/// Where the corpus codebase id 1.01 is, under `QS_TEST_ASSETS`, for the oracles' coverage.
+const ID101: &str = "codebase/id-1.01";
 
 #[derive(Debug, PartialEq, Eq)]
 struct Options {
@@ -129,7 +148,14 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     };
     for name in &options.crates {
         let target = resolve(root, name)?;
-        let score = measure(root, options.check, &target)?;
+        let Some(score) = measure(root, options.check, &target)? else {
+            println!(
+                "{} {}: not measured: {NO_C_MUTATION}",
+                target.name,
+                options.check.name()
+            );
+            continue;
+        };
         println!(
             "{} {}: {}",
             target.name,
@@ -179,9 +205,16 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     })
 }
 
-/// A package name of a workspace member, or a crate directory inside the
-/// repository.
+/// A package name of a workspace member, a crate directory inside the
+/// repository, or [`ORACLES`].
 fn resolve(root: &Path, name: &str) -> Result<Target, String> {
+    if name.trim_end_matches(['/', '\\']) == ORACLES {
+        return Ok(Target {
+            name: ORACLES.to_owned(),
+            dir: root.join(ORACLES),
+            kind: Kind::Oracles,
+        });
+    }
     let dir = if name.contains('/') || name.contains('\\') {
         let dir = root
             .join(name)
@@ -208,10 +241,15 @@ fn resolve(root: &Path, name: &str) -> Result<Target, String> {
     else {
         return Err(format!("{name}/Cargo.toml has no package name"));
     };
+    let kind = if manifest.contains_key("workspace") {
+        Kind::Standalone
+    } else {
+        Kind::Member
+    };
     Ok(Target {
         name: package.to_owned(),
         dir,
-        standalone: manifest.contains_key("workspace"),
+        kind,
     })
 }
 
@@ -240,13 +278,26 @@ fn member_dir(root: &Path, name: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("{name} is not a workspace crate"))
 }
 
-fn measure(root: &Path, check: Check, target: &Target) -> Result<Score, String> {
-    match check {
-        Check::Lines | Check::Branches => coverage(root, target, check),
-        Check::Mutation => mutation(root, target),
-        Check::Spec => spec(&target.dir),
-        Check::Flakes => flakes(root, target),
-    }
+/// Why the oracles have no mutation score: the exception `ratchets.toml` and
+/// `oracles/README.md` record.
+const NO_C_MUTATION: &str = "cargo mutants mutates Rust, and the oracles are C; \
+                             their exception is in ratchets.toml";
+
+/// The score of `check` for `target`, or `None` when no tool measures it
+/// (the oracles' mutation score).
+fn measure(root: &Path, check: Check, target: &Target) -> Result<Option<Score>, String> {
+    let score = match (check, target.kind) {
+        (Check::Lines | Check::Branches, Kind::Oracles) => c_coverage(root, check)?,
+        (Check::Lines | Check::Branches, Kind::Member | Kind::Standalone) => {
+            coverage(root, target, check)?
+        }
+        (Check::Mutation, Kind::Oracles) => return Ok(None),
+        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target)?,
+        (Check::Spec, _) => spec(&target.dir)?,
+        (Check::Flakes, Kind::Oracles) => oracle_flakes(root)?,
+        (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target)?,
+    };
+    Ok(Some(score))
 }
 
 fn cargo() -> std::ffi::OsString {
@@ -266,7 +317,7 @@ fn cargo_for(root: &Path, target: &Target, toolchain: Option<&str>) -> Command {
         None => Command::new(cargo()),
     };
     command.current_dir(root);
-    if target.standalone {
+    if target.kind == Kind::Standalone {
         command.env("CARGO_TARGET_DIR", scratch(root).join(&target.name));
     }
     command
@@ -351,11 +402,15 @@ pub(crate) fn parse_llvm_cov(text: &str, check: Check) -> Result<Score, String> 
 fn mutation(root: &Path, target: &Target) -> Result<Score, String> {
     let out = scratch(root).join(format!("mutants-{}", target.name));
     let mut command = cargo_for(root, target, None);
+    // cargo mutants tests a copy of the tree, which without `.git` fails the
+    // tests that read the repository through git (xtask's licenses,
+    // attribution and corpus checks), so no mutant would be tested.
     command
         .args([
             "mutants",
             "--all-features",
             "--no-shuffle",
+            "--copy-vcs=true",
             "--manifest-path",
         ])
         .arg(manifest(target))
@@ -471,6 +526,157 @@ fn flakes(root: &Path, target: &Target) -> Result<Score, String> {
     })
 }
 
+/// `cargo xtask <args>`, run as this program so that nothing is rebuilt.
+fn xtask(root: &Path, args: &[&str]) -> Result<Command, String> {
+    let exe = std::env::current_exe().map_err(|error| format!("cannot find xtask: {error}"))?;
+    let mut command = Command::new(exe);
+    command.args(args).current_dir(root);
+    Ok(command)
+}
+
+/// Runs `command`, failing with its output unless it succeeds.
+fn run_ok(command: &mut Command, what: &str) -> Result<(), String> {
+    let output = run(command, what)?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "{what} failed ({}):\n{}{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+/// The oracles' flake check: `cargo xtask oracles`, every vector, number
+/// vector and probe through the VM oracle, [`FLAKE_RUNS`] times after one build.
+fn oracle_flakes(root: &Path) -> Result<Score, String> {
+    run_ok(
+        &mut xtask(root, &[ORACLES, "build"])?,
+        "cargo xtask oracles build",
+    )?;
+    repeat(FLAKE_RUNS, || {
+        run(&mut xtask(root, &[ORACLES])?, "cargo xtask oracles")
+            .map(|output| output.status.success())
+    })
+}
+
+/// The line or branch coverage of our C (`oracles/vm`): the VM oracle built
+/// with clang's source-based coverage, run on every vector, number vector and
+/// probe (`cargo xtask oracles`) and on the id 1.01 scenarios
+/// (`cargo xtask oracles id101`, from the corpus under `QS_TEST_ASSETS`).
+/// id's files in the build are not ours and are not counted.
+fn c_coverage(root: &Path, check: Check) -> Result<Score, String> {
+    let assets = std::env::var_os("QS_TEST_ASSETS").ok_or(
+        "the oracles' coverage runs id 1.01: set QS_TEST_ASSETS and run \
+         cargo xtask corpus fetch id-1.01",
+    )?;
+    let id101 = Path::new(&assets).join(ID101);
+    if !id101.join("progs.src").is_file() {
+        return Err(format!(
+            "no id 1.01 in {}: run cargo xtask corpus fetch id-1.01",
+            id101.display()
+        ));
+    }
+    let dir = scratch(root).join(format!("{}-{ORACLES}", check.name()));
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+    }
+    let profiles = dir.join("profiles");
+    fs::create_dir_all(&profiles).map_err(|error| format!("{}: {error}", profiles.display()))?;
+    // `%m` merges every run of one binary into one profile.
+    let profile_file = profiles.join("vm-oracle-%m.profraw");
+    let id101 = id101.display().to_string();
+    for args in [vec![ORACLES], vec![ORACLES, "id101", &id101]] {
+        let mut command = xtask(root, &args)?;
+        command
+            .env(COVERAGE_ENV, "1")
+            .env("LLVM_PROFILE_FILE", &profile_file);
+        run_ok(&mut command, &format!("cargo xtask {}", args.join(" ")))?;
+    }
+    let mut raw = Vec::new();
+    for entry in
+        fs::read_dir(&profiles).map_err(|error| format!("{}: {error}", profiles.display()))?
+    {
+        raw.push(
+            entry
+                .map_err(|error| format!("{}: {error}", profiles.display()))?
+                .path(),
+        );
+    }
+    if raw.is_empty() {
+        return Err(format!(
+            "the VM oracle wrote no profile in {}",
+            profiles.display()
+        ));
+    }
+    let merged = dir.join("vm-oracle.profdata");
+    let mut merge = llvm_tool("LLVM_PROFDATA", "llvm-profdata");
+    merge
+        .args(["merge", "-sparse", "-o"])
+        .arg(&merged)
+        .args(&raw);
+    run_ok(&mut merge, "llvm-profdata merge")?;
+    let sources = c_sources(&root.join(ORACLES))?;
+    let mut export = llvm_tool("LLVM_COV", "llvm-cov");
+    export
+        .args(["export", "-summary-only", "-instr-profile"])
+        .arg(&merged)
+        .arg(vm_oracle(root))
+        .args(&sources);
+    let output = run(&mut export, "llvm-cov export")?;
+    if !output.status.success() {
+        return Err(format!(
+            "llvm-cov export failed ({}):\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let report = dir.join("llvm-cov.json");
+    fs::write(&report, text.as_bytes())
+        .map_err(|error| format!("{}: {error}", report.display()))?;
+    parse_llvm_cov(&text, check)
+}
+
+/// An LLVM tool: the program the environment variable `var` names, or `name`,
+/// through `xcrun` on macOS, where Xcode's clang keeps its tools.
+fn llvm_tool(var: &str, name: &str) -> Command {
+    if let Some(program) = std::env::var_os(var) {
+        return Command::new(program);
+    }
+    if cfg!(target_os = "macos") {
+        let mut command = Command::new("xcrun");
+        command.arg(name);
+        return command;
+    }
+    Command::new(name)
+}
+
+/// The C sources and headers under `dir`: ours, which the coverage counts.
+fn c_sources(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let entries = fs::read_dir(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("{}: {error}", dir.display()))?
+                .path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "c" || extension == "h")
+            {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 /// Runs `run` `runs` times, every time even after a failure, and scores the
 /// passing runs.
 fn repeat(runs: u64, mut run: impl FnMut() -> Result<bool, String>) -> Result<Score, String> {
@@ -494,7 +700,7 @@ fn repeat(runs: u64, mut run: impl FnMut() -> Result<bool, String>) -> Result<Sc
 /// Statement citations for the crate in `dir`: the sections its README lists
 /// after `**Spec sections:**`, their active statements in the nearest
 /// `docs/spec/requirements.tsv` above it, and the `// spec` citations in the
-/// Rust files under that tree's `crates/` and `apps/` (`docs/spec/README.md`).
+/// Rust files under that tree's [`CITING_TREES`] (`docs/spec/README.md`).
 fn spec(dir: &Path) -> Result<Score, String> {
     let readme_path = dir.join("README.md");
     let readme = fs::read_to_string(&readme_path)
@@ -512,7 +718,7 @@ fn spec(dir: &Path) -> Result<Score, String> {
         .map_err(|error| format!("{}: {error}", index_path.display()))?;
     let statements = active_statements(&index)?;
     let mut cited = BTreeSet::new();
-    for tree in ["crates", "apps"] {
+    for tree in CITING_TREES {
         for file in rust_files(&spec_root.join(tree))? {
             let text = fs::read_to_string(&file)
                 .map_err(|error| format!("{}: {error}", file.display()))?;
@@ -523,6 +729,11 @@ fn spec(dir: &Path) -> Result<Score, String> {
 }
 
 const REQUIREMENTS: &str = "docs/spec/requirements.tsv";
+
+/// The trees whose Rust files hold `// spec` citations, as the spec-citation
+/// ratchet in `qs-tests` reads them: the crates, the apps, and xtask, whose
+/// oracle module tests the oracles' C through the built oracle.
+const CITING_TREES: [&str; 3] = ["crates", "apps", "xtask"];
 
 /// The section IDs (`PREFIX-n`) on a README's `**Spec sections:**` line, up to
 /// the next list item. `None` if there is no such line; empty if it says none.

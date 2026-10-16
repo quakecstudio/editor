@@ -1,0 +1,4 @@
+{
+"classname" // c
+"worldspawn"
+}

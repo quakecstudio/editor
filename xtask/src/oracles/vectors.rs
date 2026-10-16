@@ -5,13 +5,16 @@
 //! of P1-11 that the oracle passes every vector without `oracle: no`, the VM-9.2 vectors on an
 //! x86-64 host.
 //!
+//! A vector marked `builtins: engine` runs id's builtins instead of the stubs, for the argument
+//! checks of P1-31 (`builtins.txt`).
+//!
 //! Each vector becomes a progs.dat (written by `qc-progs`) and an init file holding the
 //! initial globals and fields, which the oracle resolves itself because entity and pointer
 //! values depend on its edict layout. The oracle's binary trace is decoded by `qc-trace`'s
 //! strict decoder, which also checks the oracle's C encoder: encoding the decoded trace must
 //! give back the same bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,6 +30,7 @@ use super::Oracles;
 const VECTORS: &str = "docs/spec/vectors/vm";
 const ENTITY_FIELDS: u32 = 110;
 const DEFAULT_GLOBALS: usize = 128;
+const DEFAULT_EDICTS: u32 = 3;
 const RUNAWAY: &str = "runaway loop error";
 
 /// A value as a vector writes it (README, "Values").
@@ -36,6 +40,7 @@ enum Value {
     AnyNan,
     Entity(u32),
     Pointer(u32, u32),
+    EngineString,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,11 +49,30 @@ enum Target {
     Field(u32, u32),
 }
 
-#[derive(Debug, Default)]
+/// What a line of `expect:` or of the trace is: a statement, or the start of a run the host
+/// made (listed only in vectors with a `host:` block).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Head {
+    Step { statement: i32, opcode: u32 },
+    Run(i32),
+}
+
+#[derive(Debug)]
 struct ExpectLine {
-    statement: i32,
-    opcode: u32,
+    head: Head,
     changes: Vec<(Target, Value)>,
+}
+
+/// One line of a `host:` block (README, "Host actions").
+#[derive(Clone, Debug, PartialEq)]
+enum HostAction {
+    Clock(f64),
+    Run(i32),
+    Think(u32, f64),
+    Push(u32, f64),
+    Physics(f64, u32),
+    Frame(f64, u32),
+    Edict(i32, u32),
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,7 +89,13 @@ struct Vector {
     initial: Vec<(Target, Value)>,
     strings: Vec<Vec<u8>>,
     numglobals: Option<usize>,
+    edicts: Option<u32>,
+    maxclients: Option<u32>,
+    seed: Option<u32>,
+    host: Vec<HostAction>,
+    datagram: Option<Vec<u8>>,
     loading: bool,
+    engine_builtins: bool,
     entry: Option<i32>,
     functions: BTreeMap<usize, Function>,
     steps: Option<usize>,
@@ -77,11 +107,10 @@ struct Vector {
     end: Option<End>,
 }
 
-/// One statement as the trace shows it, in the order the vectors list them.
+/// One statement, or a host run, as the trace shows it, in the order the vectors list them.
 #[derive(Debug)]
 struct Line {
-    statement: i32,
-    opcode: u32,
+    head: Head,
     changes: BTreeMap<Target, u32>,
 }
 
@@ -171,6 +200,9 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                 "code" => vector.code.push(parse_statement(body).map_err(|e| at(&e))?),
                 "expect" => parse_expect_line(vector, body.trim()).map_err(|e| at(&e))?,
                 "functions" => parse_function(vector, body.trim()).map_err(|e| at(&e))?,
+                "host" => vector
+                    .host
+                    .push(parse_host_action(body.trim()).map_err(|e| at(&e))?),
                 _ => return Err(at("indented line outside a block")),
             }
             continue;
@@ -181,7 +213,7 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
         let rest = rest.trim();
         block = "";
         match key {
-            "code" | "expect" | "functions" => block = key,
+            "code" | "expect" | "functions" | "host" => block = key,
             "spec" => vector.spec = rest.split(',').map(|s| s.trim().to_owned()).collect(),
             "globals" => {
                 for item in rest.split_whitespace() {
@@ -203,26 +235,41 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
             "numglobals" => {
                 vector.numglobals = Some(rest.parse().map_err(|_| at("bad numglobals"))?);
             }
+            "edicts" => vector.edicts = Some(rest.parse().map_err(|_| at("bad edicts"))?),
+            "maxclients" => {
+                vector.maxclients = Some(rest.parse().map_err(|_| at("bad maxclients"))?);
+            }
+            "seed" => vector.seed = Some(rest.parse().map_err(|_| at("bad seed"))?),
+            "datagram" => {
+                let bytes: Result<Vec<u8>, _> = rest.split_whitespace().map(str::parse).collect();
+                vector.datagram = Some(bytes.map_err(|_| at("bad datagram"))?);
+            }
             "server" if rest == "loading" => vector.loading = true,
+            "builtins" if rest == "engine" => vector.engine_builtins = true,
             "entry" => vector.entry = Some(rest.parse().map_err(|_| at("bad entry"))?),
             "steps" => vector.steps = Some(rest.parse().map_err(|_| at("bad steps"))?),
-            "after" => {
-                let mut depth = None;
-                let mut localstack = None;
-                for item in rest.split_whitespace() {
-                    match item.split_once('=') {
-                        Some(("depth", v)) => depth = v.parse().ok(),
-                        Some(("localstack", v)) => localstack = v.parse().ok(),
-                        _ => return Err(at("bad after")),
-                    }
-                }
-                vector.after = depth.zip(localstack);
-            }
+            "after" => vector.after = Some(parse_after(rest).map_err(|e| at(&e))?),
             "oracle" if rest == "no" => vector.oracle = false,
             _ => return Err(at(&format!("unknown key `{key}`"))),
         }
     }
     Ok(vectors)
+}
+
+/// `depth=<d> localstack=<n>` (README, "Format"): both, each once, in that order.
+fn parse_after(rest: &str) -> Result<(i32, i32), String> {
+    let bad = || format!("bad after `{rest}`: want `depth=<d> localstack=<n>`");
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let [depth, localstack] = words.as_slice() else {
+        return Err(bad());
+    };
+    let number = |word: &str, key: &str| {
+        word.strip_prefix(key)
+            .and_then(|v| v.strip_prefix('='))
+            .and_then(|v| v.parse::<i32>().ok())
+            .ok_or_else(bad)
+    };
+    Ok((number(depth, "depth")?, number(localstack, "localstack")?))
 }
 
 fn opcode_number(word: &str) -> Result<u32, String> {
@@ -241,6 +288,9 @@ fn parse_statement(body: &str) -> Result<Statement, String> {
         if let Some(word) = words.next() {
             *slot = word.parse().map_err(|_| format!("bad operand {word}"))?;
         }
+    }
+    if let Some(word) = words.next() {
+        return Err(format!("text after the operands: {word}"));
     }
     let [a, b, c] = operands;
     Ok(Statement { op, a, b, c })
@@ -274,6 +324,37 @@ fn parse_function(vector: &mut Vector, body: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn parse_host_action(body: &str) -> Result<HostAction, String> {
+    let words: Vec<&str> = body.split_whitespace().collect();
+    let seconds = |w: &str| w.parse::<f64>().map_err(|_| format!("bad seconds {w}"));
+    let count = |w: &str| {
+        w.parse::<u32>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| format!("bad count {w}"))
+    };
+    let edict = |w: &str| {
+        w.strip_prefix('e')
+            .and_then(|n| n.parse::<u32>().ok())
+            .ok_or_else(|| format!("bad edict {w}"))
+    };
+    match words.as_slice() {
+        ["clock", t] => Ok(HostAction::Clock(seconds(t)?)),
+        ["run", f] => Ok(HostAction::Run(f.parse().map_err(|_| "bad function")?)),
+        ["think", e, t] => Ok(HostAction::Think(edict(e)?, seconds(t)?)),
+        ["push", e, t] => Ok(HostAction::Push(edict(e)?, seconds(t)?)),
+        ["physics", t] => Ok(HostAction::Physics(seconds(t)?, 1)),
+        ["physics", t, n] => Ok(HostAction::Physics(seconds(t)?, count(n)?)),
+        ["frame", t] => Ok(HostAction::Frame(seconds(t)?, 1)),
+        ["frame", t, n] => Ok(HostAction::Frame(seconds(t)?, count(n)?)),
+        ["edict", n, slot] => Ok(HostAction::Edict(
+            n.parse().map_err(|_| "bad edict number")?,
+            slot.parse().map_err(|_| "bad global slot")?,
+        )),
+        _ => Err(format!("unknown host action `{body}`")),
+    }
+}
+
 fn parse_target(text: &str) -> Result<Target, String> {
     if let Some(rest) = text.strip_prefix('e') {
         let (edict, field) = rest.split_once('.').ok_or("bad field target")?;
@@ -288,6 +369,9 @@ fn parse_target(text: &str) -> Result<Target, String> {
 
 /// The forms of the README's "Values" table; `nan` is 0x7FC00000 as an initial value.
 fn parse_value(text: &str, initial: bool) -> Result<Value, String> {
+    if text == "es" && !initial {
+        return Ok(Value::EngineString);
+    }
     if text == "nan" {
         return Ok(if initial {
             Value::Bits(0x7fc0_0000)
@@ -351,6 +435,17 @@ fn parse_strings(text: &str) -> Result<Vec<Vec<u8>>, String> {
     Ok(strings)
 }
 
+/// The `"<message>"` of an `error "<message>"` line: one quoted string with no quote inside it
+/// and nothing after it. The comment rule cuts a message at `#`, which leaves it unterminated,
+/// so such a line is refused rather than read as a shorter message.
+fn parse_error_message(text: &str) -> Result<String, String> {
+    text.strip_prefix('"')
+        .and_then(|r| r.strip_suffix('"'))
+        .filter(|message| !message.contains('"'))
+        .map(str::to_owned)
+        .ok_or_else(|| format!("bad error line `error {text}`: want `error \"<message>\"`"))
+}
+
 fn parse_expect_line(vector: &mut Vector, body: &str) -> Result<(), String> {
     if body == "..." {
         vector.partial = true;
@@ -360,32 +455,30 @@ fn parse_expect_line(vector: &mut Vector, body: &str) -> Result<(), String> {
         vector.end = Some(End::Done);
         return Ok(());
     }
-    if let Some(rest) = body.strip_prefix("error") {
-        let rest = rest.trim();
-        let message = rest
-            .strip_prefix('"')
-            .and_then(|r| r.strip_suffix('"'))
-            .map(str::to_owned);
-        vector.end = Some(End::Error(message));
+    if body == "error" {
+        vector.end = Some(End::Error(None));
+        return Ok(());
+    }
+    if let Some(rest) = body.strip_prefix("error ") {
+        vector.end = Some(End::Error(Some(parse_error_message(rest)?)));
         return Ok(());
     }
     let mut words = body.split_whitespace();
-    let statement = words
-        .next()
-        .unwrap_or_default()
-        .parse()
-        .map_err(|_| "bad statement index")?;
-    let opcode = opcode_number(words.next().unwrap_or_default())?;
+    let first = words.next().unwrap_or_default();
+    let head = if first == "run" {
+        let function = words.next().unwrap_or_default();
+        Head::Run(function.parse().map_err(|_| "bad run function")?)
+    } else {
+        let statement = first.parse().map_err(|_| "bad statement index")?;
+        let opcode = opcode_number(words.next().unwrap_or_default())?;
+        Head::Step { statement, opcode }
+    };
     let mut changes = Vec::new();
     for item in words {
         let (target, value) = item.split_once('=').ok_or("bad change")?;
         changes.push((parse_target(target)?, parse_value(value, false)?));
     }
-    vector.lines.push(ExpectLine {
-        statement,
-        opcode,
-        changes,
-    });
+    vector.lines.push(ExpectLine { head, changes });
     Ok(())
 }
 
@@ -427,11 +520,32 @@ fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
 }
 
 fn init_text(vector: &Vector) -> String {
-    let mut text = String::from("edicts 3\n");
+    let mut text = format!("edicts {}\n", vector.edicts.unwrap_or(DEFAULT_EDICTS));
+    if let Some(maxclients) = vector.maxclients {
+        text.push_str(&format!("maxclients {maxclients}\n"));
+    }
+    if let Some(seed) = vector.seed {
+        text.push_str(&format!("seed {seed}\n"));
+    }
     if vector.loading {
         text.push_str("loading\n");
     }
+    if vector.engine_builtins {
+        text.push_str("builtins engine\n");
+    }
     text.push_str(&format!("entry {}\n", vector.entry.unwrap_or(1)));
+    // f64's Display is the shortest text that reads back as the same double, as strtod reads it.
+    for action in &vector.host {
+        text.push_str(&match action {
+            HostAction::Clock(t) => format!("host clock {t}\n"),
+            HostAction::Run(f) => format!("host run {f}\n"),
+            HostAction::Think(e, t) => format!("host think {e} {t}\n"),
+            HostAction::Push(e, t) => format!("host push {e} {t}\n"),
+            HostAction::Physics(t, n) => format!("host physics {t} {n}\n"),
+            HostAction::Frame(t, n) => format!("host frame {t} {n}\n"),
+            HostAction::Edict(n, slot) => format!("host edict {n} {slot}\n"),
+        });
+    }
     for (target, value) in &vector.initial {
         let place = match target {
             Target::Global(slot) => format!("global {slot}"),
@@ -440,6 +554,8 @@ fn init_text(vector: &Vector) -> String {
         let value = match value {
             Value::Bits(bits) => format!("bits {bits:08x}"),
             Value::AnyNan => "bits 7fc00000".to_owned(),
+            // Only an expected value (parse_value).
+            Value::EngineString => continue,
             Value::Entity(edict) => format!("entity {edict}"),
             Value::Pointer(edict, field) => format!("pointer {edict} {field}"),
         };
@@ -476,12 +592,37 @@ fn run(oracles: &Oracles, work: &Path, vector: &Vector) -> Result<(), String> {
     }
     check_header(&trace.header, &progs)?;
     let (lines, end) = trace_lines(&trace, vector)?;
-    compare(vector, &trace.header, &lines, &end)?;
+    let known = Known {
+        header: &trace.header,
+        engine_strings: trace
+            .records
+            .iter()
+            .filter_map(|record| match record {
+                Record::String { value, .. } => Some(*value),
+                _ => None,
+            })
+            .collect(),
+    };
+    compare(vector, &known, &lines, &end)?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut report = stdout.lines();
+    let state = report.next().unwrap_or_default();
     if let Some((depth, localstack)) = vector.after {
         let want = format!("depth={depth} localstack={localstack}");
-        let got = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if state != want {
+            return Err(format!("after the run: {state}, the vector says {want}"));
+        }
+    }
+    if let Some(bytes) = &vector.datagram {
+        let want: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let got = report
+            .next()
+            .and_then(|l| l.strip_prefix("datagram="))
+            .unwrap_or_default();
         if got != want {
-            return Err(format!("after the run: {got}, the vector says {want}"));
+            return Err(format!(
+                "the datagram holds `{got}`, the vector says `{want}`"
+            ));
         }
     }
     Ok(())
@@ -551,8 +692,10 @@ fn push_step(frame: &mut Frame, step: &Step) {
     }
     merge(&mut changes, &step.changes);
     frame.lines.push(Line {
-        statement: step.statement,
-        opcode: u32::from(step.opcode),
+        head: Head::Step {
+            statement: step.statement,
+            opcode: u32::from(step.opcode),
+        },
         changes,
     });
     for (_, lines) in nested {
@@ -578,7 +721,8 @@ fn expected_builtin(vector: &Vector, globals: &BTreeMap<u32, u32>, statement: i3
 
 fn trace_lines(trace: &Trace, vector: &Vector) -> Result<(Vec<Line>, End), String> {
     let mut stack: Vec<(Frame, Changes)> = Vec::new();
-    let mut done: Option<Vec<Line>> = None;
+    let mut done: Vec<Line> = Vec::new();
+    let mut runs = 0_u32;
     let mut globals: BTreeMap<u32, u32> = vector
         .initial
         .iter()
@@ -604,8 +748,20 @@ fn trace_lines(trace: &Trace, vector: &Vector) -> Result<(Vec<Line>, End), Strin
         }
         match record {
             Record::Run { function, changes } => {
-                if done.is_some() {
-                    return Err("a run after the entry run returned".to_owned());
+                if stack.is_empty() {
+                    // Without a `host:` block the host runs the entry function once.
+                    if vector.host.is_empty() && runs > 0 {
+                        return Err("a run after the entry run returned".to_owned());
+                    }
+                    runs = runs.saturating_add(1);
+                    if !vector.host.is_empty() {
+                        let mut run_changes = BTreeMap::new();
+                        merge(&mut run_changes, changes);
+                        done.push(Line {
+                            head: Head::Run(*function),
+                            changes: run_changes,
+                        });
+                    }
                 }
                 let frame = Frame {
                     function: *function,
@@ -625,7 +781,7 @@ fn trace_lines(trace: &Trace, vector: &Vector) -> Result<(Vec<Line>, End), Strin
                 let (frame, before) = stack.pop().ok_or("an exit outside a run")?;
                 match stack.last_mut() {
                     Some((parent, _)) => parent.nested.push((before, frame.lines)),
-                    None => done = Some(frame.lines),
+                    None => done.extend(frame.lines),
                 }
             }
             Record::Error {
@@ -635,17 +791,34 @@ fn trace_lines(trace: &Trace, vector: &Vector) -> Result<(Vec<Line>, End), Strin
                 changes,
             } => {
                 let message = String::from_utf8_lossy(message.as_bytes()).into_owned();
-                return Ok((
-                    abort_lines(vector, stack, *function, *statement, &message, changes),
-                    End::Error(Some(message)),
+                done.extend(abort_lines(
+                    vector, stack, *function, *statement, &message, changes,
                 ));
+                return Ok((done, End::Error(Some(message))));
             }
             Record::String { .. } => {}
         }
     }
-    match done {
-        Some(lines) if stack.is_empty() => Ok((lines, End::Done)),
-        _ => Err("the trace ends inside a run".to_owned()),
+    if !stack.is_empty() || runs == 0 {
+        return Err("the trace ends inside a run, or has none".to_owned());
+    }
+    Ok((done, End::Done))
+}
+
+fn statement_of(line: &Line) -> i32 {
+    match line.head {
+        Head::Step { statement, .. } => statement,
+        Head::Run(_) => 0,
+    }
+}
+
+fn step_line(vector: &Vector, statement: i32, changes: BTreeMap<Target, u32>) -> Line {
+    Line {
+        head: Head::Step {
+            statement,
+            opcode: opcode_at(vector, statement),
+        },
+        changes,
     }
 }
 
@@ -672,15 +845,11 @@ fn abort_lines(
         let call = runs.peek().map(|(_, before)| {
             let at = frame.lines.last().map_or_else(
                 || first_statement(vector, frame.function),
-                |l| l.statement.saturating_add(1),
+                |l| statement_of(l).saturating_add(1),
             );
             let mut call_changes = BTreeMap::new();
             merge(&mut call_changes, before);
-            Line {
-                statement: at,
-                opcode: opcode_at(vector, at),
-                changes: call_changes,
-            }
+            step_line(vector, at, call_changes)
         });
         lines.extend(frame.lines);
         lines.extend(call);
@@ -689,28 +858,39 @@ fn abort_lines(
     if statement >= 0 && message != RUNAWAY && !stale {
         let mut error_changes = BTreeMap::new();
         merge(&mut error_changes, changes);
-        lines.push(Line {
-            statement,
-            opcode: opcode_at(vector, statement),
-            changes: error_changes,
-        });
+        lines.push(step_line(vector, statement, error_changes));
     }
     lines
 }
 
 // --- Comparing ---
 
-fn matches(header: &Header, value: Value, bits: u32) -> bool {
+/// What a trace says about its values: its edict layout and the engine strings it made.
+struct Known<'a> {
+    header: &'a Header,
+    engine_strings: BTreeSet<u32>,
+}
+
+fn matches(known: &Known<'_>, value: Value, bits: u32) -> bool {
+    let header = known.header;
     match value {
         Value::Bits(want) => bits == want,
         Value::AnyNan => f32::from_bits(bits).is_nan(),
         Value::Entity(edict) => header.entity_number(bits) == Some(edict),
         Value::Pointer(edict, field) => header.pointer_target(bits) == Some((edict, field)),
+        Value::EngineString => known.engine_strings.contains(&bits),
+    }
+}
+
+fn describe_head(head: Head) -> String {
+    match head {
+        Head::Step { statement, opcode } => format!("{statement} {opcode}"),
+        Head::Run(function) => format!("run {function}"),
     }
 }
 
 fn describe(line: &Line) -> String {
-    let mut text = format!("{} {}", line.statement, line.opcode);
+    let mut text = describe_head(line.head);
     for (target, bits) in &line.changes {
         text.push_str(&match target {
             Target::Global(slot) => format!(" {slot}={bits:#010x}"),
@@ -720,50 +900,48 @@ fn describe(line: &Line) -> String {
     text
 }
 
-fn compare_line(header: &Header, want: &ExpectLine, got: &Line) -> Result<(), String> {
+fn compare_line(known: &Known<'_>, want: &ExpectLine, got: &Line) -> Result<(), String> {
     let same_changes = want.changes.len() == got.changes.len()
         && want.changes.iter().all(|(target, value)| {
             got.changes
                 .get(target)
-                .is_some_and(|bits| matches(header, *value, *bits))
+                .is_some_and(|bits| matches(known, *value, *bits))
         });
-    if want.statement == got.statement && want.opcode == got.opcode && same_changes {
+    if want.head == got.head && same_changes {
         return Ok(());
     }
     Err(format!(
-        "expected `{} {} {:?}`, the oracle executed `{}`",
-        want.statement,
-        want.opcode,
+        "expected `{} {:?}`, the oracle executed `{}`",
+        describe_head(want.head),
         want.changes,
         describe(got)
     ))
 }
 
-fn compare(vector: &Vector, header: &Header, lines: &[Line], end: &End) -> Result<(), String> {
+fn compare(vector: &Vector, known: &Known<'_>, lines: &[Line], end: &End) -> Result<(), String> {
     if vector.partial {
         let steps = vector.steps.ok_or("a partial expectation without steps")?;
-        if lines.len() != steps {
+        let executed = lines
+            .iter()
+            .filter(|l| matches!(l.head, Head::Step { .. }))
+            .count();
+        if executed != steps {
             return Err(format!(
-                "{} statements executed, the vector says {steps}",
-                lines.len()
+                "{executed} statements executed, the vector says {steps}"
             ));
         }
     } else if lines.len() != vector.lines.len() {
         let got: Vec<String> = lines.iter().map(describe).collect();
         return Err(format!(
-            "{} statements executed, the vector lists {}: {got:?}",
+            "{} lines in the trace, the vector lists {}: {got:?}",
             lines.len(),
             vector.lines.len()
         ));
     }
     let skip = lines.len().saturating_sub(vector.lines.len());
     for (index, (want, got)) in vector.lines.iter().zip(lines.iter().skip(skip)).enumerate() {
-        compare_line(header, want, got).map_err(|e| {
-            format!(
-                "statement {}: {e}",
-                index.saturating_add(skip).saturating_add(1)
-            )
-        })?;
+        compare_line(known, want, got)
+            .map_err(|e| format!("line {}: {e}", index.saturating_add(skip).saturating_add(1)))?;
     }
     match (vector.end.as_ref(), end) {
         (Some(End::Done), End::Done) | (Some(End::Error(None)), End::Error(_)) => Ok(()),
@@ -779,7 +957,10 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use super::{End, Target, Value, parse, parse_strings, parse_value};
+    use super::{
+        End, Head, HostAction, Target, Value, init_text, parse, parse_host_action, parse_strings,
+        parse_value,
+    };
 
     #[test]
     fn parses_values_as_the_readme_defines_them() {
@@ -793,6 +974,8 @@ mod tests {
             parse_value("p1.105", false).unwrap(),
             Value::Pointer(1, 105)
         );
+        assert_eq!(parse_value("es", false).unwrap(), Value::EngineString);
+        assert!(parse_value("es", true).is_err());
         assert!(parse_value("x", false).is_err());
     }
 
@@ -813,6 +996,7 @@ mod tests {
         let vectors = parse("t.txt", text).unwrap();
         let v = vectors.first().unwrap();
         assert!(!v.oracle);
+        assert!(!v.engine_builtins);
         assert_eq!(v.code.len(), 2);
         assert_eq!(v.initial.first().unwrap().0, Target::Global(100));
         assert_eq!(
@@ -822,5 +1006,195 @@ mod tests {
         assert_eq!(v.end, Some(End::Error(None)));
         assert!(parse("t.txt", "loose\n").is_err());
         assert!(parse("t.txt", "== v\nwhat: 1\n").is_err());
+        let engine = parse("t.txt", "== v\nbuiltins: engine\n").unwrap();
+        assert!(engine.first().unwrap().engine_builtins);
+        assert!(parse("t.txt", "== v\nbuiltins: stubs\n").is_err());
+    }
+
+    #[test]
+    fn parses_host_actions() {
+        assert_eq!(
+            parse_host_action("clock 1.2000000000000002").unwrap(),
+            HostAction::Clock(1.200_000_000_000_000_2)
+        );
+        assert_eq!(parse_host_action("run 3").unwrap(), HostAction::Run(3));
+        assert_eq!(
+            parse_host_action("think e1 0.1").unwrap(),
+            HostAction::Think(1, 0.1)
+        );
+        assert_eq!(
+            parse_host_action("push e2 0.1").unwrap(),
+            HostAction::Push(2, 0.1)
+        );
+        assert_eq!(
+            parse_host_action("physics 0.1").unwrap(),
+            HostAction::Physics(0.1, 1)
+        );
+        assert_eq!(
+            parse_host_action("frame 0.1 100").unwrap(),
+            HostAction::Frame(0.1, 100)
+        );
+        assert_eq!(
+            parse_host_action("edict -1 100").unwrap(),
+            HostAction::Edict(-1, 100)
+        );
+        for bad in [
+            "",
+            "sleep 1",
+            "clock",
+            "clock soon",
+            "think 1 0.1",
+            "push e1",
+            "frame 0.1 0",
+            "physics 0.1 -1",
+            "edict 1 -1",
+            "run 1 2",
+        ] {
+            assert!(parse_host_action(bad).is_err(), "{bad:?} parsed");
+        }
+    }
+
+    #[test]
+    fn parses_a_host_vector() {
+        let text = "== v\nspec: DIFF-5.6\nedicts: 2\nmaxclients: 1\nseed: 7\n\
+                    datagram: 64 255\nhost:\n  clock 1\n  run 1\ncode:\n  DONE\n\
+                    expect:\n  run 1 31=1\n  1 DONE\n  done\n";
+        let vectors = parse("t.txt", text).unwrap();
+        let v = vectors.first().unwrap();
+        assert_eq!(v.edicts, Some(2));
+        assert_eq!(v.maxclients, Some(1));
+        assert_eq!(v.seed, Some(7));
+        assert_eq!(v.datagram, Some(vec![64, 255]));
+        assert_eq!(v.host, [HostAction::Clock(1.0), HostAction::Run(1)]);
+        assert_eq!(v.lines.first().unwrap().head, Head::Run(1));
+        assert_eq!(
+            v.lines.last().unwrap().head,
+            Head::Step {
+                statement: 1,
+                opcode: 0
+            }
+        );
+        let init = init_text(v);
+        assert!(init.starts_with("edicts 2\nmaxclients 1\nseed 7\n"));
+        assert!(init.contains("host clock 1\nhost run 1\n"));
+        assert!(parse("t.txt", "== v\ndatagram: 256\n").is_err());
+        assert!(parse("t.txt", "== v\nhost:\n  wait\n").is_err());
+        assert!(parse("t.txt", "== v\nexpect:\n  run x\n").is_err());
+        let plain = parse("t.txt", "== v\ncode:\n  DONE\n").unwrap();
+        assert!(init_text(plain.first().unwrap()).starts_with("edicts 3\nentry 1\n"));
+    }
+
+    #[test]
+    fn rejects_values_outside_32_bits() {
+        assert_eq!(
+            parse_value("0xffffffff", true).unwrap(),
+            Value::Bits(u32::MAX)
+        );
+        assert!(parse_value("0x100000000", true).is_err());
+        assert_eq!(
+            parse_value("i-2147483648", true).unwrap(),
+            Value::Bits(0x8000_0000)
+        );
+        assert!(parse_value("i2147483648", true).is_err());
+        assert!(parse_value("p1", true).is_err());
+        assert!(parse_value("e", true).is_err());
+        assert_eq!(parse_value("inf", true).unwrap(), Value::Bits(0x7f80_0000));
+    }
+
+    #[test]
+    fn rejects_malformed_string_escapes_and_trailing_text() {
+        assert!(parse_strings(r#""\x4""#).is_err());
+        assert!(parse_strings(r#""\xzz""#).is_err());
+        assert!(parse_strings(r#""a" b"#).is_err());
+        assert_eq!(parse_strings("").unwrap(), Vec::<Vec<u8>>::new());
+        let hash = parse("t.txt", "== v\nstrings: \"a#b\"\n").unwrap();
+        assert_eq!(hash.first().unwrap().strings, vec![b"a#b".to_vec()]);
+    }
+
+    #[test]
+    fn keeps_a_quoted_error_message_and_a_bare_error() {
+        let quoted = parse("t.txt", "== v\nexpect:\n  error \"NULL function\"\n").unwrap();
+        assert_eq!(
+            quoted.first().unwrap().end,
+            Some(End::Error(Some("NULL function".to_owned())))
+        );
+        let bare = parse("t.txt", "== v\nexpect:\n  error\n").unwrap();
+        assert_eq!(bare.first().unwrap().end, Some(End::Error(None)));
+    }
+
+    #[test]
+    fn keeps_a_well_formed_after_line() {
+        let vectors = parse("t.txt", "== v\nafter: depth=0 localstack=2\n").unwrap();
+        assert_eq!(vectors.first().unwrap().after, Some((0, 2)));
+        assert!(parse("t.txt", "== v\nafter: stack=2\n").is_err());
+    }
+
+    #[test]
+    fn refuses_a_malformed_error_line() {
+        for bad in ["error \"open", "errors", "error \"a # b\""] {
+            let text = format!("== v\nexpect:\n  {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        for bad in ["error \"a\" b", "error \"a\"b\"", "error x", "error \""] {
+            let text = format!("== v\nexpect:\n  {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        let empty = parse("t.txt", "== v\nexpect:\n  error \"\"\n").unwrap();
+        assert_eq!(
+            empty.first().unwrap().end,
+            Some(End::Error(Some(String::new())))
+        );
+    }
+
+    #[test]
+    fn refuses_a_malformed_after_line() {
+        for bad in ["depth=x localstack=2", "depth=0", "localstack=2"] {
+            let text = format!("== v\nafter: {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+        for bad in [
+            "",
+            "localstack=2 depth=0",
+            "depth=0 localstack=2 depth=1",
+            "depth=0 localstack=y",
+            "depth=0 localstack=",
+            "depth0 localstack=2",
+            "depth=99999999999 localstack=2",
+        ] {
+            let text = format!("== v\nafter: {bad}\n");
+            assert!(parse("t.txt", &text).is_err(), "{bad:?} parsed");
+        }
+    }
+
+    #[test]
+    fn parses_every_vector_file() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(super::VECTORS);
+        let mut count = 0_usize;
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|ext| ext == "txt") {
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                let text = std::fs::read_to_string(&path).unwrap();
+                count = count.saturating_add(parse(&name, &text).unwrap().len());
+            }
+        }
+        assert!(count > 0, "no vectors in {}", dir.display());
+    }
+
+    #[test]
+    fn refuses_text_after_the_operands() {
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3 4\n").is_err());
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 2 3\n").is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_operands_and_function_fields() {
+        assert!(parse("t.txt", "== v\ncode:\n  ADD_F 1 x 3\n").is_err());
+        assert!(parse("t.txt", "== v\ncode:\n  NOT_AN_OPCODE 1\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  2: first=1 colour=3\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  2: builtin=-2147483648\n").is_err());
+        assert!(parse("t.txt", "== v\nfunctions:\n  x: first=1\n").is_err());
     }
 }

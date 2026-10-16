@@ -1,0 +1,117 @@
+# Integer and number texts of a differential scenario: differential.md DIFF-2.7 to DIFF-2.9.
+# Format in README.md: <directive> <text> <result>, the result `refused` or the value read.
+
+# DIFF-2.7: integers, as the argument of `frames` (0 to 1000000).
+frames 0 0
+frames 100 100
+frames 0100 100
+frames 00 0
+frames -0 0
+frames 1000000 1000000
+frames 1000001 refused
+frames -1 refused
+frames +1 refused
+frames 1.0 refused
+frames 1. refused
+frames 1e2 refused
+frames 0x10 refused
+frames - refused
+frames 1_000 refused
+frames 1,000 refused
+frames 10a refused
+frames 0000000000000000001 1
+frames 00000000000000000000000000000000001000000 1000000
+frames -0000000000000000000 0
+frames 0000000000000000000001000001 refused
+frames 9999999999999999999 refused
+frames 99999999999999999999999999999999999999999 refused
+
+# DIFF-2.8: `frametime`, the double nearest the text, greater than 0 and at most 1.
+frametime 0.1 3fb999999999999a
+frametime .1 3fb999999999999a
+frametime 0.1000 3fb999999999999a
+frametime 100e-3 3fb999999999999a
+frametime 1 3ff0000000000000
+frametime 1. 3ff0000000000000
+frametime 1e0 3ff0000000000000
+frametime 1E+0 3ff0000000000000
+frametime 10e-1 3ff0000000000000
+frametime 0.5 3fe0000000000000
+frametime 2.5e-1 3fd0000000000000
+frametime 0.015625 3f90000000000000
+frametime 0.01666666666666666666666667 3f91111111111111
+frametime 1.0000000000000001 3ff0000000000000
+frametime 1.0000000000000002 refused
+frametime 2 refused
+frametime 0 refused
+frametime -0 refused
+frametime -0.1 refused
+frametime 1e-400 refused
+frametime 1e400 refused
+frametime +0.1 refused
+frametime inf refused
+frametime INF refused
+frametime Infinity refused
+frametime -inf refused
+frametime nan refused
+frametime NaN refused
+frametime 0x1p-4 refused
+frametime 0x.1 refused
+frametime . refused
+frametime -. refused
+frametime .e1 refused
+frametime e1 refused
+frametime 1e refused
+frametime 1e+ refused
+frametime 1e- refused
+frametime 1e1.5 refused
+frametime 0.1.2 refused
+frametime 0..1 refused
+frametime 0,1 refused
+frametime 0.1f refused
+frametime 0_1 refused
+frametime --0.1 refused
+frametime -+0.1 refused
+
+# DIFF-2.8: `model` numbers, the f32 nearest the text, finite.
+model 0 00000000
+model -0 80000000
+model 0.1 3dcccccd
+model .1 3dcccccd
+model 5. 40a00000
+model -.5 bf000000
+model 1E+3 447a0000
+model 1e-3 3a83126f
+model -4096 c5800000
+model 123.456 42f6e979
+model 1e+38 7e967699
+model 16777217 4b800000
+model 1.000000059604644775390625001 3f800001
+model 340282346638528859811704183484516925440 7f7fffff
+model 340282356779733661637539395458142568447 7f7fffff
+model 340282356779733661637539395458142568448 refused
+model 1e39 refused
+model -1e39 refused
+model 1e-45 00000001
+model 1e-46 00000000
+model -1e-46 80000000
+model 7.00649232162408535461864791644958065640130970938257885878534141944895541342930300743319094181060791015625e-46 00000000
+model 7.006492321624085354618647916449580656401309709382578858785341419448955413429303007433190941810607910156251e-46 00000001
+model +1 refused
+model inf refused
+model -Infinity refused
+model nan refused
+model 0x10 refused
+model . refused
+model 1e refused
+model 1d0 refused
+
+# DIFF-2.8: `v_angle` numbers, read as `model` numbers are.
+v_angle 90 42b40000
+v_angle -.5 bf000000
+v_angle 0.1 3dcccccd
+v_angle +90 refused
+v_angle nan refused
+v_angle inf refused
+v_angle 1e39 refused
+v_angle 0x5a refused

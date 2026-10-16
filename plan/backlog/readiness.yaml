@@ -104,9 +104,10 @@ groups:
     - P1-21
     - P1-22
     - P1-23
+    - P1-33
     - P0-24
     deliverable:
-    - 'docs/readiness/p1-r2.md following docs/readiness/_template.md, covering: P1-20, P1-21, P1-22, P1-23'
+    - 'docs/readiness/p1-r2.md following docs/readiness/_template.md, covering: P1-20, P1-21, P1-22, P1-23, P1-33'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -139,9 +140,13 @@ groups:
     - P1-11
     - P1-26
     - P1-32
+    - P1-35
+    - P1-36
+    - P1-38
+    - P1-39
     - P0-24
     deliverable:
-    - 'docs/readiness/p1-rg.md following docs/readiness/_template.md, covering: P1-11, P1-26, P1-32'
+    - 'docs/readiness/p1-rg.md following docs/readiness/_template.md, covering: P1-11, P1-26, P1-32, P1-35, P1-36, P1-38, P1-39'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README

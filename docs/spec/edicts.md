@@ -61,12 +61,21 @@ the progs' field slots, and QuakeC refers to an edict by its byte offset in that
 - **EDICT-1.7** Turning a number into an edict fails with `EDICT_NUM: bad number <n>` when the
   number is negative or not less than 600. Turning an edict back into a number fails with
   `NUM_FOR_EDICT: bad pointer` when the number is negative or not less than `num_edicts`.
-  An entity value is not checked when QuakeC uses it (`PROG_TO_EDICT` only adds); what an
-  invalid one does is in VM-11.4 and VM-12.5.
+  An entity value is not checked when QuakeC uses it (`PROG_TO_EDICT` only adds); what one
+  that names no edict (EDICT-1.9) does is in VM-11.4, VM-12.5 and BUILTIN-2.7.
 - **EDICT-1.8** Every map gets a new array: `SV_SpawnServer` reloads the progs, which resets
   every global to its value in the file (PROGS-12.1), and allocates the edicts zero-filled,
   so every field of every edict is 0 and no edict is free until the map's entities are
   spawned (EDICT-8). `num_edicts` starts at `maxclients + 1`.
+- **EDICT-1.9** An entity value **names an edict** when it is `n` times the edict size for a
+  whole number `n` from 0 to `LIMIT_MAX_EDICTS - 1` (599); it names edict `n`. It does so
+  whether or not `n` is below `num_edicts` and whether or not edict `n` is free: the array
+  holds all 600 edicts (EDICT-1.4), so id's code reads and writes such an edict as any other.
+  Any other value, negative, not a multiple of the edict size, or 600 edicts or more, names
+  none: id's `PROG_TO_EDICT` (`(edict_t *)((byte *)sv.edicts + e)`) then gives an address that
+  is not the start of an edict in the array, so what it reaches depends on the header size
+  (EDICT-1.3) or lies outside the array. The edict size is the VM's own (TRACE-2.1), so the
+  same edict number is a different value in a 32-bit and a 64-bit build.
 
 ### Constants
 
@@ -656,6 +665,16 @@ harness with `sv`, `svs` and `progs` reduced to the members those functions read
 `SV_UnlinkEdict` stubbed out and `Sys_Error` printing its message. The edicts had 105 field
 slots. Each row starts from a new map: `num_edicts` is `maxclients + 1` and nothing is free.
 
+Since P1-32 every row is a vector in [`vectors/vm/edicts.txt`](vectors/vm/edicts.txt), which
+`cargo xtask oracles` runs through the VM oracle on Linux, macOS and Windows in CI: `spawn`,
+`remove` and `nextent` are id's `PF_` functions, the host sets the clock between runs, and the
+`EDICT_NUM` rows call id's function from the host. On 2026-10-16 all 17 passed on macOS arm64.
+The trace shows fields and globals, not the edict header, so the vectors show the header through
+what reads it: the free flag through `nextent`, which skips free edicts, and `freetime` through
+the time at which `spawn` reuses the edict. Edict 2 of the `freetime` 3.25 row starts in use with
+every field slot 7 rather than being spawned and stored to; "`freetime` still 3.25" is not
+visible to QuakeC, since only allocation reads `freetime` and only of a free edict.
+
 | `maxclients` | Steps (time: action) | Result | Statements |
 | --- | --- | --- | --- |
 | 1 | 1.0: spawn, spawn | edicts 2, 3; `num_edicts` 4 | EDICT-6.2, EDICT-1.4 |
@@ -673,6 +692,14 @@ slots. Each row starts from a new map: `num_edicts` is `maxclients + 1` and noth
 | 1 | `EDICT_NUM(600)`, `EDICT_NUM(-1)`, `EDICT_NUM(599)` | `EDICT_NUM: bad number 600`, `EDICT_NUM: bad number -1`, edict 599 | EDICT-1.7 |
 | 1 | `NUM_FOR_EDICT` of edict `num_edicts` | `NUM_FOR_EDICT: bad pointer` | EDICT-1.7 |
 | 8 | 1.0: remove 3, spawn | 9 | EDICT-5.3, EDICT-6.1 |
+
+### Entity values
+
+EDICT-1.9 is checked through the builtins that read entity values, by the vectors
+`entity_unused_edict`, `entity_past_the_array`, `entity_not_a_multiple` and `entity_negative`
+in [`vectors/vm/builtins.txt`](vectors/vm/builtins.txt), which the VM oracle passed on
+2026-10-16 (`builtins.md`, Test vectors): with three edicts in use, edict 10 names an edict and
+its fields can be written and read; edict 600, the value 4 and -1 name none.
 
 The rest of this spec (EDICT-4, EDICT-5.2, EDICT-8 to EDICT-13) is behaviour of the running
 server. It was written from the source at the pinned commit and is checked against id's engine

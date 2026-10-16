@@ -86,19 +86,28 @@ const OPCODES: [&str; 66] = [
     "BITOR",
 ];
 
-const KEYS: [&str; 11] = [
+const KEYS: [&str; 17] = [
     "spec",
+    "builtins",
     "globals",
     "fields",
     "strings",
     "numglobals",
+    "edicts",
+    "maxclients",
+    "seed",
     "server",
     "entry",
     "steps",
     "after",
+    "datagram",
     "oracle",
     "functions",
+    "host",
 ];
+
+/// The first word of each line of a `host:` block (README, "Host actions").
+const HOST_ACTIONS: [&str; 7] = ["clock", "run", "think", "push", "physics", "frame", "edict"];
 
 /// One vector, with only what these checks need.
 #[derive(Debug, Default)]
@@ -144,8 +153,20 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                     let op = body.split_whitespace().next().unwrap_or_default();
                     vector.ops.push(op.to_owned());
                 }
-                "expect" => vector.expect.push(body.trim().to_owned()),
+                "expect" => {
+                    let body = body.trim();
+                    if body.starts_with("error") {
+                        check_error_line(body).map_err(|e| format!("{}: {e}", at()))?;
+                    }
+                    vector.expect.push(body.to_owned());
+                }
                 "functions" => {}
+                "host" => {
+                    let action = body.split_whitespace().next().unwrap_or_default();
+                    if !HOST_ACTIONS.contains(&action) {
+                        return Err(format!("{}: unknown host action `{action}`", at()));
+                    }
+                }
                 _ => return Err(format!("{}: indented line outside a block", at())),
             }
             continue;
@@ -161,11 +182,60 @@ fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
                     .extend(rest.split(',').map(|id| id.trim().to_owned()));
                 block = "";
             }
-            _ if KEYS.contains(&key) => block = if key == "functions" { "functions" } else { "" },
+            "functions" | "host" => block = key,
+            "after" => {
+                check_after_line(rest.trim()).map_err(|e| format!("{}: {e}", at()))?;
+                block = "";
+            }
+            _ if KEYS.contains(&key) => block = "",
             _ => return Err(format!("{}: unknown key `{key}`", at())),
         }
     }
     Ok(vectors)
+}
+
+/// An expect line naming `error`: the bare word, or `error "<message>"` with one quoted
+/// message and nothing after it (README, "Format"). The comment rule cuts a message at `#`,
+/// which leaves it unterminated and so refused.
+fn check_error_line(body: &str) -> Result<(), String> {
+    if body == "error" {
+        return Ok(());
+    }
+    let quoted = body
+        .strip_prefix("error \"")
+        .and_then(|rest| rest.strip_suffix('"'))
+        .is_some_and(|message| !message.contains('"'));
+    if quoted {
+        Ok(())
+    } else {
+        Err(format!(
+            "bad error line `{body}`: want `error` or `error \"<message>\"`"
+        ))
+    }
+}
+
+/// `after: depth=<d> localstack=<n>` (README, "Format"): both, each once, in that order, each
+/// an `i32`.
+fn check_after_line(rest: &str) -> Result<(), String> {
+    let words: Vec<&str> = rest.split_whitespace().collect();
+    let well_formed = match words.as_slice() {
+        [depth, localstack] => {
+            [(depth, "depth="), (localstack, "localstack=")]
+                .iter()
+                .all(|(word, key)| {
+                    word.strip_prefix(key)
+                        .is_some_and(|value| value.parse::<i32>().is_ok())
+                })
+        }
+        _ => false,
+    };
+    if well_formed {
+        Ok(())
+    } else {
+        Err(format!(
+            "bad after line `{rest}`: want `depth=<d> localstack=<n>`"
+        ))
+    }
 }
 
 fn active_statements() -> BTreeSet<String> {
@@ -267,6 +337,14 @@ fn parse_rejects_malformed_files() {
         parse("t", "== a\nno colon here\n").is_err(),
         "line without a key"
     );
+    assert!(
+        parse("t", "== a\nhost:\n  sleep 1\n").is_err(),
+        "unknown host action"
+    );
+    assert!(
+        parse("t", "== a\nhost:\n  clock 1\n  run 1\ncode:\n  DONE\n").is_ok(),
+        "a host block"
+    );
     let parsed = parse(
         "t",
         "== a\nspec: VM-4.1, VM-4.4\ncode:\n  ADD_F 1 2 3 # c\nexpect:\n  done\n",
@@ -278,4 +356,42 @@ fn parse_rejects_malformed_files() {
     assert_eq!(vector.spec, ["VM-4.1", "VM-4.4"]);
     assert_eq!(vector.ops, ["ADD_F"]);
     assert_eq!(vector.expect, ["done"]);
+}
+
+#[test]
+fn parse_refuses_a_malformed_error_line() {
+    for bad in [
+        "error \"open",
+        "errors",
+        "error \"a # b\"",
+        "error \"a\" b",
+        "error \"a\"b\"",
+        "error x",
+        "error \"",
+    ] {
+        let text = format!("== v\nexpect:\n  {bad}\n");
+        assert!(parse("t", &text).is_err(), "{bad:?} parsed");
+    }
+    for good in ["error", "error \"\"", "error \"Bad opcode 66\""] {
+        let text = format!("== v\nexpect:\n  {good}\n");
+        assert!(parse("t", &text).is_ok(), "{good:?} refused");
+    }
+}
+
+#[test]
+fn parse_refuses_a_malformed_after_line() {
+    for bad in [
+        "depth=x localstack=2",
+        "depth=0",
+        "localstack=2",
+        "",
+        "localstack=2 depth=0",
+        "depth=0 localstack=2 depth=1",
+        "depth=0 localstack=",
+        "depth=99999999999 localstack=2",
+    ] {
+        let text = format!("== v\nafter: {bad}\n");
+        assert!(parse("t", &text).is_err(), "{bad:?} parsed");
+    }
+    assert!(parse("t", "== v\nafter: depth=0 localstack=2\n").is_ok());
 }

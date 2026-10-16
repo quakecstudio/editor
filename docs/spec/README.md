@@ -51,8 +51,10 @@ statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
 `crates/qs-tests/tests/it/spec_coverage.rs` checks, on every `cargo test`:
 
 - Every active statement in `docs/spec/*.md` (all but `README.md` and `_`-prefixed templates)
-  is cited by a line starting `// spec <ID>` in a Rust file under `crates/` or `apps/`, or
-  is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv).
+  is cited by a line starting `// spec <ID>` in a Rust file under `crates/`, `apps/` or
+  `xtask/` (whose oracle module tests the oracles' C through the built oracle; its
+  `fixtures/` cite statements of their own), or is listed in
+  [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - Every citation names a statement that exists and is not withdrawn. A citation names
   statements (`PREFIX-n.m`), never just a section.
 - No statement in the baseline is cited: once a test cites it, it leaves the baseline in the
@@ -98,6 +100,7 @@ Each section holds, in this order:
 
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
+| `BSP` | [`bsp.md`](bsp.md) | BSP29 maps: the header and every lump and field, what id's loader checks, visibility, lightmaps and hulls; the two BSP2 variants; `.lit` and `.ent` files | [#142](https://github.com/quakecstudio/editor/issues/142) |
 | `BUILTIN` | [`builtins.md`](builtins.md) | Every vanilla builtin, numbers 1 to 78: prototype, arguments, result, effects on edicts, globals and the engine, failures, and how faithfully each can be mocked | [#28](https://github.com/quakecstudio/editor/issues/28) |
 | `DIFF` | [`differential.md`](differential.md) | The differential harness: scenarios, the deterministic mock engine both VMs run in (map setup, clients, server frames, mock builtins), errors and the end of a run, comparing two traces, expected divergences, statement coverage | [#51](https://github.com/quakecstudio/editor/issues/51) |
 | `EDICT` | [`edicts.md`](edicts.md) | Edict memory and numbering, the world and client edicts, spawn and remove with reuse timing, map entity spawning, QuakeC entry points and think timing, and the system globals and fields with who writes each | [#27](https://github.com/quakecstudio/editor/issues/27) |
@@ -105,8 +108,11 @@ Each section holds, in this order:
 | `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout, recognising an install and its files by checksum | [#29](https://github.com/quakecstudio/editor/issues/29) |
 | `LIMIT` | [`limits.md`](limits.md) | Format, VM, server and qcc limits as named constants | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `LNO` | [`lno.md`](lno.md) | `.lno` line maps: which compilers write them, the header, the line and GMQCC column tables, matching a progs.dat, reading and writing | [#41](https://github.com/quakecstudio/editor/issues/41) |
+| `MAP` | [`map.md`](map.md) | `.map` files: tokens, entities and key-value pairs, brushes, standard and Valve 220 texture definitions, the world and brush entities, the text both compilers read | [#142](https://github.com/quakecstudio/editor/issues/142) |
 | `MD5` | [`md5.md`](md5.md) | The rerelease's MD5 models: tokens, the `.md5mesh` joints and meshes, the `.md5anim` hierarchy and frames, as QuakeSpasm-Spiked reads them | [#235](https://github.com/quakecstudio/editor/issues/235) |
+| `MDL` | [`mdl.md`](mdl.md) | MDL alias models: header and the checks on it, skins and skin groups, texture coordinates, triangles, frames and frame groups, GLQuake's limits | [#142](https://github.com/quakecstudio/editor/issues/142) |
 | `PAK` | [`pak.md`](pak.md) | PAK archives: header, directory, reading entries, the modified-game CRC | [#29](https://github.com/quakecstudio/editor/issues/29) |
+| `PRJ` | [`project-file.md`](project-file.md) | Projects: `quakec.toml` and its modules, bare projects, output paths, the two forms of `progs.src`, the directives that decide which files are read, and each module's ordered file graph | [#47](https://github.com/quakecstudio/editor/issues/47) |
 | `PROGS` | [`progs.md`](progs.md) | progs.dat version 6 and FTE version 7, and the QC type layout | [#25](https://github.com/quakecstudio/editor/issues/25) |
 | `QC` | [`language.md`](language.md) | Vanilla QuakeC as id's `qcc` compiles it: lexing, `$frame`, the preprocessor, declarations, statements, expressions, types, `progs.src` and the progs each construct emits | [#30](https://github.com/quakecstudio/editor/issues/30) |
 | `QCD` | [`language-diagnostics.md`](language-diagnostics.md) | The error and warning catalogue with codes | [#30](https://github.com/quakecstudio/editor/issues/30) |

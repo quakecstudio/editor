@@ -47,6 +47,7 @@ The builtins that are ours rather than id's, and why: `ftos`, `vtos` and the joi
 `bprint` and the others (BUILTIN-7.5, BUILTIN-7.6, where id's buffers overflow or C libraries
 differ); `error` and `objerror` (the error record carries the joined text, DIFF-8.2); `break`
 (BUILTIN-16.3); `lightstyle`'s range check (BUILTIN-12.6), before id's `PF_lightstyle`;
+`WriteString` and `WriteEntity`, which read the destination first (BUILTIN-2.10);
 `traceline`'s collision, `checkclient`, `aim`, `droptofloor`, `walkmove` and `movetogoal`
 (DIFF-7); and `dprint`, `eprint`, `coredump`, `traceon` and `traceoff`, which only print.
 `ED_ParseEpair` is ours for EDICT-8.3.
@@ -54,7 +55,7 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 ## Building
 
 ```bash
-cargo xtask oracles                 # build all three, then run every VM vector through the VM oracle
+cargo xtask oracles                 # build all three, then run every VM vector and scenario number vector through the VM oracle
 cargo xtask oracles build           # build only; prints where the binaries are
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
 cargo xtask oracles rerelease <dir> # also compile the six rerelease codebases with FTEQCC
@@ -87,19 +88,38 @@ vm-oracle [--console] vector <progs.dat> <init> <trace>
 
 `scenario` runs a scenario file of DIFF-2 and writes its trace. `vector` runs one program of
 [`docs/spec/vectors/vm/`](../docs/spec/vectors/vm/README.md) in the vectors' environment (three
-edicts, the stub builtins), with initial values from an init file that xtask writes:
+edicts in use out of `LIMIT_MAX_EDICTS`, the stub builtins), with initial values from an init
+file that xtask writes:
 
 ```text
 edicts 3
+maxclients <n>                # optional: client slots with no player, 0 to 16
+seed <n>                      # optional: the random state of DIFF-6.2, 1 when absent
 loading                       # optional: the server is loading
+builtins engine               # optional: the scenario table of id's builtins, not the stubs
 entry 1
 global <slot> bits <hex> | entity <n> | pointer <n> <field>
 field <edict> <field> bits <hex> | entity <n> | pointer <n> <field>
+host clock <seconds> | run <function> | think <edict> <seconds> | push <edict> <seconds>
+host physics <seconds> <count> | frame <seconds> <count> | edict <n> <slot>
 ```
 
-Entity and pointer values are resolved by the oracle, since they depend on its edict layout. At
+Every number is the one its line takes, or the file is refused: an integer is an optional `-`
+and decimal digits (DIFF-2.7), in range (`edicts` 1 to 600, `seed` 0 to 4294967295, a slot,
+field or edict within the progs and the edicts in use, a count at least 1, an entity or
+pointer whose value fits in an `int`); `<hex>` is one to eight hexadecimal digits; `<seconds>`
+is a number as DIFF-2.8 writes it. A NUL byte, a line of 512 bytes or more, or a line of more
+than eight words is refused too.
+
+Entity and pointer values are resolved by the oracle, since they depend on its edict layout.
+Without `host` lines the oracle runs the entry function once; with them it does what they say,
+in order, as the vectors' README describes: set the clock, run a function, run id's
+`SV_RunThink` or `SV_Physics_Pusher` on one edict, run physics or server frames as scenario mode
+does, or write the entity value of id's `EDICT_NUM(n)` to a global. An error ends the actions. At
 the end it prints the call depth and the local stack in use (`depth=0 localstack=2`), which the
-vectors' `after:` lines check. `--console` copies the console to standard error.
+vectors' `after:` lines check, and on a second line the bytes of the unreliable datagram in hex
+(`datagram=40ff00c0`), which their `datagram:` lines check. `--console` copies the console to
+standard error.
 
 The exit status is 0 when the run was traced, QuakeC errors included (they are error records);
 2 when the command line, scenario or progs is refused, before any trace is written; 3 when a file
@@ -131,19 +151,30 @@ write the error record (TRACE-4.6 to TRACE-4.8, DIFF-8.1, DIFF-8.2) and return t
 which shuts the server down as DIFF-8.3 says. `PR_RunError` is id's; its message is the last
 console line it prints before calling `Host_Error ("Program error")`.
 
-### Readings the specs leave open
+### Argument checks
 
-The oracle had to choose an answer in these places; P1-31 (`plan/backlog/p1.yaml`)
-pins them in the specs so that `qc-builtins` makes the same choice:
+id's builtins read entity, string and field values without checking them. The specs fix what a
+bad one does, and the oracle makes the same checks as `qc-builtins`, with the messages of
+DIFF-6.6:
 
-- An entity value names an edict when it is a whole, non-negative number of edicts below
-  `LIMIT_MAX_EDICTS` (EDICT-1.5); any other is BUILTIN-2.3's `invalid entity`.
-- A string value is valid when it is inside the string table or is exactly the value of an
-  engine string; any other is BUILTIN-2.5's `invalid string`.
-- Those checks, and BUILTIN-8.3's `invalid field`, happen where id's code reads the argument
-  (`G_EDICT`, `PROG_TO_EDICT`, `G_STRING`, `E_STRING`), so a builtin's earlier writes stand.
-- `find` checks each edict's field value as a string argument.
-- `vtos` prints a NaN or an infinity component as `ftos` does (BUILTIN-7.6).
+- An entity value must name an edict (EDICT-1.9): a whole, non-negative number of edicts below
+  `LIMIT_MAX_EDICTS`, in use or not; any other is `invalid entity` (BUILTIN-2.7).
+- A string value must be inside the string table or exactly the value of an engine string
+  (BUILTIN-2.8); any other is `invalid string` (BUILTIN-2.5). A field index outside the
+  progs's fields is `invalid field` (BUILTIN-8.3).
+- Each check is made where id's code reads the value (BUILTIN-2.9): `quakedef.h` replaces
+  `G_EDICT`, `PROG_TO_EDICT`, `G_STRING` and `E_STRING` (and so `G_EDICTNUM`) with checked forms
+  in every file but `pr_exec.c`, and in the file of id's `pr_cmds.c` functions, which the build
+  marks with `QS_EXTRACTED_PR_CMDS`, it checks the `model` text `PF_makestatic` passes to
+  `SV_ModelIndex`. A builtin's earlier writes stand, and `find` checks the field of each edict
+  it examines and no other (BUILTIN-8.8).
+- `WriteString` and `WriteEntity` are ours: id's pass `WriteDest()` and the value as arguments
+  of one call, whose order C leaves to the compiler, and BUILTIN-2.10 reads the destination
+  first.
+- `vtos` prints a NaN or an infinity component as `ftos` does (BUILTIN-7.7).
+
+The vectors in [`builtins.txt`](../docs/spec/vectors/vm/builtins.txt) run id's builtins
+(`builtins: engine`) and pin each of these; `cargo xtask oracles` runs them with the others.
 
 ## FTEQCC and the rerelease
 
@@ -191,3 +222,27 @@ date of the compile and of the FTEQCC build. When the artifacts already have the
 digests, as after a CI cache hit, they are checked without compiling again. CI runs this in the
 Linux `Test Assets` job and caches `target/oracles/rerelease` on `oracles/`, the xtask oracle
 code and `corpus/manifest.toml`.
+
+## Readiness
+
+The oracles' C is the C tools layer's own code, and the readiness bar of
+[`docs/testing.md`](../docs/testing.md) applies to it as to a crate. `cargo xtask readiness
+<check> oracles` measures it, and the `Readiness` workflow takes `oracles` in its list of crates:
+
+- **Spec sections:** DIFF-1, DIFF-2, DIFF-3, DIFF-4, DIFF-5, DIFF-6, DIFF-7, DIFF-8, DIFF-10,
+  TRACE-1, TRACE-2, TRACE-3, TRACE-4 and TRACE-5: the statements the VM oracle and its driver
+  in `xtask/src/oracles/` implement. Comparing two traces and counting their statements is
+  the differential runner's work, not the oracle's.
+- **Lines and branches:** the VM oracle built with clang's source-based coverage
+  (`QS_ORACLE_COVERAGE`), run on every vector, number vector and probe (`cargo xtask oracles`)
+  and on the id 1.01 scenarios (`cargo xtask oracles id101`, from the corpus under
+  `QS_TEST_ASSETS`), counting the files of this directory and not id's. It needs clang and the
+  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `LLVM_PROFDATA` and `LLVM_COV` choose
+  them; on macOS `xcrun` finds Xcode's).
+- **Flakes:** `cargo xtask oracles`, 20 times on each OS after one build.
+- **Mutation:** an exception, recorded in [`ratchets.toml`](../ratchets.toml). The bar's
+  mutation tool, cargo-mutants (TEST-2), mutates Rust only. The C is held instead by tests
+  whose expectations are written from the spec without it: every vector, scenario number,
+  probe and scenario test states the trace or exit status the spec gives, so a fault in the C
+  fails one of them. The Rust that drives the oracles is in `xtask`, which cargo-mutants
+  measures.

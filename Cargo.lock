@@ -366,6 +366,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-project"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+ "qc-lexer",
+ "qc-preproc",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "qc-syntax"
 version = "2026.10.0"
 dependencies = [
@@ -396,6 +407,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qs-bsp"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+ "qc-progs",
+]
+
+[[package]]
 name = "qs-install"
 version = "2026.10.0"
 dependencies = [
@@ -414,6 +433,13 @@ dependencies = [
  "qs-paths",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "qs-map"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
 ]
 
 [[package]]
@@ -443,6 +469,8 @@ version = "2026.10.0"
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
+ "qs-bsp",
+ "qs-map",
  "qs-paths",
 ]
 
@@ -451,6 +479,8 @@ name = "qs-vfs"
 version = "2026.10.0"
 dependencies = [
  "qc-progs",
+ "qs-bsp",
+ "qs-map",
  "qs-mdl",
  "qs-pak",
  "qs-wad",
@@ -843,9 +873,11 @@ dependencies = [
  "qc-lexer",
  "qc-preproc",
  "qc-progs",
+ "qc-project",
  "qc-syntax",
  "qc-trace",
  "qc-types",
+ "qs-map",
  "qs-pak",
  "serde",
  "serde_json",

@@ -1,15 +1,69 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Feeds arbitrary bytes to the sprite reader (SPR-1, SPR-2) and to the MD5 mesh and
-//! animation readers (MD5-1 to MD5-3), each as given, after a valid start, and for MD5 as
-//! tokens the bytes pick from the formats' keywords, so the fuzzer reaches past the headers.
-//! Fails on a panic, and on a frame whose pixels do not match its size.
+//! Feeds arbitrary bytes to the alias model reader (MDL-1 to MDL-5), the sprite reader (SPR-1,
+//! SPR-2) and the MD5 mesh and animation readers (MD5-1 to MD5-3), each as given, after or
+//! over a valid start, and for MD5 as tokens the bytes pick from the formats' keywords, so the
+//! fuzzer reaches past the headers. Fails on a panic, on a frame whose pixels do not match its
+//! size, and on an alias model whose triangles name vertices it lacks.
 
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
 use qs_mdl::spr::{SpriteFrame, SpriteFrameEntry};
-use qs_mdl::{Md5Anim, Md5Mesh, Sprite};
+use qs_mdl::mdl::MdlFrameEntry;
+use qs_mdl::{Md5Anim, Md5Mesh, Mdl, Sprite};
+
+/// The `base` vector of `docs/spec/vectors/mdl/`, an `xxd` dump.
+const MDL_BASE: &str = include_str!("../../docs/spec/vectors/mdl/base.txt");
+
+fn mdl_base() -> Vec<u8> {
+    let mut out = Vec::new();
+    for line in MDL_BASE.lines() {
+        let Some((_, rest)) = line.split_once(": ") else {
+            continue;
+        };
+        for group in rest.get(..39).unwrap_or(rest).split_whitespace() {
+            for pair in group.as_bytes().chunks(2) {
+                let pair = core::str::from_utf8(pair).unwrap();
+                out.push(u8::from_str_radix(pair, 16).unwrap());
+            }
+        }
+    }
+    out
+}
+
+fn alias(data: &[u8]) {
+    let Ok(model) = Mdl::read(data) else {
+        return;
+    };
+    let numverts = usize::try_from(model.header.numverts).unwrap();
+    for triangle in &model.triangles {
+        assert!(triangle.vertindex.iter().all(|&vertex| vertex < numverts));
+        let _s = model.skin_s(triangle, 0);
+    }
+    for entry in &model.frames {
+        if let MdlFrameEntry::Single(frame) = entry {
+            assert_eq!(frame.vertex_count(), numverts);
+        }
+        let _name = entry.name();
+    }
+    let _normals = model.bad_normals();
+    let _limits = model.gl_limits();
+    let _size = model.size();
+}
+
+/// `data` written over the base model, at the offset its first byte picks.
+fn over_base(data: &[u8]) -> Vec<u8> {
+    let mut bytes = mdl_base();
+    if let [at, rest @ ..] = data {
+        let at = usize::from(*at) % bytes.len();
+        for (offset, byte) in rest.iter().enumerate() {
+            let index = (at + offset) % bytes.len();
+            bytes[index] = *byte;
+        }
+    }
+    bytes
+}
 
 /// A sprite header of version 1 with one frame entry, the start of SPR-1.1.
 const SPR_START: &[u8] =
@@ -109,6 +163,8 @@ fn prefixed(start: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 fuzz_target!(|data: &[u8]| {
+    alias(data);
+    alias(&over_base(data));
     sprite(data);
     sprite(&prefixed(SPR_START, data));
     md5(data, data);

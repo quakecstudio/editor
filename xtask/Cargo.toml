@@ -14,9 +14,11 @@ miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qc-lexer = { workspace = true }
 qc-preproc = { workspace = true }
 qc-progs = { workspace = true }
+qc-project = { workspace = true }
 qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }
+qs-map = { workspace = true }
 qs-pak = { workspace = true }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
