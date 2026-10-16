@@ -16,6 +16,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0001](0001-record-decisions.md) | Record decisions as ADRs resolved from decision issues | Accepted |
 | [0002](0002-license-model.md) | License the whole project GPL-3.0-or-later | Accepted |
 | [0004](0004-preview-host-base.md) | Build the preview host in Rust on wgpu | Accepted |
+| [0005](0005-default-preview-target.md) | Run only our own preview host, with no outside engines | Accepted |
 | [0006](0006-product-name.md) | Keep the name QuakeC Studio | Accepted |
 | [0007](0007-mvp-scope.md) | Confirm the MVP In list and move ACP, next-edit and the updater after it | Accepted |
 | [0008](0008-game-directories.md) | Launch engines from a linked run directory inside the project | Accepted |

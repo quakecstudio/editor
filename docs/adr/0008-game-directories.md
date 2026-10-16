@@ -117,6 +117,8 @@ Plan changes to make after this ADR merges:
 
 ## Links
 
+- Partly overridden by [ADR-0005](0005-default-preview-target.md): the IDE runs only our own preview host, so the outside-engine adapters are removed.
+
 - Issue: [#22](https://github.com/quakecstudio/editor/issues/22); pull request: this ADR's draft PR.
 - Related: [ADR-0011](0011-app-directories.md) (application directories), [ADR-0004](0004-preview-host-base.md) in [#221](https://github.com/quakecstudio/editor/pull/221) (preview host base, option D: a Rust preview host).
 - Design document: [Platform support](../design/design-doc.md#platform-support), [Source and licensing](../design/design-doc.md#source-and-licensing).

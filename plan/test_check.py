@@ -122,9 +122,9 @@ class ScopeRule(unittest.TestCase):
         self.assertEqual(errors, ["L-04: LATER issue not linked from docs/scope.md as [L-04](<issue URL>)"])
 
     def test_later_key_mentioned_but_not_linked(self):
-        errors = self.scope_errors(re.sub(r"\[L-05\]\([^)]*\)", "L-05", self.text))
+        errors = self.scope_errors(re.sub(r"\[L-06\]\([^)]*\)", "L-06", self.text))
         self.assertEqual(len(errors), 1)
-        self.assertIn("L-05", errors[0])
+        self.assertIn("L-06", errors[0])
 
     def test_key_prefix_does_not_count(self):
         # L-1 must not be satisfied by a link to L-10.
@@ -190,10 +190,10 @@ class RiskRule(unittest.TestCase):
         self.assertEqual(self.risk_errors(self.risks.replace(row, "|".join(cells))), ["R-2: no linked issue"])
 
     def test_unknown_status(self):
-        row = next(l for l in self.risks.splitlines() if l.startswith("| R-6 |"))
+        row = next(l for l in self.risks.splitlines() if l.startswith("| R-7 |"))
         errors = self.risk_errors(self.risks.replace(row, row.replace("| Open |", "| Done |")))
         self.assertEqual(len(errors), 1)
-        self.assertTrue(errors[0].startswith("R-6: status must be one of"))
+        self.assertTrue(errors[0].startswith("R-7: status must be one of"))
 
     def test_malformed_row(self):
         row = next(l for l in self.risks.splitlines() if l.startswith("| R-1 |"))

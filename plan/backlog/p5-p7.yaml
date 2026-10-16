@@ -480,7 +480,7 @@ groups:
     deliverable:
     - Full-quality mode in qmap-light with coloured light and .lit output
     acceptance:
-    - Image comparison against id light within tolerance; .lit loads in QuakeSpasm, vkQuake and the preview host
+    - Image comparison against id light within tolerance; .lit loads in the preview host
     verify:
     - Differential suite; image tests
   - key: P7-02
@@ -735,24 +735,6 @@ groups:
     - No divergence in the differential suite with each flag on
     verify:
     - Differential suite
-  - key: L-05
-    title: DarkPlaces adapter
-    labels:
-    - L4-bridges
-    - area:preview
-    - type:feature
-    size: M
-    reqs:
-    - ENG-6
-    - MVP-3
-    depends:
-    - P3-06
-    deliverable:
-    - 'Adapter: recompile + restart, prvm_edict and prvm_global inspection over rcon or stdin'
-    acceptance:
-    - Inspection works in the Entities and Properties panels
-    verify:
-    - Adapter tests
   - key: L-06
     title: Embedded game view
     labels:

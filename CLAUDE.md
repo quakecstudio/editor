@@ -41,14 +41,14 @@ editor/
 | L1 VM | qc-vm, qc-edict, qc-builtins: what the engine executes |
 | L2 syntax | Preprocessor, lossless CST, progs.src project graph |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions |
-| L4 bridges | Our QuakeC and map compilers; the engine bridge and adapters |
+| L4 bridges | Our QuakeC and map compilers; the engine bridge |
 | L5 commands | Command engine, session, undo: one registry for UI, CLI, agent and MCP |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP |
 | L7 UI | The app on the chosen framework |
 | apps | Desktop app, CLI, LSP server |
 
 **Separate processes.** The oracles (id's VM and qcc, a pinned FTEQCC, later id's map tools
-and ericw-tools, and a pinned QuakeSpasm build as the engine oracle) are C programs in
+and ericw-tools, and id's engine as the engine oracle) are C programs in
 `oracles/`, run only in CI to prove our ports match. The preview host is our own Rust app in
 `apps/preview-host` ([ADR-0004](docs/adr/0004-preview-host-base.md)), built on our QuakeC VM,
 `qs-sim`, `qs-sound` and the wgpu renderer, and runs as its own process, talking to the IDE over

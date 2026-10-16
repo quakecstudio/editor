@@ -56,7 +56,7 @@ anything that issue answers no to moves to the post-MVP backlog and onto this pa
 | Semantic core for the vanilla and FTEQCC dialects, SSQC module only | [Phase 2](https://github.com/quakecstudio/editor/milestone/3) |
 | Editor with navigation, diagnostics, completion and hover docs | [Phase 2](https://github.com/quakecstudio/editor/milestone/3) |
 | Our own compiler for vanilla plus the FTEQCC features the rerelease uses; no outside toolchain | [Phase 2](https://github.com/quakecstudio/editor/milestone/3) |
-| Preview host with reload-on-save, breakpoints and an entity inspector; FTEQW adapter on Windows and Linux | [Phase 3](https://github.com/quakecstudio/editor/milestone/4) |
+| Preview host with reload-on-save, breakpoints and an entity inspector | [Phase 3](https://github.com/quakecstudio/editor/milestone/4) |
 | Agent panel with diff review, checkpoints and the agent tools; MCP server | [Phase 4](https://github.com/quakecstudio/editor/milestone/5) |
 | Signed builds for macOS, Windows and Linux | [Phase 4](https://github.com/quakecstudio/editor/milestone/5) |
 | Export a mod as a zip players can install: progs.dat, maps and the project's own assets, optionally in a PAK, with a README and license notices, never id's game data | [Phase 4](https://github.com/quakecstudio/editor/milestone/5) |
@@ -67,7 +67,7 @@ Everything in the design document's "Out (later)" list, each with its issue in t
 
 - GMQCC dialect, CSQC and MenuQC modules.
 - Compiler optimizations beyond constant folding.
-- DarkPlaces adapter, embedded game view, web build, and the map editor (Phases 5 to 7).
+- Embedded game view, web build, and the map editor (Phases 5 to 7).
 
 ## Post-MVP
 
@@ -80,7 +80,6 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | CSQC and MenuQC modules | MVP scope, Out | [L-03](https://github.com/quakecstudio/editor/issues/187) Spec: CSQC and MenuQC modules; [L-09](https://github.com/quakecstudio/editor/issues/193) Implement CSQC and MenuQC modules |
 | The rest of FTEQCC, beyond the features the rerelease uses | Compiler, Dialects in order | [L-01](https://github.com/quakecstudio/editor/issues/185) Spec: FTEQCC code generation beyond the rerelease subset; [L-08](https://github.com/quakecstudio/editor/issues/192) Generate code for full FTEQCC |
 | Compiler optimizations beyond constant folding | MVP scope, Out; Compiler | [L-04](https://github.com/quakecstudio/editor/issues/188) Dead-code removal and string and global deduplication |
-| DarkPlaces adapter | MVP scope, Out | [L-05](https://github.com/quakecstudio/editor/issues/189) DarkPlaces adapter |
 | Embedded game view | MVP scope, Out; Engine bridge, Docking | [L-06](https://github.com/quakecstudio/editor/issues/190) Embedded game view |
 | Web build | Non-goals for v1; MVP scope, Out | [L-07](https://github.com/quakecstudio/editor/issues/191) Web build |
 | ericw-tools class advanced lighting | Map editor, Our own map compiler | [L-12](https://github.com/quakecstudio/editor/issues/195) Advanced lighting (ericw-tools class) |

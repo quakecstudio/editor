@@ -50,8 +50,8 @@ a layer's readiness review runs (the on-demand `Readiness` workflow), not on eve
   by deleting each token, parser fuzzing.
 - **L3 semantics:** golden indexes (definitions, references, diagnostics) for the corpus;
   incrementality asserted by query counters.
-- **L4 bridges:** compiler differential suites; adapter suites run against real headless
-  engines; protocol conformance tests on both sides of the bridge.
+- **L4 bridges:** compiler differential suites; bridge client suites run against the headless
+  preview host; protocol conformance tests on both sides of the bridge.
 - **L5 commands:** every command has a schema test, an undo test and a guard test.
 - **L6 agent:** tests use a scripted fake model; evals (P4-15) measure quality, not correctness.
 - **L7 UI and apps:** coverage applies to non-rendering code; every command and panel has

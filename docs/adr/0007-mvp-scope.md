@@ -86,6 +86,8 @@ The plan changes are in this ADR's pull request:
 
 ## Links
 
+- Partly overridden by [ADR-0005](0005-default-preview-target.md): the IDE runs only our own preview host, so the outside-engine adapters are removed.
+
 - Issue: [#21](https://github.com/quakecstudio/editor/issues/21); pull request: this ADR's draft PR.
 - Design document: [MVP scope](../design/design-doc.md#mvp-scope), [Editor and UI](../design/design-doc.md#editor-and-ui), [Product principles](../design/design-doc.md#product-principles).
 - [`docs/scope.md`](../scope.md), [`docs/risks.md`](../risks.md) (R-8), [`docs/design/README.md`](../design/README.md) (approved mockups).

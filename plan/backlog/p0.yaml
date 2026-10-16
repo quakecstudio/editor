@@ -314,7 +314,7 @@ issues:
   deliverable:
   - docs/adr/0005-default-preview-target.md
   acceptance:
-  - States the default per OS and when FTEQW is offered instead
+  - States that Play always runs our preview host on every OS and that the IDE launches no outside engine
   verify:
   - ADR merged
 - key: P0-15
@@ -476,8 +476,7 @@ issues:
   labels:
   - repo
   - area:process
-  - type:decision
-  - needs:human
+  - type:chore
   size: M
   reqs:
   - TEST-1
@@ -505,8 +504,7 @@ issues:
   labels:
   - L7-ui
   - area:editor
-  - type:decision
-  - needs:human
+  - type:feature
   size: M
   reqs:
   - UI-14

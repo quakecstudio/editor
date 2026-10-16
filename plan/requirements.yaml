@@ -10,7 +10,7 @@
 # design_doc_sha256 is the SHA-256 of docs/design/design-doc.md (LF line endings) that these
 # requirements were last reviewed against. plan/check.py fails when the design doc changes until
 # the requirements are reviewed and the new hash, which the failure prints, is recorded here.
-design_doc_sha256: b51f21544f3ce96383fdc8164c01dd07b412927f5177b9bb804ed0c550c95b92
+design_doc_sha256: 3ada43681ada8374465d1135f35eef286ee16c8a474e95e131fede87c625d431
 
 sections:
   - id: GOAL
@@ -42,10 +42,7 @@ sections:
       - {id: PLAT-1, kind: stated, text: "IDE targets macOS universal, Windows x64/arm64 and Linux x86_64/aarch64 from one codebase"}
       - {id: PLAT-2, kind: stated, text: "Detect Steam and GOG Quake installs (id1 and rerelease folders) on all three OSes and point engines at them"}
       - {id: PLAT-3, kind: stated, text: "Preview host provides identical live preview on macOS, Windows and Linux"}
-      - {id: PLAT-4, kind: stated, text: "Verify FTEQW's Apple silicon status before relying on it"}
       - {id: PLAT-6, kind: implied, text: "Game directory strategy: build output and engine launch against the user's install without modifying or copying it"}
-      - {id: PLAT-7, kind: implied, text: "Detect and configure third-party engines (FTEQW, vkQuake, QuakeSpasm, Ironwail): paths and versions"}
-      - {id: PLAT-5, kind: stated, text: "vkQuake and QuakeSpasm/Ironwail usable as restart-loop preview targets and for compatibility checks"}
       - {id: PLAT-8, kind: stated, text: "On macOS, where Steam and GOG sell Quake as Windows-only, accept any folder with id1/pak0.pak, recognise steamcmd downloads and GOG installers extracted with innoextract, and guide the user through it on first run; game data is read in place, never copied"}
 
   - id: PRIN
@@ -65,7 +62,7 @@ sections:
     title: Architecture
     requirements:
       - {id: ARCH-1, kind: stated, text: "Crate layers L0-L7 plus apps; a crate depends only on lower layers, enforced by cargo xtask layers"}
-      - {id: ARCH-2, kind: stated, text: "C programs (the id VM, id qcc, engine and map-tool oracles) and the preview host run as separate processes and talk to the IDE over protocols"}
+      - {id: ARCH-2, kind: stated, text: "C programs (the id VM, id qcc, id engine and map-tool oracles) and the preview host run as separate processes and talk to the IDE over protocols"}
       - {id: ARCH-3, kind: implied, text: "Cargo workspace scaffold, toolchain pin, rustfmt/clippy config and pinned dependency policy"}
 
   - id: FND
@@ -113,13 +110,10 @@ sections:
   - id: ENG
     title: Engine bridge and live preview
     requirements:
-      - {id: ENG-1, kind: stated, text: "EngineAdapter trait: launch, reload, set_breakpoint, step, inspect, console, screenshot"}
+      - {id: ENG-1, kind: stated, text: "Engine bridge client for our preview host, the only engine the IDE runs (ADR-0005): launch, reload, set_breakpoint, step, inspect, console, screenshot"}
       - {id: ENG-2, kind: stated, text: "Preview host: our own engine in Rust, ported from id's GPL source, rendering through wgpu and running qc-vm, qc-edict and qc-builtins, with an IDE bridge emitting structured events over a versioned JSON local-socket protocol (ADR-0004)"}
       - {id: ENG-3, kind: stated, text: "Preview host hot reload keeps the map and migrates fields by name where types match"}
       - {id: ENG-4, kind: stated, text: "Preview host debugging: breakpoints, step, watch, entity tree"}
-      - {id: ENG-5, kind: stated, text: "FTEQW adapter: applycompile reload and the fteqccgui debug protocol over stdin/stdout with -qcdebug"}
-      - {id: ENG-6, kind: stated, text: "DarkPlaces adapter: recompile + restart, prvm_* inspection over rcon/stdin (post-MVP)"}
-      - {id: ENG-7, kind: stated, text: "QuakeSpasm, Ironwail and vkQuake adapter: recompile + restart over the stdin console"}
       - {id: ENG-8, kind: stated, text: "KEX rerelease as a compile target only"}
       - {id: ENG-9, kind: stated, text: "v1 docking: engine window placed beside the IDE and following focus"}
       - {id: ENG-10, kind: stated, text: "Embedded game view inside the IDE (later)"}
@@ -148,7 +142,7 @@ sections:
     title: Editor and UI
     requirements:
       - {id: UI-1, kind: stated, text: "Two-week gpui vs egui spike against the acceptance test on Mac, Windows and Linux; decision recorded"}
-      - {id: UI-2, kind: stated, text: "Layout: toolbar (Play, Pause, Step, Restart map, engine picker); Project and Entities left; editor and game centre; Properties and agent right; Problems, Console, Debugger bottom"}
+      - {id: UI-2, kind: stated, text: "Layout: toolbar (Play, Pause, Step, Restart map); Project and Entities left; editor and game centre; Properties and agent right; Problems, Console, Debugger bottom"}
       - {id: UI-3, kind: stated, text: "Play loop: Play launches the preview host; save hot-reloads; clicking an entity selects it everywhere; Pause freezes for inspection"}
       - {id: UI-4, kind: stated, text: "Code editor: semantic highlighting, multi-cursor, IME, large files, inline diff rendering"}
       - {id: UI-5, kind: stated, text: "Agent panel with parallel threads, checkpoints and hunk-by-hunk review, modelled on Zed's"}
@@ -214,15 +208,15 @@ sections:
     requirements:
       - {id: MVP-1, kind: stated, text: "MVP acceptance: open the rerelease QuakeC, agent adds a weapon, review the diff, it fires in a live game on macOS, Windows and Linux"}
       - {id: MVP-2, kind: stated, text: "Phases run in order; each gate must pass before the next phase starts"}
-      - {id: MVP-4, kind: stated, text: "MVP In list: semantic core for vanilla and FTEQCC dialects (SSQC only); editor with navigation, diagnostics, completion, hover; own compiler for vanilla + rerelease FTEQCC features; preview host with reload-on-save, breakpoints, entity inspector; FTEQW adapter on Windows and Linux; agent panel with diff review, checkpoints, the agent tools; MCP server; signed builds"}
+      - {id: MVP-4, kind: stated, text: "MVP In list: semantic core for vanilla and FTEQCC dialects (SSQC only); editor with navigation, diagnostics, completion, hover; own compiler for vanilla + rerelease FTEQCC features; preview host with reload-on-save, breakpoints, entity inspector; agent panel with diff review, checkpoints, the agent tools; MCP server; signed builds"}
       - {id: MVP-5, kind: stated, text: "Dates stay open until the Phase 0 spike sizes the work, then the roadmap is dated"}
-      - {id: MVP-3, kind: stated, text: "Post-MVP items tracked: GMQCC, CSQC and MenuQC, optimizations beyond constant folding, DarkPlaces adapter, embedded game view, web build"}
+      - {id: MVP-3, kind: stated, text: "Post-MVP items tracked: GMQCC, CSQC and MenuQC, optimizations beyond constant folding, embedded game view, web build"}
 
   - id: OPEN
     title: Risks and open questions
     requirements:
       - {id: OPEN-1, kind: stated, text: "Product name and trademark check"}
-      - {id: OPEN-2, kind: stated, text: "Default preview target: our host or FTEQW where available"}
+      - {id: OPEN-2, kind: stated, text: "Default preview target: our host, always; no outside engines (ADR-0005)"}
       - {id: OPEN-3, kind: stated, text: "Does a web build matter enough to choose egui"}
       - {id: OPEN-4, kind: stated, text: "Which public mods form the conformance corpus and are their licenses OK"}
       - {id: OPEN-5, kind: stated, text: "Risk register reviewed at every phase gate"}

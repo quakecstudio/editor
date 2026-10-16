@@ -17,7 +17,7 @@ Issue: #$ARGUMENTS
 4. Check the labels:
    - `needs:human`: do not implement or merge. Use the `prepare-decision` skill (decisions) or prepare what a person needs and comment on the issue (hardware, credentials, legal, the MVP release). Then stop.
    - `escalated`: a person has been asked to resolve something; read the latest comment and stop unless it says the blocker is resolved.
-   - `c-tools`: the work is C code in `oracles/` (the oracles, including the pinned QuakeSpasm engine oracle). If it needs a repository that does not exist yet, stop and report it: Justin creates repositories.
+   - `c-tools`: the work is C code in `oracles/` (the oracles, including id's engine as the engine oracle). If it needs a repository that does not exist yet, stop and report it: Justin creates repositories.
    - `type:readiness`: use the `readiness-review` skill instead.
    - `type:gate`: use the `gate-review` skill instead.
 5. Never commit Quake game data (pak0/pak1) or QuakeC 1.06, which has no license. Fetch third-party sources and corpora by checksum instead of vendoring them.
