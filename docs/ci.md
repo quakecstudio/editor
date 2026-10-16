@@ -28,8 +28,9 @@ queue merges a group only when every required check below has passed on it.
 | `Pinned Actions` | fails if any workflow uses an action not pinned to a full commit SHA (`zgosalvez/github-actions-ensure-sha-pinned-actions`) |
 | `zizmor` | audits every workflow with zizmor and fails on any finding |
 
-[`.github/workflows/bench.yml`](../.github/workflows/bench.yml) runs on pull requests and pushes
-to `main`, not in the merge queue, and is **not** a required check:
+[`.github/workflows/bench.yml`](../.github/workflows/bench.yml) runs weekly and on demand
+(`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a required
+check:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
