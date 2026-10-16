@@ -222,3 +222,27 @@ date of the compile and of the FTEQCC build. When the artifacts already have the
 digests, as after a CI cache hit, they are checked without compiling again. CI runs this in the
 Linux `Test Assets` job and caches `target/oracles/rerelease` on `oracles/`, the xtask oracle
 code and `corpus/manifest.toml`.
+
+## Readiness
+
+The oracles' C is the C tools layer's own code, and the readiness bar of
+[`docs/testing.md`](../docs/testing.md) applies to it as to a crate. `cargo xtask readiness
+<check> oracles` measures it, and the `Readiness` workflow takes `oracles` in its list of crates:
+
+- **Spec sections:** DIFF-1, DIFF-2, DIFF-3, DIFF-4, DIFF-5, DIFF-6, DIFF-7, DIFF-8, DIFF-10,
+  TRACE-1, TRACE-2, TRACE-3, TRACE-4 and TRACE-5: the statements the VM oracle and its driver
+  in `xtask/src/oracles/` implement. Comparing two traces and counting their statements is
+  the differential runner's work, not the oracle's.
+- **Lines and branches:** the VM oracle built with clang's source-based coverage
+  (`QS_ORACLE_COVERAGE`), run on every vector, number vector and probe (`cargo xtask oracles`)
+  and on the id 1.01 scenarios (`cargo xtask oracles id101`, from the corpus under
+  `QS_TEST_ASSETS`), counting the files of this directory and not id's. It needs clang and the
+  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `LLVM_PROFDATA` and `LLVM_COV` choose
+  them; on macOS `xcrun` finds Xcode's).
+- **Flakes:** `cargo xtask oracles`, 20 times on each OS after one build.
+- **Mutation:** an exception, recorded in [`ratchets.toml`](../ratchets.toml). The bar's
+  mutation tool, cargo-mutants (TEST-2), mutates Rust only. The C is held instead by tests
+  whose expectations are written from the spec without it: every vector, scenario number,
+  probe and scenario test states the trace or exit status the spec gives, so a fault in the C
+  fails one of them. The Rust that drives the oracles is in `xtask`, which cargo-mutants
+  measures.

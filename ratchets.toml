@@ -2,8 +2,7 @@
 #
 # A readiness review that passes records its crates' numbers here, and
 # `cargo xtask ratchet` (run by the Readiness workflow) fails any crate that
-# measures below its minimums or below the bar. No crate has passed a review
-# yet, so there are no tables.
+# measures below its minimums or below the bar.
 #
 # One table per crate, the whole percentage measured, rounded down:
 #
@@ -17,6 +16,17 @@
 #   exceptions = { branches = "why; also stated in the crate README" }
 #   equivalent_mutants = { "src/lib.rs: replace f -> u8 with 0" = "why it cannot be killed" }
 #
+# Before any review has passed, a table may hold only `exceptions` and their
+# `reason`: no `readiness` key and no minimums, which the first passing review
+# adds. A check under `exceptions` with no minimum passes even when no tool
+# measures it.
+#
 # Changing a crate's numbers needs a new `readiness` key; lowering one, or
 # adding an exception or equivalent mutant, also needs a new `reason`.
 # `cargo xtask ratchet` checks this over the file's whole git history.
+
+# The C tools layer's own C (`cargo xtask readiness <check> oracles`): the bar
+# applies to it as to a crate, except mutation, which oracles/README.md explains.
+[crates.oracles]
+reason = "P1-35: no mutation tool of the bar runs on the oracles' C"
+exceptions = { mutation = "cargo mutants, the bar's mutation tool (docs/testing.md, TEST-2), mutates Rust only, and the oracles are C; every vector, probe and scenario test states the trace or exit status the spec gives, written without the C, so a fault in the C fails an expectation (oracles/README.md, Readiness)" }
