@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Ensure plan dependencies (PyYAML)",
+      "trigger": "SessionStart",
+      "description": "Fallback for sandboxes with a read-only HOME: makes PyYAML importable for the plan/ checks by installing it into a writable workspace-local dir and reporting the PYTHONPATH. Does not replace .claude/hooks/session-setup.sh; idempotent and always exits 0.",
+      "action": {
+        "type": "command",
+        "command": "bash \"$CLAUDE_PROJECT_DIR/.kiro/hooks/ensure-pydeps.sh\"",
+        "timeout": 180
+      }
+    }
+  ]
+}
