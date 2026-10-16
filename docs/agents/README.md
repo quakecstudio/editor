@@ -16,7 +16,7 @@ Other phase gates are not yours: the reviewer agent closes a gate once every iss
 
 Any issue an agent cannot finish without a person gets the `escalated` label and a comment saying what is needed. `status.py` treats it like `needs:human`; remove the label once it is resolved.
 
-Creating new GitHub repositories (`quakecstudio/preview-host`, `quakecstudio/tree-sitter-quakec`) is also Justin's; an agent that needs one stops and says so.
+Creating new GitHub repositories (such as `quakecstudio/tree-sitter-quakec`) is also Justin's; an agent that needs one stops and says so.
 
 ## The pieces
 
@@ -63,7 +63,7 @@ Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues 
 | 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope and the signing secrets. The license is decided; the agent closes the gate. |
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
 | 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. Needs `quakecstudio/tree-sitter-quakec` for the grammar (#71). |
-| 3 | Needs `quakecstudio/preview-host` for the fork (#90). Engine integration tests need the redistributable test assets chosen in #17. |
+| 3 | The preview host is our Rust app in `apps/preview-host` (ADR-0004), checked against a pinned QuakeSpasm build in `oracles/`. Engine integration tests need the redistributable test assets chosen in #17. |
 | 4 | Autonomous up to signing and release, which need the credentials from #23, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
