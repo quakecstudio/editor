@@ -748,6 +748,24 @@ issues:
   - The statement quotes its evidence (the original build's code generation, or a run of id's loader built as the original was) and qs-bsp agrees with id's loader so built on the LibreQuake lite BSPs
   verify:
   - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-41
+  title: Store face texturemins and extents in 16 bits as id's loader does
+  labels:
+  - L0-formats
+  - area:map
+  - type:spec
+  size: S
+  reqs:
+  - MAP-6
+  depends:
+  - P1-40
+  deliverable:
+  - 'docs/spec/bsp.md: a statement that CalcSurfaceExtents stores texturemins and extents in the short fields of msurface_t (WinQuake/model.h, gl_model.h), so a value outside -32768 to 32767 keeps its low 16 bits before the check of BSP-9.4 and the lightmap size of BSP-9.7 (WINQUAKE.EXE compares the 16-bit value: cmpw $0x100), with BSP-9.9 withdrawn and replaced where it says the results wrap as 32-bit integers; found while doing P1-40'
+  - crates/qs-bsp keeps the 16-bit values, with a test that cites the statement and a BSP vector whose extent is 65536 + 16
+  acceptance:
+  - A face with an extent of 65552 and no TEX_SPECIAL loads with extent 16, as id's loader built for x86 gives, recorded in the vectors' README
+  verify:
+  - cargo test -p qs-bsp; the recorded run in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -800,6 +818,7 @@ issues:
   - P1-38
   - P1-39
   - P1-40
+  - P1-41
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:

@@ -85,7 +85,7 @@ fn factory_builds_the_base_vector() {
     assert_eq!(lump_name(15), "unknown");
 }
 
-// spec BSP-2.1, BSP-3.1, BSP-4.3, BSP-5.1, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1, BSP-9.2, BSP-9.3:
+// spec BSP-2.1, BSP-3.1, BSP-4.3, BSP-5.1, BSP-7.1, BSP-7.2, BSP-8.1, BSP-9.1, BSP-9.2, BSP-9.10:
 // spec BSP-9.6, BSP-9.7, BSP-11.1, BSP-12.1, BSP-13.1, BSP-14.1, BSP-14.2:
 // the base vector loads as the README records.
 #[test]
@@ -672,7 +672,7 @@ fn anim_duplicate_frame() {
     assert_eq!(bsp.textures[1].as_ref().unwrap().animation.unwrap().next, 2);
 }
 
-// spec BSP-8.1, BSP-9.3: texture offsets move the extents.
+// spec BSP-8.1, BSP-9.10: texture offsets move the extents.
 #[test]
 fn texture_offset() {
     let mut spec = sized(64.0, 36);
@@ -682,7 +682,7 @@ fn texture_offset() {
     assert_eq!((face.texturemins, face.extents), ([-16, 16], [80, 80]));
 }
 
-// spec BSP-8.6, BSP-9.3: half-length axes give mip bias 2 and smaller extents.
+// spec BSP-8.6, BSP-9.10: half-length axes give mip bias 2 and smaller extents.
 #[test]
 fn mipadjust() {
     let mut spec = BspSpec::default();
@@ -793,6 +793,82 @@ fn huge_extents() {
     assert_eq!(x86_double_to_int(f64::NAN), i32::MIN);
     assert_eq!(x86_double_to_int(-3.7), -3);
     assert_eq!(x86_double_to_int(2_147_483_648.0), i32::MIN);
+}
+
+/// The base with vertex 0 at (1, 0, 1), the others at (1, 1, 1), and texinfo 0's s axis
+/// `s`: the face of the `x87-order` and `x87-pc64` vectors.
+fn skewed(s: [f32; 4]) -> BspSpec {
+    let mut spec = BspSpec {
+        vertexes: vec![
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ],
+        ..BspSpec::default()
+    };
+    spec.texinfo[0].vecs[0] = s;
+    spec
+}
+
+// spec BSP-9.11: the products are exact and are added x, z, y at 53 bits, then rounded once
+// to single precision; single precision or C's order of the additions gives extent 0.
+#[test]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "test code: rounding to single precision is the point"
+)]
+fn x87_order() {
+    let spec = skewed([
+        2048.0,
+        2.0_f32.powi(-42),
+        -(1024.0 - 2.0_f32.powi(-14)),
+        0.0,
+    ]);
+    let face = read(&spec).unwrap().faces[0];
+    assert_eq!((face.texturemins, face.extents), ([1024, 0], [16, 16]));
+    assert_eq!(face.lightmap_size, [2, 2]);
+    let s = spec.texinfo[0].vecs[0];
+    let top = x87_texture_coordinate([1.0, 1.0, 1.0], s);
+    assert_eq!(top, 1024.0 + 2.0_f32.powi(-13));
+    let single = 1.0 * s[0] + 1.0 * s[1] + 1.0 * s[2] + s[3];
+    assert_eq!(single, 1024.0);
+    let c_order = (2048.0_f64 + 2.0_f64.powi(-42) - (1024.0 - 2.0_f64.powi(-14))) as f32;
+    assert_eq!(c_order, 1024.0);
+}
+
+// spec BSP-9.11: the sums round to 53 bits, not 64, so a sum that only 64 bits keep above
+// the midpoint of two singles rounds to the even one.
+#[test]
+fn x87_pc53() {
+    let spec = skewed([0.0, 2.0_f32.powi(-14), 2.0_f32.powi(-50), 1024.0]);
+    let face = read(&spec).unwrap().faces[0];
+    assert_eq!((face.texturemins, face.extents), ([1024, 0], [0, 16]));
+    let s = spec.texinfo[0].vecs[0];
+    assert_eq!(x87_texture_coordinate([1.0, 1.0, 1.0], s), 1024.0);
+    assert_eq!(x87_texture_coordinate([1.0, 0.0, 1.0], s), 1024.0);
+    // Infinities and NaN pass through as on the x87.
+    assert_eq!(
+        x87_texture_coordinate([f32::MAX, 0.0, 0.0], [2.0, 0.0, 0.0, 0.0]),
+        f32::INFINITY
+    );
+    assert!(x87_texture_coordinate([f32::INFINITY, 0.0, 0.0], [0.0; 4]).is_nan());
+}
+
+// spec BSP-9.12: a NaN coordinate replaces the minimum and maximum, and the next coordinate
+// replaces a NaN bound; vertex 0, read first and last, leaves both NaN.
+#[test]
+fn nan_vertex() {
+    let mut spec = BspSpec::default();
+    spec.vertexes[0] = [f32::NAN, 0.0, 0.0];
+    let face = read(&spec).unwrap().faces[0];
+    assert_eq!((face.texturemins, face.extents), ([0, 0], [0, 0]));
+    assert_eq!(face.lightmap_size, [1, 1]);
+    assert!(x87_replaces(f32::NAN, 5.0));
+    assert!(x87_replaces(5.0, f32::NAN));
+    assert!(x87_replaces(4.0, 5.0));
+    assert!(!x87_replaces(5.0, 5.0));
+    assert!(!x87_replaces(6.0, 5.0));
 }
 
 // spec BSP-13.2: a marksurface that names no face fails.
