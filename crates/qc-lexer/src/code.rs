@@ -89,11 +89,13 @@ pub enum Code {
     W0101,
     /// "macro NAME redefined" (QCD-7.2).
     W0102,
+    /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
+    W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -134,6 +136,7 @@ impl Code {
         Self::E0408,
         Self::W0101,
         Self::W0102,
+        Self::W0402,
     ];
 
     /// The code as written in messages, such as `E0101`.
@@ -180,6 +183,7 @@ impl Code {
             Self::E0408 => "E0408",
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
+            Self::W0402 => "W0402",
         }
     }
 
@@ -187,7 +191,7 @@ impl Code {
     #[must_use]
     pub const fn is_error(self) -> bool {
         match self {
-            Self::W0101 | Self::W0102 => false,
+            Self::W0101 | Self::W0102 | Self::W0402 => false,
             Self::E0101
             | Self::E0102
             | Self::E0103

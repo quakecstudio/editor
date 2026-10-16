@@ -14,7 +14,9 @@ macro resolution. FTEQCC's pragmas come with the dialect profiles (P2-03).
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-9 and the frame macro rules of QC-8 in
   [`language.md`](../../docs/spec/language.md), with QC-27.5; the codes in QCD-2.6, QCD-6.4,
-  QCD-7.2 and QCD-8 of [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
+  QCD-7.2 and QCD-8 of [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md);
+  the loaders' case rules of PRJ-7.1 and PRJ-7.2 in
+  [`project-file.md`](../../docs/spec/project-file.md).
 - **Shipped:** yes.
 
 ## Invariants

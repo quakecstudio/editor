@@ -646,6 +646,77 @@ fn fs_loader_reads_files() {
     assert_eq!(pp.sources().files().len(), 2);
 }
 
+// spec PRJ-7.2: the file system loader reads the stored name from the directory, the exact
+// entry first and otherwise the one that differs only in case, whatever the host's case rules
+#[test]
+fn fs_loader_reads_stored_names() {
+    use super::Loader as _;
+    let dir = std::env::temp_dir().join(format!("qc-preproc-case-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("Sub")).unwrap();
+    std::fs::write(dir.join("Sub/Animations.h"), "").unwrap();
+    let mut loader = super::FsLoader;
+    let stored = |loader: &mut super::FsLoader, path: &str| {
+        loader
+            .stored_name(&dir.join(path))
+            .map(|n| n.to_string_lossy().into_owned())
+    };
+    let found = [
+        stored(&mut loader, "Sub/Animations.h"),
+        stored(&mut loader, "Sub/animations.h"),
+        stored(&mut loader, "sub"),
+        stored(&mut loader, "Sub/missing.h"),
+        stored(&mut loader, "missing/a.h"),
+    ];
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        found,
+        [
+            Some("Animations.h".to_owned()),
+            Some("Animations.h".to_owned()),
+            Some("Sub".to_owned()),
+            None,
+            None,
+        ]
+    );
+}
+
+// spec PRJ-7.1: a memory loader matches paths exactly, or, made case-insensitive, ignoring
+// the case of each component
+// spec PRJ-7.2: its stored name is the held spelling, and a case-sensitive loader has none
+// for a name in the wrong case
+#[test]
+fn memory_loader_case_rules() {
+    use super::Loader as _;
+    let stored = |loader: &mut MemoryLoader, path: &str| {
+        loader
+            .stored_name(Path::new(path))
+            .map(|n| n.to_string_lossy().into_owned())
+    };
+    let mut exact = MemoryLoader::new();
+    exact.insert("Sub/Animations.h", "x");
+    assert!(exact.load(Path::new("sub/animations.h")).is_err());
+    assert_eq!(
+        stored(&mut exact, "Sub/Animations.h").as_deref(),
+        Some("Animations.h")
+    );
+    assert_eq!(stored(&mut exact, "Sub").as_deref(), Some("Sub"));
+    assert_eq!(stored(&mut exact, "Sub/animations.h"), None);
+    let mut folded = MemoryLoader::case_insensitive();
+    folded.insert("Sub/Animations.h", "x");
+    folded.insert("Sub/b.h", "y");
+    assert_eq!(folded.load(Path::new("sub/ANIMATIONS.H")).unwrap(), b"x");
+    assert_eq!(folded.load(Path::new("Sub/b.h")).unwrap(), b"y");
+    assert!(folded.load(Path::new("sub/c.h")).is_err());
+    assert!(folded.load(Path::new("sub")).is_err());
+    assert_eq!(
+        stored(&mut folded, "sub/animations.h").as_deref(),
+        Some("Animations.h")
+    );
+    assert_eq!(stored(&mut folded, "SUB").as_deref(), Some("Sub"));
+    assert_eq!(stored(&mut folded, "Sub/b.h").as_deref(), Some("b.h"));
+    assert_eq!(stored(&mut folded, "sub/c.h"), None);
+}
+
 proptest! {
     // Without directives or `$`, preprocessing changes nothing: the tokens are the lexer's.
     #[test]
