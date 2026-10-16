@@ -7,6 +7,7 @@
 qc-lexer = "L2"
 qc-preproc = "L2"
 qc-progs = "L0"
+qc-project = "L2"
 qc-syntax = "L2"
 qc-trace = "L1"
 qc-types = "L0"

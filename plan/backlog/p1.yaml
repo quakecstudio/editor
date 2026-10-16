@@ -584,6 +584,45 @@ issues:
   - Every row of those tables is checked in CI on the three OSes, the x86-only rows on an x86-64 host, and a row that disagrees fails the run or is a divergence the spec lists (BUILTIN-6.9 for C library differences)
   verify:
   - cargo xtask oracles in CI on all three OSes
+- key: P1-33
+  title: Check the project graph's file order against the pinned FTEQCC
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-3
+  - COMP-8
+  depends:
+  - P1-23
+  - P1-26
+  deliverable:
+  - 'cargo xtask project-corpus gains a check that runs the pinned FTEQCC from cargo xtask oracles on each module of a codebase and compares the files it reports compiling and including (list and #includelist entries) with the module''s graph from qc-project, in order'
+  - CI runs it on every corpus codebase with a progs.src that the oracle job fetches
+  acceptance:
+  - Every module's list and #includelist entries match FTEQCC's in order, or the difference is a statement in docs/spec/project-file.md that the check lists as expected (the recorded local run in PRJ-6's test vectors stopped early on compile errors and on crashes of the pinned build on arm64 macOS, whose cause is part of this issue)
+  verify:
+  - cargo xtask project-corpus in CI
+- key: P1-34
+  title: Open FreeCS and Xonotic whole in the corpus project check
+  labels:
+  - repo
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-3
+  - FND-9
+  depends:
+  - P1-23
+  deliverable:
+  - 'corpus/manifest.toml: FreeHL (the valve game FreeCS builds against, files under valve/src), with its license read from its own files, and a way to lay out Nuclide, FreeHL and FreeCS as the tree FreeCS''s progs.src files expect'
+  - 'CI writes both codebases to the asset cache and runs cargo xtask project-corpus on them, Xonotic through a quakec.toml giving the defines of its qcsrc/tools/qcc.sh'
+  acceptance:
+  - cargo xtask project-corpus reports no error for FreeCS and Xonotic in CI
+  verify:
+  - cargo xtask project-corpus in CI
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -628,6 +667,8 @@ issues:
   - P1-30
   - P1-31
   - P1-32
+  - P1-33
+  - P1-34
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:

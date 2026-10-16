@@ -331,3 +331,15 @@ jobs:
       - name: Build the corpus progs and round-trip them through qc-progs
         if: runner.os == 'Linux'
         run: cargo xtask corpus build
+      # P1-23: every module of each codebase opens with no error in its file graph, and id
+      # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
+      - name: Open the corpus as projects
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask project-corpus --progs "$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
+            "$QS_TEST_ASSETS/codebase/id-1.01"
+          cargo xtask project-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/rerelease-hipnotic" \
+            "$QS_TEST_ASSETS/codebase/rerelease-rogue" "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
+            "$QS_TEST_ASSETS/codebase/rerelease-ctf" "$QS_TEST_ASSETS/codebase/rerelease-mg3" \
+            "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
