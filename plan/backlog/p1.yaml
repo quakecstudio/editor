@@ -405,10 +405,12 @@ issues:
   depends:
   - P1-17
   - P1-08
+  - P1-26
   deliverable:
   - 'crates/qc-lno: read and write statement-to-line maps'
   acceptance:
   - Round-trips every .lno file in the corpus
+  - The corpus .lno files include those the pinned FTEQCC (P1-26) writes beside the progs it builds; GMQCC's column layout, which no oracle writes, is covered by every docs/spec/lno.md test vector passing
   verify:
   - cargo test -p qc-lno
 - key: P1-18
