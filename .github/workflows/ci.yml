@@ -314,3 +314,21 @@ jobs:
           cargo xtask parse-corpus --vanilla --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
+      # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
+      # target/oracles/rerelease, cached on everything that decides their bytes.
+      - name: Write the rerelease codebases to the asset cache
+        if: runner.os == 'Linux'
+        run: |
+          for codebase in rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
+            rerelease-ctf rerelease-mg3; do
+            python corpus/assets.py codebase --codebase "$codebase"
+          done
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.os == 'Linux'
+        with:
+          path: target/oracles/rerelease
+          key: oracle-artifacts-rerelease-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**', 'corpus/manifest.toml') }}
+      - name: Compile the rerelease with FTEQCC
+        if: runner.os == 'Linux'
+        run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"

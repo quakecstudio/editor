@@ -27,10 +27,12 @@
 //!   each; `make test-fuzz` and the nightly `Fuzz` workflow call it.
 //! - `lex-corpus`: lexes every `.qc` file of a codebase directory and
 //!   preprocesses the files its `progs.src` lists, failing on any error.
-//! - `oracles`: fetches id's sources by checksum, builds the oracles in
-//!   `oracles/` (id's VM as a trace runner, and id's qcc) with the system C
-//!   compiler and checks them; `oracles id101 <dir>` also compiles and runs id's
-//!   QuakeC 1.01. CI runs it; it is not part of `ci`, which runs offline.
+//! - `oracles`: fetches id's and FTEQCC's sources by checksum, builds the
+//!   oracles in `oracles/` (id's VM as a trace runner, id's qcc and FTEQCC) with
+//!   the system C compiler and checks them; `oracles id101 <dir>` also compiles
+//!   and runs id's QuakeC 1.01, and `oracles rerelease <dir>` compiles the
+//!   rerelease with FTEQCC. CI and `make oracles` run it; it is not part of
+//!   `ci`, which runs offline.
 //! - `parse-corpus`: parses every `.qc` and `.qh` file under codebase
 //!   directories and checks the tree gives back each file; `--vanilla` fails on
 //!   any error and `--deletions` checks that recovery from each deleted token is

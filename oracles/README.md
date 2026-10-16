@@ -1,23 +1,26 @@
 # Oracles
 
 The C programs that prove QuakeC Studio agrees with id's code: id's VM as a headless trace
-runner, and id's qcc. They are test tools, run in CI by `cargo xtask oracles` (LIC-3, COMP-7),
-and are never part of the shipped app or needed to build it: nothing in the Cargo workspace
-depends on them, `cargo build` never compiles them, and only `xtask` knows they exist (ARCH-2:
-the Rust side talks to them through files and their exit status).
+runner, id's qcc, and a pinned FTEQCC for the rerelease QuakeC, which id's qcc cannot compile.
+They are test tools, run in CI and by `make oracles` through `cargo xtask oracles` (LIC-3,
+LIC-8, COMP-7), and are never part of the shipped app or needed to build it: nothing in the
+Cargo workspace depends on them, `cargo build` never compiles them, and only `xtask` knows they
+exist (ARCH-2: the Rust side talks to them through files and their exit status).
 
 | Oracle | What it is | Binary |
 | --- | --- | --- |
 | VM oracle | id's `WinQuake/pr_exec.c` in a host that implements [`docs/spec/differential.md`](../docs/spec/differential.md) and writes the trace of [`docs/spec/trace.md`](../docs/spec/trace.md) | `target/oracles/bin/vm-oracle` |
 | qcc | id's QuakeC compiler, `qcc/` of Quake-Tools, built unchanged | `target/oracles/bin/qcc` |
+| FTEQCC | The command-line compiler in `engine/qclib/` of fte-team/fteqw, built unchanged without zlib | `target/oracles/bin/fteqcc` |
 
-Later oracles (a pinned FTEQCC, P1-26; id's engine; the map tools) join this directory.
+Later oracles (id's engine; the map tools) join this directory.
 
 ## Sources
 
-No id code is committed (LIC-7). [`sources.toml`](sources.toml) pins every file the build uses
-to a commit of the upstreams in [`docs/porting.md`](../docs/porting.md#upstreams) and to its
-SHA-256; `cargo xtask oracles` downloads each from `raw.githubusercontent.com` and refuses a
+No third-party code is committed (LIC-7). [`sources.toml`](sources.toml) pins every file the
+build uses to a commit and to its SHA-256: id's files to the upstreams in
+[`docs/porting.md`](../docs/porting.md#upstreams), FTEQCC's to the fteqw commit that
+[`progs.md`](../docs/spec/progs.md) and [`lno.md`](../docs/spec/lno.md) cite; `cargo xtask oracles` downloads each from `raw.githubusercontent.com` and refuses a
 file whose SHA-256 differs. The files are kept in `target/oracles/src/`. id's `quakedef.h` is
 never fetched: [`vm/quakedef.h`](vm/quakedef.h) stands in for it.
 
@@ -51,9 +54,10 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 ## Building
 
 ```bash
-cargo xtask oracles                 # build both, then run every VM vector through the VM oracle
+cargo xtask oracles                 # build all three, then run every VM vector through the VM oracle
 cargo xtask oracles build           # build only; prints where the binaries are
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
+cargo xtask oracles rerelease <dir> # also compile the six rerelease codebases with FTEQCC
 cargo xtask oracles json <trace>    # print a binary trace as JSON Lines (TRACE-6)
 ```
 
@@ -68,7 +72,7 @@ Every file is compiled as [`vm.md`](../docs/spec/vm.md) "Reference build" requir
 GNU extensions. `-fsigned-char` makes `char` signed on every host, as on x86, which BUILTIN-10.2
 and id's `COM_Parse` assume. MSVC's `char` is signed, it does not optimise on strict aliasing,
 and under `/fp:precise` it does not contract. Our files are compiled with every warning an error;
-id's with warnings off.
+id's and FTEQCC's with warnings off.
 
 The VM-9.2 vectors convert out-of-range floats to integers, which only x86 does as the spec
 fixes; on another host (macOS on Apple silicon) their failures are reported as expected
@@ -140,3 +144,50 @@ pins them in the specs so that `qc-builtins` makes the same choice:
   (`G_EDICT`, `PROG_TO_EDICT`, `G_STRING`, `E_STRING`), so a builtin's earlier writes stand.
 - `find` checks each edict's field value as a string argument.
 - `vtos` prints a NaN or an infinity component as `ftos` does (BUILTIN-7.6).
+
+## FTEQCC and the rerelease
+
+FTEQCC is built from the files of the `qcc` target of `engine/qclib/Makefile` (`QCC_OBJS`,
+`COMMON_OBJS` and `TUI_OBJS`), with `NO_ZLIB` defined so it needs no library beyond the C
+runtime; without zlib it cannot read or write compressed archives, which compiling a
+`progs.src` never needs. On Windows the build also defines `strcasecmp` as `_stricmp`, the
+Windows C runtime's name for the POSIX function `qcc_pr_comp.c` calls. Its `engine/qclib/LICENSE` is the GPL version 2 text and its files
+carry no "or later" grant, so it is only ever run as a separate program, never linked with
+anything of ours.
+
+`cargo xtask oracles rerelease <dir>` compiles the six codebases of id's
+`quake-rerelease-qc` (corpus ids `rerelease`, `rerelease-hipnotic`, `rerelease-rogue`,
+`rerelease-mg1`, `rerelease-ctf` and `rerelease-mg3`), each a directory of `<dir>` as
+`python corpus/assets.py codebase --codebase <id>` writes it. Each is copied to
+`target/oracles/work/rerelease/<id>/src` and compiled there with
+
+```text
+fteqcc -Tid -flno -o ../progs.dat
+```
+
+- `-Tid` selects FTEQCC's `QCF_STANDARD` target: version 6 progs, where FTEQCC refuses every
+  opcode from `OP_MULSTORE_F` on (`qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`), so only id's
+  opcodes 0 to 65 can be written. All six compile under it, so P1-02 and P1-10 need not cover
+  any extra opcode. The check also reads every statement and fails on any opcode above 65.
+- `-flno` writes `progs.lno` beside `progs.dat` ([`lno.md`](../docs/spec/lno.md) LNO-1.1,
+  LNO-1.4). With no `-O` option FTEQCC already writes it, since the `filenames` optimisation
+  that suppresses it is off; the flag keeps it written should that default change. These are
+  the FTEQCC `.lno` files the `qc-lno` corpus (P1-28) reads.
+- `-o ../progs.dat` overrides the output each `progs.src` names (`../qsrc/ctf/progs.dat`,
+  `progs.dat`, `#output "../progs.dat"`), so every codebase writes to the same place.
+- `rerelease-mg3` alone adds `-Fautoproto`: it uses functions and constants before declaring
+  them (`ai.qc` uses `CORPSE_FLAG_A` from `monsters/mg3_hknight_infected.qc`), which FTEQCC
+  accepts only when it collects prototypes first. The flag changes the order of definitions in
+  the output, so the other codebases are compiled without it.
+
+`progs.dat` and `progs.lno` are copied to `target/oracles/rerelease/<id>/`, the oracle
+artifacts later differential tests read. The check requires each progs.dat to load with
+`qc-progs` as version 6 with vanilla opcodes only, each `.lno` to have LNO-2's header with the
+progs's four counts and exactly one line per statement (LNO-3.1, LNO-3.3), and both to have the
+SHA-256 recorded in `xtask/src/oracles/rerelease.rs`. The progs.dat's digest is taken with the
+bytes between the header and the first table zeroed, because FTEQCC writes its copyright text
+there (`qccmain.c`, `WriteData`) and, unless the source sets `#copyright`, that text holds the
+date of the compile and of the FTEQCC build. When the artifacts already have the recorded
+digests, as after a CI cache hit, they are checked without compiling again. CI runs this in the
+Linux `Test Assets` job and caches `target/oracles/rerelease` on `oracles/`, the xtask oracle
+code and `corpus/manifest.toml`.
