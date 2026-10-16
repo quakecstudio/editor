@@ -5,7 +5,8 @@
 //!
 //! - `cargo xtask oracles` builds every oracle and checks the VM oracle against every vector in
 //!   `docs/spec/vectors/vm/` that id's C defines, and its scenario reader against the number
-//!   vectors of `docs/spec/vectors/scenario/numbers.txt`.
+//!   vectors of `docs/spec/vectors/scenario/numbers.txt`, and runs the input file probes of
+//!   `oracles/probes.rs`.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
 //! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
 //!   `cargo xtask corpus fetch id-1.01` writes it) with id's qcc, and runs the VM oracle on the
@@ -25,6 +26,7 @@ mod compile;
 mod extract;
 pub(crate) mod id101;
 mod numbers;
+mod probes;
 pub(crate) mod rerelease;
 pub(crate) mod sha256;
 mod vectors;
@@ -106,7 +108,8 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
             let oracles = build(root)?;
             let vectors = vectors::check(root, &oracles)?;
             let numbers = numbers::check(root, &oracles)?;
-            Ok(vectors && numbers)
+            let probes = probes::check(&oracles)?;
+            Ok(vectors && numbers && probes)
         }
         ["build"] => {
             let oracles = build(root)?;

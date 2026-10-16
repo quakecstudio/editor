@@ -104,6 +104,13 @@ host clock <seconds> | run <function> | think <edict> <seconds> | push <edict> <
 host physics <seconds> <count> | frame <seconds> <count> | edict <n> <slot>
 ```
 
+Every number is the one its line takes, or the file is refused: an integer is an optional `-`
+and decimal digits (DIFF-2.7), in range (`edicts` 1 to 600, `seed` 0 to 4294967295, a slot,
+field or edict within the progs and the edicts in use, a count at least 1, an entity or
+pointer whose value fits in an `int`); `<hex>` is one to eight hexadecimal digits; `<seconds>`
+is a number as DIFF-2.8 writes it. A NUL byte, a line of 512 bytes or more, or a line of more
+than eight words is refused too.
+
 Entity and pointer values are resolved by the oracle, since they depend on its edict layout.
 Without `host` lines the oracle runs the entry function once; with them it does what they say,
 in order, as the vectors' README describes: set the clock, run a function, run id's

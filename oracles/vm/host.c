@@ -5,6 +5,7 @@
 // and statement hook that write the trace around id's PR_ExecuteProgram, and the error paths
 // that stand in for id's Host_Error and Sys_Error (differential.md DIFF-1, DIFF-8).
 
+#include <limits.h>
 #include <signal.h>
 
 #include "oracle.h"
@@ -539,24 +540,96 @@ static void on_crash(int sig) {
 
 // --- Vector mode: the environment of docs/spec/vectors/vm/README.md ---
 
-static void parse_value(const char *path, int line, int argc, char **argv, int *out) {
-    if (argc == 2 && strcmp(argv[0], "bits") == 0) {
-        *out = (int)strtoul(argv[1], NULL, 16);
-    } else if (argc == 2 && strcmp(argv[0], "entity") == 0) {
-        *out = atoi(argv[1]) * pr_edict_size;
-    } else if (argc == 3 && strcmp(argv[0], "pointer") == 0) {
-        *out = atoi(argv[1]) * pr_edict_size + (int)offsetof(edict_t, v) + 4 * atoi(argv[2]);
-    } else {
-        fprintf(stderr, "vm-oracle: %s:%d: bad value\n", path, line);
-        exit(QS_EXIT_REFUSED);
-    }
+// The numbers of the init file (oracles/README.md): integers as differential.md DIFF-2.7
+// writes them, in the range their line takes and in an int.
+static qboolean parse_int(const char *text, long long min, long long max, int *out) {
+    long long value;
+    if (min < INT_MIN)
+        min = INT_MIN;
+    if (max > INT_MAX)
+        max = INT_MAX;
+    if (!qs_parse_integer(text, min, max, &value))
+        return false;
+    *out = (int)value;
+    return true;
 }
 
+// `bits <hex>`: one to eight hexadecimal digits, the value's 32 bits.
+static qboolean parse_bits(const char *text, int *out) {
+    size_t n = strlen(text);
+    if (n < 1 || n > 8)
+        return false;
+    unsigned bits = 0;
+    for (size_t i = 0; i < n; i++) {
+        char c = text[i];
+        unsigned digit;
+        if (c >= '0' && c <= '9')
+            digit = (unsigned)(c - '0');
+        else if (c >= 'a' && c <= 'f')
+            digit = (unsigned)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F')
+            digit = (unsigned)(c - 'A' + 10);
+        else
+            return false;
+        bits = bits << 4 | digit;
+    }
+    memcpy(out, &bits, sizeof(*out));
+    return true;
+}
+
+// An entity or a pointer: an edict number and a field slot, each at least 0, whose value
+// fits in an int.
+static qboolean parse_place(const char *edict, const char *field, int *out) {
+    int e;
+    int f = 0;
+    if (!parse_int(edict, 0, INT_MAX, &e) || (field && !parse_int(field, 0, INT_MAX, &f)))
+        return false;
+    long long value = (long long)e * pr_edict_size;
+    if (field)
+        value += (long long)offsetof(edict_t, v) + 4LL * f;
+    if (value > INT_MAX)
+        return false;
+    *out = (int)value;
+    return true;
+}
+
+static qboolean parse_value(int argc, char **argv, int *out) {
+    if (argc == 2 && strcmp(argv[0], "bits") == 0)
+        return parse_bits(argv[1], out);
+    if (argc == 2 && strcmp(argv[0], "entity") == 0)
+        return parse_place(argv[1], NULL, out);
+    if (argc == 3 && strcmp(argv[0], "pointer") == 0)
+        return parse_place(argv[1], argv[2], out);
+    return false;
+}
+
+// Splits a line into at most `max` words; -1 when it has more.
 static int split(char *line, char **words, int max) {
     int n = 0;
-    for (char *w = strtok(line, " \t\r\n"); w && n < max; w = strtok(NULL, " \t\r\n"))
+    for (char *w = strtok(line, " \t\r"); w; w = strtok(NULL, " \t\r")) {
+        if (n == max)
+            return -1;
         words[n++] = w;
+    }
     return n;
+}
+
+// Copies the next line of the init file into `text`; returns 0 at the end of the file and -1
+// for a line too long for `text`.
+static int next_line(const char **cursor, const char *stop, char *text, size_t size) {
+    const char *start = *cursor;
+    if (start >= stop)
+        return 0;
+    const char *end = memchr(start, '\n', (size_t)(stop - start));
+    if (!end)
+        end = stop;
+    *cursor = end < stop ? end + 1 : stop;
+    size_t n = (size_t)(end - start);
+    if (n >= size)
+        return -1;
+    memcpy(text, start, n);
+    text[n] = 0;
+    return 1;
 }
 
 // What the host does, in order (the vectors' README, "Host actions"). Without any, it runs
@@ -629,10 +702,12 @@ static void run_host_actions(void) {
     qs_catch = NULL;
 }
 
+// `<seconds>`: a number as differential.md DIFF-2.8 writes it, read as the nearest double.
 static qboolean parse_seconds(const char *text, double *out) {
-    char *end;
-    *out = strtod(text, &end);
-    return end != text && *end == 0;
+    if (!qs_decimal_syntax(text))
+        return false;
+    *out = strtod(text, NULL);
+    return true;
 }
 
 static qboolean parse_host_action(char **w, int n, int edicts, host_action_t *out) {
@@ -642,24 +717,20 @@ static qboolean parse_host_action(char **w, int n, int edicts, host_action_t *ou
     }
     if (n == 3 && strcmp(w[1], "run") == 0) {
         out->kind = HOST_RUN;
-        out->a = atoi(w[2]);
-        return true;
+        return parse_int(w[2], INT_MIN, INT_MAX, &out->a);
     }
     if (n == 4 && (strcmp(w[1], "think") == 0 || strcmp(w[1], "push") == 0)) {
         out->kind = strcmp(w[1], "think") == 0 ? HOST_THINK : HOST_PUSH;
-        out->a = atoi(w[2]);
-        return out->a >= 0 && out->a < edicts && parse_seconds(w[3], &out->seconds);
+        return parse_int(w[2], 0, edicts - 1, &out->a) && parse_seconds(w[3], &out->seconds);
     }
     if (n == 4 && (strcmp(w[1], "physics") == 0 || strcmp(w[1], "frame") == 0)) {
         out->kind = strcmp(w[1], "physics") == 0 ? HOST_PHYSICS : HOST_FRAME;
-        out->a = atoi(w[3]);
-        return out->a >= 1 && parse_seconds(w[2], &out->seconds);
+        return parse_int(w[3], 1, INT_MAX, &out->a) && parse_seconds(w[2], &out->seconds);
     }
     if (n == 4 && strcmp(w[1], "edict") == 0) {
         out->kind = HOST_EDICT;
-        out->a = atoi(w[2]);
-        out->b = atoi(w[3]);
-        return out->b >= 0 && out->b < progs->numglobals;
+        return parse_int(w[2], INT_MIN, INT_MAX, &out->a) &&
+               parse_int(w[3], 0, progs->numglobals - 1, &out->b);
     }
     return false;
 }
@@ -675,13 +746,26 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
         fprintf(stderr, "vm-oracle: %s: %s\n", progs_path, refused);
         return QS_EXIT_REFUSED;
     }
-    FILE *init = fopen(init_path, "r");
-    if (!init) {
+    long size;
+    char *data = qs_read_file(init_path, &size);
+    if (!data) {
         fprintf(stderr, "vm-oracle: cannot open %s\n", init_path);
         return QS_EXIT_REFUSED;
     }
+    // A NUL byte would end the C string of its line early and hide the rest of it.
+    const char *nul = memchr(data, 0, (size_t)size);
+    if (nul) {
+        int nul_line = 1;
+        for (const char *p = data; p < nul; p++)
+            nul_line += *p == '\n';
+        fprintf(stderr, "vm-oracle: %s:%d: a NUL byte\n", init_path, nul_line);
+        return QS_EXIT_REFUSED;
+    }
+    const char *stop = data + size;
+    const char *cursor = data;
     char text[512];
     char *w[8];
+    int got;
     int line = 0;
     int entry = 1;
     int edicts = 3;
@@ -689,18 +773,25 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     builtin_t *builtins = qs_vector_builtins;
     sv.state = ss_active;
     // The edicts and client slots are set up first, then the values are applied.
-    long start = ftell(init);
-    while (fgets(text, sizeof(text), init)) {
-        int n = split(text, w, 8);
-        if (n == 2 && strcmp(w[0], "edicts") == 0)
-            edicts = atoi(w[1]);
-        if (n == 2 && strcmp(w[0], "maxclients") == 0)
-            maxclients = atoi(w[1]);
-    }
-    if (edicts < 1 || edicts > MAX_EDICTS || maxclients < 0 ||
-        maxclients > QS_MAX_VECTOR_CLIENTS) {
-        fprintf(stderr, "vm-oracle: %s: bad edict or client count\n", init_path);
-        return QS_EXIT_REFUSED;
+    while ((got = next_line(&cursor, stop, text, sizeof(text))) != 0) {
+        line++;
+        int n = got < 0 ? -1 : split(text, w, 8);
+        if (n < 0) {
+            fprintf(stderr, "vm-oracle: %s:%d: line too long or more than eight words\n",
+                    init_path, line);
+            return QS_EXIT_REFUSED;
+        }
+        if (n > 0 && strcmp(w[0], "edicts") == 0) {
+            if (n != 2 || !parse_int(w[1], 1, MAX_EDICTS, &edicts)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad edict count\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+        } else if (n > 0 && strcmp(w[0], "maxclients") == 0) {
+            if (n != 2 || !parse_int(w[1], 0, QS_MAX_VECTOR_CLIENTS, &maxclients)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad client count\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+        }
     }
     // The array has all LIMIT_MAX_EDICTS edicts, as the server's does (EDICT-1.4); `edicts`
     // of them are in use. No client slot has a player.
@@ -711,20 +802,33 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     for (int i = 0; i < maxclients; i++)
         svs.clients[i].edict = vector_edict(i + 1);
     qs_init_buffers();
-    fseek(init, start, SEEK_SET);
-    while (fgets(text, sizeof(text), init)) {
+    cursor = data;
+    line = 0;
+    while (next_line(&cursor, stop, text, sizeof(text)) != 0) {
         line++;
         int n = split(text, w, 8);
         if (n == 0 || strcmp(w[0], "edicts") == 0 || strcmp(w[0], "maxclients") == 0)
             continue;
+        int slot;
+        int e;
+        int field;
+        int value;
+        long long seed;
         if (n == 1 && strcmp(w[0], "loading") == 0) {
             sv.state = ss_loading;
         } else if (n == 2 && strcmp(w[0], "builtins") == 0 && strcmp(w[1], "engine") == 0) {
             builtins = qs_scenario_builtins;
         } else if (n == 2 && strcmp(w[0], "entry") == 0) {
-            entry = atoi(w[1]);
+            if (!parse_int(w[1], INT_MIN, INT_MAX, &entry)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad entry\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
         } else if (n == 2 && strcmp(w[0], "seed") == 0) {
-            qs_set_random_state((unsigned)strtoul(w[1], NULL, 10));
+            if (!qs_parse_integer(w[1], 0, 4294967295LL, &seed)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad seed\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+            qs_set_random_state((unsigned)seed);
         } else if (n >= 2 && strcmp(w[0], "host") == 0) {
             if (num_host_actions == QS_MAX_HOST_ACTIONS ||
                 !parse_host_action(w, n, edicts, &host_actions[num_host_actions])) {
@@ -733,26 +837,32 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
             }
             num_host_actions++;
         } else if (n >= 4 && strcmp(w[0], "global") == 0) {
-            int slot = atoi(w[1]);
-            if (slot < 0 || slot >= progs->numglobals) {
+            if (!parse_int(w[1], 0, progs->numglobals - 1, &slot)) {
                 fprintf(stderr, "vm-oracle: %s:%d: bad global\n", init_path, line);
                 return QS_EXIT_REFUSED;
             }
-            parse_value(init_path, line, n - 2, w + 2, &((int *)pr_globals)[slot]);
+            if (!parse_value(n - 2, w + 2, &value)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad value\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+            ((int *)pr_globals)[slot] = value;
         } else if (n >= 5 && strcmp(w[0], "field") == 0) {
-            int e = atoi(w[1]);
-            int field = atoi(w[2]);
-            if (e < 0 || e >= edicts || field < 0 || field >= progs->entityfields) {
+            if (!parse_int(w[1], 0, edicts - 1, &e) ||
+                !parse_int(w[2], 0, progs->entityfields - 1, &field)) {
                 fprintf(stderr, "vm-oracle: %s:%d: bad field\n", init_path, line);
                 return QS_EXIT_REFUSED;
             }
-            parse_value(init_path, line, n - 3, w + 3, &((int *)&vector_edict(e)->v)[field]);
+            if (!parse_value(n - 3, w + 3, &value)) {
+                fprintf(stderr, "vm-oracle: %s:%d: bad value\n", init_path, line);
+                return QS_EXIT_REFUSED;
+            }
+            ((int *)&vector_edict(e)->v)[field] = value;
         } else {
             fprintf(stderr, "vm-oracle: %s:%d: unknown line\n", init_path, line);
             return QS_EXIT_REFUSED;
         }
     }
-    fclose(init);
+    free(data);
     if (num_host_actions == 0) {
         host_actions[0].kind = HOST_RUN;
         host_actions[0].a = entry;
