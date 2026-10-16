@@ -100,5 +100,15 @@ The `.claude/` skills and agents use a few Claude Code conventions. When followi
 - **The Claude `Agent` tool / subagents** - delegation to the `implementer` and `reviewer`
   subagents. In Kiro, delegate by invoking the `implementer` and `reviewer` agents defined
   in `.kiro/agents/`.
+- **The `/goal ...` run block** - the `README.md` "Next run" block and the examples in
+  `docs/agents/README.md` are Claude Code auto-mode commands (`/goal Run /run-phase ...`).
+  Kiro has the same unattended, goal-driven loop as its Autonomous mode, so run the identical
+  instruction as the session goal there: `Run run-phase <phase> <track> until python3
+  plan/status.py ... prints a last line starting "STATUS ... COMPLETE" or "... WAITING ON
+  PEOPLE". Run that command at the end of every turn. Stop after 150 turns.` The verbatim
+  text of the instruction and its stop condition are the same; only the invocation differs
+  (a session goal in Autonomous mode, not a `/goal` slash command). Kiro's mode is chosen when
+  the session starts and does not change within it, so start a new Autonomous session to run a
+  phase rather than switching mode mid-session.
 
 See `docs/agents/README.md` for how the pieces fit together and how a whole phase is run.
