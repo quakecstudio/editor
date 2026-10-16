@@ -1,8 +1,8 @@
-# ADR-0004: Fork QuakeSpasm for the MVP preview host and plan a Rust host after it
+# ADR-0004: Build the preview host in Rust on wgpu
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-10-15
-- **Decided by:** pending
+- **Decided by:** Justin Plock, 2026-10-15, [PR #221 comment](https://github.com/quakecstudio/editor/pull/221#issuecomment-6205708332)
 - **Issue:** [#12](https://github.com/quakecstudio/editor/issues/12)
 - **Requirements:** ENG-2, PLAT-3
 
@@ -111,49 +111,76 @@ is accepted. The Rust estimates are judgement, not measurement.
 | A. Fork QuakeSpasm | Smallest and simplest code to fork; every hook is one call site, so `PATCHES.md` stays short and upstream merges stay cheap. Native on Apple silicon today; rerelease support current (0.97.0). Plan unchanged: P3-02 is one L-size issue. Risks: OpenGL, deprecated by Apple since 2018, could be removed from a future macOS (fallback: vkQuake, option C); a C codebase beside a Rust one, so the bridge is written twice (C in the host, Rust in the adapter) |
 | B. Fork Ironwail | Fastest renderer and the best store detection, but it does not run on macOS, the one platform the host exists to cover (PLAT-3). Not viable |
 | C. Fork vkQuake | Most active upstream; Vulkan through MoltenVK has a future on macOS; signed Mac builds exist. Twice QuakeSpasm's size, multithreaded, with several QC VMs, so the bridge's edict and breakpoint hooks must be thread-aware, P3-03 hot reload and P3-04 stepping get harder, and the commit rate makes a patched fork costly to keep current. The Vulkan toolchain is needed on all three CI runners |
-| D. Port a Rust host now, on wgpu and the project's L1 crates | One language, one codebase, native GPU APIs everywhere, no OpenGL risk, the VM proved in Phase 1 reused, and a direct path to the embedded game view (L-06). The bridge becomes an in-process API. Cost: Phase 3 grows from one fork issue to a sequence of spec and port issues (physics and collision, server and protocol, client, renderer, sound, HUD and localization, rerelease builtins), each with a differential suite; P5-05's renderer moves into Phase 3; the MVP moves out by the six to twelve months above. Mods that depend on engine extensions the Rust host has not ported preview wrongly until they are added |
-| E. Phased: fork QuakeSpasm for the MVP; plan the Rust host after it, with its own ADR (recommended) | A's schedule and risk for the MVP. After the MVP, a post-MVP issue specifies the Rust host; it is built behind the same `EngineAdapter` trait as one more engine, and the QuakeSpasm fork becomes its oracle for differential tests, so fidelity is proved against the engine modders already use. The Rust host can then replace the fork as the default, and carries the embedded game view. Cost: the C fork is maintained until then, and some bridge work is done twice |
+| D. Port a Rust host now, on wgpu and the project's L1 crates (chosen) | One language, one codebase, native GPU APIs everywhere, no OpenGL risk, the VM proved in Phase 1 reused, and a direct path to the embedded game view (L-06). The bridge becomes an in-process API. Cost: Phase 3 grows from one fork issue to a sequence of spec and port issues (physics and collision, server and protocol, client, renderer, sound, HUD and localization, rerelease builtins), each with a differential suite; P5-05's renderer moves into Phase 3; the MVP moves out by the six to twelve months above. Mods that depend on engine extensions the Rust host has not ported preview wrongly until they are added |
+| E. Phased: fork QuakeSpasm for the MVP; plan the Rust host after it, with its own ADR (recommended by the agent, not chosen) | A's schedule and risk for the MVP. After the MVP, a post-MVP issue specifies the Rust host; it is built behind the same `EngineAdapter` trait as one more engine, and the QuakeSpasm fork becomes its oracle for differential tests, so fidelity is proved against the engine modders already use. The Rust host can then replace the fork as the default, and carries the embedded game view. Cost: the C fork is maintained until then, and some bridge work is done twice |
 
 ## Decision
 
-Recommendation: **option E. Fork QuakeSpasm for the MVP, and plan a Rust host for after it under
-its own ADR.** The MVP gate is live preview on three operating systems with breakpoints and an
-entity inspector. QuakeSpasm meets it with the least work. It is native on Apple silicon today, its
-rerelease support is current, and it is small and single-threaded, so the bridge touches six
-well-known functions and the rest of the engine stays as upstream wrote it. A Rust host is the
-better end state: one language, native GPU APIs, the VM the project already proves, and the
-embedded game view. Building it now, though, means writing most of an engine (physics, protocol,
-client, renderer, sound) before the first preview works. That would push the MVP back by months and
-make players' movement and mods' extension builtins the project's fidelity problem from day one.
-Building it after the MVP turns that around: the QuakeSpasm fork becomes the oracle the Rust host is
-proved against, as id's VM is for `qc-vm`. Ironwail is ruled out by macOS. vkQuake is the fallback
-if the three-OS build check finds QuakeSpasm broken on a current macOS.
+**Option D. The preview host is our own engine, written in Rust from id's GPL source, rendering
+through wgpu and running the project's `qc-vm`, `qc-edict` and `qc-builtins`.** It is a separate
+program in this repository (`apps/preview-host`), launched beside the IDE as the v1 docking design
+requires (ENG-9), and it talks to the IDE over the bridge protocol (P3-01) like any other engine. No
+C engine is forked and there is no `quakecstudio/preview-host` repository.
+
+The host is ported the way the foundations are ported (`docs/porting.md`): id's engine and, for the
+rerelease and modern-mod behaviour, QuakeSpasm are the reference, each subsystem is specified in
+`docs/spec/` before it is implemented, and every port cites the file and function it came from.
+Fidelity is proved against an engine oracle. That oracle is a pinned QuakeSpasm built in `oracles/`,
+CI only, never shipped. The server simulation must match it frame by frame. Rendering and sound are
+compared with stated tolerances.
+
+Why D, as Justin decided it: one language and one codebase, native GPU APIs on every platform
+(Metal on macOS, so no dependence on Apple's deprecated OpenGL), the VM the project already proves
+in Phase 1 reused instead of a second VM in C, and a direct road to the embedded game view (L-06).
+FTEQW and the QuakeSpasm-lineage engines become optional adapters, not dependencies.
+
+The agent preparing this ADR recommended option E (a QuakeSpasm fork for the MVP, the Rust host
+after it) because D puts most of an engine on the MVP path; that recommendation and its reasoning
+are kept in Options above. The cost is real and is planned for, not waved away: the engine work is
+in Phase 3 as its own spec, port and differential-test issues, the BSP and model formats move to
+Phase 1, the renderer moves from Phase 5 to Phase 3, and the schedule risk is risk R-11 in
+`docs/risks.md`. Options A, B, C and E were not chosen: A and E keep a C engine on the critical path
+of a Rust project and defer the native renderer, B does not run on macOS, and C has the largest and
+most concurrent code to patch.
 
 ## Consequences
 
-If accepted as recommended:
+The plan changes are in this ADR's pull request:
 
-- `plan/backlog/p3.yaml`: P3-02's deliverable already says "forked from the engine chosen in
-  ADR-0004"; it gains "QuakeSpasm (upstream `sezero/quakespasm`), at a pinned release tag" and an
-  acceptance line that the fork builds with the upstream Xcode project or Makefile on macOS and with
-  MinGW or MSVC on Windows.
-- P3-01 (the bridge protocol) assumes one QC VM and a single-threaded host loop, and keeps the
-  protocol engine-neutral so a later Rust host can implement the same commands in-process.
-- `plan/backlog/p5-p7.yaml`, LATER milestone: a new decision issue, "Decide on a Rust preview
-  host", whose ADR scopes the port (subsystems, the QuakeSpasm fork as oracle, wgpu renderer shared
-  with P5-05, relationship to L-06) and files its issues. It is linked from `docs/scope.md` and,
-  like every LATER issue, waits for the MVP gate. Filed with `plan-change` after acceptance.
-- `docs/design/design-doc.md`, Engine bridge: one sentence that a Rust host is planned after the MVP
-  and decided in its own ADR.
-- P0-14 (default preview target) can decide with the host's platforms known: native on all three.
-- `docs/risks.md` at the next gate review: R-6's mitigation names the QuakeSpasm host, with a note
-  that its macOS support rests on Apple's deprecated OpenGL and vkQuake is the fallback.
-- Justin creates `quakecstudio/preview-host` before P3-02 starts (agents do not create
-  repositories).
+- **Requirements** (`plan/requirements.yaml`, with the design document): ENG-2 now describes the
+  Rust host; ARCH-2 no longer lists the host among the C programs. Two implied requirements are
+  new: ENG-15 (the host's simulation matches the engine oracle frame by frame; rendering and sound
+  within stated tolerances) and ENG-16 (the host reads every asset the game uses: BSP29, BSP2,
+  `.lit`, MDL, SPR, WAV, the rerelease's MD5 models and `QuakeEX.kpf`).
+- **Phase 1:** P5-01 (spec of the BSP, MDL and `.map` formats) and P5-02 (their readers and the
+  `.map` writer) move into Phase 1 with the other L0 formats, keeping their keys. New P1-29 specifies
+  and reads SPR sprites, WAV sounds and MD5 models.
+- **Phase 3:** P3-02 becomes "Build the preview host app" (`apps/preview-host`), no longer a C fork.
+  P5-05 (the wgpu renderer, `qs-render`, L7) moves from Phase 5 into Phase 3, keeping its key. That
+  is earlier in the schedule, not in the layering: the renderer stays L7, and only `apps`
+  crates (the preview host and the desktop app) use it. New issues:
+  - P3-22: spec of the preview host engine (L4).
+  - P3-23: the engine oracle, a pinned QuakeSpasm in `oracles/` (C tools).
+  - P3-24: the server simulation, `qs-sim` (L4).
+  - P3-25: its differential suite (L4).
+  - P3-26: rendering the game, extending `qs-render` (L7).
+  - P3-27: sound, `qs-sound` (L4).
+  - P3-28: the render and sound fidelity checks (L7).
 
-If D is chosen instead, Phase 3 is replanned around a Rust host: P3-02 becomes several spec and
-port issues, P5-05 moves into Phase 3, and #13 and the FTEQW adapter can leave the MVP path through
-#21.
+  P3-03, P3-04, P3-05 and P5-10 are Rust work now (L4 instead of C tools).
+- **#13 and #14:** P0-13 (FTEQW on Apple silicon) moves from Phase 0 to Phase 3, where it gates
+  only the FTEQW adapter (P3-07); it no longer blocks the Phase 0 gate or P0-14. P0-14 still decides
+  the default target per OS, which is now our own host everywhere unless it decides otherwise.
+- **Documents:** the design document (revision 37: Source and licensing, Platform support,
+  Architecture, Engine bridge, Map editor renderer, Milestones, Risks), `docs/layers.md`,
+  `docs/roadmap.md` and `docs/risks.md` (new R-11) say the same. The readiness issues are
+  regenerated.
+- **Not changed here:** `CLAUDE.md`, `.claude/rules/layering.md` and the `work-issue` skill still
+  describe the host as a C fork in `quakecstudio/preview-host`. Agent instructions are Justin's to
+  edit, so they are left for him.
+- **Harder or impossible now:** the MVP waits for a playable Rust engine; mods that need engine
+  extension builtins the host has not ported preview wrongly until they are added, and the
+  engine-target database (P2-04) must list the host's builtins as its own target.
 
 ## Links
 
