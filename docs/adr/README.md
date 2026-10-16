@@ -21,6 +21,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0007](0007-mvp-scope.md) | Confirm the MVP In list and move ACP, next-edit and the updater after it | Accepted |
 | [0008](0008-game-directories.md) | Launch engines from a linked run directory inside the project | Accepted |
 | [0009](0009-test-readiness-bar.md) | Adopt the readiness bar, measured at readiness reviews | Accepted |
+| [0010](0010-visual-design.md) | Use warm graphite with one ember accent, Plex and JetBrains Mono, and native chrome | Accepted |
 | [0011](0011-app-directories.md) | Use each OS's native application directories | Accepted |
 <!-- /adr:index -->
 

@@ -4,6 +4,8 @@
 | --- | --- |
 | [`design-doc.md`](design-doc.md) | The design document (revision 36, 2026-10-15): goals, licensing, architecture, foundations, compiler, engine bridge, agent, UI, map editor, quality, MVP scope, risks |
 | [`mockups/`](mockups/) | The approved mockups of the main screens (approved on [#199](https://github.com/quakecstudio/editor/issues/199#issuecomment-6202660819)) |
+| [`visual.md`](visual.md) | The visual design: colour, type, spacing, icons, motion and window chrome ([ADR-0010](../adr/0010-visual-design.md)) |
+| [`tokens.toml`](tokens.toml) | The theme tokens for dark and light, the single source the UI layer reads; `cargo xtask contrast` checks them against WCAG AA |
 
 The plan in [`../../plan/`](../../plan/README.md) turns the design document into requirements and issues. When the two disagree, fix one of them in the same PR; `plan/check.py` only checks that every requirement is covered, not that the prose still matches.
 
@@ -22,14 +24,11 @@ These are design targets for the UI layer (L7), not screenshots. The app is buil
 
 The embedded game view (ENG-10) is post-MVP and is deliberately not in the v1 mockups.
 
+The toolbar shows the preview host as a status, with no engine picker, and the palette has no "choose the engine" command: the IDE runs only its own preview host ([ADR-0005](../adr/0005-default-preview-target.md)). Boards 01 to 04 were re-exported from their sources with only that change.
+
 ### Design language
 
-- **Feel:** Zed's editor (calm, dense, keyboard-first) with Roblox Studio's play loop (UI-14).
-- **Colour:** warm graphite surfaces with one ember accent (`#EE8B45` dark, `#A84D16` light); blue (`#6FA8DC`) only for focus and selection. Every text pair meets WCAG AA; the ratios are on the theme board.
-- **Type:** IBM Plex Sans for the interface (13 px, 12 px semibold for panel headings), JetBrains Mono for code (13 px on a 20 px line, ligatures off so QuakeC reads literally).
-- **Code colours:** keywords copper, types teal, functions gold (builtins in italic), constants and numbers lilac, strings green, vectors teal, comments grey italic.
-
-The tokens move into `docs/design/tokens.toml`, with a CI contrast check, as part of [#199](https://github.com/quakecstudio/editor/issues/199).
+Warm graphite surfaces with one ember accent, IBM Plex Sans and JetBrains Mono, one dense layout and native window chrome. [`visual.md`](visual.md) describes it in full and [`tokens.toml`](tokens.toml) holds the values.
 
 ### Sources
 
