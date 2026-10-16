@@ -99,11 +99,14 @@ every budget on these machines for the MVP and writes `docs/gates/perf-mvp.md`.
 ### In CI
 
 The `Benchmarks` workflow ([`.github/workflows/bench.yml`](../.github/workflows/bench.yml)) runs
-`cargo xtask bench` on a GitHub-hosted Linux runner for every pull request and every push to
-`main`, with `QS_BENCH_HOST` set to the runner class (`ci-Linux-X64`). It restores the history
-saved by the last run on `main` from the Actions cache, so a pull request is compared with
-`main`, prints the history, uploads it as the `bench-history` artifact, and saves it back to the
-cache only from `main`. A regression or over-budget result fails the job with an error
-annotation on the pull request. The job is not a required check: shared runners vary too much
-for a 10% threshold to block merges, and their absolute numbers do not decide whether a budget
-is met; the reference machines do.
+`cargo xtask bench` on a GitHub-hosted Linux runner every Monday and on demand (Actions, Run
+workflow), with `QS_BENCH_HOST` set to the runner class (`ci-Linux-X64`). It restores the history
+saved by the last run on `main` from the Actions cache, prints the history, uploads it as the
+`bench-history` artifact, and saves it back to the cache only from `main`. A regression or
+over-budget result fails the run with an error annotation.
+
+It does not run on pull requests or in the merge queue, and it is not a required check: CI stays
+lean until there is product code to measure, and shared runners vary too much for a 10% threshold
+to block merges. Pull requests still compile the benchmarks, in the `Clippy` job
+(`--all-targets`). The runners' absolute numbers do not decide whether a budget is met; the
+reference machines do.

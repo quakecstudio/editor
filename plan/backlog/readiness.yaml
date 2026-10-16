@@ -694,13 +694,11 @@ groups:
     depends:
     - P4-09
     - P4-10
-    - P4-11
     - P4-12
-    - P4-14
     - P3-R7
     - P0-24
     deliverable:
-    - 'docs/readiness/p4-r7.md following docs/readiness/_template.md, covering: P4-09, P4-10, P4-11, P4-12, P4-14'
+    - 'docs/readiness/p4-r7.md following docs/readiness/_template.md, covering: P4-09, P4-10, P4-12'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -731,11 +729,10 @@ groups:
     - TEST-12
     depends:
     - P4-17
-    - P4-19
     - P3-RA
     - P0-24
     deliverable:
-    - 'docs/readiness/p4-ra.md following docs/readiness/_template.md, covering: P4-17, P4-19'
+    - 'docs/readiness/p4-ra.md following docs/readiness/_template.md, covering: P4-17'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README

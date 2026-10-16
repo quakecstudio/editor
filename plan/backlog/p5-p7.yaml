@@ -806,3 +806,57 @@ groups:
     - An ADR schedules or rejects each feature
     verify:
     - ADR link
+  - key: P4-11
+    title: Next-edit suggestions
+    labels:
+    - L7-ui
+    - area:agent
+    - type:feature
+    size: M
+    reqs:
+    - UI-7
+    depends:
+    - P4-10
+    - P2-02
+    deliverable:
+    - Suggestions on Tab derived from the semantic model (rename propagation, matching declarations) with optional model assistance
+    acceptance:
+    - Renaming a field suggests every use site; Tab walks through them
+    verify:
+    - Tests on the rerelease
+  - key: P4-14
+    title: Host external agents over ACP
+    labels:
+    - L7-ui
+    - area:agent
+    - type:feature
+    size: M
+    reqs:
+    - UI-11
+    - PRIN-6
+    depends:
+    - P4-09
+    deliverable:
+    - Agent Client Protocol host so Claude Code, Codex and others run in the agent panel with the IDE's tools available
+    acceptance:
+    - At least two external agents complete a task in the panel
+    verify:
+    - Recorded sessions; protocol tests
+  - key: P4-19
+    title: Update mechanism
+    labels:
+    - apps
+    - area:release
+    - type:feature
+    size: S
+    reqs:
+    - QA-11
+    - PRIN-9
+    depends:
+    - P4-18
+    deliverable:
+    - Opt-in update check against GitHub releases with signature verification; AppImage zsync
+    acceptance:
+    - No network call unless the user enabled update checks
+    verify:
+    - Update test against a fake release feed

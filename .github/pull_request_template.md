@@ -12,6 +12,12 @@
 
 Closes #
 
+## Design document
+
+<!-- plan/check.py fails if docs/design/design-doc.md changed and design_doc_sha256 in plan/requirements.yaml was not updated. -->
+
+- [ ] docs/design/design-doc.md is unchanged, or plan/requirements.yaml was reviewed against it and its design_doc_sha256 updated
+
 ## Definition of done
 
 <!-- From plan/backlog/_meta.yaml; plan/check.py keeps this list in step with it. Tick each item, or say why it does not apply. -->
