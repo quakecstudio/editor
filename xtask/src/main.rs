@@ -25,6 +25,12 @@
 //!   minimums in `ratchets.toml`, and checks how `ratchets.toml` has changed.
 //! - `fuzz`: runs the cargo-fuzz targets in `fuzz/` on nightly for a fixed time
 //!   each; `make test-fuzz` and the nightly `Fuzz` workflow call it.
+//! - `corpus`: `corpus verify [--online]` checks `corpus/manifest.toml` and the repository
+//!   against the corpus policy; `corpus fetch` downloads codebases and maps by checksum into a
+//!   cache outside the source tree; `corpus build` compiles the codebases an oracle compiler
+//!   builds and checks each progs.dat round-trips through `qc-progs`.
+//! - `assets`: `assets fetch` downloads, checks and extracts the open test assets;
+//!   `assets precache` checks they cover the rerelease's precaches.
 //! - `lex-corpus`: lexes every `.qc` file of a codebase directory and
 //!   preprocesses the files its `progs.src` lists, failing on any error.
 //! - `oracles`: fetches id's and FTEQCC's sources by checksum, builds the
@@ -56,6 +62,8 @@ mod bench;
 mod ci;
 mod contrast;
 mod conventions;
+mod corpus;
+mod download;
 mod fixtures;
 mod fuzz;
 mod layers;
@@ -74,7 +82,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
-                     readiness | ratchet | fuzz | lex-corpus | oracles | \
+                     readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      parse-corpus | project-corpus>";
 
 /// A command that takes arguments and says itself whether it passed.
@@ -85,7 +93,9 @@ fn main() -> ExitCode {
     let root = workspace_root();
     if let Some((name, rest)) = args.split_first() {
         let command: Option<Command> = match name.as_str() {
+            "assets" => Some(corpus::assets_main),
             "bench" => Some(bench::main),
+            "corpus" => Some(corpus::main),
             "fuzz" => Some(fuzz::main),
             "lex-corpus" => Some(lex_corpus::main),
             "oracles" => Some(oracles::main),

@@ -90,7 +90,9 @@ const SCENARIOS: [(&str, &str); 2] = [
     ),
 ];
 
-pub(crate) fn check(oracles: &Oracles, codebase: &Path) -> Result<bool, String> {
+/// Compiles the codebase in `codebase` with id's qcc in a scratch directory; returns the
+/// progs.dat and the number of files copied from `codebase`.
+pub(crate) fn compile(oracles: &Oracles, codebase: &Path) -> Result<(Vec<u8>, u32), String> {
     let work = oracles.work.join("id-1.01");
     let src = work.join("src");
     if work.exists() {
@@ -125,6 +127,11 @@ pub(crate) fn check(oracles: &Oracles, codebase: &Path) -> Result<bool, String> 
         ));
     }
     let progs = fs::read(&progs_path).map_err(|e| e.to_string())?;
+    Ok((progs, copied))
+}
+
+pub(crate) fn check(oracles: &Oracles, codebase: &Path) -> Result<bool, String> {
+    let (progs, copied) = compile(oracles, codebase)?;
     let mut ok = true;
     let digest = sha256::hex_digest(&progs);
     if digest == PROGS_SHA256 {
@@ -135,7 +142,7 @@ pub(crate) fn check(oracles: &Oracles, codebase: &Path) -> Result<bool, String> 
     }
     Progs::read(&progs).map_err(|e| format!("qc-progs refuses qcc's progs.dat: {e:?}"))?;
 
-    let scenarios = work.join("scenarios");
+    let scenarios = oracles.work.join("id-1.01").join("scenarios");
     fs::create_dir_all(&scenarios).map_err(|e| e.to_string())?;
     fs::write(scenarios.join("small-map.ent"), ENTITIES).map_err(|e| e.to_string())?;
     for (name, text) in SCENARIOS {

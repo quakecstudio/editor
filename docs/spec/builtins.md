@@ -81,12 +81,9 @@ engine never looks at the function's name or parameter list.
 - **BUILTIN-2.2** A float outside the range of a 32-bit int, or a NaN, makes that conversion
   undefined in C. This spec fixes the answer as the x86 one (`cvttss2si`, `cvttsd2si`): the
   result is -2147483648 (0x80000000). Every conversion in this file follows this rule.
-- **BUILTIN-2.3** An entity value a builtin reads with `G_EDICT` or `PROG_TO_EDICT`, from a
-  parameter, a global (`self`, `msg_entity`) or a field (`goalentity`, `enemy`), is not
-  checked: id adds it to the start of the edict array. A value that does not name an edict
-  (EDICT-1.7, VM-11.4) makes the builtin read or write other memory, which is undefined in C.
-  This spec fixes the answer: the builtin fails with a runtime error (VM-19.4) before it
-  writes anything.
+- **BUILTIN-2.3** **Withdrawn** 2026-10-16: it said the builtin fails before it writes
+  anything, but the check is made where id's code reads the value (BUILTIN-2.9), after
+  whatever the builtin writes first; replaced by BUILTIN-2.7.
 - **BUILTIN-2.4** An entity argument read with `G_EDICTNUM` (or passed to `NUM_FOR_EDICT`)
   fails with the fatal error `NUM_FOR_EDICT: bad pointer` (BUILTIN-3.3) when its edict number
   is not less than `num_edicts` (EDICT-1.7). The statements below say which builtins do this.
@@ -97,6 +94,37 @@ engine never looks at the function's name or parameter list.
 - **BUILTIN-2.6** A builtin that keeps a string argument (`setmodel`, the precache builtins,
   `lightstyle`) keeps the reference, not a copy of the text, so it sees later changes to that
   text, such as a new `ftos` result (BUILTIN-7.4).
+- **BUILTIN-2.7** An entity value a builtin reads with `G_EDICT`, `G_EDICTNUM` or
+  `PROG_TO_EDICT`, from a parameter, a global (`self`, `msg_entity`) or a field (`goalentity`,
+  `enemy`), is not checked by id's code: `PROG_TO_EDICT` adds it to the start of the edict
+  array. A value that names no edict (EDICT-1.9) makes the builtin read or write memory that is
+  not an edict, which is undefined in C. This spec fixes the answer: the builtin fails with a
+  runtime error (VM-19.4) where it reads the value (BUILTIN-2.9). A value that names an edict
+  passes, even one at or above `num_edicts` or a free one.
+- **BUILTIN-2.8** A string value is valid when it is from 0 to `numstrings - 1`, an offset into
+  the string table (including one into the middle of a string, PROGS-11.3), or exactly the
+  value of an engine-made string (EDICT-13.1, BUILTIN-7.4). Every other value is BUILTIN-2.5's
+  invalid string: a negative one, `numstrings` or more outside the engine-made strings, and one
+  that points past the start of an engine-made string's text, whose number depends on where the
+  engine put that text (EDICT-13.3). A valid value's text is read up to its NUL (PROGS-11.1).
+- **BUILTIN-2.9** The entity check of BUILTIN-2.7, the string check of BUILTIN-2.5 and
+  BUILTIN-2.8, and the field check of BUILTIN-8.3 are made where id's code reads the value, at
+  each `G_EDICT`, `G_EDICTNUM`, `PROG_TO_EDICT`, `G_STRING` and `E_STRING` and at `makestatic`'s
+  read of `model` (BUILTIN-12.8), in the order id's code reads them. So a builtin that fails one
+  has already done what id's code does before that read: `changelevel` has recorded that it was
+  issued (BUILTIN-11.6) and `makestatic` has appended `svc_spawnstatic`. A value the builtin
+  does not read is not checked: `changelevel` reads no string once one was issued, and `find`
+  reads the field of only the edicts it examines (BUILTIN-8.8). Of two bad values, the one read
+  first decides the error: `setmodel(e, m)` reads `e` before `m`. `G_EDICTNUM` checks the entity
+  before `NUM_FOR_EDICT` (BUILTIN-2.4) does, so a value that names no edict is the runtime
+  error and a value that names an edict at or above `num_edicts` is the fatal error.
+- **BUILTIN-2.10** `WriteString(to, s)` and `WriteEntity(to, e)` read the destination
+  (`WriteDest`, BUILTIN-13.1) and the value as two arguments of one C call
+  (`MSG_WriteString (WriteDest(), G_STRING(OFS_PARM1))`,
+  `MSG_WriteShort (WriteDest(), G_EDICTNUM(OFS_PARM1))`), and C leaves the order in which a
+  call's arguments are evaluated unspecified, so which of two failures comes first depends on
+  the compiler. This spec fixes the answer: the destination is read first, so with a bad
+  destination and a bad value the error is the destination's.
 
 ## BUILTIN-3 Kinds of failure
 
@@ -320,6 +348,10 @@ statements give each expression as id writes it, because that decides the last b
 - **BUILTIN-7.6** `ftos` of a NaN or an infinity is printed by the C library, and C libraries
   differ (MSVC's text is not C99's). This spec fixes the answer as `  nan` for every NaN,
   `  inf` and ` -inf`.
+- **BUILTIN-7.7** `vtos` prints each component the way `ftos` prints a value that is not whole
+  (BUILTIN-7.2), and a NaN or infinite component, which `%5.1f` leaves to the C library as
+  BUILTIN-7.6 says, as `  nan` for every NaN, `  inf` and ` -inf`: `vtos` of a vector whose
+  components are a NaN, an infinity and minus infinity is `'  nan   inf  -inf'`.
 
 ## BUILTIN-8 Entities
 
@@ -357,6 +389,15 @@ statements give each expression as id writes it, because that decides the last b
   globals `parm1` to `parm16` (EDICT-11.9). `e` goes through `NUM_FOR_EDICT` (BUILTIN-2.4); an
   edict number outside 1 to `maxclients` fails with the runtime error `Entity is not a client`.
   It does not check that a player is connected to that slot.
+- **BUILTIN-8.8** `find` reads `start` (BUILTIN-2.4), then `match`, then, for each edict it
+  examines (BUILTIN-8.3), the field `fld` with `E_STRING` before comparing: it checks that
+  `fld` is a field slot (`invalid field`, BUILTIN-8.3) and that the field's value is a valid
+  string (BUILTIN-2.8; `invalid string`). So it fails at the first examined edict whose field
+  value is not a valid string, even when a later edict would match; it returns a match found
+  before such an edict; and when it examines no edict (`start` is the last edict in use, or
+  every edict after it is free) it checks neither `fld` nor any field value. id's checks for a
+  null `match` (`PF_Find: bad search string`) and a null field text never fire: a string value
+  never gives a null pointer.
 
 ## BUILTIN-9 Placing entities
 
@@ -776,6 +817,39 @@ is not x86 (an arm64 build saturates the conversion instead):
 | `ftos` of a NaN, an infinity, minus infinity | `  nan`, `  inf`, ` -inf` | BUILTIN-7.6 |
 | `WriteAngle` of 90, 359.9, -1, -90 | bytes 64, 255, 0, 192 | BUILTIN-13.2 |
 | `WriteCoord(1.06)` | short 8 (`(int)8.48`) | BUILTIN-13.2 |
+
+### Argument checks
+
+The vectors in [`vectors/vm/builtins.txt`](vectors/vm/builtins.txt) run id's builtins on small
+programs (`builtins: engine`, format in the vectors' [README](vectors/vm/README.md)). Checked on
+2026-10-16 by `cargo xtask oracles` on macOS arm64: the VM oracle, which compiles the `PF_`
+functions of `WinQuake/pr_cmds.c` at the pinned commit with the checked accessors of BUILTIN-2.9
+and its own `vtos`, `WriteString` and `WriteEntity`, passed all 26. In the table `e10` is edict
+10 with three edicts in use, and the string table is `""` and `"ab"` (`numstrings` 4).
+
+| Input | Output | Statements |
+| --- | --- | --- |
+| `setorigin(e10, '1 2 3')`, then load `e10.origin` | no error; `'1 2 3'` | EDICT-1.9, BUILTIN-2.7 |
+| `setorigin` of edict 600, of the value 4, of -1 | `invalid entity` | EDICT-1.9, BUILTIN-2.7 |
+| `ChangeYaw()` with `self` edict 600; `WriteByte(MSG_ONE, 0)` with `msg_entity` 4 | `invalid entity` | BUILTIN-2.7 |
+| `nextent(4)`; `nextent(e10)` | `invalid entity`; `NUM_FOR_EDICT: bad pointer` | BUILTIN-2.9, BUILTIN-2.4 |
+| `cvar` of offsets 0 and 3; of 4 and -1 | no error; `invalid string` | BUILTIN-2.8, BUILTIN-2.5 |
+| `cvar(vtos('1.5 0 0'))` | no error | BUILTIN-2.8 |
+| `precache_file(9999)` | returns 9999, no error | BUILTIN-2.9 |
+| `makestatic(e1)` with `e1.model` 9999 | `invalid string` | BUILTIN-2.9 |
+| `changelevel("ab")`, then `changelevel(9999)` | no error | BUILTIN-2.9 |
+| `setmodel(4, 9999)` | `invalid entity` | BUILTIN-2.9 |
+| `WriteString(5, 9999)`, `WriteEntity(5, 4)` | `WriteDest: bad destination` | BUILTIN-2.10 |
+| `WriteString(MSG_BROADCAST, 9999)`; `WriteEntity(MSG_BROADCAST, e10)` | `invalid string`; `NUM_FOR_EDICT: bad pointer` | BUILTIN-2.10, BUILTIN-2.9 |
+| `find(world, 105, "ab")`, `e1.105` 9999, `e2.105` `"ab"` | `invalid string` | BUILTIN-8.8 |
+| `find(world, 105, "ab")`, `e1.105` `"ab"`, `e2.105` 9999 | `e1` | BUILTIN-8.8 |
+| `find(world, 9999, "ab")` | `invalid field` | BUILTIN-8.8, BUILTIN-8.3 |
+| `find(e2, 9999, "ab")`; `remove(e2)`, then `find(e1, 9999, "ab")` | the world, both times | BUILTIN-8.8 |
+| `vtos` of NaN, infinity, minus infinity | `'  nan   inf  -inf'` | BUILTIN-7.7 |
+| `vtos` of the NaN `ffc00000`, 1.5, -2 | `'  nan   1.5  -2.0'` | BUILTIN-7.7 |
+
+A string value that points past the start of an engine-made string (BUILTIN-2.8) has no
+vector: its number depends on where each runner puts the text.
 
 ### Numbers and prototypes
 

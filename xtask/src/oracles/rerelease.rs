@@ -4,7 +4,7 @@
 //! FTEQCC and keeps each `progs.dat` and `progs.lno` as an oracle artifact (P1-26, LIC-8).
 //!
 //! `<dir>` holds one directory per codebase, named by its id in `corpus/manifest.toml`, as
-//! `python corpus/assets.py codebase --codebase <id>` writes them. Each is compiled with
+//! `cargo xtask corpus fetch <id>` writes them. Each is compiled with
 //! [`FLAGS`]: `-Tid` targets id's version 6 format, where FTEQCC refuses any opcode id's VM
 //! lacks, and `-flno` asks for the `.lno` file (`docs/spec/lno.md` LNO-1.1). The outputs go to
 //! `target/oracles/rerelease/<id>/`; when the files there already have the recorded digests (a
@@ -17,7 +17,7 @@
 //! after the header, which holds the date of the compile and of the FTEQCC build.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qc_progs::opcode::Opcode;
@@ -98,12 +98,28 @@ pub(crate) fn check(oracles: &Oracles, codebases: &Path) -> Result<bool, String>
     Ok(ok)
 }
 
-fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result<bool, String> {
-    let id = codebase.id;
+/// Whether `id` is one of the rerelease codebases this oracle compiles.
+pub(crate) fn compiles(id: &str) -> bool {
+    CODEBASES.iter().any(|c| c.id == id)
+}
+
+/// Compiles the rerelease codebase `id`, found in `codebases/<id>`, unless the outputs already
+/// have the recorded digests. Returns the directory holding `progs.dat` and `progs.lno`, and
+/// whether they were already there.
+pub(crate) fn build(
+    oracles: &Oracles,
+    codebases: &Path,
+    id: &str,
+) -> Result<(PathBuf, bool), String> {
+    let codebase = CODEBASES
+        .iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| format!("{id} is not a rerelease codebase"))?;
     let out = oracles.rerelease.join(id);
-    let progs_path = out.join("progs.dat");
-    let lno_path = out.join("progs.lno");
-    let cached = match (fs::read(&progs_path), fs::read(&lno_path)) {
+    let cached = match (
+        fs::read(out.join("progs.dat")),
+        fs::read(out.join("progs.lno")),
+    ) {
         (Ok(progs), Ok(lno)) => {
             progs_digest(&progs).is_some_and(|d| d == codebase.progs)
                 && sha256::hex_digest(&lno) == codebase.lno
@@ -113,6 +129,14 @@ fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result
     if !cached {
         compile(oracles, &codebases.join(id), codebase, &out)?;
     }
+    Ok((out, cached))
+}
+
+fn check_one(oracles: &Oracles, codebases: &Path, codebase: &Codebase) -> Result<bool, String> {
+    let id = codebase.id;
+    let (out, cached) = build(oracles, codebases, id)?;
+    let progs_path = out.join("progs.dat");
+    let lno_path = out.join("progs.lno");
     let progs = fs::read(&progs_path).map_err(|e| format!("{}: {e}", progs_path.display()))?;
     let lno = fs::read(&lno_path).map_err(|e| format!("{}: {e}", lno_path.display()))?;
 

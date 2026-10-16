@@ -618,7 +618,6 @@ issues:
   - P1-23
   deliverable:
   - 'corpus/manifest.toml: FreeHL (the valve game FreeCS builds against, files under valve/src), with its license read from its own files, and a way to lay out Nuclide, FreeHL and FreeCS as the tree FreeCS''s progs.src files expect'
-  - 'corpus/assets.py: fetching a GitLab codebase (xonotic) works; at present the archive download fails with HTTP 403 where curl succeeds'
   - 'CI writes both codebases to the asset cache and runs cargo xtask project-corpus on them, Xonotic through a quakec.toml giving the defines of its qcsrc/tools/qcc.sh'
   acceptance:
   - cargo xtask project-corpus reports no error for FreeCS and Xonotic in CI

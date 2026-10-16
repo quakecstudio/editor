@@ -113,6 +113,7 @@ similar_names = "allow"
 cc = { version = "=1.8.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false }
 junction = { version = "=2.1.0", default-features = false }
+miniz_oxide = { version = "=0.9.1", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-preproc = { path = "crates/qc-preproc" }

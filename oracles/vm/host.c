@@ -498,17 +498,18 @@ void qs_alloc_edicts(int max_edicts) {
     sv.edicts = qs_alloc((size_t)max_edicts * (size_t)pr_edict_size);
 }
 
-// --- Argument checks for builtins (BUILTIN-2.3, BUILTIN-2.5, BUILTIN-8.3) ---
+// --- Argument checks for builtins (BUILTIN-2.5, BUILTIN-2.7 to BUILTIN-2.9, BUILTIN-8.3) ---
 
-// An entity value names an edict when it is a whole number of edicts from the start of the
-// array, inside the LIMIT_MAX_EDICTS edicts the server allocates (EDICT-1.4, EDICT-1.5).
+// EDICT-1.9: an entity value names an edict when it is a whole number of edicts from the start
+// of the array, inside the LIMIT_MAX_EDICTS edicts the server allocates.
 edict_t *qs_edict(int value) {
     if (value < 0 || value % pr_edict_size != 0 || value / pr_edict_size >= sv.max_edicts)
         PR_RunError("invalid entity");
     return (edict_t *)((byte *)sv.edicts + value);
 }
 
-// A string value is an offset into the string table or an engine string (EDICT-13.1).
+// BUILTIN-2.8: a string value is an offset into the string table or exactly the value of an
+// engine string (EDICT-13.1).
 char *qs_string(int value) {
     if ((value < 0 || value >= progs->numstrings) && !qs_is_engine_string(value))
         PR_RunError("invalid string");
@@ -519,6 +520,12 @@ char *qs_field_string(edict_t *ed, int field) {
     if (field < 0 || field >= progs->entityfields)
         PR_RunError("invalid field");
     return qs_string(((int *)&ed->v)[field]);
+}
+
+// Text id's code made as `pr_strings + value`: every value is a 32-bit offset in the arena
+// (oracle.h), so the difference gives the value back.
+char *qs_checked_text(char *text) {
+    return qs_string((int)(text - pr_strings));
 }
 
 // --- Crashes ---
@@ -581,6 +588,7 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     int line = 0;
     int entry = 1;
     int edicts = 3;
+    builtin_t *builtins = qs_vector_builtins;
     sv.state = ss_active;
     // The edicts are allocated first, then the values are applied.
     long start = ftell(init);
@@ -593,7 +601,9 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
         fprintf(stderr, "vm-oracle: %s: bad edict count\n", init_path);
         return QS_EXIT_REFUSED;
     }
-    qs_alloc_edicts(edicts);
+    // The array has all LIMIT_MAX_EDICTS edicts, as the server's does (EDICT-1.4); `edicts`
+    // of them are in use.
+    qs_alloc_edicts(MAX_EDICTS);
     sv.num_edicts = edicts;
     fseek(init, start, SEEK_SET);
     while (fgets(text, sizeof(text), init)) {
@@ -603,6 +613,8 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
             continue;
         if (n == 1 && strcmp(w[0], "loading") == 0) {
             sv.state = ss_loading;
+        } else if (n == 2 && strcmp(w[0], "builtins") == 0 && strcmp(w[1], "engine") == 0) {
+            builtins = qs_scenario_builtins;
         } else if (n == 2 && strcmp(w[0], "entry") == 0) {
             entry = atoi(w[1]);
         } else if (n >= 4 && strcmp(w[0], "global") == 0) {
@@ -628,7 +640,7 @@ int qs_vector_main(const char *progs_path, const char *init_path, const char *tr
     }
     fclose(init);
 
-    pr_builtins = qs_vector_builtins;
+    pr_builtins = builtins;
     pr_numbuiltins = QS_NUM_BUILTINS;
     if (!qs_trace_open(trace_path)) {
         fprintf(stderr, "vm-oracle: cannot write %s\n", trace_path);

@@ -1,15 +1,15 @@
 # Conformance corpus
 
-[`manifest.toml`](manifest.toml) lists the QuakeC codebases and maps the differential and conformance tests run against (FND-9, MAP-19, OPEN-4): where each one comes from, the commit it is pinned to, its license and what we may do with it. Its `[[asset]]` entries are the open game data CI runs engine scenarios with (QA-4); [`docs/test-assets.md`](../docs/test-assets.md) has their license review and [`assets.py`](assets.py) fetches them.
+[`manifest.toml`](manifest.toml) lists the QuakeC codebases and maps the differential and conformance tests run against (FND-9, MAP-19, OPEN-4): where each one comes from, the commit it is pinned to, its license and what we may do with it. Its `[[asset]]` entries are the open game data CI runs engine scenarios with (QA-4); [`docs/test-assets.md`](../docs/test-assets.md) has their license review and `cargo xtask assets fetch` fetches them.
 
-Nothing in the manifest is committed to this repository. Tools fetch each entry at its pinned commit and check it against the recorded SHA-256 (LIC-7). `cargo xtask corpus fetch|build|verify` ([P1-14](../plan/backlog/p1.yaml)) does the fetching; until it exists, [`verify.py`](verify.py) checks the manifest.
+Nothing in the manifest is committed to this repository. Tools fetch each entry at its pinned commit and check it against the recorded SHA-256 (LIC-7). `cargo xtask corpus fetch` does the fetching, `cargo xtask corpus build` compiles what an oracle compiler builds, and `cargo xtask corpus verify` checks the manifest ([`xtask/src/corpus.rs`](../xtask/src/corpus.rs)).
 
 ## Policy
 
 - **QuakeC 1.06 is never fetched, built, vendored or bundled.** id released it with no license (LIC-5). It is in the manifest's `never` list, it has no source, and `blocked_urls` names the repository that carries it so no entry can point there. id's QuakeC 1.01 (GPL, in Quake-Tools) and the rerelease QuakeC stand in for it.
-- **id's game data (pak0/pak1) never enters the repository or CI** (LIC-4). It is the `id1-paks` entry in the `never` list, `verify.py` fails on any tracked `.pak` file, and `assets.py` extracts only archive members pinned by SHA-256.
-- **Corpus files are fetched, not committed.** `verify.py` fails on any tracked Quake content file (`.qc`, `.src`, `.map`, `.bsp`, `.wad` and so on) outside the directories listed in the manifest's `fixture_dirs`, and on any tracked file that is a byte-for-byte copy of a pinned corpus file. An issue that adds test fixtures lists their directory in `fixture_dirs` in the same PR; `crates/qc-syntax/src/tests/` holds the parser's hand-written QuakeC sample.
-- **Licenses come from the item's own files.** Every entry names the files its license was read from (`evidence`), and each of those files is pinned by SHA-256, so a license change upstream fails `verify.py --online`. When an item ships only the GPL text with no "or any later version" grant from its authors, it is recorded as `-only`: the conservative reading, which never claims more rights than the files give.
+- **id's game data (pak0/pak1) never enters the repository or CI** (LIC-4). It is the `id1-paks` entry in the `never` list, `cargo xtask corpus verify` fails on any tracked `.pak` file, and `cargo xtask assets fetch` extracts only archive members pinned by SHA-256.
+- **Corpus files are fetched, not committed.** `cargo xtask corpus verify` fails on any tracked Quake content file (`.qc`, `.src`, `.map`, `.bsp`, `.wad` and so on) outside the directories listed in the manifest's `fixture_dirs`, and on any tracked file that is a byte-for-byte copy of a pinned corpus file. An issue that adds test fixtures lists their directory in `fixture_dirs` in the same PR; `crates/qc-syntax/src/tests/` holds the parser's hand-written QuakeC sample.
+- **Licenses come from the item's own files.** Every entry names the files its license was read from (`evidence`), and each of those files is pinned by SHA-256, so a license change upstream fails `cargo xtask corpus verify --online`. When an item ships only the GPL text with no "or any later version" grant from its authors, it is recorded as `-only`: the conservative reading, which never claims more rights than the files give.
 
 ## Fields
 
@@ -68,18 +68,22 @@ Nothing in the manifest is committed to this repository. Tools fetch each entry 
 
 ## Checking
 
-Needs Python 3.11 or later (for `tomllib`):
+The cache is `--dest <dir>`, else `$QS_TEST_ASSETS`, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME` or `~/.cache`, and never inside the source tree. Everything downloaded stays in `<cache>/downloads/` and is checked again before use, so a second run works offline. An entry marked `never` is refused by name. A codebase is read from its source's archive at the pinned commit, and only the files under its `path` are written: from Quake-Tools that is `qcc/v101qc/` (its `.qc` files and `progs.src`), while id's compiler and engine sources are fetched by the oracles build (`oracles/sources.toml`).
 
 ```bash
-python3.11 corpus/verify.py            # offline: manifest rules and the repository scan
-python3.11 corpus/verify.py --online   # also downloads every pinned file and compares SHA-256
-python3.11 corpus/assets.py fetch      # download, checksum and extract the test assets
-python3.11 corpus/assets.py precache   # check they cover the rerelease's precaches
-python3.11 corpus/language_coverage.py # check docs/spec/language.md covers every construct in id 1.01
-python3.11 corpus/assets.py codebase   # write id 1.01 to <cache>/codebase/id-1.01
+cargo xtask corpus verify              # offline: manifest rules and the repository scan
+cargo xtask corpus verify --online     # also downloads every pinned file and compares SHA-256
+cargo xtask corpus fetch [<id>...]     # write codebases to <cache>/codebase/<id>, maps to <cache>/map/<id>.map
+cargo xtask corpus build [<id>...]     # compile id 1.01 (id's qcc) and the rerelease (FTEQCC) into
+                                       # <cache>/progs/<id>/ and check each progs.dat round-trips
+cargo xtask assets fetch               # download, checksum and extract the test assets
+cargo xtask assets precache            # check they cover the rerelease's precaches
+python3.11 corpus/language_coverage.py --source-dir <cache>/codebase/id-1.01
+                                       # check docs/spec/language.md covers every construct in id 1.01
 cargo xtask lex-corpus <cache>/codebase/id-1.01  # lex it and preprocess progs.src with no errors
 cargo xtask parse-corpus --vanilla --deletions <cache>/codebase/id-1.01  # parse it, check recovery
 cargo xtask parse-corpus <cache>/codebase/<id>...  # every file round-trips through the tree
 cargo xtask project-corpus <cache>/codebase/<id>...  # open each as a project; check its file graphs
-(cd corpus && python3.11 -m unittest test_verify.py test_assets.py test_language_coverage.py)
+cargo test -p xtask corpus            # the commands' offline tests
+(cd corpus && python3.11 -m unittest test_language_coverage.py)
 ```

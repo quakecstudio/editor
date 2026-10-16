@@ -12,7 +12,7 @@
 //! compiled from the same `progs.src` (`cargo xtask oracles id101`) is the oracle. With
 //! `--files`, every file of every graph is printed, in order.
 //!
-//! The codebases come from `python corpus/assets.py codebase --codebase <id>`.
+//! The codebases come from `cargo xtask corpus fetch <id>`.
 
 use std::collections::BTreeSet;
 use std::fs;

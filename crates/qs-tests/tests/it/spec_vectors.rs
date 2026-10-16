@@ -86,8 +86,9 @@ const OPCODES: [&str; 66] = [
     "BITOR",
 ];
 
-const KEYS: [&str; 11] = [
+const KEYS: [&str; 12] = [
     "spec",
+    "builtins",
     "globals",
     "fields",
     "strings",
