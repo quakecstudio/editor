@@ -54,6 +54,12 @@ class CheckRules(unittest.TestCase):
     def test_later_phase_dependency(self):
         self.assert_flags(lambda r, k, i: k["P1-10"]["depends"].append("P2-06"), "from a later phase")
 
+    def test_layer_label(self):
+        self.assert_flags(lambda r, k, i: k["P0-06"]["labels"].remove("repo"),
+                          "P0-06: needs exactly one layer label, has []")
+        self.assert_flags(lambda r, k, i: k["P0-06"]["labels"].append("L1-vm"),
+                          "P0-06: needs exactly one layer label, has ['repo', 'L1-vm']")
+
     def test_cycle(self):
         self.assert_flags(lambda r, k, i: k["P0-01"].setdefault("depends", []).append("P0-02"), "dependency cycle")
 

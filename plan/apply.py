@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Create or update milestones, labels and issues on GitHub from the plan.
+"""Create or update milestones, labels, issues and the Project board on GitHub from the plan.
 
 Idempotent: each issue body carries <!-- plan-key: KEY -->; existing issues are
 found by that marker and updated instead of duplicated. Dependencies are written
-as issue links once every issue exists.
+as issue links once every issue exists. Every plan issue is then put on the
+Project board with its Phase, Layer, Size and Requirements fields set, and the
+Board, Roadmap and Decisions views are created if missing.
 
 Usage:
   python3 plan/apply.py --repo quakecstudio/editor --dry-run
-  python3 plan/apply.py --repo quakecstudio/editor
+  python3 plan/apply.py --repo quakecstudio/editor [--project quakecstudio/1]
 """
 
 from __future__ import annotations
@@ -121,9 +123,186 @@ def render_body(issue: dict, reqs: dict, meta: dict, numbers: dict[str, int], ti
     return "\n".join(lines)
 
 
+PROJECT_STATE = """
+query ProjectState($owner: String!, $number: Int!, $after: String) {
+  organization(login: $owner) { projectV2(number: $number) {
+    id
+    fields(first: 50) { nodes {
+      ... on ProjectV2FieldCommon { id name dataType }
+      ... on ProjectV2SingleSelectField { options { id name description color } } } }
+    views(first: 50) { nodes { id name layout filter
+      fields(first: 50) { nodes { ... on ProjectV2FieldCommon { id name } } } } }
+    items(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id content { ... on Issue { id } }
+        fieldValues(first: 30) { nodes {
+          ... on ProjectV2ItemFieldSingleSelectValue { optionId field { ... on ProjectV2FieldCommon { name } } }
+          ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2FieldCommon { name } } } } } } } } }
+}"""
+CREATE_FIELD = """
+mutation CreateField($input: CreateProjectV2FieldInput!) {
+  createProjectV2Field(input: $input) { clientMutationId }
+}"""
+UPDATE_FIELD = """
+mutation UpdateField($input: UpdateProjectV2FieldInput!) {
+  updateProjectV2Field(input: $input) { clientMutationId }
+}"""
+ADD_ITEM = """
+mutation AddItem($project: ID!, $content: ID!) {
+  addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
+}"""
+SET_VALUE = """
+mutation SetValue($project: ID!, $item: ID!, $field: ID!, $value: ProjectV2FieldValue!) {
+  updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field, value: $value}) {
+    clientMutationId }
+}"""
+CREATE_VIEW = """
+mutation CreateView($input: CreateProjectV2ViewInput!) {
+  createProjectV2View(input: $input) { projectV2View { id } }
+}"""
+UPDATE_VIEW = """
+mutation UpdateView($input: UpdateProjectV2ViewInput!) {
+  updateProjectV2View(input: $input) { clientMutationId }
+}"""
+
+TEXT_FIELDS = ("Requirements",)
+# The plan owns these views' layout, filter and these visible fields. Grouping is not settable
+# through the API: Board groups by Status by default; Roadmap is grouped by Milestone by hand.
+VIEWS = (
+    {"name": "Board", "layout": "BOARD_LAYOUT", "filter": "", "fields": ("Phase", "Layer", "Size")},
+    {"name": "Roadmap", "layout": "TABLE_LAYOUT", "filter": "",
+     "fields": ("Phase", "Layer", "Size", "Requirements")},
+    {"name": "Decisions", "layout": "TABLE_LAYOUT", "filter": 'label:"type:decision" is:open',
+     "fields": ("Phase", "Requirements")},
+)
+
+
+def graphql(query: str, variables: dict) -> dict:
+    return gh(["graphql"], {"query": query, "variables": variables})["data"]
+
+
+def project_fields(meta: dict) -> dict[str, list[dict]]:
+    """The single-select fields the plan owns and their options, in order."""
+    def option(name: str, description: str) -> dict:
+        return {"name": name, "description": description, "color": "GRAY"}
+    return {
+        "Phase": [option(m["key"], m["title"]) for m in meta["milestones"]],
+        "Layer": [option(l["name"], l["description"]) for l in meta["labels"]["layer"]],
+        "Size": [option(k, v) for k, v in meta["sizes"].items()],
+    }
+
+
+def project_values(issue: dict, meta: dict) -> dict[str, str]:
+    """The field values the plan sets on an issue's project item: option names, or text.
+
+    check.py ensures every issue carries exactly one layer label.
+    """
+    layers = [l["name"] for l in meta["labels"]["layer"]]
+    return {"Phase": issue["milestone"], "Layer": next(l for l in issue["labels"] if l in layers),
+            "Size": issue["size"], "Requirements": ", ".join(issue["reqs"])}
+
+
+def load_project(owner: str, number: int) -> dict:
+    """The project's id, fields by name, views by name and items by content node id."""
+    after = None
+    items: dict[str, dict] = {}
+    while True:
+        p = graphql(PROJECT_STATE, {"owner": owner, "number": number, "after": after})["organization"]["projectV2"]
+        for node in p["items"]["nodes"]:
+            content = (node.get("content") or {}).get("id")
+            if not content:
+                continue
+            values = {}
+            for v in node["fieldValues"]["nodes"]:
+                if "field" in v:
+                    values[v["field"]["name"]] = v.get("optionId", v.get("text"))
+            items[content] = {"id": node["id"], "values": values}
+        if not p["items"]["pageInfo"]["hasNextPage"]:
+            break
+        after = p["items"]["pageInfo"]["endCursor"]
+    return {"id": p["id"], "fields": {f["name"]: f for f in p["fields"]["nodes"] if "name" in f},
+            "views": {v["name"]: v for v in p["views"]["nodes"]}, "items": items}
+
+
+def sync_fields(owner: str, number: int, meta: dict) -> dict:
+    """Create or update the plan's fields, then return the project state with their ids."""
+    state = load_project(owner, number)
+    changed = False
+    for name, options in project_fields(meta).items():
+        have = state["fields"].get(name)
+        if have is None:
+            graphql(CREATE_FIELD, {"input": {"projectId": state["id"], "dataType": "SINGLE_SELECT",
+                                             "name": name, "singleSelectOptions": options}})
+            changed = True
+            continue
+        current = [{k: o[k] for k in ("name", "description", "color")} for o in have["options"]]
+        if current != options:
+            ids = {o["name"]: o["id"] for o in have["options"]}  # an option's id keeps the items set to it
+            keep = [{**o, "id": ids[o["name"]]} if o["name"] in ids else o for o in options]
+            graphql(UPDATE_FIELD, {"input": {"fieldId": have["id"], "singleSelectOptions": keep}})
+            changed = True
+    for name in TEXT_FIELDS:
+        if name not in state["fields"]:
+            graphql(CREATE_FIELD, {"input": {"projectId": state["id"], "dataType": "TEXT", "name": name}})
+            changed = True
+    return load_project(owner, number) if changed else state
+
+
+def sync_views(state: dict) -> int:
+    writes = 0
+    field_ids = {name: f["id"] for name, f in state["fields"].items()}
+    for view in VIEWS:
+        have = state["views"].get(view["name"])
+        if have is None:
+            have = graphql(CREATE_VIEW, {"input": {"projectId": state["id"], "name": view["name"],
+                                                   "layout": view["layout"]}})["createProjectV2View"]["projectV2View"]
+            have = {**have, "layout": view["layout"], "filter": "", "fields": {"nodes": []}}
+            writes += 1
+        visible = [f["id"] for f in have["fields"]["nodes"] if "id" in f]
+        missing = [field_ids[n] for n in view["fields"] if field_ids[n] not in visible]
+        update: dict = {}
+        if have["layout"] != view["layout"]:
+            update["layout"] = view["layout"]
+        if (have.get("filter") or "") != view["filter"]:
+            update["filter"] = view["filter"]
+        if missing:
+            update["configuration"] = {"visibleFieldIds": [*visible, *missing]}
+        if update:
+            graphql(UPDATE_VIEW, {"input": {"viewId": have["id"], **update}})
+            writes += 1
+    return writes
+
+
+def sync_project(project: str, issues: list[dict], meta: dict, node_ids: dict[str, str]) -> int:
+    """Put every plan issue on the project with its fields set. Returns the number of writes."""
+    owner, _, number = project.partition("/")
+    state = sync_fields(owner, int(number), meta)
+    fields = state["fields"]
+    writes = 0
+    for i in issues:
+        item = state["items"].get(node_ids[i["key"]])
+        if item is None:
+            created = graphql(ADD_ITEM, {"project": state["id"], "content": node_ids[i["key"]]})
+            item = {"id": created["addProjectV2ItemById"]["item"]["id"], "values": {}}
+            writes += 1
+        for name, want in project_values(i, meta).items():
+            field = fields[name]
+            if name in TEXT_FIELDS:
+                target, value = want, {"text": want}
+            else:
+                target = {o["name"]: o["id"] for o in field["options"]}[want]
+                value = {"singleSelectOptionId": target}
+            if item["values"].get(name) == target:
+                continue
+            graphql(SET_VALUE, {"project": state["id"], "item": item["id"], "field": field["id"], "value": value})
+            writes += 1
+    return writes + sync_views(state)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", required=True)
+    ap.add_argument("--project", default="quakecstudio/1", help="organization/number of the Project board")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -142,6 +321,8 @@ def main() -> int:
     all_labels = [l for group in meta["labels"].values() for l in group]
     if args.dry_run:
         print(f"would ensure {len(all_labels)} labels, {len(meta['milestones'])} milestones, {len(issues)} issues")
+        print(f"would ensure project {args.project}: fields {', '.join([*project_fields(meta), *TEXT_FIELDS])}; "
+              f"views {', '.join(v['name'] for v in VIEWS)}")
         for i in issues[:3]:
             print("-" * 60, f"\n{i['title']}\n", render_body(i, reqs, meta, {}, titles))
         return 0
@@ -183,6 +364,11 @@ def main() -> int:
         return found
 
     numbers = scan()
+    node_ids = {key: gi["node_id"] for key, gi in current.items()}
+    orphans = sorted(set(numbers) - set(titles))
+    if orphans:
+        print(f"issues on GitHub whose plan key is not in plan/backlog: "
+              f"{', '.join(f'#{numbers[k]} {k}' for k in orphans)}", file=sys.stderr)
 
     # pass 1: create missing issues; pass 2: write bodies with dependency links
     for i in issues:
@@ -193,11 +379,13 @@ def main() -> int:
                     created = gh(["-X", "POST", f"{repo}/issues"],
                                  {"title": i["title"], "body": body, "labels": i["labels"], "milestone": ms_by_key[i["milestone"]]})
                     numbers[i["key"]] = created["number"]
+                    node_ids[i["key"]] = created["node_id"]
                     break
                 except TransientWrite as e:
                     print(f"{i['key']}: create interrupted ({e}); checking before retry", file=sys.stderr)
                     time.sleep(10)
                     numbers.update(scan())
+                    node_ids.update({key: gi["node_id"] for key, gi in current.items()})
                     if i["key"] in numbers:
                         break
             else:
@@ -219,7 +407,9 @@ def main() -> int:
            {"title": i["title"], "body": body, "labels": labels, "milestone": ms_by_key[i["milestone"]]})
         changed += 1
     print(f"done: {len(issues)} issues in sync ({changed} updated)")
-    return 0
+    writes = sync_project(args.project, issues, meta, node_ids)
+    print(f"done: project {args.project} in sync ({writes} writes)")
+    return 1 if orphans else 0
 
 
 if __name__ == "__main__":
