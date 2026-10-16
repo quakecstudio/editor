@@ -32,7 +32,10 @@ mod tests;
 use core::fmt;
 
 pub use ent::{BSP_ENT_EXTENSION, ent_file_names};
-pub use lit::{BSP_LIT_HEADER_SIZE, BSP_LIT_MAGIC, BSP_LIT_VERSION, Lit, LitError};
+pub use lit::{
+    BSP_LIT_HEADER_SIZE, BSP_LIT_MAGIC, BSP_LIT_VERSION, FoundLit, Lit, LitChoice, LitError,
+    mod_load_lighting,
+};
 
 /// The version of a BSP29 file, id's `BSPVERSION` (BSP-1.2).
 pub const BSP_VERSION: i32 = 29;

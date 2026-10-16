@@ -1489,6 +1489,141 @@ fn companion_priority() {
     assert!(!companion_applies(2, 1));
 }
 
+/// The lighting lump of the `.lit` vectors of BSP-18.
+const LIT_VECTOR_LIGHTING: [u8; 4] = [0x00, 0x40, 0x80, 0xff];
+
+/// `lit-used`: a version-1 `.lit` for [`LIT_VECTOR_LIGHTING`], then `extra` more bytes, with
+/// `magic` and `version` in its header.
+fn lit_vector(magic: [u8; 4], version: i32, extra: u8) -> Vec<u8> {
+    let mut file = magic.to_vec();
+    file.extend_from_slice(&version.to_le_bytes());
+    file.extend(1..=12_u8);
+    file.extend((13..).take(usize::from(extra)));
+    file
+}
+
+/// What `mod_load_lighting` prints for a vector with the `.lit` from path id `path_id`, for a
+/// map in path id 2: the `Con_Printf` line, else the `Con_DPrintf` line, with the light.
+fn lit_result(file: &[u8], path_id: u32) -> (Option<String>, Vec<[u8; 3]>) {
+    let found = FoundLit {
+        bytes: file,
+        path_id,
+    };
+    let choice = mod_load_lighting(BspLoader::FitzQuake, 2, 4, Some(found));
+    let printed = choice
+        .message("maps/a.lit")
+        .or_else(|| choice.developer_message("maps/a.lit"));
+    (printed, choice.rgb(&LIT_VECTOR_LIGHTING))
+}
+
+// spec BSP-18.7, BSP-18.8: the .lit vectors, as QuakeSpasm's `Mod_LoadLighting` printed them:
+// priority, magic, version and size are checked in that order, and every ignored .lit leaves
+// the map lit grey with QuakeSpasm's message, never an error.
+#[test]
+fn lit_vectors() {
+    let used = lit_vector(BSP_LIT_MAGIC, 1, 0);
+    let samples: Vec<[u8; 3]> = vec![[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]];
+    let grey_light = grey(&LIT_VECTOR_LIGHTING);
+    assert_eq!(
+        grey_light,
+        [[0x00; 3], [0x40; 3], [0x80; 3], [0xff; 3]],
+        "the harness printed 00 00 00 40 40 40 80 80 80 ff ff ff"
+    );
+    assert_eq!(lit_result(&used, 2), (None, samples.clone()), "lit-used");
+    assert_eq!(lit_result(&used, 4), (None, samples), "lit-higher");
+    let outdated = |size: usize| {
+        Some(format!(
+            "Outdated .lit file (maps/a.lit should be 20 bytes, not {size})"
+        ))
+    };
+    assert_eq!(
+        lit_result(&used[..19], 2),
+        (outdated(19), grey_light.clone()),
+        "lit-short"
+    );
+    assert_eq!(
+        lit_result(&lit_vector(BSP_LIT_MAGIC, 1, 1), 2),
+        (outdated(21), grey_light.clone()),
+        "lit-long"
+    );
+    assert_eq!(
+        lit_result(&lit_vector(BSP_LIT_MAGIC, 2, 0), 2),
+        (
+            Some("Unknown .lit file version (2)".to_owned()),
+            grey_light.clone()
+        ),
+        "lit-version-2"
+    );
+    let corrupt = lit_vector(*b"QLIX", 1, 0);
+    assert_eq!(
+        lit_result(&corrupt, 2),
+        (
+            Some("Corrupt .lit file (old version?), ignoring".to_owned()),
+            grey_light.clone()
+        ),
+        "lit-corrupt"
+    );
+    assert_eq!(
+        lit_result(&corrupt, 1),
+        (
+            Some("ignored maps/a.lit from a gamedir with lower priority".to_owned()),
+            grey_light
+        ),
+        "lit-lower"
+    );
+}
+
+// spec BSP-18.7: only a lower-priority .lit goes through `Con_DPrintf`; the others through
+// `Con_Printf`, and a used or missing one prints nothing.
+#[test]
+fn lit_messages_by_console() {
+    let used = lit_vector(BSP_LIT_MAGIC, 1, 0);
+    let lower = mod_load_lighting(
+        BspLoader::FitzQuake,
+        2,
+        4,
+        Some(FoundLit {
+            bytes: &used,
+            path_id: 1,
+        }),
+    );
+    assert_eq!(lower, LitChoice::LowerPriority);
+    assert_eq!(lower.message("m"), None);
+    let outdated = LitChoice::Ignored(LitError::Corrupt);
+    assert_eq!(outdated.developer_message("m"), None);
+    for quiet in [
+        LitChoice::Missing,
+        LitChoice::NotRead,
+        LitChoice::Used(Lit { rgb: &[] }),
+    ] {
+        assert_eq!(
+            (quiet.message("m"), quiet.developer_message("m")),
+            (None, None)
+        );
+    }
+    assert_eq!(
+        mod_load_lighting(BspLoader::FitzQuake, 2, 4, None),
+        LitChoice::Missing
+    );
+}
+
+// spec BSP-18.6, BSP-18.8: id's WinQuake and GLQuake loaders read no .lit, so even a usable one
+// leaves the map grey.
+#[test]
+fn lit_not_read_by_id_loaders() {
+    let used = lit_vector(BSP_LIT_MAGIC, 1, 0);
+    for loader in [BspLoader::WinQuake, BspLoader::GlQuake] {
+        let found = FoundLit {
+            bytes: &used,
+            path_id: 2,
+        };
+        let choice = mod_load_lighting(loader, 2, 4, Some(found));
+        assert_eq!(choice, LitChoice::NotRead);
+        assert_eq!(choice.rgb(&LIT_VECTOR_LIGHTING), grey(&LIT_VECTOR_LIGHTING));
+        assert_eq!(choice.message("m"), None);
+    }
+}
+
 // spec BSP-19.1: the .ent names QuakeSpasm tries, with the CRC of the lump less its NUL.
 #[test]
 fn ent_names() {

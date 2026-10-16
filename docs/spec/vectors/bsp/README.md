@@ -14,7 +14,7 @@ from the same commit. The harness stubs only the engine around the loader: the h
 cache as `calloc`-like buffers, `Sys_Error` printing its message and stopping,
 `COM_LoadStackFile` returning the file, `R_InitSky` printing the texture name, and the
 little-endian swaps as no-ops. It printed every loaded field; the results below are its
-output. `.lit` has no vectors. QS's loader was run on every vector, and on the BSP2 ones, for the FitzQuake lineage's rules (BSP-20), as the last section says.
+output. The `.lit` vectors are in [`../../bsp.md`](../../bsp.md), BSP-18. QS's loader was run on every vector, and on the BSP2 ones, for the FitzQuake lineage's rules (BSP-20), as the last section says.
 
 `x87-order`, `x87-pc64` and `nan-vertex` (2026-10-16) were loaded by the same harness built
 for x86-64 with `val` computed by WinQuake's x87 instructions and compared as WinQuake does,
