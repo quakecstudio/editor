@@ -11,6 +11,7 @@ Fails (exit 1) if:
   - a type:decision issue does not name a docs/adr/ file in its deliverable
   - a type:decision issue is not labelled needs:human
   - a label description is longer than GitHub's 100-character limit
+  - a LATER issue is not linked from docs/scope.md as [KEY](https://github.com/quakecstudio/editor/issues/N)
 Phase order is enforced by adding the previous phase's gate to every issue's dependencies
 (LATER issues wait for the MVP gate, P4-25). Layer order is enforced by adding the lower
 layer's readiness issue to every issue that builds on it (docs/testing.md).
@@ -20,12 +21,15 @@ Usage: python3 plan/check.py [--write-coverage]
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
 import yaml
 
 PLAN = Path(__file__).resolve().parent
+SCOPE = PLAN.parent / "docs" / "scope.md"
+ISSUE_URL = r"https://github\.com/quakecstudio/editor/issues/\d+"
 PHASE_ORDER = ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "LATER"]
 
 
@@ -204,6 +208,17 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
     return errors
 
 
+def check_scope(issues: list[dict], scope: Path = SCOPE) -> list[str]:
+    """Every post-MVP (LATER) issue is linked from docs/scope.md (MVP-3)."""
+    if not scope.is_file():
+        return [f"{scope}: missing; it must link every LATER issue"]
+    text = scope.read_text()
+    return [f"{i['key']}: LATER issue not linked from docs/scope.md as [{i['key']}](<issue URL>)"
+            for i in issues
+            if i["milestone"] == "LATER"
+            and not re.search(rf"\[{re.escape(i['key'])}\]\({ISSUE_URL}\)", text)]
+
+
 def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
     by_req: dict[str, list[str]] = {r: [] for r in reqs}
     for i in issues:
@@ -226,7 +241,7 @@ def coverage_md(reqs: dict, meta: dict, issues: list[dict]) -> str:
 def main() -> int:
     reqs = load_requirements()
     meta, issues = load_backlog()
-    errors = check(reqs, meta, issues)
+    errors = check(reqs, meta, issues) + check_scope(issues)
     if "--write-coverage" in sys.argv:
         (PLAN / "coverage.md").write_text(coverage_md(reqs, meta, issues))
     if errors:

@@ -2,7 +2,10 @@
 """Negative tests for plan/check.py: each rule must catch a deliberate fault."""
 
 import copy
+import re
+import tempfile
 import unittest
+from pathlib import Path
 
 import check
 
@@ -68,6 +71,47 @@ class CheckRules(unittest.TestCase):
         check.add_readiness_dependencies(issues)
         errors = check.check(reqs, meta, issues)
         self.assertTrue(any("no readiness issue exists" in e for e in errors))
+
+
+class ScopeRule(unittest.TestCase):
+    """docs/scope.md must link every LATER issue (P0-18, MVP-3)."""
+
+    @classmethod
+    def setUpClass(cls):
+        _, cls.issues = check.load_backlog()
+        cls.text = check.SCOPE.read_text()
+
+    def scope_errors(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "scope.md"
+            path.write_text(text)
+            return check.check_scope(self.issues, path)
+
+    def test_scope_links_every_later_issue(self):
+        self.assertEqual(check.check_scope(self.issues), [])
+
+    def test_later_key_missing(self):
+        errors = self.scope_errors(re.sub(r"\[L-04\]\([^)]*\)", "", self.text))
+        self.assertEqual(errors, ["L-04: LATER issue not linked from docs/scope.md as [L-04](<issue URL>)"])
+
+    def test_later_key_mentioned_but_not_linked(self):
+        errors = self.scope_errors(re.sub(r"\[L-05\]\([^)]*\)", "L-05", self.text))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("L-05", errors[0])
+
+    def test_key_prefix_does_not_count(self):
+        # L-1 must not be satisfied by a link to L-10.
+        issues = copy.deepcopy(self.issues) + [{"key": "L-1", "milestone": "LATER"}]
+        self.assertEqual(len(check.check_scope(issues)), 1)
+
+    def test_new_later_issue_flagged(self):
+        issues = copy.deepcopy(self.issues) + [{"key": "L-99", "milestone": "LATER"}]
+        self.assertTrue(any(e.startswith("L-99:") for e in check.check_scope(issues)))
+
+    def test_missing_scope_file(self):
+        errors = check.check_scope(self.issues, Path("/nonexistent/scope.md"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing", errors[0])
 
 
 if __name__ == "__main__":
