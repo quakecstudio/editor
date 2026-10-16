@@ -37,6 +37,7 @@ static int qs_qcc_open(const char *path, int flags, ...) {
 #define open qs_qcc_open
 #define mkdir(path, mode) _mkdir(path)
 #define umask _umask
+#define strcasecmp _stricmp
 #else
 #include <unistd.h>
 #endif
