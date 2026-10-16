@@ -300,6 +300,36 @@ mod tests {
         assert!(assets_run(&root(), &[], &Offline).is_err());
     }
 
+    /// An offline network that remembers what was asked of it.
+    #[derive(Default)]
+    struct Recording(std::cell::RefCell<Vec<String>>);
+
+    impl Net for Recording {
+        fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+            self.0.borrow_mut().push(url.to_owned());
+            Offline.get(url)
+        }
+
+        fn download(&self, url: &str, out: &Path) -> Result<(), String> {
+            self.0.borrow_mut().push(url.to_owned());
+            Offline.download(url, out)
+        }
+    }
+
+    #[test]
+    fn fetch_downloads_the_codebase() {
+        let net = Recording::default();
+        let fetch = args(&format!("fetch --dest {} id-1.01", cache()));
+        assert!(!run(&root(), &fetch, &net).unwrap());
+        assert_eq!(net.0.borrow().len(), 1, "{:?}", net.0.borrow());
+    }
+
+    #[test]
+    fn the_entry_points_need_a_command() {
+        assert!(super::main(&root(), &[]).is_err());
+        assert!(super::assets_main(&root(), &[]).is_err());
+    }
+
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<PathBuf> + 'a {
         move |key| {
             vars.iter()

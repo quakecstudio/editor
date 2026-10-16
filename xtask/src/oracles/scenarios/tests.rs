@@ -7,7 +7,7 @@
     reason = "test code: a failed unwrap, index or match is a failed test"
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qc_progs::crc::crc_block;
 use qc_progs::{Progs, ReadOptions};
@@ -16,6 +16,76 @@ use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Step, Text, T
 use super::super::testing::{args, fake_oracles, fresh_dir, last_arg};
 use super::*;
 use crate::exec::{Fake, Reply};
+
+/// The cases whose traces are too long to record (`record.py`, `MAX_SCENARIO_TRACE`).
+const NOT_RECORDED: [&str; 9] = [
+    "buffers-emptied",
+    "datagram-overflow",
+    "large-trace",
+    "message-to-one",
+    "no-free-edicts",
+    "reliable-overflow",
+    "runaway-loop",
+    "signon-overflow",
+    "sound-dropped",
+];
+
+fn unhex(value: &serde_json::Value) -> Option<Vec<u8>> {
+    let hex = value.as_str()?;
+    Some(
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(hex.get(i..i.saturating_add(2)).unwrap(), 16).unwrap())
+            .collect(),
+    )
+}
+
+/// `xtask/fixtures/oracles/scenario-outcomes.json`: what the VM oracle gave for each case
+/// (`record.py`), by name, with the repository's path put back in its messages.
+fn recorded_outcomes() -> BTreeMap<String, Outcome> {
+    let root = super::super::testing::root();
+    let path = root.join("xtask/fixtures/oracles/scenario-outcomes.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let text = |value: &serde_json::Value| {
+        let root = root.display().to_string();
+        value.as_str().unwrap().replace("<root>", &root)
+    };
+    let mut outcomes = BTreeMap::new();
+    for (name, entry) in json.as_object().unwrap() {
+        let status = entry["status"]
+            .as_i64()
+            .map(|code| i32::try_from(code).unwrap());
+        let outcome = Outcome {
+            status,
+            stdout: text(&entry["stdout"]),
+            stderr: text(&entry["stderr"]),
+            trace: unhex(&entry["trace"]),
+            again: unhex(&entry["again"]),
+        };
+        outcomes.insert(name.clone(), outcome);
+    }
+    outcomes
+}
+
+#[test]
+fn every_case_passes_on_what_the_oracle_gave() {
+    let mut outcomes = recorded_outcomes();
+    let mut unrecorded = Vec::new();
+    for case in cases::all() {
+        match outcomes.remove(&case.name) {
+            Some(outcome) => {
+                if let Err(problem) = verify(&case, &outcome) {
+                    panic!("{}: {problem}", case.name);
+                }
+            }
+            None => unrecorded.push(case.name),
+        }
+    }
+    assert!(outcomes.is_empty(), "no case for {:?}", outcomes.keys());
+    unrecorded.sort();
+    assert_eq!(unrecorded, NOT_RECORDED);
+}
 
 #[test]
 fn every_case_builds_a_progs_qc_progs_reads_and_has_a_unique_name() {

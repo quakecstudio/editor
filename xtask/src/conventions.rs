@@ -667,6 +667,47 @@ mod tests {
     }
 
     #[test]
+    fn rust_versions_are_three_numbers() {
+        assert!(is_exact_rust_version("1.99.0"));
+        for bad in ["1.99", "1.99.0.1", "1..0", "1.x.0", ""] {
+            assert!(!is_exact_rust_version(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_repository_follows_its_conventions() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let report = check(root).unwrap();
+        assert!(report.problems.is_empty(), "{:?}", report.problems);
+        for label in [
+            "docs/conventions.md:",
+            "every clippy lint in Cargo.toml is in the docs",
+            "toolchain channel is exact and equals rust-version",
+            "xtask/Cargo.toml inherits package fields, lints and dependencies",
+            "crates/qs-paths/Cargo.toml inherits package fields, lints and dependencies",
+        ] {
+            assert!(
+                report.passed.iter().any(|line| line.starts_with(label)),
+                "{label}: {:?}",
+                report.passed
+            );
+        }
+    }
+
+    #[test]
+    fn every_problem_is_recorded_and_a_clean_check_passes() {
+        let mut report = Report::default();
+        record_all(&mut report, "clean", Vec::new());
+        record_all(
+            &mut report,
+            "dirty",
+            vec!["one".to_owned(), "two".to_owned()],
+        );
+        assert_eq!(report.passed, ["clean"]);
+        assert_eq!(report.problems, ["one", "two"]);
+    }
+
+    #[test]
     fn members_inherit_fields_lints_and_dependencies() {
         let good = toml(
             "[package]\nname = \"x\"\nversion.workspace = true\nedition.workspace = true\n\

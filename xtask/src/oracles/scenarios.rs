@@ -587,8 +587,9 @@ impl Case {
     }
 }
 
-/// What one run of the oracle gave.
-#[derive(Debug, Default)]
+/// What one run of the oracle gave. [`run`] keeps it in the case's directory as
+/// `outcome.json`, which `xtask/fixtures/oracles/record.py` records for the replay tests.
+#[derive(Debug, Default, serde::Serialize)]
 pub(super) struct Outcome {
     pub(super) status: Option<i32>,
     pub(super) stdout: String,
@@ -694,6 +695,8 @@ fn run(oracles: &Oracles, work: &Path, case: &Case) -> Result<Outcome, String> {
     if case.checks.contains(&Check::SameTwice) {
         outcome.again = invoke(oracles, &cwd, &args, readable)?.trace;
     }
+    let json = serde_json::to_vec(&outcome).map_err(|e| format!("{}: {e}", case.name))?;
+    write_file(&dir.join("outcome.json"), &json)?;
     Ok(outcome)
 }
 

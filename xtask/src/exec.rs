@@ -157,6 +157,12 @@ mod tests {
                 .success()
         );
         assert!(
+            !System
+                .status(Command::new("cargo").arg("no-such-command-xtask-exec"))
+                .unwrap()
+                .success()
+        );
+        assert!(
             System
                 .output(&mut Command::new("no-such-program-xtask"))
                 .is_err()

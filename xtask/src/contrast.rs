@@ -327,6 +327,53 @@ mod tests {
     }
 
     #[test]
+    fn dark_channels_use_the_linear_segment() {
+        let expected = 10.0 / 255.0 / 12.92;
+        assert!((rgb("#0A0A0A").luminance() - expected).abs() < 1e-12);
+    }
+
+    fn rule(min: f64, foreground: &[&str], background: &[&str]) -> Rule {
+        let names = |list: &[&str]| list.iter().map(|name| (*name).to_owned()).collect();
+        Rule {
+            name: "text".to_owned(),
+            min,
+            foreground: names(foreground),
+            background: names(background),
+        }
+    }
+
+    #[test]
+    fn a_pair_exactly_at_the_minimum_passes() {
+        let colors = BTreeMap::from([("a".to_owned(), rgb("#777777"))]);
+        let mut report = Report::default();
+        check_rule("dark", &colors, &rule(1.0, &["a"], &["a"]), &mut report);
+        assert!(report.problems.is_empty(), "{:?}", report.problems);
+        assert_eq!(report.passed.len(), 1);
+    }
+
+    #[test]
+    fn the_first_lowest_pair_is_reported() {
+        let colors = BTreeMap::from([
+            ("black".to_owned(), rgb("#000000")),
+            ("grey".to_owned(), rgb("#777777")),
+            ("grey2".to_owned(), rgb("#777777")),
+            ("white".to_owned(), rgb("#FFFFFF")),
+        ]);
+        let mut report = Report::default();
+        let pairs = rule(1.0, &["black", "grey", "grey2", "white"], &["white"]);
+        check_rule("dark", &colors, &pairs, &mut report);
+        assert_eq!(report.passed.len(), 1, "{report:?}");
+        let line = report.passed.first().unwrap();
+        assert!(line.contains("lowest 1.00:1 (white on white)"), "{line}");
+        let mut report = Report::default();
+        let pairs = rule(1.0, &["black", "grey", "grey2"], &["white"]);
+        check_rule("dark", &colors, &pairs, &mut report);
+        assert_eq!(report.passed.len(), 1, "{report:?}");
+        let line = report.passed.first().unwrap();
+        assert!(line.contains("(grey on white)"), "{line}");
+    }
+
+    #[test]
     fn colours_parse_only_as_six_hex_digits() {
         assert_eq!(Rgb::parse("#1a1918"), Some(Rgb([0x1A, 0x19, 0x18])));
         for bad in [

@@ -113,6 +113,29 @@ fn parses_strings_with_escapes() {
     assert!(parse_strings(r#""open"#).is_err());
 }
 
+// spec TRACE-4.3: a CALL step that called a builtin records `-first_statement` of the function
+// it called; only numbers 1 to 78 are callable builtins (BUILTIN-1.1), and a call to QC code
+// records none.
+#[test]
+fn a_call_expects_the_builtin_it_calls() {
+    let text = "== v\nfunctions:\n  2: first=0\n  3: builtin=79\n  4: builtin=78\n  5: first=1\n\
+                code:\n  CALL0 120\n  ADD_F 1 2 3\n";
+    let v = parse("t.txt", text).unwrap().pop().unwrap();
+    let call = |function: u32| {
+        let globals = BTreeMap::from([(120, function)]);
+        super::expected_builtin(&v, &globals, 1)
+    };
+    assert_eq!(call(2), None);
+    assert_eq!(call(3), None);
+    assert_eq!(call(4), Some(78));
+    assert_eq!(call(5), None);
+    assert_eq!(call(9), None);
+    let globals = BTreeMap::from([(120, 4)]);
+    assert_eq!(super::expected_builtin(&v, &globals, 2), None);
+    assert_eq!(super::expected_builtin(&v, &globals, 0), None);
+    assert_eq!(super::expected_builtin(&v, &globals, 3), None);
+}
+
 #[test]
 fn parses_a_vector() {
     let text = "== v\nspec: VM-1.1\nglobals: 100=e1\nfields: e1.30=2\noracle: no\n\

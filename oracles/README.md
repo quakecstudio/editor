@@ -142,6 +142,12 @@ DIFF-6 and DIFF-7, the errors and shutdown of DIFF-8, and the records and binary
 trace. `cargo xtask oracles` runs them after the vectors and probes, so CI runs them on Linux,
 macOS and Windows; the cases that write a trace to `/dev/full` run on Linux only.
 
+xtask's own tests replay what the oracle gave, without building it:
+[`xtask/fixtures/oracles/`](../xtask/fixtures/oracles/record.py) records each vector's trace
+and each scenario test's exit status, output and traces, except the few traces over 8 KiB, and
+`cargo test -p xtask` checks every vector and case against them. After changing a vector or a
+case, run `cargo xtask oracles`, then `python3 xtask/fixtures/oracles/record.py`.
+
 ### How the VM is observed
 
 `pr_exec.c` is compiled byte for byte as fetched, and the build defines `QS_PR_EXEC`, under which

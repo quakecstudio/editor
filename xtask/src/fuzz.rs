@@ -277,6 +277,11 @@ mod tests {
     }
 
     #[test]
+    fn the_entry_point_refuses_a_bad_duration() {
+        assert!(super::main(Path::new("."), &args(&["--time", "ten"])).is_err());
+    }
+
+    #[test]
     fn durations() {
         assert_eq!(parse_duration("45").unwrap(), 45);
         assert_eq!(parse_duration("30s").unwrap(), 30);

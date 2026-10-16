@@ -450,6 +450,26 @@ mod tests {
     }
 
     #[test]
+    fn a_lint_fixture_crate_inherits_the_workspace_lints() {
+        let manifest: Table = lint_member_manifest("fx-a").parse().unwrap();
+        let name = manifest
+            .get("package")
+            .and_then(|package| package.get("name"));
+        assert_eq!(name.and_then(Value::as_str), Some("fx-a"));
+        let lints = manifest
+            .get("lints")
+            .and_then(|lints| lints.get("workspace"));
+        assert_eq!(lints.and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn cargo_is_the_one_running_xtask() {
+        let expected = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+        assert_eq!(cargo_bin(), expected);
+        assert!(!cargo_bin().is_empty());
+    }
+
+    #[test]
     fn fixture_expectation_is_a_clippy_lint_or_pass() {
         let lint = parse_fixture(
             "a".to_owned(),
