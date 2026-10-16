@@ -79,9 +79,15 @@ fn tokens(out: &FileOutput) -> String {
         .join(" ")
 }
 
+/// `path:line`, the path with `/` separators on every OS.
 fn where_(sources: &SourceMap, span: FileSpan) -> String {
     let file = sources.file(span.file).unwrap();
-    format!("{}:{}", file.path.display(), sources.line(span).unwrap())
+    let parts: Vec<String> = file
+        .path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    format!("{}:{}", parts.join("/"), sources.line(span).unwrap())
 }
 
 /// The diagnostics, one per line: code, message, file and line.
