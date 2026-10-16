@@ -98,6 +98,7 @@ Each section holds, in this order:
 
 | Prefix | File | What it covers | Issue |
 | --- | --- | --- | --- |
+| `BUILTIN` | [`builtins.md`](builtins.md) | Every vanilla builtin, numbers 1 to 78: prototype, arguments, result, effects on edicts, globals and the engine, failures, and how faithfully each can be mocked | [#28](https://github.com/quakecstudio/editor/issues/28) |
 | `EDICT` | [`edicts.md`](edicts.md) | Edict memory and numbering, the world and client edicts, spawn and remove with reuse timing, map entity spawning, QuakeC entry points and think timing, and the system globals and fields with who writes each | [#27](https://github.com/quakecstudio/editor/issues/27) |
 | `EXAMPLE` | [`example.md`](example.md) | The worked porting example: entity-string escapes | [#9](https://github.com/quakecstudio/editor/issues/9) |
 | `FS` | [`filesystem.md`](filesystem.md) | The game filesystem: search path order, `-basedir`, `-game`, `-path`, finding a file, the rerelease layout | [#29](https://github.com/quakecstudio/editor/issues/29) |
@@ -110,5 +111,5 @@ Each section holds, in this order:
 | `VM` | [`vm.md`](vm.md) | QC virtual machine execution: opcodes, calls, the local stack, errors | [#26](https://github.com/quakecstudio/editor/issues/26) |
 | `WAD` | [`wad2.md`](wad2.md) | WAD2 archives: header, directory, lump lookup, the lumps the engine reads | [#29](https://github.com/quakecstudio/editor/issues/29) |
 
-Specs planned in Phase 1 (`builtins.md`, `differential.md`) register their prefix here when
-they are written.
+Specs planned in Phase 1 (`differential.md`) register their prefix here when they are
+written.
