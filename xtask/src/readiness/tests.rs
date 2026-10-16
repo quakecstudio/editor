@@ -371,7 +371,12 @@ fn measuring_writes_a_measurement_file() {
     let mut command = args("spec --os linux --out");
     command.push(out.display().to_string());
     command.push(format!("{FIXTURES}/spec/crates/fx-spec"));
+    // The tools need the scratch directory to exist; a fresh checkout has none.
+    if scratch(&root()).exists() {
+        fs::remove_dir_all(scratch(&root())).unwrap();
+    }
     assert!(main(&root(), &command).unwrap());
+    assert!(scratch(&root()).is_dir());
     let measurement: Measurement =
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.check, Check::Spec);

@@ -119,6 +119,9 @@ struct Options {
 
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let options = parse_args(args)?;
+    // The tools write their reports here and do not create it themselves.
+    let scratch = scratch(root);
+    fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let mut measurement = Measurement {
         check: options.check,
         os: options.os,
@@ -363,10 +366,11 @@ fn mutation(root: &Path, target: &Target) -> Result<Score, String> {
     // (a usage error, a failing baseline) means there is no score.
     if !matches!(output.status.code(), Some(0 | 2 | 3)) {
         return Err(format!(
-            "{}: cargo mutants failed ({}):\n{}",
+            "{}: cargo mutants failed ({}):\n{}{}",
             target.name,
             output.status,
-            String::from_utf8_lossy(&output.stdout)
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         ));
     }
     let outcomes = out.join("mutants.out").join("outcomes.json");
