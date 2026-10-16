@@ -161,11 +161,19 @@ enum Outcome {
     Skipped,
 }
 
+/// The steps of `steps` that `skip` does not name, in order.
+fn kept<'a>(steps: &'a [Step], skip: &[&str]) -> Vec<&'a Step> {
+    steps
+        .iter()
+        .filter(|step| !skip.contains(&step.name()))
+        .collect()
+}
+
 /// Runs every step not named in `skip` and prints a summary; returns whether
 /// every step run passed.
 pub(crate) fn run(root: &Path, steps: &[Step], skip: &[&str]) -> bool {
     let skipped = |step: &Step| skip.contains(&step.name());
-    let total = steps.iter().filter(|step| !skipped(step)).count();
+    let total = kept(steps, skip).len();
     let mut results = Vec::new();
     let mut index = 0_usize;
     for step in steps {
@@ -314,6 +322,31 @@ mod tests {
         assert_eq!(names, ["fmt", "clippy", "test", "deny"]);
         let skip = args(&["--skip", "clippy-fixtures"]);
         assert_eq!(parse_skip(&skip, &STEPS), Ok(vec!["clippy-fixtures"]));
+    }
+
+    #[test]
+    fn skipping_leaves_every_other_step_in_order() {
+        let names = |skip: &[&str]| -> Vec<&str> {
+            kept(&STEPS, skip).into_iter().map(Step::name).collect()
+        };
+        let all: Vec<&str> = STEPS.iter().map(Step::name).collect();
+        assert_eq!(names(&[]), all);
+        assert_eq!(
+            names(&["fmt", "clippy", "test", "deny"]),
+            [
+                "plan",
+                "plan-tests",
+                "specs",
+                "conventions",
+                "adr",
+                "layers",
+                "licenses",
+                "attribution",
+                "contrast",
+                "clippy-fixtures",
+                "deny-fixtures",
+            ]
+        );
     }
 
     #[test]
