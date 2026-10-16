@@ -368,6 +368,7 @@ issues:
   - P1-10
   - P1-04
   - P1-27
+  - P1-31
   deliverable:
   - 'crates/qc-builtins: vanilla builtin table with signatures and documented side effects; a mock engine implementing docs/spec/differential.md''s deterministic behaviour for unit tests; a trait for real
     engines'
@@ -546,6 +547,43 @@ issues:
   - A test logs a source snippet through every API and asserts it is redacted
   verify:
   - cargo test -p qs-log
+- key: P1-31
+  title: Pin the builtin argument checks the oracle and qc-builtins share
+  labels:
+  - L1-vm
+  - area:vm
+  - type:spec
+  size: S
+  reqs:
+  - FND-5
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'docs/spec/builtins.md and docs/spec/edicts.md: statements fixing the readings the VM oracle had to choose (oracles/README.md, "Readings the specs leave open"): which entity values name an edict (BUILTIN-2.3, VM-11.4); which string values are valid (BUILTIN-2.5); where in a builtin the entity, string and field checks happen; how find treats a field value that is not a valid string; and how vtos prints NaN and infinite components'
+  - Test vectors for each, and the coverage baseline and requirements index updated
+  acceptance:
+  - Each reading is a numbered statement with a vector, and the VM oracle agrees with it (cargo xtask oracles), or the oracle is changed in the same PR
+  verify:
+  - Implementer review from both sides (the oracle and qc-builtins)
+- key: P1-32
+  title: Check the recorded builtin, edict and frame vectors against the VM oracle
+  labels:
+  - c-tools
+  - area:vm
+  - type:test
+  size: S
+  reqs:
+  - FND-5
+  - FND-8
+  depends:
+  - P1-11
+  deliverable:
+  - 'cargo xtask oracles runs, through the VM oracle, the vectors the spec PRs checked by hand against id''s code: builtins.md "Math and strings" (including the rows that need x86, which its text says the oracle rechecks on x86-64), edicts.md "Allocation and freeing", and differential.md "Frames and thinking" and "Random numbers"'
+  acceptance:
+  - Every row of those tables is checked in CI on the three OSes, the x86-only rows on an x86-64 host, and a row that disagrees fails the run or is a divergence the spec lists (BUILTIN-6.9 for C library differences)
+  verify:
+  - cargo xtask oracles in CI on all three OSes
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -588,6 +626,8 @@ issues:
   - P1-27
   - P1-26
   - P1-30
+  - P1-31
+  - P1-32
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:

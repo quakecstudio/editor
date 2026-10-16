@@ -799,8 +799,12 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "xtask"
 version = "2026.10.0"
 dependencies = [
+ "cc",
  "qc-lexer",
  "qc-preproc",
+ "qc-progs",
+ "qc-trace",
+ "qc-types",
  "serde",
  "serde_json",
  "toml",

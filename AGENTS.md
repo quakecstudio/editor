@@ -11,7 +11,7 @@ whatever tool runs it.
 | Tool | Why | Where it comes from |
 | --- | --- | --- |
 | rustup | The exact toolchain in `rust-toolchain.toml` (1.99.0 with rustfmt and clippy) | [rustup.rs](https://rustup.rs/); cargo installs the pinned toolchain on first use |
-| A C toolchain and `pkg-config` | Build scripts of dependencies | The OS (`build-essential` on Debian and Ubuntu, Xcode command line tools on macOS) |
+| A C toolchain and `pkg-config` | Build scripts of dependencies, and the oracles (`cargo xtask oracles`) | The OS (`build-essential` on Debian and Ubuntu, Xcode command line tools on macOS) |
 | Python 3 with PyYAML | Everything in `plan/` | `python3-yaml`, or `pip install pyyaml` |
 | `gh`, signed in to the `quakecstudio` org | Issues, PRs and the merge queue | [cli.github.com](https://cli.github.com/) |
 | `prek` | The pre-commit hooks | `pip install prek` |
@@ -34,6 +34,8 @@ take minutes to build; install them when a task needs them.
 
 - `cargo xtask deny-fixtures` and `cargo deny` need the crates.io index.
 - `scripts/refresh-specs.sh` fetches from `raw.githubusercontent.com`; `--verify` is offline.
+- `cargo xtask oracles` fetches id's sources from `raw.githubusercontent.com` once, into
+  `target/oracles/src/`, and checks their SHA-256 on every run.
 - `plan/status.py` and `plan/apply.py` call the GitHub API through `gh`.
 
 ## Key commands
