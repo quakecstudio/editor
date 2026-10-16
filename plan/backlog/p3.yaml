@@ -41,11 +41,13 @@ issues:
   - P3-27
   deliverable:
   - 'apps/preview-host (ADR-0004): window and input, the host loop at a fixed server tick, id1 and the rerelease loaded from the user''s install (P1-19), qs-sim, qs-render and qs-sound composed, and a bridge server implementing docs/spec/bridge-protocol.md events'
+  - 'Command line (ADR-0008): -basedir PATH (the game root holding id1), -game NAME (a single directory name under it) and -kpf PATH (the rerelease''s QuakeEX.kpf, read from that path instead of the basedir)'
   - Builds for macOS universal, Windows x64/arm64, Linux x86_64/aarch64 as CI artifacts with checksums
   acceptance:
   - Loads id1 and the rerelease from the user's install, plays e1m1 from start to exit with keyboard and mouse on all three OSes, and streams events to a test client
   - 'Implements every command in bridge-protocol.md except reload (P3-03) and debugging (P3-04): pause, resume, step, set field, pick, inspect, console, screenshot, spawn player at; each with a conformance
     test'
+  - Started with -basedir, -game and -kpf against a fixture game root, it loads the mod from the named directory and the rerelease's localization from the -kpf file, and rejects a -game value that is a path
   verify:
   - Protocol conformance tests in CI on all three OSes
 - key: P3-03
@@ -137,14 +139,23 @@ issues:
   depends:
   - P3-01
   - P0-22
+  - P1-19
   deliverable:
   - 'crates/qs-engine: the bridge client for our preview host, the only engine the IDE runs (ADR-0005): launch, reload, set_breakpoint, step, inspect, console, screenshot plus capability-flagged pause, resume,
     set_field, pick, spawn, remove and edit_entity, speaking the bridge protocol'
   - The preview host binary is located from the app bundle (shipped with the app, P4-18) or a configured path; no runtime download
+  - 'Run roots (ADR-0008): before every launch the client creates and repairs <project>/build/run/original and <project>/build/run/rerelease, each holding id1, a directory link to the install''s id1 or
+    rerelease/id1 found by qs-install (P1-19), and <mod>, a directory link to ../../<mod> (the build output in <project>/build/<mod>/), made with qs-install''s directory-link function; on macOS and Linux
+    the rerelease run root also links QuakeEX.kpf. It launches the preview host with -basedir <run root> -game <mod>, adding -kpf <install>/rerelease/QuakeEX.kpf on Windows, where a junction cannot link
+    a file; nothing is written inside the install or copied out of it'
   acceptance:
   - The bridge client test suite runs against the real host in headless mode
+  - A missing, broken or wrongly targeted run-root link is repaired before the next launch, in tests on fixture installs
+  - 'Recorded launches moved here from P0-22 by ADR-0008: the preview host launched through the run roots plays the original game (id1) and the rerelease from a Steam install and from a GOG install on
+    macOS, Windows and Linux, and the install is unchanged afterwards'
   verify:
   - cargo test -p qs-engine
+  - Recorded launches per OS and store attached to the issue
 - key: P3-09
   title: KEX rerelease compile target
   labels:

@@ -280,8 +280,10 @@ issues:
   - P2-13
   deliverable:
   - 'File > New from template: rerelease-based and id1-based starters with quakec.toml, fetched or generated under their GPLv2 terms with notices'
+  - Each template's ignore file excludes build/, which holds the build output and the run roots (ADR-0008)
   acceptance:
   - A new project builds and plays immediately
+  - After a build and a launch, nothing under a new project's build/ is tracked by version control
   verify:
   - Template integration test
 - key: P4-18
@@ -448,11 +450,13 @@ issues:
   - P4-17
   deliverable:
   - 'A `project.export` command, used by File > Export Mod and the agent: a zip of the mod folder named after the project, containing progs.dat (and csprogs.dat or menu.dat if built), maps and the project''s own assets, optionally packed into pak0.pak'
+  - Reads the built mod from build/<mod>/ and never follows the run-root links under build/run/ (ADR-0008)
   - A generated README.txt with what the mod is, which game it needs (original or rerelease) and how to install and launch it in common engines; the project's license and the notices of everything it includes
   - Refuses to export id's game data, detected by checksum and by the files of the user's install, and lists any file whose license is unknown according to the project's attribution file
   acceptance:
   - An exported template mod, unzipped into a clean Quake folder, launches and plays in the preview host on each OS
   - An export that would include a file from id1 or the rerelease paks fails with a clear message
+  - An export from a project whose build/run/ links point at a fixture install contains no file reached through those links
   - Exporting twice from the same sources produces the same zip
   verify:
   - Integration test in CI with open test assets; manual install-and-play check recorded on macOS
