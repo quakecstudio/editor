@@ -4,7 +4,7 @@ Vectors for the scenario file of [`../../differential.md`](../../differential.md
 
 | File | Statements | Vectors |
 | --- | --- | --- |
-| [`numbers.txt`](numbers.txt) | DIFF-2.7, DIFF-2.8, DIFF-2.9: which integer and number texts a scenario accepts, and the value each is read as | 101 |
+| [`numbers.txt`](numbers.txt) | DIFF-2.7, DIFF-2.8, DIFF-2.9: which integer and number texts a scenario accepts, and the value each is read as | 107 |
 
 ## Format of `numbers.txt`
 
@@ -33,6 +33,5 @@ One vector per line, `#` to the end of the line a comment:
   the syntax of DIFF-2.7 and DIFF-2.8 checked first and Rust's `i64`, `f64` or `f32` parsing
   after it, and checks both the verdict and the value.
 
-An integer of more than 18 digits, such as `0000000000000000001`, is an integer by DIFF-2.7,
-but the oracle refuses it today; that is
-[#296](https://github.com/quakecstudio/editor/issues/296) (P1-36), which adds its vector.
+Leading zeros count for nothing however many there are: `frames 0000000000000000001` (19
+digits) is 1, and `frames` of 41 digits whose value is 1000000 is accepted.

@@ -52,19 +52,26 @@ static int refuse(const char *path, int line, const char *why) {
     return QS_EXIT_REFUSED;
 }
 
-// DIFF-2.7: an optional `-`, then decimal digits, in range.
-static qboolean parse_integer(const char *text, long long min, long long max, long long *out) {
+// DIFF-2.7: an optional `-`, then decimal digits, leading zeros included, in range. Every
+// range the oracle reads lies within 18 digits, so a value with more significant digits is out
+// of range, and strtoll never sees one it cannot hold.
+qboolean qs_parse_integer(const char *text, long long min, long long max, long long *out) {
     const char *p = text;
-    if (*p == '-')
+    qboolean negative = *p == '-';
+    if (negative)
         p++;
     if (!*p)
         return false;
     for (const char *q = p; *q; q++)
         if (*q < '0' || *q > '9')
             return false;
+    while (*p == '0' && p[1])
+        p++;
     if (strlen(p) > 18)
         return false;
-    long long value = strtoll(text, NULL, 10);
+    long long value = strtoll(p, NULL, 10);
+    if (negative)
+        value = -value;
     if (value < min || value > max)
         return false;
     *out = value;
@@ -73,7 +80,7 @@ static qboolean parse_integer(const char *text, long long min, long long max, lo
 
 // DIFF-2.8: an optional `-`, digits with at most one `.`, and an optional exponent. The check
 // comes first because strtod and strtof also accept `+`, `inf`, `nan` and hexadecimal.
-static qboolean decimal_syntax(const char *text) {
+qboolean qs_decimal_syntax(const char *text) {
     const char *p = text;
     int digits = 0;
     if (*p == '-')
@@ -106,7 +113,7 @@ static qboolean decimal_syntax(const char *text) {
 // DIFF-2.8: the nearest f32, rounded once by strtof; a text whose nearest f32 is infinite is
 // refused.
 static qboolean parse_float(const char *text, float *out) {
-    if (!decimal_syntax(text))
+    if (!qs_decimal_syntax(text))
         return false;
     float value = strtof(text, NULL);
     if (isinf(value))
@@ -129,7 +136,8 @@ static char *join_path(const char *dir, const char *name) {
     return path;
 }
 
-static char *read_file(const char *path, long *size_out) {
+// The whole file with a NUL after its last byte, which may hold NUL bytes of its own.
+char *qs_read_file(const char *path, long *size_out) {
     FILE *f = fopen(path, "rb");
     if (!f)
         return NULL;
@@ -169,7 +177,7 @@ static qboolean valid_map_name(const char *name) {
 
 static int parse_scenario(const char *path) {
     long size;
-    char *text = read_file(path, &size);
+    char *text = qs_read_file(path, &size);
     if (!text)
         return refuse(path, 0, "cannot read the scenario");
     char *dir = malloc(strlen(path) + 2);
@@ -198,38 +206,71 @@ static int parse_scenario(const char *path) {
                           "submodels", "frames", "frametime", "seed"};
     qboolean seen[9] = {false};
     char **model_names = NULL;
+    size_t *model_lengths = NULL;
     int num_models = 0;
 
+    // DIFF-2.1: the file is lines of bytes, so a NUL byte is a byte of its line and ends
+    // neither the line nor the file. Lines and words are found by length, and a word holding a
+    // NUL byte is not the text its C string shows (see the end of the loop's word split).
     int line = 0;
     char *next = text;
-    while (next && *next) {
+    char *stop = text + size;
+    while (next < stop) {
         char *start = next;
-        char *end = strchr(start, '\n');
+        char *end = memchr(start, '\n', (size_t)(stop - start));
         if (end) {
-            *end = 0;
             next = end + 1;
         } else {
-            next = NULL;
+            end = stop;
+            next = stop;
         }
+        *end = 0;
         line++;
-        size_t n = strlen(start);
+        size_t n = (size_t)(end - start);
         if (n > 0 && start[n - 1] == '\r')
-            start[n - 1] = 0;
-        char *hash = strchr(start, '#');
-        if (hash)
+            start[--n] = 0;
+        char *hash = memchr(start, '#', n);
+        if (hash) {
             *hash = 0;
+            n = (size_t)(hash - start);
+        }
         char *words[16];
+        size_t lengths[16];
         int count = 0;
-        for (char *w = strtok(start, " \t"); w; w = strtok(NULL, " \t")) {
+        size_t at = 0;
+        while (at < n) {
+            if (start[at] == ' ' || start[at] == '\t') {
+                at++;
+                continue;
+            }
             if (count == 16)
                 return refuse(path, line, "too many arguments");
-            words[count++] = w;
+            size_t first = at;
+            while (at < n && start[at] != ' ' && start[at] != '\t')
+                at++;
+            words[count] = start + first;
+            lengths[count] = at - first;
+            count++;
+            if (at < n)
+                start[at++] = 0;
         }
         if (count == 0)
             continue;
+        // A word holding a NUL byte: no key, integer, number, map name or path holds one
+        // (DIFF-2.2, DIFF-2.7, DIFF-2.8; a file name ends at a NUL). A model or setting name
+        // may: QuakeC's strings end at a NUL, so no QuakeC string names it.
+        qboolean nul[16];
+        for (int i = 0; i < count; i++)
+            nul[i] = strlen(words[i]) != lengths[i];
         const char *key = words[0];
         int args = count - 1;
         long long v;
+        if (nul[0])
+            return refuse(path, line, "unknown key");
+        qboolean named = strcmp(key, "model") == 0 || strcmp(key, "cvar") == 0;
+        for (int i = named ? 2 : 1; i < count; i++)
+            if (nul[i] && !(strcmp(key, "cvar") == 0 && i == 2))
+                return refuse(path, line, "an argument holds a NUL byte");
         for (int i = 0; i < 9; i++) {
             if (strcmp(key, once[i]) == 0) {
                 if (seen[i])
@@ -250,15 +291,15 @@ static int parse_scenario(const char *path) {
                 return refuse(path, line, "map takes a name of 1 to 63 bytes from a-z, 0-9, _");
             strcpy(scenario.map, words[1]);
         } else if (strcmp(key, "maxclients") == 0) {
-            if (args != 1 || !parse_integer(words[1], 1, QS_MAX_CLIENTS, &v))
+            if (args != 1 || !qs_parse_integer(words[1], 1, QS_MAX_CLIENTS, &v))
                 return refuse(path, line, "maxclients takes an integer from 1 to 16");
             scenario.maxclients = (long)v;
         } else if (strcmp(key, "clients") == 0) {
-            if (args != 1 || !parse_integer(words[1], 0, QS_MAX_CLIENTS, &v))
+            if (args != 1 || !qs_parse_integer(words[1], 0, QS_MAX_CLIENTS, &v))
                 return refuse(path, line, "clients takes an integer from 0 to maxclients");
             scenario.clients = (long)v;
         } else if (strcmp(key, "submodels") == 0) {
-            if (args != 1 || !parse_integer(words[1], 0, 254, &v))
+            if (args != 1 || !qs_parse_integer(words[1], 0, 254, &v))
                 return refuse(path, line, "submodels takes an integer from 0 to 254");
             scenario.submodels = (long)v;
         } else if (strcmp(key, "model") == 0) {
@@ -269,50 +310,65 @@ static int parse_scenario(const char *path) {
                 if (!parse_float(words[2 + i], &b[i]))
                     return refuse(path, line, "model takes a name and six numbers");
             for (int i = 0; i < num_models; i++)
-                if (strcmp(model_names[i], words[1]) == 0)
+                if (model_lengths[i] == lengths[1] &&
+                    memcmp(model_names[i], words[1], lengths[1]) == 0)
                     return refuse(path, line, "a model name is repeated");
             char **grown = realloc(model_names, (size_t)(num_models + 1) * sizeof(*grown));
             if (!grown)
                 return refuse(path, line, "out of memory");
             model_names = grown;
-            model_names[num_models++] = words[1];
-            qs_add_model_bounds(words[1], b, b + 3);
+            size_t *grown_lengths =
+                realloc(model_lengths, (size_t)(num_models + 1) * sizeof(*grown_lengths));
+            if (!grown_lengths)
+                return refuse(path, line, "out of memory");
+            model_lengths = grown_lengths;
+            model_names[num_models] = words[1];
+            model_lengths[num_models] = lengths[1];
+            num_models++;
+            // A name holding a NUL byte is one no QuakeC string gives, so no model gets these
+            // bounds.
+            if (!nul[1])
+                qs_add_model_bounds(words[1], b, b + 3);
         } else if (strcmp(key, "cvar") == 0) {
             if (args != 2)
                 return refuse(path, line, "cvar takes a name and a text");
-            qs_set_cvar(words[1], words[2]);
+            // DIFF-2.4: a name holding a NUL byte names a setting no QuakeC string can, so the
+            // line changes nothing; the value of a text holding one is Q_atof's, which reads up
+            // to the NUL.
+            if (!nul[1])
+                qs_set_cvar(words[1], words[2]);
         } else if (strcmp(key, "frames") == 0) {
-            if (args != 1 || !parse_integer(words[1], 0, 1000000, &v))
+            if (args != 1 || !qs_parse_integer(words[1], 0, 1000000, &v))
                 return refuse(path, line, "frames takes an integer from 0 to 1000000");
             scenario.frames = (long)v;
         } else if (strcmp(key, "frametime") == 0) {
-            if (args != 1 || !decimal_syntax(words[1]))
+            if (args != 1 || !qs_decimal_syntax(words[1]))
                 return refuse(path, line, "frametime takes a number");
             scenario.frametime = strtod(words[1], NULL);
             if (!(scenario.frametime > 0 && scenario.frametime <= 1))
                 return refuse(path, line, "frametime is greater than 0 and at most 1");
         } else if (strcmp(key, "seed") == 0) {
-            if (args != 1 || !parse_integer(words[1], 0, 4294967295LL, &v))
+            if (args != 1 || !qs_parse_integer(words[1], 0, 4294967295LL, &v))
                 return refuse(path, line, "seed takes an integer from 0 to 4294967295");
             scenario.seed = (unsigned long)v;
         } else if (strcmp(key, "input") == 0) {
             input_t in;
             memset(&in, 0, sizeof(in));
-            if (args < 4 || !parse_integer(words[1], 1, 1000000, &v))
+            if (args < 4 || !qs_parse_integer(words[1], 1, 1000000, &v))
                 return refuse(path, line, "input takes a frame, an edict, a field and values");
             in.frame = (long)v;
-            if (!parse_integer(words[2], 1, QS_MAX_CLIENTS, &v))
+            if (!qs_parse_integer(words[2], 1, QS_MAX_CLIENTS, &v))
                 return refuse(path, line, "input takes an edict from 1 to clients");
             in.edict = (long)v;
             const char *field = words[3];
             int values = args - 3;
             if (strcmp(field, "button0") == 0 || strcmp(field, "button2") == 0) {
-                if (values != 1 || !parse_integer(words[4], 0, 1, &v))
+                if (values != 1 || !qs_parse_integer(words[4], 0, 1, &v))
                     return refuse(path, line, "a button takes 0 or 1");
                 in.field = field[6] == '0' ? INPUT_BUTTON0 : INPUT_BUTTON2;
                 in.values[0] = (float)v;
             } else if (strcmp(field, "impulse") == 0) {
-                if (values != 1 || !parse_integer(words[4], 1, 255, &v))
+                if (values != 1 || !qs_parse_integer(words[4], 1, 255, &v))
                     return refuse(path, line, "impulse takes an integer from 1 to 255");
                 in.field = INPUT_IMPULSE;
                 in.values[0] = (float)v;
@@ -347,6 +403,7 @@ static int parse_scenario(const char *path) {
             return refuse(path, 0, "an input's edict is not a client that enters");
     }
     free(model_names);
+    free(model_lengths);
     return QS_EXIT_TRACED;
 }
 
@@ -594,7 +651,7 @@ int qs_scenario_main(const char *scenario_path, const char *trace_path) {
         return parsed;
     if (scenario.entities) {
         long size;
-        entities_text = read_file(scenario.entities, &size);
+        entities_text = qs_read_file(scenario.entities, &size);
         if (!entities_text)
             return refuse(scenario.entities, 0, "cannot read the entities");
     } else {

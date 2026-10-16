@@ -68,6 +68,12 @@ static inline int qs_ftoi(float f) {
     return (int)d;
 }
 
+// Reading the oracle's input files (scenario.c): a whole file, and the integer and number
+// syntax of differential.md DIFF-2.7 and DIFF-2.8, which vector mode's init file shares.
+char *qs_read_file(const char *path, long *size_out);
+qboolean qs_parse_integer(const char *text, long long min, long long max, long long *out);
+qboolean qs_decimal_syntax(const char *text);
+
 // The mock engine (engine.c): settings, the random state and model bounds of
 // differential.md DIFF-2.4, DIFF-6.2 and DIFF-6.3.
 void qs_set_cvar(const char *name, const char *text);

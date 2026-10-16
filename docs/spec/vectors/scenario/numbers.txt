@@ -19,6 +19,12 @@ frames - refused
 frames 1_000 refused
 frames 1,000 refused
 frames 10a refused
+frames 0000000000000000001 1
+frames 00000000000000000000000000000000001000000 1000000
+frames -0000000000000000000 0
+frames 0000000000000000000001000001 refused
+frames 9999999999999999999 refused
+frames 99999999999999999999999999999999999999999 refused
 
 # DIFF-2.8: `frametime`, the double nearest the text, greater than 0 and at most 1.
 frametime 0.1 3fb999999999999a
