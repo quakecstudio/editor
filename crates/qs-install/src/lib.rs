@@ -7,7 +7,7 @@
 //! [`examine_folder`] accepts any folder the user points at that holds `id1/pak0.pak`,
 //! recognising steamcmd downloads and GOG installers extracted with innoextract. Each
 //! [`Install`] reports its original and rerelease base directories with their `id1` and
-//! other game directories (FS-6.1). [`Install::validate`] identifies the files by their
+//! other game directories (FS-6.1, FS-6.6). [`Install::validate`] identifies the files by their
 //! published sizes and checksums and says which editions are there and what is missing
 //! (FS-6.2 to FS-6.4). [`link_dir`] makes the directory links of ADR-0008's run roots.
 //!
@@ -48,6 +48,9 @@ pub const GOG_QUAKE_ENHANCED_ID: &str = "1739637082";
 
 /// The name of the rerelease's folder inside a Steam install (FS-5.1).
 const RERELEASE_DIR: &str = "rerelease";
+
+/// The folder of GOG's Quake Enhanced that holds the original DOS game (FS-6.6).
+const DOS_DIR: &str = "dos";
 
 /// The rerelease's localization archive, found in its base directory (FS-5.3).
 const KPF_NAME: &str = "QuakeEX.kpf";
@@ -348,14 +351,19 @@ impl<'a, F: InstallFs + ?Sized, R: Registry + ?Sized> Finder<'a, F, R> {
 
     /// The install at `folder`, found by way of `source`.
     ///
-    /// Implements FS-6.1.
+    /// Implements FS-6.1 and FS-6.6.
     fn examine_as(&self, folder: &Path, source: Source) -> Option<Install> {
         let top = self.game_base(folder);
         let nested = self
             .child(folder, RERELEASE_DIR, EntryKind::Dir)
             .and_then(|dir| self.game_base(&dir));
         let (original, rerelease) = match top {
-            Some(base) if base.kpf.is_some() => (None, Some(base)),
+            Some(base) if base.kpf.is_some() => {
+                let dos = self
+                    .child(folder, DOS_DIR, EntryKind::Dir)
+                    .and_then(|dir| self.game_base(&dir));
+                (dos, Some(base))
+            }
             top => (top, nested),
         };
         if original.is_none() && rerelease.is_none() {
