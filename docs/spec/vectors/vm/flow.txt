@@ -1,0 +1,773 @@
+# Control flow, calls, returns, STATE, nested runs and errors: vm.md VM-2, VM-3 and VM-13
+# to VM-19. Format: README.md.
+
+== goto_forward
+spec: VM-13.1
+globals: 100=1
+code:
+  GOTO 2
+  STORE_F 100 101       # skipped
+  DONE
+expect:
+  1 GOTO
+  3 DONE
+  done
+
+== goto_backward
+spec: VM-13.1
+globals: 101=1
+code:
+  GOTO 3
+  ADD_F 100 101 100
+  GOTO 2
+  IFNOT 100 -2          # first pass: 0, jump back to 2
+  DONE
+expect:
+  1 GOTO
+  4 IFNOT
+  2 ADD_F 100=1
+  3 GOTO
+  5 DONE
+  done
+
+== goto_to_statement_zero
+spec: VM-3.5, VM-13.1
+code:
+  GOTO -1               # statement 0 is all zero: DONE 0 0 0
+expect:
+  1 GOTO
+  0 DONE
+  done
+
+== if_loop
+spec: VM-13.2
+globals: 101=1 102=3
+code:
+  ADD_F 100 101 100
+  LT 100 102 103
+  IF 103 -2
+  DONE
+expect:
+  1 ADD_F 100=1
+  2 LT 103=1
+  3 IF
+  1 ADD_F 100=2
+  2 LT
+  3 IF
+  1 ADD_F 100=3
+  2 LT 103=0
+  3 IF
+  4 DONE
+  done
+
+== ifnot
+spec: VM-13.2
+globals: 101=1
+code:
+  IFNOT 100 2           # 0: jump
+  STORE_F 101 110       # skipped
+  IFNOT 101 2           # non-zero: fall through
+  STORE_F 101 111
+  DONE
+expect:
+  1 IFNOT
+  3 IFNOT
+  4 STORE_F 111=1
+  5 DONE
+  done
+
+== if_tests_bit_pattern
+spec: VM-13.3
+strings: ""
+globals: 100=-0 101=nan 102=i1 104=1
+code:
+  IF 100 2              # -0 is 0x80000000: taken
+  STORE_F 104 110
+  IF 101 2              # NaN: taken
+  STORE_F 104 111
+  IF 102 2              # offset 1 of an empty string: taken
+  STORE_F 104 112
+  IF 103 2              # 0: not taken
+  STORE_F 104 113
+  DONE
+expect:
+  1 IF
+  3 IF
+  5 IF
+  7 IF
+  8 STORE_F 113=1
+  9 DONE
+  done
+
+== goto_zero_runaway
+spec: VM-3.1, VM-13.4
+steps: 99999
+code:
+  GOTO 0
+expect:
+  ...
+  1 GOTO
+  1 GOTO
+  error "runaway loop error"
+
+== runaway_per_run
+spec: VM-18.1
+steps: 100000
+globals: 120=i3 121=i2 111=1 112=33332
+functions:
+  2: builtin=2
+  3: first=5
+code:
+  STORE_FNC 120 4       # parameter 0: function 3
+  CALL1 121             # builtin 2 runs function 3 in a nested run
+  DONE
+  DONE
+  ADD_F 110 111 110     # function 3: 33332 passes of 3 statements, then DONE: 99997 statements
+  LT 110 112 113
+  IF 113 -2
+  DONE
+expect:
+  ...
+  7 IF
+  8 DONE
+  3 DONE
+  done
+
+== call_builtin
+spec: VM-14.1, VM-14.4, VM-16.2
+globals: 100=7.5 101=i2
+functions:
+  2: builtin=1
+code:
+  STORE_F 100 4
+  CALL1 101             # the stub builtin writes argc to slot 1 and parameter 0 to slot 2
+  DONE                  # copies slot 0 to slots 1, 2 and 3
+expect:
+  1 STORE_F 4=7.5
+  2 CALL1 1=1 2=7.5
+  3 DONE 1=0 2=0
+  done
+
+== call_argc
+spec: VM-14.1
+globals: 101=i2
+functions:
+  2: builtin=1
+code:
+  CALL0 101
+  CALL1 101
+  CALL2 101
+  CALL3 101
+  CALL4 101
+  CALL5 101
+  CALL6 101
+  CALL7 101
+  CALL8 101
+  RETURN 4
+expect:
+  1 CALL0
+  2 CALL1 1=1
+  3 CALL2 1=2
+  4 CALL3 1=3
+  5 CALL4 1=4
+  6 CALL5 1=5
+  7 CALL6 1=6
+  8 CALL7 1=7
+  9 CALL8 1=8
+  10 RETURN 1=0
+  done
+
+== call_null_function
+spec: VM-14.2
+code:
+  CALL0 100
+  DONE
+expect:
+  1 CALL0
+  error "NULL function"
+
+== call_last_builtin
+spec: VM-14.4
+globals: 101=i2
+functions:
+  2: builtin=78
+code:
+  CALL2 101
+  RETURN 1
+expect:
+  1 CALL2 1=2
+  2 RETURN
+  done
+
+== call_bad_builtin
+spec: VM-14.4
+globals: 101=i2
+functions:
+  2: builtin=79
+code:
+  CALL0 101
+  DONE
+expect:
+  1 CALL0
+  error "Bad builtin call number"
+
+== call_qc_function
+spec: VM-14.5, VM-15.2, VM-15.3, VM-16.3, VM-16.4
+globals: 100=3 101=i2
+functions:
+  2: first=5 parm_start=110 locals=2 parms=1
+code:
+  STORE_F 100 4
+  CALL1 101
+  STORE_F 1 102
+  DONE
+  ADD_F 110 110 111     # function 2: t = f + f
+  RETURN 111            # returns its own local, then restores 110 and 111
+expect:
+  1 STORE_F 4=3
+  2 CALL1 110=3
+  5 ADD_F 111=6
+  6 RETURN 1=6 110=0 111=0
+  3 STORE_F 102=6
+  4 DONE 1=0
+  done
+
+== call_saves_caller_values
+spec: VM-15.2, VM-16.3
+globals: 101=i2 110=5 111=6 120=9
+functions:
+  2: first=4 parm_start=110 locals=2 parms=1
+code:
+  STORE_F 111 4
+  CALL1 101             # saves 110 and 111, then copies parameter 0 into 110
+  DONE
+  STORE_F 120 111       # function 2 overwrites its local
+  DONE                  # restores 5 and 6
+expect:
+  1 STORE_F 4=6
+  2 CALL1 110=6
+  4 STORE_F 111=9
+  5 DONE 110=5 111=6
+  3 DONE
+  done
+
+== call_vector_parm_packing
+spec: VM-15.3
+globals: 100=1 101=2 102=3 103=9 104=i2
+functions:
+  2: first=5 parm_start=110 locals=4 parms=3,1
+code:
+  STORE_V 100 4
+  STORE_F 103 7
+  CALL2 104             # the vector fills 110 to 112, the float 113
+  DONE
+  DONE
+expect:
+  1 STORE_V 4=1 5=2 6=3
+  2 STORE_F 7=9
+  3 CALL2 110=1 111=2 112=3 113=9
+  5 DONE 110=0 111=0 112=0 113=0
+  4 DONE
+  done
+
+== call_parm_size_unchecked
+spec: VM-15.4
+globals: 4=1 5=2 6=3 7=4 8=5 100=i2
+functions:
+  2: first=3 parm_start=110 locals=5 parms=5
+code:
+  CALL1 100             # a size of 5 reads slots 4 to 8, past parameter 0
+  DONE
+  DONE
+expect:
+  1 CALL1 110=1 111=2 112=3 113=4 114=5
+  3 DONE 110=0 111=0 112=0 113=0 114=0
+  2 DONE
+  done
+
+== call_extra_parms_stale
+spec: VM-14.6
+globals: 7=9 100=4 101=i2
+functions:
+  2: first=4 parm_start=110 locals=2 parms=1,1
+code:
+  STORE_F 100 4
+  CALL1 101             # the callee takes 2 parameters and copies slot 7 as well
+  DONE
+  DONE
+expect:
+  1 STORE_F 4=4
+  2 CALL1 110=4 111=9
+  4 DONE 110=0 111=0
+  3 DONE
+  done
+
+== call_locals_not_initialised
+spec: VM-15.7
+globals: 103=5 104=i2
+functions:
+  2: first=4 parm_start=110 locals=2
+code:
+  STORE_F 103 111       # the caller writes the slot function 2 uses as a local
+  CALL0 104
+  DONE
+  STORE_F 111 102       # function 2 reads its local before writing it: 5
+  DONE
+expect:
+  1 STORE_F 111=5
+  2 CALL0
+  4 STORE_F 102=5
+  5 DONE
+  3 DONE
+  done
+
+== recursion_restores_locals
+spec: VM-15.2, VM-16.3
+globals: 100=2 120=1 121=i2
+functions:
+  2: first=4 parm_start=110 locals=1 parms=1
+code:
+  STORE_F 100 4
+  CALL1 121
+  DONE
+  IFNOT 110 4           # function 2 (n): if n == 0 return
+  SUB_F 110 120 4
+  CALL1 121             # recurse with n - 1
+  STORE_F 110 122       # n is restored after the call
+  RETURN 110
+expect:
+  1 STORE_F 4=2
+  2 CALL1 110=2
+  4 IFNOT
+  5 SUB_F 4=1
+  6 CALL1 110=1
+  4 IFNOT
+  5 SUB_F 4=0
+  6 CALL1 110=0
+  4 IFNOT
+  8 RETURN 110=1
+  7 STORE_F 122=1
+  8 RETURN 1=1 110=2
+  7 STORE_F 122=2
+  8 RETURN 1=2 110=0
+  3 DONE 1=0
+  done
+
+== stack_overflow
+spec: VM-15.1, VM-19.3
+steps: 31
+globals: 100=i2
+functions:
+  2: first=3
+after: depth=0 localstack=0
+code:
+  CALL0 100
+  DONE
+  CALL0 100             # function 2 calls itself
+expect:
+  ...
+  3 CALL0
+  3 CALL0
+  error "stack overflow"
+
+== locals_stack_full
+spec: VM-15.2
+numglobals: 2048
+globals: 2047=1
+functions:
+  1: first=1 parm_start=0 locals=2048
+code:
+  STORE_F 2047 2046
+  DONE
+expect:
+  1 STORE_F 2046=1
+  2 DONE 2046=0
+  done
+
+== locals_stack_overflow
+spec: VM-15.2
+functions:
+  1: first=1 parm_start=0 locals=2049
+code:
+  DONE
+expect:
+  error "PR_ExecuteProgram: locals stack overflow"
+
+== locals_stack_overflow_nested
+spec: VM-15.2, VM-19.3
+numglobals: 2048
+globals: 100=i2
+functions:
+  1: first=1 parm_start=1000 locals=1000
+  2: first=3 parm_start=0 locals=1049
+after: depth=0 localstack=1000
+code:
+  CALL0 100             # 1000 in use + 1049 is more than 2048
+  DONE
+  DONE
+expect:
+  1 CALL0
+  error "PR_ExecuteProgram: locals stack overflow"
+
+== done_copies_slot_zero
+spec: VM-16.1, VM-16.2
+globals: 0=7
+code:
+  DONE
+expect:
+  1 DONE 1=7 2=7 3=7
+  done
+
+== return_vector
+spec: VM-16.1
+globals: 100=1 101=2 102=3
+code:
+  RETURN 100
+expect:
+  1 RETURN 1=1 2=2 3=3
+  done
+
+== return_overlap
+spec: VM-16.1
+globals: 2=20 3=30 4=40
+code:
+  RETURN 2
+expect:
+  1 RETURN 1=20 2=30 3=40
+  done
+
+== return_copy_bit_exact
+spec: VM-16.5
+globals: 100=0x7f800001 101=-0 102=0xffc00001
+code:
+  RETURN 100
+expect:
+  1 RETURN 1=0x7f800001 2=-0 3=0xffc00001
+  done
+
+== state
+spec: VM-17.1, VM-17.2, VM-17.3
+globals: 28=e1 31=0x3d8e4a0e 100=5 101=i3
+code:
+  STATE 100 101
+  DONE
+expect:
+  1 STATE e1.30=5 e1.44=i3 e1.46=0x3e2d8b6d
+  2 DONE
+  done
+
+== state_think_time_in_double
+spec: VM-17.1
+globals: 28=e1 31=10
+code:
+  STATE 100 101
+  DONE
+expect:
+  1 STATE e1.46=10.1
+  2 DONE
+  done
+
+== state_frame_negative_zero
+spec: VM-17.2
+globals: 28=e1 100=-0
+code:
+  STATE 100 101         # -0 equals the frame's +0, so frame keeps its bits
+  DONE
+expect:
+  1 STATE e1.46=0.1
+  2 DONE
+  done
+
+== state_frame_nan
+spec: VM-17.2
+globals: 28=e1 100=nan
+fields: e1.30=2
+code:
+  STATE 100 101
+  DONE
+expect:
+  1 STATE e1.30=nan e1.46=0.1
+  2 DONE
+  done
+
+== state_world
+spec: VM-17.4
+globals: 31=1 100=3 101=i2
+code:
+  STATE 100 101         # self is 0: the world's fields are written
+  DONE
+expect:
+  1 STATE e0.30=3 e0.44=i2 e0.46=1.1
+  2 DONE
+  done
+
+== bad_opcode
+spec: VM-3.4
+code:
+  66 0 0 0
+expect:
+  1 66
+  error "Bad opcode 66"
+
+== bad_opcode_high
+spec: VM-3.4
+code:
+  65535 0 0 0
+expect:
+  1 65535
+  error "Bad opcode 65535"
+
+== entry_null_function
+spec: VM-2.1
+entry: 0
+code:
+  DONE
+expect:
+  error "PR_ExecuteProgram: NULL function"
+
+== entry_past_table
+spec: VM-2.1
+entry: 2
+code:
+  DONE
+expect:
+  error "PR_ExecuteProgram: NULL function"
+
+== entry_first_statement_zero
+spec: VM-3.5
+functions:
+  1: first=0
+code:
+  DONE
+expect:
+  0 DONE
+  done
+
+== falls_through_function_end
+spec: VM-3.2
+globals: 100=1
+functions:
+  2: first=3
+code:
+  STORE_F 100 101       # function 1 has no DONE of its own
+  STORE_F 100 102       # and runs on into function 2
+  STORE_F 100 103
+  DONE
+expect:
+  1 STORE_F 101=1
+  2 STORE_F 102=1
+  3 STORE_F 103=1
+  4 DONE
+  done
+
+== nested_run
+spec: VM-18.1, VM-18.2
+globals: 100=i3 101=i2 102=8
+functions:
+  2: builtin=2
+  3: first=5
+code:
+  STORE_FNC 100 4
+  CALL1 101             # builtin 2 runs function 3, then the outer run continues
+  STORE_F 103 104
+  DONE
+  STORE_F 102 103       # function 3
+  DONE
+expect:
+  1 STORE_FNC 4=i3
+  2 CALL1
+  5 STORE_F 103=8
+  6 DONE
+  3 STORE_F 104=8
+  4 DONE
+  done
+
+== nested_error_aborts_all
+spec: VM-18.4, VM-19.2, VM-19.3
+globals: 100=i3 101=i2 102=8
+functions:
+  1: first=1 parm_start=110 locals=3
+  2: builtin=2
+  3: first=5 parm_start=120 locals=2
+after: depth=0 localstack=5
+code:
+  STORE_FNC 100 4
+  CALL1 101
+  STORE_F 102 103       # never runs
+  DONE
+  STORE_F 102 121       # function 3
+  66 0 0 0
+expect:
+  1 STORE_FNC 4=i3
+  2 CALL1
+  5 STORE_F 121=8
+  6 66
+  error "Bad opcode 66"
+
+== address_world_error_state
+spec: VM-19.1, VM-19.3
+globals: 101=i105 103=4
+functions:
+  1: first=1 parm_start=110 locals=2
+after: depth=0 localstack=2
+code:
+  STORE_F 103 110       # a local of the aborted function keeps its value
+  ADDRESS 100 101 102
+  DONE
+expect:
+  1 STORE_F 110=4
+  2 ADDRESS
+  error "assignment to world entity"
+
+# Divergences: id's C is undefined here, and this spec fixes an error (VM-19.4). The
+# message is the implementation's, so these vectors expect any error, and they do not run
+# against the oracle.
+
+== global_out_of_range
+spec: VM-1.4
+oracle: no
+code:
+  STORE_F 100 128       # the program has 128 globals
+  DONE
+expect:
+  1 STORE_F
+  error
+
+== global_negative
+spec: VM-1.4
+oracle: no
+code:
+  ADD_F -1 100 101
+  DONE
+expect:
+  1 ADD_F
+  error
+
+== vector_partly_out_of_range
+spec: VM-1.4
+oracle: no
+globals: 100=1
+code:
+  STORE_V 100 126       # slots 126 and 127 exist, 128 does not: nothing is written
+  DONE
+expect:
+  1 STORE_V
+  error
+
+== entry_negative_function
+spec: VM-2.2
+oracle: no
+entry: -1
+code:
+  DONE
+expect:
+  error
+
+== entry_builtin
+spec: VM-2.4
+oracle: no
+entry: 2
+functions:
+  2: builtin=1
+code:
+  DONE
+expect:
+  error
+
+== run_past_last_statement
+spec: VM-3.3
+oracle: no
+code:
+  STORE_F 100 101
+expect:
+  1 STORE_F
+  error
+
+== jump_out_of_range
+spec: VM-3.3, VM-13.5
+oracle: no
+code:
+  GOTO -2
+expect:
+  1 GOTO
+  error
+
+== call_function_out_of_range
+spec: VM-14.3
+oracle: no
+globals: 100=i5
+code:
+  CALL0 100
+  DONE
+expect:
+  1 CALL0
+  error
+
+== string_out_of_range
+spec: VM-7.3
+oracle: no
+globals: 100=i99999
+code:
+  EQ_S 100 101 102
+  DONE
+expect:
+  1 EQ_S
+  error
+
+== load_bad_entity
+spec: VM-11.4
+oracle: no
+globals: 100=i3 101=i105
+code:
+  LOAD_F 100 101 102    # 3 is not a multiple of the edict size
+  DONE
+expect:
+  1 LOAD_F
+  error
+
+== load_bad_field
+spec: VM-11.4
+oracle: no
+globals: 100=e1 101=i108
+code:
+  LOAD_V 100 101 102    # fields 108 to 110: 110 is past the last field slot, 109
+  DONE
+expect:
+  1 LOAD_V
+  error
+
+== storep_bad_pointer
+spec: VM-12.5
+oracle: no
+globals: 102=i1 103=5
+code:
+  STOREP_F 103 102
+  DONE
+expect:
+  1 STOREP_F
+  error
+
+== negative_locals
+spec: VM-15.6
+oracle: no
+globals: 100=i2
+functions:
+  2: first=3 parm_start=110 locals=-1
+code:
+  CALL0 100
+  DONE
+  DONE
+expect:
+  1 CALL0
+  error
+
+== state_bad_self
+spec: VM-17.4
+oracle: no
+globals: 28=i3
+code:
+  STATE 100 101
+  DONE
+expect:
+  1 STATE
+  error

@@ -1,0 +1,324 @@
+# Stores, field loads, field addresses and pointer stores: vm.md VM-10 to VM-12.
+# Format: README.md.
+
+== store_f
+spec: VM-10.1, VM-10.4
+globals: 100=1.5
+code:
+  STORE_F 100 101 120   # c is ignored
+  DONE
+expect:
+  1 STORE_F 101=1.5
+  2 DONE
+  done
+
+== store_s
+spec: VM-10.1
+globals: 100=i7
+code:
+  STORE_S 100 101
+  DONE
+expect:
+  1 STORE_S 101=i7
+  2 DONE
+  done
+
+== store_ent
+spec: VM-10.1
+globals: 100=e2
+code:
+  STORE_ENT 100 101
+  DONE
+expect:
+  1 STORE_ENT 101=e2
+  2 DONE
+  done
+
+== store_fld
+spec: VM-10.1
+globals: 100=i105
+code:
+  STORE_FLD 100 101
+  DONE
+expect:
+  1 STORE_FLD 101=i105
+  2 DONE
+  done
+
+== store_fnc
+spec: VM-10.1
+globals: 100=i3
+code:
+  STORE_FNC 100 101
+  DONE
+expect:
+  1 STORE_FNC 101=i3
+  2 DONE
+  done
+
+== store_types_unchecked
+spec: VM-10.1, VM-10.3
+globals: 100=nan 101=-0 102=0x7f800001
+code:
+  STORE_S 100 110       # a float NaN copied by the string store, bit for bit
+  STORE_FNC 101 111
+  STORE_F 102 112       # a signalling NaN pattern is copied unchanged
+  DONE
+expect:
+  1 STORE_S 110=0x7fc00000
+  2 STORE_FNC 111=-0
+  3 STORE_F 112=0x7f800001
+  4 DONE
+  done
+
+== store_v
+spec: VM-10.2
+globals: 100=1 101=2 102=3
+code:
+  STORE_V 100 104
+  DONE
+expect:
+  1 STORE_V 104=1 105=2 106=3
+  2 DONE
+  done
+
+== store_v_overlap_forward
+spec: VM-10.2
+globals: 100=1 101=2 102=3
+code:
+  STORE_V 100 101       # b = a + 1: every copy reads the slot just written
+  DONE
+expect:
+  1 STORE_V 101=1 102=1 103=1
+  2 DONE
+  done
+
+== store_v_overlap_backward
+spec: VM-10.2
+globals: 101=1 102=2 103=3
+code:
+  STORE_V 101 100       # b = a - 1: a plain shift
+  DONE
+expect:
+  1 STORE_V 100=1 101=2 102=3
+  2 DONE
+  done
+
+== store_v_signalling_nan
+spec: VM-10.3
+globals: 100=0x7f800001 101=0xffc00001 102=-0
+code:
+  STORE_V 100 104
+  DONE
+expect:
+  1 STORE_V 104=0x7f800001 105=0xffc00001 106=-0
+  2 DONE
+  done
+
+== load_f
+spec: VM-11.1
+globals: 100=e1 101=i105
+fields: e1.105=2.5
+code:
+  LOAD_F 100 101 102
+  DONE
+expect:
+  1 LOAD_F 102=2.5
+  2 DONE
+  done
+
+== load_s
+spec: VM-11.1
+globals: 100=e1 101=i106
+fields: e1.106=i9
+code:
+  LOAD_S 100 101 102
+  DONE
+expect:
+  1 LOAD_S 102=i9
+  2 DONE
+  done
+
+== load_ent
+spec: VM-11.1
+globals: 100=e2 101=i107
+fields: e2.107=e1
+code:
+  LOAD_ENT 100 101 102
+  DONE
+expect:
+  1 LOAD_ENT 102=e1
+  2 DONE
+  done
+
+== load_fld
+spec: VM-11.1
+globals: 100=e1 101=i108
+fields: e1.108=i48
+code:
+  LOAD_FLD 100 101 102
+  DONE
+expect:
+  1 LOAD_FLD 102=i48
+  2 DONE
+  done
+
+== load_fnc
+spec: VM-11.1
+globals: 100=e1 101=i109
+fields: e1.109=i2
+code:
+  LOAD_FNC 100 101 102
+  DONE
+expect:
+  1 LOAD_FNC 102=i2
+  2 DONE
+  done
+
+== load_v
+spec: VM-11.2
+globals: 100=e1 101=i10
+fields: e1.10=1 e1.11=-2 e1.12=3
+code:
+  LOAD_V 100 101 102    # origin is field slots 10 to 12
+  DONE
+expect:
+  1 LOAD_V 102=1 103=-2 104=3
+  2 DONE
+  done
+
+== load_from_world
+spec: VM-11.3
+globals: 101=i105
+fields: e0.105=4
+code:
+  LOAD_F 100 101 102    # slot 100 is 0, the world
+  DONE
+expect:
+  1 LOAD_F 102=4
+  2 DONE
+  done
+
+== address
+spec: VM-12.1
+globals: 100=e1 101=i105
+code:
+  ADDRESS 100 101 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.105
+  2 DONE
+  done
+
+== address_world_active
+spec: VM-12.2
+globals: 101=i105
+code:
+  ADDRESS 100 101 102
+  DONE
+expect:
+  1 ADDRESS
+  error "assignment to world entity"
+
+== address_world_loading
+spec: VM-12.2, VM-12.6
+server: loading
+globals: 101=i105 103=7
+code:
+  ADDRESS 100 101 102
+  STOREP_F 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p0.105
+  2 STOREP_F e0.105=7
+  3 DONE
+  done
+
+== storep_f
+spec: VM-12.4
+globals: 100=e1 101=i105 103=6.5
+code:
+  ADDRESS 100 101 102
+  STOREP_F 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.105
+  2 STOREP_F e1.105=6.5
+  3 DONE
+  done
+
+== storep_s
+spec: VM-12.4
+globals: 100=e1 101=i106 103=i5
+code:
+  ADDRESS 100 101 102
+  STOREP_S 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.106
+  2 STOREP_S e1.106=i5
+  3 DONE
+  done
+
+== storep_ent
+spec: VM-12.4
+globals: 100=e2 101=i107 103=e1
+code:
+  ADDRESS 100 101 102
+  STOREP_ENT 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p2.107
+  2 STOREP_ENT e2.107=e1
+  3 DONE
+  done
+
+== storep_fld
+spec: VM-12.4
+globals: 100=e1 101=i108 103=i10
+code:
+  ADDRESS 100 101 102
+  STOREP_FLD 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.108
+  2 STOREP_FLD e1.108=i10
+  3 DONE
+  done
+
+== storep_fnc
+spec: VM-12.4
+globals: 100=e1 101=i44 103=i2
+code:
+  ADDRESS 100 101 102   # think is field slot 44
+  STOREP_FNC 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.44
+  2 STOREP_FNC e1.44=i2
+  3 DONE
+  done
+
+== storep_v
+spec: VM-12.4
+globals: 100=e1 101=i10 103=4 104=5 105=6
+code:
+  ADDRESS 100 101 102
+  STOREP_V 103 102
+  DONE
+expect:
+  1 ADDRESS 102=p1.10
+  2 STOREP_V e1.10=4 e1.11=5 e1.12=6
+  3 DONE
+  done
+
+== storep_world_pointer_while_active
+spec: VM-12.6
+globals: 102=p0.105 103=3
+code:
+  STOREP_F 103 102      # a pointer to the world made earlier still writes
+  DONE
+expect:
+  1 STOREP_F e0.105=3
+  2 DONE
+  done

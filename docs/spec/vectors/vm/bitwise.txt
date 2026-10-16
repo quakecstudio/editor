@@ -1,0 +1,107 @@
+# Bitwise operators: vm.md VM-9. Format: README.md.
+
+== bitand
+spec: VM-9.1
+globals: 100=12 101=10
+code:
+  BITAND 100 101 102
+  DONE
+expect:
+  1 BITAND 102=8
+  2 DONE
+  done
+
+== bitor
+spec: VM-9.1
+globals: 100=12 101=3
+code:
+  BITOR 100 101 102
+  DONE
+expect:
+  1 BITOR 102=15
+  2 DONE
+  done
+
+== bitand_truncates_toward_zero
+spec: VM-9.1
+globals: 100=7.9 101=-1.9 102=255
+code:
+  BITAND 100 102 110    # 7.9 becomes 7
+  BITAND 101 102 111    # -1.9 becomes -1: 0xffffffff & 255
+  DONE
+expect:
+  1 BITAND 110=7
+  2 BITAND 111=255
+  3 DONE
+  done
+
+== bitor_negative
+spec: VM-9.3
+globals: 100=-8 101=3 102=-1 103=5
+code:
+  BITOR 100 101 110     # ...11111000 | 011 is -5
+  BITAND 102 103 111
+  DONE
+expect:
+  1 BITOR 110=-5
+  2 BITAND 111=5
+  3 DONE
+  done
+
+== bitor_result_rounds_to_float
+spec: VM-9.1
+globals: 100=16777216 101=1 102=16777216 103=3
+code:
+  BITOR 100 101 110     # 16777217 is not a float: rounds to even, 16777216
+  BITOR 102 103 111     # 16777219 rounds to 16777220
+  DONE
+expect:
+  1 BITOR 110=16777216
+  2 BITOR 111=16777220
+  3 DONE
+  done
+
+== bitand_out_of_range
+spec: VM-9.2
+globals: 100=3e9 101=-1 102=nan 103=inf 104=-3e9 105=2147483648
+code:
+  BITAND 100 101 110    # 3e9 does not fit: -2147483648 & -1
+  BITAND 102 101 111    # NaN converts to -2147483648
+  BITAND 103 101 112    # inf converts to -2147483648
+  BITAND 104 101 113
+  BITAND 105 101 114    # 2^31 is one past the largest int
+  DONE
+expect:
+  1 BITAND 110=-2147483648
+  2 BITAND 111=-2147483648
+  3 BITAND 112=-2147483648
+  4 BITAND 113=-2147483648
+  5 BITAND 114=-2147483648
+  6 DONE
+  done
+
+== bitor_out_of_range
+spec: VM-9.2
+globals: 100=3e9 101=nan
+code:
+  BITOR 100 102 110     # -2147483648 | 0
+  BITOR 101 102 111
+  DONE
+expect:
+  1 BITOR 110=-2147483648
+  2 BITOR 111=-2147483648
+  3 DONE
+  done
+
+== bitand_largest_in_range
+spec: VM-9.1, VM-9.2
+globals: 100=2147483520 101=-2147483648 102=-1
+code:
+  BITAND 100 102 110    # the largest float below 2^31 converts exactly
+  BITAND 101 102 111    # -2^31 is in range
+  DONE
+expect:
+  1 BITAND 110=2147483520
+  2 BITAND 111=-2147483648
+  3 DONE
+  done
