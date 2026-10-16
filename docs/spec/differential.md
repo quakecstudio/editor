@@ -540,16 +540,17 @@ rounds to an infinite `f32`, so that every number in a trace's inputs is finite.
 stay numbers because both libraries read them the same way and the oracle has accepted them
 since P1-11. Each runner checks the syntax first, then converts with its library.
 
-[`vectors/scenario/numbers.txt`](vectors/scenario/numbers.txt) has 101 vectors, each a text
+[`vectors/scenario/numbers.txt`](vectors/scenario/numbers.txt) has 107 vectors, each a text
 in the place of a `frames`, `frametime`, `model` or `v_angle` argument with the value it is
 read as or `refused`; its [README](vectors/scenario/README.md) has the format. `cargo xtask
 oracles` runs each through the VM oracle in CI, which must refuse exactly the `refused` ones;
 `scenario_numbers` in `crates/qs-tests` checks the verdicts and the values from Rust. On
-2026-10-16 all 101 passed through the oracle on macOS arm64. The edges:
+2026-10-16 all 107 passed through the oracle on macOS arm64. The edges:
 
 | Text | Read as | Statement |
 | --- | --- | --- |
 | `frames 0100`, `frames -0` | 100, 0 | DIFF-2.7 |
+| `frames 0000000000000000001`, `frames -0000000000000000000` | 1, 0: leading zeros, however many | DIFF-2.7 |
 | `frames +1`, `frames 1.0`, `frames 1e2` | refused | DIFF-2.7 |
 | `frametime .1`, `frametime 100e-3` | the `double` nearest 0.1, `0x3fb999999999999a` | DIFF-2.8 |
 | `frametime 1.0000000000000001` | 1 (the nearest `double`), so accepted | DIFF-2.8 |
@@ -559,6 +560,19 @@ oracles` runs each through the VM oracle in CI, which must refuse exactly the `r
 | `model 340282356779733661637539395458142568447` | `0x7f7fffff`, the largest `f32` | DIFF-2.8 |
 | `model 340282356779733661637539395458142568448`, `model 1e39` | refused: the nearest `f32` is infinite | DIFF-2.8 |
 | `model 1e-46`, `model -1e-46` | `0x00000000`, `0x80000000` | DIFF-2.8 |
+
+### Scenario bytes
+
+DIFF-2.1 makes a scenario lines of bytes, so a NUL byte is a byte of its line: it ends neither
+the line nor the file, and what follows it is read. What a NUL byte in a word means follows
+from the statements that word falls under. A key holding one is unknown, and an integer,
+number or map name holding one is not one (DIFF-2.2, DIFF-2.7, DIFF-2.8), so each is refused
+(DIFF-2.9); a path holding one names no file, so the runner cannot read it. A `model` or
+`cvar` name holding one is a name, but one no QuakeC string gives, since QuakeC's strings end
+at their first NUL: the bounds or setting it names are never used, and two such names differ
+when their bytes do. A `cvar` text holding one has the value `Q_atof` reads from it, which
+stops at the NUL (DIFF-2.4). `cargo xtask oracles` runs these cases through the VM oracle
+(`xtask/src/oracles/probes.rs`).
 
 ### Frames and thinking
 
