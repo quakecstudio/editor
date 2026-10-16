@@ -3,7 +3,7 @@
 The single integration test binary for tests that exercise more than one crate
 (`docs/conventions.md`, Tests). A test of one crate lives in that crate.
 
-- **Layer:** none; it is a test harness and may depend on any crate.
+- **Layer:** `tests` in `layers.toml` ([`docs/layers.md`](../../docs/layers.md)); it is a test harness and may depend on any crate.
 - **Spec sections:** whichever the tests in each module cite.
 - **Shipped:** no.
 

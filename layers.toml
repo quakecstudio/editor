@@ -1,0 +1,10 @@
+# Every workspace crate and its layer. `cargo xtask layers` fails when a crate
+# is missing here or depends on a crate in a higher layer; docs/layers.md
+# explains the model. Layers rank L0 to L7, then apps; tests and tooling crates
+# may depend on anything, and nothing may depend on them.
+
+[crates]
+qs-paths = "L0"
+qs-porting-example = "L1"
+qs-tests = "tests"
+xtask = "tooling"

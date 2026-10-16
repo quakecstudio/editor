@@ -19,15 +19,15 @@ You need [rustup](https://rustup.rs/); `rust-toolchain.toml` pins the exact tool
 [cargo-deny](https://github.com/EmbarkStudios/cargo-deny).
 
 ```bash
-cargo build --locked
-cargo test --locked
-cargo fmt --all --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo deny check advisories bans licenses sources
-cargo xtask conventions        # the config matches docs/conventions.md
-cargo xtask clippy-fixtures    # the lints reject what they target
-cargo xtask deny-fixtures      # deny.toml rejects bad licenses and wildcards
+make ci                        # everything CI runs: cargo xtask ci
+make help                      # every target: fmt, lint, test, audit, test-coverage, ...
 ```
+
+`cargo xtask ci` runs, in order: `cargo fmt --all --check`, `cargo xtask conventions` (the
+config matches `docs/conventions.md`), `adr`, `layers` (crates depend only on their own layer or
+lower, `docs/layers.md`), `licenses` (SPDX and ported-file headers), `attribution` (every asset
+is in `ATTRIBUTION.md`), clippy with `-D warnings`, the tests, `clippy-fixtures`,
+`cargo deny check` and `deny-fixtures`. The last two need network access.
 
 Shipped crates never panic: `unwrap`, `expect`, indexing, unchecked arithmetic and `as` casts
 are denied by lint. An exception is `#[expect(lint, reason = "...")]` at the narrowest scope,

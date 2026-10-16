@@ -360,8 +360,13 @@ Every source file starts with an SPDX line, as in vouch, but with this project's
 (**differs from vouch**, which is Apache-2.0 OR MIT; ADR-0002):
 `// SPDX-License-Identifier: GPL-3.0-or-later`. A file ported from id's code keeps id's
 copyright line, `// Copyright (C) 1996-1997 Id Software, Inc.`, above ours, and cites the file
-and function it came from.
-`make audit` fails a file without one.
+and function it came from ([`porting.md`](porting.md#file-headers)).
+`cargo xtask licenses` (run by `make audit` and `make ci`) fails a file without one. It
+classifies every file: source files (Rust, Python, shell, C and the `Makefile`) need the SPDX
+line first, after a `#!` line if there is one; docs and config files are covered by `LICENSE`;
+assets (images, fonts, sounds, Quake formats) are listed in `ATTRIBUTION.md` and checked by
+`cargo xtask attribution`. A file of a type with no rule fails until it is classified in
+`xtask/src/licenses.rs`.
 
 ## Repository files (CONV-15)
 
