@@ -744,7 +744,7 @@ fn extents() {
     );
 }
 
-// spec BSP-9.15: GLQuake's loader accepts extents up to 512 where WinQuake's stops at 256:
+// spec BSP-9.17: GLQuake's loader accepts extents up to 512 where WinQuake's stops at 256:
 // `extents-272` and `extents-512` load in GLQuake and fail in WinQuake, and `extents-528`
 // fails in both unless special.
 #[test]
@@ -1294,7 +1294,7 @@ fn limits() {
     assert_eq!(read(&spec).unwrap().vertexes.len(), 70_004);
 }
 
-// spec BSP-17.1, BSP-17.2, BSP-17.3, BSP-17.4, BSP-17.5: both BSP2 variants of the base load
+// spec BSP-17.1, BSP-17.2, BSP-17.3, BSP-17.4, BSP-17.6: both BSP2 variants of the base load
 // to the same values, with 32-bit fields and, for BSP2, float bounds.
 #[test]
 fn bsp2() {
