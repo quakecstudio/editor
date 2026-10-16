@@ -647,3 +647,31 @@ through id's `PR_LoadProgs`:
 | `crc` = 5928 | `progs.dat system vars have been modified, progdefs.h is out of date` | PROGS-3.2 |
 | `version` = 7 and `crc` = 0 | `progs.dat has wrong version number (7 should be 6)` | PROGS-3.3 |
 | In [`small`](vectors/progs/README.md#small), field definition 1 `type` = 0x8002 | `PR_LoadProgs: pr_fielddefs[i].type & DEF_SAVEGLOBAL` | PROGS-3.4 |
+
+Slot values (PROGS-17), as id's `eval_t` reads them:
+
+| Slot bits | `_int` | `_float` | Statements |
+| --- | --- | --- | --- |
+| `3f800000` | 1065353216 | 1.0 | PROGS-17.1, PROGS-17.3 |
+| `80000000` | -2147483648 | -0.0 | PROGS-17.1 |
+| `7fc00000` | 2143289344 | NaN, bits kept | PROGS-17.1 |
+| `ffffffff` | -1 | NaN, bits kept | PROGS-17.1 |
+
+Entity values (PROGS-17.4) through `EDICT_TO_PROG`: entity 3 with a 400-byte edict is 1200;
+entity 599 with a 1096-byte edict is 656504; entity 0 is 0 for every edict size.
+
+Types and reserved slots (PROGS-16, PROGS-18), and the conversions above, were checked against
+`qc-types` on 2026-10-16. A local harness included `WinQuake/pr_comp.h` unchanged and the
+`type_size` table of `WinQuake/pr_edict.c`, the `eval_t` union and `EDICT_TO_PROG` and
+`PROG_TO_EDICT` of `WinQuake/progs.h`, and the `type_size` table of `qcc/pr_lex.c`, each copied
+verbatim from the pinned commits, and was built with Apple clang 21 for 64-bit macOS. It printed
+every type number and its slot counts in both tables, `OFS_NULL`, `OFS_RETURN`, `OFS_PARM0` to
+`OFS_PARM7`, `RESERVED_OFS` and `MAX_PARMS`, the `_int`, `_float`, `string`, `function` and
+`edict` views and a three-component vector of ten slot bit patterns (0, 1, `3f800000`,
+`80000000`, `7fc00000`, `ffffffff`, `7f800000`, `deadbeef`, `7fffffff`, and 1 again), and the
+`EDICT_TO_PROG` offset and the entity number recovered from it for entities 0, 1, 3 and 599 at
+edict sizes 4, 400 and 1096. A Rust program printed the same 49 lines from `qc-types`, and the two
+outputs were identical. The one expected difference is PROGS-16.2: the 64-bit build's
+`type_size[ev_pointer]` is 2, so the harness reported 1 for it, the value of the shipped 32-bit
+engine and of qcc's table. Changing the vector's slot count to 2 in `qc-types` made the Rust
+side fail on the first vector, and cargo-mutants caught all 44 viable mutants of the crate.

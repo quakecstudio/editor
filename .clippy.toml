@@ -13,6 +13,7 @@ absolute-paths-allowed-crates = [
     "alloc",
     "proc_macro",
     "criterion",
+    "proptest",
     "serde",
     "serde_json",
     "toml",
