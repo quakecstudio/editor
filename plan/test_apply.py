@@ -167,6 +167,14 @@ class Apply(unittest.TestCase):
             got = {n: names.get(v, v) for n, v in item["values"].items()}
             self.assertEqual(got, want)
 
+    def test_bug_body_carries_the_bug_template_sections(self):
+        run(self.fake)
+        bodies = {apply.MARKER.search(i["body"]).group(1): i["body"] for i in self.fake.issues.values()}
+        bug = bodies["P1-52"]
+        self.assertLess(bug.index("## What happens"), bug.index("## Environment"))
+        self.assertLess(bug.index("## Environment"), bug.index("## Deliverable"))
+        self.assertNotIn("## What happens", bodies["P1-50"])
+
     def test_views_are_created_with_their_filters_and_fields(self):
         run(self.fake)
         ids = {f["id"]: n for n, f in self.fake.fields.items()}

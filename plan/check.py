@@ -7,6 +7,7 @@ Fails (exit 1) if:
   - an issue cites an unknown requirement, label, milestone or dependency
   - an issue lacks a title, deliverable, acceptance criteria or verification
   - an issue has no type:* label, or more than one
+  - a type:bug issue lacks the summary or environment that .github/ISSUE_TEMPLATE/bug.yml asks for
   - an issue depends on an issue in a later phase, or dependencies form a cycle
   - a gate issue does not depend on every other issue in its phase
   - a type:decision issue does not name its docs/adr/NNNN-slug.md file in its deliverable
@@ -170,6 +171,11 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
         for field in ("title", "deliverable", "acceptance", "verify", "reqs"):
             if not i.get(field):
                 errors.append(f"{k}: missing {field}")
+        if "type:bug" in i.get("labels", []):
+            # The fields of .github/ISSUE_TEMPLATE/bug.yml beyond the ones every issue has.
+            for field in ("summary", "environment"):
+                if not i.get(field):
+                    errors.append(f"{k}: a bug needs {field} (bug.yml)")
         if i["milestone"] not in milestones:
             errors.append(f"{k}: unknown milestone {i['milestone']}")
         if i.get("size") not in sizes:

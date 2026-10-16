@@ -956,6 +956,76 @@ issues:
   - A test shows apply.py leaves a Status value set on the board unchanged, and a real sync after the merge leaves Status values alone
   verify:
   - shellcheck and shfmt output, the start.sh run and the apply.py sync recorded in the PR
+- key: P1-52
+  title: The walk example fails a map whose .lit QuakeSpasm ignores
+  labels:
+  - L0-formats
+  - area:map
+  - type:bug
+  size: S
+  reqs:
+  - MAP-6
+  - FND-11
+  summary: |
+    Running `cargo run --release -p qs-vfs --example walk` on the 2021 rerelease with `-game hipnotic`, `rogue`, `dopa` or `mg1` (P1-30, #277) prints `failed: maps/start.bsp: maps/start.lit: Outdated .lit file (maps/start.lit should be N bytes, not M)`, so each of those runs fails. QuakeSpasm (sezero/quakespasm@c9c8ee98, `Quake/gl_model.c`, `Mod_LoadLighting`) only prints that message with `Con_Printf` and lights the map from the BSP's own lighting lump (BSP-18.2, BSP-18.5), so the map loads. The walk also pairs a BSP that a lookup never reaches (shadowed by the mod's copy) with the mod's `.lit`, and never applies BSP-18.4, so a mod's map is checked against the base game's `.lit`, which QuakeSpasm ignores.
+  environment: |
+    macOS, main at 1f4c187, Justin's GOG Quake Enhanced (2021 rerelease) folder; results in https://github.com/quakecstudio/editor/issues/277#issuecomment-6221264809
+  deliverable:
+  - 'crates/qs-bsp/src/lit.rs: `mod_load_lighting`, the choice QuakeSpasm''s `Mod_LoadLighting` makes for a map: the `.lit` it uses, or why it ignores one (lower priority, corrupt, unknown version, outdated) with its message, falling back to the BSP''s own light, never an error; `BspLoader::WinQuake` and `BspLoader::GlQuake` never read a `.lit` (BSP-18.6)'
+  - 'docs/spec/bsp.md: statements quoting `Mod_LoadLighting` for the order of its checks and for the map loading whatever the `.lit` holds; docs/spec/vectors/bsp/README.md: `.lit` vectors, checked against `Mod_LoadLighting` copied unchanged from the pinned commit'
+  - 'crates/qs-vfs/examples/walk.rs: a BSP a lookup reaches is paired with the `.lit` it finds, with BSP-18.4 applied by game directory; an ignored `.lit` is a `warning:` line, not `failed:`'
+  acceptance:
+  - A test citing the new statements shows an outdated, corrupt, unknown-version and lower-priority `.lit` each leave the map loading with grey light and QuakeSpasm's message, and fails before the fix
+  - WinQuake and GLQuake loaders never use a `.lit` (BSP-18.6), shown by a test
+  - The `.lit` vectors give the same result from `mod_load_lighting` and from QuakeSpasm's `Mod_LoadLighting`, recorded in the PR
+  - The walk example run on the rerelease with -game hipnotic, rogue, dopa and mg1 prints no `failed:` line for `maps/start.lit`
+  verify:
+  - cargo test -p qs-bsp; the walk runs posted on P1-30
+- key: P1-53
+  title: The walk example counts the rerelease's haptics clips as failed sounds
+  labels:
+  - L0-formats
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - ENG-16
+  - FND-11
+  summary: |
+    Every rerelease run of the walk example (P1-30, #277) prints about 48 lines like `failed: tactile/dualsense/player/axhit1_vb.wav: is a stereo sample`, 246 over the five runs. These are the rerelease's DualSense haptics clips, not sounds: id's `S_LoadSound` (WinQuake/snd_mem.c) loads a sound only from `sound/<name>` (`Q_strcpy(namebuffer, "sound/"); Q_strcat(namebuffer, s->name);`), and QuakeSpasm does the same. qs-wav rejects stereo as id's code does (WAV-3.1), so the reader is right and the walk is wrong to load every `.wav` as a sound.
+  environment: |
+    macOS, main at 1f4c187, Justin's GOG Quake Enhanced (2021 rerelease) folder; results in https://github.com/quakecstudio/editor/issues/277#issuecomment-6221264809
+  deliverable:
+  - 'docs/spec/wav.md: a WAV-3 statement quoting `S_LoadSound`''s `sound/` prefix; crates/qs-wav: the path `S_LoadSound` loads a sound from, and the sound name of a path under `sound/`'
+  - 'crates/qs-vfs/examples/walk.rs: decodes a `.wav` as a sound only under `sound/`, and reports the other `.wav` files on their own line, not as `failed:`'
+  acceptance:
+  - A test citing the new WAV-3 statement shows which paths `S_LoadSound` reaches
+  - The walk example on the rerelease prints no `failed:` line for `tactile/`, and its count of `.wav` files outside `sound/`
+  verify:
+  - cargo test -p qs-wav; the walk runs posted on P1-30
+- key: P1-54
+  title: Install detection misses the original game GOG ships with Quake Enhanced
+  labels:
+  - L0-formats
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - PLAT-2
+  - PLAT-8
+  - LIC-4
+  summary: |
+    `cargo run --release -p qs-install --example find -- ~/Games/quake-enhanced-gog` (P1-30, #277) reports `original: none` and `missing id1/pak0.pak: RereleaseOnly`, but GOG's Quake Enhanced also ships the original DOS game in its `dos` folder: `dos/id1/PAK0.PAK`, `dos/id1/PAK1.PAK`, `dos/hipnotic/pak0.pak` and `dos/rogue/pak0.pak`, beside the rerelease's `goggame-1739637082.info`, `QuakeEX.kpf`, `id1`, `hipnotic`, `rogue`, `dopa`, `mg1`, `mg3` and `ctf`. FS-6.1 knows only Steam's layout, the original game with the rerelease in `rerelease`.
+  environment: |
+    macOS, main at 1f4c187, Justin's GOG Quake Enhanced folder; results in https://github.com/quakecstudio/editor/issues/277#issuecomment-6221264809
+  deliverable:
+  - 'docs/spec/filesystem.md: an FS-6 statement for a rerelease base whose `dos` folder is the original game; docs/game-data.md: the GOG Quake Enhanced layout'
+  - 'crates/qs-install/src/lib.rs: the finder reports that `dos` folder as the install''s original base, with fixture tests (no game data committed, LIC-4)'
+  acceptance:
+  - A fixture test of GOG's Quake Enhanced layout, citing the new statement, reports both bases, the registered and rerelease editions and no missing files, and fails before the fix
+  - The find example on Justin's Quake Enhanced folder reports `original:` with `dos/id1`
+  verify:
+  - cargo test -p qs-install; the find run posted on P1-30
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -1019,6 +1089,9 @@ issues:
   - P1-49
   - P1-50
   - P1-51
+  - P1-52
+  - P1-53
+  - P1-54
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1106,14 +1179,17 @@ issues:
   - P1-19
   - P1-29
   - P5-02
+  - P1-52
+  - P1-53
+  - P1-54
   deliverable:
   - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. The example also decodes every sprite, sound and MD5 model (P1-29), and every alias model and BSP with its .lit and entity text (P5-02), it reads. No game data is committed (LIC-4)'
   - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
   acceptance:
-  - Every run ends with `read N files, ...` and prints no `failed:` lines
+  - Every run ends with `read N files, ...` and prints no `failed:` lines; a `.wav` outside `sound/`, which the engine never loads as a sound (WAV-3), is counted on its own line, and a `.lit` QuakeSpasm ignores is a `warning:` line (BSP-18)
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
   - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
-  - Every run's `decoded` line counts every `.spr`, `.wav`, `.mdl` and `.bsp` it read, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3, MDL-1 to MDL-5, BSP-1 to BSP-18, MAP-1, MAP-2)
+  - Every run's `decoded` line counts every `.spr`, `.mdl` and `.bsp` it read and every `.wav` under `sound/`, and the rerelease's runs count every `.md5mesh` with its `.md5anim` (SPR-1, SPR-2, WAV-1 to WAV-3, MD5-1 to MD5-3, MDL-1 to MDL-5, BSP-1 to BSP-18, MAP-1, MAP-2)
   - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
   - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-bsp, qs-map, qs-wav or qs-install and fixed before this issue closes
   verify:

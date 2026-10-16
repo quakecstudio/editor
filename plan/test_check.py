@@ -66,6 +66,10 @@ class CheckRules(unittest.TestCase):
     def test_gate_incomplete(self):
         self.assert_flags(lambda r, k, i: k["P1-25"]["depends"].remove("P1-15"), "gate does not depend")
 
+    def test_bug_without_template_fields(self):
+        self.assert_flags(lambda r, k, i: k["P1-52"].pop("summary"), "P1-52: a bug needs summary")
+        self.assert_flags(lambda r, k, i: k["P1-52"].pop("environment"), "P1-52: a bug needs environment")
+
     def test_decision_without_needs_human(self):
         self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "decisions need a person")
 
