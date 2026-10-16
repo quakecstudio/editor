@@ -30,8 +30,9 @@ editor/
 └── .claude/       rules/, skills/, agents/, hooks/
 ```
 
-**Layers.** Each crate may depend only on layers below it; `cargo xtask layers` enforces it
-once [#2](https://github.com/quakecstudio/editor/issues/2) lands.
+**Layers.** A crate may depend only on crates in its own layer or a lower one;
+`layers.toml` maps every crate and `cargo xtask layers` enforces it.
+[`docs/layers.md`](docs/layers.md) explains the model and
 [`.claude/rules/layering.md`](.claude/rules/layering.md) has the table.
 
 | Layer | Holds |
@@ -89,6 +90,8 @@ explains them and how to run a whole phase under `/goal`.
 ```bash
 make ci                                   # exactly what CI runs (cargo xtask ci); must pass before any merge
 
+make help                                 # every Makefile target: fmt, lint, test, test-coverage, test-mutants, audit, ...
+
 cargo build --locked
 cargo test --locked                       # every unit test, plus the qs-tests binary
 cargo test -p qs-tests                    # cross-crate tests, including the spec-citation ratchet
@@ -100,16 +103,17 @@ cargo xtask conventions                   # config files match docs/conventions.
 cargo xtask adr                           # ADRs follow the template and are indexed
 cargo xtask clippy-fixtures               # the lints reject what they target
 cargo xtask deny-fixtures                 # deny.toml rejects bad licenses and wildcards (needs network)
+cargo xtask layers                        # no crate depends on a higher layer (layers.toml)
+cargo xtask licenses                      # SPDX lines and ported-file headers; skips cached specs
+cargo xtask attribution                   # every asset is listed in ATTRIBUTION.md
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
 prek run                                  # the pre-commit hooks
 ```
 
-`make ci` and the Makefile targets (`fmt`, `lint`, `check`, `test`, `test-integration`,
-`test-fuzz`, `test-coverage`, `test-mutants`, `audit`, `bench`, `docs-build`, `help`) arrive
-with [#2](https://github.com/quakecstudio/editor/issues/2), along with `cargo xtask layers`,
-`licenses` and `attribution`. Until then, run the commands above.
+`make ci` runs every `cargo` and `cargo xtask` step above except `refresh-specs.sh`; the
+individual commands are for narrowing down a failure.
 
 The plan:
 
