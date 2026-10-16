@@ -16,3 +16,6 @@
 *.wav binary
 
 Cargo.lock linguist-generated=true
+
+# Cached specifications stay byte-identical to their origin (specs/README.md).
+/specs/*/** -text

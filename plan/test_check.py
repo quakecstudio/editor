@@ -2,11 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Negative tests for plan/check.py: each rule must catch a deliberate fault."""
 
+from __future__ import annotations
+
 import copy
+import hashlib
 import re
 import tempfile
 import unittest
 from pathlib import Path
+
+import yaml
 
 import check
 
@@ -36,6 +41,15 @@ class CheckRules(unittest.TestCase):
 
     def test_missing_acceptance(self):
         self.assert_flags(lambda r, k, i: k["P0-01"].update(acceptance=[]), "P0-01: missing acceptance")
+
+    def test_missing_deliverable(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"].update(deliverable=[]), "P0-01: missing deliverable")
+
+    def test_missing_verification(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"].pop("verify"), "P0-01: missing verify")
+
+    def test_unknown_requirement(self):
+        self.assert_flags(lambda r, k, i: k["P0-01"]["reqs"].append("NOPE-1"), "P0-01: unknown requirement NOPE-1")
 
     def test_later_phase_dependency(self):
         self.assert_flags(lambda r, k, i: k["P1-10"]["depends"].append("P2-06"), "from a later phase")
@@ -196,6 +210,152 @@ class RiskRule(unittest.TestCase):
         errors = self.risk_errors(design=design)
         self.assertEqual(len(errors), 1)
         self.assertIn("no risk table", errors[0])
+
+
+class DesignHashRule(unittest.TestCase):
+    """A design-doc change fails the check until requirements.yaml records the new hash (P0-05, PM-6)."""
+
+    def hash_errors(self, design: bytes, recorded: str | None):
+        with tempfile.TemporaryDirectory() as d:
+            dp, rp = Path(d) / "design-doc.md", Path(d) / "requirements.yaml"
+            dp.write_bytes(design)
+            header = "" if recorded is None else f"{check.DESIGN_HASH_KEY}: {recorded}\n"
+            rp.write_text(header + "sections: []\n")
+            return check.check_design_hash(rp, dp)
+
+    def test_recorded_hash_matches(self):
+        self.assertEqual(check.check_design_hash(), [])
+
+    def test_matching_fixture_passes(self):
+        self.assertEqual(self.hash_errors(b"# Design\n", hashlib.sha256(b"# Design\n").hexdigest()), [])
+
+    def test_changed_design_doc_flagged(self):
+        recorded = hashlib.sha256(b"# Design\n").hexdigest()
+        new = hashlib.sha256(b"# Design v2\n").hexdigest()
+        errors = self.hash_errors(b"# Design v2\n", recorded)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("changed since requirements.yaml was last reviewed", errors[0])
+        self.assertTrue(errors[0].endswith(f"design_doc_sha256: {new}"), errors[0])
+
+    def test_missing_hash_flagged(self):
+        errors = self.hash_errors(b"# Design\n", None)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("records no design_doc_sha256", errors[0])
+
+    def test_crlf_checkout_hashes_like_lf(self):
+        self.assertEqual(self.hash_errors(b"# Design\r\nText\r\n", hashlib.sha256(b"# Design\nText\n").hexdigest()), [])
+
+    def test_missing_design_doc(self):
+        with tempfile.TemporaryDirectory() as d:
+            errors = check.check_design_hash(check.REQUIREMENTS, Path(d) / "design-doc.md")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("missing", errors[0])
+
+
+class CoverageRule(unittest.TestCase):
+    """plan/coverage.md is regenerated with the plan, never left stale (P0-05)."""
+
+    @classmethod
+    def setUpClass(cls):
+        reqs = check.load_requirements()
+        meta, issues = check.load_backlog()
+        cls.expected = check.coverage_md(reqs, meta, issues)
+
+    def test_committed_coverage_is_current(self):
+        self.assertEqual(check.check_coverage(self.expected), [])
+
+    def test_every_requirement_is_listed(self):
+        for r in check.load_requirements():
+            self.assertIn(f"| {r} |", self.expected)
+
+    def coverage_errors(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "coverage.md"
+            if text is not None:
+                path.write_text(text)
+            return check.check_coverage(self.expected, path)
+
+    def test_stale_coverage_flagged(self):
+        stale = self.expected.replace("| GOAL-1 |", "| GOAL-1x |")
+        self.assertEqual(self.coverage_errors(stale),
+                         ["coverage.md: out of date; run python3 plan/check.py --write-coverage"])
+
+    def test_missing_coverage_flagged(self):
+        self.assertEqual(len(self.coverage_errors(None)), 1)
+
+
+class TemplateRule(unittest.TestCase):
+    """Issue templates ask for deliverable, acceptance, verification and requirement IDs; the
+    PR template carries the definition of done (P0-04, PM-5)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.meta, _ = check.load_backlog()
+
+    def template_errors(self, edit_name=None, edit=None, pr_edit=None):
+        with tempfile.TemporaryDirectory() as d:
+            templates = Path(d) / "ISSUE_TEMPLATE"
+            templates.mkdir()
+            for name in check.TEMPLATE_NAMES:
+                text = (check.ISSUE_TEMPLATES / f"{name}.yml").read_text()
+                if name == edit_name:
+                    if edit is None:
+                        continue
+                    text = edit(text)
+                (templates / f"{name}.yml").write_text(text)
+            pr = Path(d) / "pull_request_template.md"
+            text = check.PR_TEMPLATE.read_text()
+            pr.write_text(pr_edit(text) if pr_edit else text)
+            return check.check_templates(self.meta, templates, pr)
+
+    def test_templates_pass(self):
+        self.assertEqual(check.check_templates(self.meta), [])
+        self.assertEqual(self.template_errors(), [])
+
+    def test_every_template_shows_the_required_sections(self):
+        for name in check.TEMPLATE_NAMES:
+            form = yaml.safe_load((check.ISSUE_TEMPLATES / f"{name}.yml").read_text())
+            labels = {f["id"]: f["attributes"]["label"] for f in form["body"] if "id" in f}
+            with self.subTest(template=name):
+                self.assertEqual(labels["deliverable"], "Deliverable")
+                self.assertEqual(labels["acceptance"], "Acceptance criteria")
+                self.assertEqual(labels["verification"], "Verification")
+                self.assertEqual(labels["requirements"], "Requirement IDs")
+
+    def test_missing_template(self):
+        self.assertEqual(self.template_errors("spike"), ["spike.yml: issue template missing"])
+
+    def test_missing_field(self):
+        errors = self.template_errors("bug", lambda t: t.replace("id: verification", "id: checks"))
+        self.assertEqual(errors, ["bug.yml: no verification field"])
+
+    def test_optional_field(self):
+        def make_deliverable_optional(text):
+            head, tail = text.split("id: deliverable", 1)
+            return head + "id: deliverable" + tail.replace("required: true", "required: false", 1)
+
+        errors = self.template_errors("feature", make_deliverable_optional)
+        self.assertEqual(errors, ["feature.yml: the deliverable field is not required"])
+
+    def test_type_label(self):
+        errors = self.template_errors("spec", lambda t: t.replace('["type:spec"]', '["type:nope"]'))
+        self.assertEqual(errors, ["spec.yml: needs exactly one known type:* label, has ['type:nope']"])
+        errors = self.template_errors("spec", lambda t: t.replace('["type:spec"]', "[]"))
+        self.assertEqual(errors, ["spec.yml: needs exactly one known type:* label, has []"])
+
+    def test_definition_of_done_drift(self):
+        item = self.meta["definition_of_done"][0]
+        errors = self.template_errors(pr_edit=lambda t: t.replace(f"- [ ] {item}\n", ""))
+        self.assertEqual(errors, [f"pull_request_template.md: definition-of-done item missing: {item}"])
+
+    def test_pr_template_must_ask_about_the_design_doc(self):
+        errors = self.template_errors(pr_edit=lambda t: t.replace("design_doc_sha256", "the hash"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("does not ask whether requirements.yaml was reviewed", errors[0])
+
+    def test_missing_pr_template(self):
+        errors = check.check_templates(self.meta, check.ISSUE_TEMPLATES, Path("/nonexistent/pr.md"))
+        self.assertEqual(errors, ["pr.md: pull request template missing"])
 
 
 if __name__ == "__main__":

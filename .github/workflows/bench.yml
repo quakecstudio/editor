@@ -1,0 +1,71 @@
+# Runs the performance-budget benchmarks (docs/perf-budgets.md, TEST-8) weekly
+# and on demand, and uploads the JSON history. The history is carried between
+# runs in the Actions cache, saved only from main, so each run is compared with
+# the last passing run on main.
+#
+# It does not run on pull requests or in the merge queue, and is not a required
+# check (docs/ci.md): CI stays lean until there is product code to measure, and
+# shared runners are too noisy to block merges on a 10% threshold. Pull requests
+# still compile the benchmarks in the Clippy job (--all-targets). A regression
+# or an over-budget result fails the run with an error annotation.
+name: Benchmarks
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+
+jobs:
+  bench:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: bench-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Restore the benchmark history
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bench-history
+          key: bench-history-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: bench-history-${{ runner.os }}-
+      # The runner's CPU model varies between runs, so the host key names the
+      # runner class instead: runs compare only with runs from the same key.
+      - name: Run the benchmarks
+        run: |
+          export QS_BENCH_HOST="ci-$RUNNER_OS-$RUNNER_ARCH"
+          cargo xtask bench --history "$RUNNER_TEMP/bench-history/history.json"
+      - name: Print the history
+        if: ${{ !cancelled() }}
+        run: cargo xtask bench history --history "$RUNNER_TEMP/bench-history/history.json"
+      - name: Upload the history
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-history
+          path: ${{ runner.temp }}/bench-history/history.json
+          if-no-files-found: error
+      - name: Save the benchmark history
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/bench-history
+          key: bench-history-${{ runner.os }}-${{ github.run_id }}

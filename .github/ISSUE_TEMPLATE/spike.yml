@@ -1,0 +1,58 @@
+name: Spike
+description: A time-boxed investigation that ends in a written result.
+title: "Spike: ..."
+labels: ["type:spike"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A spike answers a question within a fixed time and records what it found, including a negative result.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What the spike must answer, and what each possible answer changes in the plan.
+    validations:
+      required: true
+  - type: input
+    id: timebox
+    attributes:
+      label: Time box
+      placeholder: "3 days"
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      description: The IDs from plan/requirements.yaml this informs, comma-separated.
+    validations:
+      required: true
+  - type: textarea
+    id: deliverable
+    attributes:
+      label: Deliverable
+      description: The written result and any prototype, with paths.
+      placeholder: |
+        - docs/spikes/<slug>.md: the question, what was tried, measurements, the answer
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Each one checkable by a recorded result.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: How the result is checked, such as a second session reproducing the measurements.
+    validations:
+      required: true
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on
+      description: Issues that must close first, as #numbers.
