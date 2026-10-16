@@ -36,12 +36,37 @@ pub(crate) const MSVC_FLAGS: [&str; 6] = [
 /// compiled with `QS_COVERAGE` defined, so that a crash writes the profile before it exits.
 pub(crate) const COVERAGE_FLAGS: [&str; 2] = ["-fprofile-instr-generate", "-fcoverage-mapping"];
 
+/// The flags of a libFuzzer build (`oracles/vm/fuzz.c`): every file with the address and
+/// undefined-behaviour sanitizers and libFuzzer's coverage, a failed undefined-behaviour check
+/// a crash; the link brings libFuzzer. The alignment check is left out: id's edict layout puts
+/// edict `n` at `n` times the edict size (EDICT-1.5), which on a 64-bit host is not a multiple
+/// of the 8 bytes `edict_t` asks for, and x86-64 and arm64 read such addresses, as id's own
+/// 64-bit builds do.
+pub(crate) const FUZZ_FLAGS: [&str; 4] = [
+    "-fsanitize=fuzzer-no-link,address,undefined",
+    "-fno-sanitize=alignment",
+    "-fno-sanitize-recover=undefined",
+    "-g",
+];
+pub(crate) const FUZZ_LINK_FLAGS: [&str; 1] = ["-fsanitize=fuzzer,address,undefined"];
+
+/// What a build adds to the reference build.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Instrument {
+    /// Nothing: the oracles as CI runs them.
+    None,
+    /// Source-based coverage of our files ([`COVERAGE_FLAGS`]).
+    Coverage,
+    /// A fuzz target ([`FUZZ_FLAGS`]).
+    Fuzz,
+}
+
 /// The compiler, and the environment it needs (MSVC's `INCLUDE`, `LIB` and `PATH`).
 pub(crate) struct Compiler {
     path: PathBuf,
     env: Vec<(OsString, OsString)>,
     msvc: bool,
-    coverage: bool,
+    instrument: Instrument,
 }
 
 /// Whose code a file is: upstream code (id's, FTEQCC's) is compiled without warnings, ours with
@@ -76,9 +101,9 @@ fn host_triple() -> Result<&'static str, String> {
 }
 
 impl Compiler {
-    /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents). With
-    /// `coverage`, our files and the link take [`COVERAGE_FLAGS`], which need clang.
-    pub(crate) fn find(scratch: &Path, coverage: bool) -> Result<Self, String> {
+    /// Finds the system C compiler (`CC` overrides it, as the `cc` crate documents). Coverage
+    /// and fuzzing need clang (for fuzzing, one with libFuzzer).
+    pub(crate) fn find(scratch: &Path, instrument: Instrument) -> Result<Self, String> {
         let triple = host_triple()?;
         let tool = Build::new()
             .target(triple)
@@ -91,9 +116,9 @@ impl Compiler {
             .emit_rerun_if_env_changed(false)
             .try_get_compiler()
             .map_err(|e| format!("no C compiler found: {e}"))?;
-        if coverage && !tool.is_like_clang() {
+        if instrument != Instrument::None && !tool.is_like_clang() {
             return Err(format!(
-                "C coverage needs clang, and the C compiler is {} (set CC=clang)",
+                "C coverage and fuzzing need clang, and the C compiler is {} (set CC=clang)",
                 tool.path().display()
             ));
         }
@@ -104,7 +129,7 @@ impl Compiler {
                 .map(|(k, v)| (k.to_owned(), v.to_owned()))
                 .collect(),
             msvc: tool.is_like_msvc(),
-            coverage,
+            instrument,
         })
     }
 
@@ -115,9 +140,16 @@ impl Compiler {
         } else {
             GNU_FLAGS.join(" ")
         };
-        if self.coverage {
-            flags.push_str(" coverage ");
-            flags.push_str(&COVERAGE_FLAGS.join(" "));
+        match self.instrument {
+            Instrument::None => {}
+            Instrument::Coverage => {
+                flags.push_str(" coverage ");
+                flags.push_str(&COVERAGE_FLAGS.join(" "));
+            }
+            Instrument::Fuzz => {
+                flags.push_str(" fuzz ");
+                flags.push_str(&FUZZ_FLAGS.join(" "));
+            }
         }
         format!("{} {flags}", self.path.display())
     }
@@ -165,11 +197,14 @@ impl Compiler {
             command.args(GNU_FLAGS);
             if unit.code == Code::Ours {
                 command.args(["-Wall", "-Wextra", "-Werror"]);
-                if self.coverage {
+                if self.instrument == Instrument::Coverage {
                     command.args(COVERAGE_FLAGS).arg("-DQS_COVERAGE");
                 }
             } else {
                 command.arg("-w");
+            }
+            if self.instrument == Instrument::Fuzz {
+                command.args(FUZZ_FLAGS).arg("-DQS_FUZZ");
             }
             for dir in unit.includes {
                 command.arg("-I").arg(dir);
@@ -194,8 +229,14 @@ impl Compiler {
             command.arg(format!("/Fe{}", out.display()));
         } else {
             command.args(objects);
-            if self.coverage {
-                command.args(COVERAGE_FLAGS);
+            match self.instrument {
+                Instrument::None => {}
+                Instrument::Coverage => {
+                    command.args(COVERAGE_FLAGS);
+                }
+                Instrument::Fuzz => {
+                    command.args(FUZZ_LINK_FLAGS);
+                }
             }
             command.arg("-o").arg(out).arg("-lm");
         }

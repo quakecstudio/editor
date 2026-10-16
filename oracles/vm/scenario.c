@@ -175,39 +175,18 @@ static qboolean valid_map_name(const char *name) {
     return true;
 }
 
-static int parse_scenario(const char *path) {
-    long size;
-    char *text = qs_read_file(path, &size);
-    if (!text)
-        return refuse(path, 0, "cannot read the scenario");
-    char *dir = malloc(strlen(path) + 2);
-    if (!dir)
-        return refuse(path, 0, "out of memory");
-    strcpy(dir, path);
-    char *slash = strrchr(dir, '/');
-    char *backslash = strrchr(dir, '\\');
-    if (backslash && (!slash || backslash > slash))
-        slash = backslash;
-    if (slash)
-        *slash = 0;
-    else
-        strcpy(dir, ".");
+// The model names a scenario gives, kept to refuse a repeated one.
+typedef struct {
+    char **names;
+    size_t *lengths;
+    int count;
+} model_names_t;
 
-    scenario.maxclients = 1;
-    scenario.clients = 0;
-    scenario.submodels = 0;
-    scenario.frames = 100;
-    scenario.frametime = 0.1;
-    scenario.seed = 1;
-    strcpy(scenario.map, "test");
-    qs_set_cvar(NULL, NULL);
-
+static int parse_lines(const char *path, char *text, long size, const char *dir,
+                       model_names_t *models) {
     const char *once[] = {"progs", "entities", "map", "maxclients", "clients",
                           "submodels", "frames", "frametime", "seed"};
     qboolean seen[9] = {false};
-    char **model_names = NULL;
-    size_t *model_lengths = NULL;
-    int num_models = 0;
 
     // DIFF-2.1: the file is lines of bytes, so a NUL byte is a byte of its line and ends
     // neither the line nor the file. Lines and words are found by length, and a word holding a
@@ -309,22 +288,22 @@ static int parse_scenario(const char *path) {
             for (int i = 0; i < 6; i++)
                 if (!parse_float(words[2 + i], &b[i]))
                     return refuse(path, line, "model takes a name and six numbers");
-            for (int i = 0; i < num_models; i++)
-                if (model_lengths[i] == lengths[1] &&
-                    memcmp(model_names[i], words[1], lengths[1]) == 0)
+            for (int i = 0; i < models->count; i++)
+                if (models->lengths[i] == lengths[1] &&
+                    memcmp(models->names[i], words[1], lengths[1]) == 0)
                     return refuse(path, line, "a model name is repeated");
-            char **grown = realloc(model_names, (size_t)(num_models + 1) * sizeof(*grown));
+            char **grown = realloc(models->names, (size_t)(models->count + 1) * sizeof(*grown));
             if (!grown)
                 return refuse(path, line, "out of memory");
-            model_names = grown;
+            models->names = grown;
             size_t *grown_lengths =
-                realloc(model_lengths, (size_t)(num_models + 1) * sizeof(*grown_lengths));
+                realloc(models->lengths, (size_t)(models->count + 1) * sizeof(*grown_lengths));
             if (!grown_lengths)
                 return refuse(path, line, "out of memory");
-            model_lengths = grown_lengths;
-            model_names[num_models] = words[1];
-            model_lengths[num_models] = lengths[1];
-            num_models++;
+            models->lengths = grown_lengths;
+            models->names[models->count] = words[1];
+            models->lengths[models->count] = lengths[1];
+            models->count++;
             // A name holding a NUL byte is one no QuakeC string gives, so no model gets these
             // bounds.
             if (!nul[1])
@@ -402,9 +381,53 @@ static int parse_scenario(const char *path) {
         if (scenario.inputs[i].edict > scenario.clients)
             return refuse(path, 0, "an input's edict is not a client that enters");
     }
-    free(model_names);
-    free(model_lengths);
     return QS_EXIT_TRACED;
+}
+
+// Reads the scenario `path` names from the `size` bytes at `text`, which it changes, into the
+// scenario and the mock's settings and model bounds, each set back to its defaults first.
+int qs_parse_scenario(const char *path, char *text, long size) {
+    free(scenario.progs);
+    free(scenario.entities);
+    free(scenario.inputs);
+    memset(&scenario, 0, sizeof(scenario));
+    scenario.maxclients = 1;
+    scenario.frames = 100;
+    scenario.frametime = 0.1;
+    scenario.seed = 1;
+    strcpy(scenario.map, "test");
+    qs_set_cvar(NULL, NULL);
+    qs_clear_model_bounds();
+
+    char *dir = malloc(strlen(path) + 2);
+    if (!dir)
+        return refuse(path, 0, "out of memory");
+    strcpy(dir, path);
+    char *slash = strrchr(dir, '/');
+    char *backslash = strrchr(dir, '\\');
+    if (backslash && (!slash || backslash > slash))
+        slash = backslash;
+    if (slash)
+        *slash = 0;
+    else
+        strcpy(dir, ".");
+
+    model_names_t models = {NULL, NULL, 0};
+    int result = parse_lines(path, text, size, dir, &models);
+    free(models.names);
+    free(models.lengths);
+    free(dir);
+    return result;
+}
+
+static int parse_scenario(const char *path) {
+    long size;
+    char *text = qs_read_file(path, &size);
+    if (!text)
+        return refuse(path, 0, "cannot read the scenario");
+    int result = qs_parse_scenario(path, text, size);
+    free(text);
+    return result;
 }
 
 // --- Frames (DIFF-5) ---

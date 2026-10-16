@@ -1,5 +1,6 @@
 # Runs every cargo-fuzz target in fuzz/ for 10 minutes each, nightly and on
-# demand, with `cargo xtask fuzz` (docs/testing.md, TEST-5). A crash fails the
+# demand, with `cargo xtask fuzz` (docs/testing.md, TEST-5), and the VM
+# oracle's libFuzzer targets with `cargo xtask oracles fuzz`. A crash fails the
 # run and uploads the crashing input as the `fuzz-artifacts` artifact; minimise
 # it into a regression test in the crate it found.
 #
@@ -55,4 +56,39 @@ jobs:
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+  # The VM oracle's readers of files (oracles/README.md, Fuzzing): libFuzzer
+  # targets of our C, built with clang's libFuzzer and sanitizers. A crash
+  # fails the run and uploads the crashing input as `fuzz-artifacts-oracles`.
+  oracles:
+    name: Fuzz the oracles
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - name: Set up clang with libFuzzer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: fuzz-oracles-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Fuzz each target of the oracles
+        env:
+          CC: clang-18
+        run: cargo xtask oracles fuzz all --time 600
+      - name: Upload crashing inputs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts-oracles
+          path: target/oracles/fuzz/*/artifacts/
           if-no-files-found: ignore

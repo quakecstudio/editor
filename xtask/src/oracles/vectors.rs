@@ -82,7 +82,7 @@ enum End {
 }
 
 #[derive(Debug, Default)]
-struct Vector {
+pub(super) struct Vector {
     file: String,
     name: String,
     spec: Vec<String>,
@@ -167,6 +167,26 @@ pub(crate) fn check(root: &Path, oracles: &Oracles) -> Result<bool, String> {
     Ok(failed == 0)
 }
 
+/// The init file of every vector in `docs/spec/vectors/vm/`, which seed the fuzz target of the
+/// init file (`oracles/fuzz.rs`).
+pub(super) fn init_texts(root: &Path) -> Result<Vec<String>, String> {
+    let dir = root.join(VECTORS);
+    let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+        .map_err(|e| format!("{VECTORS}: {e}"))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "txt"))
+        .collect();
+    files.sort();
+    let mut texts = Vec::new();
+    for path in &files {
+        let name = path.display().to_string();
+        let text = fs::read_to_string(path).map_err(|e| format!("{name}: {e}"))?;
+        texts.extend(parse(&name, &text)?.iter().map(init_text));
+    }
+    Ok(texts)
+}
+
 /// What one vector's run counts as.
 #[derive(Debug, PartialEq, Eq)]
 enum Verdict {
@@ -191,7 +211,7 @@ fn verdict(vector: &Vector, result: Result<(), String>, x86_64: bool) -> Verdict
 
 // --- Parsing the vector files ---
 
-fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
+pub(super) fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
     let mut vectors: Vec<Vector> = Vec::new();
     let mut block = "";
     for (raw, number) in text.lines().zip(1_u32..) {
@@ -506,7 +526,7 @@ fn parse_expect_line(vector: &mut Vector, body: &str) -> Result<(), String> {
 
 // --- Building the progs and running the oracle ---
 
-fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
+pub(super) fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
     let mut statements = vec![Statement::default()];
     statements.extend(vector.code.iter().copied());
     let mut strings = vec![0_u8];
@@ -541,7 +561,7 @@ fn build_progs(vector: &Vector) -> Result<Vec<u8>, String> {
     write(&file).map_err(|e| format!("cannot write the progs: {e:?}"))
 }
 
-fn init_text(vector: &Vector) -> String {
+pub(super) fn init_text(vector: &Vector) -> String {
     let mut text = format!("edicts {}\n", vector.edicts.unwrap_or(DEFAULT_EDICTS));
     if let Some(maxclients) = vector.maxclients {
         text.push_str(&format!("maxclients {maxclients}\n"));

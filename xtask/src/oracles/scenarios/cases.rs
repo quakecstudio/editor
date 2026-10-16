@@ -806,6 +806,30 @@ fn refused_progs() -> Vec<Case> {
     .check(Check::Exit(2, "cannot open the progs"));
     cases.push(missing);
     cases.extend(progs_header_refusals());
+    cases.extend(too_many_field_slots());
+    cases
+}
+
+// spec EDICT-3.5: a progs with more than 894760 field slots is refused, in scenario mode and in
+// vector mode, which does not check the CRC (a finding of the progs fuzz target, whose edict
+// size overflowed an int).
+fn too_many_field_slots() -> Vec<Case> {
+    let mut cases = Vec::new();
+    for (name, input) in [
+        ("progs-too-many-fields", scenario("")),
+        (
+            "vector-progs-too-many-fields",
+            Input::Vector {
+                init: "edicts 3\n".to_owned(),
+            },
+        ),
+    ] {
+        let mut p = Program::new();
+        p.entityfields = 894_761;
+        cases.push(
+            Case::new(name, p, input).check(Check::Exit(2, "more than 894760 field slots")),
+        );
+    }
     cases
 }
 

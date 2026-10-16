@@ -43,8 +43,17 @@ static void set_text(cvar_t *var, const char *text) {
 }
 
 // Sets a setting from the scenario, creating it if it is not one of the four; a later line
-// for a name replaces an earlier one.
+// for a name replaces an earlier one. With no name, the settings are the four with their
+// first texts again.
 void qs_set_cvar(const char *name, const char *text) {
+    if (!name) {
+        for (int i = 4; i < num_cvars; i++) {
+            free(cvars[i]->name);
+            free(cvars[i]->string);
+            free(cvars[i]);
+        }
+        num_cvars = 0;
+    }
     if (num_cvars == 0) {
         cvars[num_cvars++] = &skill;
         cvars[num_cvars++] = &deathmatch;
@@ -168,6 +177,14 @@ typedef struct {
 
 static bounds_t *model_bounds;
 static int num_model_bounds;
+
+void qs_clear_model_bounds(void) {
+    for (int i = 0; i < num_model_bounds; i++)
+        free(model_bounds[i].name);
+    free(model_bounds);
+    model_bounds = NULL;
+    num_model_bounds = 0;
+}
 
 void qs_add_model_bounds(const char *name, const float *mins, const float *maxs) {
     bounds_t *grown = realloc(model_bounds, (size_t)(num_model_bounds + 1) * sizeof(*grown));
