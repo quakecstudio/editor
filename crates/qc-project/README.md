@@ -34,4 +34,6 @@ Each has a test in `src/tests/`:
 
 `cargo xtask project-corpus` opens corpus codebases and checks every module's graph. In CI it
 runs on id 1.01, where it also checks the graph against the order of the functions in the
-`progs.dat` id's `qcc` compiles, and on the rerelease, Copper and Arcane Dimensions.
+`progs.dat` id's `qcc` compiles, on the rerelease, Copper and Arcane Dimensions, on FreeCS in
+its Nuclide SDK tree (`cargo xtask corpus fetch freecs-tree`), and on Xonotic through the
+`quakec.toml` in `corpus/projects/xonotic/`.

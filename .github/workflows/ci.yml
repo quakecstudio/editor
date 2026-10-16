@@ -343,6 +343,17 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-rogue" "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
             "$QS_TEST_ASSETS/codebase/rerelease-ctf" "$QS_TEST_ASSETS/codebase/rerelease-mg3" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P1-34: FreeCS opens whole in its Nuclide SDK tree, with Rad-Therapy (FreeHL) beside
+      # it, and Xonotic's three modules through the quakec.toml corpus fetch writes. The
+      # archives add about 120 MB to the downloads cache; Xonotic's is only its qcsrc/.
+      - name: Write the FreeCS tree and Xonotic to the asset cache
+        if: runner.os == 'Linux'
+        run: cargo xtask corpus fetch freecs-tree xonotic
+      - name: Open FreeCS and Xonotic as projects
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask project-corpus "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src" \
+            "$QS_TEST_ASSETS/codebase/xonotic"
       # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
       # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
       - name: Write the corpus maps to the asset cache

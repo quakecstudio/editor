@@ -262,7 +262,9 @@ The unit tests in `crates/qc-project` hold the small cases. The corpus was check
 - **The C preprocessor** (`cc -xc -E -H`, Apple clang 21) for Xonotic, which builds with it
   (`qcsrc/Makefile`, `CPP := cc -xc -E`): its include trace is the whole graph, `#include`
   entries and all. `quakec.toml` gave the defines of `qcsrc/tools/qcc.sh`, with
-  `__STDC__=1`, which the C preprocessor defines itself, and `include_dirs = ["."]`.
+  `__STDC__=1`, which the C preprocessor defines itself, and `include_dirs = ["."]`; it is
+  `corpus/projects/xonotic/quakec.toml`, which `cargo xtask corpus fetch xonotic` writes
+  into the codebase.
 
 | Codebase | Modules (source form unless noted) | Graph entries | Against |
 | --- | --- | --- | --- |
@@ -277,6 +279,6 @@ The unit tests in `crates/qc-project` hold the small cases. The corpus was check
 | LibreQuake | `progs.src`, `__QW__` undefined | 35 | FTEQCC: 34 same |
 | Conduit, Quake Reignited | `progs.src` (list) | 44, 31 | FTEQCC: all same |
 | Nuclide | 11 root `.src` files, menu modules from `menu.dat` | 604 | FTEQCC: `hud.src` 13 and `menu-fn` 95 same, `menu-vgui` prefix of 53 (crash) |
-| FreeCS, in a Nuclide tree at `cstrike/src` | top-level `progs.src` lists 3 programs; 8 modules in all | 843 | FTEQCC: `hud` and the 4 rules same; `client` and `server` prefixes of 14 and 211; 20 files of FreeHL (`valve/src`), not in the corpus, are E0402 |
+| FreeCS, in a Nuclide tree at `cstrike/src` | top-level `progs.src` lists 3 programs; 8 modules in all | 843 without FreeHL; 855, with no error, in the `freecs-tree` tree that adds it at `valve/src` (in CI) | FTEQCC, without FreeHL: `hud` and the 4 rules same; `client` and `server` prefixes of 14 and 211; the 20 files of FreeHL were E0402 |
 | Nazi Zombies: Portable | `progs/ssqc.src`, `csqc.src`, `menu.src` with `#pragma includedir` | 113 | FTEQCC: `menu` 21 same, `csqc` and `ssqc` prefixes of 19 and 4 (crash); `hash_table.qc`, which `tools/qc-compiler-gnu.sh` generates before compiling, is E0402 |
-| Xonotic | `quakec.toml`: server, client, menu `progs.inc` | 1764, 1195, 1006 | C preprocessor: all three the same order |
+| Xonotic | `quakec.toml` (`corpus/projects/xonotic/`): server, client, menu `progs.inc` | 1764, 1195, 1006 | C preprocessor: all three the same order (in CI: no error) |

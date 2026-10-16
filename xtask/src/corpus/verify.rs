@@ -12,8 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::manifest::{Entry, Manifest, Source};
-use super::safe_member;
+use super::manifest::{Entry, Manifest, Source, Tree};
+use super::{MANIFEST, safe_member};
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
 
@@ -64,9 +64,45 @@ pub(crate) fn check(m: &Manifest) -> Vec<String> {
         } else if e.use_ == "vendor" || e.use_ == "fetch-at-test" {
             check_pins(table, e, &at, &sources, &mut errs);
         }
+        if let Some(project) = &e.project
+            && (table != "codebase" || !safe_member(project))
+        {
+            errs.push(format!(
+                "{at}: project {project:?} must be a relative path, on a codebase"
+            ));
+        }
+    }
+    for t in &m.tree {
+        if !seen.insert(t.id.as_str()) {
+            errs.push(format!("tree {}: duplicate id", t.id));
+        }
+        check_tree(m, t, &mut errs);
     }
     check_policy(m, &mut errs);
     errs
+}
+
+/// A tree lays usable codebases out in separate directories, none inside another.
+fn check_tree(m: &Manifest, t: &Tree, errs: &mut Vec<String>) {
+    let at = format!("tree {}", t.id);
+    if !is_id(&t.id) {
+        errs.push(format!("{at}: bad id"));
+    }
+    if t.dirs.is_empty() {
+        errs.push(format!("{at}: no dirs"));
+    }
+    for (dir, codebase) in &t.dirs {
+        if !safe_member(dir) {
+            errs.push(format!("{at}: {dir:?} must be a relative directory"));
+        }
+        let inside = |other: &String| other != dir && dir.starts_with(&format!("{other}/"));
+        if let Some(outer) = t.dirs.keys().find(|other| inside(other)) {
+            errs.push(format!("{at}: {dir} is inside {outer}"));
+        }
+        if !m.codebase.iter().any(|e| e.id == *codebase && e.usable()) {
+            errs.push(format!("{at}: {dir}: no usable codebase {codebase}"));
+        }
+    }
 }
 
 fn check_sources<'m>(m: &'m Manifest, errs: &mut Vec<String>) -> BTreeMap<&'m str, &'m Source> {
@@ -356,6 +392,18 @@ pub(crate) fn check_repo(
             Err(e) => errs.push(format!("{f}: {e}")),
         }
     }
+    let manifest_dir = MANIFEST.rsplit_once('/').map_or("", |(dir, _)| dir);
+    for e in &m.codebase {
+        if let Some(project) = &e.project {
+            let path = format!("{manifest_dir}/{project}");
+            if !files.contains(&path) {
+                errs.push(format!(
+                    "codebase {}: project {path} is not tracked in git",
+                    e.id
+                ));
+            }
+        }
+    }
     errs
 }
 
@@ -398,18 +446,39 @@ pub(crate) fn raw_url(url: &str, commit: &str, path: &str) -> Result<String, Str
     }
 }
 
-/// Where a source's host serves the whole repository at a commit as a `.tar.gz`. GitLab's web
-/// archive path asks for a sign-in, so it is fetched through the API.
-pub(crate) fn archive_url(url: &str, commit: &str) -> Result<String, String> {
+/// The directory of `base` (a repository path ending in `/`, or empty for the whole
+/// repository) that the host of `url` can limit an archive to, without the trailing `/`.
+/// GitLab's archive API takes `path`, "Subpath of the repository to download", so a codebase in
+/// one directory of a large repository (Xonotic's `qcsrc/`, beside 800 MB of game data) is a
+/// small download. GitHub's archives are always of the whole repository, so it is empty there.
+pub(crate) fn archive_scope<'b>(url: &str, base: &'b str) -> &'b str {
     match host_project(url) {
-        Some(("github.com", project)) => Ok(format!(
+        Some(("gitlab.com", _)) => base.trim_end_matches('/'),
+        _ => "",
+    }
+}
+
+/// Where a source's host serves the repository at a commit as a `.tar.gz`: the whole of it, or
+/// only `scope` when that is not empty ([`archive_scope`]). GitLab's web archive path asks for a
+/// sign-in, so it is fetched through the API.
+pub(crate) fn archive_url(url: &str, commit: &str, scope: &str) -> Result<String, String> {
+    match host_project(url) {
+        Some(("github.com", project)) if scope.is_empty() => Ok(format!(
             "https://github.com/{project}/archive/{commit}.tar.gz"
         )),
-        Some(("gitlab.com", project)) => Ok(format!(
-            "https://gitlab.com/api/v4/projects/{}/repository/archive.tar.gz?sha={commit}",
-            quote(project, false)
-        )),
-        _ => Err(format!("unsupported host in {url}")),
+        Some(("gitlab.com", project)) => {
+            let mut out = format!(
+                "https://gitlab.com/api/v4/projects/{}/repository/archive.tar.gz?sha={commit}",
+                quote(project, false)
+            );
+            if !scope.is_empty() {
+                out.push_str("&path=");
+                out.push_str(&quote(scope, false));
+            }
+            Ok(out)
+        }
+        Some((host, _)) => Err(format!("{host} archives cannot be limited to {scope}")),
+        None => Err(format!("unsupported host in {url}")),
     }
 }
 
