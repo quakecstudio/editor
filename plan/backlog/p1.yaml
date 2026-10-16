@@ -881,6 +881,23 @@ issues:
   - A BSP whose node tree reaches a leaf of contents 0 gives the result the statement fixes, and the vectors' README records what id's model.c and gl_model.c built from the pinned commit do with it
   verify:
   - cargo test -p qs-bsp; the recorded run in the PR
+- key: P1-48
+  title: Make agents watch CI instead of sleeping on it
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-13
+  deliverable:
+  - '.claude/rules/development-discipline.md, .claude/skills/work-issue/SKILL.md, .claude/agents/implementer.md and .claude/agents/reviewer.md: agents never wait on CI or GitHub with a long sleep (such as `sleep 600; gh run view ...`); they use `gh pr checks <pr> --watch --fail-fast` for a PR''s checks and `gh run watch <run-id> --exit-status` for a workflow run, and run long local jobs (cargo-mutants, fuzzing, differential runs) in the background with a completion notification (Justin, 2026-10-16)'
+  - '.claude/skills/work-issue/scripts/land.sh: after `gh pr merge --auto` it watches the merge queue''s runs for the PR''s queue entry with `gh run watch --exit-status` and confirms the PR state, keeping a short poll only where no watch exists; its timeout bounds the checks watch too, and it stops with a reason when the PR conflicts with main or the queue removes it, instead of waiting out the timeout with auto-merge enabled'
+  acceptance:
+  - The rule appears in each of the four files named
+  - land.sh passes shellcheck and shfmt -i 2 -d, keeps its timeout argument and exit codes (0 merged, 1 otherwise with the reason printed), and lands the PR that delivers this issue
+  verify:
+  - shellcheck and shfmt output and the land.sh run recorded in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -940,6 +957,7 @@ issues:
   - P1-45
   - P1-46
   - P1-47
+  - P1-48
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
