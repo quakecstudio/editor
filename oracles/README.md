@@ -259,8 +259,10 @@ The oracles' C is the C tools layer's own code, and the readiness bar of
   (`QS_ORACLE_COVERAGE`), run on every vector, number vector and probe (`cargo xtask oracles`)
   and on the id 1.01 scenarios (`cargo xtask oracles id101`, from the corpus under
   `QS_TEST_ASSETS`), counting the files of this directory and not id's. It needs clang and the
-  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `LLVM_PROFDATA` and `LLVM_COV` choose
-  them; on macOS `xcrun` finds Xcode's).
+  `llvm-profdata` and `llvm-cov` of the same LLVM (`CC`, `QS_ORACLE_LLVM_PROFDATA` and
+  `QS_ORACLE_LLVM_COV` choose them; on macOS `xcrun` finds Xcode's). They are not
+  `LLVM_PROFDATA` and `LLVM_COV`, which cargo-llvm-cov reads for the Rust crates measured in the
+  same run.
 - **Flakes:** `cargo xtask oracles`, 20 times on each OS after one build.
 - **Mutation:** an exception, recorded in [`ratchets.toml`](../ratchets.toml). The bar's
   mutation tool, cargo-mutants (TEST-2), mutates Rust only. The C is held instead by tests

@@ -644,14 +644,14 @@ fn c_coverage(root: &Path, check: Check, tools: &Tools<'_>) -> Result<Score, Str
         ));
     }
     let merged = dir.join("vm-oracle.profdata");
-    let mut merge = llvm_tool("LLVM_PROFDATA", "llvm-profdata");
+    let mut merge = llvm_tool("QS_ORACLE_LLVM_PROFDATA", "llvm-profdata");
     merge
         .args(["merge", "-sparse", "-o"])
         .arg(&merged)
         .args(&raw);
     run_ok(exec, &mut merge, "llvm-profdata merge")?;
     let sources = c_sources(&root.join(ORACLES))?;
-    let mut export = llvm_tool("LLVM_COV", "llvm-cov");
+    let mut export = llvm_tool("QS_ORACLE_LLVM_COV", "llvm-cov");
     export
         .args(["export", "-summary-only", "-instr-profile"])
         .arg(&merged)

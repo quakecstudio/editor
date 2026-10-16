@@ -65,8 +65,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang-18 llvm-18
           {
             echo "CC=clang-18"
-            echo "LLVM_PROFDATA=llvm-profdata-18"
-            echo "LLVM_COV=llvm-cov-18"
+            echo "QS_ORACLE_LLVM_PROFDATA=llvm-profdata-18"
+            echo "QS_ORACLE_LLVM_COV=llvm-cov-18"
             echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets"
           } >> "$GITHUB_ENV"
           QS_TEST_ASSETS="$RUNNER_TEMP_DIR/test-assets" cargo xtask corpus fetch id-1.01
