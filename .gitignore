@@ -18,3 +18,5 @@ __pycache__/
 
 # Quake game data is never committed: bring your own copy of Quake
 *.pak
+
+/.claude/worktrees/
