@@ -531,10 +531,19 @@ char *qs_checked_text(char *text) {
 
 // --- Crashes ---
 
+#ifdef QS_COVERAGE
+// The coverage build's runtime (clang's profile library) writes its profile at exit, which
+// _Exit skips; a crash writes it here instead (oracles/README.md, Readiness).
+int __llvm_profile_write_file(void);
+#endif
+
 static void on_crash(int sig) {
     qs_trace_flush_on_crash();
     fprintf(stderr, "vm-oracle: crashed with signal %d (id's code hit undefined behaviour)\n",
             sig);
+#ifdef QS_COVERAGE
+    __llvm_profile_write_file();
+#endif
     _Exit(4);
 }
 

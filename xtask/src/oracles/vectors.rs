@@ -140,9 +140,9 @@ pub(crate) fn check(root: &Path, oracles: &Oracles) -> Result<bool, String> {
                 skipped = skipped.saturating_add(1);
                 continue;
             }
-            match run(oracles, &work, &vector) {
-                Ok(()) => passed = passed.saturating_add(1),
-                Err(problem) if !x86_64 && vector.spec.iter().any(|id| id == "VM-9.2") => {
+            match verdict(&vector, run(oracles, &work, &vector), x86_64) {
+                Verdict::Passed => passed = passed.saturating_add(1),
+                Verdict::Expected(problem) => {
                     expected = expected.saturating_add(1);
                     println!(
                         "note  {}:{}: expected divergence on a host that is not x86 \
@@ -150,7 +150,7 @@ pub(crate) fn check(root: &Path, oracles: &Oracles) -> Result<bool, String> {
                         vector.file, vector.name
                     );
                 }
-                Err(problem) => {
+                Verdict::Failed(problem) => {
                     failed = failed.saturating_add(1);
                     println!("FAIL  {}:{}: {problem}", vector.file, vector.name);
                 }
@@ -165,6 +165,28 @@ pub(crate) fn check(root: &Path, oracles: &Oracles) -> Result<bool, String> {
         return Err(format!("no vectors found in {VECTORS}"));
     }
     Ok(failed == 0)
+}
+
+/// What one vector's run counts as.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Passed,
+    /// A divergence `differential.md` DIFF-10.1 lists.
+    Expected(String),
+    /// Any other divergence (DIFF-10.3).
+    Failed(String),
+}
+
+/// A failed run is an expected divergence only for a vector of VM-9.2's out-of-range float
+/// conversions on a host that is not x86-64 (DIFF-10.1); any other is a failure (DIFF-10.3).
+fn verdict(vector: &Vector, result: Result<(), String>, x86_64: bool) -> Verdict {
+    match result {
+        Ok(()) => Verdict::Passed,
+        Err(problem) if !x86_64 && vector.spec.iter().any(|id| id == "VM-9.2") => {
+            Verdict::Expected(problem)
+        }
+        Err(problem) => Verdict::Failed(problem),
+    }
 }
 
 // --- Parsing the vector files ---
@@ -280,7 +302,7 @@ fn opcode_number(word: &str) -> Result<u32, String> {
         .map_err(|_| format!("unknown opcode {word}"))
 }
 
-fn parse_statement(body: &str) -> Result<Statement, String> {
+pub(super) fn parse_statement(body: &str) -> Result<Statement, String> {
     let mut words = body.split_whitespace();
     let op = opcode_number(words.next().unwrap_or_default())?;
     let mut operands = [0_i32; 3];
@@ -958,9 +980,74 @@ mod tests {
     )]
 
     use super::{
-        End, Head, HostAction, Target, Value, init_text, parse, parse_host_action, parse_strings,
-        parse_value,
+        End, Head, HostAction, Known, Target, Value, Vector, Verdict, init_text, matches, parse,
+        parse_host_action, parse_strings, parse_value, verdict,
     };
+    use qc_trace::Header;
+
+    fn vector(spec: &str) -> Vector {
+        Vector {
+            spec: vec![spec.to_owned()],
+            ..Vector::default()
+        }
+    }
+
+    // spec DIFF-10.1: a VM-9.2 vector that fails on a host that is not x86-64 is an expected
+    // divergence, reported as such; on x86-64 it is a failure.
+    #[test]
+    fn an_out_of_range_conversion_is_expected_to_diverge_only_off_x86() {
+        let bitand = vector("VM-9.2");
+        let failure = || Err("line 1".to_owned());
+        assert_eq!(
+            verdict(&bitand, failure(), false),
+            Verdict::Expected("line 1".to_owned())
+        );
+        assert_eq!(
+            verdict(&bitand, failure(), true),
+            Verdict::Failed("line 1".to_owned())
+        );
+        assert_eq!(verdict(&bitand, Ok(()), false), Verdict::Passed);
+    }
+
+    // spec DIFF-10.3: any divergence DIFF-10.1 does not list is a failure, on every host.
+    #[test]
+    fn any_other_divergence_is_a_failure() {
+        for x86_64 in [false, true] {
+            assert_eq!(
+                verdict(&vector("VM-4.1"), Err("line 2".to_owned()), x86_64),
+                Verdict::Failed("line 2".to_owned())
+            );
+        }
+    }
+
+    // spec DIFF-10.2: NaN payloads, the edict layout and engine string numbers are no
+    // divergence: a value is compared through its reading.
+    #[test]
+    fn values_are_compared_through_their_readings() {
+        let layouts = [
+            Header::new(0, 516, 96, 105, 1000).unwrap(),
+            Header::new(0, 528, 108, 105, 1000).unwrap(),
+        ];
+        for header in &layouts {
+            let known = Known {
+                header,
+                engine_strings: [2000, 70000].into(),
+            };
+            let size = header.edict_size();
+            assert!(matches(&known, Value::AnyNan, 0x7fc0_0000));
+            assert!(matches(&known, Value::AnyNan, 0xffc0_0001));
+            assert!(!matches(&known, Value::AnyNan, 0x7f80_0000));
+            assert!(matches(&known, Value::Entity(2), size * 2));
+            assert!(!matches(&known, Value::Entity(2), size * 3));
+            let nextthink = size * 2 + header.field_offset() + 4 * 46;
+            assert!(matches(&known, Value::Pointer(2, 46), nextthink));
+            assert!(matches(&known, Value::EngineString, 2000));
+            assert!(matches(&known, Value::EngineString, 70000));
+            assert!(!matches(&known, Value::EngineString, 500));
+            assert!(matches(&known, Value::Bits(0x8000_0000), 0x8000_0000));
+            assert!(!matches(&known, Value::Bits(0x8000_0000), 0));
+        }
+    }
 
     #[test]
     fn parses_values_as_the_readme_defines_them() {
