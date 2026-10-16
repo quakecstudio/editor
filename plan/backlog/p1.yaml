@@ -455,7 +455,7 @@ issues:
   - The directory-link function has tests for a symbolic link (macOS and Linux), a junction (Windows), a broken link and a missing install, each run in CI on its OS
   - Fixtures contain directory layouts and checksums only; no game data is copied, bundled or committed
   verify:
-  - Fixture tests; manual check recorded on macOS against Justin's GOG purchase extracted with innoextract, and on Windows and Linux
+  - Fixture tests and the directory-link tests in CI on all three OSes; the run against Justin's real installs (macOS GOG purchase extracted with innoextract, Windows and Linux) is P1-30
 - key: P1-20
   title: Implement the lexer and preprocessor (vanilla)
   labels:
@@ -657,7 +657,7 @@ issues:
   verify:
   - cargo test; fuzz targets in make test-fuzz
 - key: P1-30
-  title: Verify the virtual filesystem against a real id1 and rerelease install
+  title: Verify the virtual filesystem and install detection against real installs
   labels:
   - repo
   - area:vm
@@ -667,14 +667,19 @@ issues:
   reqs:
   - FND-11
   - LIC-4
+  - PLAT-2
+  - PLAT-8
   depends:
   - P1-18
+  - P1-19
   deliverable:
   - 'The output of `cargo run --release -p qs-vfs --example walk -- -basedir <dir> [-game <dir>]`, run from main on Justin''s own install, posted on this issue for the original id1 and for the 2021 rerelease: base game, hipnotic, rogue, dopa and mg1. No game data is committed (LIC-4)'
+  - 'The output of `cargo run --release -p qs-install --example find`, run from main and posted on this issue: on macOS with the folder of Justin''s GOG purchase extracted with innoextract given as an argument, and with no arguments on Windows and on Linux where Steam or GOG has Quake installed'
   acceptance:
   - Every run ends with `read N files, ...` and prints no `failed:` lines
   - On the original install, id1/pak0.pak lists 339 entries and directory CRC 32981 with `modified false` (PAK-4.2)
   - The rerelease's id1 holds only pak0.pak (FS-5.1) and it loads (PAK-5.1)
-  - Any failure is filed as a type:bug issue against qs-pak, qs-wad or qs-vfs and fixed before this issue closes
+  - Every `find` run reports the install with its id1, rerelease and expansion paths (FS-6.1), and the editions and missing files FS-6.4 and FS-6.5 give for what is installed; a file reported unrecognised is listed with its size and MD5 so FS_KNOWN_FILES can gain the row
+  - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs or qs-install and fixed before this issue closes
   verify:
-  - Walk output for all six runs attached to the issue; the install-detection check on the same machine is P1-19's manual verification, recorded on that issue
+  - Walk output for all six runs and find output for the three OSes attached to the issue
