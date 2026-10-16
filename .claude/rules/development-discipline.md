@@ -42,10 +42,15 @@ came from a session that went wrong without it.
     write share a verb.
 11. **Three strikes, then re-diagnose.** If a command fails three times, stop retrying and
     check the diagnosis again from scratch; the cause can change while you retry.
+12. **Watch, don't sleep.** Never wait on CI or GitHub with a long `sleep` such as
+    `sleep 600; gh run view ...`. Use `gh pr checks <pr> --watch --fail-fast` for a PR's
+    checks and `gh run watch <run-id> --exit-status` for a workflow run. Run long local jobs
+    (cargo-mutants, fuzzing, differential runs) in the background with a completion
+    notification instead of sleep-polling them.
 
 ## Agents working together
 
-12. **Judge progress by evidence, not silence.** Before calling another agent stuck, look
+13. **Judge progress by evidence, not silence.** Before calling another agent stuck, look
     at the files: modification times, new commits, `target/` activity.
-13. **One writer per working tree.** Parallel agents use separate worktrees. To hand work
+14. **One writer per working tree.** Parallel agents use separate worktrees. To hand work
     over, stop the first agent and save its diff before the next one starts.
