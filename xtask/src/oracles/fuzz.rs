@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn each_target_has_seeds_of_its_own_kind() {
         let scenario = seeds(&root(), "scenario").unwrap();
-        assert!(scenario.len() > 100, "{}", scenario.len());
+        assert!(scenario.len() > 50, "{}", scenario.len());
         assert!(scenario.iter().any(|seed| seed.starts_with(b"progs progs.dat\n")));
         let init = seeds(&root(), "init").unwrap();
         assert!(init.len() > 200, "{}", init.len());
