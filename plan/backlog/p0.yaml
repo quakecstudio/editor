@@ -524,6 +524,73 @@ issues:
   - A file added under specs/ without a manifest row fails cargo xtask ci with the file named
   verify:
   - xtask tests, run by cargo xtask ci, change one byte of and add an unlisted file to a scratch copy of the cache and check that the verify step fails naming the file
+- key: P0-27
+  title: Carry ADR-0008's launch plan into the backlog
+  labels:
+  - repo
+  - area:preview
+  - type:chore
+  size: S
+  reqs:
+  - PLAT-6
+  - LIC-4
+  depends:
+  - P0-22
+  - P0-14
+  deliverable:
+  - 'plan/backlog/p3.yaml P3-06: the bridge client creates and repairs the run roots (build/run/original, build/run/rerelease) that link id1 and the rerelease from the user''s install and the mod from build/<mod>/, and launches the preview host with -basedir <run root> -game <mod> (ADR-0008, preview host only per ADR-0005); its acceptance gains the recorded launches ADR-0008 moved there from P0-22: Steam and GOG installs on macOS, Windows and Linux, for id1 and the rerelease'
+  - 'plan/backlog/p3.yaml P3-02: the preview host accepts -basedir, -game and -kpf PATH (ADR-0008)'
+  - 'plan/backlog/p1.yaml P1-19 (qs-install, the place ADR-0008 offers besides qs-paths): one function that makes a directory link per OS (symbolic links on macOS and Linux, junctions on Windows), with tests for a symbolic link, a junction, a broken link and a missing install'
+  - 'plan/backlog/p4.yaml: P4-17 templates ignore build/; P4-28 export reads build/<mod>/ and never follows the run-root links'
+  - 'plan/backlog/p0.yaml P0-22: its acceptance says the recorded launches moved to P3-06 (ADR-0008), as P0-10''s does for ADR-0003'
+  acceptance:
+  - Every plan change listed in ADR-0008's Consequences, narrowed to the preview host by ADR-0005 (P3-08 no longer exists), appears in the deliverable or acceptance of the issue it names
+  - plan/check.py --write-coverage and its tests pass
+  verify:
+  - Plan diff linked on the issue, mapping each ADR-0008 consequence to the changed issue; plan checks in CI
+- key: P0-28
+  title: Carry ADR-0003's plan consequences into the backlog
+  labels:
+  - repo
+  - area:editor
+  - type:chore
+  size: S
+  reqs:
+  - UI-1
+  depends:
+  - P0-10
+  deliverable:
+  - 'plan/backlog/p2.yaml: the new L7 issue ADR-0003 names, turning the spike''s editor widget (spikes/ui-common, spikes/ui-egui) into crates/qs-editor-view with a text layout cache, selections, IME and AccessKit text runs, before P2''s editor features; P2-18 depends on it'
+  - 'plan/backlog/p2.yaml P2-17: eframe and egui in [workspace.dependencies] with default-features = false (no default_fonts), and the deny.toml advisory ignore for paste with its reason (ADR-0003)'
+  - 'plan/backlog/p2.yaml P2-18: the bundled CJK fallback font (OFL-1.1) is listed in ATTRIBUTION.md'
+  - 'plan/backlog/p3.yaml P5-05: the renderer draws inside the UI through egui_wgpu paint callbacks'
+  - plan/backlog/readiness.yaml regenerated with plan/gen_readiness.py
+  acceptance:
+  - Every plan change listed in ADR-0003's Consequences appears in the deliverable or acceptance of the issue it names, or in the new issue
+  - plan/check.py --write-coverage and its tests pass
+  verify:
+  - Plan diff linked on the issue, mapping each ADR-0003 consequence to the changed issue; plan checks in CI
+- key: P0-29
+  title: Fix the docs left stale by Phase 0's plan moves
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - PM-6
+  depends:
+  - P0-10
+  - P0-12
+  deliverable:
+  - 'docs/design/design-doc.md Milestones: the Phase 0 row no longer lists the signing accounts, which PR #249 moved to Phase 4 (P0-23); the recorded design-doc hash updated'
+  - 'docs/testing.md layer notes: the C tools note no longer names a separate preview host repository; the preview host is apps/preview-host in this repository (ADR-0004)'
+  - 'docs/spikes/ui-framework.md: refers to ADR-0003 as accepted, not as proposed in a draft PR'
+  acceptance:
+  - A search of docs/ for the moved signing accounts in Phase 0, a preview host repository and ADR-0003 as proposed finds nothing
+  - plan/check.py and cargo xtask ci pass
+  verify:
+  - The searches and their empty output recorded on the issue; CI
 - key: P0-20
   title: Phase 0 gate review
   labels:
@@ -559,6 +626,9 @@ issues:
   - P0-25
   - P0-24
   - P0-26
+  - P0-27
+  - P0-28
+  - P0-29
   deliverable:
   - 'docs/gates/p0.md: gate criteria, evidence for each, updated risk register'
   - Sized, dated roadmap for Phases 1 to 7 based on the spike results (docs/roadmap.md)
