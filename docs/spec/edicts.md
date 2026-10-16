@@ -45,7 +45,8 @@ the progs' field slots, and QuakeC refers to an edict by its byte offset in that
 - **EDICT-1.3** id computes the header size as `sizeof(edict_t) - sizeof(entvars_t)`, which
   depends on the build. This spec fixes 96, the size on the 32-bit x86 build id shipped; a
   64-bit build of the same code has 108. The header size is visible to QuakeC only through
-  entity and pointer values (EDICT-1.5, EDICT-1.6).
+  entity and pointer values (EDICT-1.5, EDICT-1.6), so a comparison with an oracle built for
+  64 bits (`differential.md`, P1-27) compares those values as edict numbers and field slots.
 - **EDICT-1.4** The array has `LIMIT_MAX_EDICTS` (600) edicts, numbered from 0. Edict 0 is
   the world (EDICT-4) and edicts 1 to `maxclients` are the client slots (EDICT-5).
   `num_edicts` starts at `maxclients + 1` (EDICT-1.8) and grows by one each time allocation
