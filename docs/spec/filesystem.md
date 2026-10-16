@@ -7,9 +7,10 @@ Describes how the engine turns a base directory and command-line options into a 
 path of directories and PAK archives, and how it finds a file on that path, as implemented
 by `WinQuake/common.c` in [id-Software/Quake](https://github.com/id-Software/Quake) at
 commit `bf4ac424ce754894ac8f1dae6a3981954bc9852d`, with the 2021 rerelease's layout in
-FS-5. The archive format is [`pak.md`](pak.md). Implemented by `crates/qs-vfs`
-([#42](https://github.com/quakecstudio/editor/issues/42)); finding the install itself is
-[#43](https://github.com/quakecstudio/editor/issues/43).
+FS-5, and how QuakeC Studio recognises an install and its files in FS-6. The archive
+format is [`pak.md`](pak.md). FS-1 to FS-5 are implemented by `crates/qs-vfs`
+([#42](https://github.com/quakecstudio/editor/issues/42)); FS-6 by `crates/qs-install`
+([#43](https://github.com/quakecstudio/editor/issues/43)).
 
 Paths below are written with `/`, which is what the engine's `sprintf` calls insert.
 
@@ -294,3 +295,92 @@ None of this was checked against an install for this spec; the tests of
 - **FS-5.4** QuakeC Studio does not model the KEX engine's per-user game directories
   (`Saved Games\Nightdive Studios\Quake`); the rerelease engine is a compile target only
   (ENG-8), and the search path is the one id's engine builds.
+
+## FS-6 Recognising an install
+
+**Source:** none in id's GPL code; id's engine is given its base directory and never looks
+for one. How the stores lay out the game is in FS-5 and in
+[`../game-data.md`](../game-data.md). The published sizes and checksums below come from
+these pages, read on 2026-10-16:
+
+- Debian's game-data-packager,
+  [`data/quake.yaml`](https://salsa.debian.org/games-team/game-data-packager/-/raw/master/data/quake.yaml):
+  `id1/pak0.pak` 1.01 and 1.06, `id1/pak1.pak`, `hipnotic/pak0.pak`, the three
+  `rogue/pak0.pak` releases, the 2016 `dopa` episode and the rerelease's `mg1/pak0.pak` of
+  496,862,633 bytes.
+- The Quake Wiki, [pak0.pak](https://quakewiki.org/wiki/pak0.pak) and
+  [pak1.pak](https://quakewiki.org/wiki/pak1.pak), which give the same values for `id1`
+  and say pak0.pak 1.06 is shared by "Registered Version 1.06 Shareware Version 1.06 Steam
+  Release".
+- The Internet Archive's [Quake 2021 Patches](https://archive.org/details/q2021p), whose
+  "Re-release Hashes" give the rerelease's `id1`, `hipnotic`, `rogue`, `dopa`, `mg1` and
+  `q64` archives of one update.
+- [RFC 1321](https://www.rfc-editor.org/rfc/rfc1321.txt), the MD5 algorithm.
+- Ironwail's [`Quake/steam.c`](https://github.com/andrei-drexler/ironwail/blob/master/Quake/steam.c),
+  `ChooseQuakeFlavor`: "Original version can't be played on OS's with case-sensitive file
+  systems (due to id1 being named "Id1" and pak0.pak "PAK0.PAK")", the case Steam's
+  original install uses.
+- innoextract's [manual](https://constexpr.org/innoextract/innoextract.1): "`{app}` is
+  expanded to `app`", so an extracted GOG installer has the game in an `app` folder.
+
+The rerelease's archives change with its updates (the two `mg1` rows are two of them), so
+the table cannot list every rerelease file; FS-6.3 makes an unlisted one an ordinary
+result. None of this was checked against a real install for this spec; the manual check of
+[#43](https://github.com/quakecstudio/editor/issues/43), on the same machines as
+[#277](https://github.com/quakecstudio/editor/issues/277), records it.
+
+### Behaviour
+
+- **FS-6.1** A folder is a base directory when it holds `id1` and `id1` holds `pak0.pak`,
+  both names matched as FS-3.7 matches them (Steam's original install writes `Id1` and
+  `PAK0.PAK`). A base directory that holds `QuakeEX.kpf` (FS-5.3) is a rerelease;
+  otherwise it is the original game, and its `rerelease` folder, when that is a base
+  directory, is the rerelease of the same install (FS-5.1). Every other directory of a base
+  that holds `pak0.pak` is one of its game directories. A folder the user chooses is also
+  accepted when its `app` folder is a base directory, which is where innoextract writes a
+  GOG installer's files, and it is a steamcmd download when it holds
+  `steamapps/appmanifest_2310.acf`.
+- **FS-6.2** A file is a known file when its size in bytes and its MD5 checksum (RFC 1321)
+  both equal one row of `FS_KNOWN_FILES`. Only a file whose size equals some row's size is
+  hashed. Where the file sits does not change what it is.
+- **FS-6.3** A file that matches no row is not an error. If it loads as a PAK archive
+  (PAK-1, PAK-2) it is reported as unrecognised, with its entry count and whether it marks
+  the game as modified (PAK-4.2); if it cannot be opened or does not load, it is reported
+  as unusable, with the error.
+- **FS-6.4** An install holds the registered game when its original base's `id1/pak1.pak`
+  is the known registered `pak1.pak`; the shareware game when its original base has no
+  `id1/pak1.pak` and its `id1/pak0.pak` is a known original `pak0.pak`; and the rerelease
+  when its rerelease base's `id1/pak0.pak` is known or unrecognised, not unusable.
+- **FS-6.5** An install whose original base has no `id1/pak1.pak` reports `id1/pak1.pak`
+  as missing. An install with a rerelease and no original base reports the original game's
+  `id1/pak0.pak` and `id1/pak1.pak` as missing, since the rerelease's `id1` holds only its
+  own `pak0.pak` (FS-5.1); this is what the Epic Games Store and Game Pass sell.
+
+### Constants
+
+`FS_KNOWN_FILES`, every file FS-6.2 identifies:
+
+| File | Size | MD5 | Release | What it is |
+| --- | --- | --- | --- | --- |
+| `id1/pak0.pak` | 18,689,235 | `5906e5998fc3d896ddaf5e6a62e03abb` | original | Quake 1.06 episode 1, shared by the shareware and registered game |
+| `id1/pak0.pak` | 18,276,119 | `85fc9cee2035b66290da1e33be2ac86b` | original | Quake 1.01 episode 1 |
+| `id1/pak1.pak` | 34,257,856 | `d76b3e5678f0b64ac74ce5e340e6a685` | original | Quake registered, episodes 2 to 4 |
+| `hipnotic/pak0.pak` | 35,527,205 | `0ab83681aaf841c4320269e02941a14a` | original | Mission pack 1, Scourge of Armagon |
+| `rogue/pak0.pak` | 37,875,279 | `c38a4e04219c317cd1b02f386bdfe11f` | original | Mission pack 2, Dissolution of Eternity (mission packs CD) |
+| `rogue/pak0.pak` | 37,875,279 | `f8898a483b131de21581656c94f3c1a4` | original | Mission pack 2 (its own CD) |
+| `rogue/pak0.pak` | 37,875,279 | `f71428763229bdb373f00a547296efe3` | original | Mission pack 2 (Steam and GOG) |
+| `dopa/pak0.pak` | 18,556,973 | `607a5d9f0fc778cad37889a093dc593e` | original | Episode 5, Dimension of the Past (2016) |
+| `id1/pak0.pak` | 179,618,935 | `457d9221804b0346fd8f42923b2a7879` | rerelease | Rerelease base game |
+| `hipnotic/pak0.pak` | 79,912,030 | `f8b8700e9eed54d521618574d9b690e9` | rerelease | Rerelease mission pack 1 |
+| `rogue/pak0.pak` | 44,484,697 | `54e3e4fbce74232618a632b7440c05de` | rerelease | Rerelease mission pack 2 |
+| `dopa/pak0.pak` | 40,557,898 | `1e91e104a16cc0fdd53f6b7ce37005e0` | rerelease | Rerelease episode 5 |
+| `mg1/pak0.pak` | 496,862,633 | `0aff296d1ec3b9b70e67ce84c60a0d13` | rerelease | Rerelease episode 6, Dimension of the Machine (2021) |
+| `mg1/pak0.pak` | 760,108,744 | `21ff64bc11548c28f1ea03e48eb97a82` | rerelease | Episode 6 (a later update) |
+| `q64/pak0.pak` | 101,636,600 | `20eb6f63a2ef3f8a763b03dbdb1a33b1` | rerelease | Quake 64 |
+
+### Test vectors
+
+No game data is available to tests (LIC-4), so `qs-install`'s tests identify stand-in PAK
+archives against rows made from their own sizes and checksums, and check that the table
+above and the code's table agree row for row. The MD5 code is checked against RFC 1321's
+test suite (appendix A.5).
