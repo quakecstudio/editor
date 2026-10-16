@@ -83,6 +83,10 @@ fn every_case_passes_on_what_the_oracle_gave() {
         }
     }
     assert!(outcomes.is_empty(), "no case for {:?}", outcomes.keys());
+    // The outcomes were recorded on macOS, which has no `/dev/full` and so not these cases.
+    if cfg!(target_os = "linux") {
+        unrecorded.retain(|name| !name.ends_with("trace-to-a-full-device"));
+    }
     unrecorded.sort();
     assert_eq!(unrecorded, NOT_RECORDED);
 }
