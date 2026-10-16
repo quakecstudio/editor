@@ -3,6 +3,7 @@ __pycache__/
 # Cargo build output, including the xtask scratch workspaces under target/xtask/
 /target/
 /fuzz/target/
+/spikes/target/
 /fuzz/corpus/
 /fuzz/artifacts/
 

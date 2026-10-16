@@ -1,0 +1,16 @@
+[package]
+name = "ui-egui"
+description = "egui prototype for the UI framework spike (P0-10); not shipped"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# eframe's defaults without `default_fonts` (OFL-1.1 AND Ubuntu-font-1.0, which deny.toml does
+# not allow) and the web-only features. The prototype loads the OS's fonts, as gpui does.
+eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "wayland", "wgpu", "x11"] }
+ui-common = { workspace = true }
+
+[lints]
+workspace = true

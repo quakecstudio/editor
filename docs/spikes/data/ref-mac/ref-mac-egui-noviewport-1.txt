@@ -1,0 +1,11 @@
+egui-noviewport on ref-mac: frame CPU time in ms (budget 8.33 ms at p99)
+phase        frames    p50    p95    p99    max  over
+all            2725   1.13   1.59   1.82   3.13     0
+diff            488   1.16   1.44   1.66   2.11     0
+ime             140   1.17   1.41   1.50   1.54     0
+multicursor     256   1.33   1.70   2.00   2.31     0
+scroll         1200   1.05   1.51   1.71   1.88     0
+type            641   1.14   1.71   2.15   3.13     0
+warmup          120   0.94   1.28   1.46  29.26     1
+
+startup: 50000 lines loaded in 31.7 ms, first frame built 138.0 ms after launch
