@@ -343,6 +343,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-builtins"
+version = "2026.10.0"
+dependencies = [
+ "qc-edict",
+ "qc-progs",
+ "qc-types",
+ "qc-vm",
+]
+
+[[package]]
 name = "qc-edict"
 version = "2026.10.0"
 dependencies = [
@@ -496,6 +506,11 @@ version = "2026.10.0"
 name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
+ "qc-builtins",
+ "qc-edict",
+ "qc-progs",
+ "qc-types",
+ "qc-vm",
  "qs-bsp",
  "qs-map",
  "qs-paths",

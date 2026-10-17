@@ -1096,6 +1096,7 @@ issues:
   - P1-56
   - P1-57
   - P1-58
+  - P1-59
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1279,3 +1280,21 @@ issues:
   - 'A Readiness run on main reports qc-preproc with no surviving mutant that is not killed or listed under equivalent_mutants (cargo xtask ratchet passes for the layer)'
   verify:
   - The Readiness workflow run linked in the PR
+- key: P1-59
+  title: Implement the qc-builtins state, output and world builtin bodies
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  size: M
+  reqs:
+  - FND-5
+  depends:
+  - P1-16
+  deliverable:
+  - 'crates/qc-builtins: the class state, output and world builtin bodies against the mock engine fixture. P1-16 landed the builtin table, the pure math and string builtins (BUILTIN-6, BUILTIN-7, anglemod), the mock engine fixture (DIFF-6) and the MockBuiltins dispatcher over qc-vm''s Builtins trait, with every number present and the not-yet-implemented class state, output and world builtins returning a typed engine-only error. This issue fills in their bodies: the entity builtins (BUILTIN-8), placing (BUILTIN-9), precaching (BUILTIN-10), printing, commands and settings (BUILTIN-11), sounds, particles, lightstyles and static entities (BUILTIN-12), network messages (BUILTIN-13), and the world builtins by the deterministic rules of DIFF-7 (BUILTIN-14, BUILTIN-15), plus the argument checks of BUILTIN-2.4 to BUILTIN-2.10 and the error builtins of BUILTIN-16'
+  acceptance:
+  - Every class state, output and world builtin reads its arguments and writes its result and its mock-engine effect as docs/spec/builtins.md and docs/spec/differential.md (DIFF-6, DIFF-7) specify, with a test citing each statement
+  - The argument checks of BUILTIN-2 raise the runtime errors of DIFF-6.6 byte for byte (invalid entity, invalid string, invalid field, invalid lightstyle)
+  verify:
+  - cargo test -p qc-builtins; the builtins argument-check vectors of docs/spec/builtins.md pass

@@ -104,6 +104,16 @@ pub enum ErrorKind {
         /// What went wrong, as this VM phrases it.
         detail: String,
     },
+    /// A runtime error a builtin raised with id's verbatim message (BUILTIN-3.1, DIFF-8.2).
+    ///
+    /// Unlike [`Divergence`](Self::Divergence), the message is printed byte for byte so a
+    /// builtin error (`invalid entity`, `no precache: <m>`, `backwards mins/maxs`, and the
+    /// fixed-answer errors `invalid string`, `invalid field`, `invalid lightstyle` of
+    /// DIFF-6.6) appears in the trace exactly as both differential runners write it.
+    Builtin {
+        /// The message, exactly as it goes into the trace's error record (TRACE-4.8).
+        message: String,
+    },
 }
 
 impl ErrorKind {
@@ -136,6 +146,7 @@ impl fmt::Display for ErrorKind {
             Self::BadOpcode { opcode } => write!(f, "Bad opcode {opcode}"),
             Self::AssignmentToWorld => f.write_str("assignment to world entity"),
             Self::Divergence { statement, detail } => write!(f, "{detail} ({statement})"),
+            Self::Builtin { message } => f.write_str(message),
         }
     }
 }

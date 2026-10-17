@@ -2,6 +2,7 @@
 
 //! The single cross-crate integration test binary. Each area is a module.
 
+mod builtins;
 mod map_entities;
 mod paths;
 mod scenario_numbers;
