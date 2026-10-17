@@ -454,6 +454,15 @@ dependencies = [
 [[package]]
 name = "qs-differential"
 version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-edict",
+ "qc-progs",
+ "qc-trace",
+ "qc-types",
+ "qc-vm",
+ "qs-porting-example",
+]
 
 [[package]]
 name = "qs-install"

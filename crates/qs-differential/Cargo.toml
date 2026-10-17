@@ -9,6 +9,13 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+qc-builtins.workspace = true
+qc-edict.workspace = true
+qc-progs.workspace = true
+qc-trace.workspace = true
+qc-types.workspace = true
+qc-vm.workspace = true
+qs-porting-example.workspace = true
 
 [lints]
 workspace = true
