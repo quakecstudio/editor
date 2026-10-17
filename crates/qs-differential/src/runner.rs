@@ -39,25 +39,19 @@ pub use fixtures::{ScenarioSpec, scenarios};
 /// tests supply a fake.
 pub type Oracle<'a> = dyn FnMut(&Path, &Path) -> Result<Vec<u8>, SuiteError> + 'a;
 
-/// Which codebases to run and which acceptance criteria to enforce (P1-13).
+/// Which codebases to run (P1-13). The bar is zero divergences in both modes (ADR-0013);
+/// coverage is reported, not gated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// The fast CI subset: id 1.01 only; enforce zero divergences (QA-1, DIFF-9.6). The subset
     /// `cargo xtask ci` and the CI `Test Assets` job prove on every change.
     Fast,
-    /// The full nightly corpus: every oracle-built codebase; enforce zero divergences and the
-    /// 90% statement-coverage bar (TEST-6, DIFF-11.2).
+    /// The full nightly corpus: every oracle-built codebase; enforce zero divergences
+    /// (DIFF-9.6) and report statement coverage (DIFF-11, ADR-0013).
     Full,
 }
 
 impl Mode {
-    /// Whether this mode enforces the 90% statement-coverage bar (TEST-6). The fast subset
-    /// proves zero divergences only; the full corpus proves coverage too.
-    #[must_use]
-    pub fn enforces_coverage(self) -> bool {
-        matches!(self, Mode::Full)
-    }
-
     /// The codebases this mode runs (their ids in `corpus/manifest.toml`).
     #[must_use]
     pub fn codebases(self) -> &'static [&'static str] {
@@ -168,27 +162,22 @@ pub fn progs_path(assets: &Path, id: &str) -> PathBuf {
     assets.join("progs").join(id).join("progs.dat")
 }
 
-/// Prints one codebase's report and returns whether it met the criteria `mode` enforces
-/// (DIFF-9.6 zero divergences always; DIFF-11.2 90% coverage in [`Mode::Full`]).
+/// Prints one codebase's report and returns whether it met the differential bar (ADR-0013):
+/// zero divergences over at least one scenario (DIFF-9.6). Statement coverage (DIFF-11) is
+/// printed for information but not gated, because the mock does not drive the running world
+/// (DIFF-5.8, DIFF-1.5).
 #[must_use]
-pub fn report_line(report: &CodebaseReport, mode: Mode) -> bool {
+pub fn report_line(report: &CodebaseReport) -> bool {
     let coverage = report.coverage() * 100.0;
     let covered = report.executed.len();
     println!(
         "      {}: {} scenarios, {} divergences, {covered} of {} statements ({coverage:.1}%)",
         report.id, report.scenarios, report.divergences, report.total_statements
     );
-    if report.divergences != 0 || report.scenarios == 0 {
+    if !report.passes() {
         println!(
             "FAIL  {}: {} divergences over {} scenarios",
             report.id, report.divergences, report.scenarios
-        );
-        return false;
-    }
-    if mode.enforces_coverage() && report.coverage() < suite::MIN_COVERAGE {
-        println!(
-            "FAIL  {}: {coverage:.1}% of statements executed, below the 90% bar (TEST-6)",
-            report.id
         );
         return false;
     }

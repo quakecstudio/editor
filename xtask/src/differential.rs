@@ -13,7 +13,7 @@
 //! - `cargo xtask differential` and `--fast` run the fast subset: id 1.01, enforcing zero
 //!   divergences (the subset the CI `Test Assets` job proves on every change).
 //! - `cargo xtask differential --full` runs every oracle-built codebase, the nightly corpus,
-//!   enforcing zero divergences and the 90% statement-coverage bar (TEST-6).
+//!   enforcing zero divergences and reporting statement coverage (DIFF-11, ADR-0013).
 //!
 //! The corpus progs must be built first (`cargo xtask corpus build`); the asset cache is
 //! `$QS_TEST_ASSETS` (the same default as `cargo xtask corpus`).

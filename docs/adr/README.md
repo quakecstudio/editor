@@ -25,6 +25,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0010](0010-visual-design.md) | Use warm graphite with one ember accent, Plex and JetBrains Mono, and native chrome | Accepted |
 | [0011](0011-app-directories.md) | Use each OS's native application directories | Accepted |
 | [0012](0012-bsp-loader-default.md) | Load BSPs by the FitzQuake lineage's rules by default, with WinQuake and GLQuake as modes | Accepted |
+| [0013](0013-differential-coverage-bar.md) | Make zero divergences the differential suite's bar and report coverage without a flat 90% gate | Accepted |
 <!-- /adr:index -->
 
 ADR-0003 to ADR-0010 are reserved by the Phase 0 issues that name them in their deliverables

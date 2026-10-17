@@ -34,6 +34,4 @@ pub use compare::{Comparison, Divergence, Slot, compare, coverage};
 pub use host::{Ended, RunOutput, RunRefused, run_scenario};
 pub use runner::{Mode, run_codebase};
 pub use scenario::{Cvar, Input, ModelBounds, Refused, Scenario};
-pub use suite::{
-    CodebaseReport, MIN_COVERAGE, ScenarioResult, SuiteError, entity_lump, run_and_compare,
-};
+pub use suite::{CodebaseReport, ScenarioResult, SuiteError, entity_lump, run_and_compare};

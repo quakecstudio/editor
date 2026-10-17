@@ -8,7 +8,8 @@
 //! oracle, and compares the two traces statement by statement (DIFF-9), reporting the first
 //! divergence with context (DIFF-9.5) and measuring how many of the progs' statements the
 //! traces executed (DIFF-11). The acceptance of P1-13 is zero divergences on id 1.01 and the
-//! rerelease, and at least 90% of the statements of each corpus codebase executed.
+//! rerelease; statement coverage is measured and reported, not gated at a flat 90%, because the
+//! mock does not drive the running world (DIFF-5.8, DIFF-1.5, ADR-0013).
 //!
 //! This module is the oracle-independent half of the runner: it builds the entity lump of a
 //! scenario from a `.map` (DIFF-2.5), runs QuakeC Studio's side, compares a pair of traces and
@@ -312,17 +313,15 @@ impl CodebaseReport {
         f64::from(covered) / f64::from(self.total_statements)
     }
 
-    /// Whether the codebase meets P1-13: zero divergences and at least 90% of its statements
-    /// executed (TEST-6), over at least one scenario.
+    /// Whether the codebase meets its differential bar (P1-13, ADR-0013): zero divergences
+    /// over at least one scenario. Statement coverage ([`Self::coverage`]) is measured and
+    /// reported but not gated here, because the mock does not drive the running world
+    /// (DIFF-5.8, DIFF-1.5), so most of a Quake progs is unreachable under it.
     #[must_use]
-    pub fn passes(&self, min_coverage: f64) -> bool {
-        self.scenarios > 0 && self.divergences == 0 && self.coverage() >= min_coverage
+    pub fn passes(&self) -> bool {
+        self.scenarios > 0 && self.divergences == 0
     }
 }
-
-/// The P1-13 statement-coverage bar (TEST-6, `docs/testing.md`): at least 90% of a codebase's
-/// statements executed.
-pub const MIN_COVERAGE: f64 = 0.90;
 
 #[cfg(test)]
 #[path = "suite/tests.rs"]
