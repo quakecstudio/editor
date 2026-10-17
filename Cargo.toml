@@ -116,6 +116,7 @@ junction = { version = "=2.1.0", default-features = false }
 miniz_oxide = { version = "=0.9.1", default-features = false }
 proptest = { version = "=1.11.0", default-features = false }
 qc-edict = { path = "crates/qc-edict" }
+qc-builtins = { path = "crates/qc-builtins" }
 qc-lexer = { path = "crates/qc-lexer" }
 qc-lno = { path = "crates/qc-lno" }
 qc-preproc = { path = "crates/qc-preproc" }

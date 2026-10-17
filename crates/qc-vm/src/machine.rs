@@ -147,7 +147,15 @@ impl Machine {
         self.trace_flag
     }
 
-    pub(crate) fn global(&self, slot: i32) -> Result<Slot, GlobalAccessError> {
+    /// Reads one global slot, bounds-checked (VM-1.3, VM-1.4).
+    ///
+    /// A builtin reads a parameter slot (`OFS_PARM0` up) and a system global through this
+    /// (VM-14.1, PROGS-18); the index is `self.globals().len()` at most.
+    ///
+    /// # Errors
+    ///
+    /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals`.
+    pub fn global(&self, slot: i32) -> Result<Slot, GlobalAccessError> {
         usize::try_from(slot)
             .ok()
             .and_then(|index| self.globals.get(index).copied())
@@ -156,11 +164,15 @@ impl Machine {
 
     /// Writes one global slot, bounds-checked (VM-1.3, VM-1.4).
     ///
+    /// A builtin writes its result to `OFS_RETURN` and a system global (such as `v_forward` or
+    /// the `trace_*` globals) through this; the write is checked so a hand-built progs cannot
+    /// make it reach outside the globals.
+    ///
     /// # Errors
     ///
     /// [`GlobalAccessError`] when `slot` is negative or not less than `numglobals`; nothing is
     /// written.
-    pub(crate) fn set_global(&mut self, slot: i32, value: Slot) -> Result<(), GlobalAccessError> {
+    pub fn set_global(&mut self, slot: i32, value: Slot) -> Result<(), GlobalAccessError> {
         match usize::try_from(slot)
             .ok()
             .and_then(|index| self.globals.get_mut(index))
@@ -180,11 +192,33 @@ impl Machine {
     /// # Errors
     ///
     /// [`GlobalAccessError`] naming the first slot outside the globals.
-    pub(crate) fn global3(&self, slot: i32) -> Result<[Slot; 3], GlobalAccessError> {
+    pub fn global3(&self, slot: i32) -> Result<[Slot; 3], GlobalAccessError> {
         let x = self.global(slot)?;
         let y = self.global(add_slot(slot, 1)?)?;
         let z = self.global(add_slot(slot, 2)?)?;
         Ok([x, y, z])
+    }
+
+    /// Writes the three slots of a vector global, `slot`, `slot + 1`, `slot + 2` (VM-1.3).
+    ///
+    /// All three must be inside the globals, checked before any is written (VM-1.4), so a
+    /// failure leaves every slot unchanged. A builtin writes a vector result (`makevectors`'
+    /// `v_forward`, `trace_endpos`) through this.
+    ///
+    /// # Errors
+    ///
+    /// [`GlobalAccessError`] naming the first slot outside the globals; nothing is written.
+    pub fn set_global3(&mut self, slot: i32, value: [Slot; 3]) -> Result<(), GlobalAccessError> {
+        // Check all three slots are in range before writing any (VM-1.4).
+        let s1 = add_slot(slot, 1)?;
+        let s2 = add_slot(slot, 2)?;
+        self.global(slot)?;
+        self.global(s1)?;
+        self.global(s2)?;
+        self.set_global(slot, value[0])?;
+        self.set_global(s1, value[1])?;
+        self.set_global(s2, value[2])?;
+        Ok(())
     }
 }
 
