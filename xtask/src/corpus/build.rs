@@ -1,16 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask corpus build`: compiles the codebases an oracle compiler builds and checks
-//! that each progs.dat round-trips through `qc-progs` byte for byte (PROGS-22.1).
+//! that each progs.dat round-trips through `qc-progs` byte for byte (PROGS-22.1), and that
+//! each FTEQCC-written `.lno` round-trips through `qc-lno` byte for byte (LNO-6.2) and matches
+//! its progs.dat header counts (LNO-4.1).
 //!
 //! id's QuakeC 1.01 is compiled with id's qcc and the six rerelease codebases with the pinned
 //! FTEQCC, exactly as `cargo xtask oracles id101` and `oracles rerelease` do; the outputs go
 //! to `<cache>/progs/<id>/`. This is where those progs.dat files first exist, so the
-//! round-trip is checked here.
+//! round-trip is checked here. id's qcc writes no `.lno` (LNO-1), so only the FTEQCC-written
+//! codebases carry one and are checked against it.
 
 use std::fs;
 use std::path::Path;
 
+use qc_lno::LnoFile;
 use qc_progs::{Progs, write};
 
 use super::fetch::{write_codebase, write_file};
@@ -80,8 +84,8 @@ fn build_one(
 ) -> Result<usize, String> {
     let (dir, _) = write_codebase(m, id, dest, net)?;
     let out = dest.join("progs").join(id);
-    let progs = if id == ID_QCC {
-        id101::compile(oracles, &dir)?.0
+    let (progs, lno) = if id == ID_QCC {
+        (id101::compile(oracles, &dir)?.0, None)
     } else {
         let codebases = dir.parent().unwrap_or(dest);
         let (built, _) = rerelease::build(oracles, codebases, id)?;
@@ -89,10 +93,16 @@ fn build_one(
         let lno = fs::read(&lno_path).map_err(|e| format!("{}: {e}", lno_path.display()))?;
         write_file(&out.join("progs.lno"), &lno)?;
         let progs_path = built.join("progs.dat");
-        fs::read(&progs_path).map_err(|e| format!("{}: {e}", progs_path.display()))?
+        let progs = fs::read(&progs_path).map_err(|e| format!("{}: {e}", progs_path.display()))?;
+        (progs, Some(lno))
     };
     write_file(&out.join("progs.dat"), &progs)?;
     round_trip(&progs)?;
+    if let Some(lno) = lno {
+        lno_round_trip(&lno, &progs)?;
+        let bytes = lno.len();
+        println!("ok    {id}: progs.lno ({bytes} bytes) round-trips through qc-lno, counts match");
+    }
     Ok(progs.len())
 }
 
@@ -116,6 +126,38 @@ pub(crate) fn round_trip(progs: &[u8]) -> Result<(), String> {
     ))
 }
 
+/// Reads an FTEQCC-written `.lno` with `qc-lno`, writes it back and checks the bytes are
+/// identical (LNO-6.2: "A file the reader accepts is written back byte for byte, and reading
+/// what the writer wrote gives back the counts, tables and trailing bytes it was given."),
+/// then checks it matches its `progs.dat` header counts (LNO-4.1: "A `.lno` belongs to a progs
+/// when all four counts equal that progs' header fields `numglobaldefs`, `numglobals`,
+/// `numfielddefs` and `numstatements` (PROGS-2.1), compared as unsigned 32-bit values.").
+///
+/// Reports the first differing byte on a round-trip mismatch and the first differing count on
+/// a header mismatch; the caller prefixes the codebase id.
+pub(crate) fn lno_round_trip(lno: &[u8], progs: &[u8]) -> Result<(), String> {
+    let read = LnoFile::read(lno).map_err(|e| format!("qc-lno refuses the .lno: {e}"))?;
+    let written = read
+        .write()
+        .map_err(|e| format!("qc-lno cannot write the .lno back: {e}"))?;
+    if written != lno {
+        let first = lno
+            .iter()
+            .zip(&written)
+            .position(|(a, b)| a != b)
+            .unwrap_or(lno.len().min(written.len()));
+        return Err(format!(
+            "the .lno written back is {} bytes against {}, differing first at byte {first}",
+            written.len(),
+            lno.len()
+        ));
+    }
+    let progs = Progs::read(progs).map_err(|e| format!("qc-progs refuses the progs.dat: {e:?}"))?;
+    read.matches_header(progs.header())
+        .map_err(|e| format!("the .lno does not match the progs.dat: {e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #![expect(
@@ -124,6 +166,7 @@ mod tests {
         reason = "test code: a failed unwrap or index is a failed test"
     )]
 
+    use qc_lno::LnoFile;
     use qc_progs::{Def, ProgsFile, Statement, write};
 
     use std::path::Path;
@@ -134,7 +177,7 @@ mod tests {
         DEFS, FakeNet, TempDir, archive_url, manifest, standard_archive,
     };
     use super::super::manifest::Manifest;
-    use super::{build_one, cmd_build, has_oracle, round_trip, targets};
+    use super::{build_one, cmd_build, has_oracle, lno_round_trip, round_trip, targets};
     use crate::exec::{Fake, Reply};
     use crate::oracles::sha256::hex_digest;
     use crate::oracles::testing::fake_oracles;
@@ -243,5 +286,83 @@ mod tests {
         let err = round_trip(&bytes).unwrap_err();
         assert!(err.contains("differing first at byte 24"), "{err}");
         assert!(err.contains(&format!("against {}", bytes.len())), "{err}");
+    }
+
+    /// A progs.dat whose header counts a matching `.lno` must share: `numglobaldefs` 1,
+    /// `numglobals` 0, `numfielddefs` 1 and `numstatements` 2, from the table lengths.
+    fn progs_with_two_statements() -> Vec<u8> {
+        let file = ProgsFile {
+            statements: vec![Statement::default(); 2],
+            global_defs: vec![Def::default(); 1],
+            field_defs: vec![Def::default(); 1],
+            strings: vec![0],
+            ..ProgsFile::default()
+        };
+        write(&file).unwrap()
+    }
+
+    // spec LNO-6.2: a file the reader accepts is written back byte for byte.
+    // spec LNO-4.1: a .lno matches when its four counts equal the progs' header fields.
+    #[test]
+    fn an_lno_that_round_trips_and_matches_its_progs_passes() {
+        let progs = progs_with_two_statements();
+        let lno = LnoFile {
+            numglobaldefs: 1,
+            numglobals: 0,
+            numfielddefs: 1,
+            lines: vec![0, 5],
+            columns: None,
+            trailing: Vec::new(),
+        }
+        .write()
+        .unwrap();
+        assert_eq!(lno_round_trip(&lno, &progs), Ok(()));
+    }
+
+    // spec LNO-4.1: a .lno matches only when all four counts equal the progs' header fields.
+    // spec LNO-4.2: the first differing field, in header order, is reported.
+    #[test]
+    fn an_lno_whose_counts_differ_fails_naming_the_field() {
+        let progs = progs_with_two_statements();
+        let lno = LnoFile {
+            numglobaldefs: 1,
+            numglobals: 7,
+            numfielddefs: 1,
+            lines: vec![0, 5],
+            columns: None,
+            trailing: Vec::new(),
+        }
+        .write()
+        .unwrap();
+        let err = lno_round_trip(&lno, &progs).unwrap_err();
+        assert!(err.contains("does not match the progs.dat"), "{err}");
+        assert!(err.contains("numglobals"), "{err}");
+        assert!(err.contains("the .lno's numglobals is 7"), "{err}");
+    }
+
+    // spec LNO-4.1: numstatements is the line table length, checked against the progs.
+    #[test]
+    fn an_lno_with_the_wrong_statement_count_fails() {
+        let progs = progs_with_two_statements();
+        let lno = LnoFile {
+            numglobaldefs: 1,
+            numglobals: 0,
+            numfielddefs: 1,
+            lines: vec![0, 5, 9],
+            columns: None,
+            trailing: Vec::new(),
+        }
+        .write()
+        .unwrap();
+        let err = lno_round_trip(&lno, &progs).unwrap_err();
+        assert!(err.contains("numstatements"), "{err}");
+    }
+
+    // spec LNO-5.1: a file shorter than the header is rejected with a typed error.
+    #[test]
+    fn an_lno_qc_lno_refuses_is_reported() {
+        let progs = progs_with_two_statements();
+        let err = lno_round_trip(b"short", &progs).unwrap_err();
+        assert!(err.starts_with("qc-lno refuses the .lno"), "{err}");
     }
 }

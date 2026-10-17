@@ -879,6 +879,7 @@ dependencies = [
  "cc",
  "miniz_oxide",
  "qc-lexer",
+ "qc-lno",
  "qc-preproc",
  "qc-progs",
  "qc-project",
