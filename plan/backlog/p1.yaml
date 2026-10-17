@@ -1131,6 +1131,34 @@ issues:
   - The differential suite (P1-13) runs id 1.01 end to end with zero unexpected divergences from the angle conversion (the first makevectors and movetogoal divergences are gone)
   verify:
   - cargo test -p qc-builtins; the differential suite of P1-13
+- key: P1-65
+  title: Raise L1 VM coverage to the bar and fix the qc-vm and qc-builtins READMEs for the spec tool
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  reqs:
+  - TEST-1
+  - TEST-2
+  - TEST-3
+  size: M
+  depends:
+  - P1-09
+  - P1-10
+  - P1-59
+  - P1-60
+  - P1-63
+  - P1-64
+  deliverable:
+  - 'The P1-R1 readiness review (docs/readiness/p1-r1.md) ran the Readiness workflow on main (run 39053374755) and found the L1 VM layer short of the ADR-0009 bar on three axes. TEST-1 (coverage): qc-builtins is at 67.7% lines (1076 of 1589) and 52.0% branches (128 of 246), far below the 90% line and 80% branch bars, and qc-edict is at 85.8% lines (194 of 226), below the 90% line bar (its branches are 84.2%, over the bar). TEST-2 (mutation): qc-builtins has 272 surviving mutants and a 63.4% mutation score (471 of 743), and qc-vm has 33 surviving mutants and an 85.7% score (197 of 230), both below the 90% bar and with survivors neither killed nor recorded equivalent; qc-edict has 7 survivors (90.7%, at the bar but survivors unaddressed) and qc-trace has 1 (99.5%). TEST-3 (spec citations) could not be measured at all: cargo xtask readiness spec exits 1 on crates/qc-vm/README.md with "no `**Spec sections:**` line", because qc-vm (## Spec sections implemented) and qc-builtins (## Spec sections) write the heading as a Markdown header rather than the bold inline `**Spec sections:**` line the tool parses (xtask/src/readiness.rs spec_sections), the form qc-edict, qc-trace and qs-porting-example already use.'
+  - 'For TEST-1: add tests in qc-builtins and qc-edict until every crate in the layer reaches at least 90% line and 80% branch coverage on a Readiness run, exercising the mock-engine dispatch bodies and error paths that are currently uncovered; a per-crate exception is allowed only with a reason recorded in the crate README and ratchets.toml.'
+  - 'For TEST-2: for each surviving mutant in qc-builtins, qc-vm and qc-edict, a test in the owning crate that fails on the mutant (cargo mutants --manifest-path crates/<crate>/Cargo.toml lists it as MISSED), or an entry in ratchets.toml under [crates.<crate>].equivalent_mutants with the mutant key and a reason it cannot be killed; every crate at mutation at least 90% or an exception with its reason.'
+  - 'For TEST-3: rewrite the Spec sections heading in crates/qc-vm/README.md and crates/qc-builtins/README.md as a `- **Spec sections:** ...` line naming the statements each crate implements, so cargo xtask readiness spec measures them; add a `// spec <ID>:` test citation for every within-layer statement left uncited, with no new baseline entry for an L1 crate.'
+  acceptance:
+  - 'A Readiness run on main reports every L1 VM crate (qc-vm, qc-builtins, qc-edict, qc-trace, qs-porting-example) at line coverage at least 90%, branch coverage at least 80%, and mutation at least 90% or a recorded exception, with no surviving mutant that is not killed or listed under equivalent_mutants (cargo xtask ratchet passes for the layer)'
+  - 'A Readiness run on main reports every L1 VM crate at spec citations 100% (cargo xtask readiness spec runs without error and attributes no higher-layer statement to a crate), with no new baseline entry for an L1 crate'
+  verify:
+  - The Readiness workflow run linked in the PR
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -1207,6 +1235,7 @@ issues:
   - P1-62
   - P1-63
   - P1-64
+  - P1-65
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:

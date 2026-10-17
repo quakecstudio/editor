@@ -14,6 +14,7 @@
     reason = "test code: a failed unwrap or index is a failed test"
 )]
 
+mod adversarial;
 mod harness;
 mod string_opcodes;
 mod vectors;
