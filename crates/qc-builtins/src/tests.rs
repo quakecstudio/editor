@@ -190,6 +190,36 @@ fn makevectors_zero_angles() {
     assert!(vec_same(up, [0.0, 0.0, 1.0]));
 }
 
+// spec BUILTIN-6.1: makevectors rounds the angle to f32 before sine and cosine, as id's
+// AngleVectors stores it in a float; a 360-degree yaw gives id's f32-rounded sine, bits
+// 0x343bbd2e (about 1.748e-7), not the f64 value bits 0xa58d3132 (about -2.449e-16).
+#[test]
+fn makevectors_full_yaw_rounds_to_f32() {
+    let (forward, right, up) = math::makevectors([0.0, 360.0, 0.0]);
+    // forward = (cp*cy, cp*sy, -sp): cy ~ 1, sy is the f32-rounded sine of 2*PI.
+    assert_eq!(forward[0].to_bits(), 0x3f80_0000); // 1.0
+    assert_eq!(forward[1].to_bits(), 0x343b_bd2e); // ~1.748e-7, not ~-2.449e-16
+    assert_eq!(forward[2].to_bits(), 0x8000_0000); // -0.0
+    assert_eq!(right[0].to_bits(), 0x343b_bd2e);
+    assert_eq!(right[1].to_bits(), 0xbf80_0000); // -1.0
+    assert_eq!(right[2].to_bits(), 0x8000_0000); // -0.0
+    assert!(vec_same(up, [0.0, 0.0, 1.0]));
+}
+
+// spec BUILTIN-6.1: makevectors of a representative non-axis yaw matches id's AngleVectors
+// bit for bit (yaw 45: sin and cos are 0x3f3504f3, about 0.70710677).
+#[test]
+fn makevectors_non_axis_yaw() {
+    let (forward, right, up) = math::makevectors([0.0, 45.0, 0.0]);
+    assert_eq!(forward[0].to_bits(), 0x3f35_04f3);
+    assert_eq!(forward[1].to_bits(), 0x3f35_04f3);
+    assert_eq!(forward[2].to_bits(), 0x8000_0000); // -0.0
+    assert_eq!(right[0].to_bits(), 0x3f35_04f3);
+    assert_eq!(right[1].to_bits(), 0xbf35_04f3);
+    assert_eq!(right[2].to_bits(), 0x8000_0000); // -0.0
+    assert!(vec_same(up, [0.0, 0.0, 1.0]));
+}
+
 // spec BUILTIN-15.5: anglemod wraps to 0 up to 360 and truncates to a multiple of 360/65536.
 #[test]
 fn anglemod_values() {
@@ -1022,6 +1052,29 @@ mod bodies {
         // step at y=20).
         assert_eq!(f.field_v(1, "origin")[0], 0.0);
         assert_eq!(f.field_v(1, "origin")[1], 20.0);
+    }
+
+    // spec DIFF-7.6: the walkmove step rounds its angle to f32 before cosine and sine, as id's
+    // PF_walkmove keeps the yaw in a float. A 360-degree yaw by 10 gives id's f32-rounded
+    // move_y, bits 0x35eaac7a (about 1.748e-6), not the f64 path's 0xa7307d7e (about -2.449e-15);
+    // with origin_y 0 the new origin_y carries that residue bit for bit.
+    #[test]
+    fn walkmove_full_yaw_rounds_to_f32() {
+        let mut f = Fixture::new(32, 2, vec![0], 0);
+        f.machine.edicts_mut().alloc(1.0).unwrap();
+        f.set_field_f(1, "flags", 512.0); // FL_ONGROUND
+        f.set_field_v(1, "origin", [10.0, 0.0, 30.0]);
+        f.set_global_entity("self", 1);
+        f.set_parm_f(0, 360.0); // yaw
+        f.set_parm_f(1, 10.0); // dist
+        f.run_ok(ServerState::Active);
+        assert_eq!(f.return_f(), 1.0);
+        let origin = f.field_v(1, "origin");
+        // move_x = (f32)(cos(f32-radians) * 10) = 10; origin_x 10 + 10 = 20.
+        assert_eq!(origin[0].to_bits(), 0x41a0_0000); // 20.0
+        // move_y = (f32)(sin(f32-radians) * 10), bits 0x35eaac7a; origin_y 0 + that.
+        assert_eq!(origin[1].to_bits(), 0x35ea_ac7a);
+        assert_eq!(origin[2], 30.0); // origin_z is not written.
     }
 
     // spec DIFF-7.8: movetogoal without a movement flag writes 0 to RETURN.

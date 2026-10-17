@@ -42,9 +42,14 @@ pub fn float_to_int(f: f32) -> i32 {
 /// Returns `(v_forward, v_right, v_up)`. Each component angle `a` is
 /// `(f32)(a * (M_PI*2/360))` in double, `sy`/`cy`/`sp`/`cp`/`sr`/`cr` its f32 sine and cosine
 /// (computed in double) for yaw (`ang_y`), pitch (`ang_x`) and roll (`ang_z`); the rest is f32.
+///
+/// id's `AngleVectors` stores the angle in a `float` (`angle = angles[YAW] * (M_PI*2 / 360)`),
+/// so the double product is rounded to f32 before `sin`/`cos`. `deg_to_rad` does the same
+/// `(f32)(...)` round; a 360-degree yaw therefore gives id's `sin` of `~1.7e-7`, not the
+/// `~-2.4e-16` of the un-rounded `2*PI` (BUILTIN-6.1).
 #[must_use]
 pub fn makevectors(ang: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
-    let deg_to_rad = |a: f32| -> f64 { f64::from(a) * (PI * 2.0 / 360.0) };
+    let deg_to_rad = |a: f32| -> f64 { f64::from(f64_to_f32(f64::from(a) * (PI * 2.0 / 360.0))) };
     let (sy, cy) = sin_cos_f32(deg_to_rad(ang[1]));
     let (sp, cp) = sin_cos_f32(deg_to_rad(ang[0]));
     let (sr, cr) = sin_cos_f32(deg_to_rad(ang[2]));
