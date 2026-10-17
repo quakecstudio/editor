@@ -494,6 +494,74 @@ fn set_and_remove() {
     assert!(matches!(entity.items[0], Item::Pair(_)));
 }
 
+// spec MAP-2.3: a pair keeps its value's raw bytes, including the quotes, and gives them back.
+#[test]
+fn pair_value_raw_keeps_the_quotes() {
+    let pair = Pair::new(b"k", b"hello world").unwrap();
+    assert_eq!(pair.value_raw(), b"\"hello world\"");
+    assert_eq!(pair.value(), b"hello world");
+}
+
+// spec MAP-1.8, MAP-2.3: set_value reports an ericw escape when the value ends in a backslash;
+// a value with no trailing backslash and a key without one does not.
+#[test]
+fn set_value_reports_an_ericw_escape() {
+    let mut pair = Pair::new(b"k", b"v").unwrap();
+    pair.set_value(b"ends\\").unwrap();
+    assert!(pair.ericw_escape());
+    assert_eq!(pair.value_raw(), b"\"ends\\\"");
+    let mut plain = Pair::new(b"k", b"v").unwrap();
+    plain.set_value(b"plain").unwrap();
+    assert!(!plain.ericw_escape());
+}
+
+// spec MAP-3.3, MAP-4.1: a face number token must be used in full; a token with trailing
+// non-number bytes is a BadNumber, not a silently truncated value.
+#[test]
+fn face_number_must_consume_the_whole_token() {
+    assert_eq!(
+        MapFile::parse(b"{\n{\n( 0 0 0 ) ( 0 1 0 ) ( 0 0 1 ) w 0 0 0 1x 1\n}\n}\n"),
+        Err(MapError::BadNumber {
+            line: 3,
+            text: b"1x".to_vec()
+        })
+    );
+}
+
+// spec MAP-3.3: the number formatter writes a whole number with no fraction and keeps the sign
+// of a real -0.0 as the plus it rounds to (value + 0.0 normalises -0.0 to +0.0).
+#[test]
+fn number_formats_whole_and_signed_zero() {
+    assert_eq!(super::number(0.0).unwrap(), "0");
+    assert_eq!(super::number(-0.0).unwrap(), "0");
+    assert_eq!(super::number(42.0).unwrap(), "42");
+    assert_eq!(super::number(-42.0).unwrap(), "-42");
+    assert_eq!(super::number(1.5).unwrap(), "1.5");
+}
+
+// spec MAP-3.3, MAP-4.1: a face qbsp_differs flag is the OR of three independent reasons. An
+// all-integer standard face matches qbsp (false); a fractional point makes it differ (true);
+// a Valve 220 face always differs because qbsp has no Valve form (true).
+#[test]
+fn face_qbsp_differs_covers_each_reason() {
+    let integer = standard_face([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], b"wall");
+    assert!(!integer.qbsp_differs());
+    let fractional = standard_face([[0.0, 0.0, 1.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], b"wall");
+    assert!(fractional.qbsp_differs());
+    let valve = Face::new(
+        [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        b"wall",
+        TexDef::Valve {
+            s: [0.0, 1.0, 0.0, 0.0],
+            t: [0.0, 0.0, -1.0, 0.0],
+            rotate: 0.0,
+            scale: [1.0, 1.0],
+        },
+    )
+    .unwrap();
+    assert!(valve.qbsp_differs());
+}
+
 /// A key, value or texture name that both readers take as one token.
 fn word() -> impl Strategy<Value = String> {
     "[a-z_*+][a-z0-9_*+]{0,8}"

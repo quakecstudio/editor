@@ -10,9 +10,9 @@
 )]
 
 use super::{
-    MAP_LUMP_LINE, MAP_MAX_ENTITIES, MAP_MAX_KEY, MAP_MAX_TEXINFO, MAP_MAX_TEXTURE_NAME,
-    MAP_MAX_VALUE, MAP_TEX_SPECIAL, QbspError, QbspMap, QbspWarning, TextureSlot, is_special,
-    load_map_file,
+    MAP_LUMP_LINE, MAP_MAX_ENTITIES, MAP_MAX_ENTSTRING, MAP_MAX_KEY, MAP_MAX_TEXINFO,
+    MAP_MAX_TEXTURE_NAME, MAP_MAX_VALUE, MAP_TEX_SPECIAL, QbspError, QbspMap, QbspWarning,
+    TextureSlot, is_special, load_map_file,
 };
 use core::f32::consts::FRAC_1_SQRT_2;
 
@@ -186,6 +186,40 @@ fn entity_without_pairs_is_skipped() {
     let map = load_map_file(b"{\n}\n{\n\"a\" \"b\"\n}\n").unwrap();
     assert_eq!(map.entity_lump().unwrap(), b"{\n\"a\" \"b\"\n}\n\0");
     assert_eq!(load_map_file(b"").unwrap().entity_lump().unwrap(), b"\0");
+}
+
+// spec MAP-2.8: an entity keeps the source line of its opening brace.
+#[test]
+fn entity_keeps_its_line() {
+    let map = load_map_file(b"{\n\"a\" \"b\"\n}\n{\n\"c\" \"d\"\n}\n").unwrap();
+    assert_eq!(map.entities[0].line, 1);
+    assert_eq!(map.entities[1].line, 4);
+}
+
+// spec MAP-2.10: an entity lump longer than MAP_MAX_ENTSTRING fails; one at or below it does
+// not. Many short entities accumulate past the limit.
+#[test]
+fn entity_lump_past_the_limit_fails() {
+    assert_eq!(MAP_MAX_ENTSTRING, 65536);
+    // Each entity writes `{\n"k" "<120 v>"\n}\n` = 131 bytes; 600 entities make ~78600 bytes.
+    let value = "v".repeat(120);
+    let mut text = String::new();
+    for _ in 0..600 {
+        text.push_str(&format!("{{\n\"k\" \"{value}\"\n}}\n"));
+    }
+    let map = load_map_file(text.as_bytes()).unwrap();
+    assert_eq!(map.entity_lump(), Err(QbspError::EntityTextTooLong));
+    // A handful of the same entities stays well under the limit and succeeds.
+    let mut small = String::new();
+    for _ in 0..3 {
+        small.push_str(&format!("{{\n\"k\" \"{value}\"\n}}\n"));
+    }
+    assert!(
+        load_map_file(small.as_bytes())
+            .unwrap()
+            .entity_lump()
+            .is_ok()
+    );
 }
 
 // spec MAP-6.2: brush entities after the world are numbered from 1 and their `model` key

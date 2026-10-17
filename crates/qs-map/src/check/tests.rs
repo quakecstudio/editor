@@ -183,6 +183,10 @@ fn faces() {
         check(&format!("{{\n{FACE} {name} 0 0 0 1 1\n}}\n}}\n")),
         [(5, DiagnosticKind::TextureNameTooLong)]
     );
+    // spec MAP-4.6: a name of exactly MAP_MAX_TEXTURE_NAME (15) is accepted; the warning is
+    // for names longer than the limit, so the boundary does not warn.
+    let name = "t".repeat(15);
+    assert!(check(&format!("{{\n{FACE} {name} 0 0 0 1 1\n}}\n}}\n")).is_empty());
     assert_eq!(
         check(&format!(
             "{{\n{FACE} w 0 0 0 1 1\n( 0 0 1 ) ( 0 1 1 ) ( 0 0 0 ) w 0 0 0 1 1\n}}\n}}\n"
@@ -202,6 +206,23 @@ fn texture_count() {
     }
     body.push_str("}\n}\n");
     assert_eq!(check(&body), [(0, DiagnosticKind::TooManyTextures)]);
+}
+
+// spec MAP-4.7: 4097 identical faces have one qbsp texinfo, so qbsp does not overflow and no
+// TooManyTextures is reported even though the face count passes 4096. This separates the
+// faces-count test from qbsp actually overflowing (the two must both hold).
+#[test]
+fn many_duplicate_faces_do_not_overflow() {
+    let mut body = "{\n".to_owned();
+    for _ in 0..4097 {
+        body.push_str(&format!("{FACE} shared 0 0 0 1 1\n"));
+    }
+    body.push_str("}\n}\n");
+    assert!(
+        !check(&body)
+            .iter()
+            .any(|(_, kind)| *kind == DiagnosticKind::TooManyTextures)
+    );
 }
 
 // spec MAP-6.3, MAP-6.5, MAP-6.6: the world's WAD, message and CD track.
