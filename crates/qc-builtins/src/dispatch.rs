@@ -1513,6 +1513,10 @@ impl MockBuiltins<MockEngine> {
     }
 
     /// The step of DIFF-7.6 along yaw `a` by distance `d`, writing `origin_x` and `origin_y`.
+    ///
+    /// id's `PF_walkmove`/`movetogoal` keeps the yaw in a `float` (`yaw = yaw*M_PI*2 / 360`),
+    /// so the double product is rounded to f32 before `cos`/`sin` (DIFF-7.6). `f64_to_f32_public`
+    /// does that `(f32)(...)` round; the promotion back to double for the library call is exact.
     fn step_self(
         &mut self,
         context: &mut Context<'_, '_>,
@@ -1520,7 +1524,9 @@ impl MockBuiltins<MockEngine> {
         a: f32,
         d: f32,
     ) -> Result<(), BuiltinError> {
-        let y = f64::from(a) * core::f64::consts::PI * 2.0 / 360.0;
+        let y = f64::from(math::f64_to_f32_public(
+            f64::from(a) * core::f64::consts::PI * 2.0 / 360.0,
+        ));
         let move_x = math::f64_to_f32_public(y.cos() * f64::from(d));
         let move_y = math::f64_to_f32_public(y.sin() * f64::from(d));
         let origin = read_field_vector(context, number, "origin")?;
