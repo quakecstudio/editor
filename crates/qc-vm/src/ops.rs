@@ -76,8 +76,8 @@ pub(crate) fn execute_statement(
         Opcode::NeV => vector_cmp(machine, progs, st, false),
 
         // VM-7: string, entity and function comparisons.
-        Opcode::EqS => string_cmp(machine, progs, st, true),
-        Opcode::NeS => string_cmp(machine, progs, st, false),
+        Opcode::EqS => string_cmp(machine, progs, &*builtins, st, true),
+        Opcode::NeS => string_cmp(machine, progs, &*builtins, st, false),
         Opcode::EqE => bits_cmp(machine, progs, st, true),
         Opcode::NeE => bits_cmp(machine, progs, st, false),
         Opcode::EqFnc => bits_cmp(machine, progs, st, true),
@@ -86,7 +86,7 @@ pub(crate) fn execute_statement(
         // VM-8: logical operators.
         Opcode::NotF => not_float(machine, progs, st),
         Opcode::NotV => not_vector(machine, progs, st),
-        Opcode::NotS => not_string(machine, progs, st),
+        Opcode::NotS => not_string(machine, progs, &*builtins, st),
         Opcode::NotEnt => not_bits(machine, progs, st),
         Opcode::NotFnc => not_bits(machine, progs, st),
         Opcode::And => logical(machine, progs, st, true),
@@ -359,25 +359,37 @@ fn vector_cmp(
 
 /// Resolves a string value to its bytes up to NUL, id's `pr_strings + value` (PROGS-11.1).
 ///
-/// VM-7.3: a value that is neither a string-table offset nor an engine string names memory
-/// outside both, which is undefined in C; this spec fails it. This VM has no engine strings
-/// yet (those are a builtin concern), so any value outside `0..numstrings` whose bytes cannot
-/// be resolved fails.
-fn resolve_string<'p>(progs: &Progs<'p>, value: i32) -> Result<&'p [u8], ()> {
+/// VM-7.3: a string value is a string-table offset or a string the engine allocated
+/// (PROGS-11.6, EDICT-13.1). A value from 0 to `numstrings - 1` is a table offset; any other
+/// value is resolved against the engine-allocated strings the [`Builtins`] dispatch owns
+/// (EDICT-13.3), id's `PR_GetString` reading `pr_strings + value` for both. Only a value that
+/// is neither a table offset nor an engine string names memory outside both, which is
+/// undefined in C; this spec fails it with the VM-19.4 runtime error.
+fn resolve_string<'a>(
+    progs: &'a Progs<'_>,
+    builtins: &'a dyn Builtins,
+    value: i32,
+) -> Result<&'a [u8], ()> {
     // A value from 0 to numstrings - 1 is a table offset (PROGS-11.6). offset 0 is the empty
     // string. The loader terminates every referenced string, but an arbitrary offset into the
     // table must still reach a NUL; progs.string returns None otherwise.
     let numstrings = progs.strings().len();
     match usize::try_from(value) {
         Ok(offset) if offset < numstrings => progs.string(value).ok_or(()),
-        _ => Err(()),
+        // Outside the table: an engine-allocated string (EDICT-13.1, EDICT-13.3), resolved
+        // through the dispatch that owns it. id's PR_GetString reads it the same way.
+        _ => builtins.engine_string(value).ok_or(()),
     }
 }
 
 /// `EQ_S` and `NE_S` (VM-7.1, VM-7.2): compare by content with `strcmp`.
+///
+/// A string value outside the table is an engine-allocated string resolved through `builtins`
+/// (VM-7.3, PROGS-11.6, EDICT-13.1).
 fn string_cmp(
     machine: &mut Machine,
     progs: &Progs<'_>,
+    builtins: &dyn Builtins,
     st: &Statement,
     equal: bool,
 ) -> Result<Control, RunError> {
@@ -389,10 +401,10 @@ fn string_cmp(
         .global(st.b)
         .map_err(|e| exec::global_error(machine, progs, e))?
         .as_i32();
-    let a =
-        resolve_string(progs, a_value).map_err(|()| string_divergence(machine, progs, a_value))?;
-    let b =
-        resolve_string(progs, b_value).map_err(|()| string_divergence(machine, progs, b_value))?;
+    let a = resolve_string(progs, builtins, a_value)
+        .map_err(|()| string_divergence(machine, progs, a_value))?;
+    let b = resolve_string(progs, builtins, b_value)
+        .map_err(|()| string_divergence(machine, progs, b_value))?;
     if equal {
         // VM-7.1: EQ_S writes 1.0 when the strings are equal.
         write_slot(machine, progs, st.c, bool_slot(a == b))?;
@@ -503,17 +515,21 @@ fn not_vector(
 }
 
 /// `NOT_S` (VM-8.3): 1.0 when the string value is 0 or names an empty string.
+///
+/// A string value outside the table is an engine-allocated string resolved through `builtins`
+/// (VM-8.3, PROGS-11.6, EDICT-13.1); its text decides whether it is empty (EDICT-13.2).
 fn not_string(
     machine: &mut Machine,
     progs: &Progs<'_>,
+    builtins: &dyn Builtins,
     st: &Statement,
 ) -> Result<Control, RunError> {
     let value = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?
         .as_i32();
-    let bytes =
-        resolve_string(progs, value).map_err(|()| string_divergence(machine, progs, value))?;
+    let bytes = resolve_string(progs, builtins, value)
+        .map_err(|()| string_divergence(machine, progs, value))?;
     // spec VM-8.3: NOT_S writes 1.0 when the value is 0 or the first byte is NUL.
     let empty = bytes.first().copied().unwrap_or(0) == 0;
     write_slot(machine, progs, st.c, bool_slot(empty))?;

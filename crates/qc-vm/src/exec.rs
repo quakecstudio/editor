@@ -46,6 +46,23 @@ pub trait Builtins {
     ///
     /// Whatever error the builtin raises; it ends every active run (VM-19.2).
     fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError>;
+
+    /// The text of the engine-allocated string `value`, or `None` when `value` is not one.
+    ///
+    /// Implements PROGS-11.6 and EDICT-13.1: at run time a string value can point outside the
+    /// string table, at text the engine allocated (`mapname`, `netname`, the world's `model`,
+    /// an `ftos`/`vtos` buffer). The string opcodes `EQ_S`, `NE_S` and `NOT_S` (VM-7.3,
+    /// VM-8.3) resolve such a value by asking the dispatch that owns the engine's strings for
+    /// its text, so a comparison of an engine-made string reads its bytes instead of failing.
+    /// The value is represented in a range that cannot be a string-table offset (EDICT-13.3).
+    ///
+    /// The default is `None`: a dispatch with no engine makes no engine strings, so every
+    /// string value outside the table is the VM-19.4 runtime error (VM-7.3). A dispatch that
+    /// allocates engine strings overrides this to return the text it holds for `value`.
+    fn engine_string(&self, value: i32) -> Option<&[u8]> {
+        let _ = value;
+        None
+    }
 }
 
 /// A [`Builtins`] that has no builtins: every call fails as `Bad builtin call number` would be
