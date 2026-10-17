@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 15] = [
+pub(crate) const STEPS: [Step; 16] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -75,6 +75,16 @@ pub(crate) const STEPS: [Step; 15] = [
         "sources",
     ]),
     Step::Xtask("deny-fixtures"),
+    // The differential VM suite QA-1 names: the fast subset (id 1.01, zero
+    // divergences, DIFF-10.3). It builds the oracles and needs the corpus
+    // progs (`cargo xtask corpus build`), so in CI the `Test Assets (linux)`
+    // job runs this same command after the corpus build and the `cargo xtask
+    // ci` job skips it (docs/ci.md). `make ci` runs it with the rest.
+    Step::Program(
+        "differential",
+        "cargo",
+        &["xtask", "differential", "--fast"],
+    ),
 ];
 
 impl Step {
@@ -235,6 +245,7 @@ mod tests {
             "cargo xtask attribution",
             "cargo xtask contrast",
             "cargo deny --locked --all-features check advisories bans licenses sources",
+            "cargo xtask differential --fast",
             "python3 plan/check.py",
             "python3 -m unittest discover -s plan -p test_*.py",
             "bash scripts/refresh-specs.sh --verify",
@@ -345,6 +356,7 @@ mod tests {
                 "contrast",
                 "clippy-fixtures",
                 "deny-fixtures",
+                "differential",
             ]
         );
     }
@@ -418,7 +430,11 @@ mod tests {
         let quoted: Vec<&str> = skip_line.split('\'').skip(1).step_by(2).collect();
         assert_eq!(
             quoted,
-            ["refs/heads/main", "clippy,test", "fmt,clippy,test,deny"]
+            [
+                "refs/heads/main",
+                "clippy,test,differential",
+                "fmt,clippy,test,deny,differential"
+            ]
         );
         let lists = quoted.get(1..).unwrap_or_default();
         for list in lists {

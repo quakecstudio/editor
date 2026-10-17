@@ -233,13 +233,15 @@ jobs:
         with:
           shared-key: xtask-ci-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Format, Clippy, Unit Tests (linux) and cargo-deny run these steps of
-      # cargo xtask ci with the same command, so this job skips them and each
-      # runs once (docs/ci.md). A run on main skips Format and cargo-deny, so
-      # there this job runs fmt and deny itself. make ci runs every step.
+      # Format, Clippy, Unit Tests (linux), cargo-deny and Test Assets (linux)
+      # run these steps of cargo xtask ci with the same command, so this job
+      # skips them and each runs once (docs/ci.md). Test Assets runs the fast
+      # differential suite after it builds the corpus progs. A run on main
+      # skips Format and cargo-deny, so there this job runs fmt and deny
+      # itself. make ci runs every step.
       - name: cargo xtask ci, less the steps other jobs run
         env:
-          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,test' || 'fmt,clippy,test,deny' }}
+          SKIP: ${{ github.ref == 'refs/heads/main' && 'clippy,test,differential' || 'fmt,clippy,test,deny,differential' }}
         run: cargo xtask ci --skip "$SKIP"
 
   deny:
@@ -399,6 +401,15 @@ jobs:
       - name: Build the corpus progs and round-trip them through qc-progs
         if: runner.os == 'Linux'
         run: cargo xtask corpus build
+      # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
+      # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
+      # divergence that DIFF-10.1 does not list (DIFF-10.3). This is the differential VM
+      # suite QA-1 names; the cargo xtask ci job skips the `differential` step because this
+      # job runs it with the same command (docs/ci.md). The full corpus runs nightly
+      # (differential.yml).
+      - name: Run the fast differential VM suite on id 1.01
+        if: runner.os == 'Linux'
+        run: cargo xtask differential --fast
       # P1-23: every module of each codebase opens with no error in its file graph, and id
       # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
       - name: Open the corpus as projects

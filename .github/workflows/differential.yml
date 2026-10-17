@@ -1,0 +1,93 @@
+# Runs the full differential VM corpus (P1-13, FND-8) nightly and on demand
+# with `cargo xtask differential --full`: every oracle-built codebase (id 1.01
+# built by id's qcc, and the six rerelease codebases built by the pinned
+# FTEQCC) run in the VM oracle and in QuakeC Studio's runner, their traces
+# compared statement by statement (DIFF-9) and their statement coverage
+# measured (DIFF-11). The full run enforces zero divergences and the 90%
+# statement-coverage bar (TEST-6, docs/testing.md); the fast subset (id 1.01,
+# zero divergences only) runs on every change in the Test Assets (linux) job of
+# ci.yml.
+#
+# It does not run on pull requests or in the merge queue, and is not a required
+# check (docs/ci.md): the full corpus takes minutes and the fast subset already
+# guards every change. The coverage bar it enforces is unreachable under the
+# mock engine as specified (DIFF-5.8 leaves out movement, collision, combat and
+# touch, so id 1.01 reaches about 32.3%); until that conflict is resolved
+# (tracked on #37), this run is expected to fail on the coverage bar. Keeping
+# it non-required means the known failure does not block any merge, and the run
+# reports the real measured coverage.
+name: Differential
+
+on:
+  schedule:
+    - cron: "53 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_WARNINGS: deny
+
+jobs:
+  differential:
+    name: Differential
+    runs-on: ubuntu-latest
+    # Building the oracles and FTEQCC, compiling the corpus and running every
+    # codebase twice.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: differential-${{ runner.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Point QS_TEST_ASSETS outside the source tree
+        env:
+          RUNNER_TEMP_DIR: ${{ runner.temp }}
+        run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
+      # The archives are pinned by the manifest, so its SHA-256 (hashFiles) is the cache key.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: downloads-cache
+        with:
+          path: ${{ runner.temp }}/test-assets/downloads
+          key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
+      # The VM oracle and id's qcc, fetched by checksum and built with the system C compiler.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: oracles-cache
+        with:
+          path: |
+            target/oracles/src
+            target/oracles/bin
+          key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
+      - name: Build and check the oracles
+        run: cargo xtask oracles
+      # id 1.01 (compiled by id's qcc) and the six rerelease codebases (compiled by FTEQCC).
+      - name: Write id 1.01 and the rerelease codebases to the asset cache
+        run: |
+          cargo xtask corpus fetch id-1.01 rerelease rerelease-hipnotic rerelease-rogue \
+            rerelease-mg1 rerelease-ctf rerelease-mg3
+      - name: Compile the rerelease with FTEQCC
+        run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
+      # P1-14: every corpus progs.dat round-trips through qc-progs; it also writes the progs the
+      # differential runner reads.
+      - name: Build the corpus progs
+        run: cargo xtask corpus build
+      # The full corpus: every oracle-built codebase, enforcing zero divergences and the 90%
+      # statement-coverage bar (TEST-6). See the header note: the bar is unreachable under the
+      # mock as specified until #37's coverage conflict is resolved.
+      - name: Run the full differential VM suite
+        run: cargo xtask differential --full
