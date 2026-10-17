@@ -23,8 +23,17 @@ project.
 - **Layer:** L2 syntax. It depends on `qc-lexer` (diagnostic codes) and `qc-preproc` (the
   file loader).
 - **Spec sections:** PRJ-1 to PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md);
-  QC-23 in [`language.md`](../../docs/spec/language.md); QCD-5.1, QCD-5.2, QCD-5.6 to QCD-5.8,
-  QCD-7.16 and QCD-8.4 in [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
+  the directive codes QCD-8 of
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). A readiness run
+  attributes only these sections to the crate, and every active statement of each is cited by a
+  test here.
+- **Also cited here, in sections another crate completes:** the `progs.src` reading of QC-23.1
+  to QC-23.3, QC-23.5 and QC-23.6 in [`language.md`](../../docs/spec/language.md) (QC-23.4, the
+  output path relative to the working directory, is id's `qcc`; the graph resolves it against
+  the `progs.src` directory, PRJ-4.3); the project error codes QCD-5.1, QCD-5.2 and QCD-5.6 to
+  QCD-5.8; and the case warning QCD-7.16. The compiler-stage errors QCD-5.3 to QCD-5.5 and the
+  resolution warnings of QCD-7 belong to the compiler and the semantic model, so QC-23, QCD-5
+  and QCD-7 are not declared above.
 - **Shipped:** yes.
 
 ## Invariants

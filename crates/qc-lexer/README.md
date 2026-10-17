@@ -12,11 +12,19 @@ them.
 
 - **Layer:** L2 syntax. It depends on no other crate; `qc-preproc` and `qc-syntax` build on
   it.
-- **Spec sections:** QC-1 to QC-7 and the lexical part of QC-8 in
-  [`language.md`](../../docs/spec/language.md), with the divergences QC-27.1, QC-27.2,
-  QC-27.4, QC-27.5 (the `,` and `;` part), QC-27.6 and QC-27.14; the codes in QCD-1, QCD-2,
-  QCD-3 (the parser's), QCD-6, QCD-7 and QCD-8 of
-  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
+- **Spec sections:** QC-2, QC-4, QC-5, QC-6 and QC-8 in
+  [`language.md`](../../docs/spec/language.md); the codes QCD-1, QCD-2 and QCD-6 of
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The lexer implements
+  QC-2, QC-4, QC-5, QC-6, QC-8, QCD-1 and QCD-2 in full; QCD-6 is the error-code enum this
+  crate defines for the lexer, preprocessor and parser to share, and every one of its codes is
+  cited by a test. A readiness run attributes only these sections to the crate, and every
+  active statement of each is cited here or in a crate that builds on it.
+- **Also cited here, in sections a higher layer completes:** the lexical statements QC-1.1 to
+  QC-1.4 (line index), QC-3.1 and QC-3.5 (names and keywords), QC-7.1, QC-7.2 and QC-7.4
+  (punctuation), the lexer's own divergences QC-27.1, QC-27.2, QC-27.4, QC-27.5, QC-27.6 and
+  QC-27.14, and the parser error codes QCD-3.1 to QCD-3.4 it defines. The rest of QC-1, QC-3,
+  QC-7, QC-27 and QCD-3 is the parser's, the semantic model's or code generation's, so those
+  sections are not declared above.
 - **Shipped:** yes.
 
 ## Invariants

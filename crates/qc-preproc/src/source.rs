@@ -120,17 +120,19 @@ impl Loader for FsLoader {
             .parent()
             .filter(|d| !d.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let mut folded: Option<OsString> = None;
+        let mut folded: Vec<OsString> = Vec::new();
         for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
             let entry = entry.file_name();
             if entry == name {
                 return Some(entry);
             }
-            if same_ignoring_case(&entry, name) && folded.as_ref().is_none_or(|f| entry < *f) {
-                folded = Some(entry);
+            if same_ignoring_case(&entry, name) {
+                folded.push(entry);
             }
         }
-        folded
+        // The directory may list two entries that differ only in case; `read_dir` does not
+        // order them, so take the least to be the same on every run (PRJ-7.2).
+        folded.into_iter().min()
     }
 }
 
@@ -175,19 +177,19 @@ impl MemoryLoader {
     /// cut to as many components as `path` has.
     fn folded(&self, path: &Path) -> Option<Vec<&OsStr>> {
         let wanted = Self::prefix(path, usize::MAX);
-        let mut best: Option<Vec<&OsStr>> = None;
-        for key in self.files.keys() {
-            let prefix = Self::prefix(key, wanted.len());
-            let same = prefix.len() == wanted.len()
-                && prefix
-                    .iter()
-                    .zip(&wanted)
-                    .all(|(a, b)| same_ignoring_case(a, b));
-            if same && best.as_ref().is_none_or(|b| prefix < *b) {
-                best = Some(prefix);
-            }
-        }
-        best
+        // Two held keys may cut to prefixes that differ only in case; the map does not order
+        // them, so take the least to be the same on every run (PRJ-7.2).
+        self.files
+            .keys()
+            .map(|key| Self::prefix(key, wanted.len()))
+            .filter(|prefix| {
+                prefix.len() == wanted.len()
+                    && prefix
+                        .iter()
+                        .zip(&wanted)
+                        .all(|(a, b)| same_ignoring_case(a, b))
+            })
+            .min()
     }
 }
 

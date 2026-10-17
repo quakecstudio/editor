@@ -717,6 +717,67 @@ fn memory_loader_case_rules() {
     assert_eq!(stored(&mut folded, "sub/c.h"), None);
 }
 
+// spec PRJ-7.2: when a directory holds two entries that differ only in case, the stored name
+// is the least of them, so the warning is the same whatever order the file system lists them
+#[test]
+fn fs_loader_picks_the_least_case_variant() {
+    use super::Loader as _;
+    let dir = std::env::temp_dir().join(format!("qc-preproc-least-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // Two entries that differ only in case. On a case-insensitive host only one can exist,
+    // so skip there: the tie-break is only reachable where both coexist.
+    std::fs::write(dir.join("Defs.qc"), "").unwrap();
+    let both = std::fs::write(dir.join("defs.qc"), "").is_ok()
+        && std::fs::read(dir.join("Defs.qc")).is_ok()
+        && std::fs::read(dir.join("defs.qc")).is_ok()
+        && std::fs::metadata(dir.join("Defs.qc")).unwrap().len() == 0;
+    let stored = super::FsLoader
+        .stored_name(&dir.join("DEFS.qc"))
+        .map(|n| n.to_string_lossy().into_owned());
+    let listed: std::collections::BTreeSet<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    std::fs::remove_dir_all(&dir).unwrap();
+    if both && listed.contains("Defs.qc") && listed.contains("defs.qc") {
+        // `D` (0x44) is less than `d` (0x64), so the least is `Defs.qc`.
+        assert_eq!(stored.as_deref(), Some("Defs.qc"));
+    }
+}
+
+// spec PRJ-7.2: when a memory loader holds two keys whose first components differ only in
+// case, the stored name is the least, whatever order the map iterates them
+#[test]
+fn memory_loader_picks_the_least_case_variant() {
+    use super::Loader as _;
+    let mut folded = MemoryLoader::case_insensitive();
+    folded.insert("Defs.qc", "x");
+    folded.insert("defs.qc", "y");
+    let stored = folded
+        .stored_name(Path::new("DEFS.qc"))
+        .map(|n| n.to_string_lossy().into_owned());
+    // `D` (0x44) is less than `d` (0x64), so the least is `Defs.qc`.
+    assert_eq!(stored.as_deref(), Some("Defs.qc"));
+}
+
+// spec PRJ-7.2: a loader that does not list its directory cannot tell the stored name, so the
+// default answer is none; the graph then never reports W0402 for it
+#[test]
+fn a_loader_without_a_directory_has_no_stored_name() {
+    use super::Loader as _;
+    /// A loader that serves one file and uses the trait's default `stored_name`.
+    struct BareLoader;
+    impl super::Loader for BareLoader {
+        fn load(&mut self, _path: &Path) -> std::io::Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
+    }
+    let mut loader = BareLoader;
+    assert_eq!(loader.stored_name(Path::new("Anything.qc")), None);
+    assert_eq!(loader.stored_name(Path::new("a/b/c.qc")), None);
+}
+
 proptest! {
     // Without directives or `$`, preprocessing changes nothing: the tokens are the lexer's.
     #[test]
