@@ -35,6 +35,14 @@ on it (`layers.toml`).
   reports the first divergence with its statement (DIFF-9.5), classifies a divergence as a
   failure since the expected divergences of DIFF-10 are handled inside DIFF-9.4 and by stopping
   at an agreeing error record (DIFF-10), and measures statement coverage (DIFF-11).
+- `docs/spec/differential.md` DIFF-1, DIFF-2.5, DIFF-9 and DIFF-11: the end-to-end runner
+  (`suite` and `runner` modules). `suite` builds a scenario's entity lump from a `.map` with its
+  brushes removed (DIFF-2.5), runs one scenario in QuakeC Studio's runner and compares it to the
+  id VM oracle's trace (DIFF-9), and aggregates coverage per codebase (DIFF-11.2). `runner` holds
+  the corpus scenarios and drives every codebase an oracle compiler builds, with the oracle
+  injected so the logic is unit-tested without the C oracle. The `differential` binary
+  (`src/bin/differential.rs`) supplies the real oracle subprocess; `cargo xtask differential`
+  and CI build the oracles and corpus progs and run it.
 
 ## Tests
 

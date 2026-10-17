@@ -68,6 +68,7 @@ mod ci;
 mod contrast;
 mod conventions;
 mod corpus;
+mod differential;
 mod download;
 mod exec;
 mod fixtures;
@@ -90,7 +91,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     map-corpus | parse-corpus | project-corpus>";
+                     map-corpus | parse-corpus | project-corpus | differential>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -146,6 +147,7 @@ fn command(name: &str) -> Option<Command> {
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
         "corpus" => Some(corpus::main),
+        "differential" => Some(differential::main),
         "fuzz" => Some(fuzz::main),
         "lex-corpus" => Some(lex_corpus::main),
         "map-corpus" => Some(map_corpus::main),
@@ -243,6 +245,7 @@ mod tests {
             "assets",
             "bench",
             "corpus",
+            "differential",
             "fuzz",
             "lex-corpus",
             "map-corpus",

@@ -461,6 +461,7 @@ dependencies = [
  "qc-trace",
  "qc-types",
  "qc-vm",
+ "qs-map",
  "qs-porting-example",
 ]
 

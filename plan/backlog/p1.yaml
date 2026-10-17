@@ -304,6 +304,7 @@ issues:
   - P1-61
   - P1-62
   - P1-63
+  - P1-64
   deliverable:
   - 'crates/qs-differential: the differential VM runner that writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm (through the scenario reader of P1-60, the host loop of P1-61 and the comparator of P1-62) and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
   - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
@@ -1110,6 +1111,25 @@ issues:
   - No panics; a value that is neither a table offset nor an engine-allocated string still fails with the VM-19.4 runtime error, with a test
   verify:
   - cargo test -p qc-vm; the differential suite of P1-13
+- key: P1-64
+  title: Round makevectors and movetogoal angles to f32 before sine and cosine
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-16
+  deliverable:
+  - 'crates/qc-builtins: the angle-to-radians conversion that BUILTIN-6.1 and DIFF-7.6 both write as `(f32)(a * M_PI*2/360)` computed in double must round the radians to f32 before the sine and cosine, in every code path that has it. Today math::makevectors (math.rs) computes `deg_to_rad = f64::from(a) * (PI*2/360)` and passes the full f64 to sin_cos_f32, and dispatch.rs step_self (the walkmove and movetogoal step, DIFF-7.6) computes `y = f64::from(a) * PI*2/360` the same way, neither rounding the angle to f32 first. For an angle of 360 degrees the f64 radians are 2*PI exactly, whose sine is about -2.4e-16, while the f32-rounded radians give sine about 1.7e-7, which is what id''s AngleVectors and SV_StepDirection compute (they store the angle in a float). So v_forward, v_right, v_up (makevectors) and the origin step of walkmove and movetogoal diverge from id''s VM. Fix the class: round the radians to f32 (through math::f64_to_f32) in both makevectors and step_self, and in any other path with the same (f32)(...) angle. This is not a DIFF-10 expected divergence (both runners use the same libm here; the divergence is the missing f32 round, not a last-bit library difference); it blocks the differential suite (P1-13) on id 1.01 at the first makevectors call.'
+  acceptance:
+  - A qc-builtins unit test shows makevectors of a 360-degree yaw gives id''s f32-rounded sine (about 1.7e-7, bits 0x343bbd2e), not the f64 value (about -2.4e-16), citing BUILTIN-6.1
+  - A qc-builtins unit test shows the walkmove and movetogoal step (DIFF-7.6) rounds its angle to f32 before cosine and sine, citing DIFF-7.6
+  - The differential suite (P1-13) runs id 1.01 end to end with zero unexpected divergences from the angle conversion (the first makevectors and movetogoal divergences are gone)
+  verify:
+  - cargo test -p qc-builtins; the differential suite of P1-13
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -1185,6 +1205,7 @@ issues:
   - P1-61
   - P1-62
   - P1-63
+  - P1-64
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
