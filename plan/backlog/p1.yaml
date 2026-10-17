@@ -1095,6 +1095,7 @@ issues:
   - P1-55
   - P1-56
   - P1-57
+  - P1-58
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1253,5 +1254,28 @@ issues:
   - 'For each surviving mutant: a test in the owning crate that fails on the mutant (cargo mutants --manifest-path crates/<crate>/Cargo.toml lists it as MISSED), or an entry in ratchets.toml under [crates.<crate>].equivalent_mutants with the mutant key and a reason it cannot be killed; qc-lno brought to 90% mutation or an exception recorded in crates/qc-lno/README.md and ratchets.toml for the four mutants whose only distinguishing input is a line table of i32::MAX entries or a Vec capacity (not observable through the public API)'
   acceptance:
   - 'A Readiness run on main reports every L0 formats crate at mutation at least 90% or an exception with its reason, with no surviving mutant that is not killed or listed under equivalent_mutants (cargo xtask ratchet passes for the layer)'
+  verify:
+  - The Readiness workflow run linked in the PR
+- key: P1-58
+  title: Fix the L2 syntax spec citations and qc-preproc mutation survivors
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  reqs:
+  - TEST-2
+  - TEST-3
+  size: M
+  depends:
+  - P1-20
+  - P1-21
+  - P1-23
+  deliverable:
+  - 'The P1-R2 readiness review (docs/readiness/p1-r2.md) ran the Readiness workflow on main (run 38998454580) and found two bars unmet for the L2 syntax layer. TEST-3 (spec citations) fails for all four crates: cargo xtask readiness spec reports qc-lexer 73.3% (66 of 90), qc-preproc 79.0% (64 of 81), qc-syntax 60.4% (52 of 86) and qc-project 64.5% (31 of 48); 92 active statements the crate READMEs list under Spec sections have no `// spec` test citation in the crate. Most belong to a higher layer (QCD-3.x type and redeclaration errors, QCD-7.3 to QCD-7.15 resolution warnings, QC-10/11/13/14/15 type semantics, QC-27.11 to QC-27.13 code generation, QC-1.5 statement line numbers); a few are genuinely this layer''s (QC-8.9, QCD-1.2, QC-23.4). TEST-2 (mutation) fails for qc-preproc: 9 surviving mutants on the case-fold comparison in src/source.rs (stored_name and folded) and src/lib.rs (finish_cursor) are neither killed nor recorded equivalent. The review added six adversarial tests to qc-lexer, all passing, which cite QC-8.9'
+  - 'For TEST-3: per crate, narrow each README''s Spec sections line to the statements the crate actually implements (so cargo xtask readiness spec stops attributing higher-layer statements to it), and add a `// spec <ID>:` test citation for every remaining within-layer statement; make no new baseline entry for an L2 crate'
+  - 'For TEST-2: a test in qc-preproc that fails on each of the 9 mutants (cargo mutants --manifest-path crates/qc-preproc/Cargo.toml lists it as MISSED), or an entry in ratchets.toml under [crates.qc-preproc].equivalent_mutants with the mutant key and a reason it cannot be killed'
+  acceptance:
+  - 'A Readiness run on main reports every L2 syntax crate at spec citations 100% (cargo xtask readiness spec), with no active statement the crate''s README attributes to it left uncited and no new baseline entry for an L2 crate'
+  - 'A Readiness run on main reports qc-preproc with no surviving mutant that is not killed or listed under equivalent_mutants (cargo xtask ratchet passes for the layer)'
   verify:
   - The Readiness workflow run linked in the PR
