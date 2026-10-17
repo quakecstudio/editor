@@ -1,0 +1,19 @@
+[package]
+name = "qc-edict"
+description = "The server's edict store: entity memory, field access, spawn and remove, and the system globals and fields"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-progs = { workspace = true }
+qc-types = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
