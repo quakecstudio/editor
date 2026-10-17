@@ -350,6 +350,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-lno"
+version = "2026.10.0"
+dependencies = [
+ "proptest",
+ "qc-progs",
+]
+
+[[package]]
 name = "qc-preproc"
 version = "2026.10.0"
 dependencies = [
