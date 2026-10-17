@@ -18,10 +18,16 @@ test vectors were recorded against id's `qcc` at the pinned commit, and the test
 the syntactic ones.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
-- **Spec sections:** the syntax of QC-10, QC-11, QC-13, QC-14 and QC-15 in
-  [`language.md`](../../docs/spec/language.md), with the divergences QC-27.3, QC-27.7,
-  QC-27.8, QC-27.9, QC-27.10 and QC-27.15; the syntax errors of QCD-3 and QCD-6 and the
-  recovery of QCD-1.4 in [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
+- **Spec sections:** the syntax-error codes QCD-6 and the recovery rule QCD-1 of
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). These are the sections
+  the parser owns in full, so a readiness run attributes only them to it and every active
+  statement of each is cited by a test here.
+- **Also cited here, in sections a higher layer completes:** the syntactic parts of QC-10,
+  QC-11, QC-13, QC-14 and QC-15 in [`language.md`](../../docs/spec/language.md), the parser's
+  divergences QC-27.3, QC-27.7, QC-27.8, QC-27.9, QC-27.10 and QC-27.15, and the parser error
+  codes QCD-3.1 to QCD-3.4. The semantics, type rules and code generation of QC-10 to QC-15,
+  and the redeclaration and resolution errors of QCD-3, belong to the semantic model and the
+  compiler, so those sections are not declared above.
 - **Shipped:** yes.
 
 ## Error recovery

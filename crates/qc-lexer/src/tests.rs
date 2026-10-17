@@ -536,6 +536,10 @@ fn error_in_first_token() {
 }
 
 // spec QCD-1.1: a code is E or W, four digits, the first two a group from 01 to 05
+// spec QCD-1.1: a code is E or W, four digits, the first two a group from 01 to 05
+// spec QCD-1.2: a code is never reused for a different diagnostic, so no two codes share a
+// string; a withdrawn code stays unassigned, not re-added, which Code::ALL being this exact
+// set of variants holds
 #[test]
 fn code_format() {
     for code in Code::ALL {
@@ -551,8 +555,13 @@ fn code_format() {
         );
     }
     let mut sorted = Code::ALL.map(Code::as_str).to_vec();
+    sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), Code::ALL.len());
+    assert_eq!(
+        sorted.len(),
+        Code::ALL.len(),
+        "no code string is shared by two diagnostics (QCD-1.2)"
+    );
 }
 
 #[test]
