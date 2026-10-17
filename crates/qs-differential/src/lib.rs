@@ -25,12 +25,14 @@
 
 pub mod compare;
 pub mod edict8;
+pub mod generate;
 pub mod host;
 pub mod runner;
 pub mod scenario;
 pub mod suite;
 
 pub use compare::{Comparison, Divergence, Slot, compare, coverage};
+pub use generate::{Generated, generate};
 pub use host::{Ended, RunOutput, RunRefused, run_scenario};
 pub use runner::{Mode, run_codebase};
 pub use scenario::{Cvar, Input, ModelBounds, Refused, Scenario};

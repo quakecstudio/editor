@@ -2,7 +2,16 @@
 # demand, with `cargo xtask fuzz` (docs/testing.md, TEST-5), and the VM
 # oracle's libFuzzer targets with `cargo xtask oracles fuzz`. A crash fails the
 # run and uploads the crashing input as the `fuzz-artifacts` artifact; minimise
-# it into a regression test in the crate it found.
+# it into a regression test in the crate it found (for `qc-vm`, a case in
+# crates/qs-differential/src/generate/tests.rs).
+#
+# The `qc-vm` target fuzzes QuakeC Studio's VM against the id VM oracle on
+# well-formed random progs (FND-10, P1-15): this job builds the oracle
+# (`cargo xtask oracles`) and sets QS_VM_ORACLE, so the target compares the two
+# VMs' traces (DIFF-9); a divergence fails the run. The acceptance of P1-15, a
+# 24-hour clean run before the P1 gate, is this nightly job's over the persisted
+# corpus. Without the oracle (a pull-request build) the target still runs
+# `qc-vm` over every input and fails on a panic or runaway.
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): pull requests still build and test the crates the targets
@@ -27,8 +36,8 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
-    # Ten targets of ten minutes each, and the builds.
-    timeout-minutes: 150
+    # Eleven targets of ten minutes each, the oracle build and the Rust builds.
+    timeout-minutes: 180
     permissions:
       contents: read
     steps:
@@ -64,6 +73,14 @@ jobs:
               name=${file#"$QS_TEST_ASSETS"/codebase/}
               cp "$file" "fuzz/corpus/parser/${name//\//_}"
             done
+      # FND-10: the qc-vm target compares against the id VM oracle. Build it
+      # (`cargo xtask oracles` fetches id's C by checksum and compiles it) and
+      # point QS_VM_ORACLE at the binary, so the target does the differential
+      # comparison (DIFF-9) rather than only the no-panic check.
+      - name: Build the VM oracle
+        run: cargo xtask oracles
+      - name: Point QS_VM_ORACLE at the VM oracle binary
+        run: echo "QS_VM_ORACLE=$PWD/target/oracles/bin/vm-oracle" >> "$GITHUB_ENV"
       - name: Run every fuzz target
         run: cargo xtask fuzz --time 10m
       - name: Upload crashing inputs
