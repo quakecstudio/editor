@@ -389,6 +389,38 @@ fn gl_limits() {
     );
 }
 
+// spec MDL-1.8: a model that exceeds every GL limit at once reports all four, in the push
+// order vertices, skins, triangles, poses. The single-limit cases above pin each branch alone;
+// this pins that the four checks are independent and all fire together, so a mutant that drops
+// or short-circuits any one branch is caught even when the others are over the limit too.
+#[test]
+fn reviewer_gl_limits_all_four_exceeded_report_in_order() {
+    let poses = vec![frame(b"p", [0; 4], [0; 4], vec![[0; 4]; 1025]); 257];
+    let spec = MdlSpec {
+        skins: vec![SkinSpec::Single(0); 33],
+        stverts: vec![[0, 0, 0]; 1025],
+        triangles: vec![[1, 0, 1, 2]; 2049],
+        frames: vec![EntrySpec::Group(
+            1,
+            257,
+            [0; 4],
+            [0; 4],
+            vec![0.1; 257],
+            poses,
+        )],
+        ..MdlSpec::default()
+    };
+    assert_eq!(
+        read(&spec).unwrap().gl_limits(),
+        [
+            GlLimit::Vertices,
+            GlLimit::Skins,
+            GlLimit::Triangles,
+            GlLimit::Poses
+        ]
+    );
+}
+
 // spec MDL-2.1, MDL-2.3: skin groups of any non-zero type.
 #[test]
 fn skin_group() {
