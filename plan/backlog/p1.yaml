@@ -1092,6 +1092,7 @@ issues:
   - P1-52
   - P1-53
   - P1-54
+  - P1-55
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1193,3 +1194,21 @@ issues:
   - Any failure is filed as a type:bug issue against qs-pak, qs-wad, qs-vfs, qs-mdl, qs-bsp, qs-map, qs-wav or qs-install and fixed before this issue closes
   verify:
   - Walk output for all six runs and find output for both macOS folders attached to the issue
+- key: P1-55
+  title: Kill or record the xtask main ExitCode mutant
+  labels:
+  - repo
+  - area:process
+  - type:test
+  reqs:
+  - TEST-2
+  - TEST-10
+  size: S
+  depends:
+  - P1-35
+  deliverable:
+  - 'xtask: kill the surviving mutant cargo mutants reports as `xtask/src/main.rs: replace main -> ExitCode with Default::default()`, or record it as an equivalent mutant with its reason under `[crates.xtask] equivalent_mutants` in ratchets.toml; found by the P1-RG readiness review (docs/readiness/p1-rg.md) running the Readiness workflow on `oracles xtask`'
+  acceptance:
+  - 'A Readiness run that includes xtask reports its mutation score at or above the bar (90%) with no survivor that is not killed or listed as equivalent'
+  verify:
+  - The Readiness workflow run linked in the PR

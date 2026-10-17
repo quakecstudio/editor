@@ -28,5 +28,10 @@
 # The C tools layer's own C (`cargo xtask readiness <check> oracles`): the bar
 # applies to it as to a crate, except mutation, which oracles/README.md explains.
 [crates.oracles]
+readiness = "P1-RG"
+lines = 95
+branches = 88
+mutation = 0
+spec = 100
 reason = "P1-35: no mutation tool of the bar runs on the oracles' C"
 exceptions = { mutation = "cargo mutants, the bar's mutation tool (docs/testing.md, TEST-2), mutates Rust only, and the oracles are C; every vector, probe and scenario test states the trace or exit status the spec gives, written without the C, so a fault in the C fails an expectation (oracles/README.md, Readiness)" }
