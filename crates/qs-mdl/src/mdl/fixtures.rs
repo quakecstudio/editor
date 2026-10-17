@@ -38,6 +38,10 @@ pub(crate) enum EntrySpec {
 pub(crate) struct MdlSpec {
     pub(crate) magic: [u8; 4],
     pub(crate) version: i32,
+    /// The three `scale` values of the header; the base vector's `[1.0; 3]` when `None`.
+    pub(crate) scale: Option<[f32; 3]>,
+    /// The header `size` field; the base vector's `11.0` when `None`.
+    pub(crate) size: Option<f32>,
     pub(crate) numskins: Option<i32>,
     pub(crate) skinwidth: i32,
     pub(crate) skinheight: i32,
@@ -72,6 +76,8 @@ impl Default for MdlSpec {
         Self {
             magic: *b"IDPO",
             version: 6,
+            scale: None,
+            size: None,
             numskins: None,
             skinwidth: 4,
             skinheight: 2,
@@ -134,7 +140,8 @@ impl MdlSpec {
     pub(crate) fn build(&self) -> Vec<u8> {
         let mut out = self.magic.to_vec();
         put(&mut out, self.version);
-        for value in [1.0, 1.0, 1.0, -8.0, -8.0, -8.0, 10.0, 0.0, 0.0, 22.0] {
+        let [sx, sy, sz] = self.scale.unwrap_or([1.0, 1.0, 1.0]);
+        for value in [sx, sy, sz, -8.0, -8.0, -8.0, 10.0, 0.0, 0.0, 22.0] {
             put_f32(&mut out, value);
         }
         put(
@@ -157,7 +164,7 @@ impl MdlSpec {
         );
         put(&mut out, 1);
         put(&mut out, self.flags);
-        put_f32(&mut out, 11.0);
+        put_f32(&mut out, self.size.unwrap_or(11.0));
         let size =
             usize::try_from(self.skinwidth.max(0).saturating_mul(self.skinheight.max(0))).unwrap();
         for skin in &self.skins {

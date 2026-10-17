@@ -257,6 +257,34 @@ fn skin_size() {
         .message("m")
         .contains("-4 by 2")
     );
+    // spec MDL-1.5: the guard rejects only a negative width or height, so a zero width and
+    // zero height is accepted (skin size 0). This distinguishes `< 0` from `== 0` and `<= 0`
+    // on both fields: those mutants would reject a model the loader accepts.
+    let zero = MdlSpec {
+        skinwidth: 0,
+        skinheight: 0,
+        skins: vec![SkinSpec::Single(0)],
+        counting_skin: false,
+        ..MdlSpec::default()
+    };
+    assert_eq!(read(&zero).unwrap().header.skinwidth, 0);
+    // spec MDL-1.5: either field being negative is rejected (the guard is `width < 0 || height
+    // < 0`). A negative width (a multiple of 4, so the earlier width check passes) with a zero
+    // height is rejected; `&&` would wrongly accept it, since the product 0 is a valid size.
+    let neg_width = MdlSpec {
+        skinwidth: -4,
+        skinheight: 0,
+        skins: Vec::new(),
+        numskins: Some(1),
+        ..MdlSpec::default()
+    };
+    assert_eq!(
+        read(&neg_width),
+        Err(MdlError::BadSkinSize {
+            width: -4,
+            height: 0
+        })
+    );
 }
 
 // spec MDL-1.6, MDL-1.9: unchecked fields; the size ratio; the effect bits.
@@ -268,6 +296,14 @@ fn unchecked_fields() {
     };
     assert_eq!(read(&spec).unwrap().header.flags, 0x7FFF_FFFF);
     assert_eq!(MDL_SIZE_RATIO.to_bits(), (1.0_f64 / 11.0).to_bits());
+    // spec MDL-1.6: size() is the header size times 1/11; a header size of 22 gives 2.0,
+    // not the base vector's 1.0.
+    let scaled = MdlSpec {
+        size: Some(22.0),
+        ..MdlSpec::default()
+    };
+    assert_eq!(read(&scaled).unwrap().size(), 2.0);
+    assert_eq!(read(&MdlSpec::default()).unwrap().size(), 1.0);
     assert_eq!(
         [
             MDL_EF_ROCKET,
@@ -298,11 +334,23 @@ fn gl_limits() {
         ..MdlSpec::default()
     };
     assert_eq!(read(&spec).unwrap().gl_limits(), [GlLimit::Skins]);
+    // spec MDL-1.8: exactly MDL_GL_MAX_SKINS skins is not over the limit.
+    let spec = MdlSpec {
+        skins: vec![SkinSpec::Single(0); 32],
+        ..MdlSpec::default()
+    };
+    assert!(read(&spec).unwrap().gl_limits().is_empty());
     let spec = MdlSpec {
         triangles: vec![[1, 0, 1, 2]; 2049],
         ..MdlSpec::default()
     };
     assert_eq!(read(&spec).unwrap().gl_limits(), [GlLimit::Triangles]);
+    // spec MDL-1.8: exactly MDL_GL_MAX_TRIS triangles is not over the limit.
+    let spec = MdlSpec {
+        triangles: vec![[1, 0, 1, 2]; 2048],
+        ..MdlSpec::default()
+    };
+    assert!(read(&spec).unwrap().gl_limits().is_empty());
     let poses = vec![frame(b"p", [0; 4], [0; 4], vec![[0; 4]; 3]); 257];
     let spec = MdlSpec {
         frames: vec![EntrySpec::Group(
@@ -316,6 +364,20 @@ fn gl_limits() {
         ..MdlSpec::default()
     };
     assert_eq!(read(&spec).unwrap().gl_limits(), [GlLimit::Poses]);
+    // spec MDL-1.8: exactly MDL_GL_MAX_POSES poses is not over the limit.
+    let poses = vec![frame(b"p", [0; 4], [0; 4], vec![[0; 4]; 3]); 256];
+    let spec = MdlSpec {
+        frames: vec![EntrySpec::Group(
+            1,
+            256,
+            [0; 4],
+            [0; 4],
+            vec![0.1; 256],
+            poses,
+        )],
+        ..MdlSpec::default()
+    };
+    assert!(read(&spec).unwrap().gl_limits().is_empty());
     assert_eq!(
         (
             MDL_GL_MAX_VERTS,
@@ -491,6 +553,19 @@ fn positions_and_normals() {
             lightnormalindex: 0
         }),
         [-6.0, -4.0, -2.0]
+    );
+    // spec MDL-5.3: position is v * scale + origin; with scale 2 and origin -8, v = 2 gives
+    // 2 * 2 - 8 = -4, which v / scale would not (2 / 2 - 8 = -7).
+    let scaled = MdlSpec {
+        scale: Some([2.0, 2.0, 2.0]),
+        ..MdlSpec::default()
+    };
+    assert_eq!(
+        read(&scaled).unwrap().position(TriVertX {
+            v: [2, 2, 2],
+            lightnormalindex: 0
+        }),
+        [-4.0, -4.0, -4.0]
     );
     let spec = MdlSpec {
         frames: vec![EntrySpec::Single(frame(
