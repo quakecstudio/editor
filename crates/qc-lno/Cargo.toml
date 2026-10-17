@@ -1,0 +1,18 @@
+[package]
+name = "qc-lno"
+description = "Reader and writer for the .lno statement-to-source-line map beside a progs.dat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-progs = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

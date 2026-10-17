@@ -5,6 +5,7 @@
 
 [crates]
 qc-lexer = "L2"
+qc-lno = "L0"
 qc-preproc = "L2"
 qc-progs = "L0"
 qc-project = "L2"
