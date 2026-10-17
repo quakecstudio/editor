@@ -68,3 +68,12 @@ distilled from `CLAUDE.md` ("What not to do") and `.claude/rules/`.
     `Closes #<issue>`. Issue bodies are generated from `plan/`; change the plan with the
     `plan-change` skill, not the GitHub UI. See `.claude/rules/branching.md` and
     `.claude/rules/commits-and-issues.md`.
+
+12. **Run session setup before any build, test, lint, plan or git work.** Kiro does not fire
+    this repo's `SessionStart` hook (it lives in a subdirectory, not the workspace root), so
+    at the start of each session run the authoritative setup script once, as your first
+    action: `bash .claude/hooks/session-setup.sh` (idempotent, Linux-only, always exits 0).
+    It installs rustup, `prek`, `uv` and the git hooks. Where system PyYAML is unavailable,
+    run `plan/` with uv: `uv run --no-project --with pyyaml python3 plan/check.py`.
+    See `.claude/hooks/session-setup.sh`, `AGENTS.md` ("Environment setup") and
+    `.claude/settings.json`.
