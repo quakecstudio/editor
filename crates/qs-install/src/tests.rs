@@ -1077,3 +1077,21 @@ fn io_errors_name_their_path() {
     assert!(std::error::Error::source(&error).is_some());
     assert!(std::error::Error::source(&LinkError::Occupied(p("/x"))).is_none());
 }
+
+// A non-NotFound error from reading the link path is reported as LinkError::Io for the link,
+// not treated as "nothing is there" (the guard is `error.kind() == NotFound`). On unix a path
+// whose parent is a regular file gives ENOTDIR, which is not NotFound.
+#[cfg(unix)]
+#[test]
+fn a_non_not_found_error_at_the_link_is_an_io_error() {
+    let dir = TempDir::new("link-enotdir");
+    let id1 = stand_in_install(&dir);
+    let blocker = dir.path().join("blocker");
+    fs::write(&blocker, b"not a directory").unwrap();
+    let link = blocker.join("id1");
+    let error = link_dir(&id1, &link).unwrap_err();
+    assert!(
+        matches!(&error, LinkError::Io { path, .. } if *path == link),
+        "{error:?}"
+    );
+}
