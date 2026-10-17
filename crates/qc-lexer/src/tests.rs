@@ -572,6 +572,98 @@ fn span_helpers() {
     assert!(!span.contains(Span::new(3, 6)));
 }
 
+// Adversarial tests added by the P1-R2 readiness review (review-55). The reviewer did not
+// write this crate; these probe edges found while reading the lexer against the spec.
+
+// spec QC-8.9: id's qcc loops forever on a `,` or `;` in a $frame list; this lexer stops,
+// so a $frame line ending in a run of separators terminates with one E0503 for each.
+#[test]
+fn reviewer_frame_list_separators_terminate() {
+    // A trailing run of `,;,;` would hang id's qcc; here lexing ends with the file.
+    let lexed = lex(b"$frame a ,;,; b\nfloat c;");
+    // The frame token is produced, then the `float c ;` line parses normally.
+    assert!(matches!(&lexed.tokens[0].kind, TokenKind::Frames(_)));
+    assert_eq!(
+        kinds(b"$frame a ,;,; b\nfloat c;")[1..],
+        vec![name("float"), name("c"), punct(Punct::Semicolon)]
+    );
+    // One E0503 per separator byte, and nothing else.
+    assert_eq!(
+        codes(b"$frame a ,;,; b"),
+        vec![Code::E0503, Code::E0503, Code::E0503, Code::E0503]
+    );
+    // A $frame line that is nothing but separators still terminates.
+    assert_eq!(codes(b"$frame ,,,;;;"), vec![Code::E0503; 6]);
+}
+
+// spec QC-27.6: a 15-byte frame name is kept silently; 16 bytes is the first that warns,
+// the exact boundary of QC_MAX_FRAME_NAME.
+#[test]
+fn reviewer_frame_name_length_boundary() {
+    let fifteen = "a".repeat(15);
+    let sixteen = "a".repeat(16);
+    assert!(codes(format!("$frame {fifteen}").as_bytes()).is_empty());
+    assert_eq!(
+        codes(format!("$frame {sixteen}").as_bytes()),
+        vec![Code::W0101]
+    );
+}
+
+// spec QC-5.1: a vector literal with fewer than three components leaves the missing ones
+// zero, and the missing closing quote is E0104, without reading past end of file.
+#[test]
+fn reviewer_short_vector_is_zero_filled() {
+    assert_eq!(kinds(b"'1 2"), vec![TokenKind::Vector([1.0, 2.0, 0.0])]);
+    assert_eq!(codes(b"'1 2"), vec![Code::E0104]);
+    // A bare quote at end of file is a zero vector with one Bad vector.
+    assert_eq!(kinds(b"'"), vec![TokenKind::Vector([0.0, 0.0, 0.0])]);
+    assert_eq!(codes(b"'"), vec![Code::E0104]);
+}
+
+// spec QC-27.4: the token-too-long boundary is exact: QC_MAX_TOKEN - 1 name bytes are fine,
+// QC_MAX_TOKEN bytes are E0502, for a name as well as for a string.
+#[test]
+fn reviewer_name_length_boundary_is_exact() {
+    let fits = "a".repeat(QC_MAX_TOKEN - 1);
+    let over = "a".repeat(QC_MAX_TOKEN);
+    assert!(codes(fits.as_bytes()).is_empty());
+    assert_eq!(codes(over.as_bytes()), vec![Code::E0502]);
+    // The token is still produced in full, not truncated.
+    assert_eq!(kinds(over.as_bytes()), vec![name(&over)]);
+}
+
+// spec QC-2.3: `/*` finds its end at the first `*/` from the byte after the `/`, so `/**/`
+// is an empty comment, `/*/` is a whole comment (the `*/` is found at once), and a `/*` with
+// no later `*/` is unterminated (E0501).
+#[test]
+fn reviewer_block_comment_boundaries() {
+    assert!(kinds(b"/**/x").iter().eq([name("x")].iter()));
+    assert!(codes(b"/**/x").is_empty());
+    // `/*/` is a whole comment: the search for `*/` starts one byte past the first `/`,
+    // so `/*/x` closes the comment at once and leaves `x`.
+    assert_eq!(kinds(b"/*/x"), vec![name("x")]);
+    assert!(codes(b"/*/x").is_empty());
+    // `/*` with no closing `*/` anywhere is unterminated.
+    assert_eq!(codes(b"/* x"), vec![Code::E0501]);
+    // A comment that ends exactly at end of file with `*/`.
+    assert!(codes(b"/* done */").is_empty());
+}
+
+// spec QC-7.1: the lexer tries multi-byte punctuation before single bytes, so a lone `&`
+// or `|` is And/Or but `&&`/`||` win when they match, and `...` beats `.`.
+#[test]
+fn reviewer_punctuation_maximal_munch() {
+    assert_eq!(kinds(b"&"), vec![punct(Punct::And)]);
+    assert_eq!(kinds(b"&&"), vec![punct(Punct::AndAnd)]);
+    assert_eq!(kinds(b"&&&"), vec![punct(Punct::AndAnd), punct(Punct::And)]);
+    assert_eq!(kinds(b"..."), vec![punct(Punct::Ellipsis)]);
+    assert_eq!(
+        kinds(b"...."),
+        vec![punct(Punct::Ellipsis), punct(Punct::Dot)]
+    );
+    assert_eq!(kinds(b".."), vec![punct(Punct::Dot), punct(Punct::Dot)]);
+}
+
 proptest! {
     // Lexing any bytes terminates without panicking, and every span is in bounds,
     // increasing and non-overlapping.
