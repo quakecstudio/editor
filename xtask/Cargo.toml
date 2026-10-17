@@ -12,6 +12,7 @@ publish.workspace = true
 cc = { workspace = true }
 miniz_oxide = { workspace = true, features = ["with-alloc"] }
 qc-lexer = { workspace = true }
+qc-lno = { workspace = true }
 qc-preproc = { workspace = true }
 qc-progs = { workspace = true }
 qc-project = { workspace = true }
