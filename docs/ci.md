@@ -52,11 +52,11 @@ every input of every cache key.
 | `cargo xtask ci` | Linux | the command `make ci` runs, less the steps another job runs with the same command (`cargo xtask ci --skip`, [below](#which-job-runs-each-step-of-cargo-xtask-ci)): the plan checks (`plan/check.py` and its tests, with PyYAML installed), the cached specifications (`scripts/refresh-specs.sh --verify`, offline: fails naming any file under `specs/` whose SHA-256 differs from `specs/manifest.tsv`, that is listed but missing, or that has no row), conventions, ADRs, layers, licenses, attribution, contrast, clippy fixtures and deny fixtures; on a cache run on `main`, fmt and cargo-deny too |
 | `cargo-deny` | Linux | `cargo deny --locked --all-features check advisories bans licenses sources` with cargo-deny 0.20.2, the version the `cargo xtask ci` job installs |
 | `Dependency Review` | Linux | `dependency-review-action` on pull requests; skipped on merge groups and cache runs, which a required check accepts |
-| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, in the merge group only, `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
+| `Test Assets (linux)`, `Test Assets (macos)`, `Test Assets (windows)` | each OS | the `language_coverage.py` tests, `cargo xtask corpus verify`, then `cargo xtask assets fetch` and `precache` ([test-assets.md](test-assets.md)); on Linux only, `cargo xtask corpus fetch id-1.01`, which writes id 1.01 to the cache by checksum, `corpus/language_coverage.py`, which checks that [`docs/spec/language.md`](spec/language.md) covers every construct id's QuakeC 1.01 uses, `cargo xtask lex-corpus`, which lexes every `.qc` file and preprocesses the files `progs.src` lists with no errors, `cargo xtask oracles id101` on the same files, which compiles them with id's qcc, checks the progs.dat's SHA-256 and traces two scenarios with the VM oracle, `cargo xtask parse-corpus`, which parses id 1.01 with no errors and checks that every file of the rerelease, Copper and Arcane Dimensions round-trips through the syntax tree, then, in the merge group only, `cargo xtask parse-corpus --deletions`, which deletes each token of id 1.01 in turn to check that recovery stays local, `cargo xtask oracles rerelease` on the six rerelease codebases, which compiles each with FTEQCC to a version 6 progs.dat with vanilla opcodes only and a `.lno`, checks both against recorded SHA-256 digests and keeps them in `target/oracles/rerelease` (cached on `oracles/`, the xtask oracle code and `corpus/manifest.toml`), `cargo xtask corpus build`, which checks that every progs.dat those oracles build round-trips through `qc-progs` byte for byte, `cargo xtask differential --fast`, which runs id 1.01 end to end in the VM oracle and QuakeC Studio's runner and fails on any divergence DIFF-10.1 does not list (the differential VM suite QA-1 names; the full corpus runs nightly, [below](#differential)), `cargo xtask corpus fetch` of every map in the manifest and `cargo xtask map-corpus`, which checks that each reads and writes back through `qs-map` byte for byte, and the `qs-vfs` `walk` example on the LibreQuake lite asset, which loads every BSP, `.lit`, alias model, sprite and sound in it; the download cache, which holds the asset archives and the repository archives `corpus fetch` reads, is keyed on the SHA-256 of `corpus/manifest.toml` and saved after the last fetch |
 
 ### Which job runs each step of cargo xtask ci
 
-`make ci` runs every step of `cargo xtask ci` (`xtask/src/ci.rs`). In CI, four of them have a
+`make ci` runs every step of `cargo xtask ci` (`xtask/src/ci.rs`). In CI, five of them have a
 job of their own that runs the same command, so the `cargo xtask ci` job leaves them out with
 `--skip` and each runs once per CI run. A run on `main` skips `Format` and `cargo-deny`, so
 there the `cargo xtask ci` job runs fmt and deny itself.
@@ -73,6 +73,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
+| `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
 
 The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. An xtask test
 (`every_step_ci_skips_runs_in_another_job_with_the_same_command`) fails unless each one is a
@@ -102,6 +103,17 @@ check:
 | Check | Runs on | What it does |
 | --- | --- | --- |
 | `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust, the `parser` target seeded with the `.qc` files of id 1.01 and the rerelease (`cargo xtask corpus fetch`); on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
+
+### Differential
+
+[`.github/workflows/differential.yml`](../.github/workflows/differential.yml) runs nightly and
+on demand (`workflow_dispatch`), never on pull requests or in the merge queue, and is **not** a
+required check (docs/ci.md): the full corpus takes minutes, and the fast subset (id 1.01, zero
+divergences) runs on every change in the `Test Assets (linux)` job above.
+
+| Check | Runs on | What it does |
+| --- | --- | --- |
+| `Differential` | Linux | `cargo xtask differential --full`: builds the oracles, compiles the rerelease with FTEQCC, builds the corpus progs, then runs every oracle-built codebase (id 1.01 and the six rerelease codebases) in the VM oracle and QuakeC Studio's runner, comparing traces (DIFF-9) and measuring statement coverage (DIFF-11); enforces zero divergences and the 90% statement-coverage bar (TEST-6) |
 
 [`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
 (`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,
