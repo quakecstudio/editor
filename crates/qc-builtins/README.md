@@ -15,13 +15,19 @@ and an `Engine` trait a real engine (`qs-sim`, P3-24) implements.
 - `mock`: the deterministic mock engine fixture (the precache lists and model bounds, the
   lightstyles, the cvars, the `changelevel` flag, the command buffer, the message buffer sizes
   and the DIFF-6.2 random source) that two independent runners share (DIFF-6, DIFF-7).
-- `MockBuiltins`: implements `qc_vm::Builtins`, so a `qc_vm::Machine` can run a progs that
-  calls builtins; it reads each builtin's arguments from the parameter slots and writes its
-  result to `OFS_RETURN` or the system globals (BUILTIN-1.3, BUILTIN-1.4, PROGS-18). A number
-  with no builtin fails with id's `unimplemented bulitin` (BUILTIN-1.2).
+- `MockBuiltins`: implements `qc_vm::Builtins` for `MockBuiltins<MockEngine>`, so a
+  `qc_vm::Machine` can run a progs that calls builtins; it reads each builtin's arguments from
+  the parameter slots and writes its result to `OFS_RETURN`, the system globals or the edicts
+  (BUILTIN-1.3, BUILTIN-1.4, PROGS-18). A number with no builtin fails with id's
+  `unimplemented bulitin` (BUILTIN-1.2). Every vanilla builtin has a body: the pure math and
+  strings (BUILTIN-6, BUILTIN-7), the entity, placing, precaching, printing, command, setting,
+  sound, particle, lightstyle, static-entity, network-message and error builtins against the
+  mock fixture (BUILTIN-8 to BUILTIN-13, BUILTIN-16), the class world builtins by DIFF-7
+  (BUILTIN-14, BUILTIN-15), and the argument checks of BUILTIN-2 with the runtime errors of
+  DIFF-6.6 (`invalid entity`, `invalid string`, `invalid field`, `invalid lightstyle`).
 - `Engine` and `BuiltinError`: the engine-side effects a real engine provides, and the typed
-  errors a builtin raises (BUILTIN-3). A class `world` builtin (BUILTIN-4.4) is answered by
-  DIFF-7 when the engine has a world and otherwise marked engine-only with a typed error.
+  errors a builtin raises (BUILTIN-3). The class world builtins (BUILTIN-4.4) are answered by
+  DIFF-7 over the mock; a caller using `NoEngine` gets a typed engine-only error.
 
 ## Layer
 
@@ -31,7 +37,6 @@ nothing higher.
 ## Spec sections
 
 Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-17) and the mock engine of
-`docs/spec/differential.md` (DIFF-6, DIFF-7). The pure math and string builtins, the table and
-the mock classes are complete and covered by the `builtins.md` test vectors; the class state,
-output and world builtin bodies against the mock fixture are the next step (see the linked
-follow-up issue).
+`docs/spec/differential.md` (DIFF-6, DIFF-7). The table, the mock classes, the pure math and
+string builtins and the class state, output and world builtin bodies against the mock fixture
+are complete.

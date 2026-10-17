@@ -4,6 +4,7 @@
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_cmds.c, PF_makevectors, PF_normalize, PF_vlen, PF_vectoyaw, PF_vectoangles, PF_random, PF_rint, PF_floor, PF_ceil, PF_fabs, PF_ftos, PF_vtos
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/mathlib.c, AngleVectors, anglemod
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/common.c, Q_atof
 
 //! The pure math and string builtins, exact without an engine (BUILTIN-4.1).
 //!
@@ -219,6 +220,15 @@ fn format_5_1(f: f32) -> String {
 // ----- small helpers that keep the no-panic, no-`as` conventions -----
 
 /// `(f32)x`: round a double to the nearest f32, as C's assignment to a `float` does.
+///
+/// `BUILTIN-6`: the dispatcher uses this for the double arithmetic of `findradius`
+/// (BUILTIN-8.5) and the message coordinate writes (BUILTIN-13.2).
+#[must_use]
+pub fn f64_to_f32_public(x: f64) -> f32 {
+    f64_to_f32(x)
+}
+
+/// `(f32)x`: round a double to the nearest f32, as C's assignment to a `float` does.
 fn f64_to_f32(x: f64) -> f32 {
     #[expect(
         clippy::cast_possible_truncation,
@@ -262,6 +272,14 @@ fn trunc_to_i32_f64(x: f64) -> i32 {
 }
 
 /// An `i32` as f32, id's `(float)n`.
+///
+/// `BUILTIN-9.4`: the dispatcher uses it for a model index and other small integer counts.
+#[must_use]
+pub fn int_to_f32_public(v: i32) -> f32 {
+    int_to_f32(v)
+}
+
+/// An `i32` as f32, id's `(float)n`.
 fn int_to_f32(v: i32) -> f32 {
     #[expect(
         clippy::cast_precision_loss,
@@ -280,4 +298,78 @@ fn int_to_f64(v: i32) -> f64 {
 /// A non-negative `u32` (0 to 0x7fff here) as `i32`, without a cast.
 fn u32_to_i32(v: u32) -> i32 {
     i32::try_from(v).unwrap_or(0)
+}
+
+/// `Q_atof(s)` (BUILTIN-11.7): id's number parser for a setting's text.
+///
+/// Implements BUILTIN-11.7, id's `Q_atof` in `WinQuake/common.c`: an optional leading `-`;
+/// then a hexadecimal number after `0x` or `0X`, the code of the character after a `'`, or
+/// decimal digits with at most one `.`; it stops at the first other character, with no
+/// exponent and no leading spaces. The result is id's `(float)(sign * total)`.
+#[must_use]
+pub fn q_atof(text: &str) -> f32 {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    // id: skip a leading '-' only; no spaces are skipped (BUILTIN-11.7, `" 5"` is 0).
+    let sign = if bytes.first() == Some(&b'-') {
+        i = 1;
+        -1.0_f64
+    } else {
+        1.0
+    };
+
+    // id: a leading "0x" or "0X" reads a hexadecimal integer.
+    if bytes.get(i) == Some(&b'0')
+        && matches!(bytes.get(i.saturating_add(1)), Some(&b'x') | Some(&b'X'))
+    {
+        let mut total: f64 = 0.0;
+        let mut j = i.saturating_add(2);
+        while let Some(&c) = bytes.get(j) {
+            let digit = match c {
+                b'0'..=b'9' => i32::from(c.wrapping_sub(b'0')),
+                b'a'..=b'f' => i32::from(c.wrapping_sub(b'a')).saturating_add(10),
+                b'A'..=b'F' => i32::from(c.wrapping_sub(b'A')).saturating_add(10),
+                _ => break,
+            };
+            total = total * 16.0 + f64::from(digit);
+            j = j.saturating_add(1);
+        }
+        return f64_to_f32(sign * total);
+    }
+
+    // id: a leading '\'' takes the code of the next character.
+    if bytes.get(i) == Some(&b'\'') {
+        let code = bytes.get(i.saturating_add(1)).copied().unwrap_or(0);
+        return f64_to_f32(sign * f64::from(code));
+    }
+
+    // id: decimal digits with at most one '.', stopping at the first other character.
+    let mut total: f64 = 0.0;
+    let mut decimal: Option<i32> = None;
+    let mut j = i;
+    while let Some(&c) = bytes.get(j) {
+        if c == b'.' {
+            if decimal.is_some() {
+                break;
+            }
+            decimal = Some(0);
+            j = j.saturating_add(1);
+            continue;
+        }
+        if !c.is_ascii_digit() {
+            break;
+        }
+        total = total * 10.0 + f64::from(c.wrapping_sub(b'0'));
+        if let Some(places) = decimal.as_mut() {
+            *places = places.saturating_add(1);
+        }
+        j = j.saturating_add(1);
+    }
+    if let Some(places) = decimal {
+        // id: while (decimal-- > 0) total /= 10.
+        for _ in 0..places {
+            total /= 10.0;
+        }
+    }
+    f64_to_f32(sign * total)
 }

@@ -10,11 +10,15 @@
 //! (DIFF-6, DIFF-7) for unit and differential tests, and an [`Engine`] trait a real engine
 //! (`qs-sim`, P3-24) implements.
 //!
-//! [`MockBuiltins`] implements [`qc_vm::Builtins`], so a [`qc_vm::Machine`] can run a progs
-//! that calls builtins: it reads each builtin's arguments from the parameter slots, writes the
-//! result to `OFS_RETURN` or the system globals, and updates the mock engine (PROGS-18,
-//! BUILTIN-1.3, BUILTIN-1.4). A class `world` builtin (BUILTIN-4.4) is answered by DIFF-7 when
-//! the engine has a world, and otherwise fails with a typed [`BuiltinError::EngineOnly`].
+//! [`MockBuiltins<MockEngine>`] implements [`qc_vm::Builtins`], so a [`qc_vm::Machine`] can run
+//! a progs that calls builtins: it reads each builtin's arguments from the parameter slots,
+//! writes the result to `OFS_RETURN`, the system globals or the edicts, and updates the mock
+//! engine (PROGS-18, BUILTIN-1.3, BUILTIN-1.4). Every vanilla builtin has a body: the pure
+//! math and strings (BUILTIN-6, BUILTIN-7), the class state, output and world builtins against
+//! the mock fixture (BUILTIN-8 to BUILTIN-13, BUILTIN-16) and by DIFF-7 (BUILTIN-14,
+//! BUILTIN-15), with the argument checks of BUILTIN-2 raising the runtime errors of DIFF-6.6.
+//! A caller using [`NoEngine`] has no world builtins and gets a typed
+//! [`BuiltinError::EngineOnly`].
 //!
 //! Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-17) and the mock engine of
 //! `docs/spec/differential.md` (DIFF-6, DIFF-7). The builtin numbers, value encodings and the
