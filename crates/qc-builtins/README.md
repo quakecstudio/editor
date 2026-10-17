@@ -36,7 +36,10 @@ nothing higher.
 
 ## Spec sections
 
-Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-17) and the mock engine of
-`docs/spec/differential.md` (DIFF-6, DIFF-7). The table, the mock classes, the pure math and
-string builtins and the class state, output and world builtin bodies against the mock fixture
-are complete.
+- **Spec sections:** [BUILTIN-1, BUILTIN-2, BUILTIN-3, BUILTIN-4, BUILTIN-5, BUILTIN-6,
+  BUILTIN-7, BUILTIN-8, BUILTIN-9, BUILTIN-10, BUILTIN-11, BUILTIN-12, BUILTIN-13, BUILTIN-14,
+  BUILTIN-15, BUILTIN-16, BUILTIN-17](../../docs/spec/builtins.md) and the mock engine of
+  [DIFF-6, DIFF-7](../../docs/spec/differential.md).
+
+The table, the mock classes, the pure math and string builtins and the class state, output and
+world builtin bodies against the mock fixture are complete.
