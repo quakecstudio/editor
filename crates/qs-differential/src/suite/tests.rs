@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use qc_trace::{Changes, Header, Record, Step, Trace, encode};
 
 use super::{
-    CodebaseReport, MIN_COVERAGE, ScenarioResult, SuiteError, entity_lump, initial_globals,
-    numstatements, records_before, run_and_compare,
+    CodebaseReport, ScenarioResult, SuiteError, entity_lump, initial_globals, numstatements,
+    records_before, run_and_compare,
 };
 use crate::compare::{Comparison, Divergence};
 use crate::host::fixture::{FuncSpec, ProgsBuilder, Stmt};
@@ -280,7 +280,8 @@ fn run_and_compare_surfaces_a_bad_oracle_trace_and_a_refusal() {
 }
 
 // spec DIFF-11.2: a codebase's coverage is distinct executed statements over numstatements - 1.
-// spec DIFF-9.6: zero divergences is the acceptance of P1-13.
+// spec DIFF-9.6: zero divergences is the differential bar of P1-13 (ADR-0013); coverage is
+// reported, not gated.
 #[test]
 fn a_codebase_report_aggregates_coverage_and_divergences() {
     // A progs with numstatements 11: statements 1 to 10 (DIFF-11.1).
@@ -308,12 +309,16 @@ fn a_codebase_report_aggregates_coverage_and_divergences() {
         records_before_divergence: trace_b.records.len(),
     });
 
-    // Distinct statements 1..=9 of 10: 0.9 coverage, zero divergences, two scenarios.
+    // Distinct statements 1..=9 of 10: 0.9 coverage, zero divergences, two scenarios. Coverage
+    // is reported; the bar is zero divergences (ADR-0013), so the codebase passes.
     assert_eq!(report.scenarios, 2);
     assert_eq!(report.divergences, 0);
     assert_eq!(report.executed.len(), 9);
     assert!((report.coverage() - 0.9).abs() < f64::EPSILON);
-    assert!(report.passes(MIN_COVERAGE), "0.9 meets the 90% bar");
+    assert!(
+        report.passes(),
+        "zero divergences over scenarios meets the bar"
+    );
 
     // A diverging scenario raises the divergence count and fails the codebase.
     report.record(&ScenarioResult {
@@ -328,17 +333,19 @@ fn a_codebase_report_aggregates_coverage_and_divergences() {
         records_before_divergence: 0,
     });
     assert_eq!(report.divergences, 1);
-    assert!(!report.passes(MIN_COVERAGE), "a divergence fails P1-13");
+    assert!(!report.passes(), "a divergence fails the differential bar");
 }
 
-// spec DIFF-11.2: a report over no scenarios does not pass, and a progs with no statements has
-// coverage 0, not a divide by zero.
+// spec DIFF-9.6: a report over no scenarios does not pass the differential bar (ADR-0013);
+// spec DIFF-11.2: a progs with no statements has coverage 0, not a divide by zero.
 #[test]
-fn a_report_with_no_scenarios_or_no_statements_does_not_pass() {
+fn a_report_with_no_scenarios_does_not_pass_and_no_statements_is_zero_coverage() {
     let report = CodebaseReport::new("empty", 11);
-    assert!(!report.passes(MIN_COVERAGE), "no scenarios ran");
+    assert!(!report.passes(), "no scenarios ran");
     assert_eq!(report.coverage(), 0.0);
 
+    // A progs with no statements: coverage is 0 (no divide by zero), and one agreeing scenario
+    // meets the bar, because the bar is zero divergences, not a coverage figure (ADR-0013).
     let mut no_statements = CodebaseReport::new("tiny", 1);
     no_statements.record(&ScenarioResult {
         trace: Trace {
@@ -349,5 +356,5 @@ fn a_report_with_no_scenarios_or_no_statements_does_not_pass() {
         records_before_divergence: 0,
     });
     assert_eq!(no_statements.coverage(), 0.0);
-    assert!(!no_statements.passes(MIN_COVERAGE));
+    assert!(no_statements.passes(), "zero divergences meets the bar");
 }

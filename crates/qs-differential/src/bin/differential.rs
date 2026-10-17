@@ -13,9 +13,9 @@
 //! ```
 //!
 //! `--mode fast` (the default) runs id 1.01 and enforces zero divergences (DIFF-9.6); `--mode
-//! full` runs every oracle-built codebase and enforces zero divergences and the 90%
-//! statement-coverage bar (TEST-6). It exits 0 when every enforced criterion passed, 1
-//! otherwise, and 2 on a usage or setup error.
+//! full` runs every oracle-built codebase and enforces zero divergences, reporting statement
+//! coverage (DIFF-11, ADR-0013) without gating it. It exits 0 when every enforced criterion
+//! passed, 1 otherwise, and 2 on a usage or setup error.
 
 #![expect(
     clippy::print_stdout,
@@ -111,7 +111,7 @@ fn run(args: &[String]) -> Result<bool, String> {
         let mut oracle =
             move |scenario: &Path, trace: &Path| run_oracle(&oracle_bin, scenario, trace);
         match runner::run_codebase(id, &progs, &work, &mut oracle) {
-            Ok(report) => all_ok &= runner::report_line(&report, options.mode),
+            Ok(report) => all_ok &= runner::report_line(&report),
             Err(e) => {
                 println!("FAIL  {id}: {e}");
                 all_ok = false;
@@ -119,14 +119,7 @@ fn run(args: &[String]) -> Result<bool, String> {
         }
     }
     if all_ok {
-        println!(
-            "differential: every codebase agreed with the oracle{}",
-            if options.mode.enforces_coverage() {
-                " and met the 90% statement-coverage bar"
-            } else {
-                ""
-            }
-        );
+        println!("differential: every codebase agreed with the oracle");
     }
     Ok(all_ok)
 }

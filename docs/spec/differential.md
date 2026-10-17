@@ -515,8 +515,13 @@ rules remain.
 
 **Source:** this project; statement 0 is reserved (PROGS-1.5, VM-3.5).
 
-The bar of [`../testing.md`](../testing.md) (TEST-6) is at least 90% of the statements of each
-corpus codebase executed; this is how the runner measures it.
+The hard bar of [`../testing.md`](../testing.md) (TEST-6) for this suite is zero divergences
+on each corpus codebase; statement coverage is measured and reported, not gated against a flat
+90%, because the mock engine does not drive the running world (DIFF-5.8, DIFF-1.5), so most of a
+Quake progs is unreachable under it. Running-world statement coverage is `qs-sim`'s, measured by
+its own suite ([#239](https://github.com/quakecstudio/editor/issues/239)). This is
+[ADR-0013](../adr/0013-differential-coverage-bar.md). DIFF-11.1 to DIFF-11.3 are how the runner
+measures and reports coverage.
 
 ### Behaviour
 

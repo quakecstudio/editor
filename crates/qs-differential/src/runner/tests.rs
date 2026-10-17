@@ -53,12 +53,10 @@ fn work(name: &str) -> PathBuf {
 }
 
 #[test]
-fn the_modes_select_their_codebases_and_criteria() {
+fn the_modes_select_their_codebases() {
     assert_eq!(Mode::Fast.codebases(), ["id-1.01"]);
     assert!(Mode::Full.codebases().contains(&"id-1.01"));
     assert!(Mode::Full.codebases().contains(&"rerelease"));
-    assert!(!Mode::Fast.enforces_coverage());
-    assert!(Mode::Full.enforces_coverage());
 }
 
 #[test]
@@ -103,8 +101,8 @@ fn a_codebase_with_a_matching_oracle_has_no_divergences() {
     let report = run_codebase("id-1.01", &progs, &dir, &mut oracle).expect("the codebase runs");
     assert!(report.scenarios > 0);
     assert_eq!(report.divergences, 0, "a matching oracle agrees");
-    // The report prints and passes the fast criterion (zero divergences).
-    assert!(report_line(&report, Mode::Fast));
+    // The report prints and passes the differential bar (zero divergences, ADR-0013).
+    assert!(report_line(&report));
 }
 
 // spec DIFF-9.6: a divergence the readings leave is a failure; an oracle whose trace is one
@@ -128,10 +126,7 @@ fn a_codebase_with_a_diverging_oracle_reports_divergences() {
     };
     let report = run_codebase("id-1.01", &progs, &dir, &mut oracle).expect("the codebase runs");
     assert!(report.divergences > 0, "a shorter oracle trace diverges");
-    assert!(
-        !report_line(&report, Mode::Fast),
-        "divergences fail the report"
-    );
+    assert!(!report_line(&report), "divergences fail the report");
 }
 
 // A scenario whose run errors (here the oracle cannot produce a decodable trace) counts as a
@@ -143,7 +138,7 @@ fn an_oracle_error_counts_as_a_divergence() {
     let mut oracle = |_scenario: &Path, _trace: &Path| Ok(b"not a trace".to_vec());
     let report = run_codebase("id-1.01", &progs, &dir, &mut oracle).expect("the codebase runs");
     assert_eq!(report.divergences, report.scenarios);
-    assert!(!report_line(&report, Mode::Fast));
+    assert!(!report_line(&report));
 }
 
 #[test]
