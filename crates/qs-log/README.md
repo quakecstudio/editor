@@ -6,7 +6,8 @@ source text out of every log.
 
 - **Layer:** L0. It depends on `qs-paths` for the log directory, and on `tracing` and
   `tracing-subscriber` (`std` and `registry` features only).
-- **Spec sections:** none; it implements requirement QA-7, not engine behaviour.
+- **Decision:** crash-safe logging, plan requirement QA-7 (not engine behaviour).
+- **Spec sections:** none; it implements a plan requirement, not engine behaviour.
 - **Shipped:** yes.
 
 ## Use
