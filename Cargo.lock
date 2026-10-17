@@ -417,6 +417,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-vm"
+version = "2026.10.0"
+dependencies = [
+ "qc-edict",
+ "qc-progs",
+ "qc-trace",
+ "qc-types",
+]
+
+[[package]]
 name = "qs-bench"
 version = "2026.10.0"
 dependencies = [

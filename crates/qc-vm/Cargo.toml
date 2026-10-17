@@ -1,0 +1,18 @@
+[package]
+name = "qc-vm"
+description = "The QuakeC virtual machine: id's PR_ExecuteProgram as a no-panic interpreter over a loaded progs.dat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-edict = { workspace = true }
+qc-progs = { workspace = true }
+qc-trace = { workspace = true }
+qc-types = { workspace = true }
+
+[lints]
+workspace = true
