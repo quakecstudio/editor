@@ -10,8 +10,11 @@
 //!   bar but not the minimum. Every surviving mutant must be listed under
 //!   `equivalent_mutants` with a reason. The flake check needs [`FLAKE_RUNS`]
 //!   passing runs on each of [`FLAKE_OSES`].
-//! - `ratchets.toml` itself: every crate names a readiness issue of the plan
-//!   in `readiness`, and a minimum below the bar needs an exception.
+//! - `ratchets.toml` itself: every crate with recorded minimums names a
+//!   readiness issue of the plan in `readiness`, and a minimum below the bar
+//!   needs an exception. A crate without a review may still hold a table that
+//!   waives an unmeasurable check (an `exception`) or justifies a surviving
+//!   mutant (an `equivalent_mutant`), each with a reason.
 //! - Its git history: a commit that changes a crate's minimums must also
 //!   change `readiness` to the readiness issue that set them, and one that
 //!   lowers a minimum must give a new `reason`. A crate's table may be removed
@@ -203,9 +206,10 @@ pub(crate) fn validate(ratchets: &Ratchets, keys: &BTreeSet<String>) -> Vec<Stri
                     "{FILE}: {name}: a readiness issue but no minimums; a review records both"
                 ));
             }
-            if minimums.exceptions.is_empty() {
+            if minimums.exceptions.is_empty() && minimums.equivalent_mutants.is_empty() {
                 problems.push(format!(
-                    "{FILE}: {name}: a table needs the minimums of a review, or an exception"
+                    "{FILE}: {name}: a table needs the minimums of a review, an exception or an \
+                     equivalent mutant"
                 ));
             }
         }

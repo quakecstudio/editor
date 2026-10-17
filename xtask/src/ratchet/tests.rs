@@ -275,7 +275,7 @@ fn a_table_holds_a_review_s_four_minimums_or_only_exceptions() {
     let readiness_alone = problems("[crates.qs-x]\nreadiness = \"P1-R0\"\n");
     assert_eq!(readiness_alone.len(), 2, "{readiness_alone:?}");
     assert!(readiness_alone[0].contains("a readiness issue but no minimums"));
-    assert!(readiness_alone[1].contains("needs the minimums of a review, or an exception"));
+    assert!(readiness_alone[1].contains("needs the minimums of a review, an exception"));
     let empty = problems("[crates.qs-x]\n");
     assert_eq!(empty.len(), 1, "{empty:?}");
     let partial = problems("[crates.qs-x]\nreadiness = \"P1-R0\"\nlines = 95\n");
@@ -293,6 +293,10 @@ fn a_table_holds_a_review_s_four_minimums_or_only_exceptions() {
     let exceptions_only =
         "[crates.qs-c]\nreason = \"no tool\"\nexceptions = { mutation = \"C\" }\n";
     assert_eq!(problems(exceptions_only), Vec::<String>::new());
+    // A crate with no review may hold only a justified survivor.
+    let survivor_only = "[crates.qs-b]\nreason = \"entry point\"\n\
+                         equivalent_mutants = { \"src/main.rs: replace main -> () with ()\" = \"unkillable\" }\n";
+    assert_eq!(problems(survivor_only), Vec::<String>::new());
 }
 
 #[test]
