@@ -303,6 +303,7 @@ issues:
   - P1-60
   - P1-61
   - P1-62
+  - P1-63
   deliverable:
   - 'crates/qs-differential: the differential VM runner that writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm (through the scenario reader of P1-60, the host loop of P1-61 and the comparator of P1-62) and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
   - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
@@ -1086,6 +1087,29 @@ issues:
   - DIFF-9, DIFF-10 and DIFF-11 leave docs/spec/coverage-baseline.tsv, cited by tests
   verify:
   - cargo test -p qs-differential
+- key: P1-63
+  title: Resolve engine-allocated strings in qc-vm string opcodes
+  labels:
+  - L1-vm
+  - area:vm
+  - type:feature
+  size: M
+  reqs:
+  - FND-3
+  - FND-7
+  - FND-8
+  depends:
+  - P1-10
+  - P1-16
+  deliverable:
+  - 'crates/qc-vm: EQ_S, NE_S and NOT_S resolve a string value that is outside the string table against the engine-allocated strings (PROGS-11.6, EDICT-13.1, EDICT-13.3) as well as table offsets, by consulting the engine string store through the Builtins/execution context, so a comparison of an engine-made string (mapname, netname, the world model, an ftos/vtos buffer) reads its text instead of failing. Today qc-vm resolve_string (ops.rs) only accepts 0..numstrings and fails every other value with the VM-7.3 runtime error, so any corpus progs that compares an engine string (id 1.01 worldspawn does so immediately) diverges from id''s VM at the first EQ_S: id reads the allocated string and continues, qc-vm errors. This is not a DIFF-10 expected divergence; it blocks the differential suite (P1-13).'
+  - 'docs/spec/vm.md VM-7.3 (and NOT_S under VM-8.3) updated so an engine-allocated string value resolves to its text; only a value that is neither a table offset nor an engine-allocated string is the VM-19.4 runtime error. The change keeps id''s behaviour (PR_GetString resolves both), cites the pinned commit, and the differential suite is the differential result'
+  acceptance:
+  - A qc-vm unit or vector test shows EQ_S, NE_S and NOT_S on an engine-allocated string value resolve its text (equal texts compare equal, different texts do not), citing the updated VM-7.3 and VM-8.3
+  - The differential suite (P1-13) runs id 1.01 worldspawn and a client-entering scenario end to end with zero unexpected divergences past the first engine-string comparison
+  - No panics; a value that is neither a table offset nor an engine-allocated string still fails with the VM-19.4 runtime error, with a test
+  verify:
+  - cargo test -p qc-vm; the differential suite of P1-13
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -1160,6 +1184,7 @@ issues:
   - P1-60
   - P1-61
   - P1-62
+  - P1-63
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
