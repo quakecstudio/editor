@@ -48,7 +48,9 @@
 //!   local.
 //! - `project-corpus`: opens codebase directories as projects with
 //!   `qc-project` and checks each module's file graph; `--progs` also checks it
-//!   against the order of the functions in a `progs.dat` id's qcc compiled.
+//!   against the order of the functions in a `progs.dat` id's qcc compiled, and
+//!   `--fteqcc` runs the pinned FTEQCC on every module and checks that the files
+//!   it reports compiling and including match the graph, in order.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).

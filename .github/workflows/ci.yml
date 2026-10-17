@@ -411,6 +411,19 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-rogue" "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
             "$QS_TEST_ASSETS/codebase/rerelease-ctf" "$QS_TEST_ASSETS/codebase/rerelease-mg3" \
             "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
+      # P1-33: the pinned FTEQCC runs on every module of each codebase it can compile, and the
+      # files it reports compiling and including match the module's graph, in order (a prefix
+      # when FTEQCC stops on a compile error or a crash, per PRJ-6). The oracles are restored
+      # with the id 1.01 compile step above, so this only builds FTEQCC on a cache miss.
+      - name: Check the corpus graph order against FTEQCC
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask project-corpus --fteqcc "$QS_TEST_ASSETS/codebase/id-1.01" \
+            "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/rerelease-hipnotic" \
+            "$QS_TEST_ASSETS/codebase/rerelease-rogue" "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
+            "$QS_TEST_ASSETS/codebase/rerelease-ctf" "$QS_TEST_ASSETS/codebase/rerelease-mg3" \
+            "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions"
       # P1-34: Xonotic's three modules open through the quakec.toml corpus fetch writes (its
       # archive is only qcsrc/, 2 MB), and FreeCS opens whole in its Nuclide SDK tree, with
       # Rad-Therapy (FreeHL) beside it (about 120 MB in the macOS downloads cache). FreeCS

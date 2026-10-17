@@ -11,11 +11,15 @@
 //! have one module, and the source files of the functions in that `progs.dat`, in function
 //! order, must appear in the module's graph in the same order: the program id's `qcc`
 //! compiled from the same `progs.src` (`cargo xtask oracles id101`) is the oracle. With
-//! `--files`, every file of every graph is printed, in order. With `--expect-warning`, exactly
-//! `n` modules, over all the directories, must have a warning with that code; warnings are
-//! otherwise printed and never fail the check.
+//! `--fteqcc`, the pinned FTEQCC (`cargo xtask oracles build`, P1-26) is run on every module
+//! of every codebase, and the files it reports compiling and including, in order, must match
+//! the module's graph (P1-33; `fteqcc`). With `--files`, every file of every graph is printed,
+//! in order. With `--expect-warning`, exactly `n` modules, over all the directories, must have
+//! a warning with that code; warnings are otherwise printed and never fail the check.
 //!
 //! The codebases come from `cargo xtask corpus fetch <id>`.
+
+mod fteqcc;
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -25,9 +29,10 @@ use qc_progs::Progs;
 use qc_project::{Code, Form, Module, Project, Via, open};
 
 use crate::lex_corpus::progs_src_names;
+use crate::oracles;
 
-const USAGE: &str = "usage: cargo xtask project-corpus [--files] [--progs <progs.dat>] \
-                     [--expect-warning <code>=<modules>] <dir>...";
+const USAGE: &str = "usage: cargo xtask project-corpus [--files] [--fteqcc] \
+                     [--progs <progs.dat>] [--expect-warning <code>=<modules>] <dir>...";
 
 /// Every `.src` file under `dir`, sorted.
 fn src_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
@@ -210,9 +215,10 @@ fn parse_expected(arg: &str) -> Result<(Code, usize), String> {
 }
 
 /// Runs the check on the directories in `args`.
-pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
+pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let mut progs = None;
     let mut files = false;
+    let mut run_fteqcc = false;
     let mut expected: Option<(Code, usize)> = None;
     let mut warned = 0_usize;
     let mut dirs = Vec::new();
@@ -221,6 +227,7 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
         match arg.as_str() {
             "--progs" => progs = Some(PathBuf::from(rest.next().ok_or(USAGE)?)),
             "--files" => files = true,
+            "--fteqcc" => run_fteqcc = true,
             "--expect-warning" => expected = Some(parse_expected(rest.next().ok_or(USAGE)?)?),
             flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
             dir => dirs.push(PathBuf::from(dir)),
@@ -229,6 +236,13 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     if dirs.is_empty() || (progs.is_some() && dirs.len() != 1) {
         return Err(USAGE.to_owned());
     }
+    // Build the pinned FTEQCC up front (a no-op when it is already built), so a failure to
+    // build it is reported once, not once per directory.
+    let oracles = if run_fteqcc {
+        Some(oracles::build(root)?)
+    } else {
+        None
+    };
     let mut ok = true;
     for dir in &dirs {
         let projects = projects(dir)?;
@@ -262,6 +276,12 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
                 return Err(format!("--progs needs one module in {}", dir.display()));
             };
             ok &= check_progs_order(module, progs)?;
+        }
+        if let Some(oracles) = &oracles
+            && !modules.is_empty()
+        {
+            let work = oracles.work.join("project-corpus");
+            ok &= fteqcc::check_dir(oracles.exec, &oracles.fteqcc, &work, dir, &modules)?;
         }
         println!(
             "project-corpus: {}: {} modules, {} files",

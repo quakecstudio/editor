@@ -254,12 +254,19 @@ The unit tests in `crates/qc-project` hold the small cases. The corpus was check
   2091 functions in the `progs.dat` it compiles from id 1.01 appear in the graph's order
   (`cargo xtask project-corpus --progs`, which CI runs). Swapping two lines of the
   `progs.src` makes the check fail.
-- **FTEQCC**, the pinned build `cargo xtask oracles build` makes (P1-26), run locally on
-  arm64 macOS with `-srcfile` in each module's directory. With default verbosity it prints
-  `compiling` or `including` for each list and `#includelist` entry, not for `#include`, so
-  those entries were compared. "Prefix" means FTEQCC stopped early, on a compile error or a
-  crash (signal 11, cause not investigated), and every entry it printed was in the graph's
-  order.
+- **FTEQCC**, the pinned build `cargo xtask oracles build` makes (P1-26), run with `-srcfile`
+  in a copy of each module's directory by `cargo xtask project-corpus --fteqcc`, which CI
+  runs on the codebases FTEQCC compiles (P1-33). With default verbosity (`verbose ==
+  VERBOSE_PROGRESS`, 0) it prints `compiling %s` for each list entry and `including %s` for
+  each `#includelist` entry, and nothing for an `#include`, from `QCC_FindBestInclude`
+  (`engine/qclib/qcc_pr_lex.c`), which `QCC_ContinueCompile` (`engine/qclib/qccmain.c`) calls
+  with `includetype == 2` for a list entry, `QCC_PR_Precompiler` with `true` for an
+  `#includelist` entry and `false` for an `#include`; the guard is `if (includetype && verbose
+  >= VERBOSE_PROGRESS)`. So the files it reports are the graph's `Via::Listed` and
+  `Via::IncludeList` entries, compared in order. "Prefix" means FTEQCC stopped early, on a
+  compile error or a crash (signal 11, cause not investigated), and every entry it printed was
+  in the graph's order; the check accepts a prefix. The first recording was on arm64 macOS on
+  2026-10-16.
 - **The C preprocessor** (`cc -xc -E -H`, Apple clang 21) for Xonotic, which builds with it
   (`qcsrc/Makefile`, `CPP := cc -xc -E`): its include trace is the whole graph, `#include`
   entries and all. `quakec.toml` gave the defines of `qcsrc/tools/qcc.sh`, with
