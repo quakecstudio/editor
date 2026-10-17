@@ -311,3 +311,77 @@ fn engine_string_resolves_inside_a_nested_run() {
     // Equal engine strings compare equal: EQ_S writes 1.0 (VM-7.3).
     assert_eq!(machine.globals()[110].as_f32(), 1.0);
 }
+
+// spec VM-19.1: PR_RunError's trace lists every active function from the innermost out, each
+// resolving its name and source file from the progs' string table. The `runaway` and
+// `stack_overflow` vectors pin that an error fires; this pins the trace's contents, so an
+// empty trace (stack_trace) or an unresolved name (string_of) is caught.
+#[test]
+fn run_error_trace_names_the_active_functions() {
+    // Strings: "\0entry\0inner\0a.qc\0b.qc\0": entry@1, inner@7, a.qc@13, b.qc@18.
+    let mut strings = vec![0_u8];
+    for name in [b"entry".as_slice(), b"inner", b"a.qc", b"b.qc"] {
+        strings.extend_from_slice(name);
+        strings.push(0);
+    }
+    // f1 "entry" in "a.qc" calls f2 (builtin 2, a nested run of f3); f3 "inner" in "b.qc" hits
+    // a bad opcode, raising the error two frames deep.
+    let bytes = harness::ProgsBuilder::default()
+        .strings(strings)
+        .functions(vec![
+            Func {
+                first_statement: 1,
+                s_name: 1,  // "entry"
+                s_file: 13, // "a.qc"
+                ..Func::default()
+            }, // f1
+            Func {
+                first_statement: -2,
+                ..Func::default()
+            }, // f2: builtin 2
+            Func {
+                first_statement: 4,
+                s_name: 7,  // "inner"
+                s_file: 18, // "b.qc"
+                ..Func::default()
+            }, // f3
+        ])
+        .statements(&[
+            Stmt::op("STORE_FNC", 100, 4, 0), // 1: OFS_PARM0 = f3 index
+            Stmt::op("CALL1", 101, 0, 0),     // 2: builtin 2 runs f3 nested
+            Stmt::op("DONE", 0, 0, 0),        // 3
+            Stmt::raw(66, 0, 0, 0),           // 4: f3, a bad opcode (VM-2.3)
+        ])
+        .build();
+    let progs = read(&bytes);
+    let mut machine = Machine::new(&progs, 0).unwrap();
+    machine.set_global_test(100, Slot::from_i32(3)); // f3 index
+    machine.set_global_test(101, Slot::from_i32(2)); // f2 index
+    let error = machine
+        .execute_program(
+            &progs,
+            ServerState::Active,
+            &mut NestedRunBuiltin,
+            &mut NoObserver,
+            1,
+        )
+        .unwrap_err();
+    // The trace is innermost first: f3 "inner" (b.qc), f1 "entry" (a.qc), then the null base
+    // frame (function 0, no name or file). The builtin frame (f2) is not a QC stack frame.
+    assert_eq!(
+        error.trace.len(),
+        3,
+        "the two QC frames plus the base frame"
+    );
+    assert_eq!(error.trace[0].function, 3);
+    assert_eq!(error.trace[0].name, "inner");
+    assert_eq!(error.trace[0].file, "b.qc");
+    assert_eq!(error.trace[1].function, 1);
+    assert_eq!(error.trace[1].name, "entry");
+    assert_eq!(error.trace[1].file, "a.qc");
+    // The base frame is the null function with no resolved name or file (string_of of 0 is
+    // the empty string, stack_entry's None-function branch).
+    assert_eq!(error.trace[2].function, 0);
+    assert_eq!(error.trace[2].name, "");
+    assert_eq!(error.trace[2].file, "");
+}

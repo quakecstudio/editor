@@ -9,9 +9,10 @@
 #![expect(
     clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::cast_possible_truncation,
-    reason = "test code: a failed unwrap or assert is a failed test with a message, and the \
-              f64-to-f32 casts reproduce the engine's rounding"
+    reason = "test code: a failed unwrap, assert or index is a failed test with a message, and \
+              the f64-to-f32 casts reproduce the engine's rounding"
 )]
 
 use qc_progs::limits::LIMIT_MAX_EDICTS;
@@ -556,4 +557,182 @@ fn field_access_by_offset_rejects_out_of_range() {
     assert_eq!(store.field(2, 105), None);
     // Edict 600 does not exist.
     assert_eq!(store.field(600, 0), None);
+}
+
+// spec EDICT-2.4, EDICT-3.3, EDICT-3.5: each LayoutError prints the count and the limit it
+// broke, so a reader sees why the progs was refused.
+#[test]
+fn layout_error_messages() {
+    let globals = LayoutError::GlobalsTooFew { globals: 10 };
+    assert_eq!(
+        globals.to_string(),
+        format!(
+            "progs.dat has 10 global slots, fewer than the {EDICT_SYS_GLOBALS_END} the system \
+             globals need"
+        )
+    );
+    let fields = LayoutError::FieldsTooFew { fields: 3 };
+    assert_eq!(
+        fields.to_string(),
+        format!(
+            "progs.dat has 3 field slots, fewer than the {EDICT_SYS_FIELDS_END} the system \
+             fields need"
+        )
+    );
+    let many = LayoutError::FieldsTooMany { fields: 9_000_000 };
+    assert_eq!(
+        many.to_string(),
+        format!(
+            "progs.dat has 9000000 field slots, more than the {EDICT_MAX_FIELDS} an entity \
+             value can address"
+        )
+    );
+}
+
+// spec EDICT-1.7, EDICT-6.2, EDICT-5.1: each EdictError prints id's message with its number.
+#[test]
+fn edict_error_messages() {
+    assert_eq!(
+        EdictError::BadNumber { number: -3 }.to_string(),
+        "EDICT_NUM: bad number -3"
+    );
+    assert_eq!(
+        EdictError::BadPointer.to_string(),
+        "NUM_FOR_EDICT: bad pointer"
+    );
+    assert_eq!(
+        EdictError::NoFreeEdicts.to_string(),
+        "ED_Alloc: no free edicts"
+    );
+    assert_eq!(
+        EdictError::BadMaxclients { maxclients: 20 }.to_string(),
+        "maxclients 20 is not 0 to 16"
+    );
+}
+
+// spec EDICT-3.5: a field count above EDICT_MAX_FIELDS is refused with FieldsTooMany, the
+// guard that keeps the edict size inside an i32 entity value.
+#[test]
+fn too_many_fields_at_the_limit() {
+    assert!(EdictLayout::new(EDICT_MAX_FIELDS, GLOBALS_128).is_ok());
+    let err = EdictLayout::new(EDICT_MAX_FIELDS + 1, GLOBALS_128).unwrap_err();
+    assert_eq!(
+        err,
+        LayoutError::FieldsTooMany {
+            fields: EDICT_MAX_FIELDS + 1
+        }
+    );
+}
+
+// spec EDICT-1.1: for_progs reads entityfields and the global slot count from a loaded progs
+// and computes the same layout as EdictLayout::new.
+#[test]
+fn for_progs_matches_new() {
+    use qc_progs::{Progs, ProgsFile, write};
+    let file = ProgsFile {
+        entityfields: i32::try_from(FIELDS_105).unwrap(),
+        globals: vec![Slot(0); GLOBALS_128],
+        ..ProgsFile::default()
+    };
+    let bytes = write(&file).unwrap();
+    let progs = Progs::read(&bytes).unwrap();
+    let from_progs = EdictLayout::for_progs(&progs).unwrap();
+    assert_eq!(from_progs, layout_105());
+    assert_eq!(from_progs.entityfields(), FIELDS_105);
+}
+
+// spec EDICT-1.6: pointer_value is None for a field slot not below entityfields, and a valid
+// slot gives number * edict_size + 96 + 4 * field.
+#[test]
+fn pointer_value_bounds() {
+    let layout = layout_105();
+    // Field 105 is not below entityfields (105): None.
+    assert_eq!(layout.pointer_value(1, 105), None);
+    // Field 0 of edict 1: 1 * 516 + 96 + 0 = 612.
+    assert_eq!(layout.pointer_value(1, 0).map(|p| p.0), Some(612));
+    // Field 2 of edict 0: 0 + 96 + 8 = 104.
+    assert_eq!(layout.pointer_value(0, 2).map(|p| p.0), Some(104));
+}
+
+// spec EDICT-1.9: edict_number names an edict only for a value that is a whole non-negative
+// multiple of the edict size below LIMIT_MAX_EDICTS; a value for edict LIMIT_MAX_EDICTS or
+// above names none.
+#[test]
+fn edict_number_rejects_out_of_range() {
+    let layout = layout_105();
+    let size = layout.edict_size();
+    // Edict 0 and edict 1 are in range.
+    assert_eq!(layout.edict_number(EntityRef(0)), Some(0));
+    assert_eq!(layout.edict_number(EntityRef(size)), Some(1));
+    // Edict LIMIT_MAX_EDICTS is out of range.
+    let max = i32::try_from(LIMIT_MAX_EDICTS).unwrap();
+    assert_eq!(layout.edict_number(EntityRef(size * max)), None);
+    // A value that is not a whole multiple names no edict.
+    assert_eq!(layout.edict_number(EntityRef(size + 1)), None);
+}
+
+// spec EDICT-1.2: freetime reports the server time an edict was last freed, rounded to f32,
+// and None for a number the array does not hold.
+#[test]
+fn freetime_reports_the_free_clock() {
+    let mut store = store(1);
+    store.alloc(1.0).unwrap(); // edict 2
+    assert_eq!(store.freetime(2), Some(0.0));
+    store.free(2, 3.5);
+    assert_eq!(store.freetime(2), Some(3.5));
+    assert_eq!(store.freetime(LIMIT_MAX_EDICTS), None);
+}
+
+// spec EDICT-1.4: fields and fields_mut give the edict's whole slot array, and None for a
+// number the array does not hold; a write through fields_mut is read back through fields.
+#[test]
+fn fields_and_fields_mut() {
+    let mut store = store(1);
+    assert_eq!(store.fields(0).map(<[Slot]>::len), Some(FIELDS_105));
+    {
+        let slots = store.fields_mut(0).unwrap();
+        slots[4] = Slot::from_f32(9.0);
+    }
+    assert_eq!(store.fields(0).unwrap()[4], Slot::from_f32(9.0));
+    assert_eq!(store.fields(LIMIT_MAX_EDICTS), None);
+    assert_eq!(store.fields_mut(LIMIT_MAX_EDICTS), None);
+}
+
+// spec EDICT-6.2: alloc fails with NoFreeEdicts when num_edicts is already LIMIT_MAX_EDICTS
+// and every scanned edict was freed too recently to reuse; pins the no-free-edicts path and
+// its message.
+#[test]
+fn alloc_no_free_edicts_message() {
+    let mut store = store(0);
+    // Grow num_edicts to LIMIT_MAX_EDICTS, freeing nothing, so none can be reused.
+    while store.num_edicts() < LIMIT_MAX_EDICTS {
+        store.alloc(1.0).unwrap();
+    }
+    let err = store.alloc(1.0).unwrap_err();
+    assert_eq!(err, EdictError::NoFreeEdicts);
+}
+
+// spec EDICT-5.1: maxclients reports the client-slot count the store was built with, not a
+// constant; a store with 5 client slots reports 5.
+#[test]
+fn maxclients_reports_the_count() {
+    let five = store(5);
+    assert_eq!(five.maxclients(), 5);
+    assert_eq!(five.num_edicts(), 6); // maxclients + 1
+    let zero = store(0);
+    assert_eq!(zero.maxclients(), 0);
+}
+
+// spec EDICT-1.7: edict_num accepts edict 0 (the world) and edict 1, and rejects a negative
+// number; pins the lower bound `number < 0` (edict 0 must not be rejected).
+#[test]
+fn edict_num_accepts_world_and_first() {
+    let s = store(1);
+    assert_eq!(s.edict_num(0).unwrap(), EntityRef(0));
+    let size = s.layout().edict_size();
+    assert_eq!(s.edict_num(1).unwrap(), EntityRef(size));
+    assert_eq!(
+        s.edict_num(-1).unwrap_err(),
+        EdictError::BadNumber { number: -1 }
+    );
 }

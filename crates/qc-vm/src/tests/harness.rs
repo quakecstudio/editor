@@ -46,6 +46,10 @@ pub(crate) struct Func {
     pub(crate) locals: i32,
     pub(crate) numparms: i32,
     pub(crate) parm_size: [u8; 8],
+    /// The string-table offset of the function's name (`s_name`), for stack-trace tests.
+    pub(crate) s_name: i32,
+    /// The string-table offset of the function's source file (`s_file`).
+    pub(crate) s_file: i32,
 }
 
 /// The opcode number for a vanilla opcode name, from `qc-progs`.
@@ -208,8 +212,8 @@ fn encode_function(func: &Func) -> Vec<u8> {
         func.parm_start,
         func.locals,
         0, // profile
-        0, // s_name
-        0, // s_file
+        func.s_name,
+        func.s_file,
         func.numparms,
     ] {
         bytes.extend(field.to_le_bytes());

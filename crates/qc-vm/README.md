@@ -37,10 +37,11 @@ runner can compare this VM against the id VM oracle statement by statement.
 
 ## Spec sections implemented
 
-- `docs/spec/vm.md`: VM-1 to VM-19 (the whole statement loop, opcodes, calls, returns, STATE,
-  nested runs and errors).
-- `docs/spec/limits.md`: LIMIT-2 to LIMIT-5 (call depth, local stack, runaway guard, builtin
-  numbers).
+- **Spec sections:** [VM-1, VM-2, VM-3, VM-4, VM-5, VM-6, VM-7, VM-8, VM-9, VM-10, VM-11,
+  VM-12, VM-13, VM-14, VM-15, VM-16, VM-17, VM-18, VM-19](../../docs/spec/vm.md) (the whole
+  statement loop, opcodes, calls, returns, STATE, nested runs and errors) and
+  [LIMIT-2, LIMIT-3, LIMIT-4, LIMIT-5](../../docs/spec/limits.md) (call depth, local stack,
+  runaway guard, builtin numbers).
 
 Ported from `id-Software/Quake` at commit
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`: `WinQuake/pr_exec.c`
