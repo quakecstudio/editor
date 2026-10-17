@@ -71,6 +71,8 @@ const MOVETYPE_FLYMISSILE: i32 = 9;
 const MOVETYPE_BOUNCE: i32 = 10;
 /// `EF_MUZZLEFLASH` (EDICT-10.7, DIFF-5.1): cleared after each frame's updates.
 const EF_MUZZLEFLASH: i32 = 2;
+/// `FL_ITEM` (EDICT-12.2, DIFF-5.7): a link box widened by 15 on x and y, not 1.
+const FL_ITEM: i32 = 256;
 /// `NUM_SPAWN_PARMS` (EDICT-2.1): `parm1` to `parm16`.
 const NUM_SPAWN_PARMS: usize = 16;
 
@@ -352,18 +354,25 @@ impl Host<'_> {
 
     /// Runs QuakeC function `function`, id's `PR_ExecuteProgram` (EDICT-9.1), through the VM
     /// with the mock builtins and the trace observer.
+    ///
+    /// The VM is given the server state the mock keys its loading-only builtins on
+    /// (`precache_sound`, `precache_model`, BUILTIN-10.1, and the entity-0 write of VM-14.4):
+    /// `Loading` while the map is still spawning its entities (DIFF-3.2, DIFF-3.5) and `Active`
+    /// once the server is active (DIFF-3.6). id's `sv.state` is `ss_loading` through
+    /// `SV_SpawnServer` until the map has spawned, then `ss_active`, so a spawn function may
+    /// precache and a later run may not.
     pub(crate) fn run_function(
         &mut self,
         progs: &Progs<'_>,
         function: i32,
     ) -> Result<(), RunError> {
-        self.machine.execute_program(
-            progs,
-            ServerState::Active,
-            &mut self.builtins,
-            &mut self.trace,
-            function,
-        )
+        let server = if self.builtins.engine().server_active {
+            ServerState::Active
+        } else {
+            ServerState::Loading
+        };
+        self.machine
+            .execute_program(progs, server, &mut self.builtins, &mut self.trace, function)
     }
 
     /// Makes an engine string holding `text`, records it in the trace (TRACE-4.10) and returns
@@ -484,6 +493,6 @@ fn parm_slot(n: usize) -> i32 {
 }
 
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -19,8 +19,9 @@ use qc_vm::{ErrorKind, RunError};
 use crate::scenario::Input;
 
 use super::{
-    EF_MUZZLEFLASH, Host, MOVETYPE_BOUNCE, MOVETYPE_FLY, MOVETYPE_FLYMISSILE, MOVETYPE_NOCLIP,
-    MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK, ftoi, slot_of_field,
+    EF_MUZZLEFLASH, FL_ITEM, Host, MOVETYPE_BOUNCE, MOVETYPE_FLY, MOVETYPE_FLYMISSILE,
+    MOVETYPE_NOCLIP, MOVETYPE_NONE, MOVETYPE_PUSH, MOVETYPE_STEP, MOVETYPE_TOSS, MOVETYPE_WALK,
+    ftoi, slot_of_field, slot_of_global,
 };
 
 /// The fatal error the physics frame raises on a bad movetype (DIFF-5.3, DIFF-5.4).
@@ -117,9 +118,13 @@ impl Host<'_> {
                 i = i.saturating_add(1);
                 continue;
             }
-            // DIFF-5.3: link if force_retouch is non-zero (the mock link writes absmin/absmax,
-            // DIFF-5.7; with no movement it changes nothing here, so it is omitted as a no-op).
+            // DIFF-5.3: link the edict if force_retouch is not 0 (DIFF-5.7): the mock link
+            // writes absmin and absmax (EDICT-12.2), which is not a no-op even without
+            // movement, so the oracle's settle-frame links show in its trace.
             let maxclients = self.machine.edicts().maxclients();
+            if self.global_slot(slot_of_global("force_retouch")).as_f32() != 0.0 {
+                self.link_edict(i);
+            }
             let movetype = ftoi(self.field(i, slot_of_field("movetype")).as_f32());
             if i >= 1 && i <= maxclients {
                 self.physics_client(progs, i)?;
@@ -142,9 +147,61 @@ impl Host<'_> {
             i = i.saturating_add(1);
         }
 
+        // DIFF-5.3: after the last edict, when force_retouch is not 0 it is decreased by 1 in
+        // f32; id's SV_Physics does this right before advancing the clock.
+        let retouch = self.global_slot(slot_of_global("force_retouch")).as_f32();
+        if retouch != 0.0 {
+            self.set_global("force_retouch", Slot::from_f32(retouch - 1.0));
+        }
+
         // DIFF-5.3: the clock advances by t, in double.
         self.builtins.engine_mut().clock += t;
         Ok(())
+    }
+
+    /// DIFF-5.7: link edict `edict`, id's `SV_LinkEdict` without the area tree, writing
+    /// `absmin` and `absmax` by EDICT-12.2 and running no `touch`. Not for the world (0) or a
+    /// free edict. `absmin` is `origin + mins` and `absmax` is `origin + maxs`, each widened by
+    /// 15 on x and y for an entity whose `flags` has `FL_ITEM` (256) and by 1 on every axis
+    /// otherwise.
+    fn link_edict(&mut self, edict: usize) {
+        if edict == 0 || self.machine.edicts().is_free(edict) != Some(false) {
+            return;
+        }
+        let origin = self.field_vector(edict, "origin");
+        let mins = self.field_vector(edict, "mins");
+        let maxs = self.field_vector(edict, "maxs");
+        let flags = ftoi(self.field(edict, slot_of_field("flags")).as_f32());
+        // EDICT-12.2: FL_ITEM (256) widens by 15 on x and y and 0 on z; else by 1 on each axis.
+        let widen = if flags & FL_ITEM != 0 {
+            [15.0_f32, 15.0, 0.0]
+        } else {
+            [1.0, 1.0, 1.0]
+        };
+        let base_absmin = slot_of_field("absmin");
+        let base_absmax = slot_of_field("absmax");
+        for axis in 0..3 {
+            let o = origin.get(axis).copied().unwrap_or(0.0);
+            let mn = mins.get(axis).copied().unwrap_or(0.0);
+            let mx = maxs.get(axis).copied().unwrap_or(0.0);
+            let w = widen.get(axis).copied().unwrap_or(1.0);
+            self.set_field(
+                edict,
+                base_absmin.saturating_add(axis),
+                Slot::from_f32(o + mn - w),
+            );
+            self.set_field(
+                edict,
+                base_absmax.saturating_add(axis),
+                Slot::from_f32(o + mx + w),
+            );
+        }
+    }
+
+    /// The three `f32` components of a vector field of `edict`, from its base slot.
+    fn field_vector(&self, edict: usize, name: &str) -> [f32; 3] {
+        let base = slot_of_field(name);
+        [0, 1, 2].map(|axis| self.field(edict, base.saturating_add(axis)).as_f32())
     }
 
     /// DIFF-5.4: a client edict's turn, id's `SV_Physics_Client` without the move.
@@ -181,7 +238,9 @@ impl Host<'_> {
             other => return Err(bad_movetype(self, "_client", other)),
         }
 
-        // DIFF-5.4: link the edict (a no-op with no movement), then PlayerPostThink.
+        // DIFF-5.4: link the edict (DIFF-5.7 writes absmin/absmax, EDICT-12.2), then
+        // PlayerPostThink.
+        self.link_edict(edict);
         let clock = self.builtins.engine().clock;
         #[expect(
             clippy::cast_possible_truncation,
