@@ -93,14 +93,47 @@ equivalent_mutants = { "crates/qs-install/src/lib.rs: replace find_installs -> V
 reason = "P1-57 (#358): the remaining survivors are an f64::from(f32) comparison that never hits the double literal exactly (BSP-8.6), OR over disjoint SURF_* bits where OR equals XOR (BSP-20.6, BSP-20.11), equal-value reassignments in calc_surface_extents and the radius bound that are no-ops (BSP-9.10, BSP-15.4), and Option filters that never change when the count is already positive (BSP-4.9)"
 equivalent_mutants = { "crates/qs-bsp/src/lib.rs: replace < with <= in Bsp<'a>::mod_load_texinfo" = "the mip-bias thresholds compare `f64::from(mean)` with the double literals 0.32, 0.49 and 0.99 (BSP-8.6: 'The lengths and their mean are single-precision floats, compared with the constants as doubles'); mean is an f32, so f64::from(mean) is a value with at most 24 significant bits and can never equal 0.32, 0.49 or 0.99 (none of which is exactly representable in f32), so `<` and `<=` agree on every input", "crates/qs-bsp/src/lib.rs: replace | with ^ in Bsp<'a>::mod_load_faces" = "the `*` and `sky` branches OR disjoint single-bit SURF_* flags (SURF_DRAWSKY=4, SURF_DRAWTILED=0x20, SURF_DRAWTURB=0x10); the operands never share a bit, so `a | b == a ^ b` for every input (BSP-20.6)", "crates/qs-bsp/src/lib.rs: replace < with <= in Bsp<'a>::calc_surface_extents" = "the WinQuake extent loop does `if value < *min { *min = value }`; replacing `<` with `<=` only adds the case value == *min, which reassigns the same value, a no-op, so the computed texturemins and extents are identical (BSP-9.10)", "crates/qs-bsp/src/lib.rs: replace > with >= in Bsp<'a>::calc_surface_extents" = "the companion `if value > *max { *max = value }`; `>=` only adds value == *max, which reassigns the same value, a no-op, so the extents are identical (BSP-9.10)", "crates/qs-bsp/src/lib.rs: replace > with >= in Bsp<'a>::mod_load_submodels" = "RadiusFromBounds takes the larger absolute value per axis with `if min.abs() > max.abs() { min.abs() } else { max.abs() }` (BSP-15.4); when the two absolute values are equal the two branches return the same number, so `>` and `>=` give the same radius on every input, while the `>` to `==` mutant that does differ is killed by model_radius_prefers_larger_abs_mins", "crates/qs-bsp/src/lib.rs: replace > with >= in sequence_animations" = "the two alternate links pass `altanims.first()...filter(|_| altmax > 0)` and `anims.first()...filter(|_| max > 0)`; altmax and max are usize counts set to at least one whenever a frame of that kind exists, and the filtered Option is None whenever no such frame exists (then first() is already None), so the filter changes nothing and `> 0` and `>= 0` never differ (BSP-4.9)", "crates/qs-bsp/src/lib.rs: replace | with ^ in fitz_face_flags" = "fitz_face_flags ORs disjoint single-bit SURF_* flags (SURF_DRAWSKY|SURF_DRAWTILED for sky, SURF_DRAWTURB|SURF_DRAWTILED for `*`/`!`); the operands never share a bit, so `a | b == a ^ b` for every input (BSP-20.6, BSP-20.11)" }
 
+# qc-lexer (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
+# the layer ready; no surviving mutants and 100% on every axis.
+[crates.qc-lexer]
+readiness = "P1-R2"
+lines = 100
+branches = 100
+mutation = 100
+spec = 100
+
+# qc-syntax (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
+# the layer ready; no surviving mutants.
+[crates.qc-syntax]
+readiness = "P1-R2"
+lines = 97
+branches = 92
+mutation = 100
+spec = 100
+
+# qc-project (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
+# the layer ready; no surviving mutants.
+[crates.qc-project]
+readiness = "P1-R2"
+lines = 97
+branches = 93
+mutation = 100
+spec = 100
+
 # qc-preproc (L2 syntax): the P1-R2 readiness review (docs/readiness/p1-r2.md)
 # found nine survivors on the case-fold comparison (P1-58, #360). Seven are
 # killed by new tests (the trait default's Some(Default) answer, and the
 # least-of-two-case-variants tie-break in FsLoader::stored_name and
 # MemoryLoader::folded, now written with Iterator::min so the comparison has no
-# operator to flip). The two below are equivalent on every realisable input. A
-# later review adds the minimums and `readiness`.
+# operator to flip). The two below are equivalent on every realisable input.
+# The P1-R2 re-run (run 39020739388) measures the layer ready and sets the
+# minimums below; the two equivalent mutants hold the measured mutation at 98%.
 [crates.qc-preproc]
+readiness = "P1-R2"
+lines = 98
+branches = 91
+mutation = 98
+spec = 100
 reason = "P1-58 (#360): the trait default already returns None, and no lexical diagnostic can start at a conditional skip region's end, so neither survivor has a distinguishing input"
 equivalent_mutants = { "crates/qc-preproc/src/lib.rs: replace < with <= in Preprocessor<L>::finish_cursor" = "the guard `s.start <= d.span.start && d.span.start < s.end` suppresses a lexical diagnostic inside a skipped conditional region [start, end); a skip region's end is always either the file length (no byte starts there) or the start of the `#else`/`#endif` that re-enables output (a `#`, which lexes as Punct(Hash) and is never a lexical error, QC-9.6), so no diagnostic's span starts at s.end and `<` and `<=` agree on every input", "crates/qc-preproc/src/source.rs: replace Loader::stored_name -> Option<OsString> with None" = "the Loader trait's default stored_name body is `let _ = path; None`, so returning None is the unmutated value; a loader that lists no directory cannot tell the stored name (PRJ-7.2), which a_loader_without_a_directory_has_no_stored_name pins, while the Some(Default::default()) mutant of the same default is killed by it" }
 
