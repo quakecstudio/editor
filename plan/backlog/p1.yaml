@@ -300,14 +300,16 @@ issues:
   - P1-11
   - P1-16
   - P1-26
+  - P1-60
+  - P1-61
+  - P1-62
   deliverable:
-  - 'tests/differential: writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
+  - 'crates/qs-differential: the differential VM runner that writes scenarios (docs/spec/differential.md) for each corpus progs, with entity files from the corpus maps, runs each in qc-vm (through the scenario reader of P1-60, the host loop of P1-61 and the comparator of P1-62) and the oracle, compares the traces by DIFF-9 and reports the first divergence with context'
   - Wired into cargo xtask ci (fast subset) and nightly (full corpus)
   acceptance:
   - Zero divergences on id 1.01 progs (built by id qcc) and rerelease progs (built by pinned FTEQCC)
   - At least 90% of statements executed per corpus codebase, measured from traces
   - A deliberate opcode bug is caught with the right statement reported
-  - The runner's scenario reader gives every vector in docs/spec/vectors/scenario/numbers.txt its result (DIFF-2.7 to DIFF-2.9)
   verify:
   - Mutation test in CI
 - key: P1-14
@@ -1026,6 +1028,64 @@ issues:
   - The find example on Justin's Quake Enhanced folder reports `original:` with `dos/id1`
   verify:
   - cargo test -p qs-install; the find run posted on P1-30
+- key: P1-60
+  title: Read a differential scenario file
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-10
+  - P1-37
+  deliverable:
+  - 'crates/qs-differential: the scenario reader of docs/spec/differential.md DIFF-2, reading a scenario in bytes (DIFF-2.1), every directive of DIFF-2.2, the integer and number syntax of DIFF-2.7 and DIFF-2.8 checked before Rust conversion, and the refusals of DIFF-2.9, so the runner and the id VM oracle accept and refuse the same files and read each value alike'
+  - A Rust test running every vector of docs/spec/vectors/scenario/numbers.txt through the reader and checking the verdict and the value, as cargo xtask oracles runs them through the oracle
+  acceptance:
+  - The scenario reader gives every vector in docs/spec/vectors/scenario/numbers.txt its result (DIFF-2.7 to DIFF-2.9)
+  - A scenario with every directive reads into the fields DIFF-2.2 names, the defaults fill in, and each DIFF-2.9 refusal (unknown key, wrong argument count, repeated single key, repeated model name, out-of-range value, no progs, NUL byte) is refused, each checked by a test citing its statement
+  verify:
+  - cargo test -p qs-differential
+- key: P1-61
+  title: Spawn a map and run the differential host loop
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  size: M
+  reqs:
+  - FND-8
+  depends:
+  - P1-60
+  - P1-16
+  deliverable:
+  - 'crates/qs-differential: the map-spawn port of docs/spec/edicts.md EDICT-8 (ED_LoadFromFile, ED_ParseEdict, ED_ParseEpair, COM_Parse from WinQuake/pr_edict.c and common.c at the pinned commit, with id''s copyright and a Ported from header, a docs/spec/ citation, tests citing each statement, and a differential result), and the host loop of DIFF-3 to DIFF-5 and DIFF-8 driving qc-vm with qc-edict and the qc-builtins mock engine'
+  acceptance:
+  - A scenario runs end to end in the QuakeC Studio runner and writes a trace, with a test citing EDICT-8 and DIFF-3 to DIFF-5
+  - The EDICT-8 port keeps id''s copyright and Ported from header, has a docs/spec/edicts.md section, tests citing each statement, and a differential result against the oracle (or a recorded local run until the oracle suite runs it)
+  verify:
+  - cargo test -p qs-differential; the recorded differential run in the PR
+- key: P1-62
+  title: Compare differential traces and measure statement coverage
+  labels:
+  - L1-vm
+  - area:vm
+  - type:test
+  size: S
+  reqs:
+  - FND-8
+  depends:
+  - P1-61
+  deliverable:
+  - 'crates/qs-differential: the trace comparator of docs/spec/differential.md DIFF-9 (equivalence of values through the engine-string, NaN, entity and pointer readings), the expected divergences of DIFF-10, the first-divergence report with context, and the statement coverage of DIFF-11'
+  - A unit test that a deliberate opcode bug is caught with the right statement reported (DIFF-9.5)
+  acceptance:
+  - Two traces that agree compare equal and a seeded divergence is reported at the first differing record with its statement, each checked by a test citing DIFF-9 and DIFF-11
+  - DIFF-9, DIFF-10 and DIFF-11 leave docs/spec/coverage-baseline.tsv, cited by tests
+  verify:
+  - cargo test -p qs-differential
 - key: P1-25
   title: Phase 1 gate review
   labels:
@@ -1097,6 +1157,9 @@ issues:
   - P1-57
   - P1-58
   - P1-59
+  - P1-60
+  - P1-61
+  - P1-62
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
