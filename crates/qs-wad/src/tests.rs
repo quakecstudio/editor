@@ -182,6 +182,31 @@ fn spec_vector_names() {
     assert_eq!(w_cleanup_name(b"AB\0CD").as_bytes(), b"ab");
 }
 
+// Adversarial reviewer test (P1-R0, TEST-9): added by the independent readiness review of
+// the L0 formats layer. Passed on first run, kept as a regression test.
+// spec WAD-2.5, WAD-3.1: a lump whose 16-byte name field begins with NUL cleans to the
+// empty name, is listed with that name, and is found by an empty lookup, while a non-empty
+// lookup for it is not; a later empty-named lump does not shadow the first (first match).
+#[test]
+fn reviewer_empty_named_lump_is_found_by_empty_name() {
+    let bytes = WadSpec {
+        lumps: vec![
+            lump(b"\0ignored-after-nul", b"first"),
+            lump(b"\0second", b"second"),
+        ],
+        ..WadSpec::default()
+    }
+    .build();
+    let wad = Wad::read(&bytes).unwrap();
+    assert_eq!(names(&wad), [Vec::<u8>::new(), Vec::<u8>::new()]);
+    // WAD-3.1 returns the first lump cleaning to the requested (empty) name.
+    let found = wad.find(b"").unwrap();
+    assert_eq!(wad.data(found).unwrap(), b"first");
+    // A non-empty name that happens to share the discarded tail is not found.
+    assert!(wad.find(b"ignored-after-nul").is_err());
+    assert!(wad.find(b"second").is_err());
+}
+
 // spec WAD-2.6: a 16-byte name with no NUL keeps all 16 bytes.
 // spec WAD-3.2: only the first 16 bytes of a requested name count.
 #[test]

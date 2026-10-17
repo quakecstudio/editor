@@ -323,6 +323,57 @@ fn truncated_list_is_ignored() {
     assert_eq!(get_wavinfo(&bytes).unwrap().samples, 5);
 }
 
+// Adversarial reviewer tests (P1-R0, TEST-9): added by the independent readiness review of
+// the L0 formats layer, probing the exact file-length boundary at which WAV-2.6's loopstart
+// field and WAV-2.7's `mark` tag fall past the end of the file. They confirmed the field is
+// read from the file bytes (so chunk padding does not hide a short chunk) and that the cut
+// happens one byte into the field. Both passed on first run and are kept as regression tests.
+
+// spec WAV-2.6: `loopstart` is the signed 32-bit value at offset 32 of the `cue ` chunk; a
+// value past the end of the file is read as if there were no `cue ` chunk. With the cue
+// chunk last, cutting the file by one byte drops the last byte of that 4-byte field, so the
+// cue is ignored, while the whole field present gives the value.
+#[test]
+fn reviewer_cue_loopstart_file_boundary() {
+    // The cue chunk after the data chunk; its loopstart is the last four bytes of the file.
+    let mut spec = WavSpec::default();
+    spec.chunks.push(cue(7));
+    let full = spec.build();
+    // The whole field present: the value is read.
+    assert_eq!(get_wavinfo(&full).unwrap().loopstart, 7);
+    // One byte short of the file's end drops the last byte of the loopstart field: no cue.
+    let short = &full[..full.len() - 1];
+    assert_eq!(get_wavinfo(short).unwrap().loopstart, WAV_NO_LOOP);
+}
+
+// spec WAV-2.7: the `mark` tag is bytes 28 to 31 of the `LIST` chunk; bytes 28 to 31 past
+// the end of the file mean no `mark`. With the `LIST` chunk last, cutting the file so those
+// bytes fall past the end means the loop count is ignored.
+#[test]
+fn reviewer_list_mark_file_boundary() {
+    assert_eq!((WAV_LIST_LENGTH_OFFSET, WAV_LIST_MARK_OFFSET), (24, 28));
+    // The LIST chunk after the data chunk, with the cue before it; the fixture's `mark` tag
+    // ends eight bytes before the file end (eight NUL bytes follow it in the chunk).
+    let mut spec = WavSpec::before_data(vec![cue(3)]);
+    spec.chunks.push(list(2, b"mark"));
+    let full = spec.build();
+    let got = get_wavinfo(&full).unwrap();
+    assert_eq!(
+        (got.loopstart, got.samples),
+        (3, 5),
+        "the mark gives the loop"
+    );
+    // Cut the LIST payload after the loop count so bytes 28 to 31 (the `mark` tag) fall past
+    // the end of the file: no mark, so samples stay the data count.
+    let cut = full.len() - 9;
+    let short = &full[..cut];
+    assert_eq!(
+        get_wavinfo(short).unwrap().samples,
+        5,
+        "a cut mark is no mark"
+    );
+}
+
 // spec WAV-2.8: no `data` chunk fails.
 #[test]
 fn missing_data_fails() {

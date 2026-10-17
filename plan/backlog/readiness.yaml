@@ -32,9 +32,10 @@ groups:
     - P1-45
     - P5-02
     - P1-29
+    - P1-57
     - P0-24
     deliverable:
-    - 'docs/readiness/p1-r0.md following docs/readiness/_template.md, covering: P1-07, P1-08, P1-28, P1-18, P1-19, P1-24, P1-45, P5-02, P1-29'
+    - 'docs/readiness/p1-r0.md following docs/readiness/_template.md, covering: P1-07, P1-08, P1-28, P1-18, P1-19, P1-24, P1-45, P5-02, P1-29, P1-57'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README

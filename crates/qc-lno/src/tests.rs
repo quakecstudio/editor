@@ -214,3 +214,130 @@ proptest! {
         prop_assert!(matches!(LnoFile::read(&bytes), Ok(_) | Err(_)));
     }
 }
+
+// Adversarial reviewer tests (P1-R0, TEST-9 and TEST-2): added by the independent readiness
+// review of the L0 formats layer to kill the surviving mutants the Readiness mutation run
+// found in qc-lno (76.3% caught before these). They pin the error Display strings (whose
+// `fmt` bodies survived being replaced with `Ok(())`) and the mismatch path of
+// `matches_header` (which survived being replaced with `Ok(())`).
+
+// spec LNO-5.1, LNO-5.2, LNO-5.3, LNO-5.4: each ReadError variant prints its spec message,
+// so its `fmt` body is not an empty string.
+#[test]
+fn reviewer_read_error_messages() {
+    use crate::ReadError;
+    assert_eq!(
+        ReadError::TooShort(3).to_string(),
+        "the .lno is 3 bytes, shorter than the 24-byte header"
+    );
+    assert_eq!(
+        ReadError::BadMagic(*b"XXXX").to_string(),
+        "the .lno does not start with LNOF: found [88, 88, 88, 88]"
+    );
+    assert_eq!(
+        ReadError::UnsupportedVersion(7).to_string(),
+        "the .lno has version 7, not 1"
+    );
+    assert_eq!(
+        ReadError::LineTableTruncated {
+            numstatements: 5,
+            len: 30,
+        }
+        .to_string(),
+        "the .lno is 30 bytes: too short for a 5-statement line table"
+    );
+}
+
+// spec LNO-6.3: each WriteError variant prints the message the spec gives for that refusal.
+#[test]
+fn reviewer_write_error_messages() {
+    use crate::WriteError;
+    assert_eq!(
+        WriteError::ColumnCountMismatch {
+            lines: 2,
+            columns: 3,
+        }
+        .to_string(),
+        "the column table has 3 entries, the line table has 2"
+    );
+    assert_eq!(
+        WriteError::ColumnsWithoutLines.to_string(),
+        "a column table was given for an empty line table"
+    );
+    assert_eq!(
+        WriteError::TooManyStatements(9).to_string(),
+        "the line table has 9 entries, more than the 2147483647 a .lno can record"
+    );
+}
+
+// spec LNO-4.2: a MatchError names the first differing field and both values, and the four
+// CountField names print as the header fields they stand for.
+#[test]
+fn reviewer_match_error_messages() {
+    use crate::{CountField, MatchError};
+    assert_eq!(
+        MatchError {
+            field: CountField::Globals,
+            lno: 99,
+            progs: 100,
+        }
+        .to_string(),
+        "the .lno's numglobals is 99, the progs.dat's is 100"
+    );
+    for (field, name) in [
+        (CountField::GlobalDefs, "numglobaldefs"),
+        (CountField::Globals, "numglobals"),
+        (CountField::FieldDefs, "numfielddefs"),
+        (CountField::Statements, "numstatements"),
+    ] {
+        assert_eq!(field.to_string(), name);
+    }
+}
+
+// spec LNO-4.1, LNO-4.2: matches_header reports the first differing field, so a header that
+// disagrees on a count is a MatchError, not Ok. This kills the mutant that made the whole
+// function return Ok(()).
+#[test]
+fn reviewer_matches_header_reports_a_mismatch() {
+    use crate::{CountField, MatchError};
+    let lno = LnoFile {
+        numglobaldefs: 3,
+        numglobals: 30,
+        numfielddefs: 1,
+        lines: vec![0, 5],
+        columns: None,
+        trailing: Vec::new(),
+    };
+    // Equal counts match.
+    let ok = qc_progs::Header {
+        numglobaldefs: 3,
+        numglobals: 30,
+        numfielddefs: 1,
+        numstatements: 2,
+        ..qc_progs::Header::default()
+    };
+    assert_eq!(lno.matches_header(&ok), Ok(()));
+    // A differing numglobals is reported, in header order, with both values (LNO-4.2).
+    let bad = qc_progs::Header {
+        numglobals: 31,
+        ..ok
+    };
+    assert_eq!(
+        lno.matches_header(&bad),
+        Err(MatchError {
+            field: CountField::Globals,
+            lno: 30,
+            progs: 31,
+        })
+    );
+    // The first differing field wins: numglobaldefs before numglobals.
+    let both = qc_progs::Header {
+        numglobaldefs: 4,
+        numglobals: 31,
+        ..ok
+    };
+    assert_eq!(
+        lno.matches_header(&both).unwrap_err().field,
+        CountField::GlobalDefs
+    );
+}
