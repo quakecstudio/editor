@@ -222,6 +222,26 @@ fn entity_lump_past_the_limit_fails() {
     );
 }
 
+// spec MAP-2.10: a lump of exactly MAP_MAX_ENTSTRING bytes is accepted; only one longer fails.
+// Each `{\n"k" "<v>"\n}\n` block is 11 + v.len() bytes, so 500 blocks of a 120-byte value plus
+// one of a 25-byte value total exactly 65536 bytes before the trailing NUL.
+#[test]
+fn entity_lump_exactly_at_the_limit_is_accepted() {
+    let v120 = "v".repeat(120);
+    let v25 = "v".repeat(25);
+    let mut text = String::new();
+    for _ in 0..500 {
+        text.push_str(&format!("{{\n\"k\" \"{v120}\"\n}}\n"));
+    }
+    text.push_str(&format!("{{\n\"k\" \"{v25}\"\n}}\n"));
+    let lump = load_map_file(text.as_bytes())
+        .unwrap()
+        .entity_lump()
+        .unwrap();
+    // The NUL is appended after the length check, so the checked length is exactly the limit.
+    assert_eq!(lump.len(), MAP_MAX_ENTSTRING + 1);
+}
+
 // spec MAP-6.2: brush entities after the world are numbered from 1 and their `model` key
 // replaced; entities without brushes keep their keys.
 #[test]
