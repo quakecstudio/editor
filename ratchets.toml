@@ -52,6 +52,11 @@ equivalent_mutants = { "xtask/src/main.rs: replace main -> ExitCode with Default
 # mutation bar is waived by an exception with the same reason (also in
 # crates/qc-lno/README.md). A later review adds the minimums and `readiness`.
 [crates.qc-lno]
+readiness = "P1-R0"
+lines = 98
+branches = 92
+mutation = 89
+spec = 100
 reason = "P1-57: four mutants in LnoFile::write have no distinguishing input observable through the public API (a line table of LNO_MAX_STATEMENTS = i32::MAX entries cannot be allocated, and a Vec::with_capacity hint does not change the bytes written)"
 exceptions = { mutation = "P1-57: the four equivalent mutants below hold the measured mutation at 89%, one point under the 90% bar; every other mutant is caught, so the bar is waived rather than lowered (stated in crates/qc-lno/README.md)" }
 equivalent_mutants = { "crates/qc-lno/src/write.rs: replace > with == in LnoFile::write" = "the LNO-6.3 guard `self.lines.len() > LNO_MAX_STATEMENTS` rejects an oversized line table; distinguishing `>` from `==` needs a line table of exactly LNO_MAX_STATEMENTS = i32::MAX = 2_147_483_647 entries (over 8 GiB of i32), which cannot be allocated in a test, so the two forms agree on every realisable input", "crates/qc-lno/src/write.rs: replace > with >= in LnoFile::write" = "same LNO-6.3 guard: distinguishing `>` from `>=` needs a line table of exactly LNO_MAX_STATEMENTS = i32::MAX entries, which cannot be allocated, so the two forms agree on every realisable input", "crates/qc-lno/src/write.rs: replace LnoFile::size_hint -> usize with 0" = "size_hint only feeds Vec::with_capacity to pre-size the output buffer; the bytes written are identical whatever the capacity, so a wrong hint is not observable through the public API (LNO-6.1, LNO-6.2)", "crates/qc-lno/src/write.rs: replace LnoFile::size_hint -> usize with 1" = "size_hint only feeds Vec::with_capacity; a hint of 1 changes the initial capacity, not the bytes written, so it is not observable through the public API (LNO-6.1, LNO-6.2)" }
@@ -60,18 +65,33 @@ equivalent_mutants = { "crates/qc-lno/src/write.rs: replace > with == in LnoFile
 # which runs on Linux (.github/workflows/readiness.yml), found by the P1-R0
 # readiness review (P1-57). A later review adds the minimums and `readiness`.
 [crates.qs-vfs]
+readiness = "P1-R0"
+lines = 98
+branches = 96
+mutation = 98
+spec = 100
 reason = "P1-57: the surviving mutant is in a `cfg!(windows)`-guarded branch, dead code on the Linux Readiness runner, so no input can distinguish it there"
 equivalent_mutants = { "crates/qs-vfs/src/host.rs: replace == with != in is_separator" = "is_separator is `c == '/' || (cfg!(windows) && c == '\\\\')`; the mutated comparison `c == '\\\\'` is inside the `cfg!(windows)` conjunction, so on the Linux Readiness runner `cfg!(windows)` is false and `false && _` is false whatever that comparison yields, leaving no input that tells `==` from `!=`; the backslash separator it guards is Windows-only behaviour (FS: `\\` is a separator only where the host filesystem treats it as one)" }
 
 # qc-progs (L0 formats): one surviving mutant found by the P1-R0 readiness
 # review (P1-57). A later review adds the minimums and `readiness`.
 [crates.qc-progs]
+readiness = "P1-R0"
+lines = 98
+branches = 98
+mutation = 99
+spec = 100
 reason = "P1-57: crc_value XORs with PROGS_CRC_XOR, which PROGS-4.1 fixes at 0x0000, so XOR and OR give the same result for every input"
 equivalent_mutants = { "crates/qc-progs/src/crc.rs: replace ^ with | in crc_value" = "crc_value is `crc ^ PROGS_CRC_XOR`; PROGS-4.1 states the final XOR is 0x0000 (CRC-16/CCITT-FALSE), and `crc ^ 0 == crc | 0 == crc` for every 16-bit crc, so no input distinguishes `^` from `|` here" }
 
 # qs-log (L0 formats): three of its four survivors (P1-R0, P1-57) are killed by
 # new tests; the fourth is equivalent. A later review adds the minimums and `readiness`.
 [crates.qs-log]
+readiness = "P1-R0"
+lines = 98
+branches = 85
+mutation = 99
+spec = 100
 reason = "P1-57: the `self.len > 0` rotation guard mutated to `self.len >= 0` is unreachable as a difference, because len is a u64 and the empty-file case it guards gives the same result either way"
 equivalent_mutants = { "crates/qs-log/src/writer.rs: replace > with >= in RotatingFile::write_record" = "the guard is `self.len > 0 && self.len.saturating_add(size) > self.max_file_bytes`; len is a u64 so `len >= 0` is always true, and the only input that differs from `len > 0` is len == 0 (an empty file), where write_record has already truncated the record to at most max_file_bytes, so `0 + size > max` is false and neither form rotates: the result is identical" }
 
@@ -79,6 +99,11 @@ equivalent_mutants = { "crates/qs-log/src/writer.rs: replace > with >= in Rotati
 # NotFound guard is killed by a new test; the rest are equivalent on the Linux
 # Readiness runner. A later review adds the minimums and `readiness`.
 [crates.qs-install]
+readiness = "P1-R0"
+lines = 96
+branches = 94
+mutation = 93
+spec = 100
 reason = "P1-57: the remaining survivors are in Windows-only code (dead on the Linux Readiness runner), are the MD5 selection-function identity where OR and XOR agree on disjoint operands, or are the find_installs wrapper whose result depends on the real machine"
 equivalent_mutants = { "crates/qs-install/src/lib.rs: replace find_installs -> Vec<Install> with vec![]" = "find_installs only constructs a Finder from StdFs, SystemRegistry, the current platform and the current store dirs and calls find(); on a Readiness runner with no Quake installed it returns an empty Vec, so an empty result is not distinguishable, and the finder's logic is tested with mock Fs and Registry", "crates/qs-install/src/link.rs: replace is_link -> bool with true" = "this is_link is the `#[cfg(windows)]` definition (junctions); it is not compiled on the Linux Readiness runner, so the mutation cannot change behaviour there", "crates/qs-install/src/link.rs: replace is_link -> bool with false" = "the `#[cfg(windows)]` is_link is not compiled on the Linux Readiness runner", "crates/qs-install/src/link.rs: replace || with && in is_link" = "the `#[cfg(windows)]` is_link (`is_symlink() || junction::exists(...)`) is not compiled on the Linux Readiness runner", "crates/qs-install/src/link.rs: replace remove_link -> io::Result<()> with Ok(())" = "this remove_link is the `#[cfg(windows)]` definition, not compiled on the Linux Readiness runner", "crates/qs-install/src/link.rs: replace create_link -> io::Result<()> with Ok(())" = "this create_link is the `#[cfg(windows)]` definition, not compiled on the Linux Readiness runner", "crates/qs-install/src/md5.rs: replace | with ^ in compress" = "the F and G selection functions `(b & c) | (!b & d)` and `(b & d) | (c & !d)` combine disjoint operands (one bit of the selector routes each bit to exactly one side), and `p | q == p ^ q` whenever p & q == 0, so OR and XOR give the same 32-bit result for every input (RFC 1321 section 3.4)", "crates/qs-install/src/registry.rs: replace <impl Registry for SystemRegistry>::string -> Option<String> with None" = "SystemRegistry::string begins `if !cfg!(windows) { return None; }`, so on the Linux Readiness runner it already returns None for every input; the mutant is the same value", "crates/qs-install/src/registry.rs: delete ! in <impl Registry for SystemRegistry>::string" = "the two `!` are in `!cfg!(windows)` and `!output.status.success()`; on the Linux Readiness runner removing the first still returns None (the reg command is absent, so `.ok()?` is None), and the second is only reached on Windows, so neither changes behaviour on the runner" }
 
@@ -90,8 +115,67 @@ equivalent_mutants = { "crates/qs-install/src/lib.rs: replace find_installs -> V
 # mutation is 393 of 405 viable (97%), above the 90% bar, so no exception is
 # needed. A later review adds the minimums and `readiness`.
 [crates.qs-bsp]
+readiness = "P1-R0"
+lines = 99
+branches = 94
+mutation = 97
+spec = 100
 reason = "P1-57 (#358): the remaining survivors are an f64::from(f32) comparison that never hits the double literal exactly (BSP-8.6), OR over disjoint SURF_* bits where OR equals XOR (BSP-20.6, BSP-20.11), equal-value reassignments in calc_surface_extents and the radius bound that are no-ops (BSP-9.10, BSP-15.4), and Option filters that never change when the count is already positive (BSP-4.9)"
 equivalent_mutants = { "crates/qs-bsp/src/lib.rs: replace < with <= in Bsp<'a>::mod_load_texinfo" = "the mip-bias thresholds compare `f64::from(mean)` with the double literals 0.32, 0.49 and 0.99 (BSP-8.6: 'The lengths and their mean are single-precision floats, compared with the constants as doubles'); mean is an f32, so f64::from(mean) is a value with at most 24 significant bits and can never equal 0.32, 0.49 or 0.99 (none of which is exactly representable in f32), so `<` and `<=` agree on every input", "crates/qs-bsp/src/lib.rs: replace | with ^ in Bsp<'a>::mod_load_faces" = "the `*` and `sky` branches OR disjoint single-bit SURF_* flags (SURF_DRAWSKY=4, SURF_DRAWTILED=0x20, SURF_DRAWTURB=0x10); the operands never share a bit, so `a | b == a ^ b` for every input (BSP-20.6)", "crates/qs-bsp/src/lib.rs: replace < with <= in Bsp<'a>::calc_surface_extents" = "the WinQuake extent loop does `if value < *min { *min = value }`; replacing `<` with `<=` only adds the case value == *min, which reassigns the same value, a no-op, so the computed texturemins and extents are identical (BSP-9.10)", "crates/qs-bsp/src/lib.rs: replace > with >= in Bsp<'a>::calc_surface_extents" = "the companion `if value > *max { *max = value }`; `>=` only adds value == *max, which reassigns the same value, a no-op, so the extents are identical (BSP-9.10)", "crates/qs-bsp/src/lib.rs: replace > with >= in Bsp<'a>::mod_load_submodels" = "RadiusFromBounds takes the larger absolute value per axis with `if min.abs() > max.abs() { min.abs() } else { max.abs() }` (BSP-15.4); when the two absolute values are equal the two branches return the same number, so `>` and `>=` give the same radius on every input, while the `>` to `==` mutant that does differ is killed by model_radius_prefers_larger_abs_mins", "crates/qs-bsp/src/lib.rs: replace > with >= in sequence_animations" = "the two alternate links pass `altanims.first()...filter(|_| altmax > 0)` and `anims.first()...filter(|_| max > 0)`; altmax and max are usize counts set to at least one whenever a frame of that kind exists, and the filtered Option is None whenever no such frame exists (then first() is already None), so the filter changes nothing and `> 0` and `>= 0` never differ (BSP-4.9)", "crates/qs-bsp/src/lib.rs: replace | with ^ in fitz_face_flags" = "fitz_face_flags ORs disjoint single-bit SURF_* flags (SURF_DRAWSKY|SURF_DRAWTILED for sky, SURF_DRAWTURB|SURF_DRAWTILED for `*`/`!`); the operands never share a bit, so `a | b == a ^ b` for every input (BSP-20.6, BSP-20.11)" }
+
+# qc-types (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants and 100% on mutation and spec.
+[crates.qc-types]
+readiness = "P1-R0"
+lines = 97
+branches = 100
+mutation = 100
+spec = 100
+
+# qs-pak (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants.
+[crates.qs-pak]
+readiness = "P1-R0"
+lines = 99
+branches = 100
+mutation = 100
+spec = 100
+
+# qs-wad (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants.
+[crates.qs-wad]
+readiness = "P1-R0"
+lines = 99
+branches = 95
+mutation = 100
+spec = 100
+
+# qs-mdl (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants and 100% mutation.
+[crates.qs-mdl]
+readiness = "P1-R0"
+lines = 98
+branches = 99
+mutation = 100
+spec = 100
+
+# qs-wav (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants.
+[crates.qs-wav]
+readiness = "P1-R0"
+lines = 100
+branches = 97
+mutation = 100
+spec = 100
+
+# qs-paths (L0 formats): the P1-R0 readiness re-run (run 39024658466) measures
+# the layer ready; no surviving mutants, no spec sections (implements ADR-0011).
+[crates.qs-paths]
+readiness = "P1-R0"
+lines = 98
+branches = 87
+mutation = 100
+spec = 100
 
 # qc-lexer (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
 # the layer ready; no surviving mutants and 100% on every axis.
@@ -144,5 +228,10 @@ equivalent_mutants = { "crates/qc-preproc/src/lib.rs: replace < with <= in Prepr
 # realisable input. Measured mutation is 548 of 561 viable, above the 90% bar,
 # so no exception is needed. A later review adds the minimums and `readiness`.
 [crates.qs-map]
+readiness = "P1-R0"
+lines = 96
+branches = 93
+mutation = 97
+spec = 100
 reason = "P1-57 (#358): the survivors are two redundant comparisons rescued by the second disjunct of the texture-limit check (MAP-4.7), a lone-dot guard whose advance is discarded (MAP-3.3), a whole-number format threshold where both branches print the same text (MAP-3.3), the best-row dot sum over unit base axes and its min/max tie that land on the same s and t axes (MAP-4.2)"
 equivalent_mutants = { "crates/qs-map/src/check.rs: replace > with == in MapFile::check" = "this is `textures.len() > MAP_MAX_TEXINFO` (MAP-4.7); whenever the distinct name count passes 4096 the second disjunct `faces > 4096 && qbsp overflows` is already true (more than 4096 names forces qbsp's miptex table over 4096, TooManyMiptex, and faces >= names > 4096), so changing `>` to `==` on the first disjunct never changes the OR result; the faces-and-qbsp disjunct is itself pinned by too_many_textures_by_texinfo_not_names and many_duplicate_faces_do_not_overflow", "crates/qs-map/src/check.rs: replace > with >= in MapFile::check" = "same first disjunct `textures.len() > MAP_MAX_TEXINFO` (MAP-4.7): the second disjunct is already true whenever the first fires, so `>=` on the first comparison does not change the result (a name count below 4096 makes both `>` and `>=` false, so there is no spurious positive either)", "crates/qs-map/src/cnum.rs: replace > with >= in c_strtod" = "in C89 strtod the guard `if whole > 0 || fraction > 0` advances `len` past a `.` (MAP-3.3); `whole >= 0` (resp `fraction >= 0`) differs only when the count is 0, i.e. a lone `.`, but then `whole == 0 && fraction == 0` is reached and returns `(0.0, 0)`, discarding the advanced `len`, so both forms give the identical (value, used)", "crates/qs-map/src/document.rs: replace < with <= in number" = "the formatter uses `value.fract() == 0.0 && value.abs() < 1e15` to choose `format!(\"{value:.0}\")` over `format!(\"{value}\")` (MAP-3.3); the branch is only reached for whole numbers (fract == 0), and Rust prints a whole f64 identically in both forms at every magnitude, so the 1e15 threshold never changes the output and `<`, `<=`, `==` and `>` all format the same string", "crates/qs-map/src/document.rs: replace < with == in number" = "same whole-number format threshold (MAP-3.3): `{value:.0}` and `{value}` are byte-identical for every whole f64, so which branch a value takes is not observable and `==` cannot differ from `<`", "crates/qs-map/src/document.rs: replace < with > in number" = "same whole-number format threshold (MAP-3.3): the two format branches produce the same text for whole numbers, so `>` cannot differ from `<`", "crates/qs-map/src/geometry.rs: replace + with - in qbsp_texvecs" = "the best-row dot `normal[0]*axis[0] + normal[1]*axis[1] + normal[2]*axis[2]` uses axis = base_axis(row, 0), one of the six signed unit base axes (MAP-4.2) with exactly one non-zero component, so two of the three products are 0 and flipping a `+` between them to `-` cannot change the sum", "crates/qs-map/src/geometry.rs: replace + with - in standard_texvecs" = "same dot over the unit base axes (MAP-4.2): each has a single non-zero component, so the two zero products make the `+` to `-` flip a no-op", "crates/qs-map/src/geometry.rs: replace > with < in best_row" = "best_row keeps the row with the largest dot (MAP-4.2); the six base axes are the signed unit vectors +-x, +-y, +-z, so the smallest dot is always the negation of the largest and falls on the paired opposite row, which shares its s and t axes and its sv/tv indices, so picking the smallest instead of the largest yields identical texture axes" }
