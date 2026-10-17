@@ -9,7 +9,7 @@
 //! | `lines` | `cargo llvm-cov` on the pinned stable toolchain | lines covered (TEST-1) |
 //! | `branches` | `cargo llvm-cov --branch` on [`NIGHTLY`] | branches covered (TEST-1) |
 //! | `mutation` | `cargo mutants` | mutants caught or timed out, of those that built (TEST-2) |
-//! | `spec` | the crate README and `docs/spec/requirements.tsv` | active statements cited by a `// spec` test (TEST-3) |
+//! | `spec` | the crate README, `docs/spec/requirements.tsv` and `docs/spec/coverage-baseline.tsv` | active, non-baseline statements cited by a `// spec` test (TEST-3) |
 //! | `flakes` | `cargo test`, [`FLAKE_RUNS`] times | passing runs (TEST-7) |
 //!
 //! A crate is named by its package name (a workspace member) or by its
@@ -734,6 +734,13 @@ fn repeat(runs: u64, mut run: impl FnMut() -> Result<bool, String>) -> Result<Sc
 /// after `**Spec sections:**`, their active statements in the nearest
 /// `docs/spec/requirements.tsv` above it, and the `// spec` citations in the
 /// Rust files under that tree's [`CITING_TREES`] (`docs/spec/README.md`).
+///
+/// A statement in [`BASELINE`] (`docs/spec/coverage-baseline.tsv`) is not
+/// counted: the baseline holds statements written ahead of the code that
+/// implements them (`docs/spec/README.md`: "A statement written ahead of the
+/// code that implements it goes there, and the PR that adds the code and its
+/// tests removes it."), so it is not yet owned by this crate and not yet
+/// cited, exactly as the spec-citation ratchet in `qs-tests` treats it.
 fn spec(dir: &Path) -> Result<Score, String> {
     let readme_path = dir.join("README.md");
     let readme = fs::read_to_string(&readme_path)
@@ -750,6 +757,10 @@ fn spec(dir: &Path) -> Result<Score, String> {
     let index = fs::read_to_string(&index_path)
         .map_err(|error| format!("{}: {error}", index_path.display()))?;
     let statements = active_statements(&index)?;
+    let baseline_path = spec_root.join(BASELINE);
+    let baseline_text = fs::read_to_string(&baseline_path)
+        .map_err(|error| format!("{}: {error}", baseline_path.display()))?;
+    let baseline = baseline_statements(&baseline_text)?;
     let mut cited = BTreeSet::new();
     for tree in CITING_TREES {
         for file in rust_files(&spec_root.join(tree))? {
@@ -758,10 +769,31 @@ fn spec(dir: &Path) -> Result<Score, String> {
             cited.extend(citations(&text));
         }
     }
-    spec_score(&sections, &statements, &cited)
+    spec_score(&sections, &statements, &baseline, &cited)
 }
 
 const REQUIREMENTS: &str = "docs/spec/requirements.tsv";
+
+/// The baseline of statements written ahead of their code
+/// (`docs/spec/README.md`); its rows are not counted against a crate.
+const BASELINE: &str = "docs/spec/coverage-baseline.tsv";
+
+/// The statement IDs in `coverage-baseline.tsv`: a header line `id`, then one
+/// ID per line (`docs/spec/README.md`). Blank lines are skipped.
+fn baseline_statements(text: &str) -> Result<BTreeSet<String>, String> {
+    let mut lines = text.lines();
+    if lines.next() != Some("id") {
+        return Err(format!("{BASELINE}: unexpected header"));
+    }
+    let mut ids = BTreeSet::new();
+    for line in lines {
+        let id = line.trim();
+        if !id.is_empty() {
+            ids.insert(id.to_owned());
+        }
+    }
+    Ok(ids)
+}
 
 /// The trees whose Rust files hold `// spec` citations, as the spec-citation
 /// ratchet in `qs-tests` reads them: the crates, the apps, and xtask, whose
@@ -844,6 +876,7 @@ pub(crate) fn citations(text: &str) -> Vec<String> {
 fn spec_score(
     sections: &[String],
     statements: &[(String, String)],
+    baseline: &BTreeSet<String>,
     cited: &BTreeSet<String>,
 ) -> Result<Score, String> {
     let mut score = Score {
@@ -858,6 +891,13 @@ fn spec_score(
                 continue;
             }
             found = true;
+            // A statement written ahead of its code sits in the baseline and
+            // is not yet owned by this crate (`docs/spec/README.md`); it is
+            // not counted, just as the ratchet in `qs-tests` does not require
+            // a baseline statement to be cited.
+            if baseline.contains(id) {
+                continue;
+            }
             score.total = score.total.saturating_add(1);
             if cited.contains(id) {
                 score.passed = score.passed.saturating_add(1);

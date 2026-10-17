@@ -265,8 +265,66 @@ fn a_bad_index_or_an_empty_section_is_an_error() {
     )
     .unwrap();
     assert_eq!(statements, [("X-1.1".to_owned(), "X-1".to_owned())]);
-    let error = spec_score(&["X-2".to_owned()], &statements, &BTreeSet::new()).unwrap_err();
+    let error = spec_score(
+        &["X-2".to_owned()],
+        &statements,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    )
+    .unwrap_err();
     assert!(error.contains("X-2 has no active statements"), "{error}");
+}
+
+#[test]
+fn a_baseline_header_is_read_and_a_bad_one_is_an_error() {
+    assert_eq!(
+        baseline_statements("id\nPROGS-5.1\n\nLNO-1.1\n").unwrap(),
+        ["LNO-1.1".to_owned(), "PROGS-5.1".to_owned()]
+            .into_iter()
+            .collect()
+    );
+    assert_eq!(baseline_statements("id\n").unwrap(), BTreeSet::new());
+    assert!(baseline_statements("").is_err());
+    assert!(baseline_statements("statement\nPROGS-5.1\n").is_err());
+}
+
+#[test]
+fn a_baseline_statement_is_not_counted_against_a_crate() {
+    // X-1 owns X-1.1 (cited) and X-1.2 (not cited); X-1.2 is in the baseline,
+    // so it is excluded and the crate is 100%, as `docs/spec/README.md` says a
+    // statement written ahead of its code is not yet owned by the crate.
+    let statements = [
+        ("X-1.1".to_owned(), "X-1".to_owned()),
+        ("X-1.2".to_owned(), "X-1".to_owned()),
+    ];
+    let cited = ["X-1.1".to_owned()].into_iter().collect();
+    let baseline = ["X-1.2".to_owned()].into_iter().collect();
+    let score = spec_score(&["X-1".to_owned()], &statements, &baseline, &cited).unwrap();
+    assert_eq!(score, self::score(1, 1));
+    assert!(score.failures.is_empty(), "{:?}", score.failures);
+    // Without the baseline the uncited statement is a failure.
+    let score = spec_score(&["X-1".to_owned()], &statements, &BTreeSet::new(), &cited).unwrap();
+    assert_eq!(
+        score,
+        Score {
+            passed: 1,
+            total: 2,
+            failures: vec!["X-1.2 is not cited".to_owned()],
+        }
+    );
+    // A section whose every statement is in the baseline contributes nothing,
+    // and does not error as a missing section would.
+    let both_baselined = ["X-1.1".to_owned(), "X-1.2".to_owned()]
+        .into_iter()
+        .collect();
+    let score = spec_score(
+        &["X-1".to_owned()],
+        &statements,
+        &both_baselined,
+        &BTreeSet::new(),
+    )
+    .unwrap();
+    assert_eq!(score, self::score(0, 0));
 }
 
 #[test]
