@@ -19,7 +19,9 @@ qc-project = { path = "../crates/qc-project" }
 qc-syntax = { path = "../crates/qc-syntax" }
 qc-trace = { path = "../crates/qc-trace" }
 qc-types = { path = "../crates/qc-types" }
+qc-vm = { path = "../crates/qc-vm" }
 qs-bsp = { path = "../crates/qs-bsp" }
+qs-differential = { path = "../crates/qs-differential" }
 qs-map = { path = "../crates/qs-map" }
 qs-mdl = { path = "../crates/qs-mdl" }
 qs-pak = { path = "../crates/qs-pak" }
@@ -36,6 +38,13 @@ bench = false
 [[bin]]
 name = "qc-progs"
 path = "fuzz_targets/qc_progs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qc-vm"
+path = "fuzz_targets/qc_vm.rs"
 test = false
 doc = false
 bench = false

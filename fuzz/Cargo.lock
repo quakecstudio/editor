@@ -113,6 +113,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-builtins"
+version = "2026.10.0"
+dependencies = [
+ "qc-edict",
+ "qc-progs",
+ "qc-types",
+ "qc-vm",
+]
+
+[[package]]
+name = "qc-edict"
+version = "2026.10.0"
+dependencies = [
+ "qc-progs",
+ "qc-types",
+]
+
+[[package]]
 name = "qc-lexer"
 version = "2026.10.0"
 
@@ -159,10 +177,34 @@ name = "qc-types"
 version = "2026.10.0"
 
 [[package]]
+name = "qc-vm"
+version = "2026.10.0"
+dependencies = [
+ "qc-edict",
+ "qc-progs",
+ "qc-trace",
+ "qc-types",
+]
+
+[[package]]
 name = "qs-bsp"
 version = "2026.10.0"
 dependencies = [
  "qc-progs",
+]
+
+[[package]]
+name = "qs-differential"
+version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-edict",
+ "qc-progs",
+ "qc-trace",
+ "qc-types",
+ "qc-vm",
+ "qs-map",
+ "qs-porting-example",
 ]
 
 [[package]]
@@ -176,7 +218,9 @@ dependencies = [
  "qc-syntax",
  "qc-trace",
  "qc-types",
+ "qc-vm",
  "qs-bsp",
+ "qs-differential",
  "qs-map",
  "qs-mdl",
  "qs-pak",
@@ -198,6 +242,10 @@ version = "2026.10.0"
 dependencies = [
  "qc-progs",
 ]
+
+[[package]]
+name = "qs-porting-example"
+version = "2026.10.0"
 
 [[package]]
 name = "qs-wad"

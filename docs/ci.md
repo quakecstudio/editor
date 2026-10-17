@@ -102,7 +102,7 @@ check:
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust, the `parser` target seeded with the `.qc` files of id 1.01 and the rerelease (`cargo xtask corpus fetch`); on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
+| `Fuzz` | Linux | `cargo xtask fuzz --time 10m`: every cargo-fuzz target in `fuzz/` for 10 minutes on nightly Rust, the `parser` target seeded with the `.qc` files of id 1.01 and the rerelease (`cargo xtask corpus fetch`), and the `qc-vm` target run against the id VM oracle (`cargo xtask oracles` builds it and `QS_VM_ORACLE` points at it, so well-formed random progs are compared in both VMs, FND-10); on a crash, uploads `fuzz/artifacts/` as the `fuzz-artifacts` artifact |
 
 ### Differential
 
