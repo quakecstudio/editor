@@ -1094,6 +1094,7 @@ issues:
   - P1-54
   - P1-55
   - P1-56
+  - P1-57
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1232,3 +1233,25 @@ issues:
   - 'Every FTEQCC-written .lno in the corpus build round-trips through qc-lno byte for byte and matches its progs.dat counts; a mismatch fails the build with the codebase id and the first differing byte or count'
   verify:
   - cargo xtask corpus build (network and a C compiler, CI)
+- key: P1-57
+  title: Kill the surviving mutants in the L0 formats crates
+  labels:
+  - L0-formats
+  - area:process
+  - type:test
+  reqs:
+  - TEST-2
+  size: M
+  depends:
+  - P1-07
+  - P1-08
+  - P1-18
+  - P1-19
+  - P1-28
+  deliverable:
+  - 'The P1-R0 readiness review (docs/readiness/p1-r0.md) ran the Readiness workflow on main (run 38994567037) and found surviving mutants in eight L0 crates that TEST-2 requires be killed by a new test or recorded in ratchets.toml under equivalent_mutants with a reason: qc-progs (1), qc-lno (9, below the 90% bar at 76.3%), qs-vfs (1), qs-log (4), qs-install (12), qs-bsp (15), qs-map (45) and qs-mdl (10); the review added tests in qc-lno (killed 5), qs-pak, qs-wad and qs-wav, leaving the rest'
+  - 'For each surviving mutant: a test in the owning crate that fails on the mutant (cargo mutants --manifest-path crates/<crate>/Cargo.toml lists it as MISSED), or an entry in ratchets.toml under [crates.<crate>].equivalent_mutants with the mutant key and a reason it cannot be killed; qc-lno brought to 90% mutation or an exception recorded in crates/qc-lno/README.md and ratchets.toml for the four mutants whose only distinguishing input is a line table of i32::MAX entries or a Vec capacity (not observable through the public API)'
+  acceptance:
+  - 'A Readiness run on main reports every L0 formats crate at mutation at least 90% or an exception with its reason, with no surviving mutant that is not killed or listed under equivalent_mutants (cargo xtask ratchet passes for the layer)'
+  verify:
+  - The Readiness workflow run linked in the PR

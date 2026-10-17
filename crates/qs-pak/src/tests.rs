@@ -506,6 +506,68 @@ fn errors_display_after_the_path() {
     }
 }
 
+// Adversarial reviewer tests (P1-R0, TEST-9): added by the independent readiness review of
+// the L0 formats layer, probing extreme values and the order of the directory checks. They
+// passed on first run, so they are kept as regression tests.
+
+// spec PAK-2.12, PAK-3.4: an entry whose `filepos` and `filelen` are both i32::MAX is still
+// listed, but reading it is an error and never overflows the 64-bit range arithmetic.
+#[test]
+fn reviewer_extreme_entry_range_is_listed_but_unreadable() {
+    let mut bytes = PakSpec {
+        entries: vec![entry("a", b"x")],
+        ..PakSpec::default()
+    }
+    .build();
+    // The single entry's 64-byte directory record begins at dirofs; patch its filepos and
+    // filelen (the last two little-endian i32 of the record) to i32::MAX.
+    let dir_record = bytes.len() - PAK_ENTRY_SIZE;
+    patch(&mut bytes, dir_record + PAK_NAME_SIZE, i32::MAX);
+    patch(&mut bytes, dir_record + PAK_NAME_SIZE + 4, i32::MAX);
+    let pak = load(&bytes).unwrap();
+    // Listed with its declared, impossible range (PAK-2.12).
+    assert_eq!(pak.entries().len(), 1);
+    assert_eq!(pak.entries()[0].filepos, i32::MAX);
+    assert_eq!(pak.entries()[0].filelen, i32::MAX);
+    // Reading it is an error, not a panic or an overflow (PAK-3.4); i32::MAX + i32::MAX fits
+    // in u64, so the end is well-defined and simply past the end of the file.
+    assert_eq!(
+        contents(&bytes, &pak),
+        vec![Err(PakError::EntryOutOfBounds {
+            filepos: i32::MAX,
+            filelen: i32::MAX,
+        })]
+    );
+}
+
+// spec PAK-2.4, PAK-2.6, PAK-2.7: the checks run in id's `COM_LoadPackFile` order (count,
+// then directory size, then bounds), so a directory of exactly 2048 whole entries
+// (dirlen 131072) placed one byte past the end of the file fails as out of bounds, not as
+// too large: it passes the count and size checks and only the bounds check rejects it.
+#[test]
+fn reviewer_full_directory_past_eof_fails_out_of_bounds() {
+    let spec = PakSpec {
+        entries: empty_entries(2048),
+        ..PakSpec::default()
+    };
+    let mut bytes = spec.build();
+    let dirlen = i32::try_from(2048 * PAK_ENTRY_SIZE).unwrap();
+    assert_eq!(dirlen, 131_072);
+    // Move the directory one byte past where it was written, so dirofs + dirlen exceeds the
+    // file by one byte while dirlen itself stays at the exact 131072 limit.
+    let dirofs = i32::try_from(bytes.len() - 2048 * PAK_ENTRY_SIZE).unwrap();
+    patch(&mut bytes, 4, dirofs + 1);
+    assert_eq!(
+        load(&bytes),
+        Err(PakError::DirectoryOutOfBounds {
+            dirofs: dirofs + 1,
+            dirlen,
+        })
+    );
+    // The same archive with the directory in place loads: dirlen 131072 is at the limit.
+    assert!(load(&spec.build()).is_ok());
+}
+
 fn entry_specs() -> impl Strategy<Value = Vec<EntrySpec>> {
     prop::collection::vec(
         (
