@@ -675,6 +675,44 @@ fn anim_duplicate_frame() {
     assert_eq!(bsp.textures[1].as_ref().unwrap().animation.unwrap().next, 2);
 }
 
+// spec BSP-4.8: a `+` texture with a different suffix starts its own animation, not the
+// current one; grouping is by suffix, so two suffixes do not merge.
+#[test]
+fn anim_distinct_suffixes() {
+    // `+0lava` and `+0water` share frame 0 but differ in suffix, so each is its own
+    // single-frame animation. Were the suffix guard an AND, `+0water` would be pulled into
+    // `+0lava`'s set and overwrite slot 0, leaving `+0lava` (slot 0) without an animation.
+    let bsp = read(&with_textures(&[b"+0lava", b"+0water"])).unwrap();
+    let lava = bsp.textures[0].as_ref().unwrap().animation.unwrap();
+    let water = bsp.textures[1].as_ref().unwrap().animation.unwrap();
+    assert_eq!(lava.next, 0);
+    assert_eq!(water.next, 1);
+}
+
+// spec BSP-15.6: a BSP with no models fails to load; its Display renders the error for an
+// unnamed map ("the map").
+#[test]
+fn error_display_uses_the_map() {
+    assert_eq!(BspError::NoModels.to_string(), "the map has no models");
+    assert_eq!(
+        format!("{}", BspError::NoModels),
+        BspError::NoModels.message("the map")
+    );
+}
+
+// spec BSP-15.4: the radius takes the larger absolute value per axis, so a model whose
+// adjusted |mins[j]| exceeds |maxs[j]| uses the mins side.
+#[test]
+fn model_radius_prefers_larger_abs_mins() {
+    let mut spec = BspSpec::default();
+    // Raw mins -100 on x becomes -101 after the -1 adjust; maxs 64 becomes 65. |-101| > |65|,
+    // so corner x is 101, not 65: a strict `>` picks mins; `==` or the max side would not.
+    spec.models[0].mins = [-100.0, 0.0, 0.0];
+    let bsp = read(&spec).unwrap();
+    let expected = (101.0_f32 * 101.0 + 65.0 * 65.0 + 1.0 * 1.0).sqrt();
+    assert!((bsp.models[0].radius - expected).abs() < 1e-3);
+}
+
 // spec BSP-8.1, BSP-9.10: texture offsets move the extents.
 #[test]
 fn texture_offset() {
