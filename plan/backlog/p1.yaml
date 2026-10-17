@@ -1093,6 +1093,7 @@ issues:
   - P1-53
   - P1-54
   - P1-55
+  - P1-56
   deliverable:
   - 'docs/gates/p1.md with evidence: differential suite results, fuzz run reports, parser round-trip results, updated risk register'
   acceptance:
@@ -1212,3 +1213,22 @@ issues:
   - 'A Readiness run that includes xtask reports its mutation score at or above the bar (90%) with no survivor that is not killed or listed as equivalent'
   verify:
   - The Readiness workflow run linked in the PR
+- key: P1-56
+  title: Round-trip the FTEQCC corpus .lno files through qc-lno in the corpus build
+  labels:
+  - repo
+  - area:process
+  - type:test
+  reqs:
+  - FND-6
+  - TEST-2
+  size: S
+  depends:
+  - P1-28
+  - P1-26
+  deliverable:
+  - 'xtask: in `cargo xtask corpus build`, read each FTEQCC-written progs.lno with qc-lno, write it back and check the bytes are identical (LNO-6.2), and check it matches its progs.dat header counts (LNO-4.1), alongside the existing progs.dat round-trip'
+  acceptance:
+  - 'Every FTEQCC-written .lno in the corpus build round-trips through qc-lno byte for byte and matches its progs.dat counts; a mismatch fails the build with the codebase id and the first differing byte or count'
+  verify:
+  - cargo xtask corpus build (network and a C compiler, CI)
