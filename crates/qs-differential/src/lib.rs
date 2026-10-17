@@ -22,6 +22,9 @@
 //! Tests. It builds on the L1 VM crates and the L0 formats below them, and nothing depends on
 //! it (`layers.toml`).
 
+pub mod edict8;
+pub mod host;
 pub mod scenario;
 
+pub use host::{Ended, RunOutput, RunRefused, run_scenario};
 pub use scenario::{Cvar, Input, ModelBounds, Refused, Scenario};

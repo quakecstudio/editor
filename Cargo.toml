@@ -132,6 +132,7 @@ qs-map = { path = "crates/qs-map" }
 qs-mdl = { path = "crates/qs-mdl" }
 qs-pak = { path = "crates/qs-pak" }
 qs-paths = { path = "crates/qs-paths" }
+qs-porting-example = { path = "crates/qs-porting-example" }
 qs-vfs = { path = "crates/qs-vfs" }
 qs-wad = { path = "crates/qs-wad" }
 qs-wav = { path = "crates/qs-wav" }
