@@ -147,6 +147,31 @@ const PROBES: &[Probe] = &[
     vector(b"edicts 3\nhost clock 1 2 3 4 5 6 7\n", Some(2)),
     vector(b"edicts 3\nglobal 100 bits 0\0junk\n", Some(2)),
     vector(b"edicts 3\n\0\n", Some(2)),
+    // P1-RG readiness review (TEST-9): directive-level refusals DIFF-2.9 names, which the
+    // number vectors (frametime, DIFF-2.8) and the earlier NUL and leading-zero probes do not
+    // reach. Each is refused before any run, naming the line.
+    // DIFF-2.2: a map name is 1 to 63 bytes from a-z, 0-9 and _, so an uppercase letter or a
+    // 64th byte is refused.
+    scenario(b"progs progs.dat\nmap Test\nframes 0\n", Some(2)),
+    scenario(
+        b"progs progs.dat\n\
+          map aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nframes 0\n",
+        Some(2),
+    ),
+    // DIFF-2.2: submodels is an integer from 0 to 254, so 255 is refused.
+    scenario(b"progs progs.dat\nsubmodels 255\nframes 0\n", Some(2)),
+    // DIFF-2.2 and DIFF-2.9: frames may appear at most once, so a second frames is refused.
+    scenario(b"progs progs.dat\nframes 0\nframes 1\n", Some(3)),
+    // DIFF-2.6: an input field is button0, button2, impulse or v_angle, so button1 is refused.
+    scenario(
+        b"progs progs.dat\nframes 10\nclients 1\ninput 1 1 button1 1\n",
+        Some(4),
+    ),
+    // DIFF-2.6: impulse takes an integer from 1 to 255, so 256 is refused.
+    scenario(
+        b"progs progs.dat\nframes 10\nclients 1\ninput 1 1 impulse 256\n",
+        Some(4),
+    ),
 ];
 
 /// Runs every probe; `Ok(false)` when the oracle disagrees with one.
