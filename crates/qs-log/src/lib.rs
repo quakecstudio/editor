@@ -79,9 +79,15 @@ impl LogConfig {
     /// Logs to the application's log directory, with directives from `RUST_LOG`.
     #[must_use]
     pub fn for_app(dirs: &AppDirs) -> Self {
+        Self::with_rust_log(dirs.logs().to_path_buf(), std::env::var_os("RUST_LOG"))
+    }
+
+    /// [`Self::for_app`] with the `RUST_LOG` value given rather than read from the environment,
+    /// so a test can set the directives without touching process-global state.
+    fn with_rust_log(dir: PathBuf, rust_log: Option<OsString>) -> Self {
         Self {
-            directives: directives_from(std::env::var_os("RUST_LOG")),
-            ..Self::new(dirs.logs().to_path_buf())
+            directives: directives_from(rust_log),
+            ..Self::new(dir)
         }
     }
 }

@@ -68,3 +68,9 @@ equivalent_mutants = { "crates/qs-vfs/src/host.rs: replace == with != in is_sepa
 [crates.qc-progs]
 reason = "P1-57: crc_value XORs with PROGS_CRC_XOR, which PROGS-4.1 fixes at 0x0000, so XOR and OR give the same result for every input"
 equivalent_mutants = { "crates/qc-progs/src/crc.rs: replace ^ with | in crc_value" = "crc_value is `crc ^ PROGS_CRC_XOR`; PROGS-4.1 states the final XOR is 0x0000 (CRC-16/CCITT-FALSE), and `crc ^ 0 == crc | 0 == crc` for every 16-bit crc, so no input distinguishes `^` from `|` here" }
+
+# qs-log (L0 formats): three of its four survivors (P1-R0, P1-57) are killed by
+# new tests; the fourth is equivalent. A later review adds the minimums and `readiness`.
+[crates.qs-log]
+reason = "P1-57: the `self.len > 0` rotation guard mutated to `self.len >= 0` is unreachable as a difference, because len is a u64 and the empty-file case it guards gives the same result either way"
+equivalent_mutants = { "crates/qs-log/src/writer.rs: replace > with >= in RotatingFile::write_record" = "the guard is `self.len > 0 && self.len.saturating_add(size) > self.max_file_bytes`; len is a u64 so `len >= 0` is always true, and the only input that differs from `len > 0` is len == 0 (an empty file), where write_record has already truncated the record to at most max_file_bytes, so `0 + size > max` is false and neither form rotates: the result is identical" }
