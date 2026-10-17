@@ -35,3 +35,18 @@ Unit tests of every `docs/spec/lno.md` test vector in `src/vectors.rs`, and prop
 The `.lno` files the pinned FTEQCC writes beside the progs it builds are round-tripped by
 `cargo xtask corpus build`, which compiles each codebase in the oracle flow (network and a C
 compiler, CI only).
+
+## Mutation
+
+Four mutants in `LnoFile::write` have no distinguishing input observable through the public
+API, so they cannot be killed by a test. They are recorded in `ratchets.toml` under
+`[crates.qc-lno].equivalent_mutants` with these reasons, and the mutation bar is waived by the
+matching `[crates.qc-lno].exceptions` entry (the four hold the measured score at 89%, one point
+under the 90% bar; every other mutant is caught):
+
+- The LNO-6.3 guard `self.lines.len() > LNO_MAX_STATEMENTS` (`>` to `==` or `>=`): the only
+  input that tells the forms apart is a line table of exactly `LNO_MAX_STATEMENTS` (`i32::MAX`,
+  2_147_483_647) entries, over 8 GiB of `i32`, which cannot be allocated in a test.
+- `size_hint` (to `0` or `1`): it only feeds `Vec::with_capacity` to pre-size the output
+  buffer; the bytes written are identical whatever the capacity (LNO-6.1, LNO-6.2), so a wrong
+  hint is not observable through the public API.

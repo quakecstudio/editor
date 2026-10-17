@@ -217,4 +217,17 @@ mod tests {
         assert_eq!(file_path(dir, "app", 0), dir.join("app.log"));
         assert_eq!(file_path(dir, "app", 3), dir.join("app.3.log"));
     }
+
+    #[test]
+    fn remove_if_present_ignores_missing_but_propagates_other_errors() {
+        let dir = TestDir::new("writer-remove");
+        // A missing file is not an error.
+        remove_if_present(&dir.path().join("gone.log")).unwrap();
+        // A path that is a directory is a different error, which must propagate rather than be
+        // swallowed: fs::remove_file on a directory does not return NotFound.
+        let subdir = dir.path().join("subdir");
+        fs::create_dir_all(&subdir).unwrap();
+        let err = remove_if_present(&subdir).unwrap_err();
+        assert_ne!(err.kind(), io::ErrorKind::NotFound);
+    }
 }

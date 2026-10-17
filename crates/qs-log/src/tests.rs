@@ -107,6 +107,14 @@ fn source_text_is_redacted_through_every_api() {
         log.contains(&format!("parse{{source={marker} file={marker} text=")),
         "{log}"
     );
+    // The `text` field is recorded after the span is created (span.record("text", SNIPPET)),
+    // so its redacted value must appear in the span context; without on_record it would not.
+    assert!(
+        log.contains(&format!(
+            "parse{{source={marker} file={marker} text=<redacted 1 bytes> text={marker}}}"
+        )),
+        "{log}"
+    );
     assert!(log.contains("inside the span"), "{log}");
     assert_eq!(log.lines().count(), 17, "{log}");
 }
@@ -270,4 +278,11 @@ fn app_config_uses_the_per_os_log_directory() {
     assert_eq!(config.dir, dirs.logs());
     assert_eq!(config.max_file_bytes, 5_242_880);
     assert_eq!(config.max_files, 4);
+    // for_app takes its directives from RUST_LOG: a set value is used, an unset one falls back
+    // to the default. with_rust_log is for_app with the value given, so the test does not touch
+    // process-global environment state.
+    let custom = LogConfig::with_rust_log(dirs.logs().to_path_buf(), Some(OsString::from("debug")));
+    assert_eq!(custom.directives, "debug");
+    let unset = LogConfig::with_rust_log(dirs.logs().to_path_buf(), None);
+    assert_eq!(unset.directives, DEFAULT_DIRECTIVES);
 }
