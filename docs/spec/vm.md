@@ -218,9 +218,13 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
   this spec fixes the byte difference, which glibc and macOS's C library return. Code that
   only tests the result for zero is unaffected.
 - **VM-7.3** A string value is an offset into the string table or a string the engine
-  allocated (PROGS-11.6). id resolves any other value to memory outside both, which is
-  undefined in C. This spec fixes the answer: `EQ_S`, `NE_S` and `NOT_S` with a string value
-  that is neither fail with a runtime error (VM-19.4).
+  allocated (PROGS-11.6). `EQ_S`, `NE_S` and `NOT_S` resolve both: a value from 0 to
+  `numstrings - 1` reads the string table (PROGS-11.1), and any other value reads the
+  engine-allocated string it names (EDICT-13.1), id's `PR_GetString` computing
+  `pr_strings + value` for either. Only a value that is neither a table offset nor an
+  engine-allocated string names memory outside both, which is undefined in C; this spec fixes
+  the answer: `EQ_S`, `NE_S` and `NOT_S` with such a value fail with a runtime error
+  (VM-19.4).
 - **VM-7.4** `EQ_E` and `NE_E` compare the 32-bit patterns of `a` and `b`, and `EQ_FNC` and
   `NE_FNC` compare them as function indices, writing `1.0` or `0.0`. None of them checks that
   the value names an entity or function, and `EQ_E` compares bits, not floats: `-0.0` and
@@ -237,7 +241,11 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
   `0.0` otherwise, including for a NaN.
 - **VM-8.2** `NOT_V` writes `1.0` when all three components of `a` equal `0.0`.
 - **VM-8.3** `NOT_S` writes `1.0` when the string value is 0 or names an empty string (its
-  first byte is NUL), and `0.0` otherwise.
+  first byte is NUL), and `0.0` otherwise. It resolves the value the same way `EQ_S` does
+  (VM-7.3): a table offset reads the string table, and a value outside the table reads the
+  engine-allocated string it names (PROGS-11.6, EDICT-13.1), so an engine-made string is
+  false only when its text is empty (EDICT-13.2); a value that is neither fails with a runtime
+  error (VM-19.4).
 - **VM-8.4** `NOT_ENT` writes `1.0` when the entity value is 0, the world, and `0.0`
   otherwise. It compares the value only, without checking that it names an edict or whether
   that edict is free.

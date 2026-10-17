@@ -15,6 +15,7 @@
 )]
 
 mod harness;
+mod string_opcodes;
 mod vectors;
 
 use qc_progs::Progs;

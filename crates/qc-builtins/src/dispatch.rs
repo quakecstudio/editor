@@ -75,6 +75,14 @@ impl Builtins for MockBuiltins<MockEngine> {
             Err(error) => Err(to_run_error(context, error)),
         }
     }
+
+    /// The text of the engine-allocated string `value` the mock holds, or `None` (EDICT-13.1,
+    /// EDICT-13.3). The mock keeps engine strings by their negative value (`mapname`,
+    /// `netname`, the world's `model`, the `ftos`/`vtos` buffer); the VM's string opcodes
+    /// resolve a value outside the string table through this (VM-7.3, PROGS-11.6).
+    fn engine_string(&self, value: i32) -> Option<&[u8]> {
+        self.engine.strings.text(value)
+    }
 }
 
 impl MockBuiltins<MockEngine> {
