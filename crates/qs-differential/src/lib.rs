@@ -15,16 +15,19 @@
 //! (QA-1) and P1-13's verification is a mutation test.
 //!
 //! Implements `docs/spec/differential.md`. The trace format is `qc-trace` (`trace.md`); the
-//! VM is `qc-progs` and `qc-vm`; the scenario format is DIFF-2.
+//! VM is `qc-progs` and `qc-vm`; the scenario format is DIFF-2. Two traces are compared and
+//! statement coverage is measured by [`compare`] (DIFF-9 to DIFF-11).
 //!
 //! # Layer
 //!
 //! Tests. It builds on the L1 VM crates and the L0 formats below them, and nothing depends on
 //! it (`layers.toml`).
 
+pub mod compare;
 pub mod edict8;
 pub mod host;
 pub mod scenario;
 
+pub use compare::{Comparison, Divergence, Slot, compare, coverage};
 pub use host::{Ended, RunOutput, RunRefused, run_scenario};
 pub use scenario::{Cvar, Input, ModelBounds, Refused, Scenario};
