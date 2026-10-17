@@ -123,6 +123,27 @@ pub const BUILTIN_SIGNON_SIZE: usize = 8192;
 /// `BUILTIN_CMD_TEXT_SIZE`, the command buffer size (BUILTIN-11.5).
 pub const BUILTIN_CMD_TEXT_SIZE: usize = 8192;
 
+/// `LIMIT_MAX_SOUNDS`, the sound precache list size (LIMIT-6.2), id's `MAX_SOUNDS`.
+pub const LIMIT_MAX_SOUNDS: usize = 256;
+/// `LIMIT_MAX_MODELS`, the model precache list size (LIMIT-6.2), id's `MAX_MODELS`.
+pub const LIMIT_MAX_MODELS: usize = 256;
+
+/// A network message destination id's `WriteDest` resolves `to` to (BUILTIN-13.1).
+///
+/// A client slot's reliable message ([`MessageDest::One`]) is not kept by the mock and never
+/// overflows (DIFF-6.5); the other three are counted in [`Buffers`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageDest {
+    /// 0 `MSG_BROADCAST`: the unreliable datagram (BUILTIN-13.1).
+    Broadcast,
+    /// 1 `MSG_ONE`: the reliable message of `msg_entity`'s client slot (BUILTIN-13.1).
+    One,
+    /// 2 `MSG_ALL`: the reliable datagram (BUILTIN-13.1).
+    All,
+    /// 3 `MSG_INIT`: the signon buffer (BUILTIN-13.1).
+    Init,
+}
+
 /// The mock engine fixture (DIFF-6).
 ///
 /// It implements [`Engine`] with [`Engine::has_world`] returning `true`, because the mock
@@ -150,10 +171,125 @@ pub struct MockEngine {
     pub buffers: Buffers,
     /// The random source (DIFF-6.2).
     pub rng: Rng,
+    /// The engine-made strings, by their value (EDICT-13.1, EDICT-13.3).
+    pub strings: EngineStrings,
+    /// `checkclient`'s last choice and the clock at which it was made (DIFF-7.3).
+    pub checkclient: CheckClient,
+    /// Whether each client slot (1 to `maxclients`) has a player in it (DIFF-4.2).
+    ///
+    /// Index `n - 1` is client slot `n`; a slot that is active and spawned receives the
+    /// printing and network builtins (BUILTIN-11, BUILTIN-12.7). The VM test environment that
+    /// runs a single builtin leaves them all empty.
+    pub clients_active: Vec<bool>,
+    /// Whether the server is active, id's `sv.active` (BUILTIN-11.8, BUILTIN-12.7).
+    ///
+    /// `false` while the map loads (DIFF-3.2) and `true` from the settle frames on (DIFF-3.6);
+    /// it decides whether `cvar_set` broadcasts and whether `lightstyle` sends.
+    pub server_active: bool,
+    /// The server clock `sv.time`, a `double` (DIFF-3.2): 1.0 at map start.
+    ///
+    /// `spawn` and `remove` read it for the edict reuse policy and `freetime` (EDICT-6,
+    /// EDICT-7); `checkclient` reads it for its reconsider interval (DIFF-7.3). The runner
+    /// advances it each frame (DIFF-5.2); the VM test environment leaves it at 1.0.
+    pub clock: f64,
 }
 
 /// The lightstyle count id does not range-check against, `LIMIT_MAX_LIGHTSTYLES` (BUILTIN-12.6).
 pub const LIMIT_MAX_LIGHTSTYLES: usize = 64;
+
+/// A client slot's reliable message is `LIMIT_MAX_MSGLEN` bytes, id's `MAX_MSGLEN` (BUILTIN-13.4).
+///
+/// The mock does not keep it (DIFF-6.5), so this names the size for documentation only.
+pub const LIMIT_MAX_MSGLEN: usize = 8000;
+
+/// The engine-made strings the mock keeps, by their value (EDICT-13.1, EDICT-13.3).
+///
+/// An engine-made string is a value that cannot be a string-table offset; the mock uses the
+/// negative values -1, -2, ... in the order the strings are made, and the differential
+/// comparison compares their text, not their numbers (EDICT-13.3, DIFF-9.4). `ftos` and `vtos`
+/// share one buffer value, so each call overwrites the previous text (BUILTIN-7.4).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EngineStrings {
+    /// The `ftos`/`vtos` buffer value, once allocated (BUILTIN-7.4).
+    temp_value: Option<i32>,
+    /// Every engine string's text, by value; the temp buffer's is updated in place.
+    entries: Vec<(i32, Vec<u8>)>,
+}
+
+impl EngineStrings {
+    /// Sets the one `ftos`/`vtos` temporary buffer to `text` and returns its value (BUILTIN-7.4).
+    ///
+    /// The first call allocates the value -1; later calls overwrite its text and return the
+    /// same value, so an earlier result's text changes (BUILTIN-7.4).
+    pub fn set_temp(&mut self, text: Vec<u8>) -> i32 {
+        let value = match self.temp_value {
+            Some(value) => value,
+            None => {
+                let value = self.next_value();
+                self.temp_value = Some(value);
+                self.entries.push((value, Vec::new()));
+                value
+            }
+        };
+        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value) {
+            entry.1 = text;
+        }
+        value
+    }
+
+    /// Makes a new engine string holding `text`, with a fresh value (EDICT-13.1).
+    ///
+    /// Used for `mapname`, `netname` and the world's `model`; its value never changes.
+    pub fn make(&mut self, text: Vec<u8>) -> i32 {
+        let value = self.next_value();
+        self.entries.push((value, text));
+        value
+    }
+
+    /// The text of the engine string `value`, or `None` when no engine string has it.
+    #[must_use]
+    pub fn text(&self, value: i32) -> Option<&[u8]> {
+        self.entries
+            .iter()
+            .find(|(key, _)| *key == value)
+            .map(|(_, text)| text.as_slice())
+    }
+
+    /// The next free engine-string value: -1, then -2, and so on (EDICT-13.3).
+    fn next_value(&mut self) -> i32 {
+        let next = self
+            .entries
+            .len()
+            .checked_add(1)
+            .and_then(|n| i32::try_from(n).ok())
+            .unwrap_or(1);
+        next.checked_neg().unwrap_or(i32::MIN)
+    }
+}
+
+/// `checkclient`'s stored choice and the clock at which it was made (DIFF-7.3).
+///
+/// Both start at 0 (DIFF-3.2): the last choice is edict 0 (the world) and the time is 0.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CheckClient {
+    /// The edict number of the last client `checkclient` chose, id's `sv.lastcheck`.
+    pub last_check: i32,
+    /// The clock at the last choice, id's `sv.lastchecktime` (a `double`).
+    pub last_check_time: f64,
+}
+
+/// The `checkclient` reconsider interval, id's `0.1` seconds (DIFF-7.3, BUILTIN-14.3).
+pub const BUILTIN_CHECKCLIENT_INTERVAL: f64 = 0.1;
+
+/// `FL_NOTARGET`, the flag `checkclient` skips (DIFF-7.3), id's `FL_NOTARGET`.
+pub const BUILTIN_FL_NOTARGET: i32 = 128;
+
+/// `FL_ONGROUND`, one of the flags `walkmove` and `movetogoal` need (DIFF-7.7).
+pub const BUILTIN_FL_ONGROUND: i32 = 512;
+/// `FL_FLY`, one of the flags `walkmove` and `movetogoal` need (DIFF-7.7).
+pub const BUILTIN_FL_FLY: i32 = 1;
+/// `FL_SWIM`, one of the flags `walkmove` and `movetogoal` need (DIFF-7.7).
+pub const BUILTIN_FL_SWIM: i32 = 2;
 
 impl MockEngine {
     /// A fresh fixture for a map, before any spawn function runs (DIFF-3.2, DIFF-3.3).
@@ -177,6 +313,115 @@ impl MockEngine {
             command_buffer: Vec::new(),
             buffers: Buffers::default(),
             rng: Rng::new(seed),
+            strings: EngineStrings::default(),
+            checkclient: CheckClient::default(),
+            clients_active: Vec::new(),
+            server_active: false,
+            clock: 1.0,
+        }
+    }
+
+    /// Whether client slot `number` (1 to `maxclients`) has a player (DIFF-4.2).
+    ///
+    /// A slot outside 1 to `clients_active.len()` is never active.
+    #[must_use]
+    pub fn client_active(&self, number: usize) -> bool {
+        number
+            .checked_sub(1)
+            .and_then(|index| self.clients_active.get(index))
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// The entry number of `name` in the sound precache list, or `None` (BUILTIN-12.2).
+    ///
+    /// Looked up from entry 0; entry 0 is the empty string.
+    #[must_use]
+    pub fn sound_index(&self, name: &str) -> Option<usize> {
+        self.sound_precache.iter().position(|entry| entry == name)
+    }
+
+    /// The entry number of `name` in the model precache list, or `None` (BUILTIN-9.3).
+    #[must_use]
+    pub fn model_index(&self, name: &str) -> Option<usize> {
+        self.model_precache.iter().position(|entry| entry == name)
+    }
+
+    /// Appends `name` to the sound precache list if it is not already there, id's
+    /// `SV_SoundIndex` through `precache_sound` (BUILTIN-10.3). Returns whether the list was
+    /// full (`true` means the name could not be added).
+    ///
+    /// A full list is id's `LIMIT_MAX_SOUNDS` (256) entries (LIMIT-6.2).
+    pub fn precache_sound_name(&mut self, name: &str) -> bool {
+        if self.sound_precache.iter().any(|entry| entry == name) {
+            return false;
+        }
+        if self.sound_precache.len() >= LIMIT_MAX_SOUNDS {
+            return true;
+        }
+        self.sound_precache.push(name.to_owned());
+        false
+    }
+
+    /// Appends `name` to the model precache list if it is not already there (BUILTIN-10.3).
+    /// Returns whether the list was full. A full list is `LIMIT_MAX_MODELS` (256) entries.
+    pub fn precache_model_name(&mut self, name: &str) -> bool {
+        if self.model_precache.iter().any(|entry| entry == name) {
+            return false;
+        }
+        if self.model_precache.len() >= LIMIT_MAX_MODELS {
+            return true;
+        }
+        self.model_precache.push(name.to_owned());
+        false
+    }
+
+    /// Sets lightstyle `style` to `value` (BUILTIN-12.6); `style` is already range-checked by
+    /// the caller to 0 to [`LIMIT_MAX_LIGHTSTYLES`] - 1.
+    pub fn set_lightstyle(&mut self, style: usize, value: Vec<u8>) {
+        if let Some(cell) = self.lightstyles.get_mut(style) {
+            *cell = Some(String::from_utf8_lossy(&value).into_owned());
+        }
+    }
+
+    /// Appends `len` bytes to message buffer `dest` (DIFF-6.5), returning whether it overflowed.
+    ///
+    /// `dest` is 0 (`MSG_BROADCAST`, the unreliable datagram), 2 (`MSG_ALL`, the reliable
+    /// datagram) or 3 (`MSG_INIT`, the signon buffer); a client's reliable message
+    /// (`MSG_ONE`) is not kept and never overflows (DIFF-6.5). An append that does not fit is
+    /// id's `SZ_GetSpace: overflow` (BUILTIN-13.3): the size is not changed and `true` is
+    /// returned.
+    pub fn append_message(&mut self, dest: MessageDest, len: usize) -> bool {
+        let (used, limit) = match dest {
+            MessageDest::Broadcast => (&mut self.buffers.unreliable, LIMIT_MAX_DATAGRAM),
+            MessageDest::All => (&mut self.buffers.reliable, LIMIT_MAX_DATAGRAM),
+            MessageDest::Init => (&mut self.buffers.signon, BUILTIN_SIGNON_SIZE),
+            MessageDest::One => return false,
+        };
+        match used.checked_add(len) {
+            Some(new) if new <= limit => {
+                *used = new;
+                false
+            }
+            _ => true,
+        }
+    }
+
+    /// Appends `text` to the command buffer `localcmd` and `changelevel` use (BUILTIN-11.5).
+    ///
+    /// Returns whether the buffer would overflow [`BUILTIN_CMD_TEXT_SIZE`]: when the contents
+    /// plus `text` would reach it, `text` is dropped and `true` returned (BUILTIN-11.5).
+    pub fn append_command(&mut self, text: &[u8]) -> bool {
+        let fits = self
+            .command_buffer
+            .len()
+            .checked_add(text.len())
+            .is_some_and(|total| total < BUILTIN_CMD_TEXT_SIZE);
+        if fits {
+            self.command_buffer.extend_from_slice(text);
+            false
+        } else {
+            true
         }
     }
 
