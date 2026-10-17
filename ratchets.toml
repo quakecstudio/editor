@@ -17,9 +17,9 @@
 #   equivalent_mutants = { "src/lib.rs: replace f -> u8 with 0" = "why it cannot be killed" }
 #
 # Before any review has passed, a table may hold only `exceptions` and their
-# `reason`: no `readiness` key and no minimums, which the first passing review
-# adds. A check under `exceptions` with no minimum passes even when no tool
-# measures it.
+# `reason`, or only `equivalent_mutants` and their `reason`: no `readiness` key
+# and no minimums, which the first passing review adds. A check under
+# `exceptions` with no minimum passes even when no tool measures it.
 #
 # Changing a crate's numbers needs a new `readiness` key; lowering one, or
 # adding an exception or equivalent mutant, also needs a new `reason`.
@@ -35,3 +35,11 @@ mutation = 0
 spec = 100
 reason = "P1-35: no mutation tool of the bar runs on the oracles' C"
 exceptions = { mutation = "cargo mutants, the bar's mutation tool (docs/testing.md, TEST-2), mutates Rust only, and the oracles are C; every vector, probe and scenario test states the trace or exit status the spec gives, written without the C, so a fault in the C fails an expectation (oracles/README.md, Readiness)" }
+
+# The build-automation tool (`xtask`, the tooling layer): one surviving mutant
+# that no test can kill, found by the P1-RG readiness review (P1-55). `xtask`
+# has not had a full readiness review, so this table holds only the justified
+# survivor; a later review adds the minimums and `readiness`.
+[crates.xtask]
+reason = "P1-55: fn main is the process entry point, which no test can run in cargo mutants"
+equivalent_mutants = { "xtask/src/main.rs: replace main -> ExitCode with Default::default()" = "fn main reads the process arguments and returns the exit code; cargo mutants builds the crate's tests with `cargo test --no-run`, which never builds the binary, and CARGO_BIN_EXE_xtask is unset for a bin crate's own unit tests, so no test can invoke main; its one line of logic (map the bool from the tested `run` to SUCCESS or FAILURE) is covered by the tests of `run`, and Default::default() is ExitCode::SUCCESS" }
