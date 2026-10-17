@@ -355,6 +355,23 @@ fn q_atof_decimal() {
     assert_eq!(math::q_atof(""), 0.0);
 }
 
+// spec BUILTIN-11.7: the spec's own examples and the three empty-prefix edges. The text
+// states Q_atof has "no exponent" and gives "`\"1e3\"` is 1"; it also reads a hexadecimal
+// number after `0x` and the code of the character after a `'`. An adversarial reviewer pins
+// the normative example and the empty tails those two prefixes allow: "0x" with no hex digit
+// and a lone "'" with no following character both read 0.
+#[test]
+fn q_atof_spec_examples_and_empty_prefixes() {
+    // The spec's explicit example: the exponent is not read, so "1e3" stops at 'e' and is 1.
+    assert_eq!(math::q_atof("1e3"), 1.0);
+    // "0x" with no following hex digit reads 0 (the hex loop finds no digit).
+    assert_eq!(math::q_atof("0x"), 0.0);
+    // A lone "'" takes the code of the next character, which is absent, so it reads 0.
+    assert_eq!(math::q_atof("'"), 0.0);
+    // A leading dot with no second dot still parses: ".5" is 0.5.
+    assert_eq!(math::q_atof(".5"), 0.5);
+}
+
 // spec BUILTIN-6.8: fabs clears the sign bit of a negative value (pins fabs against a 0.0
 // mutant: fabs(-3) is 3, not 0).
 #[test]
