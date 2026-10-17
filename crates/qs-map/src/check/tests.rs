@@ -183,6 +183,10 @@ fn faces() {
         check(&format!("{{\n{FACE} {name} 0 0 0 1 1\n}}\n}}\n")),
         [(5, DiagnosticKind::TextureNameTooLong)]
     );
+    // spec MAP-4.6: a name of exactly MAP_MAX_TEXTURE_NAME (15) is accepted; the warning is
+    // for names longer than the limit, so the boundary does not warn.
+    let name = "t".repeat(15);
+    assert!(check(&format!("{{\n{FACE} {name} 0 0 0 1 1\n}}\n}}\n")).is_empty());
     assert_eq!(
         check(&format!(
             "{{\n{FACE} w 0 0 0 1 1\n( 0 0 1 ) ( 0 1 1 ) ( 0 0 0 ) w 0 0 0 1 1\n}}\n}}\n"
@@ -202,6 +206,40 @@ fn texture_count() {
     }
     body.push_str("}\n}\n");
     assert_eq!(check(&body), [(0, DiagnosticKind::TooManyTextures)]);
+}
+
+// spec MAP-4.7: too many textures is also reported when qbsp's texinfo table overflows even
+// though the distinct-name count is small. 4097 parallel faces at distinct offsets share one
+// name but each is its own texinfo, so the faces-and-qbsp reason fires with a name count of 1.
+#[test]
+fn too_many_textures_by_texinfo_not_names() {
+    let mut body = "{\n".to_owned();
+    for z in 1..=4097 {
+        // Parallel planes at distinct z are distinct, not duplicates; a distinct shift makes
+        // each face its own texinfo while all share the name "shared".
+        body.push_str(&format!(
+            "( 0 0 {z} ) ( 1 0 {z} ) ( 0 1 {z} ) shared {z} 0 0 1 1\n"
+        ));
+    }
+    body.push_str("}\n}\n");
+    assert!(check(&body).contains(&(0, DiagnosticKind::TooManyTextures)));
+}
+
+// spec MAP-4.7: 4097 identical faces have one qbsp texinfo, so qbsp does not overflow and no
+// TooManyTextures is reported even though the face count passes 4096. This separates the
+// faces-count test from qbsp actually overflowing (the two must both hold).
+#[test]
+fn many_duplicate_faces_do_not_overflow() {
+    let mut body = "{\n".to_owned();
+    for _ in 0..4097 {
+        body.push_str(&format!("{FACE} shared 0 0 0 1 1\n"));
+    }
+    body.push_str("}\n}\n");
+    assert!(
+        !check(&body)
+            .iter()
+            .any(|(_, kind)| *kind == DiagnosticKind::TooManyTextures)
+    );
 }
 
 // spec MAP-6.3, MAP-6.5, MAP-6.6: the world's WAD, message and CD track.
