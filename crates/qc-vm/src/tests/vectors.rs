@@ -56,6 +56,10 @@ impl Builtins for StubBuiltins {
         context.machine().set_global_test(2, parm0);
         Ok(())
     }
+
+    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+        None
+    }
 }
 
 /// A parsed vector.
