@@ -1,0 +1,55 @@
+# Recorded run of `cargo xtask fteqcc-full-coverage` over the three FTEQCC corpus mods
+# (nuclide, freecs, freehl in corpus/manifest.toml), on 2026-10-17.
+# Paths are shown relative to each corpus mod root. Regenerate with:
+#   cargo xtask corpus fetch nuclide freecs freehl
+#   cargo xtask fteqcc-full-coverage <cache>/codebase/nuclide <cache>/codebase/freecs <cache>/codebase/freehl
+#
+# This counts only the full-dialect constructs beyond the rerelease subset
+# (docs/spec/dialect-fteqcc.md, FTEF-*). The subset's own constructs (for, switch, ++, %,
+# ?:, const, var, nosave, bare enum, inferred-size arrays, typedef struct, #pragma warning)
+# also appear in these mods and are counted by cargo xtask fteqcc-coverage against
+# docs/spec/dialect-fteqcc-rerelease.md (FTE-*), not here.
+
+fteqcc-full-coverage: nuclide: 618 files, 11 full-dialect classes
+  int/bool/double type       445  FTEF-2
+  typed/hex literal          350  FTEF-3
+  pointer (-> & *)            42  FTEF-4
+  sized array                202  FTEF-5
+  struct/union                35  FTEF-6
+  typedef                     81  FTEF-7
+  enumflags                  109  FTEF-8
+  class/virtual              322  FTEF-9
+  accessor/get/set             1  FTEF-10
+  __variant                   24  FTEF-11
+  #pragma (beyond warning)    10  FTEF-12
+fteqcc-full-coverage: freecs: 59 files, 8 full-dialect classes
+  int/bool/double type        34  FTEF-2
+  typed/hex literal           21  FTEF-3
+  pointer (-> & *)             5  FTEF-4
+  sized array                 15  FTEF-5
+  struct/union                 3  FTEF-6
+  typedef                      5  FTEF-7
+  enumflags                    1  FTEF-8
+  class/virtual               19  FTEF-9
+fteqcc-full-coverage: freehl: 50 files, 8 full-dialect classes
+  int/bool/double type        31  FTEF-2
+  typed/hex literal           21  FTEF-3
+  pointer (-> & *)             9  FTEF-4
+  sized array                 16  FTEF-5
+  struct/union                 4  FTEF-6
+  typedef                      2  FTEF-7
+  enumflags                    1  FTEF-8
+  class/virtual               14  FTEF-9
+fteqcc-full-coverage: total files with each class, by class:
+  int/bool/double type       510  FTEF-2 (in spec)
+  typed/hex literal          392  FTEF-3 (in spec)
+  pointer (-> & *)            56  FTEF-4 (in spec)
+  sized array                233  FTEF-5 (in spec)
+  struct/union                42  FTEF-6 (in spec)
+  typedef                     88  FTEF-7 (in spec)
+  enumflags                  111  FTEF-8 (in spec)
+  class/virtual              355  FTEF-9 (in spec)
+  accessor/get/set             1  FTEF-10 (in spec)
+  __variant                   24  FTEF-11 (in spec)
+  #pragma (beyond warning)    10  FTEF-12 (in spec)
+fteqcc-full-coverage: every construct is in the spec
