@@ -122,6 +122,7 @@ qc-lno = { path = "crates/qc-lno" }
 qc-preproc = { path = "crates/qc-preproc" }
 qc-progs = { path = "crates/qc-progs" }
 qc-project = { path = "crates/qc-project" }
+qc-sema = { path = "crates/qc-sema" }
 qc-syntax = { path = "crates/qc-syntax" }
 qc-trace = { path = "crates/qc-trace" }
 qc-types = { path = "crates/qc-types" }

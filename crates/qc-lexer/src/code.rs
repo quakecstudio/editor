@@ -51,12 +51,20 @@ pub enum Code {
     E0203,
     /// "expected X, found Y" (QCD-3.4).
     E0204,
+    /// "Type mismatch on redeclaration of NAME" (QCD-3.5).
+    E0205,
+    /// "NAME redeclared" (QCD-3.6).
+    E0206,
     /// "Fields and functions must be global" (QCD-3.8).
     E0208,
     /// "Bad builtin immediate" (QCD-3.9).
     E0209,
     /// "state frame must be a number" (QCD-3.10).
     E0210,
+    /// "function NAME was not defined" (QCD-3.11).
+    E0211,
+    /// "Unknown value \"NAME\"" (QCD-4.1).
+    E0301,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -89,13 +97,15 @@ pub enum Code {
     W0101,
     /// "macro NAME redefined" (QCD-7.2).
     W0102,
+    /// "local NAME is the global NAME" (QCD-7.3).
+    W0201,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 46] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -117,9 +127,13 @@ impl Code {
         Self::E0202,
         Self::E0203,
         Self::E0204,
+        Self::E0205,
+        Self::E0206,
         Self::E0208,
         Self::E0209,
         Self::E0210,
+        Self::E0211,
+        Self::E0301,
         Self::E0501,
         Self::E0502,
         Self::E0503,
@@ -136,6 +150,7 @@ impl Code {
         Self::E0408,
         Self::W0101,
         Self::W0102,
+        Self::W0201,
         Self::W0402,
     ];
 
@@ -164,9 +179,13 @@ impl Code {
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
             Self::E0204 => "E0204",
+            Self::E0205 => "E0205",
+            Self::E0206 => "E0206",
             Self::E0208 => "E0208",
             Self::E0209 => "E0209",
             Self::E0210 => "E0210",
+            Self::E0211 => "E0211",
+            Self::E0301 => "E0301",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
             Self::E0503 => "E0503",
@@ -183,6 +202,7 @@ impl Code {
             Self::E0408 => "E0408",
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
+            Self::W0201 => "W0201",
             Self::W0402 => "W0402",
         }
     }
@@ -191,7 +211,7 @@ impl Code {
     #[must_use]
     pub const fn is_error(self) -> bool {
         match self {
-            Self::W0101 | Self::W0102 | Self::W0402 => false,
+            Self::W0101 | Self::W0102 | Self::W0201 | Self::W0402 => false,
             Self::E0101
             | Self::E0102
             | Self::E0103
@@ -213,9 +233,13 @@ impl Code {
             | Self::E0202
             | Self::E0203
             | Self::E0204
+            | Self::E0205
+            | Self::E0206
             | Self::E0208
             | Self::E0209
             | Self::E0210
+            | Self::E0211
+            | Self::E0301
             | Self::E0501
             | Self::E0502
             | Self::E0503

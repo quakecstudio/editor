@@ -404,6 +404,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-sema"
+version = "2026.10.0"
+dependencies = [
+ "qc-lexer",
+ "qc-project",
+ "qc-syntax",
+]
+
+[[package]]
 name = "qc-syntax"
 version = "2026.10.0"
 dependencies = [

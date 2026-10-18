@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The incremental QuakeC semantic model.
+//!
+//! This crate turns the lossless syntax trees of `qc-syntax` and the ordered file graph of
+//! `qc-project` into a resolved view of a QuakeC module: what each name means, its type,
+//! whether it is a field or a global, a prototype or a body, and where it is defined and
+//! used. It is the engine behind go-to-definition, find-references and the semantic
+//! diagnostics (GOAL-1, LANG-4).
+//!
+//! The model is *incremental* (the design doc, "Semantic model"): a [`Db`] holds each
+//! file's text as an input and memoizes the derived queries built on it, so a keystroke in
+//! one file re-parses and re-lowers only that file and re-resolves the module from the mix
+//! of fresh and cached per-file results. [`Db::counts`] exposes how many times each query
+//! actually ran, so an edit's effect on the query graph is observable.
+//!
+//! # Semantics
+//!
+//! Resolution follows id's `qcc` as `docs/spec/language.md` records it, not as other QuakeC
+//! tools describe it:
+//!
+//! - Two scopes, global and the function being defined; blocks open no scope (QC-12.1).
+//! - One definition list in declaration order; a name is the first global or current
+//!   function definition with that name (QC-12.2).
+//! - A local or parameter cannot shadow a global declared before it; it reuses the global
+//!   (QC-12.3).
+//! - Names resolve at their position in compilation order (QC-12.5, QC-23.3).
+//! - A name may be declared repeatedly and initialised once; a second type is a type
+//!   mismatch and a second initialiser is a redeclaration (QC-11.5).
+//! - Every global function must be defined (QC-11.8).
+//! - Fields and functions are global only (QC-11.9).
+//! - A state header's next-think name is declared as a global `void()` if new (QC-13.6).
+//!
+//! # Layer
+//!
+//! L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-lexer` (L0, for
+//! [`qc_lexer::Diagnostic`] and [`qc_lexer::Code`]).
+//!
+//! # Spec sections
+//!
+//! Implements the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes and
+//! lookup) and QC-13.6 (state-header names) of `docs/spec/language.md`, and reports QCD-3.5,
+//! QCD-3.6, QCD-3.11, QCD-4.1 and QCD-7.3 of `docs/spec/language-diagnostics.md`. Written
+//! from the spec, not ported.
+
+pub mod db;
+pub mod lower;
+pub mod nav;
+pub mod resolve;
+pub mod symbol;
+pub mod ty;
+
+#[cfg(test)]
+mod tests;
+
+pub use db::{Db, QueryCounts};
+pub use lower::{FileDecls, RawBody, RawDecl, RawLocal, RawParam, RawUse};
+pub use resolve::{ModuleIndex, resolve_module};
+pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
+pub use ty::{FunctionType, SimpleType, Type};
