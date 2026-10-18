@@ -16,6 +16,13 @@ graph is observable (and is what the incremental tests assert). The engine is wr
 with no dependency on the `salsa` crate: it is small, and the project builds its foundations
 itself.
 
+`Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.2). Under an
+FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
+names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
+globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and member
+access (vector members, `.length`, struct fields; FTE-9, FTE-13, FTE-14) is not a global
+field use, so the rerelease resolves with no spurious "unknown value".
+
 Resolution follows id's `qcc` as [`docs/spec/language.md`](../../docs/spec/language.md)
 records it, not as other QuakeC tools describe it: two scopes, global and the function being
 defined (QC-12.1); one definition list in declaration order, a name being the first global or

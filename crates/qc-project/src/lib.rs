@@ -55,6 +55,19 @@ pub enum Dialect {
     Gmqcc,
 }
 
+impl From<Dialect> for qc_lexer::Dialect {
+    /// The lexer and parser dialect this project dialect selects. The names match one for
+    /// one; the two types are separate only so this crate can deserialise it from a project
+    /// file without the lexer depending on `serde`.
+    fn from(dialect: Dialect) -> Self {
+        match dialect {
+            Dialect::Vanilla => Self::Vanilla,
+            Dialect::Fteqcc => Self::Fteqcc,
+            Dialect::Gmqcc => Self::Gmqcc,
+        }
+    }
+}
+
 /// The engine a module is built for (PRJ-2.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]

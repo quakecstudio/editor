@@ -71,6 +71,8 @@ struct Memo<T> {
 pub struct Db {
     /// The current clock. Bumped each time an input changes.
     clock: Revision,
+    /// The dialect every file is parsed in (PRJ-2.2). Vanilla by default.
+    dialect: qc_syntax::Dialect,
     /// The input files, by id.
     files: HashMap<FileId, InputFile>,
     /// Memoized per-file parses.
@@ -88,6 +90,30 @@ impl Db {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The dialect files are parsed in.
+    #[must_use]
+    pub fn dialect(&self) -> qc_syntax::Dialect {
+        self.dialect
+    }
+
+    /// Sets the dialect every file is parsed in (PRJ-2.2), selecting the vanilla or an FTEQCC
+    /// profile. Changing it invalidates every cached parse, lowering and module index, since
+    /// they depend on the dialect; set it once before adding files in the common case.
+    pub fn set_dialect(&mut self, dialect: qc_syntax::Dialect) {
+        if self.dialect == dialect {
+            return;
+        }
+        self.dialect = dialect;
+        self.clock.0 = self.clock.0.saturating_add(1);
+        self.parses.clear();
+        self.lowerings.clear();
+        self.module = None;
+        // Stamp every file with the new revision so dependent queries recompute.
+        for file in self.files.values_mut() {
+            file.revision = self.clock;
+        }
     }
 
     /// The query-run counters so far.
@@ -154,7 +180,7 @@ impl Db {
             return memo.value.clone();
         }
         self.bump_parse();
-        let value = qc_syntax::parse(self.file_text(file));
+        let value = qc_syntax::parse_with(self.file_text(file), self.dialect);
         self.parses.insert(
             file,
             Memo {
@@ -177,7 +203,7 @@ impl Db {
         }
         let parse = self.parse(file);
         self.bump_lower();
-        let value = lower_file(&parse);
+        let value = lower_file(&parse, self.dialect);
         self.lowerings.insert(
             file,
             Memo {

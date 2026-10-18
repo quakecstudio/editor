@@ -158,6 +158,24 @@ fn every_dialect_and_target() {
     }
 }
 
+// spec PRJ-2.2: a module's dialect selects the lexer and parser dialect one for one, so the
+// parser and semantic model build it in the right profile (LANG-5, COMP-3).
+#[test]
+fn dialect_selects_the_lexer_dialect() {
+    assert_eq!(
+        qc_lexer::Dialect::from(Dialect::Vanilla),
+        qc_lexer::Dialect::Vanilla
+    );
+    assert_eq!(
+        qc_lexer::Dialect::from(Dialect::Fteqcc),
+        qc_lexer::Dialect::Fteqcc
+    );
+    assert_eq!(
+        qc_lexer::Dialect::from(Dialect::Gmqcc),
+        qc_lexer::Dialect::Gmqcc
+    );
+}
+
 // spec PRJ-2.1: an unknown key, a wrong type, a value outside its list or invalid TOML is an error
 #[test]
 fn invalid_manifests() {
