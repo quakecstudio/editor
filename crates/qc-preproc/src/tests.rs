@@ -11,9 +11,11 @@ use std::path::Path;
 
 use proptest::prelude::*;
 
+use qc_lexer::lex;
+
 use super::{
     Code, FileOutput, FileSpan, LIMIT_QCC_MAX_FRAMES, MemoryLoader, PpToken, Preprocessor,
-    SourceMap, TokenKind, lex,
+    SourceMap, TokenKind,
 };
 
 /// A project: its files, and the ones compiled, in order. By default one file, `a.qc`,
@@ -53,6 +55,15 @@ fn one(text: &str) -> (Preprocessor<MemoryLoader>, FileOutput) {
         ..ProjectSpec::default()
     });
     (pp, outputs.remove(0))
+}
+
+/// Preprocesses `a.qc` under the FTEQCC dialect.
+fn one_fte(text: &str) -> (Preprocessor<MemoryLoader>, FileOutput) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    (pp, out)
 }
 
 fn token_text(kind: &TokenKind) -> String {
@@ -381,6 +392,28 @@ fn unknown_directive() {
         diagnostics(&pp, &out),
         "E0108 unknown directive #pragma @a.qc:1\n"
     );
+}
+
+// spec FTE-16.1: `#pragma name args` is a compiler directive in an FTEQCC dialect, including
+// the rerelease's `#pragma warning disable/enable F317`.
+// spec FTE-16.3: a `#pragma` produces no tokens and no progs output.
+#[test]
+fn fteqcc_pragma_is_accepted_and_produces_no_tokens() {
+    let (_pp, out) = one_fte("#pragma warning disable F317\nx\n#pragma warning enable F317\ny");
+    assert_eq!(tokens(&out), "x y");
+    assert!(out.diagnostics.is_empty());
+    // An unrecognised pragma is still accepted and ignored (FTE-16.2), not an error.
+    let (_pp, out) = one_fte("#pragma target fte\nx");
+    assert_eq!(tokens(&out), "x");
+    assert!(out.diagnostics.is_empty());
+}
+
+// spec FTE-16.1: the vanilla dialect still rejects `#pragma` as an unknown directive
+// (QC-9.9), so the two profiles differ.
+#[test]
+fn vanilla_pragma_is_still_an_unknown_directive() {
+    let (_pp, out) = one("#pragma warning disable F317\nx");
+    assert_eq!(codes(&out), vec![Code::E0108]);
 }
 
 // spec QC-9.9, QCD-8.6, QCD-8.7, QCD-8.8: malformed operands are errors; extra tokens are ignored

@@ -24,7 +24,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
-use qc_lexer::{Code, Punct, Span, Token, TokenKind, lex};
+use qc_lexer::{Code, Dialect, Punct, Span, Token, TokenKind, lex_with};
 
 /// Most frames one source file may define.
 ///
@@ -173,6 +173,7 @@ impl Run {
 #[derive(Debug)]
 pub struct Preprocessor<L> {
     loader: L,
+    dialect: Dialect,
     sources: SourceMap,
     macros: HashMap<String, Rc<Macro>>,
     expansions: Vec<Expansion>,
@@ -207,10 +208,20 @@ impl<L: Loader> Preprocessor<L> {
     pub fn new(loader: L) -> Self {
         Self {
             loader,
+            dialect: Dialect::Vanilla,
             sources: SourceMap::default(),
             macros: HashMap::new(),
             expansions: Vec::new(),
         }
+    }
+
+    /// Sets the dialect this preprocessor accepts (PRJ-2.2). In an FTEQCC dialect the
+    /// FTEQCC `#pragma` directive (FTE-16) is accepted rather than reported as an unknown
+    /// directive (QC-9.9). Vanilla is the default.
+    #[must_use]
+    pub fn with_dialect(mut self, dialect: Dialect) -> Self {
+        self.dialect = dialect;
+        self
     }
 
     /// Every file read so far.
@@ -276,7 +287,7 @@ impl<L: Loader> Preprocessor<L> {
             .sources
             .file(file)
             .map_or(&[][..], |f| f.text.as_slice());
-        let lexed = lex(text);
+        let lexed = lex_with(text, self.dialect);
         Cursor {
             file,
             path,
@@ -465,6 +476,11 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             "include" => self.include(run, line, whole),
+            // FTEQCC `#pragma` (FTE-16): a compiler directive that produces no tokens and no
+            // progs output (FTE-16.3). In an FTEQCC dialect it is accepted and ignored,
+            // including the rerelease's `#pragma warning disable/enable F317` (FTE-16.1); in
+            // the vanilla dialect it stays an unknown directive (QC-9.9).
+            "pragma" if self.dialect.has_fteqcc_extensions() => {}
             _ => run.report(Code::E0108, format!("unknown directive #{name}"), at(whole)),
         }
         let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == file) else {

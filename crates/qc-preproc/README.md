@@ -9,7 +9,10 @@ the place in the compiled file.
 
 id's `qcc` has no preprocessor. The directives are this project's own definition, named after
 FTEQCC's; for vanilla code, where no line starts with `#` and a name, the only change is frame
-macro resolution. FTEQCC's pragmas come with the dialect profiles (P2-03).
+macro resolution. `Preprocessor::with_dialect` selects the dialect: in an FTEQCC dialect the
+FTEQCC `#pragma` directive is accepted and produces no tokens (`dialect-fteqcc-rerelease.md`,
+FTE-16), including the rerelease's `#pragma warning disable/enable`; in the vanilla dialect it
+stays an unknown directive (QC-9.9).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); the
