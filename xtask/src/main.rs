@@ -56,6 +56,11 @@
 //!   rejects, grouped into the classes of
 //!   `docs/spec/dialect-fteqcc-rerelease.md` (P2-01); it fails on a rejected
 //!   construct no class names.
+//! - `fteqcc-full-coverage`: scans every `.qc`, `.qh` and `.h` file under the
+//!   FTEQCC corpus mod directories (nuclide, freecs, freehl) for the full
+//!   FTEQCC dialect constructs beyond the rerelease subset, grouped into the
+//!   classes of `docs/spec/dialect-fteqcc.md` (P2-25); it fails on a class no
+//!   section names.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -78,6 +83,7 @@ mod download;
 mod exec;
 mod fixtures;
 mod fteqcc_coverage;
+mod fteqcc_full_coverage;
 mod fuzz;
 mod layers;
 mod lex_corpus;
@@ -98,7 +104,7 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | differential | \
-                     fteqcc-coverage>";
+                     fteqcc-coverage | fteqcc-full-coverage>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -156,6 +162,7 @@ fn command(name: &str) -> Option<Command> {
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
         "fteqcc-coverage" => Some(fteqcc_coverage::main),
+        "fteqcc-full-coverage" => Some(fteqcc_full_coverage::main),
         "fuzz" => Some(fuzz::main),
         "lex-corpus" => Some(lex_corpus::main),
         "map-corpus" => Some(map_corpus::main),
@@ -255,6 +262,7 @@ mod tests {
             "corpus",
             "differential",
             "fteqcc-coverage",
+            "fteqcc-full-coverage",
             "fuzz",
             "lex-corpus",
             "map-corpus",
