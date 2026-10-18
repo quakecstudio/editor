@@ -7,7 +7,7 @@
 //! name in a value position that resolves to a definition. Both carry a [`Location`] so the
 //! editor can jump to them (go-to-definition and find-references, GOAL-1).
 
-use qc_lexer::Span;
+use qc_diag::Span;
 
 use crate::ty::Type;
 

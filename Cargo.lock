@@ -353,6 +353,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-diag"
+version = "2026.10.0"
+
+[[package]]
 name = "qc-edict"
 version = "2026.10.0"
 dependencies = [
@@ -366,6 +370,7 @@ name = "qc-lexer"
 version = "2026.10.0"
 dependencies = [
  "proptest",
+ "qc-diag",
 ]
 
 [[package]]
@@ -407,7 +412,7 @@ dependencies = [
 name = "qc-sema"
 version = "2026.10.0"
 dependencies = [
- "qc-lexer",
+ "qc-diag",
  "qc-project",
  "qc-syntax",
 ]
@@ -530,8 +535,11 @@ name = "qs-tests"
 version = "2026.10.0"
 dependencies = [
  "qc-builtins",
+ "qc-diag",
  "qc-edict",
  "qc-progs",
+ "qc-sema",
+ "qc-syntax",
  "qc-types",
  "qc-vm",
  "qs-bsp",

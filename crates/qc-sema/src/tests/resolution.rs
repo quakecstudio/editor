@@ -2,7 +2,7 @@
 
 //! Resolution and diagnostics tests (QC-11, QC-12, QC-13.6; QCD-3, QCD-4.1, QCD-7.3).
 
-use qc_lexer::Code;
+use qc_diag::Code;
 
 use super::{index_of, module_index_of};
 use crate::symbol::{DefId, DefKind};

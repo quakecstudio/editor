@@ -33,8 +33,8 @@
 //!
 //! # Layer
 //!
-//! L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-lexer` (L0, for
-//! [`qc_lexer::Diagnostic`] and [`qc_lexer::Code`]).
+//! L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-diag` (L0, for the
+//! one [`qc_diag::Diagnostic`], its [`qc_diag::Code`] and [`qc_diag::Span`]).
 //!
 //! # Spec sections
 //!

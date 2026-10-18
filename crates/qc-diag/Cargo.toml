@@ -1,0 +1,12 @@
+[package]
+name = "qc-diag"
+description = "The one QuakeC diagnostic type: a code from docs/spec/language-diagnostics.md, a message and a byte span, shared by the editor, LSP, CLI and compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

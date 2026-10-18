@@ -4,7 +4,9 @@ The vanilla QuakeC lexer. It splits one source file into tokens with byte spans,
 `qcc` splits it: names (keywords are names, since none is reserved), float, vector and string
 literals, punctuation in id's order, and `$` commands (`$frame` lists and frame macro
 references). Every lexical error is a diagnostic with its code, and lexing always runs to the
-end of the file. It also has the diagnostic codes the preprocessor and the parser share, and a line index.
+end of the file. The diagnostic vocabulary itself, `Code`, `Diagnostic` and `Span`, lives in
+[`qc-diag`](../qc-diag/README.md) and is re-exported here, so code written against
+`qc_lexer::{Code, Diagnostic, Span}` keeps compiling. A line index is also provided.
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
@@ -13,12 +15,13 @@ them.
 - **Layer:** L2 syntax. It depends on no other crate; `qc-preproc` and `qc-syntax` build on
   it.
 - **Spec sections:** QC-2, QC-4, QC-5, QC-6 and QC-8 in
-  [`language.md`](../../docs/spec/language.md); the codes QCD-1, QCD-2 and QCD-6 of
+  [`language.md`](../../docs/spec/language.md); the codes QCD-2 and QCD-6 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The lexer implements
-  QC-2, QC-4, QC-5, QC-6, QC-8, QCD-1 and QCD-2 in full; QCD-6 is the error-code enum this
-  crate defines for the lexer, preprocessor and parser to share, and every one of its codes is
-  cited by a test. A readiness run attributes only these sections to the crate, and every
-  active statement of each is cited here or in a crate that builds on it.
+  QC-2, QC-4, QC-5, QC-6, QC-8 and QCD-2 in full; QCD-6 holds the lexer's own divergence
+  codes, and every one of them is cited by a test. The code format and the diagnostic shape
+  (QCD-1) and the `Code`, `Diagnostic` and `Span` types live in
+  [`qc-diag`](../qc-diag/README.md). A readiness run attributes only these sections to the
+  crate, and every active statement of each is cited here or in a crate that builds on it.
 - **Also cited here, in sections a higher layer completes:** the lexical statements QC-1.1 to
   QC-1.4 (line index), QC-3.1 and QC-3.5 (names and keywords), QC-7.1, QC-7.2 and QC-7.4
   (punctuation), the lexer's own divergences QC-27.1, QC-27.2, QC-27.4, QC-27.5, QC-27.6 and

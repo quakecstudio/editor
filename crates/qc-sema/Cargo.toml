@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-qc-lexer = { workspace = true }
+qc-diag = { workspace = true }
 qc-project = { workspace = true }
 qc-syntax = { workspace = true }
 
