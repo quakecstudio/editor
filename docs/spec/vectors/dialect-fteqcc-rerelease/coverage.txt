@@ -1,0 +1,79 @@
+# Recorded run of `cargo xtask fteqcc-coverage` over the six rerelease codebases
+# (id-Software/quake-rerelease-qc@634eefab09a77eb7b5f5ca7078ba3d8784a91142), on 2026-10-17.
+# Paths are shown relative to each codebase root. Regenerate with:
+#   cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 rerelease-ctf rerelease-mg3
+#   cargo xtask fteqcc-coverage <cache>/codebase/rerelease <cache>/codebase/rerelease-hipnotic ...
+
+fteqcc-coverage: rerelease: 33 files, 10 non-vanilla constructs in 6 classes
+  switch                     1  FTE-3
+  case/default               1  FTE-3
+  break/continue             1  FTE-4
+  compound assignment        3  FTE-6
+  ?: operator                2  FTE-8
+  array                      2  FTE-13
+fteqcc-coverage: rerelease-hipnotic: 62 files, 6 non-vanilla constructs in 4 classes
+  compound assignment        1  FTE-6
+  ?: operator                2  FTE-8
+  array                      2  FTE-13
+  enum                       1  FTE-15
+fteqcc-coverage: rerelease-rogue: 62 files, 6 non-vanilla constructs in 5 classes
+  compound assignment        1  FTE-6
+  ?: operator                1  FTE-8
+  var                        1  FTE-11
+  array                      2  FTE-13
+  enum                       1  FTE-15
+fteqcc-coverage: rerelease-mg1: 47 files, 64 non-vanilla constructs in 15 classes
+  for loop                   1  FTE-2
+  switch                     3  FTE-3
+  case/default               3  FTE-3
+  break/continue             3  FTE-4
+  ++/--                      9  FTE-5
+  compound assignment       14  FTE-6
+  % operator                 1  FTE-7
+  ?: operator                7  FTE-8
+  const                     15  FTE-10
+  var                        1  FTE-11
+  nosave                     1  FTE-12
+  array                      2  FTE-13
+  typedef/struct             1  FTE-14
+  enum                       2  FTE-15
+  #pragma                    1  FTE-16
+fteqcc-coverage: rerelease-ctf: 22 files, 10 non-vanilla constructs in 5 classes
+  switch                     1  FTE-3
+  case/default               1  FTE-3
+  compound assignment        5  FTE-6
+  ?: operator                2  FTE-8
+  array                      1  FTE-13
+fteqcc-coverage: rerelease-mg3: 65 files, 113 non-vanilla constructs in 15 classes
+  for loop                   2  FTE-2
+  switch                     6  FTE-3
+  case/default               6  FTE-3
+  break/continue             6  FTE-4
+  ++/--                     24  FTE-5
+  compound assignment       30  FTE-6
+  % operator                 3  FTE-7
+  ?: operator               10  FTE-8
+  const                     17  FTE-10
+  var                        1  FTE-11
+  nosave                     1  FTE-12
+  array                      2  FTE-13
+  typedef/struct             1  FTE-14
+  enum                       3  FTE-15
+  #pragma                    1  FTE-16
+fteqcc-coverage: total non-vanilla constructs by class:
+  for loop                   3  FTE-2 (in spec)
+  switch                    11  FTE-3 (in spec)
+  case/default              11  FTE-3 (in spec)
+  break/continue            10  FTE-4 (in spec)
+  ++/--                     33  FTE-5 (in spec)
+  compound assignment       54  FTE-6 (in spec)
+  % operator                 4  FTE-7 (in spec)
+  ?: operator               24  FTE-8 (in spec)
+  const                     32  FTE-10 (in spec)
+  var                        3  FTE-11 (in spec)
+  nosave                     2  FTE-12 (in spec)
+  array                     11  FTE-13 (in spec)
+  typedef/struct             2  FTE-14 (in spec)
+  enum                       7  FTE-15 (in spec)
+  #pragma                    2  FTE-16 (in spec)
+fteqcc-coverage: every construct is in the spec
