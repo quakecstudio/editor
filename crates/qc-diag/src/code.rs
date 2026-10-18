@@ -97,6 +97,8 @@ pub enum Code {
     E0508,
     /// "nesting too deep" (QCD-6.9).
     E0509,
+    /// "NAME is an FTEQCC extension, not in vanilla QuakeC" (QCD-6.10).
+    E0510,
     /// "No destination filename.  qcc -help for info." (QCD-5.1).
     E0401,
     /// "Error opening PATH: REASON" (QCD-5.2).
@@ -119,7 +121,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 47] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -157,6 +159,7 @@ impl Code {
         Self::E0507,
         Self::E0508,
         Self::E0509,
+        Self::E0510,
         Self::E0401,
         Self::E0402,
         Self::E0406,
@@ -209,6 +212,7 @@ impl Code {
             Self::E0507 => "E0507",
             Self::E0508 => "E0508",
             Self::E0509 => "E0509",
+            Self::E0510 => "E0510",
             Self::E0401 => "E0401",
             Self::E0402 => "E0402",
             Self::E0406 => "E0406",
@@ -263,6 +267,7 @@ impl Code {
             | Self::E0507
             | Self::E0508
             | Self::E0509
+            | Self::E0510
             | Self::E0401
             | Self::E0402
             | Self::E0406
