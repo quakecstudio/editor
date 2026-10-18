@@ -45,6 +45,10 @@ impl Builtins for NestedRunBuiltin {
         }
         Ok(())
     }
+
+    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+        None
+    }
 }
 
 // spec LIMIT-4.2: statements run by a nested PR_ExecuteProgram count against the nested call's

@@ -56,13 +56,12 @@ pub trait Builtins {
     /// its text, so a comparison of an engine-made string reads its bytes instead of failing.
     /// The value is represented in a range that cannot be a string-table offset (EDICT-13.3).
     ///
-    /// The default is `None`: a dispatch with no engine makes no engine strings, so every
-    /// string value outside the table is the VM-19.4 runtime error (VM-7.3). A dispatch that
-    /// allocates engine strings overrides this to return the text it holds for `value`.
-    fn engine_string(&self, value: i32) -> Option<&[u8]> {
-        let _ = value;
-        None
-    }
+    /// This is a required method so every dispatch decides it deliberately: one that makes no
+    /// engine strings returns `None` for every value, which makes any string value outside the
+    /// table the VM-19.4 runtime error (VM-7.3); one that allocates engine strings returns the
+    /// text it holds for `value`. There is no default, so a dispatch that owns engine strings
+    /// cannot silently fall back to `None` and fail every comparison of one at run time.
+    fn engine_string(&self, value: i32) -> Option<&[u8]>;
 }
 
 /// A [`Builtins`] that has no builtins: every call fails as `Bad builtin call number` would be
@@ -76,6 +75,11 @@ impl Builtins for NoBuiltins {
             statement: "VM-14.4",
             detail: format!("no builtin {number} is registered"),
         }))
+    }
+
+    /// `NoBuiltins` has no engine, so it makes no engine strings and resolves none (EDICT-13.1).
+    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+        None
     }
 }
 
