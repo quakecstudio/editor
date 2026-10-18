@@ -36,6 +36,37 @@ pub const QC_MAX_TOKEN: usize = 2048;
 /// `QC_MAX_FRAME_NAME` in QC-8, from `pr_framemacros[MAX_FRAMES][16]` in `qcc/pr_lex.c`.
 pub const QC_MAX_FRAME_NAME: usize = 15;
 
+/// The QuakeC dialect the lexer and parser accept.
+///
+/// [`Dialect::Vanilla`] is id's QuakeC as `docs/spec/language.md` records it; the lexer's
+/// output for it is byte for byte what [`lex`] produces. [`Dialect::Fteqcc`] adds the
+/// FTEQCC subset the Quake rerelease uses (`docs/spec/dialect-fteqcc-rerelease.md`,
+/// FTE-5 to FTE-8 at the lexical level). [`Dialect::Gmqcc`] is GMQCC's QuakeC, which comes
+/// later (COMP-3); at the lexical level it is treated as [`Dialect::Fteqcc`] for now.
+///
+/// This mirrors `qc_project::Dialect`, which deserialises it from a project file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Dialect {
+    /// id's QuakeC, as id's `qcc` accepts it.
+    #[default]
+    Vanilla,
+    /// FTEQCC's QuakeC (the rerelease subset in the MVP).
+    Fteqcc,
+    /// GMQCC's QuakeC.
+    Gmqcc,
+}
+
+impl Dialect {
+    /// Whether this dialect lexes and parses the FTEQCC extensions (FTE-1 to FTE-16).
+    ///
+    /// Vanilla does not; every other dialect does, since GMQCC is a superset of the FTEQCC
+    /// subset the rerelease uses (COMP-3).
+    #[must_use]
+    pub const fn has_fteqcc_extensions(self) -> bool {
+        matches!(self, Self::Fteqcc | Self::Gmqcc)
+    }
+}
+
 /// A punctuation token, in the order the lexer tries them (QC-7.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Punct {
@@ -93,10 +124,29 @@ pub enum Punct {
     And,
     /// `|`
     Or,
+    /// `++` (FTEQCC, FTE-5).
+    PlusPlus,
+    /// `--` (FTEQCC, FTE-5).
+    MinusMinus,
+    /// `+=` (FTEQCC, FTE-6).
+    PlusEq,
+    /// `-=` (FTEQCC, FTE-6).
+    MinusEq,
+    /// `*=` (FTEQCC, FTE-6).
+    StarEq,
+    /// `/=` (FTEQCC, FTE-6).
+    SlashEq,
+    /// `%` (FTEQCC, FTE-7).
+    Percent,
+    /// `?` (FTEQCC, FTE-8).
+    Question,
+    /// `:` (FTEQCC, FTE-8).
+    Colon,
 }
 
 impl Punct {
-    /// Every punctuation token in the order the lexer tries them, id's `pr_punctuation`.
+    /// Every vanilla punctuation token in the order the lexer tries them, id's
+    /// `pr_punctuation`.
     ///
     /// Implements QC-7.1: the first entry that matches the input wins.
     pub const ALL: [Self; 27] = [
@@ -127,6 +177,24 @@ impl Punct {
         Self::Hash,
         Self::And,
         Self::Or,
+    ];
+
+    /// The FTEQCC punctuation tokens (FTE-5 to FTE-8), tried before the vanilla tokens so
+    /// that the longer FTEQCC operators win the longest match (QC-7.1): `++`, `--`, `+=`,
+    /// `-=`, `*=` and `/=` before `+`, `-`, `*` and `/`. The entirely new `%`, `?` and `:`
+    /// bytes are vanilla "Unknown punctuation" (QC-7.2), so their order is immaterial. These
+    /// are not ported from FTEQCC; they are this project's rules for the FTEQCC subset the
+    /// rerelease uses (`docs/spec/dialect-fteqcc-rerelease.md`).
+    pub const FTEQCC: [Self; 9] = [
+        Self::PlusPlus,
+        Self::MinusMinus,
+        Self::PlusEq,
+        Self::MinusEq,
+        Self::StarEq,
+        Self::SlashEq,
+        Self::Percent,
+        Self::Question,
+        Self::Colon,
     ];
 
     /// The token's text.
@@ -160,6 +228,15 @@ impl Punct {
             Self::Hash => "#",
             Self::And => "&",
             Self::Or => "|",
+            Self::PlusPlus => "++",
+            Self::MinusMinus => "--",
+            Self::PlusEq => "+=",
+            Self::MinusEq => "-=",
+            Self::StarEq => "*=",
+            Self::SlashEq => "/=",
+            Self::Percent => "%",
+            Self::Question => "?",
+            Self::Colon => ":",
         }
     }
 }
@@ -213,13 +290,25 @@ pub struct Lexed {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// Splits `source` into tokens.
+/// Splits `source` into tokens, in the vanilla dialect.
 ///
 /// Implements QC-1, QC-2, QC-3.1, QC-4, QC-5, QC-6, QC-7 and the lexical part of QC-8, with
 /// the divergences QC-27.2, QC-27.4, QC-27.5, QC-27.6 and QC-27.14. Never fails: an error is
-/// reported and lexing carries on after it.
+/// reported and lexing carries on after it. Equivalent to
+/// [`lex_with`]`(source, Dialect::Vanilla)`.
 #[must_use]
 pub fn lex(source: &[u8]) -> Lexed {
+    lex_with(source, Dialect::Vanilla)
+}
+
+/// Splits `source` into tokens in `dialect`.
+///
+/// With [`Dialect::Vanilla`] the output is byte for byte what [`lex`] produces. A dialect
+/// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
+/// punctuation `++`, `--`, `+=`, `-=`, `*=`, `/=`, `%`, `?` and `:`
+/// (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to FTE-8); every other rule is the same.
+#[must_use]
+pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     let text = source
         .iter()
         .position(|&b| b == 0)
@@ -228,6 +317,7 @@ pub fn lex(source: &[u8]) -> Lexed {
     let mut lexer = Lexer {
         text,
         pos: 0,
+        dialect,
         out: Lexed::default(),
     };
     lexer.run();
@@ -255,6 +345,7 @@ const IGNORED_COMMANDS: [&str; 6] = ["cd", "origin", "base", "flags", "scale", "
 struct Lexer<'a> {
     text: &'a [u8],
     pos: usize,
+    dialect: Dialect,
     out: Lexed,
 }
 
@@ -557,12 +648,26 @@ impl Lexer<'_> {
     }
 
     /// Punctuation (QC-7.1), or an unknown byte (QC-7.2), which is skipped.
+    ///
+    /// In an FTEQCC dialect the FTEQCC punctuators ([`Punct::FTEQCC`]) are tried before the
+    /// vanilla ones, so `++`, `+=` and the rest win the longest match over `+`, `-`, `*` and
+    /// `/` (FTE-5 to FTE-8).
     fn punctuation(&mut self) {
         let start = self.pos;
         let rest = self.text.get(start..).unwrap_or_default();
-        let found = Punct::ALL
-            .into_iter()
-            .find(|p| rest.starts_with(p.as_str().as_bytes()));
+        let fteqcc = self.dialect.has_fteqcc_extensions();
+        let found = fteqcc
+            .then(|| {
+                Punct::FTEQCC
+                    .into_iter()
+                    .find(|p| rest.starts_with(p.as_str().as_bytes()))
+            })
+            .flatten()
+            .or_else(|| {
+                Punct::ALL
+                    .into_iter()
+                    .find(|p| rest.starts_with(p.as_str().as_bytes()))
+            });
         if let Some(punct) = found {
             self.bump(punct.as_str().len());
             self.push(TokenKind::Punct(punct), start);

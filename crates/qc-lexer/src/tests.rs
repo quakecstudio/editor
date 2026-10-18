@@ -12,6 +12,16 @@ use std::fmt::Write as _;
 use proptest::prelude::*;
 
 use super::{Code, LineIndex, Punct, QC_MAX_TOKEN, Span, TokenKind, atof, lex};
+use super::{Dialect, lex_with};
+
+/// The token kinds a dialect lexer produces.
+fn kinds_in(source: &[u8], dialect: Dialect) -> Vec<TokenKind> {
+    lex_with(source, dialect)
+        .tokens
+        .into_iter()
+        .map(|t| t.kind)
+        .collect()
+}
 
 /// A snapshot of a lex: one line per token, then one per diagnostic.
 fn snapshot(source: &[u8]) -> String {
@@ -671,6 +681,104 @@ fn reviewer_punctuation_maximal_munch() {
         vec![punct(Punct::Ellipsis), punct(Punct::Dot)]
     );
     assert_eq!(kinds(b".."), vec![punct(Punct::Dot), punct(Punct::Dot)]);
+}
+
+// spec FTE-5.1: `++` and `--` lex as single FTEQCC punctuators in an FTEQCC dialect.
+// spec FTE-6.1: `+=`, `-=`, `*=` and `/=` lex as single compound-assignment punctuators.
+// spec FTE-7.1: `%` lexes as the modulo punctuator.
+// spec FTE-8.1: `?` and `:` lex as the ternary punctuators.
+#[test]
+fn fteqcc_punctuators_lex_in_fteqcc_dialect() {
+    assert_eq!(
+        kinds_in(b"i++", Dialect::Fteqcc),
+        vec![name("i"), punct(Punct::PlusPlus)]
+    );
+    assert_eq!(
+        kinds_in(b"i--", Dialect::Fteqcc),
+        vec![name("i"), punct(Punct::MinusMinus)]
+    );
+    assert_eq!(
+        kinds_in(b"x += y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::PlusEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x -= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::MinusEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x *= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::StarEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x /= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::SlashEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"a % b", Dialect::Fteqcc),
+        vec![name("a"), punct(Punct::Percent), name("b")]
+    );
+    assert_eq!(
+        kinds_in(b"a ? b : c", Dialect::Fteqcc),
+        vec![
+            name("a"),
+            punct(Punct::Question),
+            name("b"),
+            punct(Punct::Colon),
+            name("c"),
+        ]
+    );
+}
+
+// spec FTE-6.1: a compound FTEQCC operator wins the longest match over the vanilla operator
+// it extends, so `++=` is `++` then `=` and two separated `+` stay separate.
+#[test]
+fn fteqcc_punctuators_take_the_longest_match() {
+    assert_eq!(
+        kinds_in(b"++=", Dialect::Fteqcc),
+        vec![punct(Punct::PlusPlus), punct(Punct::Eq)]
+    );
+    assert_eq!(
+        kinds_in(b"+ +", Dialect::Fteqcc),
+        vec![punct(Punct::Plus), punct(Punct::Plus)]
+    );
+}
+
+// spec FTE-7.1: vanilla has no `%`, `?` or `:`: each is "Unknown punctuation" (QC-7.2), and
+// vanilla output is unchanged by the FTEQCC lexer additions (byte for byte).
+#[test]
+fn vanilla_lexing_is_unchanged_by_the_dialect_additions() {
+    // The FTEQCC bytes are vanilla "Unknown punctuation" and are skipped (QC-7.2).
+    assert_eq!(codes(b"a % b"), vec![Code::E0105]);
+    assert_eq!(codes(b"a ? b : c"), vec![Code::E0105, Code::E0105]);
+    // `i++` in vanilla is `i`, `+`, `+`: two separate Plus tokens, not one `++`.
+    assert_eq!(
+        kinds(b"i++"),
+        vec![name("i"), punct(Punct::Plus), punct(Punct::Plus)]
+    );
+    // `x += y` in vanilla is `x`, `+`, `=`, `y`.
+    assert_eq!(
+        kinds(b"x += y"),
+        vec![name("x"), punct(Punct::Plus), punct(Punct::Eq), name("y")]
+    );
+    // lex() and lex_with(.., Vanilla) agree.
+    assert_eq!(
+        kinds(b"i++ x+=y a%b?c:d"),
+        kinds_in(b"i++ x+=y a%b?c:d", Dialect::Vanilla)
+    );
+}
+
+// spec FTE-5.1: a negative-number token is still a single float, so `--`/`-=` lexing does
+// not change how `-1` lexes.
+#[test]
+fn negative_numbers_still_lex_as_floats_in_fteqcc() {
+    assert_eq!(
+        kinds_in(b"-1", Dialect::Fteqcc),
+        vec![TokenKind::Float(-1.0)]
+    );
+    assert_eq!(
+        kinds_in(b"x - 1", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::Minus), TokenKind::Float(1.0)]
+    );
 }
 
 proptest! {
