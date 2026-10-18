@@ -1,0 +1,17 @@
+[package]
+name = "qc-sema"
+description = "The incremental QuakeC semantic model: name resolution, types, and per-module symbol tables on salsa-style queries"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-lexer = { workspace = true }
+qc-project = { workspace = true }
+qc-syntax = { workspace = true }
+
+[lints]
+workspace = true
