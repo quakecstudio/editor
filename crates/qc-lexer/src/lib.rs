@@ -14,17 +14,16 @@
 //! against id's `qcc` and the tests here check them.
 
 mod atof;
-mod code;
 mod lines;
 
 #[cfg(test)]
 mod tests;
 
 pub use atof::atof;
-pub use code::Code;
 pub use lines::LineIndex;
-
-use std::ops::Range;
+// The diagnostic vocabulary lives in `qc-diag`; re-exported here so code written against
+// `qc_lexer::{Code, Diagnostic, Span}` keeps compiling.
+pub use qc_diag::{Code, Diagnostic, Severity, Span};
 
 /// Longest token `qcc` holds, including its terminating NUL.
 ///
@@ -36,35 +35,6 @@ pub const QC_MAX_TOKEN: usize = 2048;
 ///
 /// `QC_MAX_FRAME_NAME` in QC-8, from `pr_framemacros[MAX_FRAMES][16]` in `qcc/pr_lex.c`.
 pub const QC_MAX_FRAME_NAME: usize = 15;
-
-/// A byte range in one source file: `start` is the first byte, `end` one past the last.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Span {
-    /// Offset of the first byte.
-    pub start: usize,
-    /// Offset one past the last byte.
-    pub end: usize,
-}
-
-impl Span {
-    /// The span from `start` to `end`.
-    #[must_use]
-    pub const fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
-
-    /// The span as a range, for slicing the source with `get`.
-    #[must_use]
-    pub const fn range(self) -> Range<usize> {
-        self.start..self.end
-    }
-
-    /// Whether `other` lies entirely inside this span.
-    #[must_use]
-    pub const fn contains(self, other: Self) -> bool {
-        self.start <= other.start && other.end <= self.end
-    }
-}
 
 /// A punctuation token, in the order the lexer tries them (QC-7.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -232,17 +202,6 @@ pub struct Token {
     /// Whether only whitespace stands between the start of its line and the token, so a `#`
     /// token may start a directive (QC-9.1).
     pub line_start: bool,
-}
-
-/// A lexical error or warning.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Diagnostic {
-    /// Its code (QCD-1.1).
-    pub code: Code,
-    /// The message, with the names filled in.
-    pub message: String,
-    /// The primary span (QCD-1.3).
-    pub span: Span,
 }
 
 /// The tokens of one file and the diagnostics found while lexing it.

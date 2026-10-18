@@ -9,7 +9,7 @@
 //! order (QC-23.3). Keeping this query per file is what lets an edit to one file re-lower
 //! only that file (GOAL-1, the incremental model).
 
-use qc_lexer::Span;
+use qc_diag::Span;
 use qc_syntax::Parse;
 use qc_syntax::ast::{self, AstNode as _};
 

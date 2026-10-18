@@ -1,10 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Diagnostic codes raised by the lexer, the preprocessor, the parser and the project graph.
+//! Diagnostic codes and their severity.
+//!
+//! The codes of `docs/spec/language-diagnostics.md`, raised by the lexer, the preprocessor,
+//! the parser (`qc-syntax`), the project graph (`qc-project`), the semantic model (`qc-sema`)
+//! and the compiler.
+
+/// Whether a diagnostic is an error or a warning (QCD-1.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Severity {
+    /// An error: the code begins with `E`.
+    Error,
+    /// A warning: the code begins with `W`. A warning never changes the emitted progs
+    /// (QCD-7).
+    Warning,
+}
 
 /// A diagnostic code from `docs/spec/language-diagnostics.md` for an error or warning the
-/// lexer, the preprocessor, the parser (`qc-syntax`) or the project graph (`qc-project`)
-/// reports.
+/// lexer, the preprocessor, the parser (`qc-syntax`), the project graph (`qc-project`), the
+/// semantic model (`qc-sema`) or the compiler reports.
 ///
 /// Implements QCD-1.1: a code is `E` or `W` and four digits, the first two its group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -254,6 +268,17 @@ impl Code {
             | Self::E0406
             | Self::E0407
             | Self::E0408 => true,
+        }
+    }
+
+    /// The code's severity: [`Severity::Error`] for an `E` code, [`Severity::Warning`] for a
+    /// `W` code (QCD-1.1).
+    #[must_use]
+    pub const fn severity(self) -> Severity {
+        if self.is_error() {
+            Severity::Error
+        } else {
+            Severity::Warning
         }
     }
 }

@@ -3,6 +3,7 @@
 //! The single cross-crate integration test binary. Each area is a module.
 
 mod builtins;
+mod diagnostics_unified;
 mod map_entities;
 mod paths;
 mod scenario_numbers;

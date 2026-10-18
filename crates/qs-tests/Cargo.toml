@@ -15,8 +15,11 @@ path = "tests/it/main.rs"
 
 [dev-dependencies]
 qc-builtins = { workspace = true }
+qc-diag = { workspace = true }
 qc-edict = { workspace = true }
 qc-progs = { workspace = true }
+qc-sema = { workspace = true }
+qc-syntax = { workspace = true }
 qc-types = { workspace = true }
 qc-vm = { workspace = true }
 qs-bsp = { workspace = true }

@@ -12,7 +12,7 @@
 
 use std::rc::Rc;
 
-use qc_lexer::{Code, Diagnostic, Span};
+use qc_diag::{Code, Diagnostic, Span};
 
 use crate::lower::{FileDecls, RawBody, RawDecl, top_level_kind};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};

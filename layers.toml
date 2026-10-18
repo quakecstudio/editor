@@ -6,6 +6,7 @@
 [crates]
 qc-edict = "L1"
 qc-builtins = "L1"
+qc-diag = "L0"
 qc-lexer = "L2"
 qc-lno = "L0"
 qc-preproc = "L2"

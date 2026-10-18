@@ -73,7 +73,7 @@ impl ModuleIndex {
 
 /// Whether a span covers a byte position: `[start, end)`, or exactly at `start` for an empty
 /// span so a cursor at the first byte of a zero-width name still hits.
-fn covers(span: qc_lexer::Span, offset: usize) -> bool {
+fn covers(span: qc_diag::Span, offset: usize) -> bool {
     if span.start == span.end {
         offset == span.start
     } else {

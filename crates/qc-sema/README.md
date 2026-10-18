@@ -25,8 +25,8 @@ earlier global, it reuses it (QC-12.3); names resolve at their position in compi
 global function must be defined (QC-11.8); fields and functions are global only (QC-11.9); and
 a state header's next-think name is declared as a global `void()` if new (QC-13.6).
 
-- **Layer:** L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-lexer` (L0,
-  for `Diagnostic` and `Code`).
+- **Layer:** L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-diag` (L0,
+  for the one `Diagnostic`, its `Code` and `Span`).
 - **Spec sections:** the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes
   and lookup) and QC-13.6 (state-header names) in
   [`language.md`](../../docs/spec/language.md), and the diagnostics QCD-3.5, QCD-3.6, QCD-3.8,
