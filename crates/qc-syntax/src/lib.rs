@@ -28,7 +28,7 @@ mod tests;
 
 pub use kind::SyntaxKind;
 pub use parser::{LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
-pub use qc_lexer::{Code, Diagnostic, Span};
+pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
 pub use tree::{GreenElement, GreenNode, GreenToken, SyntaxElement, SyntaxNode, SyntaxToken};
 
 use ast::AstNode as _;
@@ -78,7 +78,21 @@ impl Parse {
 /// of QCD-3 and QCD-6. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse(source: &[u8]) -> Parse {
-    let mut parser = parser::Parser::new(input::Input::new(source));
+    parse_with(source, Dialect::Vanilla)
+}
+
+/// Parses one source file in `dialect`.
+///
+/// With [`Dialect::Vanilla`] this is [`parse`] and the tree and diagnostics are exactly what
+/// the vanilla parser produces. An FTEQCC dialect ([`Dialect::has_fteqcc_extensions`]) also
+/// parses the FTEQCC constructs of `docs/spec/dialect-fteqcc-rerelease.md` (FTE-2 to FTE-16);
+/// under the vanilla dialect each keyword construct is reported once as `E0510` "NAME is an
+/// FTEQCC extension" (QCD-6.10) and the operator and declaration extensions keep their
+/// vanilla diagnostic, so the two profiles are observably different. Never fails, and the
+/// tree's text is `source`, byte for byte.
+#[must_use]
+pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
+    let mut parser = parser::Parser::new(input::Input::new(source, dialect), dialect);
     parser.source_file();
     let (green, diagnostics) = parser.finish();
     Parse { green, diagnostics }

@@ -13,6 +13,15 @@ The tree is of the file as written: macros are not expanded and both sides of a 
 are parsed. Directive lines and `$frame` lines are trivia to the parser; frame macro
 references are literals, resolved later.
 
+`parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`.
+An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
+(`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
+`break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:`,
+`const`/`var`/`nosave`, arrays and subscripts, `typedef struct` and `enum`. Under the vanilla
+dialect each keyword construct is rejected with `E0510` (QCD-6.10) and the operator and
+declaration extensions keep their vanilla diagnostic, so the two profiles are observably
+different; a vanilla program parses identically through `parse` or `parse_with(.., Vanilla)`.
+
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 the syntactic ones.

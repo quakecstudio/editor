@@ -12,6 +12,7 @@
 
 mod ast_view;
 mod declarations;
+mod dialect;
 mod expressions;
 mod lossless;
 mod recovery;
@@ -119,6 +120,14 @@ fn sexpr(expr: &ast::Expr) -> String {
             }
             out.push(')');
             out
+        }
+        ast::Expr::Postfix(post) => format!("(postfix {})", sub(post.operand())),
+        ast::Expr::Ternary(tern) => {
+            let (a, b) = tern.arms();
+            format!("(?: {} {} {})", sub(tern.condition()), sub(a), sub(b))
+        }
+        ast::Expr::Index(index) => {
+            format!("(index {} {})", sub(index.base()), sub(index.index()))
         }
     }
 }
