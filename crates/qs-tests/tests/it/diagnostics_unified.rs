@@ -97,7 +97,10 @@ fn build_diagnostics(module: &Module) -> BTreeSet<Key> {
             out.insert(key(index, d));
         }
     }
-    let lowered: Vec<_> = parses.iter().map(lower_file).collect();
+    let lowered: Vec<_> = parses
+        .iter()
+        .map(|p| lower_file(p, qc_syntax::Dialect::Vanilla))
+        .collect();
     let module_index = resolve_module(&lowered);
     for d in &module_index.diagnostics {
         out.insert(key(resolve_file_of(module, d), d));

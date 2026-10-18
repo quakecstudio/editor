@@ -96,6 +96,7 @@ fn ternary_parses() {
 
 // spec FTE-9.1: `.z` on a vector parses (as field access, a semantic difference, so accepted
 // in both dialects); FTEQCC uses it as an lvalue with a compound operator (FTE-9.2).
+// spec FTE-9.2: a vector member is an lvalue, so it may be assigned and used with `*=`.
 #[test]
 fn vector_member_parses() {
     fte_body_ok("c = a;");
@@ -180,6 +181,7 @@ fn enum_parses() {
 
 // spec FTE-2.1, FTE-3.1, FTE-4.1: the FTEQCC keyword constructs are rejected under the
 // vanilla profile with E0510 (QCD-6.10), so the two profiles are observably different.
+// spec QCD-6.10: the vanilla dialect reports E0510 for an FTEQCC keyword construct.
 #[test]
 fn vanilla_rejects_keyword_extensions() {
     for source in [
