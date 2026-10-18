@@ -382,6 +382,18 @@ jobs:
         run: |
           cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
             rerelease-ctf rerelease-mg3
+      # P2-03: every rerelease codebase parses and resolves with zero errors under the FTEQCC
+      # profile, and the vanilla profile rejects each extension with a diagnostic.
+      - name: Parse and resolve the rerelease under the FTEQCC profile
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask fteqcc-profile \
+            "$QS_TEST_ASSETS/codebase/rerelease" \
+            "$QS_TEST_ASSETS/codebase/rerelease-hipnotic" \
+            "$QS_TEST_ASSETS/codebase/rerelease-rogue" \
+            "$QS_TEST_ASSETS/codebase/rerelease-mg1" \
+            "$QS_TEST_ASSETS/codebase/rerelease-ctf" \
+            "$QS_TEST_ASSETS/codebase/rerelease-mg3"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: runner.os == 'Linux'
         id: rerelease-cache

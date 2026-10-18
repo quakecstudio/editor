@@ -16,6 +16,7 @@ qc-lno = { workspace = true }
 qc-preproc = { workspace = true }
 qc-progs = { workspace = true }
 qc-project = { workspace = true }
+qc-sema = { workspace = true }
 qc-syntax = { workspace = true }
 qc-trace = { workspace = true }
 qc-types = { workspace = true }

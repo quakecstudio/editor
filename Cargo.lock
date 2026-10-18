@@ -948,6 +948,7 @@ dependencies = [
  "qc-preproc",
  "qc-progs",
  "qc-project",
+ "qc-sema",
  "qc-syntax",
  "qc-trace",
  "qc-types",
