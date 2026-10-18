@@ -51,6 +51,11 @@
 //!   against the order of the functions in a `progs.dat` id's qcc compiled, and
 //!   `--fteqcc` runs the pinned FTEQCC on every module and checks that the files
 //!   it reports compiling and including match the graph, in order.
+//! - `fteqcc-coverage`: parses every `.qc` and `.qh` file under the rerelease
+//!   codebase directories with the vanilla parser and lists every construct it
+//!   rejects, grouped into the classes of
+//!   `docs/spec/dialect-fteqcc-rerelease.md` (P2-01); it fails on a rejected
+//!   construct no class names.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -72,6 +77,7 @@ mod differential;
 mod download;
 mod exec;
 mod fixtures;
+mod fteqcc_coverage;
 mod fuzz;
 mod layers;
 mod lex_corpus;
@@ -91,7 +97,8 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     map-corpus | parse-corpus | project-corpus | differential>";
+                     map-corpus | parse-corpus | project-corpus | differential | \
+                     fteqcc-coverage>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -148,6 +155,7 @@ fn command(name: &str) -> Option<Command> {
         "bench" => Some(bench::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
+        "fteqcc-coverage" => Some(fteqcc_coverage::main),
         "fuzz" => Some(fuzz::main),
         "lex-corpus" => Some(lex_corpus::main),
         "map-corpus" => Some(map_corpus::main),
@@ -246,6 +254,7 @@ mod tests {
             "bench",
             "corpus",
             "differential",
+            "fteqcc-coverage",
             "fuzz",
             "lex-corpus",
             "map-corpus",
