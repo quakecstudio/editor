@@ -4,16 +4,38 @@
 //!
 //! Implements ENGT-4 and reports QCD-7.17 (`W0311`). A module's calls are found in its syntax
 //! trees and resolved through the semantic model's references (QC-12.5), so a call reaches the
-//! diagnostic only when its callee name means a global builtin function.
+//! diagnostic only when its callee name means a global builtin function. A builtin is keyed by
+//! its number (ENGT-4.3) or, under an FTEQCC dialect, by the engine name of `#0:NAME`
+//! (ENGT-4.5).
 
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_sema::{DefKind, FileId, ModuleIndex};
-use qc_syntax::Parse;
 use qc_syntax::ast::{self, AstNode as _};
+use qc_syntax::{Parse, SyntaxKind};
 
-use crate::{BuiltinKey, Engine};
+use crate::{Builtin, BuiltinKey, Engine};
+
+/// How a module's source names a builtin: its number, or the engine name of `#0:NAME`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Key {
+    Number(u32),
+    Name(String),
+}
+
+impl Key {
+    /// The engine's entry for this key, if its table has one.
+    fn lookup(&self, engine: Engine) -> Option<Builtin> {
+        match self {
+            Self::Number(number) => engine.builtin(BuiltinKey::Number(*number)),
+            Self::Name(name) => engine
+                .builtins()
+                .into_iter()
+                .find(|b| matches!(b.key, BuiltinKey::Name(n) if n == name)),
+        }
+    }
+}
 
 /// A diagnostic and the file of the module it is in.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,7 +57,7 @@ pub fn missing_builtins(
     parses: &[Parse],
     index: &ModuleIndex,
 ) -> Vec<FileDiagnostic> {
-    let numbers = builtin_numbers(parses);
+    let keys = builtin_keys(parses);
     let callees = callee_names(parses);
     let mut out = Vec::new();
     for reference in &index.refs {
@@ -49,18 +71,17 @@ pub fn missing_builtins(
         if def.kind != DefKind::Function {
             continue;
         }
-        let Some(&number) = numbers.get(def.name.as_str()) else {
+        let Some(key) = keys.get(def.name.as_str()) else {
             continue;
         };
-        let key = BuiltinKey::Number(number);
-        if engine.builtin(key).is_some() {
+        if key.lookup(engine).is_some() {
             continue;
         }
         out.push(FileDiagnostic {
             file: location.file,
             diagnostic: Diagnostic {
                 code: Code::W0311,
-                message: message(&def.name, number, engine),
+                message: message(&def.name, key, engine),
                 span: location.span,
             },
         });
@@ -69,16 +90,20 @@ pub fn missing_builtins(
     out
 }
 
-/// `NAME is builtin #N, which ENGINE does not have`, with the extensions of the first engine
-/// whose table lists `#N` with some (ENGT-4.1).
-fn message(name: &str, number: u32, engine: Engine) -> String {
+/// `NAME is builtin #N, which ENGINE does not have` (ENGT-4.1), or `#0:ENGINE_NAME` for a
+/// builtin looked up by name (ENGT-4.5), with the extensions of the first engine whose table
+/// lists the key with some.
+fn message(name: &str, key: &Key, engine: Engine) -> String {
+    let shown = match key {
+        Key::Number(number) => number.to_string(),
+        Key::Name(engine_name) => format!("0:{engine_name}"),
+    };
     let mut message = format!(
-        "{name} is builtin #{number}, which {} does not have",
+        "{name} is builtin #{shown}, which {} does not have",
         engine.name()
     );
     let extensions = Engine::ALL.into_iter().find_map(|other| {
-        other
-            .builtin(BuiltinKey::Number(number))
+        key.lookup(other)
             .map(|b| b.extensions)
             .filter(|e| !e.is_empty())
     });
@@ -90,10 +115,12 @@ fn message(name: &str, number: u32, engine: Engine) -> String {
     message
 }
 
-/// Each global name's builtin number: its first `#N` initialiser in compilation order
-/// (ENGT-4.3).
-fn builtin_numbers(parses: &[Parse]) -> HashMap<String, u32> {
-    let mut numbers = HashMap::new();
+/// Each global name's builtin key: the number of its first `#N` initialiser in compilation
+/// order (ENGT-4.3), or for a name with none, the engine name of its first `#0:NAME`
+/// initialiser (ENGT-4.5).
+fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
+    let mut numbers: HashMap<String, u32> = HashMap::new();
+    let mut names: HashMap<String, String> = HashMap::new();
     for parse in parses {
         let Some(tree) = parse.tree() else {
             continue;
@@ -106,17 +133,42 @@ fn builtin_numbers(parses: &[Parse]) -> HashMap<String, u32> {
                 let Some(ast::Initializer::Builtin(builtin)) = declarator.initializer() else {
                     continue;
                 };
-                let Some(number) = builtin
-                    .number()
-                    .and_then(|t| builtin_number(&t.text_lossless()))
-                else {
+                let Some(literal) = builtin.number().map(|t| t.text_lossless()) else {
                     continue;
                 };
-                numbers.entry(name.text_lossless()).or_insert(number);
+                if let Some(number) = builtin_number(&literal) {
+                    numbers.entry(name.text_lossless()).or_insert(number);
+                } else if let Some(engine_name) = engine_name(&builtin, &literal) {
+                    names.entry(name.text_lossless()).or_insert(engine_name);
+                }
             }
         }
     }
-    numbers
+    let mut keys: HashMap<String, Key> = names
+        .into_iter()
+        .map(|(name, engine_name)| (name, Key::Name(engine_name)))
+        .collect();
+    for (name, number) in numbers {
+        keys.insert(name, Key::Number(number));
+    }
+    keys
+}
+
+/// The engine name of a `#0:NAME` initialiser whose number literal is `literal` (FTE-17.4,
+/// ENGT-4.5): the name after the `:` when the number is zero.
+fn engine_name(builtin: &ast::Builtin, literal: &str) -> Option<String> {
+    let (whole, fraction) = literal.split_once('.').unwrap_or((literal, ""));
+    let zero = !whole.is_empty()
+        && whole.bytes().all(|b| b == b'0')
+        && fraction.bytes().all(|b| b == b'0');
+    if !zero {
+        return None;
+    }
+    let mut tokens = builtin.syntax().child_tokens();
+    tokens.find(|t| t.kind() == SyntaxKind::Colon)?;
+    tokens
+        .find(|t| t.kind() == SyntaxKind::Name)
+        .map(|t| t.text_lossless())
 }
 
 /// The value of a builtin number literal: decimal digits, optionally followed by a fraction

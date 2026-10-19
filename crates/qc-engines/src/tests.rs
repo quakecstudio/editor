@@ -14,38 +14,60 @@ use qc_diag::{Code, Severity, Span};
 use qc_project::{MemoryLoader, Target, open_dir};
 use qc_sema::lower::lower_file;
 use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
-use qc_syntax::Parse;
+use qc_syntax::{Dialect, Parse};
 
 use crate::check::builtin_number;
 use crate::{BuiltinKey, Engine, FileDiagnostic, SOURCES, missing_builtins};
 
-/// A module made of `files`, in compilation order: its parses and its resolved index.
-fn module(files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
+/// A module made of `files`, in compilation order and in `dialect`: its parses and its
+/// resolved index.
+fn module(dialect: Dialect, files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
     let parses: Vec<Parse> = files
         .iter()
-        .map(|f| qc_syntax::parse(f.as_bytes()))
+        .map(|f| qc_syntax::parse_with(f.as_bytes(), dialect))
         .collect();
-    let lowered: Vec<_> = parses
-        .iter()
-        .map(|p| lower_file(p, qc_syntax::Dialect::Vanilla))
-        .collect();
-    let index = resolve_module(&lowered, ResolveOptions::default());
+    let lowered: Vec<_> = parses.iter().map(|p| lower_file(p, dialect)).collect();
+    let options = ResolveOptions {
+        dialect,
+        ..ResolveOptions::default()
+    };
+    let index = resolve_module(&lowered, options);
     (parses, index)
 }
 
-/// The `W0311` warnings for `files` checked against `engine`.
-fn check(engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
-    let (parses, index) = module(files);
+/// The `W0311` warnings for `files`, in `dialect`, checked against `engine`.
+fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
+    let (parses, index) = module(dialect, files);
     missing_builtins(engine, &parses, &index)
 }
 
-/// The messages of [`check`].
-fn messages(engine: Engine, files: &[&str]) -> Vec<String> {
-    check(engine, files)
+/// The `W0311` warnings for vanilla `files` checked against `engine`.
+fn check(engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
+    check_in(Dialect::Vanilla, engine, files)
+}
+
+/// The messages of [`check_in`].
+fn messages_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<String> {
+    check_in(dialect, engine, files)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
 }
+
+/// The messages of [`check`].
+fn messages(engine: Engine, files: &[&str]) -> Vec<String> {
+    messages_in(Dialect::Vanilla, engine, files)
+}
+
+/// The messages of FTEQCC `files` checked against `engine`.
+fn fte_messages(engine: Engine, files: &[&str]) -> Vec<String> {
+    messages_in(Dialect::Fteqcc, engine, files)
+}
+
+const BPRINT_CALL: &str = "\
+void(string s, ...) bprint = #0:ex_bprint;
+void() worldspawn = { bprint(\"hello\\n\"); };
+";
 
 const HASH_CALL: &str = "\
 float(float tabsize, float defaulttype) hash_createtab = #287;
@@ -402,4 +424,106 @@ fn w0311_is_a_warning() {
     assert!(!Code::W0311.is_error());
     let found = check(Engine::Ironwail, &[HASH_CALL]);
     assert!(found.iter().all(|d| !d.diagnostic.is_error()));
+}
+
+// spec ENGT-4.5, QCD-7.17: calling `bprint = #0:ex_bprint` targeting FTEQW is W0311 naming
+// FTEQW at the callee's name; KEX, Ironwail and vkQuake have ex_bprint
+#[test]
+fn a_named_builtin_targeting_fteqw_is_w0311() {
+    let found = check_in(Dialect::Fteqcc, Engine::Fteqw, &[BPRINT_CALL]);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].diagnostic.code, Code::W0311);
+    assert_eq!(
+        found[0].diagnostic.message,
+        "bprint is builtin #0:ex_bprint, which FTEQW does not have"
+    );
+    let start = BPRINT_CALL.rfind("bprint(").unwrap();
+    assert_eq!(
+        found[0].diagnostic.span,
+        Span::new(start, start.saturating_add("bprint".len()))
+    );
+    for engine in [Engine::Kex, Engine::Ironwail, Engine::VkQuake] {
+        assert!(
+            check_in(Dialect::Fteqcc, engine, &[BPRINT_CALL]).is_empty(),
+            "{}",
+            engine.name()
+        );
+    }
+    for engine in [Engine::Vanilla, Engine::QuakeSpasm, Engine::DarkPlaces] {
+        assert_eq!(
+            fte_messages(engine, &[BPRINT_CALL]),
+            [format!(
+                "bprint is builtin #0:ex_bprint, which {} does not have",
+                engine.name()
+            )]
+        );
+    }
+}
+
+// spec ENGT-4.5: the extensions of a named builtin come from the first engine whose table has
+// the name with some, and an engine with the name has no W0311
+#[test]
+fn a_named_builtin_carries_its_extensions() {
+    let source = "\
+void(entity client, float flags, string s) stuffcmdflags = #0:stuffcmdflags;
+void() w = { stuffcmdflags(world, 0, \"x\"); };
+";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[source]),
+        [
+            "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have \
+          (FTE_QC_STUFFCMDFLAGS)"
+        ]
+    );
+    assert!(fte_messages(Engine::Fteqw, &[source]).is_empty());
+}
+
+// spec ENGT-4.5: a name with a #N initialiser keeps that number; otherwise its first #0:NAME
+// gives the engine name, compared exactly; a zero written 0.0 counts as zero
+#[test]
+fn the_number_wins_over_an_engine_name() {
+    let named = "void() f = #0:ex_bprint;\n";
+    let numbered = "void() f = #287;\nvoid() w = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[named, numbered]),
+        ["f is builtin #287, which KEX does not have (FTE_QC_HASHTABLES)"]
+    );
+    let first = "void() f = #0:ex_bprint;\n";
+    let second = "void() f = #0:nothing;\nvoid() w = { f(); };\n";
+    assert!(fte_messages(Engine::Kex, &[first, second]).is_empty());
+    assert_eq!(
+        fte_messages(Engine::Kex, &[second, first]),
+        ["f is builtin #0:nothing, which KEX does not have"]
+    );
+    let upper = "void() f = #0:EX_BPRINT;\nvoid() w = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[upper]),
+        ["f is builtin #0:EX_BPRINT, which KEX does not have"]
+    );
+    let fraction = "void() f = #0.0:nothing;\nvoid() w = { f(); };\n";
+    assert_eq!(fte_messages(Engine::Kex, &[fraction]).len(), 1);
+}
+
+// spec ENGT-4.6: `#N:NAME` with N at least 1 is checked by its number alone
+#[test]
+fn a_numbered_builtin_with_a_name_is_checked_by_number() {
+    let source = "void() f = #287:ex_bprint;\nvoid() w = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[source]),
+        ["f is builtin #287, which KEX does not have (FTE_QC_HASHTABLES)"]
+    );
+    assert!(fte_messages(Engine::Fteqw, &[source]).is_empty());
+}
+
+// spec ENGT-4.7: under the vanilla dialect `#0:NAME` is not a builtin initialiser, so it
+// gives no W0311
+#[test]
+fn a_named_builtin_in_vanilla_gives_none() {
+    for engine in Engine::ALL {
+        assert!(
+            check(engine, &[BPRINT_CALL]).is_empty(),
+            "{}",
+            engine.name()
+        );
+    }
 }

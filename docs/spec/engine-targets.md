@@ -137,6 +137,21 @@ own source as a further fact source.
   QCD-3.9).
 - **ENGT-4.4** `W0311` is a warning: it never stops a build or changes the emitted progs
   (QCD-7).
+- **ENGT-4.5** Under an FTEQCC dialect a builtin may be declared `= #0:NAME` (FTE-17.4), which
+  the engine looks up by `NAME` (ENGT-2.4). A global function whose name has no number by
+  ENGT-4.3 takes as its key the `NAME` of its first such initialiser in compilation order,
+  `0` being any literal whose digits are all zeros. A call of it, as in ENGT-4.1, whose engine
+  table has no builtin keyed `#0:NAME`, names compared exactly, is `W0311` with the message
+  `FUNC is builtin #0:NAME, which ENGINE does not have`, `FUNC` being the function's name,
+  and the extensions of the first engine, in the order of ENGT-3.1, whose table has `NAME`
+  with some. ENGT-4.2 holds for these keys as for numbers.
+- **ENGT-4.6** An initialiser `#N:NAME` with `N` at least 1 is keyed by its number alone, as
+  in ENGT-4.3, and its name is not read. FTE-17.4 says FTEQCC accepts the form and is silent
+  on which key an engine uses for it; keying by number is this project's choice, since a
+  number is what a progs carries for every builtin with one.
+- **ENGT-4.7** Under the vanilla dialect, whose `qcc` takes a builtin number greater than 0
+  and nothing after it (QC-13.3), `#0:NAME` gives no key, so a call of such a declaration is
+  no `W0311`; the parser reports the declaration instead.
 
 ### Test vectors
 
@@ -148,3 +163,6 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | the same, FTEQW | none | ENGT-4.2 |
 | `float(string s) strlen = #114;` called, QuakeSpasm | `W0311` "strlen is builtin #114, which QuakeSpasm does not have (FRIK_FILE, FTE_STRINGS, ZQ_QC_STRINGS)" | ENGT-4.1 |
 | `void(string s) bprint = #23;` called, KEX | `W0311` "bprint is builtin #23, which KEX does not have" | ENGT-3.2, ENGT-4.1 |
+| `void(string s, ...) bprint = #0:ex_bprint;` called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.5 |
+| the same, KEX, Ironwail or vkQuake | none | ENGT-4.5 |
+| `stuffcmdflags = #0:stuffcmdflags` called, FTEQCC dialect, KEX | `W0311` "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have (FTE_QC_STUFFCMDFLAGS)" | ENGT-4.5 |
