@@ -191,6 +191,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.16** `W0402` "NAME differs in case from the file it opens, STORED": a list entry,
   `#include` or `#includelist` entry opened a file whose stored name differs in case from the
   name, so a case-sensitive file system would not open it (PRJ-7.2).
+- **QCD-7.17** `W0311` "NAME is builtin #N, which ENGINE does not have": a call of a builtin
+  the project's target engine lacks, at the callee's name (ENGT-4.1).
 
 ## QCD-8 Preprocessor errors
 

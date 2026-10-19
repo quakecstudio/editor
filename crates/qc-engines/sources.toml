@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The fact sources of the engine-target database (P2-04, LANG-6). `cargo xtask engines`
+# fetches each file at its pinned commit, checks it and its license file against the SHA-256
+# below, extracts only facts from it (builtin names, numbers and signatures, and extension
+# names) and writes `src/tables.rs`; `cargo xtask engines --check` fails when the checked-in
+# tables differ from what the sources give. No comment text or code of these files is
+# copied, and none of them is a porting upstream: ADR-0014 records the legal basis, and
+# docs/spec/engine-targets.md the extraction rules (ENGT-2 to ENGT-4).
+#
+# `license` is the SPDX identifier of the repository's license file, `license_file`; none of
+# the three source files carries a license header of its own. Pins recorded on 2026-10-19.
+#
+# `defines` are the macros defined before the file is read, choosing the server QuakeC
+# (NQSSQC) parts of a file that serves several module kinds (ENGT-2.3).
+
+[[source]]
+id = "fteqw"
+repo = "fte-team/fteqw"
+commit = "f937b9d88f71fc4429db5fe56c6a98d922711b2e"
+path = "quakec/menusys/fteextensions.qc"
+sha256 = "21322f15aca52dae3a75b98a46be0491ed9a1f5d136511228bf52725ac81ccb0"
+license = "GPL-2.0"
+license_file = "LICENSE"
+license_sha256 = "b1119350db1dc0964bf5a786784632fd7769d958c1166fd1bfc3e873f24ceccb"
+defines = ["NQSSQC", "SSQC"]
+
+[[source]]
+id = "darkplaces"
+repo = "DarkPlacesEngine/darkplaces"
+commit = "5d80f03e26871b273da103f3b750820a3718c01a"
+path = "dpdefs/dpextensions.qc"
+sha256 = "73237e430e8d36009bf0518c0105b15fb37d7710cdc47120c67da8e5e85e33e5"
+license = "GPL-2.0"
+license_file = "COPYING"
+license_sha256 = "ba9ed2269151ad63b922598f3c5c19ddf781b2bbb6cb843ed9f085ecd1679c5d"
+defines = []
+
+# The same commit and checksums as the quake-rerelease-qc source in corpus/manifest.toml;
+# `cargo xtask engines` checks that they agree.
+[[source]]
+id = "rerelease"
+repo = "id-Software/quake-rerelease-qc"
+commit = "634eefab09a77eb7b5f5ca7078ba3d8784a91142"
+path = "quakec/defs.qc"
+sha256 = "7694c006223ec43f05b923c8fe7691a6ed8298141d1562d98d6c86162de6129d"
+license = "GPL-2.0-or-later"
+license_file = "COPYING.txt"
+license_sha256 = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
+defines = []

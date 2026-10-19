@@ -330,6 +330,11 @@ jobs:
         run: python -m unittest test_language_coverage.py
       - name: Check the corpus manifest
         run: cargo xtask corpus verify
+      # P2-04 (ENGT-1.2): the engine-target tables match what their pinned fact sources give.
+      # The sources are the same on every OS, so one runner fetches them.
+      - name: Regenerate the engine-target tables and compare
+        if: runner.os == 'Linux'
+        run: cargo xtask engines --check
       - name: Fetch the test assets
         run: cargo xtask assets fetch
       - name: Check the rerelease precaches
