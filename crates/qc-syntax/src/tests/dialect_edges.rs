@@ -563,7 +563,6 @@ fn sizeof_types() {
         "a = sizeof(int);",
         "a = sizeof(struct tag);",
         "a = sizeof(union tag);",
-        "a = sizeof(enum Color);",
         "a = sizeof(..float);",
         "a = sizeof(float);",
         "a = sizeof(Thing *);",
@@ -600,14 +599,11 @@ fn the_parameter_limit_itself_is_allowed() {
 }
 
 // spec FTEF-6.1: `struct tag` and `union tag` name a tagged type by its keyword
-// spec FTEF-8.2: and `enum Name` and `enumflags Name` an enum by its name
 #[test]
 fn tagged_type_keywords() {
     for (source, keyword) in [
         ("struct tag x;\n", SyntaxKind::StructKw),
         ("union tag x;\n", SyntaxKind::UnionKw),
-        ("enum Color x;\n", SyntaxKind::EnumKw),
-        ("enumflags Flags x;\n", SyntaxKind::EnumKw),
     ] {
         assert_eq!(fte_codes(source), [], "{source}");
         let ty = first_node(source, SyntaxKind::SimpleType);

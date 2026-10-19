@@ -1416,13 +1416,15 @@ fn lone_quote_is_a_bad_vector() {
     assert_eq!(fte_codes(b"'"), vec![Code::E0104]);
 }
 
-// spec FTE-20.2: a vector component may end in the float suffix `f`, which is not part of
-// its value
+// spec FTEF-13.6: a vector component may end in a lowercase `f`, which is not part of its
+// value; an `F` is not skipped, so the vector is bad
 #[test]
 fn vector_components_take_the_float_suffix() {
     let lexed = lex_with(b"'1f 2f 3.5f'", Dialect::Fteqcc);
     assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
     assert_eq!(lexed.tokens[0].kind, TokenKind::Vector([1.0, 2.0, 3.5]));
+    assert_eq!(fte_codes(b"'1F 2 3'")[0], Code::E0104);
+    assert_eq!(fte_codes(b"'1 2 3F'")[0], Code::E0104);
     assert_eq!(codes(b"'1f 2 3'")[0], Code::E0104);
 }
 

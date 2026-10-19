@@ -345,18 +345,10 @@ impl Parser<'_> {
         }
         let text = tok.text.clone();
         if text == "enum" || text == "enumflags" {
-            let body = self.at_enum_body();
+            // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`. FTEF-8.4: it
+            // always has its body; an enum is named by its type name alone.
             self.start_node(K::SimpleType);
-            if body {
-                // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`.
-                self.enum_body();
-            } else {
-                // `enum Name`: the enum by its name.
-                self.bump_as(K::EnumKw);
-                if self.at(K::Name) {
-                    self.bump();
-                }
-            }
+            self.enum_body();
             self.finish_node();
             return true;
         }
