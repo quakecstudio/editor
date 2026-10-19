@@ -83,7 +83,7 @@ milestone (`MVP-3`). All of them wait for the MVP gate.
 | Embedded game view | MVP scope, Out; Engine bridge, Docking | [L-06](https://github.com/quakecstudio/editor/issues/190) Embedded game view |
 | Web build | Non-goals for v1; MVP scope, Out | [L-07](https://github.com/quakecstudio/editor/issues/191) Web build |
 | ericw-tools class advanced lighting | Map editor, Our own map compiler | [L-12](https://github.com/quakecstudio/editor/issues/195) Advanced lighting (ericw-tools class) |
-| Later engines' improvements in the preview host | Engine bridge; [ADR-0004](adr/0004-preview-host-base.md) | [L-13](https://github.com/quakecstudio/editor/issues/448) Adopt later engines' improvements in the preview host |
+| Later engines' improvements in the preview host | Engine bridge; [ADR-0004](adr/0004-preview-host-base.md) | [L-13](https://github.com/quakecstudio/editor/issues/449) Adopt later engines' improvements in the preview host |
 | Next-edit suggestions | Editor and UI; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-11](https://github.com/quakecstudio/editor/issues/122) Next-edit suggestions |
 | External agents in the panel over ACP | Editor and UI, Product principles; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-14](https://github.com/quakecstudio/editor/issues/125) Host external agents over ACP |
 | In-app update check | Quality, testing and release; moved out of the MVP by [ADR-0007](adr/0007-mvp-scope.md) | [P4-19](https://github.com/quakecstudio/editor/issues/130) Update mechanism |
