@@ -434,6 +434,65 @@ issues:
   - Typing and scrolling a 50,000-line file with the spike's scripted input keeps p99 frame time at most 8.33 ms on the reference Mac, results committed under docs/spikes/data/
   verify:
   - cargo test -p qs-editor-view; benchmark run attached to the issue
+- key: P2-28
+  title: Resolve files through their macro expansions in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - GOAL-1
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-03
+  deliverable:
+  - 'crates/qc-sema: the Db parses and resolves each file of a module from its qc-preproc expansion (macros expanded, untaken conditional sides dropped, includes inlined), and maps every diagnostic, definition and reference back to the source span through the expansion origins (QC-9.7); the lossless tree of the file as written stays the editing view'
+  - 'xtask/src/fteqcc_profile.rs: the rerelease check opens each module through the Db as the editor does, instead of rendering the expansion to text itself'
+  acceptance:
+  - rerelease-mg1 and rerelease-mg3, whose files use macros as statements (INHIBIT_COOP), resolve with zero errors through the Db opened on the files as written, each diagnostic and reference located at a span of the source file
+  - Editing a macro's definition re-resolves the files that use it and no others (query counters)
+  verify:
+  - cargo test -p qc-sema; rerelease corpus job
+- key: P2-29
+  title: Extend the FTEQCC coverage check to the constructs found by the dialect profile
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - COMP-3
+  - LANG-5
+  depends:
+  - P2-03
+  deliverable:
+  - 'xtask/src/fteqcc_coverage.rs: classes for the constructs of docs/spec/dialect-fteqcc-rerelease.md FTE-15.4 and FTE-17 to FTE-22 (C-style declarations, named builtins, parameter extensions, the further operators and literals, locals without local, empty statements), each detected from the vanilla parse'
+  - docs/spec/vectors/dialect-fteqcc-rerelease/coverage.txt regenerated
+  acceptance:
+  - The coverage check lists every new class in the six rerelease codebases, with a test per class, and fails on a class no section names
+  verify:
+  - cargo test -p xtask; coverage run attached
+- key: P2-30
+  title: Resolve the names in global initialisers, default values and FTEQCC member access
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - GOAL-1
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-03
+  deliverable:
+  - 'crates/qc-sema: name uses in file-level initialisers (FTE-10.2 `const float B = A;`), in parameter default values (FTE-18.2) and in the field selector of an FTEQCC member access that is not a vector member, `.length` or a struct field (FTE-9, FTE-13, FTE-14) are references, reported as unknown when they resolve to nothing'
+  acceptance:
+  - Each of the three positions has a test with a known and an unknown name, and the six rerelease codebases still resolve with zero errors
+  verify:
+  - cargo test -p qc-sema; rerelease corpus job
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -559,6 +618,9 @@ issues:
   - P2-25
   - P2-26
   - P2-27
+  - P2-28
+  - P2-29
+  - P2-30
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
