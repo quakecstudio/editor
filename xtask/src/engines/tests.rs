@@ -136,12 +136,12 @@ fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
     Workspace { dir, net }
 }
 
-// spec ENGT-1.4: the checked-in tables record every pin of sources.toml, commit and SHA-256
+// spec ENGT-1.5: the checked-in tables record every pin of sources.toml, commit and SHA-256
 #[test]
 fn the_checked_in_tables_record_every_pin() {
     let tables = fs::read_to_string(root().join(TABLES)).unwrap();
     let pins = load(&root()).unwrap();
-    assert_eq!(pins.len(), 5);
+    assert_eq!(pins.len(), 10);
     for pin in pins {
         for value in [
             &pin.commit,
@@ -264,7 +264,8 @@ fn bad_tables_are_errors() {
 
 // spec ENGT-2.10: the pinned fteqw source is read for server, client and menu QuakeC, with
 // NQSSQC and SSQC, CSQC and MENU defined; darkplaces and rerelease for server QuakeC,
-// darkplaces-client for client and darkplaces-menu for menu QuakeC, with no macro
+// darkplaces-client for client and darkplaces-menu for menu QuakeC, with no macro; the C
+// sources with none (ENGT-2.11)
 #[test]
 fn the_pinned_tables() {
     let mut readings = Vec::new();
@@ -274,7 +275,7 @@ fn the_pinned_tables() {
                 "{} {} {}",
                 pin.id,
                 table.kind,
-                table.defines.join(",")
+                table.defines.clone().unwrap_or_default().join(",")
             ));
         }
     }
@@ -288,6 +289,65 @@ fn the_pinned_tables() {
             "darkplaces-client csqc ",
             "darkplaces-menu menuqc ",
             "rerelease ssqc ",
+            "quakespasm ssqc ",
+            "quakespasm-rerelease ssqc ",
+            "ironwail ssqc ",
+            "ironwail csqc ",
+            "vkquake ssqc ",
+            "vkquake csqc ",
+            "vkquake-ext ssqc ",
+            "vkquake-ext csqc ",
+        ]
+    );
+}
+
+// spec ENGT-2.14, ENGT-2.15, ENGT-2.16, ENGT-2.17: the pinned C sources are read from these
+// arrays, by these columns, with these functions absent
+#[test]
+fn the_pinned_c_readings() {
+    let mut readings = Vec::new();
+    for pin in load(&root()).unwrap() {
+        for t in pin.tables.iter().filter(|t| t.array.is_some()) {
+            readings.push(format!(
+                "{} {} {} name={:?} function={:?} number={:?} signature={:?} extension={:?} \
+                 target={:?}/{:?} absent={} extensions={:?}",
+                pin.id,
+                t.kind,
+                t.array.clone().unwrap_or_default(),
+                t.name,
+                t.function,
+                t.number,
+                t.signature,
+                t.extension,
+                t.target,
+                t.target_of,
+                t.absent.join(","),
+                t.extension_array
+            ));
+        }
+    }
+    assert_eq!(
+        readings,
+        [
+            "quakespasm ssqc pr_builtin name=None function=None number=None signature=None \
+             extension=None target=None/None absent=PF_Fixme extensions=None",
+            "quakespasm-rerelease ssqc exbuiltins name=Some(0) function=None number=Some(1) \
+             signature=None extension=None target=Some(2)/Some(\"quakespasm\") absent= \
+             extensions=None",
+            "ironwail ssqc pr_builtindefs name=Some(0) function=Some(1) number=Some(3) \
+             signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
+            "ironwail csqc pr_builtindefs name=Some(0) function=Some(2) number=Some(3) \
+             signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
+            "vkquake ssqc pr_ssqcbuiltins name=None function=None number=None signature=None \
+             extension=None target=None/None absent=PF_Fixme extensions=None",
+            "vkquake csqc pr_csqcbuiltins name=None function=None number=None signature=None \
+             extension=None target=None/None absent=PF_Fixme extensions=None",
+            "vkquake-ext ssqc extensionbuiltins name=Some(0) function=Some(1) number=Some(3) \
+             signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
+             extensions=Some(\"qcextensions\")",
+            "vkquake-ext csqc extensionbuiltins name=Some(0) function=Some(2) number=Some(3) \
+             signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
+             extensions=Some(\"qcextensions\")",
         ]
     );
 }

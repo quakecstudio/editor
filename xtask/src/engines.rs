@@ -6,11 +6,13 @@
 //!
 //! Each source file is fetched at its pinned commit and checked, with its repository's license
 //! file, against the recorded SHA-256, then read once for each module kind it has a table
-//! for, with that table's macros defined (ENGT-2.3, ENGT-2.10). Only facts are extracted
-//! (ENGT-2): each builtin's
-//! number or engine name, its QuakeC name and its signature, and extension names. No comment
-//! text and no code is copied: comments are read only to find an extension name that stands
-//! alone on a line or follows `Part of`, and that name is all that is kept. The tables are
+//! for: a QuakeC source with that table's macros defined (ENGT-2.3, ENGT-2.10), a C source
+//! from the array and columns the table names (`c`, ENGT-2.11 to ENGT-2.17). Only facts are
+//! extracted (ENGT-2): each builtin's number or engine name, its QuakeC name and its
+//! signature, and extension names. No comment text and no code is copied: a QuakeC source's
+//! comments are read only to find an extension name that stands alone on a line or follows
+//! `Part of`, and that name is all that is kept; a C source's comments are not read. The
+//! tables are
 //! written to `crates/qc-engines/src/tables.rs`, formatted with `rustfmt`; `--check` writes
 //! nothing and fails when the checked-in file differs, which is the regeneration check CI
 //! runs. The extraction rules are `docs/spec/engine-targets.md`, ENGT-2 to ENGT-4.
@@ -22,6 +24,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde::Deserialize;
+
+mod c;
 
 use crate::corpus::manifest::Manifest;
 use crate::download::{CURL, Net};
@@ -67,13 +71,61 @@ pub(crate) struct Pin {
     pub(crate) tables: Vec<Table>,
 }
 
-/// One reading of a source file: the module kind its builtins are for and the macros defined
-/// before it is read (ENGT-2.3, ENGT-2.10).
-#[derive(Clone, Debug, Deserialize)]
+/// One reading of a source file: the module kind its builtins are for and, for a QuakeC
+/// source, the macros defined before it is read (ENGT-2.3, ENGT-2.10), or, for a C source,
+/// the array it reads and that array's columns (ENGT-2.13 to ENGT-2.17).
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Table {
     pub(crate) kind: String,
-    pub(crate) defines: Vec<String>,
+    #[serde(default)]
+    pub(crate) defines: Option<Vec<String>>,
+    /// The C array whose initialiser lists the builtins.
+    #[serde(default)]
+    pub(crate) array: Option<String>,
+    /// The functions that stand for no builtin, such as `PF_Fixme`.
+    #[serde(default)]
+    pub(crate) absent: Vec<String>,
+    /// The column of a row's name; without it the array is positional (ENGT-2.14).
+    #[serde(default)]
+    pub(crate) name: Option<usize>,
+    /// The column of a row's function for this module kind.
+    #[serde(default)]
+    pub(crate) function: Option<usize>,
+    /// The column of a row's builtin number.
+    #[serde(default)]
+    pub(crate) number: Option<usize>,
+    /// The column of a row's type string.
+    #[serde(default)]
+    pub(crate) signature: Option<usize>,
+    /// The column of a row's extension name.
+    #[serde(default)]
+    pub(crate) extension: Option<usize>,
+    /// The column of a name patch's target statement (ENGT-2.16).
+    #[serde(default)]
+    pub(crate) target: Option<usize>,
+    /// The earlier source whose table of this kind the patches' targets are looked up in.
+    #[serde(default)]
+    pub(crate) target_of: Option<String>,
+    /// The C array whose rows list the extension names (ENGT-2.17).
+    #[serde(default)]
+    pub(crate) extension_array: Option<String>,
+}
+
+impl Table {
+    /// Whether any column of a C reading is set.
+    fn has_c_columns(&self) -> bool {
+        self.array.is_some()
+            || !self.absent.is_empty()
+            || self.name.is_some()
+            || self.function.is_some()
+            || self.number.is_some()
+            || self.signature.is_some()
+            || self.extension.is_some()
+            || self.target.is_some()
+            || self.target_of.is_some()
+            || self.extension_array.is_some()
+    }
 }
 
 impl Pin {
@@ -122,14 +174,26 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
 fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {
     let pins = load(root)?;
     agree_with_corpus(root, &pins)?;
-    let mut all = Vec::new();
+    let mut all: Vec<(Pin, Vec<(String, Facts)>)> = Vec::new();
     for pin in &pins {
         let text = fetch(net, pin, &pin.path, &pin.sha256)?;
         fetch(net, pin, &pin.license_file, &pin.license_sha256)?;
         let mut tables = Vec::new();
         for table in &pin.tables {
-            let facts = extract(&text, &table.defines)
-                .map_err(|e| format!("{} {}: {e}", pin.id, table.kind))?;
+            let facts = match &table.defines {
+                Some(defines) => extract(&text, defines),
+                None => {
+                    let targets = table.target_of.as_ref().and_then(|id| {
+                        all.iter()
+                            .filter(|(p, _)| &p.id == id)
+                            .flat_map(|(_, t)| t)
+                            .find(|(kind, _)| *kind == table.kind)
+                            .map(|(_, facts)| facts)
+                    });
+                    c::extract(&text, table, targets)
+                }
+            }
+            .map_err(|e| format!("{} {}: {e}", pin.id, table.kind))?;
             tables.push((table.kind.clone(), facts));
         }
         all.push((pin.clone(), tables));
@@ -151,11 +215,17 @@ fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {
 }
 
 /// Reads `sources.toml`. Each source has at least one table, each for a module kind of
-/// [`KINDS`] and no kind twice (ENGT-2.10).
+/// [`KINDS`] and no kind twice (ENGT-2.10); a table of a QuakeC source gives its `defines` and
+/// no C column, and a table of a C source its `array` and no `defines`, with a name patch's
+/// `target` looked up in an earlier source (ENGT-2.11, ENGT-2.16).
 pub(crate) fn load(root: &Path) -> Result<Vec<Pin>, String> {
     let text = fs::read_to_string(root.join(SOURCES)).map_err(|e| format!("{SOURCES}: {e}"))?;
     let sources: Sources = toml::from_str(&text).map_err(|e| format!("{SOURCES}: {e}"))?;
-    for pin in &sources.source {
+    for (index, pin) in sources.source.iter().enumerate() {
+        let earlier = sources.source.get(..index).unwrap_or_default();
+        for table in &pin.tables {
+            check_table(pin, table, earlier)?;
+        }
         if pin.tables.is_empty() {
             return Err(format!("{SOURCES}: {} has no table", pin.id));
         }
@@ -176,6 +246,44 @@ pub(crate) fn load(root: &Path) -> Result<Vec<Pin>, String> {
         }
     }
     Ok(sources.source)
+}
+
+/// Checks that a table's fields suit its source's language (ENGT-2.11, ENGT-2.16).
+fn check_table(pin: &Pin, table: &Table, earlier: &[Pin]) -> Result<(), String> {
+    let what = format!("{SOURCES}: {} {}", pin.id, table.kind);
+    if Path::new(&pin.path).extension().is_some_and(|e| e == "qc") {
+        if table.defines.is_none() {
+            return Err(format!("{what}: a QuakeC source's table needs defines"));
+        }
+        if table.has_c_columns() {
+            return Err(format!("{what}: a QuakeC source's table has no C columns"));
+        }
+        return Ok(());
+    }
+    if !Path::new(&pin.path).extension().is_some_and(|e| e == "c") {
+        return Err(format!("{what}: {} is neither QuakeC nor C", pin.path));
+    }
+    if table.defines.is_some() {
+        return Err(format!("{what}: a C source's table has no defines"));
+    }
+    if table.array.is_none() {
+        return Err(format!("{what}: a C source's table needs an array"));
+    }
+    if table.target.is_some() || table.target_of.is_some() {
+        let found = table.target_of.as_ref().is_some_and(|id| {
+            earlier
+                .iter()
+                .any(|p| &p.id == id && p.tables.iter().any(|t| t.kind == table.kind))
+        });
+        if table.target.is_none() || table.name.is_none() || table.number.is_none() || !found {
+            return Err(format!(
+                "{what}: name patches need name, number and target columns and a \
+                 target_of naming an earlier source with a {} table",
+                table.kind
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The rerelease pin must be the corpus manifest's (ENGT-1.3).
@@ -259,7 +367,7 @@ fn split_line(line: &str, in_block: &mut bool) -> (String, String) {
 
 /// Whether `word` has the shape of an extension name: upper-case letters, digits and
 /// underscores, with an underscore after a leading letter (ENGT-2.6).
-fn is_extension_name(word: &str) -> bool {
+pub(crate) fn is_extension_name(word: &str) -> bool {
     let mut chars = word.chars();
     chars.next().is_some_and(|c| c.is_ascii_uppercase())
         && word.contains('_')
@@ -672,7 +780,7 @@ fn split_trailing_word(text: &str) -> (&str, &str) {
     text.split_at(split)
 }
 
-fn is_word(word: &str) -> bool {
+pub(crate) fn is_word(word: &str) -> bool {
     word.chars()
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
@@ -731,7 +839,7 @@ pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
          //! The engine-target database tables, generated by `cargo xtask engines` from the fact\n\
          //! sources pinned in `crates/qc-engines/sources.toml`; do not edit. Only facts are\n\
          //! extracted: builtin numbers, engine names, QuakeC names and signatures, and extension\n\
-         //! names (ENGT-2). ADR-0014 and ADR-0015 record the legal basis.\n\n\
+         //! names (ENGT-2). ADR-0015 and ADR-0016 record the legal basis.\n\n\
          use crate::{Builtin, BuiltinKey, Source};\n\n",
     );
     out.push_str("/// The pinned sources, with the SHA-256 of each file (ENGT-1).\n");
@@ -777,11 +885,20 @@ fn render_table(out: &mut String, pin: &Pin, kind: &str, facts: &Facts) {
             item.name, item.signature, item.extensions
         ));
     }
-    out.push_str(&format!(
-        "];\n\n/// The {kind} extension names of `{}` (ENGT-2.6), in file order.\n\
-         pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n\n",
-        pin.id, facts.extensions
-    ));
+    out.push_str("];\n\n");
+    // A C reading lists extension names only from its `extension_array` (ENGT-2.17).
+    let lists_extensions = pin
+        .tables
+        .iter()
+        .find(|t| t.kind == kind)
+        .is_none_or(|t| t.defines.is_some() || t.extension_array.is_some());
+    if lists_extensions {
+        out.push_str(&format!(
+            "/// The {kind} extension names of `{}` (ENGT-2.6, ENGT-2.17), in file order.\n\
+             pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n\n",
+            pin.id, facts.extensions
+        ));
+    }
 }
 
 /// Formats `source` with the workspace's `rustfmt` settings.

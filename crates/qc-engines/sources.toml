@@ -5,16 +5,22 @@
 # below, extracts only facts from it (builtin names, numbers and signatures, and extension
 # names) and writes `src/tables.rs`; `cargo xtask engines --check` fails when the checked-in
 # tables differ from what the sources give. No comment text or code of these files is
-# copied, and none of them is a porting upstream: ADR-0014 and ADR-0015 record the legal
-# basis, and docs/spec/engine-targets.md the extraction rules (ENGT-2 to ENGT-4).
+# copied, and none of them is a porting upstream: ADR-0014, ADR-0015 and ADR-0016 record the
+# legal basis, and docs/spec/engine-targets.md the extraction rules (ENGT-2 to ENGT-4).
 #
-# `license` is the SPDX identifier of the repository's license file, `license_file`; of the
-# source files only the rerelease's carries a license header of its own. Pins recorded on 2026-10-19.
+# `license` is the SPDX identifier of the license the source carries: the repository's
+# license file, `license_file`, or the grant in the file's own header where it has one (the
+# rerelease's and the C files'). Pins recorded on 2026-10-19.
 #
 # `tables` are the readings of the file: each gives the builtins and extension names of one
-# module kind (`ssqc`, `csqc` or `menuqc`, PRJ-3.1), with `defines` the macros defined before
-# the file is read, choosing the parts of a file that serves several module kinds for that
-# kind (ENGT-2.3, ENGT-2.10).
+# module kind (`ssqc`, `csqc` or `menuqc`, PRJ-3.1). A QuakeC source's reading gives
+# `defines`, the macros defined before the file is read, choosing the parts of a file that
+# serves several module kinds for that kind (ENGT-2.3, ENGT-2.10). A C source's reading gives
+# the `array` it reads and its columns (ENGT-2.11 to ENGT-2.17): `name`, `function`, `number`,
+# `signature` and `extension` are column indices of a row (no `name` makes the array
+# positional), `absent` the functions that stand for no builtin, `target` and `target_of` a
+# name patch's target and the earlier source it is looked up in, and `extension_array` the
+# array that lists extension names.
 
 [[source]]
 id = "fteqw"
@@ -78,3 +84,75 @@ license = "GPL-2.0-or-later"
 license_file = "COPYING.txt"
 license_sha256 = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
 tables = [{ kind = "ssqc", defines = [] }]
+
+# The QuakeSpasm lineage's builtin tables, in C: fact-only sources by ADR-0016. Each file
+# carries id's header granting the GPL "either version 2 of the License, or (at your option)
+# any later version"; each repository's LICENSE.txt is the text of GPL version 2. The tables
+# are read from C array initialisers by the columns given here (ENGT-2.11 to ENGT-2.17).
+[[source]]
+id = "quakespasm"
+repo = "sezero/quakespasm"
+commit = "c9c8ee9895961669c4674e8f8ca8c64cc43e38b5"
+path = "Quake/pr_cmds.c"
+sha256 = "47081c0293520bbe2a3adefd6629dfbbe051b1e7ce6bfb0d29d79ec94b7a84a1"
+license = "GPL-2.0-or-later"
+license_file = "LICENSE.txt"
+license_sha256 = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+tables = [{ kind = "ssqc", array = "pr_builtin", absent = ["PF_Fixme"] }]
+
+# QuakeSpasm's names for the 2021 rerelease's `#0:ex_` builtins, at the same commit.
+[[source]]
+id = "quakespasm-rerelease"
+repo = "sezero/quakespasm"
+commit = "c9c8ee9895961669c4674e8f8ca8c64cc43e38b5"
+path = "Quake/pr_edict.c"
+sha256 = "735ef2b75b0fd37631d1b92f3bcd012895cf874cf710a8e3ae65feedd4bc0f49"
+license = "GPL-2.0-or-later"
+license_file = "LICENSE.txt"
+license_sha256 = "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+tables = [
+  { kind = "ssqc", array = "exbuiltins", name = 0, number = 1, target = 2, target_of = "quakespasm" },
+]
+
+[[source]]
+id = "ironwail"
+repo = "andrei-drexler/ironwail"
+commit = "08d578136ff43d7d1ef38e636dfbfd3e844be7cd"
+path = "Quake/pr_cmds.c"
+sha256 = "7a5799ab25c4ffbbc69b20cc288a0e49b553ab2f22a0357e3dfd6113708a20c0"
+license = "GPL-2.0-or-later"
+license_file = "LICENSE.txt"
+license_sha256 = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+tables = [
+  { kind = "ssqc", array = "pr_builtindefs", name = 0, function = 1, number = 3, extension = 4, absent = ["NULL"] },
+  { kind = "csqc", array = "pr_builtindefs", name = 0, function = 2, number = 3, extension = 4, absent = ["NULL"] },
+]
+
+[[source]]
+id = "vkquake"
+repo = "Novum/vkQuake"
+commit = "27789d7333a46674474d871137bb71e056719628"
+path = "Quake/pr_cmds.c"
+sha256 = "fdcfdd176306cfc7ba7c56bc1acd73c4008e9e1749f3bfadc19e262cad862b80"
+license = "GPL-2.0-or-later"
+license_file = "LICENSE.txt"
+license_sha256 = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+tables = [
+  { kind = "ssqc", array = "pr_ssqcbuiltins", absent = ["PF_Fixme"] },
+  { kind = "csqc", array = "pr_csqcbuiltins", absent = ["PF_Fixme"] },
+]
+
+# vkQuake's extension builtins and extension names, at the same commit.
+[[source]]
+id = "vkquake-ext"
+repo = "Novum/vkQuake"
+commit = "27789d7333a46674474d871137bb71e056719628"
+path = "Quake/pr_ext.c"
+sha256 = "15001b28c32f3c9a691b481286e9b1e9fa774a17b32c7c3a530d3d064e775dab"
+license = "GPL-2.0-or-later"
+license_file = "LICENSE.txt"
+license_sha256 = "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+tables = [
+  { kind = "ssqc", array = "extensionbuiltins", name = 0, function = 1, number = 3, signature = 4, absent = ["NULL", "PF_NotImplemented"], extension_array = "qcextensions" },
+  { kind = "csqc", array = "extensionbuiltins", name = 0, function = 2, number = 3, signature = 4, absent = ["NULL", "PF_NotImplemented"], extension_array = "qcextensions" },
+]

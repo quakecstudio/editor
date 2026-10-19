@@ -21,8 +21,8 @@ KEX (the 2021 rerelease).
 
 ## Sources and generation
 
-The FTEQW, DarkPlaces and rerelease tables in `src/tables.rs` are generated, never edited by
-hand. [`sources.toml`](sources.toml) pins each fact source by repository, commit and SHA-256,
+The QuakeSpasm, Ironwail, vkQuake, FTEQW, DarkPlaces and rerelease tables in `src/tables.rs`
+are generated, never edited by hand. [`sources.toml`](sources.toml) pins each fact source by repository, commit and SHA-256,
 with its repository's license file:
 
 | Source | File | License (repository) |
@@ -32,12 +32,20 @@ with its repository's license file:
 | `darkplaces-client` | `DarkPlacesEngine/darkplaces`, `dpdefs/csprogsdefs.qc` | GPL-2.0, no header in the file |
 | `darkplaces-menu` | `DarkPlacesEngine/darkplaces`, `dpdefs/menudefs.qc` | GPL-2.0, no header in the file |
 | `rerelease` | `id-Software/quake-rerelease-qc`, `quakec/defs.qc` | GPL-2.0-or-later, the file's header |
+| `quakespasm` | `sezero/quakespasm`, `Quake/pr_cmds.c` | GPL-2.0-or-later, the file's header |
+| `quakespasm-rerelease` | `sezero/quakespasm`, `Quake/pr_edict.c` | GPL-2.0-or-later, the file's header |
+| `ironwail` | `andrei-drexler/ironwail`, `Quake/pr_cmds.c` | GPL-2.0-or-later, the file's header |
+| `vkquake` | `Novum/vkQuake`, `Quake/pr_cmds.c` | GPL-2.0-or-later, the file's header |
+| `vkquake-ext` | `Novum/vkQuake`, `Quake/pr_ext.c` | GPL-2.0-or-later, the file's header |
 
 Only facts are extracted from them: builtin numbers and engine names, QuakeC names, signatures
 and extension names. No comment text or code is copied, and none of them is a porting upstream;
 [ADR-0014](../../docs/adr/0014-engine-fact-sources.md) records the decision and its legal
-basis, and [ADR-0015](../../docs/adr/0015-darkplaces-client-menu-fact-sources.md), which
-supersedes it, adds DarkPlaces' client and menu QuakeC definitions. The vanilla table is `qc-builtins`', ported from id's engine.
+basis, [ADR-0015](../../docs/adr/0015-darkplaces-client-menu-fact-sources.md), which
+supersedes it, adds DarkPlaces' client and menu QuakeC definitions, and
+[ADR-0016](../../docs/adr/0016-quakespasm-lineage-fact-sources.md) adds the builtin tables of
+the QuakeSpasm lineage, read from their C array initialisers (ENGT-2.11 to ENGT-2.17). The
+vanilla table is `qc-builtins`', ported from id's engine.
 
 ```bash
 cargo xtask engines           # fetch the pinned files by checksum and write src/tables.rs
@@ -60,11 +68,13 @@ cargo test -p qc-engines
 
 Every engine has a server QuakeC table. FTEQW also has client (CSQC) and menu QuakeC tables,
 read from the same pinned `fteextensions.qc` with `CSQC` or `MENU` defined, and DarkPlaces
-has them from its `csprogsdefs.qc` and `menudefs.qc` (ENGT-2.10, ENGT-3.8); no other engine
-has one, so a client or menu module targeting it is not checked (ENGT-4.8).
+has them from its `csprogsdefs.qc` and `menudefs.qc` (ENGT-2.10); Ironwail and vkQuake have
+client QuakeC tables from their own builtin tables (ENGT-3.11). A module of a kind its
+engine has no table for is not checked (ENGT-4.8).
 
 ## What it is not, yet
 
-Client and menu QuakeC tables for engines other than FTEQW and DarkPlaces, and the
-QuakeSpasm lineage's own extension lists, need further fact sources (see the spec's ENGT-3
-notes).
+The C sources give no signatures for QuakeSpasm's and Ironwail's own builtins, and no
+QuakeC names for the positional arrays of QuakeSpasm and vkQuake, so those entries carry the
+C function's name and an empty signature unless id's table names them (ENGT-2.14,
+ENGT-3.9).
