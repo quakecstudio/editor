@@ -147,7 +147,8 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
     };
     let fte = dialect.has_fteqcc_extensions();
     // Walk the top-level nodes in source order, so a name an `enum` or `typedef` declares is
-    // visible to the declarations after it (QC-12.5, QC-23.3).
+    // visible to the declarations after it (QC-12.5, QC-23.3). Only an FTEQCC parse has
+    // `enum` and `typedef` nodes.
     for node in tree.syntax().children() {
         match node.kind() {
             SyntaxKind::Declaration => {
@@ -155,12 +156,12 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                     lower_declaration(&decl, fte, &mut decls);
                 }
             }
-            SyntaxKind::EnumDecl if fte => {
+            SyntaxKind::EnumDecl => {
                 if let Some(en) = ast::EnumDecl::cast(node) {
                     lower_enum(&en, &mut decls);
                 }
             }
-            SyntaxKind::TypedefDecl if fte => {
+            SyntaxKind::TypedefDecl => {
                 if let Some(td) = ast::TypedefDecl::cast(node) {
                     lower_typedef(&td, &mut decls);
                 }

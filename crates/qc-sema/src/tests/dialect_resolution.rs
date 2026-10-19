@@ -278,6 +278,62 @@ fn autoprototyping_sees_later_declarations() {
     assert_eq!(counts.module_index, 2);
 }
 
+// spec FTE-14.1: a typedef's type name is a definition, and so is a named enum's (FTE-15.4).
+#[test]
+fn type_names_are_definitions() {
+    let index = fte_index_of(
+        "typedef struct { string mdl; } poseInfo;\nenum UpgradeType { UT_A };\n\
+         void() f = { poseInfo p; UpgradeType u; float poseInfo; };\n",
+    );
+    let globals: Vec<&str> = index
+        .defs
+        .iter()
+        .filter(|d| d.kind.is_global())
+        .map(|d| d.name.as_str())
+        .collect();
+    assert_eq!(globals, ["poseInfo", "UpgradeType", "UT_A", "f"]);
+    // A local of a type the model does not know is never a type mismatch, and a local named
+    // like the type shadows it (FTE-22.1).
+    assert_eq!(all_codes(&index), Vec::<Code>::new());
+    let unknown = fte_index_of("void() f = { poseInfo p; float p; };\n");
+    assert_eq!(all_codes(&unknown), Vec::<Code>::new());
+}
+
+// spec FTE-21.1: the names a local's initialiser uses are resolved, a value or an aggregate.
+#[test]
+fn local_initialisers_are_uses() {
+    let index = fte_index_of(
+        "float a;\nvoid() f = {\n\tfloat x = nope;\n\tvector v = { a, gone, 0 };\n};\n",
+    );
+    let messages: Vec<&str> = index
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        ["Unknown value \"nope\"", "Unknown value \"gone\""]
+    );
+}
+
+// spec QC-11.5: a local declared again in its function with the same type is that local
+// again, with no warning; QCD-7.3 is for a global only.
+#[test]
+fn a_local_declared_twice_is_one_local() {
+    let index = index_of("void() f = { local float x; local float x; x = 1; };");
+    assert_eq!(all_codes(&index), Vec::<Code>::new());
+    assert_eq!(index.defs.iter().filter(|d| d.name == "x").count(), 1);
+}
+
+// spec PRJ-2.2: the database reports the dialect it was set to.
+#[test]
+fn the_database_reports_its_dialect() {
+    let mut db = Db::new();
+    assert_eq!(db.dialect(), Dialect::Vanilla);
+    db.set_dialect(Dialect::Fteqcc);
+    assert_eq!(db.dialect(), Dialect::Fteqcc);
+}
+
 // spec QC-11.7: under FTEQCC too, a vector local has components, and they shadow a global
 // of the same name (FTE-22.1).
 #[test]

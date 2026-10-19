@@ -638,6 +638,14 @@ fn fteqcc_frames_carry_between_files() {
         compile: &["a.qc", "b.qc"],
     });
     assert_eq!(codes(&vanilla[1]), [Code::E0106, Code::E0106]);
+    // Another file's definition replaces the value; the same file's second one does not.
+    let files = [
+        ("a.qc", "$frame a b c\nx = $c;"),
+        ("b.qc", "$frame c\nx = $c;\n$frame d c\ny = $c;"),
+    ];
+    let (_, outputs) = fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(tokens(&outputs[0]), "x = 2 ;");
+    assert_eq!(tokens(&outputs[1]), "x = 0 ; y = 0 ;");
 }
 
 // spec FTE-22.4: after the first autoprototyping pass its frame macros are still defined, so

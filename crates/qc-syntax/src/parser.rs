@@ -830,9 +830,6 @@ impl<'a> Parser<'a> {
     fn builtin(&mut self) {
         self.start_node(K::Builtin);
         self.bump();
-        // FTE-17.4: FTEQCC's `#number:name` binds a builtin by its engine name, as the
-        // rerelease's `#0:ex_bprint`, and the number may be 0.
-        let named = self.fteqcc() && self.nth(1).is_some_and(|t| t.kind == K::Colon);
         let number = self.current().map(|t| (t.kind, t.value));
         match number {
             Some((K::FloatLit, Some(value))) => {
@@ -843,7 +840,8 @@ impl<'a> Parser<'a> {
                 let integral = value.trunc() == value;
                 if !integral {
                     self.error(Code::E0209, "Bad builtin immediate");
-                } else if value <= 0.0 && !named {
+                } else if value <= 0.0 && !self.fteqcc() {
+                    // FTE-17.4: FTEQCC takes any integral number, 0 included.
                     self.error(Code::E0507, "builtin number must be positive");
                 }
                 self.bump();
@@ -851,7 +849,8 @@ impl<'a> Parser<'a> {
             Some((K::FrameRef, _)) => self.bump(),
             _ => self.error(Code::E0209, "Bad builtin immediate"),
         }
-        // The `:name` of FTE-17.4.
+        // FTE-17.4: FTEQCC's `#number:name` binds a builtin by its engine name, as the
+        // rerelease's `#0:ex_bprint`.
         if self.fteqcc() && self.at(K::Colon) {
             self.bump();
             self.name();
@@ -1274,21 +1273,17 @@ impl<'a> Parser<'a> {
     /// function variable (FTE-21.2).
     fn local_decl(&mut self, keyword: bool) {
         self.start_node(K::LocalDecl);
-        let qualified = self.fteqcc()
-            && self
-                .current()
-                .is_some_and(|t| t.kind == K::Name && qualifier_keyword(&t.text).is_some());
         if keyword {
             self.bump_as(K::LocalKw);
-        } else if qualified {
+        }
+        if self.fteqcc() {
+            // FTE-21.1: FTEQCC needs no `local`, for a field local `.float f;` too, and
+            // `QCC_PR_ParseDefs` reads the qualifiers (FTE-10 to FTE-12) with or without it.
             self.qualifiers();
-        } else if self.fteqcc() {
-            // FTE-21.1: FTEQCC needs no `local`, for a field local `.float f;` too.
-        } else if self.at(K::Dot) {
-            self.error(Code::E0201, "not a name");
-        } else {
-            let found = self.nth(1).map(|t| (t.text.clone(), t.span));
-            if let Some((text, span)) = found {
+        } else if !keyword {
+            if self.at(K::Dot) {
+                self.error(Code::E0201, "not a name");
+            } else if let Some((text, span)) = self.nth(1).map(|t| (t.text.clone(), t.span)) {
                 self.error_at(Code::E0204, format!("expected ;, found {text}"), span);
             }
         }
