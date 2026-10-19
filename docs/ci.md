@@ -12,6 +12,9 @@ required check below has passed on it, so a push to `main` is not checked again.
 | Merge group | `refs/heads/gh-readonly-queue/main/...` | every job and every step except `Dependency Review` | checks exactly what lands on `main` |
 | Cache run on `main` (`ci.yml` only) | `refs/heads/main` | every job except `Format`, `cargo-deny` and `Dependency Review`, as on a pull request | fills the caches; see below |
 
+That is the full path. A pull request or merge group that changes only documentation, the
+plan or agent files takes the light path instead ([below](#light-changes)).
+
 The single-token deletion check of id 1.01 (`cargo xtask parse-corpus --deletions`, P1-21)
 reparses each file once per token and is the one step that took minutes, so it runs only in
 the merge group, which every change passes before it reaches `main`. In that run the
@@ -20,6 +23,70 @@ for all its steps, with debug assertions and overflow checks still on. Every oth
 job runs on the pull request too, so a platform problem still shows before queueing. A
 step skipped this way still lets its job report success, so the required check names never
 change.
+
+### Light changes
+
+A pull request or merge group that changes only documentation, the plan or agent files
+takes the light path: every required check still reports success under its exact name, but
+only the checks that read those files do any work. The first job of `ci.yml`,
+`Classify the change` (not a required check), runs
+[`scripts/ci-changes.sh`](../scripts/ci-changes.sh) on the run's diff, and every other job
+needs it:
+
+| Event | Diff |
+| --- | --- |
+| Pull request | the merge commit against its first parent, the base branch |
+| Merge group | `merge_group.base_sha` against the group's head |
+| Push to `main` | `before` against the pushed commit; every path in the push filter is full, so this run is always full |
+| Schedule, `workflow_dispatch` | none: full |
+
+A change is light when every changed file is on this allowlist, and full otherwise. An empty
+diff, a diff that cannot be computed (an unknown or unfetchable base, an all-zero `before`)
+and a failed `Classify the change` job are all full. Renames count both paths.
+
+| Light | Why only `cargo xtask ci` and xtask's tests read it |
+| --- | --- |
+| `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution` and `contrast` (`docs/design/tokens.toml`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
+| `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci`, and by xtask's ratchet tests (`plan/backlog/readiness.yaml`) |
+| `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test |
+| `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
+
+Never light, whatever directory they are in:
+
+- `docs/spec/**`: the spec-citation ratchet in `qs-tests` (`spec_coverage.rs`), the test
+  vectors several crates read, and `corpus/language_coverage.py` in `Test Assets (linux)`.
+- Any `.rs` file: `qs-tests` reads every `.rs` file in the tree for spec citations.
+- Everything else, including `.github/**`, `specs/**`, `scripts/**`, crate READMEs and any
+  path the script does not know.
+
+No crate but xtask reads a light path in its tests or build: the only repository files the
+other crates' tests open are under `docs/spec/`, and no crate embeds a document with
+`include_str!`. On the light path:
+
+| Check | What it does |
+| --- | --- |
+| `cargo xtask ci` | everything, as on a full run: the plan checks, cached specs, conventions, ADRs, layers, licenses, attribution, contrast and both fixture checks |
+| `Unit Tests (linux)`, `(macos)`, `(windows)` | `cargo test --locked -p xtask --all-features` on each OS instead of the whole workspace, and no oracles |
+| `Format`, `Clippy`, `cargo-deny`, `Build (macos-universal)` | the job is skipped by its `if:`, which reports success |
+| `Build (linux-x86_64)` and the other build entries, `Test Assets (linux)`, `(macos)`, `(windows)` | every step is skipped, so the job reports success under its matrix name |
+| `Dependency Review`, `Pinned Actions`, `zizmor` | unchanged; `.github/**` is never light |
+
+GitHub's [troubleshooting page for required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks#handling-skipped-but-required-checks)
+decides the shape: "If a workflow is skipped due to path filtering, branch filtering or a
+commit message, then checks associated with that workflow will remain in a "Pending" state.
+A pull request that requires those checks to be successful will be blocked from merging."
+and "If, however, a job within a workflow is skipped due to a conditional, it will report
+its status as "Success"." So `ci.yml` has no `paths:` filter on pull requests or merge
+groups. The same page warns: "When a job fails, any jobs that depend on the failed job are
+skipped and do not report a failure." Every job that needs `Classify the change` therefore
+has `!cancelled()` in its `if:` and treats an empty output as full, so a failed
+classification runs everything rather than skipping it. The page does not say what name a
+matrix job skipped by its `if:` reports, so the matrix jobs skip their steps instead and
+each entry reports its own name.
+
+The script's tests are `xtask/src/ci/changes_tests.rs` (each category, the unknown-path
+fallback, renames, an empty diff and an unknown base); they run with xtask's tests, so on
+the light path too.
 
 ### Caches
 
