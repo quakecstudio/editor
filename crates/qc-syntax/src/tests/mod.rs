@@ -14,6 +14,7 @@ mod ast_view;
 mod declarations;
 mod dialect;
 mod dialect_ast;
+mod dialect_edges;
 mod dialect_full;
 mod dialect_rerelease;
 mod dialect_statements;
