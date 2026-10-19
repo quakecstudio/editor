@@ -1,6 +1,6 @@
 # ADR-0014: Use FTEQW's and DarkPlaces' extension files as fact-only sources
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0015
 - **Date:** 2026-10-19
 - **Decided by:** Justin Plock
 - **Issue:** [#60](https://github.com/quakecstudio/editor/issues/60)
@@ -133,7 +133,8 @@ This is not legal advice; the license compliance review before the first public 
 
 - Decision issue: [#60](https://github.com/quakecstudio/editor/issues/60), the escalation
   comment (paths A, B and C) and Justin's decision comment of 2026-10-19.
-- Related ADRs: [ADR-0002](0002-license-model.md) (the project license and the P4-22 review).
+- Related ADRs: [ADR-0002](0002-license-model.md) (the project license and the P4-22 review);
+  [ADR-0015](0015-darkplaces-client-menu-fact-sources.md), which supersedes this one.
 - Sources, all read on 2026-10-19:
   - <https://github.com/fte-team/fteqw/blob/f937b9d88f71fc4429db5fe56c6a98d922711b2e/quakec/menusys/fteextensions.qc>
   - <https://github.com/fte-team/fteqw/blob/f937b9d88f71fc4429db5fe56c6a98d922711b2e/LICENSE>
