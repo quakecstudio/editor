@@ -1366,9 +1366,9 @@ impl<L: Loader> Preprocessor<L> {
                 run.frame_value = 0;
             }
             FrameCommand::Value(word) => {
-                let value = cond::atoi(word);
-                run.frame_value =
-                    i32::try_from(value).unwrap_or(if value < 0 { i32::MIN } else { i32::MAX });
+                // A number past an `int` is held at the nearest one.
+                let value = cond::atoi(word).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
+                run.frame_value = i32::try_from(value).unwrap_or_default();
             }
             FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
                 Some(value) => run.frame_value = value,

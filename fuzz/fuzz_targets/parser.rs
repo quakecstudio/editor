@@ -1,44 +1,62 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Fuzzes the parser (P1-22, QA-2) with grammar-aware mutation.
+//! Fuzzes the parser (P1-22, P2-51, QA-2) with grammar-aware mutation, under the vanilla and
+//! the FTEQCC profiles.
 //!
-//! The check: parsing any bytes terminates without a panic or a stack overflow, the tree's
-//! tokens tile the input and give it back byte for byte, every node lies inside its parent,
-//! every diagnostic points inside the input, and parsing the same bytes twice gives the same
-//! tree.
+//! The check, for each profile: parsing any bytes terminates without a panic or a stack
+//! overflow, the tree's tokens tile the input and give it back byte for byte, every node lies
+//! inside its parent, every diagnostic points inside the input, and parsing the same bytes
+//! twice gives the same tree.
 //!
 //! The mutator works on QuakeC tokens rather than bytes, so mutants stay close to programs
 //! and reach the parser's grammar instead of stopping in the lexer. It lexes the input with
-//! `qc-lexer` and deletes, duplicates, replaces, swaps or moves whole tokens and token runs,
-//! inserts QuakeC fragments (keywords, types, punctuation, literals, frame macros,
-//! directives, comments), and wraps token runs in brackets to probe the nesting limit
-//! (QC-27.15). One mutation in eight is libFuzzer's own byte mutation, so the lexer's edge
+//! `qc-lexer` under the FTEQCC profile, whose tokens include the vanilla ones, and deletes,
+//! duplicates, replaces, swaps or moves whole tokens and token runs, inserts QuakeC fragments
+//! (keywords, types, punctuation, literals, frame macros, directives, comments, and the FTEQCC
+//! dialect's operators, declarations and statements), and wraps token runs in brackets and
+//! prefix operators to probe the nesting limit (QC-27.15, FTEF-18.26). One mutation in eight is libFuzzer's own byte mutation, so the lexer's edge
 //! cases stay covered. An input longer than 4 KB is first cut to a window of whole tokens,
 //! which keeps the run fast on whole corpus files. The cross-over splices a token run of one
 //! input into the other.
 //!
-//! Seed it with QuakeC source: the nightly `Fuzz` workflow copies the `.qc` files of the
-//! corpus (`cargo xtask corpus fetch id-1.01 rerelease`) into `fuzz/corpus/parser/`.
+//! Seed it with QuakeC source: the nightly `Fuzz` workflow copies the `.qc` and `.qh` files of
+//! the corpus (`cargo xtask corpus fetch id-1.01 rerelease copper arcane-dimensions`) into
+//! `fuzz/corpus/parser/`.
 
 #![no_main]
 
 use libfuzzer_sys::{fuzz_crossover, fuzz_mutator, fuzz_target, fuzzer_mutate};
-use qc_lexer::lex;
-use qc_syntax::{SyntaxNode, parse};
+use qc_lexer::{Dialect, lex_with};
+use qc_syntax::{SyntaxNode, parse_with};
 
 fuzz_target!(|data: &[u8]| {
-    let parsed = parse(data);
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        check(data, dialect);
+    }
+});
+
+/// Parses `data` in `dialect` and checks the tree, the diagnostics and determinism.
+fn check(data: &[u8], dialect: Dialect) {
+    let parsed = parse_with(data, dialect);
     let root = parsed.syntax();
-    assert_eq!(root.text(), data, "the tree does not give back the input");
+    assert_eq!(
+        root.text(),
+        data,
+        "{dialect:?}: the tree does not give back the input"
+    );
     check_tiling(&root, data);
     for diagnostic in parsed.diagnostics() {
         assert!(
             diagnostic.span.start <= diagnostic.span.end && diagnostic.span.end <= data.len(),
-            "diagnostic outside the input: {diagnostic:?}"
+            "{dialect:?}: diagnostic outside the input: {diagnostic:?}"
         );
     }
-    assert_eq!(parse(data), parsed, "parsing the same bytes twice differs");
-});
+    assert_eq!(
+        parse_with(data, dialect),
+        parsed,
+        "{dialect:?}: parsing the same bytes twice differs"
+    );
+}
 
 /// Checks that the tokens of `root` tile `data` in order and every node is inside its parent.
 fn check_tiling(root: &SyntaxNode, data: &[u8]) {
@@ -64,8 +82,9 @@ fn check_tiling(root: &SyntaxNode, data: &[u8]) {
     }
 }
 
-/// Fragments the mutator inserts: every keyword and punctuation token of QC-3 and QC-7, and
-/// the shapes the grammar is built from.
+/// Fragments the mutator inserts: every keyword and punctuation token of QC-3 and QC-7, the
+/// shapes the grammar is built from, and the FTEQCC dialect's tokens and constructs
+/// (`dialect-fteqcc-rerelease.md`, `dialect-fteqcc.md`).
 const FRAGMENTS: &[&[u8]] = &[
     b"void",
     b"float",
@@ -162,6 +181,81 @@ const FRAGMENTS: &[&[u8]] = &[
     b"return x;",
     b"{ }",
     b"self.think = f;",
+    b"++",
+    b"--",
+    b"+=",
+    b"&~=",
+    b"(+)",
+    b"%",
+    b"?",
+    b":",
+    b"::",
+    b"->",
+    b"..",
+    b"~",
+    b"^",
+    b"<<",
+    b">>=",
+    b"0x1f",
+    b"07",
+    b"12i",
+    b"1.0f",
+    b".5",
+    b"'a'",
+    b"'\\n'",
+    b"'8 8'",
+    b"\"\\x41\\{65}\\u0041\\b\"",
+    b"\\\n",
+    b"const",
+    b"var",
+    b"nosave",
+    b"static",
+    b"__used",
+    b"int",
+    b"unsigned long",
+    b"__variant",
+    b"for (int i = 0; i < 3; i++)",
+    b"switch (x) { case 1: break; case 2 .. 4: default: }",
+    b"continue;",
+    b"x ? y : z",
+    b"x ?: z",
+    b"typedef struct { float a; } T;",
+    b"typedef enum { A, B } E;",
+    b"struct s { float a; struct s *next; };",
+    b"union u { float f; int i; };",
+    b"enum class E : float { A, B = 2 };",
+    b"enumflags { F1, F2 };",
+    b"class C : D { float x; virtual void(void) f; public: };",
+    b"accessor h : float { get float v = f; set float v = g; };",
+    b"void C::f(void) { super::f(); };",
+    b"float f(float a = 1, ...) { return a; };",
+    b"void() f = #0:name;",
+    b"float t[4] = { 1, 2, .x = 3 };",
+    b"float *p, **q;",
+    b"float(float)(string) ff;",
+    b"..float ff;",
+    b"(float)",
+    b"(T *)",
+    b"sizeof(int)",
+    b"[1, 2, 3]",
+    b"&x",
+    b"*p",
+    b"if not (x)",
+    b"if !(x)",
+    b"do {} __until (x);",
+    b"goto l;",
+    b"l:",
+    b":l",
+    b"return = x;",
+    b"[++ 1 .. 4]",
+    b"[--(w) 4 .. 1]",
+    b"#if 1 && !defined(X)\n",
+    b"#elif 0\n",
+    b"#else\n",
+    b"#warning w\n",
+    b"#pragma noref 1\n",
+    b"$framevalue 3\n",
+    b"$flush\n",
 ];
 
 /// Brackets the mutator wraps a token run in.
@@ -175,6 +269,13 @@ const WRAPS: &[(&[u8], &[u8])] = &[
     (b"x.", b""),
     (b"if (x) ", b""),
     (b"void() f = {", b"};"),
+    (b"++", b""),
+    (b"~", b""),
+    (b"(float)", b""),
+    (b"x ? ", b" : y"),
+    (b"struct { ", b" }"),
+    (b"float", b"()"),
+    (b"float*", b""),
 ];
 
 /// A xorshift generator over libFuzzer's seed, so a mutation is reproducible from its seed.
@@ -205,9 +306,9 @@ impl Rng {
     }
 }
 
-/// The byte ranges of the tokens of `data`, in order.
+/// The byte ranges of the tokens of `data`, in order, lexed under the FTEQCC profile.
 fn token_spans(data: &[u8]) -> Vec<(usize, usize)> {
-    lex(data)
+    lex_with(data, Dialect::Fteqcc)
         .tokens
         .iter()
         .map(|t| (t.span.start, t.span.end))

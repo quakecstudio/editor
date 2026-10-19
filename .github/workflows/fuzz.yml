@@ -36,7 +36,7 @@ jobs:
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
-    # Twelve targets of ten minutes each, the oracle build and the Rust builds.
+    # Thirteen targets of ten minutes each, the oracle build and the Rust builds.
     timeout-minutes: 180
     permissions:
       contents: read
@@ -62,13 +62,15 @@ jobs:
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
-      # P1-22: the parser target's grammar-aware mutator starts from real QuakeC.
-      - name: Seed the parser corpus with id 1.01 and the rerelease
+      # P1-22, P2-51: the parser target's grammar-aware mutator starts from real QuakeC,
+      # vanilla and FTEQCC, and parses each input under both profiles.
+      - name: Seed the parser corpus with id 1.01, the rerelease and two FTEQCC mods
         run: |
-          cargo xtask corpus fetch id-1.01 rerelease
+          cargo xtask corpus fetch id-1.01 rerelease copper arcane-dimensions
           mkdir -p fuzz/corpus/parser
           find "$QS_TEST_ASSETS/codebase/id-1.01" "$QS_TEST_ASSETS/codebase/rerelease" \
-            -type f -name '*.qc' -print0 |
+            "$QS_TEST_ASSETS/codebase/copper" "$QS_TEST_ASSETS/codebase/arcane-dimensions" \
+            -type f \( -name '*.qc' -o -name '*.qh' \) -print0 |
             while IFS= read -r -d '' file; do
               name=${file#"$QS_TEST_ASSETS"/codebase/}
               cp "$file" "fuzz/corpus/parser/${name//\//_}"
