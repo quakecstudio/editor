@@ -6,7 +6,7 @@
 //!
 //! Each source file is fetched at its pinned commit and checked, with its repository's license
 //! file, against the recorded SHA-256, then read once for each module kind it has a table
-//! for, with that table's macros defined (ENGT-2.3, ENGT-2.8). Only facts are extracted
+//! for, with that table's macros defined (ENGT-2.3, ENGT-2.10). Only facts are extracted
 //! (ENGT-2): each builtin's
 //! number or engine name, its QuakeC name and its signature, and extension names. No comment
 //! text and no code is copied: comments are read only to find an extension name that stands
@@ -68,7 +68,7 @@ pub(crate) struct Pin {
 }
 
 /// One reading of a source file: the module kind its builtins are for and the macros defined
-/// before it is read (ENGT-2.3, ENGT-2.8).
+/// before it is read (ENGT-2.3, ENGT-2.10).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Table {
@@ -151,7 +151,7 @@ fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {
 }
 
 /// Reads `sources.toml`. Each source has at least one table, each for a module kind of
-/// [`KINDS`] and no kind twice (ENGT-2.8).
+/// [`KINDS`] and no kind twice (ENGT-2.10).
 pub(crate) fn load(root: &Path) -> Result<Vec<Pin>, String> {
     let text = fs::read_to_string(root.join(SOURCES)).map_err(|e| format!("{SOURCES}: {e}"))?;
     let sources: Sources = toml::from_str(&text).map_err(|e| format!("{SOURCES}: {e}"))?;
@@ -418,6 +418,67 @@ impl Cond<'_> {
     }
 }
 
+/// Where the code read so far ends its statements (ENGT-2.9): at a `;` outside a string
+/// literal, or at a `}` outside parentheses that closes the statement's outermost brace, so a
+/// function body with no `;` after it still ends.
+#[derive(Default)]
+struct Statements {
+    parens: usize,
+    braces: usize,
+    in_string: bool,
+    escaped: bool,
+}
+
+impl Statements {
+    /// Appends `code` to `pending` and returns the statements it completes, leaving the
+    /// unfinished rest in `pending`.
+    fn feed(&mut self, code: &str, pending: &mut String) -> Vec<String> {
+        let mut done = Vec::new();
+        self.in_string = false;
+        self.escaped = false;
+        for c in code.chars() {
+            if self.in_string {
+                pending.push(c);
+                if self.escaped {
+                    self.escaped = false;
+                } else if c == '\\' {
+                    self.escaped = true;
+                } else if c == '"' {
+                    self.in_string = false;
+                }
+                continue;
+            }
+            match c {
+                ';' => {
+                    done.push(std::mem::take(pending));
+                    continue;
+                }
+                '"' => self.in_string = true,
+                '(' => self.parens = self.parens.saturating_add(1),
+                ')' => self.parens = self.parens.saturating_sub(1),
+                '{' if self.parens == 0 => self.braces = self.braces.saturating_add(1),
+                '}' if self.parens == 0 && self.braces > 0 => {
+                    self.braces = self.braces.saturating_sub(1);
+                    if self.braces == 0 {
+                        pending.push(c);
+                        done.push(std::mem::take(pending));
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+            pending.push(c);
+        }
+        done
+    }
+
+    /// Whether a statement is unfinished: some text is pending, or a brace or parenthesis is
+    /// open.
+    fn open(&self, pending: &str) -> bool {
+        !pending.trim().is_empty() || self.braces > 0 || self.parens > 0
+    }
+}
+
 /// One open conditional block.
 struct Block {
     /// Whether the lines around the block are read.
@@ -433,6 +494,7 @@ pub(crate) fn extract(text: &str, defines: &[String]) -> Result<Facts, String> {
     let mut blocks: Vec<Block> = Vec::new();
     let mut in_block = false;
     let mut pending = String::new();
+    let mut statements = Statements::default();
     let mut heading: Option<String> = None;
     for (index, line) in text.lines().enumerate() {
         let number = index.saturating_add(1);
@@ -448,7 +510,7 @@ pub(crate) fn extract(text: &str, defines: &[String]) -> Result<Facts, String> {
             continue;
         }
         let note = comment.trim();
-        if trimmed.is_empty() && pending.trim().is_empty() && is_extension_name(note) {
+        if trimmed.is_empty() && !statements.open(&pending) && is_extension_name(note) {
             if !facts.extensions.iter().any(|e| e == note) {
                 facts.extensions.push(note.to_owned());
             }
@@ -456,10 +518,7 @@ pub(crate) fn extract(text: &str, defines: &[String]) -> Result<Facts, String> {
             continue;
         }
         pending.push(' ');
-        pending.push_str(&code);
-        while let Some((statement, rest)) = pending.split_once(';') {
-            let statement = statement.to_owned();
-            pending = rest.to_owned();
+        for statement in statements.feed(&code, &mut pending) {
             if let Some(item) = builtin(&statement, &comment, heading.as_ref())
                 .map_err(|e| format!("line {number}: {e}"))?
                 && !facts.builtins.iter().any(|b| b.key == item.key)
@@ -672,7 +731,7 @@ pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
          //! The engine-target database tables, generated by `cargo xtask engines` from the fact\n\
          //! sources pinned in `crates/qc-engines/sources.toml`; do not edit. Only facts are\n\
          //! extracted: builtin numbers, engine names, QuakeC names and signatures, and extension\n\
-         //! names (ENGT-2). ADR-0014 records the legal basis.\n\n\
+         //! names (ENGT-2). ADR-0014 and ADR-0015 record the legal basis.\n\n\
          use crate::{Builtin, BuiltinKey, Source};\n\n",
     );
     out.push_str("/// The pinned sources, with the SHA-256 of each file (ENGT-1).\n");

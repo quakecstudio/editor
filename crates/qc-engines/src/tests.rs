@@ -89,12 +89,21 @@ fn is_hex(text: &str, len: usize) -> bool {
     text.len() == len && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-// spec ENGT-1.1: the tables record each of the three fact sources with its repository, commit,
+// spec ENGT-1.4: the tables record each of the five fact sources with its repository, commit,
 // file and license file, and their SHA-256
 #[test]
 fn the_tables_record_their_sources() {
     let ids: Vec<&str> = SOURCES.iter().map(|s| s.id).collect();
-    assert_eq!(ids, ["fteqw", "darkplaces", "rerelease"]);
+    assert_eq!(
+        ids,
+        [
+            "fteqw",
+            "darkplaces",
+            "darkplaces-client",
+            "darkplaces-menu",
+            "rerelease"
+        ]
+    );
     for source in SOURCES {
         assert!(is_hex(source.commit, 40), "{}", source.id);
         assert!(is_hex(source.sha256, 64), "{}", source.id);
@@ -604,7 +613,7 @@ const SETSPAWNPARMS_CALL: &str =
     "void(entity e) setspawnparms = #78;\nvoid(entity e) w = { setspawnparms(e); };\n";
 const GETMOUSEPOS_CALL: &str = "vector() getmousepos = #66;\nvoid() w = { getmousepos(); };\n";
 
-// spec ENGT-2.8, ENGT-3.7: FTEQW has a client and a menu QuakeC table, read from fteextensions.qc
+// spec ENGT-2.10, ENGT-3.8: FTEQW has a client and a menu QuakeC table, read from fteextensions.qc
 // with CSQC and MENU defined, which differ from its server table
 #[test]
 fn fteqw_has_client_and_menu_tables() {
@@ -646,12 +655,13 @@ fn fteqw_has_client_and_menu_tables() {
     assert!(!Engine::Fteqw.extensions(ModuleKind::Menuqc).is_empty());
 }
 
-// spec ENGT-3.7: only FTEQW has client and menu QuakeC tables; every engine has a server table
+// spec ENGT-3.8: only FTEQW and DarkPlaces have client and menu QuakeC tables; every engine
+// has a server table
 #[test]
-fn only_fteqw_has_client_and_menu_tables() {
+fn only_fteqw_and_darkplaces_have_client_and_menu_tables() {
     for engine in Engine::ALL {
         assert!(engine.has_table(ModuleKind::Ssqc), "{}", engine.name());
-        let other = engine == Engine::Fteqw;
+        let other = matches!(engine, Engine::Fteqw | Engine::DarkPlaces);
         for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
             assert_eq!(engine.has_table(kind), other, "{}", engine.name());
             if !other {
@@ -717,7 +727,10 @@ void() w = { stuffcmdflags(world, 0, \"x\"); };
 // spec ENGT-4.8: a module of a kind its engine has no table for is not checked
 #[test]
 fn a_kind_without_a_table_is_not_checked() {
-    for engine in Engine::ALL.into_iter().filter(|e| *e != Engine::Fteqw) {
+    for engine in Engine::ALL
+        .into_iter()
+        .filter(|e| !matches!(e, Engine::Fteqw | Engine::DarkPlaces))
+    {
         for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
             for source in [HASH_CALL, CLEARSCENE_CALL, SETSPAWNPARMS_CALL] {
                 assert!(
@@ -728,4 +741,134 @@ fn a_kind_without_a_table_is_not_checked() {
             }
         }
     }
+}
+
+const PARTICLE_CALL: &str = "\
+float(float max_themes) initparticlespawner = #522;
+void() w = { initparticlespawner(8); };
+";
+const CHR_CALL: &str = "string(float ascii) chr = #78;\nvoid() w = { chr(65); };\n";
+
+// spec ENGT-2.10, ENGT-3.8: DarkPlaces' client table is csprogsdefs.qc's and its menu table
+// menudefs.qc's, each from #1 with no layer of id's table, with their own extension names
+#[test]
+fn darkplaces_has_client_and_menu_tables() {
+    let client = Engine::DarkPlaces.builtins(ModuleKind::Csqc);
+    let menu = Engine::DarkPlaces.builtins(ModuleKind::Menuqc);
+    assert_eq!(client[0].key, BuiltinKey::Number(1));
+    assert_eq!(client[0].name, "makevectors");
+    assert_eq!(menu[0].key, BuiltinKey::Number(1));
+    assert_eq!(menu[0].name, "checkextension");
+    let server_six = Engine::DarkPlaces
+        .builtin(ModuleKind::Ssqc, BuiltinKey::Number(6))
+        .unwrap();
+    let client_six = Engine::DarkPlaces
+        .builtin(ModuleKind::Csqc, BuiltinKey::Number(6))
+        .unwrap();
+    assert_eq!(server_six.name, "break");
+    assert_eq!(client_six.name, "break_to_debugger");
+    assert!(
+        Engine::DarkPlaces
+            .builtin(ModuleKind::Csqc, BuiltinKey::Number(78))
+            .is_none()
+    );
+    let chr = Engine::DarkPlaces
+        .builtin(ModuleKind::Menuqc, BuiltinKey::Number(78))
+        .unwrap();
+    assert_eq!((chr.name, chr.signature), ("chr", "string(float ascii)"));
+    let particles = Engine::DarkPlaces
+        .builtin(ModuleKind::Csqc, BuiltinKey::Number(522))
+        .unwrap();
+    assert_eq!(particles.extensions, ["DP_CSQC_SPAWNPARTICLE"]);
+    for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
+        let table = Engine::DarkPlaces.builtins(kind);
+        let keys: HashSet<BuiltinKey> = table.iter().map(|b| b.key).collect();
+        assert_eq!(keys.len(), table.len());
+        for builtin in &table {
+            assert_eq!(
+                Engine::DarkPlaces.builtin(kind, builtin.key),
+                Some(*builtin)
+            );
+        }
+    }
+    let client_extensions = Engine::DarkPlaces.extensions(ModuleKind::Csqc);
+    assert!(client_extensions.contains(&"DP_CSQC_SPAWNPARTICLE"));
+    assert!(client_extensions.contains(&"DP_CSQC_ENTITYTRANSPARENTSORTING_OFFSET"));
+    let menu_extensions = Engine::DarkPlaces.extensions(ModuleKind::Menuqc);
+    assert!(menu_extensions.contains(&"DP_QC_URI_GET"));
+    assert_ne!(client_extensions, menu_extensions);
+}
+
+// spec ENGT-3.8, ENGT-4.8: a CSQC module targeting DarkPlaces that calls an FTE-only client
+// builtin is W0311 naming DarkPlaces and FTEQW's extension; DarkPlaces' own client builtins
+// are not
+#[test]
+fn a_darkplaces_client_module_reports_an_fte_builtin() {
+    assert_eq!(
+        check_kind(Engine::DarkPlaces, ModuleKind::Csqc, &[HASH_CALL]),
+        ["hash_createtab is builtin #287, which DarkPlaces does not have (FTE_QC_HASHTABLES)"]
+    );
+    assert!(check_kind(Engine::DarkPlaces, ModuleKind::Csqc, &[CLEARSCENE_CALL]).is_empty());
+    assert!(check_kind(Engine::DarkPlaces, ModuleKind::Csqc, &[PARTICLE_CALL]).is_empty());
+    assert_eq!(
+        check_kind(Engine::DarkPlaces, ModuleKind::Csqc, &[SETSPAWNPARMS_CALL]),
+        ["setspawnparms is builtin #78, which DarkPlaces does not have"]
+    );
+}
+
+// spec ENGT-4.8: a DarkPlaces-only client builtin targeting FTEQW is W0311 with the extension
+// DarkPlaces' client table gives it
+#[test]
+fn an_fteqw_client_module_reports_a_darkplaces_builtin() {
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Csqc, &[PARTICLE_CALL]),
+        [
+            "initparticlespawner is builtin #522, which FTEQW does not have \
+          (DP_CSQC_SPAWNPARTICLE)"
+        ]
+    );
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Ssqc, &[PARTICLE_CALL]),
+        ["initparticlespawner is builtin #522, which FTEQW does not have"]
+    );
+}
+
+// spec ENGT-3.8, ENGT-4.8: a menu module targeting DarkPlaces is checked against menudefs.qc's
+// builtins
+#[test]
+fn a_darkplaces_menu_module_uses_its_menu_table() {
+    assert!(check_kind(Engine::DarkPlaces, ModuleKind::Menuqc, &[GETMOUSEPOS_CALL]).is_empty());
+    assert!(check_kind(Engine::DarkPlaces, ModuleKind::Menuqc, &[CHR_CALL]).is_empty());
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Menuqc, &[CHR_CALL]),
+        ["chr is builtin #78, which FTEQW does not have"]
+    );
+    assert_eq!(
+        check_kind(Engine::DarkPlaces, ModuleKind::Menuqc, &[CLEARSCENE_CALL]),
+        ["clearscene is builtin #300, which DarkPlaces does not have"]
+    );
+}
+
+// spec ENGT-3.8, ENGT-4.8: a quakec.toml targeting dp opens with a client module, and calling
+// an FTE-only client builtin in it is W0311 naming DarkPlaces
+#[test]
+fn a_dp_project_client_module_reports_an_fte_builtin() {
+    let manifest =
+        "[project]\ntarget = \"dp\"\n[[module]]\nkind = \"csqc\"\nsrc = \"csprogs.src\"\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("proj/quakec.toml", manifest.as_bytes());
+    loader.insert("proj/csprogs.src", b"csprogs.dat\nmain.qc\n");
+    loader.insert("proj/main.qc", HASH_CALL.as_bytes());
+    let project = open_dir(&mut loader, Path::new("proj")).unwrap();
+    let module = &project.modules[0];
+    assert_eq!(module.target, Target::Dp);
+    assert_eq!(module.kind, ModuleKind::Csqc);
+    assert_eq!(
+        check_kind(
+            Engine::from_target(module.target),
+            module.kind,
+            &[HASH_CALL]
+        ),
+        ["hash_createtab is builtin #287, which DarkPlaces does not have (FTE_QC_HASHTABLES)"]
+    );
 }

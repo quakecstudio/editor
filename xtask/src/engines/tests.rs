@@ -136,12 +136,12 @@ fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
     Workspace { dir, net }
 }
 
-// spec ENGT-1.1: the checked-in tables record every pin of sources.toml, commit and SHA-256
+// spec ENGT-1.4: the checked-in tables record every pin of sources.toml, commit and SHA-256
 #[test]
 fn the_checked_in_tables_record_every_pin() {
     let tables = fs::read_to_string(root().join(TABLES)).unwrap();
     let pins = load(&root()).unwrap();
-    assert_eq!(pins.len(), 3);
+    assert_eq!(pins.len(), 5);
     for pin in pins {
         for value in [
             &pin.commit,
@@ -201,7 +201,7 @@ fn the_rerelease_pin_agrees_with_the_corpus() {
     super::agree_with_corpus(&root(), &real).unwrap();
 }
 
-// spec ENGT-2.8: a source read for several module kinds gives a builtin table and an extension
+// spec ENGT-2.10: a source read for several module kinds gives a builtin table and an extension
 // list for each, read with that kind's macros
 #[test]
 fn each_kind_gets_its_own_table() {
@@ -234,7 +234,7 @@ float() server = #78;
     assert!(client_part.contains("\"EXT_CLIENT\""));
 }
 
-// spec ENGT-2.8: a source has at least one table, each of a known module kind and no kind twice
+// spec ENGT-2.10: a source has at least one table, each of a known module kind and no kind twice
 #[test]
 fn bad_tables_are_errors() {
     for (name, tables, needle) in [
@@ -262,8 +262,9 @@ fn bad_tables_are_errors() {
     }
 }
 
-// spec ENGT-2.8: the pinned fteqw source is read for server, client and menu QuakeC, with
-// NQSSQC and SSQC, CSQC and MENU defined; the others for server QuakeC alone
+// spec ENGT-2.10: the pinned fteqw source is read for server, client and menu QuakeC, with
+// NQSSQC and SSQC, CSQC and MENU defined; darkplaces and rerelease for server QuakeC,
+// darkplaces-client for client and darkplaces-menu for menu QuakeC, with no macro
 #[test]
 fn the_pinned_tables() {
     let mut readings = Vec::new();
@@ -284,6 +285,8 @@ fn the_pinned_tables() {
             "fteqw csqc CSQC",
             "fteqw menuqc MENU",
             "darkplaces ssqc ",
+            "darkplaces-client csqc ",
+            "darkplaces-menu menuqc ",
             "rerelease ssqc ",
         ]
     );
@@ -548,5 +551,89 @@ float(float a) prose = #5; /* Part of simple csqc, called after */
             ("stops".to_owned(), owned(&["ZQ_A"])),
             ("prose".to_owned(), owned(&["DP_HEADING"])),
         ]
+    );
+}
+
+// spec ENGT-2.9: a function body with no `;` after it ends at its closing brace, so the
+// comment-line name after it is an extension heading and the builtin after it is read
+#[test]
+fn a_function_body_without_a_semicolon_ends_at_its_brace() {
+    let text = "\
+void() helper =
+{
+	print(\"a\\n\");
+	if (1) { print(\"b\"); }
+}
+
+// DP_AFTER_BODY
+float(float a) after = #7;
+";
+    let found = facts(text, &[]);
+    assert_eq!(found.extensions, ["DP_AFTER_BODY"]);
+    assert_eq!(
+        found.builtins,
+        [item(
+            Key::Number(7),
+            "after",
+            "float(float a)",
+            &["DP_AFTER_BODY"]
+        )]
+    );
+}
+
+// spec ENGT-2.9: braces inside parentheses end nothing, and a `;` inside a string literal ends
+// no statement
+#[test]
+fn braces_in_parentheses_and_semicolons_in_strings() {
+    let text = "\
+float(enumflags:float{A=1,B=2} flags) braced = #8;
+float(string s = \";\") quoted = #9;
+float(string s = \"\\\";\") escaped = #10;
+";
+    let found: Vec<(Key, String)> = facts(text, &[])
+        .builtins
+        .into_iter()
+        .map(|b| (b.key, b.signature))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (
+                Key::Number(8),
+                "float(enumflags:float{A=1,B=2} flags)".to_owned()
+            ),
+            (Key::Number(9), "float(string s = \";\")".to_owned()),
+            (Key::Number(10), "float(string s = \"\\\";\")".to_owned()),
+        ]
+    );
+}
+
+// spec ENGT-2.9: a comment-line name inside an unfinished statement, or inside a brace or
+// parenthesis left open, is no extension name
+#[test]
+fn a_name_inside_a_statement_is_no_heading() {
+    let text = "\
+float(float a,
+//DP_IN_PARENS
+	float b) split = #11;
+void() body =
+{
+	print(\"x\");
+//DP_IN_BODY
+};
+float x =
+//DP_IN_STATEMENT
+	1;
+";
+    let found = facts(text, &[]);
+    assert!(found.extensions.is_empty(), "{:?}", found.extensions);
+    assert_eq!(
+        found.builtins,
+        [item(
+            Key::Number(11),
+            "split",
+            "float(float a, float b)",
+            &[]
+        )]
     );
 }
