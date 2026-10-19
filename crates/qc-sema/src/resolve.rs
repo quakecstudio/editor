@@ -14,14 +14,14 @@
 //! same literal (FTE-22.2), and with autoprototyping every top-level name is visible to every
 //! function body (FTE-22.3).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_syntax::Dialect;
 
 use crate::expand::OriginMap;
-use crate::lower::{FileDecls, LiteralValue, RawBody, RawDecl, top_level_kind};
+use crate::lower::{FileDecls, LiteralValue, RawBody, RawDecl, RawUse, UseKind, top_level_kind};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
 
@@ -104,6 +104,10 @@ pub(crate) fn resolve_mapped(
         fteqcc,
         globals: HashMap::new(),
         literals: HashMap::new(),
+        members: files
+            .iter()
+            .flat_map(|f| f.members.iter().cloned())
+            .collect(),
     };
     if fteqcc && options.autoproto {
         // FTE-22.3: FTEQCC's first pass reads only the definitions, so the second, which
@@ -113,6 +117,7 @@ pub(crate) fn resolve_mapped(
             let file_id = FileId(index);
             for decl in &file.decls {
                 let def = r.declare_top_level(file_id, decl);
+                r.resolve_uses(file_id, None, &decl.uses);
                 if let Some(body) = &decl.body {
                     bodies.push((file_id, def, body));
                 }
@@ -126,6 +131,7 @@ pub(crate) fn resolve_mapped(
             let file_id = FileId(index);
             for decl in &file.decls {
                 let def = r.declare_top_level(file_id, decl);
+                r.resolve_uses(file_id, None, &decl.uses);
                 if let Some(body) = &decl.body {
                     r.resolve_body(file_id, def, body);
                 }
@@ -146,6 +152,8 @@ struct Resolver<'a> {
     globals: HashMap<String, DefId>,
     /// The literal each initialised global was given, for FTE-22.2.
     literals: HashMap<DefId, LiteralValue>,
+    /// The field names of every struct the module defines (FTE-14.1).
+    members: HashSet<String>,
 }
 
 /// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
@@ -341,9 +349,34 @@ impl Resolver<'_> {
             self.declare_scoped(scope, &local.name, &local.ty, DefKind::Local, location);
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
-        for use_ in &body.uses {
+        self.resolve_uses(file, Some(scope), &body.uses);
+    }
+
+    /// Resolves name uses in a function's scope, or with no scope in the global scope (an
+    /// initialiser or a default value, FTE-10.2, FTE-18.2), as references; a value that
+    /// resolves to nothing is "Unknown value" (QCD-4.1).
+    ///
+    /// A member use (FTE-9, FTE-13, FTE-14) is a reference when it names a definition of
+    /// field type, an entity field; otherwise it is a vector member, `.length` or a struct
+    /// field, which name no definition, and a name that is none of these is unknown.
+    fn resolve_uses(&mut self, file: FileId, scope: Option<Scope>, uses: &[RawUse]) {
+        for use_ in uses {
             let location = self.at(file, use_.span);
-            match self.lookup_in_scope(scope, &use_.name) {
+            let def = match scope {
+                Some(scope) => self.lookup_in_scope(scope, &use_.name),
+                None => self.lookup_global(&use_.name),
+            };
+            let def = match use_.kind {
+                UseKind::Value => def,
+                UseKind::Member => {
+                    let field = def.filter(|d| self.index.def(*d).is_some_and(|d| d.ty.is_field()));
+                    if field.is_none() && (def.is_some() || self.is_member_name(&use_.name)) {
+                        continue;
+                    }
+                    field
+                }
+            };
+            match def {
                 Some(def) => self.index.refs.push(Reference { location, def }),
                 None => self.index.diagnostics.push(diag(
                     Code::E0301,
@@ -352,6 +385,13 @@ impl Resolver<'_> {
                 )),
             }
         }
+    }
+
+    /// Whether `name` selects a member that is no definition: a vector's `x`, `y` or `z`
+    /// (FTE-9.1), an array's `length` (FTE-13.3), or a field of a struct the module defines
+    /// (FTE-14.2).
+    fn is_member_name(&self, name: &str) -> bool {
+        matches!(name, "x" | "y" | "z" | "length") || self.members.contains(name)
     }
 
     /// Declares a parameter or local, and the components of a new vector (QC-11.7).

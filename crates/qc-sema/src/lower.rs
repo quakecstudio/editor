@@ -38,6 +38,10 @@ pub struct RawDecl {
     /// For a function definition with a `[frame, next]` header, the next-think name and its
     /// span (QC-13.6): resolution declares it as a global `void()` if new.
     pub next_think: Option<(String, Span)>,
+    /// The names its initialiser uses, when that is not a function body, and the names its
+    /// parameters' default values use (FTE-10.2, FTE-18.2), in source order; resolved in the
+    /// global scope after the declaration.
+    pub uses: Vec<RawUse>,
 }
 
 /// The value of a literal initialiser (FTE-22.2). A float is kept as its bits, so two
@@ -115,13 +119,25 @@ pub struct RawLocal {
     pub bad_field_or_function: bool,
 }
 
-/// One use of a name as a value inside a body (QC-12.5).
+/// One use of a name (QC-12.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawUse {
     /// The name used.
     pub name: String,
     /// The byte span of the name token.
     pub span: Span,
+    /// How the name is used.
+    pub kind: UseKind,
+}
+
+/// How a name is used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UseKind {
+    /// As a value: a global, a parameter or a local (QC-12.5).
+    Value,
+    /// In an FTEQCC dialect, as the selector of a member access `e.name`: an entity field, or
+    /// a vector member, `.length` or a struct field (FTE-9, FTE-13, FTE-14).
+    Member,
 }
 
 /// Every declaration a file contributes, in source order.
@@ -129,6 +145,9 @@ pub struct RawUse {
 pub struct FileDecls {
     /// The file-level and body declarations, in source order.
     pub decls: Vec<RawDecl>,
+    /// The field names of the structs the file defines (FTE-14.1): a member access may
+    /// select one without naming a global.
+    pub members: Vec<String>,
 }
 
 /// Lowers one parsed file to its raw declarations (QC-11, QC-13), in `dialect`.
@@ -136,14 +155,16 @@ pub struct FileDecls {
 /// Implements the declaration grammar of QC-11.1 and the function-body shape of QC-13.1, and
 /// in an FTEQCC dialect the declaration forms of `docs/spec/dialect-fteqcc-rerelease.md`:
 /// `enum` names and a `typedef` type name become global definitions (FTE-10, FTE-14,
-/// FTE-15), and member access (vector members, `.length`, struct fields; FTE-9, FTE-13,
-/// FTE-14) is not treated as a global field use. Never fails: a file with syntax errors
+/// FTE-15), a member access's selector is a member use that resolution tells apart from a
+/// vector member, `.length` or a struct field (FTE-9, FTE-13, FTE-14), and the names of a
+/// value initialiser and of parameter default values are recorded (FTE-10.2, FTE-18.2).
+/// Never fails: a file with syntax errors
 /// yields whatever declarations parsed (QCD-1.4).
 #[must_use]
 pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
-    let mut decls = Vec::new();
+    let mut out = FileDecls::default();
     let Some(tree) = parse.tree() else {
-        return FileDecls { decls };
+        return out;
     };
     let fte = dialect.has_fteqcc_extensions();
     // Walk the top-level nodes in source order, so a name an `enum` or `typedef` declares is
@@ -153,23 +174,23 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
         match node.kind() {
             SyntaxKind::Declaration => {
                 if let Some(decl) = ast::Declaration::cast(node) {
-                    lower_declaration(&decl, fte, &mut decls);
+                    lower_declaration(&decl, fte, &mut out.decls);
                 }
             }
             SyntaxKind::EnumDecl => {
                 if let Some(en) = ast::EnumDecl::cast(node) {
-                    lower_enum(&en, &mut decls);
+                    lower_enum(&en, &mut out.decls);
                 }
             }
             SyntaxKind::TypedefDecl => {
                 if let Some(td) = ast::TypedefDecl::cast(node) {
-                    lower_typedef(&td, &mut decls);
+                    lower_typedef(&td, &mut out);
                 }
             }
             _ => {}
         }
     }
-    FileDecls { decls }
+    out
 }
 
 /// An `enum`'s names become global float constants (FTE-15.1, FTE-15.3), and a named enum's
@@ -185,6 +206,7 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
             literal: None,
             body: None,
             next_think: None,
+            uses: Vec::new(),
         });
     }
     for node in en.enumerators() {
@@ -200,17 +222,30 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
             literal: None,
             body: None,
             next_think: None,
+            uses: Vec::new(),
         });
     }
 }
 
 /// A `typedef struct { ... } Name;` declares the type name `Name` (FTE-14.1), recorded as a
 /// global so a use of it resolves. The struct's fields are member names, not globals.
-fn lower_typedef(td: &ast::TypedefDecl, out: &mut Vec<RawDecl>) {
+fn lower_typedef(td: &ast::TypedefDecl, out: &mut FileDecls) {
+    for field in td
+        .syntax()
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::StructField)
+    {
+        out.members.extend(
+            field
+                .child_tokens()
+                .filter(|t| t.kind() == SyntaxKind::Name)
+                .map(|t| t.text_lossless()),
+        );
+    }
     let Some(token) = td.name() else {
         return;
     };
-    out.push(RawDecl {
+    out.decls.push(RawDecl {
         name: token.text_lossless(),
         span: token.span(),
         ty: Type::Unknown,
@@ -219,6 +254,7 @@ fn lower_typedef(td: &ast::TypedefDecl, out: &mut Vec<RawDecl>) {
         literal: None,
         body: None,
         next_think: None,
+        uses: Vec::new(),
     });
 }
 
@@ -237,13 +273,38 @@ fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>)
         let init = declarator.initializer();
         let initialized = init.is_some();
         let literal = LiteralValue::of(init.as_ref());
+        let mut uses = Vec::new();
         let (body, next_think) = match &init {
             Some(ast::Initializer::Body(fn_body)) => {
                 let next_think = next_think_of(fn_body);
                 (Some(lower_body(fn_body, &ty, fte)), next_think)
             }
+            // FTE-10.2: a value initialiser may name other definitions, `const float B = A;`.
+            Some(ast::Initializer::Value(expr)) => {
+                lower_expr(expr, fte, &mut uses);
+                (None, None)
+            }
+            Some(ast::Initializer::Aggregate(agg)) => {
+                for element in agg.elements() {
+                    lower_expr(&element, fte, &mut uses);
+                }
+                (None, None)
+            }
             _ => (None, None),
         };
+        // FTE-18.2: a parameter's default value may name definitions too.
+        for list in decl
+            .ty()
+            .and_then(|t| function_params(&t))
+            .into_iter()
+            .chain(declarator.params())
+        {
+            for param in list.params() {
+                if let Some(value) = param.default_value() {
+                    lower_expr(&value, fte, &mut uses);
+                }
+            }
+        }
         out.push(RawDecl {
             name,
             span,
@@ -253,7 +314,16 @@ fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>)
             literal,
             body,
             next_think,
+            uses,
         });
+    }
+}
+
+/// The parameter list of a function type (QC-10.3).
+fn function_params(ty: &ast::Type) -> Option<ast::ParamList> {
+    match ty {
+        ast::Type::Function(func) => func.params(),
+        ast::Type::Simple(_) | ast::Type::Field(_) => None,
     }
 }
 
@@ -356,12 +426,12 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
         ast::Stmt::Block(block) => lower_block(block, fte, body),
         ast::Stmt::Return(ret) => {
             if let Some(expr) = ret.value() {
-                lower_expr(&expr, fte, body);
+                lower_expr(&expr, fte, &mut body.uses);
             }
         }
         ast::Stmt::If(if_stmt) => {
             if let Some(cond) = if_stmt.condition() {
-                lower_expr(&cond, fte, body);
+                lower_expr(&cond, fte, &mut body.uses);
             }
             if let Some(then) = if_stmt.then_branch() {
                 lower_stmt(&then, fte, body);
@@ -372,7 +442,7 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
         }
         ast::Stmt::While(while_stmt) => {
             if let Some(cond) = while_stmt.condition() {
-                lower_expr(&cond, fte, body);
+                lower_expr(&cond, fte, &mut body.uses);
             }
             if let Some(inner) = while_stmt.body() {
                 lower_stmt(&inner, fte, body);
@@ -383,7 +453,7 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
                 lower_stmt(&inner, fte, body);
             }
             if let Some(cond) = do_stmt.condition() {
-                lower_expr(&cond, fte, body);
+                lower_expr(&cond, fte, &mut body.uses);
             }
         }
         // FTEQCC `for (init; cond; step) body` (FTE-2). The init clause may declare a loop
@@ -394,7 +464,7 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
                     lower_local(&local, fte, body);
                 } else {
                     for expr in clause.children().filter_map(ast::Expr::cast) {
-                        lower_expr(&expr, fte, body);
+                        lower_expr(&expr, fte, &mut body.uses);
                     }
                 }
             }
@@ -406,13 +476,13 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
         // statements of the body are lowered.
         ast::Stmt::Switch(switch_stmt) => {
             if let Some(scrutinee) = switch_stmt.scrutinee() {
-                lower_expr(&scrutinee, fte, body);
+                lower_expr(&scrutinee, fte, &mut body.uses);
             }
             if let Some(block) = switch_stmt.block() {
                 for node in block.syntax().children() {
                     if let Some(label) = ast::CaseLabel::cast(node.clone()) {
                         if let Some(value) = label.value() {
-                            lower_expr(&value, fte, body);
+                            lower_expr(&value, fte, &mut body.uses);
                         }
                     } else if let Some(stmt) = ast::Stmt::cast(node) {
                         lower_stmt(&stmt, fte, body);
@@ -424,7 +494,7 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
         ast::Stmt::Break(_) | ast::Stmt::Continue(_) | ast::Stmt::Empty(_) => {}
         ast::Stmt::Expr(expr_stmt) => {
             if let Some(expr) = expr_stmt.expr() {
-                lower_expr(&expr, fte, body);
+                lower_expr(&expr, fte, &mut body.uses);
             }
         }
     }
@@ -442,10 +512,10 @@ fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
         // A local initialiser is a constant value; if it is a non-constant expression we
         // still record any names it uses, so references in it resolve (QC-12.5).
         match &init {
-            Some(ast::Initializer::Value(expr)) => lower_expr(expr, fte, body),
+            Some(ast::Initializer::Value(expr)) => lower_expr(expr, fte, &mut body.uses),
             Some(ast::Initializer::Aggregate(agg)) => {
                 for element in agg.elements() {
-                    lower_expr(&element, fte, body);
+                    lower_expr(&element, fte, &mut body.uses);
                 }
             }
             _ => {}
@@ -460,94 +530,105 @@ fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
     }
 }
 
-fn lower_expr(expr: &ast::Expr, fte: bool, body: &mut RawBody) {
+fn lower_expr(expr: &ast::Expr, fte: bool, uses: &mut Vec<RawUse>) {
     match expr {
         ast::Expr::Name(name_ref) => {
             if let Some(token) = name_ref.name() {
-                body.uses.push(RawUse {
+                uses.push(RawUse {
                     name: token.text_lossless(),
                     span: token.span(),
+                    kind: UseKind::Value,
                 });
             }
         }
         ast::Expr::Literal(_) => {}
         ast::Expr::Paren(paren) => {
             if let Some(inner) = paren.expr() {
-                lower_expr(&inner, fte, body);
+                lower_expr(&inner, fte, uses);
             }
         }
         ast::Expr::Not(not) => {
             if let Some(operand) = not.operand() {
-                lower_expr(&operand, fte, body);
+                lower_expr(&operand, fte, uses);
             }
         }
         ast::Expr::Binary(bin) => {
             if let Some(lhs) = bin.lhs() {
-                lower_expr(&lhs, fte, body);
+                lower_expr(&lhs, fte, uses);
             }
             if let Some(rhs) = bin.rhs() {
-                lower_expr(&rhs, fte, body);
+                lower_expr(&rhs, fte, uses);
             }
         }
         ast::Expr::Field(field) => {
             // The base is a value. In vanilla the field selector is an entity-field name
-            // used as a value (QC-15.7), so it is collected; in an FTEQCC dialect the
-            // selector may be a vector member (`.x`), `.length` or a struct field (FTE-9,
-            // FTE-13, FTE-14), none of which are globals, so it is not collected.
+            // used as a value (QC-15.7). In an FTEQCC dialect a selector that is a name may
+            // also be a vector member (`.x`), `.length` or a struct field (FTE-9, FTE-13,
+            // FTE-14), so it is a member use, which resolution tells apart.
             if let Some(base) = field.base() {
-                lower_expr(&base, fte, body);
+                lower_expr(&base, fte, uses);
             }
-            if !fte && let Some(field_expr) = field.field() {
-                lower_expr(&field_expr, fte, body);
+            match field.field() {
+                Some(ast::Expr::Name(name_ref)) if fte => {
+                    if let Some(token) = name_ref.name() {
+                        uses.push(RawUse {
+                            name: token.text_lossless(),
+                            span: token.span(),
+                            kind: UseKind::Member,
+                        });
+                    }
+                }
+                Some(field_expr) => lower_expr(&field_expr, fte, uses),
+                None => {}
             }
         }
         ast::Expr::Call(call) => {
             if let Some(callee) = call.callee() {
-                lower_expr(&callee, fte, body);
+                lower_expr(&callee, fte, uses);
             }
             if let Some(args) = call.args() {
                 for arg in args.args() {
-                    lower_expr(&arg, fte, body);
+                    lower_expr(&arg, fte, uses);
                 }
             }
         }
         // FTEQCC `e++`/`e--` (FTE-5): the operand is a value use.
         ast::Expr::Postfix(post) => {
             if let Some(operand) = post.operand() {
-                lower_expr(&operand, fte, body);
+                lower_expr(&operand, fte, uses);
             }
         }
         // FTEQCC `cond ? a : b` (FTE-8): the condition and both arms are values.
         ast::Expr::Ternary(tern) => {
             if let Some(cond) = tern.condition() {
-                lower_expr(&cond, fte, body);
+                lower_expr(&cond, fte, uses);
             }
             let (a, b) = tern.arms();
             if let Some(a) = a {
-                lower_expr(&a, fte, body);
+                lower_expr(&a, fte, uses);
             }
             if let Some(b) = b {
-                lower_expr(&b, fte, body);
+                lower_expr(&b, fte, uses);
             }
         }
         // FTEQCC `-e`, `+e`, `~e` (FTE-19.4) and `(type) e` (FTE-19.6): the operand is a value.
         ast::Expr::Unary(unary) => {
             if let Some(operand) = unary.operand() {
-                lower_expr(&operand, fte, body);
+                lower_expr(&operand, fte, uses);
             }
         }
         ast::Expr::Cast(cast) => {
             if let Some(operand) = cast.operand() {
-                lower_expr(&operand, fte, body);
+                lower_expr(&operand, fte, uses);
             }
         }
         // FTEQCC `e[i]` (FTE-13): the base and index are values.
         ast::Expr::Index(index) => {
             if let Some(base) = index.base() {
-                lower_expr(&base, fte, body);
+                lower_expr(&base, fte, uses);
             }
             if let Some(i) = index.index() {
-                lower_expr(&i, fte, body);
+                lower_expr(&i, fte, uses);
             }
         }
     }

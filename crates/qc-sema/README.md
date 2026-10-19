@@ -30,9 +30,12 @@ written, the editing view.
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.2). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
 names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
-globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and member
-access (vector members, `.length`, struct fields; FTE-9, FTE-13, FTE-14) is not a global
-field use, so the rerelease resolves with no spurious "unknown value". A named enum's type
+globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and the
+selector of a member access is a reference to the entity field it names, while a vector member,
+`.length` or a struct field names no definition (FTE-9, FTE-13, FTE-14), so the rerelease
+resolves with no spurious "unknown value" and a selector that is none of these is reported.
+Names in a file-level initialiser (FTE-10.2) and in a parameter's default value (FTE-18.2) are
+references too, resolved in the global scope where the declaration is. A named enum's type
 name is a definition (FTE-15.4), a C-style declarator has the function type of its own
 parameter list (FTE-17.1), and FTEQCC's resolution rules apply (FTE-22): a local or parameter
 shadows a global of the same name, a constant may be initialised twice with the same
