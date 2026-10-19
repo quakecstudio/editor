@@ -146,6 +146,7 @@ fn stringify_and_paste() {
     assert_eq!(toks, "x");
 }
 
+// spec FTEF-3.4: `__NULL__` is `0i`.
 // spec FTEF-14.7: the built-in constants expand when no macro has the name; a macro of the
 // same name wins; vanilla has none.
 #[test]
@@ -204,4 +205,39 @@ fn an_included_list_is_skipped() {
     let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!((tokens(&out), codes(&out)), ("after".to_owned(), vec![]));
+}
+
+// spec FTEF-14.10: a block left open on a taken side is closed at the end of the file without
+// a word; one left open while a side is skipped is reported; vanilla reports both.
+#[test]
+fn open_blocks_at_the_end_of_a_file() {
+    assert_eq!(fte("#ifndef NOPE\nx\n"), ("x".to_owned(), vec![]));
+    assert_eq!(fte("#ifdef NOPE\nx\n").1, vec![Code::E0110]);
+    assert_eq!(fte("#if 1\n#else\nx\n").1, vec![Code::E0110]);
+    let (_, out) = one("#ifndef NOPE\nx\n");
+    assert_eq!(codes(&out), vec![Code::E0110]);
+}
+
+// spec FTEF-12.6: `#pragma noref N` is recorded at the token it precedes, so the definitions
+// after it are `noref` or not.
+#[test]
+fn noref_pragmas_are_recorded() {
+    let (_, out) = one_fte("a\n#pragma noref 1\nb c\n#pragma noref 0\nd\n#pragma noref\n");
+    assert_eq!(out.noref, vec![(1, true), (3, false)]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", "#pragma noref 1\n".as_bytes());
+    let mut pp = Preprocessor::new(loader);
+    let vanilla = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert!(vanilla.noref.is_empty());
+}
+
+// spec FTEF-12.2, FTEF-12.3, FTEF-12.4, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are
+// accepted and produce no tokens.
+#[test]
+fn other_pragmas_are_accepted() {
+    let pragmas = "#pragma TARGET FTE\n#pragma PROGS_DAT \"../progs.dat\"\n\
+                   #pragma progs_dat \"x\"\n#pragma sourcefile client/progs.src\n\
+                   #pragma flag enable assumeint\n#pragma forcecrc 54730\n#pragma once\n\
+                   #pragma optimise 2\n#pragma unknown thing\nz\n";
+    assert_eq!(fte(pragmas), ("z".to_owned(), vec![]));
 }

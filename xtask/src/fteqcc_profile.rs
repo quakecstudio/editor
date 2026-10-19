@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask fteqcc-profile <dir>...`: the acceptance check for the FTEQCC dialect profile
-//! (P2-03, P2-32). For each rerelease codebase directory it opens the project, and opens every
+//! (P2-03, P2-32, P2-26). For each codebase directory it opens the project, and opens every
 //! module through the semantic model as the editor does: each file of the module's graph goes
 //! into a `qc_sema::Db` as written, under the FTEQCC profile (`Dialect::Fteqcc`, and
 //! autoprototyping for the codebase FTEQCC builds with `-Fautoproto`), and the Db preprocesses
@@ -12,10 +12,14 @@
 //! each extension as a diagnostic, so the two profiles are observably different (the issue's
 //! acceptance criterion).
 //!
-//! The codebases come from `cargo xtask corpus fetch rerelease rerelease-hipnotic
+//! The rerelease codebases come from `cargo xtask corpus fetch rerelease rerelease-hipnotic
 //! rerelease-rogue rerelease-mg1 rerelease-ctf rerelease-mg3`. The FTEQCC subset each one uses
 //! is recorded in `docs/spec/vectors/dialect-fteqcc-rerelease/coverage.txt` and pinned by the
-//! coverage check (`fteqcc_coverage`); this check adds that they parse and resolve clean.
+//! coverage check (`fteqcc_coverage`); this check adds that they parse and resolve clean. The
+//! FTEQCC corpus mods of the full dialect (`docs/spec/dialect-fteqcc.md`, FTEF-1.1) are checked
+//! in the tree `cargo xtask corpus fetch freecs-tree` lays out: FreeCS (`cstrike/src`),
+//! Rad-Therapy (`valve/src`, whose menu module builds Nuclide's `menu-vgui`) and Nuclide's own
+//! `src/menu-fn`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,7 +49,7 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     println!(
         "fteqcc-profile: {}",
         if ok {
-            "every rerelease module parses and resolves under the FTEQCC profile"
+            "every module parses and resolves under the FTEQCC profile"
         } else {
             "failures found"
         }
@@ -246,6 +250,36 @@ mod tests {
             fs::write(dir.join(file), text).unwrap();
         }
         dir
+    }
+
+    // spec FTEF-1.1: a codebase in the full dialect, a class with members defined outside it, a
+    // pointer, an accessor and the FTEQCC preprocessor, parses and resolves with no error.
+    #[test]
+    fn a_full_dialect_codebase_passes() {
+        let dir = codebase(
+            "fteqcc-profile-full",
+            &[
+                (
+                    "progs.src",
+                    "#pragma target fte_5768\n#define SERVER\n#includelist\ndefs.h\nthing.qc\n#endlist\n",
+                ),
+                (
+                    "defs.h",
+                    "#pragma noref 1\nentity self;\nfloat time;\n.float nextthink;\n\
+                     entity() spawn = #14;\naccessor strbuf : float;\n#pragma noref 0\n\
+                     #if defined(SERVER) && !defined(CLIENT)\n#define LOG(...) dprint(sprintf(__VA_ARGS__))\n#endif\n\
+                     void(string s, ...) dprint = #25;\nstring(string f, ...) sprintf = #627;\n\
+                     class Thing\n{\n\tfloat m_flTime;\n\tvirtual void Think(void);\n\tnonvirtual void Reset(void);\n};\n",
+                ),
+                (
+                    "thing.qc",
+                    "void\nThing::Reset(void)\n{\n\tm_flTime = 0;\n}\n\nvoid\nThing::Think(void)\n{\n\
+                     \tThing *self_ptr = &this;\n\tint i = 0x10i;\n\tif not (m_flTime)\n\t\tReset();\n\
+                     \tnextthink = time + 0.1f;\n\tLOG(\"%d\\n\", i);\n}\n",
+                ),
+            ],
+        );
+        assert!(main(Path::new("."), &[dir.display().to_string()]).unwrap());
     }
 
     #[test]

@@ -953,6 +953,9 @@ fn full_fteqcc_escapes() {
             char::from(escape)
         );
     }
+    // `\s` and `\b` toggle bronze text, which sets the high bit, and stand for nothing.
+    assert_eq!(fte_string(br#""a\bb\sc""#), (b"a\xe2c".to_vec(), vec![]));
+    assert_eq!(codes(br#""\b""#), vec![Code::E0103]);
     // `\{` stops at a byte that is not a digit; a code that is no scalar is `?`.
     assert_eq!(fte_string(br#""\{6z}""#).0, b"\x06z}".to_vec());
     assert_eq!(fte_string(br#""\UFFFFFFFF""#).0, b"?".to_vec());

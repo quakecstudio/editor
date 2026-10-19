@@ -65,13 +65,27 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   are not declared above. Written from the spec, not ported.
 - **Shipped:** yes.
 
+Under the FTEQCC profile the full dialect of `docs/spec/dialect-fteqcc.md` resolves by FTEF-17:
+a class, struct, union, typedef, enum or accessor names a type, which may be declared again; a
+class's members are found through the class and its parents, in a member function's body
+before the globals, and after `.` or `->` through the class of what the access is made on;
+`Class::member` defines the member its class declares; `this`, `super`, `prior` and FTEQCC's
+intrinsics are no names to define; equal initialisers, builtins of one number, enums declared
+again and `noref` definitions are no redeclaration (FTEF-17.5, FTEF-17.8); a redeclaration
+involving a type name or a pointer is no type mismatch (FTEF-17.6); `wrap`, `weak` and
+`accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
+variable (FTEF-15.5); and a function with no body is reported only where it is referred to
+(FTEF-17.7). FreeCS, Rad-Therapy and Nuclide's `menu-fn` resolve with no error
+(`cargo xtask fteqcc-profile`).
+
 ## What it is not, yet
 
 This crate resolves names and types and answers navigation and the resolution diagnostics. It
 does not yet type-check expressions and operators (QC-16 to QC-19), fold constants or lay out
 globals and fields (QC-20, QC-21), or emit progs statements (QC-22): those are the compiler's,
-built on this model. Rename and dialect profiles (LANG-5) and the engine-target database
-(LANG-6) build on it in later issues.
+built on this model. Rename builds on it in a later issue. Under FTEQCC it does not type
+expressions, so a member access whose base is not a name, `this`, a cast or a call resolves by
+the member's name, and the values of `enumflags` and other constants are not computed.
 
 ## Public shape
 

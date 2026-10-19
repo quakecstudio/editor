@@ -16,6 +16,7 @@
 )]
 
 mod dialect;
+mod dialect_full;
 mod dialect_resolution;
 mod expansion;
 mod incremental;

@@ -910,8 +910,15 @@ impl<'a> Resolver<'a> {
     /// (QC-12.4).
     fn lookup_in_scope(&self, scope: Scope, name: &str) -> Option<DefId> {
         if self.fteqcc {
+            // A class's name is the type, not its constructor member (FTEF-17.2).
+            let member = || {
+                scope
+                    .class
+                    .filter(|_| !self.class_names.contains_key(name))
+                    .and_then(|c| self.member_in(c, name))
+            };
             self.lookup_local(scope, name)
-                .or_else(|| scope.class.and_then(|c| self.member_in(c, name)))
+                .or_else(member)
                 .or_else(|| self.lookup_global(name))
         } else {
             self.lookup_global(name)

@@ -469,6 +469,16 @@ jobs:
           cargo xtask corpus fetch freecs-tree
           cargo xtask project-corpus --expect-warning W0402=2 \
             "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src"
+      # P2-26 (FTEF-1.1): the FTEQCC corpus mods parse and resolve with zero errors under the
+      # FTEQCC profile: FreeCS, Rad-Therapy (whose menu module builds Nuclide's menu-vgui) and
+      # Nuclide's own menu-fn. They need the case-insensitive file system FreeCS does.
+      - name: Parse and resolve the FTEQCC corpus mods under the FTEQCC profile
+        if: runner.os == 'macOS'
+        run: |
+          cargo xtask fteqcc-profile \
+            "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src" \
+            "$QS_TEST_ASSETS/tree/freecs-tree/valve/src" \
+            "$QS_TEST_ASSETS/tree/freecs-tree/src/menu-fn"
       # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
       # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
       - name: Write the corpus maps to the asset cache

@@ -651,7 +651,8 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   (`QCC_PR_ParseEntClass` keeps each class's members, with `newt->parentclass`). `Class::member`
   defines the member the class or a parent declares, or adds one, and its name refers to the
   member's declaration. In a member function's body a name is the function's own local or
-  parameter, then a member of its class or a parent (`assumeclass`), then a global.
+  parameter, then a member of its class or a parent (`assumeclass`), then a global; a class's
+  own name there is the class, as `spawn(Thing)` takes it, not its constructor.
 - **FTEF-17.3** The name after `.` or `->` is a member of the class of what the access is made
   on, when that is known from a name's declared type, `this`, a cast or a call's return type;
   else an entity field the name defines; else a member of any class with the name. A vector's
