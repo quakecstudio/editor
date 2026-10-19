@@ -571,6 +571,25 @@ issues:
   - Each of the three positions has a test with a known and an unknown name, and the six rerelease codebases still resolve with zero errors
   verify:
   - cargo test -p qc-sema; rerelease corpus job
+- key: P2-35
+  title: 'Spec: the FTEQCC constructs the tree-sitter grammar follows without a statement'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:spec
+  size: S
+  reqs:
+  - LANG-5
+  - LANG-8
+  depends:
+  - P2-28
+  deliverable:
+  - 'docs/spec/dialect-fteqcc-rerelease.md or docs/spec/dialect-fteqcc.md: a statement, quoting FTEQCC at the pinned commit, for each construct in the "Constructs without a spec statement" section of the quakecstudio/tree-sitter-quakec README (expression initialisers and nested function bodies, state frame expressions, unnamed and qualified parameters, functions returning functions, per-name `*`, escapes beyond FTE-20.3, adjacent strings, character constants and two-component vectors, calls of call results, frame-reference stops, the comma operator, labels and goto, `return =`, `if !`, `if not`, `until`, case ranges, `?:` with no middle, mixed `for` init, `sizeof`, `[x, y, z]`, `::name`, designated initialisers, `__` keywords, and `\` line continuations), with requirements.tsv and coverage-baseline.tsv updated'
+  - 'quakecstudio/tree-sitter-quakec: the tests in test/corpus/fteqcc-unspecified.txt retitled to cite the new statements, and the README section removed'
+  acceptance:
+  - Every construct the grammar README lists has a statement citing its FTEQCC function and quoting the source, and every grammar test cites a spec statement
+  verify:
+  - cargo test -p qs-tests (spec-citation ratchet); tree-sitter test in the grammar repo's CI
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -703,6 +722,7 @@ issues:
   - P2-32
   - P2-33
   - P2-34
+  - P2-35
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
