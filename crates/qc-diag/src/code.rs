@@ -119,6 +119,8 @@ pub enum Code {
     W0102,
     /// "#warning: TEXT" (QCD-7.20).
     W0103,
+    /// "Case insensitive frame macro (using NAME)" (QCD-7.24).
+    W0104,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -140,7 +142,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 56] = [
+    pub const ALL: [Self; 57] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -189,6 +191,7 @@ impl Code {
         Self::W0101,
         Self::W0102,
         Self::W0103,
+        Self::W0104,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -251,6 +254,7 @@ impl Code {
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
             Self::W0103 => "W0103",
+            Self::W0104 => "W0104",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -269,6 +273,7 @@ impl Code {
             Self::W0101
             | Self::W0102
             | Self::W0103
+            | Self::W0104
             | Self::W0201
             | Self::W0203
             | Self::W0204

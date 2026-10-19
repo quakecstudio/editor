@@ -208,6 +208,8 @@ impl Run {
 struct CarriedFrame {
     value: i32,
     file: PathBuf,
+    /// Where it stands in FTEQCC's `pr_framemacro` table, which is searched from the last.
+    order: usize,
 }
 
 /// The preprocessor for one `progs.src`: macros run on from one file to the next (QC-9.8).
@@ -1255,6 +1257,7 @@ impl<L: Loader> Preprocessor<L> {
                 let frame = CarriedFrame {
                     value,
                     file: run.path.clone(),
+                    order: self.carried_frames.len(),
                 };
                 self.carried_frames.insert(name.to_owned(), frame);
                 // `if (pr_nummacros >= MAX_FRAMES) QCC_PR_ParseError(ERR_TOOMANYFRAMEMACROS,
@@ -1267,9 +1270,24 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// The value of the FTEQCC frame macro `name` (`QCC_PR_FindMacro`), if it is defined.
-    fn find_frame(&self, name: &str) -> Option<i32> {
-        self.carried_frames.get(name).map(|f| f.value)
+    /// The value of the FTEQCC frame macro `name`, as `QCC_PR_FindMacro` finds it: the macro
+    /// of that name, or else the last one defined whose name differs only in case, with the
+    /// warning "Case insensitive frame macro (using NAME)" at `at` (FTEF-18.21).
+    fn find_frame(&self, run: &mut Run, name: &str, at: FileSpan) -> Option<i32> {
+        if let Some(frame) = self.carried_frames.get(name) {
+            return Some(frame.value);
+        }
+        let (found, frame) = self
+            .carried_frames
+            .iter()
+            .filter(|(other, _)| other.eq_ignore_ascii_case(name))
+            .max_by_key(|(_, frame)| frame.order)?;
+        run.report(
+            Code::W0104,
+            format!("Case insensitive frame macro (using {found})"),
+            at,
+        );
+        Some(frame.value)
     }
 
     /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
@@ -1285,7 +1303,7 @@ impl<L: Loader> Preprocessor<L> {
                 run.frame_value =
                     i32::try_from(value).unwrap_or(if value < 0 { i32::MIN } else { i32::MAX });
             }
-            FrameCommand::Restore(name) => match self.find_frame(name) {
+            FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
                 Some(value) => run.frame_value = value,
                 None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at),
             },
@@ -1297,7 +1315,7 @@ impl<L: Loader> Preprocessor<L> {
                 name.clone_into(&mut self.model_name);
                 // `i = QCC_PR_FindMacro(pr_framemodelname); if (i) pr_macrovalue = i;`, where
                 // a name with no macro is -1.
-                let found = self.find_frame(name).unwrap_or(-1);
+                let found = self.find_frame(run, name, at).unwrap_or(-1);
                 if found != 0 {
                     run.frame_value = found;
                 }
@@ -1345,7 +1363,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             TokenKind::FrameRef(word) => {
                 let value = if carry {
-                    self.find_frame(word)
+                    self.find_frame(run, word, tok.span)
                 } else {
                     let index = run.frames.iter().position(|f| f == word);
                     index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))

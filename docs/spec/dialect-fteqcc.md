@@ -856,6 +856,12 @@ FTEF-18.5.
   after `QCC_PR_CheckToken("[")`), the middle of `?:` (`val = QCC_PR_Expression(TOP_PRIORITY,
   0);`) and the expression of `sizeof` (FTEF-18.12). The last arm of `?:` passes
   `EXPR_DISALLOW_COMMA`.
+- **FTEF-18.21** A frame macro is looked up by its name and then, when no macro has it, by the
+  name in any case: `QCC_PR_FindMacro` searches `for (i=pr_nummacros-1 ; i>=0 ; i--)` with
+  `STRCMP` and then again with `stricmp`, the second time with the warning `W0104` "Case
+  insensitive frame macro (using %s)" (`WARN_CASEINSENSITIVEFRAMEMACRO`), so the macro defined
+  last of those that match is used. The lookups of a reference, `$framerestore` and
+  `$modelname` (FTEF-18.16) are all `QCC_PR_FindMacro`'s.
 
 ### Test vectors
 

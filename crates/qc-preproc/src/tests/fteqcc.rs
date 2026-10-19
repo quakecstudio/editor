@@ -299,6 +299,28 @@ fn frame_commands_number_frames() {
     );
 }
 
+// spec FTEF-18.21: a frame macro not found by its name is found in any case, the last defined, with a warning
+// spec QCD-7.24: W0104 "Case insensitive frame macro (using NAME)"
+#[test]
+fn frame_macros_fall_back_to_any_case() {
+    let (_, out) = one_fte("$frame Walk1 walk2 WALK2\nx = $walk1 + $Walk2 + $walk2;");
+    assert_eq!(tokens(&out), "x = 0 + 2 + 1 ;");
+    assert_eq!(codes(&out), [Code::W0104, Code::W0104]);
+    assert_eq!(
+        out.diagnostics[1].message,
+        "Case insensitive frame macro (using WALK2)"
+    );
+    assert!(!Code::W0104.is_error());
+    let (_, out) = one_fte("$frame a b\n$framerestore B\n$frame c\nx = $c;");
+    assert_eq!(
+        (tokens(&out), codes(&out)),
+        ("x = 1 ;".to_owned(), vec![Code::W0104])
+    );
+    // Vanilla matches the name exactly (QC-8.5).
+    let (_, out) = one("$frame Walk1\nx = $walk1;");
+    assert_eq!(codes(&out), [Code::E0106]);
+}
+
 // spec FTEF-18.17: each file numbers its frames from 0, and the limit is 8192 frame macros in the program, not 256 in a file
 #[test]
 fn frame_macros_limit_is_the_program() {

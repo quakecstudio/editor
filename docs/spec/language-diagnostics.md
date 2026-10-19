@@ -222,6 +222,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.23** `W0206` "incompatible redeclaration. Ignoring replacement of qc function with
   builtin.": under an FTEQCC profile, a builtin number given for a function that has a body, at
   the redeclared name, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-17.9).
+- **QCD-7.24** `W0104` "Case insensitive frame macro (using NAME)": under an FTEQCC profile, a
+  frame macro found only by a name in another case, at the reference, FTEQCC's warning of the
+  same text (`dialect-fteqcc.md`, FTEF-18.21).
 
 ## QCD-8 Preprocessor errors
 
