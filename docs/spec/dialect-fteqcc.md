@@ -682,6 +682,103 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   The corpus's `fteextensions.qc` sets `#pragma noref 1` and a later file binds
   `getgamedirinfo = #0` again.
 
+## FTEF-18 Further statements, terms and frame macros
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`,
+`QCC_PR_GenerateInitializerType`, `QCC_PR_ParseState`, `QCC_PR_ParseStatement`,
+`QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`; `qcc_pr_lex.c`,
+`QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`; `qccmain.c`, the keyword table,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
+`dialect-fteqcc-rerelease.md` FTE-8, FTE-10 and FTE-21.
+
+The rest of what the corpus and FTEQCC's own tests write: initialisers that are expressions,
+functions defined inside functions, state frames computed from expressions, the statement forms
+FTEQCC takes from FrikQCC and HexenC, `sizeof`, and the frame-macro forms of `QCC_PR_LexGrab`.
+Where this profile does not parse a form yet, the statement is listed in
+`coverage-baseline.tsv` until P2-39 implements it.
+
+### Behaviour
+
+- **FTEF-18.1** A definition's initialiser may be any expression: past its special cases
+  `QCC_PR_ParseInitializerType_Internal` reads
+  `tmp = QCC_PR_Expression(TOP_PRIORITY, EXPR_DISALLOW_COMMA); tmp = QCC_EvaluateCast(tmp, type,
+  true);`, so `float IT_ALL = IT_AXE | IT_SHOTGUN;` is a global with a folded value. A global's
+  value must still be constant: `QCC_PR_GenerateInitializerType` reports "initializer for '%s'
+  is not constant" when `!tmp.sym->constant`. This parse-and-resolve profile parses any
+  expression there and checks only the names in it (FTE-10.2, P2-34); whether it folds is
+  checked with constant folding (P2-06).
+- **FTEF-18.2** A function-typed local may be given a body inside a function body: the `if
+  (pr_scope)` branch of `QCC_PR_ParseInitializerType_Internal` saves the outer function's
+  locals, calls `QCC_PR_ParseImmediateStatements` for the inner body ("generate a goto statement
+  around the nested function, so that nothing is hurt"), and restores them, so the inner
+  function is a function of its own, `void() g = { ... };` with or without `local`.
+- **FTEF-18.3** A state's frame and next function are expressions: `QCC_PR_ParseState` reads
+  `s1 = QCC_PR_Expression (TOP_PRIORITY, EXPR_DISALLOW_COMMA);` for the frame, converted to
+  float, and then `def = QCC_PR_Expression (TOP_PRIORITY, EXPR_DISALLOW_COMMA);` for the next
+  function, which is "Type mismatch" unless it is a function or null. A missing `,` between
+  them is the warning "missing comma in state definition" (`WARN_UNEXPECTEDPUNCT`), not an
+  error.
+- **FTEF-18.4** A state may instead cycle through a range of frames: `[++ first .. last]` or
+  `[-- first .. last]` (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`),
+  where `first` and `last` are expressions and `QCC_PR_Expect("..")` separates them. `(w)` or
+  `(W)` after the `++` or `--` cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). A
+  constant range that runs against its direction is the warning "Forwards State Cycle with
+  backwards range".
+- **FTEF-18.5** An expression statement may hold several expressions separated by `,`, each
+  evaluated and the last one kept: `QCC_PR_ParseStatement` ends with
+  `QCC_PR_DiscardExpression (TOP_PRIORITY, 0);`, and `QCC_PR_RefExpression` continues
+  `if (!(exprflags&EXPR_DISALLOW_COMMA) && priority == TOP_PRIORITY && QCC_PR_CheckToken
+  (","))`, warning "Statement does not do anything" when the expression before the `,` has no
+  effect. Initialisers, arguments, state parts and `case` values pass `EXPR_DISALLOW_COMMA`, so
+  a `,` there separates rather than sequences.
+- **FTEF-18.6** A statement may be a label, written `name:` (the C style, taken `if
+  (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')`) or `:name` (the
+  FrikQCC style, `if (QCC_PR_CheckToken(":"))`), and `goto name;` jumps to it (`goto` is a
+  default keyword in the `qccmain.c` keyword table). A label already defined in the function is
+  the warning "Duplicate label %s"; a label name that is not a name is "invalid label name".
+- **FTEF-18.7** `return = e;` sets the value the function returns without returning: "return =
+  foo; sets the value that will be returned when the function finally exits, without returning
+  now. return; returns that value now". A return type larger than a vector is the error "'%s'
+  not supported when returning %s".
+- **FTEF-18.8** `if !(e)` takes the statement when `e` is false, like `if not (e)`
+  (FTEF-16.5): `if (!negate && QCC_PR_CheckToken("!"))` sets `negate = 2`, with the warning
+  "if !() is specific to fteqcc" (`WARN_FTE_SPECIFIC`).
+- **FTEF-18.9** `until (e) s` repeats `s` while `e` is false, and `do s until (e);` is the
+  `do` loop with the test reversed: `wasuntil = QCC_PR_CheckKeyword(keyword_until, "until"); if
+  (wasuntil || QCC_PR_CheckKeyword(keyword_while, "while"))`, and in `do`, `until =
+  QCC_PR_CheckKeyword(keyword_until, "until"); if (!until) QCC_PR_Expect ("while");`. `until` is
+  a keyword only for the Hexen II targets (`nondefaultkeyword` in the keyword table, forced on
+  `if (qcc_targetformat == QCF_HEXEN2 || ...)`), or when written `__until`, which
+  `QCC_PR_CheckKeyword` matches whether or not the keyword is enabled (FTEF-15.1); otherwise
+  `until (e)` is a call of a function named `until`.
+- **FTEF-18.10** A `case` label may give a range, `case a .. b:`, matched when the value is from
+  `a` to `b` inclusive: after the first value `QCC_PR_ParseStatement` tries `if (QCC_PR_CheckToken(".."))`
+  and reads a second with `QCC_PR_RefExpression (&pr_casesref2[num_cases], TOP_PRIORITY,
+  EXPR_DISALLOW_COMMA);`, and for a float the switch tests `OP_GE_F` against `a` and `OP_LE_F`
+  against `b`.
+- **FTEF-18.11** `a ?: b` is `a` when `a` is true and `b` otherwise, `a` evaluated once: after
+  `if (priority == TERNARY_PRIORITY && QCC_PR_CheckToken ("?"))` the conditional tries
+  `if (QCC_PR_CheckToken(":"))` before reading a middle operand.
+- **FTEF-18.12** `sizeof` takes a type or an expression, with or without parentheses:
+  `QCC_PR_RefTerm` reads `pbool bracket = QCC_PR_CheckToken("("); t =
+  QCC_PR_ParseType(false, true, false);`, and when no type follows,
+  `r = QCC_PR_RefExpression(&refbuf, TOP_PRIORITY, 0); //formulas are accepted weirdly enough,
+  its not just terms.` The value is the size in bytes, an unsigned integer constant; for a
+  string literal it counts the terminating NUL.
+- **FTEF-18.13** A frame macro reference (`$name`, QC-8.5) ends at whitespace or at the first
+  `,`, `;`, `&`, `|`, `(`, `)`, `]` or `..`: `QCC_PR_LexMacroName` copies bytes `while ( (c =
+  *pr_file_p) > ' ' && c != '\n' && c != ',' && c != ';' && c != '&' && c != '|' && c != ')' &&
+  c != '(' && c != ']' && !(pr_file_p[0] == '.' && pr_file_p[1] == '.'))`, where id's qcc stops
+  only at whitespace, `,` and `;` (QC-8.6). So `$a||x`, `($b)` and `[$a, th]` name the frames `a` and
+  `b`.
+- **FTEF-18.14** `$framesave` defines frame names exactly as `$frame` does (QC-8.2):
+  `QCC_PR_LexGrab` takes `if (!STRCMP (pr_token, "frame") || !STRCMP (pr_token, "framesave"))`
+  to `QCC_PR_ParseFrame`, which numbers each name on the line from the running frame count.
+- **FTEF-18.15** A function type may return a function: after the type, `QCC_PR_ParseDefs`
+  loops `while(QCC_PR_CheckToken ("("))` over parameter lists ("qc-style function... possibly
+  returning a function."), so `float(float)(string) f;` declares `f` as a function taking a
+  string and returning a `float(float)` function.
+
 ### Test vectors
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the

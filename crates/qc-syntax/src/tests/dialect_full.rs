@@ -532,3 +532,46 @@ fn nested_case_labels_parse() {
         "switch (a) {\ncase 3:\n\tif (b) {\n\tcase 2:\n\t\tc = 1;\n\t}\n\tbreak;\n}",
     ));
 }
+
+// spec FTEF-18.1: a global's initialiser may be any expression.
+#[test]
+fn expression_initialisers_parse() {
+    let parsed = fte("float A = 1, B = 2;\nfloat C = A | B;\n");
+    assert_eq!(
+        fte_errors("float A = 1, B = 2;\nfloat C = A | B;\n"),
+        Vec::<Code>::new()
+    );
+    let value = parsed
+        .tree()
+        .unwrap()
+        .declarations()
+        .filter_map(|d| d.declarators().next())
+        .find(|d| d.name().is_some_and(|n| n.text() == b"C"))
+        .and_then(|d| d.initializer());
+    let Some(ast::Initializer::Value(expr)) = value else {
+        panic!("C has no value: {value:?}");
+    };
+    assert_eq!(sexpr(&expr), "(| A B)");
+}
+
+// spec FTEF-18.2: a function-typed local may be given a body inside a function body.
+#[test]
+fn nested_function_bodies_parse() {
+    for body in [
+        "local void() g = { return; };\ng();",
+        "void() g = { return; };\ng();",
+    ] {
+        let parsed = fte(&in_body(body));
+        assert_eq!(fte_errors(&in_body(body)), Vec::<Code>::new(), "{body}");
+        assert!(matches!(
+            statements(&parsed).first(),
+            Some(ast::Stmt::Local(_))
+        ));
+        let bodies = parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == SyntaxKind::FunctionBody)
+            .count();
+        assert_eq!(bodies, 2, "{body}");
+    }
+}
