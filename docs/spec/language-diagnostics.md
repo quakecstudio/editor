@@ -82,6 +82,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   literal or frame macro reference (QC-13.6).
 - **QCD-3.11** `E0211` "function NAME was not defined": reported after all files for each
   global function never defined (QC-11.8, QC-24.6).
+- **QCD-3.12** `E0212` "Forwards State Cycle with backwards range": under an FTEQCC profile, a
+  frame cycle whose two constant frames run against its `++` or `--`, FTEQCC's error of the
+  same text (`dialect-fteqcc.md`, FTEF-18.19), over the two frames.
 
 ## QCD-4 Expression and statement errors
 
@@ -210,6 +213,15 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   FTEQCC's warning of the same text (`dialect-fteqcc-rerelease.md`, FTE-21.5).
 - **QCD-7.20** `W0103` "#warning: TEXT": under an FTEQCC profile, a `#warning` on a taken
   side, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-14.3).
+- **QCD-7.21** `W0205` "missing comma in state definition": under an FTEQCC profile, a state
+  header with no `,` between its frame and its next function, at the token where the `,`
+  belongs, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-18.3).
+- **QCD-7.22** `W0312` "Duplicate label NAME": under an FTEQCC profile, a label the function
+  already has, at its name, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
+  FTEF-18.6).
+- **QCD-7.23** `W0206` "incompatible redeclaration. Ignoring replacement of qc function with
+  builtin.": under an FTEQCC profile, a builtin number given for a function that has a body, at
+  the redeclared name, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-17.9).
 
 ## QCD-8 Preprocessor errors
 

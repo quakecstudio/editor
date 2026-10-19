@@ -164,7 +164,7 @@ impl Parser<'_> {
             return false;
         };
         match tok.kind {
-            K::Dot => true,
+            K::Dot | K::DotDot => true,
             K::Name if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) => true,
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags") => {
@@ -189,7 +189,7 @@ impl Parser<'_> {
         let Some(tok) = self.current() else {
             return false;
         };
-        if tok.kind == K::Dot {
+        if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
         }
         if tok.kind != K::Name {
@@ -261,6 +261,20 @@ impl Parser<'_> {
             self.bump();
             self.finish_node();
         }
+        if self.at(K::DotDot) {
+            // `..T`, a field of a field: `QCC_PR_ParseType` takes `..` as two levels ("so we
+            // don't end up with the user specifying '. .vector blah'"), as `.` and `.T`.
+            self.start_node(K::FieldType);
+            self.start_node(K::FieldType);
+            self.bump();
+            let inner = self.fte_type();
+            self.finish_node();
+            self.finish_node();
+            return inner.map(|_| TypeShape {
+                function: false,
+                field: true,
+            });
+        }
         if self.at(K::Dot) {
             self.start_node(K::FieldType);
             self.bump();
@@ -290,9 +304,13 @@ impl Parser<'_> {
             self.finish_node();
         }
         if self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
-            self.builder.start_node_at(checkpoint, K::FunctionType);
-            self.fte_param_list();
-            self.finish_node();
+            // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
+            // further parameter list makes a function returning the type so far.
+            while self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
+                self.builder.start_node_at(checkpoint, K::FunctionType);
+                self.fte_param_list();
+                self.finish_node();
+            }
             return Some(TypeShape {
                 function: true,
                 field: false,
@@ -698,7 +716,7 @@ impl Parser<'_> {
         let Some(first) = self.nth(1) else {
             return false;
         };
-        if first.kind == K::Dot {
+        if matches!(first.kind, K::Dot | K::DotDot) {
             return true;
         }
         if first.kind != K::Name {
@@ -774,7 +792,7 @@ impl Parser<'_> {
             return false;
         };
         match t.kind {
-            K::RParen | K::Ellipsis | K::Dot => true,
+            K::RParen | K::Ellipsis | K::Dot | K::DotDot => true,
             K::Name => {
                 super::type_keyword(&t.text).is_some()
                     || is_c_type_word(&t.text)
@@ -814,6 +832,206 @@ impl Parser<'_> {
             self.expression();
         }
         self.expect(K::RBracket, "]");
+    }
+
+    /// `sizeof` and a type or an expression, with or without parentheses (FTEF-18.12):
+    /// `QCC_PR_RefTerm` reads `pbool bracket = QCC_PR_CheckToken("(");`, then a type when one
+    /// follows, else `QCC_PR_RefExpression(&refbuf, TOP_PRIORITY, 0)`, then the `)`.
+    pub(super) fn sizeof_expr(&mut self) {
+        self.start_node(K::SizeofExpr);
+        self.bump_as(K::SizeofKw);
+        let bracket = self.at(K::LParen);
+        if bracket {
+            self.bump();
+        }
+        if self.sizeof_type_follows(bracket) {
+            self.fte_type();
+        } else {
+            self.sequence();
+        }
+        if bracket {
+            self.expect(K::RParen, ")");
+        }
+    }
+
+    /// Whether a type follows `sizeof` (FTEF-18.12): a type word, a C type word, a field
+    /// type, a tagged type, or, inside parentheses, a name and `*`s before the `)`. FTEQCC
+    /// knows its type names; a lone name here is read as a value, which a type's name also is
+    /// (FTEF-17.1).
+    fn sizeof_type_follows(&self, bracket: bool) -> bool {
+        let Some(tok) = self.current() else {
+            return false;
+        };
+        match tok.kind {
+            K::Dot | K::DotDot => true,
+            K::Name => {
+                if super::type_keyword(&tok.text).is_some()
+                    || is_c_type_word(&tok.text)
+                    || matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags")
+                {
+                    return true;
+                }
+                if !bracket || !self.fte_type_name(0) {
+                    return false;
+                }
+                let mut n = 1_usize;
+                while self.nth(n).is_some_and(|t| t.kind == K::Star) {
+                    n = n.saturating_add(1);
+                }
+                n > 1 && self.nth(n).is_some_and(|t| t.kind == K::RParen)
+            }
+            _ => false,
+        }
+    }
+
+    // ---- statements ----
+
+    /// The state header (FTEF-18.3, FTEF-18.4): `[frame, next]` with an expression for each,
+    /// the `,` a warning when missing; or a frame cycle `[++ first .. last]` or
+    /// `[-- first .. last]`, `(w)` after the `++` or `--` cycling `weaponframe`.
+    pub(super) fn fte_state(&mut self) {
+        self.start_node(K::State);
+        self.bump();
+        if self.at(K::PlusPlus) || self.at(K::MinusMinus) {
+            self.frame_cycle();
+        } else {
+            self.expression();
+            if self.at(K::Comma) {
+                self.bump();
+            } else {
+                // `QCC_PR_ParseWarning(WARN_UNEXPECTEDPUNCT, "missing comma in state
+                // definition");`
+                let span = self.current_span();
+                self.warning_at(Code::W0205, "missing comma in state definition", span);
+            }
+            // A name alone is the next think function, which resolution declares when it is
+            // new (QC-13.6); any other expression is a value of the body.
+            if self.at(K::Name) && self.nth(1).is_some_and(|t| t.kind == K::RBracket) {
+                self.name();
+            } else {
+                self.expression();
+            }
+        }
+        if !self.expect(K::RBracket, "]") {
+            // The rest of a header that went wrong, up to its `]` or the body's `{`.
+            let mut open = false;
+            while !self.at(K::RBracket) && !self.at(K::LBrace) && self.current().is_some() {
+                if !open {
+                    self.start_node(K::Error);
+                    open = true;
+                }
+                self.bump();
+            }
+            if open {
+                self.finish_node();
+            }
+            if self.at(K::RBracket) {
+                self.bump();
+            }
+        }
+        self.finish_node();
+    }
+
+    /// `++ first .. last` or `-- first .. last`, after the `[` (FTEF-18.4). Two constant
+    /// frames against the direction are "Forwards State Cycle with backwards range", an
+    /// error as FTEQCC raises it (`ERR_STATETYPEMISMATCH`).
+    fn frame_cycle(&mut self) {
+        let forwards = self.at(K::PlusPlus);
+        self.bump();
+        if self.at(K::LParen) {
+            // `(w)` or `(W)`: `if (!QCC_PR_CheckToken("w")) QCC_PR_Expect("W");`.
+            self.bump();
+            if !(self.at_word("w") || self.at_word("W")) {
+                self.expected("W");
+            }
+            if self.at(K::Name) {
+                self.bump();
+            }
+            self.expect(K::RParen, ")");
+        }
+        let start = self.current_span().start;
+        let first = self.constant_frame();
+        self.expect(K::DotDot, "..");
+        let last = self.constant_frame();
+        if let (Some(first), Some(last)) = (first, last) {
+            let backwards = if forwards { first > last } else { first < last };
+            if backwards {
+                let span = Span::new(start, self.last_end);
+                self.error_at(
+                    Code::E0212,
+                    "Forwards State Cycle with backwards range",
+                    span,
+                );
+            }
+        }
+    }
+
+    /// One frame of a cycle: an expression, and its value when it is a single number.
+    fn constant_frame(&mut self) -> Option<f32> {
+        let value = self
+            .current()
+            .filter(|t| t.kind == K::FloatLit)
+            .and_then(|t| t.value);
+        let before = self.pos;
+        self.expression();
+        value.filter(|_| self.pos == before.saturating_add(1))
+    }
+
+    /// Whether a C label starts here: a name with its `:` right after it (FTEF-18.6), as
+    /// `if (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')` reads.
+    pub(super) fn at_c_label(&self) -> bool {
+        let (Some(name), Some(colon)) = (self.current(), self.nth(1)) else {
+            return false;
+        };
+        name.kind == K::Name && colon.kind == K::Colon && colon.span.start == name.span.end
+    }
+
+    /// `name:` or `:name` (FTEF-18.6). A label the function already has is "Duplicate label
+    /// NAME", a warning.
+    pub(super) fn label_stmt(&mut self) {
+        self.start_node(K::LabelStmt);
+        let frikqcc = self.at(K::Colon);
+        if frikqcc {
+            self.bump();
+        }
+        let label = self
+            .current()
+            .filter(|t| t.kind == K::Name)
+            .map(|t| (t.text.clone(), t.span));
+        if !self.name() {
+            // `invalid label name`: the statement is abandoned.
+            self.recover(true);
+        } else {
+            if !frikqcc {
+                self.bump();
+            }
+            if let Some((name, span)) = label {
+                if self.labels.contains(&name) {
+                    self.warning_at(Code::W0312, format!("Duplicate label {name}"), span);
+                } else {
+                    self.labels.push(name);
+                }
+            }
+        }
+        self.finish_node();
+    }
+
+    /// `goto name;` (FTEF-18.6).
+    pub(super) fn goto_stmt(&mut self) {
+        self.start_node(K::GotoStmt);
+        self.bump_as(K::GotoKw);
+        self.name();
+        self.end_statement();
+        self.finish_node();
+    }
+
+    /// Whether `__until` starts here (FTEF-18.9). `until` itself is a keyword only for the
+    /// Hexen II targets, so under this profile it is a name, and `until (e)` a call.
+    pub(super) fn at_until(&self) -> bool {
+        self.current().is_some_and(|t| {
+            t.kind == K::Name
+                && matches!(bare(&t.text), (true, rest) if rest.eq_ignore_ascii_case("until"))
+        })
     }
 
     /// A name, and `::` and a member name after it (FTEF-16.4).

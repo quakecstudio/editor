@@ -408,6 +408,16 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `includedir`, `defaultstatic`, `framerate`, `compress`, `copyright`, `wrasm`,
   `DONT_COMPILE_THIS_FILE`. An unrecognised `#pragma` is accepted with the warning "Unknown
   pragma '%s'" (as FTE-16.2), not an error.
+- **FTEF-12.9** `#pragma autoproto` before any definition turns on the autoprototyping of
+  FTE-22.3 for the module, as `-Fautoproto` does, and `#pragma autoproto 0` turns it off:
+  `QCC_PR_Precompiler` sets `autoprototype = *msg?!!atoi(msg):true;` only
+  `if (numpr_globals == RESERVED_OFS)`, and otherwise warns "#pragma autoproto must appear
+  before any definitions". It holds for one module: `QCC_main`, run once per `progs.src`,
+  starts with `parseonly = autoprototyped = autoprototype = false;`. A list-form `progs.src`
+  is read through the preprocessor (`QCC_ContinueCompile` calls `QCC_PR_LexWhitespace(false)`
+  before each entry), so a `#pragma autoproto` there, as Copper's `progs.src` has, holds for the
+  whole module. This profile takes a pragma in a compiled file only before the first token of
+  any compiled file, and reports nothing for a later one.
 - **FTEF-12.8** A `#pragma` affects the build and diagnostics, not the token stream; it emits
   no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
   output (the target format, the CRC, the flags) is realised by L-01.
@@ -696,6 +706,15 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   initialisation" comparison runs only `if (basedef->initialized && !basedef->unused ...)`.
   The corpus's `fteextensions.qc` sets `#pragma noref 1` and a later file binds
   `getgamedirinfo = #0` again.
+- **FTEF-17.9** A function that has a body, given a builtin number again, keeps its body, with
+  the warning `W0206` "incompatible redeclaration. Ignoring replacement of qc function with
+  builtin.": the "dupe initialisation" comparison of `QCC_PR_GenerateInitializerType` has
+  `else if (!def.sym->arraysize && def.cast->type == ev_function &&
+  functions[QCC_SRef_DataWord(def, i)->_int].code>-1 &&
+  functions[QCC_SRef_DataWord(tmp, i)->_int].code==-1)` before its "incompatible
+  redeclaration" error. As FTEF-17.8, the comparison is not made for a definition marked
+  `noref`. Copper's client module defines `sin` in `maths.qc` and then reads
+  `float(float angle) sin = #60;` in `csdefs.qc`.
 
 ## FTEF-18 Further statements, terms and frame macros
 
@@ -709,8 +728,9 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 The rest of what the corpus and FTEQCC's own tests write: initialisers that are expressions,
 functions defined inside functions, state frames computed from expressions, the statement forms
 FTEQCC takes from FrikQCC and HexenC, `sizeof`, and the frame-macro forms of `QCC_PR_LexGrab`.
-Where this profile does not parse a form yet, the statement is listed in
-`coverage-baseline.tsv` until P2-39 implements it.
+Copper and Arcane Dimensions, which build with FTEQCC from list-form `progs.src` files, use the
+frame macro forms of FTEF-18.13, FTEF-18.16 and FTEF-18.17 and the statement sequences of
+FTEF-18.5.
 
 ### Behaviour
 
@@ -733,12 +753,10 @@ Where this profile does not parse a form yet, the statement is listed in
   function, which is "Type mismatch" unless it is a function or null. A missing `,` between
   them is the warning "missing comma in state definition" (`WARN_UNEXPECTEDPUNCT`), not an
   error.
-- **FTEF-18.4** A state may instead cycle through a range of frames: `[++ first .. last]` or
-  `[-- first .. last]` (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`),
-  where `first` and `last` are expressions and `QCC_PR_Expect("..")` separates them. `(w)` or
-  `(W)` after the `++` or `--` cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). A
-  constant range that runs against its direction is the warning "Forwards State Cycle with
-  backwards range".
+- **FTEF-18.4** **Withdrawn** (P2-39, #423): it called a constant range against its
+  direction a warning, but FTEQCC raises it with `QCC_PR_ParseWarning(ERR_STATETYPEMISMATCH,
+  ...)`, and `QCC_PR_PrintWarning` prints any code `if (type >= ERR_PARSEERRORS)` as an error
+  and counts it in `pr_error_count`. Replaced by FTEF-18.19.
 - **FTEF-18.5** An expression statement may hold several expressions separated by `,`, each
   evaluated and the last one kept: `QCC_PR_ParseStatement` ends with
   `QCC_PR_DiscardExpression (TOP_PRIORITY, 0);`, and `QCC_PR_RefExpression` continues
@@ -793,6 +811,51 @@ Where this profile does not parse a form yet, the statement is listed in
   loops `while(QCC_PR_CheckToken ("("))` over parameter lists ("qc-style function... possibly
   returning a function."), so `float(float)(string) f;` declares `f` as a function taking a
   string and returning a `float(float)` function.
+- **FTEF-18.16** Besides `$frame` and `$framesave`, `QCC_PR_LexGrab` knows these `$` commands,
+  each followed by words read as frame macro names are (FTEF-18.13). `$cd`, `$origin`, `$base`,
+  `$flags`, `$scale` and `$skin` are ignored with their words: `while (QCC_PR_LexMacroName ())
+  ;`, which stops at the end of the line or at the first word that ends at once, where id's qcc
+  drops the rest of the line (QC-27.14). `$flush` numbers the next frame name 0
+  (`QCC_PR_ClearGrabMacros(true)`); `$frame_reset` also forgets every frame macro
+  (`QCC_PR_ClearGrabMacros(false)`, "full reset of all frame macros"); `$framevalue N` numbers
+  the next one `N` (`pr_macrovalue = atoi(pr_token);`); `$framerestore NAME` numbers it as the
+  macro `NAME` is, which must exist ("Unknown frame macro"); and `$modelname NAME` first makes
+  the previous model name a frame macro of the current number
+  (`QCC_PR_MacroFrame(pr_framemodelname, pr_macrovalue, true)`), then takes `NAME` as the model
+  name and, when `i = QCC_PR_FindMacro(pr_framemodelname)` is not 0, numbers the next frame
+  `i`, which is -1 for a name with no macro. Under the vanilla profile each of these is a frame
+  macro reference (QC-8.5). Copper's `m_knight.qc` begins with `$flush`.
+- **FTEF-18.17** Frame macros are kept from file to file (FTE-22.4), and the number of the next
+  frame name, `pr_macrovalue`, starts at 0 in each file (`QCC_PR_CompileFile` calls
+  `QCC_PR_ClearGrabMacros (true);`) and goes up by one for each name (`QCC_PR_MacroFrame(pr_token,
+  pr_macrovalue++, false)`), a name already defined in the same file keeping its first number.
+  The limit is on the macros of the whole program, not of one file: with
+  `#define MAX_FRAMES 8192`, `QCC_PR_MacroFrame` reports `if (pr_nummacros >= MAX_FRAMES)
+  QCC_PR_ParseError(ERR_TOOMANYFRAMEMACROS, "Too many frame macros defined");`, which this
+  profile reports as `E0504` (QCD-6.4) at the name that reaches it. Under the vanilla profile
+  the limit stays 256 frames in one file (QC-27.5). Arcane Dimensions' `mon_bossmammoth.qc`
+  defines more than 256 frames.
+- **FTEF-18.18** `..` is one token: `pr_punctuation[]` lists `"...", "..", "."`, longest first.
+  So `..T` is a field of a field, which `QCC_PR_ParseType` reads `if (QCC_PR_CheckToken
+  (".."))` as two field levels ("so we don't end up with the user specifying '. .vector
+  blah'"), and a number ends before `..`: `QCC_PR_LexNumber` takes a fraction only
+  `else if (c == '.' && pr_file_p[1]!='.')`, so `1..5` is `1`, `..` and `5`.
+- **FTEF-18.19** A frame cycle (FTEF-18.4's form), `[++ first .. last]` or `[-- first .. last]`
+  (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`), has `first` and `last`
+  as expressions separated by `QCC_PR_Expect("..")`; `(w)` or `(W)` after the `++` or `--`
+  cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). Two constant frames against the
+  direction, `if (first->_float > last->_float)` after `++` or `<` after `--`, are the error
+  `E0212` "Forwards State Cycle with backwards range": FTEQCC's `QCC_PR_ParseWarning` with
+  `ERR_STATETYPEMISMATCH`, an error code, prints an error. This profile compares two frames
+  written as single numbers.
+- **FTEF-18.20** The sequences of FTEF-18.5 are read wherever FTEQCC reads an expression with
+  no `EXPR_DISALLOW_COMMA` at `TOP_PRIORITY`: a returned value and `return =`
+  (`e = QCC_PR_Expression (TOP_PRIORITY, 0);`), the conditions of `if`, `while`, `until`, `do`
+  and `switch`, a parenthesised expression (`r = QCC_PR_RefExpression(retbuf, TOP_PRIORITY,
+  0);` before `QCC_PR_Expect (")")`), a subscript (`tmp = QCC_PR_Expression (TOP_PRIORITY, 0);`
+  after `QCC_PR_CheckToken("[")`), the middle of `?:` (`val = QCC_PR_Expression(TOP_PRIORITY,
+  0);`) and the expression of `sizeof` (FTEF-18.12). The last arm of `?:` passes
+  `EXPR_DISALLOW_COMMA`.
 
 ### Test vectors
 

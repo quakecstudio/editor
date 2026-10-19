@@ -16,6 +16,7 @@ mod dialect;
 mod dialect_ast;
 mod dialect_full;
 mod dialect_rerelease;
+mod dialect_statements;
 mod expressions;
 mod lossless;
 mod recovery;
@@ -138,6 +139,15 @@ fn sexpr(expr: &ast::Expr) -> String {
             let parts: Vec<String> = vector.elements().map(|e| sexpr(&e)).collect();
             format!("[{}]", parts.join(" "))
         }
+        ast::Expr::Sizeof(sizeof) => match sizeof.ty() {
+            Some(ty) => format!(
+                "(sizeof type {})",
+                String::from_utf8_lossy(&ast::AstNode::syntax(&ty).text())
+                    .trim()
+                    .to_owned()
+            ),
+            None => format!("(sizeof {})", sub(sizeof.operand())),
+        },
     }
 }
 

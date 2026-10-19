@@ -293,6 +293,18 @@ ast_node!(
     /// `[x, y, z]` (FTEF-16.3).
     VectorExpr
 );
+ast_node!(
+    /// `name:` or `:name` (FTEF-18.6).
+    LabelStmt
+);
+ast_node!(
+    /// `goto name;` (FTEF-18.6).
+    GotoStmt
+);
+ast_node!(
+    /// `sizeof` and a type or an expression (FTEF-18.12).
+    SizeofExpr
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -333,6 +345,10 @@ ast_enum!(
         Continue(ContinueStmt),
         /// `;` alone (FTE-21.5).
         Empty(EmptyStmt),
+        /// `name:` or `:name` (FTEF-18.6).
+        Label(LabelStmt),
+        /// `goto name;` (FTEF-18.6).
+        Goto(GotoStmt),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -367,6 +383,8 @@ ast_enum!(
         Cast(CastExpr),
         /// `[x, y, z]` (FTEF-16.3).
         Vector(VectorExpr),
+        /// `sizeof` and a type or an expression (FTEF-18.12).
+        Sizeof(SizeofExpr),
     }
 );
 
@@ -628,10 +646,28 @@ impl State {
         child(&self.0)
     }
 
-    /// The next think function's name.
+    /// The next think function's name, when it is written as a name (QC-13.6). An FTEQCC
+    /// frame cycle (FTEF-18.4) has none, and a next function written as another expression
+    /// (FTEF-18.3) is among [`State::exprs`].
     #[must_use]
     pub fn next(&self) -> Option<SyntaxToken> {
+        if self.is_cycle() {
+            return None;
+        }
         self.0.token_of(K::Name)
+    }
+
+    /// Whether this is an FTEQCC frame cycle, `[++ first .. last]` or `[-- first .. last]`
+    /// (FTEF-18.4).
+    #[must_use]
+    pub fn is_cycle(&self) -> bool {
+        self.0.token_of(K::DotDot).is_some()
+    }
+
+    /// The expressions of the header: the frame and, unless it is a name, the next function
+    /// (FTEF-18.3); or a cycle's first and last frames (FTEF-18.4).
+    pub fn exprs(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
     }
 }
 
@@ -712,6 +748,36 @@ impl ExprStmt {
     /// The expression.
     #[must_use]
     pub fn expr(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+}
+
+impl LabelStmt {
+    /// The label's name (FTEF-18.6).
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+}
+
+impl GotoStmt {
+    /// The name of the label it jumps to (FTEF-18.6).
+    #[must_use]
+    pub fn label(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+}
+
+impl SizeofExpr {
+    /// The type it measures, when it is given a type (FTEF-18.12).
+    #[must_use]
+    pub fn ty(&self) -> Option<Type> {
+        child(&self.0)
+    }
+
+    /// The expression it measures, when it is given one (FTEF-18.12).
+    #[must_use]
+    pub fn operand(&self) -> Option<Expr> {
         child(&self.0)
     }
 }
@@ -963,6 +1029,8 @@ pub enum BinaryOp {
     ShlAssign,
     /// `>>=` (FTEQCC, FTE-19.1).
     ShrAssign,
+    /// `,` (FTEQCC, FTEF-18.5): both sides evaluated, the right one kept.
+    Comma,
 }
 
 impl BinaryOp {
@@ -997,6 +1065,7 @@ impl BinaryOp {
             K::CaretEq => Self::BitXorAssign,
             K::ShlEq => Self::ShlAssign,
             K::ShrEq => Self::ShrAssign,
+            K::Comma => Self::Comma,
             _ => return None,
         })
     }
@@ -1115,6 +1184,12 @@ impl CaseLabel {
         child(&self.0)
     }
 
+    /// The end of an FTEQCC case range, `case a .. b:` (FTEF-18.10).
+    #[must_use]
+    pub fn range_end(&self) -> Option<Expr> {
+        around(&self.0, K::DotDot).1
+    }
+
     /// Whether this is the `default:` label.
     #[must_use]
     pub fn is_default(&self) -> bool {
@@ -1137,12 +1212,29 @@ impl TernaryExpr {
         around(&self.0, K::Question).0
     }
 
-    /// The arm chosen when the condition holds, and the arm chosen otherwise (FTE-8.1).
+    /// The arm chosen when the condition holds, and the arm chosen otherwise (FTE-8.1). FTEQCC's
+    /// `a ?: b` has no middle arm: the condition's value is chosen (FTEF-18.11).
     #[must_use]
     pub fn arms(&self) -> (Option<Expr>, Option<Expr>) {
-        let after = around::<Expr>(&self.0, K::Question).1;
-        let otherwise = around::<Expr>(&self.0, K::Colon).1;
-        (after, otherwise)
+        let mut question = false;
+        let mut colon = false;
+        let mut middle = None;
+        let mut otherwise = None;
+        for element in self.0.children_with_tokens() {
+            match element {
+                SyntaxElement::Token(token) if token.kind() == K::Question => question = true,
+                SyntaxElement::Token(token) if token.kind() == K::Colon => colon = question,
+                SyntaxElement::Token(_) => {}
+                SyntaxElement::Node(node) => {
+                    if colon {
+                        otherwise = otherwise.or_else(|| Expr::cast(node));
+                    } else if question {
+                        middle = middle.or_else(|| Expr::cast(node));
+                    }
+                }
+            }
+        }
+        (middle, otherwise)
     }
 }
 
