@@ -51,6 +51,9 @@
 //!   against the order of the functions in a `progs.dat` id's qcc compiled, and
 //!   `--fteqcc` runs the pinned FTEQCC on every module and checks that the files
 //!   it reports compiling and including match the graph, in order.
+//! - `sema-corpus`: resolves id 1.01 and the rerelease through `qc-sema` and
+//!   compares each index with its golden file, and its global definitions with
+//!   the progs.dat an oracle compiler built (P2-54).
 //! - `fteqcc-coverage`: parses every `.qc` and `.qh` file under the rerelease
 //!   codebase directories with the vanilla parser and lists every construct it
 //!   rejects, grouped into the classes of
@@ -104,6 +107,7 @@ mod project_corpus;
 mod ratchet;
 mod readiness;
 mod repo;
+mod sema_corpus;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -111,7 +115,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixtures | \
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
-                     map-corpus | parse-corpus | project-corpus | differential | \
+                     map-corpus | parse-corpus | project-corpus | sema-corpus | differential | \
                      fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines>";
 
 /// A command that takes arguments and says itself whether it passed.
@@ -180,6 +184,7 @@ fn command(name: &str) -> Option<Command> {
         "parse-corpus" => Some(parse_corpus::main),
         "project-corpus" => Some(project_corpus::main),
         "readiness" => Some(readiness::main),
+        "sema-corpus" => Some(sema_corpus::main),
         "ratchet" => Some(ratchet::main),
         _ => None,
     }
@@ -282,6 +287,7 @@ mod tests {
             "project-corpus",
             "readiness",
             "ratchet",
+            "sema-corpus",
         ] {
             assert!(command(name).is_some(), "{name}");
             assert!(USAGE.contains(name), "{name}");

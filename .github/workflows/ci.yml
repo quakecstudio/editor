@@ -518,6 +518,15 @@ jobs:
       - name: Build the corpus progs and round-trip them through qc-progs
         if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask corpus build
+      # P2-54: id 1.01 (vanilla profile) and the rerelease (FTEQCC profile) resolve to the golden
+      # indexes in docs/spec/vectors/sema/, and their global definitions agree with the progs
+      # the oracle compilers built in the step above (TEST-6).
+      - name: Check the semantic model's golden indexes and definitions against the progs
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
+        run: |
+          cargo xtask sema-corpus \
+            "$QS_TEST_ASSETS/codebase/id-1.01=$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
+            "$QS_TEST_ASSETS/codebase/rerelease=$QS_TEST_ASSETS/progs/rerelease/progs.dat"
       # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
       # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
       # divergence that DIFF-10.1 does not list (DIFF-10.3). This is the differential VM

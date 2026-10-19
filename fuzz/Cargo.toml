@@ -13,10 +13,12 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
+qc-engines = { path = "../crates/qc-engines" }
 qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
 qc-preproc = { path = "../crates/qc-preproc" }
 qc-project = { path = "../crates/qc-project" }
+qc-sema = { path = "../crates/qc-sema" }
 qc-syntax = { path = "../crates/qc-syntax" }
 qc-trace = { path = "../crates/qc-trace" }
 qc-types = { path = "../crates/qc-types" }
@@ -60,6 +62,13 @@ bench = false
 [[bin]]
 name = "qc-project"
 path = "fuzz_targets/qc_project.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qc-sema"
+path = "fuzz_targets/qc_sema.rs"
 test = false
 doc = false
 bench = false

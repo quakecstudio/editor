@@ -15,5 +15,8 @@ qc-preproc = { workspace = true }
 qc-project = { workspace = true }
 qc-syntax = { workspace = true }
 
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
 [lints]
 workspace = true

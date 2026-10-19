@@ -12,6 +12,13 @@ use std::rc::Rc;
 
 use qc_syntax::ast;
 
+#[cfg(test)]
+thread_local! {
+    /// How many times [`Type::from_ast`] has run on this thread, for the tests that show
+    /// lowering is linear in a type's size.
+    pub(crate) static FROM_AST_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// A QuakeC type (QC-10).
 ///
 /// Two values are equal exactly when `qcc` would intern them as one type (QC-10.6):
@@ -130,6 +137,8 @@ impl Type {
     /// FTEQCC type word that is not one of the five is [`Type::Named`] (FTEF-2, FTEF-7.2).
     #[must_use]
     pub fn from_ast(ty: &ast::Type) -> Self {
+        #[cfg(test)]
+        FROM_AST_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
         match ty {
             ast::Type::Simple(simple) => match simple.kind() {
                 Some(k) => Self::Simple(SimpleType::from_ast(k)),
@@ -170,21 +179,24 @@ impl Type {
 
     /// The parameter types of a parameter list (QC-10.3). FTEQCC's `(void)`, one `void` with no
     /// name, has none (FTEF-15.3).
+    ///
+    /// Each parameter's type is lowered once, so lowering a type is linear in its size: a
+    /// parameter that is itself a function type would otherwise be lowered again at every
+    /// level of nesting.
     #[must_use]
     pub fn params_of(list: &ast::ParamList) -> Vec<Self> {
         let params: Vec<ast::Param> = list.params().collect();
-        if let [only] = params.as_slice()
+        let types: Vec<Self> = params
+            .iter()
+            .map(|p| p.ty().map_or(Self::Unknown, |t| Self::from_ast(&t)))
+            .collect();
+        if let ([only], [ty]) = (params.as_slice(), types.as_slice())
             && only.name().is_none()
-            && only
-                .ty()
-                .is_some_and(|t| Self::from_ast(&t) == Self::Simple(SimpleType::Void))
+            && *ty == Self::Simple(SimpleType::Void)
         {
             return Vec::new();
         }
-        params
-            .iter()
-            .map(|p| p.ty().map_or(Self::Unknown, |t| Self::from_ast(&t)))
-            .collect()
+        types
     }
 }
 

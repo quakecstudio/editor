@@ -371,6 +371,7 @@ version = "2026.10.0"
 dependencies = [
  "qc-builtins",
  "qc-diag",
+ "qc-lexer",
  "qc-project",
  "qc-sema",
  "qc-syntax",
@@ -423,6 +424,7 @@ dependencies = [
 name = "qc-sema"
 version = "2026.10.0"
 dependencies = [
+ "proptest",
  "qc-diag",
  "qc-lexer",
  "qc-preproc",

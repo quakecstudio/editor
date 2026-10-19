@@ -861,6 +861,40 @@ issues:
   - 'A Readiness run on main for qc-lexer qc-preproc qc-syntax qc-project passes cargo xtask ratchet: every crate at or above its ratchets.toml minimums, with no surviving mutant that is not killed or listed under equivalent_mutants'
   verify:
   - The Readiness workflow run linked in the PR
+- key: P2-56
+  title: Key FTEQCC builtin numbers by the value FTEQCC reads
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - PRIN-8
+  depends:
+  - P2-30
+  deliverable:
+  - 'crates/qc-engines/src/check.rs and docs/spec/engine-targets.md: ENGT-4.3 keys a builtin by a decimal literal of at least 1, but under the FTEQCC profile `QCC_PR_ParseInitializerType` (`qcc_pr_comp.c`, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) takes `binum` from the value `QCC_PR_LexNumber` reads, which reads `0x` as base 16 and a leading `0` as base 8. So `#0x10` is builtin 16 and `#010` builtin 8 to FTEQCC, while `builtin_number` gives `#0x10` no key and `#010` the key 10. P2-54 settled the zero of `#0:NAME` this way (ENGT-4.9); the numbers of ENGT-4.3 and ENGT-4.6 under FTEQCC should follow it, as a new statement quoting FTEQCC'
+  acceptance:
+  - '`#0x10`, `#010`, `#16i` and `#0x10:NAME` under the FTEQCC profile are keyed 16, 8, 16 and 16, and `#010` under the vanilla profile stays 10, each with a test citing the new statement'
+  verify:
+  - cargo test -p qc-engines
+- key: P2-57
+  title: Read section ranges and disclaimed sections on the README Spec sections line
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-3
+  depends:
+  - P2-54
+  deliverable:
+  - 'xtask/src/readiness.rs `spec_sections`: it takes every `PREFIX-n` on a README''s `**Spec sections:**` line, and a statement ID such as `QC-13.6` as its section. So a range is read as its two ends (qc-lno''s "LNO-2 to LNO-6" measures LNO-2 and LNO-6 only, qc-progs'' "PROGS-1 to PROGS-15" PROGS-1 and PROGS-15, qs-vfs'' "FS-1 to FS-5", qc-trace''s "TRACE-1 to TRACE-7"), and a section the README names as another crate''s is counted (qc-lno''s LNO-1 and LNO-4, qc-progs'' PROGS-5, PROGS-6 and PROGS-10). P2-54 added the `**Spec statements:**` line for single statements; the sections line should read ranges as every section between and leave out the sections a README disclaims, and each affected crate''s README and ratchet should be restated by a readiness re-run'
+  acceptance:
+  - '`cargo xtask readiness spec` measures every section in a stated range and none the README names as another crate''s, with a test of each form, and every crate it changes is re-measured and still meets the bar, or has a follow-up'
+  verify:
+  - cargo test -p xtask; a Readiness run's spec job for the affected crates
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1007,6 +1041,8 @@ issues:
   - P2-53
   - P2-54
   - P2-55
+  - P2-56
+  - P2-57
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:

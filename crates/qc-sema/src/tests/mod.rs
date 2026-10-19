@@ -24,6 +24,7 @@ mod incremental;
 mod initialiser_uses;
 mod members;
 mod navigation;
+mod properties;
 mod recovery;
 mod resolution;
 mod reviewer;

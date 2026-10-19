@@ -53,7 +53,7 @@ check and never runs on pull requests or on a schedule.
 | `Readiness coverage` | `cargo xtask readiness lines`, then `branches` | line coverage with `cargo llvm-cov` on the pinned stable toolchain; branch coverage with `cargo llvm-cov --branch` on the date-pinned nightly ([`conventions.md`](conventions.md)) |
 | `Readiness mutation` | `cargo xtask readiness mutation` | a full `cargo mutants` run per crate; a mutant that times out counts as caught, one that does not build does not count |
 | `Readiness flakes (linux, macos, windows)` | `cargo xtask readiness flakes` | each crate's tests 20 times on each OS; every run must pass |
-| `Readiness ratchet` | `cargo xtask readiness spec`, then `cargo xtask ratchet` | the active statements, in the sections the crate README lists under **Spec sections**, that a `// spec` test cites; then judges every number against the bar and `ratchets.toml` |
+| `Readiness ratchet` | `cargo xtask readiness spec`, then `cargo xtask ratchet` | the active statements, in the sections the crate README lists under **Spec sections** and the single statements it lists under **Spec statements** (none of which may be in the baseline), that a `// spec` test cites; then judges every number against the bar and `ratchets.toml` |
 
 Each crate's numbers come from its own tests (CONV-11), so tests in `qs-tests` do not count
 towards another crate's coverage or mutation score. `cargo xtask ratchet` fails when a crate is
@@ -78,8 +78,9 @@ Running the workflow on the fixture directories shows the same failures with the
   mutation scores are necessary but not sufficient.
 - **L2 syntax:** lossless round trip of the whole corpus, error-recovery tests generated
   by deleting each token, parser fuzzing.
-- **L3 semantics:** golden indexes (definitions, references, diagnostics) for the corpus;
-  incrementality asserted by query counters.
+- **L3 semantics:** golden indexes (definitions, references, diagnostics) for the corpus
+  (`cargo xtask sema-corpus`, `docs/spec/vectors/sema/`); incrementality asserted by query
+  counters.
 - **L4 bridges:** compiler differential suites; bridge client suites run against the headless
   preview host; protocol conformance tests on both sides of the bridge.
 - **L5 commands:** every command has a schema test, an undo test and a guard test.
