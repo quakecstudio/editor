@@ -640,4 +640,49 @@ mod tests {
         let shallow = format!("{}1{}", "(".repeat(5), ")".repeat(5));
         assert!(fte_eval(&shallow, &m));
     }
+
+    // spec PRJ-5.5: `>` compares as in C
+    #[test]
+    fn greater_than() {
+        let m = macros();
+        assert!(eval("2 > 1", &m));
+        assert!(eval("TWO > ONE", &m));
+        assert!(!eval("1 > 2", &m));
+    }
+
+    // spec FTEF-14.11: each comparison compares as its operator says, at the boundary too
+    #[test]
+    fn fteqcc_comparison_operators() {
+        let m = macros();
+        for (expr, want) in [
+            ("1 <= 2", true),
+            ("3 <= 2", false),
+            ("3 >= 2", true),
+            ("1 >= 2", false),
+            ("2 > 1", true),
+            ("2 > 2", false),
+            ("1 > 2", false),
+            ("2 < 2", false),
+            ("1 < 2", true),
+            ("1 != 2", true),
+        ] {
+            assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
+    }
+
+    // spec FTEF-14.11: a word ends at `//` but not at a lone `/` or `*`, and a comment can
+    // start only a word
+    #[test]
+    fn fteqcc_words_and_slashes() {
+        let m = macros();
+        for (expr, want) in [
+            ("1*", true),
+            ("ONE/2", false),
+            ("ONE// c", true),
+            ("ONE//", true),
+            ("/* c */ 1", false),
+        ] {
+            assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
+    }
 }

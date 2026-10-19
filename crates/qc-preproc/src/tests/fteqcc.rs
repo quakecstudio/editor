@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
-use crate::{Code, MemoryLoader, Preprocessor};
+use crate::{Code, MemoryLoader, Preprocessor, TokenKind};
 
 /// The tokens of `text` preprocessed under the FTEQCC dialect, and its diagnostic codes.
 fn fte(text: &str) -> (String, Vec<Code>) {
@@ -452,4 +452,100 @@ fn a_long_model_name_is_cut() {
     assert_eq!(tokens(&out), "y = 0 ;");
     assert_eq!(codes(&out), [Code::W0107]);
     assert!(!Code::W0107.is_error());
+}
+
+// spec QCD-7.2: a redefinition that differs only in its parameter list warns
+// spec FTEF-14.5: and so does one that differs only in being variadic
+#[test]
+fn a_redefinition_with_other_parameters_warns() {
+    assert_eq!(fte("#define A 1\n#define A() 1\n").1, vec![Code::W0102]);
+    assert_eq!(
+        fte("#define V(a, ...) x\n#define V(a) x\n").1,
+        vec![Code::W0102]
+    );
+    assert_eq!(fte("#define V(a, ...) x\n#define V(a, ...) x\n").1, vec![]);
+}
+
+// spec FTEF-14.6: a pasted text that lexes as one token is that token, a number or an
+// operator; one that lexes as more stays one name of the whole text
+#[test]
+fn a_paste_is_lexed_again() {
+    use qc_lexer::Punct;
+    let (_, out) = one_fte("#define J(a, b) a ## b\nJ(1, 2) J(+, =) J(a, +)\n");
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::Float(12.0),
+            TokenKind::Punct(Punct::PlusEq),
+            TokenKind::Name("a+".to_owned())
+        ]
+    );
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some("12"));
+}
+
+// spec FTEF-14.6: `#param` is a string literal whose spelling escapes `"` and `\`
+#[test]
+fn a_stringified_argument_is_escaped() {
+    let (_, out) = one_fte("#define Q(a) #a\nQ(say \"a\\\\b\")\n");
+    assert_eq!(
+        out.tokens[0].kind,
+        TokenKind::String(br#"say "a\\b""#.to_vec())
+    );
+    assert_eq!(
+        out.tokens[0].spelling.as_deref(),
+        Some(r#""say \"a\\\\b\"""#)
+    );
+}
+
+// spec FTEF-14.7: `__FILE__` is the path as a string literal, a line break in it spelled `\n`
+#[test]
+fn file_constant_escapes_its_path() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a\nb.qc", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a\nb.qc")).unwrap();
+    assert_eq!(out.tokens[0].kind, TokenKind::String(b"a\nb.qc".to_vec()));
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some(r#""a\nb.qc""#));
+}
+
+// spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
+#[test]
+fn a_frame_value_past_an_int_is_held() {
+    assert_eq!(
+        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
+        ("x = 2147483600 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$framevalue -99999999999\n$frame a\nx = $a;"),
+        ("x = -2147483600 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$framevalue -2\n$frame a b c\nx = $c;"),
+        ("x = 0 ;".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.2: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
+// the comment not ending it
+#[test]
+fn a_comment_with_stars_and_slashes_continues_a_directive() {
+    assert_eq!(fte("#define G 1 /* x\n*y\n */ 2\nG\n").0, "1 2");
+    assert_eq!(fte("#define G 1 /* a / b\n */ 2\nG\n").0, "1 2");
+    assert_eq!(fte("#define G 1 /* a */\n2\nG\n").0, "2 1");
+    assert_eq!(fte("#define G 1 /**/ 2\nG\n").0, "1 2");
+    // `//*` is a `//` comment, which ends the directive, not a `/*` one.
+    assert_eq!(fte("#define H 1 //* c\n2\nH\n").0, "2 1");
+}
+
+// spec FTEF-14.1: an `#elif` with no block is reported at the whole directive
+// spec FTEF-14.10: and a block left open while a side is skipped at its `#if` line
+#[test]
+fn conditional_errors_span_the_directive() {
+    let (_, out) = one_fte("x\n#elif 1\n");
+    assert_eq!(codes(&out), vec![Code::E0109]);
+    assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(2, 9));
+    let (_, out) = one_fte("x\n#if 0\ny\n");
+    assert_eq!(codes(&out), vec![Code::E0110]);
+    assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(2, 7));
 }
