@@ -161,18 +161,18 @@ fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
 }
 
 /// The engine name of a `#0:NAME` initialiser whose number literal is `literal` (FTE-17.4,
-/// ENGT-4.5): the name after the `:` when the number is zero.
+/// ENGT-4.5): the name after the `:` when the number is zero, a literal whose digits are all
+/// zeros, `.0` included.
 fn engine_name(builtin: &ast::Builtin, literal: &str) -> Option<String> {
-    let (whole, fraction) = literal.split_once('.').unwrap_or((literal, ""));
-    let zero = !whole.is_empty()
-        && whole.bytes().all(|b| b == b'0')
-        && fraction.bytes().all(|b| b == b'0');
+    let zero =
+        literal.bytes().any(|b| b == b'0') && literal.bytes().all(|b| b == b'0' || b == b'.');
     if !zero {
         return None;
     }
-    let mut tokens = builtin.syntax().child_tokens();
-    tokens.find(|t| t.kind() == SyntaxKind::Colon)?;
-    tokens
+    // FTE-17.4: the parser reads a name in a builtin initialiser only after its `:`.
+    builtin
+        .syntax()
+        .child_tokens()
         .find(|t| t.kind() == SyntaxKind::Name)
         .map(|t| t.text_lossless())
 }

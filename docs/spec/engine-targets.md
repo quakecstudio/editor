@@ -209,6 +209,8 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | `void(string s, ...) bprint = #0:ex_bprint;` called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.5 |
 | the same, KEX, Ironwail or vkQuake | none | ENGT-4.5 |
 | `stuffcmdflags = #0:stuffcmdflags` called, FTEQCC dialect, KEX | `W0311` "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have (FTE_QC_STUFFCMDFLAGS)" | ENGT-4.5 |
+| `void() f = #.0:nothing;` called, FTEQCC dialect, KEX (and the same with `#00` or `#0.00`) | `W0311` "f is builtin #0:nothing, which KEX does not have" | ENGT-4.5 |
+| `void() f = #0.5:nothing;` called, FTEQCC dialect, KEX | none: `0.5` is no zero | ENGT-4.5 |
 | `void() clearscene = #300;` called, FTEQW, client module | none | ENGT-4.8 |
 | the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
 | `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |
