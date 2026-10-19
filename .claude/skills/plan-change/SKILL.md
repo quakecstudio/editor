@@ -14,5 +14,5 @@ GitHub issues are generated from `plan/`. Never edit an issue body on GitHub; th
    - a new issue in a phase also goes into that phase's gate issue `depends` list.
 2. If you added or relabelled a feature or test issue: `python3 plan/gen_readiness.py`.
 3. `python3 plan/check.py --write-coverage` and `cd plan && python3 -m unittest test_check.py test_status.py` must pass.
-4. Commit the plan change with the work that needed it (or in its own PR) and land it.
+4. Commit the plan change with the work that needed it, in that work's PR, and land it. A standalone plan PR is only for a plan change with no other open work to join, since every PR runs the full CI matrix.
 5. After it merges, sync GitHub: `python3 plan/apply.py --repo quakecstudio/editor`. It is idempotent: it creates new issues, updates changed ones and prints what it did. New issues join the project board automatically.
