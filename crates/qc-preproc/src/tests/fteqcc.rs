@@ -244,6 +244,79 @@ fn noref_pragmas_are_recorded() {
     assert!(vanilla.noref.is_empty());
 }
 
+// spec FTEF-12.9: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
+#[test]
+fn autoproto_pragmas_are_recorded() {
+    let (_, out) = one_fte("#pragma autoproto\na\n#pragma AutoProto 0\n#pragma autoproto 2\n");
+    assert_eq!(out.autoproto, vec![(0, true), (1, false), (1, true)]);
+    assert!(out.noref.is_empty());
+    let (_, out) = one_fte("#PRAGMA noref 1\n#pragma NOREF 1\nx");
+    assert_eq!(out.noref, vec![(0, true)]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", "#pragma autoproto\n".as_bytes());
+    let mut pp = Preprocessor::new(loader);
+    let vanilla = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert!(vanilla.autoproto.is_empty());
+}
+
+// spec FTEF-18.16: `$flush`, `$frame_reset`, `$framevalue`, `$framerestore` and `$modelname` set the number of the next frame name
+#[test]
+fn frame_commands_number_frames() {
+    let frames = |text: &str| fte(text);
+    // `$flush` numbers from 0 again; the earlier names keep their numbers.
+    assert_eq!(
+        frames("$frame a b\n$flush\n$frame c\nx = $a + $b + $c;"),
+        ("x = 0 + 1 + 0 ;".to_owned(), vec![])
+    );
+    // `$frame_reset` also forgets them.
+    assert_eq!(
+        frames("$frame a\n$frame_reset\n$frame b\nx = $b; y = $a;"),
+        ("x = 0 ; y = $a ;".to_owned(), vec![Code::E0106])
+    );
+    // `$framevalue N` numbers from N, an empty word from 0.
+    assert_eq!(
+        frames("$framevalue 10\n$frame a b\nx = $b;\n$framevalue\n$frame c\ny = $c;"),
+        ("x = 11 ; y = 0 ;".to_owned(), vec![])
+    );
+    // `$framerestore NAME` numbers from NAME's number; an unknown NAME is QCD-2.6.
+    assert_eq!(
+        frames("$frame a b c\n$framerestore b\n$frame d\nx = $d;"),
+        ("x = 1 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        frames("$framerestore nothing\n$frame d\nx = $d;"),
+        ("x = 0 ;".to_owned(), vec![Code::E0106])
+    );
+    // `$modelname NAME`: a name with no macro numbers from -1, the earlier model name becomes
+    // a macro of the number reached, and a model name that is a macro numbers from it.
+    assert_eq!(
+        frames("$modelname m1\n$frame a b\n$modelname m2\nx = $a + $m1;"),
+        ("x = -1 + 1 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        frames("$frame m2 q r\n$modelname m2\n$frame s\nx = $s;"),
+        ("x = 3 ;".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-18.17: each file numbers its frames from 0, and the limit is 8192 frame macros in the program, not 256 in a file
+#[test]
+fn frame_macros_limit_is_the_program() {
+    let names: Vec<String> = (0..300).map(|i| format!("f{i}")).collect();
+    let text = format!("$frame {}\nx = $f299;", names.join(" "));
+    assert_eq!(fte(&text), ("x = 299 ;".to_owned(), vec![]));
+    let files = [("a.qc", "$frame a b\n"), ("b.qc", "$frame c\nx = $c + $b;")];
+    let (_, outputs) = super::fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(tokens(&outputs[1]), "x = 0 + 1 ;");
+    let all: Vec<String> = (0..crate::FTE_MAX_FRAMES)
+        .map(|i| format!("g{i}"))
+        .collect();
+    let fits = format!("$frame {}\n", all[..crate::FTE_MAX_FRAMES - 1].join(" "));
+    assert_eq!(fte(&fits).1, vec![]);
+    let full = format!("$frame {}\n", all.join(" "));
+    assert_eq!(fte(&full).1, vec![Code::E0504]);
+}
+
 // spec FTEF-12.2, FTEF-12.3, FTEF-12.4, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are
 // accepted and produce no tokens.
 #[test]

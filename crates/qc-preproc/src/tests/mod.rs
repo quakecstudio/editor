@@ -78,6 +78,7 @@ fn token_text(kind: &TokenKind) -> String {
             let names: Vec<&str> = names.iter().map(|n| n.name.as_str()).collect();
             format!("$frame {}", names.join(" "))
         }
+        TokenKind::FrameCommand(command) => format!("${command:?}"),
     }
 }
 
