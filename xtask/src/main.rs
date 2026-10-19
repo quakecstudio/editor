@@ -61,9 +61,12 @@
 //!   FTEQCC dialect constructs beyond the rerelease subset, grouped into the
 //!   classes of `docs/spec/dialect-fteqcc.md` (P2-25); it fails on a class no
 //!   section names.
-//! - `fteqcc-profile`: parses and resolves every module of each rerelease
-//!   codebase under the FTEQCC profile (P2-03) and fails on any lexical, syntax
-//!   or semantic error, then checks the vanilla profile rejects each extension.
+//! - `fteqcc-profile`: preprocesses, parses and resolves every module of each
+//!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
+//!   then checks the vanilla profile rejects each extension.
+//! - `engines`: fetches the fact sources of the engine-target database pinned in
+//!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
+//!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -83,6 +86,7 @@ mod conventions;
 mod corpus;
 mod differential;
 mod download;
+mod engines;
 mod exec;
 mod fixtures;
 mod fteqcc_coverage;
@@ -108,7 +112,7 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile>";
+                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -165,6 +169,7 @@ fn command(name: &str) -> Option<Command> {
         "bench" => Some(bench::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
+        "engines" => Some(engines::main),
         "fteqcc-coverage" => Some(fteqcc_coverage::main),
         "fteqcc-full-coverage" => Some(fteqcc_full_coverage::main),
         "fteqcc-profile" => Some(fteqcc_profile::main),

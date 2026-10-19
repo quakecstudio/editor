@@ -1,0 +1,19 @@
+[package]
+name = "qc-engines"
+description = "The engine-target database: which builtins and extensions each Quake engine supports, and the missing-builtin diagnostic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-builtins = { workspace = true }
+qc-diag = { workspace = true }
+qc-project = { workspace = true }
+qc-sema = { workspace = true }
+qc-syntax = { workspace = true }
+
+[lints]
+workspace = true

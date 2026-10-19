@@ -514,7 +514,7 @@ empty (QC-14.2).
 - **FTE-21.3** A definition that is not a function may lack its `;`: `QCC_PR_ParseDefs` reports
   `QCC_PR_ParseWarning(WARN_UNDESIRABLECONVENTION, "Missing semicolon at end of definition");`
   and goes on. The rerelease's `local float color = bottom + top * 16` has none
-  (`rerelease-ctf/teamplay.qc`). This profile reports `W0203` (QCD-7.17).
+  (`rerelease-ctf/teamplay.qc`). This profile reports `W0203` (QCD-7.18).
 - **FTE-21.4** A block may be empty: `QCC_PR_ParseStatement` reads
   `while (!QCC_PR_CheckToken("}")) QCC_PR_ParseStatement ();`. The rerelease has `else { }`
   holding only a comment (`rerelease-mg3/mg3_upgrades.qc`).
@@ -522,7 +522,7 @@ empty (QC-14.2).
   `QCC_PR_ParseWarning(WARN_POINTLESSSTATEMENT, "Hanging ';'");`, unless a macro expansion
   produced it. A macro written `if (CheckContentsDamage()) return;` and used with a `;` after it
   makes one (`rerelease-mg1/ai.qc`, `rerelease-mg1/monsters/tarbaby.qc`). This profile reports
-  `W0204` (QCD-7.18) for every one, since the parser does not see expansions.
+  `W0204` (QCD-7.19) for every one, since the parser does not see expansions.
 
 ## FTE-22 Name resolution
 

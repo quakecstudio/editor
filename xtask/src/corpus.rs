@@ -24,7 +24,7 @@ mod archive;
 mod assets;
 mod build;
 mod fetch;
-mod manifest;
+pub(crate) mod manifest;
 mod verify;
 
 use std::env;

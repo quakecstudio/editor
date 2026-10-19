@@ -328,7 +328,7 @@ fn field_and_function_locals_parse() {
 }
 
 // spec FTE-21.3: a definition that is not a function may lack its `;`, with a warning.
-// spec QCD-7.17: the warning is W0203 "Missing semicolon at end of definition".
+// spec QCD-7.18: the warning is W0203 "Missing semicolon at end of definition".
 #[test]
 fn a_missing_semicolon_after_a_definition_warns() {
     let parsed = fte(&in_body("local float color = a + b * 16\nc = color;"));
@@ -359,7 +359,7 @@ fn empty_blocks_parse() {
 }
 
 // spec FTE-21.5: a `;` alone is an empty statement, with a warning.
-// spec QCD-7.18: the warning is W0204 "Hanging ';'".
+// spec QCD-7.19: the warning is W0204 "Hanging ';'".
 #[test]
 fn a_hanging_semicolon_is_an_empty_statement() {
     let parsed = fte(&in_body("if (a) return;;\nb = 1;"));

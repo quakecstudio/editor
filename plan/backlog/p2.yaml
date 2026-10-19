@@ -124,6 +124,63 @@ issues:
   - Calling an FTE_ builtin while targeting Ironwail produces the diagnostic with the engine named
   verify:
   - cargo test -p qc-engines; regeneration check in CI
+- key: P2-29
+  title: Let a project target QuakeSpasm, Ironwail and vkQuake
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-10
+  - LANG-6
+  depends:
+  - P2-04
+  deliverable:
+  - 'crates/qc-project and docs/spec/project-file.md: PRJ-2.2 targets for quakespasm, ironwail and vkquake, and crates/qc-engines: Engine::from_target mapping each to its engine (ENGT-3.5)'
+  acceptance:
+  - A quakec.toml with target = "ironwail" opens, and calling an FTE_ builtin in it produces W0311 naming Ironwail
+  - Every engine of ENGT-3.1 is reachable from some project target
+  verify:
+  - cargo test -p qc-project -p qc-engines
+- key: P2-30
+  title: Report missing #0:NAME builtins under the FTEQCC dialect
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - PRIN-8
+  depends:
+  - P2-04
+  - P2-03
+  deliverable:
+  - 'crates/qc-engines: W0311 (ENGT-4) for calls of builtins declared `= #0:NAME`, looked up by engine name, once the FTEQCC profile parses that form; the ENGT-4 statements extended to it'
+  acceptance:
+  - Calling `bprint = #0:ex_bprint` while targeting FTEQW produces W0311 naming FTEQW, and targeting KEX, Ironwail or vkQuake produces none
+  verify:
+  - cargo test -p qc-engines
+- key: P2-31
+  title: Add CSQC and menu QuakeC tables to the engine-target database
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - AGT-9
+  depends:
+  - P2-04
+  deliverable:
+  - 'crates/qc-engines: FTEQW''s CSQC and menu builtin tables from fteextensions.qc read with CSQC and MENU defined (ENGT-2.3), selected by the module kind (PRJ-3.1); the ENGT spec extended to module kinds'
+  acceptance:
+  - A CSQC module targeting FTEQW is checked against FTEQW's CSQC builtins, and a server module against its server builtins
+  - cargo xtask engines --check passes
+  verify:
+  - cargo test -p qc-engines; the regeneration check in CI
 - key: P2-05
   title: Unify diagnostics between typing and building
   labels:
@@ -336,6 +393,27 @@ issues:
   - Parses the whole corpus with no ERROR nodes in vanilla files
   verify:
   - tree-sitter test in that repo's CI
+- key: P2-28
+  title: Extend the tree-sitter grammar to the FTEQCC dialect
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-8
+  - LANG-5
+  depends:
+  - P2-15
+  - P2-25
+  deliverable:
+  - 'quakecstudio/tree-sitter-quakec: the constructs in docs/spec/dialect-fteqcc-rerelease.md and docs/spec/dialect-fteqcc.md, with corpus tests citing their statements and the highlights and locals queries updated'
+  - The repo's corpus check extended to fetch the rerelease and the FTEQCC corpus mods by checksum, as it fetches id 1.01
+  acceptance:
+  - The six rerelease codebases parse with no ERROR or MISSING nodes, and id 1.01 still does
+  - Every .qc and .qh file of Nuclide, FreeCS, Copper and Arcane Dimensions parses with no ERROR or MISSING nodes, or the file and the construct are listed in the repo README as not covered
+  verify:
+  - tree-sitter test and the corpus check in that repo's CI
 - key: P2-16
   title: Package editor integrations for VS Code, Zed and Neovim
   labels:
@@ -434,7 +512,7 @@ issues:
   - Typing and scrolling a 50,000-line file with the spike's scripted input keeps p99 frame time at most 8.33 ms on the reference Mac, results committed under docs/spikes/data/
   verify:
   - cargo test -p qs-editor-view; benchmark run attached to the issue
-- key: P2-28
+- key: P2-32
   title: Resolve files through their macro expansions in the semantic model
   labels:
   - L3-semantics
@@ -455,7 +533,7 @@ issues:
   - Editing a macro's definition re-resolves the files that use it and no others (query counters)
   verify:
   - cargo test -p qc-sema; rerelease corpus job
-- key: P2-29
+- key: P2-33
   title: Extend the FTEQCC coverage check to the constructs found by the dialect profile
   labels:
   - L2-syntax
@@ -474,7 +552,7 @@ issues:
   - The coverage check lists every new class in the six rerelease codebases, with a test per class, and fails on a class no section names
   verify:
   - cargo test -p xtask; coverage run attached
-- key: P2-30
+- key: P2-34
   title: Resolve the names in global initialisers, default values and FTEQCC member access
   labels:
   - L3-semantics
@@ -618,9 +696,13 @@ issues:
   - P2-25
   - P2-26
   - P2-27
-  - P2-28
   - P2-29
   - P2-30
+  - P2-31
+  - P2-28
+  - P2-32
+  - P2-33
+  - P2-34
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
