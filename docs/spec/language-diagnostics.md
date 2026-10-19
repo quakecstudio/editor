@@ -200,6 +200,12 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.16** `W0402` "NAME differs in case from the file it opens, STORED": a list entry,
   `#include` or `#includelist` entry opened a file whose stored name differs in case from the
   name, so a case-sensitive file system would not open it (PRJ-7.2).
+- **QCD-7.17** `W0203` "Missing semicolon at end of definition": under an FTEQCC profile, a
+  definition that is not a function ends without its `;`, FTEQCC's warning of the same text
+  (`dialect-fteqcc-rerelease.md`, FTE-21.3). Under the vanilla profile it is "expected ;"
+  (QCD-3.4).
+- **QCD-7.18** `W0204` "Hanging ';'": under an FTEQCC profile, a `;` alone as a statement,
+  FTEQCC's warning of the same text (`dialect-fteqcc-rerelease.md`, FTE-21.5).
 
 ## QCD-8 Preprocessor errors
 

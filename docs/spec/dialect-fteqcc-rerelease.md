@@ -39,8 +39,11 @@ rerelease-ctf rerelease-mg3`), parses every `.qc` and `.qh` file with the vanill
 (`qc-syntax`, [`language.md`](language.md)), and groups each construct the vanilla grammar
 rejects into one of the classes below by its signature token. It fails if a class is found in
 the source that no section here names, so the spec and the source cannot drift apart. The
-recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/). The six
-codebases hold these classes and no others.
+recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/), and covers
+FTE-2 to FTE-16. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
+(P2-03) parsed and resolved every module of the six codebases with zero errors
+(`cargo xtask fteqcc-profile`); their constructs have no signature token that check scans
+for.
 
 ## FTE-1 The rerelease fits version 6
 
@@ -334,6 +337,11 @@ Vanilla `qcc` has no `enum`; the word is read as a name and is "not a type" (QC-
   6 target.
 - **FTE-15.3** Progs encoding: each name is a folded float constant (FTE-10.4); an `enum`
   contributes no global of its own.
+- **FTE-15.4** `enum Name { ... }` also names a type, `Name`, which declares parameters and
+  variables of the enum: `QCC_PR_ParseEnum` reads the name (`name = QCC_PR_ParseName();`) and
+  makes it a type (`enumtype = QCC_PR_NewType(name, basetype->type, true);`). The rerelease
+  declares `enum UpgradeType { ... }` and `float GetUpgradeAmount(UpgradeType Type)`
+  (`rerelease-mg3/defs.qc`, `rerelease-mg3/mg3_upgrades.qc`).
 
 ## FTE-16 `#pragma` directive
 
@@ -354,6 +362,208 @@ assigns it here.
   and adjusts whether the named diagnostic is reported.
 - **FTE-16.3** `#pragma` produces no tokens and no progs output; it affects only diagnostics
   and the build.
+
+## FTE-17 C-style function declarations
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs` and `QCC_PR_ParseInitializerType` (the function
+case), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Vanilla `qcc` declares a function only as `rettype(params) name` (QC-10.3), wants `=`, `,` or `;`
+after the name (QC-11.1), and takes a builtin number greater than 0 (QC-13.3). The rerelease's
+`defs.qc` and code also use C's order, `void makevectorsfixed(vector ang);`, define functions
+with no `=` (`void InitLightStyles() { ... }` in `rerelease-mg3/lights.qc`), and bind engine
+builtins by name, `void localsound( entity client, string sample ) = #0:ex_localsound;`.
+
+### Behaviour
+
+- **FTE-17.1** `rettype name(params)` declares `name` with the function type
+  `rettype(params)`: after the name `QCC_PR_ParseDefs` reads
+  `if (QCC_PR_CheckToken("("))` ... `type = QCC_PR_ParseFunctionType(false, type);`. The type is
+  the one `rettype(params) name` declares, so a C-style definition and a vanilla prototype
+  (`void() InitLightStyles;` in `rerelease-mg3/world.qc`) are the same function (QC-11.5).
+- **FTE-17.2** A function declarator's body may follow it without `=`:
+  `isinitialised = QCC_PR_CheckToken ("=") || ((type->type == ev_function) && (pr_token[0] ==
+  '{' || pr_token[0] == '[' || pr_token[0] == ':'));`. This holds for both orders,
+  `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
+  (`rerelease-mg1/defs.qc`).
+- **FTE-17.3** The `;` after a function declaration is optional: `QCC_PR_ParseDefs` ends with
+  `if (type->type == ev_function) QCC_PR_CheckTokenComment (";", ...)`, which takes a `;` if
+  there is one. A `;` before a definition is skipped (`while (QCC_PR_CheckToken(";")) ;` at the
+  start of `QCC_PR_ParseDefs`), so `};` after a body is also accepted.
+- **FTE-17.4** A builtin initialiser is `#number` or `#number:name`, and the number may be 0:
+  `QCC_PR_ParseInitializerType` takes any integral immediate
+  (`pr_immediate._float == (int)pr_immediate._float`), then
+  `if (!*fname && QCC_PR_CheckToken (":")) QC_strlcpy(fname, QCC_PR_ParseName(), ...)`; the
+  name is the engine's name for the builtin. The rerelease binds its `ex_` extensions this way.
+
+## FTE-18 Parameter lists
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_ParseFunctionType`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Vanilla `qcc` has `(...)` only as the whole list (QC-10.4), a parameter is a vanilla type and a
+name (QC-10.3), and nothing follows the name.
+
+### Behaviour
+
+- **FTE-18.1** `...` may end a list after named parameters: each parameter begins with
+  `if (QCC_PR_CheckToken ("..."))`, which, with no type after it, sets `ftype->vargs = true`
+  and ends the list. The rerelease declares `void(string s, ...) bprint = #0:ex_bprint;`.
+- **FTE-18.2** A parameter may have a default value, `type name = value`:
+  `if (QCC_PR_CheckToken("=")) paramlist[numparms].defltvalue =
+  QCC_PR_ParseDefaultInitialiser(paramlist[numparms].type);`. The rerelease writes
+  `float(entity e) predicate = (float(entity e))SUB_True` (`rerelease-mg1/subs.qc`).
+- **FTE-18.3** A parameter's type is read by `QCC_PR_ParseType`, so it may be a type name the
+  program defined, such as the named enum (FTE-15.4) of `float GetUpgradeAmount(UpgradeType
+  Type)` (`rerelease-mg3/mg3_upgrades.qc`).
+
+## FTE-19 Further operators
+
+**Source:** `qcc_pr_lex.c`, `pr_punctuation[]` and `pr_punctuationremap[]`; `qcc_pr_comp.c`,
+`QCC_PrioritiseOpcodes`, `QCC_PR_RefTerm` and `QCC_PR_RefExpression`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Vanilla `qcc`'s punctuation is QC-7.1; `~`, `^` and the rest below are "Unknown punctuation"
+(QC-7.2), and an expression term has no prefix operator but `!` (QC-15.7). The rerelease clears
+and sets flags with `self.flags &~= FL_ONGROUND` and `other.flags (+) FL_INSHELTER`
+(`rerelease-mg1/weapons.qc`, `rerelease-mg1/triggers.qc`), uses `self->effects`
+(`rerelease/client.qc`), `~` (`rerelease-mg1/items_runes.qc`), `-fabs(...)`
+(`rerelease-mg1/rotate.qc`) and a cast (FTE-18.2).
+
+### Behaviour
+
+- **FTE-19.1** FTEQCC's punctuation adds, among others, `->`, `~`, `^`, `<<`, `>>`, `&=`, `|=`,
+  `^=`, `&~=`, `<<=`, `>>=`, `(+)` and `(-)`, tried before shorter punctuation as its table
+  says: "longer symbols must be before a shorter partial match". `^` is exclusive or, `<<` and
+  `>>` shift, and each `op=` stores `a op b` back to `a`; `&~=` clears the bits of its right
+  side.
+- **FTE-19.2** `pr_punctuationremap[]` reads three of them as others: "(+) -> |=", "-> -> ." and
+  "(-) -> &~=". So `a (+) b` is `a |= b`, `a (-) b` is `a &~= b`, and `e->f` is `e.f`.
+- **FTE-19.3** Without `flag_cpriority` (the default for the rerelease's `-Tid` build),
+  `QCC_PrioritiseOpcodes` gives shifts, `&`, `^` and `|` the priority of `*` and `/`
+  (`priority_class[PC_MULDIV] = 3; ... priority_class[PC_SHIFT] = 3; ...
+  priority_class[PC_BITAND] = 3; priority_class[PC_BITXOR] = 3; priority_class[PC_BITOR] = 3;`),
+  one tighter than `+` and `-` as in vanilla (QC-15.1). The compound assignments are in
+  `PC_STORE`, with `=`: right-associative, at the assignment priority.
+- **FTE-19.4** A term may start with `-`, `+` or `~`: `QCC_PR_RefTerm` reads
+  `if (QCC_PR_CheckToken ("-")) { ... e = QCC_PR_Expression (UNARY_PRIORITY, EXPR_DISALLOW_COMMA);`
+  and the same for `+`, with `#define UNARY_PRIORITY 1`, so the operand is a term with its
+  postfix forms; `~` takes `QCC_PR_Expression (NOT_PRIORITY, ...)`, the operand of `!`
+  (QC-15.6). `-e` negates, `+e` is `e`, and `~e` is the bitwise not.
+- **FTE-19.5** A negative number where a binary operator belongs is a subtraction:
+  `QCC_PR_RefExpression` "work[s] around (4-3) being parsed as 4 -3 with no operator between"
+  by reading the token as `+` and the negative number after it, at the priority of `+`. The
+  lexer still reads `-1` after a value as one number (QC-4.1). The rerelease writes
+  `self.count -1` (`rerelease-mg3/mg3_sacrifice_triggers.qc`).
+- **FTE-19.6** `(type) e` is a cast: `QCC_PR_RefTerm` reads `(`, then
+  `newtype = QCC_PR_ParseType(false, true, false)`; if it is a type, `)` and
+  `e = QCC_PR_Expression (UNARY_PRIORITY, EXPR_DISALLOW_COMMA); e = QCC_EvaluateCast(e,
+  newtype, false);`. A parenthesis that does not open a type is a parenthesised expression,
+  as in vanilla. This profile parses before names are known, so it takes a cast at a `(`
+  followed by a type keyword or `.`; the rerelease casts to no type a program defines.
+
+## FTE-20 Further literals
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexEscapedCodepoint`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Vanilla `qcc` starts a number only at a digit or at `-` and a digit (QC-4.1), and knows the
+escapes `\n` and `\"` only (QC-6.2).
+
+### Behaviour
+
+- **FTE-20.1** A `.` followed by a digit starts a number: `QCC_PR_Lex` dispatches
+  `(c == '.'&&pr_file_p[1]!='.'&&pr_file_p[1] >='0' && pr_file_p[1] <= '9')` to
+  `QCC_PR_LexNumber`. The rerelease writes `float DRAW_AI_SINGLE_FRAME = .1;`
+  (`rerelease/defs.qc`).
+- **FTE-20.2** A number may end in the float suffix `f` or `F`, which is not part of its value:
+  after the fraction `QCC_PR_LexNumber` has `else if (c == 'f' || c == 'F') { pr_immediate_type
+  = type_float; pr_file_p++; break; }`. The rerelease writes `1.0f` (`rerelease/client.qc`).
+- **FTE-20.3** Besides `\n` and `\"`, the escapes that stand for one ASCII byte are `\r`, `\t`,
+  `\a`, `\v`, `\f`, `\#`, `\\`, `\?` and `\'`, as `QCC_PR_LexEscapedCodepoint` maps them
+  (`else if (c == 't') c = '\t';	//tab` and the rest). The rerelease uses `\t`
+  (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes (`\[` and the Quake character set,
+  `\x`, `\u`, `\{n}` and the digits) are not in the rerelease and stay "Unknown escape char"
+  (QC-6.2) under this profile.
+
+## FTE-21 Declarations and statements in a body
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement` and `QCC_PR_ParseDefs`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+In vanilla `qcc` a local is declared with `local` (QC-11.10), a local may not be a field or a
+function (QC-11.9), every definition and statement ends with `;`, and a nested block may not be
+empty (QC-14.2).
+
+### Behaviour
+
+- **FTE-21.1** A statement that starts with a type declares locals with no `local`:
+  `QCC_PR_ParseStatement` passes a name for which `QCC_TypeForName(pr_token)` finds a type, or
+  one of the words `float`, `vector`, `string`, `entity`, `var`, `const` and the other type and
+  storage keywords, to `QCC_PR_ParseDefs`, and also a statement starting with `.` ("for local
+  .entity without var/local"). Such a declaration may stand anywhere among the statements. The
+  rerelease writes `float playerFlags = CheckPlayerEXFlags(playerEnt);` mid-body
+  (`rerelease/weapons.qc`) and `poseInfo pose = poses[self.style];`
+  (`rerelease-mg1/misc_corpses.qc`). This profile parses before names are known, so it takes a
+  statement that starts with a name and then another name, `Type name`, for a declaration of
+  a type the program defined; no expression statement starts that way.
+- **FTE-21.2** A local may be a field or a function variable: FTEQCC's check is commented out,
+  `//		QCC_PR_ParseError ("Fields must be global");`. The rerelease declares
+  `void() tutsh;` and `local void() pain_event;` in bodies
+  (`rerelease-mg1/map_specific/mge2m2.qc`, `rerelease-mg3/monsters/boss_final.qc`).
+- **FTE-21.3** A definition that is not a function may lack its `;`: `QCC_PR_ParseDefs` reports
+  `QCC_PR_ParseWarning(WARN_UNDESIRABLECONVENTION, "Missing semicolon at end of definition");`
+  and goes on. The rerelease's `local float color = bottom + top * 16` has none
+  (`rerelease-ctf/teamplay.qc`). This profile reports `W0203` (QCD-7.17).
+- **FTE-21.4** A block may be empty: `QCC_PR_ParseStatement` reads
+  `while (!QCC_PR_CheckToken("}")) QCC_PR_ParseStatement ();`. The rerelease has `else { }`
+  holding only a comment (`rerelease-mg3/mg3_upgrades.qc`).
+- **FTE-21.5** A `;` alone is an empty statement: `QCC_PR_ParseStatement` takes it with
+  `QCC_PR_ParseWarning(WARN_POINTLESSSTATEMENT, "Hanging ';'");`, unless a macro expansion
+  produced it. A macro written `if (CheckContentsDamage()) return;` and used with a `;` after it
+  makes one (`rerelease-mg1/ai.qc`, `rerelease-mg1/monsters/tarbaby.qc`). This profile reports
+  `W0204` (QCD-7.18) for every one, since the parser does not see expansions.
+
+## FTE-22 Name resolution
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_GetDef`, `QCC_PR_ParseInitializerType_Internal`,
+`QCC_PR_ParseDefs` and `QCC_PR_CompileFile`; `qcc_pr_lex.c`, `QCC_PR_ClearGrabMacros` and
+`QCC_PR_MacroFrame`; `qccmain.c`, the `compiler_flag[]` table and
+`QCC_SetDefaultProperties`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+In vanilla `qcc` a local or parameter named like a global is that global (QC-12.3), a name is
+initialised once (QC-11.5), a name is known only after its declaration (QC-12.5), and the frame
+list starts empty in each file (QC-8.3).
+
+### Behaviour
+
+- **FTE-22.1** A parameter or local is a new definition that shadows a global of the same name,
+  whatever its type: when `QCC_PR_GetDef` allocates in a function's scope it skips global
+  definitions, `if ( (def->scope || (scope && allocate)) && def->scope != scope) { ... continue;
+  // in a different function }`. A use in the body finds the function's own definition first.
+  The rerelease names a parameter `light` beside the spawn function `void() light`
+  (`rerelease-mg3/mg3_weapons.qc`, `rerelease-mg3/lights.qc`). A second declaration of a name
+  in the same function is still that definition again, or a type mismatch (QC-11.5).
+- **FTE-22.2** A name initialised twice with the same value is accepted: for a "dupe
+  initialisation" `QCC_PR_ParseInitializerType_Internal` compares the two word by word and
+  reports `"incompatible redeclaration"` only when they differ. The rerelease initialises
+  `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
+  This profile compares two literal initialisers by value and accepts them when equal;
+  a second initialiser that is not a literal, or that differs, is still "NAME redeclared"
+  (QCD-3.6), since constant expressions are not folded until P2-06.
+- **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
+  function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
+  instead of one. The first pass, only the definitions are read. The second pass actually
+  compiles your code." `rerelease-mg3` needs it (FTE-1.2). Between the passes
+  `QCC_SetDefaultProperties` makes a new table of `#define`s
+  (`Hash_InitTable(&compconstantstable, ...)`), so the second pass defines its macros again.
+- **FTE-22.4** Frame macros (QC-8) carry from one file to the next: at the start of a file
+  `QCC_PR_CompileFile` calls `QCC_PR_ClearGrabMacros (true)`, which with `newfile` set only
+  restarts the numbering (`if (!newfile) pr_nummacros = 0; pr_macrovalue = 0;`). A `$frame`
+  name another file defined takes the new value ("old file, override it"); one this file
+  already defined keeps its first (QC-8.7). With `-Fautoproto` the frame macros of the first
+  pass are still defined in the second, so a file may use a frame name a later file defines
+  (`rerelease-mg3/misc_corpses.qc` uses `$CORPSEFRAME_PLAYER_6` from `rerelease-mg3/player.qc`).
 
 ### Test vectors
 
