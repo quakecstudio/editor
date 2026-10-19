@@ -40,7 +40,7 @@ The project is GPL-3.0-or-later ([ADR-0002](../adr/0002-license-model.md)), so a
 
 ## Merge policy
 
-An agent may add its own PR to the merge queue once CI passes on it (`land.sh` does this) and it has reviewed its own diff with the `code-review` skill at high effort, recording the outcome in the PR body (`work-issue`, "Land it"). That review is a self-review, not an independent one. It never merges a `needs:human` issue's PR, never skips or loosens a test, lint or ratchet to get green, and never pushes to `main` directly.
+An agent may add its own PR to the merge queue once CI passes on it (`land.sh` does this). An implementer's PR also needs its own diff reviewed with the `code-review` skill at high effort and the outcome recorded in the PR body (`work-issue`, "Land it"); that is a self-review, not an independent one. Readiness and gate PRs are reviews already and skip it. It never merges a `needs:human` issue's PR, never skips or loosens a test, lint or ratchet to get green, and never pushes to `main` directly.
 
 ## Before the first run
 

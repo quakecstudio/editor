@@ -404,8 +404,8 @@ licenses, recorded in `specs/README.md`, and are not scanned. A file of a type w
 
 ## Type design (CONV-17)
 
-These rules are this project's own (the project owner's request, 2026-10-19), not taken from
-vouch. They apply to shipped crates; test code may bend them where a test reads better for
+**Differs from vouch:** these rules are this project's own (the project owner's request,
+2026-10-19), not taken from vouch. They apply to shipped crates; test code may bend them where a test reads better for
 it. No lint checks them: the implementer's pre-land code review
 ([`work-issue`](../.claude/skills/work-issue/SKILL.md), "Land it") checks every PR against
 them, and P2-60 audits the L0 to L3 crates. Code written before them is changed by that
@@ -436,7 +436,7 @@ After: pass the `Dialect` (it is `Copy`) and ask it where the answer matters, so
 with rules of its own changes `Dialect`, not every signature.
 
 ```rust
-fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, dialect: Dialect) -> RawBody {
+fn lower_local(local: &ast::LocalDecl, dialect: Dialect, body: &mut RawBody) {
     // ...
     let bad = !dialect.has_fteqcc_extensions() && (base.is_field() || base.is_function());
 ```
@@ -453,7 +453,9 @@ let redefinable = has("wrap") || has("weak") || has("accumulate");
 ```
 
 After: one `Qualifier` enum, with the spelling rules (FTEF-15.1) in the one function that
-reads a word, so a misspelt qualifier is a compile error rather than a silent `false`:
+reads a word, so a misspelt qualifier is a compile error rather than a silent `false`. A
+question asked of every qualifier is an exhaustive `match`, not `matches!`, so a new variant
+does not compile until someone decides its answer:
 
 ```rust
 /// A declaration qualifier `lower.rs` reads (FTEF-15.1, FTEF-9.2).
@@ -464,12 +466,19 @@ enum Qualifier {
 impl Qualifier {
     /// The qualifier a word spells, with or without its leading underscores.
     fn from_word(word: &str) -> Option<Self> { /* ... */ }
+
+    /// Whether a later definition may replace this one (FTEF-15.5).
+    const fn is_redefinable(self) -> bool {
+        match self {
+            Self::Wrap | Self::Weak | Self::Accumulate => true,
+            Self::Extern | Self::Var | Self::Noref | Self::Unused => false,
+            Self::Virtual | Self::Nonvirtual | Self::Static => false,
+        }
+    }
 }
 
 let quals: Vec<Qualifier> = qualifiers(decl);
-let redefinable = quals
-    .iter()
-    .any(|q| matches!(q, Qualifier::Wrap | Qualifier::Weak | Qualifier::Accumulate));
+let redefinable = quals.iter().any(|q| q.is_redefinable());
 ```
 
 ### Newtypes for IDs and units
@@ -578,8 +587,8 @@ Code that differs only in a type is written once, generic over that type or behi
 Copies drift: a bound check fixed in one stays wrong in the others.
 
 `le_i32` is copied byte for byte in `crates/qs-pak/src/lib.rs` and `crates/qs-wad/src/lib.rs`,
-with variants in `qs-mdl`, `qs-wav`, `qs-bsp` (`i32_at`, `u32_at`) and `qc-lno` (`read_u32`),
-each with its own bound check:
+and twice within one crate, in `crates/qs-mdl/src/mdl.rs` and `crates/qs-mdl/src/spr.rs`, with
+variants in `qs-wav` and `qc-lno` (`read_u32`), each with its own bound check:
 
 ```rust
 /// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
@@ -592,8 +601,9 @@ fn le_i32(bytes: &[u8], offset: usize) -> i32 {
 }
 ```
 
-`crates/qc-progs/src/records.rs` already has the shape the rule asks for: the bound check is
-written once, generic over the width, and each integer type is a one-line use of it.
+`crates/qc-progs/src/records.rs` already has the shape the rule asks for, as does `le_bytes`
+in `crates/qs-bsp/src/lib.rs`: the bound check is written once, generic over the width, and
+each integer type is a one-line use of it.
 
 ```rust
 fn read_array<const N: usize>(bytes: &[u8], at: usize) -> Option<[u8; N]> {
@@ -608,7 +618,9 @@ pub(crate) fn read_i32(bytes: &[u8], at: usize) -> Option<i32> {
 Its `Record` trait does the same for tables: `Progs::table<T: Record>` is one function for
 every table rather than one per record type. Whether copies in several crates become one
 shared module is a layering decision ([`layers.md`](layers.md)); the duplication is a
-finding either way.
+finding either way. The copies do not agree past the end of the input (the `qs-pak` and
+`qs-wad` copies give 0, the `qs-mdl` and `qs-wav` ones `None`), and a merge keeps what each
+caller gets: the out-of-range result is behaviour, not detail.
 
 ### No stringly-typed errors in library crates
 
@@ -631,8 +643,10 @@ pub(crate) fn check_one(/* ... */) -> Result<usize, String> {
     }
 ```
 
-After: an enum with one variant per failure, and `Display` for the text, as `ReadError` in
-`crates/qc-progs/src/read.rs` does:
+After: an enum with one variant for each of `check_one`'s five failures, and `Display` for
+the text, as `ReadError` in `crates/qc-progs/src/read.rs` does. The public
+`DeletionReport::failures`, a `Vec<String>` today, then holds the enum, so a caller can match
+on it:
 
 ```rust
 /// Why one edited source fails the recovery check.
@@ -643,5 +657,9 @@ pub enum RecoveryFault {
     NotSourceFile,
     /// A declaration before the deletion changed.
     PrefixChanged { declaration: usize },
+    /// A declaration more than one after the deletion changed.
+    SuffixChanged { declaration: usize },
+    /// A parse error lies outside the damaged window.
+    ErrorOutsideWindow { code: Code, start: usize, window: Range<usize> },
 }
 ```

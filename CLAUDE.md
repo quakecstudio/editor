@@ -138,7 +138,8 @@ Python 3 with PyYAML for `plan/`.
 
 ## Code conventions
 
-[`docs/conventions.md`](docs/conventions.md) is the full set, adopted from vouch, and
+[`docs/conventions.md`](docs/conventions.md) is the full set, adopted from vouch with this
+project's own type design rules (CONV-17), and
 `cargo xtask conventions` checks the configuration against it.
 
 ### No panics
@@ -199,7 +200,8 @@ checklist.
 `main` only accepts changes through the merge queue: work on a branch named
 `<type>/<issue>-<slug>` and open a PR with `Closes #<issue>`. Conventional Commits, at most 72
 characters, imperative. **No Co-Authored-By trailers.** An agent may add its own PR to the
-merge queue once CI passes (`.claude/skills/work-issue/scripts/land.sh`), except for
+merge queue once CI passes (`.claude/skills/work-issue/scripts/land.sh`), an implementer only
+after its `code-review` self-review is recorded in the PR body (`work-issue`), except for
 `needs:human` issues, which wait for Justin. Parallel agents use separate worktrees. See
 [`.claude/rules/branching.md`](.claude/rules/branching.md) and
 [`.claude/rules/commits-and-issues.md`](.claude/rules/commits-and-issues.md).

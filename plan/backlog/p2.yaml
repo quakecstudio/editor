@@ -926,12 +926,12 @@ issues:
   - P2-R2
   - P2-R3
   deliverable:
-  - 'An architecture audit, in the style of the dev-agents arch-analyst, of every shipped crate in layers L0 to L3 (layers.toml; test-only and tooling crates excluded) against docs/conventions.md, "Type design (CONV-17)": closed sets of choices passed as booleans or strings, IDs and units with pub fields, free functions that read one type, single-use one-line helpers, duplicated code a generic or trait would remove, and stringly-typed errors. Each finding names the file and line, the rule and the proposed change'
+  - 'An architecture audit, in the style of the dev-agents plugin''s arch-analyst agent (a locally installed plugin, not part of this repository), of every shipped crate in layers L0 to L3 (layers.toml; test-only and tooling crates excluded) against docs/conventions.md, "Type design (CONV-17)": closed sets of choices passed as booleans or strings, IDs and units with pub fields, free functions that read one type, single-use one-line helpers, duplicated code a generic or trait would remove, and stringly-typed errors. Each finding names the file and line, the rule and the proposed change'
   - 'Refactoring issues in plan/backlog/p2.yaml, filed with the plan-change skill and grouped so that one crate''s fixes fit one PR, each listing its findings; an issue that changes a public item also names every dependent crate it touches'
   - 'docs/audits/conv-17-l0-l3.md: every finding, and for each the issue that fixes it or the reason it is accepted as it is'
   acceptance:
   - Every finding in docs/audits/conv-17-l0-l3.md is either filed in a refactoring issue or explicitly accepted with a reason; python3 plan/check.py passes with the new issues
-  - Each refactoring issue's acceptance criteria require that behaviour is unchanged and every ratchet (spec citations, coverage, mutation score, fuzz, differential) holds at its current value
+  - Each refactoring issue's acceptance criteria require that behaviour is unchanged and every ratchet (spec citations, coverage, mutation score, fuzz, differential) is not lowered
   verify:
   - python3 plan/check.py --write-coverage; review of docs/audits/conv-17-l0-l3.md against the filed issues
 - key: P2-19
