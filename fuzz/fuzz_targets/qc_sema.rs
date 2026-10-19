@@ -75,7 +75,7 @@ fuzz_target!(|data: &[u8]| {
     let resolved = resolve_module(&lowered, ResolveOptions { dialect, autoproto });
     for engine in Engine::ALL {
         for kind in [ModuleKind::Ssqc, ModuleKind::Csqc, ModuleKind::Menuqc] {
-            for d in missing_builtins(engine, kind, &parses, &resolved) {
+            for d in missing_builtins(engine, kind, &parses, &resolved, dialect) {
                 let at = Location { file: d.file, span: d.diagnostic.span };
                 assert!(inside(&files, at), "{d:?}");
             }
