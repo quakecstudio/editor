@@ -123,6 +123,7 @@ sections:
       - {id: ENG-14, kind: implied, text: "Bridge operations the UI needs beyond ENG-1: pause/resume, set field, pick, spawn/remove/edit entity, each capability-flagged"}
       - {id: ENG-15, kind: implied, text: "Preview host fidelity: its server simulation matches the engine oracle frame by frame on the corpus; rendering and sound match within stated tolerances"}
       - {id: ENG-16, kind: implied, text: "The preview host reads every asset the game uses: BSP29, BSP2, .lit, MDL, SPR, WAV, the rerelease's MD5 models and QuakeEX.kpf"}
+      - {id: ENG-17, kind: implied, text: "The preview host runs the game as fast as the engines players use: frame time, server frame and QuakeC time, and map load no worse than a pinned QuakeSpasm on the same map, route and machine"}
 
   - id: AGT
     title: Agent harness
