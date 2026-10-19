@@ -1120,11 +1120,6 @@ impl<'a> Parser<'a> {
     /// `( )`, `( ... )` or `( type name {, type name} )` (QC-10.3, QC-10.4, QC-27.7); the
     /// FTEQCC dialect's parameters are [`Parser::fte_param_list`]'s (FTE-18, FTEF-15.3).
     fn param_list(&mut self) {
-        if self.fteqcc() {
-            // FTEF-15.3: the full dialect's parameters.
-            self.fte_param_list();
-            return;
-        }
         self.start_node(K::ParamList);
         let start = self.current_span().start;
         self.bump();
