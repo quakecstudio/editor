@@ -16,11 +16,26 @@ use libfuzzer_sys::fuzz_target;
 #[expect(dead_code, reason = "the fuzz target uses the parser, not the runner")]
 mod vectors;
 
-/// What `vectors.rs` names as `super::Oracles`: where the oracle runner finds the VM oracle.
+/// What `vectors.rs` names as `super::Oracles`: where the oracle runner finds the VM oracle,
+/// and what runs it.
 #[expect(dead_code, reason = "only the runner, which the fuzz target leaves out, reads it")]
 pub(crate) struct Oracles {
     pub(crate) vm: PathBuf,
     pub(crate) work: PathBuf,
+    pub(crate) exec: NoExec,
+}
+
+/// The stand-in for xtask's `Exec`: the fuzz target never runs the oracle.
+pub(crate) struct NoExec;
+
+impl NoExec {
+    #[expect(dead_code, reason = "only the runner, which the fuzz target leaves out, calls it")]
+    pub(crate) fn output(
+        &self,
+        _command: &mut std::process::Command,
+    ) -> std::io::Result<std::process::Output> {
+        Err(std::io::Error::other("the fuzz target runs no oracle"))
+    }
 }
 
 /// Lines of the vector format, which each input byte picks from.
