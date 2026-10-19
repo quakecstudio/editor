@@ -2,7 +2,7 @@
 name: run-phase
 description: Drive a whole QuakeC Studio phase to completion, gate included, by delegating every unblocked issue to the right subagent (implementer or reviewer) until plan/status.py reports the phase complete or waiting on people. Use with /goal for unattended runs.
 argument-hint: "[phase, e.g. P1] [track: agents (default), build or review]"
-allowed-tools: Bash(python3 plan/status.py *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh issue edit *) Bash(wt remove -y *)
+allowed-tools: Bash(python3 plan/status.py *) Bash(gh run list *) Bash(gh issue view *) Bash(gh issue comment *) Bash(gh issue edit *) Bash(wt remove -y *)
 ---
 
 # Run a phase
@@ -13,18 +13,25 @@ You are the orchestrator. You do not implement issues yourself; you keep the que
 
 ## Loop
 
-1. Run `python3 plan/status.py --phase <phase> --track <track>`. Its last line is the verdict:
+1. Check the scheduled workflows on `main` (the nightly Differential run and any other `schedule` workflow), which no PR runs and so nothing else watches. List the latest scheduled run of each workflow that did not succeed:
+
+   ```bash
+   gh run list --branch main --event schedule --limit 40 --json workflowName,conclusion,createdAt,url --jq 'group_by(.workflowName)|map(max_by(.createdAt))|.[]|select(.conclusion!="success")'
+   ```
+
+   Empty output means every one passed. If anything failed, it is fixed (or filed with `plan-change` and delegated to an `implementer`) before new work starts: a red nightly on `main` is a defect in work already merged.
+2. Run `python3 plan/status.py --phase <phase> --track <track>`. Its last line is the verdict:
    - `COMPLETE`: every issue in the track is closed. Go to "Finish".
    - `WAITING ON PEOPLE #n ...`: everything left is blocked by `needs:human` issues. Make sure each of those has been prepared (below), then go to "Finish".
    - `BLOCKED #n ...`: blocked by open work outside the track (another track, or an earlier phase). Report it and go to "Finish".
    - `IN PROGRESS, next #n ...`: work the listed issues.
-2. For each issue listed as next, delegate it with the Agent tool to the subagent for its track (shown in brackets in the report):
+3. For each issue listed as next, delegate it with the Agent tool to the subagent for its track (shown in brackets in the report):
    - `[build]` (specs, ports, features, tests, tooling, docs) -> `implementer`
    - `[review]` (readiness reviews and the phase gate) -> `reviewer`
    Give the subagent the issue number and the instruction to use its skills. Never hand a reviewer the implementer's notes; it works from the evidence.
-3. Issues with no dependency between them can run in parallel, at most three at a time. Do not run two implementers on issues that change the same crate at once.
-4. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). Once both are confirmed, remove the agent's worktree with `wt remove -y <path>` (the path the Agent tool reported, under `.claude/worktrees/`): each finished worktree keeps its own `target/`, and about 60 of them once used 64 GB. Skip a worktree with uncommitted changes (`git -C <path> status --porcelain` prints anything) or whose agent is still running; worktrees Claude Code has locked clear when the session ends. If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, add the `escalated` label, comment on the issue with what is needed, mention @jplock and move on (`status.py` then counts it as waiting on people). If the gate reviewer reports stragglers that can be finished in this phase, work them before retrying the gate.
-5. Run the status again and repeat.
+4. Issues with no dependency between them can run in parallel, at most three at a time. Do not run two implementers on issues that change the same crate at once.
+5. When a subagent reports back, check that its PR merged and the issue closed (`gh issue view <n> --json state`). Once both are confirmed, remove the agent's worktree with `wt remove -y <path>` (the path the Agent tool reported, under `.claude/worktrees/`): each finished worktree keeps its own `target/`, and about 60 of them once used 64 GB. Skip a worktree with uncommitted changes (`git -C <path> status --porcelain` prints anything) or whose agent is still running; worktrees Claude Code has locked clear when the session ends. If it failed, read why: fix the cause by delegating a new attempt with that information, or, if it needs a person, add the `escalated` label, comment on the issue with what is needed, mention @jplock and move on (`status.py` then counts it as waiting on people). If the gate reviewer reports stragglers that can be finished in this phase, work them before retrying the gate.
+6. Repeat from step 1.
 
 ## Preparing people's work
 

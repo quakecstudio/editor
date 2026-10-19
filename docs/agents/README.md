@@ -57,7 +57,15 @@ The [README](../../README.md#status) always shows the current phase and the exac
 /goal Run /run-phase P0 agents until python3 plan/status.py --phase P0 --track agents prints a last line starting "STATUS P0 agents: COMPLETE" or "STATUS P0 agents: WAITING ON PEOPLE". Run that command at the end of every turn so its last line is in the transcript. Every merged PR passed CI. Stop after 150 turns.
 ```
 
-Change `P0` to the phase. When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
+Change `P0` to the phase. Each pass of the loop starts by checking the scheduled workflows on `main`, such as the nightly Differential run, which no PR runs: it lists the latest scheduled run of each workflow that did not succeed,
+
+```bash
+gh run list --branch main --event schedule --limit 40 --json workflowName,conclusion,createdAt,url --jq 'group_by(.workflowName)|map(max_by(.createdAt))|.[]|select(.conclusion!="success")'
+```
+
+and anything it lists is fixed, or filed and delegated, before new work starts.
+
+When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR or a comment explaining what they need. Act on them, then start the goal again; `status.py` picks up where it left off, because all state lives in GitHub and the repo, not in the session.
 
 | Phase | What to expect |
 | --- | --- |
