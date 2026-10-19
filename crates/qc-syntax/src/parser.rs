@@ -98,27 +98,47 @@ fn is_reserved_word(word: &str) -> bool {
         )
 }
 
+/// The priority of `+` and `-` (QC-15.1).
+const ADD_PRIORITY: u8 = 3;
+
+/// FTEQCC's `UNARY_PRIORITY`: the operand of a prefix `-`, `+` or of a cast is a term with its
+/// postfix forms and no binary operator (FTE-19.4, FTE-19.6).
+const UNARY_PRIORITY: u8 = 1;
+
 /// The priority of a binary operator (QC-15.1), from `pr_opcodes`, plus the FTEQCC operators
-/// (FTE-6, FTE-7) at the matching vanilla priority.
+/// at the matching vanilla priority (FTE-6, FTE-7, FTE-19.3): FTEQCC's default
+/// `QCC_PrioritiseOpcodes` puts shifts, `^`, `&` and `|` in the class of `*` and `/`.
 const fn binary_priority(kind: K) -> Option<u8> {
     match kind {
-        K::Star | K::Slash | K::Amp | K::Pipe | K::Percent => Some(2),
-        K::Plus | K::Minus => Some(3),
+        K::Star | K::Slash | K::Amp | K::Pipe | K::Percent | K::Caret | K::Shr | K::Shl => Some(2),
+        K::Plus | K::Minus => Some(ADD_PRIORITY),
         K::EqEq | K::NotEq | K::LessEq | K::GreaterEq | K::Less | K::Greater => Some(4),
-        // `=` and the FTEQCC compound assignments (FTE-6) are right-associative at the
-        // assignment priority.
-        K::Eq | K::PlusEq | K::MinusEq | K::StarEq | K::SlashEq => Some(ASSIGN_PRIORITY),
+        // `=` and the FTEQCC compound assignments (FTE-6, FTE-19.3) are right-associative at
+        // the assignment priority.
+        kind if is_assignment(kind) => Some(ASSIGN_PRIORITY),
         K::AndAnd | K::OrOr => Some(TOP_PRIORITY),
         _ => None,
     }
 }
 
 /// Whether a binary operator kind is an assignment (`=` or an FTEQCC compound assignment),
-/// so its left operand must be assignable (QC-27.10, FTE-6).
+/// so its left operand must be assignable (QC-27.10, FTE-6, FTE-19.3).
 const fn is_assignment(kind: K) -> bool {
     matches!(
         kind,
-        K::Eq | K::PlusEq | K::MinusEq | K::StarEq | K::SlashEq
+        K::Eq
+            | K::PlusEq
+            | K::MinusEq
+            | K::StarEq
+            | K::SlashEq
+            | K::AndEq
+            | K::OrEq
+            | K::AndNotEq
+            | K::SetBits
+            | K::ClearBits
+            | K::CaretEq
+            | K::ShlEq
+            | K::ShrEq
     )
 }
 
@@ -338,6 +358,16 @@ impl<'a> Parser<'a> {
         });
     }
 
+    /// Reports a warning. A warning does not mute the errors after it, since it does not
+    /// abandon the statement or declaration it is in.
+    fn warning_at(&mut self, code: Code, message: impl Into<String>, span: Span) {
+        self.errors.push(Diagnostic {
+            code,
+            message: message.into(),
+            span,
+        });
+    }
+
     fn error(&mut self, code: Code, message: impl Into<String>) {
         let span = self.current_span();
         self.error_at(code, message, span);
@@ -443,7 +473,11 @@ impl<'a> Parser<'a> {
             let _ = tok;
             self.muted = false;
             let before = self.pos;
-            if self.fteqcc() && self.at_word("typedef") {
+            if self.fteqcc() && self.at(K::Semicolon) {
+                // FTE-17.3: `QCC_PR_ParseDefs` skips any `;` before a definition, so the `;`
+                // after a function body may be written or not.
+                self.bump();
+            } else if self.fteqcc() && self.at_word("typedef") {
                 self.typedef_decl();
             } else if self.fteqcc() && self.at_word("enum") {
                 self.enum_decl();
@@ -588,17 +622,17 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// `enum [class Name] [: type] { A, B = n, ... };` (FTE-15.1, FTE-15.2). The `class`, the
-    /// name and the `: type` are accepted and otherwise ignored for a version 6 target.
+    /// `enum [class] [Name] [: type] { A, B = n, ... };` (FTE-15.1, FTE-15.2, FTE-15.4). The
+    /// `class` and the `: type` are accepted and otherwise ignored for a version 6 target;
+    /// the name is a type name (FTE-15.4).
     fn enum_decl(&mut self) {
         self.start_node(K::EnumDecl);
         self.bump_as(K::EnumKw);
         if self.at_word("class") {
             self.bump();
-            // Optional enum-class name.
-            if self.at(K::Name) {
-                self.bump();
-            }
+        }
+        if self.at(K::Name) {
+            self.bump();
         }
         if self.at(K::Colon) {
             // `: int` or another underlying type, accepted and ignored (FTE-15.2).
@@ -633,36 +667,66 @@ impl<'a> Parser<'a> {
     }
 
     fn declarators(&mut self, ty: TypeShape, local: bool) {
-        loop {
-            self.declarator(ty);
+        let function = loop {
+            let function = self.declarator(ty);
             if !self.at(K::Comma) {
-                break;
+                break function;
             }
             self.bump();
+        };
+        if self.at(K::Semicolon) {
+            self.bump();
+            return;
         }
-        if !self.expect(K::Semicolon, ";") {
-            self.recover(local);
+        if self.fteqcc() && !self.muted {
+            // FTE-17.3: after a function declaration `QCC_PR_ParseDefs` only checks for a
+            // `;`. FTE-21.3: after any other definition a missing `;` is FTEQCC's warning
+            // "Missing semicolon at end of definition", and the next statement or
+            // definition follows.
+            if !function {
+                let span = Span::new(self.last_end, self.last_end);
+                self.warning_at(Code::W0203, "Missing semicolon at end of definition", span);
+            }
+            return;
         }
+        self.expected(";");
+        self.recover(local);
     }
 
-    fn declarator(&mut self, ty: TypeShape) {
+    /// Parses one declarator; returns whether its type is a function type, whose `;` an
+    /// FTEQCC declaration may leave out (FTE-17.3).
+    fn declarator(&mut self, ty: TypeShape) -> bool {
         self.start_node(K::Declarator);
         self.name();
+        let mut ty = ty;
+        // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
+        // rerelease uses beside the vanilla `rettype(params) name`. A `(` after the name, on a
+        // non-function type, is the parameter list, and the declarator is then a function.
+        let c_style = self.fteqcc() && !ty.function && self.at(K::LParen);
+        if c_style {
+            self.param_list();
+            ty.function = true;
+        }
         // FTEQCC array suffix `[N]` or `[]` after the declared name (FTE-13.1). Vanilla uses
         // `[` only in a state header `=[frame, think]`, after `=`, so this does not change
-        // vanilla.
-        if self.fteqcc() && self.at(K::LBracket) {
+        // vanilla; after a function declarator a `[` is its state header (FTE-17.2).
+        if self.fteqcc() && !ty.function && self.at(K::LBracket) {
             self.array_suffix();
         }
         if self.at(K::Eq) {
             self.bump();
             self.initializer(ty);
         } else if ty.function && (self.at(K::LBrace) || self.at(K::LBracket)) {
-            // `PR_ParseDefs` finds no `=` or `,` and expects `;`; the body is kept.
-            self.expected(";");
+            // FTE-17.2: FTEQCC takes a `{` or `[` after a function declarator as its body,
+            // with no `=`. Vanilla `PR_ParseDefs` finds no `=` or `,` and expects `;`; the
+            // body is kept.
+            if !self.fteqcc() {
+                self.expected(";");
+            }
             self.function_body();
         }
         self.finish_node();
+        ty.function
     }
 
     /// `[N]` or `[]` after a declared name (FTE-13.1): a fixed size or a size inferred from
@@ -766,6 +830,9 @@ impl<'a> Parser<'a> {
     fn builtin(&mut self) {
         self.start_node(K::Builtin);
         self.bump();
+        // FTE-17.4: FTEQCC's `#number:name` binds a builtin by its engine name, as the
+        // rerelease's `#0:ex_bprint`, and the number may be 0.
+        let named = self.fteqcc() && self.nth(1).is_some_and(|t| t.kind == K::Colon);
         let number = self.current().map(|t| (t.kind, t.value));
         match number {
             Some((K::FloatLit, Some(value))) => {
@@ -776,13 +843,18 @@ impl<'a> Parser<'a> {
                 let integral = value.trunc() == value;
                 if !integral {
                     self.error(Code::E0209, "Bad builtin immediate");
-                } else if value <= 0.0 {
+                } else if value <= 0.0 && !named {
                     self.error(Code::E0507, "builtin number must be positive");
                 }
                 self.bump();
             }
             Some((K::FrameRef, _)) => self.bump(),
             _ => self.error(Code::E0209, "Bad builtin immediate"),
+        }
+        // The `:name` of FTE-17.4.
+        if self.fteqcc() && self.at(K::Colon) {
+            self.bump();
+            self.name();
         }
         self.finish_node();
     }
@@ -894,9 +966,30 @@ impl<'a> Parser<'a> {
         } else {
             let mut count = 0_usize;
             loop {
+                // FTE-18.1: FTEQCC ends the list at a `...` after named parameters, as the
+                // rerelease's `void(string s, ...) bprint`. Vanilla has only the bare `(...)`
+                // form (QC-10.4), handled above.
+                if self.fteqcc() && self.at(K::Ellipsis) {
+                    self.bump();
+                    break;
+                }
                 self.start_node(K::Param);
-                if self.type_().is_some() {
+                // FTE-18.3: an FTEQCC parameter may have a user type, `UpgradeType Type`.
+                let ty = if self.fteqcc() {
+                    self.type_or_user_type()
+                } else {
+                    self.type_()
+                };
+                if ty.is_some() {
                     self.name();
+                    // FTE-18.2: an FTEQCC default value `type name = expr`, as the
+                    // rerelease's `float(entity e) predicate = (float(entity e))SUB_True`.
+                    if self.fteqcc() && self.at(K::Eq) {
+                        self.start_node(K::DefaultValue);
+                        self.bump();
+                        self.expression();
+                        self.finish_node();
+                    }
                 } else {
                     self.skip_param();
                 }
@@ -959,7 +1052,9 @@ impl<'a> Parser<'a> {
                 break;
             };
             if kind == K::RBrace {
-                if !function && count == 0 {
+                // FTE-21.4: FTEQCC's `QCC_PR_ParseStatement` reads statements until the
+                // `}`, so its blocks may be empty.
+                if !function && count == 0 && !self.fteqcc() {
                     self.error(Code::E0201, "not a name");
                 }
                 self.bump();
@@ -997,6 +1092,15 @@ impl<'a> Parser<'a> {
         };
         match tok.kind {
             K::LBrace => self.block(false),
+            // FTE-21.5: an FTEQCC `;` alone is an empty statement, with FTEQCC's warning
+            // "Hanging ';'".
+            K::Semicolon if self.fteqcc() => {
+                let span = tok.span;
+                self.warning_at(Code::W0204, "Hanging ';'", span);
+                self.start_node(K::EmptyStmt);
+                self.bump();
+                self.finish_node();
+            }
             K::Dot => self.local_decl(false),
             K::Name => match tok.text.as_str() {
                 "return" => self.return_stmt(),
@@ -1020,6 +1124,15 @@ impl<'a> Parser<'a> {
                     self.local_decl(false);
                 }
                 _ if self.looks_like_declaration(0) => self.local_decl(false),
+                // FTE-21.1: FTEQCC's `QCC_PR_ParseStatement` reads a statement that starts
+                // with a type name as a definition, so a user type followed by a name,
+                // `poseInfo pose = ...`, declares a local.
+                word if self.fteqcc()
+                    && !is_reserved_word(word)
+                    && self.nth(1).is_some_and(|t| t.kind == K::Name) =>
+                {
+                    self.local_decl(false);
+                }
                 _ => self.expr_stmt(),
             },
             _ => self.expr_stmt(),
@@ -1068,7 +1181,7 @@ impl<'a> Parser<'a> {
         if keyword {
             self.bump_as(K::LocalKw);
         }
-        if let Some(ty) = self.type_() {
+        if let Some(ty) = self.type_or_user_type() {
             loop {
                 self.declarator(ty);
                 if !self.at(K::Comma) {
@@ -1156,8 +1269,9 @@ impl<'a> Parser<'a> {
 
     /// `local type name [= init] {, ...} ;` (QC-11.10, QC-11.9). Without `local`, the
     /// declaration is an error; it is parsed the same way so the tree keeps its shape. In an
-    /// FTEQCC dialect the `const`/`var`/`nosave` qualifiers (FTE-10 to FTE-12) start a local
-    /// declaration without the `local` keyword and without an error.
+    /// FTEQCC dialect a local needs no `local` (FTE-21.1), may have a user type (FTE-14.2) or
+    /// the `const`/`var`/`nosave` qualifiers (FTE-10 to FTE-12), and may be a field or a
+    /// function variable (FTE-21.2).
     fn local_decl(&mut self, keyword: bool) {
         self.start_node(K::LocalDecl);
         let qualified = self.fteqcc()
@@ -1168,6 +1282,8 @@ impl<'a> Parser<'a> {
             self.bump_as(K::LocalKw);
         } else if qualified {
             self.qualifiers();
+        } else if self.fteqcc() {
+            // FTE-21.1: FTEQCC needs no `local`, for a field local `.float f;` too.
         } else if self.at(K::Dot) {
             self.error(Code::E0201, "not a name");
         } else {
@@ -1177,9 +1293,17 @@ impl<'a> Parser<'a> {
             }
         }
         let start = self.current_span().start;
-        match self.type_() {
+        let ty = if self.fteqcc() {
+            self.type_or_user_type()
+        } else {
+            self.type_()
+        };
+        match ty {
             Some(ty) => {
-                if ty.field || ty.function {
+                // FTE-21.2: FTEQCC has no "Fields and functions must be global" check (it is
+                // commented out of `QCC_PR_ParseDefs`), so a local may be a field or a
+                // function variable.
+                if (ty.field || ty.function) && !self.fteqcc() {
                     let span = Span::new(start, self.last_end);
                     self.error_at(Code::E0208, "Fields and functions must be global", span);
                 }
@@ -1283,7 +1407,7 @@ impl<'a> Parser<'a> {
         let checkpoint = self.checkpoint();
         let mut lhs = self.postfix(checkpoint)?;
         let mut levels = 0_usize;
-        while let Some(priority) = self.current().and_then(|t| binary_priority(t.kind)) {
+        while let Some(priority) = self.current().and_then(|t| self.operator_priority(t)) {
             if priority > max {
                 break;
             }
@@ -1297,7 +1421,14 @@ impl<'a> Parser<'a> {
                 self.error_at(Code::E0508, "cannot assign to this expression", lhs.span);
             }
             self.builder.start_node_at(checkpoint, K::BinaryExpr);
-            self.bump();
+            // FTE-19.5: a negative number where an operator belongs is the operator and the
+            // right operand at once, so it stays for the right operand to read.
+            if self
+                .current()
+                .is_some_and(|t| binary_priority(t.kind).is_some())
+            {
+                self.bump();
+            }
             let rhs_max = if priority == ASSIGN_PRIORITY {
                 priority
             } else {
@@ -1324,6 +1455,17 @@ impl<'a> Parser<'a> {
         Some(lhs)
     }
 
+    /// The priority of `tok` as a binary operator after an operand. In an FTEQCC dialect a
+    /// negative number literal there is also one (FTE-19.5): FTEQCC's `QCC_PR_RefExpression`
+    /// "work[s] around (4-3) being parsed as 4 -3 with no operator between" by reading it as
+    /// `+` and the negative number, at the priority of `+`.
+    fn operator_priority(&self, tok: &Tok) -> Option<u8> {
+        binary_priority(tok.kind).or_else(|| {
+            let negative = tok.kind == K::FloatLit && tok.text.starts_with('-');
+            (self.fteqcc() && negative).then_some(ADD_PRIORITY)
+        })
+    }
+
     /// `cond ? a : b` (FTE-8): the already-parsed `cond` is `lhs`; parse the two arms.
     fn ternary(&mut self, checkpoint: Checkpoint, cond: Expr) -> Expr {
         self.builder.start_node_at(checkpoint, K::TernaryExpr);
@@ -1347,10 +1489,12 @@ impl<'a> Parser<'a> {
         loop {
             let call = self.at(K::LParen);
             // The FTEQCC postfix forms are only reachable in an FTEQCC dialect: the `[`
-            // subscript and the `++`/`--` tokens the vanilla lexer never produces.
+            // subscript, the `++`/`--` tokens, and the `->` member operator the vanilla lexer
+            // never produces.
             let index = self.fteqcc() && self.at(K::LBracket);
             let incdec = self.at(K::PlusPlus) || self.at(K::MinusMinus);
-            if !call && !self.at(K::Dot) && !index && !incdec {
+            let member = self.at(K::Dot) || self.at(K::Arrow);
+            if !call && !member && !index && !incdec {
                 break;
             }
             levels = levels.saturating_add(1);
@@ -1432,6 +1576,14 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
+    /// Whether the `(` here opens a cast: a type word or `.` follows it (FTE-19.6). Neither
+    /// can start an expression, so a parenthesised expression is never taken for one.
+    fn at_cast(&self) -> bool {
+        self.nth(1).is_some_and(|t| {
+            t.kind == K::Dot || (t.kind == K::Name && type_keyword(&t.text).is_some())
+        })
+    }
+
     /// `PR_Term`: `!` expression, `( expression )`, a literal, a frame macro reference or a
     /// name (QC-15.7). Anything else is "not a name" (QC-4.5, QC-14.2).
     fn term(&mut self) -> Option<Expr> {
@@ -1450,6 +1602,28 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.expr(NOT_PRIORITY);
                 (K::NotExpr, false)
+            }
+            // FTE-19.4: FTEQCC's `QCC_PR_RefTerm` reads `~` with an operand of `NOT_PRIORITY`,
+            // as `!`, and `-` and `+` with one of `UNARY_PRIORITY`.
+            K::Tilde | K::Minus | K::Plus if self.fteqcc() => {
+                let operand = if kind == K::Tilde {
+                    NOT_PRIORITY
+                } else {
+                    UNARY_PRIORITY
+                };
+                self.start_node(K::UnaryExpr);
+                self.bump();
+                self.expr(operand);
+                (K::UnaryExpr, false)
+            }
+            // FTE-19.6: `(` and a type is a cast; its operand has `UNARY_PRIORITY`.
+            K::LParen if self.fteqcc() && self.at_cast() => {
+                self.start_node(K::CastExpr);
+                self.bump();
+                self.type_();
+                self.expect(K::RParen, ")");
+                self.expr(UNARY_PRIORITY);
+                (K::CastExpr, false)
             }
             K::LParen => {
                 self.start_node(K::ParenExpr);

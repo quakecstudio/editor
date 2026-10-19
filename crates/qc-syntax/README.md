@@ -17,7 +17,12 @@ references are literals, resolved later.
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
 `break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:`,
-`const`/`var`/`nosave`, arrays and subscripts, `typedef struct` and `enum`. Under the vanilla
+`const`/`var`/`nosave`, arrays and subscripts, `typedef struct` and `enum`, named enums
+(FTE-15.4), C-style function declarations and `#n:name` builtins (FTE-17), `...` after named
+parameters, default values and user-typed parameters (FTE-18), the bitwise and shift
+operators, `->`, prefix `-`, `+` and `~`, `a -1` and casts (FTE-19), and locals without
+`local`, field and function locals, empty blocks and empty statements (FTE-21, with the
+warnings `W0203` and `W0204` of QCD-7.17 and QCD-7.18). Under the vanilla
 dialect each keyword construct is rejected with `E0510` (QCD-6.10) and the operator and
 declaration extensions keep their vanilla diagnostic, so the two profiles are observably
 different; a vanilla program parses identically through `parse` or `parse_with(.., Vanilla)`.

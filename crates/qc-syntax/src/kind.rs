@@ -126,6 +126,32 @@ pub enum SyntaxKind {
     Question,
     /// `:` (FTEQCC, FTE-8).
     Colon,
+    /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
+    Arrow,
+    /// `~` (FTEQCC, FTE-19.4).
+    Tilde,
+    /// `&=` (FTEQCC, FTE-19.1).
+    AndEq,
+    /// `|=` (FTEQCC, FTE-19.1).
+    OrEq,
+    /// `&~=` (FTEQCC, FTE-19.1).
+    AndNotEq,
+    /// `(+)` (FTEQCC, FTE-19.2): `|=` spelled another way.
+    SetBits,
+    /// `(-)` (FTEQCC, FTE-19.2): `&~=` spelled another way.
+    ClearBits,
+    /// `^` (FTEQCC, FTE-19.1).
+    Caret,
+    /// `^=` (FTEQCC, FTE-19.1).
+    CaretEq,
+    /// `>>` (FTEQCC, FTE-19.1).
+    Shr,
+    /// `>>=` (FTEQCC, FTE-19.1).
+    ShrEq,
+    /// `<<` (FTEQCC, FTE-19.1).
+    Shl,
+    /// `<<=` (FTEQCC, FTE-19.1).
+    ShlEq,
 
     /// `for` starting a statement (FTEQCC, FTE-2).
     ForKw,
@@ -225,6 +251,14 @@ pub enum SyntaxKind {
     TernaryExpr,
     /// `e[i]` (FTEQCC, FTE-13).
     IndexExpr,
+    /// `-e`, `+e` or `~e` (FTEQCC, FTE-19.4).
+    UnaryExpr,
+    /// `(type) e` (FTEQCC, FTE-19.6).
+    CastExpr,
+    /// `= e` after a parameter's name: its default value (FTEQCC, FTE-18.2).
+    DefaultValue,
+    /// `;` alone as a statement (FTEQCC, FTE-21.5).
+    EmptyStmt,
     /// `const`, `var` or `nosave` before a declaration's type (FTEQCC, FTE-10 to FTE-12).
     Qualifier,
     /// `[N]` or `[]` after a declared name (FTEQCC, FTE-13).
@@ -330,6 +364,19 @@ impl SyntaxKind {
             Punct::Percent => Self::Percent,
             Punct::Question => Self::Question,
             Punct::Colon => Self::Colon,
+            Punct::Arrow => Self::Arrow,
+            Punct::Tilde => Self::Tilde,
+            Punct::AndEq => Self::AndEq,
+            Punct::OrEq => Self::OrEq,
+            Punct::AndNotEq => Self::AndNotEq,
+            Punct::SetBits => Self::SetBits,
+            Punct::ClearBits => Self::ClearBits,
+            Punct::Caret => Self::Caret,
+            Punct::CaretEq => Self::CaretEq,
+            Punct::Shr => Self::Shr,
+            Punct::ShrEq => Self::ShrEq,
+            Punct::Shl => Self::Shl,
+            Punct::ShlEq => Self::ShlEq,
         }
     }
 }
