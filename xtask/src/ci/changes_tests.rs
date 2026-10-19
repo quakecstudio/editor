@@ -11,7 +11,7 @@
 )]
 
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -38,12 +38,13 @@ fn run(dir: &Path, args: &[&str], stdin: &str) -> String {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // Only `classify` reads its input; any other command may exit before the
+    // write, which then fails with a broken pipe.
+    let written = child.stdin.take().unwrap().write_all(stdin.as_bytes());
+    let broken_pipe = written
+        .as_ref()
+        .is_err_and(|error| error.kind() == ErrorKind::BrokenPipe);
+    assert!(written.is_ok() || broken_pipe, "{written:?}");
     let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
@@ -182,6 +183,9 @@ fn a_last_line_without_a_newline_still_counts() {
 fn an_unknown_or_missing_command_is_full() {
     assert_eq!(run(&root(), &[], "docs/ci.md\n"), "full\n");
     assert_eq!(run(&root(), &["classify-all"], "docs/ci.md\n"), "full\n");
+    // More input than a pipe buffers, so the script exits before reading it.
+    let large = "docs/ci.md\n".repeat(100_000);
+    assert_eq!(run(&root(), &["classify-all"], &large), "full\n");
 }
 
 /// A scratch git repository with one commit holding `crates/a.rs` and
