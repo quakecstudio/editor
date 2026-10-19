@@ -52,16 +52,14 @@ fn targets(index: &ModuleIndex, source: &str, name: &str) -> Vec<DefId> {
     let mut out = Vec::new();
     for (offset, _) in source.match_indices(name) {
         let boundary = |b: Option<u8>| b.is_none_or(|b| !(b.is_ascii_alphanumeric() || b == b'_'));
-        let before = offset.checked_sub(1).and_then(|i| source.as_bytes().get(i).copied());
+        let before = offset
+            .checked_sub(1)
+            .and_then(|i| source.as_bytes().get(i).copied());
         let after = source.as_bytes().get(offset + name.len()).copied();
         if !boundary(before) || !boundary(after) {
             continue;
         }
-        if let Some(r) = index
-            .refs
-            .iter()
-            .find(|r| r.location.span.start == offset)
-        {
+        if let Some(r) = index.refs.iter().find(|r| r.location.span.start == offset) {
             out.push(r.def);
         }
     }
@@ -173,7 +171,8 @@ fn scoped_names_resolve() {
     let unknown = fte_index_of("class A { };\nvoid() f = { A::missing(); };\n");
     assert_eq!(messages(&unknown), ["Unknown value \"A::missing\""]);
     // `super::` in a class whose parent is the entity is not checked.
-    let entity_parent = fte_index_of("class A { virtual void B(void); };\nvoid A::B(void) { super::B(); };\n");
+    let entity_parent =
+        fte_index_of("class A { virtual void B(void); };\nvoid A::B(void) { super::B(); };\n");
     assert_eq!(errors(&entity_parent), Vec::<Code>::new());
 }
 
@@ -183,7 +182,8 @@ fn scoped_names_resolve() {
 fn classes_define_spawn_functions() {
     let index = fte_index_of("class A { };\nvoid() f = { spawnfunc_A(); };\n");
     assert_eq!(errors(&index), Vec::<Code>::new());
-    let defined = fte_index_of("class A { };\nvoid() spawnfunc_A = { };\nvoid() f = { spawnfunc_A(); };\n");
+    let defined =
+        fte_index_of("class A { };\nvoid() spawnfunc_A = { };\nvoid() f = { spawnfunc_A(); };\n");
     assert_eq!(errors(&defined), Vec::<Code>::new());
 }
 
@@ -289,7 +289,10 @@ fn noref_allows_reinitialisation() {
     let mut db = Db::new();
     db.set_dialect(Dialect::Fteqcc);
     let files = [
-        ("ext.qc", "#pragma noref 1\nstring() info = #626;\n#pragma noref 0\nfloat() plain = #1;\n"),
+        (
+            "ext.qc",
+            "#pragma noref 1\nstring() info = #626;\n#pragma noref 0\nfloat() plain = #1;\n",
+        ),
         ("mod.qc", "string() info = #0;\nfloat() plain = #2;\n"),
     ];
     for (index, (name, text)) in files.iter().enumerate() {
@@ -310,7 +313,8 @@ fn noref_allows_reinitialisation() {
 // spec FTEF-15.6: `struct { ... } a[4], *p;` declares variables of the struct.
 #[test]
 fn pointer_declarators_and_struct_variables() {
-    let index = fte_index_of("struct seat_s { float x; } seats[4], *seat;\nvoid() f = { seat->x = 1; };\n");
+    let index =
+        fte_index_of("struct seat_s { float x; } seats[4], *seat;\nvoid() f = { seat->x = 1; };\n");
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let seat = defs_named(&index, "seat")[0];
     assert_eq!(
