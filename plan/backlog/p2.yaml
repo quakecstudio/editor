@@ -668,7 +668,7 @@ issues:
   deliverable:
   - 'crates/qc-lexer and crates/qc-syntax: the forms of docs/spec/dialect-fteqcc.md FTEF-18.3 to FTEF-18.15, which P2-36 specified and the FTEQCC profile still rejects or misreads (state frame expressions and frame cycles, the comma operator in a statement, labels and goto, `return =`, `if !`, `until` and `do ... until`, case ranges, `?:` with no middle, `sizeof` without parentheses or of a pointer type or an expression, frame references that stop at `&`, `|`, `(`, `)`, `]` and `..`, `$framesave`, and function types returning functions), with the statements moved out of docs/spec/coverage-baseline.tsv'
   acceptance:
-  - Each of FTEF-18.3 to FTEF-18.15 has a test citing it, and none is left in coverage-baseline.tsv
+  - Each of FTEF-18.3 to FTEF-18.15 has a test citing it (FTEF-18.4 withdrawn for FTEF-18.19, which FTEQCC raises as an error), and none is left in coverage-baseline.tsv
   verify:
   - cargo test -p qc-lexer -p qc-syntax; cargo test -p qs-tests (spec-citation ratchet)
 - key: P2-40
@@ -688,6 +688,42 @@ issues:
   - '`#if 1 || 0 && 0` and its mirror evaluate as FTEQCC does under the FTEQCC profile and as PRJ-5.5 says under the vanilla profile, each with a test'
   verify:
   - cargo test -p qc-preproc
+- key: P2-41
+  title: 'Parse `?:` at the assignment priority under the FTEQCC profile'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-39
+  deliverable:
+  - 'crates/qc-syntax: under the FTEQCC profile `?:` is read at FTEQCC''s `TERNARY_PRIORITY`, which `QCC_PrioritiseOpcodes` sets equal to the assignment priority and tighter than `&&` and `||` (`priority_class[PC_TERNARY] = 6; priority_class[PC_STORE] = 6;` and `priority_class[PC_LOGICAND] = 7;` without `flag_cpriority`), so `x = a ? b : c` assigns the conditional and `a && b ? c : d` is `a && (b ? c : d)`; the parser now wraps the whole expression, `(x = a) ? b : c`, as P2-39 found'
+  - 'docs/spec/dialect-fteqcc-rerelease.md: a statement in FTE-8 quoting the priorities, with requirements.tsv updated'
+  acceptance:
+  - '`x = a ? b : c`, `a && b ? c : d`, `a || b ? c : d` and a nested `?:` parse as FTEQCC groups them, each with a test citing the new statement, and the six rerelease codebases, the FreeCS tree, Copper and Arcane Dimensions still resolve with zero errors'
+  verify:
+  - cargo test -p qc-syntax; corpus job
+- key: P2-42
+  title: Report FTEQCC's frame macro, pragma and statement warnings under the FTEQCC profile
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-38
+  - P2-39
+  deliverable:
+  - 'crates/qc-preproc, crates/qc-syntax and crates/qc-sema: the warnings FTEQCC gives by default that this profile does not report yet, found in P2-38 and P2-39: "Statement does not do anything" (`WARN_POINTLESSSTATEMENT`, FTEF-18.5), "#pragma autoproto must appear before any definitions" (`WARN_BADPRAGMA`, FTEF-12.9), "Stale macro used (%s, defined in %s)" (`WARN_STALEMACRO`), "Duplicate macro defined (%s). Rename it." (`WARN_DUPLICATEMACRO`) and "Name for frame macro %s is too long" in `QCC_PR_MacroFrame` and `QCC_PR_FindMacro`, and the error for a `goto` with no label of its name in the function (FTEF-18.6); each with a statement in docs/spec/dialect-fteqcc.md quoting FTEQCC and a code in docs/spec/language-diagnostics.md'
+  acceptance:
+  - Each warning and the error has a test that triggers it and one that does not, and the corpus job's codebases still resolve with zero errors
+  verify:
+  - cargo test -p qc-preproc -p qc-syntax -p qc-sema; corpus job
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -826,6 +862,8 @@ issues:
   - P2-38
   - P2-39
   - P2-40
+  - P2-41
+  - P2-42
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
