@@ -353,10 +353,13 @@ fn a_range_of_sections_is_every_section_between() {
             "WAD-2"
         ]
     );
-    let statements = "- **Spec statements:** X-1.2 to X-1.4, Y-1.9 to Y-2.1.\n";
+    let statements = "- **Spec statements:** X-1.2 to X-1.4, Y-1.9 to Y-2.1, Z-1.5 to Z-1.3,\n  \
+                      W-1.1 to V-1.2 and X-1.x.\n";
     assert_eq!(
         spec_statements(statements),
-        ["X-1.2", "X-1.3", "X-1.4", "Y-1.9", "Y-2.1"]
+        [
+            "X-1.2", "X-1.3", "X-1.4", "Y-1.9", "Y-2.1", "Z-1.5", "Z-1.3", "W-1.1", "V-1.2"
+        ]
     );
 }
 

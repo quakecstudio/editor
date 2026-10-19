@@ -907,8 +907,10 @@ fn section_parts(id: &str) -> Option<(&str, u32)> {
 
 /// The section and number of a statement ID, `PREFIX-n.m`.
 fn statement_parts(id: &str) -> Option<(&str, u32)> {
+    // The words of `field_ids` hold only letters, digits, `-` and `.`, so a number that
+    // parses is all digits.
     let (section, number) = id.rsplit_once('.')?;
-    if !is_section_id(section) || number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+    if !is_section_id(section) {
         return None;
     }
     Some((section, number.parse().ok()?))
