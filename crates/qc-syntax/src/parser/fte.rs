@@ -528,7 +528,8 @@ impl Parser<'_> {
         }
         if self.at(K::LBrace) {
             self.bump();
-            while !self.at(K::RBrace) && self.current().is_some() {
+            // FTEF-18.27: a class that lost its `}` ends at the next declaration line.
+            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
                 let before = self.pos;
                 self.start_item();
                 self.class_member();
@@ -542,6 +543,18 @@ impl Parser<'_> {
             self.bump();
         }
         self.finish_node();
+    }
+
+    /// Whether a keyword that starts a file-level construct of the full dialect is here:
+    /// `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct` or `union` (FTEF-18.27).
+    pub(super) fn at_fte_construct(&self) -> bool {
+        self.current().is_some_and(|t| {
+            t.kind == K::Name
+                && matches!(
+                    t.text.as_str(),
+                    "typedef" | "class" | "accessor" | "enum" | "enumflags" | "struct" | "union"
+                )
+        })
     }
 
     /// Whether an `enum` or `enumflags` with its body starts here (FTE-15, FTEF-8): the keyword
@@ -618,7 +631,8 @@ impl Parser<'_> {
         match self.fte_type() {
             // `Name(void);`: a constructor with no return type (FTEF-9.4).
             Some(ty) if ty.function && self.at(K::Semicolon) => self.bump(),
-            Some(ty) => self.declarators(ty, false),
+            // A member's recovery stops at the `}` that closes the class.
+            Some(ty) => self.declarators(ty, true),
             None => self.recover(true),
         }
         self.finish_node();
@@ -629,7 +643,9 @@ impl Parser<'_> {
     pub(super) fn struct_decl(&mut self) {
         self.start_node(K::StructDecl);
         self.struct_type();
-        if self.at(K::Name) || self.at(K::Star) {
+        // FTEF-18.27: a declaration line after a struct that lost its `}` is the next
+        // declaration, not a variable of the struct.
+        if (self.at(K::Name) || self.at(K::Star)) && !self.at_declaration_line() {
             // FTEF-6.1: `struct { ... } a[4], *p;` declares variables of the struct too.
             let shape = TypeShape {
                 function: false,
@@ -653,7 +669,8 @@ impl Parser<'_> {
         }
         if self.at(K::LBrace) {
             self.bump();
-            while !self.at(K::RBrace) && self.current().is_some() {
+            // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
+            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
                 let before = self.pos;
                 self.start_item();
                 self.accessor_member();

@@ -961,6 +961,15 @@ FTEF-18.5.
   level deeper, and so does each `*` before a declarator's name (FTEF-15.6). QC-27.16 then
   holds as for vanilla: a prefix `++` or `--` it unwinds through is read as no postfix one, and
   a type or a declarator takes no further `*` or parameter list. FTEQCC has no such limit.
+- **FTEF-18.27** This profile's error recovery (QCD-1.4) treats the full dialect's bodies as a
+  function body: a struct's fields, a class's members and an accessor's members end at a
+  declaration line, a token at column 0 that has a declaration's shape or is one of `typedef`,
+  `class`, `accessor`, `enum`, `enumflags`, `struct` and `union`, as well as at their `}`; and
+  a class member's recovery stops at the `}` that closes the class. So a body that lost its
+  `}` damages no declaration after the next. FTEQCC reads each body to its `}`; a field or
+  member written at column 0 in the shape of a declaration therefore ends its body here, as a
+  statement at column 0 ends a function body, and none of the codebases the corpus job
+  resolves under this profile writes one.
 
   Under the vanilla profile none of this is reported.
 

@@ -6,10 +6,11 @@
 //! that the damage stays where the token was: the tree still gives back the text, every
 //! declaration before the one that lost the token parses as before, every declaration from
 //! two after it onwards parses as before, and every error is between them. The tests run it
-//! on hand-written sources and `cargo xtask parse-corpus` on the corpus.
+//! on hand-written sources and `cargo xtask parse-corpus` on the corpus, and
+//! [`check_deletions_with`] in a chosen dialect.
 
 use crate::ast::{AstNode as _, SourceFile};
-use crate::{GreenNode, Parse, Span, SyntaxKind, SyntaxNode, parse};
+use crate::{Dialect, GreenNode, Parse, Span, SyntaxKind, SyntaxNode, parse_with};
 
 /// What [`check_deletions`] found.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -22,10 +23,22 @@ pub struct DeletionReport {
     pub failures: Vec<String>,
 }
 
-/// A top-level item: a declaration or a run of tokens that is not one.
+/// A top-level item: a declaration, one of the FTEQCC dialect's file-level constructs, or a
+/// run of tokens that is not one.
 pub(crate) fn items(root: &SyntaxNode) -> Vec<SyntaxNode> {
     root.children()
-        .filter(|n| matches!(n.kind(), SyntaxKind::Declaration | SyntaxKind::Error))
+        .filter(|n| {
+            matches!(
+                n.kind(),
+                SyntaxKind::Declaration
+                    | SyntaxKind::Error
+                    | SyntaxKind::TypedefDecl
+                    | SyntaxKind::EnumDecl
+                    | SyntaxKind::StructDecl
+                    | SyntaxKind::ClassDecl
+                    | SyntaxKind::AccessorDecl
+            )
+        })
         .collect()
 }
 
@@ -51,7 +64,13 @@ fn deletable(root: &SyntaxNode) -> Vec<Span> {
 /// Deletes each token of `source` in turn and checks that the damage is local.
 #[must_use]
 pub fn check_deletions(source: &[u8]) -> DeletionReport {
-    let original = parse(source);
+    check_deletions_with(source, Dialect::Vanilla)
+}
+
+/// [`check_deletions`] with `source` and each edited copy parsed in `dialect`.
+#[must_use]
+pub fn check_deletions_with(source: &[u8], dialect: Dialect) -> DeletionReport {
+    let original = parse_with(source, dialect);
     let root = original.syntax();
     let before = items(&root);
     let before_greens = greens(&before);
@@ -64,7 +83,7 @@ pub fn check_deletions(source: &[u8]) -> DeletionReport {
         edited.extend_from_slice(source.get(..span.start).unwrap_or_default());
         edited.extend_from_slice(source.get(span.end..).unwrap_or_default());
         report.deletions = report.deletions.saturating_add(1);
-        match check_one(&edited, &before_greens, item) {
+        match check_one(&edited, dialect, &before_greens, item) {
             Ok(0) => report.silent = report.silent.saturating_add(1),
             Ok(_) => {}
             Err(failure) => report.failures.push(format!(
@@ -82,10 +101,11 @@ pub fn check_deletions(source: &[u8]) -> DeletionReport {
 /// returns how many errors it has.
 pub(crate) fn check_one(
     edited: &[u8],
+    dialect: Dialect,
     before: &[GreenNode],
     damaged: usize,
 ) -> Result<usize, String> {
-    let parsed: Parse = parse(edited);
+    let parsed: Parse = parse_with(edited, dialect);
     let root = parsed.syntax();
     if root.text() != edited {
         return Err("the tree does not give back the text".to_owned());

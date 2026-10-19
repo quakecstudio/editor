@@ -34,6 +34,10 @@ use crate::{Code, Parse, SyntaxKind, parse};
 /// The hand-written sample program with every vanilla construct.
 const SAMPLE: &str = include_str!("sample.qc");
 
+/// A hand-written program of FTEQCC constructs, which parses with no error under the FTEQCC
+/// profile.
+const SAMPLE_FTEQCC: &str = include_str!("sample_fteqcc.qc");
+
 /// A program around one function body, the factory for statement and expression tests.
 #[derive(Clone, Debug)]
 struct Program<'a> {
@@ -174,4 +178,11 @@ fn sample_parses_without_errors() {
     assert_eq!(errors(&parsed), vec![], "{}", parsed.syntax().debug_tree());
     assert_eq!(parsed.syntax().text(), SAMPLE.as_bytes());
     assert!(parsed.tree().is_some());
+}
+
+#[test]
+fn fteqcc_sample_parses_without_errors() {
+    let parsed = crate::parse_with(SAMPLE_FTEQCC.as_bytes(), crate::Dialect::Fteqcc);
+    assert_eq!(errors(&parsed), vec![], "{}", parsed.syntax().debug_tree());
+    assert_eq!(parsed.syntax().text(), SAMPLE_FTEQCC.as_bytes());
 }

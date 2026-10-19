@@ -123,6 +123,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-diag"
+version = "2026.10.0"
+
+[[package]]
 name = "qc-edict"
 version = "2026.10.0"
 dependencies = [
@@ -133,6 +137,9 @@ dependencies = [
 [[package]]
 name = "qc-lexer"
 version = "2026.10.0"
+dependencies = [
+ "qc-diag",
+]
 
 [[package]]
 name = "qc-preproc"
@@ -213,6 +220,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "qc-lexer",
+ "qc-preproc",
  "qc-progs",
  "qc-project",
  "qc-syntax",

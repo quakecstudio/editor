@@ -475,6 +475,10 @@ jobs:
       - name: Check that deleting any token of id 1.01 leaves a local error
         if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.event_name == 'merge_group'
         run: cargo xtask parse-corpus --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
+      # P2-51: the same for the rerelease under the FTEQCC profile.
+      - name: Check that deleting any token of the rerelease leaves a local error under FTEQCC
+        if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.event_name == 'merge_group'
+        run: cargo xtask parse-corpus --fteqcc --deletions "$QS_TEST_ASSETS/codebase/rerelease"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
       # target/oracles/rerelease, cached on everything that decides their bytes.

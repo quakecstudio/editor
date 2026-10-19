@@ -305,9 +305,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Whether the current token starts a declaration at column 0, where recovery resumes.
+    /// Whether the current token starts a declaration at column 0, where recovery resumes:
+    /// a declaration's shape, or under FTEQCC a keyword that starts a file-level construct
+    /// (FTEF-18.27).
     fn at_declaration_line(&self) -> bool {
-        self.current().is_some_and(|t| t.column0) && self.looks_like_declaration(0)
+        self.current().is_some_and(|t| t.column0)
+            && (self.looks_like_declaration(0) || (self.fteqcc() && self.at_fte_construct()))
     }
 
     /// Whether the current token is a statement keyword first on its line.
@@ -639,6 +642,13 @@ impl<'a> Parser<'a> {
             // FTEF-7.1: `typedef <type> Name;`, any type.
             self.type_or_user_type();
         }
+        if self.at_declaration_line() {
+            // FTEF-18.27: after a struct that lost its `}`, a declaration line is the next
+            // declaration, not the typedef's name.
+            self.error(Code::E0201, "not a name");
+            self.finish_node();
+            return;
+        }
         self.name();
         while self.at(K::LBracket) {
             self.array_suffix();
@@ -674,6 +684,10 @@ impl<'a> Parser<'a> {
         }
         self.bump();
         while !self.at(K::RBrace) && self.current().is_some() {
+            if self.at_declaration_line() {
+                // FTEF-18.27: a struct that lost its `}` ends at the next declaration line.
+                break;
+            }
             let before = self.pos;
             self.start_node(K::StructField);
             if self.fte_type().is_some() {

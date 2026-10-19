@@ -13,7 +13,8 @@ bar of `docs/conventions.md` and `docs/testing.md` requires.
 
 | Target | What it fuzzes | What it checks |
 | --- | --- | --- |
-| `parser` | `qc-syntax::parse` with grammar-aware mutation (P1-22) | The tree tiles the input and gives it back; nodes nest; diagnostics point inside the input; parsing is deterministic |
+| `parser` | `qc-syntax::parse_with` under the vanilla and the FTEQCC profiles, with grammar-aware mutation over both dialects' tokens (P1-22, P2-51) | Under each profile: the tree tiles the input and gives it back; nodes nest; diagnostics point inside the input; parsing is deterministic |
+| `qc-preproc` | `qc-preproc` under the FTEQCC profile, the input split into two compiled files and an included one, preprocessed twice with `restart` between; and the `#if` evaluator under both profiles (P2-51) | No panic; every token and diagnostic lies inside the file it is in |
 | `qc-progs` | The progs.dat reader and writer (PROGS-15, PROGS-22) | No panic; an accepted file writes back and rereads unchanged |
 | `qc-vm` | `qc-vm` against the id VM oracle, on well-formed random progs (FND-10, P1-15) | `qc-vm` never panics or runs away; with the oracle, the two traces agree (DIFF-9) |
 | `qc-project` | The `progs.src` project graph reader | No panic on any bytes |

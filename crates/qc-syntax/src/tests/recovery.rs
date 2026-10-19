@@ -4,9 +4,9 @@
 
 use proptest::prelude::*;
 
-use super::{SAMPLE, errors};
-use crate::recovery::check_deletions;
-use crate::{Code, parse};
+use super::{SAMPLE, SAMPLE_FTEQCC, errors};
+use crate::recovery::{check_deletions, check_deletions_with, items};
+use crate::{Code, Dialect, SyntaxKind, SyntaxNode, parse, parse_with};
 
 /// The names declared at file level, in order.
 fn declared(source: &str) -> Vec<String> {
@@ -139,6 +139,122 @@ proptest! {
         let report = check_deletions(source.as_bytes());
         prop_assert_eq!(report.failures, Vec::<String>::new());
     }
+
+    // Under the FTEQCC profile deleting any token of a generated program leaves a local
+    // error.
+    #[test]
+    fn generated_fteqcc_deletions_are_local(source in fteqcc_program()) {
+        let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+        prop_assert_eq!(parsed.errors().count(), 0);
+        let report = check_deletions_with(source.as_bytes(), Dialect::Fteqcc);
+        prop_assert_eq!(report.failures, Vec::<String>::new());
+    }
+}
+
+/// A small program from generated FTEQCC statements and declarations, for deletion checks.
+fn fteqcc_program() -> impl Strategy<Value = String> {
+    let stmt = prop_oneof![
+        Just("a += b % 2;"),
+        Just("for (int i = 0; i < 3; i++) a++;"),
+        Just("switch (a) { case 1: b = 2; break; default: b = 3; }"),
+        Just("a = b ? c : 1;"),
+        Just("float d = a << 2;"),
+        Just("e->fl = [a, b, c].x;"),
+        Just("if not (a) b = (float)c;"),
+        Just("do a--; __until (a < 0);"),
+    ];
+    let decl = prop_oneof![
+        Just("enum { A, B = 2 };"),
+        Just("typedef struct { float x; } point_t;"),
+        Just("class C : D { float x; };"),
+        Just("const float K = 3;"),
+        Just("int n = 0x10;"),
+    ];
+    (
+        proptest::collection::vec(stmt, 1..6),
+        proptest::collection::vec(decl, 0..3),
+    )
+        .prop_map(|(stmts, decls)| {
+            format!(
+                "float a, b, c;\nentity e;\n.float fl;\n{}\nvoid() f =\n{{\n\t{}\n}};\nfloat z;\n",
+                decls.join("\n"),
+                stmts.join("\n\t")
+            )
+        })
+}
+
+/// The kinds of the file-level items of `source` under the FTEQCC profile.
+fn fte_items(source: &str) -> Vec<SyntaxKind> {
+    items(&parse_with(source.as_bytes(), Dialect::Fteqcc).syntax())
+        .iter()
+        .map(SyntaxNode::kind)
+        .collect()
+}
+
+// spec FTEF-18.27: a struct, class or accessor body that lost its `}` ends at the next
+// declaration line, a declaration's shape or a file-level keyword at column 0
+#[test]
+fn fteqcc_bodies_end_at_declaration_lines() {
+    use SyntaxKind as K;
+    for (source, kinds) in [
+        (
+            "struct s { float a;\nfloat b;\n",
+            vec![K::StructDecl, K::Declaration],
+        ),
+        (
+            "typedef struct { float a;\nenum { A };\n",
+            vec![K::TypedefDecl, K::EnumDecl],
+        ),
+        (
+            "class C { float a;\naccessor h : float;\n",
+            vec![K::ClassDecl, K::AccessorDecl],
+        ),
+        (
+            "accessor h : float { get float v = f;\nclass C;\n",
+            vec![K::AccessorDecl, K::ClassDecl],
+        ),
+        (
+            "class C { float a;\ntypedef float T;\nunion u { float f; };\nstruct s;\n",
+            vec![K::ClassDecl, K::TypedefDecl, K::StructDecl, K::StructDecl],
+        ),
+    ] {
+        assert_eq!(fte_items(source), kinds, "{source}");
+        assert!(
+            parse_with(source.as_bytes(), Dialect::Fteqcc)
+                .errors()
+                .next()
+                .is_some(),
+            "{source}"
+        );
+    }
+    // Indented, the same lines are fields and members.
+    assert_eq!(
+        fte_items("struct s {\n\tfloat a;\n\tfloat b;\n};\nclass C {\n\tfloat a;\n};\n"),
+        [K::StructDecl, K::ClassDecl]
+    );
+}
+
+// spec FTEF-18.27: a class member's recovery stops at the `}` that closes the class
+#[test]
+fn class_member_recovery_keeps_the_class_brace() {
+    use SyntaxKind as K;
+    let source = "class C { float a, , b };\nfloat c;\n";
+    assert_eq!(fte_items(source), [K::ClassDecl, K::Declaration]);
+    let class = parse_with(source.as_bytes(), Dialect::Fteqcc)
+        .syntax()
+        .children()
+        .find(|n| n.kind() == K::ClassDecl)
+        .unwrap();
+    assert!(class.child_tokens().any(|t| t.kind() == K::RBrace));
+}
+
+// spec QCD-1.4: under the FTEQCC profile deleting any one token of the FTEQCC sample leaves an
+// error that stays where the token was
+#[test]
+fn every_single_fteqcc_token_deletion_is_local() {
+    let report = check_deletions_with(SAMPLE_FTEQCC.as_bytes(), Dialect::Fteqcc);
+    assert!(report.deletions > 500, "{report:?}");
+    assert_eq!(report.failures, Vec::<String>::new());
 }
 
 /// The statement kinds of the body of `f` in `source`.
@@ -191,7 +307,7 @@ fn recovery_tracks_braces() {
 
 mod checker {
     use crate::recovery::{check_one, greens, items};
-    use crate::{GreenNode, parse};
+    use crate::{Dialect, GreenNode, parse};
 
     fn before(source: &str) -> Vec<GreenNode> {
         greens(&items(&parse(source.as_bytes()).syntax()))
@@ -201,27 +317,39 @@ mod checker {
 
     #[test]
     fn counts_errors() {
-        assert_eq!(check_one(FOUR.as_bytes(), &before(FOUR), 1), Ok(0));
+        assert_eq!(
+            check_one(FOUR.as_bytes(), Dialect::Vanilla, &before(FOUR), 1),
+            Ok(0)
+        );
         let edited = "float a;\nfloat b\nfloat c;\nfloat d;\n";
-        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 1), Ok(1));
+        assert_eq!(
+            check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 1),
+            Ok(1)
+        );
     }
 
     #[test]
     fn a_changed_declaration_before_the_damage_fails() {
         let edited = "float x;\nfloat b;\nfloat c;\nfloat d;\n";
-        let result = check_one(edited.as_bytes(), &before(FOUR), 2);
+        let result = check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 2);
         assert_eq!(
             result,
             Err("declaration 0 before the deletion changed".to_owned())
         );
-        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 0), Ok(0));
+        assert_eq!(
+            check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 0),
+            Ok(0)
+        );
     }
 
     #[test]
     fn at_most_the_next_declaration_may_change() {
         let edited = "float a;\nfloat b;\nfloat x;\nfloat d;\n";
-        assert_eq!(check_one(edited.as_bytes(), &before(FOUR), 1), Ok(0));
-        let result = check_one(edited.as_bytes(), &before(FOUR), 0);
+        assert_eq!(
+            check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 1),
+            Ok(0)
+        );
+        let result = check_one(edited.as_bytes(), Dialect::Vanilla, &before(FOUR), 0);
         assert_eq!(
             result,
             Err("declaration 2 changed, more than one after the deletion".to_owned())
@@ -231,16 +359,19 @@ mod checker {
     #[test]
     fn an_error_outside_the_damage_fails() {
         let original = "x1;\nfloat a;\nfloat b;\nfloat c;\n";
-        let result = check_one(original.as_bytes(), &before(original), 2);
+        let result = check_one(original.as_bytes(), Dialect::Vanilla, &before(original), 2);
         assert!(
             result
                 .as_ref()
                 .is_err_and(|e| e.starts_with("error E0203 \"x1\" is not a type at 0")),
             "{result:?}"
         );
-        assert_eq!(check_one(original.as_bytes(), &before(original), 0), Ok(1));
+        assert_eq!(
+            check_one(original.as_bytes(), Dialect::Vanilla, &before(original), 0),
+            Ok(1)
+        );
         let late = "float a;\nfloat b;\nfloat c;\nx1;\n";
-        let result = check_one(late.as_bytes(), &before(late), 0);
+        let result = check_one(late.as_bytes(), Dialect::Vanilla, &before(late), 0);
         assert!(result.is_err(), "{result:?}");
     }
 }

@@ -82,12 +82,14 @@ nests deeper (QC-27.16), so no input exhausts the stack.
 
 Each has a test in `src/tests/`:
 
-- Parsing any bytes terminates and the tree's tokens tile the input exactly (property tests
-  in `lossless.rs`).
+- Parsing any bytes terminates and the tree's tokens tile the input exactly, under both
+  profiles (property tests in `lossless.rs`).
 - Deleting any single token of a correct file leaves every declaration before it, and every
   declaration from two after it on, parsed as before, with every error between them
-  (`recovery::check_deletions`, run on `src/tests/sample.qc`, on generated programs, and by
-  `cargo xtask parse-corpus --deletions` on id's QuakeC 1.01 in CI).
+  (`recovery::check_deletions` and, in a chosen dialect, `check_deletions_with`, run on
+  `src/tests/sample.qc` and `src/tests/sample_fteqcc.qc`, on generated programs of both
+  dialects, and by `cargo xtask parse-corpus --deletions` on id's QuakeC 1.01 and
+  `--fteqcc --deletions` on the rerelease in CI).
 - Every file of the corpus, FTEQCC codebases included, round-trips
   (`cargo xtask parse-corpus`).
 - Parsing never panics or overflows the stack and round-trips every input, under the

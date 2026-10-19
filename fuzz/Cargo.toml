@@ -15,6 +15,7 @@ cargo-fuzz = true
 libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["link_libfuzzer"] }
 qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
+qc-preproc = { path = "../crates/qc-preproc" }
 qc-project = { path = "../crates/qc-project" }
 qc-syntax = { path = "../crates/qc-syntax" }
 qc-trace = { path = "../crates/qc-trace" }
@@ -45,6 +46,13 @@ bench = false
 [[bin]]
 name = "qc-vm"
 path = "fuzz_targets/qc_vm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qc-preproc"
+path = "fuzz_targets/qc_preproc.rs"
 test = false
 doc = false
 bench = false

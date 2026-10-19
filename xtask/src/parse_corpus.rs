@@ -1,37 +1,40 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `cargo xtask parse-corpus [--vanilla] [--deletions] <dir>...`: parses every `.qc` and `.qh`
-//! file under each codebase directory and checks that the tree gives back the file byte for
-//! byte (P1-21). With `--vanilla`, any lexical or syntax error in a file the codebase's
-//! `progs.src` lists fails (the other files are not part of the program, QC-23.6); with
-//! `--deletions`, each token of each file is deleted in turn and the damage must stay local
-//! (`qc_syntax::recovery`).
+//! `cargo xtask parse-corpus [--vanilla] [--fteqcc] [--deletions] <dir>...`: parses every `.qc`
+//! and `.qh` file under each codebase directory and checks that the tree gives back the file
+//! byte for byte (P1-21). With `--vanilla`, any lexical or syntax error in a file the
+//! codebase's `progs.src` lists fails (the other files are not part of the program, QC-23.6);
+//! with `--fteqcc`, each file is parsed under the FTEQCC profile rather than the vanilla one
+//! (P2-51); with `--deletions`, each token of each file is deleted in turn and the damage must
+//! stay local (`qc_syntax::recovery`), in the profile the files are parsed in.
 //!
 //! The codebases come from `cargo xtask corpus fetch <id>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use qc_lexer::LineIndex;
-use qc_syntax::parse;
-use qc_syntax::recovery::check_deletions;
+use qc_lexer::{Dialect, LineIndex};
+use qc_syntax::parse_with;
+use qc_syntax::recovery::check_deletions_with;
 
 use crate::lex_corpus::progs_src_names;
 
 #[derive(Debug, Default)]
 struct Options {
     vanilla: bool,
+    fteqcc: bool,
     deletions: bool,
     dirs: Vec<PathBuf>,
 }
 
-const USAGE: &str = "usage: cargo xtask parse-corpus [--vanilla] [--deletions] <dir>...";
+const USAGE: &str = "usage: cargo xtask parse-corpus [--vanilla] [--fteqcc] [--deletions] <dir>...";
 
 fn options(args: &[String]) -> Result<Options, String> {
     let mut options = Options::default();
     for arg in args {
         match arg.as_str() {
             "--vanilla" => options.vanilla = true,
+            "--fteqcc" => options.fteqcc = true,
             "--deletions" => options.deletions = true,
             flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
             dir => options.dirs.push(PathBuf::from(dir)),
@@ -68,6 +71,11 @@ fn sources(dir: &Path) -> Result<Vec<PathBuf>, String> {
 /// Runs the check on the directories in `args`.
 pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     let options = options(args)?;
+    let dialect = if options.fteqcc {
+        Dialect::Fteqcc
+    } else {
+        Dialect::Vanilla
+    };
     let mut ok = true;
     for dir in &options.dirs {
         let files = sources(dir)?;
@@ -91,7 +99,7 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
         for path in &files {
             let text = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
             bytes = bytes.saturating_add(text.len());
-            let parsed = parse(&text);
+            let parsed = parse_with(&text, dialect);
             if parsed.syntax().text() != text {
                 ok = false;
                 println!(
@@ -114,7 +122,7 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
                 }
             }
             if options.deletions {
-                let report = check_deletions(&text);
+                let report = check_deletions_with(&text, dialect);
                 deletions = report.deletions.saturating_add(deletions);
                 silent = report.silent.saturating_add(silent);
                 for failure in &report.failures {
@@ -207,6 +215,26 @@ mod tests {
         assert!(
             run(&["--vanilla"], &dir).unwrap(),
             "the error is in no listed file"
+        );
+    }
+
+    #[test]
+    fn fteqcc_files_parse_and_delete_under_the_fteqcc_profile() {
+        let dir = codebase(
+            "parse-fteqcc",
+            &[
+                ("progs.src", "progs.dat\nworld.qc\n"),
+                (
+                    "world.qc",
+                    "float x;\nvoid() main = { for (int i = 0; i < 3; i++) x += i; };\n",
+                ),
+            ],
+        );
+        assert!(run(&["--fteqcc", "--deletions"], &dir).unwrap());
+        assert!(run(&["--fteqcc", "--vanilla"], &dir).unwrap());
+        assert!(
+            !run(&["--vanilla"], &dir).unwrap(),
+            "the vanilla profile rejects the FTEQCC forms"
         );
     }
 
