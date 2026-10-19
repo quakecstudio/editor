@@ -40,10 +40,13 @@ rerelease-ctf rerelease-mg3`), parses every `.qc` and `.qh` file with the vanill
 rejects into one of the classes below by its signature token. It fails if a class is found in
 the source that no section here names, so the spec and the source cannot drift apart. The
 recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/), and covers
-FTE-2 to FTE-16. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
+FTE-2 to FTE-21. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
 (P2-03) parsed and resolved every module of the six codebases with zero errors
-(`cargo xtask fteqcc-profile`); their constructs have no signature token that check scans
-for.
+(`cargo xtask fteqcc-profile`), and their classes were added to the check after (P2-33).
+FTE-22 is name resolution, which has no syntax of its own, so it has no class. The hanging
+`;` of FTE-21.5 exists only once a macro whose body ends in `;` is expanded, so the check finds
+it as a use of such a macro followed by `;`, in a file the vanilla parser may accept as
+written.
 
 ## FTE-1 The rerelease fits version 6
 

@@ -1,28 +1,51 @@
 # Recorded run of `cargo xtask fteqcc-coverage` over the six rerelease codebases
-# (id-Software/quake-rerelease-qc@634eefab09a77eb7b5f5ca7078ba3d8784a91142), on 2026-10-17.
+# (id-Software/quake-rerelease-qc@634eefab09a77eb7b5f5ca7078ba3d8784a91142), on 2026-10-19.
 # Paths are shown relative to each codebase root. Regenerate with:
 #   cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 rerelease-ctf rerelease-mg3
 #   cargo xtask fteqcc-coverage <cache>/codebase/rerelease <cache>/codebase/rerelease-hipnotic ...
 
-fteqcc-coverage: rerelease: 33 files, 10 non-vanilla constructs in 6 classes
+fteqcc-coverage: rerelease: 33 files, 28 non-vanilla constructs in 13 classes
   switch                     1  FTE-3
   case/default               1  FTE-3
   break/continue             1  FTE-4
   compound assignment        3  FTE-6
-  ?: operator                2  FTE-8
   array                      2  FTE-13
-fteqcc-coverage: rerelease-hipnotic: 62 files, 6 non-vanilla constructs in 4 classes
-  compound assignment        1  FTE-6
-  ?: operator                2  FTE-8
-  array                      2  FTE-13
-  enum                       1  FTE-15
-fteqcc-coverage: rerelease-rogue: 62 files, 6 non-vanilla constructs in 5 classes
+  C-style function           7  FTE-17
+  body without =             5  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  -> (+) (-)                 1  FTE-19
+  .5 literal                 1  FTE-20
+  f suffix                   1  FTE-20
+  local without local        3  FTE-21
+fteqcc-coverage: rerelease-hipnotic: 62 files, 19 non-vanilla constructs in 13 classes
   compound assignment        1  FTE-6
   ?: operator                1  FTE-8
+  array                      2  FTE-13
+  enum                       1  FTE-15
+  named enum type            1  FTE-15
+  C-style function           3  FTE-17
+  body without =             2  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  -> (+) (-)                 1  FTE-19
+  .5 literal                 1  FTE-20
+  f suffix                   1  FTE-20
+  local without local        3  FTE-21
+fteqcc-coverage: rerelease-rogue: 62 files, 18 non-vanilla constructs in 12 classes
+  compound assignment        1  FTE-6
   var                        1  FTE-11
   array                      2  FTE-13
   enum                       1  FTE-15
-fteqcc-coverage: rerelease-mg1: 47 files, 64 non-vanilla constructs in 15 classes
+  named enum type            1  FTE-15
+  C-style function           3  FTE-17
+  body without =             2  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  .5 literal                 1  FTE-20
+  f suffix                   1  FTE-20
+  local without local        3  FTE-21
+fteqcc-coverage: rerelease-mg1: 47 files, 154 non-vanilla constructs in 30 classes
   for loop                   1  FTE-2
   switch                     3  FTE-3
   case/default               3  FTE-3
@@ -30,7 +53,7 @@ fteqcc-coverage: rerelease-mg1: 47 files, 64 non-vanilla constructs in 15 classe
   ++/--                      9  FTE-5
   compound assignment       14  FTE-6
   % operator                 1  FTE-7
-  ?: operator                7  FTE-8
+  ?: operator                4  FTE-8
   const                     15  FTE-10
   var                        1  FTE-11
   nosave                     1  FTE-12
@@ -38,13 +61,35 @@ fteqcc-coverage: rerelease-mg1: 47 files, 64 non-vanilla constructs in 15 classe
   typedef/struct             1  FTE-14
   enum                       2  FTE-15
   #pragma                    1  FTE-16
-fteqcc-coverage: rerelease-ctf: 22 files, 10 non-vanilla constructs in 5 classes
+  C-style function          22  FTE-17
+  body without =            21  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  default parameter          4  FTE-18
+  bitwise operator           8  FTE-19
+  -> (+) (-)                 5  FTE-19
+  unary - +                  2  FTE-19
+  cast                       1  FTE-19
+  .5 literal                 1  FTE-20
+  f suffix                   1  FTE-20
+  string escape              1  FTE-20
+  local without local       23  FTE-21
+  field/function local       1  FTE-21
+  hanging ;                  1  FTE-21
+fteqcc-coverage: rerelease-ctf: 22 files, 24 non-vanilla constructs in 12 classes
   switch                     1  FTE-3
   case/default               1  FTE-3
   compound assignment        5  FTE-6
-  ?: operator                2  FTE-8
   array                      1  FTE-13
-fteqcc-coverage: rerelease-mg3: 65 files, 113 non-vanilla constructs in 15 classes
+  C-style function           5  FTE-17
+  body without =             4  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  bitwise operator           1  FTE-19
+  .5 literal                 1  FTE-20
+  local without local        2  FTE-21
+  missing ;                  1  FTE-21
+fteqcc-coverage: rerelease-mg3: 65 files, 219 non-vanilla constructs in 34 classes
   for loop                   2  FTE-2
   switch                     6  FTE-3
   case/default               6  FTE-3
@@ -52,14 +97,33 @@ fteqcc-coverage: rerelease-mg3: 65 files, 113 non-vanilla constructs in 15 class
   ++/--                     24  FTE-5
   compound assignment       30  FTE-6
   % operator                 3  FTE-7
-  ?: operator               10  FTE-8
+  ?: operator                4  FTE-8
   const                     17  FTE-10
   var                        1  FTE-11
   nosave                     1  FTE-12
   array                      2  FTE-13
   typedef/struct             1  FTE-14
   enum                       3  FTE-15
+  named enum type            1  FTE-15
   #pragma                    1  FTE-16
+  C-style function          23  FTE-17
+  body without =            23  FTE-17
+  named builtin              1  FTE-17
+  ... after parameters       1  FTE-18
+  default parameter          4  FTE-18
+  named-type parameter       1  FTE-18
+  bitwise operator           8  FTE-19
+  -> (+) (-)                10  FTE-19
+  unary - +                  2  FTE-19
+  a -1                       2  FTE-19
+  cast                       1  FTE-19
+  .5 literal                 1  FTE-20
+  f suffix                   1  FTE-20
+  string escape              1  FTE-20
+  local without local       28  FTE-21
+  field/function local       1  FTE-21
+  empty block                2  FTE-21
+  hanging ;                  1  FTE-21
 fteqcc-coverage: total non-vanilla constructs by class:
   for loop                   3  FTE-2 (in spec)
   switch                    11  FTE-3 (in spec)
@@ -68,12 +132,32 @@ fteqcc-coverage: total non-vanilla constructs by class:
   ++/--                     33  FTE-5 (in spec)
   compound assignment       54  FTE-6 (in spec)
   % operator                 4  FTE-7 (in spec)
-  ?: operator               24  FTE-8 (in spec)
+  ?: operator                9  FTE-8 (in spec)
   const                     32  FTE-10 (in spec)
   var                        3  FTE-11 (in spec)
   nosave                     2  FTE-12 (in spec)
   array                     11  FTE-13 (in spec)
   typedef/struct             2  FTE-14 (in spec)
   enum                       7  FTE-15 (in spec)
+  named enum type            3  FTE-15 (in spec)
   #pragma                    2  FTE-16 (in spec)
+  C-style function          63  FTE-17 (in spec)
+  body without =            57  FTE-17 (in spec)
+  named builtin              6  FTE-17 (in spec)
+  ... after parameters       6  FTE-18 (in spec)
+  default parameter          8  FTE-18 (in spec)
+  named-type parameter       1  FTE-18 (in spec)
+  bitwise operator          17  FTE-19 (in spec)
+  -> (+) (-)                17  FTE-19 (in spec)
+  unary - +                  4  FTE-19 (in spec)
+  a -1                       2  FTE-19 (in spec)
+  cast                       2  FTE-19 (in spec)
+  .5 literal                 6  FTE-20 (in spec)
+  f suffix                   5  FTE-20 (in spec)
+  string escape              2  FTE-20 (in spec)
+  local without local       62  FTE-21 (in spec)
+  field/function local       2  FTE-21 (in spec)
+  missing ;                  1  FTE-21 (in spec)
+  empty block                2  FTE-21 (in spec)
+  hanging ;                  2  FTE-21 (in spec)
 fteqcc-coverage: every construct is in the spec
