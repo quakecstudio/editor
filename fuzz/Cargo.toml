@@ -16,6 +16,7 @@ libfuzzer-sys = { version = "=0.4.13", default-features = false, features = ["li
 qc-engines = { path = "../crates/qc-engines" }
 qc-lexer = { path = "../crates/qc-lexer" }
 qc-progs = { path = "../crates/qc-progs", features = ["fte"] }
+qc-preproc = { path = "../crates/qc-preproc" }
 qc-project = { path = "../crates/qc-project" }
 qc-sema = { path = "../crates/qc-sema" }
 qc-syntax = { path = "../crates/qc-syntax" }
@@ -47,6 +48,13 @@ bench = false
 [[bin]]
 name = "qc-vm"
 path = "fuzz_targets/qc_vm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "qc-preproc"
+path = "fuzz_targets/qc_preproc.rs"
 test = false
 doc = false
 bench = false

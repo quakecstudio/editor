@@ -244,6 +244,7 @@ dependencies = [
  "libfuzzer-sys",
  "qc-engines",
  "qc-lexer",
+ "qc-preproc",
  "qc-progs",
  "qc-project",
  "qc-sema",

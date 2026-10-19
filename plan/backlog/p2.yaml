@@ -839,6 +839,28 @@ issues:
   - '`cargo xtask readiness spec` reports qc-sema and qc-engines at 100% with no statement of docs/spec/coverage-baseline.tsv in either crate''s Spec sections, and ENGT-4.5 says whether `#0x0:NAME` is keyed by name, with a test'
   verify:
   - The corpus job, cargo test -p qc-sema, the Fuzz workflow run, a Readiness run's spec job
+- key: P2-55
+  title: Restore the L2 syntax crates to their readiness ratchets
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: M
+  reqs:
+  - TEST-1
+  - TEST-2
+  depends:
+  - P2-39
+  - P2-40
+  - P2-41
+  - P2-42
+  deliverable:
+  - 'The Readiness run 39303208067 on main (58c060c) failed cargo xtask ratchet for the L2 syntax layer after the FTEQCC work of P2-39 to P2-42: qc-lexer lines 96.2% (needs 100), branches 89.8% (needs 100), mutation 210 of 232 (needs 100); qc-preproc mutation 392 of 421 (needs 98); qc-project branches 92.1% (needs 93); qc-syntax lines 94.9% (needs 97), branches 84.7% (needs 92), mutation 919 of 1018 (needs 100)'
+  - 'crates/qc-lexer, crates/qc-preproc, crates/qc-project and crates/qc-syntax: tests of real behaviour, each citing the spec statement it pins, that kill every surviving mutant and cover the missed lines and branches; a mutant is recorded under equivalent_mutants in ratchets.toml only when no input can distinguish it, with the reason; no ratchet is lowered and no code is excluded from measurement'
+  acceptance:
+  - 'A Readiness run on main for qc-lexer qc-preproc qc-syntax qc-project passes cargo xtask ratchet: every crate at or above its ratchets.toml minimums, with no surviving mutant that is not killed or listed under equivalent_mutants'
+  verify:
+  - The Readiness workflow run linked in the PR
 - key: P2-56
   title: Key FTEQCC builtin numbers by the value FTEQCC reads
   labels:
@@ -1018,6 +1040,7 @@ issues:
   - P2-51
   - P2-53
   - P2-54
+  - P2-55
   - P2-56
   - P2-57
   deliverable:

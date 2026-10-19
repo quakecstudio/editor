@@ -524,11 +524,6 @@ mod tests {
         ] {
             assert!(!eval(expr, &m), "{expr:?}");
         }
-        let deep = format!("{}1{}", "(".repeat(100), ")".repeat(100));
-        assert!(!eval(&deep, &m));
-        let shallow = format!("{}1{}", "(".repeat(10), ")".repeat(10));
-        assert!(eval(&shallow, &m));
-        assert!(!eval(&"!".repeat(100), &m));
     }
 
     // spec PRJ-5.5: a macro's text is read as a decimal integer, as atoi reads it
@@ -635,9 +630,102 @@ mod tests {
         ] {
             assert!(!fte_eval(expr, &m), "{expr:?}");
         }
-        let deep = format!("{}1{}", "(".repeat(100), ")".repeat(100));
-        assert!(!fte_eval(&deep, &m));
-        let shallow = format!("{}1{}", "(".repeat(5), ")".repeat(5));
-        assert!(fte_eval(&shallow, &m));
+    }
+
+    /// `value` inside `n` parentheses.
+    fn in_parens(n: usize, value: &str) -> String {
+        format!("{}{value}{}", "(".repeat(n), ")".repeat(n))
+    }
+
+    // spec PRJ-5.10: a value inside up to 63 parentheses and `!`s is read, and one inside more
+    // is false, whatever it would be; `||` and `&&` chain with no limit
+    #[test]
+    fn vanilla_nesting_limit() {
+        let m = macros();
+        assert!(eval(&in_parens(63, "1"), &m));
+        assert!(!eval(&in_parens(64, "1"), &m));
+        // `!` 63 times over 0 is 1; 64 times over 1 would be 1 too.
+        assert!(eval(&format!("{}0", "!".repeat(63)), &m));
+        assert!(!eval(&format!("{}1", "!".repeat(64)), &m));
+        assert!(eval(
+            &format!("{}{}", "!".repeat(31), in_parens(32, "0")),
+            &m
+        ));
+        assert!(!eval(
+            &format!("{}{}", "!".repeat(32), in_parens(32, "0")),
+            &m
+        ));
+        assert!(eval(&format!("{}1", "0 || ".repeat(1000)), &m));
+        assert!(eval(&format!("1{}", " && 1".repeat(1000)), &m));
+        assert!(!eval(&in_parens(100, "1"), &m));
+        assert!(!eval(&"!".repeat(100), &m));
+    }
+
+    // spec FTEF-14.12: under the FTEQCC profile the reader nests 64 levels, each parenthesis,
+    // `!` and right side of an operator one, and an expression nested deeper is false
+    #[test]
+    fn fteqcc_nesting_limit() {
+        let m = macros();
+        assert!(fte_eval(&in_parens(64, "1"), &m));
+        assert!(!fte_eval(&in_parens(65, "1"), &m));
+        assert!(fte_eval(&format!("{}1", "!".repeat(64)), &m));
+        assert!(!fte_eval(&format!("{}0", "!".repeat(65)), &m));
+        assert!(fte_eval(&format!("{}1", "0 || ".repeat(64)), &m));
+        assert!(!fte_eval(&format!("{}1", "0 || ".repeat(65)), &m));
+        assert!(fte_eval(&format!("1{}", " == 1".repeat(64)), &m));
+        assert!(!fte_eval(&format!("1{}", " == 1".repeat(65)), &m));
+        assert!(fte_eval(
+            &format!("{}{}", "!".repeat(32), in_parens(32, "1")),
+            &m
+        ));
+        assert!(!fte_eval(
+            &format!("{}{}", "!".repeat(33), in_parens(32, "0")),
+            &m
+        ));
+    }
+
+    // spec PRJ-5.5: `>` compares as in C
+    #[test]
+    fn greater_than() {
+        let m = macros();
+        assert!(eval("2 > 1", &m));
+        assert!(eval("TWO > ONE", &m));
+        assert!(!eval("1 > 2", &m));
+    }
+
+    // spec FTEF-14.11: each comparison compares as its operator says, at the boundary too
+    #[test]
+    fn fteqcc_comparison_operators() {
+        let m = macros();
+        for (expr, want) in [
+            ("1 <= 2", true),
+            ("3 <= 2", false),
+            ("3 >= 2", true),
+            ("1 >= 2", false),
+            ("2 > 1", true),
+            ("2 > 2", false),
+            ("1 > 2", false),
+            ("2 < 2", false),
+            ("1 < 2", true),
+            ("1 != 2", true),
+        ] {
+            assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
+    }
+
+    // spec FTEF-14.11: a word ends at `//` but not at a lone `/` or `*`, and a comment can
+    // start only a word
+    #[test]
+    fn fteqcc_words_and_slashes() {
+        let m = macros();
+        for (expr, want) in [
+            ("1*", true),
+            ("ONE/2", false),
+            ("ONE// c", true),
+            ("ONE//", true),
+            ("/* c */ 1", false),
+        ] {
+            assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
     }
 }

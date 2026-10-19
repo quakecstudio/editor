@@ -1303,3 +1303,162 @@ fn dot_dot_token() {
         vec![name("a"), punct(Punct::Dot), punct(Punct::Dot), name("b")]
     );
 }
+
+/// The string token texts of an FTEQCC lex, in order.
+fn fte_strings(source: &[u8]) -> Vec<Vec<u8>> {
+    lex_with(source, Dialect::Fteqcc)
+        .tokens
+        .into_iter()
+        .filter_map(|t| match t.kind {
+            TokenKind::String(bytes) => Some(bytes),
+            _ => None,
+        })
+        .collect()
+}
+
+// spec FTEF-14.3: the text of `#warning`, `#error` and `#message` is the rest of the line as
+// written, blanks before it skipped, so a `'` in it opens no vector
+#[test]
+fn message_directive_text_is_the_raw_line() {
+    assert_eq!(
+        fte_kinds(b"#warning doesn't work\nx"),
+        vec![
+            punct(Punct::Hash),
+            name("warning"),
+            TokenKind::String(b"doesn't work".to_vec()),
+            name("x")
+        ]
+    );
+    assert_eq!(fte_strings(b"#error \t bad"), vec![b"bad".to_vec()]);
+    assert_eq!(fte_strings(b"#message\thello"), vec![b"hello".to_vec()]);
+    assert_eq!(fte_strings(b"  #warning a b\r\nx"), vec![b"a b".to_vec()]);
+    assert_eq!(fte_strings(b"#warning a\rx"), vec![b"a".to_vec()]);
+    // A line that ends at once has no text.
+    assert_eq!(
+        fte_kinds(b"#warning\nx"),
+        vec![punct(Punct::Hash), name("warning"), name("x")]
+    );
+    assert_eq!(fte_kinds(b"#warning   ").len(), 2);
+    // Blanks between the `#` and the word are allowed.
+    assert_eq!(fte_strings(b"# warning a"), vec![b"a".to_vec()]);
+}
+
+// spec FTEF-14.3: only a `#warning`, `#error` or `#message` directive reads its line raw:
+// another word, a `#` not starting its line, a `#` on an earlier line or the vanilla profile
+// lex the line as tokens
+#[test]
+fn message_text_needs_the_directive() {
+    let none: Vec<Vec<u8>> = Vec::new();
+    assert_eq!(fte_strings(b"#define a b"), none);
+    assert_eq!(fte_strings(b"warning a b"), none);
+    assert_eq!(fte_strings(b"+warning a"), none);
+    assert_eq!(fte_strings(b"x #warning a"), none);
+    assert_eq!(fte_strings(b"#\nwarning a"), none);
+    assert_eq!(
+        kinds(b"#warning a"),
+        vec![punct(Punct::Hash), name("warning"), name("a")]
+    );
+}
+
+// spec FTEF-3.2: a leading `0` reads base 8, so an `8` or `9` ends the number; `0x` reads base
+// 16, so a `g` ends it
+#[test]
+fn a_digit_outside_the_base_ends_the_number() {
+    assert_eq!(
+        fte_kinds(b"08"),
+        vec![TokenKind::Float(0.0), TokenKind::Float(8.0)]
+    );
+    assert_eq!(fte_kinds(b"0x1g"), vec![TokenKind::Float(1.0), name("g")]);
+    assert_eq!(fte_kinds(b"0xf"), vec![TokenKind::Float(15.0)]);
+    assert_eq!(fte_kinds(b"07"), vec![TokenKind::Float(7.0)]);
+}
+
+// spec FTEF-13.4: `\u` takes four hex digits, as many as there are
+#[test]
+fn short_unicode_escape() {
+    assert_eq!(fte_string(br#""\u0041B""#), (b"AB".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""\u41""#), (b"A".to_vec(), vec![]));
+    assert_eq!(fte_kinds(br"'\u0041'"), vec![TokenKind::Float(65.0)]);
+}
+
+// spec FTEF-13.4: bronze text sets the high bit of each ASCII byte and leaves a byte of 0x80
+// or more as it is
+#[test]
+fn bronze_text_keeps_high_bytes() {
+    assert_eq!(fte_string(b"\"\\b\xe9a\"").0, b"\xe9\xe1".to_vec());
+    assert_eq!(fte_string(b"\"\\s\x80\"").0, b"\x80".to_vec());
+}
+
+// spec FTEF-13.4: `\{n}` reads digits to the `}`; at the end of the file the code ends there
+// and the string is unterminated (QCD-2.1)
+#[test]
+fn braced_escape_at_end_of_file() {
+    assert_eq!(fte_string(br#""\{65"#), (b"A".to_vec(), vec![Code::E0101]));
+    assert_eq!(fte_string(br#""\{x41}""#), (b"A".to_vec(), vec![]));
+}
+
+// spec FTEF-13.3: an escaped character constant is the escape's code, and a byte with no
+// escape of its own, `\"` among them, is itself
+#[test]
+fn escaped_character_constants() {
+    assert_eq!(fte_kinds(br#"'\"'"#), vec![TokenKind::Float(34.0)]);
+    assert_eq!(fte_kinds(br"'\n'"), vec![TokenKind::Float(10.0)]);
+    assert_eq!(fte_kinds(br"'\t'"), vec![TokenKind::Float(9.0)]);
+    assert_eq!(fte_kinds(br"'\''"), vec![TokenKind::Float(39.0)]);
+}
+
+// spec FTEF-13.3: a `'` with nothing after it opens a vector, which is bad
+#[test]
+fn lone_quote_is_a_bad_vector() {
+    let lexed = lex_with(b"'", Dialect::Fteqcc);
+    assert_eq!(lexed.tokens.len(), 1);
+    assert_eq!(lexed.tokens[0].kind, TokenKind::Vector([0.0; 3]));
+    assert_eq!(fte_codes(b"'"), vec![Code::E0104]);
+}
+
+// spec FTE-20.2: a vector component may end in the float suffix `f`, which is not part of
+// its value
+#[test]
+fn vector_components_take_the_float_suffix() {
+    let lexed = lex_with(b"'1f 2f 3.5f'", Dialect::Fteqcc);
+    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
+    assert_eq!(lexed.tokens[0].kind, TokenKind::Vector([1.0, 2.0, 3.5]));
+    assert_eq!(codes(b"'1f 2 3'")[0], Code::E0104);
+}
+
+// spec FTEF-13.2: a `\` before a CR LF joins the lines, the LF included
+#[test]
+fn continuation_before_crlf_keeps_the_next_line_start() {
+    let lexed = lex_with(b"a \\\r\n\nb", Dialect::Fteqcc);
+    assert!(lexed.diagnostics.is_empty());
+    assert_eq!(lexed.tokens.len(), 2);
+    assert_eq!(lexed.tokens[1].span, Span::new(6, 7));
+}
+
+// spec FTEF-18.16: `$flush` and `$frame_reset` take the words after them
+#[test]
+fn flush_takes_its_words() {
+    use super::FrameCommand;
+    assert_eq!(
+        fte_kinds(b"$flush a b\nx"),
+        vec![TokenKind::FrameCommand(FrameCommand::Flush), name("x")]
+    );
+    assert_eq!(
+        fte_kinds(b"$frame_reset a"),
+        vec![TokenKind::FrameCommand(FrameCommand::Reset)]
+    );
+}
+
+// spec FTEF-18.13: a frame macro name ends at a comment, but a `/` before anything else is
+// part of the name
+#[test]
+fn frame_names_and_slashes() {
+    let names = |source: &[u8]| match &lex_with(source, Dialect::Fteqcc).tokens[0].kind {
+        TokenKind::Frames(names) => names.iter().map(|n| n.name.clone()).collect::<Vec<_>>(),
+        other => panic!("not a frame list: {other:?}"),
+    };
+    assert_eq!(names(b"$frame a /b"), ["a", "/b"]);
+    assert_eq!(names(b"$frame a // b c\nd"), ["a"]);
+    assert_eq!(names(b"$frame a /* b */ c"), ["a"]);
+    assert_eq!(fte_kinds(b"$frame a // b c\nd")[1..], [name("d")]);
+}

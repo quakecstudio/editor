@@ -4,13 +4,25 @@
 
 use proptest::prelude::*;
 
-use super::SAMPLE;
+use super::{SAMPLE, SAMPLE_FTEQCC};
 use crate::ast::AstNode as _;
-use crate::{SyntaxKind, parse};
+use crate::{Dialect, SyntaxKind, parse, parse_with};
 
 /// Checks that the tokens of `root` tile `source` exactly and give it back.
 fn assert_lossless(source: &[u8]) {
-    let root = parse(source).syntax();
+    assert_lossless_in(source, Dialect::Vanilla);
+}
+
+/// [`assert_lossless`] with `source` parsed in `dialect`, and every diagnostic inside it.
+fn assert_lossless_in(source: &[u8], dialect: Dialect) {
+    let parsed = parse_with(source, dialect);
+    for d in parsed.diagnostics() {
+        assert!(
+            d.span.start <= d.span.end && d.span.end <= source.len(),
+            "{d:?}"
+        );
+    }
+    let root = parsed.syntax();
     assert_eq!(root.kind(), SyntaxKind::SourceFile);
     assert_eq!(root.text(), source);
     assert_eq!(root.span().start, 0);
@@ -50,6 +62,12 @@ fn empty_file() {
 #[test]
 fn sample_is_lossless() {
     assert_lossless(SAMPLE.as_bytes());
+}
+
+#[test]
+fn fteqcc_sample_is_lossless() {
+    assert_lossless_in(SAMPLE_FTEQCC.as_bytes(), Dialect::Fteqcc);
+    assert_lossless_in(SAMPLE_FTEQCC.as_bytes(), Dialect::Vanilla);
 }
 
 #[test]
@@ -224,6 +242,71 @@ fn fragment() -> impl Strategy<Value = String> {
     ]
 }
 
+/// Tokens and shapes of the FTEQCC dialect (`dialect-fteqcc-rerelease.md`,
+/// `dialect-fteqcc.md`), with the vanilla ones, for generated sources.
+fn fteqcc_fragment() -> impl Strategy<Value = String> {
+    let fteqcc = prop_oneof![
+        prop_oneof![
+            Just("++"),
+            Just("--"),
+            Just("+="),
+            Just("-="),
+            Just("*="),
+            Just("/="),
+            Just("%"),
+            Just("?"),
+            Just(":"),
+            Just("::"),
+            Just("->"),
+            Just(".."),
+            Just("~"),
+            Just("^"),
+            Just("<<"),
+            Just(">>="),
+            Just("&~="),
+            Just("(+)"),
+            Just("(-)"),
+        ],
+        prop_oneof![
+            Just("const"),
+            Just("var"),
+            Just("nosave"),
+            Just("static"),
+            Just("int"),
+            Just("unsigned"),
+            Just("switch (a) { case 1: break; default: }"),
+            Just("for (int i = 0; i < 3; i++)"),
+            Just("typedef struct { float x; } T;"),
+            Just("struct s { float a; };"),
+            Just("enum { A, B = 2 };"),
+            Just("class C : D { float x; };"),
+            Just("accessor h : float { get float v = f; };"),
+            Just("sizeof(int)"),
+            Just("(float)"),
+            Just("[1, 2, 3]"),
+            Just("[++ 1 .. 4]"),
+            Just("goto l;"),
+            Just("l:"),
+            Just("__until"),
+            Just("#0:name"),
+        ],
+        prop_oneof![
+            Just("0x1f"),
+            Just("1.0f"),
+            Just(".5"),
+            Just("'a'"),
+            Just("'8 8'"),
+            Just("\"\\x41\""),
+            Just("#if 1\n"),
+            Just("#elif 0\n"),
+            Just("#warning w\n"),
+            Just("$framevalue 3\n"),
+            Just("\\\n"),
+        ],
+    ];
+    prop_oneof![fteqcc.prop_map(str::to_owned), fragment()]
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
@@ -244,6 +327,30 @@ proptest! {
     fn parsing_is_deterministic(parts in proptest::collection::vec(fragment(), 0..40)) {
         let text = parts.join(" ");
         prop_assert_eq!(parse(text.as_bytes()), parse(text.as_bytes()));
+    }
+
+    // Under the FTEQCC profile the tree gives back any bytes, and parsing always ends.
+    #[test]
+    fn fteqcc_any_bytes_round_trip(source in proptest::collection::vec(any::<u8>(), 0..512)) {
+        assert_lossless_in(&source, Dialect::Fteqcc);
+    }
+
+    // FTEQCC token soup round-trips under the FTEQCC profile, and under vanilla.
+    #[test]
+    fn fteqcc_token_soup_round_trips(parts in proptest::collection::vec(fteqcc_fragment(), 0..80)) {
+        let text = parts.join(" ");
+        assert_lossless_in(text.as_bytes(), Dialect::Fteqcc);
+        assert_lossless_in(text.as_bytes(), Dialect::Vanilla);
+    }
+
+    // Under the FTEQCC profile parsing the same text twice gives the same tree.
+    #[test]
+    fn fteqcc_parsing_is_deterministic(parts in proptest::collection::vec(fteqcc_fragment(), 0..40)) {
+        let text = parts.join(" ");
+        prop_assert_eq!(
+            parse_with(text.as_bytes(), Dialect::Fteqcc),
+            parse_with(text.as_bytes(), Dialect::Fteqcc)
+        );
     }
 }
 
