@@ -3,6 +3,7 @@
 //! The FTEQCC parse on malformed and cut-off input: each error is reported, the tree keeps
 //! every byte, and the parse goes on (QCD-1.4); and the valid forms beside them.
 
+use crate::ast::{AstNode as _, SimpleType};
 use crate::{Code, Dialect, Parse, SyntaxKind, parse_with};
 
 /// Parses `source` under the FTEQCC dialect.
@@ -283,4 +284,83 @@ fn declaration_shapes_in_a_body() {
         top_kinds(&long),
         [SyntaxKind::Declaration, SyntaxKind::Declaration]
     );
+}
+
+/// The statement kinds of the body of `f` in `in_body(body)`.
+fn body_kinds(body: &str) -> Vec<SyntaxKind> {
+    let parsed = fte(&in_body(body));
+    let block = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::Block)
+        .unwrap();
+    block.children().map(|n| n.kind()).collect()
+}
+
+// spec FTEF-16.1: a statement that starts with a qualifier or a C type word declares locals,
+// whatever follows it
+#[test]
+fn qualifier_or_c_word_alone_declares() {
+    assert_eq!(body_kinds("int;"), [SyntaxKind::LocalDecl]);
+    assert_eq!(body_kinds("static;"), [SyntaxKind::LocalDecl]);
+}
+
+// spec FTEF-16.1: in a `for` clause too, a name followed by a name declares a local, whatever
+// follows them
+#[test]
+fn a_for_clause_type_and_name_declare() {
+    let clause = fte(&in_body("for (Thing t) a = 1;"))
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::ForClause)
+        .unwrap();
+    assert!(clause.children().any(|n| n.kind() == SyntaxKind::LocalDecl));
+}
+
+// spec FTEF-2.4: only the C type words combine; `float` is a type of its own name, so a C word
+// after it is the declarator's name
+#[test]
+fn a_c_word_after_a_vanilla_type_is_a_name() {
+    let ty = fte("float long x;\n")
+        .syntax()
+        .descendants()
+        .find_map(SimpleType::cast)
+        .unwrap();
+    assert_eq!(ty.text(), "float");
+}
+
+// spec FTEF-15.3: a function-pointer parameter is `(*name)`; a `(` without the `*` ends the
+// parameter
+#[test]
+fn a_parenthesis_without_a_star_is_no_function_pointer() {
+    assert_eq!(
+        fte_errors("void(float &(x)) f;\n").first(),
+        Some(&Code::E0204)
+    );
+}
+
+// spec FTEF-9.3: only `public`, `private`, `protected`, `virtual` and `nonvirtual` are labels
+// spec FTEF-9.4: only a constructor, of function type, may have no name
+#[test]
+fn class_labels_and_nameless_members() {
+    assert!(!fte_errors("class C {\n\tfoo:\n};\n").is_empty());
+    assert!(!fte_errors("class C {\n\tfloat;\n};\n").is_empty());
+    assert_eq!(fte_errors("class C {\n\tC(void);\n};\n"), []);
+}
+
+// spec FTEF-18.3: the rest of a state header that went wrong is one error node
+#[test]
+fn a_bad_state_header_is_an_error_node() {
+    let parsed = fte("void() f = [1, g x y] {};\n");
+    let state = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::State)
+        .unwrap();
+    let errors: Vec<String> = state
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::Error)
+        .map(|n| String::from_utf8_lossy(&n.text()).trim().to_owned())
+        .collect();
+    assert_eq!(errors, ["x y"]);
 }

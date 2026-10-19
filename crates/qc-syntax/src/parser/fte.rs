@@ -396,14 +396,9 @@ impl Parser<'_> {
         }
         if let Some(keyword) = super::type_keyword(&text) {
             self.start_node(K::SimpleType);
+            // A vanilla type word is a type of its own name, which `QCC_PR_ParseType` finds
+            // with `QCC_TypeForName` before its C type words, so no C word joins it (FTEF-2.4).
             self.bump_as(keyword);
-            // `float` and `double` after a C type word, `long double` (FTEF-2.4).
-            while self
-                .current()
-                .is_some_and(|t| t.kind == K::Name && is_c_type_word(&t.text))
-            {
-                self.bump();
-            }
             self.finish_node();
             return true;
         }

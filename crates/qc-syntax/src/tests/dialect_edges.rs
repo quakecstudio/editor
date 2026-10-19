@@ -290,6 +290,12 @@ fn for_clauses_and_the_useful_flag() {
         pointless("for (a = 1; f(); b++) c = 1;\nif (a, b) c = 1;"),
         Vec::<String>::new()
     );
+    // The condition starts with the flag an earlier condition left, so its `a` is not warned.
+    assert_eq!(
+        pointless("if (f()) c = 1;\nfor (; a, a < 1; ) c = 1;"),
+        Vec::<String>::new()
+    );
+    assert_eq!(pointless("for (; a, a < 1; ) c = 1;"), ["a"]);
 }
 
 // spec FTEF-16.9: the first clause of a `for` may declare locals with `local`, a type word or a
