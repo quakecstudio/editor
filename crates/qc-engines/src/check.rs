@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_lexer::{Dialect, TokenKind};
 use qc_project::ModuleKind;
 use qc_sema::{DefKind, FileId, ModuleIndex};
 use qc_syntax::ast::{self, AstNode as _};
@@ -161,11 +162,13 @@ fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
 }
 
 /// The engine name of a `#0:NAME` initialiser whose number literal is `literal` (FTE-17.4,
-/// ENGT-4.5): the name after the `:` when the number is zero, a literal whose digits are all
-/// zeros, `.0` included.
+/// ENGT-4.5): the name after the `:` when the literal is zero as FTEQCC reads it, any number
+/// form whose value is 0 (`0`, `00`, `.0`, `0x0`, `0i`).
 fn engine_name(builtin: &ast::Builtin, literal: &str) -> Option<String> {
-    let zero =
-        literal.bytes().any(|b| b == b'0') && literal.bytes().all(|b| b == b'0' || b == b'.');
+    // ENGT-4.5: `QCC_PR_LexNumber` reads the literal and `#` takes it as `binum` 0 whenever
+    // its value is 0; a name is in the initialiser only under FTEQCC, so it is lexed so.
+    let lexed = qc_lexer::lex_with(literal.as_bytes(), Dialect::Fteqcc);
+    let zero = matches!(lexed.tokens.as_slice(), [token] if token.kind == TokenKind::Float(0.0));
     if !zero {
         return None;
     }

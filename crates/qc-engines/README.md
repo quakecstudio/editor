@@ -13,10 +13,10 @@ KEX (the 2021 rerelease).
 - **Layer:** L3 semantics. It depends on `qc-sema` (L3), `qc-syntax` and `qc-project` (L2),
   `qc-builtins` (L1, id's vanilla table) and `qc-diag` (L0).
 - **Spec sections:** ENGT-1 (sources), ENGT-3 (engines) and ENGT-4 (the missing-builtin
-  warning) of [`docs/spec/engine-targets.md`](../../docs/spec/engine-targets.md), and
-  QCD-7.17 (`W0311`) of
-  [`docs/spec/language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The
+  warning) of [`docs/spec/engine-targets.md`](../../docs/spec/engine-targets.md). The
   generator implements ENGT-2. Written from the spec, not ported.
+- **Spec statements:** QCD-7.17 (`W0311`) of
+  [`docs/spec/language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
 - **Shipped:** yes.
 
 ## Sources and generation
