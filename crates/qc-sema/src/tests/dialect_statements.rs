@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Resolution of FTEQCC's further statements and terms (`docs/spec/dialect-fteqcc.md`, FTEF-18),
-//! the builtin redeclaration FTEQCC accepts (FTEF-17.9), and `#pragma autoproto` (FTEF-12.9).
+//! the builtin redeclaration FTEQCC accepts (FTEF-17.9), and `#pragma autoproto` (FTEF-12.10).
 
 use std::path::PathBuf;
 
@@ -67,6 +67,18 @@ fn analysis_errors(analysis: &ModuleAnalysis) -> Vec<Code> {
         .collect()
 }
 
+/// The diagnostics of an analysis with code `code`, as `file:start message`.
+fn analysis_with(analysis: &ModuleAnalysis, code: Code) -> Vec<String> {
+    analysis
+        .diagnostics()
+        .filter(|d| d.diagnostic.code == code)
+        .map(|d| {
+            let span = d.diagnostic.span;
+            format!("{}:{} {}", d.file.0, span.start, d.diagnostic.message)
+        })
+        .collect()
+}
+
 // spec FTEF-18.3: the names in a state's frame and next expressions are uses, and a next think written as a name is declared
 // spec FTEF-18.19: the frames of a cycle are uses
 #[test]
@@ -100,7 +112,7 @@ fn sequences_resolve() {
     assert_eq!(errors(&index), [Code::E0301]);
 }
 
-// spec FTEF-18.6: labels and goto name no values
+// spec FTEF-18.23: labels and goto name no values
 #[test]
 fn labels_resolve_nothing() {
     let index =
@@ -157,7 +169,8 @@ fn builtin_after_body_is_a_warning() {
     assert_eq!(errors(&vanilla), [Code::E0206]);
 }
 
-// spec FTEF-12.9: `#pragma autoproto` before any definition reads the module with autoprototyping, `#pragma autoproto 0` without
+// spec FTEF-12.10: `#pragma autoproto` before any definition reads the module with autoprototyping, `#pragma autoproto 0` without; a later one is ignored with a warning
+// spec QCD-7.28: W0108 "#pragma autoproto must appear before any definitions"
 #[test]
 fn autoproto_pragma_turns_autoprototyping_on() {
     let later_use = ("b.qc", "void() a = { later(); };\nvoid() later = {};\n");
@@ -169,12 +182,18 @@ fn autoproto_pragma_turns_autoprototyping_on() {
         None,
     );
     assert_eq!(analysis_errors(&pragma), Vec::<Code>::new());
-    // After a definition the pragma is ignored.
+    assert!(analysis_with(&pragma, Code::W0108).is_empty());
+    // After a definition the pragma is ignored, with a warning at it.
     let late = analyze(
         &[("a.qc", "float x;\n#pragma autoproto\n"), later_use],
         None,
     );
     assert_eq!(analysis_errors(&late), [Code::E0301]);
+    assert_eq!(
+        analysis_with(&late, Code::W0108),
+        ["0:9 #pragma autoproto must appear before any definitions"]
+    );
+    assert!(!Code::W0108.is_error());
     let late_file = analyze(
         &[
             ("a.qc", "float x;\n"),
@@ -184,6 +203,14 @@ fn autoproto_pragma_turns_autoprototyping_on() {
         None,
     );
     assert_eq!(analysis_errors(&late_file), [Code::E0301]);
+    assert_eq!(analysis_with(&late_file, Code::W0108).len(), 1);
+    // With autoprototyping the late pragma is warned once: the second pass skips it.
+    let twice = analyze(
+        &[("a.qc", "float x;\n#pragma autoproto\n"), later_use],
+        Some(true),
+    );
+    assert_eq!(analysis_errors(&twice), Vec::<Code>::new());
+    assert_eq!(analysis_with(&twice, Code::W0108).len(), 1);
     // A list-form `progs.src`'s pragma, which the graph reads, holds for the module, and a
     // compiled file's `#pragma autoproto 0` before any definition turns it off again.
     let listed = analyze(&[("a.qc", "float x;\n"), later_use], Some(true));
@@ -195,4 +222,23 @@ fn autoproto_pragma_turns_autoprototyping_on() {
     assert_eq!(analysis_errors(&off), [Code::E0301]);
     let listed_off = analyze(&[("a.qc", "float x;\n"), later_use], Some(false));
     assert_eq!(analysis_errors(&listed_off), [Code::E0301]);
+}
+
+// spec FTEF-18.23: a C label read through the preprocessor is still a name with its `:` right
+// after it, and a name and a `:` written apart are still no label
+#[test]
+fn c_labels_survive_preprocessing() {
+    let label = analyze(
+        &[(
+            "a.qc",
+            "#define ONE 1\nfloat x;\nvoid() f = { top: x = ONE; goto top; };\n",
+        )],
+        None,
+    );
+    assert_eq!(analysis_errors(&label), Vec::<Code>::new());
+    let apart = analyze(
+        &[("a.qc", "float x;\nvoid() f = { top : x = 1; };\n")],
+        None,
+    );
+    assert!(!analysis_errors(&apart).is_empty());
 }

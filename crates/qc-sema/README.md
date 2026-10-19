@@ -78,7 +78,8 @@ variable (FTEF-15.5); a function with no body is reported only where it is refer
 (FTEF-17.7); and a builtin given for a function with a body is a warning, the body kept
 (FTEF-17.9). The names in state headers, sequences, case ranges and `sizeof` are resolved
 (FTEF-18), and a `#pragma autoproto` before any definition, in a compiled file or a list-form
-`progs.src`, reads the module with autoprototyping (FTEF-12.9). FreeCS, Rad-Therapy, Nuclide's
+`progs.src`, reads the module with autoprototyping (FTEF-12.10), and a later one is the
+warning `W0108` (QCD-7.28). FreeCS, Rad-Therapy, Nuclide's
 `menu-fn`, Copper and Arcane Dimensions resolve with no error (`cargo xtask fteqcc-profile`).
 
 ## What it is not, yet

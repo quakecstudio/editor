@@ -97,8 +97,9 @@ pub struct FileOutput {
     /// after it, and whether the definitions from there on are `noref` (FTEF-12.6).
     pub noref: Vec<(usize, bool)>,
     /// In an FTEQCC dialect, each `#pragma autoproto [N]` in the file: the index of the first
-    /// token after it, and whether it asks for autoprototyping (FTEF-12.9).
-    pub autoproto: Vec<(usize, bool)>,
+    /// token after it, whether it asks for autoprototyping, and the directive's span
+    /// (FTEF-12.10).
+    pub autoproto: Vec<(usize, bool, FileSpan)>,
 }
 
 #[derive(Debug)]
@@ -202,15 +203,42 @@ impl Run {
     }
 }
 
-/// A frame macro FTEQCC keeps from file to file (FTE-22.4): its value and the source file of
-/// `progs.src` that last defined it.
+/// The longest frame macro name FTEQCC keeps: its `pr_framemacro[].name` is `char name[64]`,
+/// and `QCC_PR_MacroFrame` reports a name `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))`
+/// (FTEF-18.22).
+const FTE_MAX_FRAME_NAME: usize = 63;
+
+/// What FTEQCC's `s_filen` is while a frame macro is defined or used: one reading of a source
+/// file, a new one for each compiled file and each `#include` of a file, or one macro
+/// expansion, which `QCC_PR_IncludeChunkEx` gives a name of its own (FTEF-18.22).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FrameFile {
+    file: FileId,
+    expansion: Option<ExpansionId>,
+}
+
+impl FrameFile {
+    const fn of(token: &PpToken) -> Self {
+        Self {
+            file: token.span.file,
+            expansion: token.expansion,
+        }
+    }
+}
+
+/// A frame macro FTEQCC keeps from file to file (FTE-22.4): its value and the reading of a
+/// file that last defined it.
 #[derive(Debug)]
 struct CarriedFrame {
     value: i32,
-    file: PathBuf,
+    file: FrameFile,
     /// Where it stands in FTEQCC's `pr_framemacro` table, which is searched from the last.
     order: usize,
 }
+
+/// Where an FTEQCC frame macro is defined or used: the span to report at and the reading of a
+/// file it is in.
+type Here = (FileSpan, FrameFile);
 
 /// The preprocessor for one `progs.src`: macros run on from one file to the next (QC-9.8).
 #[derive(Debug)]
@@ -616,15 +644,15 @@ impl<L: Loader> Preprocessor<L> {
                     let at = run.out.tokens.len();
                     run.out.noref.push((at, *value != 0.0));
                 }
-                // FTEF-12.9: `#pragma autoproto [N]` asks for autoprototyping, or not for a 0:
+                // FTEF-12.10: `#pragma autoproto [N]` asks for autoprototyping, or not for a 0:
                 // `autoprototype = *msg?!!atoi(msg):true;`.
                 if pragma("autoproto") {
                     let on = match line.get(3) {
                         None => true,
                         Some(token) => cond::atoi(&self.token_text(file, token)) != 0,
                     };
-                    let at = run.out.tokens.len();
-                    run.out.autoproto.push((at, on));
+                    let index = run.out.tokens.len();
+                    run.out.autoproto.push((index, on, at(whole)));
                 }
             }
             _ => {
@@ -1242,21 +1270,41 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name an
-    /// earlier file defined takes the new value, and a name this file already defined keeps
-    /// its first value (QC-8.7) unless `force`d. A new name past `FTE_MAX_FRAMES` is an
-    /// error (FTEF-18.17).
-    fn carry_frame(&mut self, run: &mut Run, name: &str, value: i32, force: bool, at: FileSpan) {
+    /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name another
+    /// reading of a file defined takes the new value, and a name this one already defined
+    /// keeps its first value (QC-8.7) with the warning "Duplicate macro defined (NAME). Rename
+    /// it." unless `force`d (FTEF-18.22). A new name of more than 63 bytes is the error "Name
+    /// for frame macro NAME is too long" and is not defined (FTEF-18.22); a new name past
+    /// `FTE_MAX_FRAMES` is an error (FTEF-18.17).
+    fn carry_frame(&mut self, run: &mut Run, name: &str, value: i32, force: bool, at: Here) {
+        let (at, here) = at;
         match self.carried_frames.get_mut(name) {
-            Some(frame) if frame.file == run.path && !force => {}
+            Some(frame) if frame.file == here && !force => {
+                // `if (pr_framemacro[i].file == s_filen && !force) QCC_PR_ParseWarning(
+                // WARN_DUPLICATEMACRO, "Duplicate macro defined (%s). Rename it.", pr_token);`
+                run.report(
+                    Code::W0106,
+                    format!("Duplicate macro defined ({name}). Rename it."),
+                    at,
+                );
+            }
             Some(frame) => {
                 frame.value = value;
-                frame.file.clone_from(&run.path);
+                frame.file = here;
+            }
+            None if name.len() > FTE_MAX_FRAME_NAME => {
+                // `QCC_PR_ParseWarning(ERR_TOOMANYFRAMEMACROS, "Name for frame macro %s is
+                // too long", name);`, an error code, which FTEQCC prints as an error.
+                run.report(
+                    Code::E0119,
+                    format!("Name for frame macro {name} is too long"),
+                    at,
+                );
             }
             None => {
                 let frame = CarriedFrame {
                     value,
-                    file: run.path.clone(),
+                    file: here,
                     order: self.carried_frames.len(),
                 };
                 self.carried_frames.insert(name.to_owned(), frame);
@@ -1272,26 +1320,45 @@ impl<L: Loader> Preprocessor<L> {
 
     /// The value of the FTEQCC frame macro `name`, as `QCC_PR_FindMacro` finds it: the macro
     /// of that name, or else the last one defined whose name differs only in case, with the
-    /// warning "Case insensitive frame macro (using NAME)" at `at` (FTEF-18.21).
-    fn find_frame(&self, run: &mut Run, name: &str, at: FileSpan) -> Option<i32> {
-        if let Some(frame) = self.carried_frames.get(name) {
-            return Some(frame.value);
+    /// warning "Case insensitive frame macro (using NAME)" at `at` (FTEF-18.21). A macro
+    /// another reading of a file defined is the warning "Stale macro used (NAME, defined in
+    /// FILE)" (FTEF-18.22).
+    fn find_frame(&self, run: &mut Run, name: &str, at: Here) -> Option<i32> {
+        let (at, here) = at;
+        let frame = if let Some(frame) = self.carried_frames.get(name) {
+            frame
+        } else {
+            let (found, frame) = self
+                .carried_frames
+                .iter()
+                .filter(|(other, _)| other.eq_ignore_ascii_case(name))
+                .max_by_key(|(_, frame)| frame.order)?;
+            run.report(
+                Code::W0104,
+                format!("Case insensitive frame macro (using {found})"),
+                at,
+            );
+            frame
+        };
+        // `if (pr_framemacro[i].file != s_filen) QCC_PR_ParseWarning(WARN_STALEMACRO,
+        // "Stale macro used (%s, defined in %s)", pr_token, pr_framemacro[i].file);`
+        if frame.file != here {
+            let defined = self
+                .sources
+                .file(frame.file.file)
+                .map(|f| f.path.display().to_string())
+                .unwrap_or_default();
+            run.report(
+                Code::W0105,
+                format!("Stale macro used ({name}, defined in {defined})"),
+                at,
+            );
         }
-        let (found, frame) = self
-            .carried_frames
-            .iter()
-            .filter(|(other, _)| other.eq_ignore_ascii_case(name))
-            .max_by_key(|(_, frame)| frame.order)?;
-        run.report(
-            Code::W0104,
-            format!("Case insensitive frame macro (using {found})"),
-            at,
-        );
         Some(frame.value)
     }
 
     /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
-    fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: FileSpan) {
+    fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: Here) {
         match command {
             FrameCommand::Flush => run.frame_value = 0,
             FrameCommand::Reset => {
@@ -1305,13 +1372,21 @@ impl<L: Loader> Preprocessor<L> {
             }
             FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
                 Some(value) => run.frame_value = value,
-                None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at),
+                None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at.0),
             },
             FrameCommand::ModelName(name) => {
                 if !self.model_name.is_empty() {
                     let previous = std::mem::take(&mut self.model_name);
                     self.carry_frame(run, &previous, run.frame_value, true, at);
                 }
+                // `if (!QC_strlcpy(pr_framemodelname, pr_token, sizeof(pr_framemodelname)))
+                // QCC_PR_ParseWarning (WARN_STRINGTOOLONG, "$modelname name too long");`: the
+                // name is cut to the 63 bytes `char pr_framemodelname[64]` holds (FTEF-18.22).
+                let kept = name.floor_char_boundary(FTE_MAX_FRAME_NAME);
+                if kept < name.len() {
+                    run.report(Code::W0107, "$modelname name too long", at.0);
+                }
+                let name = name.get(..kept).unwrap_or_default();
                 name.clone_into(&mut self.model_name);
                 // `i = QCC_PR_FindMacro(pr_framemodelname); if (i) pr_macrovalue = i;`, where
                 // a name with no macro is -1.
@@ -1330,6 +1405,7 @@ impl<L: Loader> Preprocessor<L> {
         let carry = self.dialect.has_fteqcc_extensions();
         match &tok.kind {
             TokenKind::Frames(names) if carry => {
+                let here = FrameFile::of(&tok);
                 for frame in names {
                     let at = FileSpan {
                         file: tok.span.file,
@@ -1337,7 +1413,7 @@ impl<L: Loader> Preprocessor<L> {
                     };
                     let value = run.frame_value;
                     run.frame_value = run.frame_value.wrapping_add(1);
-                    self.carry_frame(run, &frame.name, value, false, at);
+                    self.carry_frame(run, &frame.name, value, false, (at, here));
                 }
                 return;
             }
@@ -1358,12 +1434,12 @@ impl<L: Loader> Preprocessor<L> {
             }
             TokenKind::FrameCommand(command) => {
                 let command = command.clone();
-                self.frame_command(run, &command, tok.span);
+                self.frame_command(run, &command, (tok.span, FrameFile::of(&tok)));
                 return;
             }
             TokenKind::FrameRef(word) => {
                 let value = if carry {
-                    self.find_frame(run, word, tok.span)
+                    self.find_frame(run, word, (tok.span, FrameFile::of(&tok)))
                 } else {
                     let index = run.frames.iter().position(|f| f == word);
                     index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))

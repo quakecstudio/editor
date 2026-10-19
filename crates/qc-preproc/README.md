@@ -19,7 +19,10 @@ also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-1
 `#elif`, `#elifdef` and `#elifndef` (with the project graph's evaluator, now in `cond`, so both
 take the same sides; it reads an expression with FTEQCC's precedence under an FTEQCC dialect,
 FTEF-14.11), `#pragma noref` and `#pragma autoproto` recorded for the semantic model (FTEF-12.6,
-FTEF-12.9), FTEQCC's frame numbering and its further `$` commands (FTEF-18.16, FTEF-18.17),
+FTEF-12.10), FTEQCC's frame numbering and its further `$` commands (FTEF-18.16, FTEF-18.17),
+its frame macro diagnostics, "Stale macro used", "Duplicate macro defined", "Name for frame
+macro NAME is too long" and "$modelname name too long" (FTEF-18.22; QCD-2.8, QCD-7.25 to
+QCD-7.27),
 directives continued after a `\`, `#warning`, `#error` and `#message`,
 `#includelist` blocks (the graph's to compile), `#append`, `#eof` and the build directives,
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
@@ -35,7 +38,8 @@ built-in's value, carries its text in `PpToken::spelling`.
   these sections to the crate, and every active statement of each is cited by a test here.
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes
-  `qc-lexer` defines), and QCD-7.2 (the W0102 "macro redefined" warning). QCD-7 is otherwise
+  `qc-lexer` defines), QCD-2.8 and QCD-7.25 to QCD-7.27 (FTEQCC's frame macro diagnostics,
+  FTEF-18.22), and QCD-7.2 (the W0102 "macro redefined" warning). QCD-7 is otherwise
   the semantic model's resolution warnings, so it is not declared above.
 - **Mutation:** two survivors on the case-fold comparison are equivalent to the original on
   every realisable input and recorded under `[crates.qc-preproc].equivalent_mutants` in

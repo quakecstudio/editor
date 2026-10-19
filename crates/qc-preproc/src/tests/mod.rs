@@ -632,7 +632,14 @@ fn fteqcc_frames_carry_between_files() {
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], false);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
     assert_eq!(tokens(&outputs[1]), "x = 0 ; y = 1 ; x = 1 ; y = 0 ;");
-    assert_eq!(diagnostics(&pp, &outputs[1]), "");
+    // FTEF-18.22: the uses before b.qc's own `$frame` are stale, and its second `b` is a
+    // duplicate.
+    assert_eq!(
+        diagnostics(&pp, &outputs[1]),
+        "W0105 Stale macro used (a, defined in a.qc) @b.qc:1\n\
+         W0105 Stale macro used (b, defined in a.qc) @b.qc:1\n\
+         W0106 Duplicate macro defined (b). Rename it. @b.qc:2\n"
+    );
     // Vanilla clears the list per file (QC-8.3).
     let (_, vanilla) = project(&ProjectSpec {
         files: &files,
@@ -660,7 +667,11 @@ fn autoprototyping_keeps_frames_and_forgets_macros() {
     ];
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], true);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
-    assert_eq!(diagnostics(&pp, &outputs[0]), "");
+    // FTEF-18.22: the frame is the first pass's reading of b.qc, so the use is stale.
+    assert_eq!(
+        diagnostics(&pp, &outputs[0]),
+        "W0105 Stale macro used (CORPSEFRAME, defined in b.qc) @a.qc:1\n"
+    );
     let (_, single) = fte_project(&files, &["a.qc", "b.qc"], false);
     assert_eq!(codes(&single[0]), [Code::E0106]);
 }

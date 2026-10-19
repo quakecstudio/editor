@@ -85,7 +85,7 @@ pub struct FileGraph {
     /// The other programs' sources it registers with `#pragma sourcefile` (PRJ-5.7).
     pub sourcefiles: Vec<PathBuf>,
     /// What a `#pragma autoproto [N]` in a list-form `progs.src` asks for, which comes
-    /// before every definition of the module (FTEF-12.9); `None` when there is none.
+    /// before every definition of the module (FTEF-12.10); `None` when there is none.
     pub autoproto: Option<bool>,
     /// The problems found.
     pub diagnostics: Vec<Diagnostic>,
@@ -618,7 +618,7 @@ impl<L: Loader> Builder<'_, L> {
                 let path = cursor.path.clone();
                 self.once.insert(path);
             }
-            // FTEF-12.9: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
+            // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
             // `progs.src` with its preprocessor, so the pragma there holds for the module.
             "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
                 self.graph.autoproto = Some(args.first().is_none_or(|n| cond::atoi(n) != 0));

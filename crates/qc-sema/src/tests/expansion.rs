@@ -254,7 +254,8 @@ fn autoprototyping_preprocesses_twice() {
     assert!(codes(&without).contains(&Code::E0106));
     db.set_autoproto(true);
     let with = db.analyze_module(&input);
-    assert!(codes(&with).is_empty(), "{:?}", codes(&with));
+    // FTEF-18.22: the frame is the first pass's, so the use is stale, a warning.
+    assert_eq!(codes(&with), [Code::W0105]);
 }
 
 /// The three-file module of the incremental tests, analysed once so every cache is full.

@@ -54,6 +54,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-2.6** `E0106` "Unknown frame macro $NAME": a `$` word that is neither a known command
   nor a frame defined earlier in the file (QC-8.5, QC-8.8).
 - **QCD-2.7** `E0107` "hanging $": `$` with no word after it on its line (QC-8.1).
+- **QCD-2.8** `E0119` "Name for frame macro NAME is too long": under an FTEQCC profile, a new
+  frame name of 64 bytes or more, at the name, FTEQCC's error of the same text
+  (`dialect-fteqcc.md`, FTEF-18.22).
 
 ## QCD-3 Declaration and type errors
 
@@ -104,6 +107,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (QC-18.1).
 - **QCD-4.6** `E0306` "type mismatch on parm N": argument N, counting from 0, has the wrong
   type (QC-18.1).
+- **QCD-4.8** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
+  profile, a `goto` whose label is not among those read since the last function's end by the
+  end of its function, at the label name, FTEQCC's error of the same text
+  (`dialect-fteqcc.md`, FTEF-18.24).
 - **QCD-4.7** `E0307` "More than eight parameters": nine or more arguments to a variadic
   function (QC-18.2).
 
@@ -216,15 +223,33 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.21** `W0205` "missing comma in state definition": under an FTEQCC profile, a state
   header with no `,` between its frame and its next function, at the token where the `,`
   belongs, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-18.3).
-- **QCD-7.22** `W0312` "Duplicate label NAME": under an FTEQCC profile, a label the function
-  already has, at its name, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
-  FTEF-18.6).
+- **QCD-7.22** **Withdrawn** (P2-42, #429): it gave `W0312` for a label the function already
+  has, but FTEQCC compares with the labels read since the last function's end, which a
+  function defined inside another shares. Replaced by QCD-7.30.
 - **QCD-7.23** `W0206` "incompatible redeclaration. Ignoring replacement of qc function with
   builtin.": under an FTEQCC profile, a builtin number given for a function that has a body, at
   the redeclared name, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-17.9).
 - **QCD-7.24** `W0104` "Case insensitive frame macro (using NAME)": under an FTEQCC profile, a
   frame macro found only by a name in another case, at the reference, FTEQCC's warning of the
   same text (`dialect-fteqcc.md`, FTEF-18.21).
+- **QCD-7.25** `W0105` "Stale macro used (NAME, defined in FILE)": under an FTEQCC profile, a
+  frame macro another reading of a file defined, at the use, FTEQCC's warning of the same text
+  (`dialect-fteqcc.md`, FTEF-18.22).
+- **QCD-7.26** `W0106` "Duplicate macro defined (NAME). Rename it.": under an FTEQCC profile, a
+  frame name the same reading of a file already defined, at the name, FTEQCC's warning of the
+  same text (`dialect-fteqcc.md`, FTEF-18.22).
+- **QCD-7.27** `W0107` "$modelname name too long": under an FTEQCC profile, a `$modelname` of
+  64 bytes or more, at the command, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
+  FTEF-18.22).
+- **QCD-7.28** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
+  profile, a `#pragma autoproto` after the first definition, at the directive, FTEQCC's warning
+  of the same text (`dialect-fteqcc.md`, FTEF-12.10).
+- **QCD-7.29** `W0313` "Statement does not do anything": under an FTEQCC profile, a discarded
+  expression that calls, assigns and increments nothing, at the expression, FTEQCC's warning of
+  the same text (`dialect-fteqcc.md`, FTEF-18.25).
+- **QCD-7.30** `W0312` "Duplicate label NAME": under an FTEQCC profile, a label read since the
+  end of the last function, at its name, FTEQCC's warning of the same text
+  (`dialect-fteqcc.md`, FTEF-18.23).
 
 ## QCD-8 Preprocessor errors
 

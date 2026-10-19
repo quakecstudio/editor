@@ -866,7 +866,7 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
             }
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
-        // neither do a label and `goto` (FTEF-18.6), whose names are the function's labels.
+        // neither do a label and `goto` (FTEF-18.23), whose names are labels, not values.
         ast::Stmt::Break(_)
         | ast::Stmt::Continue(_)
         | ast::Stmt::Empty(_)

@@ -187,7 +187,8 @@ Vanilla `qcc` has no `%`: it is "Unknown punctuation" (QC-7.2, QC-7.4).
 ## FTE-8 Ternary conditional operator
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_LexPunctuation` (the `?` and `:` tokens);
-`qcc_pr_comp.c`, `QCC_PR_Expression`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+`qcc_pr_comp.c`, `QCC_PR_Expression`, `QCC_PR_RefExpression` and `QCC_PrioritiseOpcodes`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
 
 Vanilla `qcc` has neither `?` nor `:` as punctuation: each is "Unknown punctuation"
 (QC-7.2).
@@ -200,6 +201,21 @@ Vanilla `qcc` has neither `?` nor `:` as punctuation: each is "Unknown punctuati
 - **FTE-8.2** `a` and `b` must have the same type; that is the type of the whole expression.
 - **FTE-8.3** Progs encoding: lowers to an `IFNOT` over the two arms storing into a shared
   temporary, over vanilla opcodes; no new opcode is used.
+- **FTE-8.4** `?:` is read at FTEQCC's `TERNARY_PRIORITY`, the assignment priority, which
+  is tighter than `&&` and `||`: without `flag_cpriority`, `QCC_PrioritiseOpcodes` sets
+  `priority_class[PC_LOGICAND] = 7;`, `priority_class[PC_LOGICOR] = 7;`,
+  `priority_class[PC_TERNARY] = 6;` and `priority_class[PC_STORE] = 6;`, and
+  `QCC_PR_RefExpression` tries `if (priority == TERNARY_PRIORITY && QCC_PR_CheckToken ("?"))`
+  on the operand it read at the priority below. The right operand of `=` is read at its own
+  priority and that of `&&` and `||` at the one below theirs, so each reaches the `?` first:
+  `x = a ? b : c` assigns the conditional, and `a && b ? c : d` is `a && (b ? c : d)`, as is
+  `a || b ? c : d` with `||`. A comparison, `a == b ? c : d`, is the condition. Both arms are
+  read at `TOP_PRIORITY` (`val = QCC_PR_Expression(TOP_PRIORITY, 0);` for the middle and
+  `QCC_PR_Expression(TOP_PRIORITY, EXPR_DISALLOW_COMMA)` for the last), so a conditional in
+  the last arm nests to the right, `a ? b : c ? d : e` is `a ? b : (c ? d : e)`, and the last
+  arm takes `&&` and `=`. This differs from C, where `?:` is looser than `||`; FTEQCC takes
+  the C order only with `flag_cpriority` (`priority_class[PC_TERNARY] = 12;`), which is not
+  its default.
 
 ## FTE-9 Vector member access
 

@@ -187,7 +187,7 @@ pub enum SyntaxKind {
     UnionKw,
     /// `accessor` (FTEQCC, FTEF-10).
     AccessorKw,
-    /// `goto` (FTEQCC, FTEF-18.6).
+    /// `goto` (FTEQCC, FTEF-18.23).
     GotoKw,
     /// `__until` (FTEQCC, FTEF-18.9).
     UntilKw,
@@ -306,9 +306,9 @@ pub enum SyntaxKind {
     PointerType,
     /// `[x, y, z]`, a vector built from three expressions (FTEQCC, FTEF-16.3).
     VectorExpr,
-    /// `name:` or `:name`, a label (FTEQCC, FTEF-18.6).
+    /// `name:` or `:name`, a label (FTEQCC, FTEF-18.23).
     LabelStmt,
-    /// `goto name;` (FTEQCC, FTEF-18.6).
+    /// `goto name;` (FTEQCC, FTEF-18.23).
     GotoStmt,
     /// `sizeof` and a type or an expression (FTEQCC, FTEF-18.12).
     SizeofExpr,
