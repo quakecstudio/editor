@@ -1165,6 +1165,11 @@ differential suite lists each of these as an expected divergence.
   of a binary operator), and each binary operator, field access or call, which nests the
   expression before it one level deeper. id's `qcc` has no such limit; this compiler bounds
   the depth of its syntax tree so that no input can exhaust its stack.
+- **QC-27.16** Once the limit of QC-27.15 is passed in a statement or a declaration, no
+  construct in it opens another level: the constructs it unwinds through read no further
+  operator, field access, call or type around what they hold, so the tree stays within the
+  limit, and the rest of the statement or declaration is skipped as after any error (QCD-1.4).
+  The next statement or declaration nests afresh.
 
 ### Constants
 

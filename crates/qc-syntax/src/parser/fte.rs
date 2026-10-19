@@ -295,7 +295,13 @@ impl Parser<'_> {
             self.error(Code::E0203, message);
             return None;
         }
+        // FTEF-18.26: each `*` and each parameter list nests the type one level deeper.
+        let mut levels = 0_usize;
         while self.at(K::Star) {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
+            }
             self.builder.start_node_at(checkpoint, K::PointerType);
             self.bump();
             if self.fte_word(0, "const") {
@@ -303,23 +309,28 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
-        if self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
-            // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
-            // further parameter list makes a function returning the type so far.
-            while self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
-                self.builder.start_node_at(checkpoint, K::FunctionType);
-                self.fte_param_list();
-                self.finish_node();
+        let function = self.at_function_params();
+        // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
+        // further parameter list makes a function returning the type so far.
+        while self.at_function_params() {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
             }
-            return Some(TypeShape {
-                function: true,
-                field: false,
-            });
+            self.builder.start_node_at(checkpoint, K::FunctionType);
+            self.fte_param_list();
+            self.finish_node();
         }
+        self.leave(levels);
         Some(TypeShape {
-            function: false,
+            function,
             field: false,
         })
+    }
+
+    /// Whether a type's parameter list starts here: a `(` that opens no `(*name)` (FTEF-15.3).
+    fn at_function_params(&self) -> bool {
+        self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star)
     }
 
     /// The base of a type: a `SimpleType` node holding a vanilla keyword, a run of C type
@@ -519,7 +530,7 @@ impl Parser<'_> {
             self.bump();
             while !self.at(K::RBrace) && self.current().is_some() {
                 let before = self.pos;
-                self.muted = false;
+                self.start_item();
                 self.class_member();
                 if self.pos == before {
                     self.bump_error();
@@ -644,7 +655,7 @@ impl Parser<'_> {
             self.bump();
             while !self.at(K::RBrace) && self.current().is_some() {
                 let before = self.pos;
-                self.muted = false;
+                self.start_item();
                 self.accessor_member();
                 if self.at(K::Comma) || self.at(K::Semicolon) {
                     self.bump();

@@ -193,6 +193,11 @@ pub(crate) struct Parser<'a> {
     errors: Vec<Diagnostic>,
     muted: bool,
     depth: usize,
+    /// Whether the nesting limit was passed in the current statement, declaration or member,
+    /// so no construct in it opens another level until the next one starts (QC-27.15): the
+    /// levels it unwinds through would otherwise go on wrapping what they hold, and the tree
+    /// would grow past the limit after all.
+    too_deep: bool,
     /// FTEQCC's `qcc_usefulstatement`: whether a call, an assignment or a prefix `++` or `--`
     /// has been read since the flag was last cleared (FTEF-18.25).
     useful: bool,
@@ -219,6 +224,7 @@ impl<'a> Parser<'a> {
             labels: Vec::new(),
             gotos: Vec::new(),
             depth: 0,
+            too_deep: false,
         }
     }
 
@@ -448,15 +454,27 @@ impl<'a> Parser<'a> {
     }
 
     /// Enters one level of nesting; false, with the error reported, past the limit
-    /// (QC-27.15). Each call is paired with a [`Parser::leave`].
+    /// (QC-27.15), and false from then on until the next statement, declaration or member
+    /// starts ([`Parser::start_item`]). Each call is paired with a [`Parser::leave`].
     fn enter(&mut self) -> bool {
         self.depth = self.depth.saturating_add(1);
+        if self.too_deep {
+            return false;
+        }
         if self.depth > QC_MAX_NESTING {
             self.error(Code::E0509, "nesting too deep");
+            self.too_deep = true;
             false
         } else {
             true
         }
+    }
+
+    /// Starts a statement, declaration or member: the errors of the last one no longer mute
+    /// this one's (QC-24.2), and its nesting starts afresh (QC-27.15).
+    fn start_item(&mut self) {
+        self.muted = false;
+        self.too_deep = false;
     }
 
     fn leave(&mut self, levels: usize) {
@@ -510,7 +528,7 @@ impl<'a> Parser<'a> {
         self.builder.start_node(K::SourceFile);
         while let Some(tok) = self.current() {
             let _ = tok;
-            self.muted = false;
+            self.start_item();
             let before = self.pos;
             if self.fteqcc() && self.at(K::Semicolon) {
                 // FTE-17.3: `QCC_PR_ParseDefs` skips any `;` before a definition, so the `;`
@@ -778,10 +796,16 @@ impl<'a> Parser<'a> {
     /// FTEQCC declaration may leave out (FTE-17.3).
     fn declarator(&mut self, ty: TypeShape) -> bool {
         self.start_node(K::Declarator);
-        // FTEF-4.1: `T a, *b` declares `b` a pointer.
+        // FTEF-4.1: `T a, *b` declares `b` a pointer, each `*` one level (FTEF-18.26).
+        let mut levels = 0_usize;
         while self.fteqcc() && self.at(K::Star) {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
+            }
             self.bump();
         }
+        self.leave(levels);
         self.name();
         // FTEF-9.4: `Class::member` names a member a class declares.
         while self.fteqcc() && self.at(K::ColonColon) {
@@ -1177,7 +1201,7 @@ impl<'a> Parser<'a> {
                 self.expected("}");
                 break;
             }
-            self.muted = false;
+            self.start_item();
             if self.fteqcc() && (self.at_word("case") || self.at_word("default")) {
                 // FTEF-16.12: a label of the enclosing `switch` may stand in a nested block.
                 self.case_label();
@@ -1401,7 +1425,7 @@ impl<'a> Parser<'a> {
                 self.case_label();
                 continue;
             }
-            self.muted = false;
+            self.start_item();
             let before = self.pos;
             self.statement();
             if self.pos == before {
@@ -1413,7 +1437,7 @@ impl<'a> Parser<'a> {
 
     /// `case e:` or `default:` (FTE-3.1).
     fn case_label(&mut self) {
-        self.muted = false;
+        self.start_item();
         self.start_node(K::CaseLabel);
         if self.at_word("default") {
             self.bump_as(K::DefaultKw);

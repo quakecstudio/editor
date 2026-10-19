@@ -20,6 +20,7 @@ mod dialect_rerelease;
 mod dialect_statements;
 mod expressions;
 mod lossless;
+mod nesting;
 mod recovery;
 mod reviewer;
 mod statements;

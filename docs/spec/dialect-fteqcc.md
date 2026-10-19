@@ -560,6 +560,12 @@ profile the preprocessor reads them as FTEQCC does.
   written, a line continuation (FTEF-14.2) a space. Where FTEQCC reports an error ("unclosed
   bracket condition", "unclosed defined condition", "unexpected end-of-line") this profile
   takes the expression as false.
+- **FTEF-14.12** A deliberate divergence: this profile's `#if` reader nests at most 64 levels
+  (`MAX_DEPTH` in `qc-preproc`'s `cond.rs`), each parenthesis, each `!` and each right side of
+  an operator one level deeper (`ParsePrecompilerIf` calls itself for each), and an expression
+  nested deeper is false, as one FTEQCC reports as an error is. FTEQCC's
+  `ParsePrecompilerIf` recurses with no limit; this profile bounds it so that no input can
+  exhaust the stack, as PRJ-5.10 bounds the vanilla reader and QC-27.15 the parser.
 
 ## FTEF-15 Declarations
 
@@ -948,6 +954,13 @@ FTEF-18.5.
     statement and a discarded `for` clause the flag then carries what came before, a call in an
     earlier condition included, since only the discarding and the `,` clear it; this profile
     keeps the flag over one file.
+- **FTEF-18.26** Under this profile the nesting limit of QC-27.15 counts the FTEQCC constructs
+  too: the operand of a prefix `-`, `+`, `~`, `++`, `--`, `&` or `*` (FTE-19.4, FTEF-16.7), of
+  a cast (FTEF-16.2) and of `sizeof` (FTEF-18.12) is one level inside it, as the operand of `!`
+  is, each `*` and each parameter list of a type (FTEF-4.1, FTEF-18.15) nests the type one
+  level deeper, and so does each `*` before a declarator's name (FTEF-15.6). QC-27.16 then
+  holds as for vanilla: a prefix `++` or `--` it unwinds through is read as no postfix one, and
+  a type or a declarator takes no further `*` or parameter list. FTEQCC has no such limit.
 
   Under the vanilla profile none of this is reported.
 

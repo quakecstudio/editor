@@ -55,7 +55,8 @@ the syntactic ones.
   statement of each is cited by a test here.
 - **Also cited here, in sections a higher layer completes:** the syntactic parts of QC-10,
   QC-11, QC-13, QC-14 and QC-15 in [`language.md`](../../docs/spec/language.md), the parser's
-  divergences QC-27.3, QC-27.7, QC-27.8, QC-27.9, QC-27.10 and QC-27.15, and the parser error
+  divergences QC-27.3, QC-27.7, QC-27.8, QC-27.9, QC-27.10, QC-27.15 and QC-27.16, the FTEQCC
+  profile's nesting (FTEF-18.26), and the parser error
   codes QCD-3.1 to QCD-3.4. The semantics, type rules and code generation of QC-10 to QC-15,
   and the redeclaration and resolution errors of QCD-3, belong to the semantic model and the
   compiler, so those sections are not declared above.
@@ -73,8 +74,9 @@ Two rules, neither of which changes how a correct program parses:
   such a declaration line.
 
 Only the first error of each statement or declaration is reported, as `qcc` reports one and
-abandons the declaration (QC-24.2). Nesting is bounded (QC-27.15), so no input exhausts the
-stack.
+abandons the declaration (QC-24.2). Nesting is bounded (QC-27.15), the FTEQCC constructs
+included (FTEF-18.26), and once the limit is passed nothing in the statement or declaration
+nests deeper (QC-27.16), so no input exhausts the stack.
 
 ## Invariants
 

@@ -260,6 +260,21 @@ fn if_elif_else_chain() {
     assert_eq!(brought(&chain("garbage +"), &files), ["two.qc"]);
 }
 
+// spec PRJ-5.10: the graph reads a value inside 63 parentheses, and one inside 64 is false
+#[test]
+fn if_nesting_limit() {
+    let files = [("yes.qc", ""), ("no.qc", "")];
+    let body = |n: usize| {
+        format!(
+            "#if {}1{}\n#include \"yes.qc\"\n#else\n#include \"no.qc\"\n#endif\n",
+            "(".repeat(n),
+            ")".repeat(n)
+        )
+    };
+    assert_eq!(brought(&body(63), &files), ["yes.qc"]);
+    assert_eq!(brought(&body(64), &files), ["no.qc"]);
+}
+
 // spec FTEF-14.11: the graph of an FTEQCC module reads #if as FTEQCC does, a vanilla one with C's precedence
 #[test]
 fn if_reads_in_the_module_dialect() {
