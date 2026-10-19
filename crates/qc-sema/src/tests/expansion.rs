@@ -187,6 +187,7 @@ fn a_compiled_file_that_cannot_be_read_is_an_error() {
     let input = ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(2), FileId(1)],
+        autoproto: None,
     };
     let analysis = db.analyze_module(&input);
     assert_eq!(codes(&analysis), [Code::E0402]);
@@ -305,6 +306,7 @@ fn an_unchanged_module_is_served_from_cache() {
     let fewer = ModuleInput {
         prelude: Vec::new(),
         compiled: input.compiled[..2].to_vec(),
+        autoproto: None,
     };
     db.analyze_module(&fewer);
     let after = db.counts();

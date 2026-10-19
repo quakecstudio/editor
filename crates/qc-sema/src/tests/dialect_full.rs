@@ -303,6 +303,7 @@ fn noref_allows_reinitialisation() {
     let input = ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(1)],
+        autoproto: None,
     };
     let analysis = db.analyze_module(&input);
     let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();

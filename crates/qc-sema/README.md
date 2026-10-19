@@ -74,9 +74,12 @@ intrinsics are no names to define; equal initialisers, builtins of one number, e
 again and `noref` definitions are no redeclaration (FTEF-17.5, FTEF-17.8); a redeclaration
 involving a type name or a pointer is no type mismatch (FTEF-17.6); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
-variable (FTEF-15.5); and a function with no body is reported only where it is referred to
-(FTEF-17.7). FreeCS, Rad-Therapy and Nuclide's `menu-fn` resolve with no error
-(`cargo xtask fteqcc-profile`).
+variable (FTEF-15.5); a function with no body is reported only where it is referred to
+(FTEF-17.7); and a builtin given for a function with a body is a warning, the body kept
+(FTEF-17.9). The names in state headers, sequences, case ranges and `sizeof` are resolved
+(FTEF-18), and a `#pragma autoproto` before any definition, in a compiled file or a list-form
+`progs.src`, reads the module with autoprototyping (FTEF-12.9). FreeCS, Rad-Therapy, Nuclide's
+`menu-fn`, Copper and Arcane Dimensions resolve with no error (`cargo xtask fteqcc-profile`).
 
 ## What it is not, yet
 

@@ -337,6 +337,29 @@ fn declared_output() {
     assert_eq!(graph.declared_output, Some(PathBuf::from("a.dat")));
 }
 
+// spec FTEF-12.9: a list-form progs.src's #pragma autoproto, in any case, asks for autoprototyping, `0` not; one in a source file is the preprocessor's
+#[test]
+fn list_form_autoproto_pragma() {
+    let list = |text: &str| {
+        build(&GraphSpec {
+            files: &[("progs.src", text), ("a.qc", "#pragma autoproto\n")],
+            ..GraphSpec::default()
+        })
+        .autoproto
+    };
+    assert_eq!(list("../progs.dat\n#pragma autoproto\na.qc\n"), Some(true));
+    assert_eq!(
+        list("../progs.dat\n#pragma AutoProto 1\na.qc\n"),
+        Some(true)
+    );
+    assert_eq!(
+        list("../progs.dat\n#pragma autoproto 0\na.qc\n"),
+        Some(false)
+    );
+    assert_eq!(list("../progs.dat\na.qc\n"), None);
+    assert_eq!(source("#pragma autoproto\n", &[]).autoproto, None);
+}
+
 // spec PRJ-5.7: #pragma sourcefile registers programs against the module source's directory, once each
 #[test]
 fn sourcefile_registers_programs() {

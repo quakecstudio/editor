@@ -18,6 +18,7 @@
 mod dialect;
 mod dialect_full;
 mod dialect_resolution;
+mod dialect_statements;
 mod expansion;
 mod incremental;
 mod initialiser_uses;
