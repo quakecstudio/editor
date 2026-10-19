@@ -11,7 +11,6 @@
 //!
 //! Written from `docs/spec/project-file.md` and QC-23 of `docs/spec/language.md`, not ported.
 
-mod cond;
 mod graph;
 mod manifest;
 

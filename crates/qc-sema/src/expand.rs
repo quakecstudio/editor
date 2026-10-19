@@ -263,7 +263,12 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         if let Some(location) = source_location(pp, files, origin) {
             out.origins.origins.push((out.text.len(), location));
         }
-        let own = pp.sources().text(token.span).unwrap_or_default();
+        let own = token
+            .spelling
+            .as_deref()
+            .map(str::as_bytes)
+            .or_else(|| pp.sources().text(token.span))
+            .unwrap_or_default();
         match token.kind {
             TokenKind::Float(value) if own.first() == Some(&b'$') => {
                 out.text.extend_from_slice(value.to_string().as_bytes());

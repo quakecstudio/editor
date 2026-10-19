@@ -10,9 +10,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::Code;
-use qc_preproc::Loader;
-
-use crate::cond;
+use qc_preproc::{Loader, cond};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -505,7 +503,8 @@ impl<L: Loader> Builder<'_, L> {
                 });
             }
             "if" => {
-                let taking = parent && cond::eval(&lossy(Some(operand)), &self.macros);
+                let taking =
+                    parent && cond::eval(&lossy(Some(operand)), &|n| self.macros.get(n).cloned());
                 cursor.conds.push(Cond {
                     taking,
                     parent,
@@ -517,7 +516,9 @@ impl<L: Loader> Builder<'_, L> {
                     let value = c.parent
                         && !c.done
                         && match name {
-                            "elif" => cond::eval(&lossy(Some(operand)), &self.macros),
+                            "elif" => {
+                                cond::eval(&lossy(Some(operand)), &|n| self.macros.get(n).cloned())
+                            }
                             _ => {
                                 let defined = first_name(operand)
                                     .is_some_and(|n| self.macros.contains_key(&n));

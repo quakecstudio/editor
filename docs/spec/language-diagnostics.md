@@ -208,6 +208,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (QCD-3.4).
 - **QCD-7.19** `W0204` "Hanging ';'": under an FTEQCC profile, a `;` alone as a statement,
   FTEQCC's warning of the same text (`dialect-fteqcc-rerelease.md`, FTE-21.5).
+- **QCD-7.20** `W0103` "#warning: TEXT": under an FTEQCC profile, a `#warning` on a taken
+  side, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-14.3).
 
 ## QCD-8 Preprocessor errors
 
@@ -232,3 +234,5 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-8.9** `E0116` "macro NAME expects N arguments, found M": a function-like macro use
   with the wrong argument count (QC-9.10).
 - **QCD-8.10** `E0117` "unterminated argument list for macro NAME" (QC-9.10).
+- **QCD-8.11** `E0118` "#Error: TEXT": under an FTEQCC profile, an `#error` on a taken side,
+  FTEQCC's error of the same text (`dialect-fteqcc.md`, FTEF-14.3).

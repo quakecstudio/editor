@@ -423,3 +423,18 @@ fn module_input_from_a_graph() {
     graph.files = vec![file("main.qc", Via::Root)];
     assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId(0)]);
 }
+
+// spec FTEF-14.6: a name `##` makes is rendered as its own text, so it defines and resolves
+// like any other.
+#[test]
+fn a_pasted_name_resolves() {
+    let files = [(
+        "a.qc",
+        "#define NET(x) float x; float x ##_net;\nNET(health)\nvoid() f = { health_net = 1; };\n",
+    )];
+    let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
+    let names: Vec<_> = analysis.index.defs.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"health_net"), "{names:?}");
+}

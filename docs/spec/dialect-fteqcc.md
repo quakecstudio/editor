@@ -453,6 +453,78 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   a float holding its code: the literal's FTEQCC type (FTEF-3.1, FTEF-3.3) matters only to type
   checking and code generation, which are later (L-01).
 
+## FTEF-14 Preprocessor directives and macros
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_Precompiler`, `QCC_PR_FalsePreProcessorIf`,
+`ParsePrecompilerIf`, `QCC_PR_SkipToEndOfLine`, `QCC_PR_PreProcessor_Define`,
+`QCC_PR_ExpandPreProcessorMacro`, `QCC_PR_CheckCompConst` and `QCC_PR_CheckBuiltinCompConst`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Vanilla preprocessor:
+[`language.md`](language.md) QC-9; the project graph's reading of the same directives:
+[`project-file.md`](project-file.md) PRJ-5.
+
+This project's vanilla preprocessor (QC-9) knows `#include`, `#define`, `#undef`, `#ifdef`,
+`#ifndef`, `#else` and `#endif`, and QC-9.9 makes any other directive an error. The corpus also
+writes `#if` (256 lines), `#elif`, `#warning` (16), `#includelist` inside the files a list
+names, macros continued over several lines, variadic macros (`#define ncLog(...)`), `#` and
+`##` in macro bodies, and FTEQCC's built-in `__NULL__` and `__FUNC__`. Under the FTEQCC
+profile the preprocessor reads them as FTEQCC does.
+
+### Behaviour
+
+- **FTEF-14.1** `#if expr`, `#elif expr`, `#elifdef NAME` and `#elifndef NAME` choose a side as
+  the project graph does (PRJ-5.5): `QCC_PR_Precompiler` evaluates `#if` with
+  `eval = ParsePrecompilerIf(PPI_TOPLEVEL);`, and `QCC_PR_FalsePreProcessorIf` takes the first
+  `#elif`, `#elifdef` or `#elifndef` that is true, or the `#else`, only while no earlier side was
+  (`if (!hadtrue && !strncmp(pr_file_p, "elif", 4) && level == 1)`). An `#if` inside a skipped
+  side only nests (`if (!strncmp(pr_file_p, "if", 2)) level++;`). The expression is evaluated
+  by the one evaluator the graph uses, so the graph and the preprocessor take the same sides.
+- **FTEF-14.2** A directive continues on the next line when its line ends in `\` directly before
+  the break: `QCC_PR_SkipToEndOfLine` reads
+  `else if (*pr_file_p == '\\' && pr_file_p[1] == '\n') { /*linux endings*/ pr_file_p+=2;`, and
+  `QCC_PR_PreProcessor_Define` "read[s] over a newline if necessary" after a `\`. A `/* */`
+  comment that spans lines does not end the directive ("multi-line c style comments become
+  part of the define itself"); a `//` comment ends it.
+- **FTEF-14.3** `#warning text` is the warning `W0103` "#warning: text"
+  (`QCC_PR_ParseWarning(WARN_PRECOMPILERMESSAGE, "#warning: %s", msg);`) and `#error text` the
+  error `E0118` "#Error: text" (`QCC_PR_ParseError(ERR_HASHERROR, "#Error: %s", msg);`), each on
+  the side of a conditional that is taken. `#message text` prints the text and reports nothing.
+  The text is the rest of the line as written (`msg[a] = pr_file_p[a];` up to the line break),
+  not tokens, so a `'` in it (`#warning Toggle doesn't work`) opens no vector.
+- **FTEF-14.4** `#includelist` to `#endlist` lists files that are compiled in order where the
+  list stands (`QCC_FindBestInclude(pr_token, compilingfile, true);` for each word). The module
+  graph reads the list and compiles each file (PRJ-5.3), so the preprocessor produces no token
+  for the lines of the list. A `#endlist` with no list open is accepted.
+- **FTEF-14.5** A macro parameter list whose last parameter is `...` makes the macro variadic:
+  `if (nl == 3 && s[0] == '.' && s[1] == '.' && s[2] == '.') { cnst->varg = true;`. The arguments
+  after the named ones, with the commas between them, replace `__VA_ARGS__` in the body
+  (`if (*pr_file_p == ',' && c->varg && param >= c->numparams) extraparam++;`); a use may give
+  no variadic argument. A use with fewer arguments than named parameters is "macro NAME
+  expects N arguments, found M" (QCD-8.9), as FTEQCC's "Not enough macro parameters" is.
+- **FTEF-14.6** In a macro body `#param` is the argument as a string literal (the "stringify"
+  branch of `QCC_PR_ExpandPreProcessorMacro`), and `a ## b` joins the tokens either side into
+  one ("concatinate (strip out whitespace before the token)"): `x ##_net` with `x` given
+  `health` is the name `health_net`. A `#` before a word that is no parameter stays as written.
+- **FTEF-14.7** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
+  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
+  and `__LINESTR__` to it as a string, `__FUNC__` and `__func__` to the function's name as a
+  string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a number and `__QCCVER__` to a
+  string. The preprocessor does not know the function a use is in, so this profile expands
+  `__FUNC__` to an empty string; the value is a compile-time string and does not change
+  resolution.
+- **FTEF-14.8** `#append NAME text` adds `text` to the body of macro `NAME`, or defines it when it
+  is not defined (`append with no previous define is treated as just a regular define`); `#eof`
+  ends the file (`pr_file_p = NULL;`). `#output`, `#forcecrc`, `#copyright`, `#pack`,
+  `#package`, `#merge` and `#datafile` are accepted and produce no token: their effects are on
+  the build, not on the token stream.
+
+- **FTEF-14.9** A use of a function-like macro may give one argument more than its
+  parameters, which is unused: `QCC_PR_ExpandPreProcessorMacro` checks the count only at a
+  comma, after counting the argument before it, with
+  `if (param == MAXCONSTANTPARAMS || param > c->numparams) QCC_PR_ParseError(ERR_TOOMANYPARAMS, "Too many parameters in macro call");`,
+  so the last argument is never counted against the parameters. Two or more extra arguments are
+  "macro NAME expects N arguments, found M" (QCD-8.9). The corpus relies on it
+  (`EVALUATE_FIELD(mins, 0, PLAYER_SIZE)` for a two-parameter macro, `shared/game/Player.qc`).
+
 ### Test vectors
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the

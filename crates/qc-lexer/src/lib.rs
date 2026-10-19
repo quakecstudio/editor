@@ -907,8 +907,35 @@ impl Lexer<'_> {
         }
         let span = Span::new(start, self.pos);
         self.check_length(span.end.saturating_sub(start), span);
-        let name = self.bytes(span).iter().copied().map(char::from).collect();
+        let name: String = self.bytes(span).iter().copied().map(char::from).collect();
+        let message = self.dialect.has_fteqcc_extensions()
+            && matches!(name.as_str(), "warning" | "error" | "message")
+            && self.out.tokens.last().is_some_and(|t| {
+                t.kind == TokenKind::Punct(Punct::Hash)
+                    && t.line_start
+                    && !self.bytes(Span::new(t.span.end, start)).contains(&b'\n')
+            });
         self.push(TokenKind::Name(name), start);
+        if message {
+            self.message_text();
+        }
+    }
+
+    /// The rest of a `#warning`, `#error` or `#message` line, read raw as FTEQCC reads it
+    /// (FTEF-14.3): a string token of its bytes, blanks before it skipped, up to the line
+    /// break. Nothing when the line ends at once.
+    fn message_text(&mut self) {
+        while self.peek(0).is_some_and(|b| b == b' ' || b == b'\t') {
+            self.bump(1);
+        }
+        let start = self.pos;
+        while self.peek(0).is_some_and(|b| b != b'\n' && b != b'\r') {
+            self.bump(1);
+        }
+        if self.pos > start {
+            let text = self.bytes(Span::new(start, self.pos)).to_vec();
+            self.push(TokenKind::String(text), start);
+        }
     }
 
     /// The next word on the line, as `PR_SimpleGetToken` reads it: blanks skipped, then bytes
