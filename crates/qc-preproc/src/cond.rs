@@ -647,8 +647,14 @@ mod tests {
         // `!` 63 times over 0 is 1; 64 times over 1 would be 1 too.
         assert!(eval(&format!("{}0", "!".repeat(63)), &m));
         assert!(!eval(&format!("{}1", "!".repeat(64)), &m));
-        assert!(eval(&format!("{}{}", "!".repeat(31), in_parens(32, "0")), &m));
-        assert!(!eval(&format!("{}{}", "!".repeat(32), in_parens(32, "0")), &m));
+        assert!(eval(
+            &format!("{}{}", "!".repeat(31), in_parens(32, "0")),
+            &m
+        ));
+        assert!(!eval(
+            &format!("{}{}", "!".repeat(32), in_parens(32, "0")),
+            &m
+        ));
         assert!(eval(&format!("{}1", "0 || ".repeat(1000)), &m));
         assert!(eval(&format!("1{}", " && 1".repeat(1000)), &m));
         assert!(!eval(&in_parens(100, "1"), &m));
@@ -668,8 +674,14 @@ mod tests {
         assert!(!fte_eval(&format!("{}1", "0 || ".repeat(65)), &m));
         assert!(fte_eval(&format!("1{}", " == 1".repeat(64)), &m));
         assert!(!fte_eval(&format!("1{}", " == 1".repeat(65)), &m));
-        assert!(fte_eval(&format!("{}{}", "!".repeat(32), in_parens(32, "1")), &m));
-        assert!(!fte_eval(&format!("{}{}", "!".repeat(33), in_parens(32, "0")), &m));
+        assert!(fte_eval(
+            &format!("{}{}", "!".repeat(32), in_parens(32, "1")),
+            &m
+        ));
+        assert!(!fte_eval(
+            &format!("{}{}", "!".repeat(33), in_parens(32, "0")),
+            &m
+        ));
     }
 
     // spec PRJ-5.5: `>` compares as in C

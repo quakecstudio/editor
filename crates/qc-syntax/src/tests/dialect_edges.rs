@@ -514,7 +514,8 @@ fn equal_frame_cycles_are_no_error() {
 #[test]
 fn class_member_kinds() {
     let members = |body: &str| -> Vec<SyntaxKind> {
-        let source = format!("class C {{\n{body}\n}};\n");
+        let indented: String = body.lines().map(|line| format!("\t{line}\n")).collect();
+        let source = format!("class C {{\n{indented}}};\n");
         assert_eq!(fte_codes(&source), [], "{source}");
         first_node(&source, SyntaxKind::ClassDecl)
             .children()
@@ -530,7 +531,9 @@ fn class_member_kinds() {
         [SyntaxKind::Declaration; 3]
     );
     assert_eq!(
-        members("get float a = A;\nset float a = B;\ninline get float b = C;\ninline set float b = D;"),
+        members(
+            "get float a = A;\nset float a = B;\ninline get float b = C;\ninline set float b = D;"
+        ),
         [SyntaxKind::AccessorMember; 4]
     );
     assert_eq!(
@@ -602,11 +605,7 @@ fn tagged_type_keywords() {
     ] {
         assert_eq!(fte_codes(source), [], "{source}");
         let ty = first_node(source, SyntaxKind::SimpleType);
-        assert_eq!(
-            token_kinds(&ty),
-            [keyword, SyntaxKind::Name],
-            "{source}"
-        );
+        assert_eq!(token_kinds(&ty), [keyword, SyntaxKind::Name], "{source}");
     }
     // A struct written as a member's type, with or without a tag.
     for source in [

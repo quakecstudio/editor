@@ -18,7 +18,10 @@ fn deep_sources() -> Vec<(&'static str, String)> {
     vec![
         ("prefix -", in_body(&format!("a = {}a;", "-".repeat(n)))),
         ("prefix +", in_body(&format!("a = {}a;", "+".repeat(n)))),
-        ("spaced prefix -", in_body(&format!("a = {}a;", "- ".repeat(n)))),
+        (
+            "spaced prefix -",
+            in_body(&format!("a = {}a;", "- ".repeat(n))),
+        ),
         ("prefix ++", in_body(&format!("{}a;", "++".repeat(n)))),
         ("prefix --", in_body(&format!("{}a;", "--".repeat(n)))),
         ("parameter lists", format!("float{} g;\n", "()".repeat(n))),
