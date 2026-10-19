@@ -329,7 +329,7 @@ fn a_local_declared_twice_is_one_local() {
     assert_eq!(index.defs.iter().filter(|d| d.name == "x").count(), 1);
 }
 
-// spec PRJ-2.2: the database reports the dialect it was set to.
+// spec PRJ-2.8: the database reports the dialect it was set to.
 #[test]
 fn the_database_reports_its_dialect() {
     let mut db = Db::new();

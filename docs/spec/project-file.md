@@ -63,7 +63,8 @@ compiles `progs.src` in its source directory when given no file (`QCC_main`).
 name = "Copper"            # optional; default: the project directory's name
 mod = "copper"             # optional; default as for a bare project (PRJ-1.4)
 dialect = "fteqcc"         # optional; vanilla (default), fteqcc or gmqcc
-target = "quake"           # optional; quake (default), rerelease, fte or dp
+target = "quake"           # optional; quake (default), quakespasm, ironwail, vkquake,
+                           # rerelease, fte or dp
 
 [[module]]
 kind = "ssqc"              # required; ssqc, csqc or menuqc
@@ -82,10 +83,8 @@ include_dirs = ["lib"]             # optional; searched after the including file
   `[[module]]` tables with the keys above and no others. A key that is not listed, a value of
   the wrong type, a value outside its list, a file that is not valid TOML or a file with no
   `[[module]]` is an error that names the file, and the project does not open.
-- **PRJ-2.2** `dialect` is one of `vanilla`, `fteqcc` and `gmqcc`; `target` is one of
-  `quake` (id's engine, which the preview host follows), `rerelease` (the 2021 KEX engine, a
-  compile target only, ENG-8), `fte` and `dp`. A module without its own `dialect` or `target`
-  takes the project's.
+- **PRJ-2.2** **Withdrawn** (P2-29, #407): it allowed only four targets. Replaced by PRJ-2.8
+  for `dialect` and PRJ-2.9 for `target`.
 - **PRJ-2.3** The mod name is the single directory name ADR-0008 puts the build output in.
   It is valid when it is not empty, is not `.` or `..`, and holds no `/`, `\` or `:`. An
   invalid `mod` is an error.
@@ -99,6 +98,13 @@ include_dirs = ["lib"]             # optional; searched after the including file
   (QC-3.1); `NAME` alone defines the macro with an empty body. Any other entry is an error.
 - **PRJ-2.7** A module's `#pragma sourcefile` lines (PRJ-5.7) add no modules: the modules of
   a project with `quakec.toml` are exactly those it declares.
+- **PRJ-2.8** `dialect` is one of `vanilla`, `fteqcc` and `gmqcc`. A module without its own
+  `dialect` takes the project's.
+- **PRJ-2.9** `target` is one of `quake` (id's engine, which the preview host follows),
+  `quakespasm`, `ironwail`, `vkquake`, `rerelease` (the 2021 KEX engine, a compile target
+  only, ENG-8), `fte` and `dp`; each selects an engine of the engine-target database
+  (`engine-targets.md`, ENGT-3.5 and ENGT-3.6). A module without its own `target` takes the
+  project's.
 
 ## PRJ-3 Modules and output paths
 

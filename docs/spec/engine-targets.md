@@ -76,6 +76,13 @@ The vanilla builtins are not extracted: they are id's own table, ported from id'
   line where its declaration ends, separated by commas, up to the first word that is not
   upper-case letters, digits, underscores and `?`; without one, the last comment-line name of
   ENGT-2.6 above it; without either, none.
+- **ENGT-2.8** Each source is read once per module kind (PRJ-3.1) it gives a table for, each
+  reading by ENGT-2.1 to ENGT-2.7 with its own predefined macros, giving its own builtins and
+  extension names. Every source is read for server QuakeC (`ssqc`) with the macros of ENGT-2.3;
+  `fteqw` is also read for client QuakeC (`csqc`) with `CSQC` alone defined and for menu
+  QuakeC (`menuqc`) with `MENU` alone defined, the macros its own `#if` lines test for those
+  kinds. `sources.toml` lists each source's readings as `tables`; a source with no table, a
+  table of any other kind, or two tables of one kind is an error, and nothing is written.
 
 ## ENGT-3 Engines
 
@@ -111,8 +118,16 @@ own source as a further fact source.
 - **ENGT-3.4** Each engine has a display name (`Vanilla`, `QuakeSpasm`, `Ironwail`,
   `vkQuake`, `FTEQW`, `DarkPlaces`, `KEX`) and an id (`vanilla`, `quakespasm`, `ironwail`,
   `vkquake`, `fteqw`, `darkplaces`, `kex`); reading any other id gives no engine.
-- **ENGT-3.5** A project file's target (PRJ-2.2) selects an engine: `quake` is Vanilla,
+- **ENGT-3.5** A project file's target (PRJ-2.9) selects an engine: `quake` is Vanilla,
   `rerelease` KEX, `fte` FTEQW and `dp` DarkPlaces.
+- **ENGT-3.6** The targets `quakespasm`, `ironwail` and `vkquake` (PRJ-2.9) select QuakeSpasm,
+  Ironwail and vkQuake, so every engine of ENGT-3.1 is the engine of some target.
+- **ENGT-3.7** The tables and extension names of ENGT-3.1 to ENGT-3.3 are those for server
+  QuakeC. FTEQW also has a client QuakeC table, the `fteqw` builtins of its `csqc` reading
+  (ENGT-2.8), and a menu QuakeC table, those of its `menuqc` reading, each with that
+  reading's extension names. No other engine has a client or menu QuakeC table, since no fact
+  source gives one; a builtin number can mean a different builtin in each kind (in `fteqw`,
+  `#5` is `lightstylestatic` for server and `bprint` for menu QuakeC).
 
 ## ENGT-4 Missing builtins
 
@@ -135,6 +150,25 @@ own source as a further fact source.
   QCD-3.9).
 - **ENGT-4.4** `W0311` is a warning: it never stops a build or changes the emitted progs
   (QCD-7).
+- **ENGT-4.5** Under an FTEQCC dialect a builtin may be declared `= #0:NAME` (FTE-17.4), which
+  the engine looks up by `NAME` (ENGT-2.4). A global function whose name has no number by
+  ENGT-4.3 takes as its key the `NAME` of its first such initialiser in compilation order,
+  `0` being any literal whose digits are all zeros. A call of it, as in ENGT-4.1, whose engine
+  table has no builtin keyed `#0:NAME`, names compared exactly, is `W0311` with the message
+  `FUNC is builtin #0:NAME, which ENGINE does not have`, `FUNC` being the function's name,
+  and the extensions of the first engine, in the order of ENGT-3.1, whose table has `NAME`
+  with some. ENGT-4.2 holds for these keys as for numbers.
+- **ENGT-4.6** An initialiser `#N:NAME` with `N` at least 1 is keyed by its number alone, as
+  in ENGT-4.3, and its name is not read. FTE-17.4 says FTEQCC accepts the form and is silent
+  on which key an engine uses for it; keying by number is this project's choice, since a
+  number is what a progs carries for every builtin with one.
+- **ENGT-4.7** Under the vanilla dialect, whose `qcc` takes a builtin number greater than 0
+  and nothing after it (QC-13.3), `#0:NAME` gives no key, so a call of such a declaration is
+  no `W0311`; the parser reports the declaration instead.
+- **ENGT-4.8** A module is checked against its target engine's table for the module's kind
+  (PRJ-3.1, ENGT-3.7), and the extensions of ENGT-4.1 and ENGT-4.5 come from the engines'
+  tables for that kind. A module of a kind its engine has no table for is not checked and
+  has no `W0311`.
 
 ### Test vectors
 
@@ -146,3 +180,10 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | the same, FTEQW | none | ENGT-4.2 |
 | `float(string s) strlen = #114;` called, QuakeSpasm | `W0311` "strlen is builtin #114, which QuakeSpasm does not have (FRIK_FILE, FTE_STRINGS, ZQ_QC_STRINGS)" | ENGT-4.1 |
 | `void(string s) bprint = #23;` called, KEX | `W0311` "bprint is builtin #23, which KEX does not have" | ENGT-3.2, ENGT-4.1 |
+| `void(string s, ...) bprint = #0:ex_bprint;` called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.5 |
+| the same, KEX, Ironwail or vkQuake | none | ENGT-4.5 |
+| `stuffcmdflags = #0:stuffcmdflags` called, FTEQCC dialect, KEX | `W0311` "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have (FTE_QC_STUFFCMDFLAGS)" | ENGT-4.5 |
+| `void() clearscene = #300;` called, FTEQW, client module | none | ENGT-4.8 |
+| the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
+| `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |
+| `float(float tabsize, float defaulttype) hash_createtab = #287;` called, Ironwail, client module | none: Ironwail has no client table | ENGT-4.8 |

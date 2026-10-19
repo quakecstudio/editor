@@ -43,7 +43,7 @@ pub const PRJ_MENUQC_OUTPUT: &str = "menu.dat";
 /// The directory, in the project, that build output goes in (PRJ-3.2, ADR-0008).
 pub const PRJ_BUILD_DIR: &str = "build";
 
-/// The QuakeC dialect a module is written in (PRJ-2.2).
+/// The QuakeC dialect a module is written in (PRJ-2.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dialect {
@@ -68,18 +68,37 @@ impl From<Dialect> for qc_lexer::Dialect {
     }
 }
 
-/// The engine a module is built for (PRJ-2.2).
+/// The engine a module is built for (PRJ-2.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Target {
     /// id's engine, which the preview host follows.
     Quake,
+    /// QuakeSpasm, written `quakespasm`.
+    QuakeSpasm,
+    /// Ironwail.
+    Ironwail,
+    /// vkQuake, written `vkquake`.
+    VkQuake,
     /// The 2021 KEX rerelease engine, a compile target only (ENG-8).
     Rerelease,
     /// FTE.
     Fte,
     /// `DarkPlaces`.
     Dp,
+}
+
+impl Target {
+    /// Every target, in the order PRJ-2.9 lists them.
+    pub const ALL: [Self; 7] = [
+        Self::Quake,
+        Self::QuakeSpasm,
+        Self::Ironwail,
+        Self::VkQuake,
+        Self::Rerelease,
+        Self::Fte,
+        Self::Dp,
+    ];
 }
 
 /// What a module is (PRJ-3.1).

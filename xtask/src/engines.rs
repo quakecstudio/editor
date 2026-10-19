@@ -5,7 +5,9 @@
 //! `crates/qc-engines/sources.toml`.
 //!
 //! Each source file is fetched at its pinned commit and checked, with its repository's license
-//! file, against the recorded SHA-256. Only facts are extracted (ENGT-2): each builtin's
+//! file, against the recorded SHA-256, then read once for each module kind it has a table
+//! for, with that table's macros defined (ENGT-2.3, ENGT-2.8). Only facts are extracted
+//! (ENGT-2): each builtin's
 //! number or engine name, its QuakeC name and its signature, and extension names. No comment
 //! text and no code is copied: comments are read only to find an extension name that stands
 //! alone on a line or follows `Part of`, and that name is all that is kept. The tables are
@@ -36,6 +38,9 @@ const RERELEASE_CORPUS_SOURCE: &str = "quake-rerelease-qc";
 
 const USAGE: &str = "usage: cargo xtask engines [--check]";
 
+/// The module kinds a table may be for (PRJ-3.1): server, client and menu QuakeC.
+const KINDS: [&str; 3] = ["ssqc", "csqc", "menuqc"];
+
 /// Words before a builtin's type that only mark it deprecated (ENGT-2.5); each may take a
 /// parenthesised argument, which is dropped with it.
 const MODIFIERS: [&str; 4] = ["DEP", "DEP_CSQC", "FTEDEP", "__deprecated"];
@@ -59,6 +64,15 @@ pub(crate) struct Pin {
     pub(crate) license: String,
     pub(crate) license_file: String,
     pub(crate) license_sha256: String,
+    pub(crate) tables: Vec<Table>,
+}
+
+/// One reading of a source file: the module kind its builtins are for and the macros defined
+/// before it is read (ENGT-2.3, ENGT-2.8).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Table {
+    pub(crate) kind: String,
     pub(crate) defines: Vec<String>,
 }
 
@@ -112,8 +126,13 @@ fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {
     for pin in &pins {
         let text = fetch(net, pin, &pin.path, &pin.sha256)?;
         fetch(net, pin, &pin.license_file, &pin.license_sha256)?;
-        let facts = extract(&text, &pin.defines).map_err(|e| format!("{}: {e}", pin.id))?;
-        all.push((pin.clone(), facts));
+        let mut tables = Vec::new();
+        for table in &pin.tables {
+            let facts = extract(&text, &table.defines)
+                .map_err(|e| format!("{} {}: {e}", pin.id, table.kind))?;
+            tables.push((table.kind.clone(), facts));
+        }
+        all.push((pin.clone(), tables));
     }
     let tables = rustfmt(root, &render(&all))?;
     let path = root.join(TABLES);
@@ -131,10 +150,31 @@ fn run(root: &Path, check: bool, net: &dyn Net) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Reads `sources.toml`.
+/// Reads `sources.toml`. Each source has at least one table, each for a module kind of
+/// [`KINDS`] and no kind twice (ENGT-2.8).
 pub(crate) fn load(root: &Path) -> Result<Vec<Pin>, String> {
     let text = fs::read_to_string(root.join(SOURCES)).map_err(|e| format!("{SOURCES}: {e}"))?;
     let sources: Sources = toml::from_str(&text).map_err(|e| format!("{SOURCES}: {e}"))?;
+    for pin in &sources.source {
+        if pin.tables.is_empty() {
+            return Err(format!("{SOURCES}: {} has no table", pin.id));
+        }
+        let mut seen = BTreeSet::new();
+        for table in &pin.tables {
+            if !KINDS.contains(&table.kind.as_str()) {
+                return Err(format!(
+                    "{SOURCES}: {} has a table of unknown kind {:?}",
+                    pin.id, table.kind
+                ));
+            }
+            if !seen.insert(table.kind.as_str()) {
+                return Err(format!(
+                    "{SOURCES}: {} has two {} tables",
+                    pin.id, table.kind
+                ));
+            }
+        }
+    }
     Ok(sources.source)
 }
 
@@ -623,8 +663,9 @@ fn const_name(id: &str) -> String {
     id.to_ascii_uppercase().replace('-', "_")
 }
 
-/// Writes the tables as Rust source (before `rustfmt`).
-pub(crate) fn render(all: &[(Pin, Facts)]) -> String {
+/// Writes the tables as Rust source (before `rustfmt`): for each source, one builtin table
+/// and one extension list per module kind it is read for.
+pub(crate) fn render(all: &[(Pin, Vec<(String, Facts)>)]) -> String {
     let mut out = String::new();
     out.push_str(
         "// SPDX-License-Identifier: GPL-3.0-or-later\n\n\
@@ -651,30 +692,37 @@ pub(crate) fn render(all: &[(Pin, Facts)]) -> String {
         ));
     }
     out.push_str("];\n\n");
-    for (pin, facts) in all {
-        let name = const_name(&pin.id);
-        out.push_str(&format!(
-            "/// The builtins of the `{}` source, `{}` (ENGT-2), in file order.\n\
-             pub(crate) const {name}_BUILTINS: &[Builtin] = &[\n",
-            pin.id, pin.path
-        ));
-        for item in &facts.builtins {
-            let key = match &item.key {
-                Key::Number(n) => format!("BuiltinKey::Number({n})"),
-                Key::Name(alias) => format!("BuiltinKey::Name({alias:?})"),
-            };
-            out.push_str(&format!(
-                "Builtin {{ key: {key}, name: {:?}, signature: {:?}, extensions: &{:?} }},\n",
-                item.name, item.signature, item.extensions
-            ));
+    for (pin, tables) in all {
+        for (kind, facts) in tables {
+            render_table(&mut out, pin, kind, facts);
         }
-        out.push_str(&format!(
-            "];\n\n/// The extension names of the `{}` source (ENGT-2.6), in file order.\n\
-             pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n\n",
-            pin.id, facts.extensions
-        ));
     }
     out
+}
+
+/// Writes one table of [`render`].
+fn render_table(out: &mut String, pin: &Pin, kind: &str, facts: &Facts) {
+    let name = format!("{}_{}", const_name(&pin.id), const_name(kind));
+    out.push_str(&format!(
+        "/// The {kind} builtins of `{}`, `{}` (ENGT-2), in file order.\n\
+         pub(crate) const {name}_BUILTINS: &[Builtin] = &[\n",
+        pin.id, pin.path
+    ));
+    for item in &facts.builtins {
+        let key = match &item.key {
+            Key::Number(n) => format!("BuiltinKey::Number({n})"),
+            Key::Name(alias) => format!("BuiltinKey::Name({alias:?})"),
+        };
+        out.push_str(&format!(
+            "Builtin {{ key: {key}, name: {:?}, signature: {:?}, extensions: &{:?} }},\n",
+            item.name, item.signature, item.extensions
+        ));
+    }
+    out.push_str(&format!(
+        "];\n\n/// The {kind} extension names of `{}` (ENGT-2.6), in file order.\n\
+         pub(crate) const {name}_EXTENSIONS: &[&str] = &{:?};\n\n",
+        pin.id, facts.extensions
+    ));
 }
 
 /// Formats `source` with the workspace's `rustfmt` settings.

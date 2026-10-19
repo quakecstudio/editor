@@ -110,7 +110,7 @@ struct Memo<T> {
 pub struct Db {
     /// The current clock. Bumped each time an input changes.
     clock: Revision,
-    /// The dialect every file is parsed in (PRJ-2.2). Vanilla by default.
+    /// The dialect every file is parsed in (PRJ-2.8). Vanilla by default.
     dialect: qc_syntax::Dialect,
     /// Whether modules resolve with FTEQCC's autoprototyping (FTE-22.3). Off by default.
     autoproto: bool,
@@ -145,7 +145,7 @@ impl Db {
         self.dialect
     }
 
-    /// Sets the dialect every file is parsed in (PRJ-2.2), selecting the vanilla or an FTEQCC
+    /// Sets the dialect every file is parsed in (PRJ-2.8), selecting the vanilla or an FTEQCC
     /// profile. Changing it invalidates every cached parse, lowering and module index, since
     /// they depend on the dialect; set it once before adding files in the common case.
     pub fn set_dialect(&mut self, dialect: qc_syntax::Dialect) {
