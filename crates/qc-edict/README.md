@@ -28,10 +28,11 @@ the memory and the allocation rules.
   `PR_LoadProgs`), `WinQuake/progs.h` (`EDICT_TO_PROG`, `PROG_TO_EDICT`, `NEXT_EDICT`),
   `WinQuake/progdefs.q1` (`globalvars_t`, `entvars_t`), `WinQuake/sv_main.c`
   (`SV_SpawnServer`).
-- **Spec sections:** [EDICT-1 to EDICT-3, EDICT-6, EDICT-7](../../docs/spec/edicts.md)
-  (entity memory and numbering, system globals, system fields, allocation and freeing). The
-  statements about the running server (EDICT-4, EDICT-5, EDICT-8 to EDICT-13) are implemented
-  by the preview host and stay in the coverage baseline until it cites them.
+- **Spec sections:** [EDICT-1 to EDICT-3, EDICT-6, EDICT-7](../../docs/spec/edicts.md) (entity
+  memory and numbering, system globals, system fields, allocation and freeing).
+- **Not this crate's:** the statements about the running server, EDICT-4, EDICT-5 and EDICT-8 to
+  EDICT-13, which the preview host implements; they stay in the coverage baseline until it cites
+  them.
 - **Shipped:** yes. No panics: every index, conversion and arithmetic is checked, and id's
   behaviour on an out-of-range value is written out as the spec fixes it.
 
