@@ -18,14 +18,18 @@ fn error_codes(index: &ModuleIndex) -> Vec<Code> {
     index
         .diagnostics
         .iter()
-        .filter(|d| d.code.is_error())
-        .map(|d| d.code)
+        .filter(|d| d.diagnostic.code.is_error())
+        .map(|d| d.diagnostic.code)
         .collect()
 }
 
 /// The codes of every diagnostic of an index.
 fn all_codes(index: &ModuleIndex) -> Vec<Code> {
-    index.diagnostics.iter().map(|d| d.code).collect()
+    index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.code)
+        .collect()
 }
 
 /// Resolves several files under the FTEQCC dialect, with or without autoprototyping.
@@ -53,7 +57,7 @@ fn compound_assignment_operands_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,
@@ -156,7 +160,7 @@ fn prefix_and_cast_operands_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,
@@ -171,7 +175,7 @@ fn negative_number_subtraction_resolves_its_operand() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(messages, ["Unknown value \"nope\""]);
 }
@@ -308,7 +312,7 @@ fn local_initialisers_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,

@@ -16,6 +16,17 @@ graph is observable (and is what the incremental tests assert). The engine is wr
 with no dependency on the `salsa` crate: it is small, and the project builds its foundations
 itself.
 
+`Db::analyze_module` reads a module as the compiler reads it. Each file of the module is put
+in the `Db` with its path and its text as written (`Db::set_file`); the module is preprocessed
+in compilation order through `qc-preproc` (macros expanded, the untaken side of each
+conditional dropped, includes inlined, QC-9), and each file's expansion is parsed, lowered and
+resolved. Every token of an expansion keeps its origin, its own span or the outermost macro use
+(QC-9.7), so every definition, reference and diagnostic of the result is at a span of a
+source file, an included file's own where it came from one (QC-9.2). The per-file parse and
+lowering are memoized on the expanded text, so editing a macro's definition re-parses the files
+whose expansion it changes and no others. `Db::parse` stays the lossless tree of the file as
+written, the editing view.
+
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.2). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
 names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
@@ -38,8 +49,9 @@ vector, or a vector field, also declares its `_x`, `_y` and `_z` components (QC-
 global function must be defined (QC-11.8); fields and functions are global only (QC-11.9); and
 a state header's next-think name is declared as a global `void()` if new (QC-13.6).
 
-- **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof`) and
-  `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its `Code` and `Span`).
+- **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof` and the token
+  kinds), `qc-preproc` and `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its
+  `Code` and `Span`).
 - **Spec sections:** the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes
   and lookup) and QC-13.6 (state-header names) in
   [`language.md`](../../docs/spec/language.md), and the diagnostics QCD-3.5, QCD-3.6, QCD-3.8,
@@ -60,13 +72,16 @@ built on this model. Rename and dialect profiles (LANG-5) and the engine-target 
 
 ## Public shape
 
-- `Db` and `QueryCounts` (`db`): the incremental query database and its counters.
+- `Db`, `QueryCounts` and `ModuleAnalysis` (`db`): the incremental query database, its
+  counters, and a module read through the preprocessor.
+- `ModuleInput` and `OriginMap` (`expand`): which files a module preprocesses and compiles,
+  and where each span of an expansion came from.
 - `Type`, `SimpleType`, `FunctionType` (`ty`): QC-10 types with the structural equality
   `qcc` gives them (QC-10.6).
 - `Definition`, `Reference`, `DefId`, `DefKind`, `Location`, `FileId` (`symbol`): the symbols
   a module declares and the uses of them.
-- `ModuleIndex` and `resolve_module` (`resolve`): a module's resolved definition list,
-  references and diagnostics.
+- `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved
+  definition list, references and diagnostics, each diagnostic with its file.
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
   find-references.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.

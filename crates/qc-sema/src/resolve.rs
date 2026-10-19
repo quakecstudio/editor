@@ -20,16 +20,29 @@ use std::rc::Rc;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_syntax::Dialect;
 
+use crate::expand::OriginMap;
 use crate::lower::{FileDecls, LiteralValue, RawBody, RawDecl, top_level_kind};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
 
-/// Builds a [`Diagnostic`] (the struct has public fields and no constructor).
-fn diag(code: Code, span: Span, message: String) -> Diagnostic {
-    Diagnostic {
-        code,
-        message,
-        span,
+/// A diagnostic and the file it is in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileDiagnostic {
+    /// The file the diagnostic's span is in.
+    pub file: FileId,
+    /// The diagnostic.
+    pub diagnostic: Diagnostic,
+}
+
+/// Builds a [`FileDiagnostic`] at `location`.
+fn diag(code: Code, location: Location, message: String) -> FileDiagnostic {
+    FileDiagnostic {
+        file: location.file,
+        diagnostic: Diagnostic {
+            code,
+            message,
+            span: location.span,
+        },
     }
 }
 
@@ -43,8 +56,8 @@ pub struct ModuleIndex {
     pub defs: Vec<Definition>,
     /// Every resolved name use, in source order (QC-12.5).
     pub refs: Vec<Reference>,
-    /// The semantic diagnostics, in source order.
-    pub diagnostics: Vec<Diagnostic>,
+    /// The semantic diagnostics, in the order found, each with its file.
+    pub diagnostics: Vec<FileDiagnostic>,
 }
 
 impl ModuleIndex {
@@ -72,10 +85,25 @@ pub struct ResolveOptions {
 /// diagnostics.
 #[must_use]
 pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleIndex {
+    resolve_mapped(files, &[], options)
+}
+
+/// [`resolve_module`] for files the parser read after preprocessing: `maps` holds, for each
+/// entry of `files`, where each span of its rendered text came from (QC-9.7), so every
+/// location in the index is a span of a source file. With no maps a span is in the file of
+/// its entry.
+pub(crate) fn resolve_mapped(
+    files: &[FileDecls],
+    maps: &[&OriginMap],
+    options: ResolveOptions,
+) -> ModuleIndex {
     let fteqcc = options.dialect.has_fteqcc_extensions();
     let mut r = Resolver {
+        index: ModuleIndex::default(),
+        maps,
         fteqcc,
-        ..Resolver::default()
+        globals: HashMap::new(),
+        literals: HashMap::new(),
     };
     if fteqcc && options.autoproto {
         // FTE-22.3: FTEQCC's first pass reads only the definitions, so the second, which
@@ -107,9 +135,11 @@ pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleInd
     r.finish()
 }
 
-#[derive(Default)]
-struct Resolver {
+struct Resolver<'a> {
     index: ModuleIndex,
+    /// Where the spans of each file's rendered text came from; empty when the files were
+    /// parsed as written.
+    maps: &'a [&'a OriginMap],
     /// Whether an FTEQCC profile is in force (FTE-22).
     fteqcc: bool,
     /// The first global definition of each name (QC-12.2), so a global lookup is direct.
@@ -137,7 +167,16 @@ fn component_type(ty: &Type) -> Option<Type> {
 /// when there is none, and otherwise its value when it is a single literal.
 type Init<'a> = Option<Option<&'a LiteralValue>>;
 
-impl Resolver {
+impl Resolver<'_> {
+    /// The source location of the span `span` of file `file`'s parsed text: through the
+    /// file's origin map when it was preprocessed (QC-9.7), else the span itself.
+    fn at(&self, file: FileId, span: Span) -> Location {
+        self.maps
+            .get(file.0)
+            .and_then(|map| map.locate(span))
+            .unwrap_or(Location { file, span })
+    }
+
     /// Looks up a global name: the first global definition with that name (QC-12.2).
     fn lookup_global(&self, name: &str) -> Option<DefId> {
         self.globals.get(name).copied()
@@ -217,7 +256,7 @@ impl Resolver {
         if &def.ty != ty && def.ty != Type::Unknown && *ty != Type::Unknown {
             self.index.diagnostics.push(diag(
                 Code::E0205,
-                location.span,
+                location,
                 format!("Type mismatch on redeclaration of {name}"),
             ));
             return;
@@ -233,7 +272,7 @@ impl Resolver {
                 // QCD-3.6: initialising a name that is already initialised.
                 self.index.diagnostics.push(diag(
                     Code::E0206,
-                    location.span,
+                    location,
                     format!("{name} redeclared"),
                 ));
             }
@@ -251,10 +290,7 @@ impl Resolver {
     /// and returns the definition it names.
     fn declare_top_level(&mut self, file: FileId, decl: &RawDecl) -> DefId {
         let kind = top_level_kind(&decl.ty);
-        let location = Location {
-            file,
-            span: decl.span,
-        };
+        let location = self.at(file, decl.span);
         let init = decl.initialized.then_some(decl.literal.as_ref());
         let def = self.declare_global(&decl.name, &decl.ty, kind, location, init);
         if let Some((next_name, next_span)) = &decl.next_think {
@@ -273,7 +309,7 @@ impl Resolver {
             params: Vec::new(),
             variadic: false,
         }));
-        let location = Location { file, span };
+        let location = self.at(file, span);
         let def = self.declare_global(name, &void_fn, DefKind::Function, location, None);
         // The name in the header is a reference to the think function.
         self.index.refs.push(Reference { location, def });
@@ -287,23 +323,17 @@ impl Resolver {
             locals_start: self.index.defs.len(),
         };
         for param in &body.params {
-            let location = Location {
-                file,
-                span: param.span,
-            };
+            let location = self.at(file, param.span);
             self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);
         }
         // QC-11.10, QC-11.9: locals; a local field or function is an error (QCD-3.8 is the
         // parser's; the semantic check is QC-11.9).
         for local in &body.locals {
-            let location = Location {
-                file,
-                span: local.span,
-            };
+            let location = self.at(file, local.span);
             if local.bad_field_or_function {
                 self.index.diagnostics.push(diag(
                     Code::E0208,
-                    local.span,
+                    location,
                     "Fields and functions must be global".to_owned(),
                 ));
                 continue;
@@ -312,15 +342,12 @@ impl Resolver {
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
         for use_ in &body.uses {
-            let location = Location {
-                file,
-                span: use_.span,
-            };
+            let location = self.at(file, use_.span);
             match self.lookup_in_scope(scope, &use_.name) {
                 Some(def) => self.index.refs.push(Reference { location, def }),
                 None => self.index.diagnostics.push(diag(
                     Code::E0301,
-                    use_.span,
+                    location,
                     format!("Unknown value \"{}\"", use_.name),
                 )),
             }
@@ -371,7 +398,7 @@ impl Resolver {
                 // QCD-3.5: `PR_GetDef` finds the earlier definition with another type.
                 self.index.diagnostics.push(diag(
                     Code::E0205,
-                    location.span,
+                    location,
                     format!("Type mismatch on redeclaration of {name}"),
                 ));
                 return;
@@ -380,7 +407,7 @@ impl Resolver {
                 // QCD-7.3: warn that the local name is the global.
                 self.index.diagnostics.push(diag(
                     Code::W0201,
-                    location.span,
+                    location,
                     format!("local {name} is the global {name}"),
                 ));
             }
@@ -441,12 +468,12 @@ impl Resolver {
 
     /// QC-11.8, QCD-3.11: every global function must be defined; report those that are not.
     fn check_undefined_functions(&mut self) {
-        let mut undefined: Vec<Diagnostic> = Vec::new();
+        let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for def in &self.index.defs {
             if def.kind == DefKind::Function && !def.initialized {
                 undefined.push(diag(
                     Code::E0211,
-                    def.location.span,
+                    def.location,
                     format!("function {} was not defined", def.name),
                 ));
             }

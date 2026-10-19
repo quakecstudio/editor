@@ -15,7 +15,7 @@ fn codes(source: &str) -> Vec<Code> {
     index_of(source)
         .diagnostics
         .iter()
-        .map(|d| d.code)
+        .map(|d| d.diagnostic.code)
         .collect()
 }
 
@@ -65,8 +65,8 @@ fn vector_params_and_locals_declare_components() {
     let unknown: Vec<&str> = index
         .diagnostics
         .iter()
-        .filter(|d| d.code == Code::E0301)
-        .map(|d| d.message.as_str())
+        .filter(|d| d.diagnostic.code == Code::E0301)
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(unknown, ["Unknown value \"org_x\""]);
     let param_x = index.defs.iter().find(|d| d.name == "org_x").unwrap();
@@ -89,7 +89,11 @@ fn a_component_name_follows_redeclaration_rules() {
 fn a_reused_vector_adds_no_components() {
     let index = index_of("vector v;\nvoid() f = { local vector v; v_x = 1; };");
     assert_eq!(index.defs.iter().filter(|d| d.name == "v_x").count(), 1);
-    let warnings: Vec<Code> = index.diagnostics.iter().map(|d| d.code).collect();
+    let warnings: Vec<Code> = index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.code)
+        .collect();
     assert_eq!(warnings, [Code::W0201]);
 }
 
@@ -173,7 +177,12 @@ fn local_reuses_earlier_global() {
     assert_eq!(xs.len(), 1);
     assert_eq!(xs[0].kind, DefKind::Global);
     // The warning is raised.
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::W0201));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::W0201)
+    );
 }
 
 // spec QC-12.3: a parameter that names an earlier global reuses it.
@@ -202,7 +211,12 @@ fn locals_are_private_to_their_function() {
 #[test]
 fn unknown_name_is_e0301() {
     let index = index_of("void() f = { zz = 1; };");
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0301));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0301)
+    );
 }
 
 // spec QC-12.5: a function body sees only definitions made before it; a global declared
@@ -211,7 +225,12 @@ fn unknown_name_is_e0301() {
 fn body_sees_only_earlier_definitions() {
     // `later` is declared after f, so f cannot see it.
     let index = index_of("void() f = { later = 1; };\nfloat later;");
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0301));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0301)
+    );
 }
 
 // spec QC-12.5: a global declared before a function is visible in it.
@@ -226,7 +245,12 @@ fn body_sees_earlier_global() {
 #[test]
 fn local_field_is_e0208() {
     let index = index_of("void() f = { local .float g; };");
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0208));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0208)
+    );
 }
 
 // spec QC-13.6: a state header declares the next-think name as a global void() if new.
@@ -237,14 +261,24 @@ fn next_think_name_is_declared_void_function() {
     let th2 = index.defs.iter().find(|d| d.name == "th2").unwrap();
     assert_eq!(th2.kind, DefKind::Function);
     // th2 is defined by its own body, so no "not defined" error.
-    assert!(index.diagnostics.iter().all(|d| d.code != Code::E0211));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .all(|d| d.diagnostic.code != Code::E0211)
+    );
 }
 
 // spec QC-13.6, QC-11.8: a next-think name never defined is reported as undefined.
 #[test]
 fn undefined_next_think_is_reported() {
     let index = index_of("$frame s1\nvoid() th1 = [$s1, th3] { };");
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0211));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0211)
+    );
 }
 
 // spec QC-13.6, QCD-3.5: a next-think name that exists with another type is a type
@@ -252,7 +286,12 @@ fn undefined_next_think_is_reported() {
 #[test]
 fn next_think_type_mismatch_is_e0205() {
     let index = index_of("float th3;\n$frame s1\nvoid() th1 = [$s1, th3] { };");
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0205));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0205)
+    );
 }
 
 // spec QC-23.3: files compile in order as one program; a later file sees an earlier file's
@@ -271,5 +310,10 @@ fn earlier_file_cannot_see_later_file_definitions() {
     let defs = "float shared;";
     let user = "void() f = { shared = 1; };";
     let index = module_index_of(&[user, defs]);
-    assert!(index.diagnostics.iter().any(|d| d.code == Code::E0301));
+    assert!(
+        index
+            .diagnostics
+            .iter()
+            .any(|d| d.diagnostic.code == Code::E0301)
+    );
 }

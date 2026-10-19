@@ -1,26 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `cargo xtask fteqcc-profile <dir>...`: the acceptance check for the FTEQCC dialect profile
-//! (P2-03). For each rerelease codebase directory it opens the project, and for every module
-//! preprocesses the module's files in compilation order (`qc_preproc`, FTEQCC dialect), then
-//! parses and resolves the expanded files under the FTEQCC profile (`qc_sema::Db` with
-//! `Dialect::Fteqcc`, and autoprototyping for the codebase FTEQCC builds with
-//! `-Fautoproto`), failing on any preprocessor, lexical, syntax or semantic error. It then
-//! checks the vanilla profile reports each extension as a diagnostic, so the two profiles are
-//! observably different (the issue's acceptance criterion). Errors are printed at the file and
-//! line of the source token; a semantic error has only its offset in the expanded file.
+//! (P2-03, P2-32). For each rerelease codebase directory it opens the project, and opens every
+//! module through the semantic model as the editor does: each file of the module's graph goes
+//! into a `qc_sema::Db` as written, under the FTEQCC profile (`Dialect::Fteqcc`, and
+//! autoprototyping for the codebase FTEQCC builds with `-Fautoproto`), and the Db preprocesses
+//! the module, parses and resolves each file's expansion and maps every location back to the
+//! source (`Db::analyze_module`). It fails on any preprocessor, lexical, syntax or semantic
+//! error, each printed at its source file and line, and on a definition, reference or
+//! diagnostic outside the bytes of its source file. It then checks the vanilla profile reports
+//! each extension as a diagnostic, so the two profiles are observably different (the issue's
+//! acceptance criterion).
 //!
 //! The codebases come from `cargo xtask corpus fetch rerelease rerelease-hipnotic
 //! rerelease-rogue rerelease-mg1 rerelease-ctf rerelease-mg3`. The FTEQCC subset each one uses
 //! is recorded in `docs/spec/vectors/dialect-fteqcc-rerelease/coverage.txt` and pinned by the
 //! coverage check (`fteqcc_coverage`); this check adds that they parse and resolve clean.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use qc_lexer::TokenKind;
-use qc_preproc::{FileSpan, FsLoader, Loader, PpToken, Preprocessor};
-use qc_project::{Dialect, Form, Module, Via, open};
-use qc_sema::{Db, FileId};
+use qc_lexer::LineIndex;
+use qc_project::{Dialect, Module, open};
+use qc_sema::{Db, FileId, Location, ModuleInput};
 use qc_syntax::parse_with;
 
 use crate::oracles::rerelease::autoprototypes;
@@ -51,78 +53,16 @@ pub(crate) fn main(_root: &Path, args: &[String]) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// One compiled file after preprocessing: the expanded text the parser reads, and for each
-/// of its tokens the byte offset it starts at and where it came from.
-struct Expanded {
-    text: Vec<u8>,
-    origins: Vec<(usize, FileSpan)>,
-}
-
-impl Expanded {
-    /// Renders a preprocessed file as text: each token's own bytes (a resolved frame
-    /// reference as its number), a line break wherever the token's origin moves to another
-    /// line, and a space otherwise. A token that starts its line indented stays indented,
-    /// since the parser's recovery treats a token in column 0 as the start of a top-level
-    /// declaration (QCD-1.4).
-    fn render<L: Loader>(pp: &Preprocessor<L>, tokens: &[PpToken]) -> Self {
-        let mut out = Self {
-            text: Vec::new(),
-            origins: Vec::new(),
-        };
-        let mut last_line = None;
-        for token in tokens {
-            let origin = pp.origin(token);
-            let line = pp.sources().line(origin);
-            if line != last_line {
-                if !out.text.is_empty() {
-                    out.text.push(b'\n');
-                }
-                let file = pp.sources().file(origin.file);
-                let indented = file
-                    .and_then(|f| origin.span.start.checked_sub(1).and_then(|i| f.text.get(i)))
-                    .is_some_and(|b| *b != b'\n');
-                if indented {
-                    out.text.push(b' ');
-                }
-            } else {
-                out.text.push(b' ');
-            }
-            last_line = line;
-            out.origins.push((out.text.len(), origin));
-            let own = pp.sources().text(token.span).unwrap_or_default();
-            match token.kind {
-                TokenKind::Float(value) if own.first() == Some(&b'$') => {
-                    out.text.extend_from_slice(value.to_string().as_bytes());
-                }
-                _ => out.text.extend_from_slice(own),
-            }
-        }
-        out
-    }
-
-    /// The file and line of the token an offset of the rendered text belongs to.
-    fn locate<L: Loader>(&self, pp: &Preprocessor<L>, offset: usize) -> String {
-        let at = self.origins.partition_point(|(start, _)| *start <= offset);
-        let Some((_, origin)) = at.checked_sub(1).and_then(|i| self.origins.get(i)) else {
-            return "?".to_owned();
-        };
-        let path = pp
-            .sources()
-            .file(origin.file)
-            .map_or_else(PathBuf::new, |f| f.path.clone());
-        let line = pp.sources().line(*origin).unwrap_or(0);
-        format!("{}:{line}", path.display())
-    }
-}
-
 /// Parses and resolves every module of the codebase in `dir` under the FTEQCC profile.
 ///
-/// The parser and the semantic model read each file as FTEQCC compiles it: after the
-/// preprocessor (QC-9) has expanded its macros, dropped the untaken side of each conditional
-/// and inlined its `#include`s. A file as written can use a macro as a statement
-/// (`INHIBIT_COOP` in `rerelease-mg1`), which no parser of the unexpanded text accepts. The
-/// macros of a source-form `progs.src` (PRJ-4.4) are defined by preprocessing it first; its
-/// own lines are the graph's (PRJ-5), so its tokens are not parsed.
+/// Each module is opened through the semantic model as the editor opens it: every file of
+/// the module's graph is put in a `qc_sema::Db` with its path and its text as written, and
+/// `Db::analyze_module` preprocesses the module (QC-9), parses and resolves each file's
+/// expansion, and reports every diagnostic at a span of a source file (QC-9.7). A file as
+/// written can use a macro as a statement (`INHIBIT_COOP` in `rerelease-mg1`), which no parser
+/// of the unexpanded text accepts. The macros of a source-form `progs.src` (PRJ-4.4) are
+/// defined by preprocessing it first; its own lines are the graph's (PRJ-5), so its tokens are
+/// not parsed.
 ///
 /// A codebase FTEQCC compiles with `-Fautoproto` (`rerelease-mg3`, FTE-1.2) is preprocessed
 /// twice, as FTEQCC reads it twice (FTE-22.4), and resolved with every top-level name visible
@@ -144,51 +84,7 @@ fn profile_one(dir: &Path) -> Result<bool, String> {
                 module.name
             ));
         }
-        let mut pp = Preprocessor::new(FsLoader).with_dialect(Dialect::Fteqcc.into());
-        if autoproto {
-            preprocess_module(&mut pp, module)?;
-            pp.restart();
-        }
-        let (expanded, pp_ok) = preprocess_module(&mut pp, module)?;
-        ok &= pp_ok;
-        let mut db = Db::new();
-        db.set_dialect(Dialect::Fteqcc.into());
-        db.set_autoproto(autoproto);
-        let mut ids = Vec::new();
-        for file_expanded in &expanded {
-            let id = FileId(ids.len());
-            db.set_file_text(id, file_expanded.text.clone());
-            ids.push(id);
-        }
-        // Per-file parse errors.
-        for file_expanded in &expanded {
-            let parsed = parse_with(&file_expanded.text, Dialect::Fteqcc.into());
-            for d in parsed.errors() {
-                ok = false;
-                println!(
-                    "FAIL  {}: parse {} {}",
-                    file_expanded.locate(&pp, d.span.start),
-                    d.code.as_str(),
-                    d.message
-                );
-            }
-        }
-        // Whole-module resolution errors.
-        let index = db.module_index(&ids);
-        for d in &index.diagnostics {
-            if !d.code.is_error() {
-                continue;
-            }
-            ok = false;
-            println!(
-                "FAIL  module {}: resolve {} {} @{}..{}",
-                module.name,
-                d.code.as_str(),
-                d.message,
-                d.span.start,
-                d.span.end
-            );
-        }
+        ok &= analyze(module, autoproto)?;
     }
     println!(
         "fteqcc-profile: {}: {modules} modules checked",
@@ -197,41 +93,71 @@ fn profile_one(dir: &Path) -> Result<bool, String> {
     Ok(ok)
 }
 
-/// Preprocesses the files of `module` in compilation order, printing each preprocessor
-/// error; returns the expanded files to parse and whether there was no error.
-fn preprocess_module(
-    pp: &mut Preprocessor<FsLoader>,
-    module: &Module,
-) -> Result<(Vec<Expanded>, bool), String> {
+/// Opens one module through the semantic model and prints every error at the file and line
+/// it is in; fails on an error, or on a definition, reference or diagnostic outside the
+/// bytes of its source file.
+fn analyze(module: &Module, autoproto: bool) -> Result<bool, String> {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc.into());
+    db.set_autoproto(autoproto);
+    for (index, file) in module.graph.files.iter().enumerate() {
+        let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
+        db.set_file(FileId(index), file.path.clone(), text);
+    }
+    let analysis = db.analyze_module(&ModuleInput::from_graph(&module.graph));
     let mut ok = true;
-    let mut expanded = Vec::new();
-    for file in &module.graph.files {
-        if file.via == Via::Include {
-            continue;
-        }
-        let out = pp
-            .preprocess_file(&file.path)
-            .map_err(|e| format!("{}: {e}", file.path.display()))?;
-        if file.via == Via::Root && module.graph.form == Some(Form::Source) {
-            continue;
-        }
-        for d in out.diagnostics.iter().filter(|d| d.code.is_error()) {
+    for d in analysis.diagnostics() {
+        let at = Location {
+            file: d.file,
+            span: d.diagnostic.span,
+        };
+        if !in_source(&db, at) {
             ok = false;
-            let path = pp
-                .sources()
-                .file(d.span.file)
-                .map_or_else(PathBuf::new, |f| f.path.clone());
-            let line = pp.sources().line(d.span).unwrap_or(0);
             println!(
-                "FAIL  {}:{line}: preprocess {} {}",
-                path.display(),
-                d.code.as_str(),
-                d.message
+                "FAIL  module {}: {} outside its source file",
+                module.name,
+                d.diagnostic.code.as_str()
             );
         }
-        expanded.push(Expanded::render(pp, &out.tokens));
+        if d.diagnostic.code.is_error() {
+            ok = false;
+            println!(
+                "FAIL  {}: {} {}",
+                place(&db, at),
+                d.diagnostic.code.as_str(),
+                d.diagnostic.message
+            );
+        }
     }
-    Ok((expanded, ok))
+    let index = &analysis.index;
+    let locations = index
+        .defs
+        .iter()
+        .map(|d| d.location)
+        .chain(index.refs.iter().map(|r| r.location));
+    let outside = locations.filter(|&at| !in_source(&db, at)).count();
+    if outside > 0 {
+        ok = false;
+        println!(
+            "FAIL  module {}: {outside} definitions or references outside their source file",
+            module.name
+        );
+    }
+    Ok(ok)
+}
+
+/// Whether a location is a span of the bytes of its source file.
+fn in_source(db: &Db, at: Location) -> bool {
+    db.file_path(at.file).is_some()
+        && at.span.start <= at.span.end
+        && at.span.end <= db.file_text(at.file).len()
+}
+
+/// The path and 1-based line of a location.
+fn place(db: &Db, at: Location) -> String {
+    let path = db.file_path(at.file).unwrap_or_else(|| Path::new("?"));
+    let line = LineIndex::new(db.file_text(at.file)).line(at.span.start);
+    format!("{}:{line}", path.display())
 }
 
 /// Each FTEQCC extension, under the vanilla profile, must produce at least one diagnostic, so
