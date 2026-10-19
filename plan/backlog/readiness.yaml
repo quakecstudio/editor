@@ -168,6 +168,40 @@ groups:
     - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
 - milestone: P2
   issues:
+  - key: P2-R1
+    title: L1 VM test-suite readiness (P2)
+    labels:
+    - L1-vm
+    - area:process
+    - type:readiness
+    size: S
+    reqs:
+    - TEST-1
+    - TEST-2
+    - TEST-3
+    - TEST-4
+    - TEST-5
+    - TEST-6
+    - TEST-7
+    - TEST-8
+    - TEST-9
+    - TEST-10
+    - TEST-11
+    - TEST-12
+    depends:
+    - P2-60
+    - P1-R1
+    - P0-24
+    deliverable:
+    - 'docs/readiness/p2-r1.md following docs/readiness/_template.md, covering: P2-60'
+    - Ratchet values for every crate in the layer committed to CI
+    acceptance:
+    - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
+    - 'Independent adversarial review completed (TEST-9): reviewer did not write the code, added at least five tests, and every defect found is fixed with a regression test and re-reviewed'
+    - 'Flake job: 20 consecutive passing runs on macOS, Windows and Linux'
+    - Defects reported against this layer from higher layers are all closed
+    verify:
+    - CI run links for coverage, mutation, fuzz, differential and flake jobs; reviewer sign-off on the issue
   - key: P2-R2
     title: L2 syntax test-suite readiness (P2)
     labels:
