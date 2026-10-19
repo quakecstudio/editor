@@ -122,8 +122,8 @@ fn class_member_qualifier_kinds() {
     );
 }
 
-// spec FTE-2.1: `for`, `switch`, `break` and `continue` are keywords only in the position their
-// construct takes, so `for x;` or `switch x;` declares no local of a type `for`
+// spec FTE-21.1: a statement declares locals only when it starts with a type, and a statement
+// word names none, so `for x;` or `switch x;` declares no local of a type `for`
 #[test]
 fn statement_words_never_name_a_type() {
     for body in ["for x;", "switch x;", "break x;", "continue x;", "while x;"] {
@@ -202,6 +202,16 @@ fn typedef_struct_forms() {
         .filter(|k| *k == SyntaxKind::Star)
         .count();
     assert_eq!(stars, 1);
+    // `typedef enum { ... } Name;` defines the enum there.
+    for source in [
+        "typedef enum { A, B } E;\n",
+        "typedef enumflags { A, B } F;\n",
+    ] {
+        let typedef = first_node(source, SyntaxKind::TypedefDecl);
+        let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
+        assert_eq!(direct, [SyntaxKind::EnumDecl], "{source}");
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
     // An array typedef, `typedef float V[3];`.
     let source = "typedef float V[3];\n";
     assert_eq!(fte_codes(source), []);
@@ -380,7 +390,8 @@ fn accessor_views() {
     assert_eq!(text(decl.name()), "strbuf");
 }
 
-// spec FTEF-10.1: an accessor's members may be separated by `;` or `,`
+// spec FTEF-10.1: an accessor's body lists its members; the statement names no separator, and
+// this profile reads a `;` or a `,` after each
 #[test]
 fn accessor_member_separators() {
     for source in [
