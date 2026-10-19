@@ -646,11 +646,11 @@ issues:
   - P2-26
   - P2-36
   deliverable:
-  - 'crates/qc-syntax: the FTEQCC statement and expression forms P2-36 specifies and the parser still rejects (labels and goto, `until`, case ranges, `?:` with no middle, `return =`, `if !`, nested function bodies, state frame expressions, frame-reference stops), with the statements moved out of docs/spec/coverage-baseline.tsv'
+  - 'crates/qc-lexer and crates/qc-syntax: the forms of docs/spec/dialect-fteqcc.md FTEF-18.3 to FTEF-18.15, which P2-36 specified and the FTEQCC profile still rejects or misreads (state frame expressions and frame cycles, the comma operator in a statement, labels and goto, `return =`, `if !`, `until` and `do ... until`, case ranges, `?:` with no middle, `sizeof` without parentheses or of a pointer type or an expression, frame references that stop at `&`, `|`, `(`, `)`, `]` and `..`, `$framesave`, and function types returning functions), with the statements moved out of docs/spec/coverage-baseline.tsv'
   acceptance:
-  - Each form has a parser test citing its statement, and no P2-36 statement is left in coverage-baseline.tsv for want of a parser
+  - Each of FTEF-18.3 to FTEF-18.15 has a test citing it, and none is left in coverage-baseline.tsv
   verify:
-  - cargo test -p qc-syntax; cargo test -p qs-tests (spec-citation ratchet)
+  - cargo test -p qc-lexer -p qc-syntax; cargo test -p qs-tests (spec-citation ratchet)
 - key: P2-40
   title: 'Evaluate #if with FTEQCC''s operator precedence under the FTEQCC profile'
   labels:
