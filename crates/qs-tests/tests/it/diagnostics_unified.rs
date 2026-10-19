@@ -74,10 +74,7 @@ fn editor_diagnostics(module: &Module) -> BTreeSet<Key> {
         }
     }
     for d in &db.module_index(&ids).diagnostics {
-        // Resolution diagnostics carry a span but not a file; attribute them to the file
-        // whose span range contains them, falling back to the module's first file. This is a
-        // test-only attribution and is applied identically to both paths.
-        out.insert(key(resolve_file_of(module, d), d));
+        out.insert(key(d.file.0, &d.diagnostic));
     }
     out
 }
@@ -103,22 +100,9 @@ fn build_diagnostics(module: &Module) -> BTreeSet<Key> {
         .collect();
     let module_index = resolve_module(&lowered, ResolveOptions::default());
     for d in &module_index.diagnostics {
-        out.insert(key(resolve_file_of(module, d), d));
+        out.insert(key(d.file.0, &d.diagnostic));
     }
     out
-}
-
-/// Attributes a resolution diagnostic to a file: the first file whose source, lexed and
-/// parsed, holds a declaration at the diagnostic's span. Resolution diagnostics do not yet
-/// record their file, so for the corpus below, which keeps each diagnostic's offending
-/// construct in a single file, matching on the containing file by span is deterministic and
-/// the same for both paths, which is all set equality needs.
-fn resolve_file_of(module: &Module, d: &Diagnostic) -> usize {
-    module
-        .files
-        .iter()
-        .position(|(_, source)| d.span.end <= source.len())
-        .unwrap_or(0)
 }
 
 /// The corpus: small vanilla QuakeC modules that raise the diagnostics the model owns today.

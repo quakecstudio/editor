@@ -16,8 +16,11 @@
 )]
 
 mod dialect;
+mod dialect_full;
 mod dialect_resolution;
+mod expansion;
 mod incremental;
+mod initialiser_uses;
 mod navigation;
 mod resolution;
 mod types;

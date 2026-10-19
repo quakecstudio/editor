@@ -4,7 +4,9 @@
     clippy::indexing_slicing,
     clippy::string_slice,
     clippy::arithmetic_side_effects,
-    reason = "test code: a failed index is a failed test"
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test code: a failed index, unwrap or panic is a failed test"
 )]
 
 use std::fmt::Write as _;
@@ -899,7 +901,7 @@ fn float_suffix_lexes() {
     );
 }
 
-// spec FTE-20.3: FTEQCC's one-byte escapes are accepted; its others stay unknown.
+// spec FTE-20.4: FTEQCC's one-byte escapes are accepted, and are unknown in vanilla.
 #[test]
 fn fteqcc_string_escapes() {
     let lexed = lex_with(br#""\t\r\a\v\f\#\\\?\'\n\"""#, Dialect::Fteqcc);
@@ -908,10 +910,175 @@ fn fteqcc_string_escapes() {
         lexed.tokens[0].kind,
         TokenKind::String(b"\t\r\x07\x0b\x0c#\\?'\n\"".to_vec())
     );
-    let unknown = lex_with(br#""\[\x41""#, Dialect::Fteqcc);
-    let unknown_codes: Vec<Code> = unknown.diagnostics.iter().map(|d| d.code).collect();
-    assert_eq!(unknown_codes, vec![Code::E0103, Code::E0103]);
     assert_eq!(codes(br#""\t""#), vec![Code::E0103]);
+}
+
+/// The string contents and diagnostic codes of one FTEQCC string literal.
+fn fte_string(source: &[u8]) -> (Vec<u8>, Vec<Code>) {
+    let lexed = lex_with(source, Dialect::Fteqcc);
+    let codes = lexed.diagnostics.iter().map(|d| d.code).collect();
+    match &lexed.tokens[0].kind {
+        TokenKind::String(bytes) => (bytes.clone(), codes),
+        other => panic!("not a string: {other:?}"),
+    }
+}
+
+// spec FTEF-13.4: the Quake character escapes, `\{n}`, `\{xN}`, `\x`, `\u`, `\U` and the
+// digits; a code above a byte is written as UTF-8; any other escape stays unknown.
+#[test]
+fn full_fteqcc_escapes() {
+    let utf8 = |code: u32| char::from_u32(code).unwrap().to_string().into_bytes();
+    assert_eq!(fte_string(br#""\x41\x4""#), (b"A\x04".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""\{65}\{x42}""#), (b"AB".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""A\U00000042""#), (b"AB".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""\[""#).0, utf8(0xe010));
+    assert_eq!(fte_string(br#""\]""#).0, utf8(0xe011));
+    for (escape, code) in [
+        (b'.', 0xe01c),
+        (b'<', 0xe01d),
+        (b'-', 0xe01e),
+        (b'>', 0xe01f),
+        (b'(', 0xe080),
+        (b'=', 0xe081),
+        (b')', 0xe082),
+        (b'+', 0xe083),
+        (b'0', 0xe012),
+        (b'9', 0xe01b),
+    ] {
+        let source = [b'"', b'\\', escape, b'"'];
+        assert_eq!(
+            fte_string(&source),
+            (utf8(code), vec![]),
+            "{}",
+            char::from(escape)
+        );
+    }
+    // `\s` and `\b` toggle bronze text, which sets the high bit, and stand for nothing.
+    assert_eq!(fte_string(br#""a\bb\sc""#), (b"a\xe2c".to_vec(), vec![]));
+    assert_eq!(codes(br#""\b""#), vec![Code::E0103]);
+    // `\{` stops at a byte that is not a digit; a code that is no scalar is `?`.
+    assert_eq!(fte_string(br#""\{6z}""#).0, b"\x06z}".to_vec());
+    assert_eq!(fte_string(br#""\UFFFFFFFF""#).0, b"?".to_vec());
+    assert_eq!(fte_string(br#""\q""#).1, vec![Code::E0103]);
+    // Vanilla has none of them.
+    assert_eq!(codes(br#""\x41""#), vec![Code::E0103]);
+}
+
+// spec FTEF-13.1: `::` is one token in FTEQCC and two `:` bytes unknown to vanilla.
+#[test]
+fn scope_operator_lexes() {
+    assert_eq!(
+        kinds_in(b"a::b", Dialect::Fteqcc),
+        vec![
+            TokenKind::Name("a".into()),
+            TokenKind::Punct(Punct::ColonColon),
+            TokenKind::Name("b".into()),
+        ]
+    );
+    assert_eq!(
+        kinds_in(b"a: b", Dialect::Fteqcc)[1],
+        TokenKind::Punct(Punct::Colon)
+    );
+    assert_eq!(codes(b"a::b"), vec![Code::E0105, Code::E0105]);
+}
+
+// spec FTEF-13.2: a `\` before LF, CR or CR LF joins the lines in FTEQCC; vanilla has no such
+// byte.
+#[test]
+fn line_continuations_are_trivia() {
+    for source in [&b"a \\\nb"[..], b"a \\\r\nb", b"a \\\rb"] {
+        let lexed = lex_with(source, Dialect::Fteqcc);
+        assert!(lexed.diagnostics.is_empty(), "{source:?}");
+        assert_eq!(lexed.tokens.len(), 2);
+    }
+    assert_eq!(codes(b"a \\\nb"), vec![Code::E0105]);
+    // A `\` before anything else is still unknown.
+    assert_eq!(
+        lex_with(b"a \\ b", Dialect::Fteqcc).diagnostics[0].code,
+        Code::E0105
+    );
+}
+
+// spec FTEF-13.3: a character constant is a float of its code; a two-component vector has
+// z 0; vanilla reads neither.
+#[test]
+fn character_constants_and_short_vectors() {
+    let one = |source: &[u8]| {
+        let lexed = lex_with(source, Dialect::Fteqcc);
+        assert!(
+            lexed.diagnostics.is_empty(),
+            "{source:?}: {:?}",
+            lexed.diagnostics
+        );
+        assert_eq!(lexed.tokens.len(), 1, "{source:?}");
+        lexed.tokens[0].kind.clone()
+    };
+    assert_eq!(one(b"'a'"), TokenKind::Float(97.0));
+    assert_eq!(one(b"' '"), TokenKind::Float(32.0));
+    assert_eq!(one(br"'\n'"), TokenKind::Float(10.0));
+    assert_eq!(one(br"'\x41'"), TokenKind::Float(65.0));
+    assert_eq!(one(br"'\q'"), TokenKind::Float(113.0));
+    assert_eq!(one("'\u{e9}'".as_bytes()), TokenKind::Float(233.0));
+    assert_eq!(one(b"'8 8'"), TokenKind::Vector([8.0, 8.0, 0.0]));
+    assert_eq!(one(b"'1 2 3'"), TokenKind::Vector([1.0, 2.0, 3.0]));
+    let unclosed = lex_with(br"'\nx", Dialect::Fteqcc);
+    assert_eq!(unclosed.diagnostics[0].code, Code::E0104);
+    assert_eq!(lex_with(br"'\", Dialect::Fteqcc).tokens.len(), 0);
+    assert_eq!(codes(b"'a'"), vec![Code::E0104]);
+    assert_eq!(codes(b"'8 8'"), vec![Code::E0104]);
+    // A lone invalid UTF-8 byte is its own code.
+    assert_eq!(one(b"'\xff'"), TokenKind::Float(255.0));
+}
+
+// spec FTEF-3.1: a type suffix ends a number and is not part of its value.
+// spec FTEF-3.2: `0x` reads base 16 and a leading `0` base 8.
+// spec FTEF-13.5: every number is kept as a float of its value.
+#[test]
+fn full_fteqcc_numbers() {
+    let value = |source: &str| {
+        let lexed = lex_with(source.as_bytes(), Dialect::Fteqcc);
+        assert!(lexed.diagnostics.is_empty(), "{source}");
+        assert_eq!(lexed.tokens.len(), 1, "{source}");
+        match lexed.tokens[0].kind {
+            TokenKind::Float(v) => v,
+            ref other => panic!("{source}: {other:?}"),
+        }
+    };
+    for (source, expected) in [
+        ("12i", 12.0_f32),
+        ("1u", 1.0),
+        ("7l", 7.0),
+        ("7ll", 7.0),
+        ("7lu", 7.0),
+        ("7LLi", 7.0),
+        ("7ul", 7.0),
+        ("7iLL", 7.0),
+        ("3d", 3.0),
+        ("3f", 3.0),
+        ("3.5d", 3.5),
+        ("3.5f", 3.5),
+        ("0x10", 16.0),
+        ("0XfF", 255.0),
+        ("0x00000002i", 2.0),
+        ("0x80000000i", 2.0_f32.powi(31)),
+        ("010", 8.0),
+        ("0", 0.0),
+        ("0.25", 0.25),
+        ("-0x10", -16.0),
+        ("-5", -5.0),
+        (".5", 0.5),
+        ("0xd", 13.0),
+    ] {
+        assert_eq!(value(source).to_bits(), expected.to_bits(), "{source}");
+    }
+    // A `..` after a number is not a fraction.
+    let dots = kinds_in(b"1..", Dialect::Fteqcc);
+    assert_eq!(dots[0], TokenKind::Float(1.0));
+    // Vanilla reads `0x10` as 0 and the name `x10`.
+    assert_eq!(
+        kinds_in(b"0x10", Dialect::Vanilla),
+        vec![TokenKind::Float(0.0), TokenKind::Name("x10".into())]
+    );
 }
 
 proptest! {

@@ -60,8 +60,8 @@ Never light, whatever directory they are in:
   path the script does not know.
 
 No crate but xtask reads a light path in its tests or build: the only repository files the
-other crates' tests open are under `docs/spec/`, and no crate embeds a document with
-`include_str!`. On the light path:
+other crates' tests open or embed with `include_str!` and `include_bytes!` are under
+`docs/spec/`, and no crate has a build script. On the light path:
 
 | Check | What it does |
 | --- | --- |

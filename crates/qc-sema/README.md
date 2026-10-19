@@ -16,12 +16,26 @@ graph is observable (and is what the incremental tests assert). The engine is wr
 with no dependency on the `salsa` crate: it is small, and the project builds its foundations
 itself.
 
+`Db::analyze_module` reads a module as the compiler reads it. Each file of the module is put
+in the `Db` with its path and its text as written (`Db::set_file`); the module is preprocessed
+in compilation order through `qc-preproc` (macros expanded, the untaken side of each
+conditional dropped, includes inlined, QC-9), and each file's expansion is parsed, lowered and
+resolved. Every token of an expansion keeps its origin, its own span or the outermost macro use
+(QC-9.7), so every definition, reference and diagnostic of the result is at a span of a
+source file, an included file's own where it came from one (QC-9.2). The per-file parse and
+lowering are memoized on the expanded text, so editing a macro's definition re-parses the files
+whose expansion it changes and no others. `Db::parse` stays the lossless tree of the file as
+written, the editing view.
+
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.8). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
 names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
-globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and member
-access (vector members, `.length`, struct fields; FTE-9, FTE-13, FTE-14) is not a global
-field use, so the rerelease resolves with no spurious "unknown value". A named enum's type
+globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and the
+selector of a member access is a reference to the entity field it names, while a vector member,
+`.length` or a struct field names no definition (FTE-9, FTE-13, FTE-14), so the rerelease
+resolves with no spurious "unknown value" and a selector that is none of these is reported.
+Names in a file-level initialiser (FTE-10.2) and in a parameter's default value (FTE-18.2) are
+references too, resolved in the global scope where the declaration is. A named enum's type
 name is a definition (FTE-15.4), a C-style declarator has the function type of its own
 parameter list (FTE-17.1), and FTEQCC's resolution rules apply (FTE-22): a local or parameter
 shadows a global of the same name, a constant may be initialised twice with the same
@@ -38,8 +52,9 @@ vector, or a vector field, also declares its `_x`, `_y` and `_z` components (QC-
 global function must be defined (QC-11.8); fields and functions are global only (QC-11.9); and
 a state header's next-think name is declared as a global `void()` if new (QC-13.6).
 
-- **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof`) and
-  `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its `Code` and `Span`).
+- **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof` and the token
+  kinds), `qc-preproc` and `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its
+  `Code` and `Span`).
 - **Spec sections:** the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes
   and lookup) and QC-13.6 (state-header names) in
   [`language.md`](../../docs/spec/language.md), and the diagnostics QCD-3.5, QCD-3.6, QCD-3.8,
@@ -50,23 +65,40 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   are not declared above. Written from the spec, not ported.
 - **Shipped:** yes.
 
+Under the FTEQCC profile the full dialect of `docs/spec/dialect-fteqcc.md` resolves by FTEF-17:
+a class, struct, union, typedef, enum or accessor names a type, which may be declared again; a
+class's members are found through the class and its parents, in a member function's body
+before the globals, and after `.` or `->` through the class of what the access is made on;
+`Class::member` defines the member its class declares; `this`, `super`, `prior` and FTEQCC's
+intrinsics are no names to define; equal initialisers, builtins of one number, enums declared
+again and `noref` definitions are no redeclaration (FTEF-17.5, FTEF-17.8); a redeclaration
+involving a type name or a pointer is no type mismatch (FTEF-17.6); `wrap`, `weak` and
+`accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
+variable (FTEF-15.5); and a function with no body is reported only where it is referred to
+(FTEF-17.7). FreeCS, Rad-Therapy and Nuclide's `menu-fn` resolve with no error
+(`cargo xtask fteqcc-profile`).
+
 ## What it is not, yet
 
 This crate resolves names and types and answers navigation and the resolution diagnostics. It
 does not yet type-check expressions and operators (QC-16 to QC-19), fold constants or lay out
 globals and fields (QC-20, QC-21), or emit progs statements (QC-22): those are the compiler's,
-built on this model. Rename and dialect profiles (LANG-5) and the engine-target database
-(LANG-6) build on it in later issues.
+built on this model. Rename builds on it in a later issue. Under FTEQCC it does not type
+expressions, so a member access whose base is not a name, `this`, a cast or a call resolves by
+the member's name, and the values of `enumflags` and other constants are not computed.
 
 ## Public shape
 
-- `Db` and `QueryCounts` (`db`): the incremental query database and its counters.
+- `Db`, `QueryCounts` and `ModuleAnalysis` (`db`): the incremental query database, its
+  counters, and a module read through the preprocessor.
+- `ModuleInput` and `OriginMap` (`expand`): which files a module preprocesses and compiles,
+  and where each span of an expansion came from.
 - `Type`, `SimpleType`, `FunctionType` (`ty`): QC-10 types with the structural equality
   `qcc` gives them (QC-10.6).
 - `Definition`, `Reference`, `DefId`, `DefKind`, `Location`, `FileId` (`symbol`): the symbols
   a module declares and the uses of them.
-- `ModuleIndex` and `resolve_module` (`resolve`): a module's resolved definition list,
-  references and diagnostics.
+- `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved
+  definition list, references and diagnostics, each diagnostic with its file.
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
   find-references.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.

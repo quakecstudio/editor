@@ -75,6 +75,12 @@ pub struct Definition {
     /// Whether an initialiser has been seen (QC-11.5): a function body, a builtin number or
     /// a constant value. A second initialiser is an error, "NAME redeclared" (QCD-3.6).
     pub initialized: bool,
+    /// For a member of an FTEQCC class, the class's type-name definition (FTEF-17.1); a
+    /// member is not a global by its name. `None` for every other definition.
+    pub member_of: Option<DefId>,
+    /// Whether the compiler, not the program, defines it: an FTEQCC class's
+    /// `spawnfunc_Name` (FTEF-9.5), never undefined.
+    pub generated: bool,
 }
 
 /// One use of a name that resolves to a definition (QC-12.5).

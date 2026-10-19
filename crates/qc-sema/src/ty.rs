@@ -26,6 +26,12 @@ pub enum Type {
     Field(Rc<Type>),
     /// `T(params)`, a function (QC-10.3).
     Function(Rc<FunctionType>),
+    /// An FTEQCC type named by a word that is not one of the five: a class, struct, union,
+    /// typedef, enum or accessor a program defines, or a C type word such as `int`
+    /// (FTEF-2, FTEF-7.2), as written.
+    Named(Rc<str>),
+    /// An FTEQCC pointer `T *` (FTEF-4.1).
+    Pointer(Rc<Type>),
 }
 
 /// The five simple types (QC-10.1).
@@ -49,8 +55,8 @@ pub enum SimpleType {
 /// stored, so two function types with different parameter names are equal (QC-10.6).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionType {
-    /// The return type, always a simple type in the surface language (QC-10.3).
-    pub ret: SimpleType,
+    /// The return type: a simple type in vanilla (QC-10.3), any type in FTEQCC (FTEF-15.2).
+    pub ret: Type,
     /// The parameter types, in order.
     pub params: Vec<Type>,
     /// Whether the parameter list is `(...)` (QC-10.4).
@@ -65,7 +71,12 @@ impl Type {
     pub fn word_size(&self) -> u32 {
         match self {
             Self::Simple(SimpleType::Vector) => 3,
-            Self::Unknown | Self::Simple(_) | Self::Field(_) | Self::Function(_) => 1,
+            Self::Unknown
+            | Self::Simple(_)
+            | Self::Field(_)
+            | Self::Function(_)
+            | Self::Named(_)
+            | Self::Pointer(_) => 1,
         }
     }
 
@@ -81,32 +92,72 @@ impl Type {
         matches!(self, Self::Field(_))
     }
 
+    /// Whether this is an FTEQCC type whose meaning the semantic model does not follow: a
+    /// named type, a pointer, or one holding either or [`Type::Unknown`]. Two types are then
+    /// [`Type::compatible`] whatever they are (FTEF-17.6).
+    #[must_use]
+    pub fn is_opaque(&self) -> bool {
+        match self {
+            Self::Unknown | Self::Named(_) | Self::Pointer(_) => true,
+            Self::Simple(_) => false,
+            Self::Field(inner) => inner.is_opaque(),
+            Self::Function(func) => func.ret.is_opaque() || func.params.iter().any(Self::is_opaque),
+        }
+    }
+
+    /// Whether a redeclaration with type `other` declares the same thing (QC-11.5): equal
+    /// types, or, under FTEQCC, types either of which [`Type::is_opaque`] (FTEF-17.6).
+    #[must_use]
+    pub fn compatible(&self, other: &Self) -> bool {
+        self == other || self.is_opaque() || other.is_opaque()
+    }
+
+    /// The class or other type a value of this type names, through one pointer: `Named` or
+    /// `Pointer(Named)` (FTEF-17.3).
+    #[must_use]
+    pub fn type_name(&self) -> Option<&str> {
+        match self {
+            Self::Named(name) => Some(name),
+            Self::Pointer(inner) => inner.type_name(),
+            Self::Unknown | Self::Simple(_) | Self::Field(_) | Self::Function(_) => None,
+        }
+    }
+
     /// Lowers a syntactic [`ast::Type`] to a semantic [`Type`].
     ///
     /// A missing or malformed part becomes [`Type::Unknown`], since the parser never fails
-    /// and may hand back a partial type (QCD-1.4). `..float` nests field types (QC-10.2).
+    /// and may hand back a partial type (QCD-1.4). `..float` nests field types (QC-10.2). An
+    /// FTEQCC type word that is not one of the five is [`Type::Named`] (FTEF-2, FTEF-7.2).
     #[must_use]
     pub fn from_ast(ty: &ast::Type) -> Self {
         match ty {
-            ast::Type::Simple(simple) => simple
-                .kind()
-                .map_or(Self::Unknown, |k| Self::Simple(SimpleType::from_ast(k))),
+            ast::Type::Simple(simple) => match simple.kind() {
+                Some(k) => Self::Simple(SimpleType::from_ast(k)),
+                None => {
+                    let text = simple.text();
+                    if text.is_empty() {
+                        Self::Unknown
+                    } else {
+                        Self::Named(Rc::from(text.as_str()))
+                    }
+                }
+            },
             ast::Type::Field(field) => {
                 let inner = field.inner().map_or(Self::Unknown, |t| Self::from_ast(&t));
                 Self::Field(Rc::new(inner))
             }
+            ast::Type::Pointer(pointer) => {
+                let inner = pointer
+                    .inner()
+                    .map_or(Self::Unknown, |t| Self::from_ast(&t));
+                Self::Pointer(Rc::new(inner))
+            }
             ast::Type::Function(func) => {
                 let ret = func
                     .return_type()
-                    .and_then(|r| r.kind())
-                    .map_or(SimpleType::Void, SimpleType::from_ast);
+                    .map_or(Self::Simple(SimpleType::Void), |r| Self::from_ast(&r));
                 let (params, variadic) = func.params().map_or((Vec::new(), false), |list| {
-                    let variadic = list.is_variadic();
-                    let params = list
-                        .params()
-                        .map(|p| p.ty().map_or(Self::Unknown, |t| Self::from_ast(&t)))
-                        .collect();
-                    (params, variadic)
+                    (Self::params_of(&list), list.is_variadic())
                 });
                 Self::Function(Rc::new(FunctionType {
                     ret,
@@ -115,6 +166,25 @@ impl Type {
                 }))
             }
         }
+    }
+
+    /// The parameter types of a parameter list (QC-10.3). FTEQCC's `(void)`, one `void` with no
+    /// name, has none (FTEF-15.3).
+    #[must_use]
+    pub fn params_of(list: &ast::ParamList) -> Vec<Self> {
+        let params: Vec<ast::Param> = list.params().collect();
+        if let [only] = params.as_slice()
+            && only.name().is_none()
+            && only
+                .ty()
+                .is_some_and(|t| Self::from_ast(&t) == Self::Simple(SimpleType::Void))
+        {
+            return Vec::new();
+        }
+        params
+            .iter()
+            .map(|p| p.ty().map_or(Self::Unknown, |t| Self::from_ast(&t)))
+            .collect()
     }
 }
 

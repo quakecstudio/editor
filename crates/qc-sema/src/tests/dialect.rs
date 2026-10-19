@@ -12,7 +12,7 @@ fn fte_errors(source: &str) -> Vec<String> {
     fte_index_of(source)
         .diagnostics
         .iter()
-        .map(|d| format!("{} {}", d.code.as_str(), d.message))
+        .map(|d| format!("{} {}", d.diagnostic.code.as_str(), d.diagnostic.message))
         .collect()
 }
 

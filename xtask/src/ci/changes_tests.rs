@@ -290,3 +290,86 @@ fn a_diff_outside_a_repository_is_full() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "full\n");
 }
+
+/// The jobs of `ci.yml`, by id, each with its lines.
+fn workflow_jobs() -> Vec<(String, Vec<String>)> {
+    let workflow = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let mut jobs: Vec<(String, Vec<String>)> = Vec::new();
+    let mut in_jobs = false;
+    for line in workflow.lines() {
+        if line == "jobs:" {
+            in_jobs = true;
+            continue;
+        }
+        if !in_jobs {
+            continue;
+        }
+        let header = line
+            .strip_prefix("  ")
+            .and_then(|rest| rest.strip_suffix(':'));
+        match header {
+            Some(id) if !id.starts_with([' ', '#']) => jobs.push((id.to_owned(), Vec::new())),
+            _ => {
+                if let Some((_, lines)) = jobs.last_mut() {
+                    lines.push(line.to_owned());
+                }
+            }
+        }
+    }
+    jobs
+}
+
+/// The steps among a job's lines, each as its lines.
+fn steps(lines: &[String]) -> Vec<Vec<String>> {
+    let mut steps: Vec<Vec<String>> = Vec::new();
+    let mut in_steps = false;
+    for line in lines {
+        if line == "    steps:" {
+            in_steps = true;
+        } else if in_steps && line.starts_with("      - ") {
+            steps.push(vec![line.clone()]);
+        } else if in_steps && let Some(step) = steps.last_mut() {
+            step.push(line.clone());
+        }
+    }
+    steps
+}
+
+/// A job that needs the classification runs even when the classification
+/// fails: otherwise it would be skipped, and a skipped job reports success.
+#[test]
+fn every_job_that_needs_the_classification_runs_when_it_fails() {
+    let jobs = workflow_jobs();
+    let mut needing = 0_usize;
+    for (id, lines) in &jobs {
+        if !lines.iter().any(|line| line == "    needs: changes") {
+            continue;
+        }
+        needing = needing.saturating_add(1);
+        let condition = lines.iter().find(|line| line.starts_with("    if: "));
+        assert!(
+            condition.is_some_and(|line| line.contains("!cancelled()")),
+            "{id}: {condition:?}"
+        );
+    }
+    assert_eq!(needing, jobs.len().saturating_sub(3), "{jobs:?}");
+}
+
+/// On the light path a matrix job skips its steps, so every step of one must
+/// wait for the full path, including a step added later.
+#[test]
+fn every_step_of_the_build_and_test_asset_jobs_waits_for_the_full_path() {
+    let jobs = workflow_jobs();
+    for id in ["build", "test-assets"] {
+        let (_, lines) = jobs.iter().find(|(name, _)| name == id).unwrap();
+        let steps = steps(lines);
+        assert!(steps.len() >= 4, "{id}");
+        for step in steps {
+            assert!(
+                step.iter()
+                    .any(|line| line.starts_with("        if: env.CI_PATH == 'full'")),
+                "{id}: {step:?}"
+            );
+        }
+    }
+}
