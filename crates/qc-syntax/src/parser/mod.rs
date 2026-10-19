@@ -194,7 +194,7 @@ pub(crate) struct Parser<'a> {
     muted: bool,
     depth: usize,
     /// Whether the nesting limit was passed in the current statement, declaration or member,
-    /// so no construct in it opens another level until the next one starts (QC-27.15): the
+    /// so no construct in it opens another level until the next one starts (QC-27.16): the
     /// levels it unwinds through would otherwise go on wrapping what they hold, and the tree
     /// would grow past the limit after all.
     too_deep: bool,
@@ -458,7 +458,7 @@ impl<'a> Parser<'a> {
 
     /// Enters one level of nesting; false, with the error reported, past the limit
     /// (QC-27.15), and false from then on until the next statement, declaration or member
-    /// starts ([`Parser::start_item`]). Each call is paired with a [`Parser::leave`].
+    /// starts ([`Parser::start_item`], QC-27.16). Each call is paired with a [`Parser::leave`].
     fn enter(&mut self) -> bool {
         self.depth = self.depth.saturating_add(1);
         if self.too_deep {
@@ -474,7 +474,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Starts a statement, declaration or member: the errors of the last one no longer mute
-    /// this one's (QC-24.2), and its nesting starts afresh (QC-27.15).
+    /// this one's (QC-24.2), and its nesting starts afresh (QC-27.16).
     fn start_item(&mut self) {
         self.muted = false;
         self.too_deep = false;
