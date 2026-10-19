@@ -7,14 +7,20 @@
 //! [`crate::lower::FileDecls`] in that order into one definition list (QC-12.2), resolves
 //! every name use against it (QC-12.5), and records the diagnostics the semantic model owns.
 //!
-//! Implements QC-11 (declarations and redeclaration), QC-12 (scopes and lookup) and the
-//! state-header name rule of QC-13.6; reports QCD-3.5, QCD-3.6, QCD-3.11 and QCD-7.3.
+//! Implements QC-11 (declarations and redeclaration, the vector components of QC-11.7), QC-12
+//! (scopes and lookup) and the state-header name rule of QC-13.6; reports QCD-3.5, QCD-3.6,
+//! QCD-3.11 and QCD-7.3. Under an FTEQCC profile it follows FTE-22 instead where FTEQCC
+//! differs: locals shadow globals (FTE-22.1), a constant may be initialised twice with the
+//! same literal (FTE-22.2), and with autoprototyping every top-level name is visible to every
+//! function body (FTE-22.3).
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_syntax::Dialect;
 
-use crate::lower::{FileDecls, RawBody, RawDecl, top_level_kind};
+use crate::lower::{FileDecls, LiteralValue, RawBody, RawDecl, top_level_kind};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
 
@@ -49,18 +55,53 @@ impl ModuleIndex {
     }
 }
 
+/// How a module is resolved: the dialect profile and FTEQCC's autoprototyping.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ResolveOptions {
+    /// The dialect profile (PRJ-2.2). An FTEQCC dialect resolves by FTE-22.
+    pub dialect: Dialect,
+    /// FTEQCC's `-Fautoproto` (FTE-22.3): every top-level declaration of the module is
+    /// visible to every function body. Only meaningful with an FTEQCC dialect.
+    pub autoproto: bool,
+}
+
 /// Resolves a module from its files' lowered declarations, in compilation order (QC-23.3).
 ///
 /// `files` is the module's file graph order; each entry is that file's [`FileDecls`]. The
 /// returned [`ModuleIndex`] holds the definition list, the resolved references and the
 /// diagnostics.
 #[must_use]
-pub fn resolve_module(files: &[FileDecls]) -> ModuleIndex {
-    let mut r = Resolver::default();
-    for (index, file) in files.iter().enumerate() {
-        let file_id = FileId(index);
-        for decl in &file.decls {
-            r.add_top_level(file_id, decl);
+pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleIndex {
+    let fteqcc = options.dialect.has_fteqcc_extensions();
+    let mut r = Resolver {
+        fteqcc,
+        ..Resolver::default()
+    };
+    if fteqcc && options.autoproto {
+        // FTE-22.3: FTEQCC's first pass reads only the definitions, so the second, which
+        // compiles the bodies, finds every top-level name already declared.
+        let mut bodies = Vec::new();
+        for (index, file) in files.iter().enumerate() {
+            let file_id = FileId(index);
+            for decl in &file.decls {
+                let def = r.declare_top_level(file_id, decl);
+                if let Some(body) = &decl.body {
+                    bodies.push((file_id, def, body));
+                }
+            }
+        }
+        for (file_id, def, body) in bodies {
+            r.resolve_body(file_id, def, body);
+        }
+    } else {
+        for (index, file) in files.iter().enumerate() {
+            let file_id = FileId(index);
+            for decl in &file.decls {
+                let def = r.declare_top_level(file_id, decl);
+                if let Some(body) = &decl.body {
+                    r.resolve_body(file_id, def, body);
+                }
+            }
         }
     }
     r.finish()
@@ -69,50 +110,95 @@ pub fn resolve_module(files: &[FileDecls]) -> ModuleIndex {
 #[derive(Default)]
 struct Resolver {
     index: ModuleIndex,
+    /// Whether an FTEQCC profile is in force (FTE-22).
+    fteqcc: bool,
+    /// The first global definition of each name (QC-12.2), so a global lookup is direct.
+    globals: HashMap<String, DefId>,
+    /// The literal each initialised global was given, for FTE-22.2.
+    literals: HashMap<DefId, LiteralValue>,
 }
+
+/// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
+const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
+
+/// The type of each component of a definition of type `ty`: `float` for a `vector`, `.float`
+/// for a `.vector` field (QC-11.7); `None` for any other type.
+fn component_type(ty: &Type) -> Option<Type> {
+    match ty {
+        Type::Simple(SimpleType::Vector) => Some(Type::Simple(SimpleType::Float)),
+        Type::Field(inner) if **inner == Type::Simple(SimpleType::Vector) => {
+            Some(Type::Field(Rc::new(Type::Simple(SimpleType::Float))))
+        }
+        Type::Unknown | Type::Simple(_) | Type::Field(_) | Type::Function(_) => None,
+    }
+}
+
+/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.2): `None`
+/// when there is none, and otherwise its value when it is a single literal.
+type Init<'a> = Option<Option<&'a LiteralValue>>;
 
 impl Resolver {
     /// Looks up a global name: the first global definition with that name (QC-12.2).
     fn lookup_global(&self, name: &str) -> Option<DefId> {
-        self.index
-            .defs
-            .iter()
-            .position(|d| d.kind.is_global() && d.name == name)
-            .map(DefId)
+        self.globals.get(name).copied()
     }
 
     /// Adds a definition and returns its id.
     fn push_def(&mut self, def: Definition) -> DefId {
         let id = DefId(self.index.defs.len());
+        if def.kind.is_global() {
+            self.globals.entry(def.name.clone()).or_insert(id);
+        }
         self.index.defs.push(def);
         id
     }
 
-    /// Declares, or redeclares, a global-scope name (QC-11.5).
+    /// Declares, or redeclares, a global-scope name (QC-11.5), and the components of a
+    /// vector or vector field it declares anew (QC-11.7).
     ///
     /// A name already in scope with the same type refers to the same definition; declaring
     /// it with a different type is QCD-3.5; initialising it a second time is QCD-3.6
-    /// (QC-11.5). Returns the [`DefId`] the name resolves to.
+    /// (QC-11.5), unless FTE-22.2 accepts it. Returns the [`DefId`] the name resolves to.
     fn declare_global(
         &mut self,
         name: &str,
         ty: &Type,
         kind: DefKind,
         location: Location,
-        initialized: bool,
+        init: Init<'_>,
     ) -> DefId {
         if let Some(existing) = self.lookup_global(name) {
-            self.redeclare(existing, name, ty, location, initialized);
+            self.redeclare(existing, name, ty, location, init);
             return existing;
         }
-        self.push_def(Definition {
+        let id = self.push_def(Definition {
             name: name.to_owned(),
             ty: ty.clone(),
             kind,
             location,
             owner: None,
-            initialized,
-        })
+            initialized: init.is_some(),
+        });
+        if let Some(Some(literal)) = init {
+            self.literals.insert(id, literal.clone());
+        }
+        // QC-11.7: `PR_GetDef` makes `name_x`, `name_y` and `name_z` for a new vector, and
+        // `.float` fields of the same names for a new `.vector` field.
+        if let Some(component) = component_type(ty) {
+            let component_kind = top_level_kind(&component);
+            let component_init = init.map(|_| None);
+            for suffix in COMPONENTS {
+                let component_name = format!("{name}{suffix}");
+                self.declare_global(
+                    &component_name,
+                    &component,
+                    component_kind,
+                    location,
+                    component_init,
+                );
+            }
+        }
+        id
     }
 
     /// Handles a redeclaration of an existing definition (QC-11.5).
@@ -122,7 +208,7 @@ impl Resolver {
         name: &str,
         ty: &Type,
         location: Location,
-        initialized: bool,
+        init: Init<'_>,
     ) {
         let Some(def) = self.index.defs.get(existing.0) else {
             return;
@@ -136,35 +222,45 @@ impl Resolver {
             ));
             return;
         }
-        // QCD-3.6: initialising a name that is already initialised.
-        if initialized && def.initialized {
-            self.index.diagnostics.push(diag(
-                Code::E0206,
-                location.span,
-                format!("{name} redeclared"),
-            ));
+        let Some(literal) = init else {
+            return;
+        };
+        if def.initialized {
+            // FTE-22.2: FTEQCC compares a second initialiser with the first and accepts it
+            // when the two are the same value.
+            let same = self.fteqcc && literal.is_some() && literal == self.literals.get(&existing);
+            if !same {
+                // QCD-3.6: initialising a name that is already initialised.
+                self.index.diagnostics.push(diag(
+                    Code::E0206,
+                    location.span,
+                    format!("{name} redeclared"),
+                ));
+            }
             return;
         }
-        if initialized && let Some(def) = self.index.defs.get_mut(existing.0) {
+        if let Some(def) = self.index.defs.get_mut(existing.0) {
             def.initialized = true;
+        }
+        if let Some(literal) = literal {
+            self.literals.insert(existing, literal.clone());
         }
     }
 
-    /// Adds one top-level declaration and, if it is a function body, its scope (QC-13).
-    fn add_top_level(&mut self, file: FileId, decl: &RawDecl) {
+    /// Declares one top-level declaration and its state header's next-think name (QC-13.6),
+    /// and returns the definition it names.
+    fn declare_top_level(&mut self, file: FileId, decl: &RawDecl) -> DefId {
         let kind = top_level_kind(&decl.ty);
         let location = Location {
             file,
             span: decl.span,
         };
-        let def = self.declare_global(&decl.name, &decl.ty, kind, location, decl.initialized);
-        // QC-13.6: the next-think name is declared as a global void() if it is new.
+        let init = decl.initialized.then_some(decl.literal.as_ref());
+        let def = self.declare_global(&decl.name, &decl.ty, kind, location, init);
         if let Some((next_name, next_span)) = &decl.next_think {
             self.declare_next_think(file, next_name, *next_span);
         }
-        if let Some(body) = &decl.body {
-            self.resolve_body(file, def, body);
-        }
+        def
     }
 
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -178,7 +274,7 @@ impl Resolver {
             variadic: false,
         }));
         let location = Location { file, span };
-        let def = self.declare_global(name, &void_fn, DefKind::Function, location, false);
+        let def = self.declare_global(name, &void_fn, DefKind::Function, location, None);
         // The name in the header is a reference to the think function.
         self.index.refs.push(Reference { location, def });
     }
@@ -186,15 +282,16 @@ impl Resolver {
     /// Resolves one function body: its parameters, locals and name uses (QC-12.1, QC-12.5).
     fn resolve_body(&mut self, file: FileId, owner: DefId, body: &RawBody) {
         // Record where this function's locals start, so lookups in it see only its own.
-        let locals_start = self.index.defs.len();
-        // QC-12.3: a parameter that names an existing global reuses the global, it does not
-        // shadow it; otherwise it is a new parameter in the function's scope.
+        let scope = Scope {
+            owner,
+            locals_start: self.index.defs.len(),
+        };
         for param in &body.params {
             let location = Location {
                 file,
                 span: param.span,
             };
-            self.declare_scoped(owner, &param.name, &param.ty, DefKind::Param, location);
+            self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);
         }
         // QC-11.10, QC-11.9: locals; a local field or function is an error (QCD-3.8 is the
         // parser's; the semantic check is QC-11.9).
@@ -211,7 +308,7 @@ impl Resolver {
                 ));
                 continue;
             }
-            self.declare_scoped(owner, &local.name, &local.ty, DefKind::Local, location);
+            self.declare_scoped(scope, &local.name, &local.ty, DefKind::Local, location);
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
         for use_ in &body.uses {
@@ -219,7 +316,7 @@ impl Resolver {
                 file,
                 span: use_.span,
             };
-            match self.lookup_in_scope(owner, &use_.name, locals_start) {
+            match self.lookup_in_scope(scope, &use_.name) {
                 Some(def) => self.index.refs.push(Reference { location, def }),
                 None => self.index.diagnostics.push(diag(
                     Code::E0301,
@@ -230,22 +327,48 @@ impl Resolver {
         }
     }
 
-    /// Declares a parameter or local, honouring QC-12.3's no-shadow rule.
+    /// Declares a parameter or local, and the components of a new vector (QC-11.7).
+    ///
+    /// A name the function already declared is that definition again, or a type mismatch
+    /// (QC-11.5). In vanilla a name that is a global reuses the global (QC-12.3); in an
+    /// FTEQCC profile the local is new and shadows it (FTE-22.1).
     fn declare_scoped(
         &mut self,
-        owner: DefId,
+        scope: Scope,
         name: &str,
         ty: &Type,
         kind: DefKind,
         location: Location,
     ) {
-        if let Some(global) = self.lookup_global(name) {
-            // QC-12.3: the local or parameter reuses the global declared before it.
-            if let Some(def) = self.index.defs.get(global.0)
-                && &def.ty != ty
-                && def.ty != Type::Unknown
-                && *ty != Type::Unknown
-            {
+        self.declare_scoped_inner(scope, name, ty, kind, location, false);
+    }
+
+    /// [`Resolver::declare_scoped`]; a `component` (QC-11.7) that reuses a global is not
+    /// warned about, since the source never names it.
+    fn declare_scoped_inner(
+        &mut self,
+        scope: Scope,
+        name: &str,
+        ty: &Type,
+        kind: DefKind,
+        location: Location,
+        component: bool,
+    ) {
+        let existing = self.lookup_local(scope, name).or_else(|| {
+            if self.fteqcc {
+                None
+            } else {
+                self.lookup_global(name)
+            }
+        });
+        if let Some(existing) = existing {
+            let Some(def) = self.index.defs.get(existing.0) else {
+                return;
+            };
+            let global = def.kind.is_global();
+            let mismatch = &def.ty != ty && def.ty != Type::Unknown && *ty != Type::Unknown;
+            if mismatch {
+                // QCD-3.5: `PR_GetDef` finds the earlier definition with another type.
                 self.index.diagnostics.push(diag(
                     Code::E0205,
                     location.span,
@@ -253,16 +376,18 @@ impl Resolver {
                 ));
                 return;
             }
-            // QCD-7.3: warn that the local name is the global.
-            self.index.diagnostics.push(diag(
-                Code::W0201,
-                location.span,
-                format!("local {name} is the global {name}"),
-            ));
-            // The declaration is a reference to the global it reuses.
+            if global && !component {
+                // QCD-7.3: warn that the local name is the global.
+                self.index.diagnostics.push(diag(
+                    Code::W0201,
+                    location.span,
+                    format!("local {name} is the global {name}"),
+                ));
+            }
+            // The declaration is a reference to the definition it reuses.
             self.index.refs.push(Reference {
                 location,
-                def: global,
+                def: existing,
             });
             return;
         }
@@ -271,28 +396,42 @@ impl Resolver {
             ty: ty.clone(),
             kind,
             location,
-            owner: Some(owner),
+            owner: Some(scope.owner),
             initialized: false,
         });
+        // QC-11.7: a new vector local or parameter has its components too.
+        if let Some(component) = component_type(ty) {
+            for suffix in COMPONENTS {
+                let component_name = format!("{name}{suffix}");
+                self.declare_scoped_inner(scope, &component_name, &component, kind, location, true);
+            }
+        }
     }
 
-    /// Looks up a name in a function's scope: its own locals and parameters first in
-    /// declaration order, then globals (QC-12.2).
-    ///
-    /// `locals_start` is the index in `defs` where this function's locals begin, so a local
-    /// of another function (declared earlier) is invisible (QC-12.4).
-    fn lookup_in_scope(&self, owner: DefId, name: &str, locals_start: usize) -> Option<DefId> {
-        // QC-12.2: walk the single list from the start, taking the first definition that is
-        // global or belongs to this function.
+    /// The parameter or local of the function in `scope` named `name` (QC-12.1).
+    fn lookup_local(&self, scope: Scope, name: &str) -> Option<DefId> {
         self.index
             .defs
             .iter()
             .enumerate()
-            .find(|(index, d)| {
-                d.name == name
-                    && (d.kind.is_global() || (d.owner == Some(owner) && *index >= locals_start))
-            })
+            .skip(scope.locals_start)
+            .find(|(_, d)| d.owner == Some(scope.owner) && d.name == name)
             .map(|(index, _)| DefId(index))
+    }
+
+    /// Looks up a name in a function's scope (QC-12.2). In vanilla the first definition in
+    /// the list that is global or the function's own is the global when there is one, since
+    /// a local cannot shadow it (QC-12.3); in an FTEQCC profile the function's own comes
+    /// first, since it shadows the global (FTE-22.1). A local of another function, declared
+    /// earlier, is invisible (QC-12.4).
+    fn lookup_in_scope(&self, scope: Scope, name: &str) -> Option<DefId> {
+        if self.fteqcc {
+            self.lookup_local(scope, name)
+                .or_else(|| self.lookup_global(name))
+        } else {
+            self.lookup_global(name)
+                .or_else(|| self.lookup_local(scope, name))
+        }
     }
 
     fn finish(mut self) -> ModuleIndex {
@@ -314,4 +453,12 @@ impl Resolver {
         }
         self.index.diagnostics.extend(undefined);
     }
+}
+
+/// The function whose body is being resolved, and where its locals start in the definition
+/// list.
+#[derive(Clone, Copy)]
+struct Scope {
+    owner: DefId,
+    locals_start: usize,
 }

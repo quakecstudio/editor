@@ -2,10 +2,13 @@
 
 //! Resolution and diagnostics tests (QC-11, QC-12, QC-13.6; QCD-3, QCD-4.1, QCD-7.3).
 
+use std::rc::Rc;
+
 use qc_diag::Code;
 
 use super::{index_of, module_index_of};
 use crate::symbol::{DefId, DefKind};
+use crate::ty::{SimpleType, Type};
 
 /// The codes of the diagnostics an index reports, in order.
 fn codes(source: &str) -> Vec<Code> {
@@ -21,8 +24,73 @@ fn codes(source: &str) -> Vec<Code> {
 fn file_level_names_become_definitions() {
     let index = index_of("float a;\nvector b;\nstring c;");
     let names: Vec<&str> = index.defs.iter().map(|d| d.name.as_str()).collect();
-    assert_eq!(names, ["a", "b", "c"]);
+    // The vector's components follow it (QC-11.7).
+    assert_eq!(names, ["a", "b", "b_x", "b_y", "b_z", "c"]);
     assert!(index.defs.iter().all(|d| d.kind == DefKind::Global));
+}
+
+// spec QC-11.7: a vector global declares float globals `v_x`, `v_y` and `v_z`, which a body
+// uses by name.
+#[test]
+fn vector_global_declares_its_components() {
+    let index = index_of("vector v;\nvoid() f = { v_x = v_y + v_z; };");
+    let float = Type::Simple(SimpleType::Float);
+    for name in ["v_x", "v_y", "v_z"] {
+        let def = index.defs.iter().find(|d| d.name == name).unwrap();
+        assert_eq!(def.ty, float);
+        assert_eq!(def.kind, DefKind::Global);
+    }
+    assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+}
+
+// spec QC-11.7: a `.vector` field declares `.float` fields `f_x`, `f_y` and `f_z`.
+#[test]
+fn vector_field_declares_float_fields() {
+    let index = index_of(".vector o;\nentity e;\nvoid() f = { e.o_z = 1; };");
+    let def = index.defs.iter().find(|d| d.name == "o_z").unwrap();
+    assert_eq!(def.kind, DefKind::Field);
+    let float_field = Type::Field(Rc::new(Type::Simple(SimpleType::Float)));
+    assert_eq!(def.ty, float_field);
+    assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+}
+
+// spec QC-11.7: a vector parameter and a vector local have components in the function's
+// scope, which no other function sees (QC-12.4).
+#[test]
+fn vector_params_and_locals_declare_components() {
+    let index = index_of(
+        "void(vector org) f = { local vector d; d_x = org_y; };\n\
+         void() g = { org_x = 1; };",
+    );
+    let unknown: Vec<&str> = index
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == Code::E0301)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(unknown, ["Unknown value \"org_x\""]);
+    let param_x = index.defs.iter().find(|d| d.name == "org_x").unwrap();
+    assert_eq!(param_x.kind, DefKind::Param);
+    let local_x = index.defs.iter().find(|d| d.name == "d_x").unwrap();
+    assert_eq!(local_x.kind, DefKind::Local);
+}
+
+// spec QC-11.7: a component is an ordinary name, so a float of the same name declared before
+// is the component, and one of another type is a type mismatch (QC-11.5).
+#[test]
+fn a_component_name_follows_redeclaration_rules() {
+    assert!(codes("float v_x;\nvector v;").is_empty());
+    assert_eq!(codes("string v_x;\nvector v;"), [Code::E0205]);
+}
+
+// spec QC-11.7: a vector local that reuses a vector global (QC-12.3) adds no components, and
+// its components, the global's, raise no "local is the global" warning of their own.
+#[test]
+fn a_reused_vector_adds_no_components() {
+    let index = index_of("vector v;\nvoid() f = { local vector v; v_x = 1; };");
+    assert_eq!(index.defs.iter().filter(|d| d.name == "v_x").count(), 1);
+    let warnings: Vec<Code> = index.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(warnings, [Code::W0201]);
 }
 
 // spec QC-11.8: a global of function type is a function, not a variable.

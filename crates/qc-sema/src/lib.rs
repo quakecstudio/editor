@@ -30,6 +30,12 @@
 //! - Every global function must be defined (QC-11.8).
 //! - Fields and functions are global only (QC-11.9).
 //! - A state header's next-think name is declared as a global `void()` if new (QC-13.6).
+//! - A vector, or a vector field, also declares its `_x`, `_y` and `_z` components (QC-11.7).
+//!
+//! Under an FTEQCC profile the rules of `docs/spec/dialect-fteqcc-rerelease.md` FTE-22 replace
+//! three of these: a local shadows a global, a constant may be initialised twice with the same
+//! literal, and with autoprototyping ([`Db::set_autoproto`]) names do not wait for their
+//! position.
 //!
 //! # Layer
 //!
@@ -54,7 +60,7 @@ pub mod ty;
 mod tests;
 
 pub use db::{Db, QueryCounts};
-pub use lower::{FileDecls, RawBody, RawDecl, RawLocal, RawParam, RawUse};
-pub use resolve::{ModuleIndex, resolve_module};
+pub use lower::{FileDecls, LiteralValue, RawBody, RawDecl, RawLocal, RawParam, RawUse};
+pub use resolve::{ModuleIndex, ResolveOptions, resolve_module};
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

@@ -21,19 +21,25 @@ FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` reso
 names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
 globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and member
 access (vector members, `.length`, struct fields; FTE-9, FTE-13, FTE-14) is not a global
-field use, so the rerelease resolves with no spurious "unknown value".
+field use, so the rerelease resolves with no spurious "unknown value". A named enum's type
+name is a definition (FTE-15.4), a C-style declarator has the function type of its own
+parameter list (FTE-17.1), and FTEQCC's resolution rules apply (FTE-22): a local or parameter
+shadows a global of the same name, a constant may be initialised twice with the same
+literal, and with `Db::set_autoproto` (FTEQCC's `-Fautoproto`) every top-level declaration is
+visible to every function body.
 
 Resolution follows id's `qcc` as [`docs/spec/language.md`](../../docs/spec/language.md)
 records it, not as other QuakeC tools describe it: two scopes, global and the function being
 defined (QC-12.1); one definition list in declaration order, a name being the first global or
 current-function definition with that name (QC-12.2); a local or parameter cannot shadow an
 earlier global, it reuses it (QC-12.3); names resolve at their position in compilation order
-(QC-12.5, QC-23.3); a name may be declared repeatedly and initialised once (QC-11.5); every
+(QC-12.5, QC-23.3); a name may be declared repeatedly and initialised once (QC-11.5); a
+vector, or a vector field, also declares its `_x`, `_y` and `_z` components (QC-11.7); every
 global function must be defined (QC-11.8); fields and functions are global only (QC-11.9); and
 a state header's next-think name is declared as a global `void()` if new (QC-13.6).
 
-- **Layer:** L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-diag` (L0,
-  for the one `Diagnostic`, its `Code` and `Span`).
+- **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof`) and
+  `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its `Code` and `Span`).
 - **Spec sections:** the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes
   and lookup) and QC-13.6 (state-header names) in
   [`language.md`](../../docs/spec/language.md), and the diagnostics QCD-3.5, QCD-3.6, QCD-3.8,

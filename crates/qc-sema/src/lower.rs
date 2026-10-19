@@ -10,11 +10,12 @@
 //! only that file (GOAL-1, the incremental model).
 
 use qc_diag::Span;
+use qc_lexer::atof;
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::{Dialect, Parse, SyntaxKind};
 
 use crate::symbol::DefKind;
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 /// A name a file declares, before cross-file resolution.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,11 +30,52 @@ pub struct RawDecl {
     pub local: bool,
     /// Whether the declaration has an initialiser (QC-11.5).
     pub initialized: bool,
+    /// The value of an initialiser that is a single literal, which FTEQCC compares when a
+    /// name is initialised twice (FTE-22.2); `None` for any other initialiser or none.
+    pub literal: Option<LiteralValue>,
     /// For a function definition, the lowered body; otherwise `None`.
     pub body: Option<RawBody>,
     /// For a function definition with a `[frame, next]` header, the next-think name and its
     /// span (QC-13.6): resolution declares it as a global `void()` if new.
     pub next_think: Option<(String, Span)>,
+}
+
+/// The value of a literal initialiser (FTE-22.2). A float is kept as its bits, so two
+/// initialisers are the same value exactly when FTEQCC's word-by-word comparison finds them
+/// equal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LiteralValue {
+    /// A float literal (QC-4).
+    Float(u32),
+    /// A vector literal (QC-5).
+    Vector([u32; 3]),
+    /// A string literal as written, quotes included (QC-6).
+    String(String),
+}
+
+impl LiteralValue {
+    /// The value of a literal initialiser, if `init` is one.
+    fn of(init: Option<&ast::Initializer>) -> Option<Self> {
+        let Some(ast::Initializer::Value(ast::Expr::Literal(literal))) = init else {
+            return None;
+        };
+        let token = literal.token()?;
+        let text = token.text_lossless();
+        match literal.kind()? {
+            ast::LiteralKind::Float => Some(Self::Float(atof(text.as_bytes()).to_bits())),
+            ast::LiteralKind::Vector => {
+                let inner = text.trim_matches('\'');
+                let mut parts = inner.split_ascii_whitespace().map(|p| atof(p.as_bytes()));
+                let mut value = [0_u32; 3];
+                for word in &mut value {
+                    *word = parts.next().unwrap_or(0.0).to_bits();
+                }
+                Some(Self::Vector(value))
+            }
+            ast::LiteralKind::String => Some(Self::String(text)),
+            ast::LiteralKind::FrameRef => None,
+        }
+    }
 }
 
 /// A function body's parameters, locals and the names it uses (QC-13).
@@ -129,8 +171,21 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
     FileDecls { decls }
 }
 
-/// An `enum`'s names become global float constants (FTE-15.1, FTE-15.3).
+/// An `enum`'s names become global float constants (FTE-15.1, FTE-15.3), and a named enum's
+/// type name is recorded as a typedef's is (FTE-15.4).
 fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
+    if let Some(token) = en.name() {
+        out.push(RawDecl {
+            name: token.text_lossless(),
+            span: token.span(),
+            ty: Type::Unknown,
+            local: false,
+            initialized: true,
+            literal: None,
+            body: None,
+            next_think: None,
+        });
+    }
     for node in en.enumerators() {
         let Some(token) = node.child_tokens().find(|t| t.kind() == SyntaxKind::Name) else {
             continue;
@@ -141,6 +196,7 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
             ty: Type::Simple(SimpleType::Float),
             local: false,
             initialized: true,
+            literal: None,
             body: None,
             next_think: None,
         });
@@ -159,6 +215,7 @@ fn lower_typedef(td: &ast::TypedefDecl, out: &mut Vec<RawDecl>) {
         ty: Type::Unknown,
         local: false,
         initialized: true,
+        literal: None,
         body: None,
         next_think: None,
     });
@@ -172,25 +229,52 @@ fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>)
         };
         let name = name_token.text_lossless();
         let span = name_token.span();
+        // FTE-17.1: an FTEQCC C-style declarator `rettype name(params)` has its own
+        // `ParamList`; its type is the function type of the return type and those
+        // parameters, so it is the type a vanilla `rettype(params) name` declares.
+        let ty = c_style_function_type(&base, &declarator).unwrap_or_else(|| base.clone());
         let init = declarator.initializer();
         let initialized = init.is_some();
+        let literal = LiteralValue::of(init.as_ref());
         let (body, next_think) = match &init {
             Some(ast::Initializer::Body(fn_body)) => {
                 let next_think = next_think_of(fn_body);
-                (Some(lower_body(fn_body, &base, fte)), next_think)
+                (Some(lower_body(fn_body, &ty, fte)), next_think)
             }
             _ => (None, None),
         };
         out.push(RawDecl {
             name,
             span,
-            ty: base.clone(),
+            ty,
             local: false,
             initialized,
+            literal,
             body,
             next_think,
         });
     }
+}
+
+/// If `declarator` is an FTEQCC C-style function declarator (its own `(params)` list beside
+/// the name), the function type built from the return type `ret` and the parameter types;
+/// otherwise `None` (FTE-17.1). A return type other than a simple type is `void`, as
+/// [`Type::from_ast`] reads the return type of a vanilla function type.
+fn c_style_function_type(ret: &Type, declarator: &ast::Declarator) -> Option<Type> {
+    let list = declarator.params()?;
+    let ret_simple = match ret {
+        Type::Simple(s) => *s,
+        Type::Unknown | Type::Field(_) | Type::Function(_) => SimpleType::Void,
+    };
+    let params = list
+        .params()
+        .map(|p| p.ty().map_or(Type::Unknown, |t| Type::from_ast(&t)))
+        .collect();
+    Some(Type::Function(std::rc::Rc::new(FunctionType {
+        ret: ret_simple,
+        params,
+        variadic: list.is_variadic(),
+    })))
 }
 
 /// The next-think name of a state header `[frame, next]`, if present (QC-13.6).
@@ -215,19 +299,24 @@ fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, fte: bool) -> RawBody {
 /// from the same list, matched by position to [`Type::from_ast`]'s view of the function
 /// type (QC-10.3).
 fn collect_params(fn_ty: &Type, fn_body: &ast::FunctionBody, out: &mut Vec<RawParam>) {
-    // The AST parameter list lives on the declaration's FunctionType, not the body. Reach it
-    // through the body's parent declaration's type.
     let Some(param_list) = param_list_of(fn_body) else {
         return;
     };
-    let Type::Function(fty) = fn_ty else {
-        return;
+    // The function type's positional parameter types, for the vanilla `rettype(params) name`
+    // order. For the FTEQCC C-style `rettype name(params)` order the return type is not a
+    // function type, so each parameter's type comes from its own `Param` node instead.
+    let fty = match fn_ty {
+        Type::Function(fty) => Some(fty),
+        _ => None,
     };
     for (index, param) in param_list.params().enumerate() {
         let Some(name_token) = param.name() else {
             continue;
         };
-        let ty = fty.params.get(index).cloned().unwrap_or(Type::Unknown);
+        let ty = fty
+            .and_then(|f| f.params.get(index).cloned())
+            .or_else(|| param.ty().map(|t| Type::from_ast(&t)))
+            .unwrap_or(Type::Unknown);
         out.push(RawParam {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -236,9 +325,13 @@ fn collect_params(fn_ty: &Type, fn_body: &ast::FunctionBody, out: &mut Vec<RawPa
     }
 }
 
-/// The `ParamList` of the function type that defines `fn_body` (QC-13.2).
+/// The `ParamList` of the function that defines `fn_body` (QC-13.2): the vanilla function
+/// type's list, or an FTEQCC C-style declarator's own `(params)` list (FTE-17.1).
 fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
     let declarator = fn_body.syntax().parent()?;
+    if let Some(list) = ast::Declarator::cast(declarator.clone()).and_then(|d| d.params()) {
+        return Some(list);
+    }
     let declaration = declarator.parent()?;
     let ty = declaration
         .children()
@@ -326,8 +419,8 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
                 }
             }
         }
-        // `break;` and `continue;` (FTE-4) bind no names and use none.
-        ast::Stmt::Break(_) | ast::Stmt::Continue(_) => {}
+        // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none.
+        ast::Stmt::Break(_) | ast::Stmt::Continue(_) | ast::Stmt::Empty(_) => {}
         ast::Stmt::Expr(expr_stmt) => {
             if let Some(expr) = expr_stmt.expr() {
                 lower_expr(&expr, fte, body);
@@ -338,7 +431,8 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
 
 fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
     let base = local.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
-    let bad = base.is_field() || base.is_function();
+    // QC-11.9 holds only in vanilla: FTEQCC allows a field or function local (FTE-21.2).
+    let bad = !fte && (base.is_field() || base.is_function());
     for declarator in local.declarators() {
         let Some(name_token) = declarator.name() else {
             continue;
@@ -433,6 +527,17 @@ fn lower_expr(expr: &ast::Expr, fte: bool, body: &mut RawBody) {
             }
             if let Some(b) = b {
                 lower_expr(&b, fte, body);
+            }
+        }
+        // FTEQCC `-e`, `+e`, `~e` (FTE-19.4) and `(type) e` (FTE-19.6): the operand is a value.
+        ast::Expr::Unary(unary) => {
+            if let Some(operand) = unary.operand() {
+                lower_expr(&operand, fte, body);
+            }
+        }
+        ast::Expr::Cast(cast) => {
+            if let Some(operand) = cast.operand() {
+                lower_expr(&operand, fte, body);
             }
         }
         // FTEQCC `e[i]` (FTE-13): the base and index are values.
