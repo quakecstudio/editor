@@ -724,6 +724,30 @@ issues:
   - Each warning and the error has a test that triggers it and one that does not, and the corpus job's codebases still resolve with zero errors
   verify:
   - cargo test -p qc-preproc -p qc-syntax -p qc-sema; corpus job
+- key: P2-43
+  title: Bring qc-sema and qc-engines to the readiness bar
+  labels:
+  - L3-semantics
+  - area:process
+  - type:test
+  size: S
+  reqs:
+  - TEST-1
+  - TEST-2
+  depends:
+  - P2-02
+  - P2-26
+  - P2-30
+  - P2-32
+  - P2-34
+  - P2-38
+  deliverable:
+  - 'The Readiness workflow run 39303223745 (crates "qc-sema qc-engines") failed `cargo xtask ratchet`: qc-sema branches 74.2% (349 of 470, bar 80%), qc-sema mutation 81.1% (224 of 276, bar 90%) with 52 survivors, and qc-engines mutation 93.3% with three survivors in `engine_name` (crates/qc-engines/src/check.rs) neither killed nor listed as equivalent'
+  - 'Tests in crates/qc-sema/src/tests/ and crates/qc-engines/src/tests.rs that kill each survivor and cover the untested edge and error paths, each citing the statement it pins; a survivor no input can kill recorded in ratchets.toml under equivalent_mutants with its reason; a defect a survivor exposes fixed with its test'
+  acceptance:
+  - 'A Readiness run on main for "qc-sema qc-engines" passes `cargo xtask ratchet`: branches at least 80% and mutation at least 90% for both crates, with no surviving mutant that is not killed or listed under equivalent_mutants'
+  verify:
+  - The Readiness workflow run linked in the PR
 - key: P2-50
   title: Bound the FTEQCC profile's nesting so no input exhausts the parser's stack
   labels:
@@ -977,6 +1001,7 @@ issues:
   - P2-40
   - P2-41
   - P2-42
+  - P2-43
   - P2-50
   - P2-51
   - P2-53

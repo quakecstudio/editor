@@ -169,6 +169,15 @@ fn builtin_after_body_is_a_warning() {
     assert_eq!(errors(&vanilla), [Code::E0206]);
 }
 
+// spec FTEF-17.9: as in FTEF-17.8, a function marked `noref` is not compared, so a builtin
+// given for it after its body is neither the warning nor "NAME redeclared".
+#[test]
+fn builtin_after_a_noref_body_is_accepted() {
+    let index =
+        fte_index_of("noref float(float a) sin = { return a; };\nfloat(float a) sin = #60;\n");
+    assert_eq!(messages(&index), Vec::<String>::new());
+}
+
 // spec FTEF-12.10: `#pragma autoproto` before any definition reads the module with autoprototyping, `#pragma autoproto 0` without; a later one is ignored with a warning
 // spec QCD-7.28: W0108 "#pragma autoproto must appear before any definitions"
 #[test]

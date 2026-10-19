@@ -3,6 +3,7 @@
 //! A module read through the preprocessor (`Db::analyze_module`, P2-32): each file is parsed
 //! and resolved from its expansion, and every location is a span of a source file.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use qc_diag::{Code, Span};
@@ -10,7 +11,7 @@ use qc_project::{FileGraph, Form, GraphFile, Via};
 use qc_syntax::Dialect;
 
 use crate::db::{Db, ModuleAnalysis};
-use crate::expand::{ModuleInput, OriginMap};
+use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
 use crate::symbol::{FileId, Location};
 
 /// A module of named files: every file is put in a database under its name, and the ones
@@ -189,6 +190,11 @@ fn a_compiled_file_that_cannot_be_read_is_an_error() {
         compiled: vec![FileId(0), FileId(2), FileId(1)],
         autoproto: None,
     };
+    assert_eq!(
+        db.file_path(FileId(1)),
+        Some(PathBuf::from("b.qc").as_path())
+    );
+    assert_eq!(db.file_path(FileId(2)), None);
     let analysis = db.analyze_module(&input);
     assert_eq!(codes(&analysis), [Code::E0402]);
     assert_eq!(analysis.syntax[0].file, FileId(2));
@@ -425,6 +431,73 @@ fn module_input_from_a_graph() {
     assert_eq!(input.compiled, [FileId(0), FileId(1)]);
     graph.files = vec![file("main.qc", Via::Root)];
     assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId(0)]);
+}
+
+// spec FTEF-12.10: the `#pragma autoproto` setting the graph read from a list-form
+// `progs.src` is the module input's.
+#[test]
+fn module_input_keeps_the_graph_autoproto() {
+    for autoproto in [None, Some(true), Some(false)] {
+        let graph = FileGraph {
+            autoproto,
+            ..FileGraph::default()
+        };
+        assert_eq!(ModuleInput::from_graph(&graph).autoproto, autoproto);
+    }
+}
+
+/// The text the parser reads for the one-file module `text`: its tokens rendered after
+/// preprocessing in `dialect`.
+fn rendered(text: &str, dialect: Dialect) -> String {
+    let path = PathBuf::from("a.qc");
+    let files = Files {
+        texts: HashMap::from([(path.clone(), text.as_bytes())]),
+        ids: HashMap::from([(path.clone(), FileId(0))]),
+        paths: HashMap::from([(FileId(0), path)]),
+    };
+    let input = ModuleInput {
+        compiled: vec![FileId(0)],
+        ..ModuleInput::default()
+    };
+    let out = preprocess(&files, &input, dialect, false);
+    String::from_utf8(out.files[0].text.clone()).unwrap()
+}
+
+// spec QC-9.7: a file is rendered a line for each source line its tokens came from, with a
+// token that starts its line indented kept indented and tokens that touch in the source kept
+// touching, so the parser's line-start recovery (QCD-1.4) sees the source's lines.
+#[test]
+fn rendering_keeps_lines_and_indentation() {
+    assert_eq!(
+        rendered("float x;\n  float y;\nfloat z;\n", Dialect::Vanilla),
+        "float x;\n float y;\nfloat z;"
+    );
+}
+
+// spec QC-8.5: a frame macro reference is rendered as its frame number, and every other float
+// literal as written.
+#[test]
+fn rendering_writes_a_frame_reference_as_its_number() {
+    assert_eq!(
+        rendered(
+            "$frame stand walk\nfloat f = $walk;\nfloat g = 1.50;\n",
+            Dialect::Vanilla
+        ),
+        "float f = 1 ;\nfloat g = 1.50;"
+    );
+}
+
+// spec FTEF-18.23: a C label is a name with its `:` right after it, so two tokens a macro made
+// are rendered apart, while the same tokens written in the file stay together.
+#[test]
+fn rendering_separates_the_tokens_of_a_macro() {
+    assert_eq!(
+        rendered(
+            "#define LABEL done:\nvoid() f = { LABEL };\nvoid() g = { done: };\n",
+            Dialect::Fteqcc
+        ),
+        "void() f = { done : };\nvoid() g = { done: };"
+    );
 }
 
 // spec FTEF-14.6: a name `##` makes is rendered as its own text, so it defines and resolves
