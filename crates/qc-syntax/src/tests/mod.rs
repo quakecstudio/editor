@@ -21,6 +21,7 @@ mod dialect_statements;
 mod expressions;
 mod lossless;
 mod recovery;
+mod reviewer;
 mod statements;
 mod tree_api;
 

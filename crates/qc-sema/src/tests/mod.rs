@@ -24,6 +24,7 @@ mod incremental;
 mod initialiser_uses;
 mod navigation;
 mod resolution;
+mod reviewer;
 mod types;
 
 use crate::db::Db;

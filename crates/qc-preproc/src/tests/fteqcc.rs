@@ -549,3 +549,22 @@ fn conditional_errors_span_the_directive() {
     assert_eq!(codes(&out), vec![Code::E0110]);
     assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(2, 7));
 }
+
+// spec FTEF-14.11: (P2-R2 review) `||` and `&&` group to the right, so a chain of either is
+// read to its end with its value, and a chain or a run of `!` far longer than any real
+// condition still takes one side, without exhausting the stack
+#[test]
+fn reviewer_long_logical_chains() {
+    let side = |cond: &str| fte(&format!("#if {cond}\nyes\n#else\nno\n#endif\n")).0;
+    assert_eq!(side(&format!("{}1", "0 || ".repeat(30))), "yes");
+    assert_eq!(side(&format!("{}0", "1 && ".repeat(30))), "no");
+    assert_eq!(side(&format!("{}1", "1 && ".repeat(30))), "yes");
+    for cond in [
+        format!("{}1", "0 || ".repeat(100_000)),
+        format!("{}1", "!".repeat(100_000)),
+        format!("{}1", "(".repeat(100_000)),
+    ] {
+        let taken = side(&cond);
+        assert!(taken == "yes" || taken == "no", "{taken}");
+    }
+}
