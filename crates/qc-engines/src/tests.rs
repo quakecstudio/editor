@@ -39,7 +39,7 @@ fn module(dialect: Dialect, files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
 /// `engine`.
 fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
     let (parses, index) = module(Dialect::Fteqcc, files);
-    missing_builtins(engine, kind, &parses, &index)
+    missing_builtins(engine, kind, &parses, &index, Dialect::Fteqcc)
         .into_iter()
         .map(|d| d.diagnostic.message)
         .collect()
@@ -49,7 +49,7 @@ fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
 /// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
-    missing_builtins(engine, ModuleKind::Ssqc, &parses, &index)
+    missing_builtins(engine, ModuleKind::Ssqc, &parses, &index, dialect)
 }
 
 /// The `W0311` warnings for vanilla `files` checked against `engine`.
@@ -528,7 +528,7 @@ void() w = { take(hash_createtab); };
     assert!(check(Engine::Vanilla, &[undefined]).is_empty());
 }
 
-// spec ENGT-4.3: the first #N initialiser of a name gives its number, in compilation order
+// spec ENGT-4.10: the first #N initialiser of a name gives its number, in compilation order
 #[test]
 fn the_first_builtin_number_wins() {
     let first = "void() f = #287;\n";
@@ -546,15 +546,18 @@ fn the_first_builtin_number_wins() {
     assert!(check(Engine::Vanilla, &[frame]).is_empty());
 }
 
-// spec ENGT-4.3: a builtin number is decimal digits with an optional fraction of zeros, at
-// least 1
+// spec ENGT-4.10: under the vanilla dialect a builtin number is decimal digits with an
+// optional fraction of zeros, at least 1
 #[test]
 fn builtin_number_literals() {
-    assert_eq!(builtin_number("1"), Some(1));
-    assert_eq!(builtin_number("287"), Some(287));
-    assert_eq!(builtin_number("12."), Some(12));
-    assert_eq!(builtin_number("12.000"), Some(12));
-    assert_eq!(builtin_number("4294967295"), Some(u32::MAX));
+    assert_eq!(builtin_number("1", Dialect::Vanilla), Some(1));
+    assert_eq!(builtin_number("287", Dialect::Vanilla), Some(287));
+    assert_eq!(builtin_number("12.", Dialect::Vanilla), Some(12));
+    assert_eq!(builtin_number("12.000", Dialect::Vanilla), Some(12));
+    assert_eq!(
+        builtin_number("4294967295", Dialect::Vanilla),
+        Some(u32::MAX)
+    );
     for bad in [
         "",
         "0",
@@ -567,8 +570,67 @@ fn builtin_number_literals() {
         "+1",
         "4294967296",
     ] {
-        assert_eq!(builtin_number(bad), None, "{bad}");
+        assert_eq!(builtin_number(bad, Dialect::Vanilla), None, "{bad}");
     }
+}
+
+// spec ENGT-4.11: under an FTEQCC dialect a builtin number is the whole value FTEQCC reads,
+// in any number form: hex, octal (a leading 0), an integer suffix or a fraction of zeros; a
+// value that is not whole, zero or too large is no number
+#[test]
+fn fteqcc_builtin_numbers_are_the_values_fteqcc_reads() {
+    for (literal, number) in [
+        ("16", 16),
+        ("16.0", 16),
+        ("0x10", 16),
+        ("0X10", 16),
+        ("010", 8),
+        ("16i", 16),
+        ("16f", 16),
+    ] {
+        assert_eq!(
+            builtin_number(literal, Dialect::Fteqcc),
+            Some(number),
+            "{literal}"
+        );
+    }
+    for bad in ["0", "0x0", "1.5", "0xFFFFFFFF", "", "a", "1 2"] {
+        assert_eq!(builtin_number(bad, Dialect::Fteqcc), None, "{bad}");
+    }
+    // The vanilla dialect reads the same text as a decimal.
+    assert_eq!(builtin_number("010", Dialect::Vanilla), Some(10));
+    assert_eq!(builtin_number("0x10", Dialect::Vanilla), None);
+}
+
+// spec ENGT-4.11: `#0x11F` is builtin 287, `#0x11F:NAME` too (ENGT-4.6), and `#010` is builtin
+// 8 under the FTEQCC dialect but 10 under the vanilla one
+#[test]
+fn fteqcc_number_forms_are_checked_by_their_value() {
+    let hex = "void() f = #0x11F;\nvoid() w = { f(); };\n";
+    let named = "void() f = #0x11F:ex_f;\nvoid() w = { f(); };\n";
+    for source in [hex, named] {
+        assert_eq!(
+            fte_messages(Engine::Ironwail, &[source]),
+            ["f is builtin #287, which Ironwail does not have (FTE_QC_HASHTABLES)"],
+            "{source}"
+        );
+    }
+    // `#0101` is builtin 65 in base 8 and builtin 101 in base 10; id's table has neither.
+    let octal = "void() f = #0101;\nvoid() w = { f(); };\n";
+    let message = |dialect| -> Vec<String> {
+        check_in(dialect, Engine::Vanilla, &[octal])
+            .into_iter()
+            .map(|d| d.diagnostic.message)
+            .collect()
+    };
+    assert_eq!(
+        message(Dialect::Fteqcc),
+        ["f is builtin #65, which Vanilla does not have (DP_QC_ETOS)"]
+    );
+    assert_eq!(
+        message(Dialect::Vanilla),
+        ["f is builtin #101, which Vanilla does not have (??MVDSV_BUILTINS)"]
+    );
 }
 
 // spec ENGT-4.4, QCD-7.17: W0311 is a warning, written W0311
@@ -985,7 +1047,7 @@ fn a_dp_project_client_module_reports_an_fte_builtin() {
 
 // spec ENGT-4.5: (P2-R3 review) a zero is any literal whose digits are all zeros, so `#00`
 // and `#0.00` are keyed by the name after the `:`, and `#0.5`, whose digits are not, is no
-// key and gives no W0311 (ENGT-4.3)
+// key and gives no W0311 (ENGT-4.10)
 #[test]
 fn reviewer_only_all_zero_digits_key_by_name() {
     let call = |number: &str| {

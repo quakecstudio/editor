@@ -352,6 +352,30 @@ issues:
   - Choosing a valid folder makes Play work without restarting the app; the files are read in place, never copied
   verify:
   - UI snapshot tests; manual first run on macOS with GOG files extracted by innoextract
+- key: P3-29
+  title: Measure the preview host's performance against QuakeSpasm
+  labels:
+  - apps
+  - area:preview
+  - type:feature
+  size: M
+  reqs:
+  - ENG-13
+  - ENG-17
+  - PRIN-5
+  depends:
+  - P3-26
+  - P3-24
+  - P3-23
+  deliverable:
+  - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on scripted routes through heavy maps (id1 e1m1, the rerelease''s mg1 and mg3 maps, and an Arcane Dimensions map) on macOS, Windows and Linux; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time'
+  - 'Each budget compared with a pinned QuakeSpasm running the same map and route on the same machine: ADR-0004 says the engine oracle "is a pinned QuakeSpasm built in `oracles/`"'
+  - 'Note: P3-23''s deliverable builds id''s WinQuake as the engine oracle, while ADR-0004 says a pinned QuakeSpasm; the two need reconciling before this issue''s comparison runs, and this issue does not decide which'
+  acceptance:
+  - 'Each new budget is active with a number, run on the reference machines and recorded in the bench history'
+  - 'Frame time at p99 is no worse than QuakeSpasm''s on the same route and machine, within a margin stated in docs/perf-budgets.md'
+  verify:
+  - cargo xtask bench on the reference machines; the bench history
 - key: P3-18
   title: Phase 3 gate review
   labels:
@@ -371,6 +395,7 @@ issues:
   - P3-26
   - P3-27
   - P3-28
+  - P3-29
   - P3-21
   - P3-01
   - P3-02

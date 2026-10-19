@@ -452,23 +452,10 @@ impl LocalDecl {
 }
 
 /// The name of a possibly scoped name `Name` or `Scope::Name` among `node`'s tokens: the name
-/// after the last `::`, else the first name (FTEF-9.4, FTEF-16.4).
+/// after the last `::` (FTEF-9.4, FTEF-16.4). A declarator or a name reference holds one name,
+/// or names joined by `::`, so it is the last name.
 fn scoped_name(node: &SyntaxNode) -> Option<SyntaxToken> {
-    let mut first = None;
-    let mut after_scope = None;
-    let mut scoped = false;
-    for token in node.child_tokens() {
-        match token.kind() {
-            K::ColonColon => scoped = true,
-            K::Name if scoped => {
-                after_scope = Some(token);
-                scoped = false;
-            }
-            K::Name if first.is_none() => first = Some(token),
-            _ => {}
-        }
-    }
-    after_scope.or(first)
+    node.child_tokens().filter(|t| t.kind() == K::Name).last()
 }
 
 /// The scope of a scoped name `Scope::Name`: the name before the first `::`.
@@ -1325,9 +1312,10 @@ impl EnumDecl {
     /// for an anonymous enum.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
+        // The base type after `:` and the enumerators after `{` are nodes of their own, so
+        // the enum's own tokens hold no other name.
         self.0
             .child_tokens()
-            .take_while(|t| t.kind() != K::LBrace && t.kind() != K::Colon)
             .filter(|t| t.kind() == K::Name)
             .find(|t| t.text_lossless() != "class")
     }

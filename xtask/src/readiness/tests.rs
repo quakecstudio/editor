@@ -232,6 +232,15 @@ fn a_mutant_key_drops_the_line_and_column_only() {
     assert_eq!(mutant_key("src/a:b.rs: x"), "src/a:b.rs: x");
 }
 
+/// The claims of a README with `sections` and `statements` and no disclaimed ones.
+fn claims(sections: &[&str], statements: &[&str]) -> Claims {
+    Claims {
+        sections: sections.iter().map(|s| (*s).to_owned()).collect(),
+        statements: statements.iter().map(|s| (*s).to_owned()).collect(),
+        disclaimed: Vec::new(),
+    }
+}
+
 #[test]
 fn spec_sections_come_from_the_readme_line() {
     let readme = "# x\n\n- **Layer:** L1.\n- **Spec sections:** [VM-12](../vm.md#vm-12-x)\n  \
@@ -266,8 +275,7 @@ fn a_bad_index_or_an_empty_section_is_an_error() {
     .unwrap();
     assert_eq!(statements, [("X-1.1".to_owned(), "X-1".to_owned())]);
     let error = spec_score(
-        &["X-2".to_owned()],
-        &[],
+        &claims(&["X-2"], &[]),
         &statements,
         &BTreeSet::new(),
         &BTreeSet::new(),
@@ -300,13 +308,12 @@ fn a_baseline_statement_is_not_counted_against_a_crate() {
     ];
     let cited = ["X-1.1".to_owned()].into_iter().collect();
     let baseline = ["X-1.2".to_owned()].into_iter().collect();
-    let score = spec_score(&["X-1".to_owned()], &[], &statements, &baseline, &cited).unwrap();
+    let score = spec_score(&claims(&["X-1"], &[]), &statements, &baseline, &cited).unwrap();
     assert_eq!(score, self::score(1, 1));
     assert!(score.failures.is_empty(), "{:?}", score.failures);
     // Without the baseline the uncited statement is a failure.
     let score = spec_score(
-        &["X-1".to_owned()],
-        &[],
+        &claims(&["X-1"], &[]),
         &statements,
         &BTreeSet::new(),
         &cited,
@@ -326,14 +333,58 @@ fn a_baseline_statement_is_not_counted_against_a_crate() {
         .into_iter()
         .collect();
     let score = spec_score(
-        &["X-1".to_owned()],
-        &[],
+        &claims(&["X-1"], &[]),
         &statements,
         &both_baselined,
         &BTreeSet::new(),
     )
     .unwrap();
     assert_eq!(score, self::score(0, 0));
+}
+
+#[test]
+fn a_range_of_sections_is_every_section_between() {
+    let readme = "- **Spec sections:** [LNO-2 to LNO-4](../lno.md), PROGS-19 to PROGS-21 and\n  \
+                  VM-7 to VM-6, which is no range; MAP-1 to WAD-2 neither.\n";
+    assert_eq!(
+        spec_sections(readme).unwrap(),
+        [
+            "LNO-2", "LNO-3", "LNO-4", "PROGS-19", "PROGS-20", "PROGS-21", "VM-7", "VM-6", "MAP-1",
+            "WAD-2"
+        ]
+    );
+    let statements = "- **Spec statements:** X-1.2 to X-1.4, Y-1.9 to Y-2.1, Z-1.5 to Z-1.3,\n  \
+                      W-1.1 to V-1.2 and X-1.x.\n";
+    assert_eq!(
+        spec_statements(statements),
+        [
+            "X-1.2", "X-1.3", "X-1.4", "Y-1.9", "Y-2.1", "Z-1.5", "Z-1.3", "W-1.1", "V-1.2"
+        ]
+    );
+}
+
+#[test]
+fn a_disclaimed_section_or_statement_is_not_the_crates() {
+    let readme = "- **Spec sections:** PROGS-1 to PROGS-6 and PROGS-22.\n\
+                  - **Not this crate's:** PROGS-5 (the compiler's), PROGS-16 to PROGS-18\n  \
+                  (`qc-types`), and PROGS-6.2.\n";
+    assert_eq!(
+        spec_sections(readme).unwrap(),
+        [
+            "PROGS-1", "PROGS-2", "PROGS-3", "PROGS-4", "PROGS-6", "PROGS-22"
+        ]
+    );
+    assert_eq!(disclaimed_statements(readme), ["PROGS-6.2"]);
+    assert!(disclaimed_statements("- **Spec sections:** X-1.\n").is_empty());
+    let statements = [
+        ("X-1.1".to_owned(), "X-1".to_owned()),
+        ("X-1.2".to_owned(), "X-1".to_owned()),
+    ];
+    let cited: BTreeSet<String> = ["X-1.1".to_owned()].into_iter().collect();
+    let mut claims = claims(&["X-1"], &[]);
+    claims.disclaimed = vec!["X-1.2".to_owned()];
+    let score = spec_score(&claims, &statements, &BTreeSet::new(), &cited).unwrap();
+    assert_eq!(score, self::score(1, 1));
 }
 
 #[test]
@@ -358,8 +409,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
         .collect();
     // Y-1.2, uncited, is in the claimed statement's section but not claimed.
     let score = spec_score(
-        &["X-1".to_owned()],
-        &["Y-1.1".to_owned(), "X-1.1".to_owned()],
+        &claims(&["X-1"], &["Y-1.1", "X-1.1"]),
         &statements,
         &["X-1.2".to_owned()].into_iter().collect(),
         &cited,
@@ -367,8 +417,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
     .unwrap();
     assert_eq!(score, self::score(2, 2));
     let uncited = spec_score(
-        &[],
-        &["Y-1.2".to_owned()],
+        &claims(&[], &["Y-1.2"]),
         &statements,
         &BTreeSet::new(),
         &cited,
@@ -376,8 +425,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
     .unwrap();
     assert_eq!(uncited.failures, ["Y-1.2 is not cited"]);
     let missing = spec_score(
-        &[],
-        &["Z-1.1".to_owned()],
+        &claims(&[], &["Z-1.1"]),
         &statements,
         &BTreeSet::new(),
         &cited,
@@ -388,8 +436,7 @@ fn a_claimed_statement_is_counted_once_and_must_be_active_and_owned() {
         "{missing}"
     );
     let baselined = spec_score(
-        &[],
-        &["Y-1.2".to_owned()],
+        &claims(&[], &["Y-1.2"]),
         &statements,
         &["Y-1.2".to_owned()].into_iter().collect(),
         &cited,

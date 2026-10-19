@@ -218,6 +218,11 @@ malformed directive without a diagnostic.
   module.
 - **PRJ-5.9** `#pragma once` marks the file holding it: a later `#include`, `#includelist`
   entry or list entry naming it again compiles nothing.
+- **PRJ-5.10** An `#if` or `#elif` expression whose value stands inside more than 63
+  parentheses and `!`s together is false, as one that does not parse is: the reader nests at
+  most `MAX_DEPTH` = 64 levels (`qc-preproc`'s `cond.rs`), the value itself one, so no input
+  can exhaust its stack. `&&`, `||` and the comparisons chain without nesting. Under an
+  FTEQCC profile the limit is FTEF-14.12's.
 
 ## PRJ-6 The file graph
 

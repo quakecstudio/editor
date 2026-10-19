@@ -18,7 +18,7 @@ pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4). An 
 also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-14): `#if`,
 `#elif`, `#elifdef` and `#elifndef` (with the project graph's evaluator, now in `cond`, so both
 take the same sides; it reads an expression with FTEQCC's precedence under an FTEQCC dialect,
-FTEF-14.11), `#pragma noref` and `#pragma autoproto` recorded for the semantic model (FTEF-12.6,
+FTEF-14.11, nesting at most 64 levels, FTEF-14.12 and PRJ-5.10), `#pragma noref` and `#pragma autoproto` recorded for the semantic model (FTEF-12.6,
 FTEF-12.10), FTEQCC's frame numbering and its further `$` commands (FTEF-18.16, FTEF-18.17),
 its frame macro diagnostics, "Stale macro used", "Duplicate macro defined", "Name for frame
 macro NAME is too long" and "$modelname name too long" (FTEF-18.22; QCD-2.8, QCD-7.25 to
@@ -30,12 +30,13 @@ argument, and the built-in constants such as `__NULL__`. A token `##` or `#` mad
 built-in's value, carries its text in `PpToken::spelling`.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
-- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14
-  in [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the `#if` expressions of PRJ-5.5
-  (`cond`); the directive codes QCD-8 of
+- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in
+  [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the directive codes QCD-8 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); the loaders' case rules
   PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md). A readiness run attributes only
   these sections to the crate, and every active statement of each is cited by a test here.
+- **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`) in
+  [`project-file.md`](../../docs/spec/project-file.md).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes
   `qc-lexer` defines), QCD-2.8 and QCD-7.25 to QCD-7.27 (FTEQCC's frame macro diagnostics,

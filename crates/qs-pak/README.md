@@ -9,8 +9,9 @@ malformed input with a typed `PakError`, never a panic. `Pak::find` is the archi
 directory CRC is `qc-progs`'s port of `crc.c`.
 
 - **Layer:** L0 formats. It depends on `qc-progs` for the CRC; `qs-vfs` builds on it.
-- **Spec sections:** PAK-1 to PAK-5 in [`pak.md`](../../docs/spec/pak.md). PAK-1.4 (an
-  archive that cannot be opened) is the filesystem's and is tested in `qs-vfs`.
+- **Spec sections:** PAK-1 to PAK-5 in [`pak.md`](../../docs/spec/pak.md).
+- **Not this crate's:** PAK-1.4 (an archive that cannot be opened), the filesystem's, tested in
+  `qs-vfs`.
 - **Shipped:** yes.
 
 ## Invariants

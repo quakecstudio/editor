@@ -157,14 +157,14 @@ impl Parser<'_> {
         }
     }
 
-    /// Whether the current token starts a file-level declaration (FTEF-15.1): a `.`, a
-    /// qualifier, a type word, or a name that may be a type.
+    /// Whether the current name starts a file-level declaration (FTEF-15.1): a qualifier, a
+    /// C type word, a tagged type, or a name that may be a type. `starts_declaration` has
+    /// already taken a `.`, a `..` and a vanilla type word.
     pub(super) fn fte_starts_declaration(&self) -> bool {
         let Some(tok) = self.current() else {
             return false;
         };
         match tok.kind {
-            K::Dot | K::DotDot => true,
             K::Name if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) => true,
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags") => {
@@ -295,7 +295,13 @@ impl Parser<'_> {
             self.error(Code::E0203, message);
             return None;
         }
+        // FTEF-18.26: each `*` and each parameter list nests the type one level deeper.
+        let mut levels = 0_usize;
         while self.at(K::Star) {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
+            }
             self.builder.start_node_at(checkpoint, K::PointerType);
             self.bump();
             if self.fte_word(0, "const") {
@@ -303,23 +309,28 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
-        if self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
-            // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
-            // further parameter list makes a function returning the type so far.
-            while self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star) {
-                self.builder.start_node_at(checkpoint, K::FunctionType);
-                self.fte_param_list();
-                self.finish_node();
+        let function = self.at_function_params();
+        // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
+        // further parameter list makes a function returning the type so far.
+        while self.at_function_params() {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
             }
-            return Some(TypeShape {
-                function: true,
-                field: false,
-            });
+            self.builder.start_node_at(checkpoint, K::FunctionType);
+            self.fte_param_list();
+            self.finish_node();
         }
+        self.leave(levels);
         Some(TypeShape {
-            function: false,
+            function,
             field: false,
         })
+    }
+
+    /// Whether a type's parameter list starts here: a `(` that opens no `(*name)` (FTEF-15.3).
+    fn at_function_params(&self) -> bool {
+        self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star)
     }
 
     /// The base of a type: a `SimpleType` node holding a vanilla keyword, a run of C type
@@ -385,14 +396,9 @@ impl Parser<'_> {
         }
         if let Some(keyword) = super::type_keyword(&text) {
             self.start_node(K::SimpleType);
+            // A vanilla type word is a type of its own name, which `QCC_PR_ParseType` finds
+            // with `QCC_TypeForName` before its C type words, so no C word joins it (FTEF-2.4).
             self.bump_as(keyword);
-            // `float` and `double` after a C type word, `long double` (FTEF-2.4).
-            while self
-                .current()
-                .is_some_and(|t| t.kind == K::Name && is_c_type_word(&t.text))
-            {
-                self.bump();
-            }
             self.finish_node();
             return true;
         }
@@ -517,9 +523,10 @@ impl Parser<'_> {
         }
         if self.at(K::LBrace) {
             self.bump();
-            while !self.at(K::RBrace) && self.current().is_some() {
+            // FTEF-18.27: a class that lost its `}` ends at the next declaration line.
+            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
                 let before = self.pos;
-                self.muted = false;
+                self.start_item();
                 self.class_member();
                 if self.pos == before {
                     self.bump_error();
@@ -531,6 +538,18 @@ impl Parser<'_> {
             self.bump();
         }
         self.finish_node();
+    }
+
+    /// Whether a keyword that starts a file-level construct of the full dialect is here:
+    /// `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct` or `union` (FTEF-18.27).
+    pub(super) fn at_fte_construct(&self) -> bool {
+        self.current().is_some_and(|t| {
+            t.kind == K::Name
+                && matches!(
+                    t.text.as_str(),
+                    "typedef" | "class" | "accessor" | "enum" | "enumflags" | "struct" | "union"
+                )
+        })
     }
 
     /// Whether an `enum` or `enumflags` with its body starts here (FTE-15, FTEF-8): the keyword
@@ -607,7 +626,8 @@ impl Parser<'_> {
         match self.fte_type() {
             // `Name(void);`: a constructor with no return type (FTEF-9.4).
             Some(ty) if ty.function && self.at(K::Semicolon) => self.bump(),
-            Some(ty) => self.declarators(ty, false),
+            // A member's recovery stops at the `}` that closes the class.
+            Some(ty) => self.declarators(ty, true),
             None => self.recover(true),
         }
         self.finish_node();
@@ -618,7 +638,9 @@ impl Parser<'_> {
     pub(super) fn struct_decl(&mut self) {
         self.start_node(K::StructDecl);
         self.struct_type();
-        if self.at(K::Name) || self.at(K::Star) {
+        // FTEF-18.27: a declaration line after a struct that lost its `}` is the next
+        // declaration, not a variable of the struct.
+        if (self.at(K::Name) || self.at(K::Star)) && !self.at_declaration_line() {
             // FTEF-6.1: `struct { ... } a[4], *p;` declares variables of the struct too.
             let shape = TypeShape {
                 function: false,
@@ -642,9 +664,10 @@ impl Parser<'_> {
         }
         if self.at(K::LBrace) {
             self.bump();
-            while !self.at(K::RBrace) && self.current().is_some() {
+            // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
+            while !self.at(K::RBrace) && self.current().is_some() && !self.at_declaration_line() {
                 let before = self.pos;
-                self.muted = false;
+                self.start_item();
                 self.accessor_member();
                 if self.at(K::Comma) || self.at(K::Semicolon) {
                     self.bump();

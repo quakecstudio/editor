@@ -10,8 +10,9 @@ parameters (`OFS_NULL` to `RESERVED_OFS`). Ported from `WinQuake/pr_comp.h`, `pr
   the VM build on it.
 - **Spec sections:** [PROGS-16](../../docs/spec/progs.md#progs-16-the-eight-qc-types),
   [PROGS-17](../../docs/spec/progs.md#progs-17-values-in-slots) and
-  [PROGS-18](../../docs/spec/progs.md#progs-18-reserved-global-slots), and the parameter
-  limit LIMIT-1.4 in [`limits.md`](../../docs/spec/limits.md#limit-1-progsdat-format-limits).
+  [PROGS-18](../../docs/spec/progs.md#progs-18-reserved-global-slots).
+- **Spec statements:** the parameter limit LIMIT-1.4 in
+  [`limits.md`](../../docs/spec/limits.md#limit-1-progsdat-format-limits).
 - **Shipped:** yes.
 
 ## Invariants

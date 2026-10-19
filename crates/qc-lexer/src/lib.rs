@@ -554,10 +554,10 @@ impl Lexer<'_> {
                     }
                 }
                 (Some(b'/'), Some(b'*')) => self.block_comment(),
-                // FTEF-13.2: in FTEQCC a `\` before a line break joins the lines.
+                // FTEF-13.2: in FTEQCC a `\` before a line break joins the lines. FTEQCC skips
+                // the LF of a CR LF with them; here it is whitespace, skipped by the next turn.
                 (Some(b'\\'), Some(b'\n' | b'\r')) if self.dialect.has_fteqcc_extensions() => {
-                    let crlf = self.peek(1) == Some(b'\r') && self.peek(2) == Some(b'\n');
-                    self.bump(if crlf { 3 } else { 2 });
+                    self.bump(2);
                 }
                 _ => return,
             }
@@ -654,8 +654,9 @@ impl Lexer<'_> {
                         }
                     }
                 }
+                // A byte of 0x80 or more already has its high bit, so bronze leaves it as it is.
                 Some(b) => {
-                    contents.push(if bronze && b < 0x80 { b | 0x80 } else { b });
+                    contents.push(if bronze { b | 0x80 } else { b });
                     self.bump(1);
                 }
             }
@@ -695,12 +696,12 @@ impl Lexer<'_> {
     /// maps it (FTEF-13.4): the one-byte escapes, Quake's character set (`\[`, `\]`, `\.`,
     /// `\<`, `\-`, `\>`, `\(`, `\=`, `\)`, `\+` and the digits), `\{n}` and `\{xN}`,
     /// `\x` with one or two hex digits, and `\u` and `\U` with four and eight. `None` for any
-    /// other `c`.
+    /// other `c`. A string reads `\n` and `\"` before it gets here; a character constant
+    /// reads `\n` here and `\"`, like any byte with no escape of its own, as itself.
     fn escape_code(&mut self, c: u8) -> Option<u32> {
         let quake = |code: u32| Some(code);
         match c {
             b'n' => Some(u32::from(b'\n')),
-            b'"' => Some(u32::from(b'"')),
             b'[' => quake(0xe010),
             b']' => quake(0xe011),
             b'.' => quake(0xe01c),
@@ -999,7 +1000,7 @@ impl Lexer<'_> {
     /// The next frame macro word on the line, as FTEQCC's `QCC_PR_LexMacroName` reads it
     /// (FTEF-18.13): whitespace skipped, then the bytes above `' '` (as a signed `char`) up to
     /// `,`, `;`, `&`, `|`, `(`, `)`, `]` or `..`. `None`, taking nothing more, at the end of the
-    /// line, at a comment (a `//` one skipped to the end of the line), or when no byte is taken.
+    /// line, at a comment, or when no byte is taken.
     fn macro_name(&mut self) -> Option<Span> {
         while let Some(b) = self.peek(0) {
             if b == b'\n' {
@@ -1010,16 +1011,9 @@ impl Lexer<'_> {
             }
             self.bump(1);
         }
-        if self.peek(0) == Some(b'/') {
-            if self.peek(1) == Some(b'/') {
-                while self.peek(0).is_some_and(|b| b != b'\n') {
-                    self.bump(1);
-                }
-                return None;
-            }
-            if self.peek(1) == Some(b'*') {
-                return None;
-            }
+        // The comment is left for the main loop, which skips it as trivia (QC-2).
+        if self.peek(0) == Some(b'/') && matches!(self.peek(1), Some(b'/' | b'*')) {
+            return None;
         }
         let start = self.pos;
         while let Some(b) = self.peek(0) {

@@ -92,6 +92,28 @@ fn green_lengths() {
     assert!(blank.is_empty());
     assert!(GreenElement::Node(empty).is_empty());
     assert_eq!(GreenElement::Node(node).kind(), SyntaxKind::NameRef);
+    let token = GreenToken::new(SyntaxKind::Semicolon, b";");
+    assert_eq!(GreenElement::Token(token).kind(), SyntaxKind::Semicolon);
+}
+
+#[test]
+fn elements_have_their_kinds_and_spans() {
+    let parsed = parse(b"float a;");
+    assert_eq!(parsed.green(), parsed.syntax().green());
+    let decl = parsed.syntax().children().next().unwrap();
+    let elements: Vec<(SyntaxKind, usize, usize)> = decl
+        .children_with_tokens()
+        .map(|e| (e.kind(), e.span().start, e.span().end))
+        .collect();
+    assert_eq!(
+        elements,
+        [
+            (SyntaxKind::SimpleType, 0, 5),
+            (SyntaxKind::Whitespace, 5, 6),
+            (SyntaxKind::Declarator, 6, 7),
+            (SyntaxKind::Semicolon, 7, 8),
+        ]
+    );
 }
 
 #[test]

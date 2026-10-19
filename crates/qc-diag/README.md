@@ -20,11 +20,12 @@ and `Code` live here, and `qc-lexer` re-exports them, so code written against
 
 - **Layer:** L0 formats. It depends on no other crate; the lexer, preprocessor, parser,
   project graph, semantic model and compiler build on it.
-- **Spec sections:**
-  [QCD-1](../../docs/spec/language-diagnostics.md#qcd-1-codes) (the code format QCD-1.1, the
-  no-reuse rule QCD-1.2 and the diagnostic shape QCD-1.3) of
-  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); it names the codes of
-  QCD-2 to QCD-8, which the stages that raise them cite. Written from the spec, not ported.
+- **Spec sections:** [QCD-1](../../docs/spec/language-diagnostics.md#qcd-1-codes) (the code
+  format QCD-1.1, the no-reuse rule QCD-1.2 and the diagnostic shape QCD-1.3) of
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). Written from the spec,
+  not ported.
+- **Not this crate's:** the codes of QCD-2 to QCD-8, which this crate names and the stages that
+  raise them cite.
 - **Shipped:** yes.
 
 ## Public shape
