@@ -453,6 +453,24 @@ mod mock_engine {
         assert_eq!(strings.text(first), Some(b"2".as_slice()));
     }
 
+    // spec DIFF-3.9: every engine string whose text was set since the last take is listed once,
+    // with its current text, in the order first set; the list is then empty.
+    #[test]
+    fn engine_strings_take_changed() {
+        let mut strings = EngineStrings::default();
+        assert!(strings.take_changed().is_empty());
+        let made = strings.make(b"map".to_vec());
+        let temp = strings.set_temp(b"1".to_vec());
+        strings.set_temp(b"2".to_vec());
+        assert_eq!(
+            strings.take_changed(),
+            vec![(made, b"map".to_vec()), (temp, b"2".to_vec())]
+        );
+        assert!(strings.take_changed().is_empty());
+        strings.set_temp(b"2".to_vec());
+        assert_eq!(strings.take_changed(), vec![(temp, b"2".to_vec())]);
+    }
+
     // spec DIFF-4.2: client_active is true only for a slot 1..=len with a player; slot 0 and a
     // slot past the end are never active.
     #[test]

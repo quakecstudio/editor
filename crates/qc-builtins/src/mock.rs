@@ -208,12 +208,19 @@ pub const LIMIT_MAX_MSGLEN: usize = 8000;
 /// negative values -1, -2, ... in the order the strings are made, and the differential
 /// comparison compares their text, not their numbers (EDICT-13.3, DIFF-9.4). `ftos` and `vtos`
 /// share one buffer value, so each call overwrites the previous text (BUILTIN-7.4).
+///
+/// It also lists the values whose text was set since the last [`EngineStrings::take_changed`],
+/// so the differential host can write a string record for each (TRACE-4.10, DIFF-3.9), as the
+/// oracle's `qs_engine_string_touched` marks a string for its next change-carrying record.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EngineStrings {
     /// The `ftos`/`vtos` buffer value, once allocated (BUILTIN-7.4).
     temp_value: Option<i32>,
     /// Every engine string's text, by value; the temp buffer's is updated in place.
     entries: Vec<(i32, Vec<u8>)>,
+    /// The values whose text was set since the last `take_changed`, each once, in the order
+    /// they were first set (TRACE-4.10).
+    changed: Vec<i32>,
 }
 
 impl EngineStrings {
@@ -234,6 +241,7 @@ impl EngineStrings {
         if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value) {
             entry.1 = text;
         }
+        self.mark_changed(value);
         value
     }
 
@@ -243,7 +251,29 @@ impl EngineStrings {
     pub fn make(&mut self, text: Vec<u8>) -> i32 {
         let value = self.next_value();
         self.entries.push((value, text));
+        self.mark_changed(value);
         value
+    }
+
+    /// The engine strings whose text was set (made, or the temp buffer overwritten) since the
+    /// last call, each once with its current text, in the order they were first set; the list
+    /// is then empty (TRACE-4.10).
+    pub fn take_changed(&mut self) -> Vec<(i32, Vec<u8>)> {
+        let changed = core::mem::take(&mut self.changed);
+        let mut out = Vec::with_capacity(changed.len());
+        for value in changed {
+            if let Some(text) = self.text(value) {
+                out.push((value, text.to_vec()));
+            }
+        }
+        out
+    }
+
+    /// Lists `value` as changed for the next [`EngineStrings::take_changed`], once.
+    fn mark_changed(&mut self, value: i32) {
+        if !self.changed.contains(&value) {
+            self.changed.push(value);
+        }
     }
 
     /// The text of the engine string `value`, or `None` when no engine string has it.

@@ -316,3 +316,99 @@ fn an_unknown_key_is_ignored() {
     let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
     assert_eq!(output.ended, Ended::Normally);
 }
+
+/// A progs whose `worldspawn` calls `ftos` three times: on 0, on 0 again and on `time` (1 at
+/// spawn, EDICT-8.1), so the temp buffer's text goes `0`, `0`, `1` (BUILTIN-7.4). `ftos` is
+/// builtin 26 under the name of the system function global `SetChangeParms`, whose slot the
+/// builder fills with its index and which a scenario that ends normally never runs (DIFF-3.7).
+fn progs_calling_ftos() -> Vec<u8> {
+    let ftos_slot = i16::try_from(
+        qc_edict::system::global_by_name("SetChangeParms")
+            .expect("a system global")
+            .slot,
+    )
+    .expect("a small slot");
+    ProgsBuilder::default()
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
+        .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
+        .statement(Stmt::op("STORE_F", 31, 4, 0))
+        .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .function(FuncSpec {
+            name: "worldspawn",
+            first_statement: 2,
+            ..FuncSpec::default()
+        })
+        .function(FuncSpec {
+            name: "SetChangeParms",
+            first_statement: -26,
+            ..FuncSpec::default()
+        })
+        .function(FuncSpec {
+            name: "StartFrame",
+            first_statement: 1,
+            ..FuncSpec::default()
+        })
+        .build()
+}
+
+/// The index of the first step record of `statement`.
+fn step_index(records: &[Record], statement: i32) -> usize {
+    records
+        .iter()
+        .position(|r| matches!(r, Record::Step(step) if step.statement == statement))
+        .expect("the statement ran")
+}
+
+/// The indices of the string records holding `text`.
+fn string_records(records: &[Record], text: &[u8]) -> Vec<usize> {
+    records
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| matches!(r, Record::String { text: t, .. } if t.as_bytes() == text))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+// spec DIFF-3.9: a builtin that sets an engine string's text writes a string record before the
+// CALL's step record, whose change set first shows the value; the same text again writes none.
+#[test]
+fn ftos_writes_a_string_record_before_its_call() {
+    let bytes = progs_calling_ftos();
+    let mut scn = scenario("test");
+    scn.frames = 0;
+    let entities = b"{\n\"classname\" \"worldspawn\"\n}\n";
+    let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
+    assert_eq!(output.ended, Ended::Normally);
+    let trace = &output.trace;
+    let records = &trace.records;
+
+    // The first CALL writes "0": its string record comes before the step record (TRACE-4.10),
+    // and the second CALL, setting "0" again, writes none.
+    let first_call = step_index(records, 2);
+    let zero = string_records(records, b"0");
+    assert_eq!(zero.len(), 1, "\"0\" is written once");
+    assert!(zero[0] < first_call);
+    // OFS_RETURN at the CALL reads as the engine string "0" through the trace (TRACE-7.3).
+    let ret = records[first_call]
+        .changes()
+        .expect("a step record")
+        .globals()
+        .iter()
+        .find(|g| g.slot == 1)
+        .expect("ftos writes OFS_RETURN")
+        .bits;
+    let zero_text = qc_trace::Text::new(b"0".to_vec()).expect("a text");
+    assert_eq!(
+        trace.string_value(first_call + 1, ret),
+        qc_trace::StringValue::Engine(&zero_text)
+    );
+
+    // The third CALL changes the text to "1": a new record after the STORE_F and before it.
+    let store = step_index(records, 4);
+    let third_call = step_index(records, 5);
+    let one = string_records(records, b"1");
+    assert_eq!(one.len(), 1);
+    assert!(store < one[0] && one[0] < third_call);
+}
