@@ -913,6 +913,27 @@ issues:
   - '`''1f 2f 3f''` is a vector and `''1F 2 3''` a bad one under the FTEQCC profile; `enum colour_e c;`, `enumflags flags_e c;` and `typedef enum colour_e C;` are E0204 and `colour_e c;` after the enum declares; each with a test citing FTEF-13.6 or FTEF-8.4, and the FTEQCC corpus still resolves with zero errors'
   verify:
   - cargo test -p qc-lexer -p qc-syntax; corpus job
+- key: P2-60
+  title: Audit the L0 to L3 crates against CONV-17 and file refactoring issues
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: M
+  reqs:
+  - CONV-17
+  depends:
+  - P2-R2
+  - P2-R3
+  deliverable:
+  - 'An architecture audit, in the style of the dev-agents arch-analyst, of every shipped crate in layers L0 to L3 (layers.toml; test-only and tooling crates excluded) against docs/conventions.md, "Type design (CONV-17)": closed sets of choices passed as booleans or strings, IDs and units with pub fields, free functions that read one type, single-use one-line helpers, duplicated code a generic or trait would remove, and stringly-typed errors. Each finding names the file and line, the rule and the proposed change'
+  - 'Refactoring issues in plan/backlog/p2.yaml, filed with the plan-change skill and grouped so that one crate''s fixes fit one PR, each listing its findings; an issue that changes a public item also names every dependent crate it touches'
+  - 'docs/audits/conv-17-l0-l3.md: every finding, and for each the issue that fixes it or the reason it is accepted as it is'
+  acceptance:
+  - Every finding in docs/audits/conv-17-l0-l3.md is either filed in a refactoring issue or explicitly accepted with a reason; python3 plan/check.py passes with the new issues
+  - Each refactoring issue's acceptance criteria require that behaviour is unchanged and every ratchet (spec citations, coverage, mutation score, fuzz, differential) holds at its current value
+  verify:
+  - python3 plan/check.py --write-coverage; review of docs/audits/conv-17-l0-l3.md against the filed issues
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1104,6 +1125,7 @@ issues:
   - P2-57
   - P2-58
   - P2-59
+  - P2-60
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

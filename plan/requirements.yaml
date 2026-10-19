@@ -252,6 +252,7 @@ sections:
       - {id: CONV-14, kind: stated, text: "Repository layout: crates/ with a project prefix, apps/, xtask/, fuzz/ outside the workspace, docs/ mdBook, specs/, plan/, packaging/"}
       - {id: CONV-15, kind: stated, text: "Repository files: dual license files (per ADR), README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT"}
       - {id: CONV-16, kind: stated, text: "tracing for diagnostics, one paths module (XDG vs native dirs decided in an ADR), user-facing strings in one catalog"}
+      - {id: CONV-17, kind: stated, text: "Type design in shipped crates: enums for closed sets of choices, newtypes with private fields for IDs and units, methods on the type they read, no single-use one-line helpers, generics and traits over duplicated code, no stringly-typed errors in library crates (user requirement, 2026-10-19)"}
 
   - id: TEST
     title: Test-suite readiness (see docs/testing.md)
