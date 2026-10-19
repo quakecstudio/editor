@@ -170,6 +170,10 @@ checklist.
 - **Dependencies:** declared once in `[workspace.dependencies]` with an exact version and
   `default-features = false`; licenses compatible with GPL-3.0-or-later (`deny.toml`). Add
   sparingly, and justify each one.
+- **Type design (CONV-17):** enums, not booleans or strings, for a closed set of choices;
+  newtypes with private fields and constructors for IDs and units; behaviour that reads one
+  type is a method on it; no single-use one-line helper unless its name adds meaning;
+  generics and traits over duplicated code; error enums, not strings, in library crates.
 - **Diagnostics:** `tracing`, never `println!`. Paths come only from `qs-paths`.
 - **Docs:** public items have rustdoc; every crate README states its purpose, layer and the
   spec sections it implements.

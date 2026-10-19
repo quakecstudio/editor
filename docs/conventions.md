@@ -401,3 +401,247 @@ licenses, recorded in `specs/README.md`, and are not scanned. A file of a type w
   ([ADR-0011](adr/0011-app-directories.md)).
 - User-facing strings go through one catalog so translation is possible later (vouch uses
   Fluent via `vouch-i18n`). Translations themselves are not in scope for v1.
+
+## Type design (CONV-17)
+
+These rules are this project's own (the project owner's request, 2026-10-19), not taken from
+vouch. They apply to shipped crates; test code may bend them where a test reads better for
+it. No lint checks them: the implementer's pre-land code review
+([`work-issue`](../.claude/skills/work-issue/SKILL.md), "Land it") checks every PR against
+them, and P2-60 audits the L0 to L3 crates. Code written before them is changed by that
+audit's refactoring issues, not by unrelated PRs. Each example is real code in the
+repository as of 2026-10-19; the "after" is the shape the rule asks for.
+
+### Enums for closed sets of choices
+
+A closed set of choices is an enum, not a `bool` or a string. A `bool` argument says nothing
+at the call site (`lower_body(body, &ty, true)`), two booleans can hold a combination that
+means nothing, and a string can hold a typo. An enum names each choice, and `match` makes the
+compiler find every place a new variant has to be handled.
+
+`crates/qc-sema/src/lower.rs` turns the `Dialect` it is given into a `bool` and threads that
+through eleven functions:
+
+```rust
+pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
+    let fte = dialect.has_fteqcc_extensions();
+    // ...
+                    lower_declaration(&decl, fte, &mut out.decls);
+}
+
+fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, fte: bool) -> RawBody {
+```
+
+After: pass the `Dialect` (it is `Copy`) and ask it where the answer matters, so a dialect
+with rules of its own changes `Dialect`, not every signature.
+
+```rust
+fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, dialect: Dialect) -> RawBody {
+    // ...
+    let bad = !dialect.has_fteqcc_extensions() && (base.is_field() || base.is_function());
+```
+
+The same file reads a declaration's qualifiers as words and compares strings, stripping the
+leading underscores at every comparison:
+
+```rust
+fn qualifiers(decl: &ast::Declaration) -> Vec<String> { /* the words, as written */ }
+
+let words = qualifiers(decl);
+let has = |word: &str| words.iter().any(|w| w.trim_start_matches('_') == word);
+let redefinable = has("wrap") || has("weak") || has("accumulate");
+```
+
+After: one `Qualifier` enum, with the spelling rules (FTEF-15.1) in the one function that
+reads a word, so a misspelt qualifier is a compile error rather than a silent `false`:
+
+```rust
+/// A declaration qualifier `lower.rs` reads (FTEF-15.1, FTEF-9.2).
+enum Qualifier {
+    Wrap, Weak, Accumulate, Extern, Var, Noref, Unused, Virtual, Nonvirtual, Static,
+}
+
+impl Qualifier {
+    /// The qualifier a word spells, with or without its leading underscores.
+    fn from_word(word: &str) -> Option<Self> { /* ... */ }
+}
+
+let quals: Vec<Qualifier> = qualifiers(decl);
+let redefinable = quals
+    .iter()
+    .any(|q| matches!(q, Qualifier::Wrap | Qualifier::Weak | Qualifier::Accumulate));
+```
+
+### Newtypes for IDs and units
+
+An ID or a unit is a newtype with a private field, built by a constructor and read by an
+accessor. A `pub` tuple field lets any caller make an ID from any number and read it back as
+a bare number, so the type stops nothing; with the field private, the crate that owns the
+type decides how one is made and can change its representation without touching callers.
+
+`crates/qc-sema/src/symbol.rs`:
+
+```rust
+pub struct FileId(pub usize);
+pub struct DefId(pub usize);
+```
+
+After:
+
+```rust
+/// A file's index in a module's ordered file graph (`qc_project::Module::graph`).
+pub struct FileId(usize);
+
+impl FileId {
+    /// The file at `index` in the module's file graph.
+    #[must_use]
+    pub const fn new(index: usize) -> Self { Self(index) }
+
+    /// The file's index in the module's file graph.
+    #[must_use]
+    pub const fn index(self) -> usize { self.0 }
+}
+```
+
+Make the constructor `pub(crate)` when only the owning crate should make one.
+
+### Behaviour that reads one type is a method on it
+
+A function whose work is reading one type's data is a method on that type, not a free
+function taking it. A method is found where the type is documented, sits beside the related
+methods, and keeps the type's rules in one place instead of in each crate that needs them.
+
+`crates/qc-sema/src/resolve.rs` and `crates/qc-sema/src/nav.rs`:
+
+```rust
+fn component_type(ty: &Type) -> Option<Type> { /* float for vector, .float for .vector */ }
+
+fn covers(span: qc_diag::Span, offset: usize) -> bool {
+    if span.start == span.end {
+        offset == span.start
+    } else {
+        offset >= span.start && offset < span.end
+    }
+}
+```
+
+After: `Type::component` in `crates/qc-sema/src/ty.rs`, and `Span::covers` in
+`crates/qc-diag/src/lib.rs` beside `Span::contains`, where every crate that has a span can
+use it:
+
+```rust
+impl Type {
+    /// The type of each component of a value of this type (QC-11.7).
+    pub(crate) fn component(&self) -> Option<Type> { /* ... */ }
+}
+
+impl Span {
+    /// Whether this span covers byte `offset`: `[start, end)`, or exactly `start` when empty.
+    #[must_use]
+    pub const fn covers(self, offset: usize) -> bool { /* ... */ }
+}
+```
+
+### No single-use one-line helpers
+
+A one-line function with one caller is inlined, unless its name says something the
+expression does not: a spec rule, a C idiom, or an `#[expect]` that would otherwise sit in
+the middle of a larger function. Otherwise a reader jumps to the helper only to find it does
+nothing more than its body.
+
+`crates/qc-builtins/src/math.rs` has one caller of:
+
+```rust
+/// An `i32` as f64, exact for every `i32`.
+fn int_to_f64(v: i32) -> f64 {
+    f64::from(v)
+}
+
+let result = (360.0 / 65536.0) * int_to_f64(masked);
+```
+
+After: `f64::from` already says the conversion is exact, as the first line of the same
+function, `anglemod`, shows.
+
+```rust
+let scaled = f64::from(a) * (65536.0 / 360.0);
+// ...
+let result = (360.0 / 65536.0) * f64::from(masked);
+```
+
+`int_to_f32` in the same file stays: its `#[expect(clippy::cast_precision_loss, reason =
+"spec BUILTIN-6: ...")]` is what its name stands for.
+
+### Generics and traits instead of duplicated code
+
+Code that differs only in a type is written once, generic over that type or behind a trait.
+Copies drift: a bound check fixed in one stays wrong in the others.
+
+`le_i32` is copied byte for byte in `crates/qs-pak/src/lib.rs` and `crates/qs-wad/src/lib.rs`,
+with variants in `qs-mdl`, `qs-wav`, `qs-bsp` (`i32_at`, `u32_at`) and `qc-lno` (`read_u32`),
+each with its own bound check:
+
+```rust
+/// The signed little-endian 32-bit integer at `offset`, or 0 past the end of `bytes`.
+fn le_i32(bytes: &[u8], offset: usize) -> i32 {
+    let word = bytes
+        .get(offset..offset.saturating_add(4))
+        .and_then(|word| <[u8; 4]>::try_from(word).ok())
+        .unwrap_or_default();
+    i32::from_le_bytes(word)
+}
+```
+
+`crates/qc-progs/src/records.rs` already has the shape the rule asks for: the bound check is
+written once, generic over the width, and each integer type is a one-line use of it.
+
+```rust
+fn read_array<const N: usize>(bytes: &[u8], at: usize) -> Option<[u8; N]> {
+    bytes.get(at..at.checked_add(N)?)?.try_into().ok()
+}
+
+pub(crate) fn read_i32(bytes: &[u8], at: usize) -> Option<i32> {
+    read_array(bytes, at).map(i32::from_le_bytes)
+}
+```
+
+Its `Record` trait does the same for tables: `Progs::table<T: Record>` is one function for
+every table rather than one per record type. Whether copies in several crates become one
+shared module is a layering decision ([`layers.md`](layers.md)); the duplication is a
+finding either way.
+
+### No stringly-typed errors in library crates
+
+A library crate returns an error enum, not a `String` or a `Box<dyn Error>` made from text.
+A caller cannot match on a sentence, a test that compares one breaks when the wording
+changes, and the variants are the list of what can go wrong. A binary may turn errors into
+text at the top, where a person reads them.
+
+`crates/qc-syntax/src/recovery.rs`:
+
+```rust
+pub(crate) fn check_one(/* ... */) -> Result<usize, String> {
+    // ...
+    if root.text() != edited {
+        return Err("the tree does not give back the text".to_owned());
+    }
+    // ...
+    if prefix < damaged {
+        return Err(format!("declaration {prefix} before the deletion changed"));
+    }
+```
+
+After: an enum with one variant per failure, and `Display` for the text, as `ReadError` in
+`crates/qc-progs/src/read.rs` does:
+
+```rust
+/// Why one edited source fails the recovery check.
+pub enum RecoveryFault {
+    /// The tree does not give back the text.
+    NotLossless,
+    /// The root is not a source file.
+    NotSourceFile,
+    /// A declaration before the deletion changed.
+    PrefixChanged { declaration: usize },
+}
+```
