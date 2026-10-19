@@ -5,8 +5,11 @@
 use std::rc::Rc;
 
 use qc_diag::Code;
+use qc_syntax::Dialect;
 
 use super::{index_of, module_index_of};
+use crate::lower::lower_file;
+use crate::resolve::{ResolveOptions, resolve_module};
 use crate::symbol::{DefId, DefKind};
 use crate::ty::{SimpleType, Type};
 
@@ -316,4 +319,101 @@ fn earlier_file_cannot_see_later_file_definitions() {
             .iter()
             .any(|d| d.diagnostic.code == Code::E0301)
     );
+}
+
+// spec QC-11.7: a vector local whose component name is a global reuses that global without
+// the warning of QCD-7.3, since the source never names the component; the others are new.
+#[test]
+fn a_vector_local_component_reuses_a_global_silently() {
+    let index = index_of("float v_x;\nvoid() f = { local vector v; v_x = v_y; };\n");
+    assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+    let v_x: Vec<_> = index.defs.iter().filter(|d| d.name == "v_x").collect();
+    assert_eq!(v_x.len(), 1);
+    assert_eq!(v_x[0].kind, DefKind::Global);
+    let v_y = index.defs.iter().find(|d| d.name == "v_y").unwrap();
+    assert_eq!(v_y.kind, DefKind::Local);
+}
+
+// spec QC-12.5: every part of an `if`, `if`-`else`, `while` and `do`-`while` statement and a
+// `return` value names values, resolved in source order.
+#[test]
+fn statement_parts_are_resolved() {
+    assert_eq!(
+        unknown_values(
+            "float() f = {\n\tif (u1) u2 = 1; else u3 = 1;\n\twhile (u4) u5 = 2;\n\
+             \tdo u6 = 3; while (u7);\n\tif (u8) return u9;\n\treturn;\n};\n"
+        ),
+        ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9"]
+            .map(|name| format!("Unknown value \"{name}\""))
+    );
+}
+
+/// The messages of the "Unknown value" errors of a vanilla module of one file.
+fn unknown_values(source: &str) -> Vec<String> {
+    index_of(source)
+        .diagnostics
+        .iter()
+        .filter(|d| d.diagnostic.code == Code::E0301)
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+}
+
+// spec QC-12.5: in vanilla the name after `.` is a name used as a value, so a field name with
+// no definition is "Unknown value", even one FTEQCC would read as a vector member.
+#[test]
+fn a_vanilla_field_selector_is_a_value() {
+    assert_eq!(
+        unknown_values("entity e;\nvoid() f = { e.x = 1; };\n"),
+        ["Unknown value \"x\""]
+    );
+}
+
+// spec QC-12.5: in vanilla `autocvar` is an ordinary name, so every argument of a call of it
+// is a value that must be defined.
+#[test]
+fn a_vanilla_autocvar_call_resolves_every_argument() {
+    assert_eq!(
+        unknown_values(
+            "float(float a, float b) autocvar = #1;\nvoid() f = { autocvar(nope, 1); };\n"
+        ),
+        ["Unknown value \"nope\""]
+    );
+}
+
+// spec QC-11.5: a redeclaration whose type is unknown, the type of a declaration the parser
+// read only in part, is no type mismatch in vanilla, whichever of the two is unknown.
+#[test]
+fn an_unknown_type_is_no_vanilla_mismatch() {
+    let parse = qc_syntax::parse_with(b"float x;\nfloat x;\n", Dialect::Vanilla);
+    let lowered = lower_file(&parse, Dialect::Vanilla);
+    for unknown in [0, 1] {
+        let mut file = lowered.clone();
+        file.decls[unknown].ty = Type::Unknown;
+        let index = resolve_module(&[file], ResolveOptions::default());
+        assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+    }
+    let mut file = lowered;
+    file.decls[1].ty = Type::Simple(SimpleType::String);
+    let index = resolve_module(&[file], ResolveOptions::default());
+    let codes: Vec<_> = index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.code)
+        .collect();
+    assert_eq!(codes, [Code::E0205]);
+}
+
+// spec QC-12.5: resolution follows the dialect it is asked for: under vanilla a scoped name
+// lowered from FTEQCC source is looked up by its name alone, so `super::` excuses nothing.
+#[test]
+fn vanilla_resolution_reads_a_scoped_name_as_its_name() {
+    let parse = qc_syntax::parse_with(b"void() f = { super::nothing(); };\n", Dialect::Fteqcc);
+    let lowered = lower_file(&parse, Dialect::Fteqcc);
+    let index = resolve_module(&[lowered], ResolveOptions::default());
+    let messages: Vec<_> = index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.message.as_str())
+        .collect();
+    assert_eq!(messages, ["Unknown value \"super::nothing\""]);
 }

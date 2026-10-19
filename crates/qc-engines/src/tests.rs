@@ -584,6 +584,22 @@ fn the_number_wins_over_an_engine_name() {
     assert_eq!(fte_messages(Engine::Kex, &[fraction]).len(), 1);
 }
 
+// spec ENGT-4.5: `0` is any literal whose digits are all zeros, `00` and FTEQCC's `.0`
+// included; `0.5` is no zero, so `#0.5:NAME` has no engine name and gives no W0311
+#[test]
+fn only_a_zero_literal_takes_an_engine_name() {
+    for zero in ["00", ".0", "0.00"] {
+        let source = format!("void() f = #{zero}:nothing;\nvoid() w = {{ f(); }};\n");
+        assert_eq!(
+            fte_messages(Engine::Kex, &[source.as_str()]),
+            ["f is builtin #0:nothing, which KEX does not have"],
+            "#{zero}"
+        );
+    }
+    let half = "void() f = #0.5:nothing;\nvoid() w = { f(); };\n";
+    assert!(fte_messages(Engine::Kex, &[half]).is_empty());
+}
+
 // spec ENGT-4.6: `#N:NAME` with N at least 1 is checked by its number alone
 #[test]
 fn a_numbered_builtin_with_a_name_is_checked_by_number() {

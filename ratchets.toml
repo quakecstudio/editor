@@ -303,3 +303,11 @@ lines = 100
 branches = 100
 mutation = 100
 spec = 100
+
+# qc-sema (L3 semantics): one surviving mutant that no input can kill, found
+# when P2-43 brought the crate to the bar (Readiness run 39303223745 had 52
+# survivors; the new tests kill the other 51). The P2-R3 readiness review adds
+# the minimums and `readiness`.
+[crates.qc-sema]
+reason = "P2-43: OriginMap::locate's `>` and `>=` differ only for a one-byte span, where the last byte's origin is the first byte's, so both forms return the first token's origin"
+equivalent_mutants = { "crates/qc-sema/src/expand.rs: replace > with >= in OriginMap::locate" = "locate reads the last byte as `span.end.checked_sub(1).filter(|&e| e > span.start)`; `>=` differs only when span.end - 1 == span.start, a one-byte span, and then the last byte is span.start itself, so `origin_at` returns the same origin as for the first byte; the merged location is then Span::new(first.span.start, first.span.end) in first.file, which is the first origin unchanged, or, if that origin's end were before its start, the first origin returned as is, so both forms return the first token's origin for every input (QC-9.7)" }

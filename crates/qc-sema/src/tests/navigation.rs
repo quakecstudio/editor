@@ -3,7 +3,7 @@
 //! Navigation tests: go-to-definition and find-references (GOAL-1).
 
 use super::{index_of, nth_offset};
-use crate::symbol::FileId;
+use crate::symbol::{DefId, FileId};
 
 // spec QC-12.5: go-to-definition from a use jumps to the definition's name.
 #[test]
@@ -94,6 +94,54 @@ fn position_on_no_symbol() {
             .references_at(FileId(0), source.len() + 100, true)
             .is_empty()
     );
+}
+
+// spec QC-12.5: a name covers every byte from its first to its last, and not the byte after
+// it, nor a keyword before it, nor a position in another file of the module.
+#[test]
+fn a_name_covers_exactly_its_own_bytes() {
+    let source = "float health;\nvoid() f = { health = 1; };";
+    let index = super::module_index_of(&[source, "float other;"]);
+    let decl = nth_offset(source, "health", 0);
+    let use_ = nth_offset(source, "health", 1);
+    for offset in [decl, decl + 3, decl + 5, use_ + 3, use_ + 5] {
+        let (def, _) = index.definition_at(FileId(0), offset).expect("on health");
+        assert_eq!(index.def(def).unwrap().name, "health", "at {offset}");
+    }
+    for offset in [0, decl + 6, use_ + 6] {
+        assert!(
+            index.definition_at(FileId(0), offset).is_none(),
+            "at {offset}"
+        );
+    }
+    assert!(index.definition_at(FileId(1), use_).is_none());
+    let (other, _) = index.definition_at(FileId(1), 6).expect("on other");
+    assert_eq!(index.def(other).unwrap().name, "other");
+    assert!(index.references(DefId(99), true).is_empty());
+}
+
+// spec FTEF-10.2: an accessor body's `this` and `value` have empty spans at the member's
+// name, which cover only that position, so a position elsewhere is on no symbol.
+#[test]
+fn an_empty_span_covers_only_its_position() {
+    let source = "accessor strbuf : float { get float at = { return this; }; };\n";
+    let index = super::fte_index_of(source);
+    let this = index
+        .defs
+        .iter()
+        .position(|d| d.name == "this")
+        .expect("the this parameter");
+    let at = index.defs[this].location.span;
+    assert_eq!(
+        (at.start, at.end),
+        (nth_offset(source, " at ", 0) + 1, at.start)
+    );
+    for offset in [0, nth_offset(source, "return", 0), source.len() - 1] {
+        assert!(
+            index.definition_at(FileId(0), offset).is_none(),
+            "at {offset}"
+        );
+    }
 }
 
 // spec QC-12.5: references_at from a use gathers the definition's references.

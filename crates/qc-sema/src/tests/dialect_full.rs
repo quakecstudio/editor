@@ -228,6 +228,21 @@ fn equal_initialisers_are_accepted() {
     assert_eq!(errors(&different), [Code::E0206]);
 }
 
+// spec FTEF-17.5: an initialiser that is no literal is compared by its text, token for token:
+// the same tokens spaced differently are the same value, other tokens are not.
+#[test]
+fn other_initialisers_compare_token_for_token() {
+    let spaced = fte_index_of("const float a = 1 + 2;\nconst float a = 1+2;\n");
+    assert_eq!(
+        errors(&spaced),
+        Vec::<Code>::new(),
+        "{:?}",
+        messages(&spaced)
+    );
+    let other = fte_index_of("const float a = 1 + 2;\nconst float a = 1 + 3;\n");
+    assert_eq!(errors(&other), [Code::E0206]);
+}
+
 // spec FTEF-17.6: a redeclaration whose type involves a type name, a pointer or an unknown
 // type is no mismatch; one between two simple types still is.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
@@ -324,6 +339,18 @@ fn pointer_declarators_and_struct_variables() {
         index.defs[seat.0].ty,
         Type::Pointer(std::rc::Rc::new(Type::Named("seat_s".into())))
     );
+}
+
+// spec FTEF-8.2: an enum written as a typedef's type declares its names, which are
+// constants a later declaration uses.
+#[test]
+fn a_typedef_enum_declares_its_names() {
+    let index = fte_index_of("typedef enum { RED, GREEN } color_t;\ncolor_t c = GREEN;\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    let green = defs_named(&index, "GREEN");
+    assert_eq!(green.len(), 1);
+    assert_eq!(index.refs.iter().filter(|r| r.def == green[0]).count(), 1);
+    assert_eq!(defs_named(&index, "color_t").len(), 1);
 }
 
 // spec FTEF-8.2: an enum written as a parameter's type declares its names.
