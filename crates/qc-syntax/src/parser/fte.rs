@@ -157,14 +157,14 @@ impl Parser<'_> {
         }
     }
 
-    /// Whether the current token starts a file-level declaration (FTEF-15.1): a `.`, a
-    /// qualifier, a type word, or a name that may be a type.
+    /// Whether the current name starts a file-level declaration (FTEF-15.1): a qualifier, a
+    /// C type word, a tagged type, or a name that may be a type. `starts_declaration` has
+    /// already taken a `.`, a `..` and a vanilla type word.
     pub(super) fn fte_starts_declaration(&self) -> bool {
         let Some(tok) = self.current() else {
             return false;
         };
         match tok.kind {
-            K::Dot | K::DotDot => true,
             K::Name if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) => true,
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags") => {

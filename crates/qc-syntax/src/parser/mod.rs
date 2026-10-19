@@ -88,21 +88,12 @@ fn type_keyword(word: &str) -> Option<K> {
 /// The words that start a statement (QC-14.1).
 const STATEMENT_WORDS: [&str; 5] = ["return", "while", "do", "local", "if"];
 
-/// The FTEQCC storage qualifier keywords and their kinds (FTE-10 to FTE-12).
-fn qualifier_keyword(word: &str) -> Option<K> {
-    match word {
-        "const" => Some(K::ConstKw),
-        "var" => Some(K::VarKw),
-        "nosave" => Some(K::NosaveKw),
-        _ => None,
-    }
-}
-
 /// Words the FTEQCC dialect treats as keywords, so a user-defined type name (FTE-14.2) is
-/// not mistaken for one. Covers the vanilla statement words and the FTEQCC keywords.
+/// not mistaken for one. Covers the vanilla statement words and the FTEQCC keywords; the
+/// qualifiers `const`, `var` and `nosave` are declaration qualifiers (`fte::is_decl_qualifier`),
+/// which every caller checks too.
 fn is_reserved_word(word: &str) -> bool {
     STATEMENT_WORDS.contains(&word)
-        || qualifier_keyword(word).is_some()
         || matches!(
             word,
             "for"
@@ -599,30 +590,18 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// A vanilla type (QC-10) or, in an FTEQCC dialect, a user-defined type name (FTE-14.2).
+    /// A vanilla type (QC-10) or, in an FTEQCC dialect, the full dialect's types, a
+    /// user-defined type name among them (FTE-14.2; FTEF-2, FTEF-4, FTEF-7).
     fn type_or_user_type(&mut self) -> Option<TypeShape> {
         if self.fteqcc() {
-            // FTEF-2, FTEF-4, FTEF-7: the full dialect's types.
-            return self.fte_type();
+            self.fte_type()
+        } else {
+            self.type_()
         }
-        let user = self.fteqcc()
-            && self
-                .current()
-                .is_some_and(|t| t.kind == K::Name && type_keyword(&t.text).is_none());
-        if user {
-            self.start_node(K::SimpleType);
-            self.bump();
-            self.finish_node();
-            return Some(TypeShape {
-                function: false,
-                field: false,
-            });
-        }
-        self.type_()
     }
 
-    /// `typedef struct { T1 f1; ... } Name;` (FTE-14.1). Only the struct form the rerelease
-    /// uses is accepted; a `typedef` of anything else is parsed loosely as a name and a type.
+    /// `typedef struct { T1 f1; ... } Name;` (FTE-14.1), and a `typedef` of an enum or of any
+    /// type (FTEF-7.1). Only the FTEQCC dialect reads it.
     fn typedef_decl(&mut self) {
         self.start_node(K::TypedefDecl);
         self.bump_as(K::TypedefKw);
@@ -635,7 +614,7 @@ impl<'a> Parser<'a> {
             while self.at(K::Star) {
                 self.bump();
             }
-        } else if self.fteqcc() && (self.at_word("enum") || self.at_word("enumflags")) {
+        } else if self.at_word("enum") || self.at_word("enumflags") {
             // FTEF-7.1: `typedef enum { ... } Name;`.
             self.enum_body();
         } else {
@@ -643,10 +622,8 @@ impl<'a> Parser<'a> {
             self.type_or_user_type();
         }
         self.name();
-        if self.fteqcc() {
-            while self.at(K::LBracket) {
-                self.array_suffix();
-            }
+        while self.at(K::LBracket) {
+            self.array_suffix();
         }
         if !self.expect(K::Semicolon, ";") {
             self.recover(false);
@@ -654,7 +631,8 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// `struct { T1 f1; T2 f2; ... }` (FTE-14.1): the fields in declaration order.
+    /// `struct { T1 f1; T2 f2; ... }` (FTE-14.1): the fields in declaration order. Only the
+    /// FTEQCC dialect reads it.
     fn struct_type(&mut self) {
         self.start_node(K::StructType);
         if self.at_word("union") {
@@ -662,38 +640,35 @@ impl<'a> Parser<'a> {
         } else {
             self.bump_as(K::StructKw);
         }
-        if self.fteqcc() && self.at(K::Name) {
+        if self.at(K::Name) {
             // FTEF-6.1: the struct's tag.
             self.bump();
         }
-        if self.fteqcc() && self.at(K::Colon) {
+        if self.at(K::Colon) {
             // FTEF-6.3: `struct Child : Parent`.
             self.bump();
             self.name();
         }
-        if self.fteqcc() && !self.at(K::LBrace) {
+        if !self.at(K::LBrace) {
             // FTEF-6.1: `struct Name;` declares the struct without its fields.
             self.finish_node();
             return;
         }
-        if !self.expect(K::LBrace, "{") {
-            self.finish_node();
-            return;
-        }
+        self.bump();
         while !self.at(K::RBrace) && self.current().is_some() {
             let before = self.pos;
             self.start_node(K::StructField);
-            if self.type_or_user_type().is_some() {
+            if self.fte_type().is_some() {
                 loop {
                     self.name();
-                    while self.fteqcc() && self.at(K::LBracket) {
+                    while self.at(K::LBracket) {
                         self.array_suffix();
                     }
-                    if self.fteqcc() && self.at(K::LParen) {
+                    if self.at(K::LParen) {
                         // FTEF-6.4: a member of function type, `float Get(int);`.
                         self.fte_param_list();
                     }
-                    if self.fteqcc() && self.at(K::Colon) {
+                    if self.at(K::Colon) {
                         // FTEF-6.4: a bitfield `int name : bits;`.
                         self.bump();
                         self.expression();
@@ -747,7 +722,7 @@ impl<'a> Parser<'a> {
         if self.at(K::Colon) {
             // `: int` or another underlying type, accepted and ignored (FTE-15.2).
             self.bump();
-            self.type_or_user_type();
+            self.fte_type();
         }
         if self.expect(K::LBrace, "{") {
             while !self.at(K::RBrace) && self.current().is_some() {
@@ -814,26 +789,18 @@ impl<'a> Parser<'a> {
             self.name();
         }
         let mut ty = ty;
-        // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
-        // rerelease uses beside the vanilla `rettype(params) name`. A `(` after the name, on a
-        // non-function type, is the parameter list, and the declarator is then a function.
-        let c_style = self.fteqcc() && !ty.function && self.at(K::LParen);
-        if c_style {
-            if self.fteqcc() {
-                self.fte_param_list();
-            } else {
-                self.param_list();
-            }
-            ty.function = true;
-        }
         // FTEQCC array suffix `[N]` or `[]` after the declared name (FTE-13.1). Vanilla uses
         // `[` only in a state header `=[frame, think]`, after `=`, so this does not change
         // vanilla; after a function declarator a `[` is its state header (FTE-17.2).
         while self.fteqcc() && !ty.function && self.at(K::LBracket) {
             self.array_suffix();
         }
-        if self.fteqcc() && !c_style && !ty.function && self.at(K::LParen) {
-            // FTEF-5.3: `T name[N](params)`, an array of functions.
+        // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
+        // rerelease uses beside the vanilla `rettype(params) name`, and FTEF-5.3: `T
+        // name[N](params)`, an array of functions. A `(` after the name or its array
+        // suffixes, on a non-function type, is the parameter list, and the declarator is then
+        // a function.
+        if self.fteqcc() && !ty.function && self.at(K::LParen) {
             self.fte_param_list();
             ty.function = true;
         }
@@ -925,7 +892,7 @@ impl<'a> Parser<'a> {
 
     /// `{ a, b, ... }`: an FTEQCC array or struct initialiser (FTE-13.1, FTE-14.3). Each
     /// element is an expression or a nested aggregate `{ ... }` (an array of structs). A
-    /// trailing comma before `}` is allowed.
+    /// trailing comma before `}` is allowed. Only the FTEQCC dialect reads it.
     fn aggregate_init(&mut self) {
         if !self.enter() {
             self.bump_error();
@@ -935,8 +902,7 @@ impl<'a> Parser<'a> {
         self.start_node(K::AggregateInit);
         self.bump_as(K::LBrace);
         while !self.at(K::RBrace) && self.current().is_some() {
-            if self.fteqcc()
-                && self.at(K::Dot)
+            if self.at(K::Dot)
                 && self.nth(1).is_some_and(|t| t.kind == K::Name)
                 && self.nth(2).is_some_and(|t| t.kind == K::Eq)
             {
@@ -1113,7 +1079,8 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// `( )`, `( ... )` or `( type name {, type name} )` (QC-10.3, QC-10.4, QC-27.7).
+    /// `( )`, `( ... )` or `( type name {, type name} )` (QC-10.3, QC-10.4, QC-27.7); the
+    /// FTEQCC dialect's parameters are [`Parser::fte_param_list`]'s (FTE-18, FTEF-15.3).
     fn param_list(&mut self) {
         if self.fteqcc() {
             // FTEF-15.3: the full dialect's parameters.
@@ -1133,30 +1100,9 @@ impl<'a> Parser<'a> {
         } else {
             let mut count = 0_usize;
             loop {
-                // FTE-18.1: FTEQCC ends the list at a `...` after named parameters, as the
-                // rerelease's `void(string s, ...) bprint`. Vanilla has only the bare `(...)`
-                // form (QC-10.4), handled above.
-                if self.fteqcc() && self.at(K::Ellipsis) {
-                    self.bump();
-                    break;
-                }
                 self.start_node(K::Param);
-                // FTE-18.3: an FTEQCC parameter may have a user type, `UpgradeType Type`.
-                let ty = if self.fteqcc() {
-                    self.type_or_user_type()
-                } else {
-                    self.type_()
-                };
-                if ty.is_some() {
+                if self.type_().is_some() {
                     self.name();
-                    // FTE-18.2: an FTEQCC default value `type name = expr`, as the
-                    // rerelease's `float(entity e) predicate = (float(entity e))SUB_True`.
-                    if self.fteqcc() && self.at(K::Eq) {
-                        self.start_node(K::DefaultValue);
-                        self.bump();
-                        self.expression();
-                        self.finish_node();
-                    }
                 } else {
                     self.skip_param();
                 }
@@ -1274,9 +1220,10 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             K::Dot => self.local_decl(false),
-            K::DotDot if self.fteqcc() => self.local_decl(false),
+            // Only the FTEQCC lexer makes the `..` and `:` tokens.
+            K::DotDot => self.local_decl(false),
             // FTEF-18.23: `:name`, the FrikQCC label.
-            K::Colon if self.fteqcc() => self.label_stmt(),
+            K::Colon => self.label_stmt(),
             // FTEF-18.23: `name:`, the C label, its `:` right after the name.
             K::Name if self.fteqcc() && self.at_c_label() => self.label_stmt(),
             K::Name if self.fteqcc() && tok.text == "goto" => self.goto_stmt(),
@@ -1299,9 +1246,6 @@ impl<'a> Parser<'a> {
                 }
                 "continue" if self.nth(1).is_some_and(|t| t.kind == K::Semicolon) => {
                     self.break_continue_stmt(K::ContinueStmt, K::ContinueKw, "continue");
-                }
-                word if self.fteqcc() && qualifier_keyword(word).is_some() => {
-                    self.local_decl(false);
                 }
                 // FTEF-16.1: a statement of the full dialect that declares locals.
                 _ if self.fteqcc() && self.fte_looks_like_local() => self.local_decl(false),
@@ -1931,14 +1875,6 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// Whether the `(` here opens a cast: a type word or `.` follows it (FTE-19.6). Neither
-    /// can start an expression, so a parenthesised expression is never taken for one.
-    fn at_cast(&self) -> bool {
-        self.nth(1).is_some_and(|t| {
-            t.kind == K::Dot || (t.kind == K::Name && type_keyword(&t.text).is_some())
-        })
-    }
-
     /// `PR_Term`: `!` expression, `( expression )`, a literal, a frame macro reference or a
     /// name (QC-15.7). Anything else is "not a name" (QC-4.5, QC-14.2).
     fn term(&mut self) -> Option<Expr> {
@@ -1951,12 +1887,6 @@ impl<'a> Parser<'a> {
             tok.span.start,
             tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1),
         );
-        // FTEF-18.25: `(void)` makes the expression `void`.
-        let void_cast = kind == K::LParen
-            && self
-                .nth(1)
-                .is_some_and(|t| t.kind == K::Name && t.text == "void")
-            && self.nth(2).is_some_and(|t| t.kind == K::RParen);
         let mut tail = Tail::Plain;
         let (node, assignable) = match kind {
             K::Not => {
@@ -1980,6 +1910,11 @@ impl<'a> Parser<'a> {
             }
             // FTEF-16.2: the full dialect's casts, to any type.
             K::LParen if self.fteqcc() && self.fte_at_cast() => {
+                // FTEF-18.25: `(void)` makes the expression `void`.
+                let void_cast = self
+                    .nth(1)
+                    .is_some_and(|t| t.kind == K::Name && t.text == "void")
+                    && self.nth(2).is_some_and(|t| t.kind == K::RParen);
                 self.fte_cast();
                 if void_cast {
                     tail = Tail::Void;
@@ -2001,15 +1936,6 @@ impl<'a> Parser<'a> {
             K::LBracket if self.fteqcc() => {
                 self.vector_expr();
                 (K::VectorExpr, false)
-            }
-            // FTE-19.6: `(` and a type is a cast; its operand has `UNARY_PRIORITY`.
-            K::LParen if self.fteqcc() && self.at_cast() => {
-                self.start_node(K::CastExpr);
-                self.bump();
-                self.type_();
-                self.expect(K::RParen, ")");
-                self.expr(UNARY_PRIORITY);
-                (K::CastExpr, false)
             }
             K::LParen => {
                 self.start_node(K::ParenExpr);
@@ -2041,17 +1967,10 @@ impl<'a> Parser<'a> {
                 self.sizeof_expr();
                 (K::SizeofExpr, false)
             }
-            // FTEF-16.4: `Class::member` and `super::member`.
-            K::Name if self.fteqcc() => {
-                self.scoped_name(long);
-                (K::NameRef, true)
-            }
+            // FTEF-16.4: `Class::member` and `super::member`; a vanilla name has no `::`,
+            // which only the FTEQCC lexer makes.
             K::Name => {
-                self.start_node(K::NameRef);
-                if long {
-                    self.error(Code::E0202, "name too long");
-                }
-                self.bump();
+                self.scoped_name(long);
                 (K::NameRef, true)
             }
             _ => {
