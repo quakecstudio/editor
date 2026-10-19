@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_project::ModuleKind;
 use qc_sema::{DefKind, FileId, ModuleIndex};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::{Parse, SyntaxKind};
@@ -25,12 +26,12 @@ enum Key {
 }
 
 impl Key {
-    /// The engine's entry for this key, if its table has one.
-    fn lookup(&self, engine: Engine) -> Option<Builtin> {
+    /// The engine's entry for this key in its table for `kind`, if it has one.
+    fn lookup(&self, engine: Engine, kind: ModuleKind) -> Option<Builtin> {
         match self {
-            Self::Number(number) => engine.builtin(BuiltinKey::Number(*number)),
+            Self::Number(number) => engine.builtin(kind, BuiltinKey::Number(*number)),
             Self::Name(name) => engine
-                .builtins()
+                .builtins(kind)
                 .into_iter()
                 .find(|b| matches!(b.key, BuiltinKey::Name(n) if n == name)),
         }
@@ -46,17 +47,22 @@ pub struct FileDiagnostic {
     pub diagnostic: Diagnostic,
 }
 
-/// The `W0311` warnings for a module checked against `engine` (ENGT-4.1).
+/// The `W0311` warnings for a module of `kind` checked against `engine` (ENGT-4.1, ENGT-4.8).
 ///
 /// `parses` are the module's files in compilation order, `parses[i]` being [`FileId`]`(i)`,
 /// and `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
-/// warning per call of a builtin the engine's table lacks, in file and then source order.
+/// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
+/// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
 #[must_use]
 pub fn missing_builtins(
     engine: Engine,
+    kind: ModuleKind,
     parses: &[Parse],
     index: &ModuleIndex,
 ) -> Vec<FileDiagnostic> {
+    if !engine.has_table(kind) {
+        return Vec::new();
+    }
     let keys = builtin_keys(parses);
     let callees = callee_names(parses);
     let mut out = Vec::new();
@@ -74,14 +80,14 @@ pub fn missing_builtins(
         let Some(key) = keys.get(def.name.as_str()) else {
             continue;
         };
-        if key.lookup(engine).is_some() {
+        if key.lookup(engine, kind).is_some() {
             continue;
         }
         out.push(FileDiagnostic {
             file: location.file,
             diagnostic: Diagnostic {
                 code: Code::W0311,
-                message: message(&def.name, key, engine),
+                message: message(&def.name, key, engine, kind),
                 span: location.span,
             },
         });
@@ -92,8 +98,8 @@ pub fn missing_builtins(
 
 /// `NAME is builtin #N, which ENGINE does not have` (ENGT-4.1), or `#0:ENGINE_NAME` for a
 /// builtin looked up by name (ENGT-4.5), with the extensions of the first engine whose table
-/// lists the key with some.
-fn message(name: &str, key: &Key, engine: Engine) -> String {
+/// for `kind` lists the key with some (ENGT-4.8).
+fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
     let shown = match key {
         Key::Number(number) => number.to_string(),
         Key::Name(engine_name) => format!("0:{engine_name}"),
@@ -103,7 +109,7 @@ fn message(name: &str, key: &Key, engine: Engine) -> String {
         engine.name()
     );
     let extensions = Engine::ALL.into_iter().find_map(|other| {
-        key.lookup(other)
+        key.lookup(other, kind)
             .map(|b| b.extensions)
             .filter(|e| !e.is_empty())
     });

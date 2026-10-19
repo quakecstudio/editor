@@ -11,7 +11,7 @@ use std::path::Path;
 
 use qc_builtins::table::BUILTINS;
 use qc_diag::{Code, Severity, Span};
-use qc_project::{MemoryLoader, Target, open_dir};
+use qc_project::{MemoryLoader, ModuleKind, Target, open_dir};
 use qc_sema::lower::lower_file;
 use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
 use qc_syntax::{Dialect, Parse};
@@ -35,10 +35,21 @@ fn module(dialect: Dialect, files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
     (parses, index)
 }
 
-/// The `W0311` warnings for `files`, in `dialect`, checked against `engine`.
+/// The `W0311` messages for a module of `kind` made of FTEQCC `files`, checked against
+/// `engine`.
+fn check_kind(engine: Engine, kind: ModuleKind, files: &[&str]) -> Vec<String> {
+    let (parses, index) = module(Dialect::Fteqcc, files);
+    missing_builtins(engine, kind, &parses, &index)
+        .into_iter()
+        .map(|d| d.diagnostic.message)
+        .collect()
+}
+
+/// The `W0311` warnings for a server module of `files`, in `dialect`, checked against
+/// `engine`.
 fn check_in(dialect: Dialect, engine: Engine, files: &[&str]) -> Vec<FileDiagnostic> {
     let (parses, index) = module(dialect, files);
-    missing_builtins(engine, &parses, &index)
+    missing_builtins(engine, ModuleKind::Ssqc, &parses, &index)
 }
 
 /// The `W0311` warnings for vanilla `files` checked against `engine`.
@@ -99,22 +110,41 @@ fn the_tables_record_their_sources() {
 #[test]
 fn vanilla_and_quakespasm_are_ids_table() {
     for engine in [Engine::Vanilla, Engine::QuakeSpasm] {
-        let numbers: Vec<BuiltinKey> = engine.builtins().iter().map(|b| b.key).collect();
+        let numbers: Vec<BuiltinKey> = engine
+            .builtins(ModuleKind::Ssqc)
+            .iter()
+            .map(|b| b.key)
+            .collect();
         let ids: Vec<BuiltinKey> = BUILTINS
             .iter()
             .map(|b| BuiltinKey::Number(b.number))
             .collect();
         assert_eq!(numbers, ids);
-        assert!(engine.builtin(BuiltinKey::Number(5)).is_none());
-        assert!(engine.builtin(BuiltinKey::Number(79)).is_none());
-        assert!(engine.builtin(BuiltinKey::Name("ex_bprint")).is_none());
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(5))
+                .is_none()
+        );
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(79))
+                .is_none()
+        );
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Name("ex_bprint"))
+                .is_none()
+        );
     }
     for engine in Engine::ALL {
-        let table = engine.builtins();
+        let table = engine.builtins(ModuleKind::Ssqc);
         let keys: HashSet<BuiltinKey> = table.iter().map(|b| b.key).collect();
         assert_eq!(keys.len(), table.len(), "{} repeats a key", engine.name());
         for builtin in &table {
-            assert_eq!(engine.builtin(builtin.key), Some(*builtin));
+            assert_eq!(
+                engine.builtin(ModuleKind::Ssqc, builtin.key),
+                Some(*builtin)
+            );
         }
     }
 }
@@ -124,16 +154,35 @@ fn vanilla_and_quakespasm_are_ids_table() {
 #[test]
 fn ironwail_and_vkquake_add_the_rerelease_builtins() {
     for engine in [Engine::Ironwail, Engine::VkQuake] {
-        let bprint = engine.builtin(BuiltinKey::Number(23)).unwrap();
+        let bprint = engine
+            .builtin(ModuleKind::Ssqc, BuiltinKey::Number(23))
+            .unwrap();
         assert_eq!(bprint.name, "bprint");
         assert_eq!(
             bprint,
-            Engine::Vanilla.builtin(BuiltinKey::Number(23)).unwrap()
+            Engine::Vanilla
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(23))
+                .unwrap()
         );
-        assert!(engine.builtin(BuiltinKey::Name("ex_bprint")).is_some());
-        assert!(engine.builtin(BuiltinKey::Number(99)).is_some());
-        assert!(engine.builtin(BuiltinKey::Number(287)).is_none());
-        assert_eq!(engine.builtins()[0], Engine::Vanilla.builtins()[0]);
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Name("ex_bprint"))
+                .is_some()
+        );
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(99))
+                .is_some()
+        );
+        assert!(
+            engine
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(287))
+                .is_none()
+        );
+        assert_eq!(
+            engine.builtins(ModuleKind::Ssqc)[0],
+            Engine::Vanilla.builtins(ModuleKind::Ssqc)[0]
+        );
     }
 }
 
@@ -141,27 +190,35 @@ fn ironwail_and_vkquake_add_the_rerelease_builtins() {
 // own file's
 #[test]
 fn fteqw_and_darkplaces_tables() {
-    let hash = Engine::Fteqw.builtin(BuiltinKey::Number(287)).unwrap();
+    let hash = Engine::Fteqw
+        .builtin(ModuleKind::Ssqc, BuiltinKey::Number(287))
+        .unwrap();
     assert_eq!(hash.name, "hash_createtab");
     assert_eq!(hash.extensions, ["FTE_QC_HASHTABLES"]);
-    assert!(Engine::Fteqw.builtin(BuiltinKey::Number(1)).is_some());
     assert!(
         Engine::Fteqw
-            .builtin(BuiltinKey::Name("removeinstant"))
+            .builtin(ModuleKind::Ssqc, BuiltinKey::Number(1))
             .is_some()
     );
-    let strlen = Engine::DarkPlaces.builtin(BuiltinKey::Number(114)).unwrap();
+    assert!(
+        Engine::Fteqw
+            .builtin(ModuleKind::Ssqc, BuiltinKey::Name("removeinstant"))
+            .is_some()
+    );
+    let strlen = Engine::DarkPlaces
+        .builtin(ModuleKind::Ssqc, BuiltinKey::Number(114))
+        .unwrap();
     assert_eq!(
         (strlen.name, strlen.signature),
         ("strlen", "float(string s)")
     );
     assert_eq!(
-        Engine::DarkPlaces.builtin(BuiltinKey::Number(1)),
-        Engine::Vanilla.builtin(BuiltinKey::Number(1))
+        Engine::DarkPlaces.builtin(ModuleKind::Ssqc, BuiltinKey::Number(1)),
+        Engine::Vanilla.builtin(ModuleKind::Ssqc, BuiltinKey::Number(1))
     );
     assert!(
         Engine::DarkPlaces
-            .builtin(BuiltinKey::Number(287))
+            .builtin(ModuleKind::Ssqc, BuiltinKey::Number(287))
             .is_none()
     );
 }
@@ -172,32 +229,42 @@ fn fteqw_and_darkplaces_tables() {
 fn kex_is_the_rerelease_defs() {
     for number in [23, 24, 73] {
         assert!(
-            Engine::Kex.builtin(BuiltinKey::Number(number)).is_none(),
+            Engine::Kex
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Number(number))
+                .is_none(),
             "#{number}"
         );
     }
     for name in ["ex_bprint", "ex_sprint", "ex_centerprint"] {
         assert!(
-            Engine::Kex.builtin(BuiltinKey::Name(name)).is_some(),
+            Engine::Kex
+                .builtin(ModuleKind::Ssqc, BuiltinKey::Name(name))
+                .is_some(),
             "{name}"
         );
     }
-    let makevectors = Engine::Kex.builtin(BuiltinKey::Number(1)).unwrap();
+    let makevectors = Engine::Kex
+        .builtin(ModuleKind::Ssqc, BuiltinKey::Number(1))
+        .unwrap();
     assert_eq!(makevectors.signature, "void(vector ang)");
 }
 
 // spec ENGT-3.3: FTEQW and DarkPlaces declare extension names; the other engines declare none
 #[test]
 fn extensions_per_engine() {
-    assert!(Engine::Fteqw.extensions().contains(&"FTE_QC_HASHTABLES"));
+    assert!(
+        Engine::Fteqw
+            .extensions(ModuleKind::Ssqc)
+            .contains(&"FTE_QC_HASHTABLES")
+    );
     assert!(
         Engine::DarkPlaces
-            .extensions()
+            .extensions(ModuleKind::Ssqc)
             .contains(&"DP_QC_SINCOSSQRTPOW")
     );
     assert!(
         !Engine::DarkPlaces
-            .extensions()
+            .extensions(ModuleKind::Ssqc)
             .contains(&"FTE_QC_HASHTABLES")
     );
     for engine in [
@@ -207,7 +274,11 @@ fn extensions_per_engine() {
         Engine::VkQuake,
         Engine::Kex,
     ] {
-        assert!(engine.extensions().is_empty(), "{}", engine.name());
+        assert!(
+            engine.extensions(ModuleKind::Ssqc).is_empty(),
+            "{}",
+            engine.name()
+        );
     }
 }
 
@@ -525,5 +596,136 @@ fn a_named_builtin_in_vanilla_gives_none() {
             "{}",
             engine.name()
         );
+    }
+}
+
+const CLEARSCENE_CALL: &str = "void() clearscene = #300;\nvoid() w = { clearscene(); };\n";
+const SETSPAWNPARMS_CALL: &str =
+    "void(entity e) setspawnparms = #78;\nvoid(entity e) w = { setspawnparms(e); };\n";
+const GETMOUSEPOS_CALL: &str = "vector() getmousepos = #66;\nvoid() w = { getmousepos(); };\n";
+
+// spec ENGT-2.8, ENGT-3.7: FTEQW has a client and a menu QuakeC table, read from fteextensions.qc
+// with CSQC and MENU defined, which differ from its server table
+#[test]
+fn fteqw_has_client_and_menu_tables() {
+    let csqc = Engine::Fteqw.builtins(ModuleKind::Csqc);
+    let menu = Engine::Fteqw.builtins(ModuleKind::Menuqc);
+    assert!(!csqc.is_empty() && !menu.is_empty());
+    let clearscene = Engine::Fteqw
+        .builtin(ModuleKind::Csqc, BuiltinKey::Number(300))
+        .unwrap();
+    assert_eq!(clearscene.name, "clearscene");
+    assert!(
+        Engine::Fteqw
+            .builtin(ModuleKind::Ssqc, BuiltinKey::Number(300))
+            .is_none()
+    );
+    assert!(
+        Engine::Fteqw
+            .builtin(ModuleKind::Csqc, BuiltinKey::Number(78))
+            .is_none()
+    );
+    let menu_bprint = Engine::Fteqw
+        .builtin(ModuleKind::Menuqc, BuiltinKey::Number(5))
+        .unwrap();
+    assert_eq!(menu_bprint.name, "bprint");
+    let server_five = Engine::Fteqw
+        .builtin(ModuleKind::Ssqc, BuiltinKey::Number(5))
+        .unwrap();
+    assert_eq!(server_five.name, "lightstylestatic");
+    for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
+        let table = Engine::Fteqw.builtins(kind);
+        let keys: HashSet<BuiltinKey> = table.iter().map(|b| b.key).collect();
+        assert_eq!(keys.len(), table.len());
+        for builtin in &table {
+            assert_eq!(Engine::Fteqw.builtin(kind, builtin.key), Some(*builtin));
+        }
+    }
+    let csqc_extensions = Engine::Fteqw.extensions(ModuleKind::Csqc);
+    assert!(csqc_extensions.contains(&"FTE_QC_HASHTABLES"));
+    assert!(!Engine::Fteqw.extensions(ModuleKind::Menuqc).is_empty());
+}
+
+// spec ENGT-3.7: only FTEQW has client and menu QuakeC tables; every engine has a server table
+#[test]
+fn only_fteqw_has_client_and_menu_tables() {
+    for engine in Engine::ALL {
+        assert!(engine.has_table(ModuleKind::Ssqc), "{}", engine.name());
+        let other = engine == Engine::Fteqw;
+        for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
+            assert_eq!(engine.has_table(kind), other, "{}", engine.name());
+            if !other {
+                assert!(engine.builtins(kind).is_empty(), "{}", engine.name());
+                assert!(engine.builtin(kind, BuiltinKey::Number(1)).is_none());
+                assert!(engine.extensions(kind).is_empty(), "{}", engine.name());
+            }
+        }
+    }
+}
+
+// spec ENGT-4.8: a CSQC module targeting FTEQW is checked against its client builtins, and a
+// server module against its server builtins
+#[test]
+fn a_module_is_checked_against_its_kinds_table() {
+    assert!(check_kind(Engine::Fteqw, ModuleKind::Csqc, &[CLEARSCENE_CALL]).is_empty());
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Ssqc, &[CLEARSCENE_CALL]),
+        ["clearscene is builtin #300, which FTEQW does not have"]
+    );
+    assert!(check_kind(Engine::Fteqw, ModuleKind::Ssqc, &[SETSPAWNPARMS_CALL]).is_empty());
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Csqc, &[SETSPAWNPARMS_CALL]),
+        ["setspawnparms is builtin #78, which FTEQW does not have"]
+    );
+    assert!(check_kind(Engine::Fteqw, ModuleKind::Menuqc, &[GETMOUSEPOS_CALL]).is_empty());
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Csqc, &[GETMOUSEPOS_CALL]).len(),
+        1
+    );
+}
+
+// spec ENGT-4.8: the extensions in a message come from the tables of the module's kind, so a
+// server builtin's extensions are not named for a menu module
+#[test]
+fn extensions_come_from_the_kinds_tables() {
+    let source = "\
+void(entity client, float flags, string s) stuffcmdflags = #0:stuffcmdflags;
+void() w = { stuffcmdflags(world, 0, \"x\"); };
+";
+    assert_eq!(
+        check_kind(Engine::Fteqw, ModuleKind::Menuqc, &[source]),
+        ["stuffcmdflags is builtin #0:stuffcmdflags, which FTEQW does not have"]
+    );
+    assert_eq!(
+        check_kind(Engine::Kex, ModuleKind::Ssqc, &[source]),
+        [
+            "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have \
+          (FTE_QC_STUFFCMDFLAGS)"
+        ]
+    );
+    let shader = "void() shaderforname = #238;\nvoid() w = { shaderforname(); };\n";
+    assert!(check_kind(Engine::Fteqw, ModuleKind::Csqc, &[shader]).is_empty());
+    assert_eq!(
+        Engine::Fteqw
+            .builtin(ModuleKind::Csqc, BuiltinKey::Number(238))
+            .unwrap()
+            .extensions,
+        ["FTE_FORCESHADER"]
+    );
+}
+
+// spec ENGT-4.8: a module of a kind its engine has no table for is not checked
+#[test]
+fn a_kind_without_a_table_is_not_checked() {
+    for engine in Engine::ALL.into_iter().filter(|e| *e != Engine::Fteqw) {
+        for kind in [ModuleKind::Csqc, ModuleKind::Menuqc] {
+            for source in [HASH_CALL, CLEARSCENE_CALL, SETSPAWNPARMS_CALL] {
+                assert!(
+                    check_kind(engine, kind, &[source]).is_empty(),
+                    "{}",
+                    engine.name()
+                );
+            }
+        }
     }
 }

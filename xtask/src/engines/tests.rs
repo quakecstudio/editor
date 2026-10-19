@@ -63,7 +63,41 @@ struct Workspace {
     net: Canned,
 }
 
+/// What a test workspace holds. The default is the rerelease source [`SOURCE`], pinned at
+/// [`COMMIT`] as the corpus manifest pins it, read once for server QuakeC.
+struct WorkspaceSpec<'a> {
+    name: &'a str,
+    manifest_commit: &'a str,
+    source: &'a str,
+    tables: &'a str,
+}
+
+impl Default for WorkspaceSpec<'_> {
+    fn default() -> Self {
+        Self {
+            name: "default",
+            manifest_commit: COMMIT,
+            source: SOURCE,
+            tables: "[{ kind = \"ssqc\", defines = [] }]",
+        }
+    }
+}
+
 fn workspace(name: &str, manifest_commit: &str) -> Workspace {
+    workspace_with(&WorkspaceSpec {
+        name,
+        manifest_commit,
+        ..WorkspaceSpec::default()
+    })
+}
+
+fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
+    let WorkspaceSpec {
+        name,
+        manifest_commit,
+        source,
+        tables,
+    } = *spec;
     let dir = root()
         .join("target/xtask-tests")
         .join(format!("engines-{name}"));
@@ -72,14 +106,15 @@ fn workspace(name: &str, manifest_commit: &str) -> Workspace {
     }
     fs::create_dir_all(dir.join("crates/qc-engines/src")).unwrap();
     fs::create_dir_all(dir.join("corpus")).unwrap();
-    let sha = hex_digest(SOURCE.as_bytes());
+    let sha = hex_digest(source.as_bytes());
     let license_sha = hex_digest(LICENSE.as_bytes());
     fs::write(
         dir.join("crates/qc-engines/sources.toml"),
         format!(
             "[[source]]\nid = \"rerelease\"\nrepo = \"o/r\"\ncommit = \"{COMMIT}\"\n\
              path = \"defs.qc\"\nsha256 = \"{sha}\"\nlicense = \"GPL-2.0-or-later\"\n\
-             license_file = \"COPYING.txt\"\nlicense_sha256 = \"{license_sha}\"\ndefines = []\n"
+             license_file = \"COPYING.txt\"\nlicense_sha256 = \"{license_sha}\"\n\
+             tables = {tables}\n"
         ),
     )
     .unwrap();
@@ -95,7 +130,7 @@ fn workspace(name: &str, manifest_commit: &str) -> Workspace {
     fs::write(dir.join(TABLES), "").unwrap();
     let base = format!("https://raw.githubusercontent.com/o/r/{COMMIT}");
     let net = Canned(BTreeMap::from([
-        (format!("{base}/defs.qc"), SOURCE.as_bytes().to_vec()),
+        (format!("{base}/defs.qc"), source.as_bytes().to_vec()),
         (format!("{base}/COPYING.txt"), LICENSE.as_bytes().to_vec()),
     ]));
     Workspace { dir, net }
@@ -164,6 +199,94 @@ fn the_rerelease_pin_agrees_with_the_corpus() {
     assert!(err.contains("quake-rerelease-qc"), "{err}");
     let real = load(&root()).unwrap();
     super::agree_with_corpus(&root(), &real).unwrap();
+}
+
+// spec ENGT-2.8: a source read for several module kinds gives a builtin table and an extension
+// list for each, read with that kind's macros
+#[test]
+fn each_kind_gets_its_own_table() {
+    let source = "\
+#ifdef CSQC
+float() client = #300;
+#define EXT_CLIENT
+#else
+float() server = #78;
+#endif
+";
+    let ws = workspace_with(&WorkspaceSpec {
+        name: "kinds",
+        source,
+        tables: "[{ kind = \"ssqc\", defines = [\"SSQC\"] }, \
+                 { kind = \"csqc\", defines = [\"CSQC\"] }]",
+        ..WorkspaceSpec::default()
+    });
+    assert!(run(&ws.dir, false, &ws.net).unwrap());
+    let written = fs::read_to_string(ws.dir.join(TABLES)).unwrap();
+    let server = written.find("RERELEASE_SSQC_BUILTINS").unwrap();
+    let client = written.find("RERELEASE_CSQC_BUILTINS").unwrap();
+    let (server_part, client_part) = written.split_at(client);
+    assert!(server < client);
+    assert!(server_part.contains("BuiltinKey::Number(78)"));
+    assert!(!server_part.contains("BuiltinKey::Number(300)"));
+    assert!(client_part.contains("BuiltinKey::Number(300)"));
+    assert!(!client_part.contains("BuiltinKey::Number(78)"));
+    assert!(written.contains("RERELEASE_SSQC_EXTENSIONS: &[&str] = &[];"));
+    assert!(client_part.contains("\"EXT_CLIENT\""));
+}
+
+// spec ENGT-2.8: a source has at least one table, each of a known module kind and no kind twice
+#[test]
+fn bad_tables_are_errors() {
+    for (name, tables, needle) in [
+        ("no-table", "[]", "no table"),
+        (
+            "unknown-kind",
+            "[{ kind = \"server\", defines = [] }]",
+            "unknown kind",
+        ),
+        (
+            "twice",
+            "[{ kind = \"csqc\", defines = [] }, { kind = \"csqc\", defines = [\"CSQC\"] }]",
+            "two csqc tables",
+        ),
+        ("no-defines", "[{ kind = \"ssqc\" }]", "defines"),
+    ] {
+        let ws = workspace_with(&WorkspaceSpec {
+            name,
+            tables,
+            ..WorkspaceSpec::default()
+        });
+        let err = run(&ws.dir, false, &ws.net).unwrap_err();
+        assert!(err.contains(needle), "{name}: {err}");
+        assert_eq!(fs::read_to_string(ws.dir.join(TABLES)).unwrap(), "");
+    }
+}
+
+// spec ENGT-2.8: the pinned fteqw source is read for server, client and menu QuakeC, with
+// NQSSQC and SSQC, CSQC and MENU defined; the others for server QuakeC alone
+#[test]
+fn the_pinned_tables() {
+    let mut readings = Vec::new();
+    for pin in load(&root()).unwrap() {
+        for table in &pin.tables {
+            readings.push(format!(
+                "{} {} {}",
+                pin.id,
+                table.kind,
+                table.defines.join(",")
+            ));
+        }
+    }
+    assert_eq!(
+        readings,
+        [
+            "fteqw ssqc NQSSQC,SSQC",
+            "fteqw csqc CSQC",
+            "fteqw menuqc MENU",
+            "darkplaces ssqc ",
+            "rerelease ssqc ",
+        ]
+    );
 }
 
 // spec ENGT-1.2: the command takes only --check

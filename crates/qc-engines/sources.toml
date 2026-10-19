@@ -11,8 +11,10 @@
 # `license` is the SPDX identifier of the repository's license file, `license_file`; none of
 # the three source files carries a license header of its own. Pins recorded on 2026-10-19.
 #
-# `defines` are the macros defined before the file is read, choosing the server QuakeC
-# (NQSSQC) parts of a file that serves several module kinds (ENGT-2.3).
+# `tables` are the readings of the file: each gives the builtins and extension names of one
+# module kind (`ssqc`, `csqc` or `menuqc`, PRJ-3.1), with `defines` the macros defined before
+# the file is read, choosing the parts of a file that serves several module kinds for that
+# kind (ENGT-2.3, ENGT-2.8).
 
 [[source]]
 id = "fteqw"
@@ -23,7 +25,11 @@ sha256 = "21322f15aca52dae3a75b98a46be0491ed9a1f5d136511228bf52725ac81ccb0"
 license = "GPL-2.0"
 license_file = "LICENSE"
 license_sha256 = "b1119350db1dc0964bf5a786784632fd7769d958c1166fd1bfc3e873f24ceccb"
-defines = ["NQSSQC", "SSQC"]
+tables = [
+  { kind = "ssqc", defines = ["NQSSQC", "SSQC"] },
+  { kind = "csqc", defines = ["CSQC"] },
+  { kind = "menuqc", defines = ["MENU"] },
+]
 
 [[source]]
 id = "darkplaces"
@@ -34,7 +40,7 @@ sha256 = "73237e430e8d36009bf0518c0105b15fb37d7710cdc47120c67da8e5e85e33e5"
 license = "GPL-2.0"
 license_file = "COPYING"
 license_sha256 = "ba9ed2269151ad63b922598f3c5c19ddf781b2bbb6cb843ed9f085ecd1679c5d"
-defines = []
+tables = [{ kind = "ssqc", defines = [] }]
 
 # The same commit and checksums as the quake-rerelease-qc source in corpus/manifest.toml;
 # `cargo xtask engines` checks that they agree.
@@ -47,4 +53,4 @@ sha256 = "7694c006223ec43f05b923c8fe7691a6ed8298141d1562d98d6c86162de6129d"
 license = "GPL-2.0-or-later"
 license_file = "COPYING.txt"
 license_sha256 = "32b1062f7da84967e7019d01ab805935caa7ab7321a7ced0e30ebe75e5df1670"
-defines = []
+tables = [{ kind = "ssqc", defines = [] }]
