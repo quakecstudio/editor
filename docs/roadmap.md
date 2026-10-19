@@ -113,3 +113,4 @@ Agents use the `/work-issue` skill, and `/run-phase` under `/goal` to work a who
 3. When porting from id's source, keep id's copyright line, cite the file and function, and document the behaviour in `docs/spec/` (`docs/porting.md`, from #9).
 4. Work on a branch, meet the definition of done in the issue, and open a PR with `Closes #<n>`. `main` merges only through the merge queue; an agent may add its own PR once CI passes, except for `needs:human` issues.
 5. If the work shows the plan is wrong or incomplete, change `plan/` in a PR and file follow-up issues; do not leave it in comments.
+
