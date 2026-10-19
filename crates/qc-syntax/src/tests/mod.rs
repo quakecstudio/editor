@@ -14,6 +14,7 @@ mod ast_view;
 mod declarations;
 mod dialect;
 mod dialect_ast;
+mod dialect_full;
 mod dialect_rerelease;
 mod expressions;
 mod lossless;
@@ -133,6 +134,10 @@ fn sexpr(expr: &ast::Expr) -> String {
         }
         ast::Expr::Unary(unary) => format!("(unary {:?} {})", unary.op(), sub(unary.operand())),
         ast::Expr::Cast(cast) => format!("(cast {})", sub(cast.operand())),
+        ast::Expr::Vector(vector) => {
+            let parts: Vec<String> = vector.elements().map(|e| sexpr(&e)).collect();
+            format!("[{}]", parts.join(" "))
+        }
     }
 }
 

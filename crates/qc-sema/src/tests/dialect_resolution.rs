@@ -18,14 +18,18 @@ fn error_codes(index: &ModuleIndex) -> Vec<Code> {
     index
         .diagnostics
         .iter()
-        .filter(|d| d.code.is_error())
-        .map(|d| d.code)
+        .filter(|d| d.diagnostic.code.is_error())
+        .map(|d| d.diagnostic.code)
         .collect()
 }
 
 /// The codes of every diagnostic of an index.
 fn all_codes(index: &ModuleIndex) -> Vec<Code> {
-    index.diagnostics.iter().map(|d| d.code).collect()
+    index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.code)
+        .collect()
 }
 
 /// Resolves several files under the FTEQCC dialect, with or without autoprototyping.
@@ -53,7 +57,7 @@ fn compound_assignment_operands_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,
@@ -81,8 +85,8 @@ fn c_style_definitions_match_vanilla_prototypes() {
     assert!(lights[0].initialized);
     assert_eq!(lights[0].kind, DefKind::Function);
     // A C-style declarator of another type is a type mismatch, as in vanilla (QC-11.5), and
-    // leaves the prototype undefined (QC-11.8).
-    let mismatch = fte_index_of("void() h;\nvoid h(float x) { };\n");
+    // leaves the prototype undefined (QC-11.8), which a call makes an error (FTEF-17.7).
+    let mismatch = fte_index_of("void() h;\nvoid h(float x) { };\nvoid() k = { h(); };\n");
     assert_eq!(error_codes(&mismatch), [Code::E0205, Code::E0211]);
 }
 
@@ -156,7 +160,7 @@ fn prefix_and_cast_operands_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,
@@ -171,7 +175,7 @@ fn negative_number_subtraction_resolves_its_operand() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(messages, ["Unknown value \"nope\""]);
 }
@@ -224,8 +228,9 @@ fn locals_shadow_globals() {
     assert_eq!(error_codes(&same), Vec::<Code>::new());
 }
 
-// spec FTE-22.2: a constant initialised twice with the same literal is accepted; a
-// different literal, or an initialiser that is not a literal, is still "NAME redeclared".
+// spec FTE-22.5: a constant initialised twice with the same literal is accepted; a different
+// literal is still "NAME redeclared".
+// spec FTEF-17.5: so is an initialiser written differently, and a body is never equal.
 #[test]
 fn equal_reinitialisation_is_accepted() {
     let index = fte_index_of(
@@ -308,7 +313,7 @@ fn local_initialisers_are_uses() {
     let messages: Vec<&str> = index
         .diagnostics
         .iter()
-        .map(|d| d.message.as_str())
+        .map(|d| d.diagnostic.message.as_str())
         .collect();
     assert_eq!(
         messages,

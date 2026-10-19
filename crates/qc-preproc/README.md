@@ -14,11 +14,19 @@ FTEQCC `#pragma` directive is accepted and produces no tokens (`dialect-fteqcc-r
 FTE-16), including the rerelease's `#pragma warning disable/enable`; in the vanilla dialect it
 stays an unknown directive (QC-9.9). In an FTEQCC dialect frame macros also carry from one
 source file to the next, and `Preprocessor::restart` begins FTEQCC's second autoprototyping
-pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4).
+pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4). An FTEQCC dialect
+also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-14): `#if`,
+`#elif`, `#elifdef` and `#elifndef` (with the project graph's evaluator, now in `cond`, so both
+take the same sides), directives continued after a `\`, `#warning`, `#error` and `#message`,
+`#includelist` blocks (the graph's to compile), `#append`, `#eof` and the build directives,
+variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
+argument, and the built-in constants such as `__NULL__`. A token `##` or `#` made, or a
+built-in's value, carries its text in `PpToken::spelling`.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
-- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); the
-  directive codes QCD-8 of
+- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14
+  in [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the `#if` expressions of PRJ-5.5
+  (`cond`); the directive codes QCD-8 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); the loaders' case rules
   PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md). A readiness run attributes only
   these sections to the crate, and every active statement of each is cited by a test here.

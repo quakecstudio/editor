@@ -18,8 +18,11 @@ fn show(ty: &ast::Type) -> String {
     match ty {
         ast::Type::Simple(simple) => format!("{:?}", simple.kind().unwrap()).to_lowercase(),
         ast::Type::Field(field) => format!(".{}", field.inner().map_or("?".into(), |t| show(&t))),
+        ast::Type::Pointer(pointer) => {
+            format!("{}*", pointer.inner().map_or("?".into(), |t| show(&t)))
+        }
         ast::Type::Function(function) => {
-            let ret = format!("{:?}", function.return_type().unwrap().kind().unwrap());
+            let ret = show(&function.return_type().unwrap());
             let params = function.params().unwrap();
             let list: Vec<String> = if params.is_variadic() {
                 vec!["...".to_owned()]

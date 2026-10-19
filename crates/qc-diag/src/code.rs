@@ -57,6 +57,8 @@ pub enum Code {
     E0116,
     /// "unterminated argument list for macro NAME" (QCD-8.10).
     E0117,
+    /// "#Error: TEXT" (QCD-8.11).
+    E0118,
     /// "not a name" (QCD-3.1).
     E0201,
     /// "name too long" (QCD-3.2).
@@ -113,6 +115,8 @@ pub enum Code {
     W0101,
     /// "macro NAME redefined" (QCD-7.2).
     W0102,
+    /// "#warning: TEXT" (QCD-7.20).
+    W0103,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -127,7 +131,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 50] = [
+    pub const ALL: [Self; 52] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -145,6 +149,7 @@ impl Code {
         Self::E0115,
         Self::E0116,
         Self::E0117,
+        Self::E0118,
         Self::E0201,
         Self::E0202,
         Self::E0203,
@@ -173,6 +178,7 @@ impl Code {
         Self::E0408,
         Self::W0101,
         Self::W0102,
+        Self::W0103,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -201,6 +207,7 @@ impl Code {
             Self::E0115 => "E0115",
             Self::E0116 => "E0116",
             Self::E0117 => "E0117",
+            Self::E0118 => "E0118",
             Self::E0201 => "E0201",
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
@@ -229,6 +236,7 @@ impl Code {
             Self::E0408 => "E0408",
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
+            Self::W0103 => "W0103",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -243,6 +251,7 @@ impl Code {
         match self {
             Self::W0101
             | Self::W0102
+            | Self::W0103
             | Self::W0201
             | Self::W0203
             | Self::W0204
@@ -265,6 +274,7 @@ impl Code {
             | Self::E0115
             | Self::E0116
             | Self::E0117
+            | Self::E0118
             | Self::E0201
             | Self::E0202
             | Self::E0203

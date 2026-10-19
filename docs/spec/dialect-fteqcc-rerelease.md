@@ -40,10 +40,13 @@ rerelease-ctf rerelease-mg3`), parses every `.qc` and `.qh` file with the vanill
 rejects into one of the classes below by its signature token. It fails if a class is found in
 the source that no section here names, so the spec and the source cannot drift apart. The
 recorded run is in [`vectors/dialect-fteqcc-rerelease/coverage.txt`](vectors/), and covers
-FTE-2 to FTE-16. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
+FTE-2 to FTE-21. FTE-17 to FTE-22 and FTE-15.4 were found later, when the dialect profile
 (P2-03) parsed and resolved every module of the six codebases with zero errors
-(`cargo xtask fteqcc-profile`); their constructs have no signature token that check scans
-for.
+(`cargo xtask fteqcc-profile`), and their classes were added to the check after (P2-33).
+FTE-22 is name resolution, which has no syntax of its own, so it has no class. The hanging
+`;` of FTE-21.5 exists only once a macro whose body ends in `;` is expanded, so the check finds
+it as a use of such a macro followed by `;`, in a file the vanilla parser may accept as
+written.
 
 ## FTE-1 The rerelease fits version 6
 
@@ -479,12 +482,14 @@ escapes `\n` and `\"` only (QC-6.2).
 - **FTE-20.2** A number may end in the float suffix `f` or `F`, which is not part of its value:
   after the fraction `QCC_PR_LexNumber` has `else if (c == 'f' || c == 'F') { pr_immediate_type
   = type_float; pr_file_p++; break; }`. The rerelease writes `1.0f` (`rerelease/client.qc`).
-- **FTE-20.3** Besides `\n` and `\"`, the escapes that stand for one ASCII byte are `\r`, `\t`,
+- **FTE-20.3** **Withdrawn** (P2-26, #82): it kept FTEQCC's escapes beyond one byte "Unknown
+  escape char" under the FTEQCC profile, which now also reads the full dialect. Replaced by
+  FTE-20.4 for the one-byte escapes and `dialect-fteqcc.md` FTEF-13.4 for the rest.
+- **FTE-20.4** Besides `\n` and `\"`, the escapes that stand for one ASCII byte are `\r`, `\t`,
   `\a`, `\v`, `\f`, `\#`, `\\`, `\?` and `\'`, as `QCC_PR_LexEscapedCodepoint` maps them
   (`else if (c == 't') c = '\t';	//tab` and the rest). The rerelease uses `\t`
-  (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes (`\[` and the Quake character set,
-  `\x`, `\u`, `\{n}` and the digits) are not in the rerelease and stay "Unknown escape char"
-  (QC-6.2) under this profile.
+  (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes are the full dialect's
+  (`dialect-fteqcc.md` FTEF-13.4).
 
 ## FTE-21 Declarations and statements in a body
 
@@ -544,13 +549,16 @@ list starts empty in each file (QC-8.3).
   The rerelease names a parameter `light` beside the spawn function `void() light`
   (`rerelease-mg3/mg3_weapons.qc`, `rerelease-mg3/lights.qc`). A second declaration of a name
   in the same function is still that definition again, or a type mismatch (QC-11.5).
-- **FTE-22.2** A name initialised twice with the same value is accepted: for a "dupe
+- **FTE-22.2** **Withdrawn** (P2-26, #82): it made a second initialiser that is not a literal
+  always "NAME redeclared", which the full dialect's corpus contradicts. Replaced by FTE-22.5
+  for literals and `dialect-fteqcc.md` FTEF-17.5 for the rest.
+- **FTE-22.5** A name initialised twice with the same value is accepted: for a "dupe
   initialisation" `QCC_PR_ParseInitializerType_Internal` compares the two word by word and
   reports `"incompatible redeclaration"` only when they differ. The rerelease initialises
   `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
-  This profile compares two literal initialisers by value and accepts them when equal;
-  a second initialiser that is not a literal, or that differs, is still "NAME redeclared"
-  (QCD-3.6), since constant expressions are not folded until P2-06.
+  This profile compares two literal initialisers by value and accepts them when equal, and a
+  differing literal is still "NAME redeclared" (QCD-3.6); other initialisers compare as
+  FTEF-17.5 says.
 - **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
   function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
   instead of one. The first pass, only the definitions are read. The second pass actually

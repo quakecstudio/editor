@@ -8,7 +8,6 @@
 )]
 
 mod case;
-mod cond;
 mod directives;
 mod forms;
 mod manifest;

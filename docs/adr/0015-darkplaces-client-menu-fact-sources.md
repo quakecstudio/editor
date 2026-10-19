@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-19
 - **Decided by:** Justin Plock
-- **Issue:** plan key P2-35 (its issue is created when the plan is synced)
+- **Issue:** [#418](https://github.com/quakecstudio/editor/issues/418)
 - **Requirements:** LANG-6, PRIN-8, AGT-9, LIC-6, LIC-7
 
 ## Question

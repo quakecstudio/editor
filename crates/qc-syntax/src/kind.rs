@@ -126,6 +126,8 @@ pub enum SyntaxKind {
     Question,
     /// `:` (FTEQCC, FTE-8).
     Colon,
+    /// `::` (FTEQCC, FTEF-13.1): a class member's scope.
+    ColonColon,
     /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
     Arrow,
     /// `~` (FTEQCC, FTE-19.4).
@@ -175,8 +177,14 @@ pub enum SyntaxKind {
     TypedefKw,
     /// `struct` (FTEQCC, FTE-14).
     StructKw,
-    /// `enum` (FTEQCC, FTE-15).
+    /// `enum` or `enumflags` (FTEQCC, FTE-15, FTEF-8).
     EnumKw,
+    /// `class` (FTEQCC, FTEF-9).
+    ClassKw,
+    /// `union` (FTEQCC, FTEF-6).
+    UnionKw,
+    /// `accessor` (FTEQCC, FTEF-10).
+    AccessorKw,
 
     /// A whole file.
     SourceFile,
@@ -275,6 +283,21 @@ pub enum SyntaxKind {
     EnumDecl,
     /// One enumerator `Name` or `Name = value` (FTEQCC, FTE-15).
     Enumerator,
+    /// `class Name [: Parent] { members };` (FTEQCC, FTEF-9).
+    ClassDecl,
+    /// `public:`, `private:`, `protected:`, `virtual:` or `nonvirtual:` in a class (FTEQCC,
+    /// FTEF-9.2, FTEF-9.3).
+    AccessLabel,
+    /// `struct Name { fields };` or `union Name { ... };` at file level (FTEQCC, FTEF-6).
+    StructDecl,
+    /// `accessor Name : Base [{ members }];` (FTEQCC, FTEF-10).
+    AccessorDecl,
+    /// One `get` or `set` member of an accessor (FTEQCC, FTEF-10.2).
+    AccessorMember,
+    /// `T *`, a pointer type (FTEQCC, FTEF-4.1).
+    PointerType,
+    /// `[x, y, z]`, a vector built from three expressions (FTEQCC, FTEF-16.3).
+    VectorExpr,
     /// Tokens the parser could not place, kept so that no byte is lost.
     Error,
 }
@@ -321,6 +344,9 @@ impl SyntaxKind {
                 | Self::TypedefKw
                 | Self::StructKw
                 | Self::EnumKw
+                | Self::ClassKw
+                | Self::UnionKw
+                | Self::AccessorKw
         )
     }
 
@@ -364,6 +390,7 @@ impl SyntaxKind {
             Punct::Percent => Self::Percent,
             Punct::Question => Self::Question,
             Punct::Colon => Self::Colon,
+            Punct::ColonColon => Self::ColonColon,
             Punct::Arrow => Self::Arrow,
             Punct::Tilde => Self::Tilde,
             Punct::AndEq => Self::AndEq,

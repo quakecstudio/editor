@@ -27,6 +27,17 @@ dialect each keyword construct is rejected with `E0510` (QCD-6.10) and the opera
 declaration extensions keep their vanilla diagnostic, so the two profiles are observably
 different; a vanilla program parses identically through `parse` or `parse_with(.., Vanilla)`.
 
+The FTEQCC dialect also parses the full dialect of `docs/spec/dialect-fteqcc.md` (FTEF-2 to
+FTEF-16), in `parser/fte.rs`: the C scalar types, pointers, sized and multi-dimensional arrays,
+named structs and unions, typedefs of any type, `enumflags` and enums written as types,
+classes with their members and `Class::member` definitions, accessors, `__variant`,
+declaration and parameter qualifiers, nameless parameters, functions returning any type, casts
+to any type, `[x, y, z]` vectors, scoped names, `if not`, prefix `++`/`--`/`&`/`*`, adjacent
+strings and `case` labels in nested blocks; and of FTEF-18, expression initialisers and function
+bodies inside function bodies (FTEF-18.1, FTEF-18.2), the rest of FTEF-18 being P2-39. FTEQCC knows every type name when it parses; this
+parser runs before names are known, so it tells a declaration or a cast from an expression by
+the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
+
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 the syntactic ones.

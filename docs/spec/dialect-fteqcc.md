@@ -412,6 +412,373 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
   output (the target format, the CRC, the flags) is realised by L-01.
 
+## FTEF-13 Further tokens
+
+**Source:** `qcc_pr_lex.c`, the `pr_punctuation[]` table, `QCC_PR_LexPunctuation`,
+`QCC_PR_LexVector`, `QCC_PR_LexEscapedCodepoint` and `QCC_PR_LexNumber`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset: the punctuation of
+`dialect-fteqcc-rerelease.md` FTE-19.1, the literals of FTE-20.
+
+Vanilla `qcc` has no `::` (QC-7.1), reads a `'` only as the start of a three-component vector
+(QC-5.1), and knows the escapes `\n` and `\"` only (QC-6.2). The corpus names class members as
+`Class::member` (4953 lines), joins long lines with a `\` at their end, writes character
+constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\x` escapes.
+
+### Behaviour
+
+- **FTEF-13.1** `::` is one token. `pr_punctuation[]` lists `"::"` before `":"`, as its rule
+  says: "longer symbols must be before a shorter partial match".
+- **FTEF-13.2** A `\` directly before a line break joins the lines: the token is skipped with
+  the break, in `QCC_PR_LexPunctuation`'s
+  `if ((unsigned char)*pr_file_p == (unsigned char)'\\' && pr_file_p[1] == '\r' && pr_file_p[2] == '\n') pr_file_p+=3;`
+  and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
+  this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
+- **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
+  FTEF-13.4), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
+  `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
+  the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
+  which may stop after two components, the third 0, with FTEQCC's warning "2d vector"
+  (`if (*pr_file_p == '\'' && i == 1)`).
+- **FTEF-13.4** Besides the one-byte escapes of `dialect-fteqcc-rerelease.md` FTE-20.4,
+  `QCC_PR_LexEscapedCodepoint` maps `\[` and `\]` to `0xe010` and `0xe011`, `\.`, `\<`, `\-` and
+  `\>` to `0xe01c` to `0xe01f`, `\(`, `\=`, `\)` and `\+` to `0xe080` to `0xe083` ("quake
+  specific"), `\{n}` and `\{xN}` to the decimal or hex code `n`, `\x` and one or two hex digits
+  to that byte, `\u` and `\U` and four or eight hex digits to that code point, and a digit to
+  `0xe012` plus the digit under `flag_qcfuncs` ("yellow numbers"). A code above one byte is
+  written to the string as its UTF-8 bytes. In a string `\s` and `\b` stand for no character:
+  `QCC_PR_LexString` toggles Quake's bronze text for the characters after them
+  (`if (c == 's' || c == 'b') { pr_file_p++; texttype ^= 0xe080; continue; }`), written here as
+  each ASCII byte with its high bit set. Any other escape stays "Unknown escape char" (QC-6.2).
+- **FTEF-13.5** This parse-and-resolve profile keeps every number token of FTEF-3 as a float
+  holding its value (an integer rounded to the nearest float), and every character constant as
+  a float holding its code: the literal's FTEQCC type (FTEF-3.1, FTEF-3.3) matters only to type
+  checking and code generation, which are later (L-01).
+
+## FTEF-14 Preprocessor directives and macros
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_Precompiler`, `QCC_PR_FalsePreProcessorIf`,
+`ParsePrecompilerIf`, `QCC_PR_SkipToEndOfLine`, `QCC_PR_PreProcessor_Define`,
+`QCC_PR_ExpandPreProcessorMacro`, `QCC_PR_CheckCompConst` and `QCC_PR_CheckBuiltinCompConst`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Vanilla preprocessor:
+[`language.md`](language.md) QC-9; the project graph's reading of the same directives:
+[`project-file.md`](project-file.md) PRJ-5.
+
+This project's vanilla preprocessor (QC-9) knows `#include`, `#define`, `#undef`, `#ifdef`,
+`#ifndef`, `#else` and `#endif`, and QC-9.9 makes any other directive an error. The corpus also
+writes `#if` (256 lines), `#elif`, `#warning` (16), `#includelist` inside the files a list
+names, macros continued over several lines, variadic macros (`#define ncLog(...)`), `#` and
+`##` in macro bodies, and FTEQCC's built-in `__NULL__` and `__FUNC__`. Under the FTEQCC
+profile the preprocessor reads them as FTEQCC does.
+
+### Behaviour
+
+- **FTEF-14.1** `#if expr`, `#elif expr`, `#elifdef NAME` and `#elifndef NAME` choose a side as
+  the project graph does (PRJ-5.5): `QCC_PR_Precompiler` evaluates `#if` with
+  `eval = ParsePrecompilerIf(PPI_TOPLEVEL);`, and `QCC_PR_FalsePreProcessorIf` takes the first
+  `#elif`, `#elifdef` or `#elifndef` that is true, or the `#else`, only while no earlier side was
+  (`if (!hadtrue && !strncmp(pr_file_p, "elif", 4) && level == 1)`). An `#if` inside a skipped
+  side only nests (`if (!strncmp(pr_file_p, "if", 2)) level++;`). The expression is evaluated
+  by the one evaluator the graph uses, so the graph and the preprocessor take the same sides.
+- **FTEF-14.2** A directive continues on the next line when its line ends in `\` directly before
+  the break: `QCC_PR_SkipToEndOfLine` reads
+  `else if (*pr_file_p == '\\' && pr_file_p[1] == '\n') { /*linux endings*/ pr_file_p+=2;`, and
+  `QCC_PR_PreProcessor_Define` "read[s] over a newline if necessary" after a `\`. A `/* */`
+  comment that spans lines does not end the directive ("multi-line c style comments become
+  part of the define itself"); a `//` comment ends it.
+- **FTEF-14.3** `#warning text` is the warning `W0103` "#warning: text"
+  (`QCC_PR_ParseWarning(WARN_PRECOMPILERMESSAGE, "#warning: %s", msg);`) and `#error text` the
+  error `E0118` "#Error: text" (`QCC_PR_ParseError(ERR_HASHERROR, "#Error: %s", msg);`), each on
+  the side of a conditional that is taken. `#message text` prints the text and reports nothing.
+  The text is the rest of the line as written (`msg[a] = pr_file_p[a];` up to the line break),
+  not tokens, so a `'` in it (`#warning Toggle doesn't work`) opens no vector.
+- **FTEF-14.4** `#includelist` to `#endlist` lists files that are compiled in order where the
+  list stands (`QCC_FindBestInclude(pr_token, compilingfile, true);` for each word). The module
+  graph reads the list and compiles each file (PRJ-5.3), so the preprocessor produces no token
+  for the lines of the list. A `#endlist` with no list open is accepted.
+- **FTEF-14.5** A macro parameter list whose last parameter is `...` makes the macro variadic:
+  `if (nl == 3 && s[0] == '.' && s[1] == '.' && s[2] == '.') { cnst->varg = true;`. The arguments
+  after the named ones, with the commas between them, replace `__VA_ARGS__` in the body
+  (`if (*pr_file_p == ',' && c->varg && param >= c->numparams) extraparam++;`); a use may give
+  no variadic argument. A use with fewer arguments than named parameters is "macro NAME
+  expects N arguments, found M" (QCD-8.9), as FTEQCC's "Not enough macro parameters" is.
+- **FTEF-14.6** In a macro body `#param` is the argument as a string literal (the "stringify"
+  branch of `QCC_PR_ExpandPreProcessorMacro`), and `a ## b` joins the tokens either side into
+  one ("concatinate (strip out whitespace before the token)"): `x ##_net` with `x` given
+  `health` is the name `health_net`. A `#` before a word that is no parameter stays as written.
+- **FTEF-14.7** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
+  `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
+  and `__LINESTR__` to it as a string, `__FUNC__` and `__func__` to the function's name as a
+  string, `__TIME__` and `__DATE__` to strings, `__RAND__` to a number and `__QCCVER__` to a
+  string. The preprocessor does not know the function a use is in, so this profile expands
+  `__FUNC__` to an empty string; the value is a compile-time string and does not change
+  resolution.
+- **FTEF-14.8** `#append NAME text` adds `text` to the body of macro `NAME`, or defines it when it
+  is not defined (`append with no previous define is treated as just a regular define`); `#eof`
+  ends the file (`pr_file_p = NULL;`). `#output`, `#forcecrc`, `#copyright`, `#pack`,
+  `#package`, `#merge` and `#datafile` are accepted and produce no token: their effects are on
+  the build, not on the token stream.
+
+- **FTEF-14.9** A use of a function-like macro may give one argument more than its
+  parameters, which is unused: `QCC_PR_ExpandPreProcessorMacro` checks the count only at a
+  comma, after counting the argument before it, with
+  `if (param == MAXCONSTANTPARAMS || param > c->numparams) QCC_PR_ParseError(ERR_TOOMANYPARAMS, "Too many parameters in macro call");`,
+  so the last argument is never counted against the parameters. Two or more extra arguments are
+  "macro NAME expects N arguments, found M" (QCD-8.9). The corpus relies on it
+  (`EVALUATE_FIELD(mins, 0, PLAYER_SIZE)` for a two-parameter macro, `shared/game/Player.qc`).
+- **FTEF-14.10** A conditional block still open at the end of the file is reported (QCD-8.3) only
+  when a side of it is being skipped, as FTEQCC's "#if with no endif" comes from
+  `QCC_PR_FalsePreProcessorIf`, which skips; a taken side left open is closed at the end of the
+  file without a word. The corpus leaves one open (`menu-fn/m_customgame.qc`, line 18).
+
+## FTEF-15 Declarations
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType_Internal` and
+`QCC_PR_GenerateInitializerType`; `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_ParseType` and
+`QCC_PR_ParseFunctionType`; `qcc.h`, `MAX_EXTRA_PARMS`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset: the qualifiers of
+`dialect-fteqcc-rerelease.md` FTE-10 to FTE-12, the C-style declarations of FTE-17, the
+parameters of FTE-18.
+
+FTEQCC knows every type name when it reads a declaration; this parse-and-resolve profile reads
+the file before names are known, so it decides by the shape of the tokens. The corpus starts
+declarations with qualifiers (`noref`, `__wrap`, `__deprecated("...")`, `static`), returns
+user types and pointers from functions (`jsonnode(string) json_parse`, `entity*(...)`), and
+declares parameters without names or with `optional` and `__out`.
+
+### Behaviour
+
+- **FTEF-15.1** A declaration may start with qualifiers, read by the loop at the start of
+  `QCC_PR_ParseDefs`: `extern`, `static`, `shared`, `const`, `var`, `nonstatic`, `noref`,
+  `nosave`, `strip`, `inline`, `wrap` and `weak`, and also, written with a leading `__`,
+  `auto`, `register`, `unused`, `used`, `ignore`, `accumulate` and `deprecated`, which may take
+  a `("reason")`. `QCC_PR_CheckKeyword` matches any keyword written with `__` whether or not it
+  is enabled ("lets just always go insensitive with a leading underscore pair"). Then comes a
+  type. At file level a name that is no statement word starts a declaration when a name, a `*`
+  or a parameter list follows it, since a type name is followed by its declarator; a name alone
+  is still "not a type" (FTE-21.1).
+- **FTEF-15.2** A function's return type may be any type: `QCC_PR_ParseType` ends with
+  `if (flag_qcfuncs && QCC_PR_CheckToken ("("))` after any type, a user type or a pointer
+  included. A function may be initialised with a value as well as a body or a builtin, as
+  `QCC_PR_ParseInitializerType_Internal` does with
+  `tmp = QCC_PR_Expression(TOP_PRIORITY, EXPR_DISALLOW_COMMA);`: another function, or `0`.
+- **FTEF-15.3** A parameter (`QCC_PR_ParseFunctionType`) has optional qualifiers `optional`,
+  `__in`, `__out` and `__inout`; a type; an optional `&` ("accept c++ syntax"); then a name, a
+  function pointer `(*name)(params)`, or nothing, since `else if (pr_token_type == tt_name) name =
+  QCC_PR_ParseName ();` takes a name only when there is one; array suffixes; and a default value.
+  A lone unnamed `void` is no parameter (`else if (paramlist[numparms].type->type == ev_void)
+  break; //float(void) has no actual args`). `...` ends the list, after a type or alone, and may
+  be followed by the name of the argument count.
+- **FTEF-15.4** A function type has at most `MAX_PARMS+MAX_EXTRA_PARMS` parameters ("Too many
+  parameters. Sorry. (limit is %i)"), with `#define MAX_EXTRA_PARMS 128` and id's
+  `MAX_PARMS` of 8 (`LIMIT_MAX_PARMS`, QC-27.7): 136 under this profile, not 8.
+- **FTEF-15.5** `wrap`, `weak` and `accumulate` let a function be defined again: a `wrap`
+  definition replaces the one before it and may call it as `prior` (`PIF_WRAP`, "wrapper function
+  does not wrap anything" when there is none), a `weak` one gives way to a later definition, and
+  an `accumulate` one is extended by later ones. `extern` says the body is elsewhere ("function
+  is external, don't error or warn if the body was not found"). A `var` function-typed name is a
+  variable that holds a function, not a function to define: `QCC_PR_ParseDefs` makes
+  "functions and fields ... always ... consts even when not initialised", unless `var`.
+- **FTEF-15.6** `T a, *b` declares `b` a pointer, and `struct { ... } a[4], *p;` declares
+  variables of an unnamed struct, as C does; each `*` before a declarator's name is a level of
+  pointer (FTEF-4.1).
+
+## FTEF-16 Statements and expressions
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_RefTerm`, `QCC_PR_ParseRefValue`
+(the `[` vector and `::` branches), `QCC_PR_RefExpression`; `qcc_pr_lex.c`,
+`QCC_PR_LexString`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
+`dialect-fteqcc-rerelease.md` FTE-19 to FTE-21.
+
+The corpus writes locals of class and pointer types, casts to classes (`(ncPlayer)self`),
+`[x, y, z]` vectors, scoped names (`ncTimer::_TimerThink`, `super::Save`, `::classname`),
+`if not (...)`, members of what a call returns, and `case` labels inside nested blocks.
+
+### Behaviour
+
+- **FTEF-16.1** A statement declares locals when it starts with a qualifier (FTEF-15.1), a C
+  type word (FTEF-2), a `.`, or a name followed by a name, by `*`s, a name and a `;`, `=`, `,` or
+  `[`, or by a parameter list and a name. FTEQCC decides by `QCC_TypeForName`; no expression
+  statement has these shapes, except a product `a * b` alone, which this profile reads as an
+  expression unless a declarator's end follows.
+- **FTEF-16.2** `(type) e` is a cast to any type: `QCC_PR_RefTerm` reads `(`, then
+  `newtype = QCC_PR_ParseType(false, true, false)`, and, after `)`,
+  `e = QCC_PR_Expression (UNARY_PRIORITY, EXPR_DISALLOW_COMMA);` or, before `{`, an initialiser
+  of the type. This profile takes a cast where `(` holds a type word, a `.` or a C type word; or
+  a name and `*`s or a function type's parameter list, closed by `)` and followed by a term; or a
+  lone name in parentheses followed by a term. `(visible(head))` and `(sin(x))` stay
+  parenthesised calls.
+- **FTEF-16.3** `[x, y, z]` builds a vector of three expressions, the missing ones 0 ("and to not
+  need the 2nd/3rd parts if you're lazy - [5] or [5,6]"); a fourth is an error, since
+  `QCC_PR_Expect("]")` follows the third.
+- **FTEF-16.4** `Class::member` names a member of a class or its parents, `super::member` one of
+  the parent of the class whose member function it is, and `::name` a name of the global scope
+  (`if (QCC_PR_CheckToken("::")) { assumeclass = NULL;`).
+- **FTEF-16.5** `if not (e)` takes the statement when `e` is false:
+  `int negate = QCC_PR_CheckKeyword(keyword_not, "not")/*hexenc*/;`.
+- **FTEF-16.6** A call may be followed by a subscript, a member or another call; in vanilla a
+  call ends the term (QC-15.8).
+- **FTEF-16.7** A term may start with `++` or `--` (`QCC_PR_RefTerm`'s `preinc`), `&` (an
+  address, FTEF-4.2) or `*` (a dereference, FTEF-4.4); the operand is a term with its postfix
+  forms.
+- **FTEF-16.8** Adjacent string literals are one string: `QCC_PR_LexString` reads strings in a
+  loop that skips whitespace and comments and ends only where no `"` follows
+  (`else if (first) ... else break;`).
+- **FTEF-16.9** A clause of a `for` header may hold several expressions separated by `,`, and the
+  first clause a declaration after them (`v = 0, int i = 1`).
+- **FTEF-16.10** A call's result may be assigned to, as in the chain `a = f() = b` the corpus
+  writes; FTEQCC reports no error there, so neither does this profile.
+- **FTEF-16.11** An aggregate initialiser may name the member each value initialises,
+  `{ .name = value, ... }`.
+- **FTEF-16.12** A `case` or `default` label may stand in a block nested in the `switch` body,
+  as C allows; the corpus does so (`client/viewmodel.qc`).
+
+## FTEF-17 Name resolution
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefValue` (`assumeclass`, `this`, `super`, the
+intrinsics), `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType` (the "dupe
+initialisation" comparison), `QCC_PR_ParseEnum`; `qcc_pr_lex.c`, `QCC_PR_ParseEntClass`;
+`qccmain.c`, the bodyless-function check of `QCC_WriteData`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
+`dialect-fteqcc-rerelease.md` FTE-22.
+
+### Behaviour
+
+- **FTEF-17.1** A class, struct, union, typedef, enum or accessor names a type, and its name may
+  be used where a value is (`spawn(ncTimer)`, `sizeof(graphNode_t)`). A type's name may be
+  declared again: a class forward and then with its body, a typedef in two headers.
+- **FTEF-17.2** A class's members are found through the class and its parents
+  (`QCC_PR_ParseEntClass` keeps each class's members, with `newt->parentclass`). `Class::member`
+  defines the member the class or a parent declares, or adds one, and its name refers to the
+  member's declaration. In a member function's body a name is the function's own local or
+  parameter, then a member of its class or a parent (`assumeclass`), then a global; a class's
+  own name there is the class, as `spawn(Thing)` takes it, not its constructor.
+- **FTEF-17.3** The name after `.` or `->` is a member of the class of what the access is made
+  on, when that is known from a name's declared type, `this`, a cast or a call's return type;
+  else an entity field the name defines; else a member of any class with the name. A vector's
+  `x`, `y` and `z`, `.length`, and a field of a struct or accessor name no definition, and a
+  name that is a value but no field is not checked; any other name is "Unknown value" (QCD-4.1).
+- **FTEF-17.4** `this`, `super` and, in a `wrap` function, `prior` are no names a program
+  defines, and neither are the intrinsics `QCC_PR_ParseRefValue` declares on demand ("intrinsics,
+  any old function with no args will do"): `nil`, `randomv`, `alloca`, `entnum`, `autocvar`,
+  `used_model`, `used_sound`, `va_arg` and `_`, with `sizeof` and `_length`. `autocvar(name,
+  default)` takes the cvar's name, which is no value, and `sizeof` may take a type word.
+- **FTEF-17.5** A name initialised again is accepted when the "dupe initialisation"
+  comparison finds the two values equal word by word: this profile compares two literals by
+  value (FTE-22.5), any other initialiser by its text, token for token, and a builtin by its
+  number. An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
+  `QCC_PR_DummyDef`, which looks for no earlier definition. A function body is never equal to
+  another.
+- **FTEF-17.6** Under this profile a redeclaration is a type mismatch only when neither type
+  involves a type name, a pointer or an unknown type, whose meaning the model does not follow
+  (a typedef may name `float`); otherwise QC-11.5 holds as written.
+- **FTEF-17.7** A function with no body is an error only where the module refers to it: the
+  bodyless check skips a definition when `d->unused && !d->used`, and this profile does not
+  follow every `noref`. A member function is not checked, and a class's `spawnfunc_Name`
+  (FTEF-9.5), whose body FTEQCC writes when the program does not, is never undefined.
+- **FTEF-17.8** A definition marked `noref` or `unused`, by its qualifier or a `#pragma noref 1`
+  before it (FTEF-12.6), may be initialised again with another value: the "dupe
+  initialisation" comparison runs only `if (basedef->initialized && !basedef->unused ...)`.
+  The corpus's `fteextensions.qc` sets `#pragma noref 1` and a later file binds
+  `getgamedirinfo = #0` again.
+
+## FTEF-18 Further statements, terms and frame macros
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`,
+`QCC_PR_GenerateInitializerType`, `QCC_PR_ParseState`, `QCC_PR_ParseStatement`,
+`QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`; `qcc_pr_lex.c`,
+`QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`; `qccmain.c`, the keyword table,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
+`dialect-fteqcc-rerelease.md` FTE-8, FTE-10 and FTE-21.
+
+The rest of what the corpus and FTEQCC's own tests write: initialisers that are expressions,
+functions defined inside functions, state frames computed from expressions, the statement forms
+FTEQCC takes from FrikQCC and HexenC, `sizeof`, and the frame-macro forms of `QCC_PR_LexGrab`.
+Where this profile does not parse a form yet, the statement is listed in
+`coverage-baseline.tsv` until P2-39 implements it.
+
+### Behaviour
+
+- **FTEF-18.1** A definition's initialiser may be any expression: past its special cases
+  `QCC_PR_ParseInitializerType_Internal` reads
+  `tmp = QCC_PR_Expression(TOP_PRIORITY, EXPR_DISALLOW_COMMA); tmp = QCC_EvaluateCast(tmp, type,
+  true);`, so `float IT_ALL = IT_AXE | IT_SHOTGUN;` is a global with a folded value. A global's
+  value must still be constant: `QCC_PR_GenerateInitializerType` reports "initializer for '%s'
+  is not constant" when `!tmp.sym->constant`. This parse-and-resolve profile parses any
+  expression there and checks only the names in it (FTE-10.2, P2-34); whether it folds is
+  checked with constant folding (P2-06).
+- **FTEF-18.2** A function-typed local may be given a body inside a function body: the `if
+  (pr_scope)` branch of `QCC_PR_ParseInitializerType_Internal` saves the outer function's
+  locals, calls `QCC_PR_ParseImmediateStatements` for the inner body ("generate a goto statement
+  around the nested function, so that nothing is hurt"), and restores them, so the inner
+  function is a function of its own, `void() g = { ... };` with or without `local`.
+- **FTEF-18.3** A state's frame and next function are expressions: `QCC_PR_ParseState` reads
+  `s1 = QCC_PR_Expression (TOP_PRIORITY, EXPR_DISALLOW_COMMA);` for the frame, converted to
+  float, and then `def = QCC_PR_Expression (TOP_PRIORITY, EXPR_DISALLOW_COMMA);` for the next
+  function, which is "Type mismatch" unless it is a function or null. A missing `,` between
+  them is the warning "missing comma in state definition" (`WARN_UNEXPECTEDPUNCT`), not an
+  error.
+- **FTEF-18.4** A state may instead cycle through a range of frames: `[++ first .. last]` or
+  `[-- first .. last]` (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`),
+  where `first` and `last` are expressions and `QCC_PR_Expect("..")` separates them. `(w)` or
+  `(W)` after the `++` or `--` cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). A
+  constant range that runs against its direction is the warning "Forwards State Cycle with
+  backwards range".
+- **FTEF-18.5** An expression statement may hold several expressions separated by `,`, each
+  evaluated and the last one kept: `QCC_PR_ParseStatement` ends with
+  `QCC_PR_DiscardExpression (TOP_PRIORITY, 0);`, and `QCC_PR_RefExpression` continues
+  `if (!(exprflags&EXPR_DISALLOW_COMMA) && priority == TOP_PRIORITY && QCC_PR_CheckToken
+  (","))`, warning "Statement does not do anything" when the expression before the `,` has no
+  effect. Initialisers, arguments, state parts and `case` values pass `EXPR_DISALLOW_COMMA`, so
+  a `,` there separates rather than sequences.
+- **FTEF-18.6** A statement may be a label, written `name:` (the C style, taken `if
+  (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')`) or `:name` (the
+  FrikQCC style, `if (QCC_PR_CheckToken(":"))`), and `goto name;` jumps to it (`goto` is a
+  default keyword in the `qccmain.c` keyword table). A label already defined in the function is
+  the warning "Duplicate label %s"; a label name that is not a name is "invalid label name".
+- **FTEF-18.7** `return = e;` sets the value the function returns without returning: "return =
+  foo; sets the value that will be returned when the function finally exits, without returning
+  now. return; returns that value now". A return type larger than a vector is the error "'%s'
+  not supported when returning %s".
+- **FTEF-18.8** `if !(e)` takes the statement when `e` is false, like `if not (e)`
+  (FTEF-16.5): `if (!negate && QCC_PR_CheckToken("!"))` sets `negate = 2`, with the warning
+  "if !() is specific to fteqcc" (`WARN_FTE_SPECIFIC`).
+- **FTEF-18.9** `until (e) s` repeats `s` while `e` is false, and `do s until (e);` is the
+  `do` loop with the test reversed: `wasuntil = QCC_PR_CheckKeyword(keyword_until, "until"); if
+  (wasuntil || QCC_PR_CheckKeyword(keyword_while, "while"))`, and in `do`, `until =
+  QCC_PR_CheckKeyword(keyword_until, "until"); if (!until) QCC_PR_Expect ("while");`. `until` is
+  a keyword only for the Hexen II targets (`nondefaultkeyword` in the keyword table, forced on
+  `if (qcc_targetformat == QCF_HEXEN2 || ...)`), or when written `__until`, which
+  `QCC_PR_CheckKeyword` matches whether or not the keyword is enabled (FTEF-15.1); otherwise
+  `until (e)` is a call of a function named `until`.
+- **FTEF-18.10** A `case` label may give a range, `case a .. b:`, matched when the value is from
+  `a` to `b` inclusive: after the first value `QCC_PR_ParseStatement` tries `if (QCC_PR_CheckToken(".."))`
+  and reads a second with `QCC_PR_RefExpression (&pr_casesref2[num_cases], TOP_PRIORITY,
+  EXPR_DISALLOW_COMMA);`, and for a float the switch tests `OP_GE_F` against `a` and `OP_LE_F`
+  against `b`.
+- **FTEF-18.11** `a ?: b` is `a` when `a` is true and `b` otherwise, `a` evaluated once: after
+  `if (priority == TERNARY_PRIORITY && QCC_PR_CheckToken ("?"))` the conditional tries
+  `if (QCC_PR_CheckToken(":"))` before reading a middle operand.
+- **FTEF-18.12** `sizeof` takes a type or an expression, with or without parentheses:
+  `QCC_PR_RefTerm` reads `pbool bracket = QCC_PR_CheckToken("("); t =
+  QCC_PR_ParseType(false, true, false);`, and when no type follows,
+  `r = QCC_PR_RefExpression(&refbuf, TOP_PRIORITY, 0); //formulas are accepted weirdly enough,
+  its not just terms.` The value is the size in bytes, an unsigned integer constant; for a
+  string literal it counts the terminating NUL.
+- **FTEF-18.13** A frame macro reference (`$name`, QC-8.5) ends at whitespace or at the first
+  `,`, `;`, `&`, `|`, `(`, `)`, `]` or `..`: `QCC_PR_LexMacroName` copies bytes `while ( (c =
+  *pr_file_p) > ' ' && c != '\n' && c != ',' && c != ';' && c != '&' && c != '|' && c != ')' &&
+  c != '(' && c != ']' && !(pr_file_p[0] == '.' && pr_file_p[1] == '.'))`, where id's qcc stops
+  only at whitespace, `,` and `;` (QC-8.6). So `$a||x`, `($b)` and `[$a, th]` name the frames `a` and
+  `b`.
+- **FTEF-18.14** `$framesave` defines frame names exactly as `$frame` does (QC-8.2):
+  `QCC_PR_LexGrab` takes `if (!STRCMP (pr_token, "frame") || !STRCMP (pr_token, "framesave"))`
+  to `QCC_PR_ParseFrame`, which numbers each name on the line from the running frame count.
+- **FTEF-18.15** A function type may return a function: after the type, `QCC_PR_ParseDefs`
+  loops `while(QCC_PR_CheckToken ("("))` over parameter lists ("qc-style function... possibly
+  returning a function."), so `float(float)(string) f;` declares `f` as a function taking a
+  string and returning a `float(float)` function.
+
 ### Test vectors
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the

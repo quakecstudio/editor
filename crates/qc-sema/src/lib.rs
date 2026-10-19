@@ -37,9 +37,13 @@
 //! literal, and with autoprototyping ([`Db::set_autoproto`]) names do not wait for their
 //! position.
 //!
+//! [`Db::analyze_module`] reads a module as the compiler reads it, from each file's
+//! preprocessed expansion (QC-9), with every location mapped back to a span of a source file
+//! through the expansion origins (QC-9.7); [`Db::parse`] stays the tree of the file as written.
+//!
 //! # Layer
 //!
-//! L3 semantics. It depends on `qc-syntax` and `qc-project` (L2) and `qc-diag` (L0, for the
+//! L3 semantics. It depends on `qc-syntax`, `qc-lexer`, `qc-preproc` and `qc-project` (L2) and `qc-diag` (L0, for the
 //! one [`qc_diag::Diagnostic`], its [`qc_diag::Code`] and [`qc_diag::Span`]).
 //!
 //! # Spec sections
@@ -50,6 +54,7 @@
 //! from the spec, not ported.
 
 pub mod db;
+pub mod expand;
 pub mod lower;
 pub mod nav;
 pub mod resolve;
@@ -59,8 +64,9 @@ pub mod ty;
 #[cfg(test)]
 mod tests;
 
-pub use db::{Db, QueryCounts};
-pub use lower::{FileDecls, LiteralValue, RawBody, RawDecl, RawLocal, RawParam, RawUse};
-pub use resolve::{ModuleIndex, ResolveOptions, resolve_module};
+pub use db::{Db, ModuleAnalysis, QueryCounts};
+pub use expand::{ModuleInput, OriginMap};
+pub use lower::{FileDecls, LiteralValue, RawBody, RawDecl, RawLocal, RawParam, RawUse, UseKind};
+pub use resolve::{FileDiagnostic, ModuleIndex, ResolveOptions, resolve_module};
 pub use symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 pub use ty::{FunctionType, SimpleType, Type};

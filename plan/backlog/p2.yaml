@@ -96,11 +96,11 @@ issues:
   - P2-25
   - P2-03
   deliverable:
-  - FTEQCC profile in qc-syntax and qc-sema covering docs/spec/dialect-fteqcc.md for parsing, resolution, types and diagnostics (code generation beyond the rerelease subset stays in LATER)
+  - 'FTEQCC profile in qc-lexer, qc-preproc, qc-syntax and qc-sema covering docs/spec/dialect-fteqcc.md (FTEF-13 to FTEF-17) for tokens, preprocessing, parsing, resolution, types and diagnostics (code generation beyond the rerelease subset stays in LATER)'
   acceptance:
   - Every FTEQCC corpus mod parses and resolves with navigation working and no false diagnostics
   verify:
-  - Corpus job
+  - 'Corpus job: cargo xtask fteqcc-profile on the FreeCS tree (cstrike/src, valve/src, src/menu-fn) in the macOS CI job; the remaining mods are P2-38'
 - key: P2-04
   title: Build the engine-target database
   labels:
@@ -607,12 +607,67 @@ issues:
   depends:
   - P2-28
   deliverable:
-  - 'docs/spec/dialect-fteqcc-rerelease.md or docs/spec/dialect-fteqcc.md: a statement, quoting FTEQCC at the pinned commit, for each construct in the "Constructs without a spec statement" section of the quakecstudio/tree-sitter-quakec README (expression initialisers and nested function bodies, state frame expressions, unnamed and qualified parameters, functions returning functions, per-name `*`, escapes beyond FTE-20.3, adjacent strings, character constants and two-component vectors, calls of call results, frame-reference stops, the comma operator, labels and goto, `return =`, `if !`, `if not`, `until`, case ranges, `?:` with no middle, mixed `for` init, `sizeof`, `[x, y, z]`, `::name`, designated initialisers, `__` keywords, and `\` line continuations), with requirements.tsv and coverage-baseline.tsv updated'
+  - 'docs/spec/dialect-fteqcc-rerelease.md or docs/spec/dialect-fteqcc.md: a statement, quoting FTEQCC at the pinned commit, for each construct in the "Constructs without a spec statement" section of the quakecstudio/tree-sitter-quakec README (expression initialisers and nested function bodies, state frame expressions, unnamed and qualified parameters, functions returning functions, per-name `*`, escapes beyond FTE-20.4, adjacent strings, character constants and two-component vectors, calls of call results, frame-reference stops, the comma operator, labels and goto, `return =`, `if !`, `if not`, `until`, case ranges, `?:` with no middle, mixed `for` init, `sizeof`, `[x, y, z]`, `::name`, designated initialisers, `__` keywords, and `\` line continuations), with requirements.tsv and coverage-baseline.tsv updated'
   - 'quakecstudio/tree-sitter-quakec: the tests in test/corpus/fteqcc-unspecified.txt retitled to cite the new statements, and the README section removed'
   acceptance:
   - Every construct the grammar README lists has a statement citing its FTEQCC function and quoting the source, and every grammar test cites a spec statement
   verify:
   - cargo test -p qs-tests (spec-citation ratchet); tree-sitter test in the grammar repo's CI
+- key: P2-38
+  title: Resolve copper and Arcane Dimensions under the FTEQCC profile
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - GOAL-1
+  - LANG-5
+  - MVP-4
+  depends:
+  - P2-26
+  deliverable:
+  - 'crates/qc-lexer, crates/qc-syntax and crates/qc-sema: the FTEQCC constructs copper and Arcane Dimensions use that P2-26 left out (the 8192-frame limit of `QCC_PR_LexGrab`, FTEQCC''s extra `$` commands, comma-separated statements, `#pragma autoproto` across modules), each with a statement in docs/spec/dialect-fteqcc.md quoting FTEQCC'
+  - 'The macOS corpus job runs cargo xtask fteqcc-profile on both mods'
+  acceptance:
+  - copper and Arcane Dimensions parse and resolve under the FTEQCC profile with zero errors, and the six rerelease codebases and the FreeCS tree still do
+  verify:
+  - Corpus job
+- key: P2-39
+  title: Parse the remaining FTEQCC statement forms
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  depends:
+  - P2-26
+  - P2-36
+  deliverable:
+  - 'crates/qc-lexer and crates/qc-syntax: the forms of docs/spec/dialect-fteqcc.md FTEF-18.3 to FTEF-18.15, which P2-36 specified and the FTEQCC profile still rejects or misreads (state frame expressions and frame cycles, the comma operator in a statement, labels and goto, `return =`, `if !`, `until` and `do ... until`, case ranges, `?:` with no middle, `sizeof` without parentheses or of a pointer type or an expression, frame references that stop at `&`, `|`, `(`, `)`, `]` and `..`, `$framesave`, and function types returning functions), with the statements moved out of docs/spec/coverage-baseline.tsv'
+  acceptance:
+  - Each of FTEF-18.3 to FTEF-18.15 has a test citing it, and none is left in coverage-baseline.tsv
+  verify:
+  - cargo test -p qc-lexer -p qc-syntax; cargo test -p qs-tests (spec-citation ratchet)
+- key: P2-40
+  title: 'Evaluate #if with FTEQCC''s operator precedence under the FTEQCC profile'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-26
+  deliverable:
+  - 'crates/qc-preproc: under the FTEQCC profile `#if` follows `ParsePrecompilerIf` in qcc_pr_lex.c, where `||` and `&&` share one level and associate to the right (`eval = ParsePrecompilerIf(level)||eval;`), instead of the C precedence PRJ-5.5 gives; a statement in docs/spec/dialect-fteqcc.md quoting it, with the PRJ-5 evaluator in qc-preproc taking the profile'
+  acceptance:
+  - '`#if 1 || 0 && 0` and its mirror evaluate as FTEQCC does under the FTEQCC profile and as PRJ-5.5 says under the vanilla profile, each with a test'
+  verify:
+  - cargo test -p qc-preproc
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -747,6 +802,9 @@ issues:
   - P2-34
   - P2-35
   - P2-36
+  - P2-38
+  - P2-39
+  - P2-40
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
