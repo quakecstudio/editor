@@ -3,6 +3,12 @@
 # (docs/ci.md), so every job runs on merge_group events and keeps a static name:
 # renaming a job means changing the ruleset too.
 #
+# A change whose every file is on the light allowlist of scripts/ci-changes.sh
+# (documentation, the plan, agent files) takes the light path: each required
+# job still reports success under its name, but only the cargo xtask ci job and
+# xtask's own tests, the only checks that read those files, do their work
+# (docs/ci.md, "Light changes").
+#
 # Caches are saved only by runs on main (github.ref == 'refs/heads/main'): a
 # cache saved in a pull request or merge group run is scoped to its ref and no
 # other pull request or queue run can restore it. The merge group has already
@@ -49,10 +55,62 @@ env:
   CARGO_BUILD_WARNINGS: deny
 
 jobs:
+  # Decides whether this run takes the full path or the light one (docs/ci.md,
+  # "Light changes"): light when every changed file is on the allowlist in
+  # scripts/ci-changes.sh, full otherwise and whenever the diff cannot be
+  # computed. Every other job needs this one and runs unless the run is
+  # cancelled, because a job skipped after a job it needs fails reports
+  # success; a failed classification leaves the output empty, which is the
+  # full path. On the light path a job that is not a matrix skips itself, which
+  # reports success, and a matrix job skips its steps, so each entry still
+  # reports the exact name the ruleset requires.
+  changes:
+    name: Classify the change
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      # A pull request checks out its merge commit, whose first parent is the
+      # base branch, so a depth of two holds the pull request's whole diff.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Classify the changed files
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          GROUP_BASE: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          base=
+          case $EVENT in
+          pull_request)
+            if git rev-parse --verify --quiet 'HEAD^2' >/dev/null; then
+              base=$(git rev-parse 'HEAD^1')
+            fi
+            ;;
+          merge_group) base=$GROUP_BASE ;;
+          push) base=$PUSH_BEFORE ;;
+          esac
+          if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            git fetch --quiet --no-tags --depth=1 origin "$base" || true
+          fi
+          verdict=$(bash scripts/ci-changes.sh diff "$base" HEAD)
+          echo "$EVENT, base ${base:-unknown}: $verdict"
+          if [ "$verdict" = light ]; then
+            echo "full=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "full=true" >>"$GITHUB_OUTPUT"
+          fi
+
   fmt:
     name: Format
+    needs: changes
     # Saves no cache, so a run on main skips it.
-    if: github.ref != 'refs/heads/main'
+    if: ${{ !cancelled() && needs.changes.outputs.full != 'false' && github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,6 +124,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.full != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -83,9 +143,16 @@ jobs:
 
   test:
     name: Unit Tests (${{ matrix.name }})
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    env:
+      # xtask's own tests read the light files (its repository checks, the
+      # ratchet's readiness plan, the porting and perf-budget docs), so the
+      # light path runs them on every OS and leaves out the other crates'.
+      CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,12 +173,17 @@ jobs:
         with:
           shared-key: debug-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo test --locked --workspace --all-features
+      - if: env.CI_PATH == 'full'
+        run: cargo test --locked --workspace --all-features
+      - name: Test xtask, whose tests read the light files
+        if: env.CI_PATH == 'light'
+        run: cargo test --locked -p xtask --all-features
       # P1-11: the oracles (oracles/README.md), built from id's sources fetched by checksum
       # with the system C compiler, then the VM oracle checked against the VM vectors. The
       # fetched sources and binaries are cached; a stamp of every input decides whether the
       # cached binaries are rebuilt.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: env.CI_PATH == 'full'
         id: oracles-cache
         with:
           path: |
@@ -119,9 +191,10 @@ jobs:
             target/oracles/bin
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Build and check the oracles
+        if: env.CI_PATH == 'full'
         run: cargo xtask oracles
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: github.ref == 'refs/heads/main' && steps.oracles-cache.outputs.cache-hit != 'true'
+        if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.oracles-cache.outputs.cache-hit != 'true'
         with:
           path: |
             target/oracles/src
@@ -130,9 +203,13 @@ jobs:
 
   build:
     name: Build (${{ matrix.name }})
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
+    env:
+      CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -151,9 +228,11 @@ jobs:
             target: aarch64-pc-windows-msvc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CI_PATH == 'full'
         with:
           persist-credentials: false
       - name: Set up the Rust toolchain
+        if: env.CI_PATH == 'full'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -161,10 +240,12 @@ jobs:
           rustup toolchain install
           rustup target add "$TARGET"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: env.CI_PATH == 'full'
         with:
           shared-key: build-${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build
+        if: env.CI_PATH == 'full'
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
@@ -172,6 +253,8 @@ jobs:
 
   build-macos:
     name: Build (macos-universal)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.full != 'false' }}
     runs-on: macos-latest
     permissions:
       contents: read
@@ -246,8 +329,9 @@ jobs:
 
   deny:
     name: cargo-deny
+    needs: changes
     # Saves no cache, so a run on main skips it.
-    if: github.ref != 'refs/heads/main'
+    if: ${{ !cancelled() && needs.changes.outputs.full != 'false' && github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -283,6 +367,8 @@ jobs:
 
   test-assets:
     name: Test Assets (${{ matrix.name }})
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -300,18 +386,22 @@ jobs:
       run:
         shell: bash
     env:
+      CI_PATH: ${{ needs.changes.outputs.full == 'false' && 'light' || 'full' }}
       # The deletion check below runs only in the merge group on Linux, where it takes
       # minutes unoptimized: there the job's one xtask build is optimized. Debug
       # assertions and overflow checks stay on, as in every other run.
       CARGO_PROFILE_DEV_OPT_LEVEL: ${{ github.event_name == 'merge_group' && matrix.name == 'linux' && '3' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.CI_PATH == 'full'
         with:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.CI_PATH == 'full'
         with:
           python-version: "3.12"
       - name: Point QS_TEST_ASSETS outside the source tree
+        if: env.CI_PATH == 'full'
         env:
           RUNNER_TEMP_DIR: ${{ runner.temp }}
         run: echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets" >> "$GITHUB_ENV"
@@ -319,56 +409,62 @@ jobs:
       # the cache key: a manifest change downloads afresh. Saved at the end of
       # the job, after every fetch, on main only.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: env.CI_PATH == 'full'
         id: downloads-cache
         with:
           path: ${{ runner.temp }}/test-assets/downloads
           key: test-assets-${{ runner.os }}-${{ hashFiles('corpus/manifest.toml') }}
       - name: Set up the Rust toolchain
+        if: env.CI_PATH == 'full'
         run: rustup toolchain install
       - name: Test the language coverage script
+        if: env.CI_PATH == 'full'
         working-directory: corpus
         run: python -m unittest test_language_coverage.py
       - name: Check the corpus manifest
+        if: env.CI_PATH == 'full'
         run: cargo xtask corpus verify
       # P2-04 (ENGT-1.2): the engine-target tables match what their pinned fact sources give.
       # The sources are the same on every OS, so one runner fetches them.
       - name: Regenerate the engine-target tables and compare
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask engines --check
       - name: Fetch the test assets
+        if: env.CI_PATH == 'full'
         run: cargo xtask assets fetch
       - name: Check the rerelease precaches
+        if: env.CI_PATH == 'full'
         run: cargo xtask assets precache
       # The source is the same on every OS, so one runner checks it.
       - name: Write id 1.01 to the asset cache
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask corpus fetch id-1.01
       - name: Check the language spec covers id 1.01
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: python corpus/language_coverage.py --source-dir "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-20: every vanilla corpus file lexes, and progs.src preprocesses, with no errors.
       - name: Lex and preprocess id 1.01
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask lex-corpus "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-11: id's qcc compiles id 1.01 and the VM oracle traces the result. Unit Tests
       # (linux) saves the oracles under the same key, so this job only restores them.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         with:
           path: |
             target/oracles/src
             target/oracles/bin
           key: oracles-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**') }}
       - name: Compile and trace id 1.01 with the oracles
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask oracles id101 "$QS_TEST_ASSETS/codebase/id-1.01"
       - name: Write the rerelease and two FTEQCC mods to the asset cache
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask corpus fetch rerelease copper arcane-dimensions
       # P1-21: id 1.01 parses with no errors; every file of each codebase, FTEQCC ones
       # included, round-trips through the tree.
       - name: Parse the corpus
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask parse-corpus --vanilla "$QS_TEST_ASSETS/codebase/id-1.01"
           cargo xtask parse-corpus "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -377,20 +473,20 @@ jobs:
       # each file once per token, the one step that takes minutes, so it runs in the
       # merge group only, which every change passes before it reaches main.
       - name: Check that deleting any token of id 1.01 leaves a local error
-        if: runner.os == 'Linux' && github.event_name == 'merge_group'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.event_name == 'merge_group'
         run: cargo xtask parse-corpus --deletions "$QS_TEST_ASSETS/codebase/id-1.01"
       # P1-26: the pinned FTEQCC compiles the six rerelease codebases to version 6 progs.dat
       # files with vanilla opcodes only, and .lno files. They are kept as oracle artifacts in
       # target/oracles/rerelease, cached on everything that decides their bytes.
       - name: Write the rerelease codebases to the asset cache
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask corpus fetch rerelease rerelease-hipnotic rerelease-rogue rerelease-mg1 \
             rerelease-ctf rerelease-mg3
       # P2-03: every rerelease codebase parses and resolves with zero errors under the FTEQCC
       # profile, and the vanilla profile rejects each extension with a diagnostic.
       - name: Parse and resolve the rerelease under the FTEQCC profile
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask fteqcc-profile \
             "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -400,23 +496,23 @@ jobs:
             "$QS_TEST_ASSETS/codebase/rerelease-ctf" \
             "$QS_TEST_ASSETS/codebase/rerelease-mg3"
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         id: rerelease-cache
         with:
           path: target/oracles/rerelease
           key: oracle-artifacts-rerelease-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('oracles/**', 'xtask/src/oracles.rs', 'xtask/src/oracles/**', 'corpus/manifest.toml') }}
       - name: Compile the rerelease with FTEQCC
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask oracles rerelease "$QS_TEST_ASSETS/codebase"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.rerelease-cache.outputs.cache-hit != 'true'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.rerelease-cache.outputs.cache-hit != 'true'
         with:
           path: target/oracles/rerelease
           key: ${{ steps.rerelease-cache.outputs.cache-primary-key }}
       # P1-14: every progs.dat an oracle compiler builds from the corpus (id 1.01 with id's qcc,
       # the rerelease with FTEQCC) is kept in the cache and round-trips through qc-progs.
       - name: Build the corpus progs and round-trip them through qc-progs
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask corpus build
       # P1-13 (FND-8, QA-1): the fast differential subset. Runs id 1.01 end to end
       # in the VM oracle (restored above) and QuakeC Studio's runner and fails on any
@@ -425,12 +521,12 @@ jobs:
       # job runs it with the same command (docs/ci.md). The full corpus runs nightly
       # (differential.yml).
       - name: Run the fast differential VM suite on id 1.01
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask differential --fast
       # P1-23: every module of each codebase opens with no error in its file graph, and id
       # 1.01's graph has the order of the functions in the progs.dat id's qcc compiled above.
       - name: Open the corpus as projects
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask project-corpus --progs "$QS_TEST_ASSETS/progs/id-1.01/progs.dat" \
             "$QS_TEST_ASSETS/codebase/id-1.01"
@@ -444,7 +540,7 @@ jobs:
       # when FTEQCC stops on a compile error or a crash, per PRJ-6). The oracles are restored
       # with the id 1.01 compile step above, so this only builds FTEQCC on a cache miss.
       - name: Check the corpus graph order against FTEQCC
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask project-corpus --fteqcc "$QS_TEST_ASSETS/codebase/id-1.01" \
             "$QS_TEST_ASSETS/codebase/rerelease" \
@@ -459,12 +555,12 @@ jobs:
       # Animations.h, which only a case-insensitive file system opens, as FTEQCC's fopen
       # would (PRJ-7.1); its client and server modules each get warning W0402 there (PRJ-7.2).
       - name: Open Xonotic as a project
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           cargo xtask corpus fetch xonotic
           cargo xtask project-corpus "$QS_TEST_ASSETS/codebase/xonotic"
       - name: Open FreeCS as a project
-        if: runner.os == 'macOS'
+        if: env.CI_PATH == 'full' && runner.os == 'macOS'
         run: |
           cargo xtask corpus fetch freecs-tree
           cargo xtask project-corpus --expect-warning W0402=2 \
@@ -473,7 +569,7 @@ jobs:
       # FTEQCC profile: FreeCS, Rad-Therapy (whose menu module builds Nuclide's menu-vgui) and
       # Nuclide's own menu-fn. They need the case-insensitive file system FreeCS does.
       - name: Parse and resolve the FTEQCC corpus mods under the FTEQCC profile
-        if: runner.os == 'macOS'
+        if: env.CI_PATH == 'full' && runner.os == 'macOS'
         run: |
           cargo xtask fteqcc-profile \
             "$QS_TEST_ASSETS/tree/freecs-tree/cstrike/src" \
@@ -482,18 +578,18 @@ jobs:
       # P5-02: every map of the corpus reads and writes back byte for byte, and every BSP,
       # .lit, alias model, sprite and sound of the LibreQuake lite asset loads.
       - name: Write the corpus maps to the asset cache
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: |
           awk '/^\[\[/ { map = ($0 == "[[map]]") } map && $1 == "id" { gsub(/"/, "", $3); print $3 }' \
             corpus/manifest.toml | xargs cargo xtask corpus fetch
       - name: Round-trip the corpus maps
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo xtask map-corpus "$QS_TEST_ASSETS/map"
       - name: Decode the LibreQuake lite asset
-        if: runner.os == 'Linux'
+        if: env.CI_PATH == 'full' && runner.os == 'Linux'
         run: cargo run --release -p qs-vfs --example walk -- -basedir "$QS_TEST_ASSETS/librequake-lite"
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
+        if: env.CI_PATH == 'full' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
         with:
           path: ${{ runner.temp }}/test-assets/downloads
           key: ${{ steps.downloads-cache.outputs.cache-primary-key }}

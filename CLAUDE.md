@@ -26,7 +26,7 @@ editor/
 ├── docs/          roadmap, design and mockups, ADRs (adr/), engine behaviour specs (spec/), conventions, testing bar
 ├── specs/         cached public specifications (LSP, MCP, ACP), verbatim; grep before fetching
 ├── plan/          requirements and backlog as data; GitHub issues are generated from it
-├── scripts/       refresh-specs.sh
+├── scripts/       refresh-specs.sh; ci-changes.sh (light or full CI path, docs/ci.md)
 └── .claude/       rules/, skills/, agents/, hooks/
 ```
 
@@ -114,6 +114,7 @@ cargo xtask engines [--check]             # regenerate (or check) the engine-tar
 
 scripts/refresh-specs.sh --verify         # cached specs match specs/manifest.tsv (offline)
 scripts/refresh-specs.sh                  # refresh specs/ from the origins
+git diff --name-only main | scripts/ci-changes.sh classify   # would CI take the light path?
 prek run                                  # the pre-commit hooks
 ```
 
