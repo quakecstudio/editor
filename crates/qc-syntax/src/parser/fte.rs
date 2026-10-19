@@ -311,6 +311,41 @@ impl Parser<'_> {
             return false;
         }
         let text = tok.text.clone();
+        if text == "enum" || text == "enumflags" {
+            let body = match self.nth(1).map(|t| t.kind) {
+                Some(K::LBrace | K::Colon) => true,
+                Some(K::Name) => {
+                    self.fte_word(1, "class")
+                        || self
+                            .nth(2)
+                            .is_some_and(|t| matches!(t.kind, K::LBrace | K::Colon))
+                }
+                _ => false,
+            };
+            self.start_node(K::SimpleType);
+            if body {
+                // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`.
+                self.enum_body();
+            } else {
+                // `enum Name`: the enum by its name.
+                self.bump_as(K::EnumKw);
+                if self.at(K::Name) {
+                    self.bump();
+                }
+            }
+            self.finish_node();
+            return true;
+        }
+        if (text == "struct" || text == "union")
+            && (self.nth(1).is_some_and(|t| t.kind == K::LBrace)
+                || self.nth(2).is_some_and(|t| t.kind == K::LBrace))
+        {
+            // FTEF-6.4: a struct written as a member's type, `struct tag { ... } *field;`.
+            self.start_node(K::SimpleType);
+            self.struct_type();
+            self.finish_node();
+            return true;
+        }
         if text == "struct" || text == "union" {
             // `struct tag` names a struct by its tag (FTEF-6.1).
             self.start_node(K::SimpleType);
@@ -458,6 +493,9 @@ impl Parser<'_> {
     /// (`QCC_PR_ParseEntClass`, FTEF-9.1).
     pub(super) fn class_decl(&mut self) {
         self.start_node(K::ClassDecl);
+        // `static class ...`: `QCC_PR_ParseDefs` reads the qualifiers, then the class as the
+        // declaration's type.
+        self.fte_qualifiers();
         self.bump_as(K::ClassKw);
         self.name();
         if self.at(K::Colon) {
@@ -480,6 +518,18 @@ impl Parser<'_> {
             self.bump();
         }
         self.finish_node();
+    }
+
+    /// Whether a class starts here, after any declaration qualifiers (FTEF-9.1).
+    pub(super) fn at_class(&self) -> bool {
+        let mut n = 0_usize;
+        while self
+            .nth(n)
+            .is_some_and(|t| t.kind == K::Name && is_decl_qualifier(&t.text))
+        {
+            n = n.saturating_add(1);
+        }
+        self.fte_word(n, "class")
     }
 
     /// One member of a class body (FTEF-9.2 to FTEF-9.4, FTEF-10.3): an access or default
@@ -537,11 +587,14 @@ impl Parser<'_> {
     pub(super) fn struct_decl(&mut self) {
         self.start_node(K::StructDecl);
         self.struct_type();
-        if self.at(K::Name) {
-            // `struct Name { ... } var;` declares a variable too; kept in the node.
-            self.bump();
-        }
-        if !self.expect(K::Semicolon, ";") {
+        if self.at(K::Name) || self.at(K::Star) {
+            // FTEF-6.1: `struct { ... } a[4], *p;` declares variables of the struct too.
+            let shape = TypeShape {
+                function: false,
+                field: false,
+            };
+            self.declarators(shape, false);
+        } else if !self.expect(K::Semicolon, ";") {
             self.recover(false);
         }
         self.finish_node();
@@ -649,23 +702,11 @@ impl Parser<'_> {
             n = n.saturating_add(1);
         }
         if n > 2 {
-            return self.nth(n).is_some_and(|t| t.kind == K::RParen);
+            return self.nth(n).is_some_and(|t| t.kind == K::RParen)
+                && self.starts_term(n.saturating_add(1));
         }
         match self.nth(2).map(|t| t.kind) {
-            Some(K::RParen) => self.nth(3).is_some_and(|t| {
-                matches!(
-                    t.kind,
-                    K::Name
-                        | K::FloatLit
-                        | K::VectorLit
-                        | K::StringLit
-                        | K::FrameRef
-                        | K::LParen
-                        | K::Not
-                        | K::Tilde
-                        | K::LBracket
-                )
-            }),
+            Some(K::RParen) => self.starts_term(3),
             // `(Type(params))`: a function type, whose list starts with a parameter (a type
             // word, `...`, `)` or a name followed by a name or `*`), closed after its list. A
             // call in parentheses, `(visible(head))`, has an expression there.
@@ -678,9 +719,9 @@ impl Parser<'_> {
                         K::RParen => {
                             depth = depth.saturating_sub(1);
                             if depth == 0 {
-                                return self
-                                    .nth(ahead.saturating_add(1))
-                                    .is_some_and(|t| t.kind == K::RParen);
+                                let close = ahead.saturating_add(1);
+                                return self.nth(close).is_some_and(|t| t.kind == K::RParen)
+                                    && self.starts_term(close.saturating_add(1));
                             }
                         }
                         K::Semicolon | K::LBrace => return false,
@@ -692,6 +733,26 @@ impl Parser<'_> {
             }
             _ => false,
         }
+    }
+
+    /// Whether the token `n` ahead can start a term, as the operand of a cast does.
+    fn starts_term(&self, n: usize) -> bool {
+        self.nth(n).is_some_and(|t| {
+            matches!(
+                t.kind,
+                K::Name
+                    | K::FloatLit
+                    | K::VectorLit
+                    | K::StringLit
+                    | K::FrameRef
+                    | K::LParen
+                    | K::Not
+                    | K::Tilde
+                    | K::LBracket
+                    | K::Amp
+                    | K::ColonColon
+            )
+        })
     }
 
     /// Whether the token `n` ahead can start a parameter list's contents.

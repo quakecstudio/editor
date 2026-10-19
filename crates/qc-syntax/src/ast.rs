@@ -479,6 +479,16 @@ impl Declarator {
         scope_of(&self.0)
     }
 
+    /// How many `*` come before the name: `T *p` declares a pointer (FTEF-4.1).
+    #[must_use]
+    pub fn pointer_depth(&self) -> usize {
+        self.0
+            .child_tokens()
+            .take_while(|t| t.kind() != K::Name)
+            .filter(|t| t.kind() == K::Star)
+            .count()
+    }
+
     /// The array suffixes after the name (FTE-13.1, FTEF-5).
     pub fn array_suffixes(&self) -> impl Iterator<Item = SyntaxNode> {
         self.0.children().filter(|n| n.kind() == K::ArraySuffix)
@@ -802,6 +812,11 @@ impl ClassDecl {
 }
 
 impl StructDecl {
+    /// The variables `struct { ... } a, *b;` declares (FTEF-6.1).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
+        children(&self.0)
+    }
+
     /// The struct's tag.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
@@ -831,10 +846,22 @@ impl AccessorDecl {
 }
 
 impl AccessorMember {
-    /// The member's name, if it has one.
+    /// The member's name, if it has one: the name after `inline`, `get` or `set` and the
+    /// type.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        self.0.token_of(K::Name)
+        self.0
+            .child_tokens()
+            .filter(|t| t.kind() == K::Name)
+            .find(|t| !matches!(t.text_lossless().as_str(), "inline" | "get" | "set"))
+    }
+
+    /// Whether it is a `set` member.
+    #[must_use]
+    pub fn is_set(&self) -> bool {
+        self.0
+            .child_tokens()
+            .any(|t| t.kind() == K::Name && t.text_lossless() == "set")
     }
 
     /// The index parameter's name in `[Type name]`, if any.

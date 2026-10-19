@@ -567,6 +567,8 @@ impl Lexer<'_> {
         let start = self.pos;
         self.bump(1);
         let mut contents = Vec::new();
+        // FTEF-13.4: `\s` and `\b` toggle Quake's bronze text for what follows.
+        let mut bronze = false;
         loop {
             match self.peek(0) {
                 None => {
@@ -607,6 +609,10 @@ impl Lexer<'_> {
                             "Unknown escape char",
                             Span::new(escape, self.pos),
                         ),
+                        Some(b's' | b'b') if self.dialect.has_fteqcc_extensions() => {
+                            self.bump(1);
+                            bronze = !bronze;
+                        }
                         Some(other) => {
                             self.bump(1);
                             if let Some(byte) = self.fteqcc_escape(other) {
@@ -624,7 +630,7 @@ impl Lexer<'_> {
                     }
                 }
                 Some(b) => {
-                    contents.push(b);
+                    contents.push(if bronze && b < 0x80 { b | 0x80 } else { b });
                     self.bump(1);
                 }
             }

@@ -373,13 +373,18 @@ impl Db {
             decls.push(file.decls);
         }
         let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
+        let noref: Vec<&[(usize, bool)]> = preprocessed
+            .files
+            .iter()
+            .map(|r| r.noref.as_slice())
+            .collect();
         self.bump_module_index();
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: self.autoproto,
         };
         let analysis = ModuleAnalysis {
-            index: resolve_mapped(&decls, &maps, options),
+            index: resolve_mapped(&decls, &maps, &noref, options),
             syntax,
         };
         self.analysis = Some(Memo {

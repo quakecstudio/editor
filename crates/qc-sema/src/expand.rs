@@ -107,6 +107,9 @@ pub(crate) struct Rendered {
     pub(crate) text: Vec<u8>,
     /// Where each token came from.
     pub(crate) origins: OriginMap,
+    /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
+    /// setting (FTEF-12.6).
+    pub(crate) noref: Vec<(usize, bool)>,
 }
 
 /// The preprocessed module: each compiled file rendered, and the preprocessor's diagnostics
@@ -216,7 +219,20 @@ fn run<L: Loader>(
                 },
             });
         }
-        out.files.push(render(pp, files, &output.tokens));
+        let mut rendered = render(pp, files, &output.tokens);
+        rendered.noref = output
+            .noref
+            .iter()
+            .map(|&(token, on)| {
+                let offset = rendered
+                    .origins
+                    .origins
+                    .get(token)
+                    .map_or(rendered.text.len(), |(start, _)| *start);
+                (offset, on)
+            })
+            .collect();
+        out.files.push(rendered);
     }
     out
 }

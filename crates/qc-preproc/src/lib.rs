@@ -87,6 +87,9 @@ pub struct FileOutput {
     pub tokens: Vec<PpToken>,
     /// Lexical and preprocessor diagnostics.
     pub diagnostics: Vec<Diagnostic>,
+    /// In an FTEQCC dialect, each `#pragma noref N` in the file: the index of the first token
+    /// after it, and whether the definitions from there on are `noref` (FTEF-12.6).
+    pub noref: Vec<(usize, bool)>,
 }
 
 #[derive(Debug)]
@@ -469,7 +472,14 @@ impl<L: Loader> Preprocessor<L> {
                 );
             }
         }
+        let fte = self.dialect.has_fteqcc_extensions();
         for cond in cursor.conds {
+            // FTEF-14.10: FTEQCC reports a block left open only while it skips a side of it
+            // ("#if with no endif" in `QCC_PR_FalsePreProcessorIf`); a taken side open at the
+            // end of the file is closed without a word.
+            if fte && cond.value && cond.parent {
+                continue;
+            }
             let span = FileSpan {
                 file: cursor.file,
                 span: cond.opened,
@@ -571,7 +581,19 @@ impl<L: Loader> Preprocessor<L> {
             // progs output (FTE-16.3). In an FTEQCC dialect it is accepted and ignored,
             // including the rerelease's `#pragma warning disable/enable F317` (FTE-16.1); in
             // the vanilla dialect it stays an unknown directive (QC-9.9).
-            "pragma" if fte => {}
+            "pragma" if fte => {
+                // FTEF-12.6: `#pragma noref N` sets whether the definitions after it are
+                // `noref`.
+                if operand == Some("noref")
+                    && let Some(Token {
+                        kind: TokenKind::Float(value),
+                        ..
+                    }) = line.get(3)
+                {
+                    let at = run.out.tokens.len();
+                    run.out.noref.push((at, *value != 0.0));
+                }
+            }
             _ => {
                 if !(fte && self.fteqcc_directive(run, file, name, line, whole)) {
                     run.report(Code::E0108, format!("unknown directive #{name}"), at(whole));

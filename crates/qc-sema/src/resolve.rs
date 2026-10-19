@@ -90,7 +90,7 @@ pub struct ResolveOptions {
 /// diagnostics.
 #[must_use]
 pub fn resolve_module(files: &[FileDecls], options: ResolveOptions) -> ModuleIndex {
-    resolve_mapped(files, &[], options)
+    resolve_mapped(files, &[], &[], options)
 }
 
 /// A function body waiting to be resolved: its file, its function and its class.
@@ -103,6 +103,7 @@ type Pending<'a> = (FileId, DefId, Option<DefId>, &'a RawBody);
 pub(crate) fn resolve_mapped(
     files: &[FileDecls],
     maps: &[&OriginMap],
+    noref: &[&[(usize, bool)]],
     options: ResolveOptions,
 ) -> ModuleIndex {
     let fteqcc = options.dialect.has_fteqcc_extensions();
@@ -119,15 +120,34 @@ pub(crate) fn resolve_mapped(
         classes: HashMap::new(),
         class_names: HashMap::new(),
         any_member: HashMap::new(),
+        redefinable: HashSet::new(),
+        unused: HashSet::new(),
     };
     // FTE-22.3: with autoprototyping FTEQCC's first pass reads only the definitions, so the
     // second, which compiles the bodies, finds every top-level name already declared.
     let defer = fteqcc && options.autoproto;
     let mut bodies: Vec<Pending<'_>> = Vec::new();
+    // FTEF-12.6: `#pragma noref` holds from where it stands to the next one, across files.
+    let mut noref_on = false;
     for (index, file) in files.iter().enumerate() {
         let file_id = FileId(index);
+        let events = noref.get(index).copied().unwrap_or_default();
+        let start = noref_on;
+        if let Some(&(_, last)) = events.last() {
+            noref_on = last;
+        }
         for decl in &file.decls {
+            let pragma = events
+                .iter()
+                .take_while(|(at, _)| *at <= decl.span.start)
+                .last()
+                .map_or(start, |&(_, on)| on);
             let pending = r.declare_top_level(file_id, decl);
+            if (decl.noref || pragma)
+                && let Some(def) = r.lookup_global(&decl.name)
+            {
+                r.unused.insert(def);
+            }
             r.resolve_uses(file_id, None, &decl.uses);
             if defer {
                 bodies.extend(pending);
@@ -174,6 +194,12 @@ struct Resolver<'a> {
     /// The first member of any class with each name, for an access whose base's class is not
     /// known (FTEF-17.3).
     any_member: HashMap<String, DefId>,
+    /// The definitions whose last initialiser was `wrap`, `weak` or `accumulate`, which the
+    /// next may replace (FTEF-15.5).
+    redefinable: HashSet<DefId>,
+    /// The definitions marked `noref`, by qualifier or `#pragma noref`, whose initialiser a
+    /// later one may replace (FTEF-17.8).
+    unused: HashSet<DefId>,
 }
 
 /// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
@@ -200,10 +226,26 @@ fn component_type(ty: &Type) -> Option<Type> {
 }
 
 /// Words FTEQCC reads as part of an expression rather than as names a program defines:
-/// `this` and `super` in a member function, and the `sizeof` and `_length` intrinsics
-/// (FTEF-17.4).
+/// `this` and `super` in a member function, `prior` in a `__wrap` function, and the
+/// intrinsics `QCC_PR_ParseValue` and `QCC_PR_RefTerm` know (FTEF-17.4).
 fn is_intrinsic(name: &str) -> bool {
-    matches!(name, "this" | "super" | "sizeof" | "_length")
+    matches!(
+        name,
+        "this"
+            | "super"
+            | "prior"
+            | "sizeof"
+            | "_length"
+            | "nil"
+            | "randomv"
+            | "alloca"
+            | "entnum"
+            | "autocvar"
+            | "used_model"
+            | "used_sound"
+            | "va_arg"
+            | "_"
+    )
 }
 
 /// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.2): `None`
@@ -271,6 +313,7 @@ impl<'a> Resolver<'a> {
             owner: None,
             initialized: init.is_some(),
             member_of: None,
+            generated: false,
         });
         if let Some(Some(literal)) = init {
             self.literals.insert(id, literal.clone());
@@ -320,8 +363,11 @@ impl<'a> Resolver<'a> {
         };
         if def.initialized {
             // FTE-22.2: FTEQCC compares a second initialiser with the first and accepts it
-            // when the two are the same value.
-            let same = self.fteqcc && literal.is_some() && literal == self.literals.get(&existing);
+            // when the two are the same value; FTEF-17.8: it does not compare them when the
+            // first is `noref`.
+            let same = self.fteqcc
+                && ((literal.is_some() && literal == self.literals.get(&existing))
+                    || self.unused.contains(&existing));
             if !same {
                 // QCD-3.6: initialising a name that is already initialised.
                 self.index.diagnostics.push(diag(
@@ -360,9 +406,35 @@ impl<'a> Resolver<'a> {
         {
             return self.define_member(file, scope, decl, location);
         }
-        let kind = top_level_kind(&decl.ty);
-        let init = decl.initialized.then_some(decl.literal.as_ref());
+        // FTE-11, FTEF-15.5: a `var` of function type holds a function; it defines none.
+        let kind = if decl.variable && decl.ty.is_function() {
+            DefKind::Global
+        } else {
+            top_level_kind(&decl.ty)
+        };
+        let existing = self.lookup_global(&decl.name);
+        // FTEF-15.5: a definition marked `wrap`, `weak` or `accumulate`, or one after such a
+        // definition, is given again without "NAME redeclared"; an `extern` one has its body
+        // elsewhere.
+        let replaces = decl.redefinable || existing.is_some_and(|d| self.redefinable.contains(&d));
+        let initialized = decl.initialized || decl.external;
+        let init = if replaces && existing.is_some() {
+            None
+        } else {
+            initialized.then_some(decl.literal.as_ref())
+        };
         let def = self.declare_global(&decl.name, &decl.ty, kind, location, init);
+        if replaces
+            && initialized
+            && let Some(d) = self.index.defs.get_mut(def.0)
+        {
+            d.initialized = true;
+        }
+        if decl.redefinable {
+            self.redefinable.insert(def);
+        } else if decl.initialized {
+            self.redefinable.remove(&def);
+        }
         if let Some((next_name, next_span)) = &decl.next_think {
             self.declare_next_think(file, next_name, *next_span);
         }
@@ -380,7 +452,8 @@ impl<'a> Resolver<'a> {
             .def(def)
             .map(|d| d.name.clone())
             .unwrap_or_default();
-        self.class_names.entry(name).or_insert(def);
+        self.class_names.entry(name.clone()).or_insert(def);
+        self.declare_spawnfunc(def, &name);
         let info = self.classes.entry(def).or_insert_with(|| ClassInfo {
             parent: None,
             members: HashMap::new(),
@@ -416,6 +489,7 @@ impl<'a> Resolver<'a> {
                     owner: None,
                     initialized: member.initialized,
                     member_of: Some(def),
+                    generated: false,
                 });
                 if let Some(info) = self.classes.get_mut(&def) {
                     info.members.insert(member.name.clone(), id);
@@ -428,6 +502,33 @@ impl<'a> Resolver<'a> {
             }
         }
         pending
+    }
+
+    /// FTEF-9.5: every class defines `spawnfunc_Name`, so maps can spawn it; FTEQCC writes its
+    /// body when the program writes none, so it is never undefined.
+    fn declare_spawnfunc(&mut self, class: DefId, name: &str) {
+        let spawnfunc = format!("spawnfunc_{name}");
+        if self.lookup_global(&spawnfunc).is_some() {
+            return;
+        }
+        let Some(location) = self.index.def(class).map(|d| d.location) else {
+            return;
+        };
+        let ty = Type::Function(Rc::new(FunctionType {
+            ret: Type::Simple(SimpleType::Void),
+            params: Vec::new(),
+            variadic: false,
+        }));
+        self.push_def(Definition {
+            name: spawnfunc,
+            ty,
+            kind: DefKind::Function,
+            location,
+            owner: None,
+            initialized: false,
+            member_of: None,
+            generated: true,
+        });
     }
 
     /// An FTEQCC `Class::member` definition (FTEF-17.2): it defines the member the class or
@@ -479,6 +580,7 @@ impl<'a> Resolver<'a> {
                     owner: None,
                     initialized: decl.initialized,
                     member_of: Some(class),
+                    generated: false,
                 });
                 if let Some(info) = self.classes.get_mut(&class) {
                     info.members.insert(decl.name.clone(), id);
@@ -778,6 +880,7 @@ impl<'a> Resolver<'a> {
             owner: Some(scope.owner),
             initialized: false,
             member_of: None,
+            generated: false,
         });
         // QC-11.7: a new vector local or parameter has its components too.
         if let Some(component) = component_type(ty) {
@@ -822,10 +925,19 @@ impl<'a> Resolver<'a> {
     }
 
     /// QC-11.8, QCD-3.11: every global function must be defined; report those that are not.
+    /// Under FTEQCC only one the module refers to is reported (FTEF-17.7): FTEQCC skips an
+    /// unreferenced one marked `noref`, which this model does not follow.
     fn check_undefined_functions(&mut self) {
+        let used: HashSet<DefId> = self.index.refs.iter().map(|r| r.def).collect();
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
-        for def in &self.index.defs {
-            if def.kind == DefKind::Function && !def.initialized && def.member_of.is_none() {
+        for (index, def) in self.index.defs.iter().enumerate() {
+            let referenced = !self.fteqcc || used.contains(&DefId(index));
+            if def.kind == DefKind::Function
+                && !def.initialized
+                && !def.generated
+                && def.member_of.is_none()
+                && referenced
+            {
                 undefined.push(diag(
                     Code::E0211,
                     def.location,

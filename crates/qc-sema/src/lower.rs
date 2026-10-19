@@ -49,6 +49,16 @@ pub struct RawDecl {
     /// Whether the name is a type's: a class, struct, union, typedef, enum or accessor, which
     /// may be declared more than once (FTEF-7.2).
     pub type_name: bool,
+    /// Whether an FTEQCC `wrap`, `weak` or `accumulate` qualifier lets the definition be given
+    /// again (FTEF-15.5).
+    pub redefinable: bool,
+    /// Whether an FTEQCC `extern` qualifier says the body is elsewhere (FTEF-15.5).
+    pub external: bool,
+    /// Whether a `var` qualifier makes a function-typed name a variable that holds a
+    /// function, not a function to define (FTE-11, FTEF-15.5).
+    pub variable: bool,
+    /// Whether a `noref` or `unused` qualifier marks it (FTEF-17.8).
+    pub noref: bool,
 }
 
 impl RawDecl {
@@ -67,6 +77,10 @@ impl RawDecl {
             scope: None,
             class: None,
             type_name: false,
+            redefinable: false,
+            external: false,
+            variable: false,
+            noref: false,
         }
     }
 
@@ -126,11 +140,34 @@ pub enum LiteralValue {
     Vector([u32; 3]),
     /// A string literal as written, quotes included (QC-6).
     String(String),
+    /// Under FTEQCC, any other initialiser, as its tokens' text: two written the same way
+    /// have the same value (FTEF-17.5).
+    Text(String),
 }
 
 impl LiteralValue {
+    /// The value of an initialiser under FTEQCC: a literal's, or else its text (FTEF-17.5).
+    fn of_fteqcc(init: Option<&ast::Initializer>) -> Option<Self> {
+        let init = init?;
+        match init {
+            // A body is a definition, never a value two may share.
+            ast::Initializer::Body(_) => None,
+            ast::Initializer::Builtin(_)
+            | ast::Initializer::Aggregate(_)
+            | ast::Initializer::Value(_) => {
+                Self::of(Some(init)).or_else(|| Some(Self::Text(token_text(init.syntax()))))
+            }
+        }
+    }
+
     /// The value of a literal initialiser, if `init` is one.
     fn of(init: Option<&ast::Initializer>) -> Option<Self> {
+        if let Some(ast::Initializer::Builtin(builtin)) = init {
+            // FTEF-17.5: a builtin is the same value as another of its number.
+            return builtin
+                .number()
+                .map(|t| Self::Text(format!("#{}", atof(t.text_lossless().as_bytes()))));
+        }
         let Some(ast::Initializer::Value(ast::Expr::Literal(literal))) = init else {
             return None;
         };
@@ -297,12 +334,18 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
             }
             SyntaxKind::StructDecl => {
                 if let Some(st) = ast::StructDecl::cast(node) {
-                    if let Some(token) = st.name() {
-                        out.decls.push(RawDecl::type_name(&token));
-                    }
+                    let base = match st.name() {
+                        Some(token) => {
+                            out.decls.push(RawDecl::type_name(&token));
+                            Type::Named(std::rc::Rc::from(token.text_lossless().as_str()))
+                        }
+                        None => Type::Unknown,
+                    };
                     for field in st.fields() {
                         record_fields(&field, &mut out.members);
                     }
+                    // FTEF-6.1: `struct { ... } a[4], *p;` declares variables too.
+                    lower_declarators(st.declarators(), &base, None, fte, &mut out.decls);
                 }
             }
             SyntaxKind::AccessorDecl => {
@@ -326,14 +369,27 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
         let Some(token) = node.child_tokens().find(|t| t.kind() == SyntaxKind::Name) else {
             continue;
         };
-        let mut decl = RawDecl::new(
+        // FTEF-17.5: FTEQCC makes each enum name a new constant with `QCC_PR_DummyDef`, which
+        // looks for no earlier definition, so an enum declared again is no redeclaration; the
+        // name is kept as declared, not initialised.
+        out.push(RawDecl::new(
             token.text_lossless(),
             token.span(),
             Type::Simple(SimpleType::Float),
-        );
-        decl.initialized = true;
-        out.push(decl);
+        ));
     }
+}
+
+/// The text of a node's tokens, trivia left out, joined by a space.
+fn token_text(node: &SyntaxNode) -> String {
+    let words: Vec<String> = node
+        .descendants_with_tokens()
+        .filter_map(|e| match e {
+            qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t.text_lossless()),
+            qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+        })
+        .collect();
+    words.join(" ")
 }
 
 /// The names of the fields of a struct node, recorded as member names (FTE-14.1, FTEF-6).
@@ -358,17 +414,7 @@ fn lower_typedef(td: &ast::TypedefDecl, out: &mut FileDecls) {
         record_fields(&field, &mut out.members);
     }
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
-        for node in en.enumerators() {
-            if let Some(token) = node.child_tokens().find(|t| t.kind() == SyntaxKind::Name) {
-                let mut decl = RawDecl::new(
-                    token.text_lossless(),
-                    token.span(),
-                    Type::Simple(SimpleType::Float),
-                );
-                decl.initialized = true;
-                out.decls.push(decl);
-            }
-        }
+        lower_enum(&en, &mut out.decls);
     }
     let Some(token) = td.name() else {
         return;
@@ -518,11 +564,7 @@ fn lower_accessor_body(
     fte: bool,
     out: &mut Vec<RawDecl>,
 ) {
-    let set = first_word(member.syntax()) == "set"
-        || member
-            .syntax()
-            .child_tokens()
-            .any(|t| t.text_lossless() == "set");
+    let set = member.is_set();
     let field = member
         .name()
         .map_or_else(String::new, |t| t.text_lossless());
@@ -560,21 +602,62 @@ fn lower_accessor_body(
 }
 
 fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>) {
+    // FTEF-8.2: an enum written as a type declares its names first.
+    for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
+        lower_enum(&en, out);
+    }
     let base = decl.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
-    for declarator in decl.declarators() {
+    let first = out.len();
+    lower_declarators(decl.declarators(), &base, decl.ty(), fte, out);
+    // FTEF-15.5: `wrap`, `weak` and `accumulate` let a definition be given again; `extern`
+    // puts the body elsewhere.
+    let words = qualifiers(decl);
+    let has = |word: &str| words.iter().any(|w| w.trim_start_matches('_') == word);
+    let redefinable = has("wrap") || has("weak") || has("accumulate");
+    let external = has("extern");
+    let variable = has("var");
+    let noref = has("noref") || has("unused");
+    for raw in out.iter_mut().skip(first) {
+        raw.redefinable = redefinable;
+        raw.external = external;
+        raw.variable = variable;
+        raw.noref = noref;
+    }
+}
+
+/// The names `declarators` declare with the type `base`, whose syntax is `ty` when it has
+/// default values to read.
+fn lower_declarators(
+    declarators: impl Iterator<Item = ast::Declarator>,
+    base: &Type,
+    ty_node: Option<ast::Type>,
+    fte: bool,
+    out: &mut Vec<RawDecl>,
+) {
+    for declarator in declarators {
         let Some(name_token) = declarator.name() else {
             continue;
         };
         let name = name_token.text_lossless();
         let span = name_token.span();
+        // FTEF-4.1: `T *name` is a pointer.
+        let mut base = base.clone();
+        for _ in 0..declarator.pointer_depth() {
+            base = Type::Pointer(std::rc::Rc::new(base));
+        }
+        let base = &base;
         // FTE-17.1: an FTEQCC C-style declarator `rettype name(params)` has its own
         // `ParamList`; its type is the function type of the return type and those
         // parameters, so it is the type a vanilla `rettype(params) name` declares.
-        let ty = c_style_function_type(&base, &declarator).unwrap_or_else(|| base.clone());
+        let ty = c_style_function_type(base, &declarator).unwrap_or_else(|| base.clone());
         let init = declarator.initializer();
         let mut raw = RawDecl::new(name, span, ty.clone());
         raw.initialized = init.is_some();
-        raw.literal = LiteralValue::of(init.as_ref());
+        raw.literal = if fte {
+            LiteralValue::of_fteqcc(init.as_ref())
+        } else {
+            LiteralValue::of(init.as_ref())
+        };
         raw.scope = declarator.scope().map(|t| t.text_lossless());
         match &init {
             Some(ast::Initializer::Body(fn_body)) => {
@@ -591,9 +674,9 @@ fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>)
             Some(ast::Initializer::Builtin(_)) | None => {}
         }
         // FTE-18.2: a parameter's default value may name definitions too.
-        for list in decl
-            .ty()
-            .and_then(|t| function_params(&t))
+        for list in ty_node
+            .as_ref()
+            .and_then(function_params)
             .into_iter()
             .chain(declarator.params())
         {
@@ -893,11 +976,23 @@ fn lower_expr(expr: &ast::Expr, fte: bool, uses: &mut Vec<RawUse>) {
             }
         }
         ast::Expr::Call(call) => {
-            if let Some(callee) = call.callee() {
-                lower_expr(&callee, fte, uses);
+            let callee = call.callee();
+            if let Some(callee) = &callee {
+                lower_expr(callee, fte, uses);
             }
+            // FTEF-17.4: `autocvar(name, default)` names the cvar, which is no value, and
+            // `sizeof` may take a type word.
+            let callee_name = match &callee {
+                Some(ast::Expr::Name(n)) if fte => n.name().map(|t| t.text_lossless()),
+                _ => None,
+            };
+            let skip = usize::from(callee_name.as_deref() == Some("autocvar"));
+            let sizeof = matches!(callee_name.as_deref(), Some("sizeof" | "_length"));
             if let Some(args) = call.args() {
-                for arg in args.args() {
+                for arg in args.args().skip(skip) {
+                    if sizeof && is_type_word(&arg) {
+                        continue;
+                    }
                     lower_expr(&arg, fte, uses);
                 }
             }
@@ -957,6 +1052,36 @@ fn lower_expr(expr: &ast::Expr, fte: bool, uses: &mut Vec<RawUse>) {
             }
         }
     }
+}
+
+/// Whether an expression is a bare type word, as `sizeof(int)` takes: a vanilla type or one of
+/// FTEQCC's C type words (FTEF-2).
+fn is_type_word(expr: &ast::Expr) -> bool {
+    let ast::Expr::Name(name) = expr else {
+        return false;
+    };
+    name.name().is_some_and(|t| {
+        matches!(
+            t.text_lossless().trim_start_matches("__"),
+            "void"
+                | "float"
+                | "vector"
+                | "string"
+                | "entity"
+                | "int"
+                | "integer"
+                | "uint"
+                | "int64"
+                | "uint64"
+                | "double"
+                | "variant"
+                | "long"
+                | "short"
+                | "char"
+                | "unsigned"
+                | "signed"
+        )
+    })
 }
 
 /// The kind a top-level raw declaration resolves to, from its type (QC-11.8, QC-11.9).

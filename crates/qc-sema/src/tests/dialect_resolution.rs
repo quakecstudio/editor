@@ -85,8 +85,8 @@ fn c_style_definitions_match_vanilla_prototypes() {
     assert!(lights[0].initialized);
     assert_eq!(lights[0].kind, DefKind::Function);
     // A C-style declarator of another type is a type mismatch, as in vanilla (QC-11.5), and
-    // leaves the prototype undefined (QC-11.8).
-    let mismatch = fte_index_of("void() h;\nvoid h(float x) { };\n");
+    // leaves the prototype undefined (QC-11.8), which a call makes an error (FTEF-17.7).
+    let mismatch = fte_index_of("void() h;\nvoid h(float x) { };\nvoid() k = { h(); };\n");
     assert_eq!(error_codes(&mismatch), [Code::E0205, Code::E0211]);
 }
 

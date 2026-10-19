@@ -483,8 +483,8 @@ impl<'a> Parser<'a> {
                 self.typedef_decl();
             } else if self.fteqcc() && (self.at_word("enum") || self.at_word("enumflags")) {
                 self.enum_decl();
-            } else if self.fteqcc() && self.at_word("class") {
-                // FTEF-9.1: a class, or its forward declaration.
+            } else if self.fteqcc() && self.at_class() {
+                // FTEF-9.1: a class, or its forward declaration, after any qualifiers.
                 self.class_decl();
             } else if self.fteqcc() && self.at_word("accessor") {
                 // FTEF-10.1: an accessor type.
@@ -752,6 +752,10 @@ impl<'a> Parser<'a> {
     /// FTEQCC declaration may leave out (FTE-17.3).
     fn declarator(&mut self, ty: TypeShape) -> bool {
         self.start_node(K::Declarator);
+        // FTEF-4.1: `T a, *b` declares `b` a pointer.
+        while self.fteqcc() && self.at(K::Star) {
+            self.bump();
+        }
         self.name();
         // FTEF-9.4: `Class::member` names a member a class declares.
         while self.fteqcc() && self.at(K::ColonColon) {
@@ -848,7 +852,8 @@ impl<'a> Parser<'a> {
             return;
         }
         let start = self.current_span().start;
-        if self.at(K::LBrace) || self.at(K::LBracket) {
+        let state = self.at(K::LBracket) && !self.fteqcc();
+        if self.at(K::LBrace) || state {
             self.function_body();
         } else if self.at(K::Hash) {
             self.builtin();
@@ -879,6 +884,16 @@ impl<'a> Parser<'a> {
         self.start_node(K::AggregateInit);
         self.bump_as(K::LBrace);
         while !self.at(K::RBrace) && self.current().is_some() {
+            if self.fteqcc()
+                && self.at(K::Dot)
+                && self.nth(1).is_some_and(|t| t.kind == K::Name)
+                && self.nth(2).is_some_and(|t| t.kind == K::Eq)
+            {
+                // FTEF-16.11: `.member = value` names the member it initialises.
+                self.bump();
+                self.bump();
+                self.bump();
+            }
             if self.at(K::LBrace) {
                 self.aggregate_init();
             } else {
@@ -1142,6 +1157,11 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.muted = false;
+            if self.fteqcc() && (self.at_word("case") || self.at_word("default")) {
+                // FTEF-16.12: a label of the enclosing `switch` may stand in a nested block.
+                self.case_label();
+                continue;
+            }
             let before = self.pos;
             self.statement();
             if self.pos == before {
@@ -1253,6 +1273,16 @@ impl<'a> Parser<'a> {
             self.for_local_decl(keyword);
         } else {
             self.expression();
+            // FTEF-16.9: FTEQCC's `for` clauses may hold several expressions, `i = 3, j = 0`,
+            // and the first a declaration after them, `v = 0, int i = 1`.
+            while self.fteqcc() && self.at(K::Comma) {
+                self.bump();
+                if init && self.fte_looks_like_local() {
+                    self.for_local_decl(false);
+                    break;
+                }
+                self.expression();
+            }
         }
         self.finish_node();
     }
@@ -1501,7 +1531,10 @@ impl<'a> Parser<'a> {
                 self.bump_error();
                 break;
             }
-            if assign && !lhs.assignable {
+            // FTEF-16.10: FTEQCC also assigns to what a call returns, as a chained
+            // `a = f() = b` does.
+            let call = self.fteqcc() && lhs.kind == K::CallExpr;
+            if assign && !lhs.assignable && !call {
                 self.error_at(Code::E0508, "cannot assign to this expression", lhs.span);
             }
             self.builder.start_node_at(checkpoint, K::BinaryExpr);
@@ -1746,6 +1779,13 @@ impl<'a> Parser<'a> {
                     self.bump();
                 }
                 (K::Literal, false)
+            }
+            // FTEF-16.4: `::name`, a name of the global scope.
+            K::ColonColon if self.fteqcc() && self.nth(1).is_some_and(|t| t.kind == K::Name) => {
+                self.start_node(K::NameRef);
+                self.bump();
+                self.bump();
+                (K::NameRef, true)
             }
             // FTEF-16.4: `Class::member` and `super::member`.
             K::Name if self.fteqcc() => {
