@@ -593,6 +593,69 @@ fn frames_per_source_file() {
     );
 }
 
+/// Preprocesses `compile` from `files` under the FTEQCC dialect; with `autoproto`, all of them
+/// once first, then again after [`Preprocessor::restart`], returning the second pass.
+fn fte_project(
+    files: &[(&str, &str)],
+    compile: &[&str],
+    autoproto: bool,
+) -> (Preprocessor<MemoryLoader>, Vec<FileOutput>) {
+    let mut loader = MemoryLoader::new();
+    for (path, text) in files {
+        loader.insert(*path, text.as_bytes());
+    }
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let run = |pp: &mut Preprocessor<MemoryLoader>| -> Vec<FileOutput> {
+        compile
+            .iter()
+            .map(|p| pp.preprocess_file(Path::new(p)).unwrap())
+            .collect()
+    };
+    if autoproto {
+        run(&mut pp);
+        pp.restart();
+    }
+    let outputs = run(&mut pp);
+    (pp, outputs)
+}
+
+// spec FTE-22.4: FTEQCC frame macros carry to later files; the numbering restarts in each
+// file, a name another file defined takes the new value, and one the same file defined
+// twice keeps its first.
+#[test]
+fn fteqcc_frames_carry_between_files() {
+    let files = [
+        ("a.qc", "$frame a b\nx = $b;"),
+        ("b.qc", "x = $a; y = $b;\n$frame z b b\nx = $b; y = $z;"),
+    ];
+    let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(tokens(&outputs[0]), "x = 1 ;");
+    assert_eq!(tokens(&outputs[1]), "x = 0 ; y = 1 ; x = 1 ; y = 0 ;");
+    assert_eq!(diagnostics(&pp, &outputs[1]), "");
+    // Vanilla clears the list per file (QC-8.3).
+    let (_, vanilla) = project(&ProjectSpec {
+        files: &files,
+        compile: &["a.qc", "b.qc"],
+    });
+    assert_eq!(codes(&vanilla[1]), [Code::E0106, Code::E0106]);
+}
+
+// spec FTE-22.4: after the first autoprototyping pass its frame macros are still defined, so
+// a file may use a frame a later file defines.
+// spec FTE-22.3: the second pass forgets the first pass's `#define`s.
+#[test]
+fn autoprototyping_keeps_frames_and_forgets_macros() {
+    let files = [
+        ("a.qc", "x = $CORPSEFRAME;\n#ifdef LATER\nlater\n#endif\n"),
+        ("b.qc", "$frame idle CORPSEFRAME\n#define LATER\n"),
+    ];
+    let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], true);
+    assert_eq!(tokens(&outputs[0]), "x = 1 ;");
+    assert_eq!(diagnostics(&pp, &outputs[0]), "");
+    let (_, single) = fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(codes(&single[0]), [Code::E0106]);
+}
+
 // spec QC-8.5, QCD-2.6: a reference is the frame's index; an unknown one is an error
 #[test]
 fn frame_references() {

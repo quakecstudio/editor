@@ -152,6 +152,8 @@ impl Cursor {
 /// The state of preprocessing one source file of `progs.src`.
 #[derive(Debug, Default)]
 struct Run {
+    /// The source file of `progs.src` being preprocessed.
+    path: PathBuf,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
     frames: Vec<String>,
@@ -169,6 +171,14 @@ impl Run {
     }
 }
 
+/// A frame macro FTEQCC keeps from file to file (FTE-22.4): its value and the source file of
+/// `progs.src` that last defined it.
+#[derive(Debug)]
+struct CarriedFrame {
+    value: u16,
+    file: PathBuf,
+}
+
 /// The preprocessor for one `progs.src`: macros run on from one file to the next (QC-9.8).
 #[derive(Debug)]
 pub struct Preprocessor<L> {
@@ -177,6 +187,8 @@ pub struct Preprocessor<L> {
     sources: SourceMap,
     macros: HashMap<String, Rc<Macro>>,
     expansions: Vec<Expansion>,
+    /// In an FTEQCC dialect, every frame macro defined so far (FTE-22.4).
+    carried_frames: HashMap<String, CarriedFrame>,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -212,7 +224,16 @@ impl<L: Loader> Preprocessor<L> {
             sources: SourceMap::default(),
             macros: HashMap::new(),
             expansions: Vec::new(),
+            carried_frames: HashMap::new(),
         }
+    }
+
+    /// Starts FTEQCC's second autoprototyping pass, `-Fautoproto` (FTE-22.3, FTE-22.4): every
+    /// `#define` is forgotten, as FTEQCC's `QCC_SetDefaultProperties` makes a new macro table
+    /// between the passes, and the frame macros of the first pass are kept, since nothing
+    /// between the passes clears them. The files are then preprocessed again in order.
+    pub fn restart(&mut self) {
+        self.macros.clear();
     }
 
     /// Sets the dialect this preprocessor accepts (PRJ-2.2). In an FTEQCC dialect the
@@ -261,7 +282,8 @@ impl<L: Loader> Preprocessor<L> {
     /// Preprocesses one source file of `progs.src`, after the ones before it (QC-23.3).
     ///
     /// Implements QC-9 and the frame macro rules of QC-8: the frame list starts empty for
-    /// each call (QC-8.3), macros carry over (QC-9.8).
+    /// each call (QC-8.3), macros carry over (QC-9.8). In an FTEQCC dialect the frame macros
+    /// carry over too (FTE-22.4).
     ///
     /// # Errors
     ///
@@ -271,12 +293,15 @@ impl<L: Loader> Preprocessor<L> {
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
         let file = self.sources.add(path.clone(), bytes);
-        let mut run = Run::default();
+        let mut run = Run {
+            path: path.clone(),
+            ..Run::default()
+        };
         let cursor = self.cursor(file, path);
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
             if let Some(item) = self.try_expand(&mut run, item) {
-                Self::emit(&mut run, item.tok);
+                self.emit(&mut run, item.tok);
             }
         }
         Ok(run.out)
@@ -731,13 +756,39 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// Adds a token to the output, applying the frame macros of QC-8.
-    fn emit(run: &mut Run, mut tok: PpToken) {
+    /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name an
+    /// earlier file defined takes the new value, and a name this file already defined keeps
+    /// its first value (QC-8.7).
+    fn carry_frame(&mut self, file: &Path, name: &str, value: u16) {
+        match self.carried_frames.get_mut(name) {
+            Some(frame) if frame.file == file => {}
+            Some(frame) => {
+                frame.value = value;
+                file.clone_into(&mut frame.file);
+            }
+            None => {
+                let frame = CarriedFrame {
+                    value,
+                    file: file.to_path_buf(),
+                };
+                self.carried_frames.insert(name.to_owned(), frame);
+            }
+        }
+    }
+
+    /// Adds a token to the output, applying the frame macros of QC-8, and in an FTEQCC
+    /// dialect those carried from earlier files (FTE-22.4).
+    fn emit(&mut self, run: &mut Run, mut tok: PpToken) {
+        let carry = self.dialect.has_fteqcc_extensions();
         match &tok.kind {
             TokenKind::Frames(names) => {
                 for frame in names {
                     if run.frames.len() < LIMIT_QCC_MAX_FRAMES {
+                        let value = u16::try_from(run.frames.len()).unwrap_or(u16::MAX);
                         run.frames.push(frame.name.clone());
+                        if carry {
+                            self.carry_frame(&run.path, &frame.name, value);
+                        }
                     } else if !run.frames_full {
                         run.frames_full = true;
                         let span = FileSpan {
@@ -750,9 +801,14 @@ impl<L: Loader> Preprocessor<L> {
                 return;
             }
             TokenKind::FrameRef(word) => {
-                if let Some(index) = run.frames.iter().position(|f| f == word) {
-                    let index = u16::try_from(index).unwrap_or(u16::MAX);
-                    tok.kind = TokenKind::Float(f32::from(index));
+                let value = if carry {
+                    self.carried_frames.get(word).map(|f| f.value)
+                } else {
+                    let index = run.frames.iter().position(|f| f == word);
+                    index.map(|i| u16::try_from(i).unwrap_or(u16::MAX))
+                };
+                if let Some(value) = value {
+                    tok.kind = TokenKind::Float(f32::from(value));
                 } else {
                     run.report(
                         Code::E0106,

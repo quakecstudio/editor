@@ -12,7 +12,9 @@ FTEQCC's; for vanilla code, where no line starts with `#` and a name, the only c
 macro resolution. `Preprocessor::with_dialect` selects the dialect: in an FTEQCC dialect the
 FTEQCC `#pragma` directive is accepted and produces no tokens (`dialect-fteqcc-rerelease.md`,
 FTE-16), including the rerelease's `#pragma warning disable/enable`; in the vanilla dialect it
-stays an unknown directive (QC-9.9).
+stays an unknown directive (QC-9.9). In an FTEQCC dialect frame macros also carry from one
+source file to the next, and `Preprocessor::restart` begins FTEQCC's second autoprototyping
+pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); the
