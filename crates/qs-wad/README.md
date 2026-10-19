@@ -10,8 +10,9 @@ and `MipTexHeader` decode the lumps the engine and map tools read. Ported from
 [`docs/porting.md`](../../docs/porting.md).
 
 - **Layer:** L0 formats, with no dependencies. `qs-vfs` finds `gfx.wad` with it.
-- **Spec sections:** WAD-1 to WAD-4 in [`wad2.md`](../../docs/spec/wad2.md). WAD-1.4 (finding
-  `gfx.wad` on the search path) is the filesystem's and is in `qs-vfs`.
+- **Spec sections:** WAD-1 to WAD-4 in [`wad2.md`](../../docs/spec/wad2.md).
+- **Not this crate's:** WAD-1.4 (finding `gfx.wad` on the search path), the filesystem's, in
+  `qs-vfs`.
 - **Shipped:** yes.
 
 ## Invariants

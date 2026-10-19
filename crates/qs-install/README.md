@@ -19,8 +19,8 @@ puts the files, and how to get them onto a Mac, is [`docs/game-data.md`](../../d
   host filesystem and `qs-pak` to read an archive no published checksum matches; `serde_json`
   reads Heroic's list of installed games, and on Windows the `junction` crate (MIT) makes
   junctions, so no `unsafe` code is needed. The Windows registry is read with `reg query`.
-- **Spec sections:** FS-6 in [`filesystem.md`](../../docs/spec/filesystem.md), with the
-  layouts of FS-5.1 and the name matching of FS-3.7.
+- **Spec sections:** FS-6 in [`filesystem.md`](../../docs/spec/filesystem.md).
+- **Spec statements:** the layouts of FS-5.1 and the name matching of FS-3.7.
 - **Shipped:** yes.
 
 ## Tests

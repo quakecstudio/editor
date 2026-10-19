@@ -16,8 +16,8 @@ lengths or the number of archives (FS-3.9, FS-3.10). `-cachedir` is not implemen
 
 - **Layer:** L0 formats. It depends on `qs-pak` and `qs-wad`. Finding the user's install is
   [#43](https://github.com/quakecstudio/editor/issues/43).
-- **Spec sections:** FS-1 to FS-5 in [`filesystem.md`](../../docs/spec/filesystem.md),
-  PAK-1.4 in [`pak.md`](../../docs/spec/pak.md) and WAD-1.4 in
+- **Spec sections:** FS-1 to FS-5 in [`filesystem.md`](../../docs/spec/filesystem.md).
+- **Spec statements:** PAK-1.4 in [`pak.md`](../../docs/spec/pak.md) and WAD-1.4 in
   [`wad2.md`](../../docs/spec/wad2.md).
 - **Shipped:** yes.
 

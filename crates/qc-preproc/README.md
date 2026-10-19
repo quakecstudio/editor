@@ -30,12 +30,13 @@ argument, and the built-in constants such as `__NULL__`. A token `##` or `#` mad
 built-in's value, carries its text in `PpToken::spelling`.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
-- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14
-  in [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the `#if` expressions of PRJ-5.5
-  and PRJ-5.10 (`cond`); the directive codes QCD-8 of
+- **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in
+  [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md); the directive codes QCD-8 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); the loaders' case rules
   PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md). A readiness run attributes only
   these sections to the crate, and every active statement of each is cited by a test here.
+- **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`) in
+  [`project-file.md`](../../docs/spec/project-file.md).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes
   `qc-lexer` defines), QCD-2.8 and QCD-7.25 to QCD-7.27 (FTEQCC's frame macro diagnostics,
