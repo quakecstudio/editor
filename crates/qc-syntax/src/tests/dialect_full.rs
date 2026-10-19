@@ -254,7 +254,17 @@ fn enumflags_parse() {
     fte_ok("enumflags { A, B, C };\n");
     fte_ok("enumflags : int { A = 4, B };\n");
     fte_ok("float(optional enumflags:float{WP_A, WP_B} flags) whichpack;\n");
-    fte_ok("enum colour_e c;\n");
+}
+
+// spec FTEF-8.4: an `enum` or `enumflags` written as a type has its body; the enum is named by
+// its type name alone, so `enum colour_e c;` and `typedef enum colour_e C;` are errors
+#[test]
+fn an_enum_type_has_its_body() {
+    assert_eq!(fte_errors("enum colour_e c;\n"), [Code::E0204]);
+    assert_eq!(fte_errors("enumflags flags_e c;\n"), [Code::E0204]);
+    assert_eq!(fte_errors("typedef enum colour_e C;\n"), [Code::E0204]);
+    assert_eq!(fte_errors("enum colour_e { RED };\ncolour_e c;\n"), []);
+    assert_eq!(fte_errors("typedef enum colour_e { RED } C;\n"), []);
 }
 
 // spec FTEF-9.1: `class Name : Parent { ... };` and the forward `class Name;`, after any

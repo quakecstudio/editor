@@ -278,6 +278,14 @@ full dialect also uses `enumflags`.
   resolve as FTE-15.2 states. A bare `enum`'s increment-by-one semantics are FTE-15.1.
 - **FTEF-8.3** Codegen (later): each enum name is a folded constant and the enum contributes no
   global of its own (as FTE-15.3 for the subset); confirmed by L-01.
+- **FTEF-8.4** An `enum` or `enumflags` where a type belongs always has its body:
+  `QCC_PR_ParseType` sends both keywords to `QCC_PR_ParseEnum` (`else if
+  (QCC_PR_CheckKeyword(keyword_enum, "enum")) type = QCC_PR_ParseEnum(false);`), which reads an
+  optional `class`, a name or legacy base type and an optional `: type`, then
+  `QCC_PR_Expect("{");` on every path that has not already read the `{`
+  (`qcc_pr_comp.c`, `QCC_PR_ParseEnum`). So `enum colour_e c;` and `typedef enum colour_e C;`
+  are "expected {" errors; an enum is named elsewhere by its type name alone (FTE-15.4),
+  `colour_e c;`.
 
 ## FTEF-9 Classes
 
@@ -469,6 +477,11 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   holding its value (an integer rounded to the nearest float), and every character constant as
   a float holding its code: the literal's FTEQCC type (FTEF-3.1, FTEF-3.3) matters only to type
   checking and code generation, which are later (L-01).
+- **FTEF-13.6** A vector's components are read by `QCC_PR_LexFloat`, which takes the bytes of
+  a number and then skips one lowercase `f` only: `if (*pr_file_p == 'f') pr_file_p++;`
+  (`qcc_pr_lex.c`, `QCC_PR_LexFloat`). So `'1f 2f 3f'` is the vector `'1 2 3'`, and an `F`
+  after a component is no suffix: it is read as the next component, and the vector is bad
+  (QC-5.2).
 
 ## FTEF-14 Preprocessor directives and macros
 

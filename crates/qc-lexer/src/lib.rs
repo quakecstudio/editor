@@ -758,8 +758,9 @@ impl Lexer<'_> {
     }
 
     /// A number as `PR_LexNumber` reads it: the first byte whatever it is, then digits and
-    /// dots, converted with `atof` (QC-4.1, QC-5.1). In an FTEQCC dialect a trailing `f` or
-    /// `F` float suffix (`1.0f`, FTE-20.2) is part of the token but not of the value.
+    /// dots, converted with `atof` (QC-4.1, QC-5.1). In an FTEQCC dialect, where only a vector
+    /// component is read here, a trailing lowercase `f`, as `QCC_PR_LexFloat` skips it, is part
+    /// of the token but not of the value (FTEF-13.6).
     fn number(&mut self) -> f32 {
         let start = self.pos;
         self.bump(1);
@@ -771,7 +772,7 @@ impl Lexer<'_> {
         }
         let span = Span::new(start, self.pos);
         let value = atof(self.bytes(span));
-        if self.dialect.has_fteqcc_extensions() && matches!(self.peek(0), Some(b'f' | b'F')) {
+        if self.dialect.has_fteqcc_extensions() && self.peek(0) == Some(b'f') {
             self.bump(1);
         }
         self.check_length(self.pos.saturating_sub(start), span);

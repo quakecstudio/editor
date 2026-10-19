@@ -895,6 +895,24 @@ issues:
   - '`cargo xtask readiness spec` measures every section in a stated range and none the README names as another crate''s, with a test of each form, and every crate it changes is re-measured and still meets the bar, or has a follow-up'
   verify:
   - cargo test -p xtask; a Readiness run's spec job for the affected crates
+- key: P2-59
+  title: Read vector suffixes and enum types as FTEQCC does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-55
+  deliverable:
+  - 'crates/qc-lexer: under the FTEQCC profile a vector component skips only a lowercase `f`, as `QCC_PR_LexFloat` does (`if (*pr_file_p == ''f'') pr_file_p++;`, qcc_pr_lex.c at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e); the lexer also skipped `F`. New statement FTEF-13.6'
+  - 'crates/qc-syntax: an `enum` or `enumflags` written as a type always has its body, since `QCC_PR_ParseEnum` ends in `QCC_PR_Expect("{")` on every path without one; the parser accepted `enum Name x;` as the enum by name. `typedef enum Name Alias;` stays the "expected {" error FTEQCC gives. New statement FTEF-8.4'
+  acceptance:
+  - '`''1f 2f 3f''` is a vector and `''1F 2 3''` a bad one under the FTEQCC profile; `enum colour_e c;`, `enumflags flags_e c;` and `typedef enum colour_e C;` are E0204 and `colour_e c;` after the enum declares; each with a test citing FTEF-13.6 or FTEF-8.4, and the FTEQCC corpus still resolves with zero errors'
+  verify:
+  - cargo test -p qc-lexer -p qc-syntax; corpus job
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1085,6 +1103,7 @@ issues:
   - P2-56
   - P2-57
   - P2-58
+  - P2-59
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
