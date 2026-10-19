@@ -191,10 +191,11 @@ groups:
     depends:
     - P2-29
     - P2-15
+    - P2-28
     - P1-R2
     - P0-24
     deliverable:
-    - 'docs/readiness/p2-r2.md following docs/readiness/_template.md, covering: P2-29, P2-15'
+    - 'docs/readiness/p2-r2.md following docs/readiness/_template.md, covering: P2-29, P2-15, P2-28'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
