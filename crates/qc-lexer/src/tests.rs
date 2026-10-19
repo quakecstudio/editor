@@ -41,6 +41,7 @@ fn snapshot(source: &[u8]) -> String {
                 let names: Vec<&str> = names.iter().map(|n| n.name.as_str()).collect();
                 format!("frames {}", names.join(" "))
             }
+            TokenKind::FrameCommand(command) => format!("command {command:?}"),
         };
         let start = if token.line_start { " ^" } else { "" };
         writeln!(
@@ -1122,4 +1123,183 @@ proptest! {
         let lfs = source[..at].iter().filter(|&&b| b == b'\n').count();
         prop_assert_eq!(index.line(at), u32::try_from(lfs + 1).unwrap_or(u32::MAX));
     }
+}
+
+fn fte_kinds(source: &[u8]) -> Vec<TokenKind> {
+    kinds_in(source, Dialect::Fteqcc)
+}
+
+fn fte_codes(source: &[u8]) -> Vec<Code> {
+    lex_with(source, Dialect::Fteqcc)
+        .diagnostics
+        .iter()
+        .map(|d| d.code)
+        .collect()
+}
+
+fn frame_ref(word: &str) -> TokenKind {
+    TokenKind::FrameRef(word.to_owned())
+}
+
+// spec FTEF-18.13: under FTEQCC a frame reference ends at `,`, `;`, `&`, `|`, `(`, `)`, `]` or `..`
+#[test]
+fn fteqcc_frame_ref_stops_at_more_bytes() {
+    assert_eq!(
+        fte_kinds(b"($b)"),
+        vec![punct(Punct::LParen), frame_ref("b"), punct(Punct::RParen)]
+    );
+    assert_eq!(
+        fte_kinds(b"$a||x"),
+        vec![frame_ref("a"), punct(Punct::OrOr), name("x")]
+    );
+    assert_eq!(
+        fte_kinds(b"$a&&x"),
+        vec![frame_ref("a"), punct(Punct::AndAnd), name("x")]
+    );
+    assert_eq!(
+        fte_kinds(b"[$a, th]"),
+        vec![
+            punct(Punct::LBracket),
+            frame_ref("a"),
+            punct(Punct::Comma),
+            name("th"),
+            punct(Punct::RBracket)
+        ]
+    );
+    assert_eq!(
+        fte_kinds(b"$a]$b..$c;"),
+        vec![
+            frame_ref("a"),
+            punct(Punct::RBracket),
+            frame_ref("b"),
+            punct(Punct::DotDot),
+            frame_ref("c"),
+            punct(Punct::Semicolon)
+        ]
+    );
+    // A single `.` stays in the name, as do the other bytes above a space.
+    assert_eq!(fte_kinds(b"$a.b+c"), vec![frame_ref("a.b+c")]);
+    // Vanilla keeps reading to whitespace, `,` or `;` (QC-8.6).
+    assert_eq!(kinds(b"$a||x"), vec![frame_ref("a||x")]);
+}
+
+// spec FTEF-18.13: under FTEQCC a `$` followed by whitespace, or by no byte a name can hold, is hanging
+#[test]
+fn fteqcc_hanging_dollar() {
+    assert_eq!(fte_codes(b"$ walk1"), vec![Code::E0107]);
+    assert_eq!(fte_codes(b"$)"), vec![Code::E0107]);
+    assert_eq!(fte_codes(b"$// c"), vec![Code::E0107]);
+    assert_eq!(fte_codes(b"$/* c */"), vec![Code::E0107]);
+    // Vanilla skips the blanks to the word (QC-8.1).
+    assert_eq!(kinds(b"$ walk1"), vec![frame_ref("walk1")]);
+}
+
+// spec FTEF-18.14: `$framesave` defines frame names as `$frame` does, under FTEQCC only
+#[test]
+fn framesave_defines_frames() {
+    let lexed = lex_with(b"$framesave a b\nx", Dialect::Fteqcc);
+    let TokenKind::Frames(names) = &lexed.tokens[0].kind else {
+        panic!("not a frame list: {:?}", lexed.tokens[0].kind);
+    };
+    assert_eq!(
+        names.iter().map(|n| n.name.as_str()).collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+    assert_eq!(lexed.tokens[1].kind, name("x"));
+    // The frame names end as frame references do (FTEF-18.13).
+    let lexed = lex_with(b"$frame a(b c", Dialect::Fteqcc);
+    let TokenKind::Frames(names) = &lexed.tokens[0].kind else {
+        panic!("not a frame list");
+    };
+    assert_eq!(names.len(), 1);
+    assert_eq!(lexed.tokens[1].kind, punct(Punct::LParen));
+    // `,` and `;` stay QCD-6.3 errors under both profiles.
+    assert_eq!(fte_codes(b"$frame a, b"), vec![Code::E0503]);
+    assert_eq!(
+        kinds(b"$framesave a"),
+        vec![frame_ref("framesave"), name("a")]
+    );
+}
+
+// spec FTEF-18.16: FTEQCC's further `$` commands are tokens of their own, with their word
+#[test]
+fn fteqcc_frame_commands() {
+    use super::FrameCommand;
+    assert_eq!(
+        fte_kinds(b"$flush\nx"),
+        vec![TokenKind::FrameCommand(FrameCommand::Flush), name("x")]
+    );
+    assert_eq!(
+        fte_kinds(b"$frame_reset"),
+        vec![TokenKind::FrameCommand(FrameCommand::Reset)]
+    );
+    assert_eq!(
+        fte_kinds(b"$framevalue 12"),
+        vec![TokenKind::FrameCommand(FrameCommand::Value(
+            "12".to_owned()
+        ))]
+    );
+    assert_eq!(
+        fte_kinds(b"$framerestore walk1"),
+        vec![TokenKind::FrameCommand(FrameCommand::Restore(
+            "walk1".to_owned()
+        ))]
+    );
+    assert_eq!(
+        fte_kinds(b"$modelname knight"),
+        vec![TokenKind::FrameCommand(FrameCommand::ModelName(
+            "knight".to_owned()
+        ))]
+    );
+    // With no word the operand is empty, as FTEQCC's `pr_token` is.
+    assert_eq!(
+        fte_kinds(b"$framevalue\nx"),
+        vec![
+            TokenKind::FrameCommand(FrameCommand::Value(String::new())),
+            name("x")
+        ]
+    );
+    // Under vanilla each is a frame macro reference (QC-8.5).
+    assert_eq!(kinds(b"$flush"), vec![frame_ref("flush")]);
+    assert_eq!(kinds(b"$modelname"), vec![frame_ref("modelname")]);
+}
+
+// spec FTEF-18.16: an ignored command takes its words up to one that ends at once, not the rest of the line
+#[test]
+fn fteqcc_ignored_commands_take_words() {
+    assert_eq!(fte_kinds(b"$cd id1/models/knight\nx"), vec![name("x")]);
+    assert_eq!(fte_kinds(b"$origin 0 0 24 // c\nx"), vec![name("x")]);
+    assert_eq!(fte_kinds(b"$cd a,b"), vec![punct(Punct::Comma), name("b")]);
+    // Vanilla drops the rest of the line (QC-27.14).
+    assert_eq!(kinds(b"$cd a,b\nx"), vec![name("x")]);
+}
+
+// spec FTEF-18.18: `..` is one token under FTEQCC, after `...`, and a number ends before it
+#[test]
+fn dot_dot_token() {
+    assert_eq!(
+        fte_kinds(b"1..5"),
+        vec![
+            TokenKind::Float(1.0),
+            punct(Punct::DotDot),
+            TokenKind::Float(5.0)
+        ]
+    );
+    assert_eq!(
+        fte_kinds(b"... .. ."),
+        vec![
+            punct(Punct::Ellipsis),
+            punct(Punct::DotDot),
+            punct(Punct::Dot)
+        ]
+    );
+    assert_eq!(
+        fte_kinds(b"..float"),
+        vec![punct(Punct::DotDot), name("float")]
+    );
+    // Vanilla has no `..` token.
+    assert_eq!(
+        kinds(b"a..b"),
+        vec![name("a"), punct(Punct::Dot), punct(Punct::Dot), name("b")]
+    );
 }

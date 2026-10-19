@@ -122,6 +122,7 @@ pub(crate) fn resolve_mapped(
         any_member: HashMap::new(),
         redefinable: HashSet::new(),
         unused: HashSet::new(),
+        bodies: HashSet::new(),
     };
     // FTE-22.3: with autoprototyping FTEQCC's first pass reads only the definitions, so the
     // second, which compiles the bodies, finds every top-level name already declared.
@@ -200,6 +201,8 @@ struct Resolver<'a> {
     /// The definitions marked `noref`, by qualifier or `#pragma noref`, whose initialiser a
     /// later one may replace (FTEF-17.8).
     unused: HashSet<DefId>,
+    /// The functions defined with a body, which a later builtin does not replace (FTEF-17.9).
+    bodies: HashSet<DefId>,
 }
 
 /// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
@@ -227,14 +230,14 @@ fn component_type(ty: &Type) -> Option<Type> {
 
 /// Words FTEQCC reads as part of an expression rather than as names a program defines:
 /// `this` and `super` in a member function, `prior` in a `__wrap` function, and the
-/// intrinsics `QCC_PR_ParseValue` and `QCC_PR_RefTerm` know (FTEF-17.4).
+/// intrinsics `QCC_PR_ParseValue` and `QCC_PR_RefTerm` know (FTEF-17.4). `sizeof` is parsed as
+/// a term of its own (FTEF-18.12), never a name.
 fn is_intrinsic(name: &str) -> bool {
     matches!(
         name,
         "this"
             | "super"
             | "prior"
-            | "sizeof"
             | "_length"
             | "nil"
             | "randomv"
@@ -423,7 +426,31 @@ impl<'a> Resolver<'a> {
         } else {
             initialized.then_some(decl.literal.as_ref())
         };
+        // FTEF-17.9: a builtin given for a function that has a body is a warning, and the
+        // function keeps its body.
+        if self.fteqcc
+            && decl.builtin
+            && let Some(existing) = existing
+            && self.bodies.contains(&existing)
+            && !self.unused.contains(&existing)
+            && self
+                .index
+                .defs
+                .get(existing.0)
+                .is_some_and(|d| self.same_type(&d.ty, &decl.ty))
+        {
+            self.index.diagnostics.push(diag(
+                Code::W0206,
+                location,
+                "incompatible redeclaration. Ignoring replacement of qc function with builtin."
+                    .to_owned(),
+            ));
+            return Vec::new();
+        }
         let def = self.declare_global(&decl.name, &decl.ty, kind, location, init);
+        if decl.body.is_some() {
+            self.bodies.insert(def);
+        }
         if replaces
             && initialized
             && let Some(d) = self.index.defs.get_mut(def.0)

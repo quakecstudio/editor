@@ -169,6 +169,8 @@ pub(crate) struct Parser<'a> {
     errors: Vec<Diagnostic>,
     muted: bool,
     depth: usize,
+    /// The labels of the function body being parsed (FTEF-18.6).
+    labels: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -183,6 +185,7 @@ impl<'a> Parser<'a> {
             errors: Vec::new(),
             muted: false,
             depth: 0,
+            labels: Vec::new(),
         }
     }
 
@@ -231,7 +234,8 @@ impl<'a> Parser<'a> {
         let Some(tok) = self.nth(n) else {
             return false;
         };
-        if tok.kind == K::Dot {
+        // `..T`, a field of a field, is one token under FTEQCC (FTEF-18.4).
+        if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
         }
         if tok.kind != K::Name || type_keyword(&tok.text).is_none() {
@@ -522,7 +526,7 @@ impl<'a> Parser<'a> {
         let Some(tok) = self.current() else {
             return false;
         };
-        if tok.kind == K::Dot {
+        if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
         }
         if tok.kind != K::Name {
@@ -968,12 +972,20 @@ impl<'a> Parser<'a> {
         if self.at(K::LBracket) {
             self.state();
         }
+        // FTEF-18.6: a label belongs to its function; a nested function (FTEF-18.2) has its own.
+        let outer = std::mem::take(&mut self.labels);
         self.block(true);
+        self.labels = outer;
         self.finish_node();
     }
 
-    /// `[frame, next]` (QC-13.6).
+    /// `[frame, next]` (QC-13.6), or under FTEQCC its expressions and frame cycles
+    /// (FTEF-18.3, FTEF-18.4).
     fn state(&mut self) {
+        if self.fteqcc() {
+            self.fte_state();
+            return;
+        }
         self.start_node(K::State);
         self.bump();
         if self.at(K::FloatLit) || self.at(K::FrameRef) {
@@ -1204,6 +1216,14 @@ impl<'a> Parser<'a> {
                 self.finish_node();
             }
             K::Dot => self.local_decl(false),
+            K::DotDot if self.fteqcc() => self.local_decl(false),
+            // FTEF-18.6: `:name`, the FrikQCC label.
+            K::Colon if self.fteqcc() => self.label_stmt(),
+            // FTEF-18.6: `name:`, the C label, its `:` right after the name.
+            K::Name if self.fteqcc() && self.at_c_label() => self.label_stmt(),
+            K::Name if self.fteqcc() && tok.text == "goto" => self.goto_stmt(),
+            // FTEF-18.9: `__until (e) s`.
+            K::Name if self.fteqcc() && self.at_until() => self.while_stmt(),
             K::Name => match tok.text.as_str() {
                 "return" => self.return_stmt(),
                 "while" => self.while_stmt(),
@@ -1367,6 +1387,11 @@ impl<'a> Parser<'a> {
         } else {
             self.bump_as(K::CaseKw);
             self.expression();
+            if self.fteqcc() && self.at(K::DotDot) {
+                // FTEF-18.10: `case a .. b:`, a range.
+                self.bump();
+                self.expression();
+            }
         }
         self.expect(K::Colon, ":");
         self.finish_node();
@@ -1428,21 +1453,30 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
+    /// `return;`, `return e;`, and under FTEQCC `return = e;` (FTEF-18.7).
     fn return_stmt(&mut self) {
         self.start_node(K::ReturnStmt);
         self.bump_as(K::ReturnKw);
         if self.at(K::Semicolon) {
             self.bump();
         } else {
-            self.expression();
+            if self.fteqcc() && self.at(K::Eq) {
+                self.bump();
+            }
+            self.sequence();
             self.end_statement();
         }
         self.finish_node();
     }
 
+    /// `while (e) s`, or under FTEQCC `__until (e) s` (FTEF-18.9).
     fn while_stmt(&mut self) {
         self.start_node(K::WhileStmt);
-        self.bump_as(K::WhileKw);
+        if self.at_word("while") {
+            self.bump_as(K::WhileKw);
+        } else {
+            self.bump_as(K::UntilKw);
+        }
         self.condition();
         self.statement();
         self.finish_node();
@@ -1454,6 +1488,9 @@ impl<'a> Parser<'a> {
         self.statement();
         if self.at_word("while") {
             self.bump_as(K::WhileKw);
+        } else if self.fteqcc() && self.at_until() {
+            // FTEF-18.9: `do s __until (e);`.
+            self.bump_as(K::UntilKw);
         } else {
             self.expected("while");
         }
@@ -1469,6 +1506,12 @@ impl<'a> Parser<'a> {
         {
             // FTEF-16.5: `if not (e)` negates the condition.
             self.bump();
+        } else if self.fteqcc()
+            && self.at(K::Not)
+            && self.nth(1).is_some_and(|t| t.kind == K::LParen)
+        {
+            // FTEF-18.8: `if !(e)` negates it too.
+            self.bump();
         }
         self.condition();
         self.statement();
@@ -1479,16 +1522,18 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// `( expression )`; the parentheses are required (QC-14.7).
+    /// `( expression )`; the parentheses are required (QC-14.7). Under FTEQCC the expression
+    /// may be a sequence (FTEF-18.5).
     fn condition(&mut self) {
         self.expect(K::LParen, "(");
-        self.expression();
+        self.sequence();
         self.expect(K::RParen, ")");
     }
 
+    /// `e;`, and under FTEQCC `e, e, ...;` (FTEF-18.5).
     fn expr_stmt(&mut self) {
         self.start_node(K::ExprStmt);
-        self.expression();
+        self.sequence();
         self.end_statement();
         self.finish_node();
     }
@@ -1504,6 +1549,32 @@ impl<'a> Parser<'a> {
     /// `PR_Expression (TOP_PRIORITY)`.
     fn expression(&mut self) -> Option<Expr> {
         self.expr(TOP_PRIORITY)
+    }
+
+    /// An expression where FTEQCC allows a sequence, `a, b, c`, each evaluated and the last
+    /// kept (FTEF-18.5): `QCC_PR_RefExpression` without `EXPR_DISALLOW_COMMA`. Each `,` is a
+    /// `BinaryExpr`, grouped to the right. Vanilla has no sequence: there it is
+    /// [`Parser::expression`].
+    fn sequence(&mut self) -> Option<Expr> {
+        let checkpoint = self.checkpoint();
+        let first = self.expression()?;
+        if !(self.fteqcc() && self.at(K::Comma)) {
+            return Some(first);
+        }
+        self.builder.start_node_at(checkpoint, K::BinaryExpr);
+        self.bump();
+        if self.enter() {
+            self.sequence();
+        } else {
+            self.bump_error();
+        }
+        self.leave(1);
+        self.finish_node();
+        Some(Expr {
+            kind: K::BinaryExpr,
+            assignable: false,
+            span: Span::new(first.span.start, self.last_end),
+        })
     }
 
     /// An expression whose binary operators have priority `max` or tighter (QC-15.1).
@@ -1592,8 +1663,14 @@ impl<'a> Parser<'a> {
     fn ternary(&mut self, checkpoint: Checkpoint, cond: Expr) -> Expr {
         self.builder.start_node_at(checkpoint, K::TernaryExpr);
         self.bump_as(K::Question);
-        self.expression();
-        self.expect(K::Colon, ":");
+        if self.at(K::Colon) {
+            // FTEF-18.11: `a ?: b` has no middle operand.
+            self.bump();
+        } else {
+            // FTEF-18.5: the middle operand may be a sequence.
+            self.sequence();
+            self.expect(K::Colon, ":");
+        }
         self.expression();
         self.finish_node();
         Expr {
@@ -1641,7 +1718,7 @@ impl<'a> Parser<'a> {
                 // `e[i]` (FTE-13): a subscript; the result is an lvalue.
                 self.builder.start_node_at(checkpoint, K::IndexExpr);
                 self.bump_as(K::LBracket);
-                self.expression();
+                self.sequence();
                 self.expect(K::RBracket, "]");
                 self.finish_node();
                 expr = Expr {
@@ -1772,7 +1849,7 @@ impl<'a> Parser<'a> {
             K::LParen => {
                 self.start_node(K::ParenExpr);
                 self.bump();
-                let inner = self.expression();
+                let inner = self.sequence();
                 self.expect(K::RParen, ")");
                 (K::ParenExpr, inner.is_some_and(|e| e.assignable))
             }
@@ -1791,6 +1868,11 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.bump();
                 (K::NameRef, true)
+            }
+            // FTEF-18.12: `sizeof` and a type or an expression.
+            K::Name if self.fteqcc() && self.fte_word(0, "sizeof") => {
+                self.sizeof_expr();
+                (K::SizeofExpr, false)
             }
             // FTEF-16.4: `Class::member` and `super::member`.
             K::Name if self.fteqcc() => {

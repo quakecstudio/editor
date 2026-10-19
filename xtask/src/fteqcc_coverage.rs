@@ -694,7 +694,8 @@ impl<'a> Scan<'a> {
             | TokenKind::Vector(_)
             | TokenKind::String(_)
             | TokenKind::FrameRef(_)
-            | TokenKind::Frames(_) => false,
+            | TokenKind::Frames(_)
+            | TokenKind::FrameCommand(_) => false,
         });
         if cast_position && at.next.is_some_and(|n| is_type(&n.kind)) {
             self.add(Kind::Cast);
@@ -814,7 +815,7 @@ fn ends_value(token: &Token) -> bool {
         | TokenKind::String(_)
         | TokenKind::FrameRef(_)
         | TokenKind::Punct(Punct::RParen | Punct::RBracket) => true,
-        TokenKind::Punct(_) | TokenKind::Frames(_) => false,
+        TokenKind::Punct(_) | TokenKind::Frames(_) | TokenKind::FrameCommand(_) => false,
     }
 }
 

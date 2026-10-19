@@ -35,6 +35,9 @@ pub struct RawDecl {
     pub literal: Option<LiteralValue>,
     /// For a function definition, the lowered body; otherwise `None`.
     pub body: Option<RawBody>,
+    /// Whether the initialiser is a builtin number, `= #n` (QC-13.3), which FTEQCC does not
+    /// let replace a function with a body (FTEF-17.9).
+    pub builtin: bool,
     /// For a function definition with a `[frame, next]` header, the next-think name and its
     /// span (QC-13.6): resolution declares it as a global `void()` if new.
     pub next_think: Option<(String, Span)>,
@@ -72,6 +75,7 @@ impl RawDecl {
             initialized: false,
             literal: None,
             body: None,
+            builtin: false,
             next_think: None,
             uses: Vec::new(),
             scope: None,
@@ -659,6 +663,7 @@ fn lower_declarators(
             LiteralValue::of(init.as_ref())
         };
         raw.scope = declarator.scope().map(|t| t.text_lossless());
+        raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         match &init {
             Some(ast::Initializer::Body(fn_body)) => {
                 raw.next_think = next_think_of(fn_body);
@@ -726,6 +731,10 @@ fn next_think_of(fn_body: &ast::FunctionBody) -> Option<(String, Span)> {
 fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, fte: bool) -> RawBody {
     let mut body = RawBody::default();
     collect_params(fn_ty, fn_body, &mut body.params);
+    // FTEF-18.3, FTEF-18.4: a state header's expressions are values of the function.
+    for expr in fn_body.state().iter().flat_map(ast::State::exprs) {
+        lower_expr(&expr, fte, &mut body.uses);
+    }
     if let Some(block) = fn_body.block() {
         lower_block(&block, fte, &mut body);
     }
@@ -846,7 +855,8 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
             if let Some(block) = switch_stmt.block() {
                 for node in block.syntax().children() {
                     if let Some(label) = ast::CaseLabel::cast(node.clone()) {
-                        if let Some(value) = label.value() {
+                        // FTEF-18.10: a range's end is a value too.
+                        for value in label.value().into_iter().chain(label.range_end()) {
                             lower_expr(&value, fte, &mut body.uses);
                         }
                     } else if let Some(stmt) = ast::Stmt::cast(node) {
@@ -855,8 +865,13 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
                 }
             }
         }
-        // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none.
-        ast::Stmt::Break(_) | ast::Stmt::Continue(_) | ast::Stmt::Empty(_) => {}
+        // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
+        // neither do a label and `goto` (FTEF-18.6), whose names are the function's labels.
+        ast::Stmt::Break(_)
+        | ast::Stmt::Continue(_)
+        | ast::Stmt::Empty(_)
+        | ast::Stmt::Label(_)
+        | ast::Stmt::Goto(_) => {}
         ast::Stmt::Expr(expr_stmt) => {
             if let Some(expr) = expr_stmt.expr() {
                 lower_expr(&expr, fte, &mut body.uses);
@@ -980,19 +995,15 @@ fn lower_expr(expr: &ast::Expr, fte: bool, uses: &mut Vec<RawUse>) {
             if let Some(callee) = &callee {
                 lower_expr(callee, fte, uses);
             }
-            // FTEF-17.4: `autocvar(name, default)` names the cvar, which is no value, and
-            // `sizeof` may take a type word.
+            // FTEF-17.4: `autocvar(name, default)` names the cvar, which is no value. (`sizeof`
+            // and the type it may take are a `SizeofExpr`, FTEF-18.12.)
             let callee_name = match &callee {
                 Some(ast::Expr::Name(n)) if fte => n.name().map(|t| t.text_lossless()),
                 _ => None,
             };
             let skip = usize::from(callee_name.as_deref() == Some("autocvar"));
-            let sizeof = matches!(callee_name.as_deref(), Some("sizeof" | "_length"));
             if let Some(args) = call.args() {
                 for arg in args.args().skip(skip) {
-                    if sizeof && is_type_word(&arg) {
-                        continue;
-                    }
                     lower_expr(&arg, fte, uses);
                 }
             }
@@ -1051,37 +1062,14 @@ fn lower_expr(expr: &ast::Expr, fte: bool, uses: &mut Vec<RawUse>) {
                 lower_expr(&element, fte, uses);
             }
         }
+        // FTEQCC `sizeof` (FTEF-18.12): an expression it measures names values; a type does
+        // not.
+        ast::Expr::Sizeof(sizeof) => {
+            if let Some(operand) = sizeof.operand() {
+                lower_expr(&operand, fte, uses);
+            }
+        }
     }
-}
-
-/// Whether an expression is a bare type word, as `sizeof(int)` takes: a vanilla type or one of
-/// FTEQCC's C type words (FTEF-2).
-fn is_type_word(expr: &ast::Expr) -> bool {
-    let ast::Expr::Name(name) = expr else {
-        return false;
-    };
-    name.name().is_some_and(|t| {
-        matches!(
-            t.text_lossless().trim_start_matches("__"),
-            "void"
-                | "float"
-                | "vector"
-                | "string"
-                | "entity"
-                | "int"
-                | "integer"
-                | "uint"
-                | "int64"
-                | "uint64"
-                | "double"
-                | "variant"
-                | "long"
-                | "short"
-                | "char"
-                | "unsigned"
-                | "signed"
-        )
-    })
 }
 
 /// The kind a top-level raw declaration resolves to, from its type (QC-11.8, QC-11.9).

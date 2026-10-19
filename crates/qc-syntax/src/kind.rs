@@ -128,6 +128,8 @@ pub enum SyntaxKind {
     Colon,
     /// `::` (FTEQCC, FTEF-13.1): a class member's scope.
     ColonColon,
+    /// `..` (FTEQCC, FTEF-18.4, FTEF-18.10): a range.
+    DotDot,
     /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
     Arrow,
     /// `~` (FTEQCC, FTE-19.4).
@@ -185,6 +187,12 @@ pub enum SyntaxKind {
     UnionKw,
     /// `accessor` (FTEQCC, FTEF-10).
     AccessorKw,
+    /// `goto` (FTEQCC, FTEF-18.6).
+    GotoKw,
+    /// `__until` (FTEQCC, FTEF-18.9).
+    UntilKw,
+    /// `sizeof` (FTEQCC, FTEF-18.12).
+    SizeofKw,
 
     /// A whole file.
     SourceFile,
@@ -298,6 +306,12 @@ pub enum SyntaxKind {
     PointerType,
     /// `[x, y, z]`, a vector built from three expressions (FTEQCC, FTEF-16.3).
     VectorExpr,
+    /// `name:` or `:name`, a label (FTEQCC, FTEF-18.6).
+    LabelStmt,
+    /// `goto name;` (FTEQCC, FTEF-18.6).
+    GotoStmt,
+    /// `sizeof` and a type or an expression (FTEQCC, FTEF-18.12).
+    SizeofExpr,
     /// Tokens the parser could not place, kept so that no byte is lost.
     Error,
 }
@@ -347,6 +361,9 @@ impl SyntaxKind {
                 | Self::ClassKw
                 | Self::UnionKw
                 | Self::AccessorKw
+                | Self::GotoKw
+                | Self::UntilKw
+                | Self::SizeofKw
         )
     }
 
@@ -391,6 +408,7 @@ impl SyntaxKind {
             Punct::Question => Self::Question,
             Punct::Colon => Self::Colon,
             Punct::ColonColon => Self::ColonColon,
+            Punct::DotDot => Self::DotDot,
             Punct::Arrow => Self::Arrow,
             Punct::Tilde => Self::Tilde,
             Punct::AndEq => Self::AndEq,

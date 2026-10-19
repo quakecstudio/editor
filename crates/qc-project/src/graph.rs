@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use qc_lexer::Code;
+use qc_lexer::{Code, Dialect};
 use qc_preproc::{Loader, cond};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
@@ -84,6 +84,9 @@ pub struct FileGraph {
     pub declared_output: Option<PathBuf>,
     /// The other programs' sources it registers with `#pragma sourcefile` (PRJ-5.7).
     pub sourcefiles: Vec<PathBuf>,
+    /// What a `#pragma autoproto [N]` in a list-form `progs.src` asks for, which comes
+    /// before every definition of the module (FTEF-12.9); `None` when there is none.
+    pub autoproto: Option<bool>,
     /// The problems found.
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -412,6 +415,8 @@ struct Builder<'l, L> {
     once: HashSet<PathBuf>,
     stack: Vec<Cursor>,
     graph: FileGraph,
+    /// The module's dialect, which decides how an `#if` reads (PRJ-5.5, FTEF-14.11).
+    dialect: Dialect,
 }
 
 impl<L: Loader> Builder<'_, L> {
@@ -503,8 +508,12 @@ impl<L: Loader> Builder<'_, L> {
                 });
             }
             "if" => {
-                let taking =
-                    parent && cond::eval(&lossy(Some(operand)), &|n| self.macros.get(n).cloned());
+                let taking = parent
+                    && cond::eval(
+                        &lossy(Some(operand)),
+                        &|n| self.macros.get(n).cloned(),
+                        self.dialect,
+                    );
                 cursor.conds.push(Cond {
                     taking,
                     parent,
@@ -516,9 +525,11 @@ impl<L: Loader> Builder<'_, L> {
                     let value = c.parent
                         && !c.done
                         && match name {
-                            "elif" => {
-                                cond::eval(&lossy(Some(operand)), &|n| self.macros.get(n).cloned())
-                            }
+                            "elif" => cond::eval(
+                                &lossy(Some(operand)),
+                                &|n| self.macros.get(n).cloned(),
+                                self.dialect,
+                            ),
                             _ => {
                                 let defined = first_name(operand)
                                     .is_some_and(|n| self.macros.contains_key(&n));
@@ -606,6 +617,11 @@ impl<L: Loader> Builder<'_, L> {
             "once" => {
                 let path = cursor.path.clone();
                 self.once.insert(path);
+            }
+            // FTEF-12.9: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
+            // `progs.src` with its preprocessor, so the pragma there holds for the module.
+            "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
+                self.graph.autoproto = Some(args.first().is_none_or(|n| cond::atoi(n) != 0));
             }
             _ => {}
         }
@@ -728,13 +744,14 @@ fn source_form(text: &[u8]) -> Option<bool> {
 /// Builds the file graph of the module whose source is `src` (PRJ-4 to PRJ-6).
 ///
 /// `defines` are defined before the first file (PRJ-5.4) and `include_dirs` are searched
-/// after the including file's directory (PRJ-5.2). Implements PRJ-4, PRJ-5 and PRJ-6; the
-/// list form follows QC-23.
+/// after the including file's directory (PRJ-5.2); an `#if` is read as `dialect` reads it
+/// (PRJ-5.5, FTEF-14.11). Implements PRJ-4, PRJ-5 and PRJ-6; the list form follows QC-23.
 pub fn build_graph<L: Loader>(
     loader: &mut L,
     src: &Path,
     defines: &[Define],
     include_dirs: &[PathBuf],
+    dialect: Dialect,
 ) -> FileGraph {
     let src = normalize(src);
     let mut builder = Builder {
@@ -748,6 +765,7 @@ pub fn build_graph<L: Loader>(
         once: HashSet::new(),
         stack: Vec::new(),
         graph: FileGraph::default(),
+        dialect,
     };
     let text = match builder.loader.load(&src) {
         Ok(text) => text,

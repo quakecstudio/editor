@@ -28,13 +28,19 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
-use qc_lexer::{Code, Dialect, Punct, Span, Token, TokenKind, lex_with};
+use qc_lexer::{Code, Dialect, FrameCommand, Punct, Span, Token, TokenKind, lex_with};
 
 /// Most frames one source file may define.
 ///
 /// `LIMIT_QCC_MAX_FRAMES` in `docs/spec/limits.md`, from `MAX_FRAMES` in `qcc/pr_lex.c`. More
 /// is an error (QC-27.5).
 pub const LIMIT_QCC_MAX_FRAMES: usize = 256;
+
+/// Most frame macros an FTEQCC program may define, over all its files.
+///
+/// `MAX_FRAMES` in FTEQCC's `qcc_pr_lex.c`, `#define MAX_FRAMES 8192`: defining the last
+/// one is "Too many frame macros defined" (FTEF-18.17).
+pub const FTE_MAX_FRAMES: usize = 8192;
 
 /// One macro expansion: which macro, where it was used, and the use it sits inside.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -90,6 +96,9 @@ pub struct FileOutput {
     /// In an FTEQCC dialect, each `#pragma noref N` in the file: the index of the first token
     /// after it, and whether the definitions from there on are `noref` (FTEF-12.6).
     pub noref: Vec<(usize, bool)>,
+    /// In an FTEQCC dialect, each `#pragma autoproto [N]` in the file: the index of the first
+    /// token after it, and whether it asks for autoprototyping (FTEF-12.9).
+    pub autoproto: Vec<(usize, bool)>,
 }
 
 #[derive(Debug)]
@@ -177,6 +186,9 @@ struct Run {
     pending: Vec<Item>,
     frames: Vec<String>,
     frames_full: bool,
+    /// In an FTEQCC dialect, the number the next frame name gets, FTEQCC's `pr_macrovalue`,
+    /// 0 at the start of each file (FTEF-18.17).
+    frame_value: i32,
     out: FileOutput,
 }
 
@@ -194,8 +206,10 @@ impl Run {
 /// `progs.src` that last defined it.
 #[derive(Debug)]
 struct CarriedFrame {
-    value: u16,
+    value: i32,
     file: PathBuf,
+    /// Where it stands in FTEQCC's `pr_framemacro` table, which is searched from the last.
+    order: usize,
 }
 
 /// The preprocessor for one `progs.src`: macros run on from one file to the next (QC-9.8).
@@ -208,6 +222,11 @@ pub struct Preprocessor<L> {
     expansions: Vec<Expansion>,
     /// In an FTEQCC dialect, every frame macro defined so far (FTE-22.4).
     carried_frames: HashMap<String, CarriedFrame>,
+    /// In an FTEQCC dialect, the name of the last `$modelname`, FTEQCC's
+    /// `pr_framemodelname` (FTEF-18.16).
+    model_name: String,
+    /// Whether FTEQCC's frame macro table is full (FTEF-18.17), so the error is given once.
+    frames_full: bool,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -244,6 +263,8 @@ impl<L: Loader> Preprocessor<L> {
             macros: HashMap::new(),
             expansions: Vec::new(),
             carried_frames: HashMap::new(),
+            model_name: String::new(),
+            frames_full: false,
         }
     }
 
@@ -582,9 +603,11 @@ impl<L: Loader> Preprocessor<L> {
             // including the rerelease's `#pragma warning disable/enable F317` (FTE-16.1); in
             // the vanilla dialect it stays an unknown directive (QC-9.9).
             "pragma" if fte => {
+                // FTEQCC compares a pragma's name with `QC_strcasecmp`.
+                let pragma = |word: &str| operand.is_some_and(|o| o.eq_ignore_ascii_case(word));
                 // FTEF-12.6: `#pragma noref N` sets whether the definitions after it are
                 // `noref`.
-                if operand == Some("noref")
+                if pragma("noref")
                     && let Some(Token {
                         kind: TokenKind::Float(value),
                         ..
@@ -592,6 +615,16 @@ impl<L: Loader> Preprocessor<L> {
                 {
                     let at = run.out.tokens.len();
                     run.out.noref.push((at, *value != 0.0));
+                }
+                // FTEF-12.9: `#pragma autoproto [N]` asks for autoprototyping, or not for a 0:
+                // `autoprototype = *msg?!!atoi(msg):true;`.
+                if pragma("autoproto") {
+                    let on = match line.get(3) {
+                        None => true,
+                        Some(token) => cond::atoi(&self.token_text(file, token)) != 0,
+                    };
+                    let at = run.out.tokens.len();
+                    run.out.autoproto.push((at, on));
                 }
             }
             _ => {
@@ -826,17 +859,38 @@ impl<L: Loader> Preprocessor<L> {
         self.macros.insert(name.clone(), Rc::new(mac));
     }
 
-    /// The value of an `#if` or `#elif` expression (FTEF-14.1): its tokens' text, evaluated as
-    /// the project graph evaluates it (PRJ-5.5), a macro's value being its body's text.
+    /// The value of an `#if` or `#elif` expression (FTEF-14.1), evaluated as the project graph
+    /// evaluates it in this dialect (PRJ-5.5, FTEF-14.11), a macro's value being its body's
+    /// text. The expression is its tokens' text; under an FTEQCC profile it is the bytes as
+    /// written, since FTEQCC reads words up to whitespace (FTEF-14.11).
     fn condition(&self, file: FileId, tokens: &[Token]) -> bool {
-        let expr = self.line_text(file, tokens);
-        cond::eval(&expr, &|name: &str| {
+        let expr = if self.dialect.has_fteqcc_extensions() {
+            self.source_text(file, tokens)
+        } else {
+            self.line_text(file, tokens)
+        };
+        let value = |name: &str| {
             self.macros.get(name).map(|m| {
                 let parts: Vec<String> =
                     m.body.iter().map(|(f, t)| self.token_text(*f, t)).collect();
                 parts.join(" ")
             })
-        })
+        };
+        cond::eval(&expr, &value, self.dialect)
+    }
+
+    /// The bytes of `file` from the first of `tokens` to the end of the last, a line
+    /// continuation (FTEF-14.2) read as a space.
+    fn source_text(&self, file: FileId, tokens: &[Token]) -> String {
+        let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
+            return String::new();
+        };
+        let span = FileSpan {
+            file,
+            span: Span::new(first.span.start, last.span.end),
+        };
+        let text = String::from_utf8_lossy(self.sources.text(span).unwrap_or_default());
+        text.replace("\\\r\n", " ").replace("\\\n", " ")
     }
 
     /// The text of directive tokens of `file`, each token's bytes, joined by a space.
@@ -1190,37 +1244,107 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name an
     /// earlier file defined takes the new value, and a name this file already defined keeps
-    /// its first value (QC-8.7).
-    fn carry_frame(&mut self, file: &Path, name: &str, value: u16) {
+    /// its first value (QC-8.7) unless `force`d. A new name past `FTE_MAX_FRAMES` is an
+    /// error (FTEF-18.17).
+    fn carry_frame(&mut self, run: &mut Run, name: &str, value: i32, force: bool, at: FileSpan) {
         match self.carried_frames.get_mut(name) {
-            Some(frame) if frame.file == file => {}
+            Some(frame) if frame.file == run.path && !force => {}
             Some(frame) => {
                 frame.value = value;
-                file.clone_into(&mut frame.file);
+                frame.file.clone_from(&run.path);
             }
             None => {
                 let frame = CarriedFrame {
                     value,
-                    file: file.to_path_buf(),
+                    file: run.path.clone(),
+                    order: self.carried_frames.len(),
                 };
                 self.carried_frames.insert(name.to_owned(), frame);
+                // `if (pr_nummacros >= MAX_FRAMES) QCC_PR_ParseError(ERR_TOOMANYFRAMEMACROS,
+                // "Too many frame macros defined");`
+                if self.carried_frames.len() >= FTE_MAX_FRAMES && !self.frames_full {
+                    self.frames_full = true;
+                    run.report(Code::E0504, "too many frames", at);
+                }
+            }
+        }
+    }
+
+    /// The value of the FTEQCC frame macro `name`, as `QCC_PR_FindMacro` finds it: the macro
+    /// of that name, or else the last one defined whose name differs only in case, with the
+    /// warning "Case insensitive frame macro (using NAME)" at `at` (FTEF-18.21).
+    fn find_frame(&self, run: &mut Run, name: &str, at: FileSpan) -> Option<i32> {
+        if let Some(frame) = self.carried_frames.get(name) {
+            return Some(frame.value);
+        }
+        let (found, frame) = self
+            .carried_frames
+            .iter()
+            .filter(|(other, _)| other.eq_ignore_ascii_case(name))
+            .max_by_key(|(_, frame)| frame.order)?;
+        run.report(
+            Code::W0104,
+            format!("Case insensitive frame macro (using {found})"),
+            at,
+        );
+        Some(frame.value)
+    }
+
+    /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
+    fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: FileSpan) {
+        match command {
+            FrameCommand::Flush => run.frame_value = 0,
+            FrameCommand::Reset => {
+                self.carried_frames.clear();
+                run.frame_value = 0;
+            }
+            FrameCommand::Value(word) => {
+                let value = cond::atoi(word);
+                run.frame_value =
+                    i32::try_from(value).unwrap_or(if value < 0 { i32::MIN } else { i32::MAX });
+            }
+            FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
+                Some(value) => run.frame_value = value,
+                None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at),
+            },
+            FrameCommand::ModelName(name) => {
+                if !self.model_name.is_empty() {
+                    let previous = std::mem::take(&mut self.model_name);
+                    self.carry_frame(run, &previous, run.frame_value, true, at);
+                }
+                name.clone_into(&mut self.model_name);
+                // `i = QCC_PR_FindMacro(pr_framemodelname); if (i) pr_macrovalue = i;`, where
+                // a name with no macro is -1.
+                let found = self.find_frame(run, name, at).unwrap_or(-1);
+                if found != 0 {
+                    run.frame_value = found;
+                }
             }
         }
     }
 
     /// Adds a token to the output, applying the frame macros of QC-8, and in an FTEQCC
-    /// dialect those carried from earlier files (FTE-22.4).
+    /// dialect those carried from earlier files (FTE-22.4) and its further `$` commands
+    /// (FTEF-18.16, FTEF-18.17).
     fn emit(&mut self, run: &mut Run, mut tok: PpToken) {
         let carry = self.dialect.has_fteqcc_extensions();
         match &tok.kind {
+            TokenKind::Frames(names) if carry => {
+                for frame in names {
+                    let at = FileSpan {
+                        file: tok.span.file,
+                        span: frame.span,
+                    };
+                    let value = run.frame_value;
+                    run.frame_value = run.frame_value.wrapping_add(1);
+                    self.carry_frame(run, &frame.name, value, false, at);
+                }
+                return;
+            }
             TokenKind::Frames(names) => {
                 for frame in names {
                     if run.frames.len() < LIMIT_QCC_MAX_FRAMES {
-                        let value = u16::try_from(run.frames.len()).unwrap_or(u16::MAX);
                         run.frames.push(frame.name.clone());
-                        if carry {
-                            self.carry_frame(&run.path, &frame.name, value);
-                        }
                     } else if !run.frames_full {
                         run.frames_full = true;
                         let span = FileSpan {
@@ -1232,15 +1356,20 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 return;
             }
+            TokenKind::FrameCommand(command) => {
+                let command = command.clone();
+                self.frame_command(run, &command, tok.span);
+                return;
+            }
             TokenKind::FrameRef(word) => {
                 let value = if carry {
-                    self.carried_frames.get(word).map(|f| f.value)
+                    self.find_frame(run, word, tok.span)
                 } else {
                     let index = run.frames.iter().position(|f| f == word);
-                    index.map(|i| u16::try_from(i).unwrap_or(u16::MAX))
+                    index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))
                 };
                 if let Some(value) = value {
-                    tok.kind = TokenKind::Float(f32::from(value));
+                    tok.kind = TokenKind::Float(frame_float(value));
                 } else {
                     run.report(
                         Code::E0106,
@@ -1257,6 +1386,12 @@ impl<L: Loader> Preprocessor<L> {
         }
         run.out.tokens.push(tok);
     }
+}
+
+/// A frame number as the float it expands to: `pr_immediate._float = (float)i;`, the integer
+/// rounded to the nearest float.
+fn frame_float(value: i32) -> f32 {
+    value.to_string().parse::<f32>().unwrap_or(0.0)
 }
 
 /// Parses `name, name, ...)` from `line[start..]`; returns the names and the index after `)`.
@@ -1292,7 +1427,8 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
             | TokenKind::String(_)
             | TokenKind::Punct(_)
             | TokenKind::FrameRef(_)
-            | TokenKind::Frames(_) => return None,
+            | TokenKind::Frames(_)
+            | TokenKind::FrameCommand(_) => return None,
         }
     }
 }

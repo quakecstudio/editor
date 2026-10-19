@@ -17,8 +17,10 @@ number that starts with `.` or ends with an `f` suffix (FTE-20.1, FTE-20.2); and
 one-byte string escapes (FTE-20.4). It also lexes the full dialect's tokens
 (`docs/spec/dialect-fteqcc.md`): `::`, a `\` that joins two lines, character constants and
 two-component vectors, FTEQCC's other escapes (FTEF-13), and its hex, octal and suffixed
-numbers, each kept as a float of its value (FTEF-3, FTEF-13.5). Every other rule, and the
-vanilla output byte for byte, is unchanged.
+numbers, each kept as a float of its value (FTEF-3, FTEF-13.5); the `..` token (FTEF-18.18);
+and FTEQCC's frame macro words, which end at more bytes than id's (FTEF-18.13), with
+`$framesave` and the further `$` commands as tokens of their own (FTEF-18.14, FTEF-18.16).
+Every other rule, and the vanilla output byte for byte, is unchanged.
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check

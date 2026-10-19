@@ -381,7 +381,7 @@ impl Db {
         self.bump_module_index();
         let options = ResolveOptions {
             dialect: self.dialect,
-            autoproto: self.autoproto,
+            autoproto: preprocessed.autoproto,
         };
         let analysis = ModuleAnalysis {
             index: resolve_mapped(&decls, &maps, &noref, options),

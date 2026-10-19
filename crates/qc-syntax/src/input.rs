@@ -101,7 +101,10 @@ impl<'a> Input<'a> {
                     Some(*value),
                 ),
                 TokenKind::Punct(punct) => (punct.as_str().to_owned(), None),
-                TokenKind::Vector(_) | TokenKind::FrameRef(_) | TokenKind::Frames(_) => (
+                TokenKind::Vector(_)
+                | TokenKind::FrameRef(_)
+                | TokenKind::Frames(_)
+                | TokenKind::FrameCommand(_) => (
                     latin1(source.get(token.span.range()).unwrap_or_default()),
                     None,
                 ),
@@ -210,6 +213,6 @@ fn token_kind(kind: &TokenKind) -> SyntaxKind {
         TokenKind::String(_) => SyntaxKind::StringLit,
         TokenKind::Punct(punct) => SyntaxKind::from_punct(*punct),
         TokenKind::FrameRef(_) => SyntaxKind::FrameRef,
-        TokenKind::Frames(_) => SyntaxKind::Frames,
+        TokenKind::Frames(_) | TokenKind::FrameCommand(_) => SyntaxKind::Frames,
     }
 }

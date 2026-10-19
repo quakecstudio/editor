@@ -170,6 +170,8 @@ pub enum Punct {
     ShlEq,
     /// `::` (FTEQCC, FTEF-13.1): a class member's scope, `Class::member`.
     ColonColon,
+    /// `..` (FTEQCC, FTEF-18.4, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
+    DotDot,
 }
 
 impl Punct {
@@ -217,7 +219,7 @@ impl Punct {
     /// (QC-7.2), so their order among themselves is immaterial. These are not ported from
     /// FTEQCC; they are this project's rules for the FTEQCC subset the rerelease uses
     /// (`docs/spec/dialect-fteqcc-rerelease.md`).
-    pub const FTEQCC: [Self; 23] = [
+    pub const FTEQCC: [Self; 25] = [
         Self::PlusPlus,
         Self::MinusMinus,
         Self::PlusEq,
@@ -241,6 +243,9 @@ impl Punct {
         Self::Question,
         Self::ColonColon,
         Self::Colon,
+        // FTEQCC's `pr_punctuation` lists `"...", "..", "."`, longest first.
+        Self::Ellipsis,
+        Self::DotDot,
     ];
 
     /// The token's text.
@@ -297,6 +302,7 @@ impl Punct {
             Self::Shl => "<<",
             Self::ShlEq => "<<=",
             Self::ColonColon => "::",
+            Self::DotDot => "..",
         }
     }
 }
@@ -325,8 +331,27 @@ pub enum TokenKind {
     Punct(Punct),
     /// `$word`: a frame macro reference, the word without the `$` (QC-8.5).
     FrameRef(String),
-    /// `$frame` and the names after it on its line (QC-8.2).
+    /// `$frame` and the names after it on its line (QC-8.2), or FTEQCC's `$framesave`
+    /// (FTEF-18.14).
     Frames(Vec<FrameName>),
+    /// One of FTEQCC's further `$` commands, which change the frame numbering (FTEF-18.16).
+    FrameCommand(FrameCommand),
+}
+
+/// An FTEQCC `$` command that changes how the next frame names are numbered (FTEF-18.16):
+/// `QCC_PR_LexGrab`'s cases beyond `$frame` and the ignored model commands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FrameCommand {
+    /// `$flush`: the next frame name is numbered 0 again.
+    Flush,
+    /// `$frame_reset`: every frame macro is forgotten and the next is numbered 0.
+    Reset,
+    /// `$framevalue N`: the next frame name is numbered `N`, the word read with `atoi`.
+    Value(String),
+    /// `$framerestore NAME`: the next frame name is numbered as the macro `NAME` is.
+    Restore(String),
+    /// `$modelname NAME`: a new model, whose name becomes a frame macro of its own.
+    ModelName(String),
 }
 
 /// A token and where it is.
@@ -971,33 +996,124 @@ impl Lexer<'_> {
         self.bytes(span).iter().copied().map(char::from).collect()
     }
 
+    /// The next frame macro word on the line, as FTEQCC's `QCC_PR_LexMacroName` reads it
+    /// (FTEF-18.13): whitespace skipped, then the bytes above `' '` (as a signed `char`) up to
+    /// `,`, `;`, `&`, `|`, `(`, `)`, `]` or `..`. `None`, taking nothing more, at the end of the
+    /// line, at a comment (a `//` one skipped to the end of the line), or when no byte is taken.
+    fn macro_name(&mut self) -> Option<Span> {
+        while let Some(b) = self.peek(0) {
+            if b == b'\n' {
+                return None;
+            }
+            if !matches!(b, b' ' | b'\r' | b'\t' | 0x0b) {
+                break;
+            }
+            self.bump(1);
+        }
+        if self.peek(0) == Some(b'/') {
+            if self.peek(1) == Some(b'/') {
+                while self.peek(0).is_some_and(|b| b != b'\n') {
+                    self.bump(1);
+                }
+                return None;
+            }
+            if self.peek(1) == Some(b'*') {
+                return None;
+            }
+        }
+        let start = self.pos;
+        while let Some(b) = self.peek(0) {
+            let stop = !(0x21..0x80).contains(&b)
+                || matches!(b, b',' | b';' | b'&' | b'|' | b')' | b'(' | b']')
+                || (b == b'.' && self.peek(1) == Some(b'.'));
+            if stop {
+                break;
+            }
+            self.bump(1);
+        }
+        (self.pos > start).then(|| Span::new(start, self.pos))
+    }
+
     /// A `$` command or frame macro reference (QC-8).
+    ///
+    /// In an FTEQCC dialect the word after the `$` is read as `QCC_PR_LexGrab` reads it: it
+    /// must follow the `$` at once, and it ends where FTEQCC's frame macro names end
+    /// (FTEF-18.13); `$framesave` is `$frame` (FTEF-18.14), the further commands of FTEF-18.16
+    /// are tokens of their own, and an ignored command takes only the words after it.
     fn dollar(&mut self) {
         let start = self.pos;
         self.bump(1);
-        let Some(word) = self.word() else {
+        let fteqcc = self.dialect.has_fteqcc_extensions();
+        let word = if fteqcc {
+            // `if (qcc_iswhite(*pr_file_p)) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "hanging $");`
+            let white = matches!(self.peek(0), Some(b' ' | b'\r' | b'\n' | b'\t' | 0x0b));
+            if white { None } else { self.macro_name() }
+        } else {
+            self.word()
+        };
+        let Some(word) = word else {
             self.error(Code::E0107, "hanging $", Span::new(start, self.pos));
             return;
         };
         self.check_length(word.end.saturating_sub(word.start), word);
         let command = self.word_text(word);
-        if command == "frame" {
-            self.frames(start);
-        } else if IGNORED_COMMANDS.contains(&command.as_str()) {
-            // QC-27.14: the rest of the line goes, `,` and `;` included.
-            while self.peek(0).is_some_and(|b| b != b'\n') {
-                self.bump(1);
+        match command.as_str() {
+            "frame" => self.frames(start),
+            "framesave" if fteqcc => self.frames(start),
+            word if IGNORED_COMMANDS.contains(&word) => {
+                if fteqcc {
+                    // `while (QCC_PR_LexMacroName ()) ;`: the words, up to the first that
+                    // ends at once.
+                    while self.macro_name().is_some() {}
+                } else {
+                    // QC-27.14: the rest of the line goes, `,` and `;` included.
+                    while self.peek(0).is_some_and(|b| b != b'\n') {
+                        self.bump(1);
+                    }
+                }
             }
-        } else {
-            self.push(TokenKind::FrameRef(command), start);
+            "flush" | "frame_reset" if fteqcc => {
+                while self.macro_name().is_some() {}
+                let command = if command == "flush" {
+                    FrameCommand::Flush
+                } else {
+                    FrameCommand::Reset
+                };
+                self.push(TokenKind::FrameCommand(command), start);
+            }
+            "framevalue" | "framerestore" | "modelname" if fteqcc => {
+                let operand = self
+                    .macro_name()
+                    .map(|span| self.word_text(span))
+                    .unwrap_or_default();
+                let command = match command.as_str() {
+                    "framevalue" => FrameCommand::Value(operand),
+                    "framerestore" => FrameCommand::Restore(operand),
+                    _ => FrameCommand::ModelName(operand),
+                };
+                self.push(TokenKind::FrameCommand(command), start);
+            }
+            _ => self.push(TokenKind::FrameRef(command), start),
         }
+    }
+
+    /// The next name of a `$frame` line: `PR_SimpleGetToken`'s word (QC-8.1), or in an FTEQCC
+    /// dialect `QCC_PR_LexMacroName`'s (FTEF-18.13), where a `,` or `;` is an empty word.
+    fn frame_word(&mut self) -> Option<Span> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return self.word();
+        }
+        if let Some(span) = self.macro_name() {
+            return Some(span);
+        }
+        matches!(self.peek(0), Some(b',' | b';')).then(|| Span::new(self.pos, self.pos))
     }
 
     /// The names of a `$frame` line (QC-8.2), with the errors of QC-27.5 and the warning of
     /// QC-27.6.
     fn frames(&mut self, start: usize) {
         let mut names = Vec::new();
-        while let Some(span) = self.word() {
+        while let Some(span) = self.frame_word() {
             if span.start == span.end {
                 self.bump(1);
                 self.error(

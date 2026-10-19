@@ -17,7 +17,10 @@ source file to the next, and `Preprocessor::restart` begins FTEQCC's second auto
 pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4). An FTEQCC dialect
 also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-14): `#if`,
 `#elif`, `#elifdef` and `#elifndef` (with the project graph's evaluator, now in `cond`, so both
-take the same sides), directives continued after a `\`, `#warning`, `#error` and `#message`,
+take the same sides; it reads an expression with FTEQCC's precedence under an FTEQCC dialect,
+FTEF-14.11), `#pragma noref` and `#pragma autoproto` recorded for the semantic model (FTEF-12.6,
+FTEF-12.9), FTEQCC's frame numbering and its further `$` commands (FTEF-18.16, FTEF-18.17),
+directives continued after a `\`, `#warning`, `#error` and `#message`,
 `#includelist` blocks (the graph's to compile), `#append`, `#eof` and the build directives,
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
 argument, and the built-in constants such as `__NULL__`. A token `##` or `#` made, or a

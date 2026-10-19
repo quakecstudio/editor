@@ -36,6 +36,9 @@ pub struct ModuleInput {
     pub prelude: Vec<FileId>,
     /// The files compiled, in compilation order (QC-23.3).
     pub compiled: Vec<FileId>,
+    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.9), which the
+    /// graph reads, since that file is not preprocessed here.
+    pub autoproto: Option<bool>,
 }
 
 impl ModuleInput {
@@ -45,7 +48,10 @@ impl ModuleInput {
     /// compiled, in the graph's order.
     #[must_use]
     pub fn from_graph(graph: &FileGraph) -> Self {
-        let mut input = Self::default();
+        let mut input = Self {
+            autoproto: graph.autoproto,
+            ..Self::default()
+        };
         for (index, file) in graph.files.iter().enumerate() {
             let id = FileId(index);
             match file.via {
@@ -120,6 +126,9 @@ pub(crate) struct Preprocessed {
     pub(crate) files: Vec<Rendered>,
     /// Lexical and preprocessor diagnostics.
     pub(crate) diagnostics: Vec<FileDiagnostic>,
+    /// Whether the module was read with FTEQCC's autoprototyping (FTE-22.3): asked for by the
+    /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.9).
+    pub(crate) autoproto: bool,
 }
 
 /// Reads files out of the database by path, so the preprocessor sees the editor's buffers
@@ -149,6 +158,8 @@ pub(crate) struct Files<'a> {
 
 /// Preprocesses the module `input` in `dialect` (QC-9, QC-23.3), and with FTEQCC's
 /// autoprototyping twice, as FTEQCC reads the files twice (FTE-22.3, FTE-22.4).
+/// Autoprototyping is `autoproto`, FTEQCC's `-Fautoproto`, unless a `#pragma autoproto`
+/// before any definition of the module says otherwise (FTEF-12.9).
 pub(crate) fn preprocess(
     files: &Files<'_>,
     input: &ModuleInput,
@@ -159,20 +170,27 @@ pub(crate) fn preprocess(
         texts: &files.texts,
     };
     let mut pp = Preprocessor::new(loader).with_dialect(dialect);
-    if autoproto {
-        let _ = run(&mut pp, files, input);
-        pp.restart();
+    let (first, pragma) = run(&mut pp, files, input);
+    if !pragma.or(input.autoproto).unwrap_or(autoproto) {
+        return first;
     }
-    run(&mut pp, files, input)
+    pp.restart();
+    let (mut second, _) = run(&mut pp, files, input);
+    second.autoproto = true;
+    second
 }
 
-/// One pass over the prelude and the compiled files.
+/// One pass over the prelude and the compiled files, and the setting of the last
+/// `#pragma autoproto` that comes before any definition (FTEF-12.9): one in the prelude, or
+/// one in a compiled file before the first token of any compiled file.
 fn run<L: Loader>(
     pp: &mut Preprocessor<L>,
     files: &Files<'_>,
     input: &ModuleInput,
-) -> Preprocessed {
+) -> (Preprocessed, Option<bool>) {
     let mut out = Preprocessed::default();
+    let mut pragma = None;
+    let mut defined = false;
     let listed = input
         .prelude
         .iter()
@@ -203,9 +221,15 @@ fn run<L: Loader>(
                 continue;
             }
         };
+        for &(at, on) in &output.autoproto {
+            if !compiled || (!defined && at == 0) {
+                pragma = Some(on);
+            }
+        }
         if !compiled {
             continue;
         }
+        defined |= !output.tokens.is_empty();
         for d in output.diagnostics {
             let Some(location) = source_location(pp, files, d.span) else {
                 continue;
@@ -234,7 +258,7 @@ fn run<L: Loader>(
             .collect();
         out.files.push(rendered);
     }
-    out
+    (out, pragma)
 }
 
 /// The database location of a preprocessor span: the database file with the same path.

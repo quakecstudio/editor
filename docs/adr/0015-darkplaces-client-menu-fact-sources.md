@@ -106,7 +106,8 @@ This is not legal advice; the license compliance review before the first public 
 
 ## Links
 
-- Plan key P2-35 and the pull request that merged this ADR.
+- Issue [#418](https://github.com/quakecstudio/editor/issues/418) and the pull request that
+  merged this ADR.
 - Related ADRs: [ADR-0014](0014-engine-fact-sources.md), which this supersedes;
   [ADR-0002](0002-license-model.md) (the project license and the P4-22 review).
 - Sources, all read on 2026-10-19:
