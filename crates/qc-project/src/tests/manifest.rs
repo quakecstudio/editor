@@ -30,7 +30,7 @@ fn manifest_error(manifest: &str) -> String {
 const ONE_MODULE: &str = "[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
 
 // spec PRJ-2.1: an optional [project] table and one or more [[module]] tables
-// spec PRJ-2.2: a module without dialect or target takes the project's, and the defaults are vanilla and quake
+// spec PRJ-2.8, PRJ-2.9: a module without dialect or target takes the project's, and the defaults are vanilla and quake
 #[test]
 fn smallest_manifest() {
     let project = open_manifest(
@@ -53,7 +53,7 @@ fn smallest_manifest() {
 }
 
 // spec PRJ-2.1: every key of [project] and [[module]] is read
-// spec PRJ-2.2: dialect and target take each listed value, and a module's own wins
+// spec PRJ-2.8, PRJ-2.9: dialect and target take each listed value, and a module's own wins
 // spec PRJ-2.5: src, output and include_dirs resolve against the project directory
 // spec PRJ-2.6: defines are NAME or NAME=VALUE
 // spec PRJ-3.2: an explicit output is used, and the declared output is kept separately
@@ -134,7 +134,8 @@ target = "rerelease"
     assert_eq!(menu.output, Path::new("proj/build/copper/menu.dat"));
 }
 
-// spec PRJ-2.2: vanilla, fteqcc, gmqcc and quake, rerelease, fte, dp are the values
+// spec PRJ-2.8, PRJ-2.9: vanilla, fteqcc, gmqcc and quake, quakespasm, ironwail, vkquake,
+// rerelease, fte, dp are the values
 #[test]
 fn every_dialect_and_target() {
     let dialects = [
@@ -144,10 +145,14 @@ fn every_dialect_and_target() {
     ];
     let targets = [
         ("quake", Target::Quake),
+        ("quakespasm", Target::QuakeSpasm),
+        ("ironwail", Target::Ironwail),
+        ("vkquake", Target::VkQuake),
         ("rerelease", Target::Rerelease),
         ("fte", Target::Fte),
         ("dp", Target::Dp),
     ];
+    assert_eq!(targets.map(|(_, target)| target), Target::ALL);
     for (text, dialect) in dialects {
         for (ttext, target) in targets {
             let manifest =
@@ -158,7 +163,7 @@ fn every_dialect_and_target() {
     }
 }
 
-// spec PRJ-2.2: a module's dialect selects the lexer and parser dialect one for one, so the
+// spec PRJ-2.8: a module's dialect selects the lexer and parser dialect one for one, so the
 // parser and semantic model build it in the right profile (LANG-5, COMP-3).
 #[test]
 fn dialect_selects_the_lexer_dialect() {
@@ -198,6 +203,14 @@ fn invalid_manifests() {
         (
             format!("[project]\ntarget = \"quake2\"\n{ONE_MODULE}"),
             "quake2",
+        ),
+        (
+            format!("[project]\ntarget = \"vkQuake\"\n{ONE_MODULE}"),
+            "vkQuake",
+        ),
+        (
+            format!("{ONE_MODULE}target = \"quake_spasm\"\n"),
+            "quake_spasm",
         ),
         ("[[module]]\nsrc = \"p.src\"\n".to_owned(), "kind"),
         ("[[module]]\nkind = \"ssqc\"\n".to_owned(), "src"),

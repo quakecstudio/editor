@@ -196,11 +196,14 @@ impl Engine {
         Self::ALL.into_iter().find(|engine| engine.id() == id)
     }
 
-    /// The engine a project file's target selects (ENGT-3.5).
+    /// The engine a project file's target selects (ENGT-3.5, ENGT-3.6).
     #[must_use]
     pub const fn from_target(target: Target) -> Self {
         match target {
             Target::Quake => Self::Vanilla,
+            Target::QuakeSpasm => Self::QuakeSpasm,
+            Target::Ironwail => Self::Ironwail,
+            Target::VkQuake => Self::VkQuake,
             Target::Rerelease => Self::Kex,
             Target::Fte => Self::Fteqw,
             Target::Dp => Self::DarkPlaces,

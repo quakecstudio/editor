@@ -7,10 +7,11 @@
 )]
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use qc_builtins::table::BUILTINS;
 use qc_diag::{Code, Severity, Span};
-use qc_project::Target;
+use qc_project::{MemoryLoader, Target, open_dir};
 use qc_sema::lower::lower_file;
 use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
 use qc_syntax::Parse;
@@ -232,6 +233,45 @@ fn project_targets_select_engines() {
     assert_eq!(Engine::from_target(Target::Rerelease), Engine::Kex);
     assert_eq!(Engine::from_target(Target::Fte), Engine::Fteqw);
     assert_eq!(Engine::from_target(Target::Dp), Engine::DarkPlaces);
+}
+
+// spec ENGT-3.6: quakespasm, ironwail and vkquake select their engines, and every engine is
+// some target's
+#[test]
+fn every_engine_is_some_targets() {
+    assert_eq!(Engine::from_target(Target::QuakeSpasm), Engine::QuakeSpasm);
+    assert_eq!(Engine::from_target(Target::Ironwail), Engine::Ironwail);
+    assert_eq!(Engine::from_target(Target::VkQuake), Engine::VkQuake);
+    let reached: Vec<Engine> = Target::ALL.map(Engine::from_target).to_vec();
+    for engine in Engine::ALL {
+        assert!(reached.contains(&engine), "{}", engine.name());
+    }
+}
+
+// spec ENGT-3.6, ENGT-4.1: a quakec.toml targeting ironwail opens, and calling an FTE_ builtin
+// in its module is W0311 naming Ironwail
+#[test]
+fn an_ironwail_project_reports_an_fte_builtin() {
+    let manifest =
+        "[project]\ntarget = \"ironwail\"\n[[module]]\nkind = \"ssqc\"\nsrc = \"progs.src\"\n";
+    let mut loader = MemoryLoader::new();
+    loader.insert("proj/quakec.toml", manifest.as_bytes());
+    loader.insert("proj/progs.src", b"progs.dat\nworld.qc\n");
+    loader.insert("proj/world.qc", HASH_CALL.as_bytes());
+    let project = open_dir(&mut loader, Path::new("proj")).unwrap();
+    let module = &project.modules[0];
+    assert_eq!(module.target, Target::Ironwail);
+    let paths: Vec<&Path> = module
+        .graph
+        .files
+        .iter()
+        .map(|f| f.path.as_path())
+        .collect();
+    assert_eq!(paths, [Path::new("proj/world.qc")]);
+    assert_eq!(
+        messages(Engine::from_target(module.target), &[HASH_CALL]),
+        ["hash_createtab is builtin #287, which Ironwail does not have (FTE_QC_HASHTABLES)"]
+    );
 }
 
 // spec ENGT-4.1, QCD-7.17: calling an FTE_ builtin while targeting Ironwail is W0311 at the

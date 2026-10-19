@@ -111,8 +111,10 @@ own source as a further fact source.
 - **ENGT-3.4** Each engine has a display name (`Vanilla`, `QuakeSpasm`, `Ironwail`,
   `vkQuake`, `FTEQW`, `DarkPlaces`, `KEX`) and an id (`vanilla`, `quakespasm`, `ironwail`,
   `vkquake`, `fteqw`, `darkplaces`, `kex`); reading any other id gives no engine.
-- **ENGT-3.5** A project file's target (PRJ-2.2) selects an engine: `quake` is Vanilla,
+- **ENGT-3.5** A project file's target (PRJ-2.9) selects an engine: `quake` is Vanilla,
   `rerelease` KEX, `fte` FTEQW and `dp` DarkPlaces.
+- **ENGT-3.6** The targets `quakespasm`, `ironwail` and `vkquake` (PRJ-2.9) select QuakeSpasm,
+  Ironwail and vkQuake, so every engine of ENGT-3.1 is the engine of some target.
 
 ## ENGT-4 Missing builtins
 
