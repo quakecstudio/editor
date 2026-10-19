@@ -236,7 +236,7 @@ impl<L: Loader> Preprocessor<L> {
         self.macros.clear();
     }
 
-    /// Sets the dialect this preprocessor accepts (PRJ-2.2). In an FTEQCC dialect the
+    /// Sets the dialect this preprocessor accepts (PRJ-2.8). In an FTEQCC dialect the
     /// FTEQCC `#pragma` directive (FTE-16) is accepted rather than reported as an unknown
     /// directive (QC-9.9). Vanilla is the default.
     #[must_use]

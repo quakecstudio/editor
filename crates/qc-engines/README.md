@@ -44,15 +44,23 @@ cargo test -p qc-engines
 
 ## Public shape
 
-- `Engine`: the seven engines, with `name`, `id`, `from_id`, `from_target` (a project file's
-  target), `builtins`, `builtin` and `extensions`.
+- `Engine`: the seven engines, with `name`, `id`, `from_id`, `from_target` (every project
+  file target, ENGT-3.5 and ENGT-3.6), and, for a module kind, `has_table`, `builtins`,
+  `builtin` and `extensions`.
 - `Builtin` and `BuiltinKey`: a table entry, keyed by number (`#N`) or engine name (`#0:NAME`).
 - `SOURCES` and `Source`: the pinned fact sources and their checksums.
-- `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module checked
-  against a target engine.
+- `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module of a
+  kind checked against a target engine, for builtins declared `#N` and, under FTEQCC,
+  `#0:NAME`.
+
+## Module kinds
+
+Every engine has a server QuakeC table. FTEQW also has client (CSQC) and menu QuakeC tables,
+read from the same pinned `fteextensions.qc` with `CSQC` or `MENU` defined (ENGT-2.8,
+ENGT-3.7); no other engine has one, so a client or menu module targeting it is not checked
+(ENGT-4.8).
 
 ## What it is not, yet
 
-The tables are for server QuakeC; CSQC and menu QuakeC tables, calls of `#0:NAME` builtins
-(which the vanilla parser does not accept), and the QuakeSpasm lineage's own extension lists
-are later work (see the spec's ENGT-3 notes).
+Client and menu QuakeC tables for engines other than FTEQW, and the QuakeSpasm lineage's own
+extension lists, need further fact sources (see the spec's ENGT-3 notes).

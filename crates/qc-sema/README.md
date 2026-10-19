@@ -16,7 +16,7 @@ graph is observable (and is what the incremental tests assert). The engine is wr
 with no dependency on the `salsa` crate: it is small, and the project builds its foundations
 itself.
 
-`Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.2). Under an
+`Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.8). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
 names and a `typedef` type name become definitions (FTE-14, FTE-15), `const`/`var`/`nosave`
 globals and `for`-loop locals are ordinary definitions (FTE-2, FTE-10 to FTE-12), and member

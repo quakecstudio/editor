@@ -58,7 +58,7 @@ impl ModuleIndex {
 /// How a module is resolved: the dialect profile and FTEQCC's autoprototyping.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ResolveOptions {
-    /// The dialect profile (PRJ-2.2). An FTEQCC dialect resolves by FTE-22.
+    /// The dialect profile (PRJ-2.8). An FTEQCC dialect resolves by FTE-22.
     pub dialect: Dialect,
     /// FTEQCC's `-Fautoproto` (FTE-22.3): every top-level declaration of the module is
     /// visible to every function body. Only meaningful with an FTEQCC dialect.
