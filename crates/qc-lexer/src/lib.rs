@@ -57,7 +57,7 @@ pub enum Dialect {
 }
 
 impl Dialect {
-    /// Whether this dialect lexes and parses the FTEQCC extensions (FTE-1 to FTE-16).
+    /// Whether this dialect lexes and parses the FTEQCC extensions (FTE-1 to FTE-22).
     ///
     /// Vanilla does not; every other dialect does, since GMQCC is a superset of the FTEQCC
     /// subset the rerelease uses (COMP-3).
@@ -142,6 +142,32 @@ pub enum Punct {
     Question,
     /// `:` (FTEQCC, FTE-8).
     Colon,
+    /// `->` (FTEQCC, FTE-19.2): member access, read as `.`.
+    Arrow,
+    /// `~` (FTEQCC, FTE-19.4): bitwise not.
+    Tilde,
+    /// `&=` (FTEQCC, FTE-19.1).
+    AndEq,
+    /// `|=` (FTEQCC, FTE-19.1).
+    OrEq,
+    /// `&~=` (FTEQCC, FTE-19.1): clear the bits of the right side.
+    AndNotEq,
+    /// `(+)` (FTEQCC, FTE-19.2): read as `|=`.
+    SetBits,
+    /// `(-)` (FTEQCC, FTE-19.2): read as `&~=`.
+    ClearBits,
+    /// `^` (FTEQCC, FTE-19.1): bitwise exclusive or.
+    Caret,
+    /// `^=` (FTEQCC, FTE-19.1).
+    CaretEq,
+    /// `>>` (FTEQCC, FTE-19.1): shift right.
+    Shr,
+    /// `>>=` (FTEQCC, FTE-19.1).
+    ShrEq,
+    /// `<<` (FTEQCC, FTE-19.1): shift left.
+    Shl,
+    /// `<<=` (FTEQCC, FTE-19.1).
+    ShlEq,
 }
 
 impl Punct {
@@ -179,19 +205,36 @@ impl Punct {
         Self::Or,
     ];
 
-    /// The FTEQCC punctuation tokens (FTE-5 to FTE-8), tried before the vanilla tokens so
-    /// that the longer FTEQCC operators win the longest match (QC-7.1): `++`, `--`, `+=`,
-    /// `-=`, `*=` and `/=` before `+`, `-`, `*` and `/`. The entirely new `%`, `?` and `:`
-    /// bytes are vanilla "Unknown punctuation" (QC-7.2), so their order is immaterial. These
-    /// are not ported from FTEQCC; they are this project's rules for the FTEQCC subset the
-    /// rerelease uses (`docs/spec/dialect-fteqcc-rerelease.md`).
-    pub const FTEQCC: [Self; 9] = [
+    /// The FTEQCC punctuation tokens (FTE-5 to FTE-8, FTE-19.1), tried before the vanilla
+    /// tokens so that the longer FTEQCC operators win the longest match (QC-7.1): `++`, `--`,
+    /// `+=`, `-=`, `*=` and `/=` before `+`, `-`, `*` and `/`; `(+)` and `(-)` before `(`;
+    /// `&~=` and `&=` before `&`; `|=` before `|`; `->` before `-`; and `<<=`, `<<`, `>>=`
+    /// and `>>` before `<` and `>`. FTEQCC's own table (`pr_punctuation` in `qcc_pr_lex.c`)
+    /// keeps the same rule: "longer symbols must be before a shorter partial match". The
+    /// entirely new `%`, `?`, `:`, `^` and `~` bytes are vanilla "Unknown punctuation"
+    /// (QC-7.2), so their order among themselves is immaterial. These are not ported from
+    /// FTEQCC; they are this project's rules for the FTEQCC subset the rerelease uses
+    /// (`docs/spec/dialect-fteqcc-rerelease.md`).
+    pub const FTEQCC: [Self; 22] = [
         Self::PlusPlus,
         Self::MinusMinus,
         Self::PlusEq,
         Self::MinusEq,
         Self::StarEq,
         Self::SlashEq,
+        Self::SetBits,
+        Self::ClearBits,
+        Self::OrEq,
+        Self::AndNotEq,
+        Self::AndEq,
+        Self::Arrow,
+        Self::CaretEq,
+        Self::Caret,
+        Self::ShlEq,
+        Self::Shl,
+        Self::ShrEq,
+        Self::Shr,
+        Self::Tilde,
         Self::Percent,
         Self::Question,
         Self::Colon,
@@ -237,6 +280,19 @@ impl Punct {
             Self::Percent => "%",
             Self::Question => "?",
             Self::Colon => ":",
+            Self::Arrow => "->",
+            Self::Tilde => "~",
+            Self::AndEq => "&=",
+            Self::OrEq => "|=",
+            Self::AndNotEq => "&~=",
+            Self::SetBits => "(+)",
+            Self::ClearBits => "(-)",
+            Self::Caret => "^",
+            Self::CaretEq => "^=",
+            Self::Shr => ">>",
+            Self::ShrEq => ">>=",
+            Self::Shl => "<<",
+            Self::ShlEq => "<<=",
         }
     }
 }
@@ -305,8 +361,9 @@ pub fn lex(source: &[u8]) -> Lexed {
 ///
 /// With [`Dialect::Vanilla`] the output is byte for byte what [`lex`] produces. A dialect
 /// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
-/// punctuation `++`, `--`, `+=`, `-=`, `*=`, `/=`, `%`, `?` and `:`
-/// (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to FTE-8); every other rule is the same.
+/// punctuation of [`Punct::FTEQCC`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
+/// FTE-8, FTE-19.1), a number that starts with `.` or ends with an `f` suffix (FTE-20.1,
+/// FTE-20.2), and the further string escapes of FTE-20.3; every other rule is the same.
 #[must_use]
 pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     let text = source
@@ -404,6 +461,10 @@ impl Lexer<'_> {
                 self.vector();
             } else if c.is_ascii_digit()
                 || (c == b'-' && self.peek(1).is_some_and(|d| d.is_ascii_digit()))
+                // FTE-20.1: in FTEQCC a `.` before a digit starts a number, `.5`.
+                || (self.dialect.has_fteqcc_extensions()
+                    && c == b'.'
+                    && self.peek(1).is_some_and(|d| d.is_ascii_digit()))
             {
                 let value = self.number();
                 self.push(TokenKind::Float(value), start);
@@ -503,13 +564,17 @@ impl Lexer<'_> {
                             "Unknown escape char",
                             Span::new(escape, self.pos),
                         ),
-                        Some(_) => {
+                        Some(other) => {
                             self.bump(1);
-                            self.error(
-                                Code::E0103,
-                                "Unknown escape char",
-                                Span::new(escape, self.pos),
-                            );
+                            if let Some(byte) = self.fteqcc_escape(other) {
+                                contents.push(byte);
+                            } else {
+                                self.error(
+                                    Code::E0103,
+                                    "Unknown escape char",
+                                    Span::new(escape, self.pos),
+                                );
+                            }
                         }
                     }
                 }
@@ -523,8 +588,27 @@ impl Lexer<'_> {
         self.push(TokenKind::String(contents), start);
     }
 
+    /// The byte an FTEQCC escape `\c` stands for, beyond vanilla's `\n` and `\"` (FTE-20.3):
+    /// the escapes of `QCC_PR_LexEscapedCodepoint` that name one ASCII byte. `None` in the
+    /// vanilla dialect, and for any other `c`, which stays "Unknown escape char" (QC-6.2).
+    fn fteqcc_escape(&self, c: u8) -> Option<u8> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        match c {
+            b'r' => Some(b'\r'),
+            b't' => Some(b'\t'),
+            b'a' => Some(0x07),
+            b'v' => Some(0x0b),
+            b'f' => Some(0x0c),
+            b'#' | b'\\' | b'?' | b'\'' => Some(c),
+            _ => None,
+        }
+    }
+
     /// A number as `PR_LexNumber` reads it: the first byte whatever it is, then digits and
-    /// dots, converted with `atof` (QC-4.1, QC-5.1).
+    /// dots, converted with `atof` (QC-4.1, QC-5.1). In an FTEQCC dialect a trailing `f` or
+    /// `F` float suffix (`1.0f`, FTE-20.2) is part of the token but not of the value.
     fn number(&mut self) -> f32 {
         let start = self.pos;
         self.bump(1);
@@ -535,8 +619,12 @@ impl Lexer<'_> {
             self.bump(1);
         }
         let span = Span::new(start, self.pos);
+        let value = atof(self.bytes(span));
+        if self.dialect.has_fteqcc_extensions() && matches!(self.peek(0), Some(b'f' | b'F')) {
+            self.bump(1);
+        }
         self.check_length(self.pos.saturating_sub(start), span);
-        atof(self.bytes(span))
+        value
     }
 
     /// A vector literal (QC-5).
