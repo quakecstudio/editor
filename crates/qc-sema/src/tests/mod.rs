@@ -15,6 +15,8 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod dialect;
+mod dialect_resolution;
 mod incremental;
 mod navigation;
 mod resolution;
@@ -27,6 +29,15 @@ use crate::symbol::FileId;
 /// Resolves a single-file module from `source` and returns its index.
 fn index_of(source: &str) -> ModuleIndex {
     module_index_of(&[source])
+}
+
+/// Resolves a single-file module from `source` under the FTEQCC dialect.
+fn fte_index_of(source: &str) -> ModuleIndex {
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    let id = FileId(0);
+    db.set_file_text(id, source.as_bytes().to_vec());
+    db.module_index(&[id])
 }
 
 /// Resolves a module of several files, in the order given (compilation order, QC-23.3).

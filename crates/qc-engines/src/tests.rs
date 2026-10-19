@@ -12,7 +12,7 @@ use qc_builtins::table::BUILTINS;
 use qc_diag::{Code, Severity, Span};
 use qc_project::Target;
 use qc_sema::lower::lower_file;
-use qc_sema::{FileId, ModuleIndex, resolve_module};
+use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
 use qc_syntax::Parse;
 
 use crate::check::builtin_number;
@@ -24,8 +24,11 @@ fn module(files: &[&str]) -> (Vec<Parse>, ModuleIndex) {
         .iter()
         .map(|f| qc_syntax::parse(f.as_bytes()))
         .collect();
-    let lowered: Vec<_> = parses.iter().map(lower_file).collect();
-    let index = resolve_module(&lowered);
+    let lowered: Vec<_> = parses
+        .iter()
+        .map(|p| lower_file(p, qc_syntax::Dialect::Vanilla))
+        .collect();
+    let index = resolve_module(&lowered, ResolveOptions::default());
     (parses, index)
 }
 

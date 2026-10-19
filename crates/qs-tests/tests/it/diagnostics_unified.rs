@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 
 use qc_diag::Diagnostic;
 use qc_sema::lower::lower_file;
-use qc_sema::{Db, FileId, resolve_module};
+use qc_sema::{Db, FileId, ResolveOptions, resolve_module};
 
 /// One module of the corpus: its files, each a name and its source, in compilation order.
 struct Module {
@@ -97,8 +97,11 @@ fn build_diagnostics(module: &Module) -> BTreeSet<Key> {
             out.insert(key(index, d));
         }
     }
-    let lowered: Vec<_> = parses.iter().map(lower_file).collect();
-    let module_index = resolve_module(&lowered);
+    let lowered: Vec<_> = parses
+        .iter()
+        .map(|p| lower_file(p, qc_syntax::Dialect::Vanilla))
+        .collect();
+    let module_index = resolve_module(&lowered, ResolveOptions::default());
     for d in &module_index.diagnostics {
         out.insert(key(resolve_file_of(module, d), d));
     }

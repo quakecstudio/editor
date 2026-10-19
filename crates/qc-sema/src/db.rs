@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use qc_syntax::Parse;
 
 use crate::lower::{FileDecls, lower_file};
-use crate::resolve::{ModuleIndex, resolve_module};
+use crate::resolve::{ModuleIndex, ResolveOptions, resolve_module};
 use crate::symbol::FileId;
 
 /// How many times each memoized query actually ran, as opposed to being served from cache.
@@ -71,6 +71,10 @@ struct Memo<T> {
 pub struct Db {
     /// The current clock. Bumped each time an input changes.
     clock: Revision,
+    /// The dialect every file is parsed in (PRJ-2.2). Vanilla by default.
+    dialect: qc_syntax::Dialect,
+    /// Whether modules resolve with FTEQCC's autoprototyping (FTE-22.3). Off by default.
+    autoproto: bool,
     /// The input files, by id.
     files: HashMap<FileId, InputFile>,
     /// Memoized per-file parses.
@@ -88,6 +92,40 @@ impl Db {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The dialect files are parsed in.
+    #[must_use]
+    pub fn dialect(&self) -> qc_syntax::Dialect {
+        self.dialect
+    }
+
+    /// Sets the dialect every file is parsed in (PRJ-2.2), selecting the vanilla or an FTEQCC
+    /// profile. Changing it invalidates every cached parse, lowering and module index, since
+    /// they depend on the dialect; set it once before adding files in the common case.
+    pub fn set_dialect(&mut self, dialect: qc_syntax::Dialect) {
+        if self.dialect == dialect {
+            return;
+        }
+        self.dialect = dialect;
+        self.clock.0 = self.clock.0.saturating_add(1);
+        self.parses.clear();
+        self.lowerings.clear();
+        self.module = None;
+        // Stamp every file with the new revision so dependent queries recompute.
+        for file in self.files.values_mut() {
+            file.revision = self.clock;
+        }
+    }
+
+    /// Sets whether modules resolve with FTEQCC's autoprototyping, `-Fautoproto` (FTE-22.3):
+    /// every top-level declaration visible to every function body. It changes only the
+    /// module index, so only that is recomputed.
+    pub fn set_autoproto(&mut self, autoproto: bool) {
+        if self.autoproto != autoproto {
+            self.autoproto = autoproto;
+            self.module = None;
+        }
     }
 
     /// The query-run counters so far.
@@ -154,7 +192,7 @@ impl Db {
             return memo.value.clone();
         }
         self.bump_parse();
-        let value = qc_syntax::parse(self.file_text(file));
+        let value = qc_syntax::parse_with(self.file_text(file), self.dialect);
         self.parses.insert(
             file,
             Memo {
@@ -177,7 +215,7 @@ impl Db {
         }
         let parse = self.parse(file);
         self.bump_lower();
-        let value = lower_file(&parse);
+        let value = lower_file(&parse, self.dialect);
         self.lowerings.insert(
             file,
             Memo {
@@ -208,7 +246,11 @@ impl Db {
         }
         let lowered: Vec<FileDecls> = files.iter().map(|&f| self.lower(f)).collect();
         self.bump_module_index();
-        let index = resolve_module(&lowered);
+        let options = ResolveOptions {
+            dialect: self.dialect,
+            autoproto: self.autoproto,
+        };
+        let index = resolve_module(&lowered, options);
         self.module = Some(Memo {
             value: (files.to_vec(), index.clone()),
             computed_at: max_revision,

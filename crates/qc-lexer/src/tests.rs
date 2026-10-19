@@ -12,6 +12,16 @@ use std::fmt::Write as _;
 use proptest::prelude::*;
 
 use super::{Code, LineIndex, Punct, QC_MAX_TOKEN, Span, TokenKind, atof, lex};
+use super::{Dialect, lex_with};
+
+/// The token kinds a dialect lexer produces.
+fn kinds_in(source: &[u8], dialect: Dialect) -> Vec<TokenKind> {
+    lex_with(source, dialect)
+        .tokens
+        .into_iter()
+        .map(|t| t.kind)
+        .collect()
+}
 
 /// A snapshot of a lex: one line per token, then one per diagnostic.
 fn snapshot(source: &[u8]) -> String {
@@ -671,6 +681,237 @@ fn reviewer_punctuation_maximal_munch() {
         vec![punct(Punct::Ellipsis), punct(Punct::Dot)]
     );
     assert_eq!(kinds(b".."), vec![punct(Punct::Dot), punct(Punct::Dot)]);
+}
+
+// spec FTE-5.1: `++` and `--` lex as single FTEQCC punctuators in an FTEQCC dialect.
+// spec FTE-6.1: `+=`, `-=`, `*=` and `/=` lex as single compound-assignment punctuators.
+// spec FTE-7.1: `%` lexes as the modulo punctuator.
+// spec FTE-8.1: `?` and `:` lex as the ternary punctuators.
+#[test]
+fn fteqcc_punctuators_lex_in_fteqcc_dialect() {
+    assert_eq!(
+        kinds_in(b"i++", Dialect::Fteqcc),
+        vec![name("i"), punct(Punct::PlusPlus)]
+    );
+    assert_eq!(
+        kinds_in(b"i--", Dialect::Fteqcc),
+        vec![name("i"), punct(Punct::MinusMinus)]
+    );
+    assert_eq!(
+        kinds_in(b"x += y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::PlusEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x -= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::MinusEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x *= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::StarEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"x /= y", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::SlashEq), name("y")]
+    );
+    assert_eq!(
+        kinds_in(b"a % b", Dialect::Fteqcc),
+        vec![name("a"), punct(Punct::Percent), name("b")]
+    );
+    assert_eq!(
+        kinds_in(b"a ? b : c", Dialect::Fteqcc),
+        vec![
+            name("a"),
+            punct(Punct::Question),
+            name("b"),
+            punct(Punct::Colon),
+            name("c"),
+        ]
+    );
+}
+
+// spec FTE-6.1: a compound FTEQCC operator wins the longest match over the vanilla operator
+// it extends, so `++=` is `++` then `=` and two separated `+` stay separate.
+#[test]
+fn fteqcc_punctuators_take_the_longest_match() {
+    assert_eq!(
+        kinds_in(b"++=", Dialect::Fteqcc),
+        vec![punct(Punct::PlusPlus), punct(Punct::Eq)]
+    );
+    assert_eq!(
+        kinds_in(b"+ +", Dialect::Fteqcc),
+        vec![punct(Punct::Plus), punct(Punct::Plus)]
+    );
+}
+
+// spec FTE-7.1: vanilla has no `%`, `?` or `:`: each is "Unknown punctuation" (QC-7.2), and
+// vanilla output is unchanged by the FTEQCC lexer additions (byte for byte).
+#[test]
+fn vanilla_lexing_is_unchanged_by_the_dialect_additions() {
+    // The FTEQCC bytes are vanilla "Unknown punctuation" and are skipped (QC-7.2).
+    assert_eq!(codes(b"a % b"), vec![Code::E0105]);
+    assert_eq!(codes(b"a ? b : c"), vec![Code::E0105, Code::E0105]);
+    // `i++` in vanilla is `i`, `+`, `+`: two separate Plus tokens, not one `++`.
+    assert_eq!(
+        kinds(b"i++"),
+        vec![name("i"), punct(Punct::Plus), punct(Punct::Plus)]
+    );
+    // `x += y` in vanilla is `x`, `+`, `=`, `y`.
+    assert_eq!(
+        kinds(b"x += y"),
+        vec![name("x"), punct(Punct::Plus), punct(Punct::Eq), name("y")]
+    );
+    // lex() and lex_with(.., Vanilla) agree.
+    assert_eq!(
+        kinds(b"i++ x+=y a%b?c:d"),
+        kinds_in(b"i++ x+=y a%b?c:d", Dialect::Vanilla)
+    );
+}
+
+// spec FTE-5.1: a negative-number token is still a single float, so `--`/`-=` lexing does
+// not change how `-1` lexes.
+#[test]
+fn negative_numbers_still_lex_as_floats_in_fteqcc() {
+    assert_eq!(
+        kinds_in(b"-1", Dialect::Fteqcc),
+        vec![TokenKind::Float(-1.0)]
+    );
+    assert_eq!(
+        kinds_in(b"x - 1", Dialect::Fteqcc),
+        vec![name("x"), punct(Punct::Minus), TokenKind::Float(1.0)]
+    );
+}
+
+// spec FTE-19.1: the further FTEQCC punctuators each lex as one token, the longest first.
+#[test]
+fn further_fteqcc_punctuators_lex() {
+    let cases: [(&[u8], Punct); 13] = [
+        (b"->", Punct::Arrow),
+        (b"~", Punct::Tilde),
+        (b"^", Punct::Caret),
+        (b"<<", Punct::Shl),
+        (b">>", Punct::Shr),
+        (b"&=", Punct::AndEq),
+        (b"|=", Punct::OrEq),
+        (b"^=", Punct::CaretEq),
+        (b"&~=", Punct::AndNotEq),
+        (b"<<=", Punct::ShlEq),
+        (b">>=", Punct::ShrEq),
+        (b"(+)", Punct::SetBits),
+        (b"(-)", Punct::ClearBits),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(kinds_in(source, Dialect::Fteqcc), vec![punct(expected)]);
+        assert_eq!(expected.as_str().as_bytes(), source);
+    }
+    // The vanilla tokens they extend still lex as before.
+    assert_eq!(
+        kinds_in(b"< <= & | ( - )", Dialect::Fteqcc),
+        vec![
+            punct(Punct::Less),
+            punct(Punct::LessEq),
+            punct(Punct::And),
+            punct(Punct::Or),
+            punct(Punct::LParen),
+            punct(Punct::Minus),
+            punct(Punct::RParen),
+        ]
+    );
+    // `(-1)` is a parenthesised number, not `(-)`.
+    assert_eq!(
+        kinds_in(b"(-1)", Dialect::Fteqcc),
+        vec![
+            punct(Punct::LParen),
+            TokenKind::Float(-1.0),
+            punct(Punct::RParen)
+        ]
+    );
+    // In vanilla `~` and `^` are "Unknown punctuation" (QC-7.2), and `->` is `-` and `>`.
+    assert_eq!(codes(b"~a ^ b"), vec![Code::E0105, Code::E0105]);
+    assert_eq!(
+        kinds(b"e->f"),
+        vec![
+            name("e"),
+            punct(Punct::Minus),
+            punct(Punct::Greater),
+            name("f")
+        ]
+    );
+}
+
+// spec FTE-19.2: `(+)` and `(-)` are single tokens, which the parser reads as `|=` and `&~=`.
+#[test]
+fn set_and_clear_bits_are_single_tokens() {
+    assert_eq!(
+        kinds_in(b"a (+) b (-) c", Dialect::Fteqcc),
+        vec![
+            name("a"),
+            punct(Punct::SetBits),
+            name("b"),
+            punct(Punct::ClearBits),
+            name("c"),
+        ]
+    );
+}
+
+// spec FTE-20.1: in FTEQCC a `.` before a digit starts a number; vanilla reads `.` alone.
+#[test]
+fn leading_dot_numbers_lex() {
+    assert_eq!(
+        kinds_in(b".1", Dialect::Fteqcc),
+        vec![TokenKind::Float(0.1)]
+    );
+    assert_eq!(
+        kinds_in(b"x = .25;", Dialect::Fteqcc),
+        vec![
+            name("x"),
+            punct(Punct::Eq),
+            TokenKind::Float(0.25),
+            punct(Punct::Semicolon)
+        ]
+    );
+    // `..` and a field access `e.x` are not numbers.
+    assert_eq!(
+        kinds_in(b"e.x", Dialect::Fteqcc),
+        vec![name("e"), punct(Punct::Dot), name("x")]
+    );
+    assert_eq!(kinds(b".1"), vec![punct(Punct::Dot), TokenKind::Float(1.0)]);
+}
+
+// spec FTE-20.2: an `f` or `F` suffix ends an FTEQCC number and is not part of its value.
+#[test]
+fn float_suffix_lexes() {
+    let lexed = lex_with(b"1.0f 2F 3", Dialect::Fteqcc);
+    let kinds: Vec<TokenKind> = lexed.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            TokenKind::Float(1.0),
+            TokenKind::Float(2.0),
+            TokenKind::Float(3.0)
+        ]
+    );
+    assert_eq!(lexed.tokens[0].span, Span::new(0, 4));
+    assert!(lexed.diagnostics.is_empty());
+    // In vanilla the suffix is a separate name.
+    assert_eq!(
+        kinds_in(b"1.0f", Dialect::Vanilla),
+        vec![TokenKind::Float(1.0), name("f")]
+    );
+}
+
+// spec FTE-20.3: FTEQCC's one-byte escapes are accepted; its others stay unknown.
+#[test]
+fn fteqcc_string_escapes() {
+    let lexed = lex_with(br#""\t\r\a\v\f\#\\\?\'\n\"""#, Dialect::Fteqcc);
+    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
+    assert_eq!(
+        lexed.tokens[0].kind,
+        TokenKind::String(b"\t\r\x07\x0b\x0c#\\?'\n\"".to_vec())
+    );
+    let unknown = lex_with(br#""\[\x41""#, Dialect::Fteqcc);
+    let unknown_codes: Vec<Code> = unknown.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(unknown_codes, vec![Code::E0103, Code::E0103]);
+    assert_eq!(codes(br#""\t""#), vec![Code::E0103]);
 }
 
 proptest! {

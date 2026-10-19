@@ -3,7 +3,7 @@
 //! The parser's input: the lexer's tokens, with every byte between them classified as
 //! trivia, and directive lines grouped so the parser can step over them.
 
-use qc_lexer::{Diagnostic, Punct, Span, TokenKind, is_whitespace, lex};
+use qc_lexer::{Diagnostic, Dialect, Punct, Span, TokenKind, is_whitespace, lex_with};
 
 use crate::kind::SyntaxKind;
 
@@ -54,9 +54,9 @@ fn latin1(bytes: &[u8]) -> String {
 }
 
 impl<'a> Input<'a> {
-    /// Lexes `source` and classifies everything between the tokens.
-    pub(crate) fn new(source: &'a [u8]) -> Self {
-        let lexed = lex(source);
+    /// Lexes `source` in `dialect` and classifies everything between the tokens.
+    pub(crate) fn new(source: &'a [u8], dialect: Dialect) -> Self {
+        let lexed = lex_with(source, dialect);
         let mut input = Self {
             source,
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),

@@ -8,6 +8,15 @@ end of the file. The diagnostic vocabulary itself, `Code`, `Diagnostic` and `Spa
 [`qc-diag`](../qc-diag/README.md) and is re-exported here, so code written against
 `qc_lexer::{Code, Diagnostic, Span}` keeps compiling. A line index is also provided.
 
+`lex` lexes the vanilla dialect; `lex_with(source, dialect)` lexes a chosen `Dialect`. An
+FTEQCC dialect also lexes the FTEQCC punctuators `++`, `--`, `+=`, `-=`, `*=`, `/=`, `%`, `?`
+and `:` (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to FTE-8) and `->`, `~`, `^`, `<<`,
+`>>`, `&=`, `|=`, `^=`, `&~=`, `<<=`, `>>=`, `(+)` and `(-)` (FTE-19.1, FTE-19.2), tried before
+the vanilla operators they extend so the longer operator wins the longest match (QC-7.1); a
+number that starts with `.` or ends with an `f` suffix (FTE-20.1, FTE-20.2); and FTEQCC's
+one-byte string escapes (FTE-20.3). Every other rule, and the vanilla output byte for byte, is
+unchanged.
+
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 them.

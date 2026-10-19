@@ -107,22 +107,31 @@ fn do_while_needs_semicolon() {
     );
 }
 
-// spec QC-14.8: there is no `for`, `switch`, `break`, `continue` or `goto`
+// spec QC-14.8: there is no `for`, `switch`, `break`, `continue` or `goto`; under the vanilla
+// profile each FTEQCC keyword construct is rejected with E0510 (QCD-6.10), and `goto`, which
+// is not an FTEQCC construct here, is read as an ordinary name.
 #[test]
 fn no_other_statements() {
-    let parsed = body("for (a = 0; a < 3; a = a + 1) b = 1;");
-    assert_eq!(
-        errors(&parsed)[0],
-        (Code::E0204, "expected ), found ;".to_owned())
-    );
-    for word in ["break", "continue", "goto", "switch"] {
-        let parsed = body(&format!("{word};"));
-        let stmts = statements(&parsed);
-        let ast::Stmt::Expr(stmt) = &stmts[0] else {
-            panic!("{word}");
-        };
-        assert_eq!(sexpr(&stmt.expr().unwrap()), word);
+    for word in [
+        "for (a = 0; a < 3; a = a + 1) b = 1;",
+        "switch (a) { }",
+        "break;",
+        "continue;",
+    ] {
+        let parsed = body(word);
+        assert_eq!(
+            errors(&parsed)[0].0,
+            Code::E0510,
+            "{word} should be rejected in the vanilla dialect"
+        );
     }
+    // `goto` is not in the FTEQCC subset, so it stays an ordinary name (an expression).
+    let parsed = body("goto;");
+    let stmts = statements(&parsed);
+    let ast::Stmt::Expr(stmt) = &stmts[0] else {
+        panic!("goto");
+    };
+    assert_eq!(sexpr(&stmt.expr().unwrap()), "goto");
 }
 
 #[test]

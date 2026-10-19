@@ -61,6 +61,9 @@
 //!   FTEQCC dialect constructs beyond the rerelease subset, grouped into the
 //!   classes of `docs/spec/dialect-fteqcc.md` (P2-25); it fails on a class no
 //!   section names.
+//! - `fteqcc-profile`: preprocesses, parses and resolves every module of each
+//!   rerelease codebase under the FTEQCC profile (P2-03) and fails on any error,
+//!   then checks the vanilla profile rejects each extension.
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
@@ -88,6 +91,7 @@ mod exec;
 mod fixtures;
 mod fteqcc_coverage;
 mod fteqcc_full_coverage;
+mod fteqcc_profile;
 mod fuzz;
 mod layers;
 mod lex_corpus;
@@ -108,7 +112,7 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | engines>";
+                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -168,6 +172,7 @@ fn command(name: &str) -> Option<Command> {
         "engines" => Some(engines::main),
         "fteqcc-coverage" => Some(fteqcc_coverage::main),
         "fteqcc-full-coverage" => Some(fteqcc_full_coverage::main),
+        "fteqcc-profile" => Some(fteqcc_profile::main),
         "fuzz" => Some(fuzz::main),
         "lex-corpus" => Some(lex_corpus::main),
         "map-corpus" => Some(map_corpus::main),
@@ -268,6 +273,7 @@ mod tests {
             "differential",
             "fteqcc-coverage",
             "fteqcc-full-coverage",
+            "fteqcc-profile",
             "fuzz",
             "lex-corpus",
             "map-corpus",

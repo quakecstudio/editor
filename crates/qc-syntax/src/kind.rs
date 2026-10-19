@@ -108,6 +108,75 @@ pub enum SyntaxKind {
     Amp,
     /// `|`
     Pipe,
+    /// `++` (FTEQCC, FTE-5).
+    PlusPlus,
+    /// `--` (FTEQCC, FTE-5).
+    MinusMinus,
+    /// `+=` (FTEQCC, FTE-6).
+    PlusEq,
+    /// `-=` (FTEQCC, FTE-6).
+    MinusEq,
+    /// `*=` (FTEQCC, FTE-6).
+    StarEq,
+    /// `/=` (FTEQCC, FTE-6).
+    SlashEq,
+    /// `%` (FTEQCC, FTE-7).
+    Percent,
+    /// `?` (FTEQCC, FTE-8).
+    Question,
+    /// `:` (FTEQCC, FTE-8).
+    Colon,
+    /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
+    Arrow,
+    /// `~` (FTEQCC, FTE-19.4).
+    Tilde,
+    /// `&=` (FTEQCC, FTE-19.1).
+    AndEq,
+    /// `|=` (FTEQCC, FTE-19.1).
+    OrEq,
+    /// `&~=` (FTEQCC, FTE-19.1).
+    AndNotEq,
+    /// `(+)` (FTEQCC, FTE-19.2): `|=` spelled another way.
+    SetBits,
+    /// `(-)` (FTEQCC, FTE-19.2): `&~=` spelled another way.
+    ClearBits,
+    /// `^` (FTEQCC, FTE-19.1).
+    Caret,
+    /// `^=` (FTEQCC, FTE-19.1).
+    CaretEq,
+    /// `>>` (FTEQCC, FTE-19.1).
+    Shr,
+    /// `>>=` (FTEQCC, FTE-19.1).
+    ShrEq,
+    /// `<<` (FTEQCC, FTE-19.1).
+    Shl,
+    /// `<<=` (FTEQCC, FTE-19.1).
+    ShlEq,
+
+    /// `for` starting a statement (FTEQCC, FTE-2).
+    ForKw,
+    /// `switch` starting a statement (FTEQCC, FTE-3).
+    SwitchKw,
+    /// `case` label (FTEQCC, FTE-3).
+    CaseKw,
+    /// `default` label (FTEQCC, FTE-3).
+    DefaultKw,
+    /// `break` statement (FTEQCC, FTE-4).
+    BreakKw,
+    /// `continue` statement (FTEQCC, FTE-4).
+    ContinueKw,
+    /// `const` qualifier (FTEQCC, FTE-10).
+    ConstKw,
+    /// `var` qualifier (FTEQCC, FTE-11).
+    VarKw,
+    /// `nosave` qualifier (FTEQCC, FTE-12).
+    NosaveKw,
+    /// `typedef` (FTEQCC, FTE-14).
+    TypedefKw,
+    /// `struct` (FTEQCC, FTE-14).
+    StructKw,
+    /// `enum` (FTEQCC, FTE-15).
+    EnumKw,
 
     /// A whole file.
     SourceFile,
@@ -163,6 +232,49 @@ pub enum SyntaxKind {
     CallExpr,
     /// The parenthesised arguments of a call.
     ArgList,
+
+    /// `for (init; cond; step) body` (FTEQCC, FTE-2).
+    ForStmt,
+    /// One of the three `;`-separated clauses of a `for` header (FTEQCC, FTE-2).
+    ForClause,
+    /// `switch (e) { ... }` (FTEQCC, FTE-3).
+    SwitchStmt,
+    /// `case e:` or `default:` (FTEQCC, FTE-3).
+    CaseLabel,
+    /// `break;` (FTEQCC, FTE-4).
+    BreakStmt,
+    /// `continue;` (FTEQCC, FTE-4).
+    ContinueStmt,
+    /// `e++` or `e--` (FTEQCC, FTE-5).
+    PostfixExpr,
+    /// `cond ? a : b` (FTEQCC, FTE-8).
+    TernaryExpr,
+    /// `e[i]` (FTEQCC, FTE-13).
+    IndexExpr,
+    /// `-e`, `+e` or `~e` (FTEQCC, FTE-19.4).
+    UnaryExpr,
+    /// `(type) e` (FTEQCC, FTE-19.6).
+    CastExpr,
+    /// `= e` after a parameter's name: its default value (FTEQCC, FTE-18.2).
+    DefaultValue,
+    /// `;` alone as a statement (FTEQCC, FTE-21.5).
+    EmptyStmt,
+    /// `const`, `var` or `nosave` before a declaration's type (FTEQCC, FTE-10 to FTE-12).
+    Qualifier,
+    /// `[N]` or `[]` after a declared name (FTEQCC, FTE-13).
+    ArraySuffix,
+    /// `{ a, b, ... }` array or struct initialiser (FTEQCC, FTE-13, FTE-14).
+    AggregateInit,
+    /// `typedef struct { ... } Name;` (FTEQCC, FTE-14).
+    TypedefDecl,
+    /// `struct { fields }` (FTEQCC, FTE-14).
+    StructType,
+    /// One field of a struct: a type and a name (FTEQCC, FTE-14).
+    StructField,
+    /// `enum [class Name] [: type] { ... };` (FTEQCC, FTE-15).
+    EnumDecl,
+    /// One enumerator `Name` or `Name = value` (FTEQCC, FTE-15).
+    Enumerator,
     /// Tokens the parser could not place, kept so that no byte is lost.
     Error,
 }
@@ -197,6 +309,18 @@ impl SyntaxKind {
                 | Self::ElseKw
                 | Self::WhileKw
                 | Self::DoKw
+                | Self::ForKw
+                | Self::SwitchKw
+                | Self::CaseKw
+                | Self::DefaultKw
+                | Self::BreakKw
+                | Self::ContinueKw
+                | Self::ConstKw
+                | Self::VarKw
+                | Self::NosaveKw
+                | Self::TypedefKw
+                | Self::StructKw
+                | Self::EnumKw
         )
     }
 
@@ -231,6 +355,28 @@ impl SyntaxKind {
             Punct::Hash => Self::Hash,
             Punct::And => Self::Amp,
             Punct::Or => Self::Pipe,
+            Punct::PlusPlus => Self::PlusPlus,
+            Punct::MinusMinus => Self::MinusMinus,
+            Punct::PlusEq => Self::PlusEq,
+            Punct::MinusEq => Self::MinusEq,
+            Punct::StarEq => Self::StarEq,
+            Punct::SlashEq => Self::SlashEq,
+            Punct::Percent => Self::Percent,
+            Punct::Question => Self::Question,
+            Punct::Colon => Self::Colon,
+            Punct::Arrow => Self::Arrow,
+            Punct::Tilde => Self::Tilde,
+            Punct::AndEq => Self::AndEq,
+            Punct::OrEq => Self::OrEq,
+            Punct::AndNotEq => Self::AndNotEq,
+            Punct::SetBits => Self::SetBits,
+            Punct::ClearBits => Self::ClearBits,
+            Punct::Caret => Self::Caret,
+            Punct::CaretEq => Self::CaretEq,
+            Punct::Shr => Self::Shr,
+            Punct::ShrEq => Self::ShrEq,
+            Punct::Shl => Self::Shl,
+            Punct::ShlEq => Self::ShlEq,
         }
     }
 }

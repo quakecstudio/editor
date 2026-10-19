@@ -149,6 +149,15 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   literal, a call, or an operator's result (QC-27.10).
 - **QCD-6.9** `E0509` "nesting too deep": statements, types or expressions nested more than
   `QC_MAX_NESTING` levels (QC-27.15).
+- **QCD-6.10** `E0510` "NAME is an FTEQCC extension, not in vanilla QuakeC": a construct the
+  FTEQCC dialect adds (`dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16) used under the vanilla
+  profile, at the construct's keyword. The FTEQCC dialect accepts it; the vanilla dialect
+  reports this error in its place for the keyword constructs (`for`, `switch`, `break`,
+  `continue`), so the profile that rejects each extension is observable (P2-03). The operator
+  and declaration extensions keep their vanilla diagnostic (QCD-2.5 "Unknown punctuation" for
+  `%`, `?` and `:`; QCD-3.1 "not a name" for a stray `+`/`*` of `++`/`+=`; QCD-3.3 "NAME is
+  not a type" for `const`, `var`, `nosave`, `typedef`, `enum` and a user type), which is also
+  a diagnostic under the vanilla profile.
 
 ## QCD-7 Warnings
 
@@ -193,6 +202,12 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   name, so a case-sensitive file system would not open it (PRJ-7.2).
 - **QCD-7.17** `W0311` "NAME is builtin #N, which ENGINE does not have": a call of a builtin
   the project's target engine lacks, at the callee's name (ENGT-4.1).
+- **QCD-7.18** `W0203` "Missing semicolon at end of definition": under an FTEQCC profile, a
+  definition that is not a function ends without its `;`, FTEQCC's warning of the same text
+  (`dialect-fteqcc-rerelease.md`, FTE-21.3). Under the vanilla profile it is "expected ;"
+  (QCD-3.4).
+- **QCD-7.19** `W0204` "Hanging ';'": under an FTEQCC profile, a `;` alone as a statement,
+  FTEQCC's warning of the same text (`dialect-fteqcc-rerelease.md`, FTE-21.5).
 
 ## QCD-8 Preprocessor errors
 

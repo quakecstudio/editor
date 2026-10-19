@@ -209,6 +209,67 @@ ast_node!(
     ArgList
 );
 
+ast_node!(
+    /// `for (init; cond; step) body` (FTE-2).
+    ForStmt
+);
+ast_node!(
+    /// `switch (e) { ... }` (FTE-3).
+    SwitchStmt
+);
+ast_node!(
+    /// `case e:` or `default:` (FTE-3).
+    CaseLabel
+);
+ast_node!(
+    /// `break;` (FTE-4).
+    BreakStmt
+);
+ast_node!(
+    /// `continue;` (FTE-4).
+    ContinueStmt
+);
+ast_node!(
+    /// `e++` or `e--` (FTE-5).
+    PostfixExpr
+);
+ast_node!(
+    /// `cond ? a : b` (FTE-8).
+    TernaryExpr
+);
+ast_node!(
+    /// `e[i]` (FTE-13).
+    IndexExpr
+);
+ast_node!(
+    /// `-e`, `+e` or `~e` (FTE-19.4).
+    UnaryExpr
+);
+ast_node!(
+    /// `;` alone (FTE-21.5).
+    EmptyStmt
+);
+ast_node!(
+    /// `(type) e` (FTE-19.6).
+    CastExpr
+);
+ast_node!(
+    /// A parameter's default value, `= e` (FTE-18.2).
+    DefaultValue
+);
+ast_node!(
+    /// `{ a, b, ... }` (FTE-13, FTE-14).
+    AggregateInit
+);
+ast_node!(
+    /// `typedef struct { ... } Name;` (FTE-14).
+    TypedefDecl
+);
+ast_node!(
+    /// `enum ... { ... };` (FTE-15).
+    EnumDecl
+);
+
 ast_enum!(
     /// A type (QC-10).
     Type {
@@ -236,6 +297,16 @@ ast_enum!(
         While(WhileStmt),
         /// `do ... while (...);`.
         Do(DoStmt),
+        /// `for (...) ...` (FTE-2).
+        For(ForStmt),
+        /// `switch (...) { ... }` (FTE-3).
+        Switch(SwitchStmt),
+        /// `break;` (FTE-4).
+        Break(BreakStmt),
+        /// `continue;` (FTE-4).
+        Continue(ContinueStmt),
+        /// `;` alone (FTE-21.5).
+        Empty(EmptyStmt),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -258,6 +329,16 @@ ast_enum!(
         Field(FieldExpr),
         /// `f(args)`.
         Call(CallExpr),
+        /// `e++` or `e--` (FTE-5).
+        Postfix(PostfixExpr),
+        /// `cond ? a : b` (FTE-8).
+        Ternary(TernaryExpr),
+        /// `e[i]` (FTE-13).
+        Index(IndexExpr),
+        /// `-e`, `+e` or `~e` (FTE-19.4).
+        Unary(UnaryExpr),
+        /// `(type) e` (FTE-19.6).
+        Cast(CastExpr),
     }
 );
 
@@ -268,6 +349,8 @@ ast_enum!(
         Body(FunctionBody),
         /// A builtin number (QC-13.3).
         Builtin(Builtin),
+        /// An array or struct initialiser `{ ... }` (FTE-13, FTE-14).
+        Aggregate(AggregateInit),
         /// A constant (QC-11.3).
         Value(Expr),
     }
@@ -329,9 +412,17 @@ impl Declarator {
         self.0.token_of(K::Name)
     }
 
-    /// What follows `=`.
+    /// What follows `=`, or the body of a function declarator written without `=`
+    /// (FTE-17.2).
     #[must_use]
     pub fn initializer(&self) -> Option<Initializer> {
+        child(&self.0)
+    }
+
+    /// The parameters of an FTEQCC C-style function declarator `rettype name(params)`
+    /// (FTE-17.1); `None` for every other declarator.
+    #[must_use]
+    pub fn params(&self) -> Option<ParamList> {
         child(&self.0)
     }
 }
@@ -620,10 +711,38 @@ pub enum BinaryOp {
     And,
     /// `||`
     Or,
+    /// `%` (FTEQCC, FTE-7).
+    Rem,
+    /// `^` (FTEQCC, FTE-19.1).
+    BitXor,
+    /// `<<` (FTEQCC, FTE-19.1).
+    Shl,
+    /// `>>` (FTEQCC, FTE-19.1).
+    Shr,
+    /// `+=` (FTEQCC, FTE-6).
+    AddAssign,
+    /// `-=` (FTEQCC, FTE-6).
+    SubAssign,
+    /// `*=` (FTEQCC, FTE-6).
+    MulAssign,
+    /// `/=` (FTEQCC, FTE-6).
+    DivAssign,
+    /// `&=` (FTEQCC, FTE-19.1).
+    BitAndAssign,
+    /// `|=` or `(+)` (FTEQCC, FTE-19.1, FTE-19.2).
+    BitOrAssign,
+    /// `&~=` or `(-)` (FTEQCC, FTE-19.1, FTE-19.2): clear the right side's bits.
+    BitClearAssign,
+    /// `^=` (FTEQCC, FTE-19.1).
+    BitXorAssign,
+    /// `<<=` (FTEQCC, FTE-19.1).
+    ShlAssign,
+    /// `>>=` (FTEQCC, FTE-19.1).
+    ShrAssign,
 }
 
 impl BinaryOp {
-    fn from_kind(kind: K) -> Option<Self> {
+    const fn from_kind(kind: K) -> Option<Self> {
         Some(match kind {
             K::Star => Self::Mul,
             K::Slash => Self::Div,
@@ -640,13 +759,28 @@ impl BinaryOp {
             K::Eq => Self::Assign,
             K::AndAnd => Self::And,
             K::OrOr => Self::Or,
+            K::Percent => Self::Rem,
+            K::Caret => Self::BitXor,
+            K::Shl => Self::Shl,
+            K::Shr => Self::Shr,
+            K::PlusEq => Self::AddAssign,
+            K::MinusEq => Self::SubAssign,
+            K::StarEq => Self::MulAssign,
+            K::SlashEq => Self::DivAssign,
+            K::AndEq => Self::BitAndAssign,
+            K::OrEq | K::SetBits => Self::BitOrAssign,
+            K::AndNotEq | K::ClearBits => Self::BitClearAssign,
+            K::CaretEq => Self::BitXorAssign,
+            K::ShlEq => Self::ShlAssign,
+            K::ShrEq => Self::ShrAssign,
             _ => return None,
         })
     }
 }
 
 impl BinaryExpr {
-    /// The operator's token.
+    /// The operator's token; `None` for FTEQCC's `a -1`, whose operator is in the negative
+    /// number (FTE-19.5).
     #[must_use]
     pub fn op_token(&self) -> Option<SyntaxToken> {
         self.0
@@ -654,38 +788,50 @@ impl BinaryExpr {
             .find(|t| BinaryOp::from_kind(t.kind()).is_some())
     }
 
-    /// The operator.
+    /// The operator. FTEQCC reads `a -1` as `a + -1` (FTE-19.5), so a binary expression with
+    /// no operator token is [`BinaryOp::Add`].
     #[must_use]
     pub fn op(&self) -> Option<BinaryOp> {
-        BinaryOp::from_kind(self.op_token()?.kind())
+        match self.op_token() {
+            Some(token) => BinaryOp::from_kind(token.kind()),
+            None => self.rhs().map(|_| BinaryOp::Add),
+        }
     }
 
     /// The left operand.
     #[must_use]
     pub fn lhs(&self) -> Option<Expr> {
-        let kind = self.op_token()?.kind();
-        around(&self.0, kind).0
+        child(&self.0)
     }
 
     /// The right operand.
     #[must_use]
     pub fn rhs(&self) -> Option<Expr> {
-        let kind = self.op_token()?.kind();
-        around(&self.0, kind).1
+        children(&self.0).nth(1)
     }
 }
 
 impl FieldExpr {
-    /// The entity expression before `.`.
+    /// The entity expression before `.` or the FTEQCC `->`.
     #[must_use]
     pub fn base(&self) -> Option<Expr> {
-        around(&self.0, K::Dot).0
+        let split = if self.0.token_of(K::Arrow).is_some() {
+            K::Arrow
+        } else {
+            K::Dot
+        };
+        around(&self.0, split).0
     }
 
-    /// The field expression after `.`.
+    /// The field expression after `.` or the FTEQCC `->`.
     #[must_use]
     pub fn field(&self) -> Option<Expr> {
-        around(&self.0, K::Dot).1
+        let split = if self.0.token_of(K::Arrow).is_some() {
+            K::Arrow
+        } else {
+            K::Dot
+        };
+        around(&self.0, split).1
     }
 }
 
@@ -707,5 +853,171 @@ impl ArgList {
     /// The arguments, in order.
     pub fn args(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
+    }
+}
+
+impl ForStmt {
+    /// The three header clauses in order: init, cond and step (FTE-2.1). A clause that was
+    /// empty has no node, so fewer than three may be returned.
+    pub fn clauses(&self) -> impl Iterator<Item = SyntaxNode> {
+        self.0.children().filter(|n| n.kind() == K::ForClause)
+    }
+
+    /// The loop body: the statement after the header's `)`.
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        self.0.children().find_map(Stmt::cast)
+    }
+}
+
+impl SwitchStmt {
+    /// The switched expression (FTE-3.1).
+    #[must_use]
+    pub fn scrutinee(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+
+    /// The switch body block, holding the labels and statements.
+    #[must_use]
+    pub fn block(&self) -> Option<Block> {
+        child(&self.0)
+    }
+}
+
+impl CaseLabel {
+    /// The `case` value, or `None` for `default:` (FTE-3.1).
+    #[must_use]
+    pub fn value(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+
+    /// Whether this is the `default:` label.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self.0.token_of(K::DefaultKw).is_some()
+    }
+}
+
+impl PostfixExpr {
+    /// The operand (FTE-5.1).
+    #[must_use]
+    pub fn operand(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+}
+
+impl TernaryExpr {
+    /// The condition (FTE-8.1).
+    #[must_use]
+    pub fn condition(&self) -> Option<Expr> {
+        around(&self.0, K::Question).0
+    }
+
+    /// The arm chosen when the condition holds, and the arm chosen otherwise (FTE-8.1).
+    #[must_use]
+    pub fn arms(&self) -> (Option<Expr>, Option<Expr>) {
+        let after = around::<Expr>(&self.0, K::Question).1;
+        let otherwise = around::<Expr>(&self.0, K::Colon).1;
+        (after, otherwise)
+    }
+}
+
+impl IndexExpr {
+    /// The base expression being subscripted (FTE-13.2).
+    #[must_use]
+    pub fn base(&self) -> Option<Expr> {
+        around(&self.0, K::LBracket).0
+    }
+
+    /// The index expression inside `[ ]`.
+    #[must_use]
+    pub fn index(&self) -> Option<Expr> {
+        around(&self.0, K::LBracket).1
+    }
+}
+
+/// A prefix operator of FTEQCC (FTE-19.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum UnaryOp {
+    /// `-`: negation.
+    Neg,
+    /// `+`: the operand unchanged.
+    Plus,
+    /// `~`: bitwise not.
+    BitNot,
+}
+
+impl UnaryExpr {
+    /// The operator.
+    #[must_use]
+    pub fn op(&self) -> Option<UnaryOp> {
+        self.0.child_tokens().find_map(|t| match t.kind() {
+            K::Minus => Some(UnaryOp::Neg),
+            K::Plus => Some(UnaryOp::Plus),
+            K::Tilde => Some(UnaryOp::BitNot),
+            _ => None,
+        })
+    }
+
+    /// The operand.
+    #[must_use]
+    pub fn operand(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+}
+
+impl CastExpr {
+    /// The type cast to.
+    #[must_use]
+    pub fn ty(&self) -> Option<Type> {
+        child(&self.0)
+    }
+
+    /// The value cast.
+    #[must_use]
+    pub fn operand(&self) -> Option<Expr> {
+        child(&self.0)
+    }
+}
+
+impl Param {
+    /// The parameter's default value (FTE-18.2), if it has one.
+    #[must_use]
+    pub fn default_value(&self) -> Option<Expr> {
+        child::<DefaultValue>(&self.0).and_then(|d| child(&d.0))
+    }
+}
+
+impl AggregateInit {
+    /// The elements of the initialiser, in order (FTE-13.1, FTE-14.3). A nested aggregate is
+    /// not an [`Expr`], so only the expression elements are returned here.
+    pub fn elements(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
+    }
+}
+
+impl TypedefDecl {
+    /// The type's name (FTE-14.1): the last name token in the declaration.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
+    }
+}
+
+impl EnumDecl {
+    /// The enum's type name, `enum Name { ... }` or `enum class Name ...` (FTE-15.4); `None`
+    /// for an anonymous enum.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0
+            .child_tokens()
+            .take_while(|t| t.kind() != K::LBrace && t.kind() != K::Colon)
+            .filter(|t| t.kind() == K::Name)
+            .find(|t| t.text_lossless() != "class")
+    }
+
+    /// The enumerators, in order (FTE-15.1).
+    pub fn enumerators(&self) -> impl Iterator<Item = SyntaxNode> {
+        self.0.children().filter(|n| n.kind() == K::Enumerator)
     }
 }
