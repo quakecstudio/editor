@@ -5,16 +5,16 @@
 # below, extracts only facts from it (builtin names, numbers and signatures, and extension
 # names) and writes `src/tables.rs`; `cargo xtask engines --check` fails when the checked-in
 # tables differ from what the sources give. No comment text or code of these files is
-# copied, and none of them is a porting upstream: ADR-0014 records the legal basis, and
-# docs/spec/engine-targets.md the extraction rules (ENGT-2 to ENGT-4).
+# copied, and none of them is a porting upstream: ADR-0014 and ADR-0015 record the legal
+# basis, and docs/spec/engine-targets.md the extraction rules (ENGT-2 to ENGT-4).
 #
-# `license` is the SPDX identifier of the repository's license file, `license_file`; none of
-# the three source files carries a license header of its own. Pins recorded on 2026-10-19.
+# `license` is the SPDX identifier of the repository's license file, `license_file`; of the
+# source files only the rerelease's carries a license header of its own. Pins recorded on 2026-10-19.
 #
 # `tables` are the readings of the file: each gives the builtins and extension names of one
 # module kind (`ssqc`, `csqc` or `menuqc`, PRJ-3.1), with `defines` the macros defined before
 # the file is read, choosing the parts of a file that serves several module kinds for that
-# kind (ENGT-2.3, ENGT-2.8).
+# kind (ENGT-2.3, ENGT-2.10).
 
 [[source]]
 id = "fteqw"
@@ -41,6 +41,30 @@ license = "GPL-2.0"
 license_file = "COPYING"
 license_sha256 = "ba9ed2269151ad63b922598f3c5c19ddf781b2bbb6cb843ed9f085ecd1679c5d"
 tables = [{ kind = "ssqc", defines = [] }]
+
+# DarkPlaces' client and menu QuakeC definitions, at the same commit as its extension list:
+# fact-only sources by ADR-0015.
+[[source]]
+id = "darkplaces-client"
+repo = "DarkPlacesEngine/darkplaces"
+commit = "5d80f03e26871b273da103f3b750820a3718c01a"
+path = "dpdefs/csprogsdefs.qc"
+sha256 = "f9b3562ccc1298cc4794b44fb07071b5458e9919b6e674f911d666e3c54b76ab"
+license = "GPL-2.0"
+license_file = "COPYING"
+license_sha256 = "ba9ed2269151ad63b922598f3c5c19ddf781b2bbb6cb843ed9f085ecd1679c5d"
+tables = [{ kind = "csqc", defines = [] }]
+
+[[source]]
+id = "darkplaces-menu"
+repo = "DarkPlacesEngine/darkplaces"
+commit = "5d80f03e26871b273da103f3b750820a3718c01a"
+path = "dpdefs/menudefs.qc"
+sha256 = "1bfe701c54ffece1ba6a362920c9f9ec6738e45aae31413e0ab14ff8fa6f96bd"
+license = "GPL-2.0"
+license_file = "COPYING"
+license_sha256 = "ba9ed2269151ad63b922598f3c5c19ddf781b2bbb6cb843ed9f085ecd1679c5d"
+tables = [{ kind = "menuqc", defines = [] }]
 
 # The same commit and checksums as the quake-rerelease-qc source in corpus/manifest.toml;
 # `cargo xtask engines` checks that they agree.

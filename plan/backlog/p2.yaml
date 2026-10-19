@@ -181,6 +181,29 @@ issues:
   - cargo xtask engines --check passes
   verify:
   - cargo test -p qc-engines; the regeneration check in CI
+- key: P2-35
+  title: Add DarkPlaces CSQC and menu QuakeC tables to the engine-target database
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - AGT-9
+  - PRIN-8
+  depends:
+  - P2-31
+  deliverable:
+  - 'docs/adr/0015-darkplaces-client-menu-fact-sources.md: Accepted, extending the fact-only approval of ADR-0014 to DarkPlaces'' dpdefs/csprogsdefs.qc and dpdefs/menudefs.qc, and superseding ADR-0014'
+  - 'crates/qc-engines/sources.toml: both files pinned at the DarkPlaces commit already pinned there, with their checksums, as DarkPlaces'' client and menu tables; src/tables.rs regenerated'
+  - 'crates/qc-engines: DarkPlaces'' CSQC and menu builtin tables selected by the module kind (PRJ-3.1); docs/spec/engine-targets.md extended to them'
+  acceptance:
+  - A CSQC module targeting DarkPlaces that calls an FTE-only CSQC builtin gets W0311 naming DarkPlaces, and calling DarkPlaces' own CSQC builtins gets none
+  - A menu module targeting DarkPlaces is checked against menudefs.qc's builtins
+  - cargo xtask engines --check and cargo xtask adr pass
+  verify:
+  - cargo test -p qc-engines; cargo test -p xtask; the regeneration check in CI
 - key: P2-05
   title: Unify diagnostics between typing and building
   labels:
@@ -571,7 +594,7 @@ issues:
   - Each of the three positions has a test with a known and an unknown name, and the six rerelease codebases still resolve with zero errors
   verify:
   - cargo test -p qc-sema; rerelease corpus job
-- key: P2-35
+- key: P2-36
   title: 'Spec: the FTEQCC constructs the tree-sitter grammar follows without a statement'
   labels:
   - L2-syntax
@@ -723,6 +746,7 @@ issues:
   - P2-33
   - P2-34
   - P2-35
+  - P2-36
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
