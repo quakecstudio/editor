@@ -133,6 +133,10 @@ fn sexpr(expr: &ast::Expr) -> String {
         }
         ast::Expr::Unary(unary) => format!("(unary {:?} {})", unary.op(), sub(unary.operand())),
         ast::Expr::Cast(cast) => format!("(cast {})", sub(cast.operand())),
+        ast::Expr::Vector(vector) => {
+            let parts: Vec<String> = vector.elements().map(|e| sexpr(&e)).collect();
+            format!("[{}]", parts.join(" "))
+        }
     }
 }
 

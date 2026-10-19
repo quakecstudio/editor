@@ -74,7 +74,7 @@ fn function_type_lowers() {
     assert_eq!(
         ty,
         Type::Function(Rc::new(FunctionType {
-            ret: SimpleType::Void,
+            ret: Type::Simple(SimpleType::Void),
             params: vec![
                 Type::Simple(SimpleType::Float),
                 Type::Simple(SimpleType::Vector),

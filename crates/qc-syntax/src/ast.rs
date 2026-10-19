@@ -269,6 +269,30 @@ ast_node!(
     /// `enum ... { ... };` (FTE-15).
     EnumDecl
 );
+ast_node!(
+    /// `class Name [: Parent] { members };` (FTEF-9).
+    ClassDecl
+);
+ast_node!(
+    /// `struct Name { fields };` or `union Name { ... };` (FTEF-6).
+    StructDecl
+);
+ast_node!(
+    /// `accessor Name : Base { members };` (FTEF-10).
+    AccessorDecl
+);
+ast_node!(
+    /// A `get` or `set` member of an accessor (FTEF-10.2).
+    AccessorMember
+);
+ast_node!(
+    /// `T *` (FTEF-4.1).
+    PointerType
+);
+ast_node!(
+    /// `[x, y, z]` (FTEF-16.3).
+    VectorExpr
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -279,6 +303,8 @@ ast_enum!(
         Field(FieldType),
         /// `T(...)`.
         Function(FunctionType),
+        /// `T *` (FTEF-4.1).
+        Pointer(PointerType),
     }
 );
 
@@ -339,6 +365,8 @@ ast_enum!(
         Unary(UnaryExpr),
         /// `(type) e` (FTE-19.6).
         Cast(CastExpr),
+        /// `[x, y, z]` (FTEF-16.3).
+        Vector(VectorExpr),
     }
 );
 
@@ -405,11 +433,55 @@ impl LocalDecl {
     }
 }
 
+/// The name of a possibly scoped name `Name` or `Scope::Name` among `node`'s tokens: the name
+/// after the last `::`, else the first name (FTEF-9.4, FTEF-16.4).
+fn scoped_name(node: &SyntaxNode) -> Option<SyntaxToken> {
+    let mut first = None;
+    let mut after_scope = None;
+    let mut scoped = false;
+    for token in node.child_tokens() {
+        match token.kind() {
+            K::ColonColon => scoped = true,
+            K::Name if scoped => {
+                after_scope = Some(token);
+                scoped = false;
+            }
+            K::Name if first.is_none() => first = Some(token),
+            _ => {}
+        }
+    }
+    after_scope.or(first)
+}
+
+/// The scope of a scoped name `Scope::Name`: the name before the first `::`.
+fn scope_of(node: &SyntaxNode) -> Option<SyntaxToken> {
+    let mut last_name = None;
+    for token in node.child_tokens() {
+        match token.kind() {
+            K::ColonColon => return last_name,
+            K::Name => last_name = Some(token),
+            _ => {}
+        }
+    }
+    None
+}
+
 impl Declarator {
-    /// The declared name.
+    /// The declared name: for `Class::member` (FTEF-9.4), the member's.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        self.0.token_of(K::Name)
+        scoped_name(&self.0)
+    }
+
+    /// The class of a `Class::member` declarator (FTEF-9.4); `None` for a plain name.
+    #[must_use]
+    pub fn scope(&self) -> Option<SyntaxToken> {
+        scope_of(&self.0)
+    }
+
+    /// The array suffixes after the name (FTE-13.1, FTEF-5).
+    pub fn array_suffixes(&self) -> impl Iterator<Item = SyntaxNode> {
+        self.0.children().filter(|n| n.kind() == K::ArraySuffix)
     }
 
     /// What follows `=`, or the body of a function declarator written without `=`
@@ -449,6 +521,19 @@ impl SimpleType {
         self.0.child_tokens().find(|t| t.kind().is_keyword())
     }
 
+    /// The type's words as written, joined by a space: a vanilla keyword, the C type words
+    /// (FTEF-2), `struct tag` (FTEF-6.1) or a type name a program defines (FTEF-7.2).
+    #[must_use]
+    pub fn text(&self) -> String {
+        let words: Vec<String> = self
+            .0
+            .child_tokens()
+            .filter(|t| !t.kind().is_trivia())
+            .map(|t| t.text_lossless())
+            .collect();
+        words.join(" ")
+    }
+
     /// Which type it is.
     #[must_use]
     pub fn kind(&self) -> Option<SimpleTypeKind> {
@@ -472,9 +557,9 @@ impl FieldType {
 }
 
 impl FunctionType {
-    /// The return type.
+    /// The return type: a simple type in vanilla (QC-10.3), any type in FTEQCC (FTEF-15.2).
     #[must_use]
-    pub fn return_type(&self) -> Option<SimpleType> {
+    pub fn return_type(&self) -> Option<Type> {
         child(&self.0)
     }
 
@@ -655,10 +740,122 @@ impl Literal {
 }
 
 impl NameRef {
-    /// The name.
+    /// The name: for `Scope::member` (FTEF-16.4), the member's.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        scoped_name(&self.0)
+    }
+
+    /// The scope of `Scope::member` (FTEF-16.4); `None` for a plain name.
+    #[must_use]
+    pub fn scope(&self) -> Option<SyntaxToken> {
+        scope_of(&self.0)
+    }
+}
+
+impl PointerType {
+    /// The pointed-to type.
+    #[must_use]
+    pub fn inner(&self) -> Option<Type> {
+        child(&self.0)
+    }
+}
+
+impl VectorExpr {
+    /// The component expressions, in order.
+    pub fn elements(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
+    }
+}
+
+impl ClassDecl {
+    /// The class's name.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
         self.0.token_of(K::Name)
+    }
+
+    /// The parent class's name, after `:` (FTEF-9.1).
+    #[must_use]
+    pub fn parent(&self) -> Option<SyntaxToken> {
+        self.0
+            .child_tokens()
+            .skip_while(|t| t.kind() != K::Colon)
+            .find(|t| t.kind() == K::Name)
+    }
+
+    /// Whether the class has a body, so it is no forward declaration.
+    #[must_use]
+    pub fn has_body(&self) -> bool {
+        self.0.token_of(K::LBrace).is_some()
+    }
+
+    /// The member declarations, in order (FTEF-9.2, FTEF-9.3).
+    pub fn members(&self) -> impl Iterator<Item = Declaration> {
+        children(&self.0)
+    }
+
+    /// The `get` and `set` members (FTEF-10.3).
+    pub fn accessor_members(&self) -> impl Iterator<Item = AccessorMember> {
+        children(&self.0)
+    }
+}
+
+impl StructDecl {
+    /// The struct's tag.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0
+            .children()
+            .find(|n| n.kind() == K::StructType)
+            .and_then(|n| n.token_of(K::Name))
+    }
+
+    /// The field nodes, in order.
+    pub fn fields(&self) -> impl Iterator<Item = SyntaxNode> {
+        self.0.descendants().filter(|n| n.kind() == K::StructField)
+    }
+}
+
+impl AccessorDecl {
+    /// The accessor type's name.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+
+    /// The members, in order.
+    pub fn members(&self) -> impl Iterator<Item = AccessorMember> {
+        children(&self.0)
+    }
+}
+
+impl AccessorMember {
+    /// The member's name, if it has one.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+
+    /// The index parameter's name in `[Type name]`, if any.
+    #[must_use]
+    pub fn index_name(&self) -> Option<SyntaxToken> {
+        self.0
+            .children()
+            .find(|n| n.kind() == K::ArraySuffix)
+            .and_then(|n| n.token_of(K::Name))
+    }
+
+    /// The body of `= { ... }`.
+    #[must_use]
+    pub fn body(&self) -> Option<FunctionBody> {
+        child(&self.0)
+    }
+
+    /// The value of `= function`.
+    #[must_use]
+    pub fn value(&self) -> Option<Expr> {
+        child(&self.0)
     }
 }
 

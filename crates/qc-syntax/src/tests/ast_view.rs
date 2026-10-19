@@ -99,7 +99,10 @@ fn function_type_parts() {
         panic!("not a function type");
     };
     assert_eq!(
-        function.return_type().unwrap().kind(),
+        match function.return_type() {
+            Some(ast::Type::Simple(simple)) => simple.kind(),
+            _ => None,
+        },
         Some(ast::SimpleTypeKind::Entity)
     );
     let params = function.params().unwrap();

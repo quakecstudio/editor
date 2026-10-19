@@ -143,21 +143,21 @@ fn an_included_definition_is_in_the_included_file() {
     let files = [
         (
             "main.qc",
-            "#include \"inc.qh\"\nvoid() f = { shared = 1; };\n",
+            "#include \"inc.qh\"\nvoid() f = { common = 1; };\n",
         ),
-        ("inc.qh", "float shared;\n"),
+        ("inc.qh", "float common;\n"),
     ];
     let (mut db, input) = module(&files, &["main.qc"], Dialect::Fteqcc);
     let analysis = db.analyze_module(&input);
     assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
-    let shared = analysis
+    let common = analysis
         .index
         .defs
         .iter()
-        .find(|d| d.name == "shared")
+        .find(|d| d.name == "common")
         .unwrap();
-    assert_eq!(shared.location.file, FileId(1));
-    assert_eq!(text_at(&db, shared.location), "shared");
+    assert_eq!(common.location.file, FileId(1));
+    assert_eq!(text_at(&db, common.location), "common");
 }
 
 // spec QC-9.11: an include the database has no file for is an error at the directive, in the
@@ -435,6 +435,11 @@ fn a_pasted_name_resolves() {
     let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
     let analysis = db.analyze_module(&input);
     assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
-    let names: Vec<_> = analysis.index.defs.iter().map(|d| d.name.as_str()).collect();
+    let names: Vec<_> = analysis
+        .index
+        .defs
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
     assert!(names.contains(&"health_net"), "{names:?}");
 }
