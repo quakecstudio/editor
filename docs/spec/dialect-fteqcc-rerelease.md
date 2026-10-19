@@ -482,12 +482,14 @@ escapes `\n` and `\"` only (QC-6.2).
 - **FTE-20.2** A number may end in the float suffix `f` or `F`, which is not part of its value:
   after the fraction `QCC_PR_LexNumber` has `else if (c == 'f' || c == 'F') { pr_immediate_type
   = type_float; pr_file_p++; break; }`. The rerelease writes `1.0f` (`rerelease/client.qc`).
-- **FTE-20.3** Besides `\n` and `\"`, the escapes that stand for one ASCII byte are `\r`, `\t`,
+- **FTE-20.3** **Withdrawn** (P2-26, #82): it kept FTEQCC's escapes beyond one byte "Unknown
+  escape char" under the FTEQCC profile, which now also reads the full dialect. Replaced by
+  FTE-20.4 for the one-byte escapes and `dialect-fteqcc.md` FTEF-13.4 for the rest.
+- **FTE-20.4** Besides `\n` and `\"`, the escapes that stand for one ASCII byte are `\r`, `\t`,
   `\a`, `\v`, `\f`, `\#`, `\\`, `\?` and `\'`, as `QCC_PR_LexEscapedCodepoint` maps them
   (`else if (c == 't') c = '\t';	//tab` and the rest). The rerelease uses `\t`
-  (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes (`\[` and the Quake character set,
-  `\x`, `\u`, `\{n}` and the digits) are not in the rerelease and stay "Unknown escape char"
-  (QC-6.2) under this profile.
+  (`rerelease-mg1/misc_corpses.qc`). FTEQCC's other escapes are the full dialect's
+  (`dialect-fteqcc.md` FTEF-13.4).
 
 ## FTE-21 Declarations and statements in a body
 

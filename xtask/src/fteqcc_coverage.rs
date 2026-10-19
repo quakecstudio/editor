@@ -1103,7 +1103,7 @@ mod tests {
 
     // spec FTE-20.1: `.5`, a `.` touching a number; a field access `e.f` is not.
     // spec FTE-20.2: `1.0f`, a float with its suffix; `1 f` is not.
-    // spec FTE-20.3: an escape vanilla lacks.
+    // spec FTE-20.4: an escape vanilla lacks.
     #[test]
     fn further_literals_are_classified() {
         assert!(classify(b"float a = .5;").contains(&Kind::DotNumber));

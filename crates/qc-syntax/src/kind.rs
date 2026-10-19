@@ -126,6 +126,8 @@ pub enum SyntaxKind {
     Question,
     /// `:` (FTEQCC, FTE-8).
     Colon,
+    /// `::` (FTEQCC, FTEF-13.1): a class member's scope.
+    ColonColon,
     /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
     Arrow,
     /// `~` (FTEQCC, FTE-19.4).
@@ -364,6 +366,7 @@ impl SyntaxKind {
             Punct::Percent => Self::Percent,
             Punct::Question => Self::Question,
             Punct::Colon => Self::Colon,
+            Punct::ColonColon => Self::ColonColon,
             Punct::Arrow => Self::Arrow,
             Punct::Tilde => Self::Tilde,
             Punct::AndEq => Self::AndEq,

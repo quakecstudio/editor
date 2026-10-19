@@ -168,6 +168,8 @@ pub enum Punct {
     Shl,
     /// `<<=` (FTEQCC, FTE-19.1).
     ShlEq,
+    /// `::` (FTEQCC, FTEF-13.1): a class member's scope, `Class::member`.
+    ColonColon,
 }
 
 impl Punct {
@@ -215,7 +217,7 @@ impl Punct {
     /// (QC-7.2), so their order among themselves is immaterial. These are not ported from
     /// FTEQCC; they are this project's rules for the FTEQCC subset the rerelease uses
     /// (`docs/spec/dialect-fteqcc-rerelease.md`).
-    pub const FTEQCC: [Self; 22] = [
+    pub const FTEQCC: [Self; 23] = [
         Self::PlusPlus,
         Self::MinusMinus,
         Self::PlusEq,
@@ -237,6 +239,7 @@ impl Punct {
         Self::Tilde,
         Self::Percent,
         Self::Question,
+        Self::ColonColon,
         Self::Colon,
     ];
 
@@ -293,6 +296,7 @@ impl Punct {
             Self::ShrEq => ">>=",
             Self::Shl => "<<",
             Self::ShlEq => "<<=",
+            Self::ColonColon => "::",
         }
     }
 }
@@ -363,7 +367,10 @@ pub fn lex(source: &[u8]) -> Lexed {
 /// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
 /// punctuation of [`Punct::FTEQCC`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
 /// FTE-8, FTE-19.1), a number that starts with `.` or ends with an `f` suffix (FTE-20.1,
-/// FTE-20.2), and the further string escapes of FTE-20.3; every other rule is the same.
+/// FTE-20.2), and the further string escapes of FTE-20.4; and the full dialect's tokens of
+/// `docs/spec/dialect-fteqcc.md`: `::`, line continuations, character constants and
+/// two-component vectors, every escape, and FTEQCC's number forms (FTEF-3, FTEF-13). Every
+/// other rule is the same.
 #[must_use]
 pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     let text = source
@@ -379,6 +386,33 @@ pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     };
     lexer.run();
     lexer.out
+}
+
+/// Appends a character code to a string's contents: a byte as itself, a larger code as its
+/// UTF-8 bytes, or `?` when it is no Unicode scalar (FTEF-13.4).
+fn push_code(contents: &mut Vec<u8>, code: u32) {
+    if let Ok(byte) = u8::try_from(code) {
+        contents.push(byte);
+        return;
+    }
+    let c = char::from_u32(code).unwrap_or('?');
+    let mut buf = [0_u8; 4];
+    contents.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+}
+
+/// The code of the UTF-8 sequence at the start of `bytes` and its length; a byte that starts
+/// no valid sequence is its own code, length 1 (FTEF-13.3).
+fn utf8_char(bytes: &[u8]) -> (u32, usize) {
+    for len in 1..=4 {
+        if let Some(c) = bytes
+            .get(..len)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .and_then(|s| s.chars().next())
+        {
+            return (u32::from(c), len);
+        }
+    }
+    (bytes.first().copied().map_or(0, u32::from), 1)
 }
 
 /// Whitespace as `qcc` sees it: every byte `<= ' '` as a signed `char`, so 0x01 to 0x20 and
@@ -466,7 +500,11 @@ impl Lexer<'_> {
                     && c == b'.'
                     && self.peek(1).is_some_and(|d| d.is_ascii_digit()))
             {
-                let value = self.number();
+                let value = if self.dialect.has_fteqcc_extensions() {
+                    self.fteqcc_number()
+                } else {
+                    self.number()
+                };
                 self.push(TokenKind::Float(value), start);
             } else if is_name_start(c) {
                 self.name();
@@ -491,6 +529,11 @@ impl Lexer<'_> {
                     }
                 }
                 (Some(b'/'), Some(b'*')) => self.block_comment(),
+                // FTEF-13.2: in FTEQCC a `\` before a line break joins the lines.
+                (Some(b'\\'), Some(b'\n' | b'\r')) if self.dialect.has_fteqcc_extensions() => {
+                    let crlf = self.peek(1) == Some(b'\r') && self.peek(2) == Some(b'\n');
+                    self.bump(if crlf { 3 } else { 2 });
+                }
                 _ => return,
             }
         }
@@ -568,6 +611,8 @@ impl Lexer<'_> {
                             self.bump(1);
                             if let Some(byte) = self.fteqcc_escape(other) {
                                 contents.push(byte);
+                            } else if let Some(code) = self.fteqcc_escape_code(other) {
+                                push_code(&mut contents, code);
                             } else {
                                 self.error(
                                     Code::E0103,
@@ -588,7 +633,7 @@ impl Lexer<'_> {
         self.push(TokenKind::String(contents), start);
     }
 
-    /// The byte an FTEQCC escape `\c` stands for, beyond vanilla's `\n` and `\"` (FTE-20.3):
+    /// The byte an FTEQCC escape `\c` stands for, beyond vanilla's `\n` and `\"` (FTE-20.4):
     /// the escapes of `QCC_PR_LexEscapedCodepoint` that name one ASCII byte. `None` in the
     /// vanilla dialect, and for any other `c`, which stays "Unknown escape char" (QC-6.2).
     fn fteqcc_escape(&self, c: u8) -> Option<u8> {
@@ -604,6 +649,80 @@ impl Lexer<'_> {
             b'#' | b'\\' | b'?' | b'\'' => Some(c),
             _ => None,
         }
+    }
+
+    /// The code an FTEQCC escape `\c` stands for beyond the one-byte escapes of
+    /// [`Self::fteqcc_escape`] (FTEF-13.4): `None` in the vanilla dialect.
+    fn fteqcc_escape_code(&mut self, c: u8) -> Option<u32> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return None;
+        }
+        self.escape_code(c)
+    }
+
+    /// The code of the FTEQCC escape `\c`, `c` already read, as `QCC_PR_LexEscapedCodepoint`
+    /// maps it (FTEF-13.4): the one-byte escapes, Quake's character set (`\[`, `\]`, `\.`,
+    /// `\<`, `\-`, `\>`, `\(`, `\=`, `\)`, `\+` and the digits), `\{n}` and `\{xN}`,
+    /// `\x` with one or two hex digits, and `\u` and `\U` with four and eight. `None` for any
+    /// other `c`.
+    fn escape_code(&mut self, c: u8) -> Option<u32> {
+        let quake = |code: u32| Some(code);
+        match c {
+            b'n' => Some(u32::from(b'\n')),
+            b'"' => Some(u32::from(b'"')),
+            b'[' => quake(0xe010),
+            b']' => quake(0xe011),
+            b'.' => quake(0xe01c),
+            b'<' => quake(0xe01d),
+            b'-' => quake(0xe01e),
+            b'>' => quake(0xe01f),
+            b'(' => quake(0xe080),
+            b'=' => quake(0xe081),
+            b')' => quake(0xe082),
+            b'+' => quake(0xe083),
+            b'0'..=b'9' => quake(0xe012_u32.saturating_add(u32::from(c.wrapping_sub(b'0')))),
+            b'{' => Some(self.braced_code()),
+            b'x' | b'X' => Some(self.hex_digits(2)),
+            b'u' => Some(self.hex_digits(4)),
+            b'U' => Some(self.hex_digits(8)),
+            _ => self.fteqcc_escape(c).map(u32::from),
+        }
+    }
+
+    /// Up to `count` hex digits, as many as there are (FTEF-13.4).
+    fn hex_digits(&mut self, count: usize) -> u32 {
+        let mut code = 0_u32;
+        for _ in 0..count {
+            let Some(digit) = self.peek(0).and_then(|b| char::from(b).to_digit(16)) else {
+                break;
+            };
+            code = code.wrapping_mul(16).wrapping_add(digit);
+            self.bump(1);
+        }
+        code
+    }
+
+    /// `{n}` or `{xN}` after `\`: a decimal or hex code, up to the `}` (FTEF-13.4).
+    fn braced_code(&mut self) -> u32 {
+        let radix = if self.peek(0) == Some(b'x') {
+            self.bump(1);
+            16
+        } else {
+            10
+        };
+        let mut code = 0_u32;
+        while let Some(b) = self.peek(0) {
+            if b == b'}' {
+                self.bump(1);
+                break;
+            }
+            let Some(digit) = char::from(b).to_digit(radix) else {
+                break;
+            };
+            code = code.wrapping_mul(radix).wrapping_add(digit);
+            self.bump(1);
+        }
+        code
     }
 
     /// A number as `PR_LexNumber` reads it: the first byte whatever it is, then digits and
@@ -627,12 +746,104 @@ impl Lexer<'_> {
         value
     }
 
+    /// A number as FTEQCC's `QCC_PR_LexNumber` reads it (FTEF-3.1, FTEF-3.2): an optional
+    /// `-`, then `0x` for base 16 or a leading `0` for base 8, the digits of the base, and a
+    /// type suffix (`i`, `u`, `l` in their combinations, `f` or `d`) that is part of the token
+    /// but not of the value; a `.` not followed by another `.` starts a fraction, read with
+    /// `atof` and ended by an optional `f` or `d`. The value is kept as a float: the literal's
+    /// type is the compiler's (FTEF-3.5).
+    fn fteqcc_number(&mut self) -> f32 {
+        let start = self.pos;
+        let negative = self.peek(0) == Some(b'-');
+        if negative {
+            self.bump(1);
+        }
+        let base: u64 = match (self.peek(0), self.peek(1)) {
+            (Some(b'0'), Some(b'x' | b'X')) => {
+                self.bump(2);
+                16
+            }
+            (Some(b'0'), _) => {
+                self.bump(1);
+                8
+            }
+            _ => 10,
+        };
+        let mut num: u64 = 0;
+        while let Some(c) = self.peek(0) {
+            let digit = match c {
+                b'0'..=b'9' => Some(c.wrapping_sub(b'0')),
+                b'a'..=b'z' => Some(c.wrapping_sub(b'a').wrapping_add(10)),
+                b'A'..=b'Z' => Some(c.wrapping_sub(b'A').wrapping_add(10)),
+                _ => None,
+            }
+            .filter(|d| u64::from(*d) < base);
+            if let Some(digit) = digit {
+                num = num.wrapping_mul(base).wrapping_add(u64::from(digit));
+                self.bump(1);
+                continue;
+            }
+            if c == b'.' && self.peek(1) != Some(b'.') {
+                self.bump(1);
+                while self.peek(0).is_some_and(|b| b.is_ascii_digit()) {
+                    self.bump(1);
+                }
+                let value = atof(self.bytes(Span::new(start, self.pos)));
+                if matches!(self.peek(0), Some(b'f' | b'F' | b'd' | b'D')) {
+                    self.bump(1);
+                }
+                self.check_length(self.pos.saturating_sub(start), Span::new(start, self.pos));
+                return value;
+            }
+            match c {
+                b'f' | b'F' | b'd' | b'D' => self.bump(1),
+                b'i' | b'I' | b'u' | b'U' | b'l' | b'L' => self.integer_suffix(c),
+                _ => {}
+            }
+            break;
+        }
+        self.check_length(self.pos.saturating_sub(start), Span::new(start, self.pos));
+        // `(float)(num*sign)`: the whole number rounded to the nearest float.
+        let value = num.to_string().parse::<f32>().unwrap_or(f32::MAX);
+        if negative { -value } else { value }
+    }
+
+    /// The integer suffix of an FTEQCC number, whose first byte `c` is next: `i` or `u`, then
+    /// an optional `l` or `ll`; or `l` or `ll`, then an optional `i` or `u` (FTEF-3.1).
+    fn integer_suffix(&mut self, c: u8) {
+        self.bump(1);
+        if matches!(c, b'l' | b'L') {
+            if self.peek(0) == Some(c) {
+                self.bump(1);
+            }
+            if matches!(self.peek(0), Some(b'i' | b'I' | b'u' | b'U')) {
+                self.bump(1);
+            }
+        } else if let Some(l @ (b'l' | b'L')) = self.peek(0) {
+            self.bump(1);
+            if self.peek(0) == Some(l) {
+                self.bump(1);
+            }
+        }
+    }
+
     /// A vector literal (QC-5).
+    ///
+    /// In an FTEQCC dialect a quote also holds a character constant, `'a'` or `'\n'`, whose
+    /// value is the character's code, and a vector may have two components, `'8 8'`, the
+    /// third 0 (FTEF-13.3).
     fn vector(&mut self) {
         let start = self.pos;
+        if self.dialect.has_fteqcc_extensions() && self.character() {
+            return;
+        }
         self.bump(1);
         let mut value = [0.0_f32; 3];
-        for component in &mut value {
+        let fteqcc = self.dialect.has_fteqcc_extensions();
+        for (index, component) in value.iter_mut().enumerate() {
+            if fteqcc && index == 2 && self.peek(0) == Some(b'\'') {
+                break;
+            }
             if self.peek(0).is_some() {
                 *component = self.number();
             }
@@ -644,6 +855,48 @@ impl Lexer<'_> {
             self.error(Code::E0104, "Bad vector", Span::new(start, self.pos));
         }
         self.push(TokenKind::Vector(value), start);
+    }
+
+    /// An FTEQCC character constant at a `'` (FTEF-13.3), as `QCC_PR_LexVector` reads one:
+    /// `'\c'`, an escape (FTEF-13.4); one byte and a closing `'`; or a UTF-8 sequence. Pushes
+    /// it as a float token holding the character's code and returns true; false, consuming
+    /// nothing, when the quote holds a vector.
+    fn character(&mut self) -> bool {
+        let start = self.pos;
+        let (Some(first), second) = (self.peek(1), self.peek(2)) else {
+            return false;
+        };
+        let code = if first == b'\\' {
+            self.bump(2);
+            let Some(c) = self.peek(0) else {
+                return true;
+            };
+            self.bump(1);
+            let code = self.escape_code(c).unwrap_or(u32::from(c));
+            if self.peek(0) == Some(b'\'') {
+                self.bump(1);
+            } else {
+                self.error(
+                    Code::E0104,
+                    "Bad character constant",
+                    Span::new(start, self.pos),
+                );
+            }
+            code
+        } else if first >= 0x80 {
+            let rest = self.text.get(start.saturating_add(1)..).unwrap_or_default();
+            let (code, len) = utf8_char(rest);
+            self.bump(len.saturating_add(2));
+            code
+        } else if second == Some(b'\'') {
+            self.bump(3);
+            u32::from(first)
+        } else {
+            return false;
+        };
+        let value = code.to_string().parse::<f32>().unwrap_or(f32::MAX);
+        self.push(TokenKind::Float(value), start);
+        true
     }
 
     /// A name (QC-3.1).

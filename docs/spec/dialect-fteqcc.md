@@ -412,6 +412,47 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
   output (the target format, the CRC, the flags) is realised by L-01.
 
+## FTEF-13 Further tokens
+
+**Source:** `qcc_pr_lex.c`, the `pr_punctuation[]` table, `QCC_PR_LexPunctuation`,
+`QCC_PR_LexVector`, `QCC_PR_LexEscapedCodepoint` and `QCC_PR_LexNumber`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset: the punctuation of
+`dialect-fteqcc-rerelease.md` FTE-19.1, the literals of FTE-20.
+
+Vanilla `qcc` has no `::` (QC-7.1), reads a `'` only as the start of a three-component vector
+(QC-5.1), and knows the escapes `\n` and `\"` only (QC-6.2). The corpus names class members as
+`Class::member` (4953 lines), joins long lines with a `\` at their end, writes character
+constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\x` escapes.
+
+### Behaviour
+
+- **FTEF-13.1** `::` is one token. `pr_punctuation[]` lists `"::"` before `":"`, as its rule
+  says: "longer symbols must be before a shorter partial match".
+- **FTEF-13.2** A `\` directly before a line break joins the lines: the token is skipped with
+  the break, in `QCC_PR_LexPunctuation`'s
+  `if ((unsigned char)*pr_file_p == (unsigned char)'\\' && pr_file_p[1] == '\r' && pr_file_p[2] == '\n') pr_file_p+=3;`
+  and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
+  this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
+- **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
+  FTEF-13.4), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
+  `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
+  the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
+  which may stop after two components, the third 0, with FTEQCC's warning "2d vector"
+  (`if (*pr_file_p == '\'' && i == 1)`).
+- **FTEF-13.4** Besides the one-byte escapes of `dialect-fteqcc-rerelease.md` FTE-20.4,
+  `QCC_PR_LexEscapedCodepoint` maps `\[` and `\]` to `0xe010` and `0xe011`, `\.`, `\<`, `\-` and
+  `\>` to `0xe01c` to `0xe01f`, `\(`, `\=`, `\)` and `\+` to `0xe080` to `0xe083` ("quake
+  specific"), `\{n}` and `\{xN}` to the decimal or hex code `n`, `\x` and one or two hex digits
+  to that byte, `\u` and `\U` and four or eight hex digits to that code point, and a digit to
+  `0xe012` plus the digit under `flag_qcfuncs` ("yellow numbers"). A code above one byte is
+  written to the string as its UTF-8 bytes. Any other escape stays "Unknown escape char"
+  (QC-6.2).
+- **FTEF-13.5** This parse-and-resolve profile keeps every number token of FTEF-3 as a float
+  holding its value (an integer rounded to the nearest float), and every character constant as
+  a float holding its code: the literal's FTEQCC type (FTEF-3.1, FTEF-3.3) matters only to type
+  checking and code generation, which are later (L-01).
+
 ### Test vectors
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the
