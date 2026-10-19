@@ -260,6 +260,30 @@ fn if_elif_else_chain() {
     assert_eq!(brought(&chain("garbage +"), &files), ["two.qc"]);
 }
 
+// spec FTEF-14.11: the graph of an FTEQCC module reads #if as FTEQCC does, a vanilla one with C's precedence
+#[test]
+fn if_reads_in_the_module_dialect() {
+    let files = [("yes.qc", "")];
+    let body = "#if 0 && 0 || 1\n#include \"yes.qc\"\n#endif\n";
+    let mut all = vec![("main.src", body)];
+    all.extend_from_slice(&files);
+    let graph = |dialect| {
+        build(&GraphSpec {
+            files: &all,
+            src: "main.src",
+            dialect,
+            ..GraphSpec::default()
+        })
+    };
+    let vanilla = graph(qc_lexer::Dialect::Vanilla);
+    assert_eq!(
+        names(&vanilla).into_iter().skip(1).collect::<Vec<_>>(),
+        ["yes.qc"]
+    );
+    let fteqcc = graph(qc_lexer::Dialect::Fteqcc);
+    assert_eq!(names(&fteqcc).len(), 1);
+}
+
 // spec PRJ-5.5: #elifdef and #elifndef take their branch on whether the name is a macro
 #[test]
 fn elifdef_and_elifndef() {

@@ -530,6 +530,21 @@ profile the preprocessor reads them as FTEQCC does.
   when a side of it is being skipped, as FTEQCC's "#if with no endif" comes from
   `QCC_PR_FalsePreProcessorIf`, which skips; a taken side left open is closed at the end of the
   file without a word. The corpus leaves one open (`menu-fn/m_customgame.qc`, line 18).
+- **FTEF-14.11** Under this profile an `#if` or `#elif` expression is read as
+  `ParsePrecompilerIf` reads it, not with the C precedence of PRJ-5.5, by the preprocessor and by
+  the graph of a module of this dialect. `||` and `&&` share one level and group to the right,
+  the right side read first: `eval = ParsePrecompilerIf(level)||eval;` and
+  `eval = ParsePrecompilerIf(level)&&eval;` under `case PPI_LOGICAL:`, so `0 && 0 || 1` is
+  `0 && (0 || 1)`, 0, where C makes it 1. The comparisons `<=`, `>=`, `<`, `>`, `!=` and `==`
+  share the level below in the same way (`eval = eval <= ParsePrecompilerIf(level);` under
+  `case PPI_COMPARISON:`), so `1 < 2 == 1` is `1 < (2 == 1)`, 0. A value (`PPI_VALUE`) is a
+  parenthesised expression, `!` and a value, `defined` and a name with or without parentheses,
+  or a word as `QCC_PR_SimpleGetToken` reads it, up to whitespace, `,`, `;`, `(`, `)`, `]` or
+  `//`, whose macro's text, or else the word itself, is read with `atoi`: `1||0` is one word,
+  1. The text after a whole expression is not read. The expression is the directive's bytes as
+  written, a line continuation (FTEF-14.2) a space. Where FTEQCC reports an error ("unclosed
+  bracket condition", "unclosed defined condition", "unexpected end-of-line") this profile
+  takes the expression as false.
 
 ## FTEF-15 Declarations
 

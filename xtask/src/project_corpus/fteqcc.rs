@@ -288,7 +288,13 @@ mod tests {
         loader.insert("/m/progs.src", "../progs.dat\na.qc\nb.qc\n");
         loader.insert("/m/a.qc", "void() a = {};\n");
         loader.insert("/m/b.qc", "void() b = {};\n");
-        let graph = qc_project::build_graph(&mut loader, Path::new("/m/progs.src"), &[], &[]);
+        let graph = qc_project::build_graph(
+            &mut loader,
+            Path::new("/m/progs.src"),
+            &[],
+            &[],
+            qc_lexer::Dialect::Vanilla,
+        );
         let module = Module {
             name: "m".to_owned(),
             kind: ModuleKind::Ssqc,

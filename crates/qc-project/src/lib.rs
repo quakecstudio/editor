@@ -348,12 +348,19 @@ fn from_manifest<L: Loader>(
             || default_output(root, &mod_name, module.kind),
             |o| normalize(&root.join(o)),
         );
-        let graph = build_graph(loader, &src, &module.defines, &include_dirs);
+        let module_dialect = module.dialect.unwrap_or(dialect);
+        let graph = build_graph(
+            loader,
+            &src,
+            &module.defines,
+            &include_dirs,
+            module_dialect.into(),
+        );
         out.push(Module {
             name: module.name,
             kind: module.kind,
             src,
-            dialect: module.dialect.unwrap_or(dialect),
+            dialect: module_dialect,
             target: module.target.unwrap_or(target),
             output,
             defines: module.defines,
@@ -415,7 +422,7 @@ fn bare<L: Loader>(loader: &mut L, root: &Path, sources: Vec<PathBuf>) -> Projec
     let mut seen: Vec<PathBuf> = queue.iter().cloned().collect();
     let mut modules: Vec<Module> = Vec::new();
     while let Some(src) = queue.pop_front() {
-        let graph = build_graph(loader, &src, &[], &[]);
+        let graph = build_graph(loader, &src, &[], &[], qc_lexer::Dialect::Vanilla);
         for registered in &graph.sourcefiles {
             if !seen.contains(registered) {
                 seen.push(registered.clone());

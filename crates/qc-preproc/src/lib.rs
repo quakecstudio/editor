@@ -826,17 +826,38 @@ impl<L: Loader> Preprocessor<L> {
         self.macros.insert(name.clone(), Rc::new(mac));
     }
 
-    /// The value of an `#if` or `#elif` expression (FTEF-14.1): its tokens' text, evaluated as
-    /// the project graph evaluates it (PRJ-5.5), a macro's value being its body's text.
+    /// The value of an `#if` or `#elif` expression (FTEF-14.1), evaluated as the project graph
+    /// evaluates it in this dialect (PRJ-5.5, FTEF-14.11), a macro's value being its body's
+    /// text. The expression is its tokens' text; under an FTEQCC profile it is the bytes as
+    /// written, since FTEQCC reads words up to whitespace (FTEF-14.11).
     fn condition(&self, file: FileId, tokens: &[Token]) -> bool {
-        let expr = self.line_text(file, tokens);
-        cond::eval(&expr, &|name: &str| {
+        let expr = if self.dialect.has_fteqcc_extensions() {
+            self.source_text(file, tokens)
+        } else {
+            self.line_text(file, tokens)
+        };
+        let value = |name: &str| {
             self.macros.get(name).map(|m| {
                 let parts: Vec<String> =
                     m.body.iter().map(|(f, t)| self.token_text(*f, t)).collect();
                 parts.join(" ")
             })
-        })
+        };
+        cond::eval(&expr, &value, self.dialect)
+    }
+
+    /// The bytes of `file` from the first of `tokens` to the end of the last, a line
+    /// continuation (FTEF-14.2) read as a space.
+    fn source_text(&self, file: FileId, tokens: &[Token]) -> String {
+        let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
+            return String::new();
+        };
+        let span = FileSpan {
+            file,
+            span: Span::new(first.span.start, last.span.end),
+        };
+        let text = String::from_utf8_lossy(self.sources.text(span).unwrap_or_default());
+        text.replace("\\\r\n", " ").replace("\\\n", " ")
     }
 
     /// The text of directive tokens of `file`, each token's bytes, joined by a space.

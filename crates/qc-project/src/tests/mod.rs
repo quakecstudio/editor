@@ -28,6 +28,8 @@ struct GraphSpec<'a> {
     include_dirs: &'a [&'a str],
     /// Whether the files are on a file system that ignores case.
     ignore_case: bool,
+    /// The module's dialect, which decides how an `#if` reads (FTEF-14.11).
+    dialect: qc_lexer::Dialect,
 }
 
 impl Default for GraphSpec<'_> {
@@ -38,6 +40,7 @@ impl Default for GraphSpec<'_> {
             defines: &[],
             include_dirs: &[],
             ignore_case: false,
+            dialect: qc_lexer::Dialect::Vanilla,
         }
     }
 }
@@ -66,7 +69,13 @@ fn build(spec: &GraphSpec<'_>) -> FileGraph {
         .map(|d| Define::parse(d).unwrap())
         .collect();
     let dirs: Vec<PathBuf> = spec.include_dirs.iter().map(PathBuf::from).collect();
-    build_graph(&mut loader, Path::new(spec.src), &defines, &dirs)
+    build_graph(
+        &mut loader,
+        Path::new(spec.src),
+        &defines,
+        &dirs,
+        spec.dialect,
+    )
 }
 
 /// A path with `/` between its components, so tests read the same on every OS.

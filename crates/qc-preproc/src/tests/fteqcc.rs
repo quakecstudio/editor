@@ -25,6 +25,19 @@ fn if_takes_a_side_by_its_expression() {
     assert_eq!(toks, "yes");
 }
 
+// spec FTEF-14.11: the preprocessor reads `#if` as FTEQCC's `ParsePrecompilerIf` does, `||` and
+// `&&` at one level grouped to the right, from the bytes as written.
+#[test]
+fn if_follows_fteqcc_precedence() {
+    let side = |cond: &str| fte(&format!("#if {cond}\nyes\n#else\nno\n#endif\n")).0;
+    assert_eq!(side("1 || 0 && 0"), "yes");
+    assert_eq!(side("0 && 0 || 1"), "no");
+    assert_eq!(side("1 < 2 == 1"), "no");
+    // `1||0` is one word, read with atoi.
+    assert_eq!(side("0||1"), "no");
+    assert_eq!(side("1 \\\n|| 0"), "yes");
+}
+
 // spec FTEF-14.1: the first true `#elif`, `#elifdef` or `#elifndef` is taken, or the `#else`,
 // and only while no earlier side was.
 #[test]
