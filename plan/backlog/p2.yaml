@@ -613,6 +613,26 @@ issues:
   - Every construct the grammar README lists has a statement citing its FTEQCC function and quoting the source, and every grammar test cites a spec statement
   verify:
   - cargo test -p qs-tests (spec-citation ratchet); tree-sitter test in the grammar repo's CI
+- key: P2-37
+  title: Skip the build and test jobs when only docs and plan files change
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-7
+  - QA-1
+  deliverable:
+  - 'scripts/ci-changes.sh: classifies a diff as light, when every changed file is on an explicit allowlist of documentation, plan and agent paths that only the cargo xtask ci job and xtask''s own tests read, or full otherwise, including any unknown path, an empty diff and a diff that cannot be computed (Justin, 2026-10-19)'
+  - '.github/workflows/ci.yml: a first job runs the script for pull requests (the merge commit against its base), merge groups (base_sha against head_sha) and pushes to main; on the light path every required check keeps its exact name and reports success, with only the cargo xtask ci job and xtask''s tests doing work, and a failed classification takes the full path'
+  - 'docs/ci.md: the light path, the allowlist with what reads each path, and GitHub''s documented behaviour for skipped required checks, quoted'
+  acceptance:
+  - Tests of the script cover each light category, docs/spec and .rs files, the unknown-path fallback, renames, an empty diff and an uncomputable diff
+  - No check is skipped whose inputs changed; every required check reports success on a docs-only pull request, recorded with timings in the PR
+  - shellcheck, shfmt, actionlint and zizmor report nothing
+  verify:
+  - cargo test -p xtask; the PR's own full run and a scratch docs-only pull request's light run, with timings in the PR body
 - key: P2-38
   title: Resolve copper and Arcane Dimensions under the FTEQCC profile
   labels:
@@ -802,6 +822,7 @@ issues:
   - P2-34
   - P2-35
   - P2-36
+  - P2-37
   - P2-38
   - P2-39
   - P2-40
