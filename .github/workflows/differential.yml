@@ -3,19 +3,14 @@
 # built by id's qcc, and the six rerelease codebases built by the pinned
 # FTEQCC) run in the VM oracle and in QuakeC Studio's runner, their traces
 # compared statement by statement (DIFF-9) and their statement coverage
-# measured (DIFF-11). The full run enforces zero divergences and the 90%
-# statement-coverage bar (TEST-6, docs/testing.md); the fast subset (id 1.01,
-# zero divergences only) runs on every change in the Test Assets (linux) job of
-# ci.yml.
+# measured (DIFF-11). The full run enforces zero divergences on every codebase
+# and reports coverage without gating on it (ADR-0013); the fast subset (id
+# 1.01) runs on every change in the Test Assets (linux) job of ci.yml.
 #
 # It does not run on pull requests or in the merge queue, and is not a required
 # check (docs/ci.md): the full corpus takes minutes and the fast subset already
-# guards every change. The coverage bar it enforces is unreachable under the
-# mock engine as specified (DIFF-5.8 leaves out movement, collision, combat and
-# touch, so id 1.01 reaches about 32.3%); until that conflict is resolved
-# (tracked on #37), this run is expected to fail on the coverage bar. Keeping
-# it non-required means the known failure does not block any merge, and the run
-# reports the real measured coverage.
+# guards every change. Nothing else watches it, so run-phase checks the latest
+# scheduled run first (.claude/skills/run-phase/SKILL.md).
 name: Differential
 
 on:
@@ -86,8 +81,7 @@ jobs:
       # differential runner reads.
       - name: Build the corpus progs
         run: cargo xtask corpus build
-      # The full corpus: every oracle-built codebase, enforcing zero divergences and the 90%
-      # statement-coverage bar (TEST-6). See the header note: the bar is unreachable under the
-      # mock as specified until #37's coverage conflict is resolved.
+      # The full corpus: every oracle-built codebase, enforcing zero divergences and reporting
+      # statement coverage (TEST-6, ADR-0013).
       - name: Run the full differential VM suite
         run: cargo xtask differential --full
