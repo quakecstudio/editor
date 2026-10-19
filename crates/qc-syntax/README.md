@@ -33,7 +33,8 @@ named structs and unions, typedefs of any type, `enumflags` and enums written as
 classes with their members and `Class::member` definitions, accessors, `__variant`,
 declaration and parameter qualifiers, nameless parameters, functions returning any type, casts
 to any type, `[x, y, z]` vectors, scoped names, `if not`, prefix `++`/`--`/`&`/`*`, adjacent
-strings and `case` labels in nested blocks. FTEQCC knows every type name when it parses; this
+strings and `case` labels in nested blocks; and of FTEF-18, expression initialisers and function
+bodies inside function bodies (FTEF-18.1, FTEF-18.2), the rest of FTEF-18 being P2-39. FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
 the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
 
