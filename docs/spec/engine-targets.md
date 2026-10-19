@@ -8,10 +8,12 @@ a project can target supports, where those facts come from, and the diagnostic f
 a builtin the target engine lacks (PRIN-8). Implemented by `qc-engines`, with the generator
 `cargo xtask engines` (`xtask/src/engines.rs`).
 
-The three files the tables are generated from are **fact sources, not porting upstreams**:
+The five files the tables are generated from are **fact sources, not porting upstreams**:
 only facts are taken from them (names, numbers, signatures), never comment text or code, and
 none of them is listed in [`../porting.md`](../porting.md#upstreams).
-[ADR-0014](../adr/0014-engine-fact-sources.md) records the decision and its legal basis.
+[ADR-0014](../adr/0014-engine-fact-sources.md) records the decision for the first three and
+its legal basis, and [ADR-0015](../adr/0015-darkplaces-client-menu-fact-sources.md), which
+supersedes it, extends it to DarkPlaces' client and menu QuakeC definitions.
 
 ## ENGT-1 Sources
 
@@ -21,18 +23,19 @@ none of them is listed in [`../porting.md`](../porting.md#upstreams).
 | --- | --- | --- | --- |
 | `fteqw` | `fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e` | `quakec/menusys/fteextensions.qc` | `21322f15aca52dae3a75b98a46be0491ed9a1f5d136511228bf52725ac81ccb0` |
 | `darkplaces` | `DarkPlacesEngine/darkplaces@5d80f03e26871b273da103f3b750820a3718c01a` | `dpdefs/dpextensions.qc` | `73237e430e8d36009bf0518c0105b15fb37d7710cdc47120c67da8e5e85e33e5` |
+| `darkplaces-client` | `DarkPlacesEngine/darkplaces@5d80f03e26871b273da103f3b750820a3718c01a` | `dpdefs/csprogsdefs.qc` | `f9b3562ccc1298cc4794b44fb07071b5458e9919b6e674f911d666e3c54b76ab` |
+| `darkplaces-menu` | `DarkPlacesEngine/darkplaces@5d80f03e26871b273da103f3b750820a3718c01a` | `dpdefs/menudefs.qc` | `1bfe701c54ffece1ba6a362920c9f9ec6738e45aae31413e0ab14ff8fa6f96bd` |
 | `rerelease` | `id-Software/quake-rerelease-qc@634eefab09a77eb7b5f5ca7078ba3d8784a91142` | `quakec/defs.qc` | `7694c006223ec43f05b923c8fe7691a6ed8298141d1562d98d6c86162de6129d` |
 
-The FTEQW and DarkPlaces commits were the tips of each repository's `master` on 2026-10-19.
+The FTEQW and DarkPlaces commits were the tips of each repository's `master` on 2026-10-19;
+the three DarkPlaces files are read at the same commit and share its license file, `COPYING`.
 The vanilla builtins are not extracted: they are id's own table, ported from id's engine in
 `qc-builtins` (BUILTIN-5).
 
 ### Behaviour
 
-- **ENGT-1.1** The database is built from the three files above, each pinned by repository,
-  commit and SHA-256 together with its repository's license file, and from id's vanilla table
-  of `qc-builtins` (BUILTIN-5). The generated `crates/qc-engines/src/tables.rs` records every
-  pin, so the checked-in tables carry their source checksums.
+- **ENGT-1.1** **Withdrawn** 2026-10-19: it built the database from three files, but
+  ADR-0015 added DarkPlaces' `csprogsdefs.qc` and `menudefs.qc`; replaced by ENGT-1.4.
 - **ENGT-1.2** Generation is reproducible: `cargo xtask engines` fetches each pinned file and
   writes the tables, and `cargo xtask engines --check` writes nothing and fails when the
   checked-in tables differ from what the sources give. A fetched file or license file whose
@@ -40,10 +43,15 @@ The vanilla builtins are not extracted: they are id's own table, ported from id'
 - **ENGT-1.3** The `rerelease` pin is the corpus manifest's `quake-rerelease-qc` pin
   (`corpus/manifest.toml`): the same commit and the same SHA-256 for `quakec/defs.qc` and
   `COPYING.txt`. A difference is an error.
+- **ENGT-1.4** The database is built from the five files above, each pinned by repository,
+  commit and SHA-256 together with its repository's license file, and from id's vanilla table
+  of `qc-builtins` (BUILTIN-5). The generated `crates/qc-engines/src/tables.rs` records every
+  pin, so the checked-in tables carry their source checksums.
 
 ## ENGT-2 Extraction
 
-**Source:** this project. The rules read the three files as they are at the pinned commits.
+**Source:** this project. The rules read the files of ENGT-1 as they are at the pinned
+commits.
 
 ### Behaviour
 
@@ -76,13 +84,24 @@ The vanilla builtins are not extracted: they are id's own table, ported from id'
   line where its declaration ends, separated by commas, up to the first word that is not
   upper-case letters, digits, underscores and `?`; without one, the last comment-line name of
   ENGT-2.6 above it; without either, none.
-- **ENGT-2.8** Each source is read once per module kind (PRJ-3.1) it gives a table for, each
-  reading by ENGT-2.1 to ENGT-2.7 with its own predefined macros, giving its own builtins and
-  extension names. Every source is read for server QuakeC (`ssqc`) with the macros of ENGT-2.3;
-  `fteqw` is also read for client QuakeC (`csqc`) with `CSQC` alone defined and for menu
-  QuakeC (`menuqc`) with `MENU` alone defined, the macros its own `#if` lines test for those
-  kinds. `sources.toml` lists each source's readings as `tables`; a source with no table, a
-  table of any other kind, or two tables of one kind is an error, and nothing is written.
+- **ENGT-2.8** **Withdrawn** 2026-10-19: it read every source for server QuakeC, but the
+  DarkPlaces client and menu sources of ADR-0015 give only a client or a menu table; replaced
+  by ENGT-2.10.
+- **ENGT-2.9** A statement ends at a `;` outside a string literal, or at a `}` outside
+  parentheses that closes the statement's outermost `{`, so a function body with no `;` after
+  it ends at its closing brace; a `{` or `}` inside parentheses, as in FTEQW's
+  `enumflags:float{...}` parameter types, ends nothing. A comment line is read for an
+  extension name (ENGT-2.6) only outside a statement: when no code of an unfinished statement
+  precedes it and no brace or parenthesis is open.
+- **ENGT-2.10** Each source is read once per module kind (PRJ-3.1) it gives a table for, each
+  reading by ENGT-2.1 to ENGT-2.7 and ENGT-2.9 with its own predefined macros, giving its own
+  builtins and extension names. `fteqw` is read for server QuakeC (`ssqc`) with the macros of
+  ENGT-2.3, for client QuakeC (`csqc`) with `CSQC` alone defined and for menu QuakeC
+  (`menuqc`) with `MENU` alone defined, the macros its own `#if` lines test for those kinds;
+  `darkplaces` and `rerelease` are read for server QuakeC, `darkplaces-client` for client
+  QuakeC and `darkplaces-menu` for menu QuakeC, each with no macro defined. `sources.toml`
+  lists each source's readings as `tables`; a source with no table, a table of any other
+  kind, or two tables of one kind is an error, and nothing is written.
 
 ## ENGT-3 Engines
 
@@ -95,7 +114,7 @@ with zero setup", and `Novum/vkQuake@27789d7333a46674474d871137bb71e056719628`, 
 support for playing the 2021 re-release content." Both read on 2026-10-19. The rerelease
 QuakeC calls the builtins its `defs.qc` declares, so an engine that plays it has them.
 
-None of the three fact sources describes QuakeSpasm, Ironwail or vkQuake, and none of those
+None of the fact sources describes QuakeSpasm, Ironwail or vkQuake, and none of those
 engines' own sources is a fact source here, so their tables hold only what the sources above
 establish. An engine may support builtins its table lacks; listing them needs that engine's
 own source as a further fact source.
@@ -122,12 +141,19 @@ own source as a further fact source.
   `rerelease` KEX, `fte` FTEQW and `dp` DarkPlaces.
 - **ENGT-3.6** The targets `quakespasm`, `ironwail` and `vkquake` (PRJ-2.9) select QuakeSpasm,
   Ironwail and vkQuake, so every engine of ENGT-3.1 is the engine of some target.
-- **ENGT-3.7** The tables and extension names of ENGT-3.1 to ENGT-3.3 are those for server
+- **ENGT-3.7** **Withdrawn** 2026-10-19: it gave only FTEQW client and menu QuakeC tables, but
+  ADR-0015 made DarkPlaces' `csprogsdefs.qc` and `menudefs.qc` fact sources; replaced by
+  ENGT-3.8.
+- **ENGT-3.8** The tables and extension names of ENGT-3.1 to ENGT-3.3 are those for server
   QuakeC. FTEQW also has a client QuakeC table, the `fteqw` builtins of its `csqc` reading
-  (ENGT-2.8), and a menu QuakeC table, those of its `menuqc` reading, each with that
-  reading's extension names. No other engine has a client or menu QuakeC table, since no fact
-  source gives one; a builtin number can mean a different builtin in each kind (in `fteqw`,
-  `#5` is `lightstylestatic` for server and `bprint` for menu QuakeC).
+  (ENGT-2.10), and a menu QuakeC table, those of its `menuqc` reading. DarkPlaces also has a
+  client QuakeC table, the `darkplaces-client` builtins, and a menu QuakeC table, the
+  `darkplaces-menu` builtins, with no layer of id's table under either, since each file
+  declares the builtins of its kind from `#1`. Each table has its reading's extension names.
+  No other engine has a client or menu QuakeC table, since no fact source gives one. A
+  builtin number can mean a different builtin in each kind: in `fteqw`, `#5` is
+  `lightstylestatic` for server and `bprint` for menu QuakeC, and in DarkPlaces `#1` is
+  `makevectors` for client and `checkextension` for menu QuakeC.
 
 ## ENGT-4 Missing builtins
 
@@ -166,7 +192,7 @@ own source as a further fact source.
   and nothing after it (QC-13.3), `#0:NAME` gives no key, so a call of such a declaration is
   no `W0311`; the parser reports the declaration instead.
 - **ENGT-4.8** A module is checked against its target engine's table for the module's kind
-  (PRJ-3.1, ENGT-3.7), and the extensions of ENGT-4.1 and ENGT-4.5 come from the engines'
+  (PRJ-3.1, ENGT-3.8), and the extensions of ENGT-4.1 and ENGT-4.5 come from the engines'
   tables for that kind. A module of a kind its engine has no table for is not checked and
   has no `W0311`.
 
@@ -187,3 +213,10 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
 | `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |
 | `float(float tabsize, float defaulttype) hash_createtab = #287;` called, Ironwail, client module | none: Ironwail has no client table | ENGT-4.8 |
+| the same, DarkPlaces, client module | `W0311` "hash_createtab is builtin #287, which DarkPlaces does not have (FTE_QC_HASHTABLES)" | ENGT-3.8, ENGT-4.8 |
+| `void() clearscene = #300;` called, DarkPlaces, client module | none | ENGT-3.8, ENGT-4.8 |
+| `void(entity e) setspawnparms = #78;` called, DarkPlaces, client module | `W0311` "setspawnparms is builtin #78, which DarkPlaces does not have" | ENGT-3.8, ENGT-4.8 |
+| `float(float max_themes) initparticlespawner = #522;` called, FTEQW, client module | `W0311` "initparticlespawner is builtin #522, which FTEQW does not have (DP_CSQC_SPAWNPARTICLE)" | ENGT-4.8 |
+| `vector() getmousepos = #66;` called, DarkPlaces, menu module | none | ENGT-3.8, ENGT-4.8 |
+| `string(float ascii) chr = #78;` called, DarkPlaces, menu module | none | ENGT-3.8, ENGT-4.8 |
+| the same, FTEQW, menu module | `W0311` "chr is builtin #78, which FTEQW does not have" | ENGT-4.8 |

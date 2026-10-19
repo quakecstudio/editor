@@ -26,7 +26,8 @@ index below lists every ADR, in order, with the title and status its file states
 | [0011](0011-app-directories.md) | Use each OS's native application directories | Accepted |
 | [0012](0012-bsp-loader-default.md) | Load BSPs by the FitzQuake lineage's rules by default, with WinQuake and GLQuake as modes | Accepted |
 | [0013](0013-differential-coverage-bar.md) | Make zero divergences the differential suite's bar and report coverage without a flat 90% gate | Accepted |
-| [0014](0014-engine-fact-sources.md) | Use FTEQW's and DarkPlaces' extension files as fact-only sources | Accepted |
+| [0014](0014-engine-fact-sources.md) | Use FTEQW's and DarkPlaces' extension files as fact-only sources | Superseded by ADR-0015 |
+| [0015](0015-darkplaces-client-menu-fact-sources.md) | Also use DarkPlaces' client and menu QuakeC definitions as fact-only sources | Accepted |
 <!-- /adr:index -->
 
 ADR-0003 to ADR-0010 are reserved by the Phase 0 issues that name them in their deliverables
