@@ -259,3 +259,38 @@ fn builtin_zero_needs_no_name() {
 fn a_positive_number_is_not_an_operator() {
     assert_eq!(fte_errors(&in_body("a = b 1;")), [Code::E0204]);
 }
+
+// spec FTE-8.4: `?:` is read at the assignment priority, tighter than `&&` and `||`: the
+// right operand of `=`, `&&` and `||` is the conditional, and a comparison is its condition.
+#[test]
+fn ternary_binds_at_the_assignment_priority() {
+    for (body, tree) in [
+        ("a = b ? c : i;", "(= a (?: b c i))"),
+        ("a = b = c ? i : n;", "(= a (= b (?: c i n)))"),
+        ("a && b ? c : i;", "(&& a (?: b c i))"),
+        ("a || b ? c : i;", "(|| a (?: b c i))"),
+        ("a == b ? c : i;", "(?: (== a b) c i)"),
+        ("a + b ? c : i;", "(?: (+ a b) c i)"),
+        ("!a ? b : c;", "(?: (! a) b c)"),
+        ("(a = b) ? c : i;", "(?: ((= a b)) c i)"),
+    ] {
+        assert_eq!(sexpr(&fte_expr(body)), tree, "{body}");
+    }
+}
+
+// spec FTE-8.4: the arms of `?:` are read at the loosest priority, so a nested conditional
+// groups to the right in its last arm and inside its middle one, and the last arm takes `&&`
+// and `=`.
+#[test]
+fn ternary_arms_take_every_operator() {
+    for (body, tree) in [
+        ("a ? b : c ? i : n;", "(?: a b (?: c i n))"),
+        ("a ? b ? c : i : n;", "(?: a (?: b c i) n)"),
+        ("a ? b : c && i;", "(?: a b (&& c i))"),
+        ("a ? b : c = i;", "(?: a b (= c i))"),
+        ("a = b ? c : i ? n : a;", "(= a (?: b c (?: i n a)))"),
+        ("a && b ? c : i || n;", "(&& a (?: b c (|| i n)))"),
+    ] {
+        assert_eq!(sexpr(&fte_expr(body)), tree, "{body}");
+    }
+}

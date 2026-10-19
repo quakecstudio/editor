@@ -52,6 +52,13 @@ const NOT_PRIORITY: u8 = 4;
 /// The priority of `=`, the only right-associative operator.
 const ASSIGN_PRIORITY: u8 = 5;
 
+/// FTEQCC's `TERNARY_PRIORITY`: the priority `?:` is read at, equal to the assignment
+/// priority and tighter than `&&` and `||` (FTE-8.4). `QCC_PrioritiseOpcodes` sets
+/// `priority_class[PC_TERNARY] = 6; priority_class[PC_STORE] = 6;` and
+/// `priority_class[PC_LOGICAND] = 7;` without `flag_cpriority`, one above this parser's
+/// numbering, whose `&&` and `||` are 6.
+const TERNARY_PRIORITY: u8 = ASSIGN_PRIORITY;
+
 /// How far the declaration-line test looks for the `)` of a parameter list.
 const LOOKAHEAD: usize = 256;
 
@@ -1639,10 +1646,13 @@ impl<'a> Parser<'a> {
             }
         }
         self.leave(levels);
-        // The FTEQCC ternary `cond ? a : b` (FTE-8) binds looser than every binary operator,
-        // so it wraps the whole expression parsed so far. It is only reachable in an FTEQCC
-        // dialect, since the vanilla lexer has no `?` token (it is "Unknown punctuation").
-        if max >= TOP_PRIORITY && self.at(K::Question) {
+        // FTE-8.4: the FTEQCC ternary `cond ? a : b` is read at `TERNARY_PRIORITY`, so its
+        // condition is what was parsed so far at a tighter priority: `x = a ? b : c` assigns
+        // the conditional, and `a && b ? c : d` is `a && (b ? c : d)`, since the right operand
+        // of `=`, `&&` and `||` is read at this priority and reaches the `?` first. It is only
+        // reachable in an FTEQCC dialect, since the vanilla lexer has no `?` token (it is
+        // "Unknown punctuation").
+        if max >= TERNARY_PRIORITY && self.at(K::Question) {
             lhs = self.ternary(checkpoint, lhs);
         }
         Some(lhs)
