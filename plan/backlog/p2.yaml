@@ -124,6 +124,63 @@ issues:
   - Calling an FTE_ builtin while targeting Ironwail produces the diagnostic with the engine named
   verify:
   - cargo test -p qc-engines; regeneration check in CI
+- key: P2-29
+  title: Let a project target QuakeSpasm, Ironwail and vkQuake
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-10
+  - LANG-6
+  depends:
+  - P2-04
+  deliverable:
+  - 'crates/qc-project and docs/spec/project-file.md: PRJ-2.2 targets for quakespasm, ironwail and vkquake, and crates/qc-engines: Engine::from_target mapping each to its engine (ENGT-3.5)'
+  acceptance:
+  - A quakec.toml with target = "ironwail" opens, and calling an FTE_ builtin in it produces W0311 naming Ironwail
+  - Every engine of ENGT-3.1 is reachable from some project target
+  verify:
+  - cargo test -p qc-project -p qc-engines
+- key: P2-30
+  title: Report missing #0:NAME builtins under the FTEQCC dialect
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - PRIN-8
+  depends:
+  - P2-04
+  - P2-03
+  deliverable:
+  - 'crates/qc-engines: W0311 (ENGT-4) for calls of builtins declared `= #0:NAME`, looked up by engine name, once the FTEQCC profile parses that form; the ENGT-4 statements extended to it'
+  acceptance:
+  - Calling `bprint = #0:ex_bprint` while targeting FTEQW produces W0311 naming FTEQW, and targeting KEX, Ironwail or vkQuake produces none
+  verify:
+  - cargo test -p qc-engines
+- key: P2-31
+  title: Add CSQC and menu QuakeC tables to the engine-target database
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - AGT-9
+  depends:
+  - P2-04
+  deliverable:
+  - 'crates/qc-engines: FTEQW''s CSQC and menu builtin tables from fteextensions.qc read with CSQC and MENU defined (ENGT-2.3), selected by the module kind (PRJ-3.1); the ENGT spec extended to module kinds'
+  acceptance:
+  - A CSQC module targeting FTEQW is checked against FTEQW's CSQC builtins, and a server module against its server builtins
+  - cargo xtask engines --check passes
+  verify:
+  - cargo test -p qc-engines; the regeneration check in CI
 - key: P2-05
   title: Unify diagnostics between typing and building
   labels:
@@ -580,6 +637,9 @@ issues:
   - P2-25
   - P2-26
   - P2-27
+  - P2-29
+  - P2-30
+  - P2-31
   - P2-28
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

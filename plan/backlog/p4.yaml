@@ -483,6 +483,25 @@ issues:
   depends:
   - P0-02
   - P0-15
+- key: P4-29
+  title: Decide whether the QuakeSpasm lineage's builtin tables become fact sources
+  labels:
+  - L3-semantics
+  - area:legal
+  - type:decision
+  - needs:human
+  size: S
+  reqs:
+  - LANG-6
+  - PRIN-8
+  depends:
+  - P2-04
+  deliverable:
+  - docs/adr/00NN-quakespasm-lineage-fact-sources.md deciding whether QuakeSpasm's, Ironwail's and vkQuake's builtin tables, at pinned commits, become fact-only sources of the engine-target database as ADR-0014 made FTEQW's and DarkPlaces' extension files; until then those engines' tables hold only id's and the rerelease's builtins (ENGT-3.1)
+  acceptance:
+  - The ADR is Accepted, and if it approves any source, the follow-up issue that adds it to crates/qc-engines/sources.toml is filed in plan/
+  verify:
+  - ADR link
 - key: P4-25
   title: Phase 4 gate review and MVP release
   labels:
@@ -521,6 +540,7 @@ issues:
   - P4-23
   - P4-24
   - P4-26
+  - P4-29
   deliverable:
   - docs/gates/p4.md, release notes and the published MVP release
   acceptance:

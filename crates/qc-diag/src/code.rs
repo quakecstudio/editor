@@ -113,13 +113,15 @@ pub enum Code {
     W0102,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
+    /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
+    W0311,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 46] = [
+    pub const ALL: [Self; 47] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -165,6 +167,7 @@ impl Code {
         Self::W0101,
         Self::W0102,
         Self::W0201,
+        Self::W0311,
         Self::W0402,
     ];
 
@@ -217,6 +220,7 @@ impl Code {
             Self::W0101 => "W0101",
             Self::W0102 => "W0102",
             Self::W0201 => "W0201",
+            Self::W0311 => "W0311",
             Self::W0402 => "W0402",
         }
     }
@@ -225,7 +229,7 @@ impl Code {
     #[must_use]
     pub const fn is_error(self) -> bool {
         match self {
-            Self::W0101 | Self::W0102 | Self::W0201 | Self::W0402 => false,
+            Self::W0101 | Self::W0102 | Self::W0201 | Self::W0311 | Self::W0402 => false,
             Self::E0101
             | Self::E0102
             | Self::E0103
