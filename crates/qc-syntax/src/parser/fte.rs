@@ -977,7 +977,7 @@ impl Parser<'_> {
         value.filter(|_| self.pos == before.saturating_add(1))
     }
 
-    /// Whether a C label starts here: a name with its `:` right after it (FTEF-18.6), as
+    /// Whether a C label starts here: a name with its `:` right after it (FTEF-18.23), as
     /// `if (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')` reads.
     pub(super) fn at_c_label(&self) -> bool {
         let (Some(name), Some(colon)) = (self.current(), self.nth(1)) else {
@@ -986,8 +986,8 @@ impl Parser<'_> {
         name.kind == K::Name && colon.kind == K::Colon && colon.span.start == name.span.end
     }
 
-    /// `name:` or `:name` (FTEF-18.6). A label the function already has is "Duplicate label
-    /// NAME", a warning.
+    /// `name:` or `:name` (FTEF-18.23). A label read since the end of the last function is
+    /// "Duplicate label NAME", a warning, and is not added again.
     pub(super) fn label_stmt(&mut self) {
         self.start_node(K::LabelStmt);
         let frikqcc = self.at(K::Colon);
@@ -1016,10 +1016,14 @@ impl Parser<'_> {
         self.finish_node();
     }
 
-    /// `goto name;` (FTEF-18.6).
+    /// `goto name;` (FTEF-18.23), whose label is looked for at the end of the function
+    /// (FTEF-18.24).
     pub(super) fn goto_stmt(&mut self) {
         self.start_node(K::GotoStmt);
         self.bump_as(K::GotoKw);
+        if let Some(tok) = self.current().filter(|t| t.kind == K::Name) {
+            self.gotos.push((tok.text.clone(), tok.span));
+        }
         self.name();
         self.end_statement();
         self.finish_node();

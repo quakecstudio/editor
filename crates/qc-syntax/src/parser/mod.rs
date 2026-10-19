@@ -59,6 +59,17 @@ const ASSIGN_PRIORITY: u8 = 5;
 /// numbering, whose `&&` and `||` are 6.
 const TERNARY_PRIORITY: u8 = ASSIGN_PRIORITY;
 
+/// A clause of a `for` header (FTE-2.1), which FTEQCC discards or keeps (FTEF-18.25).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Clause {
+    /// The first: run once, its value discarded.
+    Init,
+    /// The second: the condition, whose value is kept.
+    Condition,
+    /// The third: run after each pass, its value discarded.
+    Step,
+}
+
 /// How far the declaration-line test looks for the `)` of a parameter list.
 const LOOKAHEAD: usize = 256;
 
@@ -164,6 +175,21 @@ struct Expr {
     kind: K,
     assignable: bool,
     span: Span,
+    tail: Tail,
+}
+
+/// What FTEQCC sees in an expression whose value is discarded, past its calls and assignments
+/// (FTEF-18.25).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Tail {
+    /// Nothing more.
+    Plain,
+    /// A postfix `++` or `--` still to be stored, which `QCC_PR_DiscardRef` stores, setting
+    /// `qcc_usefulstatement`; a parenthesised one or the last of a sequence is still pending.
+    PostInc,
+    /// A cast to `void`: the type the discarded expression check of `QCC_PR_DiscardExpression`
+    /// lets through (`if (ref->cast->type != ev_void && !qcc_usefulstatement)`).
+    Void,
 }
 
 pub(crate) struct Parser<'a> {
@@ -176,8 +202,15 @@ pub(crate) struct Parser<'a> {
     errors: Vec<Diagnostic>,
     muted: bool,
     depth: usize,
-    /// The labels of the function body being parsed (FTEF-18.6).
+    /// FTEQCC's `qcc_usefulstatement`: whether a call, an assignment or a prefix `++` or `--`
+    /// has been read since the flag was last cleared (FTEF-18.25).
+    useful: bool,
+    /// The labels read since the end of the last function, FTEQCC's `pr_labels`
+    /// (FTEF-18.23).
     labels: Vec<String>,
+    /// The `goto`s read since the end of the last function, FTEQCC's `pr_gotos`, each with
+    /// the span of its label name (FTEF-18.24).
+    gotos: Vec<(String, Span)>,
 }
 
 impl<'a> Parser<'a> {
@@ -191,8 +224,10 @@ impl<'a> Parser<'a> {
             builder: Builder::default(),
             errors: Vec::new(),
             muted: false,
-            depth: 0,
+            useful: false,
             labels: Vec::new(),
+            gotos: Vec::new(),
+            depth: 0,
         }
     }
 
@@ -979,11 +1014,27 @@ impl<'a> Parser<'a> {
         if self.at(K::LBracket) {
             self.state();
         }
-        // FTEF-18.6: a label belongs to its function; a nested function (FTEF-18.2) has its own.
-        let outer = std::mem::take(&mut self.labels);
         self.block(true);
-        self.labels = outer;
+        self.end_function_labels();
         self.finish_node();
+    }
+
+    /// The end of a function, a function defined inside another included (FTEF-18.24): each
+    /// `goto` read since the last end must name a label read since then, or it is "Goto
+    /// statement with no matching label"; then FTEQCC forgets both (`num_gotos = 0;` and
+    /// `if (num_labels) num_labels = 0;` in `QCC_PR_ParseImmediateStatements`).
+    fn end_function_labels(&mut self) {
+        for (name, span) in std::mem::take(&mut self.gotos) {
+            if !self.labels.contains(&name) {
+                // Not a parse error: it abandons nothing, so it mutes nothing.
+                self.errors.push(Diagnostic {
+                    code: Code::E0308,
+                    message: format!("Goto statement with no matching label \"{name}\""),
+                    span,
+                });
+            }
+        }
+        self.labels.clear();
     }
 
     /// `[frame, next]` (QC-13.6), or under FTEQCC its expressions and frame cycles
@@ -1224,9 +1275,9 @@ impl<'a> Parser<'a> {
             }
             K::Dot => self.local_decl(false),
             K::DotDot if self.fteqcc() => self.local_decl(false),
-            // FTEF-18.6: `:name`, the FrikQCC label.
+            // FTEF-18.23: `:name`, the FrikQCC label.
             K::Colon if self.fteqcc() => self.label_stmt(),
-            // FTEF-18.6: `name:`, the C label, its `:` right after the name.
+            // FTEF-18.23: `name:`, the C label, its `:` right after the name.
             K::Name if self.fteqcc() && self.at_c_label() => self.label_stmt(),
             K::Name if self.fteqcc() && tok.text == "goto" => self.goto_stmt(),
             // FTEF-18.9: `__until (e) s`.
@@ -1280,22 +1331,27 @@ impl<'a> Parser<'a> {
         self.start_node(K::ForStmt);
         self.bump_as(K::ForKw);
         self.expect(K::LParen, "(");
-        self.for_clause(true);
+        self.for_clause(Clause::Init);
         self.expect(K::Semicolon, ";");
-        self.for_clause(false);
+        self.for_clause(Clause::Condition);
         self.expect(K::Semicolon, ";");
-        self.for_clause(false);
+        self.for_clause(Clause::Step);
         self.expect(K::RParen, ")");
         self.statement();
         self.finish_node();
     }
 
     /// One clause of a `for` header (FTE-2.1, FTE-2.2): empty, a declaration (init only), or
-    /// an expression. Stops at `;` or `)`.
-    fn for_clause(&mut self, init: bool) {
+    /// an expression. Stops at `;` or `)`. FTEQCC discards the first and last clauses
+    /// (FTEF-18.25): it reads each expression of the first, separated by `,`, with
+    /// `QCC_PR_DiscardExpression(TOP_PRIORITY, EXPR_DISALLOW_COMMA)` in a `do ... while
+    /// (QCC_PR_CheckToken(","))` loop, and the last with `QCC_PR_DiscardExpression(TOP_PRIORITY,
+    /// 0)`, one sequence; the condition is a sequence whose value is kept.
+    fn for_clause(&mut self, clause: Clause) {
         if self.at(K::Semicolon) || self.at(K::RParen) {
             return;
         }
+        let init = clause == Clause::Init;
         self.start_node(K::ForClause);
         let declares = self.at_word("local")
             || self.looks_like_declaration(0)
@@ -1304,19 +1360,45 @@ impl<'a> Parser<'a> {
             let keyword = self.at_word("local");
             self.for_local_decl(keyword);
         } else {
-            self.expression();
+            let outer = std::mem::replace(&mut self.useful, false);
+            if clause == Clause::Condition {
+                self.useful = outer;
+            }
+            let mut last = self.for_expression(clause);
             // FTEF-16.9: FTEQCC's `for` clauses may hold several expressions, `i = 3, j = 0`,
             // and the first a declaration after them, `v = 0, int i = 1`.
             while self.fteqcc() && self.at(K::Comma) {
+                if let Some(expr) = last.as_ref().filter(|_| !init) {
+                    self.discard_before_comma(expr);
+                }
                 self.bump();
                 if init && self.fte_looks_like_local() {
                     self.for_local_decl(false);
                     break;
                 }
-                self.expression();
+                last = self.for_expression(clause);
+            }
+            if clause == Clause::Step
+                && let Some(expr) = last
+            {
+                self.discard_at_end(&expr);
+            }
+            if clause != Clause::Condition {
+                self.useful = outer;
             }
         }
         self.finish_node();
+    }
+
+    /// One expression of a `for` clause: in the first clause each is discarded on its own
+    /// (FTEF-18.25), and the value returned is only for the other clauses.
+    fn for_expression(&mut self, clause: Clause) -> Option<Expr> {
+        if clause == Clause::Init {
+            self.discarded(Self::expression);
+            None
+        } else {
+            self.expression()
+        }
     }
 
     /// A `for` init declaration `type name = value` (FTE-2.2), without the trailing `;`.
@@ -1540,7 +1622,7 @@ impl<'a> Parser<'a> {
     /// `e;`, and under FTEQCC `e, e, ...;` (FTEF-18.5).
     fn expr_stmt(&mut self) {
         self.start_node(K::ExprStmt);
-        self.sequence();
+        self.discarded(Self::sequence);
         self.end_statement();
         self.finish_node();
     }
@@ -1568,20 +1650,65 @@ impl<'a> Parser<'a> {
         if !(self.fteqcc() && self.at(K::Comma)) {
             return Some(first);
         }
+        self.discard_before_comma(&first);
         self.builder.start_node_at(checkpoint, K::BinaryExpr);
         self.bump();
-        if self.enter() {
-            self.sequence();
+        let rest = if self.enter() {
+            self.sequence()
         } else {
             self.bump_error();
-        }
+            None
+        };
         self.leave(1);
         self.finish_node();
         Some(Expr {
             kind: K::BinaryExpr,
             assignable: false,
             span: Span::new(first.span.start, self.last_end),
+            // The sequence is the reference of its last expression.
+            tail: rest.map_or(Tail::Plain, |e| e.tail),
         })
+    }
+
+    /// The `,` of a sequence discards `expr` (FTEF-18.25): `QCC_PR_DiscardRef(lhsr); if
+    /// (!qcc_usefulstatement) QCC_PR_ParseWarning(WARN_POINTLESSSTATEMENT, "Statement does
+    /// not do anything"); qcc_usefulstatement = false;`.
+    fn discard_before_comma(&mut self, expr: &Expr) {
+        if expr.tail == Tail::PostInc {
+            self.useful = true;
+        }
+        if !self.useful {
+            self.pointless(expr.span);
+        }
+        self.useful = false;
+    }
+
+    /// An expression whose value is discarded, read by `parse`, as FTEQCC's
+    /// `QCC_PR_DiscardExpression` reads an expression statement and a `for` clause
+    /// (FTEF-18.25): the flag is cleared before and restored after, and the expression is
+    /// "Statement does not do anything" when nothing set the flag since and it is not `void`.
+    fn discarded(&mut self, parse: impl FnOnce(&mut Self) -> Option<Expr>) {
+        let outer = std::mem::replace(&mut self.useful, false);
+        if let Some(expr) = parse(self) {
+            self.discard_at_end(&expr);
+        }
+        self.useful = outer;
+    }
+
+    /// The end of a discarded expression (FTEF-18.25): `QCC_PR_DiscardRef(ref); if
+    /// (ref->cast->type != ev_void && !qcc_usefulstatement) QCC_PR_ParseWarning(...)`.
+    fn discard_at_end(&mut self, expr: &Expr) {
+        if expr.tail == Tail::PostInc {
+            self.useful = true;
+        }
+        if self.fteqcc() && !self.useful && expr.tail != Tail::Void {
+            self.pointless(expr.span);
+        }
+    }
+
+    /// "Statement does not do anything" (FTEF-18.25).
+    fn pointless(&mut self, span: Span) {
+        self.warning_at(Code::W0313, "Statement does not do anything", span);
     }
 
     /// An expression whose binary operators have priority `max` or tighter (QC-15.1).
@@ -1635,11 +1762,17 @@ impl<'a> Parser<'a> {
                 priority.saturating_sub(1)
             };
             let rhs = self.expr(rhs_max);
+            if assign {
+                // FTEF-18.25: an assignment sets `qcc_usefulstatement` once its right side is
+                // read.
+                self.useful = true;
+            }
             self.finish_node();
             lhs = Expr {
                 kind: K::BinaryExpr,
                 assignable: false,
                 span: Span::new(lhs.span.start, self.last_end),
+                tail: Tail::Plain,
             };
             if rhs.is_none() {
                 break;
@@ -1687,6 +1820,7 @@ impl<'a> Parser<'a> {
             kind: K::TernaryExpr,
             assignable: false,
             span: Span::new(cond.span.start, self.last_end),
+            tail: Tail::Plain,
         }
     }
 
@@ -1721,6 +1855,7 @@ impl<'a> Parser<'a> {
                     kind: K::PostfixExpr,
                     assignable: false,
                     span: Span::new(start, self.last_end),
+                    tail: Tail::PostInc,
                 };
                 continue;
             }
@@ -1735,10 +1870,14 @@ impl<'a> Parser<'a> {
                     kind: K::IndexExpr,
                     assignable: true,
                     span: Span::new(start, self.last_end),
+                    tail: Tail::Plain,
                 };
                 continue;
             }
             if call {
+                // FTEF-18.25: `if (priority == FUNC_PRIORITY && QCC_PR_CheckToken ("(") ) {
+                // qcc_usefulstatement=true;`
+                self.useful = true;
                 self.builder.start_node_at(checkpoint, K::CallExpr);
                 self.arg_list();
                 self.finish_node();
@@ -1746,6 +1885,7 @@ impl<'a> Parser<'a> {
                     kind: K::CallExpr,
                     assignable: false,
                     span: Span::new(start, self.last_end),
+                    tail: Tail::Plain,
                 };
                 // FTEF-16.6: in FTEQCC a call's result may be indexed, called or have a
                 // member selected; in vanilla a call ends the term (QC-15.8).
@@ -1762,6 +1902,7 @@ impl<'a> Parser<'a> {
                 kind: K::FieldExpr,
                 assignable: true,
                 span: Span::new(start, self.last_end),
+                tail: Tail::Plain,
             };
             if field.is_none() {
                 break;
@@ -1810,6 +1951,13 @@ impl<'a> Parser<'a> {
             tok.span.start,
             tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1),
         );
+        // FTEF-18.25: `(void)` makes the expression `void`.
+        let void_cast = kind == K::LParen
+            && self
+                .nth(1)
+                .is_some_and(|t| t.kind == K::Name && t.text == "void")
+            && self.nth(2).is_some_and(|t| t.kind == K::RParen);
+        let mut tail = Tail::Plain;
         let (node, assignable) = match kind {
             K::Not => {
                 self.start_node(K::NotExpr);
@@ -1833,10 +1981,17 @@ impl<'a> Parser<'a> {
             // FTEF-16.2: the full dialect's casts, to any type.
             K::LParen if self.fteqcc() && self.fte_at_cast() => {
                 self.fte_cast();
+                if void_cast {
+                    tail = Tail::Void;
+                }
                 (K::CastExpr, false)
             }
             // FTEF-16.7: `++e` and `--e`, `&e` and `*e`.
             K::PlusPlus | K::MinusMinus | K::Amp | K::Star if self.fteqcc() => {
+                // FTEF-18.25: `if (preinc) { ... qcc_usefulstatement=true;`
+                if matches!(kind, K::PlusPlus | K::MinusMinus) {
+                    self.useful = true;
+                }
                 self.start_node(K::UnaryExpr);
                 self.bump();
                 self.expr(UNARY_PRIORITY);
@@ -1861,6 +2016,8 @@ impl<'a> Parser<'a> {
                 self.bump();
                 let inner = self.sequence();
                 self.expect(K::RParen, ")");
+                // A parenthesised expression is the reference inside it.
+                tail = inner.as_ref().map_or(Tail::Plain, |e| e.tail);
                 (K::ParenExpr, inner.is_some_and(|e| e.assignable))
             }
             K::FloatLit | K::VectorLit | K::StringLit | K::FrameRef => {
@@ -1914,6 +2071,7 @@ impl<'a> Parser<'a> {
             kind: node,
             assignable,
             span: Span::new(start, self.last_end),
+            tail,
         })
     }
 }

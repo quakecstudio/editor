@@ -59,6 +59,8 @@ pub enum Code {
     E0117,
     /// "#Error: TEXT" (QCD-8.11).
     E0118,
+    /// "Name for frame macro NAME is too long" (QCD-2.8).
+    E0119,
     /// "not a name" (QCD-3.1).
     E0201,
     /// "name too long" (QCD-3.2).
@@ -83,6 +85,8 @@ pub enum Code {
     E0212,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
+    /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
+    E0308,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -121,6 +125,14 @@ pub enum Code {
     W0103,
     /// "Case insensitive frame macro (using NAME)" (QCD-7.24).
     W0104,
+    /// "Stale macro used (NAME, defined in FILE)" (QCD-7.25).
+    W0105,
+    /// "Duplicate macro defined (NAME). Rename it." (QCD-7.26).
+    W0106,
+    /// "$modelname name too long" (QCD-7.27).
+    W0107,
+    /// "#pragma autoproto must appear before any definitions" (QCD-7.28).
+    W0108,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -134,15 +146,17 @@ pub enum Code {
     W0206,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
-    /// "Duplicate label NAME" (QCD-7.22).
+    /// "Duplicate label NAME" (QCD-7.30).
     W0312,
+    /// "Statement does not do anything" (QCD-7.29).
+    W0313,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 57] = [
+    pub const ALL: [Self; 64] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -161,6 +175,7 @@ impl Code {
         Self::E0116,
         Self::E0117,
         Self::E0118,
+        Self::E0119,
         Self::E0201,
         Self::E0202,
         Self::E0203,
@@ -173,6 +188,7 @@ impl Code {
         Self::E0211,
         Self::E0212,
         Self::E0301,
+        Self::E0308,
         Self::E0501,
         Self::E0502,
         Self::E0503,
@@ -192,6 +208,10 @@ impl Code {
         Self::W0102,
         Self::W0103,
         Self::W0104,
+        Self::W0105,
+        Self::W0106,
+        Self::W0107,
+        Self::W0108,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -199,6 +219,7 @@ impl Code {
         Self::W0206,
         Self::W0311,
         Self::W0312,
+        Self::W0313,
         Self::W0402,
     ];
 
@@ -224,6 +245,7 @@ impl Code {
             Self::E0116 => "E0116",
             Self::E0117 => "E0117",
             Self::E0118 => "E0118",
+            Self::E0119 => "E0119",
             Self::E0201 => "E0201",
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
@@ -236,6 +258,7 @@ impl Code {
             Self::E0211 => "E0211",
             Self::E0212 => "E0212",
             Self::E0301 => "E0301",
+            Self::E0308 => "E0308",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
             Self::E0503 => "E0503",
@@ -255,6 +278,10 @@ impl Code {
             Self::W0102 => "W0102",
             Self::W0103 => "W0103",
             Self::W0104 => "W0104",
+            Self::W0105 => "W0105",
+            Self::W0106 => "W0106",
+            Self::W0107 => "W0107",
+            Self::W0108 => "W0108",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -262,6 +289,7 @@ impl Code {
             Self::W0206 => "W0206",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
+            Self::W0313 => "W0313",
             Self::W0402 => "W0402",
         }
     }
@@ -274,6 +302,10 @@ impl Code {
             | Self::W0102
             | Self::W0103
             | Self::W0104
+            | Self::W0105
+            | Self::W0106
+            | Self::W0107
+            | Self::W0108
             | Self::W0201
             | Self::W0203
             | Self::W0204
@@ -281,6 +313,7 @@ impl Code {
             | Self::W0206
             | Self::W0311
             | Self::W0312
+            | Self::W0313
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -300,6 +333,7 @@ impl Code {
             | Self::E0116
             | Self::E0117
             | Self::E0118
+            | Self::E0119
             | Self::E0201
             | Self::E0202
             | Self::E0203
@@ -312,6 +346,7 @@ impl Code {
             | Self::E0211
             | Self::E0212
             | Self::E0301
+            | Self::E0308
             | Self::E0501
             | Self::E0502
             | Self::E0503

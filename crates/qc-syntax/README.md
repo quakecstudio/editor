@@ -16,7 +16,8 @@ references are literals, resolved later.
 `parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`.
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
-`break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:`,
+`break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:` at the
+assignment priority (FTE-8.4),
 `const`/`var`/`nosave`, arrays and subscripts, `typedef struct` and `enum`, named enums
 (FTE-15.4), C-style function declarations and `#n:name` builtins (FTE-17), `...` after named
 parameters, default values and user-typed parameters (FTE-18), the bitwise and shift
@@ -36,7 +37,10 @@ to any type, `[x, y, z]` vectors, scoped names, `if not`, prefix `++`/`--`/`&`/`
 strings and `case` labels in nested blocks; and FTEF-18: expression initialisers and function
 bodies inside function bodies, state headers of expressions and frame cycles, sequences of
 expressions, labels and `goto`, `return =`, `if !`, `__until` loops, case ranges, `?:` with no
-middle, `sizeof`, functions returning functions and `..T` fields. FTEQCC knows every type name when it parses; this
+middle, `sizeof`, functions returning functions and `..T` fields, with FTEQCC's "Duplicate
+label" warning `W0312`, "Goto statement with no matching label" error `E0308` and "Statement
+does not do anything" warning `W0313` (FTEF-18.23 to FTEF-18.25; QCD-4.8, QCD-7.29,
+QCD-7.30). FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
 the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
 

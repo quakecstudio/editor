@@ -36,7 +36,7 @@ pub struct ModuleInput {
     pub prelude: Vec<FileId>,
     /// The files compiled, in compilation order (QC-23.3).
     pub compiled: Vec<FileId>,
-    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.9), which the
+    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.10), which the
     /// graph reads, since that file is not preprocessed here.
     pub autoproto: Option<bool>,
 }
@@ -127,7 +127,7 @@ pub(crate) struct Preprocessed {
     /// Lexical and preprocessor diagnostics.
     pub(crate) diagnostics: Vec<FileDiagnostic>,
     /// Whether the module was read with FTEQCC's autoprototyping (FTE-22.3): asked for by the
-    /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.9).
+    /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.10).
     pub(crate) autoproto: bool,
 }
 
@@ -159,7 +159,9 @@ pub(crate) struct Files<'a> {
 /// Preprocesses the module `input` in `dialect` (QC-9, QC-23.3), and with FTEQCC's
 /// autoprototyping twice, as FTEQCC reads the files twice (FTE-22.3, FTE-22.4).
 /// Autoprototyping is `autoproto`, FTEQCC's `-Fautoproto`, unless a `#pragma autoproto`
-/// before any definition of the module says otherwise (FTEF-12.9).
+/// before any definition of the module says otherwise (FTEF-12.10). A later one is the
+/// warning of FTEF-12.10, given once: FTEQCC's second pass skips the pragma
+/// (`if (!autoprototyped)`).
 pub(crate) fn preprocess(
     files: &Files<'_>,
     input: &ModuleInput,
@@ -170,25 +172,29 @@ pub(crate) fn preprocess(
         texts: &files.texts,
     };
     let mut pp = Preprocessor::new(loader).with_dialect(dialect);
-    let (first, pragma) = run(&mut pp, files, input);
+    let (mut first, pragma, late) = run(&mut pp, files, input);
     if !pragma.or(input.autoproto).unwrap_or(autoproto) {
+        first.diagnostics.extend(late);
         return first;
     }
     pp.restart();
-    let (mut second, _) = run(&mut pp, files, input);
+    let (mut second, _, _) = run(&mut pp, files, input);
     second.autoproto = true;
+    second.diagnostics.extend(late);
     second
 }
 
-/// One pass over the prelude and the compiled files, and the setting of the last
-/// `#pragma autoproto` that comes before any definition (FTEF-12.9): one in the prelude, or
-/// one in a compiled file before the first token of any compiled file.
+/// One pass over the prelude and the compiled files, the setting of the last
+/// `#pragma autoproto` that comes before any definition (FTEF-12.10): one in the prelude, or
+/// one in a compiled file before the first token of any compiled file; and the warning for
+/// each later one.
 fn run<L: Loader>(
     pp: &mut Preprocessor<L>,
     files: &Files<'_>,
     input: &ModuleInput,
-) -> (Preprocessed, Option<bool>) {
+) -> (Preprocessed, Option<bool>, Vec<FileDiagnostic>) {
     let mut out = Preprocessed::default();
+    let mut late = Vec::new();
     let mut pragma = None;
     let mut defined = false;
     let listed = input
@@ -221,9 +227,20 @@ fn run<L: Loader>(
                 continue;
             }
         };
-        for &(at, on) in &output.autoproto {
+        for &(at, on, span) in &output.autoproto {
             if !compiled || (!defined && at == 0) {
                 pragma = Some(on);
+            } else if let Some(location) = source_location(pp, files, span) {
+                // `if (numpr_globals != RESERVED_OFS) QCC_PR_ParseWarning(WARN_BADPRAGMA,
+                // "#pragma autoproto must appear before any definitions");`
+                late.push(FileDiagnostic {
+                    file: location.file,
+                    diagnostic: Diagnostic {
+                        code: Code::W0108,
+                        message: "#pragma autoproto must appear before any definitions".to_owned(),
+                        span: location.span,
+                    },
+                });
             }
         }
         if !compiled {
@@ -258,7 +275,7 @@ fn run<L: Loader>(
             .collect();
         out.files.push(rendered);
     }
-    (out, pragma)
+    (out, pragma, late)
 }
 
 /// The database location of a preprocessor span: the database file with the same path.
@@ -282,6 +299,7 @@ fn source_location<L: Loader>(
 fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]) -> Rendered {
     let mut out = Rendered::default();
     let mut last_line = None;
+    let mut last: Option<&PpToken> = None;
     for token in tokens {
         let origin = pp.origin(token);
         let line = pp.sources().line(origin);
@@ -296,10 +314,11 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
             if indented {
                 out.text.push(b' ');
             }
-        } else {
+        } else if !last.is_some_and(|last| adjacent(pp, last, token)) {
             out.text.push(b' ');
         }
         last_line = line;
+        last = Some(token);
         if let Some(location) = source_location(pp, files, origin) {
             out.origins.origins.push((out.text.len(), location));
         }
@@ -317,4 +336,23 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
     }
     out
+}
+
+/// Whether `next` stands right after `last` in the same file, both written as their source
+/// bytes: no macro made either, and neither is a frame reference rendered as its number. The
+/// two are rendered with no space between, since a rule may depend on it: a C label is a name
+/// with its `:` right after it (FTEF-18.23).
+fn adjacent<L: Loader>(pp: &Preprocessor<L>, last: &PpToken, next: &PpToken) -> bool {
+    let as_written = |token: &PpToken| {
+        token.expansion.is_none()
+            && token.spelling.is_none()
+            && pp
+                .sources()
+                .text(token.span)
+                .is_some_and(|text| text.first() != Some(&b'$'))
+    };
+    last.span.file == next.span.file
+        && last.span.span.end == next.span.span.start
+        && as_written(last)
+        && as_written(next)
 }

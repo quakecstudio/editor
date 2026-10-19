@@ -337,7 +337,7 @@ fn declared_output() {
     assert_eq!(graph.declared_output, Some(PathBuf::from("a.dat")));
 }
 
-// spec FTEF-12.9: a list-form progs.src's #pragma autoproto, in any case, asks for autoprototyping, `0` not; one in a source file is the preprocessor's
+// spec FTEF-12.10: a list-form progs.src's #pragma autoproto, in any case, asks for autoprototyping, `0` not; one in a source file is the preprocessor's
 #[test]
 fn list_form_autoproto_pragma() {
     let list = |text: &str| {

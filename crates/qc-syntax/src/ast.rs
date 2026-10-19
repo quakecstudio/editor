@@ -294,11 +294,11 @@ ast_node!(
     VectorExpr
 );
 ast_node!(
-    /// `name:` or `:name` (FTEF-18.6).
+    /// `name:` or `:name` (FTEF-18.23).
     LabelStmt
 );
 ast_node!(
-    /// `goto name;` (FTEF-18.6).
+    /// `goto name;` (FTEF-18.23).
     GotoStmt
 );
 ast_node!(
@@ -345,9 +345,9 @@ ast_enum!(
         Continue(ContinueStmt),
         /// `;` alone (FTE-21.5).
         Empty(EmptyStmt),
-        /// `name:` or `:name` (FTEF-18.6).
+        /// `name:` or `:name` (FTEF-18.23).
         Label(LabelStmt),
-        /// `goto name;` (FTEF-18.6).
+        /// `goto name;` (FTEF-18.23).
         Goto(GotoStmt),
         /// `e;`.
         Expr(ExprStmt),
@@ -753,7 +753,7 @@ impl ExprStmt {
 }
 
 impl LabelStmt {
-    /// The label's name (FTEF-18.6).
+    /// The label's name (FTEF-18.23).
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
         self.0.token_of(K::Name)
@@ -761,7 +761,7 @@ impl LabelStmt {
 }
 
 impl GotoStmt {
-    /// The name of the label it jumps to (FTEF-18.6).
+    /// The name of the label it jumps to (FTEF-18.23).
     #[must_use]
     pub fn label(&self) -> Option<SyntaxToken> {
         self.0.token_of(K::Name)

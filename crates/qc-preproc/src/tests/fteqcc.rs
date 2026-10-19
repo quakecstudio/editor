@@ -244,11 +244,14 @@ fn noref_pragmas_are_recorded() {
     assert!(vanilla.noref.is_empty());
 }
 
-// spec FTEF-12.9: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
+// spec FTEF-12.10: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
 #[test]
 fn autoproto_pragmas_are_recorded() {
     let (_, out) = one_fte("#pragma autoproto\na\n#pragma AutoProto 0\n#pragma autoproto 2\n");
-    assert_eq!(out.autoproto, vec![(0, true), (1, false), (1, true)]);
+    let pragmas: Vec<(usize, bool)> = out.autoproto.iter().map(|&(i, on, _)| (i, on)).collect();
+    assert_eq!(pragmas, vec![(0, true), (1, false), (1, true)]);
+    let starts: Vec<usize> = out.autoproto.iter().map(|p| p.2.span.start).collect();
+    assert_eq!(starts, vec![0, 20, 40]);
     assert!(out.noref.is_empty());
     let (_, out) = one_fte("#PRAGMA noref 1\n#pragma NOREF 1\nx");
     assert_eq!(out.noref, vec![(0, true)]);
@@ -348,4 +351,105 @@ fn other_pragmas_are_accepted() {
                    #pragma flag enable assumeint\n#pragma forcecrc 54730\n#pragma once\n\
                    #pragma optimise 2\n#pragma unknown thing\nz\n";
     assert_eq!(fte(pragmas), ("z".to_owned(), vec![]));
+}
+
+// spec FTEF-18.22: a frame macro another reading of a file defined (an earlier file, an
+// `#include`d one, the file that includes this one, or a macro's expansion) is "Stale macro
+// used"; one this reading defined is not.
+// spec QCD-7.25: W0105 "Stale macro used (NAME, defined in FILE)"
+#[test]
+fn a_frame_macro_from_another_reading_is_stale() {
+    // Defined in this file, used in this file: not stale.
+    assert_eq!(fte("$frame a\nx = $a;"), ("x = 0 ;".to_owned(), vec![]));
+    let files = [
+        ("a.qc", "$frame a\n#include \"b.qh\"\nx = $a + $b;"),
+        ("b.qh", "$frame b\ny = $a + $b;\n"),
+        ("c.qc", "#define F $a\nz = $a; w = F;"),
+    ];
+    let (pp, outputs) = super::fte_project(&files, &["a.qc", "c.qc"], false);
+    // The include goes on numbering from where the file that includes it is.
+    assert_eq!(tokens(&outputs[0]), "y = 0 + 1 ; x = 0 + 1 ;");
+    assert_eq!(
+        super::diagnostics(&pp, &outputs[0]),
+        "W0105 Stale macro used (a, defined in a.qc) @b.qh:2\n\
+         W0105 Stale macro used (b, defined in b.qh) @a.qc:3\n"
+    );
+    assert_eq!(
+        super::diagnostics(&pp, &outputs[1]),
+        "W0105 Stale macro used (a, defined in a.qc) @c.qc:2\n\
+         W0105 Stale macro used (a, defined in a.qc) @c.qc:1\n"
+    );
+    assert!(!Code::W0105.is_error());
+    // A use through `$framerestore` and the case-insensitive lookup is checked too.
+    let files = [("a.qc", "$frame Walk\n"), ("b.qc", "$framerestore walk\n")];
+    let (_, outputs) = super::fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(codes(&outputs[1]), [Code::W0104, Code::W0105]);
+}
+
+// spec FTEF-18.22: a frame name the same reading of a file defined before is "Duplicate macro
+// defined" and keeps its first number; another reading's definition is replaced silently, and
+// so is the model name `$modelname` defines.
+// spec QCD-7.26: W0106 "Duplicate macro defined (NAME). Rename it."
+#[test]
+fn a_frame_name_defined_twice_in_one_reading_is_a_duplicate() {
+    let (_, out) = one_fte("$frame a b a\nx = $a;");
+    assert_eq!(tokens(&out), "x = 0 ;");
+    assert_eq!(codes(&out), [Code::W0106]);
+    assert_eq!(
+        out.diagnostics[0].message,
+        "Duplicate macro defined (a). Rename it."
+    );
+    assert!(!Code::W0106.is_error());
+    let files = [("a.qc", "$frame a\n"), ("b.qc", "$frame b a\nx = $a;")];
+    let (_, outputs) = super::fte_project(&files, &["a.qc", "b.qc"], false);
+    assert_eq!(
+        (tokens(&outputs[1]), codes(&outputs[1])),
+        ("x = 1 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$frame m\n$modelname m\n$modelname n\nx = $m;"),
+        ("x = 1 ;".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-18.22: a new frame name of 64 bytes or more is "Name for frame macro NAME is too
+// long", an error, and is not defined; 63 bytes are kept.
+// spec QCD-2.8: E0119 "Name for frame macro NAME is too long"
+#[test]
+fn a_frame_name_of_64_bytes_is_too_long() {
+    let fits = "f".repeat(63);
+    assert_eq!(
+        fte(&format!("$frame {fits}\nx = ${fits};")),
+        ("x = 0 ;".to_owned(), vec![Code::W0101])
+    );
+    let long = "g".repeat(64);
+    let (_, out) = one_fte(&format!("$frame {long} h\nx = $h;"));
+    assert_eq!(tokens(&out), "x = 1 ;");
+    // W0101 is the lexer's note that id's qcc could not look the name up (QC-27.6).
+    assert_eq!(codes(&out), [Code::E0119, Code::W0101]);
+    assert_eq!(
+        out.diagnostics[0].message,
+        format!("Name for frame macro {long} is too long")
+    );
+    assert!(Code::E0119.is_error());
+    // Never defined, so a use of it is unknown.
+    let (_, out) = one_fte(&format!("$frame {long}\nx = ${long};"));
+    let errors: Vec<Code> = codes(&out).into_iter().filter(|c| c.is_error()).collect();
+    assert_eq!(errors, [Code::E0119, Code::E0106]);
+}
+
+// spec FTEF-18.22: a `$modelname` of 64 bytes or more is cut to 63 with the warning
+// "$modelname name too long"; one of 63 is kept whole.
+// spec QCD-7.27: W0107 "$modelname name too long"
+#[test]
+fn a_long_model_name_is_cut() {
+    let fits = "m".repeat(63);
+    let text = format!("$modelname {fits}\n$modelname next\nx = ${fits};");
+    assert_eq!(fte(&text), ("x = -1 ;".to_owned(), vec![]));
+    let cut = "n".repeat(63);
+    let text = format!("$modelname {cut}x\n$frame a\n$modelname next\ny = ${cut};");
+    let (_, out) = one_fte(&text);
+    assert_eq!(tokens(&out), "y = 0 ;");
+    assert_eq!(codes(&out), [Code::W0107]);
+    assert!(!Code::W0107.is_error());
 }

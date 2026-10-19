@@ -408,7 +408,9 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `includedir`, `defaultstatic`, `framerate`, `compress`, `copyright`, `wrasm`,
   `DONT_COMPILE_THIS_FILE`. An unrecognised `#pragma` is accepted with the warning "Unknown
   pragma '%s'" (as FTE-16.2), not an error.
-- **FTEF-12.9** `#pragma autoproto` before any definition turns on the autoprototyping of
+- **FTEF-12.9** **Withdrawn** (P2-42, #429): it said a later `#pragma autoproto` reports
+  nothing, but FTEQCC warns for it. Replaced by FTEF-12.10.
+- **FTEF-12.10** `#pragma autoproto` before any definition turns on the autoprototyping of
   FTE-22.3 for the module, as `-Fautoproto` does, and `#pragma autoproto 0` turns it off:
   `QCC_PR_Precompiler` sets `autoprototype = *msg?!!atoi(msg):true;` only
   `if (numpr_globals == RESERVED_OFS)`, and otherwise warns "#pragma autoproto must appear
@@ -417,7 +419,10 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   is read through the preprocessor (`QCC_ContinueCompile` calls `QCC_PR_LexWhitespace(false)`
   before each entry), so a `#pragma autoproto` there, as Copper's `progs.src` has, holds for the
   whole module. This profile takes a pragma in a compiled file only before the first token of
-  any compiled file, and reports nothing for a later one.
+  any compiled file. A later one is ignored with the warning `W0108` "#pragma autoproto must
+  appear before any definitions" (`WARN_BADPRAGMA`, on by default) at the directive, once: the
+  check stands inside `if (!autoprototyped)`, so the second autoprototyping pass skips the
+  pragma without a word.
 - **FTEF-12.8** A `#pragma` affects the build and diagnostics, not the token stream; it emits
   no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
   output (the target format, the CRC, the flags) is realised by L-01.
@@ -720,8 +725,12 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`,
 `QCC_PR_GenerateInitializerType`, `QCC_PR_ParseState`, `QCC_PR_ParseStatement`,
-`QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`; `qcc_pr_lex.c`,
-`QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`; `qccmain.c`, the keyword table,
+`QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`, `QCC_PR_DiscardExpression`,
+`QCC_PR_DiscardRef`, `QCC_PR_ParseImmediateStatements`, `QCC_TryEvaluateCast`, `QCC_Include`;
+`qcc_pr_lex.c`, `QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`,
+`QCC_PR_MacroFrame`, `QCC_PR_FindMacro`, `QCC_PR_IncludeChunkEx`; `qccmain.c`, the keyword
+table and `QCC_SetDefaultProperties` (every warning on, `qccwarningaction[i] = WA_WARN;`, but
+those it lists),
 fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 `dialect-fteqcc-rerelease.md` FTE-8, FTE-10 and FTE-21.
 
@@ -764,11 +773,9 @@ FTEF-18.5.
   (","))`, warning "Statement does not do anything" when the expression before the `,` has no
   effect. Initialisers, arguments, state parts and `case` values pass `EXPR_DISALLOW_COMMA`, so
   a `,` there separates rather than sequences.
-- **FTEF-18.6** A statement may be a label, written `name:` (the C style, taken `if
-  (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')`) or `:name` (the
-  FrikQCC style, `if (QCC_PR_CheckToken(":"))`), and `goto name;` jumps to it (`goto` is a
-  default keyword in the `qccmain.c` keyword table). A label already defined in the function is
-  the warning "Duplicate label %s"; a label name that is not a name is "invalid label name".
+- **FTEF-18.6** **Withdrawn** (P2-42, #429): it gave a function defined inside another labels
+  of its own, but FTEQCC shares one list between them and clears it at the end of either.
+  Replaced by FTEF-18.23 and FTEF-18.24.
 - **FTEF-18.7** `return = e;` sets the value the function returns without returning: "return =
   foo; sets the value that will be returned when the function finally exits, without returning
   now. return; returns that value now". A return type larger than a vector is the error "'%s'
@@ -862,6 +869,87 @@ FTEF-18.5.
   insensitive frame macro (using %s)" (`WARN_CASEINSENSITIVEFRAMEMACRO`), so the macro defined
   last of those that match is used. The lookups of a reference, `$framerestore` and
   `$modelname` (FTEF-18.16) are all `QCC_PR_FindMacro`'s.
+- **FTEF-18.22** FTEQCC tells the readings of source apart by `s_filen`, a string it makes anew
+  (`qccHunkAlloc`) for each compiled file (`QCC_PR_CompileFile`), each `#include` of a file,
+  and each macro expansion (`QCC_PR_IncludeChunkEx`, given a `CompilerConstant_t`), and it
+  compares the pointers, so each of these is a reading of its own; the file that includes
+  another is the same reading again after the include. A frame macro keeps the reading that
+  defined it (`pr_framemacro[].file`), and:
+  - a use of a frame macro that another reading defined is the warning `W0105` "Stale macro
+    used (NAME, defined in FILE)" (`WARN_STALEMACRO`, on by default), where FILE is the
+    defining file's path: `QCC_PR_FindMacro` checks
+    `if (pr_framemacro[i].file != s_filen)` after each of its two lookups (FTEF-18.21), for a
+    reference, `$framerestore` and `$modelname` alike;
+  - a frame name the same reading already defined keeps its first number with the warning
+    `W0106` "Duplicate macro defined (NAME). Rename it." (`WARN_DUPLICATEMACRO`): in
+    `QCC_PR_MacroFrame`, `if (pr_framemacro[i].file == s_filen && !force)`; a name another
+    reading defined takes the new number and this reading silently ("old file, override it"),
+    and so does the model name `$modelname` defines, with `force` set (FTEF-18.16). This is
+    what "the same file" of FTEF-18.17 and FTE-22.4 means;
+  - a new frame name of 64 bytes or more is the error `E0119` "Name for frame macro NAME is
+    too long" and is not defined: `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))
+    QCC_PR_ParseWarning(ERR_TOOMANYFRAMEMACROS, ...)`, with `char name[64];`, an error code,
+    which `QCC_PR_PrintWarning` prints as an error (FTEF-18.4). The frame number still goes up
+    by one for it;
+  - a `$modelname` of 64 bytes or more is cut to its first 63 with the warning `W0107`
+    "$modelname name too long": `if (!QC_strlcpy(pr_framemodelname, pr_token,
+    sizeof(pr_framemodelname))) QCC_PR_ParseWarning (WARN_STRINGTOOLONG, ...)`, with
+    `char pr_framemodelname[64];`.
+
+  The include goes on with the frame numbering of the file that includes it, which only a
+  compiled file restarts (FTEF-18.17). This profile reports a frame macro used inside a macro
+  expansion at the macro body's token.
+- **FTEF-18.23** A statement may be a label, written `name:` (the C style, taken `if
+  (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')`) or `:name` (the
+  FrikQCC style, `if (QCC_PR_CheckToken(":"))`), and `goto name;` jumps to one (`goto` is a
+  default keyword in the `qccmain.c` keyword table); a label name that is not a name is
+  "invalid label name". FTEQCC keeps one list of labels, `pr_labels`, which the end of every
+  function clears (`if (num_labels) num_labels = 0;` in `QCC_PR_ParseImmediateStatements`),
+  a function defined inside another (FTEF-18.2) included: that one is read by the same
+  `QCC_PR_ParseImmediateStatements` in the middle of the enclosing body, with the note
+  "FIXME: make sure gotos/labels/cases/continues/breaks are not broken by this." So a label
+  read since the end of the last function is the warning `W0312` "Duplicate label NAME"
+  (`QCC_PR_ParseWarning(WARN_DUPLICATELABEL, "Duplicate label %s", pr_token);`) at its name,
+  and is not added again: a label of the enclosing function read before an inner function is
+  a duplicate for a label of that name in the inner one, and is forgotten after it. The
+  preprocessed text this profile parses keeps a name and the `:` after it together when the
+  source does, so the C style is found there too.
+- **FTEF-18.24** At the end of each function, a function defined inside another included, every
+  `goto` read since the last function's end must name a label read since then (FTEF-18.23):
+  `for (i = 0; i < num_gotos; i++) { for (j = 0; j < num_labels; j++) if
+  (!strcmp(pr_gotos[i].name, pr_labels[j].name))`, and otherwise
+  `QCC_PR_ParseError(ERR_NOLABEL, "Goto statement with no matching label \"%s\"",
+  pr_gotos[i].name);`, after which `num_gotos = 0;`. This profile reports each such `goto` as
+  `E0308` at its label name, where FTEQCC stops at the first. A label later in the same
+  function is found and one of another function is not. A function defined inside another
+  checks, and clears, the enclosing function's `goto`s read before it, against the enclosing
+  function's labels read before it and its own: a label after the inner function does not help
+  them, and a `goto` after it does not find a label before it.
+- **FTEF-18.25** FTEQCC's flag `qcc_usefulstatement` says whether the expression being read
+  does something: a call sets it (`if (priority == FUNC_PRIORITY && QCC_PR_CheckToken ("(") )
+  { qcc_usefulstatement=true;`, before the arguments are read), and so do an assignment of
+  any of the operators of FTE-6 and FTEF-16, once its right side is read, a prefix `++` or `--`
+  (`QCC_PR_RefTerm`), and a postfix `++` or `--` still pending when the expression is discarded
+  (`QCC_PR_DiscardRef`), that is, the expression itself, in parentheses or as the last of a
+  sequence. A discarded expression with none of these is the warning `W0313` "Statement does
+  not do anything" (`WARN_POINTLESSSTATEMENT`, on by default) at that expression:
+  - an expression statement, and the first and last clauses of a `for`: `QCC_PR_DiscardExpression`
+    saves the flag, clears it, reads the expression, and warns `if (ref->cast->type != ev_void
+    && !qcc_usefulstatement)`, then restores the flag. The first clause's expressions, separated
+    by `,`, are each discarded so (`QCC_PR_DiscardExpression(TOP_PRIORITY,
+    EXPR_DISALLOW_COMMA);` in a `do ... while(QCC_PR_CheckToken(","))` loop); the last clause is
+    one sequence. This profile takes an expression as `void` only when it is a cast to `void`
+    (`QCC_TryEvaluateCast`: "anything can be cast to void, but only do it explicitly."), or
+    one in parentheses;
+  - each expression before the `,` of a sequence (FTEF-18.5, FTEF-18.20), wherever the
+    sequence is: `QCC_PR_DiscardRef(lhsr); if (!qcc_usefulstatement)
+    QCC_PR_ParseWarning(WARN_POINTLESSSTATEMENT, "Statement does not do anything");
+    qcc_usefulstatement = false;`, with no exception for `void`. Outside an expression
+    statement and a discarded `for` clause the flag then carries what came before, a call in an
+    earlier condition included, since only the discarding and the `,` clear it; this profile
+    keeps the flag over one file.
+
+  Under the vanilla profile none of this is reported.
 
 ### Test vectors
 

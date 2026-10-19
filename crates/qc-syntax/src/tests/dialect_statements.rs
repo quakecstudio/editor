@@ -165,7 +165,10 @@ fn frame_cycles_parse() {
 #[test]
 fn sequence_statements_parse() {
     assert_eq!(expr_of("a = 1, b = 2;"), "(, (= a 1) (= b 2))");
-    assert_eq!(expr_of("a = 1, b, c = 3;"), "(, (= a 1) (, b (= c 3)))");
+    assert_eq!(
+        expr_of("a = 1, b = 2, c = 3;"),
+        "(, (= a 1) (, (= b 2) (= c 3)))"
+    );
     // Arguments, initialisers and case values separate: no sequence there.
     assert_eq!(expr_of("f(a, b);"), "(call f a b)");
     let parsed = fte_clean(&in_body("local float x = 1, y = 2;"));
@@ -185,24 +188,32 @@ fn sequence_statements_parse() {
 // spec FTEF-18.20: returns, conditions, parentheses, subscripts, the middle of `?:` and sizeof take sequences
 #[test]
 fn sequences_where_fteqcc_allows_them() {
-    assert_eq!(expr_of("return a, b;"), "(, a b)");
-    assert_eq!(expr_of("x = (a, b);"), "(= x ((, a b)))");
-    assert_eq!(expr_of("x = v[a, 1];"), "(= x (index v (, a 1)))");
-    assert_eq!(expr_of("return a ? b, c : e;"), "(?: a (, b c) e)");
+    // Each expression before a `,` assigns, so none is "Statement does not do anything"
+    // (FTEF-18.25).
+    assert_eq!(expr_of("return a = 1, b;"), "(, (= a 1) b)");
+    assert_eq!(expr_of("x = (a = 1, b);"), "(= x ((, (= a 1) b)))");
+    assert_eq!(expr_of("x = v[a = 1, 1];"), "(= x (index v (, (= a 1) 1)))");
+    assert_eq!(
+        expr_of("return a ? b = 1, c : e;"),
+        "(?: a (, (= b 1) c) e)"
+    );
     for stmt in [
-        "if (a, b) c = 1;",
+        "if (a = 1, b) c = 1;",
         "while (a = 1, b) c = 1;",
-        "do c = 1; while (a, b);",
-        "switch (a, b) { default: break; }",
+        "do c = 1; while (a = 1, b);",
+        "switch (a = 1, b) { default: break; }",
     ] {
         fte_ok(&in_body(stmt));
     }
     // The last arm of `?:` ends at a `,`.
-    assert_eq!(expr_of("return a ? b : c, e;"), "(, (?: a b c) e)");
+    assert_eq!(
+        expr_of("return a ? b : c = 1, e;"),
+        "(, (?: a b (= c 1)) e)"
+    );
 }
 
-// spec FTEF-18.6: `name:` and `:name` are labels and `goto name;` jumps to one
-// spec QCD-7.22: W0312 "Duplicate label NAME" for a label the function already has
+// spec FTEF-18.23: `name:` and `:name` are labels and `goto name;` jumps to one; a label read since the end of the last function is a duplicate
+// spec QCD-7.30: W0312 "Duplicate label NAME" for a label read since the last function's end
 #[test]
 fn labels_and_goto_parse() {
     let parsed = fte_ok(&in_body("top:\na = 1;\n:frik\ngoto top;\ngoto frik;"));
@@ -230,11 +241,112 @@ fn labels_and_goto_parse() {
     let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
     assert_eq!(codes, [Code::W0312, Code::W0312]);
     assert_eq!(parsed.diagnostics()[0].message, "Duplicate label l");
-    let two = "void() g = { l: a = 1; };\nfloat a;\nvoid() f = { l: a = 2; void() h = { l: a = 3; }; };\n";
+    let two = "void() g = { l: a = 1; };\nfloat a;\nvoid() f = { l: a = 2; };\n";
     assert!(fte_codes(two).is_empty(), "{:?}", fte_codes(two));
+    // A function defined inside another shares the labels read before it, and its end
+    // forgets them all.
+    let nested = "float a;\nvoid() f = { l: a = 2; void() h = { l: a = 3; }; l: a = 4; };\n";
+    assert_eq!(fte_codes(nested), [Code::W0312]);
     // A label or goto without a name is an error.
     assert_eq!(fte_codes(&in_body(":1\na = 1;")), [Code::E0201]);
     assert_eq!(fte_codes(&in_body("goto 1;")), [Code::E0201]);
+}
+
+// spec FTEF-18.24: at the end of each function, an inner one included, every goto read since the last end must name a label read since then
+// spec QCD-4.8: E0308 "Goto statement with no matching label \"NAME\""
+#[test]
+fn a_goto_needs_a_label_by_the_end_of_its_function() {
+    // A label later in the function is found.
+    assert!(fte_codes(&in_body("goto top;\na = 1;\ntop:\na = 2;")).is_empty());
+    let parsed = fte(&in_body("goto nowhere;\ngoto top;\ntop:\na = 1;"));
+    let codes: Vec<Code> = parsed.diagnostics().iter().map(|d| d.code).collect();
+    assert_eq!(codes, [Code::E0308]);
+    assert_eq!(
+        parsed.diagnostics()[0].message,
+        "Goto statement with no matching label \"nowhere\""
+    );
+    assert!(Code::E0308.is_error());
+    // Another function's label is forgotten at its end.
+    let other = "float a;\nvoid() g = { top: a = 1; };\nvoid() f = { goto top; };\n";
+    assert_eq!(fte_codes(other), [Code::E0308]);
+    // An inner function's end checks the gotos read before it against the labels read
+    // since the last end, its own included, and then forgets both.
+    let inner_label = "float a;\nvoid() f = { goto out; void() h = { out: a = 1; }; };\n";
+    assert!(
+        fte_codes(inner_label).is_empty(),
+        "{:?}",
+        fte_codes(inner_label)
+    );
+    let label_after = "float a;\nvoid() f = { goto out; void() h = { a = 1; }; out: a = 2; };\n";
+    assert_eq!(fte_codes(label_after), [Code::E0308]);
+    let label_before = "float a;\nvoid() f = { top: a = 1; void() h = { a = 2; }; goto top; };\n";
+    assert_eq!(fte_codes(label_before), [Code::E0308]);
+}
+
+// spec FTEF-18.25: an expression statement, a `for` clause FTEQCC discards, or an expression
+// before a `,`, with no call, assignment or `++`/`--` of its own, is "Statement does not do
+// anything"; a `void` cast is let through only at the end of a statement.
+// spec QCD-7.29: W0313 "Statement does not do anything"
+#[test]
+fn statements_that_do_nothing_are_warned() {
+    let warned = |body: &str| -> Vec<String> {
+        let source = in_body(body);
+        let parsed = fte(&source);
+        assert_eq!(parsed.errors().count(), 0, "{source}");
+        parsed
+            .diagnostics()
+            .iter()
+            .filter(|d| d.code == Code::W0313)
+            .map(|d| {
+                assert_eq!(d.message, "Statement does not do anything");
+                String::from_utf8_lossy(&source.as_bytes()[d.span.start..d.span.end]).into_owned()
+            })
+            .collect()
+    };
+    for (body, spans) in [
+        ("a;", &["a"][..]),
+        ("a + 1;", &["a + 1"]),
+        ("b ? c : a;", &["b ? c : a"]),
+        ("a, b = 1;", &["a"]),
+        ("a = 1, b;", &["a = 1, b"]),
+        ("b++ + 1;", &["b++ + 1"]),
+        ("(a = 1, b);", &["(a = 1, b)"]),
+        ("(void) a, b = 1;", &["(void) a"]),
+        ("for (a; a < 1; b) c = 1;", &["a", "b"]),
+        ("for (a = 0, b; a < 1; c = 1, b) c = 1;", &["b", "b"]),
+        ("if (a, b) c = 1;", &["a"]),
+    ] {
+        assert_eq!(warned(body), spans, "{body}");
+    }
+    for body in [
+        "f();",
+        "a = 1;",
+        "a += 1;",
+        "++a;",
+        "a++;",
+        "(a++);",
+        "a++, b--;",
+        "(void) a;",
+        "f(), a = 1;",
+        "a = b ? c : a;",
+        "for (a = 0; a < 1; a++) c = 1;",
+        "for (;;) break;",
+        // The first condition's call sets the flag, and no expression statement clears it
+        // for good, so the `a` of the second is not warned.
+        "if (f()) c = 1;\nif (a, b) c = 1;",
+        // The call sets the flag before its arguments are read.
+        "x = f((a, b));",
+    ] {
+        assert_eq!(warned(body), Vec::<String>::new(), "{body}");
+    }
+    // Vanilla has no such warning.
+    assert!(
+        parse(in_body("a;").as_bytes())
+            .diagnostics()
+            .iter()
+            .all(|d| d.code != Code::W0313)
+    );
+    assert!(!Code::W0313.is_error());
 }
 
 // spec FTEF-18.7: `return = e;` sets the value returned
