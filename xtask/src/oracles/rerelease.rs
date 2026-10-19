@@ -103,6 +103,13 @@ pub(crate) fn compiles(id: &str) -> bool {
     CODEBASES.iter().any(|c| c.id == id)
 }
 
+/// Whether FTEQCC compiles the rerelease codebase `id` with `-Fautoproto` (FTE-1.2).
+pub(crate) fn autoprototypes(id: &str) -> bool {
+    CODEBASES
+        .iter()
+        .any(|c| c.id == id && c.extra.contains(&"-Fautoproto"))
+}
+
 /// Compiles the rerelease codebase `id`, found in `codebases/<id>`, unless the outputs already
 /// have the recorded digests. Returns the directory holding `progs.dat` and `progs.lno`, and
 /// whether they were already there.
