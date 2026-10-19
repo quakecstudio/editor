@@ -31,11 +31,11 @@ them.
 - **Spec sections:** QC-2, QC-4, QC-5, QC-6 and QC-8 in
   [`language.md`](../../docs/spec/language.md); the codes QCD-2 and QCD-6 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The lexer implements
-  QC-2, QC-4, QC-5, QC-6, QC-8 and QCD-2 in full; QCD-6 holds the lexer's own divergence
-  codes, and every one of them is cited by a test. The code format and the diagnostic shape
-  (QCD-1) and the `Code`, `Diagnostic` and `Span` types live in
-  [`qc-diag`](../qc-diag/README.md). A readiness run attributes only these sections to the
-  crate, and every active statement of each is cited here or in a crate that builds on it.
+  QC-2, QC-4, QC-5, QC-6, QC-8 and QCD-2 in full; QCD-6 holds the lexer's own divergence codes,
+  and every one of them is cited by a test. A readiness run attributes only these sections to
+  the crate, and every active statement of each is cited here or in a crate that builds on it.
+- **Not this crate's:** the code format and the diagnostic shape, QCD-1, which with the `Code`,
+  `Diagnostic` and `Span` types live in [`qc-diag`](../qc-diag/README.md).
 - **Also cited here, in sections a higher layer completes:** the lexical statements QC-1.1 to
   QC-1.4 (line index), QC-3.1 and QC-3.5 (names and keywords), QC-7.1, QC-7.2 and QC-7.4
   (punctuation), the lexer's own divergences QC-27.1, QC-27.2, QC-27.4, QC-27.5, QC-27.6 and

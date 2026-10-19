@@ -5,8 +5,8 @@
 //! Implements ENGT-4 and reports QCD-7.17 (`W0311`). A module's calls are found in its syntax
 //! trees and resolved through the semantic model's references (QC-12.5), so a call reaches the
 //! diagnostic only when its callee name means a global builtin function. A builtin is keyed by
-//! its number (ENGT-4.3) or, under an FTEQCC dialect, by the engine name of `#0:NAME`
-//! (ENGT-4.5).
+//! its number (ENGT-4.10, read as FTEQCC reads it under an FTEQCC dialect, ENGT-4.11) or,
+//! under an FTEQCC dialect, by the engine name of `#0:NAME` (ENGT-4.5).
 
 use std::collections::{HashMap, HashSet};
 
@@ -51,7 +51,8 @@ pub struct FileDiagnostic {
 /// The `W0311` warnings for a module of `kind` checked against `engine` (ENGT-4.1, ENGT-4.8).
 ///
 /// `parses` are the module's files in compilation order, `parses[i]` being [`FileId`]`(i)`,
-/// and `index` is the module resolved from them ([`qc_sema::resolve_module`]). Returns one
+/// parsed in `dialect`, and `index` is the module resolved from them
+/// ([`qc_sema::resolve_module`]). Returns one
 /// warning per call of a builtin the engine's table for `kind` lacks, in file and then source
 /// order; none when the engine has no table for `kind` ([`Engine::has_table`]).
 #[must_use]
@@ -60,11 +61,12 @@ pub fn missing_builtins(
     kind: ModuleKind,
     parses: &[Parse],
     index: &ModuleIndex,
+    dialect: Dialect,
 ) -> Vec<FileDiagnostic> {
     if !engine.has_table(kind) {
         return Vec::new();
     }
-    let keys = builtin_keys(parses);
+    let keys = builtin_keys(parses, dialect);
     let callees = callee_names(parses);
     let mut out = Vec::new();
     for reference in &index.refs {
@@ -123,9 +125,9 @@ fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
 }
 
 /// Each global name's builtin key: the number of its first `#N` initialiser in compilation
-/// order (ENGT-4.3), or for a name with none, the engine name of its first `#0:NAME`
+/// order (ENGT-4.10), or for a name with none, the engine name of its first `#0:NAME`
 /// initialiser (ENGT-4.5).
-fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
+fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
     let mut numbers: HashMap<String, u32> = HashMap::new();
     let mut names: HashMap<String, String> = HashMap::new();
     for parse in parses {
@@ -143,7 +145,7 @@ fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
                 let Some(literal) = builtin.number().map(|t| t.text_lossless()) else {
                     continue;
                 };
-                if let Some(number) = builtin_number(&literal) {
+                if let Some(number) = builtin_number(&literal, dialect) {
                     numbers.entry(name.text_lossless()).or_insert(number);
                 } else if let Some(engine_name) = engine_name(&builtin, &literal) {
                     names.entry(name.text_lossless()).or_insert(engine_name);
@@ -165,11 +167,9 @@ fn builtin_keys(parses: &[Parse]) -> HashMap<String, Key> {
 /// ENGT-4.5): the name after the `:` when the literal is zero as FTEQCC reads it, any number
 /// form whose value is 0 (`0`, `00`, `.0`, `0x0`, `0i`).
 fn engine_name(builtin: &ast::Builtin, literal: &str) -> Option<String> {
-    // ENGT-4.5: `QCC_PR_LexNumber` reads the literal and `#` takes it as `binum` 0 whenever
-    // its value is 0; a name is in the initialiser only under FTEQCC, so it is lexed so.
-    let lexed = qc_lexer::lex_with(literal.as_bytes(), Dialect::Fteqcc);
-    let zero = matches!(lexed.tokens.as_slice(), [token] if token.kind == TokenKind::Float(0.0));
-    if !zero {
+    // ENGT-4.9: `#` takes the literal as `binum` 0 whenever FTEQCC reads its value as 0; a name
+    // is in the initialiser only under FTEQCC, so it is read so.
+    if fteqcc_value(literal) != Some(Value::Zero) {
         return None;
     }
     // FTE-17.4: the parser reads a name in a builtin initialiser only after its `:`.
@@ -180,9 +180,54 @@ fn engine_name(builtin: &ast::Builtin, literal: &str) -> Option<String> {
         .map(|t| t.text_lossless())
 }
 
-/// The value of a builtin number literal: decimal digits, optionally followed by a fraction
-/// of zeros, of at least 1 (ENGT-4.3).
-pub(crate) fn builtin_number(text: &str) -> Option<u32> {
+/// What FTEQCC reads a number literal as, for a builtin initialiser (ENGT-4.9, ENGT-4.11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Value {
+    /// 0, the `binum` of a builtin bound by name.
+    Zero,
+    /// A whole number of at least 1 that fits a `u32`.
+    Number(u32),
+    /// Anything else: a fraction, or a number too large.
+    Other,
+}
+
+/// The value FTEQCC's `QCC_PR_LexNumber` reads from `literal`, when it is one number token
+/// (ENGT-4.11): the hex, octal, suffixed and fractional forms of FTEF-3.1.
+fn fteqcc_value(literal: &str) -> Option<Value> {
+    let lexed = qc_lexer::lex_with(literal.as_bytes(), Dialect::Fteqcc);
+    let [token] = lexed.tokens.as_slice() else {
+        return None;
+    };
+    let TokenKind::Float(value) = token.kind else {
+        return None;
+    };
+    #[expect(
+        clippy::float_cmp,
+        reason = "spec ENGT-4.11: FTEQCC takes `binum` only when `_float == (int)_float`"
+    )]
+    let whole = value.trunc() == value;
+    if !whole {
+        return Some(Value::Other);
+    }
+    // A whole f32 prints with no fraction, so its text is the integer FTEQCC's `(int)` gives.
+    let number: Option<u32> = value.to_string().parse().ok();
+    Some(match number {
+        Some(0) => Value::Zero,
+        Some(number) => Value::Number(number),
+        None => Value::Other,
+    })
+}
+
+/// The number of a builtin number literal in `dialect` (ENGT-4.10): under the vanilla dialect
+/// decimal digits, optionally followed by a fraction of zeros, of at least 1; under an FTEQCC
+/// dialect the whole value of at least 1 FTEQCC reads (ENGT-4.11).
+pub(crate) fn builtin_number(text: &str, dialect: Dialect) -> Option<u32> {
+    if dialect.has_fteqcc_extensions() {
+        return match fteqcc_value(text)? {
+            Value::Number(number) => Some(number),
+            Value::Zero | Value::Other => None,
+        };
+    }
     let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
     if whole.is_empty()
         || !whole.bytes().all(|b| b.is_ascii_digit())

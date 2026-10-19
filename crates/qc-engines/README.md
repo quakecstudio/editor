@@ -12,9 +12,11 @@ KEX (the 2021 rerelease).
 
 - **Layer:** L3 semantics. It depends on `qc-sema` (L3), `qc-syntax` and `qc-project` (L2),
   `qc-builtins` (L1, id's vanilla table) and `qc-diag` (L0).
-- **Spec sections:** ENGT-1 (sources), ENGT-3 (engines) and ENGT-4 (the missing-builtin
-  warning) of [`docs/spec/engine-targets.md`](../../docs/spec/engine-targets.md). The
-  generator implements ENGT-2. Written from the spec, not ported.
+- **Spec sections:** ENGT-1 (sources), ENGT-3 (engines) and ENGT-4 (the missing-builtin warning)
+  of [`docs/spec/engine-targets.md`](../../docs/spec/engine-targets.md). Written from the spec,
+  not ported.
+- **Not this crate's:** ENGT-2, the extraction from the fact sources, which the generator `cargo
+  xtask engines` implements.
 - **Spec statements:** QCD-7.17 (`W0311`) of
   [`docs/spec/language-diagnostics.md`](../../docs/spec/language-diagnostics.md).
 - **Shipped:** yes.
@@ -54,7 +56,8 @@ cargo test -p qc-engines
 - `SOURCES` and `Source`: the pinned fact sources and their checksums.
 - `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module of a
   kind checked against a target engine, for builtins declared `#N` and, under FTEQCC,
-  `#0:NAME`.
+  `#0:NAME`, in the dialect the module was parsed in: under FTEQCC a number is the value
+  FTEQCC reads, hex and octal included (ENGT-4.11).
 
 ## Module kinds
 

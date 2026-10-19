@@ -16,9 +16,10 @@ given `progs.dat`, reporting the first differing count in header order.
 
 - **Layer:** L0 formats. It depends on `qc-progs` only for the `Header` the matcher reads; the
   compiler and the preview host build on it.
-- **Spec sections:** LNO-2 to LNO-6 in [`lno.md`](../../docs/spec/lno.md). LNO-1 (when a
-  compiler writes a `.lno`) belongs to the compiler, and LNO-4.4 and LNO-4.5 (a statement's
-  source file) to the line-number reader that pairs a `.lno` with a `progs.dat`'s functions.
+- **Spec sections:** LNO-2 to LNO-6 in [`lno.md`](../../docs/spec/lno.md).
+- **Not this crate's:** LNO-1 (when a compiler writes a `.lno`), the compiler's, and LNO-4.4 and
+  LNO-4.5 (a statement's source file), the line-number reader's that pairs a `.lno` with a
+  `progs.dat`'s functions.
 - **Shipped:** yes.
 
 ## Invariants

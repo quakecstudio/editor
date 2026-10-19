@@ -15,10 +15,10 @@ of id's code.
 - **Layer:** L1 VM. It depends on no other workspace crate; `serde_json` parses the JSON
   form.
 - **Spec sections:** [TRACE-1 to TRACE-7](../../docs/spec/trace.md), with the vectors in
-  [`docs/spec/vectors/trace/`](../../docs/spec/vectors/trace/README.md). The statements
-  about what an emitter records and when (TRACE-1.3, TRACE-3.1, TRACE-3.4, TRACE-3.5,
-  TRACE-4.1 to TRACE-4.7 and TRACE-4.9) are cited by `qc-vm`'s trace hook tests; until
-  then they are in the coverage baseline.
+  [`docs/spec/vectors/trace/`](../../docs/spec/vectors/trace/README.md).
+- **Not this crate's:** the statements about what an emitter records and when, TRACE-1.3,
+  TRACE-3.1, TRACE-3.4, TRACE-3.5, TRACE-4.1 to TRACE-4.7 and TRACE-4.9, which `qc-vm`'s trace
+  hook tests cite; until then they are in the coverage baseline.
 - **Shipped:** yes.
 
 ## Invariants

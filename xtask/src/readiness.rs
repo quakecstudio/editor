@@ -775,8 +775,12 @@ fn spec(dir: &Path) -> Result<Score, String> {
             cited.extend(citations(&text));
         }
     }
-    let claimed = spec_statements(&readme);
-    spec_score(&sections, &claimed, &statements, &baseline, &cited)
+    let claims = Claims {
+        sections,
+        statements: spec_statements(&readme),
+        disclaimed: disclaimed_statements(&readme),
+    };
+    spec_score(&claims, &statements, &baseline, &cited)
 }
 
 const REQUIREMENTS: &str = "docs/spec/requirements.tsv";
@@ -808,37 +812,108 @@ fn baseline_statements(text: &str) -> Result<BTreeSet<String>, String> {
 const CITING_TREES: [&str; 3] = ["crates", "apps", "xtask"];
 
 /// The section IDs (`PREFIX-n`) on a README's `**Spec sections:**` line, up to
-/// the next list item. `None` if there is no such line; empty if it says none.
+/// the next list item, `A to B` being every section from `A` to `B`, less the
+/// sections on its `**Not this crate's:**` line. A statement ID on the line is
+/// no section. `None` if there is no such line; empty if it says none.
 pub(crate) fn spec_sections(readme: &str) -> Option<Vec<String>> {
-    let text = readme_field(readme, "**Spec sections:**")?;
-    let mut sections = Vec::new();
-    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
-        if is_section_id(word) && !sections.iter().any(|section| section == word) {
-            sections.push(word.to_owned());
-        }
-    }
-    Some(sections)
+    let (sections, _) = field_ids(&readme_field(readme, "**Spec sections:**")?);
+    let (disclaimed, _) = readme_field(readme, NOT_THIS_CRATES)
+        .map_or_else(|| (Vec::new(), Vec::new()), |text| field_ids(&text));
+    Some(
+        sections
+            .into_iter()
+            .filter(|section| !disclaimed.contains(section))
+            .collect(),
+    )
 }
 
 /// The statement IDs (`PREFIX-n.m`) on a README's `**Spec statements:**` line,
 /// up to the next list item; empty if there is no such line.
 pub(crate) fn spec_statements(readme: &str) -> Vec<String> {
-    let Some(text) = readme_field(readme, "**Spec statements:**") else {
-        return Vec::new();
-    };
+    readme_field(readme, "**Spec statements:**")
+        .map(|text| field_ids(&text).1)
+        .unwrap_or_default()
+}
+
+/// The statement IDs on a README's `**Not this crate's:**` line: statements of a
+/// section the crate claims that another crate implements, so they are not
+/// counted against it.
+pub(crate) fn disclaimed_statements(readme: &str) -> Vec<String> {
+    readme_field(readme, NOT_THIS_CRATES)
+        .map(|text| field_ids(&text).1)
+        .unwrap_or_default()
+}
+
+/// The README line that names the sections and statements, written near the
+/// crate's own, that another crate or a later issue implements.
+const NOT_THIS_CRATES: &str = "**Not this crate's:**";
+
+/// The section and statement IDs written in `text`, in order and each once. `A to B`
+/// with `A` and `B` of one prefix is every section from `A` to `B`, or with two
+/// statements of one section every statement from `A` to `B`.
+fn field_ids(text: &str) -> (Vec<String>, Vec<String>) {
+    let words: Vec<&str> = text
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '.'))
+        .map(|word| word.trim_end_matches('.'))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let mut sections: Vec<String> = Vec::new();
     let mut statements: Vec<String> = Vec::new();
-    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '.')) {
-        let word = word.trim_end_matches('.');
-        let is_statement = word.rsplit_once('.').is_some_and(|(section, number)| {
-            is_section_id(section)
-                && !number.is_empty()
-                && number.chars().all(|c| c.is_ascii_digit())
-        });
-        if is_statement && !statements.iter().any(|statement| statement == word) {
-            statements.push(word.to_owned());
+    let add = |list: &mut Vec<String>, id: String| {
+        if !list.contains(&id) {
+            list.push(id);
+        }
+    };
+    let mut rest = words.as_slice();
+    while let Some((&word, after)) = rest.split_first() {
+        rest = after;
+        let range_end = match after {
+            [to, end, ..] if *to == "to" => Some(*end),
+            _ => None,
+        };
+        if let Some((prefix, from)) = section_parts(word) {
+            match range_end.and_then(section_parts) {
+                Some((end_prefix, to)) if end_prefix == prefix && from <= to => {
+                    for number in from..=to {
+                        add(&mut sections, format!("{prefix}-{number}"));
+                    }
+                    rest = rest.get(2..).unwrap_or_default();
+                }
+                _ => add(&mut sections, word.to_owned()),
+            }
+        } else if let Some((section, from)) = statement_parts(word) {
+            match range_end.and_then(statement_parts) {
+                Some((end_section, to)) if end_section == section && from <= to => {
+                    for number in from..=to {
+                        add(&mut statements, format!("{section}.{number}"));
+                    }
+                    rest = rest.get(2..).unwrap_or_default();
+                }
+                _ => add(&mut statements, word.to_owned()),
+            }
         }
     }
-    statements
+    (sections, statements)
+}
+
+/// The prefix and number of a section ID, `PREFIX-n`.
+fn section_parts(id: &str) -> Option<(&str, u32)> {
+    if !is_section_id(id) {
+        return None;
+    }
+    let (prefix, number) = id.split_once('-')?;
+    Some((prefix, number.parse().ok()?))
+}
+
+/// The section and number of a statement ID, `PREFIX-n.m`.
+fn statement_parts(id: &str) -> Option<(&str, u32)> {
+    // The words of `field_ids` hold only letters, digits, `-` and `.`, so a number that
+    // parses is all digits.
+    let (section, number) = id.rsplit_once('.')?;
+    if !is_section_id(section) {
+        return None;
+    }
+    Some((section, number.parse().ok()?))
 }
 
 /// The text of the README list item that starts with `label`, its
@@ -907,9 +982,17 @@ pub(crate) fn citations(text: &str) -> Vec<String> {
     ids
 }
 
+/// What a crate README claims: whole sections, single statements, and the
+/// statements of its sections that it disclaims.
+#[derive(Debug, Default)]
+pub(crate) struct Claims {
+    pub(crate) sections: Vec<String>,
+    pub(crate) statements: Vec<String>,
+    pub(crate) disclaimed: Vec<String>,
+}
+
 fn spec_score(
-    sections: &[String],
-    claimed: &[String],
+    claims: &Claims,
     statements: &[(String, String)],
     baseline: &BTreeSet<String>,
     cited: &BTreeSet<String>,
@@ -921,7 +1004,7 @@ fn spec_score(
     };
     let mut counted = BTreeSet::new();
     let mut count = |id: &String, score: &mut Score| {
-        if !counted.insert(id.clone()) {
+        if claims.disclaimed.contains(id) || !counted.insert(id.clone()) {
             return;
         }
         score.total = score.total.saturating_add(1);
@@ -931,7 +1014,7 @@ fn spec_score(
             score.failures.push(format!("{id} is not cited"));
         }
     };
-    for section in sections {
+    for section in &claims.sections {
         let mut found = false;
         for (id, owner) in statements {
             if owner != section {
@@ -953,7 +1036,7 @@ fn spec_score(
             ));
         }
     }
-    for id in claimed {
+    for id in &claims.statements {
         if !statements.iter().any(|(statement, _)| statement == id) {
             return Err(format!(
                 "statement {id} is not an active statement in {REQUIREMENTS}"
