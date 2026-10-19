@@ -15,7 +15,8 @@
 
 use std::path::PathBuf;
 
-use qc_trace::Record;
+use qc_edict::system::global_by_name;
+use qc_trace::{Record, StringValue, Text};
 use qc_types::Etype;
 
 use crate::scenario::{Cvar, DIFF_DEFAULT_FRAMETIME, DIFF_DEFAULT_SEED, Scenario};
@@ -323,7 +324,7 @@ fn an_unknown_key_is_ignored() {
 /// builder fills with its index and which a scenario that ends normally never runs (DIFF-3.7).
 fn progs_calling_ftos() -> Vec<u8> {
     let ftos_slot = i16::try_from(
-        qc_edict::system::global_by_name("SetChangeParms")
+        global_by_name("SetChangeParms")
             .expect("a system global")
             .slot,
     )
@@ -399,10 +400,10 @@ fn ftos_writes_a_string_record_before_its_call() {
         .find(|g| g.slot == 1)
         .expect("ftos writes OFS_RETURN")
         .bits;
-    let zero_text = qc_trace::Text::new(b"0".to_vec()).expect("a text");
+    let zero_text = Text::new(b"0".to_vec()).expect("a text");
     assert_eq!(
         trace.string_value(first_call + 1, ret),
-        qc_trace::StringValue::Engine(&zero_text)
+        StringValue::Engine(&zero_text)
     );
 
     // The third CALL changes the text to "1": a new record after the STORE_F and before it.
