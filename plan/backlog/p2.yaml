@@ -144,7 +144,7 @@ issues:
   verify:
   - cargo test -p qc-project -p qc-engines
 - key: P2-30
-  title: Report missing #0:NAME builtins under the FTEQCC dialect
+  title: 'Report missing #0:NAME builtins under the FTEQCC dialect'
   labels:
   - L3-semantics
   - area:language
