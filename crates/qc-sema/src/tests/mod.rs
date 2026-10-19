@@ -26,6 +26,7 @@ mod members;
 mod navigation;
 mod recovery;
 mod resolution;
+mod reviewer;
 mod types;
 
 use crate::db::Db;
