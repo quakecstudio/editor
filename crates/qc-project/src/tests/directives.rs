@@ -435,3 +435,57 @@ fn pragma_once_in_skipped_block() {
     });
     assert_eq!(names(&graph), ["h.qh", "h.qh"]);
 }
+
+// spec PRJ-5.3: a `//` touching a word ends it and the line, and a word that is only a pair of
+// quotes is no file
+#[test]
+fn includelist_comment_after_a_word_and_empty_quotes() {
+    let files = [("a.qc", ""), ("b.qc", ""), ("c.qc", "")];
+    let body = "#includelist\na.qc// b.qc\n\"\" c.qc\n#endlist\n";
+    let graph = source(body, &files);
+    assert_eq!(names(&graph), ["main.src", "a.qc", "c.qc"]);
+    assert!(diags(&graph).is_empty(), "{:?}", diags(&graph));
+}
+
+// spec PRJ-5.1: a directive whose last line ends in `\` at the end of the file ends there
+#[test]
+fn backslash_at_the_end_of_the_file() {
+    let files = [("a.qc", "")];
+    let graph = source("#include \"a.qc\"\n#define LONG 1 \\", &files);
+    assert_eq!(names(&graph), ["main.src", "a.qc"]);
+    assert!(diags(&graph).is_empty());
+}
+
+// spec PRJ-5.4: `#undef` with no name removes nothing
+#[test]
+fn undef_without_a_name() {
+    let files = [("a.qc", "")];
+    let body = "#define A\n#undef\n#ifdef A\n#include \"a.qc\"\n#endif\n";
+    assert_eq!(brought(body, &files), ["a.qc"]);
+}
+
+// spec PRJ-5.6: `#output` and `#pragma progs_dat` with no path declare nothing, and leave an
+// earlier declaration as it is
+#[test]
+fn output_without_a_path() {
+    assert_eq!(source("#output\n", &[]).declared_output, None);
+    assert_eq!(source("#output a.dat\n", &[]).declared_output, None);
+    assert_eq!(source("#pragma progs_dat\n", &[]).declared_output, None);
+    let graph = source("#output \"a.dat\"\n#pragma progs_dat\n#output\n", &[]);
+    assert_eq!(graph.declared_output, Some(PathBuf::from("a.dat")));
+}
+
+// spec PRJ-5.8: `#pragma includedir` with no path adds no directory
+#[test]
+fn includedir_without_a_path() {
+    let graph = build(&GraphSpec {
+        files: &[
+            ("progs/main.src", "#pragma includedir\n#include \"y.qh\"\n"),
+            ("y.qh", ""),
+        ],
+        src: "progs/main.src",
+        ..GraphSpec::default()
+    });
+    assert_eq!(names(&graph), ["progs/main.src"]);
+    assert_eq!(diags(&graph), ["E0111 progs/main.src:2"]);
+}
