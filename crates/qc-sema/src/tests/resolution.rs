@@ -11,7 +11,7 @@ use super::{index_of, module_index_of};
 use crate::lower::lower_file;
 use crate::resolve::{ResolveOptions, resolve_module};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{SimpleType, Type};
+use crate::ty::{FunctionType, SimpleType, Type};
 
 /// The codes of the diagnostics an index reports, in order.
 fn codes(source: &str) -> Vec<Code> {
@@ -256,13 +256,24 @@ fn local_field_is_e0208() {
     );
 }
 
-// spec QC-13.6: a state header declares the next-think name as a global void() if new.
+// spec QC-13.6, QC-12.6: a state header declares the next-think name on the spot as a global
+// void() if new.
 #[test]
 fn next_think_name_is_declared_void_function() {
     let source = "$frame s1\nvoid() th1 = [$s1, th2] { };\nvoid() th2 = {};";
     let index = module_index_of(&[source]);
     let th2 = index.defs.iter().find(|d| d.name == "th2").unwrap();
     assert_eq!(th2.kind, DefKind::Function);
+    assert_eq!(th2.owner, None);
+    assert_eq!(
+        th2.ty,
+        Type::Function(Rc::new(FunctionType {
+            ret: Type::Simple(SimpleType::Void),
+            params: Vec::new(),
+            variadic: false,
+        }))
+    );
+    assert_eq!(th2.location.span.start, source.find("th2").unwrap());
     // th2 is defined by its own body, so no "not defined" error.
     assert!(
         index

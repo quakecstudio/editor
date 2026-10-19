@@ -732,8 +732,14 @@ fn repeat(runs: u64, mut run: impl FnMut() -> Result<bool, String>) -> Result<Sc
 
 /// Statement citations for the crate in `dir`: the sections its README lists
 /// after `**Spec sections:**`, their active statements in the nearest
-/// `docs/spec/requirements.tsv` above it, and the `// spec` citations in the
-/// Rust files under that tree's [`CITING_TREES`] (`docs/spec/README.md`).
+/// `docs/spec/requirements.tsv` above it, the single statements it lists after
+/// `**Spec statements:**`, and the `// spec` citations in the Rust files under
+/// that tree's [`CITING_TREES`] (`docs/spec/README.md`).
+///
+/// A crate that implements only some statements of a section claims them one
+/// by one on the `**Spec statements:**` line, so the section's other
+/// statements, which belong to another crate or to the baseline, are not
+/// counted against it.
 ///
 /// A statement in [`BASELINE`] (`docs/spec/coverage-baseline.tsv`) is not
 /// counted: the baseline holds statements written ahead of the code that
@@ -769,7 +775,8 @@ fn spec(dir: &Path) -> Result<Score, String> {
             cited.extend(citations(&text));
         }
     }
-    spec_score(&sections, &statements, &baseline, &cited)
+    let claimed = spec_statements(&readme);
+    spec_score(&sections, &claimed, &statements, &baseline, &cited)
 }
 
 const REQUIREMENTS: &str = "docs/spec/requirements.tsv";
@@ -803,9 +810,42 @@ const CITING_TREES: [&str; 3] = ["crates", "apps", "xtask"];
 /// The section IDs (`PREFIX-n`) on a README's `**Spec sections:**` line, up to
 /// the next list item. `None` if there is no such line; empty if it says none.
 pub(crate) fn spec_sections(readme: &str) -> Option<Vec<String>> {
+    let text = readme_field(readme, "**Spec sections:**")?;
+    let mut sections = Vec::new();
+    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
+        if is_section_id(word) && !sections.iter().any(|section| section == word) {
+            sections.push(word.to_owned());
+        }
+    }
+    Some(sections)
+}
+
+/// The statement IDs (`PREFIX-n.m`) on a README's `**Spec statements:**` line,
+/// up to the next list item; empty if there is no such line.
+pub(crate) fn spec_statements(readme: &str) -> Vec<String> {
+    let Some(text) = readme_field(readme, "**Spec statements:**") else {
+        return Vec::new();
+    };
+    let mut statements: Vec<String> = Vec::new();
+    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '.')) {
+        let word = word.trim_end_matches('.');
+        let is_statement = word.rsplit_once('.').is_some_and(|(section, number)| {
+            is_section_id(section)
+                && !number.is_empty()
+                && number.chars().all(|c| c.is_ascii_digit())
+        });
+        if is_statement && !statements.iter().any(|statement| statement == word) {
+            statements.push(word.to_owned());
+        }
+    }
+    statements
+}
+
+/// The text of the README list item that starts with `label`, its
+/// continuation lines joined, up to the next list item, heading or blank line.
+fn readme_field(readme: &str, label: &str) -> Option<String> {
     let mut lines = readme.lines();
-    let first =
-        lines.find_map(|line| line.split_once("**Spec sections:**").map(|(_, rest)| rest))?;
+    let first = lines.find_map(|line| line.split_once(label).map(|(_, rest)| rest))?;
     let mut text = first.to_owned();
     for line in lines {
         let trimmed = line.trim_start();
@@ -815,13 +855,7 @@ pub(crate) fn spec_sections(readme: &str) -> Option<Vec<String>> {
         text.push(' ');
         text.push_str(trimmed);
     }
-    let mut sections = Vec::new();
-    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
-        if is_section_id(word) && !sections.iter().any(|section| section == word) {
-            sections.push(word.to_owned());
-        }
-    }
-    Some(sections)
+    Some(text)
 }
 
 /// `PREFIX-n`: an upper-case prefix starting with a letter, a hyphen and a number.
@@ -875,6 +909,7 @@ pub(crate) fn citations(text: &str) -> Vec<String> {
 
 fn spec_score(
     sections: &[String],
+    claimed: &[String],
     statements: &[(String, String)],
     baseline: &BTreeSet<String>,
     cited: &BTreeSet<String>,
@@ -883,6 +918,18 @@ fn spec_score(
         passed: 0,
         total: 0,
         failures: Vec::new(),
+    };
+    let mut counted = BTreeSet::new();
+    let mut count = |id: &String, score: &mut Score| {
+        if !counted.insert(id.clone()) {
+            return;
+        }
+        score.total = score.total.saturating_add(1);
+        if cited.contains(id) {
+            score.passed = score.passed.saturating_add(1);
+        } else {
+            score.failures.push(format!("{id} is not cited"));
+        }
     };
     for section in sections {
         let mut found = false;
@@ -898,18 +945,26 @@ fn spec_score(
             if baseline.contains(id) {
                 continue;
             }
-            score.total = score.total.saturating_add(1);
-            if cited.contains(id) {
-                score.passed = score.passed.saturating_add(1);
-            } else {
-                score.failures.push(format!("{id} is not cited"));
-            }
+            count(id, &mut score);
         }
         if !found {
             return Err(format!(
                 "section {section} has no active statements in {REQUIREMENTS}"
             ));
         }
+    }
+    for id in claimed {
+        if !statements.iter().any(|(statement, _)| statement == id) {
+            return Err(format!(
+                "statement {id} is not an active statement in {REQUIREMENTS}"
+            ));
+        }
+        // A crate that claims a statement by name implements it, so the
+        // statement cannot also be one written ahead of its code.
+        if baseline.contains(id) {
+            return Err(format!("statement {id} is claimed but is in {BASELINE}"));
+        }
+        count(id, &mut score);
     }
     Ok(score)
 }

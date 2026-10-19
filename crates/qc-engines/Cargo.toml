@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 qc-builtins = { workspace = true }
 qc-diag = { workspace = true }
+qc-lexer = { workspace = true }
 qc-project = { workspace = true }
 qc-sema = { workspace = true }
 qc-syntax = { workspace = true }

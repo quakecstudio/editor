@@ -179,7 +179,7 @@ own source as a further fact source.
 - **ENGT-4.5** Under an FTEQCC dialect a builtin may be declared `= #0:NAME` (FTE-17.4), which
   the engine looks up by `NAME` (ENGT-2.4). A global function whose name has no number by
   ENGT-4.3 takes as its key the `NAME` of its first such initialiser in compilation order,
-  `0` being any literal whose digits are all zeros. A call of it, as in ENGT-4.1, whose engine
+  `0` being any literal whose value is 0 (ENGT-4.9). A call of it, as in ENGT-4.1, whose engine
   table has no builtin keyed `#0:NAME`, names compared exactly, is `W0311` with the message
   `FUNC is builtin #0:NAME, which ENGINE does not have`, `FUNC` being the function's name,
   and the extensions of the first engine, in the order of ENGT-3.1, whose table has `NAME`
@@ -195,6 +195,18 @@ own source as a further fact source.
   (PRJ-3.1, ENGT-3.8), and the extensions of ENGT-4.1 and ENGT-4.5 come from the engines'
   tables for that kind. A module of a kind its engine has no table for is not checked and
   has no `W0311`.
+- **ENGT-4.9** The `0` of ENGT-4.5 is any number literal that FTEQCC reads as the value 0, in
+  any of its number forms (FTEF-3.1): `0`, `00`, `.0`, `0.00`, the hex `0x0` and the
+  integer `0i`. FTEQCC's `QCC_PR_ParseInitializerType` (`qcc_pr_comp.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) keys a builtin by the value
+  `QCC_PR_LexNumber` gives, not by its spelling: `if (pr_token_type == tt_immediate &&
+  pr_immediate_type == type_float && pr_immediate._float == (int)pr_immediate._float) binum =
+  (int)pr_immediate._float; else if (pr_token_type == tt_immediate && pr_immediate_type ==
+  type_integer) binum = pr_immediate._int;`, then `if (!*fname && QCC_PR_CheckToken (":"))`
+  reads the name; and `QCC_PR_LexNumber` (`qcc_pr_lex.c`) reads `0x` as base 16
+  (`if (pr_file_p[0] == '0' && (pr_file_p[1] == 'x' || pr_file_p[1] == 'X')) { ... base =
+  16;`), so `#0x0:NAME` is `binum` 0 with the name `NAME`, the same as `#0:NAME`. A literal
+  whose value is not 0, such as `0.5` or `0x1`, is no `0` here.
 
 ### Test vectors
 
@@ -209,8 +221,8 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | `void(string s, ...) bprint = #0:ex_bprint;` called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.5 |
 | the same, KEX, Ironwail or vkQuake | none | ENGT-4.5 |
 | `stuffcmdflags = #0:stuffcmdflags` called, FTEQCC dialect, KEX | `W0311` "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have (FTE_QC_STUFFCMDFLAGS)" | ENGT-4.5 |
-| `void() f = #.0:nothing;` called, FTEQCC dialect, KEX (and the same with `#00` or `#0.00`) | `W0311` "f is builtin #0:nothing, which KEX does not have" | ENGT-4.5 |
-| `void() f = #0.5:nothing;` called, FTEQCC dialect, KEX | none: `0.5` is no zero | ENGT-4.5 |
+| `void() f = #.0:nothing;` called, FTEQCC dialect, KEX (and the same with `#00`, `#0.00`, `#0x0`, `#0X00` or `#0i`) | `W0311` "f is builtin #0:nothing, which KEX does not have" | ENGT-4.5, ENGT-4.9 |
+| `void() f = #0.5:nothing;` or `#0x1:nothing` called, FTEQCC dialect, KEX | none: neither is zero | ENGT-4.9 |
 | `void() clearscene = #300;` called, FTEQW, client module | none | ENGT-4.8 |
 | the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
 | `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |

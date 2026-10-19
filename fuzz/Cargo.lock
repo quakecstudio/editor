@@ -123,6 +123,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-diag"
+version = "2026.10.0"
+
+[[package]]
 name = "qc-edict"
 version = "2026.10.0"
 dependencies = [
@@ -131,8 +135,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-engines"
+version = "2026.10.0"
+dependencies = [
+ "qc-builtins",
+ "qc-diag",
+ "qc-lexer",
+ "qc-project",
+ "qc-sema",
+ "qc-syntax",
+]
+
+[[package]]
 name = "qc-lexer"
 version = "2026.10.0"
+dependencies = [
+ "qc-diag",
+]
 
 [[package]]
 name = "qc-preproc"
@@ -156,6 +175,17 @@ dependencies = [
  "qc-preproc",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "qc-sema"
+version = "2026.10.0"
+dependencies = [
+ "qc-diag",
+ "qc-lexer",
+ "qc-preproc",
+ "qc-project",
+ "qc-syntax",
 ]
 
 [[package]]
@@ -212,9 +242,11 @@ name = "qs-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "qc-engines",
  "qc-lexer",
  "qc-progs",
  "qc-project",
+ "qc-sema",
  "qc-syntax",
  "qc-trace",
  "qc-types",

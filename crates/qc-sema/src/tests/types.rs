@@ -6,7 +6,11 @@ use std::rc::Rc;
 
 use qc_syntax::ast;
 
-use crate::ty::{FunctionType, SimpleType, Type};
+use qc_syntax::{Dialect, QC_MAX_NESTING};
+
+use crate::db::Db;
+use crate::symbol::FileId;
+use crate::ty::{FROM_AST_CALLS, FunctionType, SimpleType, Type};
 
 /// Lowers the type of the first file-level declaration in `source`.
 fn first_decl_type(source: &str) -> Type {
@@ -151,5 +155,57 @@ fn malformed_type_is_unknown() {
         // Recovery may have produced a different shape; the point is it did not panic.
         let ty = decl.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
         assert_eq!(ty.word_size(), 1);
+    }
+}
+
+/// The `Type::from_ast` calls that resolving the one-file module `source` in `dialect` takes.
+fn from_ast_calls(source: &str, dialect: Dialect) -> usize {
+    let mut db = Db::new();
+    db.set_dialect(dialect);
+    db.set_file_text(FileId(0), source.as_bytes().to_vec());
+    FROM_AST_CALLS.with(|calls| calls.set(0));
+    let _index = db.module_index(&[FileId(0)]);
+    FROM_AST_CALLS.with(std::cell::Cell::get)
+}
+
+/// `void(void(...void f;`: `depth` unclosed `void(`, as a line being typed.
+fn unclosed(depth: usize) -> String {
+    format!("{}void f;\n", "void(".repeat(depth))
+}
+
+/// `void(void(void() a1) a2) f;`: a function type whose parameter is a function type, `depth`
+/// levels deep.
+fn nested(depth: usize) -> String {
+    let mut ty = "void()".to_owned();
+    for level in 1..depth {
+        ty = format!("void({ty} a{level})");
+    }
+    format!("{ty} f;\n")
+}
+
+// spec QC-10.3: a function type's parameter types are lowered once each, so resolving a
+// function type nested QC_MAX_NESTING deep, written whole or left unclosed, takes work linear
+// in the depth: at most four calls a level, and doubling the depth at most doubles the calls,
+// with a few to spare. The depths double from 8, so lowering that is not linear fails at a
+// small depth rather than running for long.
+#[test]
+fn nested_function_types_lower_in_linear_time() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        for shape in [unclosed, nested] {
+            let mut depth = 8;
+            let mut previous: Option<usize> = None;
+            while depth <= QC_MAX_NESTING {
+                let calls = from_ast_calls(&shape(depth), dialect);
+                assert!(
+                    (depth..=4 * depth).contains(&calls),
+                    "{dialect:?}: {calls} calls at depth {depth}"
+                );
+                if let Some(previous) = previous {
+                    assert!(calls <= 2 * previous + 8, "{dialect:?}: {calls} at {depth}");
+                }
+                previous = Some(calls);
+                depth *= 2;
+            }
+        }
     }
 }

@@ -55,14 +55,22 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
 - **Layer:** L3 semantics. It depends on `qc-syntax`, `qc-lexer` (for `atof` and the token
   kinds), `qc-preproc` and `qc-project` (L2) and `qc-diag` (L0, for the one `Diagnostic`, its
   `Code` and `Span`).
-- **Spec sections:** the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes
-  and lookup) and QC-13.6 (state-header names) in
-  [`language.md`](../../docs/spec/language.md), and the diagnostics QCD-3.5, QCD-3.6, QCD-3.8,
-  QCD-3.11, QCD-4.1 and QCD-7.3 in
-  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). These sections are
-  completed here from the syntactic parts that `qc-syntax` owns; the type rules, operator
-  checks and code generation of QC-16 to QC-22 belong to the compiler (L4), so those sections
-  are not declared above. Written from the spec, not ported.
+- **Spec sections:** QC-12 (scopes and lookup) in
+  [`language.md`](../../docs/spec/language.md), FTE-22 (the rerelease profile's resolution)
+  in [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md) and FTEF-17
+  (the full dialect's name resolution) in
+  [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
+- **Spec statements:** of [`language.md`](../../docs/spec/language.md), the semantic parts of
+  types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.6 and QC-10.7; of declarations, QC-11.1,
+  QC-11.5, QC-11.7, QC-11.8 and QC-11.9; and the state-header name, QC-13.6. Of
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
+  QCD-3.5, QCD-3.6, QCD-3.8, QCD-3.11, QCD-4.1, QCD-7.3, QCD-7.23 and QCD-7.28. Of
+  [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
+  FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
+  members FTEF-10.2 and FTEF-10.3, and the scoped names of FTEF-16.4. The other
+  statements of those sections are the parser's (`qc-syntax`) or the compiler's (L4): the
+  initialiser and storage rules, the type rules, operator checks and code generation. Written
+  from the spec, not ported.
 - **Shipped:** yes.
 
 Under the FTEQCC profile the full dialect of `docs/spec/dialect-fteqcc.md` resolves by FTEF-17:
@@ -106,3 +114,16 @@ the member's name, and the values of `enumflags` and other constants are not com
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
   find-references.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.
+
+## Tests
+
+- The unit tests in `src/tests/` cite the statement each pins (`// spec <ID>`); the property
+  tests in `src/tests/properties.rs` hold the two invariants above for token soup and any
+  bytes: every definition, reference and diagnostic is at a span of its source file, and
+  re-resolving after an edit equals resolving the edited files from scratch.
+- `cargo xtask sema-corpus` (the corpus job) resolves id 1.01 under the vanilla profile and
+  the rerelease under the FTEQCC profile and compares each index with its golden file in
+  [`docs/spec/vectors/sema/`](../../docs/spec/vectors/sema/), and every global definition
+  with the progs.dat id's `qcc` and FTEQCC built from the same source (TEST-6).
+- The `qc-sema` fuzz target ([`fuzz/`](../../fuzz/README.md)) puts arbitrary bytes, as one to
+  three files, through `Db` and `qc_engines::missing_builtins` under both profiles.

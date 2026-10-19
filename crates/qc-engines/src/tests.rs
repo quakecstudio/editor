@@ -584,11 +584,12 @@ fn the_number_wins_over_an_engine_name() {
     assert_eq!(fte_messages(Engine::Kex, &[fraction]).len(), 1);
 }
 
-// spec ENGT-4.5: `0` is any literal whose digits are all zeros, `00` and FTEQCC's `.0`
-// included; `0.5` is no zero, so `#0.5:NAME` has no engine name and gives no W0311
+// spec ENGT-4.9: the `0` of `#0:NAME` is any literal FTEQCC reads as the value 0, the hex
+// `0x0` and the integer `0i` included; `0.5` and `0x1` are no zero, so they give no engine name
+// and no W0311
 #[test]
 fn only_a_zero_literal_takes_an_engine_name() {
-    for zero in ["00", ".0", "0.00"] {
+    for zero in ["00", ".0", "0.00", "0x0", "0X00", "0i"] {
         let source = format!("void() f = #{zero}:nothing;\nvoid() w = {{ f(); }};\n");
         assert_eq!(
             fte_messages(Engine::Kex, &[source.as_str()]),
@@ -596,8 +597,13 @@ fn only_a_zero_literal_takes_an_engine_name() {
             "#{zero}"
         );
     }
-    let half = "void() f = #0.5:nothing;\nvoid() w = { f(); };\n";
-    assert!(fte_messages(Engine::Kex, &[half]).is_empty());
+    for other in ["0.5", "0x1"] {
+        let source = format!("void() f = #{other}:nothing;\nvoid() w = {{ f(); }};\n");
+        assert!(
+            fte_messages(Engine::Kex, &[source.as_str()]).is_empty(),
+            "#{other}"
+        );
+    }
 }
 
 // spec ENGT-4.6: `#N:NAME` with N at least 1 is checked by its number alone
