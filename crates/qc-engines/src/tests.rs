@@ -872,3 +872,35 @@ fn a_dp_project_client_module_reports_an_fte_builtin() {
         ["hash_createtab is builtin #287, which DarkPlaces does not have (FTE_QC_HASHTABLES)"]
     );
 }
+
+// spec ENGT-4.5: (P2-R3 review) a zero is any literal whose digits are all zeros, so `#00`
+// and `#0.00` are keyed by the name after the `:`, and `#0.5`, whose digits are not, is no
+// key and gives no W0311 (ENGT-4.3)
+#[test]
+fn reviewer_only_all_zero_digits_key_by_name() {
+    let call = |number: &str| {
+        let source = format!("void() f = #{number}:nothing;\nvoid() w = {{ f(); }};\n");
+        fte_messages(Engine::Kex, &[source.as_str()])
+    };
+    for zero in ["0", "00", "0.0", "0.00", "00.0"] {
+        assert_eq!(
+            call(zero),
+            ["f is builtin #0:nothing, which KEX does not have"],
+            "{zero}"
+        );
+    }
+    for not_zero in ["0.5", "0.01", "00.10"] {
+        assert!(call(not_zero).is_empty(), "{not_zero}");
+    }
+}
+
+// spec ENGT-4.5: (P2-R3 review) the name of `#0:NAME` is the one after the `:`, however the
+// initialiser is spaced
+#[test]
+fn reviewer_the_name_follows_the_colon() {
+    let source = "void() f = # 0 : nothing ;\nvoid() w = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[source]),
+        ["f is builtin #0:nothing, which KEX does not have"]
+    );
+}
