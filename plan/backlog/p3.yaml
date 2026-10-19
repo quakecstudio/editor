@@ -388,6 +388,7 @@ issues:
   - P3-16
   - P3-17
   - P3-19
+  - P3-30
   deliverable:
   - docs/gates/p3.md with latency measurements per OS, integration test results, updated risk register
   acceptance:
@@ -416,6 +417,27 @@ issues:
   - The map view renders through an egui_wgpu paint callback in the app window, checked by a snapshot test
   verify:
   - Image comparison tests; benchmark
+- key: P3-30
+  title: Decide whether QuakeSpasm, Ironwail and vkQuake become porting upstreams
+  labels:
+  - repo
+  - area:preview
+  - type:decision
+  - needs:human
+  size: S
+  reqs:
+  - LIC-2
+  - ENG-2
+  depends:
+  - P0-12
+  deliverable:
+  - 'docs/adr/00NN-quakespasm-lineage-porting-upstreams.md, a draft ADR deciding whether rows for sezero/quakespasm, andrei-drexler/ironwail and Novum/vkQuake, each pinned by commit with the copyright line its files carry, are added to the upstream table in docs/porting.md, which would make their code portable rather than only describable'
+  - 'What the ADR starts from: docs/porting.md already says adding an upstream "(FTEQCC, ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after checking that its license allows use under GPL-3.0-or-later"; ADR-0004''s table records all three as GPL-2.0-or-later; ADR-0004 already makes QuakeSpasm the reference for the rerelease and modern-mod behaviour; and porting code is distinct from the fact-only sources of ADR-0016 (P4-29), which take only builtin facts'
+  - Settled before P3-22 specifies the engine, so the spec knows which upstreams it may port from
+  acceptance:
+  - The ADR is Accepted, and if it adds any upstream, docs/porting.md has its row with the pinned commit and copyright line
+  verify:
+  - ADR link
 - key: P3-22
   title: 'Spec: preview host engine'
   labels:
@@ -430,6 +452,7 @@ issues:
   depends:
   - P0-12
   - P5-01
+  - P3-30
   deliverable:
   - 'docs/spec/engine/: the server frame and physics (sv_phys.c), movement and collision (world.c, sv_move.c, sv_user.c), the engine side of the builtins (pr_cmds.c), client state, view and temporary entities (cl_*.c, view.c), lightstyles, particles and sound, and the rerelease''s engine behaviour (QuakeSpasm''s rerelease support: builtins, messages, localization), each citing id''s or QuakeSpasm''s file and function'
   - Named constants for every limit and tuning value (gravity, step height, friction, edict limits) with their citations
