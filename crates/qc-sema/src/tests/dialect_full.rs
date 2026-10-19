@@ -55,7 +55,9 @@ fn targets(index: &ModuleIndex, source: &str, name: &str) -> Vec<DefId> {
         let before = offset
             .checked_sub(1)
             .and_then(|i| source.as_bytes().get(i).copied());
-        let after = source.as_bytes().get(offset + name.len()).copied();
+        let after = offset
+            .checked_add(name.len())
+            .and_then(|i| source.as_bytes().get(i).copied());
         if !boundary(before) || !boundary(after) {
             continue;
         }
