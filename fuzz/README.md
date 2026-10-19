@@ -17,6 +17,7 @@ bar of `docs/conventions.md` and `docs/testing.md` requires.
 | `qc-progs` | The progs.dat reader and writer (PROGS-15, PROGS-22) | No panic; an accepted file writes back and rereads unchanged |
 | `qc-vm` | `qc-vm` against the id VM oracle, on well-formed random progs (FND-10, P1-15) | `qc-vm` never panics or runs away; with the oracle, the two traces agree (DIFF-9) |
 | `qc-project` | The `progs.src` project graph reader | No panic on any bytes |
+| `qc-sema` | The semantic model (`Db::module_index`, `Db::analyze_module`, both profiles, with and without autoprototyping) and `qc_engines::missing_builtins`, on one to three files (P2-54) | No panic; every definition, reference and diagnostic inside its file; editing a file and re-resolving equals resolving from scratch |
 | `qs-bsp` | The BSP, `.lit` and entity-lump readers and writer | No panic; face samples lie in the lighting lump; an edited entity lump rereads |
 | `qs-map` | The `.map` reader | No panic on any bytes |
 | `qs-mdl` | The MDL reader | No panic on any bytes |
