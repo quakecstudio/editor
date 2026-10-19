@@ -166,6 +166,10 @@ impl Parser<'_> {
         match tok.kind {
             K::Dot => true,
             K::Name if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) => true,
+            // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
+            K::Name if matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags") => {
+                true
+            }
             // A type name is followed by the declarator's name, a `*` or a parameter list;
             // a name alone is "not a type" (FTE-21.1).
             K::Name => {
@@ -312,16 +316,7 @@ impl Parser<'_> {
         }
         let text = tok.text.clone();
         if text == "enum" || text == "enumflags" {
-            let body = match self.nth(1).map(|t| t.kind) {
-                Some(K::LBrace | K::Colon) => true,
-                Some(K::Name) => {
-                    self.fte_word(1, "class")
-                        || self
-                            .nth(2)
-                            .is_some_and(|t| matches!(t.kind, K::LBrace | K::Colon))
-                }
-                _ => false,
-            };
+            let body = self.at_enum_body();
             self.start_node(K::SimpleType);
             if body {
                 // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`.
@@ -518,6 +513,24 @@ impl Parser<'_> {
             self.bump();
         }
         self.finish_node();
+    }
+
+    /// Whether an `enum` or `enumflags` with its body starts here (FTE-15, FTEF-8): the keyword
+    /// and `{`, `:`, `class`, or a name and `{` or `:`. `enum Name x` names the enum as a type.
+    pub(super) fn at_enum_body(&self) -> bool {
+        if !(self.at_word("enum") || self.at_word("enumflags")) {
+            return false;
+        }
+        match self.nth(1).map(|t| t.kind) {
+            Some(K::LBrace | K::Colon) => true,
+            Some(K::Name) => {
+                self.fte_word(1, "class")
+                    || self
+                        .nth(2)
+                        .is_some_and(|t| matches!(t.kind, K::LBrace | K::Colon))
+            }
+            _ => false,
+        }
     }
 
     /// Whether a class starts here, after any declaration qualifiers (FTEF-9.1).
@@ -787,16 +800,18 @@ impl Parser<'_> {
         }
     }
 
-    /// `[x, y, z]`: a vector of three expressions (FTEF-16.3).
+    /// `[x, y, z]`: a vector of one to three expressions, the rest 0 (FTEF-16.3).
     pub(super) fn vector_expr(&mut self) {
         self.start_node(K::VectorExpr);
         self.bump();
-        loop {
-            self.expression();
-            if !self.at(K::Comma) {
-                break;
+        for component in 0..3 {
+            if component > 0 {
+                if !self.at(K::Comma) {
+                    break;
+                }
+                self.bump();
             }
-            self.bump();
+            self.expression();
         }
         self.expect(K::RBracket, "]");
     }

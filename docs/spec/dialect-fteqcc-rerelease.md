@@ -549,13 +549,16 @@ list starts empty in each file (QC-8.3).
   The rerelease names a parameter `light` beside the spawn function `void() light`
   (`rerelease-mg3/mg3_weapons.qc`, `rerelease-mg3/lights.qc`). A second declaration of a name
   in the same function is still that definition again, or a type mismatch (QC-11.5).
-- **FTE-22.2** A name initialised twice with the same value is accepted: for a "dupe
+- **FTE-22.2** **Withdrawn** (P2-26, #82): it made a second initialiser that is not a literal
+  always "NAME redeclared", which the full dialect's corpus contradicts. Replaced by FTE-22.5
+  for literals and `dialect-fteqcc.md` FTEF-17.5 for the rest.
+- **FTE-22.5** A name initialised twice with the same value is accepted: for a "dupe
   initialisation" `QCC_PR_ParseInitializerType_Internal` compares the two word by word and
   reports `"incompatible redeclaration"` only when they differ. The rerelease initialises
   `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
-  This profile compares two literal initialisers by value and accepts them when equal;
-  a second initialiser that is not a literal, or that differs, is still "NAME redeclared"
-  (QCD-3.6), since constant expressions are not folded until P2-06.
+  This profile compares two literal initialisers by value and accepts them when equal, and a
+  differing literal is still "NAME redeclared" (QCD-3.6); other initialisers compare as
+  FTEF-17.5 says.
 - **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
   function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
   instead of one. The first pass, only the definitions are read. The second pass actually

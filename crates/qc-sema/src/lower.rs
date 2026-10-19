@@ -31,7 +31,7 @@ pub struct RawDecl {
     /// Whether the declaration has an initialiser (QC-11.5).
     pub initialized: bool,
     /// The value of an initialiser that is a single literal, which FTEQCC compares when a
-    /// name is initialised twice (FTE-22.2); `None` for any other initialiser or none.
+    /// name is initialised twice (FTE-22.5); `None` for any other initialiser or none.
     pub literal: Option<LiteralValue>,
     /// For a function definition, the lowered body; otherwise `None`.
     pub body: Option<RawBody>,
@@ -129,7 +129,7 @@ pub enum MemberKind {
     Method,
 }
 
-/// The value of a literal initialiser (FTE-22.2). A float is kept as its bits, so two
+/// The value of a literal initialiser (FTE-22.5). A float is kept as its bits, so two
 /// initialisers are the same value exactly when FTEQCC's word-by-word comparison finds them
 /// equal.
 #[derive(Clone, Debug, PartialEq, Eq)]

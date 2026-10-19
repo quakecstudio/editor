@@ -11,7 +11,7 @@
 //! (scopes and lookup) and the state-header name rule of QC-13.6; reports QCD-3.5, QCD-3.6,
 //! QCD-3.11 and QCD-7.3. Under an FTEQCC profile it follows FTE-22 instead where FTEQCC
 //! differs: locals shadow globals (FTE-22.1), a constant may be initialised twice with the
-//! same literal (FTE-22.2), and with autoprototyping every top-level name is visible to every
+//! same literal (FTE-22.5), and with autoprototyping every top-level name is visible to every
 //! function body (FTE-22.3). The full dialect's classes resolve by FTEF-17: a class's members
 //! are found through the class and its parents, inside a member function's body before the
 //! globals, and after a `.` through the type of what the access is made on.
@@ -182,7 +182,7 @@ struct Resolver<'a> {
     fteqcc: bool,
     /// The first global definition of each name (QC-12.2), so a global lookup is direct.
     globals: HashMap<String, DefId>,
-    /// The literal each initialised global was given, for FTE-22.2.
+    /// The literal each initialised global was given, for FTE-22.5.
     literals: HashMap<DefId, LiteralValue>,
     /// The field names of every struct and accessor the module defines (FTE-14.1, FTEF-6,
     /// FTEF-10).
@@ -248,7 +248,7 @@ fn is_intrinsic(name: &str) -> bool {
     )
 }
 
-/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.2): `None`
+/// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.5): `None`
 /// when there is none, and otherwise its value when it is a single literal.
 type Init<'a> = Option<Option<&'a LiteralValue>>;
 
@@ -292,7 +292,7 @@ impl<'a> Resolver<'a> {
     ///
     /// A name already in scope with the same type refers to the same definition; declaring
     /// it with a different type is QCD-3.5; initialising it a second time is QCD-3.6
-    /// (QC-11.5), unless FTE-22.2 accepts it. Returns the [`DefId`] the name resolves to.
+    /// (QC-11.5), unless FTE-22.5 accepts it. Returns the [`DefId`] the name resolves to.
     fn declare_global(
         &mut self,
         name: &str,
@@ -362,7 +362,7 @@ impl<'a> Resolver<'a> {
             return;
         };
         if def.initialized {
-            // FTE-22.2: FTEQCC compares a second initialiser with the first and accepts it
+            // FTE-22.5: FTEQCC compares a second initialiser with the first and accepts it
             // when the two are the same value; FTEF-17.8: it does not compare them when the
             // first is `noref`.
             let same = self.fteqcc

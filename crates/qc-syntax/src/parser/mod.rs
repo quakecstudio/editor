@@ -481,7 +481,7 @@ impl<'a> Parser<'a> {
                 self.bump();
             } else if self.fteqcc() && self.at_word("typedef") {
                 self.typedef_decl();
-            } else if self.fteqcc() && (self.at_word("enum") || self.at_word("enumflags")) {
+            } else if self.fteqcc() && self.at_enum_body() {
                 self.enum_decl();
             } else if self.fteqcc() && self.at_class() {
                 // FTEF-9.1: a class, or its forward declaration, after any qualifiers.
@@ -493,9 +493,9 @@ impl<'a> Parser<'a> {
                 && (self.at_word("struct") || self.at_word("union"))
                 && (self.nth(1).is_some_and(|t| t.kind == K::LBrace)
                     || (self.nth(1).is_some_and(|t| t.kind == K::Name)
-                        && self
-                            .nth(2)
-                            .is_some_and(|t| matches!(t.kind, K::LBrace | K::Semicolon))))
+                        && self.nth(2).is_some_and(|t| {
+                            matches!(t.kind, K::LBrace | K::Semicolon | K::Colon)
+                        })))
             {
                 // FTEF-6.1: a named struct or union, or its forward declaration.
                 self.struct_decl();
@@ -624,6 +624,11 @@ impl<'a> Parser<'a> {
             // FTEF-6.3: `struct Child : Parent`.
             self.bump();
             self.name();
+        }
+        if self.fteqcc() && !self.at(K::LBrace) {
+            // FTEF-6.1: `struct Name;` declares the struct without its fields.
+            self.finish_node();
+            return;
         }
         if !self.expect(K::LBrace, "{") {
             self.finish_node();
