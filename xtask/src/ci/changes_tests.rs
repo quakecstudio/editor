@@ -100,7 +100,12 @@ fn spec_statements_and_vectors_are_full() {
 
 #[test]
 fn rust_files_are_full_even_under_a_light_directory() {
-    for path in ["docs/example.rs", "plan/x.rs", ".claude/hooks/x.rs", "build.rs"] {
+    for path in [
+        "docs/example.rs",
+        "plan/x.rs",
+        ".claude/hooks/x.rs",
+        "build.rs",
+    ] {
         assert_eq!(classify(&[path]), "full\n", "{path}");
     }
 }
@@ -136,15 +141,26 @@ fn code_workflows_specs_and_configuration_are_full() {
 
 #[test]
 fn a_path_no_rule_knows_is_full() {
-    for path in ["newdir/file.md", "notes.txt", "Dockerfile", "\"docs/\\303\\251.md\""] {
+    for path in [
+        "newdir/file.md",
+        "notes.txt",
+        "Dockerfile",
+        "\"docs/\\303\\251.md\"",
+    ] {
         assert_eq!(classify(&[path]), "full\n", "{path}");
     }
 }
 
 #[test]
 fn one_full_path_makes_the_whole_change_full() {
-    assert_eq!(classify(&["docs/ci.md", "crates/qc-vm/src/lib.rs"]), "full\n");
-    assert_eq!(classify(&["crates/qc-vm/src/lib.rs", "docs/ci.md"]), "full\n");
+    assert_eq!(
+        classify(&["docs/ci.md", "crates/qc-vm/src/lib.rs"]),
+        "full\n"
+    );
+    assert_eq!(
+        classify(&["crates/qc-vm/src/lib.rs", "docs/ci.md"]),
+        "full\n"
+    );
 }
 
 #[test]
@@ -156,7 +172,10 @@ fn an_empty_change_is_full() {
 #[test]
 fn a_last_line_without_a_newline_still_counts() {
     assert_eq!(run(&root(), &["classify"], "docs/ci.md"), "light\n");
-    assert_eq!(run(&root(), &["classify"], "docs/ci.md\nCargo.lock"), "full\n");
+    assert_eq!(
+        run(&root(), &["classify"], "docs/ci.md\nCargo.lock"),
+        "full\n"
+    );
 }
 
 #[test]
