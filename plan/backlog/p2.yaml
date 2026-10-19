@@ -336,6 +336,27 @@ issues:
   - Parses the whole corpus with no ERROR nodes in vanilla files
   verify:
   - tree-sitter test in that repo's CI
+- key: P2-28
+  title: Extend the tree-sitter grammar to the FTEQCC dialect
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-8
+  - LANG-5
+  depends:
+  - P2-15
+  - P2-25
+  deliverable:
+  - 'quakecstudio/tree-sitter-quakec: the constructs in docs/spec/dialect-fteqcc-rerelease.md and docs/spec/dialect-fteqcc.md, with corpus tests citing their statements and the highlights and locals queries updated'
+  - The repo's corpus check extended to fetch the rerelease and the FTEQCC corpus mods by checksum, as it fetches id 1.01
+  acceptance:
+  - The six rerelease codebases parse with no ERROR or MISSING nodes, and id 1.01 still does
+  - Every .qc and .qh file of Nuclide, FreeCS, Copper and Arcane Dimensions parses with no ERROR or MISSING nodes, or the file and the construct are listed in the repo README as not covered
+  verify:
+  - tree-sitter test and the corpus check in that repo's CI
 - key: P2-16
   title: Package editor integrations for VS Code, Zed and Neovim
   labels:
@@ -559,6 +580,7 @@ issues:
   - P2-25
   - P2-26
   - P2-27
+  - P2-28
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
