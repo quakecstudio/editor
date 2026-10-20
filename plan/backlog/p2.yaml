@@ -1424,7 +1424,7 @@ issues:
   - LANG-5
   - TEST-1
   depends:
-  - P2-78
+  - P2-79
   deliverable:
   - 'crates/qc-lexer (src/fte_string.rs), crates/qc-preproc (src/fte_macro.rs, src/lib.rs `builtin`) and docs/spec/dialect-fteqcc.md FTEF-14.21: the L2 Readiness run 39455878689 on main after #486 failed `cargo xtask ratchet` on qc-lexer lines (935 of 937, needs 100%), qc-preproc branches (520 of 574, needs 91%) and two qc-preproc mutants neither killed nor listed as equivalent, the deleted `"` and `\` match arms of `quote` (src/lib.rs). The two uncovered lexer lines and the uncovered preprocessor branches that no input reaches are removed; the reachable ones get tests. The surviving mutants showed that `__FILE__` escaped its file name where `QCC_PR_CheckBuiltinCompConst` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `"%s"` unescaped and cuts the name at its first `:`; the built-in constants are written as FTEQCC writes them and the escaping function is gone'
   acceptance:
