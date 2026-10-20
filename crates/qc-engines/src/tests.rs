@@ -1282,3 +1282,25 @@ fn reviewer_a_parameter_that_shadows_a_builtin_is_no_builtin() {
     let spans: Vec<usize> = warnings.iter().map(|d| d.diagnostic.span.start).collect();
     assert_eq!(spans, [source.rfind("bprint(").unwrap()]);
 }
+
+// spec ENGT-4.12: a vanilla `#123456789` is W0311 naming builtin 123456792, the number id's
+// `qcc` binds (the pinned `qcc` writes `first_statement` -123456792), not the literal's digits
+#[test]
+fn reviewer_vanilla_names_the_number_qcc_binds() {
+    let source = "void() f = #123456789;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        messages(Engine::Vanilla, &[source]),
+        ["f is builtin #123456792, which Vanilla does not have"]
+    );
+}
+
+// spec ENGT-4.13: under FTEQCC `:N` is keyed as `#N` is, so `:123456789` is builtin 123456792,
+// the number the pinned FTEQCC binds for it
+#[test]
+fn reviewer_fteqcc_keys_a_colon_number_as_a_hash_number() {
+    let source = "void() f = :123456789;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Vanilla, &[source]),
+        ["f is builtin #123456792, which Vanilla does not have"]
+    );
+}

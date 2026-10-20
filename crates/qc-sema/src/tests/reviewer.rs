@@ -186,3 +186,30 @@ fn reviewer_many_locals_each_resolve_to_their_own() {
         }
     }
 }
+
+// spec FTEF-17.5: under FTEQCC a builtin initialised again with the same number, written as a
+// float or a fraction of zeros, or with the same `#0:NAME`, is accepted, and with another
+// number is E0206, as the pinned FTEQCC compiles the first two and reports "incompatible
+// redeclaration" for the third
+#[test]
+fn reviewer_builtins_initialised_again_compare_by_number() {
+    for (source, redeclared) in [
+        ("void() f = #16;\nvoid() f = #16.0;\n", false),
+        ("void() f = #0:ex_a;\nvoid() f = #0:ex_a;\n", false),
+        ("void() f = #5;\nvoid() f = #6;\n", true),
+    ] {
+        let index = fte_index_of(source);
+        let codes: Vec<_> = index
+            .diagnostics
+            .iter()
+            .filter(|d| d.diagnostic.code.is_error())
+            .map(|d| d.diagnostic.code)
+            .collect();
+        let expected = if redeclared {
+            vec![qc_diag::Code::E0206]
+        } else {
+            vec![]
+        };
+        assert_eq!(codes, expected, "{source}");
+    }
+}
