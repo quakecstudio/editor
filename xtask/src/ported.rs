@@ -273,13 +273,23 @@ mod tests {
     fn upstreams_come_from_the_porting_table() {
         let upstreams = id_upstreams();
         let repos: Vec<&str> = upstreams.iter().map(|u| u.repo.as_str()).collect();
-        assert_eq!(repos, ["id-Software/Quake", "id-Software/Quake-Tools"]);
-        for upstream in &upstreams {
-            assert_eq!(
-                upstream.copyright,
-                "Copyright (C) 1996-1997 Id Software, Inc."
-            );
-        }
+        assert_eq!(
+            repos,
+            [
+                "id-Software/Quake",
+                "id-Software/Quake-Tools",
+                "fte-team/fteqw"
+            ]
+        );
+        let copyrights: Vec<&str> = upstreams.iter().map(|u| u.copyright.as_str()).collect();
+        assert_eq!(
+            copyrights,
+            [
+                "Copyright (C) 1996-1997 Id Software, Inc.",
+                "Copyright (C) 1996-1997 Id Software, Inc.",
+                "Copyright (c) 2004-2025 FTE's team and its contributors",
+            ]
+        );
         assert!(super::upstreams("# no table\n").is_err());
         let elsewhere = "## Other\n| `a/b` | `Copyright (C) x` |\n## Upstreams\n\
                          `c/d` | `Copyright (C) y` |\n| `e/f` | `Copyright (C) z` |\n";
