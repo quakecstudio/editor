@@ -954,6 +954,62 @@ issues:
   - Each refactoring issue's acceptance criteria require that behaviour is unchanged and every ratchet (spec citations, coverage, mutation score, fuzz, differential) is not lowered
   verify:
   - python3 plan/check.py --write-coverage; review of docs/audits/conv-17-l0-l3.md against the filed issues
+- key: P2-65
+  title: Expand a long chain of macros without exhausting the preprocessor's stack
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  - QA-2
+  depends:
+  - P2-39
+  deliverable:
+  - 'crates/qc-preproc: the P2-R2 re-review (docs/readiness/p2-r2.md) found, at commit 368abee, that a chain of object-like macros, each defined as the name of the one before (`#define M0 1`, `#define M1 M0`, ... and a use of the last), aborts the process with a stack overflow in `Preprocessor::preprocess_file` under both dialects: a 10000-long chain overflows a debug test thread (2 MiB stack), a release build survives 30000 and aborts at 100000, and the same 10001-line file through `qc_sema::Db::analyze_module` aborts the semantic model. A 3000-long chain expands. The hide set (`Hide = Option<Rc<HideNode>>` in src/lib.rs) grows one linked node per nested expansion and is the likely recursion, but the cause is not confirmed. QC-27.15 and PRJ-5.10 state the project rule that no input can exhaust a stack; the preprocessor should follow it, with the chain expanded to its end or a stated limit (a new statement with its diagnostic, as FTEF-14.12 states the `#if` reader''s)'
+  acceptance:
+  - 'A qc-preproc test preprocesses a 100000-long chain under each dialect on a test thread and gets the chain''s value or the stated limit''s diagnostic, citing the statement it pins; a qs-tests case puts the same file through `Db::analyze_module` without exhausting the stack'
+  verify:
+  - cargo test -p qc-preproc -p qs-tests
+- key: P2-66
+  title: Parse FTEQCC's string and colon builtin initialisers
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-39
+  deliverable:
+  - 'crates/qc-syntax and docs/spec/dialect-fteqcc-rerelease.md FTE-17.4: FTEQCC''s `QCC_PR_ParseInitializerType_Internal` (qcc_pr_comp.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reads a builtin initialiser after `if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))`, and besides a number takes a string, `else if (pr_token_type == tt_immediate && pr_immediate_type == type_string) QC_strlcpy(fname, pr_immediate_string, sizeof(fname));`. The pinned FTEQCC compiles `void(string s, ...) bp = #"ex_bprint";` and `void(string s, ...) br = :ex_bprint3;` with 0 warnings (run locally in the P2-R2 re-review), while the FTEQCC profile at commit 368abee reports E0209 "Bad builtin immediate" for the first and E0201 "not a name" for the second. FTE-17.4 says only "A builtin initialiser is `#number` or `#number:name`". A new statement replaces or extends it with both forms, and the parser accepts them under the FTEQCC profile; `#name` is no such form, since FTEQCC''s lexer reads `#ex_bprint2` as a directive ("Explicit precompiler usage when not defined")'
+  acceptance:
+  - '`= #"ex_bprint";` and `= :ex_bprint;` parse with no error under the FTEQCC profile and stay errors under the vanilla profile, with the builtin''s name readable from the AST, each with a test citing the new statement'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-67
+  title: Key builtins by the float value the compilers read and by FTEQCC's string names
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - PRIN-8
+  depends:
+  - P2-56
+  - P2-66
+  deliverable:
+  - 'crates/qc-engines/src/check.rs `fteqcc_value`: ENGT-4.11 keys a builtin by "the value FTEQCC reads from the literal", and FTEQCC takes `binum = (int)pr_immediate._float;` (qcc_pr_comp.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e). `fteqcc_value` instead parses the shortest decimal Rust prints for the `f32` (`value.to_string().parse()`), which differs from the integer above 2^24: the P2-R3 re-review measured, at commit 368abee, `#123456789` keyed 123456790 where `(int)` of the `f32` is 123456792, so W0311 names a number no compiler binds (and `#2147483647`, whose `f32` is 2^31, where C''s `(int)` is undefined, is keyed 2147483600). The key should be the `f32` converted as a whole number, and a value outside `int` a stated choice'
+  - 'docs/spec/engine-targets.md ENGT-4.10: under the vanilla dialect a builtin number is read as a decimal literal, so `#16777217` is keyed 16777217, but id''s `qcc` binds `f->builtin = (int)pr_immediate._float;` (qcc/pr_comp.c, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73), the `float` value, 16777216. State which the vanilla dialect follows, quoting the source, and test it'
+  - 'crates/qc-engines: once P2-66 parses `#"NAME"` and `:NAME`, a builtin declared so is keyed by `NAME` as `#0:NAME` is (ENGT-4.5), since FTEQCC sets `fname` from the string and leaves `binum` 0'
+  acceptance:
+  - 'Under the FTEQCC profile `#123456789` is keyed 123456792, the `(int)` of its `f32` value, and a number whose `f32` is outside `int` follows a stated rule; the vanilla rule for numbers above 2^24 is a spec statement with its quote and a test; `#"ex_bprint"` and `:ex_bprint` are keyed by name and give the W0311 of ENGT-4.5 for an engine without it; each test cites its statement'
+  verify:
+  - cargo test -p qc-engines
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1147,6 +1203,9 @@ issues:
   - P2-59
   - P2-60
   - P2-61
+  - P2-65
+  - P2-66
+  - P2-67
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
