@@ -206,6 +206,15 @@ frame <index> {
   the mesh's joint at the same index (`<name>: bone was renamed`,
   `<name>: bone has wrong parent`).
 - **MD5-3.10** Each frame of the animation is one frame of the model, shown for 0.1 seconds.
+- **MD5-3.11** `numAnimatedComponents` must be at most the length of the file in bytes, up to
+  its first NUL (MD5-1.1), or reading fails with the error
+  `<name> has too many animated components`. A frame never given still has
+  `numAnimatedComponents` components (MD5-3.6), so without a bound a file of a few bytes with
+  no `frame` could ask for 2^64 of them. QSS sets no bound of its own: it allocates
+  `raw = Z_Malloc(sizeof(*raw)*(rawcount+6));` from the count as read, which fails, or wraps
+  for a count near 2^64, on a count the zone cannot hold; this spec fixes the answer as an
+  error. The bound refuses no file that gives a frame, since each of a frame's components is
+  at least one byte and a separator.
 
 ### Constants
 

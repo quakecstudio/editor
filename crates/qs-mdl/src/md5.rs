@@ -68,6 +68,8 @@ pub enum Md5Error {
     UnsupportedFlags,
     /// A hierarchy entry's components run past `numAnimatedComponents` (MD5-3.4).
     BadOffset,
+    /// `numAnimatedComponents` is more than the file's length in bytes (MD5-3.11).
+    TooManyComponents,
     /// A frame index is out of range (MD5-3.6).
     InvalidPoseIndex,
     /// The animation's joint count differs from the mesh's (MD5-3.9).
@@ -94,6 +96,7 @@ impl fmt::Display for Md5Error {
             Self::NoPoses => f.write_str("has no poses"),
             Self::UnsupportedFlags => f.write_str("bone has unsupported flags"),
             Self::BadOffset => f.write_str("bone has bad offset"),
+            Self::TooManyComponents => f.write_str("has too many animated components"),
             Self::InvalidPoseIndex => f.write_str("invalid pose index"),
             Self::IncorrectBoneCount => f.write_str("has incorrect bone count"),
             Self::BoneRenamed => f.write_str("bone was renamed"),
@@ -117,6 +120,14 @@ fn is_white(byte: u8) -> bool {
     byte <= b' ' || byte >= 0x80
 }
 
+/// The length of the text a file holds: its bytes up to its first NUL (MD5-1.1).
+fn text_len(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len())
+}
+
 /// The bytes that are tokens by themselves (MD5-1.5).
 fn is_single(byte: u8) -> bool {
     matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
@@ -126,12 +137,8 @@ impl<'a> Tokens<'a> {
     /// Tokens of `bytes` up to its first NUL (MD5-1.1).
     #[must_use]
     pub fn new(bytes: &'a [u8]) -> Self {
-        let len = bytes
-            .iter()
-            .position(|&byte| byte == 0)
-            .unwrap_or(bytes.len());
         Self {
-            bytes: bytes.get(..len).unwrap_or_default(),
+            bytes: bytes.get(..text_len(bytes)).unwrap_or_default(),
             pos: 0,
         }
     }
@@ -615,7 +622,7 @@ impl Md5Anim {
     /// Reads an animation file held in memory, as QSS's `MD5Anim_Begin` and `MD5Anim_Load`
     /// do, but on its own: [`Md5Anim::check_mesh`] makes the checks that need the mesh.
     ///
-    /// Implements MD5-1 and MD5-3.2 to MD5-3.8.
+    /// Implements MD5-1, MD5-3.2 to MD5-3.8 and MD5-3.11.
     ///
     /// # Errors
     ///
@@ -636,6 +643,12 @@ impl Md5Anim {
         }
         parser.expect("numAnimatedComponents")?;
         let num_animated_components = parser.uint()?;
+        // MD5-3.11: no more components than the text has bytes, so a frame never given
+        // (MD5-3.6) is bounded by the input.
+        let limit = u64::try_from(text_len(bytes)).unwrap_or(u64::MAX);
+        if num_animated_components > limit {
+            return Err(Md5Error::TooManyComponents);
+        }
         parser.expect("hierarchy")?;
         parser.expect("{")?;
         let mut hierarchy = Vec::new();
@@ -688,7 +701,8 @@ impl Md5Anim {
     }
 
     /// The components of frame `index`, all zero if never given; `None` from
-    /// `num_frames` on (MD5-3.6).
+    /// `num_frames` on (MD5-3.6). Either way it holds `num_animated_components` values, which
+    /// [`Md5Anim::read`] bounded by the file's length (MD5-3.11).
     #[must_use]
     pub fn frame(&self, index: u64) -> Option<Vec<f32>> {
         if index >= self.num_frames {

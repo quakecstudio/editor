@@ -33,8 +33,9 @@ pub enum DiagnosticKind {
     EricwEscape,
     /// A key of 31 bytes or more, or a value of 1023 or more, which qbsp rejects (MAP-2.4).
     KeyTooLong,
-    /// A key that appears more than once: qbsp and the game see the first, ericw-tools the
-    /// last (MAP-2.5, MAP-2.6).
+    /// A key that appears more than once: qbsp looks it up by its last occurrence (MAP-2.5)
+    /// but writes the pairs in reverse, so the game sees the first occurrence of a map qbsp
+    /// compiled (MAP-2.6); ericw-tools keeps the last value (MAP-2.5).
     DuplicateKey {
         /// The key.
         key: Vec<u8>,
@@ -79,7 +80,7 @@ impl fmt::Display for DiagnosticKind {
             Self::EricwEscape => "a quoted token ending in \\, which ericw-tools reads on",
             Self::KeyTooLong => "a key or value too long for id's qbsp",
             Self::DuplicateKey { .. } => {
-                "a duplicated key: qbsp and the game use the first, ericw-tools the last"
+                "a duplicated key: qbsp reads the last, the game the first, ericw-tools the last"
             }
             Self::TooManyEntities => "more than 1024 entities",
             Self::KeyWhitespace => "a key with whitespace at an end, which ericw-tools removes",

@@ -45,6 +45,8 @@ lump is reached:
 - Arbitrary bytes never panic the reader, its accessors, the `.lit` reader or the entity
   writer (BSP-1 to BSP-19).
 - Every face with light samples has them inside the lighting lump (BSP-10.2).
+- Every visibility row is as wide as model 0's `visleafs` makes it, and no wider than
+  `BSP_MAX_VIS_ROW` (BSP-6.7).
 - A BSP written with new entities reads back with them (BSP-19.3).
 
 ## Differential result

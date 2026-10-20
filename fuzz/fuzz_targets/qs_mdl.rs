@@ -4,7 +4,9 @@
 //! SPR-2) and the MD5 mesh and animation readers (MD5-1 to MD5-3), each as given, after or
 //! over a valid start, and for MD5 as tokens the bytes pick from the formats' keywords, so the
 //! fuzzer reaches past the headers. Fails on a panic, on a frame whose pixels do not match its
-//! size, and on an alias model whose triangles name vertices it lacks.
+//! size, on an alias model whose triangles name vertices it lacks, and on an MD5 animation
+//! frame that does not hold `numAnimatedComponents` values or a count past the file's length
+//! (MD5-3.6, MD5-3.11).
 
 #![no_main]
 
@@ -74,7 +76,7 @@ const ANIM_START: &[u8] =
     b"MD5Version 10 numFrames 2 numJoints 1 frameRate 24 numAnimatedComponents 6 ";
 
 /// Tokens of both files, which each input byte picks from.
-const VOCABULARY: [&str; 24] = [
+const VOCABULARY: [&str; 26] = [
     "mesh",
     "{",
     "}",
@@ -99,6 +101,8 @@ const VOCABULARY: [&str; 24] = [
     "0.5",
     "\"r\"",
     "//",
+    "numAnimatedComponents",
+    "18446744073709551615",
 ];
 
 /// Text of the tokens `data` picks, one byte each.
@@ -144,12 +148,21 @@ fn md5(mesh: &[u8], anim: &[u8]) {
             assert!(surface.tri(surface.num_tris).is_none());
         }
     }
+    let len = anim.iter().position(|&byte| byte == 0).unwrap_or(anim.len());
     if let Ok(anim) = Md5Anim::read(anim) {
+        // MD5-3.11: the count, and so every frame, is bounded by the text's length.
+        assert!(anim.num_animated_components <= u64::try_from(len).unwrap());
         for frame in 0..anim.num_frames.min(4) {
+            let components = anim.frame(frame).unwrap();
+            assert_eq!(
+                u64::try_from(components.len()).unwrap(),
+                anim.num_animated_components
+            );
             for joint in 0..anim.hierarchy.len() {
                 assert!(anim.pose(frame, joint).is_some());
             }
         }
+        assert!(anim.frame(anim.num_frames).is_none());
         if let Ok(mesh) = &mesh {
             let _fits = anim.check_mesh(mesh);
         }

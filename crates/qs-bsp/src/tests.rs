@@ -1265,6 +1265,32 @@ fn leaf_contents_0_or_more() {
     );
 }
 
+// spec BSP-6.7: a small file whose model 0 has visleafs i32::MAX gives leaf 0 an all-visible row
+// of BSP_MAX_VIS_ROW bytes and no wider; a negative visleafs gives an empty row.
+#[test]
+fn a_huge_visleafs_row_is_bounded() {
+    let mut spec = BspSpec::default();
+    spec.models[0].visleafs = i32::MAX;
+    assert!(spec.build().len() < 4096, "a small file");
+    let bsp = read(&spec).unwrap();
+    assert_eq!(bsp.vis_row_size(), BSP_MAX_VIS_ROW);
+    let row = bsp.leaf_pvs(0).unwrap();
+    assert_eq!(row.len(), BSP_MAX_VIS_ROW);
+    assert!(row.iter().all(|&byte| byte == 0xFF));
+    drop(row);
+    for visleafs in [i32::MAX - 7, i32::MAX - 6] {
+        spec.models[0].visleafs = visleafs;
+        let bsp = read(&spec).unwrap();
+        assert_eq!(bsp.vis_row_size(), BSP_MAX_VIS_ROW, "{visleafs}");
+    }
+    for visleafs in [-1, i32::MIN] {
+        spec.models[0].visleafs = visleafs;
+        let bsp = read(&spec).unwrap();
+        assert_eq!(bsp.vis_row_size(), 0);
+        assert_eq!(bsp.leaf_pvs(0).unwrap(), Vec::<u8>::new());
+    }
+}
+
 // spec BSP-6.1, BSP-6.2, BSP-6.3, BSP-6.4, BSP-15.2: the vis variant's rows.
 #[test]
 fn vis() {

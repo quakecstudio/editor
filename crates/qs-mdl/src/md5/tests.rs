@@ -727,6 +727,49 @@ fn anim_must_fit_mesh() {
     assert_eq!(Md5Error::WrongParent.to_string(), "bone has wrong parent");
 }
 
+// spec MD5-3.11: a few bytes with numJoints 0, no frames and numAnimatedComponents near
+// u64::MAX are refused, so frame 0, never given, cannot ask for that many zeros.
+#[test]
+fn a_huge_component_count_is_refused() {
+    let text = format!(
+        "MD5Version 10 numFrames 1 numJoints 0 frameRate 24 numAnimatedComponents {} \
+         hierarchy {{ }} bounds {{ }} baseframe {{ }}",
+        u64::MAX - 1
+    );
+    assert_eq!(
+        Md5Anim::read(text.as_bytes()),
+        Err(Md5Error::TooManyComponents)
+    );
+    assert_eq!(
+        Md5Error::TooManyComponents.to_string(),
+        "has too many animated components"
+    );
+}
+
+// spec MD5-3.11: the count may be the text's length in bytes, and frame 0 then holds that many
+// zeros, but not one more; a NUL ends the text that counts (MD5-1.1).
+#[test]
+fn the_component_limit_is_the_texts_length() {
+    let head = "MD5Version 10 numFrames 1 numJoints 0 frameRate 24 numAnimatedComponents ";
+    let tail = " hierarchy { } bounds { } baseframe { }";
+    // The count's own digits are part of the text: 3 digits make it head + 3 + tail bytes.
+    let len = head.len() + 3 + tail.len();
+    let at_limit = format!("{head}{len}{tail}");
+    assert_eq!(at_limit.len(), len);
+    let read = Md5Anim::read(at_limit.as_bytes()).unwrap();
+    assert_eq!(read.frame(0).unwrap(), vec![0.0; len]);
+    assert_eq!(read.frame(1), None);
+    let over = format!("{head}{}{tail}", len + 1);
+    assert_eq!(over.len(), len);
+    assert_eq!(
+        Md5Anim::read(over.as_bytes()),
+        Err(Md5Error::TooManyComponents)
+    );
+    let mut padded = over.into_bytes();
+    padded.extend_from_slice(&[0; 8]);
+    assert_eq!(Md5Anim::read(&padded), Err(Md5Error::TooManyComponents));
+}
+
 // spec MD5-3.10: each frame is shown for 0.1 seconds.
 #[test]
 fn frame_interval() {
@@ -740,6 +783,42 @@ proptest! {
         let _count = Tokens::new(&bytes).count();
         let _mesh = Md5Mesh::read(&bytes);
         let _anim = Md5Anim::read(&bytes);
+    }
+
+    // spec MD5-3.6, MD5-3.11: whatever count an animation states, every frame it accepts holds
+    // that many components, at most the file's length, and frames end at numFrames.
+    #[test]
+    fn frames_hold_a_bounded_count(
+        count in prop_oneof![0_u64..64, any::<u64>()],
+        frames in 1_u64..4,
+        given in proptest::collection::vec(-1.0e6_f32..1.0e6, 0..8),
+    ) {
+        let mut text = format!(
+            "MD5Version 10 numFrames {frames} numJoints 0 frameRate 24 \
+             numAnimatedComponents {count} hierarchy {{ }} bounds {{ }} baseframe {{ }}"
+        );
+        if !given.is_empty() {
+            text.push_str(" frame 0 {");
+            for value in &given {
+                text.push_str(&format!(" {value}"));
+            }
+            text.push_str(" }");
+        }
+        let len = u64::try_from(text.len()).unwrap();
+        if let Ok(read) = Md5Anim::read(text.as_bytes()) {
+            prop_assert!(read.num_animated_components <= len);
+            for index in 0..read.num_frames {
+                let components = read.frame(index).unwrap();
+                prop_assert_eq!(
+                    u64::try_from(components.len()).unwrap(),
+                    read.num_animated_components
+                );
+            }
+            prop_assert!(read.frame(read.num_frames).is_none());
+        } else {
+            let listed = u64::try_from(given.len()).unwrap();
+            prop_assert!(count > len || (listed > 0 && count != listed));
+        }
     }
 
     // spec MD5-1.2, MD5-1.3, MD5-1.5: without quotes, every token is non-empty and holds no
