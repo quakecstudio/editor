@@ -697,7 +697,7 @@ fn check_event(
 // spec VM-16.1, VM-16.2, VM-16.3, VM-16.4, VM-16.5, VM-16.6: returning.
 // spec VM-17.1, VM-17.2, VM-17.3, VM-17.4: STATE.
 // spec VM-18.1, VM-18.2, VM-18.3, VM-18.4: nested runs.
-// spec VM-19.1, VM-19.2, VM-19.3, VM-19.4, VM-19.5: errors.
+// spec VM-19.1, VM-19.2, VM-19.6, VM-19.7, VM-19.5: errors.
 // spec LIMIT-2.1, LIMIT-2.2, LIMIT-2.3: QC call depth.
 // spec LIMIT-3.1: the local stack.
 // spec LIMIT-4.1, LIMIT-4.2: the runaway loop guard.

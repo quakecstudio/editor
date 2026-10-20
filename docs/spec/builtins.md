@@ -90,7 +90,7 @@ engine never looks at the function's name or parameter list.
 - **BUILTIN-2.5** A string argument is the text at the string value (PROGS-17.2, EDICT-13.1),
   read up to its NUL. A value that is neither inside the string table nor an engine-made
   string reads other memory, which is undefined in C; this spec fixes the answer: the builtin
-  fails with a runtime error (VM-19.4).
+  fails with a runtime error (VM-19.7).
 - **BUILTIN-2.6** A builtin that keeps a string argument (`setmodel`, the precache builtins,
   `lightstyle`) keeps the reference, not a copy of the text, so it sees later changes to that
   text, such as a new `ftos` result (BUILTIN-7.4).
@@ -99,7 +99,7 @@ engine never looks at the function's name or parameter list.
   `enemy`), is not checked by id's code: `PROG_TO_EDICT` adds it to the start of the edict
   array. A value that names no edict (EDICT-1.9) makes the builtin read or write memory that is
   not an edict, which is undefined in C. This spec fixes the answer: the builtin fails with a
-  runtime error (VM-19.4) where it reads the value (BUILTIN-2.9). A value that names an edict
+  runtime error (VM-19.7) where it reads the value (BUILTIN-2.9). A value that names an edict
   passes, even one at or above `num_edicts` or a free one.
 - **BUILTIN-2.8** A string value is valid when it is from 0 to `numstrings - 1`, an offset into
   the string table (including one into the middle of a string, PROGS-11.3), or exactly the
@@ -133,8 +133,8 @@ engine never looks at the function's name or parameter list.
 
 ### Behaviour
 
-- **BUILTIN-3.1** A **runtime error** is `PR_RunError` with the message given: VM-19.1 to
-  VM-19.3 say what it does.
+- **BUILTIN-3.1** A **runtime error** is `PR_RunError` with the message given: VM-19.1,
+  VM-19.2 and VM-19.6 say what they do.
 - **BUILTIN-3.2** A **host error** is a call to `Host_Error ("Program error")` without
   `PR_RunError`: the aborted runs never continue (VM-19.2) and the server shuts down, but no
   statement or call stack is printed and the call depth is not reset to 0, unlike VM-19.1.
@@ -535,7 +535,7 @@ statements give each expression as id writes it, because that decides the last b
 - **BUILTIN-12.6** `lightstyle(style, value)` converts `style` to an integer and stores `value`
   (the reference, BUILTIN-2.6) as that lightstyle. id does not check the style number against
   `LIMIT_MAX_LIGHTSTYLES` (64), so a number outside 0 to 63 writes outside the array, which is
-  undefined in C; this spec fixes the answer: it fails with a runtime error (VM-19.4) before
+  undefined in C; this spec fixes the answer: it fails with a runtime error (VM-19.7) before
   storing anything.
 - **BUILTIN-12.7** When the server is active, `lightstyle` also appends `svc_lightstyle` (12),
   the style as a char and `value` with its NUL to the reliable message of every client slot

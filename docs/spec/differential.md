@@ -349,7 +349,7 @@ order of [`edicts.md`](edicts.md) EDICT-9 and EDICT-10) and drops the movement.
   BUILTIN-12.5, BUILTIN-13.3). A client slot's reliable message is not kept, never overflows
   and never drops the client. No output, console text included, is compared.
 - **DIFF-6.6** The errors that builtins.md fixes where id's C is undefined are runtime errors
-  (VM-19.4) with these messages in the mock, so both mocks write the same error record:
+  (VM-19.7) with these messages in the mock, so both mocks write the same error record:
   `invalid entity` (BUILTIN-2.7), `invalid string` (BUILTIN-2.5), `invalid field`
   (BUILTIN-8.3) and `invalid lightstyle` (BUILTIN-12.6).
 - **DIFF-6.7** No mock builtin starts a nested run: `walkmove` and `movetogoal` touch nothing
@@ -439,7 +439,7 @@ with BUILTIN-2.7's check (BUILTIN-2.9), except that `checkclient` does not read 
 - **DIFF-8.4** The shutdown's runs start where the error left the VM. After a runtime error the
   call depth is 0 (VM-19.1); after a host error it is still the depth at the error, since
   neither `Host_Error` nor `PF_error` resets it (BUILTIN-3.2, VM-2.1). Either way the local
-  stack keeps the slots the aborted functions saved (VM-19.3). Each `ClientDisconnect` run
+  stack keeps the slots the aborted functions saved (VM-19.6). Each `ClientDisconnect` run
   takes that depth as its exit depth (VM-2.3), so after `error` called 30 calls deep its first
   QC call reaches `LIMIT_MAX_STACK_DEPTH` and fails with `stack overflow`.
 - **DIFF-8.5** An error during the shutdown writes its error record and ends the scenario at
@@ -506,7 +506,7 @@ rules remain.
 
   | Statements | Where it shows | What the runner does |
   | --- | --- | --- |
-  | VM-1.4, VM-2.2, VM-2.4, VM-3.3, VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6 (VM-19.4) | QuakeC Studio's trace has an error record where id's C is undefined; the oracle may crash, write elsewhere or go on | Reports the scenario as expected when the traces agree up to that error record; nothing after it is compared |
+  | VM-1.4, VM-2.2 (the host error of VM-2.1), VM-2.4, VM-3.3, VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6 (VM-19.7) | QuakeC Studio's trace has an error record where id's C is undefined; the oracle may crash, write elsewhere or go on | Reports the scenario as expected when the traces agree up to that error record; nothing after it is compared |
   | PROGS-15.6, EDICT-2.4, EDICT-3.3 | QuakeC Studio refuses a progs that id's loader accepts (DIFF-3.1) | Reports the progs as refused; there is nothing to compare |
   | VM-9.2, BUILTIN-2.2 | An oracle on a host that is not x86 converts a NaN, an infinity or an out-of-range float to an integer differently (arm64 saturates) | Expected at a `BITAND` or `BITOR` step, or a `CALL` to a builtin that converts a float, only when the oracle's host is not x86; the reference oracle runs on x86-64 (P1-11) |
   | BUILTIN-6.9 | `sin`, `cos` and `atan2` differ in the last bit between C libraries | Expected in the values written by `makevectors`, `vectoyaw`, `vectoangles`, `walkmove` and `movetogoal` when the two runners use different C libraries |

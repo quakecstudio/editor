@@ -200,7 +200,8 @@ impl Host<'_> {
         match self.start_map(progs, entities) {
             Ok(()) => {}
             Err(LoadError::Spawn(error)) => {
-                self.trace.host_error(0, -1, &error.to_string());
+                self.trace
+                    .host_error(&self.machine, 0, -1, &error.to_string());
                 return Ended::Error;
             }
             Err(LoadError::Run(_)) => return Ended::Error,

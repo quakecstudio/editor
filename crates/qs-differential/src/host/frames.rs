@@ -32,7 +32,7 @@ use super::{
 /// no shutdown (DIFF-8.6).
 fn bad_movetype(host: &mut Host<'_>, which: &str, movetype: i32) -> RunError {
     let message = format!("SV_Physics{which}: bad movetype {movetype}");
-    host.trace.host_error(0, -1, &message);
+    host.trace.host_error(&host.machine, 0, -1, &message);
     RunError {
         kind: ErrorKind::Fatal { message },
         function: 0,

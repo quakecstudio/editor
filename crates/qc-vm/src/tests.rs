@@ -109,7 +109,7 @@ fn run_does_not_mutate_progs() {
     assert_eq!(machine.globals()[101].0, 0x3F80_0000);
 }
 
-// spec VM-19.3: after an error the call depth is 0 but the local stack is not reset.
+// spec VM-19.6: after an error the call depth is 0 but the local stack is not reset.
 #[test]
 fn error_resets_depth_but_not_localstack() {
     // A function with one local calls a bad opcode: the error leaves depth 0, localstack kept.
@@ -313,7 +313,7 @@ fn nested_error_aborts_all_runs() {
     assert_eq!(error.message(), "Bad opcode 66");
     // The outer's statement 3 (slot 103) never ran: it stays 0 (VM-19.2).
     assert_eq!(machine.globals()[103].0, 0);
-    // Depth is reset to 0 (VM-19.3).
+    // Depth is reset to 0 (VM-19.6).
     assert_eq!(machine.depth(), 0);
 }
 

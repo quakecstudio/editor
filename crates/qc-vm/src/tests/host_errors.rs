@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The call depth an error leaves behind: a runtime error resets it (VM-19.1, VM-19.3), a host
+//! The call depth an error leaves behind: a runtime error resets it (VM-19.1, VM-19.6), a host
 //! error does not (VM-2.1, BUILTIN-3.2), so the next run starts where the error left it
 //! (DIFF-8.4).
 //!
@@ -171,7 +171,7 @@ fn a_null_run_function_keeps_the_depth() {
     assert_eq!(second.unwrap_err().kind, ErrorKind::StackOverflow);
 }
 
-// spec VM-19.1, VM-19.3: a runtime error 30 calls deep resets the depth to 0, so the next run
+// spec VM-19.1, VM-19.6: a runtime error 30 calls deep resets the depth to 0, so the next run
 // makes its call and returns, back at depth 0.
 #[test]
 fn a_runtime_error_resets_the_depth() {

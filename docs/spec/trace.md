@@ -126,7 +126,7 @@ runtime error), and the engine strings of PROGS-11.6.
   (VM-16.4). It holds only a change set, which is normally empty: the `DONE` or `RETURN` that
   ended the run has its own step record.
 - **TRACE-4.6** An error record is written instead of a step record when a runtime error ends
-  the run (VM-19.1, VM-19.4), and also for the errors a run raises before its first statement
+  the run (VM-19.1, VM-19.7), and also for the errors a run raises before its first statement
   (VM-2.1, VM-2.2, VM-2.4). It holds a function index, a statement index, the message and a
   change set (VM-19.5 says what a failed statement may already have written).
 - **TRACE-4.7** For an error raised by a statement, an error record's function and statement
@@ -135,7 +135,7 @@ runtime error), and the engine strings of PROGS-11.6.
   before a run's first statement (VM-2.1, VM-2.2, VM-2.4), the function is the index the run
   was given and the statement is -1.
 - **TRACE-4.8** An error record's message is the error's text as [`vm.md`](vm.md) gives it,
-  without a trailing newline (`Bad opcode 70`, `NULL function`); for the errors of VM-19.4,
+  without a trailing newline (`Bad opcode 70`, `NULL function`); for the errors of VM-19.7,
   which have no message in id's code, it is the implementation's own text. It contains no NUL
   byte.
 - **TRACE-4.9** After an error record, no record follows for any run that was active when the

@@ -58,7 +58,7 @@ pub trait Builtins {
     ///
     /// This is a required method so every dispatch decides it deliberately: one that makes no
     /// engine strings returns `None` for every value, which makes any string value outside the
-    /// table the VM-19.4 runtime error (VM-7.3); one that allocates engine strings returns the
+    /// table the VM-19.7 runtime error (VM-7.3); one that allocates engine strings returns the
     /// text it holds for `value`. There is no default, so a dispatch that owns engine strings
     /// cannot silently fall back to `None` and fail every comparison of one at run time.
     fn engine_string(&self, value: i32) -> Option<&[u8]>;
@@ -192,7 +192,7 @@ impl Machine {
     /// (TRACE-4).
     ///
     /// On a runtime error, id's `PR_RunError` sets the call depth to 0 but does not reset the
-    /// local stack (VM-19.3); this VM does the same, so after one [`depth`](Machine::depth) is
+    /// local stack (VM-19.6); this VM does the same, so after one [`depth`](Machine::depth) is
     /// 0 and [`localstack_used`](Machine::localstack_used) keeps the aborted functions' slots.
     /// After a host error (`PR_ExecuteProgram: NULL function`, VM-2.1, or a builtin's, BUILTIN-3.2)
     /// or a fatal error (BUILTIN-3.3), which do not go through `PR_RunError`, the depth is
@@ -202,7 +202,7 @@ impl Machine {
     /// # Errors
     ///
     /// A [`RunError`] on any runtime error (VM-19); the machine's globals keep the values they
-    /// had when it happened (VM-19.3).
+    /// had when it happened (VM-19.6).
     pub fn execute_program(
         &mut self,
         progs: &Progs<'_>,
@@ -216,7 +216,7 @@ impl Machine {
 }
 
 /// The outermost `PR_ExecuteProgram`: runs, and on an error emits the one error record
-/// (TRACE-4.6) and, for a runtime error, resets the call depth to 0 (VM-19.1, VM-19.3); a host
+/// (TRACE-4.6) and, for a runtime error, resets the call depth to 0 (VM-19.1, VM-19.6); a host
 /// or fatal error leaves it (VM-2.1, BUILTIN-3.2). A nested run started by a builtin calls
 /// [`run_inner`] directly, so the error record is written once, by the outermost run
 /// (TRACE-4.9).
@@ -233,7 +233,7 @@ pub(crate) fn execute(
         Err(error) => {
             // VM-19.1: PR_RunError prints the current statement, the stack and the message,
             // then sets the depth to 0 ("dump the stack so host_error can shutdown
-            // functions"); the local stack is not reset (VM-19.3). VM-2.1's NULL function and
+            // functions"); the local stack is not reset (VM-19.6). VM-2.1's NULL function and
             // a builtin's host error call Host_Error directly, and a fatal error Sys_Error, so
             // the depth stays where the error left it (BUILTIN-3.2, DIFF-8.4).
             observer.error(machine, &error);

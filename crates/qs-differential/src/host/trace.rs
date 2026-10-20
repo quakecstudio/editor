@@ -193,19 +193,21 @@ impl TraceBuilder {
         }
     }
 
-    /// Writes an error record for a host error raised outside any run (DIFF-8.1): a bad
-    /// movetype in the physics frame, whose function is 0 and statement -1.
-    pub fn host_error(&mut self, function: i32, statement: i32, message: &str) {
-        self.flush_strings();
+    /// Writes an error record for an error the host raises outside any run (DIFF-8.1): a bad
+    /// movetype in the physics frame, or an error while spawning the map, whose function is 0
+    /// and statement -1.
+    ///
+    /// The record carries the host's own changes since the previous record (TRACE-3.1), as the
+    /// oracle's `qs_trace_error` does with `put_changes`: while spawning, the world's fields,
+    /// the globals and the keys already applied.
+    pub fn host_error(&mut self, machine: &Machine, function: i32, statement: i32, message: &str) {
+        let changes = self.changes(machine);
         let message = Text::new(message.as_bytes().to_vec()).unwrap_or_default();
         self.records.push(Record::Error {
             function,
             statement,
             message,
-            // A host error outside a run carries the host's own changes since the previous
-            // record (TRACE-3.1); the physics loop writes no globals or fields between the
-            // last record and the bad movetype, so the change set is empty.
-            changes: Changes::default(),
+            changes,
         });
     }
 

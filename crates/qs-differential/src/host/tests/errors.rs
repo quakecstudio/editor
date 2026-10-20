@@ -18,6 +18,8 @@ use super::{EMPTY_BODY_FUNCTION, progs_with_spawn, scenario};
 
 /// The `owner` system field, an entity (EDICT-3.1).
 const OWNER_SLOT: u32 = 95;
+/// The `solid` system field (EDICT-3.1), which the host sets on the world (DIFF-3.4).
+const SOLID_SLOT: u32 = 9;
 /// An edict's size in bytes for the fixture's 110 field slots: 110 * 4 + 96 (EDICT-1.5).
 const EDICT_SIZE: u32 = 536;
 
@@ -126,11 +128,34 @@ fn a_full_edict_array_while_spawning_is_no_free_edicts() {
 // spec EDICT-8.8: text that is not `{` where an entity should start is the error
 // ED_LoadFromFile: found <token> when expecting {, written as the host's error record with
 // function 0 and statement -1 (DIFF-8.1).
+// spec TRACE-3.1: that record carries the host's changes since the header, as the oracle's
+// qs_trace_error does: the time global set to 1 and the world's solid set to SOLID_BSP.
 #[test]
 fn a_bad_entity_lump_writes_the_hosts_error_record() {
     let bytes = progs_with_spawn("worldspawn");
     let output = run_scenario(&scenario("test"), &bytes, b"notbrace\n").expect("attempted");
     assert_eq!(output.ended, Ended::Error);
+    let changes = output
+        .trace
+        .records
+        .iter()
+        .find_map(|r| match r {
+            Record::Error { changes, .. } => Some(changes),
+            _ => None,
+        })
+        .expect("an error record");
+    assert!(
+        changes
+            .globals()
+            .iter()
+            .any(|g| g.slot == 31 && g.bits == 1.0_f32.to_bits())
+    );
+    assert!(
+        changes
+            .fields()
+            .iter()
+            .any(|f| f.edict == 0 && f.field == SOLID_SLOT && f.bits == 4.0_f32.to_bits())
+    );
     assert_eq!(
         errors(&output.trace.records),
         vec![(

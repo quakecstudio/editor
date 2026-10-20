@@ -51,7 +51,7 @@ for VM-9.2 run on an x86 host. The test vectors were checked with exactly that b
 - **VM-1.4** id's VM checks no operand: `PARANOID` is commented out in `quakedef.h`, so a
   global slot outside `0` to `numglobals - 1` is read or written outside the globals, which is
   undefined in C. This spec fixes the answer: a statement that would read or write a global
-  slot outside that range fails with a runtime error (VM-19.4) before it changes any global or
+  slot outside that range fails with a runtime error (VM-19.7) before it changes any global or
   field. It is a deliberate divergence; qcc never writes such an operand.
 
 ## VM-2 Starting a run
@@ -77,7 +77,7 @@ The engine runs QuakeC by calling `PR_ExecuteProgram` with a function index: `ma
 - **VM-2.4** A builtin (`first_statement` below 0) passed to `PR_ExecuteProgram` is entered as
   if it were a QC function, and execution starts at the negative statement index
   `first_statement`, which is undefined in C. This spec fixes the answer: it fails with a
-  runtime error (VM-19.4) before any statement runs. The engine never does this with id's
+  runtime error (VM-19.7) before any statement runs. The engine never does this with id's
   progs.
 
 ## VM-3 The statement loop
@@ -96,7 +96,7 @@ The engine runs QuakeC by calling `PR_ExecuteProgram` with a function index: `ma
 - **VM-3.3** Reaching a statement index outside `0` to `numstatements - 1` (by running past the
   last statement, by a jump, or through a function's `first_statement`) reads outside the
   statements table, which is undefined in C. This spec fixes the answer: it fails with a
-  runtime error (VM-19.4) before the statement executes.
+  runtime error (VM-19.7) before the statement executes.
 - **VM-3.4** An opcode above 65 fails with `Bad opcode <op>`, the opcode printed as an
   unsigned decimal number (PROGS-7.4). The step has already counted against the runaway
   counter and `profile`.
@@ -224,7 +224,7 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
   `pr_strings + value` for either. Only a value that is neither a table offset nor an
   engine-allocated string names memory outside both, which is undefined in C; this spec fixes
   the answer: `EQ_S`, `NE_S` and `NOT_S` with such a value fail with a runtime error
-  (VM-19.4).
+  (VM-19.7).
 - **VM-7.4** `EQ_E` and `NE_E` compare the 32-bit patterns of `a` and `b`, and `EQ_FNC` and
   `NE_FNC` compare them as function indices, writing `1.0` or `0.0`. None of them checks that
   the value names an entity or function, and `EQ_E` compares bits, not floats: `-0.0` and
@@ -245,7 +245,7 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
   (VM-7.3): a table offset reads the string table, and a value outside the table reads the
   engine-allocated string it names (PROGS-11.6, EDICT-13.1), so an engine-made string is
   false only when its text is empty (EDICT-13.2); a value that is neither fails with a runtime
-  error (VM-19.4).
+  error (VM-19.7).
 - **VM-8.4** `NOT_ENT` writes `1.0` when the entity value is 0, the world, and `0.0`
   otherwise. It compares the value only, without checking that it names an edict or whether
   that edict is free.
@@ -318,7 +318,7 @@ f32, so the only arithmetic where the precision shows is `MUL_V` (VM-5.2).
 - **VM-11.4** id does not check the entity value or the field index (`PARANOID` is off), so a
   value that does not name an edict, or a field slot outside `0` to `entityfields - 1`, reads
   other memory, which is undefined in C. This spec fixes the answer: such a load fails with a
-  runtime error (VM-19.4). Which entity values name an edict is EDICT-1.9.
+  runtime error (VM-19.7). Which entity values name an edict is EDICT-1.9.
 
 ## VM-12 Field addresses and pointer stores
 
@@ -346,7 +346,7 @@ qcc compiles an assignment to an entity field, `e.f = x`, as `ADDRESS` followed 
 - **VM-12.5** id writes wherever the pointer leads, which is undefined in C when it is not a
   field slot of an edict. This spec fixes the answer: a `STOREP` whose pointer does not name a
   field slot of an edict, or for `STOREP_V` three consecutive field slots of one edict, fails
-  with a runtime error (VM-19.4) without writing.
+  with a runtime error (VM-19.7) without writing.
 - **VM-12.6** `STOREP` does not check for the world or a free edict: a pointer to a world field
   made while loading still writes to the world when the server is active.
 
@@ -382,7 +382,7 @@ qcc compiles an assignment to an entity field, `e.f = x`, as `ADDRESS` followed 
 - **VM-14.2** A function index of 0 fails with `NULL function`.
 - **VM-14.3** id reads `pr_functions[index]` without checking, so a negative index or one not
   less than `numfunctions` is undefined in C. This spec fixes the answer: it fails with a
-  runtime error (VM-19.4).
+  runtime error (VM-19.7).
 - **VM-14.4** When the function is a builtin (`first_statement` below 0, PROGS-10.2), its
   number is `-first_statement`; a number of `LIMIT_NUM_BUILTINS` or more fails with
   `Bad builtin call number` (LIMIT-5.1, LIMIT-5.3). Otherwise the builtin is called directly:
@@ -421,7 +421,7 @@ qcc compiles an assignment to an entity field, `e.f = x`, as `ADDRESS` followed 
   `first_statement`.
 - **VM-15.6** A negative `locals` makes id move the local stack's top down, and a later entry
   or return writes outside it, which is undefined in C. This spec fixes the answer: entering
-  a function whose `locals` is negative fails with a runtime error (VM-19.4). A save, restore
+  a function whose `locals` is negative fails with a runtime error (VM-19.7). A save, restore
   or parameter copy that reaches a global slot outside the globals is VM-1.4's error.
 - **VM-15.7** Entering does not clear the local slots: a local that is not a parameter starts
   with whatever value its global slot held, normally the value left by the caller or by the
@@ -519,17 +519,26 @@ moving an entity (`builtins.md`). That run is nested inside the run that called 
 - **VM-19.2** `Host_Error` ("This shuts down both the client and server") never returns: no
   further statement of any run executes, at any level of nesting, and `PR_ExecuteProgram` does
   not return to its caller.
-- **VM-19.3** After a runtime error the call depth is 0 (a host error leaves it, VM-2.1,
-  BUILTIN-3.2), but the local stack is not reset: the slots the aborted functions saved stay
-  in use, are never restored and are never released, since nothing outside `pr_exec.c`
-  touches `localstack_used`. The globals keep the values they had
-  when the error happened, including the locals of the aborted functions.
-- **VM-19.4** The errors this spec adds where id's C is undefined (VM-1.4, VM-2.2, VM-2.4,
-  VM-3.3, VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6) are runtime errors with the effects of
-  VM-19.1 to VM-19.3. id has no message for them, so the message is the implementation's.
+- **VM-19.3** **Withdrawn** 2026-10-20: it said the call depth is 0 after any error, but a
+  host error that does not go through `PR_RunError` (VM-2.1, BUILTIN-3.2) leaves it; replaced
+  by VM-19.6.
+- **VM-19.4** **Withdrawn** 2026-10-20: it gave VM-2.2 the effects of a runtime error, which
+  resets the call depth, where VM-2.2 fails as VM-2.1 does, a host error that keeps it;
+  replaced by VM-19.7.
 - **VM-19.5** An opcode that fails writes no global and no field. It may already have set the
   argument count (a failing call) or counted against `profile` (VM-3.4). A builtin that fails
   may have written before it failed (`builtins.md`).
+- **VM-19.6** After a runtime error the call depth is 0. After a host error that does not go
+  through `PR_RunError`, `PR_ExecuteProgram: NULL function` (VM-2.1, VM-2.2) or a builtin's
+  `error` or `objerror` (BUILTIN-3.2), it is still the depth at the error. Either way the
+  local stack is not reset: the slots the aborted functions saved stay in use, are never
+  restored and are never released, since nothing outside `pr_exec.c` touches
+  `localstack_used`. The globals keep the values they had when the error happened, including
+  the locals of the aborted functions.
+- **VM-19.7** The errors this spec adds where id's C is undefined (VM-1.4, VM-2.4, VM-3.3,
+  VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6) are runtime errors with the effects of VM-19.1,
+  VM-19.2 and VM-19.6. id has no message for them, so the message is the implementation's.
+  VM-2.2 is the host error of VM-2.1.
 
 ## Test vectors
 
@@ -543,7 +552,7 @@ Checked on 2026-10-16 by running the 128 vectors that have a defined answer in i
 `pr_comp.h`, `progs.h` and `progdefs.q1`, in a local harness on x86-64 (GCC 14.4,
 `-O2 -fno-strict-aliasing -ffp-contract=off`): every vector matched. The same harness built
 for arm64 (Apple clang) matched every vector except the two for VM-9.2, as VM-9.2 says. The
-other 14 vectors pin the divergences of VM-19.4 and expect only an error. CI now runs the
+other 14 vectors pin the divergences of VM-19.7 and expect only an error. CI now runs the
 128 through the VM oracle (`cargo xtask oracles`, see the vectors' README).
 
 | Group | File | Statements |
