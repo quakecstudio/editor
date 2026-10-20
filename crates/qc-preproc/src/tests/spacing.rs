@@ -280,7 +280,10 @@ fn appended_text_stays_apart_from_the_body() {
 // text ends there (QC-1.1)
 #[test]
 fn a_nul_after_a_name_ends_the_word() {
-    assert_eq!(touching("#define N 5\nx = N\0;\n", Dialect::Fteqcc), "x = 5");
+    assert_eq!(
+        touching("#define N 5\nx = N\0;\n", Dialect::Fteqcc),
+        "x = 5"
+    );
 }
 
 // spec FTEF-14.15: `#param` is the argument's text as written, white space and comments
