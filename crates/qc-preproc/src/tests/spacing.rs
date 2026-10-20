@@ -158,6 +158,7 @@ fn a_body_touches_where_fteqcc_stored_it_touching() {
     let vanilla = |text: &str| touching(text, Dialect::Vanilla);
     assert_eq!(fte("#define L lbl/**/:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl/* a */ /**/:\nL"), "lbl :");
+    assert_eq!(fte("#define L lbl/* a */:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl\\\n:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl\\\r\n:\nL"), "lbl:");
     assert_eq!(fte("#define L(x) x/**/:\nL(lbl)"), "lbl:");
