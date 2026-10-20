@@ -380,7 +380,7 @@ dialect features (P2-01, P2-03).
   whether two tokens touch then reads a macro's tokens as it reads the source: under FTEQCC
   `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and `#define L lbl:` used as a
   statement is a label (FTEF-18.23). Under FTEQCC a token a `##` paste or a `#` string made is
-  written into the expansion as text (FTEF-14.14, FTEF-14.15), and touches as that text stands:
+  written into the expansion as text (FTEF-14.14, FTEF-14.31), and touches as that text stands:
   with `#define P(a,b) a##b:`, `P(l,bl)` is the label `lbl:`; a built-in constant's value is a
   chunk of its own and touches nothing (FTEF-14.17). In the vanilla dialect an argument's tokens
   are apart from the body's. FTEQCC reads an expansion as text (`qcc_pr_lex.c`,
@@ -425,7 +425,17 @@ dialect features (P2-01, P2-03).
   with `SIGSEGV` at 100000. Expanding every chain to its end is a deliberate divergence from that
   crash, which depends on the host's stack, not on the program. id's `qcc` has no macros (QC-9).
   In the vanilla dialect the rule against self-expansion is QC-9.4's; under FTEQCC it is FTEQCC's
-  (`dialect-fteqcc.md` FTEF-14.17), with this profile's bound on the work (FTEF-14.19).
+  (`dialect-fteqcc.md` FTEF-14.17), with this profile's bound on the work (FTEF-14.28).
+- **QC-9.18** The preprocessor makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one
+  file and writes at most `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens with them, under the vanilla
+  dialect as under FTEQCC (`dialect-fteqcc.md` FTEF-14.28), an expansion's tokens counted before
+  it is written, each body token one and each parameter its argument's: a function-like macro
+  whose body names its parameter `n` times writes its argument `n` times, so one expansion alone
+  could write the square of its file's length (a 32018-byte file of `#define D(x)`, 8000 `x` and
+  `D(` given 8000 tokens, 64000000 tokens). The first use past
+  either bound is "macro expansion too large" (`E0120`, QCD-8.13), reported once, and it and later
+  uses are left as written. id's `qcc` has no macros (QC-9), so the bound is this project's own,
+  that no file exhausts the memory of the semantic model, which preprocesses on every edit.
 
 ## QC-10 Types
 

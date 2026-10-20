@@ -69,7 +69,7 @@ fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
 // spec QC-9.17: in a 10000-long chain whose every macro also names the chain's head, the head
 // is hidden in each expansion (a name with live hide-set nodes is still looked up in the
 // token's own set), so each use of it is left as written and the chain still reaches its end
-// spec FTEF-14.19: under FTEQCC the head is expanded again in each chunk it is not open in,
+// spec FTEF-14.28: under FTEQCC the head is expanded again in each chunk it is not open in,
 // so the expansion outgrows the bound, which is reported once
 #[test]
 fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
@@ -102,7 +102,7 @@ fn fte(text: &str) -> (String, Vec<Code>) {
 // fourth P2-R2 review, each as `void() f = USE;` after its definitions, and the profile agreed
 // with every one through `cargo xtask oracles builtins`.
 
-// spec FTEF-14.18: a `\` and line break between a name and its `(` in a body is dropped as the
+// spec FTEF-14.29: a `\` and line break between a name and its `(` in a body is dropped as the
 // body is stored, so the `(` follows the name and opens its arguments
 #[test]
 fn reviewer_a_continued_line_in_a_body_still_opens_the_arguments() {
@@ -126,7 +126,7 @@ fn reviewer_pastes_join_an_argument_to_itself_and_inside_an_argument() {
     );
 }
 
-// spec FTEF-14.15: a string in an argument is one piece of it, so its comma splits nothing, and
+// spec FTEF-14.31: a string in an argument is one piece of it, so its comma splits nothing, and
 // `#a` writes the string's own quotes escaped
 #[test]
 fn reviewer_a_string_s_comma_does_not_split_an_argument() {

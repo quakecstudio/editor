@@ -415,7 +415,7 @@ fn reviewer_a_macro_s_own_name_in_its_argument_is_the_engine_name() {
     assert_eq!(fte_binding("#define E(x) #5:x", "E(E)"), bound(5, "E"));
 }
 
-// spec FTEF-14.15: `#a` writes the argument's text, so a built-in constant in it is its name, not
+// spec FTEF-14.31: `#a` writes the argument's text, so a built-in constant in it is its name, not
 // its value
 #[test]
 fn reviewer_a_stringified_built_in_constant_is_its_name() {
@@ -425,11 +425,94 @@ fn reviewer_a_stringified_built_in_constant_is_its_name() {
     );
 }
 
-// spec FTEF-14.18: a function-like macro an argument names, whose `(` comes after the expansion
-// ends, is not called (FTEF-14.18), so `f` is not bound
+// spec FTEF-14.29: a function-like macro an argument names, whose `(` comes after the expansion
+// ends, is not called (FTEF-14.29), so `f` is not bound
 #[test]
 fn reviewer_a_call_after_the_expansion_ends_binds_nothing() {
     let (errors, function) = fte_binding("#define E(x) x\n#define G(x) #5:x", "E(G)(ex_a)");
     assert!(!errors.is_empty());
     assert_eq!(function, None);
+}
+
+// The cases below are the fourth P2-R2 and fifth P2-R3 reviews' (P2-80 to P2-84), each with the
+// outcome the pinned FTEQCC gives, as `cargo xtask oracles builtins` records it.
+
+/// Whether `defines` then `void() f = USE;` is refused, as FTEQCC refuses it.
+fn refused(defines: &str, use_: &str) -> bool {
+    !fte_binding(defines, use_).0.is_empty()
+}
+
+// spec FTEF-14.22: an argument ends at a `,` or `)` in a character constant or a comment, and a
+// string ending in `\` runs on past its `"`
+#[test]
+fn reviewer_arguments_end_where_fteqcc_s_scanner_ends_them() {
+    assert!(refused("#define E(n) :n", "E(',')"));
+    assert!(refused("#define M(x) x", "M(#5 /* ) */)"));
+    assert!(refused("#define E(n) n", "E(:\"ex\\\\\")"));
+    assert_eq!(fte_binding("#define S(a) #a", ":S(e'x)"), bound(0, "e'x"));
+}
+
+// spec FTEF-14.27: a built-in constant an argument copies takes the place of the white space and
+// `//` comment before it, at the line of the use's `)`
+#[test]
+fn reviewer_a_copied_line_number_touches_the_hash() {
+    assert_eq!(
+        fte_binding("#define E(n) n", "E(# __LINE__)"),
+        bound(2, "f")
+    );
+    assert_eq!(
+        fte_binding("#define E(n) n", "E(#//\n__LINE__)"),
+        bound(3, "f")
+    );
+    assert_eq!(
+        fte_binding("#define K(x) x", "K(#\n__LINE__)"),
+        bound(3, "f")
+    );
+}
+
+// spec FTEF-14.24: a stored body drops its comments and continuations, its quote flag flips at an
+// escaped `"`, and a parameter named twice is refused
+#[test]
+fn reviewer_bodies_are_stored_as_fteqcc_stores_them() {
+    assert_eq!(
+        fte_binding("#define M(x) x\n#define K M /**/ (#5)", "K"),
+        bound(5, "f")
+    );
+    assert_eq!(
+        fte_binding("#define M(x) x\n#define K M \\\n(#5)", "K"),
+        bound(5, "f")
+    );
+    assert!(refused("#define N :\"ex\\\"_a//\"", "N"));
+    assert!(refused("#define E(n, n) n", "E(#5, 6)"));
+}
+
+// spec FTEF-14.26: `__VA_COUNT__` is FTEQCC's count and `,##__VA_ARGS__` with no variadic
+// argument takes away the `,`
+// spec FTEF-15.8: a declaration's declarators may end with a `,`
+#[test]
+fn reviewer_variadic_macros_count_and_paste_as_fteqcc_does() {
+    assert_eq!(
+        fte_binding("#define V(...) :__VA_COUNT__", "V(a, b)"),
+        bound(1, "f")
+    );
+    assert!(refused("#define V(a, ...) #5:__VA_COUNT__", "V(a, b)"));
+    assert_eq!(
+        fte_binding("#define V(a, ...) a,##__VA_ARGS__", "V(#5)"),
+        bound(5, "f")
+    );
+    assert_eq!(
+        fte_binding("#define E(...) #5 __VA_ARGS__", "E(, )"),
+        bound(5, "f")
+    );
+}
+
+// spec FTEF-17.11: a bodyless function a macro writes is an error, whether or not it is
+// referred to
+#[test]
+fn reviewer_a_bodyless_function_a_macro_writes_is_an_error() {
+    let (errors, _) = fte_binding("#define V(a, ...) a,##__VA_ARGS__", "V(#5, g)");
+    assert_eq!(errors, [qc_diag::Code::E0211]);
+    let (errors, _) = fte_binding("#define V(a, ...) a __VA_ARGS__", "V(#5, :ex_a, b)");
+    assert_eq!(errors, [qc_diag::Code::E0211]);
+    assert_eq!(fte_binding("noref void() g;", "#5"), bound(5, "f"));
 }

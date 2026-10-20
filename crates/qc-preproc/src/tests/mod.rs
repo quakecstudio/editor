@@ -974,3 +974,4 @@ proptest! {
 mod fteqcc;
 mod reviewer;
 mod spacing;
+mod text;

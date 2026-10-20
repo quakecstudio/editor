@@ -994,18 +994,20 @@ impl<'a> Resolver<'a> {
     }
 
     /// QC-11.8, QCD-3.11: every global function must be defined; report those that are not.
-    /// Under FTEQCC only one the module refers to is reported (FTEF-17.7): FTEQCC skips an
-    /// unreferenced one marked `noref`, which this model does not follow.
+    /// Under FTEQCC one marked `noref`, by its qualifier or `#pragma noref 1`, that the module
+    /// does not refer to is not reported (FTEF-17.11): FTEQCC's check skips a definition `if
+    /// (d->unused && !d->used)`.
     fn check_undefined_functions(&mut self) {
         let used: HashSet<DefId> = self.index.refs.iter().map(|r| r.def).collect();
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for (index, def) in self.index.defs.iter().enumerate() {
-            let referenced = !self.fteqcc || used.contains(&DefId(index));
+            let id = DefId(index);
+            let skipped = self.fteqcc && self.unused.contains(&id) && !used.contains(&id);
             if def.kind == DefKind::Function
                 && !def.initialized
                 && !def.generated
                 && def.member_of.is_none()
-                && referenced
+                && !skipped
             {
                 undefined.push(diag(
                     Code::E0211,

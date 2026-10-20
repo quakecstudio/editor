@@ -264,7 +264,7 @@ fn other_initialisers_compare_token_for_token() {
 #[test]
 fn opaque_types_are_compatible() {
     let index = fte_index_of(
-        "typedef float bool;\nbool flag;\nfloat flag;\n__variant(float) get;\nfloat(float) get;\n\
+        "typedef float bool;\nbool flag;\nfloat flag;\n__variant(float) get;\nfloat(float) get = #1;\n\
          float *p;\nentity p;\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
@@ -272,14 +272,18 @@ fn opaque_types_are_compatible() {
     assert_eq!(errors(&mismatch), [Code::E0205]);
 }
 
-// spec FTEF-17.7: a function with no body is an error only where it is referred to, and a
-// member function is not checked.
+// spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
+// unless it is marked `noref` and not referred to; a member function is not checked.
 #[test]
-fn undefined_functions_need_a_reference() {
-    let unused = fte_index_of("void() never;\nclass A { nonvirtual void M(void); };\n");
-    assert_eq!(errors(&unused), Vec::<Code>::new());
+fn undefined_functions_are_reported_unless_noref_and_unused() {
+    let unused = fte_index_of("void() never;\n");
+    assert_eq!(errors(&unused), [Code::E0211]);
     let used = fte_index_of("void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&used), [Code::E0211]);
+    let noref = fte_index_of("noref void() never;\nclass A { nonvirtual void M(void); };\n");
+    assert_eq!(errors(&noref), Vec::<Code>::new());
+    let noref_used = fte_index_of("noref void() needed;\nvoid() f = { needed(); };\n");
+    assert_eq!(errors(&noref_used), [Code::E0211]);
 }
 
 // spec FTEF-15.5: `wrap`, `weak` and `accumulate` definitions may be given again, `extern` has

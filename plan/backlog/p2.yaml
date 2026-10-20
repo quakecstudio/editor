@@ -1639,6 +1639,12 @@ issues:
   - P2-91
   - P2-92
   - P2-93
+  - P2-94
+  - P2-95
+  - P2-96
+  - P2-97
+  - P2-98
+  - P2-99
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1828,3 +1834,118 @@ issues:
   - 'A search for "vanilla" in the four descriptions named, for BUILTIN-17 in crates/qc-builtins/src/lib.rs and for "not a porting upstream" or "not a registered" in the two port headers finds nothing; cargo xtask ci passes, licenses included'
   verify:
   - cargo xtask ci
+- key: P2-94
+  title: End every FTEQCC directive's line where `QCC_PR_SkipToEndOfLine` ends it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-81
+  deliverable:
+  - 'crates/qc-preproc (`directive_end`, `continues`) and docs/spec/dialect-fteqcc.md (FTEF-14.30 withdrawn for a new statement): `QCC_PR_SkipToEndOfLine` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) goes on past a `\` and line break in a `//` comment (`else if (*pr_file_p == ''\\'' && pr_file_p[1] == ''\n'')` is read whatever `handleccomments` is), which the profile follows only for `#define` and `#append` (FTEF-14.24): the pinned FTEQCC (`-Tid`) passes over `zz zz zz` after `#undef X // c \` and after `#ifdef X // c \` and a line break, where the profile reads it as code and refuses it. Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile every directive''s line ends where `QCC_PR_SkipToEndOfLine` ends it, `#undef`, `#ifdef`, `#if`, `#include`, `#pragma` and the others, recorded against the pinned FTEQCC (cases of `cargo xtask oracles builtins` with 0 unexplained differences); the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-95
+  title: Give the semantic model each file's name as `progs.src` wrote it
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-project (`GraphFile`) and crates/qc-sema (`ModuleInput`, `expand.rs`): FTEQCC names a compiled file by its `progs.src` entry as written (`QCC_FindBestInclude(qcc_token, compilingrootfile, 2)` joined by `QCC_JoinPaths`, qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), which `__FILE__` writes and an `#include` is joined to (FTEF-14.32). The preprocessor takes the name as its caller gives the path, and the semantic model gives it the path the database holds for the file, which for a project is the graph''s resolved path, so `__FILE__` and the names of included files differ from FTEQCC''s where the resolved path is not the entry. Found by the self-review of P2-87'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile `__FILE__` in a listed file and in a file it includes is the name FTEQCC gives for the same project, an entry in a subdirectory and one with `\` separators included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
+  - cargo test -p qc-project
+- key: P2-96
+  title: Find an FTEQCC `#include` beside the file being compiled
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-preproc (`include`) and crates/qc-project (the graph''s includes), with docs/spec/dialect-fteqcc.md and docs/spec/project-file.md: `QCC_FindBestInclude(msg, compilingfile, false)` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) resolves an `#include` against the file being compiled, not the file the directive is in, and then against each `#includedir`; the profile resolves it beside the including file (QC-9.2). The pinned FTEQCC (`-Tid`), compiling `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, reads `src/c.qh` where the profile reads `src/x/c.qh`. Found by the self-review of P2-87'
+  acceptance:
+  - 'Under the FTEQCC profile a nested `#include` reads the file the pinned FTEQCC reads, recorded against it for a project with subdirectories; the vanilla dialect keeps QC-9.2; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-project
+- key: P2-97
+  title: Run the directives FTEQCC finds inside a macro's arguments and expansion
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-80
+  deliverable:
+  - 'crates/qc-preproc (`fte_macro.rs`) and docs/spec/dialect-fteqcc.md: FTEQCC''s `QCC_PR_LexWhitespace(false)`, which skips the white space before a macro''s argument after its `(` and each `,`, calls `QCC_PR_NewLine (false)` at each line break, which runs a directive at the start of the next line (`else if (QCC_PR_Precompiler())`); and a body that continues onto a line starting with `#` keeps the line break ("#define hacks however, require that it becomes foo\nbar\nmoo", `QCC_PR_PreProcessor_Define`), so the expansion holds a directive line (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e). The profile reads the arguments and the expansion as text only and runs no directive in them. Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile a directive on its own line after a use''s `(` or `,`, and one a stored body holds on a line of its own, run as the pinned FTEQCC runs them, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-98
+  title: Read FTEQCC's directive names and macro names as `QCC_PR_Precompiler` does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-81
+  deliverable:
+  - 'crates/qc-preproc (`directive`, `fte_define`) and docs/spec/dialect-fteqcc.md: `QCC_PR_Precompiler` matches a directive by its first bytes (`if (!strncmp(directive, "define", 6))`), so `#defined N 5` defines `N`, where the profile reports an unknown directive; and `QCC_PR_DefineName` refuses a macro name of 64 bytes or more (`if (strlen(name) >= MAXCONSTANTNAMELENGTH || !*name) QCC_PR_ParseError(ERR_NAMETOOLONG, "Compiler constant name length is too long or short");`, `#define MAXCONSTANTNAMELENGTH 64`), which the profile defines (qcc_pr_lex.c and qcc.h, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e). Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile directive names and macro names of every length are read as the pinned FTEQCC reads them, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-99
+  title: Number FTEQCC's lines from a `#pragma line`
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-preproc (the pragmas) and docs/spec/dialect-fteqcc.md: `#pragma line(N)` sets the line FTEQCC is reading (`pr_source_line = strtoul(m, &m, 0)-1;`, qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), which `__LINE__` and `__LINESTR__` write (FTEF-14.27) and FTEQCC''s diagnostics report; the profile accepts the pragma and keeps its own line. Found by the self-review of P2-87, beside `#pragma file` (FTEF-14.32)'
+  acceptance:
+  - 'Under the FTEQCC profile `__LINE__` after a `#pragma line` is the line the pinned FTEQCC writes, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
