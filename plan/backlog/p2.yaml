@@ -1376,6 +1376,25 @@ issues:
   - 'Through `Db::analyze_module` under the FTEQCC profile, an argument and a body token that touch in the body (`x:` with `x` a parameter) render touching, and ones apart in the body stay apart; `#define L(x) x:` then `L(lbl)` used as a statement is a label, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-sema
+- key: P2-78
+  title: "Render a token a macro's `##` makes against the body token written next to it"
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-77
+  deliverable:
+  - 'crates/qc-preproc (`paste`, and what a token `##` or `#` makes is `glued` to) and crates/qc-sema/src/expand.rs `adjacent`, and docs/spec/language.md (a statement replacing QC-9.15): `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) joins `a ## b` and writes `#param` into the expansion as text, so the token it makes touches the body token written next to it: with `#define P(a,b) a##b:`, the statement `P(l,bl)` is the label `lbl:` (FTEF-18.23) under the pinned FTEQCC. QC-9.15 says a token the preprocessor made touches nothing, so it renders as `lbl :`, no label. A built-in constant (FTEF-14.7) stays apart: `QCC_PR_CheckCompConst` includes its value as a chunk of its own. Found by the self-review of P2-75 to P2-77'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile, a `##` paste and a `#` string written against a body token render touching it and ones apart stay apart, a built-in constant touches nothing, and `#define P(a,b) a##b:` then `P(l,bl)` used as a statement is a label, recorded against the pinned FTEQCC (`cargo xtask oracles builtins`); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1456,6 +1475,7 @@ issues:
   - P2-75
   - P2-76
   - P2-77
+  - P2-78
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
