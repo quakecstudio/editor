@@ -109,3 +109,80 @@ fn reviewer_member_before_global() {
     let (def, _) = index.definition_at(FileId(0), use_at).unwrap();
     assert!(index.def(def).unwrap().member_of.is_some());
 }
+
+/// `void(void(...void(float p0) p1...) p{depth-1}) run`, the innermost parameter typed `inner`
+/// and every parameter named with `prefix`.
+fn nested_prototype(depth: usize, prefix: &str, inner: &str) -> String {
+    let mut ty = format!("void({inner} {prefix}0)");
+    for level in 1..depth {
+        ty = format!("void({ty} {prefix}{level})");
+    }
+    format!("{ty} run")
+}
+
+// spec QC-10.6: function types nested 200 deep compare by their parameter types at every
+// level, names excluded: a prototype and a body naming every parameter differently are one
+// function, and a body whose innermost parameter has another type is a mismatch
+#[test]
+fn reviewer_deeply_nested_function_types_compare_at_every_level() {
+    let depth = 200;
+    let same = format!(
+        "{};\n{} = {{ }};",
+        nested_prototype(depth, "a", "float"),
+        nested_prototype(depth, "b", "float")
+    );
+    let index = index_of(&same);
+    assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+    assert_eq!(index.defs.iter().filter(|d| d.name == "run").count(), 1);
+    let other = format!(
+        "{};\n{} = {{ }};",
+        nested_prototype(depth, "a", "float"),
+        nested_prototype(depth, "b", "vector")
+    );
+    assert!(!index_of(&other).diagnostics.is_empty());
+}
+
+// spec QC-27.16: the FTEQCC forms nested past the limit that the parser stops, an aggregate,
+// an initialiser list, a `?:` in its middle and an `=` chain, each 100000 deep, resolve through
+// the semantic model with every diagnostic inside the file
+#[test]
+fn reviewer_deep_fteqcc_trees_resolve() {
+    let n = 100_000;
+    let in_body = |body: String| format!("float a;\nvoid() f = {{\n{body}\n}};\n");
+    for source in [
+        format!("{}float x;{};\n", "struct { ".repeat(n), "} s;".repeat(n)),
+        format!("float x[1] = {}1{};\n", "{".repeat(n), "}".repeat(n)),
+        in_body(format!("a = {}1{};", "a ? ".repeat(n), " : 1".repeat(n))),
+        in_body(format!("{}1;", "a = ".repeat(n))),
+    ] {
+        let index = fte_index_of(&source);
+        for d in &index.diagnostics {
+            assert_eq!(d.file, FileId(0));
+            assert!(d.diagnostic.span.end <= source.len(), "{d:?}");
+        }
+    }
+}
+
+// spec QC-12.1: a function with 2000 locals resolves each use to its own local, with no
+// diagnostic, under both profiles
+#[test]
+fn reviewer_many_locals_each_resolve_to_their_own() {
+    let n = 2000;
+    let mut body = String::new();
+    for i in 0..n {
+        body.push_str(&format!("local float l{i};\n"));
+    }
+    for i in 0..n {
+        body.push_str(&format!("l{i} = {i};\n"));
+    }
+    let source = format!("void() f = {{\n{body}}};\n");
+    for index in [index_of(&source), fte_index_of(&source)] {
+        assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
+        for i in [0, 1000, n - 1] {
+            let name = format!("l{i}");
+            let use_at = nth_offset(&source, &format!("{name} ="), 0);
+            let (def, _) = index.definition_at(FileId(0), use_at).unwrap();
+            assert_eq!(index.def(def).unwrap().name, name);
+        }
+    }
+}

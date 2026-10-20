@@ -389,3 +389,95 @@ fn run_error_trace_names_the_active_functions() {
     assert_eq!(error.trace[2].name, "");
     assert_eq!(error.trace[2].file, "");
 }
+
+// spec VM-7.3: NoBuiltins has no engine and so no engine strings (EDICT-13.1): EQ_S, NE_S or
+// NOT_S given a value outside the table, here -5 against the table's empty string, is the
+// VM-7.3 run error, whatever text the value might have held
+#[test]
+fn reviewer_no_builtins_resolves_no_engine_string() {
+    for op in ["EQ_S", "NE_S", "NOT_S"] {
+        let bytes = harness::ProgsBuilder::default()
+            .statements(&[Stmt::op(op, 100, 101, 110), Stmt::op("DONE", 0, 0, 0)])
+            .build();
+        let progs = read(&bytes);
+        let mut machine = Machine::new(&progs, 0).unwrap();
+        machine.set_global_test(100, Slot::from_i32(-5));
+        machine.set_global_test(101, Slot::from_i32(0));
+        let error = machine
+            .execute_program(
+                &progs,
+                ServerState::Active,
+                &mut NoBuiltins,
+                &mut NoObserver,
+                1,
+            )
+            .unwrap_err();
+        match error.kind {
+            ErrorKind::Divergence { statement, .. } => assert_eq!(statement, "VM-7.3", "{op}"),
+            other => panic!("{op}: {other:?}"),
+        }
+    }
+}
+
+// spec VM-7.3: EQ_S and NE_S read an engine string's text when they run, so after a builtin
+// rewrites the one temp buffer (BUILTIN-7.4) the same value compares by its new text: equal to
+// the table string "one" before the call, and after it "two" against "one" is NE_S 't' - 'o'
+#[test]
+fn reviewer_an_engine_strings_text_is_read_at_each_comparison() {
+    struct Dispatch {
+        text: Vec<u8>,
+    }
+    impl Builtins for Dispatch {
+        fn call(&mut self, number: u32, _context: &mut Context<'_, '_>) -> Result<(), RunError> {
+            if number == 2 {
+                self.text = b"two".to_vec();
+            }
+            Ok(())
+        }
+        fn engine_string(&self, value: i32) -> Option<&[u8]> {
+            (value == -1).then_some(self.text.as_slice())
+        }
+    }
+
+    // Strings: "\0one\0": "one" at 1.
+    let bytes = harness::ProgsBuilder::default()
+        .strings(b"\0one\0\0\0\0".to_vec())
+        .functions(vec![
+            Func {
+                first_statement: 1,
+                ..Func::default()
+            }, // f1
+            Func {
+                first_statement: -2,
+                ..Func::default()
+            }, // f2: builtin 2
+        ])
+        .statements(&[
+            Stmt::op("EQ_S", 100, 101, 110), // 1: engine -1 vs "one"
+            Stmt::op("CALL0", 103, 0, 0),    // 2: builtin 2 rewrites the buffer
+            Stmt::op("EQ_S", 100, 101, 111), // 3: now "two" vs "one"
+            Stmt::op("NE_S", 100, 101, 112), // 4
+            Stmt::op("DONE", 0, 0, 0),       // 5
+        ])
+        .build();
+    let progs = read(&bytes);
+    let mut machine = Machine::new(&progs, 0).unwrap();
+    machine.set_global_test(100, Slot::from_i32(-1));
+    machine.set_global_test(101, Slot::from_i32(1));
+    machine.set_global_test(103, Slot::from_i32(2)); // f2 index
+    let mut dispatch = Dispatch {
+        text: b"one".to_vec(),
+    };
+    machine
+        .execute_program(
+            &progs,
+            ServerState::Active,
+            &mut dispatch,
+            &mut NoObserver,
+            1,
+        )
+        .unwrap();
+    assert_eq!(machine.globals()[110].as_f32(), 1.0);
+    assert_eq!(machine.globals()[111].as_f32(), 0.0);
+    assert_eq!(machine.globals()[112].as_f32(), 5.0);
+}

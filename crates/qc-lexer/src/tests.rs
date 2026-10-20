@@ -1138,6 +1138,42 @@ proptest! {
     }
 }
 
+proptest! {
+    // P2-R2 review: the FTEQCC lexer keeps the README's invariants too. Lexing any bytes under
+    // the FTEQCC profile terminates, and every span is in bounds, increasing and
+    // non-overlapping.
+    #[test]
+    fn reviewer_fteqcc_spans_are_ordered_and_in_bounds(source in proptest::collection::vec(any::<u8>(), 0..256)) {
+        let lexed = lex_with(&source, Dialect::Fteqcc);
+        let mut end = 0;
+        for token in &lexed.tokens {
+            prop_assert!(token.span.start >= end);
+            prop_assert!(token.span.start < token.span.end);
+            prop_assert!(token.span.end <= source.len());
+            end = token.span.end;
+        }
+        for d in &lexed.diagnostics {
+            prop_assert!(d.span.start <= d.span.end && d.span.end <= source.len());
+        }
+    }
+
+    // P2-R2 review: under the FTEQCC profile a token's own text lexes to the same token, over
+    // the FTEQCC punctuation, escapes and `$`.
+    #[test]
+    fn reviewer_fteqcc_token_text_relexes(source in "[a-z0-9_ .,;:?(){}\\[\\]+*/%^~=<>!&|#\"'\\\\$x-]{0,64}") {
+        let bytes = source.as_bytes();
+        let lexed = lex_with(bytes, Dialect::Fteqcc);
+        if lexed.diagnostics.is_empty() {
+            for token in &lexed.tokens {
+                let text = &bytes[token.span.range()];
+                let again = lex_with(text, Dialect::Fteqcc);
+                prop_assert_eq!(again.tokens.len(), 1, "{:?} in {:?}", String::from_utf8_lossy(text), source);
+                prop_assert_eq!(&again.tokens[0].kind, &token.kind);
+            }
+        }
+    }
+}
+
 fn fte_kinds(source: &[u8]) -> Vec<TokenKind> {
     kinds_in(source, Dialect::Fteqcc)
 }

@@ -471,6 +471,26 @@ mod mock_engine {
         assert_eq!(strings.take_temp_change(), Some((temp, b"1".to_vec())));
     }
 
+    // spec EDICT-13.3: a made string and the temp buffer take distinct values whichever comes
+    // first, and changing the buffer's text never changes a made string's (BUILTIN-7.4)
+    #[test]
+    fn reviewer_made_strings_survive_the_temp_buffer() {
+        let mut strings = EngineStrings::default();
+        let map = strings.make(b"start".to_vec());
+        let temp = strings.set_temp(b"1".to_vec());
+        let name = strings.make(b"player".to_vec());
+        assert_eq!((map, temp, name), (-1, -2, -3));
+        for text in ["2", "  0.5", "'  1.0   2.0   3.0'"] {
+            assert_eq!(strings.set_temp(text.as_bytes().to_vec()), temp);
+        }
+        assert_eq!(strings.text(map), Some(b"start".as_slice()));
+        assert_eq!(strings.text(name), Some(b"player".as_slice()));
+        assert_eq!(
+            strings.take_temp_change(),
+            Some((temp, b"'  1.0   2.0   3.0'".to_vec()))
+        );
+    }
+
     // spec DIFF-4.2: client_active is true only for a slot 1..=len with a player; slot 0 and a
     // slot past the end are never active.
     #[test]
@@ -2897,5 +2917,57 @@ mod bodies {
         f.set_parm_f(1, 100.0);
         f.run_ok(ServerState::Active);
         assert_eq!(f.return_i(), 0);
+    }
+
+    // spec BUILTIN-7.4: ftos and then vtos over one engine write the one buffer: vtos returns
+    // the value ftos returned, the earlier result's text becomes vtos's, and the change is
+    // reported once with vtos's text (DIFF-3.9)
+    #[test]
+    fn reviewer_ftos_then_vtos_share_one_buffer() {
+        let mut f = Fixture::new(26, 1, vec![0], 0);
+        f.set_parm_f(0, 5.0);
+        f.run_ok(ServerState::Active);
+        let value = f.return_i();
+        assert_eq!(
+            f.builtins.engine_mut().strings.take_temp_change(),
+            Some((value, b"5".to_vec()))
+        );
+
+        let mut g = Fixture::new(27, 1, vec![0], 0);
+        g.builtins = f.builtins;
+        g.set_parm_v(0, [1.0, 2.0, 3.0]);
+        g.run_ok(ServerState::Active);
+        assert_eq!(g.return_i(), value);
+        let text = b"'  1.0   2.0   3.0'".to_vec();
+        assert_eq!(g.engine().strings.text(value), Some(text.as_slice()));
+        assert_eq!(
+            g.builtins.engine_mut().strings.take_temp_change(),
+            Some((value, text))
+        );
+        assert_eq!(g.builtins.engine_mut().strings.take_temp_change(), None);
+    }
+
+    // spec DIFF-3.9: through dispatch, ftos of a value whose text the buffer already holds
+    // reports no change, and a different text reports one
+    #[test]
+    fn reviewer_repeated_ftos_reports_a_change_only_for_new_text() {
+        let mut f = Fixture::new(26, 1, vec![0], 0);
+        let mut changes = Vec::new();
+        for input in [5.0, 5.0, 6.0, 6.0, 5.0] {
+            f.set_parm_f(0, input);
+            f.run_ok(ServerState::Active);
+            let change = f.builtins.engine_mut().strings.take_temp_change();
+            changes.push(change.map(|(_, text)| text));
+        }
+        assert_eq!(
+            changes,
+            [
+                Some(b"5".to_vec()),
+                None,
+                Some(b"6".to_vec()),
+                None,
+                Some(b"5".to_vec())
+            ]
+        );
     }
 }
