@@ -62,7 +62,10 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
 - **Spec statements:** of [`language.md`](../../docs/spec/language.md), the semantic parts of
   types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.6 and QC-10.7; of declarations, QC-11.1,
-  QC-11.5, QC-11.7, QC-11.8 and QC-11.9; and the state-header name, QC-13.6. Of
+  QC-11.5, QC-11.7, QC-11.8 and QC-11.9; the state-header name, QC-13.6; and the spacing of
+  an expansion as the parser reads it, QC-9.14. Of
+  [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md), the builtin
+  functions of FTE-23.7. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
   QCD-3.5, QCD-3.6, QCD-3.8, QCD-3.11, QCD-4.1, QCD-7.3, QCD-7.23 and QCD-7.28. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,

@@ -338,20 +338,23 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
     out
 }
 
-/// Whether `next` stands right after `last` in the same file, both written as their source
-/// bytes: no macro made either, and neither is a frame reference rendered as its number. The
-/// two are rendered with no space between, since a rule may depend on it: a C label is a name
-/// with its `:` right after it (FTEF-18.23).
+/// Whether `next` stands right after `last` where both are written, both rendered as those
+/// bytes (QC-9.14): the same file, out of the same expansion or none (a macro's body, or one
+/// argument of it, keeps its own spacing), and neither a token whose text the preprocessor made
+/// nor a frame reference rendered as its number. The two are rendered with no space between,
+/// since a rule may depend on it: a C label is a name with its `:` right after it
+/// (FTEF-18.23), and an FTEQCC `#` opens a builtin only right before its number or string
+/// (FTE-23.1).
 fn adjacent<L: Loader>(pp: &Preprocessor<L>, last: &PpToken, next: &PpToken) -> bool {
     let as_written = |token: &PpToken| {
-        token.expansion.is_none()
-            && token.spelling.is_none()
+        token.spelling.is_none()
             && pp
                 .sources()
                 .text(token.span)
                 .is_some_and(|text| text.first() != Some(&b'$'))
     };
-    last.span.file == next.span.file
+    last.expansion == next.expansion
+        && last.span.file == next.span.file
         && last.span.span.end == next.span.span.start
         && as_written(last)
         && as_written(next)

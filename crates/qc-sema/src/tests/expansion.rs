@@ -12,6 +12,7 @@ use qc_syntax::Dialect;
 
 use crate::db::{Db, ModuleAnalysis};
 use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
+use crate::lower::lower_file;
 use crate::symbol::{FileId, Location};
 
 /// A module of named files: every file is put in a database under its name, and the ones
@@ -487,16 +488,70 @@ fn rendering_writes_a_frame_reference_as_its_number() {
     );
 }
 
-// spec FTEF-18.23: a C label is a name with its `:` right after it, so two tokens a macro made
-// are rendered apart, while the same tokens written in the file stay together.
+// spec QC-9.14: an expansion keeps its macro body's spacing, and a token from an argument and
+// one from the body, or from two macros, or a macro's and the text around it, stay apart
 #[test]
-fn rendering_separates_the_tokens_of_a_macro() {
-    assert_eq!(
-        rendered(
+fn rendering_keeps_a_macro_body_s_spacing() {
+    for (text, want) in [
+        (
             "#define LABEL done:\nvoid() f = { LABEL };\nvoid() g = { done: };\n",
-            Dialect::Fteqcc
+            "void() f = { done: };\nvoid() g = { done: };",
         ),
-        "void() f = { done : };\nvoid() g = { done: };"
+        ("#define B #5\nvoid() f = B;\n", "void() f = #5 ;"),
+        ("#define B #  5\nvoid() f = B;\n", "void() f = # 5 ;"),
+        (
+            "#define M(a) a:\nvoid() f = { M(lbl) };\n",
+            "void() f = { lbl : };",
+        ),
+        ("#define M(a) a\nvoid() f = M(#5);\n", "void() f = #5 ;"),
+        (
+            "#define H #\n#define F 5\nvoid() f = H F;\n",
+            "void() f = # 5 ;",
+        ),
+        ("#define B #\nvoid() f = B5;\n", "void() f = B5;"),
+    ] {
+        assert_eq!(rendered(text, Dialect::Fteqcc), want, "{text:?}");
+    }
+}
+
+// spec QC-9.14: a builtin initialiser or a label a macro makes reads as the same text written
+// in the file would: the FTEQCC `#` before its number (FTE-23.1), a `-` before a digit
+// (FTE-23.4), a label's `:` (FTEF-18.23); a body that writes them apart is read apart
+#[test]
+fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
+    let binding = |text: &str| {
+        let rendered = rendered(text, Dialect::Fteqcc);
+        let parse = qc_syntax::parse_with(rendered.as_bytes(), Dialect::Fteqcc);
+        let errors: Vec<Code> = parse.errors().map(|d| d.code).collect();
+        let function = lower_file(&parse, Dialect::Fteqcc)
+            .decls
+            .into_iter()
+            .find(|decl| decl.name == "f")
+            .and_then(|decl| decl.literal)
+            .and_then(|literal| literal.builtin_function("f"))
+            .map(|function| (function.number, function.name));
+        (errors, function)
+    };
+    let bound = |number: i32, name: &str| (vec![], Some((number, name.to_owned())));
+    assert_eq!(binding("#define B #5\nvoid() f = B;\n"), bound(5, "f"));
+    assert_eq!(binding("#define B #-5\nvoid() f = B;\n"), bound(-5, "f"));
+    assert_eq!(
+        binding("#define B #\"ex_a\"\nvoid() f = B;\n"),
+        bound(0, "ex_a")
+    );
+    assert_eq!(
+        binding("#define B #5:ex_a\nvoid() f = B;\n"),
+        bound(5, "ex_a")
+    );
+    assert_eq!(binding("#define B # 5\nvoid() f = B;\n").0, [Code::E0209]);
+    assert_eq!(binding("#define B #- 5\nvoid() f = B;\n").0, [Code::E0209]);
+    let files = [("a.qc", "#define L lbl:\nvoid() f = { L goto lbl; };\n")];
+    let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    assert!(
+        analysis.diagnostics().next().is_none(),
+        "{:?}",
+        codes(&analysis)
     );
 }
 
