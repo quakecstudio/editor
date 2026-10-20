@@ -70,6 +70,8 @@ jobs:
             echo "QS_TEST_ASSETS=$RUNNER_TEMP_DIR/test-assets"
           } >> "$GITHUB_ENV"
           QS_TEST_ASSETS="$RUNNER_TEMP_DIR/test-assets" cargo xtask corpus fetch id-1.01
+      # xtask runs both coverage checks with proptest on a fixed seed
+      # (readiness::PROPTEST_FIXED), so two runs of one commit agree.
       - name: Measure line coverage
         run: |
           read -ra crates <<< "$CRATES"
