@@ -141,6 +141,10 @@ fn an_argument_touches_the_body_tokens_its_parameter_touches() {
     assert_eq!(fte("#define V(...) __VA_ARGS__:\nV( lbl)"), "lbl:");
     assert_eq!(fte("#define V(...) __VA_ARGS__:\nV(lbl )"), "lbl :");
     assert_eq!(fte("#define V(a, ...) a:__VA_ARGS__:\nV(l, m)"), "l:m:");
+    // An argument's last token or its `)` from an expansion has only white space after it,
+    // whatever stands between them in the source (FTEQCC reads no argument list across the
+    // end of an expansion, P2-79).
+    assert_eq!(fte("#define L(x) x:\n#define LL L(lbl\nLL/**/)"), "lbl:");
     // A `#` string touches as written, but is made, so a renderer keeps it apart.
     assert_eq!(fte("#define S(x) #x:\nS(lbl)"), "\"lbl\":");
 }
@@ -197,6 +201,7 @@ fn a_parameter_inside_a_stored_word_is_no_parameter() {
         touching("#define A(a) a/**/b\nA(5)", Dialect::Vanilla),
         "5 b"
     );
+    assert_eq!(touching("#define L(x) -x\nL(5)", Dialect::Vanilla), "- 5");
 }
 
 // spec FTE-23.10, FTEF-14.13: a `#` reads the name that touches it in the text FTEQCC reads,

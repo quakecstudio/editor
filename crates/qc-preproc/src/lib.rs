@@ -1392,7 +1392,7 @@ impl<L: Loader> Preprocessor<L> {
     /// one. A token of an expansion has only white space after it, since FTEQCC dropped the
     /// body's comments.
     fn nothing_copied_after(&self, last: &PpToken, end: &PpToken) -> bool {
-        if end.touches(last) || last.expansion.is_some() || end.expansion.is_some() {
+        if last.expansion.is_some() || end.expansion.is_some() {
             return true;
         }
         let between = self
