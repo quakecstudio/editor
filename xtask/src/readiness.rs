@@ -15,7 +15,8 @@
 //! A crate is named by its package name (a workspace member) or by its
 //! directory, which is how the fixtures under `xtask/fixtures/readiness/` are
 //! measured. Each crate's numbers come from its own tests. Measuring never
-//! fails because a number is low; only a tool that cannot run fails it.
+//! fails because a number is low; only a tool that cannot run fails it. The
+//! coverage checks run property tests on a fixed seed ([`PROPTEST_FIXED`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -359,10 +360,27 @@ fn run(exec: &dyn Exec, command: &mut Command, what: &str) -> Result<std::proces
         .map_err(|error| format!("cannot run {what}: {error}"))
 }
 
+/// The proptest settings the coverage checks run with, so that a line or
+/// branch reached only by a generated case counts the same on every run.
+/// proptest 1.11 reads each from the environment (`test_runner/config.rs`,
+/// `Config`): "Seed used for the RNG. Set by using the PROPTEST_RNG_SEED
+/// environment variable"; the RNG algorithm "can be overridden by setting the
+/// `PROPTEST_RNG_ALGORITHM` environment variable", whose value `cc` selects
+/// `RngAlgorithm::ChaCha`; and for the case count, "The default is 256, which
+/// can be overridden by setting the `PROPTEST_CASES` environment variable". A
+/// test that sets its own case count keeps it. `cargo test`, mutation and flake
+/// runs set none of these and keep proptest's random seed.
+pub(crate) const PROPTEST_FIXED: [(&str, &str); 3] = [
+    ("PROPTEST_RNG_SEED", "461"),
+    ("PROPTEST_RNG_ALGORITHM", "cc"),
+    ("PROPTEST_CASES", "256"),
+];
+
 fn coverage(root: &Path, target: &Target, check: Check, exec: &dyn Exec) -> Result<Score, String> {
     let report = scratch(root).join(format!("{}-{}.json", check.name(), target.name));
     let branches = check == Check::Branches;
     let mut command = cargo_for(root, target, branches.then_some(NIGHTLY));
+    command.envs(PROPTEST_FIXED);
     command
         .args(["llvm-cov", "--locked", "--all-features", "--manifest-path"])
         .arg(manifest(target))

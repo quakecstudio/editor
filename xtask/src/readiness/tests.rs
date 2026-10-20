@@ -740,6 +740,63 @@ fn coverage_reads_the_report_cargo_llvm_cov_writes() {
     assert!(!seen[1].contains("--branch"), "{}", seen[1]);
 }
 
+/// The `PROPTEST_*` variables `command` sets, by name.
+fn proptest_envs(command: &Command) -> BTreeMap<String, String> {
+    command
+        .get_envs()
+        .filter_map(|(key, value)| {
+            let key = key.to_string_lossy().into_owned();
+            let value = value?.to_string_lossy().into_owned();
+            key.starts_with("PROPTEST_").then_some((key, value))
+        })
+        .collect()
+}
+
+#[test]
+fn coverage_runs_property_tests_on_a_fixed_seed() {
+    let report = recorded("branches", "llvm-cov.json");
+    let envs = std::cell::RefCell::new(Vec::new());
+    let fake = Fake::new(|command: &Command| {
+        envs.borrow_mut().push(proptest_envs(command));
+        Reply {
+            files: vec![(
+                after(command, "--output-path").unwrap(),
+                report.clone().into_bytes(),
+            )],
+            ..Reply::default()
+        }
+    });
+    let target = fixture("branches");
+    coverage(&root(), &target, Check::Lines, &fake).unwrap();
+    coverage(&root(), &target, Check::Branches, &fake).unwrap();
+    let fixed = BTreeMap::from([
+        ("PROPTEST_CASES".to_owned(), "256".to_owned()),
+        ("PROPTEST_RNG_ALGORITHM".to_owned(), "cc".to_owned()),
+        ("PROPTEST_RNG_SEED".to_owned(), "461".to_owned()),
+    ]);
+    assert_eq!(*envs.borrow(), [fixed.clone(), fixed]);
+}
+
+#[test]
+fn mutation_keeps_proptests_random_seed() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let envs = std::cell::RefCell::new(None);
+    let fake = Fake::new(|command: &Command| {
+        envs.replace(Some(proptest_envs(command)));
+        Reply {
+            files: vec![(
+                after(command, "--output")
+                    .unwrap()
+                    .join("mutants.out/outcomes.json"),
+                outcomes.clone().into_bytes(),
+            )],
+            ..Reply::default()
+        }
+    });
+    mutation(&root(), &fixture("mutation"), &fake).unwrap();
+    assert_eq!(envs.borrow().as_ref(), Some(&BTreeMap::new()));
+}
+
 #[test]
 fn coverage_fails_when_cargo_llvm_cov_does() {
     let fake = Fake::new(|_: &Command| Reply {
