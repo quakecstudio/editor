@@ -3,7 +3,6 @@
 | File | What it is |
 | --- | --- |
 | [`design-doc.md`](design-doc.md) | The design document (revision 36, 2026-10-15): goals, licensing, architecture, foundations, compiler, engine bridge, agent, UI, map editor, quality, MVP scope, risks |
-| [`components/`](components/README.md) | One design document per component of the codebase, between the design document and the engine behaviour specs in [`docs/spec/`](../spec/README.md): structure, error model, verification, decisions and open questions |
 | [`mockups/`](mockups/) | The approved mockups of the main screens (approved on [#199](https://github.com/quakecstudio/editor/issues/199#issuecomment-6202660819)) |
 | [`visual.md`](visual.md) | The visual design: colour, type, spacing, icons, motion and window chrome ([ADR-0010](../adr/0010-visual-design.md)) |
 | [`tokens.toml`](tokens.toml) | The theme tokens for dark and light, the single source the UI layer reads; `cargo xtask contrast` checks them against WCAG AA |
