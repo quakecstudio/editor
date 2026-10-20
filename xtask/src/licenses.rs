@@ -255,6 +255,25 @@ mod tests {
         assert_eq!(problems("clean", &files), Vec::<String>::new());
     }
 
+    // ADR-0017: a file ported from FTEQW keeps its README's copyright line (rule H4); without
+    // it the header fails
+    #[test]
+    fn an_fteqw_port_keeps_fte_s_copyright_line() {
+        let fte = "Copyright (c) 2004-2025 FTE's team and its contributors";
+        let cite = "Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: \
+                    engine/qclib/qcc_pr_lex.c, QCC_PR_CheckCompConst";
+        let spdx = tag("GPL-3.0-or-later");
+        let good = format!("// {spdx}\n// {fte}\n// Copyright (C) 2026 Us\n//\n// {cite}\n");
+        assert_eq!(
+            problems("fteqw-good", &[("src/a.rs", good)]),
+            Vec::<String>::new()
+        );
+        let bad = format!("// {spdx}\n// Copyright (C) 2026 Us\n//\n// {cite}\n");
+        let found = problems("fteqw-bad", &[("src/a.rs", bad)]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("H4"), "{found:?}");
+    }
+
     #[test]
     fn the_repository_passes() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

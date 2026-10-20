@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Adversarial tests from the third P2-R2 readiness review (TEST-9), written by a reviewer who
-//! did not write the preprocessor: macro expansion at depth after P2-65 (QC-9.13).
+//! did not write the preprocessor: macro expansion at depth after P2-65 (QC-9.17).
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -28,7 +28,7 @@ fn on_small_stack(text: String, dialect: qc_lexer::Dialect) -> (String, Vec<Code
 
 const DIALECTS: [qc_lexer::Dialect; 2] = [qc_lexer::Dialect::Vanilla, qc_lexer::Dialect::Fteqcc];
 
-// spec QC-9.13: a chain of 100000 function-like macros, each calling the one before with its
+// spec QC-9.17: a chain of 100000 function-like macros, each calling the one before with its
 // argument, expands to its end under both dialects with no diagnostic
 #[test]
 fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
@@ -46,7 +46,7 @@ fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
     }
 }
 
-// spec QC-9.13: a macro call nested 100000 deep in its own argument expands the outer call and
+// spec QC-9.17: a macro call nested 100000 deep in its own argument expands the outer call and
 // leaves each inner one, which its hide set names, as written, with no diagnostic
 #[test]
 fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
@@ -66,9 +66,11 @@ fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
     }
 }
 
-// spec QC-9.13: in a 10000-long chain whose every macro also names the chain's head, the head
+// spec QC-9.17: in a 10000-long chain whose every macro also names the chain's head, the head
 // is hidden in each expansion (a name with live hide-set nodes is still looked up in the
 // token's own set), so each use of it is left as written and the chain still reaches its end
+// spec FTEF-14.19: under FTEQCC the head is expanded again in each chunk it is not open in,
+// so the expansion outgrows the bound, which is reported once
 #[test]
 fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
     let n = 10_000_usize;
@@ -79,10 +81,10 @@ fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
     }
     writeln!(text, "M{head}").unwrap();
     let expected = format!("1{}", format!(" M{head}").repeat(head));
-    for dialect in DIALECTS {
-        assert_eq!(
-            on_small_stack(text.clone(), dialect),
-            (expected.clone(), vec![])
-        );
-    }
+    assert_eq!(
+        on_small_stack(text.clone(), qc_lexer::Dialect::Vanilla),
+        (expected, vec![])
+    );
+    let (_, codes) = on_small_stack(text, qc_lexer::Dialect::Fteqcc);
+    assert_eq!(codes, vec![Code::E0120]);
 }

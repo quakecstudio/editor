@@ -12,7 +12,7 @@
 //! to one function, with and without another function bound by the first form before them.
 //! Under FTEQCC it also holds macro uses (FTE-23.10), character-constant escapes (FTEF-13.13),
 //! macro names before every kind of byte (FTEF-14.13), and macro arguments against a label's
-//! or a builtin's body token (QC-9.15).
+//! or a builtin's body token (QC-9.16).
 //!
 //! An outcome is what the compiler did with the program: bound the function `f` to a builtin
 //! number and engine name (read from the `progs.dat` it wrote, PROGS-10.2), accepted it without a
@@ -304,7 +304,7 @@ const MACRO_BODIES: &[&str] = &[
     "ex_a",
     "#5",
     "#5:ex_a",
-    // QC-9.15: a macro's body keeps its spacing.
+    // QC-9.16: a macro's body keeps its spacing.
     "#-5",
     "#\"ex_a\"",
     "# 5",
@@ -418,7 +418,7 @@ fn word_followers() -> Vec<String> {
 }
 
 /// The macro bodies and uses of the macro-word cases in a body or an argument
-/// (FTEF-14.13, QC-9.15): `N`, which stands for `5`, followed in the text FTEQCC reads by a
+/// (FTEF-14.13, QC-9.16): `N`, which stands for `5`, followed in the text FTEQCC reads by a
 /// byte that ends its word or one that does not.
 const WORD_MACROS: &[(&str, &str)] = &[
     ("#define M N!=5", "M"),
@@ -439,13 +439,13 @@ const WORD_MACROS: &[(&str, &str)] = &[
     ("#define A(a, b) a b!=5", "A(, N)"),
     ("#define V(...) __VA_ARGS__!=5", "V(N)"),
     ("#define V(...) __VA_ARGS__!=5", "V(N )"),
-    // QC-9.15: a parameter in a word FTEQCC stored across a dropped comment or line break.
+    // QC-9.16: a parameter in a word FTEQCC stored across a dropped comment or line break.
     ("#define A(a) a/**/b", "0; local float ab; ab = A(5)"),
     ("#define A(a) b/**/a", "0; local float ba; ba = A(5)"),
     ("#define A(a) a\\\nb", "0; local float ab; ab = A(5)"),
 ];
 
-/// The macros and statements of the label cases (QC-9.15, FTEF-18.23): an argument, or a body
+/// The macros and statements of the label cases (QC-9.16, FTEF-18.23): an argument, or a body
 /// token, written against a `:` or apart from it.
 const LABEL_MACROS: &[(&str, &str)] = &[
     ("#define L lbl:", "L"),
@@ -471,7 +471,7 @@ const LABEL_MACROS: &[(&str, &str)] = &[
 ];
 
 /// The macros and initialisers of the cases where a macro's argument meets a builtin's body
-/// token (QC-9.15, FTE-23.1, FTE-23.4).
+/// token (QC-9.16, FTE-23.1, FTE-23.4).
 const ARGUMENT_BUILTINS: &[(&str, &str)] = &[
     ("#define E(n) :n", "E(ex_a)"),
     ("#define E(n) : n", "E(ex_a)"),
@@ -492,6 +492,148 @@ const ARGUMENT_BUILTINS: &[(&str, &str)] = &[
     ("#define E(n, m) n:m", "E(#5, ex_a)"),
     ("#define N \"ex_a\"\n#define K #/**/N", "K"),
     ("#define N 5\n#define K #/**/N", "K"),
+];
+
+/// The macro-expansion cases whose expansion is `f`'s initialiser (FTEF-14, QC-9.16): token
+/// pasting and stringising at each place in a body, empty arguments, nested and recursive
+/// macros, argument lists that cross the end of an expansion or of the file, and builtin
+/// initialisers a macro writes. Each is the definitions and the initialiser.
+const EXPANSION_INITIALISERS: &[(&str, &str)] = &[
+    // `##` with the arguments on each side, empty or not, and at each place in the body.
+    ("#define P(a, b) a##b", "P(#, 5)"),
+    ("#define P(a, b) a##b", "P(#5, )"),
+    ("#define P(a, b) a##b", "P(, #5)"),
+    ("#define P(a, b) a##b", "P(#1, 6)"),
+    ("#define P(a, b) a##b", "P(#, -5)"),
+    ("#define P(a, b) a##b", "P(:, ex_a)"),
+    ("#define P(a, b) a##b", "P(#5:ex, _a)"),
+    ("#define P(a, b) a##b", "P(#5:, ex_a)"),
+    ("#define P(a, b) a##b", "P(#, \"ex_a\")"),
+    ("#define P(a, b) a##b", "P(#5 :ex, _a)"),
+    ("#define P(a, b) a ## b", "P(#5:ex, _a)"),
+    ("#define P(a, b) a## b", "P(#5:ex, _a)"),
+    ("#define P(a, b) a ##b", "P(#5:ex, _a)"),
+    ("#define P(a, b, c) a##b##c", "P(#, 1, 6)"),
+    ("#define P(a, b, c) a##b##c", "P(#5:, ex, _a)"),
+    ("#define P(a) a##5", "P(#)"),
+    ("#define P(a) a##5", "P(#1)"),
+    ("#define P(a) a##5", "P()"),
+    ("#define P(a) #5:ex_##a", "P(a)"),
+    ("#define P(a) #5:a##_a", "P(ex)"),
+    ("#define P(a) #5:a##_##a", "P(ex)"),
+    ("#define P #1##6", "P"),
+    ("#define P #5:ex_##a", "P"),
+    ("#define P(a) ##a", "P(#5)"),
+    ("#define P(a) a##", "P(#5)"),
+    ("#define P(a) #5:a ## ex", "P()"),
+    // `#` before each kind of argument, and before what is no parameter.
+    ("#define S(a) #a", ":S(ex_a)"),
+    ("#define S(a) #a", ":S( ex_a )"),
+    ("#define S(a) #a", ":S(ex  a)"),
+    ("#define S(a) #a", ":S(ex/**/a)"),
+    ("#define S(a) #a", ":S(\"ex_a\")"),
+    ("#define S(a) #a", ":S(ex\\a)"),
+    ("#define S(a) #a", ":S()"),
+    ("#define S(a) #a", ":S(ex_a, b)"),
+    ("#define S(a) #a", ":S((ex, a))"),
+    ("#define S(a) # a", ":S(ex_a)"),
+    ("#define S(a) #a b", ":S(ex_a)"),
+    ("#define S(a, b) #a #b", ":S(ex_, a)"),
+    ("#define S(a) \"ex_\"#a", ":S(a)"),
+    ("#define S(a) #a\"_a\"", ":S(ex)"),
+    ("#define S(a) #b", ":S(ex_a)"),
+    ("#define S(a) #5 #", "S(ex_a)"),
+    ("#define S(a) #a:ex_b", "#5:S(ex_a)"),
+    ("#define S(a) #a", "#S(ex_a)"),
+    ("#define S(a) #a", "#5:S(ex_a)"),
+    ("#define S(a) #a\n#define N ex_b", ":S(N)"),
+    (
+        "#define S(a) #a\n#define T(a) S(a)\n#define N ex_b",
+        ":T(N)",
+    ),
+    ("#define S(a) #a##_a", ":S(ex)"),
+    // Empty arguments, and a variadic macro given none.
+    ("#define E(a) #5 a", "E()"),
+    ("#define E(a) #5a", "E()"),
+    ("#define E(a, b) a b", "E(#5, )"),
+    ("#define E(a, b) a b", "E(, #5)"),
+    ("#define E(a, b) a b", "E(, )"),
+    ("#define E(a, b) a:b", "E(#5, )"),
+    ("#define E(a, b) a#b", "E(, 5)"),
+    ("#define V(...) #5 __VA_ARGS__", "V()"),
+    ("#define V(...) #5 __VA_ARGS__", "V(:ex_a)"),
+    ("#define V(a, ...) a __VA_ARGS__", "V(#5)"),
+    ("#define V(a, ...) a __VA_ARGS__", "V(#5, )"),
+    ("#define V(a, ...) a __VA_ARGS__", "V(#5, :ex_a)"),
+    ("#define V(a, ...) a:__VA_ARGS__", "V(#5, ex_a)"),
+    // Nested and recursive macros.
+    ("#define A #5\n#define B A", "B"),
+    ("#define A(x) x\n#define B A(#5)", "B"),
+    ("#define A(x) x", "A(A(#5))"),
+    ("#define A(x) x\n#define B(x) A(x)", "B(#5)"),
+    ("#define A(x) B(x)\n#define B(x) A(x)", "A(#5)"),
+    ("#define A A", "#5:A"),
+    ("#define A B\n#define B A", "#5:A"),
+    ("#define A #5 B\n#define B :A", "A"),
+    ("#define A #5:B\n#define B A", "A"),
+    ("#define A(x) #5:x\n#define B A(B)", "B"),
+    ("#define A(x) x\n#define B A(:B)", "#5 B"),
+    ("#define N 5\n#define A #N", "A"),
+    ("#define N #5\n#define A(x) x", "A(N)"),
+    ("#define N ex_a\n#define A(x) #5:x", "A(N)"),
+    ("#define A(x) x:ex_a", "A(A(#5))"),
+    ("#define M(x) x\n#define N M", "N(#5)"),
+    ("#define M(x) x\n#define N M(", "N #5)"),
+    ("#define M(x) x\n#define N(y) M(y", "N(#5))"),
+    ("#define M(x) x", "M(\n#5)"),
+    ("#define M(x) x", "M(#5"),
+    ("#define M(x) x", "M\n(#5)"),
+    ("#define M(x) x", "M /**/(#5)"),
+    ("#define M(x) x", "M\t(#5)"),
+    ("#define S(a) # 5", "S(x)"),
+    ("#define S(a) # 5:ex_a", "S(x)"),
+    ("#define S(a) #a", ":S(e\"x\"a)"),
+    ("#define K(x) x", "#K(__LINE__)"),
+    ("#define K(x) #5:x", "K(__FILE__)"),
+    // From the self-review: arguments beside `##`, `#__VA_ARGS__`, built-in constants in
+    // arguments, a pasted name after `#`, a paste that is a comment, and bytes in a string.
+    ("#define P(a, b) a##b", "P(#5:ex , _a)"),
+    ("#define P(a, b) a##b", "P(#5:e, x_a)"),
+    ("#define P(a, b) a##b", "P(#5:e, x_a :ex_b)"),
+    ("#define P(a, b) a # # b", "P(#, 5)"),
+    ("#define P(a, b) a##b", "P(/, /) #5"),
+    ("#define V(...) #__VA_ARGS__", "V(5)"),
+    ("#define K(x) x", "K(#__LINE__)"),
+    ("#define K(x) x##5", "K(#__LINE__)"),
+    ("#define N1 #5\n#define P(x, a, b) x##a##b", "P(#, N, 1)"),
+    ("#define S(a) #a", ":S(e\u{e9})"),
+    ("#define P(a, b) a##b 5", "P(#, )"),
+    ("#define P(a, b) a##b #6", "P(/, /) #5"),
+    ("#define M(x) x\n#define K(y) y", "K(M\n(#5))"),
+];
+
+/// The macro-expansion cases written as statements of a function `g` after `f`, which binds
+/// `f` only when `g` compiles (QC-9.16, FTEF-18.23): labels a paste, a string, a nested or an
+/// unfinished macro writes. Each is the definitions and the statement.
+const EXPANSION_STATEMENTS: &[(&str, &str)] = &[
+    ("#define P(a, b) a##b:", "P(l, bl) goto lbl;"),
+    ("#define P(a, b) a##b :", "P(l, bl) goto lbl;"),
+    ("#define P(a, b) a ## b:", "P(l, bl) goto lbl;"),
+    ("#define P(a, b) a##b", "P(l, bl): goto lbl;"),
+    ("#define P(a) lbl##a", "P(): goto lbl;"),
+    ("#define P(a) a##:", "P(lbl) goto lbl;"),
+    ("#define P(a) :##a", "P(lbl) goto lbl;"),
+    ("#define L(x) x:\n#define M(x) L(x)", "M(lbl) goto lbl;"),
+    ("#define L(x) x:\n#define M L(lbl)", "M goto lbl;"),
+    ("#define L(x) x:\n#define M lbl", "L(M) goto lbl;"),
+    ("#define L(x) x:\n#define LL L(lbl", "LL) goto lbl;"),
+    ("#define L(x) x:\n#define LL L(", "LL lbl) goto lbl;"),
+    ("#define L(x) x:\n#define LL L", "LL(lbl) goto lbl;"),
+    ("#define L(x) x:", "L(lbl\n) goto lbl;"),
+    ("#define S(x) #x", "x = S(5) == \"5\";"),
+    ("#define P(a, b) a##b", "P(l, bl:) goto lbl;"),
+    ("#define P(a, b) a##b", "P(l , bl:) goto lbl;"),
+    ("#define K(x) x", "K(__LINE__:) goto lbl;"),
 ];
 
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's
@@ -574,7 +716,7 @@ pub(crate) fn cases() -> Vec<Case> {
     for escape in CHARACTER_ESCAPES {
         cases.push(fte(format!("void() f = :'\\{escape}';\n")));
     }
-    // FTEF-14.13, QC-9.15: `f` is bound only when `g`'s body, which uses the macros, has no
+    // FTEF-14.13, QC-9.16: `f` is bound only when `g`'s body, which uses the macros, has no
     // error; `f` comes first, so its function is the first (`bound`).
     let with_body = |define: &str, statement: &str| {
         format!(
@@ -592,6 +734,12 @@ pub(crate) fn cases() -> Vec<Case> {
     }
     for (define, use_) in ARGUMENT_BUILTINS {
         cases.push(fte(format!("{define}\nvoid() f = {use_};\n")));
+    }
+    for (define, use_) in EXPANSION_INITIALISERS {
+        cases.push(fte(format!("{define}\nvoid() f = {use_};\n")));
+    }
+    for (define, statement) in EXPANSION_STATEMENTS {
+        cases.push(fte(with_body(define, statement)));
     }
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for length in NAME_LENGTHS {
@@ -611,7 +759,7 @@ pub(crate) fn cases() -> Vec<Case> {
 }
 
 /// The spec statement that says why the profile's outcome `ours` for `case`, with the error
-/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.13).
+/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.14).
 pub(crate) fn expected_difference(
     case: &Case,
     ours: &Outcome,
@@ -705,7 +853,7 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
 
 /// The builtin number and engine name the profile binds the first function of `case` to:
 /// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), from the
-/// file's expansion (FTE-23.10, QC-9.15); under the vanilla dialect the number
+/// file's expansion (FTE-23.10, QC-9.16); under the vanilla dialect the number
 /// `builtin_binum` gives and the definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     let name = function_name(case);

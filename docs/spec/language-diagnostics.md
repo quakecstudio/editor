@@ -276,3 +276,5 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-8.10** `E0117` "unterminated argument list for macro NAME" (QC-9.10).
 - **QCD-8.11** `E0118` "#Error: TEXT": under an FTEQCC profile, an `#error` on a taken side,
   FTEQCC's error of the same text (`dialect-fteqcc.md`, FTEF-14.3).
+- **QCD-8.12** `E0120` "macro expansion too large": under an FTEQCC profile, the first macro use
+  past this profile's bound on expansions in one file (`dialect-fteqcc.md`, FTEF-14.19).

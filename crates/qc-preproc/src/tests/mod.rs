@@ -256,7 +256,7 @@ fn macro_chain(n: usize) -> String {
     text
 }
 
-// spec QC-9.13: a chain of 10000 and of 100000 macros, each the name of the one before, is
+// spec QC-9.17: a chain of 10000 and of 100000 macros, each the name of the one before, is
 // expanded to its end under both dialects on a 2 MiB thread, one expansion each, and so is a
 // second use, after the first use's hide sets are dropped (with a hidden check that walks the
 // whole set again, the second use takes quadratic time and the test times out)

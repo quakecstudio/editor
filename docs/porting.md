@@ -23,6 +23,7 @@ a ported file must keep.
 | --- | --- | --- | --- |
 | [`id-Software/Quake`](https://github.com/id-Software/Quake) | `bf4ac424ce754894ac8f1dae6a3981954bc9852d` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
 | [`id-Software/Quake-Tools`](https://github.com/id-Software/Quake-Tools), `qcc/` only | `c0d1b91c74eb654365ac7755bc837e497caaca73` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
+| [`fte-team/fteqw`](https://github.com/fte-team/fteqw), `engine/qclib/` only ([ADR-0017](adr/0017-port-fteqcc.md)) | `f937b9d88f71fc4429db5fe56c6a98d922711b2e` | GPL-2.0: `README.md` "FTEQW is supplied to you under the terms of the same license as the original Quake sources, the GNU General Public License Version 2.", `engine/qclib/LICENSE` the GPL-2.0 text; the `qcc_*.c` files carry no notice, so a ported file keeps the README's line | `Copyright (c) 2004-2025 FTE's team and its contributors` |
 
 **Not yet portable:** `Quake-Tools/qutils/` (qbsp, vis, light and the other map tools). Its
 files carry no license notice and its `COPYING` is GPL-2.0 with no "or later" grant, so it is
@@ -31,9 +32,23 @@ review ([#133](https://github.com/quakecstudio/editor/issues/133), P4-22) rules 
 Phase 6 ports the map tools. Until then the map tools may be read and used as oracles, not
 ported.
 
-Adding an upstream (FTEQCC, ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after
+Adding an upstream (ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after
 checking that its license allows use under GPL-3.0-or-later, and records the copyright line its
-files carry.
+files carry. FTEQW was added by Justin Plock's decision of 2026-10-20 (ADR-0017); the licence
+compliance review (P4-22) confirms how its version 2 terms combine with ours.
+
+### Porting FTEQCC: behaviour, not structure
+
+FTEQCC is ported under a clean-port policy ([ADR-0017](adr/0017-port-fteqcc.md)), so the
+FTEQCC dialect stays one supportable implementation, not an amalgamation of two compilers:
+
+- port FTEQCC's behaviour, not its structure;
+- its source is the authority, read and cited function by function (`QCC_PR_CheckCompConst`,
+  `QCC_PR_ExpandPreProcessorMacro`, ...), in the `Ported from` header and the rustdoc;
+- the Rust is written fresh inside the existing lexer, preprocessor, CST and semantic model;
+- no globals and no transliterated control flow, and [CONV-17](conventions.md) throughout;
+- one implementation with dialect profiles, never a parallel compiler;
+- the oracle differentials (`cargo xtask oracles`) stay as the proof.
 
 ## Which source is authoritative
 
@@ -49,6 +64,7 @@ files carry.
 | L1 VM | Edicts, fields, system globals, entity lump parsing | `WinQuake/pr_edict.c`, `progdefs.h`, `progs.h` |
 | L1 VM | Builtins | `WinQuake/pr_cmds.c` |
 | L2 syntax | Lexer, `$frame` and other `$` commands, `progs.src` | `Quake-Tools/qcc/pr_lex.c`, `qcc.c` |
+| L2, L3 | The FTEQCC dialect: lexer, preprocessor, parser, semantics | `fte-team/fteqw` `engine/qclib/qcc_pr_lex.c`, `qcc_pr_comp.c`, `qcc_cmdlib.c` ([ADR-0017](adr/0017-port-fteqcc.md)) |
 | L3 semantics | Types, definitions, scopes, type checking | `Quake-Tools/qcc/pr_comp.c`, `qcc.h` |
 | L4 compiler | Code generation, progs.dat output, `progdefs.h` CRC | `Quake-Tools/qcc/pr_comp.c`, `qcc.c` |
 | L5 to L7 | Commands, agent, UI | No id source; nothing to port |
@@ -59,9 +75,10 @@ When sources disagree:
   players run. The compiler's view governs only what our compiler emits (L4).
 - **WinQuake wins over QuakeWorld** (`QW/`). A spec that follows QuakeWorld says so in its
   statement.
-- **The pinned commit wins over memory, forums and other ports.** FTEQW, QuakeSpasm and
-  others are useful for understanding, but a spec statement cites id's code unless the
-  behaviour has no id source (then it cites the registered upstream it follows).
+- **The pinned commit wins over memory, forums and other ports.** QuakeSpasm and others are
+  useful for understanding, but a spec statement cites id's code unless the behaviour has no
+  id source (then it cites the registered upstream it follows). The FTEQCC dialect has no id
+  source: FTEQW's `engine/qclib` at its pinned commit is its authority.
 
 ## File headers
 

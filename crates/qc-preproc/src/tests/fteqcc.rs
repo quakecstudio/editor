@@ -138,8 +138,8 @@ fn variadic_macros() {
     assert_eq!(codes(&out), vec![Code::E0115]);
 }
 
-// spec FTEF-14.6: `#param` is the argument as a string and `a ## b` one token; a `#` before
-// a word that is no parameter stays.
+// spec FTEF-14.14, FTEF-14.15: `#param` is the argument as a string and `a ## b` one token;
+// a `#` before a word that is no parameter stays.
 #[test]
 fn stringify_and_paste() {
     let (toks, errs) = fte("#define S(a) #a\nS(info_null)\n");
@@ -466,8 +466,8 @@ fn a_redefinition_with_other_parameters_warns() {
     assert_eq!(fte("#define V(a, ...) x\n#define V(a, ...) x\n").1, vec![]);
 }
 
-// spec FTEF-14.6: a pasted text that lexes as one token is that token, a number or an
-// operator; one that lexes as more stays one name of the whole text
+// spec FTEF-14.14: a pasted text that lexes as one token is that token, a number or an
+// operator; one that lexes as more keeps its tokens, the second written against the first
 #[test]
 fn a_paste_is_lexed_again() {
     use qc_lexer::Punct;
@@ -478,13 +478,16 @@ fn a_paste_is_lexed_again() {
         [
             TokenKind::Float(12.0),
             TokenKind::Punct(Punct::PlusEq),
-            TokenKind::Name("a+".to_owned())
+            TokenKind::Name("a".to_owned()),
+            TokenKind::Punct(Punct::Plus),
         ]
     );
+    let plus = out.tokens.last().unwrap();
+    assert!(plus.touches(&out.tokens[2]));
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("12"));
 }
 
-// spec FTEF-14.6: `#param` is a string literal whose spelling escapes `"` and `\`
+// spec FTEF-14.15: `#param` is a string literal whose spelling escapes `"` and `\`
 #[test]
 fn a_stringified_argument_is_escaped() {
     let (_, out) = one_fte("#define Q(a) #a\nQ(say \"a\\\\b\")\n");
@@ -636,7 +639,7 @@ fn hash_before_a_macro_is_its_expansion() {
     }
 }
 
-// spec QC-9.15: the tokens of one expansion keep their spans in the macro's body, so two that
+// spec QC-9.16: the tokens of one expansion keep their spans in the macro's body, so two that
 // touch there touch in the output and a renderer can keep the body's spacing
 #[test]
 fn an_expansion_keeps_its_body_s_spans() {
