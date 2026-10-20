@@ -37,7 +37,7 @@ Surviving mutants, each killed by a new test or recorded in `ratchets.toml` unde
 
 | Crate | Property tests (TEST-4) | Fuzzing (TEST-5) | Differential (TEST-6) |
 | --- | --- | --- | --- |
-| `qs-...` | <one per invariant in the README: yes / gaps> | <targets, hours, crashes> | <oracle, cases, divergences> |
+| `qs-...` | <one per invariant in the README: yes / gaps> | <targets, hours, crashes> | <oracle, cases, divergences, corpus statements executed (DIFF-11, ADR-0013)> |
 
 ## 4. Flakes
 
