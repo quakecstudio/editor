@@ -8,8 +8,8 @@
 )]
 
 use super::{
-    End, Head, HostAction, Known, Target, Value, Vector, Verdict, init_text, matches, parse,
-    parse_host_action, parse_strings, parse_value, verdict,
+    End, Head, HostAction, Known, Target, Value, Vector, Verdict, build_progs, init_text, matches,
+    parse, parse_host_action, parse_strings, parse_value, verdict,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -357,6 +357,30 @@ fn rejects_bad_operands_and_function_fields() {
     assert!(parse("t.txt", "== v\nfunctions:\n  2: first=1 colour=3\n").is_err());
     assert!(parse("t.txt", "== v\nfunctions:\n  2: builtin=-2147483648\n").is_err());
     assert!(parse("t.txt", "== v\nfunctions:\n  x: first=1\n").is_err());
+}
+
+// spec LIMIT-1.5: a vector may ask for up to LIMIT_MAX_DEF_SLOT + 1 global slots and function
+// indices below LIMIT_QCC_MAX_FUNCTIONS; one past either is malformed, refused before the
+// progs is built.
+#[test]
+fn bounds_the_global_count_and_function_indices() {
+    let globals = parse("t.txt", "== v\nnumglobals: 65536\n").unwrap();
+    assert_eq!(build_progs(globals.first().unwrap()).map(|p| p.is_empty()), Ok(false));
+    assert!(parse("t.txt", "== v\nnumglobals: 65537\n").is_err());
+    assert!(parse("t.txt", "== v\nnumglobals: 0\n").is_ok());
+    let functions = parse("t.txt", "== v\nfunctions:\n  8191: first=1\n").unwrap();
+    assert!(build_progs(functions.first().unwrap()).is_ok());
+    assert!(parse("t.txt", "== v\nfunctions:\n  8192: first=1\n").is_err());
+}
+
+// spec LIMIT-1.5: the xtask-vectors fuzz target's out-of-memory input (Fuzz run 39332527448),
+// `numglobals:01111111111`, which built a progs of 1111111111 global slots; it is now refused.
+#[test]
+fn regression_fuzz_numglobals_out_of_memory() {
+    let input = b"== %\x00\x00,3\x0a\x0a\x0anumglobals:01111111111 \x0a\x0a \x0a== \x00 \x0a \x0a \x0a \x0a== \x00 \x0a\x0a== \x00 \x0a\x0a \x0a== \x00 \x0a \x0a== \x00 == \x00  \x0a \x0a== \x00 \x0a==  \x00 \x0a \x0a \x0a \x0a== \x00 \x0a\x0a== \x00 \x0a \x0a== \x00 \x0a\x0a== \x00 \x0a\x0a \x0a== \x00 \x0a \x0a== \x0011111111111r\x02\x00;\x00\x00\x00\x00\x00\x00";
+    let text = std::str::from_utf8(input).unwrap();
+    let error = parse("fuzz.txt", text).unwrap_err();
+    assert!(error.contains("bad numglobals"), "{error}");
 }
 
 // --- Running vectors, against a fake that replays what the VM oracle wrote ---

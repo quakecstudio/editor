@@ -33,6 +33,14 @@ those crates cite it. Constants that describe the format's structure rather than
   opcodes are `OP_CALL0` to `OP_CALL8`). Each parameter has 3 slots in the call area
   (PROGS-18.1), and qcc writes a `parm_size` of 1 or 3; the engine copies whatever
   `parm_size` says without checking it.
+- **LIMIT-1.5** The header's `numglobals` and `numfunctions` are signed 32-bit counts
+  (PROGS-2) that nothing in the format bounds, but no definition names a global slot above
+  `LIMIT_MAX_DEF_SLOT` (LIMIT-1.2) and id's qcc builds at most `LIMIT_QCC_MAX_FUNCTIONS`
+  functions (LIMIT-7.1). So the VM vectors (`vectors/vm/README.md`), which describe a progs
+  rather than read one, refuse a `numglobals:` above `LIMIT_MAX_DEF_SLOT + 1` (65536) and a
+  function index of `LIMIT_QCC_MAX_FUNCTIONS` (8192) or more as malformed: a larger count names
+  slots or functions no compiled program has, and building it would allocate the stated size
+  before anything checks it.
 
 ### Constants
 
