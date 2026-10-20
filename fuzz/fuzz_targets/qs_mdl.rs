@@ -148,15 +148,15 @@ fn md5(mesh: &[u8], anim: &[u8]) {
             assert!(surface.tri(surface.num_tris).is_none());
         }
     }
-    let len = anim.iter().position(|&byte| byte == 0).unwrap_or(anim.len());
+    let len = anim.len();
     if let Ok(anim) = Md5Anim::read(anim) {
-        // MD5-3.11: the count, and so every frame, is bounded by the text's length.
-        assert!(anim.num_animated_components <= u64::try_from(len).unwrap());
+        // MD5-3.11: the count, and so every frame, is bounded by the file's length.
+        assert!(anim.num_animated_components() <= u64::try_from(len).unwrap());
         for frame in 0..anim.num_frames.min(4) {
             let components = anim.frame(frame).unwrap();
             assert_eq!(
                 u64::try_from(components.len()).unwrap(),
-                anim.num_animated_components
+                anim.num_animated_components()
             );
             for joint in 0..anim.hierarchy.len() {
                 assert!(anim.pose(frame, joint).is_some());

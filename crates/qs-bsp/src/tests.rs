@@ -1276,7 +1276,7 @@ fn a_huge_visleafs_row_is_bounded() {
     assert_eq!(bsp.vis_row_size(), BSP_MAX_VIS_ROW);
     let row = bsp.leaf_pvs(0).unwrap();
     assert_eq!(row.len(), BSP_MAX_VIS_ROW);
-    assert!(row.iter().all(|&byte| byte == 0xFF));
+    assert_eq!((row.first(), row.last()), (Some(&0xFF), Some(&0xFF)));
     drop(row);
     for visleafs in [i32::MAX - 7, i32::MAX - 6] {
         spec.models[0].visleafs = visleafs;

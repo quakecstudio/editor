@@ -289,7 +289,7 @@ proptest! {
             Err(ReadError::LineTableTruncated { numstatements, len }) => {
                 prop_assert_eq!(Some(numstatements), word(20));
                 prop_assert_eq!(len, bytes.len());
-                prop_assert!(u64::from(numstatements) * 4 + 24 > len as u64);
+                prop_assert!(u64::from(numstatements) * 4 + LNO_HEADER_SIZE as u64 > len as u64);
             }
         }
     }

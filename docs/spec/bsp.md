@@ -288,9 +288,10 @@ when one of the entity's leaves is in the set of the client's leaf.
   all-visible row of BSP-6.4 that reads no input, as wide as `visleafs` says. `visleafs` is a
   signed 32-bit count, so a row is at most `BSP_MAX_VIS_ROW` bytes, the bound on what one
   leaf's set costs; id's `numleafs+7` overflows `int` for the seven largest counts, which is
-  undefined in C, and this spec fixes the answer as `BSP_MAX_VIS_ROW`. A negative `visleafs`
-  makes `row` negative, for which id's all-visible loop `while (row)` does not end; this spec
-  fixes the answer as a row of 0 bytes. id's buffer holds `MAX_MAP_LEAFS/8` bytes, so in id's code a row
+  undefined in C, and this spec fixes the answer as `BSP_MAX_VIS_ROW`. A `visleafs` of -7 to
+  -1 gives a row of 0 bytes; one of -8 or less makes `row` negative, for which id's
+  all-visible loop `while (row)` does not end, and this spec fixes the answer as a row of 0
+  bytes too. id's buffer holds `MAX_MAP_LEAFS/8` bytes, so in id's code a row
   wider than that is undefined (BSP-20.18); this spec follows QS for every loader.
 
 ### Constants

@@ -607,8 +607,9 @@ pub struct Md5Anim {
     pub num_frames: u64,
     /// The token after `frameRate`, which QSS does not read (MD5-3.2).
     pub frame_rate: Vec<u8>,
-    /// `numAnimatedComponents`.
-    pub num_animated_components: u64,
+    /// `numAnimatedComponents`, at most the file's length (MD5-3.11); private so
+    /// [`Md5Anim::frame`] can rely on that bound.
+    num_animated_components: u64,
     /// One entry per joint.
     pub hierarchy: Vec<Md5HierarchyEntry>,
     /// The `bounds` pairs, minimum then maximum, not used (MD5-3.5).
@@ -698,6 +699,13 @@ impl Md5Anim {
             baseframe,
             frames,
         })
+    }
+
+    /// `numAnimatedComponents`: the components every frame holds, at most the file's length
+    /// in bytes (MD5-3.6, MD5-3.11).
+    #[must_use]
+    pub const fn num_animated_components(&self) -> u64 {
+        self.num_animated_components
     }
 
     /// The components of frame `index`, all zero if never given; `None` from

@@ -501,7 +501,7 @@ fn anim_header() {
     assert_eq!(got.commandline, Some(Vec::new()));
     assert_eq!(got.num_frames, 2);
     assert_eq!(got.frame_rate, b"10");
-    assert_eq!(got.num_animated_components, 6);
+    assert_eq!(got.num_animated_components(), 6);
     let spec = AnimSpec {
         num_frames: "0",
         ..AnimSpec::default()
@@ -806,12 +806,12 @@ proptest! {
         }
         let len = u64::try_from(text.len()).unwrap();
         if let Ok(read) = Md5Anim::read(text.as_bytes()) {
-            prop_assert!(read.num_animated_components <= len);
+            prop_assert!(read.num_animated_components() <= len);
             for index in 0..read.num_frames {
                 let components = read.frame(index).unwrap();
                 prop_assert_eq!(
                     u64::try_from(components.len()).unwrap(),
-                    read.num_animated_components
+                    read.num_animated_components()
                 );
             }
             prop_assert!(read.frame(read.num_frames).is_none());

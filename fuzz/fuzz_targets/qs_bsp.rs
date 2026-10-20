@@ -48,10 +48,15 @@ fn check_with(bytes: &[u8], loader: BspLoader) {
         }
     }
     // A row is model 0's `visleafs` bits, which the file may make as wide as BSP_MAX_VIS_ROW
-    // (BSP-6.2, BSP-6.7): every row is checked, many leaves of a narrow one, two of a wide one.
+    // (BSP-6.2, BSP-6.7): many leaves of a narrow row are checked with every loader, and one
+    // leaf of a wide row with one loader, since the width does not depend on the loader.
     let row = bsp.vis_row_size();
     assert!(row <= BSP_MAX_VIS_ROW);
-    let leaves = if row <= 1 << 16 { 256 } else { 2 };
+    let leaves = match (row <= 1 << 16, loader) {
+        (true, _) => 256,
+        (false, BspLoader::FitzQuake) => 1,
+        (false, BspLoader::WinQuake | BspLoader::GlQuake) => 0,
+    };
     for leaf in 0..bsp.leafs.len().min(leaves) {
         if let Ok(pvs) = bsp.leaf_pvs(leaf) {
             assert_eq!(pvs.len(), row);

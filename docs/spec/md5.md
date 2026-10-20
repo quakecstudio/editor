@@ -211,10 +211,12 @@ frame <index> {
   `<name> has too many animated components`. A frame never given still has
   `numAnimatedComponents` components (MD5-3.6), so without a bound a file of a few bytes with
   no `frame` could ask for 2^64 of them. QSS sets no bound of its own: it allocates
-  `raw = Z_Malloc(sizeof(*raw)*(rawcount+6));` from the count as read, which fails, or wraps
-  for a count near 2^64, on a count the zone cannot hold; this spec fixes the answer as an
-  error. The bound refuses no file that gives a frame, since each of a frame's components is
-  at least one byte and a separator.
+  `raw = Z_Malloc(sizeof(*raw)*(rawcount+6));` from the count as read, which fails on a
+  count its zone cannot hold and wraps for a count near 2^64. This spec's bound is stricter
+  than QSS: QSS loads a file with no `frame` whose count is larger than the file but fits
+  its zone, giving all-zero poses, and this spec refuses it. The bound refuses no file that
+  gives a frame, since each of a frame's components is at least one byte and a
+  separator.
 
 ### Constants
 
