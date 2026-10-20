@@ -954,6 +954,26 @@ issues:
   - Each refactoring issue's acceptance criteria require that behaviour is unchanged and every ratchet (spec citations, coverage, mutation score, fuzz, differential) is not lowered
   verify:
   - python3 plan/check.py --write-coverage; review of docs/audits/conv-17-l0-l3.md against the filed issues
+- key: P2-62
+  title: Speed up the Readiness mutation job and lengthen the agents' watch intervals
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - QA-1
+  deliverable:
+  - 'xtask/src/readiness.rs `mutation` and Cargo.toml: the readiness mutation run builds with a `mutants` profile (no debug info, opt-level 1, debug assertions and overflow checks on, after cargo-mutants'' "Choosing a cargo profile"), with incremental builds despite rust-cache''s CARGO_INCREMENTAL=0, and a test-timeout floor below cargo-mutants'' 20 s; the L2 job took 1h47m in run 39303208067 (Justin, 2026-10-19)'
+  - 'docs/testing.md: the mutation job''s profile and timeout'
+  - '.claude/skills/work-issue/scripts/land.sh, .claude/skills/work-issue/SKILL.md, .claude/agents/implementer.md, .claude/agents/reviewer.md and .claude/rules/development-discipline.md rule 12: `gh pr checks --watch` with `--interval 30` and `gh run watch` with `--interval 60`, so that several agents watching at once stay under GitHub''s secondary rate limit (Justin, 2026-10-19)'
+  acceptance:
+  - On qc-syntax and qc-preproc, a local cargo-mutants 27.1.0 run with the new options gives the same caught, missed, timed-out and unviable mutants as the old command, with the wall time of each recorded in the PR
+  - Options that would change the bar or ADR-0009 are reported to Justin with numbers in the PR and not implemented
+  - shellcheck and shfmt report nothing on land.sh
+  verify:
+  - cargo test -p xtask; the before and after cargo-mutants runs in the PR body
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1147,6 +1167,7 @@ issues:
   - P2-59
   - P2-60
   - P2-61
+  - P2-62
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

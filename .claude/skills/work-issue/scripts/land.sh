@@ -7,7 +7,9 @@
 #
 # Waits use gh's watch commands: `gh pr checks --watch` for the PR's checks and `gh run watch`
 # for the merge queue's runs. A short poll covers only the gaps no watch exists for: checks not
-# reported yet, the queue not yet having started its runs, and the merge itself.
+# reported yet, the queue not yet having started its runs, and the merge itself. The watches
+# refresh every 30 s (checks) and 60 s (runs), not gh's 10 s and 3 s, so that several agents
+# landing at once stay under GitHub's secondary rate limit.
 set -euo pipefail
 
 pr="${1:?usage: land.sh <pr-number> [timeout-minutes]}"
@@ -61,7 +63,7 @@ fail_if_conflicting() {
 # 1. The PR's own checks. A PR that conflicts with main gets no checks, so check for that while
 # waiting for them to be reported.
 while :; do
-  if out=$(until_deadline gh pr checks "$pr" --watch --fail-fast 2>&1); then
+  if out=$(until_deadline gh pr checks "$pr" --watch --fail-fast --interval 30 2>&1); then
     break
   fi
   if past_deadline; then
@@ -123,7 +125,7 @@ while :; do
     --json databaseId --jq '.[].databaseId'); do
     case "$watched" in *" $run "*) continue ;; esac
     new_run=true
-    if ! out=$(until_deadline gh run watch "$run" --exit-status --compact --interval 15 2>&1); then
+    if ! out=$(until_deadline gh run watch "$run" --exit-status --compact --interval 60 2>&1); then
       if past_deadline; then
         timed_out "merge queue run $run was still running"
       fi
