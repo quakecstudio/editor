@@ -16,8 +16,7 @@ pub(crate) trait Exec {
 
     /// Runs `command` as [`Exec::output`] does, but kills it once it has run for `limit`, and
     /// then returns `None`.
-    fn output_within(&self, command: &mut Command, limit: Duration)
-    -> io::Result<Option<Output>>;
+    fn output_within(&self, command: &mut Command, limit: Duration) -> io::Result<Option<Output>>;
 
     /// Runs `command` to the end, its output where the command sends it.
     fn status(&self, command: &mut Command) -> io::Result<ExitStatus>;
@@ -34,11 +33,7 @@ impl Exec for System {
         command.output()
     }
 
-    fn output_within(
-        &self,
-        command: &mut Command,
-        limit: Duration,
-    ) -> io::Result<Option<Output>> {
+    fn output_within(&self, command: &mut Command, limit: Duration) -> io::Result<Option<Output>> {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

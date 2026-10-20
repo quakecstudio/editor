@@ -16,7 +16,9 @@ the vanilla operators they extend so the longer operator wins the longest match 
 number that starts with `.` or ends with an `f` suffix (FTE-20.1, FTE-20.2); and FTEQCC's
 one-byte string escapes (FTE-20.4). It also lexes the full dialect's tokens
 (`docs/spec/dialect-fteqcc.md`): `::`, a `\` that joins two lines, character constants and
-two-component vectors, FTEQCC's other escapes (FTEF-13), and its hex, octal and suffixed
+two-component vectors, FTEQCC's other escapes (FTEF-13), its strings with the prefixes `R`,
+`Q`, `u8`, `u`, `U` and, after another string, `L`, raw strings, and the bytes each kind of
+string writes (FTEF-13.7 to FTEF-13.11, `fte_string.rs`), and its hex, octal and suffixed
 numbers, each kept as a float of its value (FTEF-3, FTEF-13.5), a hex number with a fraction
 read as C's `atof` reads a hexadecimal float (FTE-23.2); the `..` token (FTEF-18.18);
 and FTEQCC's frame macro words, which end at more bytes than id's (FTEF-18.13), with

@@ -946,7 +946,7 @@ fn full_fteqcc_escapes() {
     };
     assert_eq!(fte_string(br#""\x41\x4""#), (b"A\x04".to_vec(), vec![]));
     assert_eq!(fte_string(br#""\{65}\{x42}""#), (b"AB".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""A\U00000042""#), (b"AB".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""A\U0000042""#), (b"AB".to_vec(), vec![]));
     assert_eq!(fte_string(br#""\[""#).0, b"\x10".to_vec());
     assert_eq!(u8_string(br#""\[""#).0, utf8(0xe010));
     assert_eq!(fte_string(br#""\]""#).0, b"\x11".to_vec());
@@ -965,7 +965,12 @@ fn full_fteqcc_escapes() {
         let source = [b'"', b'\\', escape, b'"'];
         let low = vec![u8::try_from(code & 0xff).unwrap()];
         assert_eq!(fte_string(&source), (low, vec![]), "{}", char::from(escape));
-        assert_eq!(u8_string(&source), (utf8(code), vec![]), "{}", char::from(escape));
+        assert_eq!(
+            u8_string(&source),
+            (utf8(code), vec![]),
+            "{}",
+            char::from(escape)
+        );
     }
     // `\s` and `\b` toggle bronze text, which sets the high bit, and stand for nothing.
     assert_eq!(fte_string(br#""a\bb\sc""#), (b"a\xe2c".to_vec(), vec![]));
@@ -1479,11 +1484,27 @@ fn hex_numbers_with_a_fraction_are_hex_floats() {
     );
 }
 
-// spec FTEF-13.11: `\u` takes four hex digits, as many as there are
+// spec FTEF-13.11: `\u` and `\U` take four and eight hex digits, as many as there are, and are
+// "Unicode character terminated unexpectedly" unless they stop one digit short
 #[test]
 fn short_unicode_escape() {
-    assert_eq!(fte_string(br#""\u0041B""#), (b"AB".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""\u41""#), (b"A".to_vec(), vec![]));
+    let unexpected = vec![Code::E0103];
+    let escape = |digits: &str| format!("\"\\{digits}Z\"").into_bytes();
+    assert_eq!(
+        fte_string(&escape("u0041")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    assert_eq!(fte_string(&escape("u041")), (b"AZ".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(&escape("u41")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    assert_eq!(fte_string(&escape("U0000041")), (b"AZ".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(&escape("U00000041")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    assert_eq!(fte_string(br#""\u""#), (b"\x00".to_vec(), unexpected));
 }
 
 // spec FTEF-13.12: a character constant's escape is the code of FTEF-13.11
@@ -1512,7 +1533,10 @@ fn braced_escape_at_end_of_file() {
         (b"A".to_vec(), vec![Code::E0103, Code::E0101])
     );
     assert_eq!(fte_string(br#""\{x41}""#), (b"A".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""\{6z}""#), (b"\x06z}".to_vec(), vec![Code::E0103]));
+    assert_eq!(
+        fte_string(br#""\{6z}""#),
+        (b"\x06z}".to_vec(), vec![Code::E0103])
+    );
     assert_eq!(fte_string(br#""\{xg}""#).1, vec![Code::E0103]);
 }
 
@@ -1603,10 +1627,17 @@ fn prefixed_strings_are_strings() {
         let lexed = lex_with(source, Dialect::Fteqcc);
         assert!(lexed.diagnostics.is_empty(), "{source:?}");
         assert_eq!(fte_kinds(source), [string(b"ab")], "{source:?}");
-        assert_eq!(lexed.tokens[0].span, Span::new(0, source.len()), "{source:?}");
+        assert_eq!(
+            lexed.tokens[0].span,
+            Span::new(0, source.len()),
+            "{source:?}"
+        );
     }
     assert_eq!(fte_kinds(b"\"a\" L\"b\""), [string(b"a"), string(b"b")]);
-    assert_eq!(fte_kinds(b"\"a\" /* c */\nL\"b\""), [string(b"a"), string(b"b")]);
+    assert_eq!(
+        fte_kinds(b"\"a\" /* c */\nL\"b\""),
+        [string(b"a"), string(b"b")]
+    );
     assert_eq!(fte_kinds(b"L\"b\""), [name("L"), string(b"b")]);
     assert_eq!(fte_kinds(b"x L\"b\""), [name("x"), name("L"), string(b"b")]);
     assert_eq!(fte_kinds(b"u8 \"b\""), [name("u8"), string(b"b")]);
@@ -1652,7 +1683,10 @@ fn each_prefix_writes_its_bytes() {
 fn raw_strings_keep_their_bytes() {
     let one = |source: &[u8]| fte_string(source);
     assert_eq!(one(b"R\"(a\nb)\""), (b"a\nb".to_vec(), vec![]));
-    assert_eq!(one(b"R\"xy(a)x)\"xy\"b)xy\""), (b"a)x)\"xy\"b".to_vec(), vec![]));
+    assert_eq!(
+        one(b"R\"xy(a)x)\"xy\"b)xy\""),
+        (b"a)x)\"xy\"b".to_vec(), vec![])
+    );
     assert_eq!(one(b"R\"(\\n\\b\")\""), (b"\\n\\b\"".to_vec(), vec![]));
     for skipped in [&b"\\\n"[..], b"\\\r\n", b"\\\r"] {
         let mut source = b"R\"(".to_vec();
@@ -1673,7 +1707,11 @@ fn raw_strings_keep_their_bytes() {
     // The raw string ends where it ends, and what follows is lexed again.
     assert_eq!(
         fte_kinds(b"R\"(a)\" + 1"),
-        [string(b"a"), TokenKind::Punct(Punct::Plus), TokenKind::Float(1.0)]
+        [
+            string(b"a"),
+            TokenKind::Punct(Punct::Plus),
+            TokenKind::Float(1.0)
+        ]
     );
 }
 
@@ -1695,7 +1733,10 @@ fn bronze_text_in_each_kind_of_string() {
 // escaped CR is the byte after it
 #[test]
 fn string_escapes_as_fteqcc_reads_them() {
-    assert_eq!(fte_string(br#""\xg""#), (b"\x00g".to_vec(), vec![Code::E0103]));
+    assert_eq!(
+        fte_string(br#""\xg""#),
+        (b"\x00g".to_vec(), vec![Code::E0103])
+    );
     assert_eq!(fte_string(b"\"a\\\nb\""), (b"a\nb".to_vec(), vec![]));
     assert_eq!(fte_string(b"\"a\\\r\nb\""), (b"a\nb".to_vec(), vec![]));
     assert_eq!(fte_string(b"\"a\\\rb\""), (b"ab".to_vec(), vec![]));

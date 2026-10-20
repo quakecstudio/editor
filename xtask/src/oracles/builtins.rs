@@ -302,6 +302,11 @@ const MACRO_BODIES: &[&str] = &[
     "ex_a",
     "#5",
     "#5:ex_a",
+    // QC-9.14: a macro's body keeps its spacing.
+    "#-5",
+    "#\"ex_a\"",
+    "# 5",
+    "#- 5",
     ":ex_a",
     "5:ex_b",
     "#",
@@ -545,30 +550,35 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     })
 }
 
-/// The name of the function `case` binds: the name its last line declares with `void() `, `f`
-/// or a long name (FTEF-15.7), or `f`.
+/// The name of the function `case` binds: `f`, or the long name of `n` bytes a case of
+/// [`NAME_LENGTHS`] declares with `void() ` (FTEF-15.7).
 fn function_name(case: &Case) -> &str {
     case.source
         .lines()
         .last()
         .and_then(|line| line.strip_prefix("void() "))
         .and_then(|rest| rest.split([' ', '=', ';']).next())
-        .filter(|name| !name.is_empty())
+        .filter(|name| name.len() > 1 && name.bytes().all(|b| b == b'n'))
         .unwrap_or("f")
 }
 
 /// Whether the FTEQCC `case`, read through the preprocessor, initialises its function with a
-/// literal that is no builtin, such as the number a macro after `#` stands for (FTE-23.11).
+/// number or a vector, such as the number a macro after `#` stands for (FTE-23.11).
 fn value_initialiser(case: &Case) -> bool {
     let name = function_name(case);
-    case.source.contains("#define")
+    uses_macros(case)
         && lowered(case).iter().any(|decl| {
             decl.name == name
-                && decl
-                    .literal
-                    .as_ref()
-                    .is_some_and(|literal| literal.builtin_function(name).is_none())
+                && matches!(
+                    decl.literal,
+                    Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
+                )
         })
+}
+
+/// Whether `case` defines a macro or uses a built-in constant (FTEF-14.7).
+fn uses_macros(case: &Case) -> bool {
+    case.source.contains("#define") || case.source.contains("__")
 }
 
 /// The declarations of `case` as qc-sema lowers the text its preprocessor makes of it
@@ -581,10 +591,11 @@ fn lowered(case: &Case) -> Vec<qc_sema::RawDecl> {
 }
 
 /// The text the preprocessor makes of `case` (QC-9, FTE-23.10), each token as its spelling or
-/// source bytes, apart from the one before it only when both stand so in the source, as
-/// qc-sema renders a file for its parser; `case` itself when it defines no macro.
+/// source bytes, touching the one before it only when both come out of the same expansion, or
+/// none, and touch where they are written (QC-9.14), as qc-sema renders a file for its parser;
+/// `case` itself when it uses no macro.
 fn expanded(case: &Case) -> Vec<u8> {
-    if !case.source.contains("#define") {
+    if !uses_macros(case) {
         return case.source.clone().into_bytes();
     }
     let mut loader = MemoryLoader::new();
@@ -594,13 +605,13 @@ fn expanded(case: &Case) -> Vec<u8> {
         return Vec::new();
     };
     let sources = pp.sources();
-    let as_written = |token: &qc_preproc::PpToken| token.expansion.is_none() && token.spelling.is_none();
     let mut text = Vec::new();
     let mut last: Option<&qc_preproc::PpToken> = None;
     for token in &output.tokens {
         let adjacent = last.is_some_and(|last| {
-            as_written(last)
-                && as_written(token)
+            last.spelling.is_none()
+                && token.spelling.is_none()
+                && last.expansion == token.expansion
                 && last.span.file == token.span.file
                 && last.span.span.end == token.span.span.start
         });

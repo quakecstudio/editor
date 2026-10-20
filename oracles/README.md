@@ -255,7 +255,7 @@ the FTEQCC profile and with id's qcc under the vanilla profile, each as a one-fi
 `progs.src` in `target/oracles/work/builtins`, and compares what each compiler did (the
 builtin number and engine name it wrote, a redeclaration error, another error) with what the
 profile reads ([`dialect-fteqcc-rerelease.md`](../docs/spec/dialect-fteqcc-rerelease.md)
-FTE-23.8). The oracles' outcomes are recorded in
+FTE-23.12). The oracles' outcomes are recorded in
 [`xtask/fixtures/oracles/builtin-outcomes.json`](../xtask/fixtures/oracles/builtin-outcomes.json):
 `cargo xtask oracles` fails when an oracle gives another outcome than the recording, and
 `cargo test -p xtask` checks the profiles against the recording on every host without the

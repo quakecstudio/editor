@@ -523,7 +523,10 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   ("quake specific"); a digit 0xE012 plus the digit under `flag_qcfuncs`, on by default
   ("yellow numbers"); `\{n}` and `\{xN}` the decimal or hex code up to the `}`, with "Bad
   character code" at any other byte, the end of the file included; `\u` and `\U` up to four or
-  eight hex digits, fewer with the warning "Unicode character terminated unexpectedly"; `\x`
+  eight hex digits, then `if (nibbles) QCC_PR_ParseWarning(ERR_BADCHARACTERCODE, "Unicode
+  character terminated unexpectedly");`, which the pinned FTEQCC reports as an error; since
+  `while (nibbles --> 0)` leaves `nibbles` at `UINT_MAX` when every digit is read, the only
+  form with no error stops one digit short (`\u041` and a byte that is no hex digit); `\x`
   one or two hex digits, "Bad character code" with none; a `\` before a line break that break;
   a `\` before CR the byte after the CR; anything else "Unknown escape char". This profile
   reports "Bad character code" as `E0103`, the code of "Unknown escape char" (QCD-2.3). The

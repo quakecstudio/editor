@@ -225,7 +225,10 @@ fn fteqcc_names_are_up_to_254_bytes() {
     let term = |name: &str| format!("float {ok};\nvoid() g = {{ {ok} = {name}; }};\n");
     assert_eq!(error(term(&ok)), []);
     assert_eq!(error(term(&long)), [Code::E0202]);
-    assert_eq!(error(format!("void() g = {{ a = A::{long}; }};\n")), [Code::E0202]);
+    assert_eq!(
+        error(format!("void() g = {{ a = A::{long}; }};\n")),
+        [Code::E0202]
+    );
     assert_eq!(error(format!("void() g = {{ a = A::{ok}; }};\n")), []);
 }
 

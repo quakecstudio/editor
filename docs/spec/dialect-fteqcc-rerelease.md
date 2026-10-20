@@ -759,8 +759,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   the warning "Implicit cast from string to void()" (F314) and makes no builtin function, as
   this profile makes none. The type of a value initialiser is the compiler's to check (L-01);
   until then `cargo xtask oracles builtins` counts such a case as differing as this statement
-  says: an FTEQCC case that defines a macro, refused by FTEQCC and accepted here with no error,
-  whose `f` is initialised with a literal that is no builtin.
+  says: an FTEQCC case that defines a macro or uses a built-in constant (`#__LINE__` is the
+  line number), refused by FTEQCC and accepted here with no error, whose `f` is initialised
+  with a number or a vector.
 - **FTE-23.12** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on
   Linux, macOS and Windows) compiles every builtin initialiser of a cross product with the
   pinned FTEQCC under the FTEQCC profile and with id's `qcc` under the vanilla profile, and
@@ -771,7 +772,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   0, whose `first_statement` it leaves uninitialised for `#0`, QC-13.4; FTEQCC for a function
   initialised with a string, FTE-23.11), refused it as a redeclaration, refused it otherwise,
   or ran for more than 20 seconds and was killed (FTEF-13.8). The cross product is `#`, `:`,
-  `# ` and `: `, before each of VALUE_COUNT values (decimal, octal and hex numbers with their
+  `# ` and `: `, before each of 133 values (decimal, octal and hex numbers with their
   signs; fractions; the `f`, `d`, `i`, `u` and `l` suffixes and their combinations; character
   constants and a vector; names; strings, joined across spaces, comments and lines, empty,
   with a NUL byte or bronze `\b` text, and longer than FTE-23.6's limit; strings with each
@@ -779,10 +780,20 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   FTEF-13.11 write differently by prefix), each with no engine name or one written five ways
   after it, and after each of three function declarators; 32 builtin forms given twice to one
   function in every pairing, with and without another function bound by the first form
-  before them (the vanilla dialect only the `#number` forms); under FTEQCC, MACRO_SUMMARY; and
+  before them (the vanilla dialect only the `#number` forms); under FTEQCC, 17 macro bodies (numbers, strings,
+  a name, builtin initialisers written with and without their spacing, QC-9.14, and nothing)
+  each used 12 ways (after `#` and `:` with and without a space, before an engine name and as
+  one, before a `!`, alone, after `##` and after `#5`), 13 other uses (function-like macros
+  with and without their arguments, the built-in constants, a name that is no macro and one
+  undefined again), and two strings FTEQCC
+  never finishes (FTEF-13.8); and
   in both dialects names of 62, 63, 70, 254, 255 and 300 bytes after `#5:` and as a builtin's
   own name (QC-3.3, FTEF-15.7). Numbers outside -2^31 to 2^31 - 1 are left out, since C leaves
   their conversion to `int` undefined (QC-13.10). Under FTEQCC the profile's binding is read
   from qc-sema's lowering of the text the preprocessor makes. The oracles' outcomes are
   recorded in `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo test -p xtask`
-  checks the profile against on every host. RUN_RESULT
+  checks the profile against on every host. The run of 2026-10-20 (macOS arm64) made 10999
+  cases: 10922 agree; 68 differ as QC-27.9 says, the vanilla profile refusing `#0`, `#-0`,
+  `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice; 7 as FTE-23.11
+  says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the two strings
+  FTEQCC never finishes.

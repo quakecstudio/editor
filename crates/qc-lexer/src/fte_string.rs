@@ -120,7 +120,11 @@ impl Lexer<'_> {
             }
         }
         for skip in [&b"\\\r\n"[..], b"\\\r", b"\\\n"] {
-            if self.text.get(self.pos..).is_some_and(|rest| rest.starts_with(skip)) {
+            if self
+                .text
+                .get(self.pos..)
+                .is_some_and(|rest| rest.starts_with(skip))
+            {
                 self.bump(skip.len());
                 break;
             }
@@ -262,8 +266,8 @@ impl Lexer<'_> {
             b'+' => 0xe083,
             b'0'..=b'9' => 0xe012_u32.wrapping_add(u32::from(c.wrapping_sub(b'0'))),
             b'{' => self.fte_braced(escape),
-            b'u' => self.fte_hex(4),
-            b'U' => self.fte_hex(8),
+            b'u' => self.fte_hex(escape, 4),
+            b'U' => self.fte_hex(escape, 8),
             b'x' | b'X' => {
                 let Some(high) = self.peek(0).and_then(|d| char::from(d).to_digit(16)) else {
                     self.bad_character_code(escape);
@@ -329,16 +333,26 @@ impl Lexer<'_> {
         }
     }
 
-    /// Up to `count` hex digits of `\u` or `\U`; fewer is only FTEQCC's warning "Unicode
-    /// character terminated unexpectedly" (FTEF-13.11).
-    fn fte_hex(&mut self, count: usize) -> u32 {
+    /// Up to `count` hex digits of the `\u` or `\U` at `escape` (FTEF-13.11). FTEQCC's
+    /// `while (nibbles --> 0)` leaves `nibbles` nonzero, and so reports "Unicode character
+    /// terminated unexpectedly", unless the digits stop one short of `count`.
+    fn fte_hex(&mut self, escape: usize, count: usize) -> u32 {
         let mut code = 0_u32;
-        for _ in 0..count {
+        let mut read = 0_usize;
+        while read < count {
             let Some(digit) = self.peek(0).and_then(|b| char::from(b).to_digit(16)) else {
                 break;
             };
             code = code.wrapping_mul(16).wrapping_add(digit);
             self.bump(1);
+            read = read.saturating_add(1);
+        }
+        if read.saturating_add(1) != count {
+            self.error(
+                Code::E0103,
+                "Unicode character terminated unexpectedly",
+                Span::new(escape, self.pos),
+            );
         }
         code
     }
@@ -390,8 +404,8 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
         return;
     }
     let mut shift = count.saturating_mul(6).saturating_sub(6);
-    let lead = (code.checked_shr(shift).unwrap_or(0) & (0x7f_u64 >> count))
-        | (0xffff_ff00_u64 >> count);
+    let lead =
+        (code.checked_shr(shift).unwrap_or(0) & (0x7f_u64 >> count)) | (0xffff_ff00_u64 >> count);
     contents.push(lead.to_le_bytes().first().copied().unwrap_or(0));
     while shift > 0 {
         shift = shift.saturating_sub(6);

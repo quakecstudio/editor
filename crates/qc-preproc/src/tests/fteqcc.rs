@@ -636,6 +636,25 @@ fn hash_before_a_macro_is_its_expansion() {
     }
 }
 
+// spec QC-9.14: the tokens of one expansion keep their spans in the macro's body, so two that
+// touch there touch in the output and a renderer can keep the body's spacing
+#[test]
+fn an_expansion_keeps_its_body_s_spans() {
+    let (_, out) = one_fte("#define B #5 6\nf = B;\n");
+    let body: Vec<_> = out
+        .tokens
+        .iter()
+        .filter(|t| t.expansion.is_some())
+        .map(|t| t.span.span)
+        .collect();
+    assert_eq!(body.len(), 3);
+    assert_eq!(body[0].end, body[1].start);
+    assert!(body[1].end < body[2].start);
+    let expansions: Vec<_> = out.tokens.iter().map(|t| t.expansion).collect();
+    assert_eq!(expansions[2], expansions[3]);
+    assert_ne!(expansions[1], expansions[2]);
+}
+
 // spec FTE-23.10: a `#` stays when the word right after it is no macro FTEQCC expands there:
 // no macro, a space or another byte first, a word longer than the name, a function-like macro
 // with no arguments, or a `#` in the vanilla dialect

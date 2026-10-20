@@ -997,8 +997,9 @@ impl<'a> Parser<'a> {
         let opener = self.current().map(|t| t.span.end);
         self.bump();
         // FTE-23.1: FTEQCC's lexer reads a `#` as a token only right before `"`, `-`, a digit,
-        // `)` or `,`; before anything else it is a macro use, an error with no such macro. The
-        // parser reports only the first error of a declaration, so this one is reported.
+        // `)` or `,`; before anything else it is a macro use, an error with no such macro, as
+        // the preprocessor has already read a macro's (FTE-23.10). The parser reports only the
+        // first error of a declaration, so this one is reported.
         if self.fteqcc() && !colon && !self.hash_token_follows(opener) {
             self.error(Code::E0209, "Bad builtin immediate");
         }
@@ -1984,11 +1985,7 @@ impl<'a> Parser<'a> {
             self.error(Code::E0201, "not a name");
             return None;
         };
-        let (kind, start, long) = (
-            tok.kind,
-            tok.span.start,
-            self.too_long(&tok.text),
-        );
+        let (kind, start, long) = (tok.kind, tok.span.start, self.too_long(&tok.text));
         let mut tail = Tail::Plain;
         let (node, assignable) = match kind {
             K::Not => {
