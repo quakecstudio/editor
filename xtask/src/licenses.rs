@@ -274,6 +274,32 @@ mod tests {
         assert!(found[0].contains("H4"), "{found:?}");
     }
 
+    // ADR-0018: a file ported from QuakeSpasm keeps its upstream file's copyright lines, at
+    // least one of them from the QuakeSpasm row (rule H4); with none of them the header fails
+    #[test]
+    fn a_quakespasm_port_keeps_its_file_s_copyright_lines() {
+        let cite = "Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: \
+                    Quake/world.c, SV_LinkEdict";
+        let spdx = tag("GPL-3.0-or-later");
+        let good = format!(
+            "// {spdx}\n// Copyright (C) 1996-2001 Id Software, Inc.\n\
+             // Copyright (C) 2007-2008 Kristian Duske\n\
+             // Copyright (C) 2010-2014 QuakeSpasm developers\n\
+             // Copyright (C) 2026 QuakeC Studio contributors\n//\n// {cite}\n"
+        );
+        assert_eq!(
+            problems("quakespasm-good", &[("src/a.rs", good)]),
+            Vec::<String>::new()
+        );
+        let bad = format!(
+            "// {spdx}\n// Copyright (C) 2007-2008 Kristian Duske\n\
+             // Copyright (C) 2026 QuakeC Studio contributors\n//\n// {cite}\n"
+        );
+        let found = problems("quakespasm-bad", &[("src/a.rs", bad)]);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains("H4"), "{found:?}");
+    }
+
     #[test]
     fn the_repository_passes() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

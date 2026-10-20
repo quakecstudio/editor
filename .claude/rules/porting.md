@@ -39,6 +39,12 @@ Rules that are easy to miss:
   control flow and CONV-17 throughout; one implementation with dialect profiles; the oracle
   differentials stay as the proof. Its copyright line is `Copyright (c) 2004-2025 FTE's team
   and its contributors`.
+- QuakeSpasm (`sezero/quakespasm`), Ironwail (`andrei-drexler/ironwail`) and vkQuake
+  (`Novum/vkQuake`) are portable for the preview host under the same policy (ADR-0018), but
+  only files whose own header grants GPL "version 2 ... or (at your option) any later
+  version"; never their bundled third-party code. A port keeps every `Copyright` line of the
+  upstream file's header, in its order, above ours. id's engine stays the oracle (ADR-0005):
+  none of the three is built or run in CI.
 - Never commit id's C. Oracles fetch it by commit and checksum.
 - Keep the behaviour, not the C: no globals (they become an explicit context), errors as
   `Err` values, every wrap, truncation and float comparison written out with the `#[expect]`
