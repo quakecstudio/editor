@@ -4,6 +4,10 @@
 //!
 //! Each type wraps a [`SyntaxNode`] of one kind and names its parts. Every accessor returns
 //! an `Option` or an iterator: the tree of a file with errors may lack any part.
+//!
+//! The FTEQCC limits quoted here, such as the length of a builtin's engine name (FTE-23.6), are
+//! read from fte-team/fteqw for facts only: no function of it is ported into this file, so it
+//! carries no `Ported from` header (ADR-0017).
 
 use crate::kind::SyntaxKind as K;
 use crate::tree::{SyntaxElement, SyntaxNode, SyntaxToken};

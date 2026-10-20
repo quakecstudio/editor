@@ -1,6 +1,6 @@
 [package]
 name = "qc-lexer"
-description = "The vanilla QuakeC lexer: tokens with byte spans, frame macro commands and lexical diagnostics"
+description = "The QuakeC lexer, for id's qcc and the FTEQCC dialects: tokens with byte spans, frame macro commands and lexical diagnostics"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

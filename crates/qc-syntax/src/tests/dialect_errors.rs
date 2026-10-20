@@ -177,7 +177,7 @@ fn state_header_edges() {
     );
 }
 
-// spec FTEF-18.19: the `(w)` after `++` must hold `w` or `W`
+// spec FTEF-18.28: the `(w)` after `++` must hold `w` or `W`
 #[test]
 fn frame_cycle_weapon_letter() {
     assert_eq!(fte_errors("void() f = [++(W) 1 .. 2] {};\n"), []);

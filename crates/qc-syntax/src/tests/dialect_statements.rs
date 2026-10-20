@@ -121,7 +121,7 @@ fn state_parts_are_expressions() {
     );
 }
 
-// spec FTEF-18.19: `[++ first .. last]` and `[-- first .. last]` cycle frames, `(w)` cycling weaponframe
+// spec FTEF-18.28: `[++ first .. last]` and `[-- first .. last]` cycle frames, `(w)` cycling weaponframe
 // spec QCD-3.12: E0212 "Forwards State Cycle with backwards range" for two constant frames against the direction
 #[test]
 fn frame_cycles_parse() {

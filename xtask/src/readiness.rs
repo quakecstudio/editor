@@ -1040,27 +1040,33 @@ fn cited_in_tests(root: &Path) -> Result<BTreeSet<String>, String> {
         }
     }
     let mut cited = BTreeSet::new();
-    for ((_, text), code) in files.iter().zip(test_code(&files)) {
-        cited.extend(citations(text, &code));
+    for ((path, text), code) in files.iter().zip(test_code(&files)) {
+        cited.extend(citations(path, text, &code)?);
     }
     Ok(cited)
 }
 
 /// Statement IDs cited by lines of `code` whose first text is
-/// `// spec <ID>, <ID>: ...`; a `// spec` line outside test code cites nothing.
-pub(crate) fn citations(text: &str, code: &TestCode) -> Vec<String> {
+/// `// spec <ID>, <ID>: ...`. A `// spec` line outside test code cites
+/// nothing, so it is an error naming `path` and the line, as the
+/// spec-citation ratchet in `qs-tests` reports it (`docs/spec/README.md`).
+pub(crate) fn citations(path: &Path, text: &str, code: &TestCode) -> Result<Vec<String>, String> {
     let mut ids = Vec::new();
     for (line, number) in text.lines().zip(1_u32..) {
         let Some(rest) = line.trim_start().strip_prefix("// spec ") else {
             continue;
         };
         if !code.contains(number) {
-            continue;
+            return Err(format!(
+                "{}:{number}: a `// spec` line outside test code cites nothing; name the \
+                 statement in a plain comment (`// {rest}`) or cite it from a test",
+                path.display()
+            ));
         }
         let list = rest.split_once(':').map_or(rest, |(list, _)| list);
         ids.extend(list.split(',').map(|id| id.trim().to_owned()));
     }
-    ids
+    Ok(ids)
 }
 
 /// What a crate README claims: whole sections, single statements, and the

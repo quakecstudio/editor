@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The vanilla QuakeC parser.
+//! The QuakeC parser, for the dialect of id's `qcc` and the FTEQCC dialects.
 //!
 //! [`parse`] turns one source file into a lossless concrete syntax tree: every byte of the
 //! file is in exactly one token, comments, whitespace, directive lines and bytes the lexer

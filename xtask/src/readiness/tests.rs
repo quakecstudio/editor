@@ -264,19 +264,29 @@ fn citations_are_comment_lines_naming_statements() {
     let text =
         "    // spec VM-1.1, VM-1.2: what it does\n// spec VM-2.1\nlet x = 1; // spec VM-3.1\n";
     assert_eq!(
-        citations(text, &TestCode::File),
+        citations(Path::new("x.rs"), text, &TestCode::File).unwrap(),
         ["VM-1.1", "VM-1.2", "VM-2.1"]
     );
 }
 
 /// TEST-3 asks for a test citing each statement, so a `// spec` line outside
-/// test code cites nothing.
+/// test code cites nothing and is reported rather than silently dropped.
 #[test]
-fn a_citation_outside_test_code_does_not_count() {
+fn a_citation_outside_test_code_is_an_error() {
+    let path = Path::new("crates/a/src/lib.rs");
     let text = "// spec VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
-    let code = test_code(&[(PathBuf::from("crates/a/src/lib.rs"), text.to_owned())]);
-    let code = code.first().unwrap();
-    assert_eq!(citations(text, code), ["VM-1.2"]);
+    let code = test_code(&[(path.to_path_buf(), text.to_owned())]);
+    let error = citations(path, text, code.first().unwrap()).unwrap_err();
+    assert!(
+        error.starts_with("crates/a/src/lib.rs:1: ") && error.contains("outside test code"),
+        "{error}"
+    );
+    let plain = "// VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
+    let code = test_code(&[(path.to_path_buf(), plain.to_owned())]);
+    assert_eq!(
+        citations(path, plain, code.first().unwrap()).unwrap(),
+        ["VM-1.2"]
+    );
 }
 
 #[test]

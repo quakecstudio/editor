@@ -80,7 +80,7 @@ fn analysis_with(analysis: &ModuleAnalysis, code: Code) -> Vec<String> {
 }
 
 // spec FTEF-18.3: the names in a state's frame and next expressions are uses, and a next think written as a name is declared
-// spec FTEF-18.19: the frames of a cycle are uses
+// spec FTEF-18.28: the frames of a cycle are uses
 #[test]
 fn state_expressions_resolve() {
     let index = fte_index_of(
