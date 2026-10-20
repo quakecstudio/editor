@@ -7,8 +7,9 @@
 //! Test code is:
 //!
 //! - a file under a `tests` directory, or named `tests.rs`;
-//! - an item marked `#[test]`, `#[cfg(test)]` or `#[cfg(all(test, ...))]`, such as an inline
-//!   `mod tests { ... }`;
+//! - an item marked `#[test]`, or `#[cfg(...)]` naming `test` without `not` (`cfg(test)`,
+//!   `cfg(all(unix, test))`), such as an inline `mod tests { ... }`, and a file whose inner
+//!   `#![cfg(test)]` marks all of it;
 //! - the file of a module declared `#[cfg(test)] mod name;`, and every file under its
 //!   directory, such as a crate's `fixtures.rs` or `vectors.rs`;
 //! - xtask's oracle scenarios ([`DIFFERENTIAL_TESTS`]), which are differential tests run
@@ -69,7 +70,8 @@ pub(crate) fn test_code(files: &[(PathBuf, String)]) -> Vec<TestCode> {
                 .any(|c| c.as_os_str() == "tests")
                 || path.file_name().is_some_and(|name| name == "tests.rs")
                 || test_files.contains(path)
-                || test_dirs.iter().any(|dir| path.starts_with(dir));
+                || test_dirs.iter().any(|dir| path.starts_with(dir))
+                || scan.whole_file;
             if whole {
                 TestCode::File
             } else {
@@ -96,10 +98,21 @@ struct Scan {
     test_lines: BTreeSet<u32>,
     /// The names of modules declared `#[cfg(test)] mod name;`.
     test_modules: Vec<String>,
+    /// Whether an inner `#![cfg(test)]` makes the whole file test code.
+    whole_file: bool,
 }
 
-/// The attributes that make the item after them test code.
-const TEST_ATTRIBUTES: [&str; 3] = ["#[test]", "#[cfg(test)]", "#[cfg(all(test"];
+/// Whether an attribute, given as its words, makes what it marks test code: `#[test]`, or a
+/// `cfg` that names `test` with no `not`, such as `cfg(test)` or `cfg(all(unix, test))`.
+fn is_test_attribute(words: &[String]) -> bool {
+    match words {
+        [only] => only == "test",
+        [cfg, rest @ ..] if cfg == "cfg" => {
+            rest.iter().any(|word| word == "test") && !rest.iter().any(|word| word == "not")
+        }
+        _ => false,
+    }
+}
 
 /// The item a test attribute marks, while its header is read.
 #[derive(Debug, Default)]
@@ -108,6 +121,15 @@ struct Pending {
     words: Vec<String>,
     /// Open `(` and `[` in the header, so that a `;` inside a type does not end it.
     nesting: usize,
+}
+
+impl Pending {
+    /// Whether a `,` at the header's own level ends it: it does for a field, a variant or an
+    /// argument the attribute marks, but not in the generics or `where` clause of a `fn` or
+    /// `impl` header.
+    fn ends_at_comma(&self) -> bool {
+        self.nesting == 0 && !self.words.iter().any(|word| word == "fn" || word == "impl")
+    }
 }
 
 /// Reads `text` as Rust tokens, enough to skip comments, strings and character literals and to
@@ -142,9 +164,16 @@ fn scan(text: &str) -> Scan {
             } else if let Some(pending) = pending.as_mut() {
                 pending.words.push(word);
             }
-        } else if c == '#' && TEST_ATTRIBUTES.iter().any(|a| cursor.starts_with(a)) {
-            cursor.attribute();
-            pending = Some(Pending::default());
+        } else if cursor.starts_with("#[") || cursor.starts_with("#![") {
+            let inner = cursor.starts_with("#!");
+            let words = cursor.attribute();
+            if is_test_attribute(&words) {
+                if inner && cursor.depth == 0 {
+                    cursor.scan.whole_file = true;
+                } else if !inner {
+                    pending = Some(Pending::default());
+                }
+            }
         } else {
             cursor.bump();
             match c {
@@ -156,11 +185,14 @@ fn scan(text: &str) -> Scan {
                     }
                 }
                 '}' => {
+                    // The attribute marked the last field or variant of this block.
+                    pending = None;
                     if cursor.test_depth == Some(cursor.depth) {
                         cursor.test_depth = None;
                     }
                     cursor.depth = cursor.depth.saturating_sub(1);
                 }
+                ',' if pending.as_ref().is_some_and(Pending::ends_at_comma) => pending = None,
                 '(' | '[' => {
                     if let Some(pending) = pending.as_mut() {
                         pending.nesting = pending.nesting.saturating_add(1);
@@ -302,22 +334,33 @@ impl Cursor<'_> {
         }
     }
 
-    /// An attribute, up to its matching `]`.
-    fn attribute(&mut self) {
+    /// An attribute, up to its matching `]`, and the words in it outside its strings.
+    fn attribute(&mut self) -> Vec<String> {
+        let mut words = Vec::new();
         let mut open: usize = 0;
         while let Some(c) = self.peek(0) {
+            if c == '"' {
+                self.bump();
+                self.string();
+                continue;
+            }
+            if c.is_alphabetic() || c == '_' {
+                words.push(self.word());
+                continue;
+            }
             self.bump();
             match c {
                 '[' => open = open.saturating_add(1),
                 ']' => {
                     open = open.saturating_sub(1);
                     if open == 0 {
-                        return;
+                        break;
                     }
                 }
                 _ => {}
             }
         }
+        words
     }
 }
 
@@ -354,6 +397,51 @@ mod tests {
     fn braces_in_strings_chars_and_comments_do_not_end_a_test_module() {
         let text = "#[cfg(all(test, unix))]\nmod tests {\n    const A: &str = \"}\\\"}\";\n    const B: &str = r#\"}\n\"}\"#;\n    const C: char = '}';\n    const D: char = '\\'';\n    fn e<'a>(x: &'a str) {}\n    /* } /* } */ } */\n    // }\n    // spec A-1.1\n}\nfn after() {}\n";
         assert_eq!(lines(text), (2..=12).collect::<Vec<u32>>());
+    }
+
+    #[test]
+    fn a_test_field_or_variant_does_not_mark_the_next_block() {
+        let field = "struct S {\n    #[cfg(test)]\n    hook: u8,\n    x: u8,\n}\nimpl S {\n    // spec A-1.1\n}\n";
+        assert_eq!(lines(field), Vec::<u32>::new());
+        let last =
+            "struct S {\n    #[cfg(test)]\n    hook: u8\n}\nimpl S {\n    // spec A-1.1\n}\n";
+        assert_eq!(lines(last), Vec::<u32>::new());
+        let variant =
+            "enum E {\n    #[cfg(test)]\n    A,\n    B,\n}\nfn f() {\n    // spec A-1.1\n}\n";
+        assert_eq!(lines(variant), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn a_generic_test_function_keeps_its_header_past_commas() {
+        let text = "#[test]\nfn t<A, B>() where A: Copy, B: Copy {\n    // spec A-1.1\n}\n";
+        assert_eq!(lines(text), [2, 3, 4]);
+    }
+
+    #[test]
+    fn any_cfg_naming_test_without_not_is_test_code() {
+        let text = "#[cfg(all(unix, test))]\nmod a {\n    // spec A-1.1\n}\n#[cfg( test )]\nmod b {\n}\n#[cfg(not(test))]\nmod c {\n}\n#[cfg(feature = \"test\")]\nmod d {\n}\n#[cfg_attr(test, derive(Debug))]\nstruct E {\n}\n";
+        assert_eq!(lines(text), [2, 3, 4, 6, 7]);
+    }
+
+    #[test]
+    fn a_bracket_in_an_attribute_string_does_not_end_the_attribute() {
+        let text =
+            "#[expect(clippy::x, reason = \"a ] b [\")]\n#[test]\nfn t() {\n    // spec A-1.1\n}\n";
+        assert_eq!(lines(text), [3, 4, 5]);
+    }
+
+    #[test]
+    fn an_inner_cfg_test_marks_the_whole_file() {
+        let files = [
+            file("crates/a/src/helpers.rs", "#![cfg(test)]\n// spec A-1.1\n"),
+            file(
+                "crates/a/src/other.rs",
+                "#![expect(dead_code, reason = \"x\")]\n// spec A-1.1\n",
+            ),
+        ];
+        let code = test_code(&files);
+        assert_eq!(code.first(), Some(&TestCode::File));
+        assert_eq!(code.get(1), Some(&TestCode::Lines(BTreeSet::new())));
     }
 
     #[test]

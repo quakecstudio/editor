@@ -79,7 +79,7 @@ def load_backlog() -> tuple[dict, list[dict]]:
         groups = data.get("groups") or [data]
         for g in groups:
             for issue in g["issues"]:
-                issue["milestone"] = g["milestone"]
+                issue["milestone"] = g.get("milestone")  # a missing one is reported by check()
                 issue["_file"] = path.name
                 issues.append(issue)
     add_gate_dependencies(issues)

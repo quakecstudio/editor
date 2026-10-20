@@ -332,14 +332,20 @@ fn citing_files() -> Vec<PathBuf> {
     files
 }
 
-fn repo_citations() -> Vec<Citation> {
-    let files: Vec<(PathBuf, String)> = citing_files()
+/// Each citing file's path relative to the repository and its text, as [`test_code`] takes
+/// them.
+fn repo_files() -> Vec<(PathBuf, String)> {
+    citing_files()
         .iter()
         .map(|path| {
             let text = fs::read_to_string(path).expect("Rust file is readable");
             (PathBuf::from(relative(path)), text)
         })
-        .collect();
+        .collect()
+}
+
+fn repo_citations() -> Vec<Citation> {
+    let files = repo_files();
     let mut citations = Vec::new();
     for ((path, text), code) in files.iter().zip(test_code(&files)) {
         let file = path.to_string_lossy();
@@ -523,13 +529,7 @@ fn oracle_scenarios_and_test_vector_modules_count_as_tests() {
         "crates/qc-lno/src/vectors.rs",
         "crates/qs-bsp/src/fitz_tests.rs",
     ];
-    let files: Vec<(PathBuf, String)> = citing_files()
-        .iter()
-        .map(|path| {
-            let text = fs::read_to_string(path).expect("Rust file is readable");
-            (PathBuf::from(relative(path)), text)
-        })
-        .collect();
+    let files = repo_files();
     let code = test_code(&files);
     for want in wanted {
         let found = files

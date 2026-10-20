@@ -178,37 +178,41 @@ pub(crate) fn write_codebase(
     net: &dyn Net,
 ) -> Result<(PathBuf, usize), String> {
     let dir = dest.join("codebase").join(id);
-    let count = write_codebase_to(m, id, &dir, dest, net)?;
+    let files = checked_files(m, id, dest, net)?;
+    let count = write_files(&dir, &files)?;
     Ok((dir, count))
 }
 
-/// Writes every file of codebase `id` to `dir`, and its `project` file as `quakec.toml`;
-/// returns the number of files.
-fn write_codebase_to(
+/// Every file of codebase `id`, its `project` file as `quakec.toml` included, by path relative
+/// to its directory. Every member is checked before any is written, so a refused archive
+/// writes nothing.
+fn checked_files(
     m: &Manifest,
     id: &str,
-    dir: &Path,
     dest: &Path,
     net: &dyn Net,
-) -> Result<usize, String> {
-    let files = codebase_files(m, id, dest, net)?;
-    // Every member is checked before any is written, so a refused archive writes nothing.
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut files = codebase_files(m, id, dest, net)?;
     if let Some(rel) = files.keys().find(|rel| !safe_member(rel)) {
         return Err(format!(
             "codebase {id}: {rel:?} is not a safe relative path"
         ));
     }
-    for (rel, data) in &files {
+    if let Some(project) = m.entry(id).and_then(|(_, e)| e.project.as_deref()) {
+        let path = m.dir.join(project);
+        let data =
+            fs::read(&path).map_err(|e| format!("codebase {id}: {}: {e}", path.display()))?;
+        files.insert("quakec.toml".to_owned(), data);
+    }
+    Ok(files)
+}
+
+/// Writes `files` under `dir`; returns how many.
+fn write_files(dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> Result<usize, String> {
+    for (rel, data) in files {
         write_file(&dir.join(rel), data)?;
     }
-    let project = m.entry(id).and_then(|(_, e)| e.project.as_deref());
-    let Some(project) = project else {
-        return Ok(files.len());
-    };
-    let path = m.dir.join(project);
-    let data = fs::read(&path).map_err(|e| format!("codebase {id}: {}: {e}", path.display()))?;
-    write_file(&dir.join("quakec.toml"), &data)?;
-    Ok(files.len().saturating_add(1))
+    Ok(files.len())
 }
 
 /// Writes each codebase of tree `id` to its directory under `<dest>/tree/<id>/`; returns the
@@ -226,11 +230,16 @@ pub(crate) fn write_tree(
     if let Some(sub) = tree.dirs.keys().find(|sub| !safe_member(sub)) {
         return Err(format!("tree {id}: {sub:?} is not a safe relative path"));
     }
-    let mut count = 0_usize;
+    // Every codebase is fetched and checked before any is written, so a refused one leaves
+    // no part of the tree behind.
+    let mut checked = Vec::new();
     for (sub, codebase) in &tree.dirs {
-        let written = write_codebase_to(m, codebase, &root.join(sub), dest, net)
-            .map_err(|e| format!("tree {id}: {e}"))?;
-        count = count.saturating_add(written);
+        let files = checked_files(m, codebase, dest, net).map_err(|e| format!("tree {id}: {e}"))?;
+        checked.push((root.join(sub), files));
+    }
+    let mut count = 0_usize;
+    for (dir, files) in &checked {
+        count = count.saturating_add(write_files(dir, files)?);
     }
     Ok((root, count))
 }

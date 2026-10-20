@@ -57,7 +57,7 @@ class CheckRules(unittest.TestCase):
     def test_unknown_milestone_is_a_problem_not_an_exception(self):
         # P1-10 depends on earlier issues and P2 issues depend on it, so both sides of the
         # phase comparison meet an issue with no phase.
-        for milestone in ("P9", "Phase 1"):
+        for milestone in ("P9", "Phase 1", None):
             self.assert_flags(lambda r, k, i, m=milestone: k["P1-10"].update(milestone=m),
                               f"P1-10: unknown milestone {milestone}")
 
