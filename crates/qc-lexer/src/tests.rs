@@ -1042,13 +1042,12 @@ fn character_constants_and_short_vectors() {
     assert_eq!(one(b"' '"), TokenKind::Float(32.0));
     assert_eq!(one(br"'\n'"), TokenKind::Float(10.0));
     assert_eq!(one(br"'\x41'"), TokenKind::Float(65.0));
-    assert_eq!(one(br"'\q'"), TokenKind::Float(113.0));
     assert_eq!(one("'\u{e9}'".as_bytes()), TokenKind::Float(233.0));
     assert_eq!(one(b"'8 8'"), TokenKind::Vector([8.0, 8.0, 0.0]));
     assert_eq!(one(b"'1 2 3'"), TokenKind::Vector([1.0, 2.0, 3.0]));
     let unclosed = lex_with(br"'\nx", Dialect::Fteqcc);
     assert_eq!(unclosed.diagnostics[0].code, Code::E0104);
-    assert_eq!(lex_with(br"'\", Dialect::Fteqcc).tokens.len(), 0);
+    assert_eq!(lex_with(br"'\", Dialect::Fteqcc).tokens.len(), 1);
     assert_eq!(codes(b"'a'"), vec![Code::E0104]);
     assert_eq!(codes(b"'8 8'"), vec![Code::E0104]);
     // A lone invalid UTF-8 byte is its own code.
@@ -1509,11 +1508,96 @@ fn short_unicode_escape() {
     assert_eq!(fte_string(br#""\u""#), (b"\x00".to_vec(), unexpected));
 }
 
-// spec FTEF-13.12: a character constant's escape is the code of FTEF-13.11
+/// The value of the FTEQCC character constant at the start of `source`, and the codes of
+/// the diagnostics of `source`.
+fn fte_character(source: &[u8]) -> (f32, Vec<Code>) {
+    let lexed = lex_with(source, Dialect::Fteqcc);
+    let codes = lexed.diagnostics.iter().map(|d| d.code).collect();
+    match &lexed.tokens[0].kind {
+        TokenKind::Float(value) => (*value, codes),
+        other => panic!("not a character constant: {other:?}"),
+    }
+}
+
+/// The character constant `'\` `escape` `'`.
+fn escaped_character(escape: &str) -> Vec<u8> {
+    format!("'\\{escape}'").into_bytes()
+}
+
+// spec FTEF-13.13: a character constant's escape is read as a string's (FTEF-13.11): each
+// escape's code, and "Unknown escape char" and "Unicode character terminated unexpectedly"
+// as errors (E0103)
 #[test]
-fn character_constant_escapes_are_codes() {
-    assert_eq!(fte_kinds(br"'\u0041'"), vec![TokenKind::Float(65.0)]);
-    assert_eq!(fte_kinds(br"'\['"), vec![TokenKind::Float(57360.0)]);
+fn character_constant_escapes_are_read_as_in_strings() {
+    for (escape, value) in [
+        ("n", 10_u16),
+        ("r", 13),
+        ("t", 9),
+        ("a", 7),
+        ("v", 11),
+        ("f", 12),
+        ("#", 35),
+        ("\"", 34),
+        ("\\", 92),
+        ("?", 63),
+        ("'", 39),
+        ("[", 0xe010),
+        ("]", 0xe011),
+        (".", 0xe01c),
+        ("<", 0xe01d),
+        ("-", 0xe01e),
+        (">", 0xe01f),
+        ("(", 0xe080),
+        ("=", 0xe081),
+        (")", 0xe082),
+        ("+", 0xe083),
+        ("0", 0xe012),
+        ("9", 0xe01b),
+        ("{65}", 65),
+        ("{x41}", 65),
+        ("x41", 65),
+        ("X41", 65),
+        ("x4", 4),
+        ("u041", 65),
+        ("U0000041", 65),
+        ("\n", 10),
+        ("\r\n", 10),
+    ] {
+        let source = escaped_character(escape);
+        assert_eq!(
+            fte_character(&source),
+            (f32::from(value), vec![]),
+            "{escape:?}"
+        );
+    }
+    for (escape, value) in [
+        ("s", 115.0),
+        ("b", 98.0),
+        ("q", 113.0),
+        ("u0041", 65.0),
+        ("U00000041", 65.0),
+    ] {
+        let source = escaped_character(escape);
+        assert_eq!(
+            fte_character(&source),
+            (value, vec![Code::E0103]),
+            "{escape:?}"
+        );
+    }
+}
+
+// spec FTEF-13.13: a bad `\{` or `\x` is "Bad character code" (E0103), and with no `'` after
+// the escape the constant is also "Bad character constant" (E0104); the end of the file
+// right after the `\` is "EOF inside quote" (E0101) alone
+#[test]
+fn character_constant_escape_errors() {
+    let both = vec![Code::E0103, Code::E0104];
+    assert_eq!(fte_character(br"'\{6z}"), (6.0, both.clone()));
+    assert_eq!(fte_character(br"'\{65"), (65.0, both.clone()));
+    assert_eq!(fte_character(br"'\xg"), (0.0, both.clone()));
+    assert_eq!(fte_character(br"'\x"), (0.0, both));
+    assert_eq!(fte_character(br"'\"), (0.0, vec![Code::E0101]));
+    assert_eq!(fte_character(br"'\n"), (10.0, vec![Code::E0104]));
 }
 
 // spec FTEF-13.10: bronze text sets the high bit of each byte from a space up and leaves a

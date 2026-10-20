@@ -691,89 +691,6 @@ impl Lexer<'_> {
         self.push(TokenKind::String(contents), start);
     }
 
-    /// The byte an FTEQCC escape `\c` stands for, beyond vanilla's `\n` and `\"` (FTE-20.4):
-    /// the escapes of `QCC_PR_LexEscapedCodepoint` that name one ASCII byte. `None` in the
-    /// vanilla dialect, and for any other `c`, which stays "Unknown escape char" (QC-6.2).
-    fn fteqcc_escape(&self, c: u8) -> Option<u8> {
-        if !self.dialect.has_fteqcc_extensions() {
-            return None;
-        }
-        match c {
-            b'r' => Some(b'\r'),
-            b't' => Some(b'\t'),
-            b'a' => Some(0x07),
-            b'v' => Some(0x0b),
-            b'f' => Some(0x0c),
-            b'#' | b'\\' | b'?' | b'\'' => Some(c),
-            _ => None,
-        }
-    }
-
-    /// The code of the FTEQCC escape `\c`, `c` already read, as `QCC_PR_LexEscapedCodepoint`
-    /// maps it (FTEF-13.4): the one-byte escapes, Quake's character set (`\[`, `\]`, `\.`,
-    /// `\<`, `\-`, `\>`, `\(`, `\=`, `\)`, `\+` and the digits), `\{n}` and `\{xN}`,
-    /// `\x` with one or two hex digits, and `\u` and `\U` with four and eight. `None` for any
-    /// other `c`. A string reads `\n` and `\"` before it gets here; a character constant
-    /// reads `\n` here and `\"`, like any byte with no escape of its own, as itself.
-    fn escape_code(&mut self, c: u8) -> Option<u32> {
-        let quake = |code: u32| Some(code);
-        match c {
-            b'n' => Some(u32::from(b'\n')),
-            b'[' => quake(0xe010),
-            b']' => quake(0xe011),
-            b'.' => quake(0xe01c),
-            b'<' => quake(0xe01d),
-            b'-' => quake(0xe01e),
-            b'>' => quake(0xe01f),
-            b'(' => quake(0xe080),
-            b'=' => quake(0xe081),
-            b')' => quake(0xe082),
-            b'+' => quake(0xe083),
-            b'0'..=b'9' => quake(0xe012_u32.saturating_add(u32::from(c.wrapping_sub(b'0')))),
-            b'{' => Some(self.braced_code()),
-            b'x' | b'X' => Some(self.hex_digits(2)),
-            b'u' => Some(self.hex_digits(4)),
-            b'U' => Some(self.hex_digits(8)),
-            _ => self.fteqcc_escape(c).map(u32::from),
-        }
-    }
-
-    /// Up to `count` hex digits, as many as there are (FTEF-13.4).
-    fn hex_digits(&mut self, count: usize) -> u32 {
-        let mut code = 0_u32;
-        for _ in 0..count {
-            let Some(digit) = self.peek(0).and_then(|b| char::from(b).to_digit(16)) else {
-                break;
-            };
-            code = code.wrapping_mul(16).wrapping_add(digit);
-            self.bump(1);
-        }
-        code
-    }
-
-    /// `{n}` or `{xN}` after `\`: a decimal or hex code, up to the `}` (FTEF-13.4).
-    fn braced_code(&mut self) -> u32 {
-        let radix = if self.peek(0) == Some(b'x') {
-            self.bump(1);
-            16
-        } else {
-            10
-        };
-        let mut code = 0_u32;
-        while let Some(b) = self.peek(0) {
-            if b == b'}' {
-                self.bump(1);
-                break;
-            }
-            let Some(digit) = char::from(b).to_digit(radix) else {
-                break;
-            };
-            code = code.wrapping_mul(radix).wrapping_add(digit);
-            self.bump(1);
-        }
-        code
-    }
-
     /// A number as `PR_LexNumber` reads it: the first byte whatever it is, then digits and
     /// dots, converted with `atof` (QC-4.1, QC-5.1). In an FTEQCC dialect, where only a vector
     /// component is read here, a trailing lowercase `f`, as `QCC_PR_LexFloat` skips it, is part
@@ -918,7 +835,8 @@ impl Lexer<'_> {
     }
 
     /// An FTEQCC character constant at a `'` (FTEF-13.3), as `QCC_PR_LexVector` reads one:
-    /// `'\c'`, an escape (FTEF-13.4); one byte and a closing `'`; or a UTF-8 sequence. Pushes
+    /// `'\c'`, an escape read as a string's is, errors included (FTEF-13.13); one byte and a
+    /// closing `'`; or a UTF-8 sequence. Pushes
     /// it as a float token holding the character's code and returns true; false, consuming
     /// nothing, when the quote holds a vector.
     fn character(&mut self) -> bool {
@@ -927,15 +845,14 @@ impl Lexer<'_> {
             return false;
         };
         let code = if first == b'\\' {
+            let escape = start.saturating_add(1);
             self.bump(2);
-            let Some(c) = self.peek(0) else {
-                return true;
-            };
-            self.bump(1);
-            let code = self.escape_code(c).unwrap_or(u32::from(c));
+            // FTEQCC stops at "EOF inside quote", before it looks for the closing `'`.
+            let eof = self.peek(0).is_none();
+            let code = self.fte_escape(start, escape);
             if self.peek(0) == Some(b'\'') {
                 self.bump(1);
-            } else {
+            } else if !eof {
                 self.error(
                     Code::E0104,
                     "Bad character constant",

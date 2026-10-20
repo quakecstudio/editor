@@ -457,7 +457,7 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
   this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
 - **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
-  FTEF-13.12), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  FTEF-13.13), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
   `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
   `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
   the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
@@ -533,11 +533,22 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   code of `\u` and `\U` is written as UTF-8 in any string ("\u is a utf-8 code regardless of
   output encoding") and that of `\x` as one byte in any ("an explicit byte regardless of
   encoding"); any other as FTEF-13.8 says for the string's type.
-- **FTEF-13.12** A character constant's escape, `'\c'`, is the code `QCC_PR_LexEscapedCodepoint`
-  gives it (FTEF-13.11), the character constant's value. This profile reads `\u`, `\U`, `\x`,
-  `\{`, the Quake characters and the digits as FTEF-13.11 says, but takes any other escape as
-  its byte, with no error, and reports no "Bad character code"; reading them as FTEQCC does is
-  P2-75.
+- **FTEF-13.12** **Withdrawn** (P2-75, #480): it said this profile takes a character
+  constant's escape with no code of its own as its byte, with no error, and reports no "Bad
+  character code" there. Replaced by FTEF-13.13.
+- **FTEF-13.13** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+  errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
+  constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
+  `flag_assume_integer`), the function a string's escapes go through. The constant's value is
+  the code: `'\n'` is 10, `'\['` 0xE010, `'\.'` 0xE01C and `'\x4'` 4. "Unknown escape char"
+  (`'\s'`, `'\b'` and `'\q'`: only a string reads `\s` and `\b`, as bronze, FTEF-13.10), "Bad
+  character code" (`'\{6z}'`, `'\xg'`) and "Unicode character terminated unexpectedly"
+  (`'\u0041'`; `'\u041'` is 65) are errors, `E0103` as in a string. The end of the file right
+  after the `\` is "EOF inside quote" (`E0101`); any other byte than `'` after the escape is
+  "Bad character constant" (`if (*pr_file_p != '\'') QCC_PR_ParseError
+  (ERR_INVALIDVECTORIMMEDIATE, "Bad character constant");`, `E0104`). FTEQCC stops at its first
+  error; this profile goes on after the escape, and so may also report "Bad character
+  constant" after a bad one.
 
 ## FTEF-14 Preprocessor directives and macros
 
