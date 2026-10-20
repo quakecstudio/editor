@@ -695,8 +695,8 @@ fn read_errors() {
     );
 }
 
-// spec FS-3.10: no limit on the number of archives; where id's engine holds a handle per
-// archive for the session, this reader holds none between reads and reopens one to read it
+// No spec statement: holding no archive open between reads, so that a lookup opens one, is
+// this reader's choice; the archive count without a limit (FS-3.10) is tested above.
 #[test]
 fn reads_reopen_archives() {
     let vfs = spec_vfs(&[]);

@@ -26,7 +26,7 @@ MAX_TRACE = 4096
 MAX_SCENARIO_TRACE = 8192
 
 
-def write(name: str, recorded: dict, what: str) -> None:
+def write(name: str, recorded: dict | list, what: str) -> None:
     """Writes `recorded` as sorted, indented JSON to `name` beside this script."""
     out = HERE / name
     out.write_text(json.dumps(recorded, indent=1, sort_keys=True) + "\n")

@@ -332,6 +332,7 @@ fn the_pinned_c_readings() {
     let pins = load(&root()).unwrap();
     let mut seen: Vec<(String, String)> = Vec::new();
     let mut quoted = Vec::new();
+    let mut columns = Vec::new();
     for pin in &pins {
         for t in &pin.tables {
             let what = format!("{} {}", pin.id, t.kind);
@@ -359,6 +360,20 @@ fn the_pinned_c_readings() {
                     t.absent.join(","),
                     t.extension_array
                 ));
+                columns.push(format!(
+                    "{what} {} name={:?} function={:?} number={:?} signature={:?} \
+                     extension={:?} target={:?}/{:?} absent={} extensions={:?}",
+                    t.array.clone().unwrap_or_default(),
+                    t.name,
+                    t.function,
+                    t.number,
+                    t.signature,
+                    t.extension,
+                    t.target,
+                    t.target_of,
+                    t.absent.join(","),
+                    t.extension_array
+                ));
             }
             seen.push((pin.id.clone(), t.kind.clone()));
         }
@@ -371,6 +386,31 @@ fn the_pinned_c_readings() {
          extensions=Some(\"qcextensions\")",
     ] {
         assert!(quoted.iter().any(|q| q == named), "{named}: {quoted:?}");
+    }
+    // The columns each pinned C reading is read by, every one of them: a pin added later is
+    // checked by the rules above, and one of these changing fails here.
+    for pinned in [
+        "quakespasm ssqc pr_builtin name=None function=None number=None signature=None \
+         extension=None target=None/None absent=PF_Fixme extensions=None",
+        "quakespasm-rerelease ssqc exbuiltins name=Some(0) function=None number=Some(1) \
+         signature=None extension=None target=Some(2)/Some(\"quakespasm\") absent= \
+         extensions=None",
+        "ironwail ssqc pr_builtindefs name=Some(0) function=Some(1) number=Some(3) \
+         signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
+        "ironwail csqc pr_builtindefs name=Some(0) function=Some(2) number=Some(3) \
+         signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
+        "vkquake ssqc pr_ssqcbuiltins name=None function=None number=None signature=None \
+         extension=None target=None/None absent=PF_Fixme extensions=None",
+        "vkquake csqc pr_csqcbuiltins name=None function=None number=None signature=None \
+         extension=None target=None/None absent=PF_Fixme extensions=None",
+        "vkquake-ext ssqc extensionbuiltins name=Some(0) function=Some(1) number=Some(3) \
+         signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
+         extensions=Some(\"qcextensions\")",
+        "vkquake-ext csqc extensionbuiltins name=Some(0) function=Some(2) number=Some(3) \
+         signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
+         extensions=Some(\"qcextensions\")",
+    ] {
+        assert!(columns.iter().any(|c| c == pinned), "{pinned}: {columns:?}");
     }
 }
 

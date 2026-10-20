@@ -369,22 +369,29 @@ fn an_unknown_key_is_ignored() {
         .build();
     let mut scn = scenario("test");
     scn.frames = 0;
-    // "nosuchfield" is unknown and ignored; "custom" is applied (EDICT-8.2); the scenario runs.
-    let entities = b"{\n\"classname\" \"worldspawn\"\n\"nosuchfield\" \"7\"\n\"custom\" \"3\"\n}\n";
-    let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
-    assert_eq!(output.ended, Ended::Normally);
-    // The world's only field changes are its classname and custom = 3: the unknown key wrote
-    // nothing.
-    let Some(changes) = output.trace.records.iter().find_map(|r| match r {
-        Record::Run { changes, .. } => Some(changes),
-        _ => None,
-    }) else {
-        panic!("a spawn run");
+    // "nosuchfield" is unknown and ignored; "custom" is applied (EDICT-8.2).
+    let with_unknown =
+        b"{\n\"classname\" \"worldspawn\"\n\"nosuchfield\" \"7\"\n\"custom\" \"3\"\n}\n";
+    let without = b"{\n\"classname\" \"worldspawn\"\n\"custom\" \"3\"\n}\n";
+    let first_run = |entities: &[u8]| {
+        let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
+        assert_eq!(output.ended, Ended::Normally);
+        let Some(changes) = output.trace.records.iter().find_map(|r| match r {
+            Record::Run { changes, .. } => Some(changes.clone()),
+            _ => None,
+        }) else {
+            panic!("a spawn run");
+        };
+        changes
     };
+    let changes = first_run(with_unknown);
+    // The unknown key wrote nothing: the spawn run's changes are those of the same entity
+    // without it, field for field and global for global.
+    assert_eq!(changes, first_run(without));
     let custom: Vec<(u32, u32)> = changes
         .fields()
         .iter()
-        .filter(|f| f.edict == 0 && f.field >= 105)
+        .filter(|f| f.edict == 0 && f.field == 105)
         .map(|f| (f.field, f.bits))
         .collect();
     assert_eq!(custom, [(105, 3.0_f32.to_bits())]);
