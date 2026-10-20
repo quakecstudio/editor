@@ -372,14 +372,18 @@ dialect features (P2-01, P2-03).
   self-expansion. Replaced by QC-9.17 and `dialect-fteqcc.md` FTEF-14.17 and FTEF-14.19.
 - **QC-9.14** **Withdrawn** (P2-77, #482): it said an argument written against a body token
   stays apart from it under FTEQCC too. Replaced by QC-9.15.
-- **QC-9.15** An expansion keeps the spacing of the text it came from: two tokens that touch in a
+- **QC-9.15** **Withdrawn** (P2-78, #484): it said a token the preprocessor made touches nothing.
+  Replaced by QC-9.16.
+- **QC-9.16** An expansion keeps the spacing of the text it came from: two tokens that touch in a
   macro's body, or in one argument of it, touch in the expansion, and two that do not, or that
   come from different macros or a macro and the text around its use, are apart. A rule that reads
   whether two tokens touch then reads a macro's tokens as it reads the source: under FTEQCC
   `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and `#define L lbl:` used as a
-  statement is a label (FTEF-18.23). A token whose text the preprocessor made (a `##` paste, a `#`
-  string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing. In the vanilla dialect an
-  argument's tokens are apart from the body's. FTEQCC reads an expansion as text (`qcc_pr_lex.c`,
+  statement is a label (FTEF-18.23). Under FTEQCC a token a `##` paste or a `#` string made is
+  written into the expansion as text (FTEF-14.14, FTEF-14.15), and touches as that text stands:
+  with `#define P(a,b) a##b:`, `P(l,bl)` is the label `lbl:`; a built-in constant's value is a
+  chunk of its own and touches nothing (FTEF-14.17). In the vanilla dialect an argument's tokens
+  are apart from the body's. FTEQCC reads an expansion as text (`qcc_pr_lex.c`,
   fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`): `QCC_PR_IncludeChunkEx` lexes the
   body as `QCC_PR_PreProcessor_Define` stored it, which drops each `/* */` comment ("multi-line c
   style comments become part of the define itself", skipped to the `*/` and not copied) and each

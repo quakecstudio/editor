@@ -31,7 +31,7 @@ macro or built-in constant is that expansion with no `#`, as FTEQCC's lexer read
 (`dialect-fteqcc-rerelease.md`, FTE-23.10). A token `##` or `#` made, or a built-in's value,
 carries its text in `PpToken::spelling`; every other token of an expansion keeps its span in
 the macro's body, and `PpToken::touches` says whether it touches the token before it as
-FTEQCC's text substitution has them, so a renderer can keep that spacing (QC-9.15). Under
+FTEQCC's text substitution has them, so a renderer can keep that spacing (QC-9.16). Under
 FTEQCC a name is a macro use only where FTEQCC's word ends with it (FTEF-14.13).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.

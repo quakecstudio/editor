@@ -339,19 +339,20 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
 }
 
 /// Whether `next` comes right after `last` in the text the compiler reads, both rendered as
-/// those bytes (QC-9.15): they touch ([`PpToken::touches`]: in the source, in a macro's body,
+/// those bytes (QC-9.16): they touch ([`PpToken::touches`]: in the source, in a macro's body,
 /// in one argument, or under FTEQCC an argument and the body token it is written against), and
-/// neither is a token whose text the preprocessor made nor a frame reference rendered as its
+/// neither is a built-in constant's value in the source nor a frame reference rendered as its
 /// number. The two are rendered with no space between, since a rule may depend on it: a C
 /// label is a name with its `:` right after it (FTEF-18.23), and an FTEQCC `#` opens a
 /// builtin only right before its number or string (FTE-23.1).
 fn adjacent<L: Loader>(pp: &Preprocessor<L>, last: &PpToken, next: &PpToken) -> bool {
-    let as_written = |token: &PpToken| {
-        token.spelling.is_none()
-            && pp
-                .sources()
-                .text(token.span)
-                .is_some_and(|text| text.first() != Some(&b'$'))
+    // QC-9.16: a token an expansion made, a `##` paste or a `#` string, is its text there.
+    let as_written = |token: &PpToken| match &token.spelling {
+        Some(_) => token.expansion.is_some(),
+        None => pp
+            .sources()
+            .text(token.span)
+            .is_some_and(|text| text.first() != Some(&b'$')),
     };
     next.touches(last) && as_written(last) && as_written(next)
 }

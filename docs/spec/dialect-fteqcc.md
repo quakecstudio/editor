@@ -608,10 +608,9 @@ profile the preprocessor reads them as FTEQCC does.
   (`if (*pr_file_p == ',' && c->varg && param >= c->numparams) extraparam++;`); a use may give
   no variadic argument. A use with fewer arguments than named parameters is "macro NAME
   expects N arguments, found M" (QCD-8.9), as FTEQCC's "Not enough macro parameters" is.
-- **FTEF-14.6** In a macro body `#param` is the argument as a string literal (the "stringify"
-  branch of `QCC_PR_ExpandPreProcessorMacro`), and `a ## b` joins the tokens either side into
-  one ("concatinate (strip out whitespace before the token)"): `x ##_net` with `x` given
-  `health` is the name `health_net`. A `#` before a word that is no parameter stays as written.
+- **FTEF-14.6** **Withdrawn** (P2-78, #484): it said every macro body reads `#param` as a string
+  and `a ## b` as one token, which only a function-like macro's does, and that a paste is always
+  one token. Replaced by FTEF-14.14 to FTEF-14.16.
 - **FTEF-14.7** When no macro of the name is defined, `QCC_PR_CheckBuiltinCompConst` expands
   `__NULL__` to `0i`, `__FILE__` to the file's name as a string, `__LINE__` to the line number
   and `__LINESTR__` to it as a string, `__FUNC__` and `__func__` to the function's name as a
@@ -673,6 +672,30 @@ profile the preprocessor reads them as FTEQCC does.
   body `#N` (the pinned FTEQCC: "Cannot cast from float to void()" for `void() f = K;`,
   FTE-23.11). The vanilla preprocessor expands every name that is a macro (QC-9.4).
 
+- **FTEF-14.14** In a function-like macro's body `a ## b` writes `b`'s text right after `a`'s,
+  with the white space before the `##` dropped (`*bufferlen = whitestart;`), and the result is
+  lexed again with the rest of the expansion: a text that lexes as one token is that token (`x
+  ##_net` with `x` given `health` is the name `health_net`, `#1##6` the builtin 16), and one that
+  lexes as more is those tokens, the second against the first (`J(a, +)` with `#define J(a, b) a
+  ## b` is `a+`, the name and `+`). Either side may be empty, so `##` at the start or end of the
+  body, or beside an empty argument, leaves the other side as it is: `#define P(a, b) a##b` used
+  as `P(#5, )` or `P(, #5)` is `#5`. An argument after `##` is copied whole (`noargexpand`), the
+  white space before its `,` or `)` included.
+- **FTEF-14.15** In a function-like macro's body `#param` is a string of the argument's text as
+  written, from its first token to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
+  `paramoffset[p]`, white space and comments included, with `\` before each line break, `\`, NUL
+  and `"`. So `#define S(a) #a` used as `S( ex_a )` is `"ex_a "`, `S(ex a)` is `"ex a"`,
+  `S(ex/**/a)` is `"ex/**/a"`, `S(ex\a)` is `"ex\\a"` and `S()` is `""`; the argument's text is a
+  string's, so no lexical error in it is reported. A `#` before a word that is no parameter writes
+  `#` and that word with nothing between (`QCC_PR_ExpandStrCat(..., "#", 1);` then `qcc_token`),
+  so `#define S(a) # 5` is `#5`, a builtin; a `#` at the end of the body writes nothing (`if
+  (!pr_file_p) break;`). An argument that comes from another expansion's text is written as its
+  tokens touch.
+- **FTEF-14.16** An object-like macro's body is included as it was stored
+  (`QCC_PR_IncludeChunkEx(c->value, ...)`), and `QCC_PR_ExpandPreProcessorMacro`, which reads `#`
+  and `##`, runs only for a macro with a parameter list (`if (c->numparams>=0)`). So in an
+  object-like macro `#` and `##` are tokens like any other: `#define P #5:ex_##a` is refused, the
+  pinned FTEQCC reporting it at the `##`.
 - **FTEF-14.17** A macro is not expanded in the chunk of its own expansion (`if (c &&
   (!currentchunk || currentchunk->cnst != c))`, "macros don't expand themselves"), and otherwise
   is, while fewer than 8 chunks of it are open for an object-like macro (`if (c->inside >= 8)`) or
