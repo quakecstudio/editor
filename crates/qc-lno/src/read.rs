@@ -76,16 +76,16 @@ impl LnoFile {
     /// Returns a [`ReadError`] for a file shorter than the header, a bad magic, an unsupported
     /// version, or a truncated line table. It never panics for any input.
     pub fn read(bytes: &[u8]) -> Result<Self, ReadError> {
-        // spec LNO-5.1: a file shorter than 24 bytes is rejected.
+        // LNO-5.1: a file shorter than 24 bytes is rejected.
         if bytes.len() < LNO_HEADER_SIZE {
             return Err(ReadError::TooShort(bytes.len()));
         }
-        // spec LNO-5.2: the first four bytes must be exactly `LNOF`.
+        // LNO-5.2: the first four bytes must be exactly `LNOF`.
         let magic = <[u8; 4]>::try_from(bytes.get(0..4).unwrap_or(&[])).unwrap_or([0; 4]);
         if magic != LNO_MAGIC {
             return Err(ReadError::BadMagic(magic));
         }
-        // spec LNO-5.3: a version other than 1 is rejected, carrying the version.
+        // LNO-5.3: a version other than 1 is rejected, carrying the version.
         let version = read_u32(bytes, 4);
         if version != LNO_VERSION {
             return Err(ReadError::UnsupportedVersion(version));
@@ -95,7 +95,7 @@ impl LnoFile {
         let numfielddefs = read_u32(bytes, 16);
         let numstatements = read_u32(bytes, 20);
 
-        // spec LNO-5.4: with n the header's numstatements, computed without overflow, a file
+        // LNO-5.4: with n the header's numstatements, computed without overflow, a file
         // shorter than 24 + 4n bytes has a truncated line table.
         let n = usize::try_from(numstatements).unwrap_or(usize::MAX);
         let line_bytes = n.checked_mul(4);
@@ -113,16 +113,16 @@ impl LnoFile {
             });
         }
 
-        // spec LNO-3.1: the line table is numstatements i32 values after the header.
+        // LNO-3.1: the line table is numstatements i32 values after the header.
         let lines = read_i32_table(bytes, LNO_HEADER_SIZE, n);
 
-        // spec LNO-5.4: a file of at least 24 + 8n bytes, with n above 0, has a column table.
+        // LNO-5.4: a file of at least 24 + 8n bytes, with n above 0, has a column table.
         let col_end = line_bytes
             .and_then(|b| b.checked_mul(2))
             .and_then(|b| b.checked_add(LNO_HEADER_SIZE));
         let has_columns = n > 0 && col_end.is_some_and(|end| bytes.len() >= end);
         let (columns, tables_end) = if has_columns {
-            // spec LNO-3.3: the column table is numstatements i32 values after the line table.
+            // LNO-3.3: the column table is numstatements i32 values after the line table.
             let cols = read_i32_table(bytes, line_end, n);
             let end = col_end.unwrap_or(line_end);
             (Some(cols), end)
@@ -130,7 +130,7 @@ impl LnoFile {
             (None, line_end)
         };
 
-        // spec LNO-5.5: bytes after the last table are kept as trailing bytes.
+        // LNO-5.5: bytes after the last table are kept as trailing bytes.
         let trailing = bytes.get(tables_end..).unwrap_or_default().to_vec();
 
         Ok(Self {

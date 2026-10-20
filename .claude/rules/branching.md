@@ -35,7 +35,7 @@ Run what CI runs, from the repository root:
 ```bash
 make ci        # cargo xtask ci: fmt, clippy -D warnings, tests, layering, licenses, conventions, ...
 prek run       # the pre-commit hooks
-python3 plan/check.py --write-coverage && (cd plan && python3 -m unittest test_check.py test_status.py)
+python3 plan/check.py --write-coverage && (cd plan && python3 -m unittest discover -p 'test_*.py')
 ```
 
 `make ci` prints a summary of its steps; rerun the one that failed on its own (the list is

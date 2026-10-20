@@ -60,7 +60,7 @@ if ! command -v uv >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/uv" ]]; then
     sh >/dev/null 2>&1
 fi
 
-# Install the git hooks once the repository has a hook configuration (#2).
+# Install the git hooks from the repository's hook configuration.
 root=$(cd "$(dirname "$0")/../.." && pwd)
 if [[ -f "$root/.pre-commit-config.yaml" ]]; then
   prek_bin=$(command -v prek || printf '%s' "$HOME/.local/bin/prek")

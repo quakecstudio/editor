@@ -29,6 +29,12 @@ step by step. This file only records the Kiro-specific translations.
   independent; it does not implement issues itself. `needs:human` work is prepared, not
   merged. See `.kiro/steering/guardrails.md`.
 
+- **Scheduled runs and code review:** each pass starts by checking the scheduled workflows
+  on `main` (the nightly Differential run and any other `schedule` workflow), which no PR
+  runs, with the source's `gh run list --branch main --event schedule ...` command, and
+  treats a failed one as work to do. When an implementer reports back, check that its PR
+  body has the "Code review" section `work-issue` asks for.
+
 The loop, parallelism (at most three issues at once, never two implementers on the same
 crate), the "preparing people's work" step and the finish summary are all as described in
 the source. See `docs/agents/README.md` for how a whole phase is run under a goal loop.

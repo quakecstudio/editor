@@ -127,6 +127,9 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
         );
     }
 
+    // The copyright lines the cited upstreams require, each once, in the order of the
+    // `Ported from` lines; two upstreams of one owner can share a line.
+    let mut required: Vec<&Upstream> = Vec::new();
     for repo in cited {
         let Some(upstream) = upstreams.iter().find(|upstream| upstream.repo == repo) else {
             problems.push(format!(
@@ -134,25 +137,47 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
             ));
             continue;
         };
-        let want = collapse_spaces(&upstream.copyright);
-        let position = header
-            .iter()
-            .position(|line| collapse_spaces(line).contains(&want));
-        let first_copyright = header.iter().position(|line| line.contains("Copyright"));
-        match position {
-            None => problems.push(format!(
-                "H4: cites {repo} but the header lacks its copyright line `{}`",
-                upstream.copyright
-            )),
-            Some(position) if first_copyright.is_some_and(|first| first < position) => problems
-                .push(format!(
-                    "H4: `{}` must come before any other Copyright line",
-                    upstream.copyright
-                )),
-            Some(_) => {}
+        if !required.iter().any(|r| r.copyright == upstream.copyright) {
+            required.push(upstream);
         }
     }
+    problems.extend(check_copyrights(header, &required));
     problems.dedup();
+    problems
+}
+
+/// Rule H4: the header carries each of `required`'s copyright lines, and they are its first
+/// `Copyright` lines, in `required`'s order, so every upstream's line is above ours.
+fn check_copyrights(header: &[&str], required: &[&Upstream]) -> Vec<String> {
+    let copyrights: Vec<String> = header
+        .iter()
+        .filter(|line| line.contains("Copyright"))
+        .map(|line| collapse_spaces(line))
+        .collect();
+    let mut problems = Vec::new();
+    for upstream in required {
+        let want = collapse_spaces(&upstream.copyright);
+        if !copyrights.iter().any(|line| line.contains(&want)) {
+            problems.push(format!(
+                "H4: cites {} but the header lacks its copyright line `{}`",
+                upstream.repo, upstream.copyright
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        return problems;
+    }
+    let misplaced = required
+        .iter()
+        .zip(&copyrights)
+        .find(|(upstream, line)| !line.contains(&collapse_spaces(&upstream.copyright)));
+    if let Some((upstream, _)) = misplaced {
+        problems.push(format!(
+            "H4: `{}` must come before any other Copyright line, the upstreams' lines in the \
+             order of their `Ported from` lines",
+            upstream.copyright
+        ));
+    }
     problems
 }
 
@@ -309,7 +334,7 @@ mod tests {
             .collect();
         assert_eq!(
             expected,
-            [None, Some("H4"), Some("H3"), Some("H2"), Some("H5")]
+            [None, None, Some("H4"), Some("H3"), Some("H2"), Some("H5")]
         );
         for (expect, text) in &fixtures {
             let want: Vec<String> = expect.iter().cloned().collect();
@@ -378,6 +403,64 @@ mod tests {
         assert!(rules(&format!("{id}{ours}{cite}")).is_empty());
         assert_eq!(rules(&format!("{ours}{id}{cite}")), ["H4"]);
         assert_eq!(rules(&format!("{ours}{cite}")), ["H4"]);
+    }
+
+    const FTE_COMMIT: &str = "f937b9d88f71fc4429db5fe56c6a98d922711b2e";
+    const ID_LINE: &str = "// Copyright (C) 1996-1997 Id Software, Inc.\n";
+    const FTE_LINE: &str = "// Copyright (c) 2004-2025 FTE's team and its contributors\n";
+    const OURS: &str = "// Copyright (C) 2026 QuakeC Studio contributors\n";
+
+    fn two_upstreams(copyrights: &str) -> String {
+        format!(
+            "// SPDX-License-Identifier: GPL-3.0-or-later\n{copyrights}//\n\
+             // Ported from id-Software/Quake@{COMMIT}: WinQuake/pr_edict.c, ED_NewString\n\
+             // Ported from fte-team/fteqw@{FTE_COMMIT}: engine/qclib/qcc_pr_lex.c, QCC_PR_Lex\n"
+        )
+    }
+
+    #[test]
+    fn h4_passes_two_upstreams_with_both_lines_in_citation_order() {
+        assert!(rules(&two_upstreams(&format!("{ID_LINE}{FTE_LINE}{OURS}"))).is_empty());
+    }
+
+    #[test]
+    fn h4_fails_two_upstreams_with_either_line_missing() {
+        let missing_fte = check_header(
+            &header(&two_upstreams(&format!("{ID_LINE}{OURS}"))),
+            &id_upstreams(),
+        );
+        assert_eq!(missing_fte.len(), 1, "{missing_fte:?}");
+        assert!(missing_fte[0].contains("fte-team/fteqw"), "{missing_fte:?}");
+        let missing_id = check_header(
+            &header(&two_upstreams(&format!("{FTE_LINE}{OURS}"))),
+            &id_upstreams(),
+        );
+        assert_eq!(missing_id.len(), 1, "{missing_id:?}");
+        assert!(
+            missing_id[0].contains("id-Software/Quake"),
+            "{missing_id:?}"
+        );
+    }
+
+    #[test]
+    fn h4_fails_two_upstreams_out_of_order_or_below_ours() {
+        assert_eq!(
+            rules(&two_upstreams(&format!("{FTE_LINE}{ID_LINE}{OURS}"))),
+            ["H4"]
+        );
+        assert_eq!(
+            rules(&two_upstreams(&format!("{ID_LINE}{OURS}{FTE_LINE}"))),
+            ["H4"]
+        );
+    }
+
+    #[test]
+    fn two_id_upstreams_share_one_copyright_line() {
+        let text = format!(
+            "{ID_LINE}{OURS}// Ported from id-Software/Quake@{COMMIT}: WinQuake/pr_edict.c, F\n\
+             // Ported from id-Software/Quake-Tools@{COMMIT}: qcc/pr_lex.c, G\n"
+        );
+        assert!(rules(&text).is_empty(), "{text}");
     }
 
     #[test]

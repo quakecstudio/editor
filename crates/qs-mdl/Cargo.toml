@@ -1,6 +1,6 @@
 [package]
 name = "qs-mdl"
-description = "Model readers: id's sprite loader (Mod_LoadSpriteModel) with bounds checks, and the rerelease's MD5 meshes and animations"
+description = "Model readers: id's alias model and sprite loaders (Mod_LoadAliasModel, Mod_LoadSpriteModel) with bounds checks, and the rerelease's MD5 meshes and animations"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

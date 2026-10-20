@@ -15,7 +15,7 @@ call in `sv_move.c`, `sv_main.c`, `world.c`, `mathlib.c`, `common.c`, `cvar.c`, 
 at commit `c0d1b91c74eb654365ac7755bc837e497caaca73`, cross-checked against the 2021 rerelease's
 `quakec/defs.qc` (BUILTIN-17).
 
-Implemented by `qc-builtins` (P1-16); `differential.md` (P1-27) defines
+Implemented by `qc-builtins` (P1-16); [`differential.md`](differential.md) defines
 the deterministic mock behaviour both VMs share. This spec does not repeat what other specs
 state:
 
@@ -30,8 +30,8 @@ state:
 The collision, movement and visibility code these builtins call (`SV_Move`, `SV_movestep`,
 `SV_CheckBottom`, `SV_LinkEdict`, the PVS) belongs to the server simulation (`qs-sim`, P3-24)
 and its engine spec (P3); this spec states what each builtin asks of it and what it writes
-back. Every statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv)
-until `qc-builtins` cites it.
+back. A statement no test cites yet is listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)).
 
 Notation: `PARM0` to `PARM7` are the parameter slots `OFS_PARM0` to `OFS_PARM7`; `RETURN` is
 `OFS_RETURN`. "The float in PARM1" reads slot 7 as an f32 (PROGS-17.1). `self` is the edict the
@@ -168,7 +168,7 @@ the differential runner (P1-27). Each builtin's class is in the table of BUILTIN
   that depend on buffer sizes when it keeps the sizes of BUILTIN-13.
 - **BUILTIN-4.4** Class **world**: the builtin needs the map's collision hulls, the area tree
   of linked edicts or the PVS. It cannot be mocked faithfully without the server simulation
-  (`qs-sim`, P3-24); `qc-builtins` marks it engine-only, and `differential.md` (P1-27) says
+  (`qs-sim`, P3-24); `qc-builtins` marks it engine-only, and [`differential.md`](differential.md) says
   what the deterministic mock returns instead.
 
 ## BUILTIN-5 Numbers, names and prototypes

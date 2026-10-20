@@ -21,7 +21,7 @@
 //!
 //! The codebases come from `cargo xtask corpus fetch id-1.01 rerelease`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -112,13 +112,21 @@ fn check(root: &Path, target: &Target, write: bool) -> Result<bool, String> {
     );
     let mut ok = true;
     let mut modules = 0_usize;
+    let mut comparisons = Vec::new();
     for module in &project.modules {
         modules = modules.saturating_add(1);
         let (db, analysis) = analyze(module, dialect, autoproto)?;
         render(&mut text, &target.dir, module, &db, &analysis);
         if let Some(progs) = &target.progs {
-            ok &= differential(root, &name, progs, &analysis, name == VANILLA)?;
+            comparisons.push(differential(progs, &analysis, name == VANILLA)?);
         }
+    }
+    if target.progs.is_some() {
+        let (passed, lines) = judge(&name, &comparisons, &listed_differences(root, &name)?);
+        for line in lines {
+            println!("{line}");
+        }
+        ok &= passed;
     }
     let golden = root.join(GOLDEN).join(format!("{name}.txt"));
     if write {
@@ -324,29 +332,33 @@ fn listed_differences(root: &Path, name: &str) -> Result<BTreeMap<String, String
     Ok(out)
 }
 
+/// One module's global definitions compared with the progs.
+#[derive(Debug, Default)]
+struct Comparison {
+    /// Definitions the progs was checked for.
+    compared: usize,
+    /// Global definitions of the module, compared or not.
+    considered: usize,
+    /// `<kind> <name>` and what is wrong, for each definition the progs disagrees with.
+    problems: Vec<(String, String)>,
+}
+
 /// Compares the global definitions of `analysis` with the defs of the progs at `progs`.
 fn differential(
-    root: &Path,
-    name: &str,
     progs: &Path,
     analysis: &ModuleAnalysis,
     whole: bool,
-) -> Result<bool, String> {
+) -> Result<Comparison, String> {
     let bytes = fs::read(progs).map_err(|e| format!("{}: {e}", progs.display()))?;
     let progs = Progs::read(&bytes).map_err(|e| format!("{}: {e:?}", progs.display()))?;
     let globals = defs_by_name(&progs, progs.global_defs().iter());
     let fields = defs_by_name(&progs, progs.field_defs().iter());
-    let listed = listed_differences(root, name)?;
-    let mut ok = true;
-    let mut compared = 0_usize;
-    let mut considered = 0_usize;
-    let mut used = 0_usize;
+    let mut comparison = Comparison::default();
     for def in &analysis.index.defs {
         if def.owner.is_some() || def.member_of.is_some() || def.generated {
             continue;
         }
-        considered = considered.saturating_add(1);
-        let key = format!("{} {}", kind_name(def.kind), def.name);
+        comparison.considered = comparison.considered.saturating_add(1);
         let problem = match (globals.get(&def.name), progs_type(&def.ty)) {
             (None, _) if !whole => continue,
             (None, _) => Some("is not a global def of the progs".to_owned()),
@@ -361,30 +373,61 @@ fn differential(
             )),
             (Some(_), Some(_)) => field_problem(def, &fields),
         };
-        compared = compared.saturating_add(1);
-        let Some(problem) = problem else {
-            continue;
-        };
-        if listed.contains_key(&key) {
-            used = used.saturating_add(1);
-            continue;
+        comparison.compared = comparison.compared.saturating_add(1);
+        if let Some(problem) = problem {
+            let key = format!("{} {}", kind_name(def.kind), def.name);
+            comparison.problems.push((key, problem));
         }
-        ok = false;
-        println!("FAIL  {name}: {key} {problem}");
     }
-    if used < listed.len() {
-        ok = false;
-        println!(
-            "FAIL  {name}: {} listed differences no longer differ; remove them",
-            listed.len().saturating_sub(used)
-        );
+    Ok(comparison)
+}
+
+/// Judges the comparisons of every module of codebase `name` against its `listed`
+/// differences, which belong to the codebase rather than to one module: a problem fails unless
+/// listed, and a listed difference fails when no module has it. Returns whether it passed and
+/// the lines to print.
+fn judge(
+    name: &str,
+    comparisons: &[Comparison],
+    listed: &BTreeMap<String, String>,
+) -> (bool, Vec<String>) {
+    let mut lines = Vec::new();
+    let mut used: BTreeSet<&str> = BTreeSet::new();
+    let mut compared = 0_usize;
+    let mut considered = 0_usize;
+    for comparison in comparisons {
+        compared = compared.saturating_add(comparison.compared);
+        considered = considered.saturating_add(comparison.considered);
+        for (key, problem) in &comparison.problems {
+            if listed.contains_key(key) {
+                used.insert(key);
+            } else {
+                lines.push(format!("FAIL  {name}: {key} {problem}"));
+            }
+        }
     }
+    let stale: Vec<&str> = listed
+        .keys()
+        .map(String::as_str)
+        .filter(|key| !used.contains(key))
+        .collect();
+    if !stale.is_empty() {
+        lines.push(format!(
+            "FAIL  {name}: {} listed differences no longer differ; remove them: {}",
+            stale.len(),
+            stale.join(", ")
+        ));
+    }
+    let ok = lines.is_empty();
     if ok {
-        println!(
-            "ok    {name}: {compared} of {considered} global definitions are in the progs and agree with it, {used} listed differences"
-        );
+        lines.push(format!(
+            "ok    {name}: {compared} of {considered} global definitions in {} modules are in \
+             the progs and agree with it, {} listed differences",
+            comparisons.len(),
+            used.len()
+        ));
     }
-    Ok(ok)
+    (ok, lines)
 }
 
 /// For a field, the problem with its field def: it must be one, of the field's inner type.
@@ -457,6 +500,62 @@ mod tests {
         );
         assert_eq!(progs_type(&Type::Unknown), None);
         assert_eq!(progs_type(&Type::Named("x".into())), None);
+    }
+
+    fn module(problems: &[&str]) -> Comparison {
+        Comparison {
+            compared: 2,
+            considered: 3,
+            problems: problems
+                .iter()
+                .map(|key| ((*key).to_owned(), "differs".to_owned()))
+                .collect(),
+        }
+    }
+
+    fn listed(keys: &[&str]) -> BTreeMap<String, String> {
+        keys.iter()
+            .map(|key| ((*key).to_owned(), "a reason".to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn a_difference_listed_for_one_of_two_modules_passes() {
+        let (ok, lines) = judge(
+            "two",
+            &[module(&["global a"]), module(&[])],
+            &listed(&["global a"]),
+        );
+        assert!(ok, "{lines:?}");
+        assert_eq!(
+            lines,
+            [
+                "ok    two: 4 of 6 global definitions in 2 modules are in the progs and agree with it, 1 listed differences"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_difference_two_modules_share_is_listed_once() {
+        let (ok, lines) = judge(
+            "two",
+            &[module(&["global a"]), module(&["global a"])],
+            &listed(&["global a"]),
+        );
+        assert!(ok, "{lines:?}");
+    }
+
+    #[test]
+    fn an_unlisted_problem_or_a_difference_no_module_has_fails() {
+        let (ok, lines) = judge("two", &[module(&["global b"]), module(&[])], &listed(&[]));
+        assert!(!ok);
+        assert_eq!(lines, ["FAIL  two: global b differs"]);
+        let (ok, lines) = judge("two", &[module(&[]), module(&[])], &listed(&["global a"]));
+        assert!(!ok);
+        assert_eq!(
+            lines,
+            ["FAIL  two: 1 listed differences no longer differ; remove them: global a"]
+        );
     }
 
     #[test]

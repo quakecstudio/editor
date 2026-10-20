@@ -1638,6 +1638,7 @@ issues:
   - P2-90
   - P2-91
   - P2-92
+  - P2-93
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1801,5 +1802,29 @@ issues:
   - 'Each test named above asserts what its name and citation say and fails when the behaviour it pins is broken, shown per test by a deliberate break or a mutant recorded in the PR'
   - 'Each test without a citation cites the statement it pins, or says in a comment why none applies (process tests and tooling with no spec)'
   - 'No ratchet is lowered and docs/spec/coverage-baseline.tsv does not grow; cargo xtask ci passes'
+  verify:
+  - cargo xtask ci
+- key: P2-93
+  title: Finish the P2-90 and P2-91 fixes in the crates other work held
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: S
+  reqs:
+  - PM-3
+  - TEST-3
+  depends:
+  - P2-90
+  - P2-91
+  deliverable:
+  - 'Shipped-code citations (P2-90): the `// spec` lines outside test code in crates/qc-vm/src/ops.rs (19 lines, from :207) and crates/qc-builtins/src/dispatch.rs:251, which the spec-citation ratchet no longer counts, become plain comments naming the statement (`// VM-4.1: ...`), as P2-90 did for qc-lno, qc-edict and qs-differential; then the spec-citation ratchet (crates/qs-tests/tests/it/spec_coverage.rs) and the spec check of `cargo xtask readiness` report a `// spec` line outside test code as an error, so one cannot come back unnoticed'
+  - 'Statements citing withdrawn ones (P2-91): ENGT-4.5 and ENGT-4.6 cite the withdrawn ENGT-4.10 (docs/spec/engine-targets.md) and FTEF-18.19 and FTEF-18.22 cite the withdrawn FTEF-18.4 (docs/spec/dialect-fteqcc.md); each is withdrawn and replaced as docs/spec/README.md says, the statements and test-vector rows that refer to them follow the replacements, and the tests that cite them (crates/qc-engines/src/tests.rs; crates/qc-sema/src/tests/dialect_statements.rs; crates/qc-syntax/src/tests/dialect_edges.rs, dialect_errors.rs, dialect_statements.rs; crates/qc-preproc/src/tests/fteqcc.rs) cite the replacements'
+  - 'Crate descriptions and rustdoc (P2-91): crates/qc-lexer/Cargo.toml:3 and src/lib.rs:3, crates/qc-syntax/Cargo.toml:3 and src/lib.rs:2 stop calling crates that read FTEQCC too "vanilla"; crates/qc-builtins/src/lib.rs:23 stops claiming BUILTIN-17, as its README now does'
+  - 'Port headers (P2-91): crates/qc-lexer/src/fte_string.rs:6-8 and crates/qc-syntax/src/ast.rs:11-14 say fteqw is not a porting upstream, which ADR-0017 changed: each takes the ADR-0017 header, as crates/qc-preproc/src/fte_macro.rs has, or says it is read for facts only'
+  acceptance:
+  - 'No `// spec` line outside test code remains in crates/ (the test-code rule of docs/spec/README.md); a test shows the ratchet fails on one; and the spec-citation ratchet passes with docs/spec/coverage-baseline.tsv not grown'
+  - 'No active statement cites a withdrawn one, and no test cites a withdrawn statement; the replacements are in docs/spec/requirements.tsv'
+  - 'A search for "vanilla" in the four descriptions named, for BUILTIN-17 in crates/qc-builtins/src/lib.rs and for "not a porting upstream" or "not a registered" in the two port headers finds nothing; cargo xtask ci passes, licenses included'
   verify:
   - cargo xtask ci

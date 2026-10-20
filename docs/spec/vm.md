@@ -14,9 +14,9 @@ structures of `WinQuake/pr_comp.h` and `WinQuake/progs.h`, in
 The file format, opcode numbers and value encodings are in [`progs.md`](progs.md) (PROGS-7,
 PROGS-8, PROGS-17, PROGS-18); the call depth, local stack, runaway and builtin limits are in
 [`limits.md`](limits.md) (LIMIT-2 to LIMIT-5). Entity memory, the system globals and fields
-and what each builtin does are in `edicts.md` (P1-03) and `builtins.md` (P1-04). Every
-statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-vm`
-cites it.
+and what each builtin does are in [`edicts.md`](edicts.md) and [`builtins.md`](builtins.md).
+A statement no test cites yet is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv)
+([`README.md`](README.md)).
 
 Notation: `g[n]` is global slot `n`; `a`, `b` and `c` are a statement's operands (PROGS-7.1);
 "the float in slot n" and "the 32-bit pattern in slot n" read the same 4 bytes as an f32 or

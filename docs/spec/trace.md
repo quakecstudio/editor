@@ -15,7 +15,7 @@ below are decisions, each made so that two VMs with different memory layouts pro
 trace for the same execution. What a VM does is in [`vm.md`](vm.md); the words "run",
 "statement", "current function", "builtin" and "runtime error" mean what they mean there.
 Value encodings are in [`progs.md`](progs.md) (PROGS-17). How the runner sets up a run and
-compares two traces is in `differential.md` (P1-27) and the runner itself.
+compares two traces is in [`differential.md`](differential.md) and the runner itself.
 
 ## TRACE-1 The trace
 

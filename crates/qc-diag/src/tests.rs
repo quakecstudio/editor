@@ -50,6 +50,14 @@ fn no_code_string_is_shared() {
     assert_eq!(sorted.len(), Code::ALL.len());
 }
 
+#[test]
+fn all_lists_every_code_in_order() {
+    let listed = Code::ALL.map(Code::as_str).to_vec();
+    let mut sorted = listed.clone();
+    sorted.sort_unstable();
+    assert_eq!(listed, sorted);
+}
+
 // spec QCD-1.2: the withdrawn codes E0207 (QCD-3.7), E0403 (QCD-5.3), E0404 (QCD-5.4),
 // E0405 (QCD-5.5) and E0501..=E0509 warnings stay unassigned: no variant carries them as a
 // not-yet-used string, and the codes below are absent from the live set

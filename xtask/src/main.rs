@@ -108,6 +108,7 @@ mod ratchet;
 mod readiness;
 mod repo;
 mod sema_corpus;
+mod test_code;
 #[cfg(test)]
 mod test_dirs;
 

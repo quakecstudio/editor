@@ -15,11 +15,11 @@ another.
 Implemented by `qc-edict` (P1-09). The physics that moves entities (`sv_phys.c`, `sv_move.c`,
 `world.c`) belongs to the preview host's simulation (`qs-sim`, P3-24) and is described here only
 as far as it writes system fields and calls QuakeC. Opcode semantics, including `OP_STATE` and
-the store through `OP_ADDRESS`, are in [`vm.md`](vm.md); builtins are in `builtins.md` (P1-04);
-the file layout of globals and fields is in [`progs.md`](progs.md); limits are in
-[`limits.md`](limits.md). Saved games (`ED_Write`, `ED_ParseGlobals`) are not covered. Every
-statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until `qc-edict`
-cites it.
+the store through `OP_ADDRESS`, are in [`vm.md`](vm.md); builtins are in
+[`builtins.md`](builtins.md); the file layout of globals and fields is in
+[`progs.md`](progs.md); limits are in [`limits.md`](limits.md). Saved games (`ED_Write`,
+`ED_ParseGlobals`) are not covered. A statement no test cites yet is listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)).
 
 Times are seconds. `sv.time` is the server clock, a C `double`; the `time` global and every
 float field are `f32`, so storing the clock in them rounds it to the nearest `f32`.

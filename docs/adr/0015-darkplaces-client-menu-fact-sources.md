@@ -106,6 +106,10 @@ This is not legal advice; the license compliance review before the first public 
 
 ## Links
 
+- Later: [ADR-0016](0016-quakespasm-lineage-fact-sources.md) withdrew ENGT-3.8, which
+  Consequences cites for the DarkPlaces client and menu tables, and replaced it with
+  ENGT-3.11, which keeps those tables and adds Ironwail's and vkQuake's client tables. This
+  decision is unchanged.
 - Issue [#418](https://github.com/quakecstudio/editor/issues/418) and the pull request that
   merged this ADR.
 - Related ADRs: [ADR-0014](0014-engine-fact-sources.md), which this supersedes;

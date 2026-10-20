@@ -30,8 +30,8 @@ Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported;
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 them.
 
-- **Layer:** L2 syntax. It depends on no other crate; `qc-preproc` and `qc-syntax` build on
-  it.
+- **Layer:** L2 syntax. It depends only on `qc-diag` (L0), for its diagnostics;
+  `qc-preproc` and `qc-syntax` build on it.
 - **Spec sections:** QC-2, QC-4, QC-5, QC-6 and QC-8 in
   [`language.md`](../../docs/spec/language.md); the codes QCD-2 and QCD-6 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The lexer implements

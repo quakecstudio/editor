@@ -7,7 +7,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
 //! Reads compiled maps: BSP29 as id's engine loads it, the two BSP2 variants, and `.lit`
-//! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-19).
+//! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-20).
 //!
 //! [`Bsp::read`] is id's `Mod_LoadBrushModel` and the loaders it calls, in the same order,
 //! with the bounds and index checks id's engine leaves out. Its caller's [`BspLoader`] picks

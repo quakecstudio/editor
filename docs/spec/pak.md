@@ -216,9 +216,11 @@ same entry counts and CRCs for LibreQuake's two paks on 2026-10-16, reading all 
 ## PAK-5 The 2021 rerelease's archives
 
 **Source:** none in id's GPL code; the rerelease engine is not open source. Evidence for
-the format is QuakeSpasm's documentation and loader, read on 2026-10-16:
-[`Quakespasm.txt`](https://raw.githubusercontent.com/sezero/quakespasm/master/Quakespasm.txt)
-and [`Quake/common.c`](https://raw.githubusercontent.com/sezero/quakespasm/master/Quake/common.c).
+the format is QuakeSpasm's documentation and loader at
+sezero/quakespasm@`c9c8ee9895961669c4674e8f8ca8c64cc43e38b5`, the commit
+[`bsp.md`](bsp.md) cites, read on 2026-10-16 and checked at that commit on 2026-10-20:
+[`Quakespasm.txt`](https://raw.githubusercontent.com/sezero/quakespasm/c9c8ee9895961669c4674e8f8ca8c64cc43e38b5/Quakespasm.txt)
+and [`Quake/common.c`](https://raw.githubusercontent.com/sezero/quakespasm/c9c8ee9895961669c4674e8f8ca8c64cc43e38b5/Quake/common.c).
 
 QuakeSpasm's loader is id's `COM_LoadPackFile` with the same `MAX_FILES_IN_PACK 2048`
 limit, and its documentation says "QuakeSpasm 0.94 has support for playing the 2021
