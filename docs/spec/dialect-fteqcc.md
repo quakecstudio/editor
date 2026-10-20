@@ -457,22 +457,16 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
   this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
 - **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
-  FTEF-13.4), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  FTEF-13.12), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
   `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
   `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
   the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
   which may stop after two components, the third 0, with FTEQCC's warning "2d vector"
   (`if (*pr_file_p == '\'' && i == 1)`).
-- **FTEF-13.4** Besides the one-byte escapes of `dialect-fteqcc-rerelease.md` FTE-20.4,
-  `QCC_PR_LexEscapedCodepoint` maps `\[` and `\]` to `0xe010` and `0xe011`, `\.`, `\<`, `\-` and
-  `\>` to `0xe01c` to `0xe01f`, `\(`, `\=`, `\)` and `\+` to `0xe080` to `0xe083` ("quake
-  specific"), `\{n}` and `\{xN}` to the decimal or hex code `n`, `\x` and one or two hex digits
-  to that byte, `\u` and `\U` and four or eight hex digits to that code point, and a digit to
-  `0xe012` plus the digit under `flag_qcfuncs` ("yellow numbers"). A code above one byte is
-  written to the string as its UTF-8 bytes. In a string `\s` and `\b` stand for no character:
-  `QCC_PR_LexString` toggles Quake's bronze text for the characters after them
-  (`if (c == 's' || c == 'b') { pr_file_p++; texttype ^= 0xe080; continue; }`), written here as
-  each ASCII byte with its high bit set. Any other escape stays "Unknown escape char" (QC-6.2).
+- **FTEF-13.4** **Withdrawn** (P2-72, #475): it said every code above one byte is written to
+  a string as UTF-8, which only a UTF-8 string does, and that `\{` stops quietly at a byte that
+  is no digit. Replaced by FTEF-13.8 to FTEF-13.11 for strings and FTEF-13.12 for character
+  constants.
 - **FTEF-13.5** This parse-and-resolve profile keeps every number token of FTEF-3 as a float
   holding its value (an integer rounded to the nearest float), and every character constant as
   a float holding its code: the literal's FTEQCC type (FTEF-3.1, FTEF-3.3) matters only to type
@@ -482,6 +476,65 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   (`qcc_pr_lex.c`, `QCC_PR_LexFloat`). So `'1f 2f 3f'` is the vector `'1 2 3'`, and an `F`
   after a component is no suffix: it is read as the next component, and the vector is bad
   (QC-5.2).
+- **FTEF-13.7** A string literal starts at `"`, and at `R"`, `Q"`, `u"`, `U"` and `u8"`:
+  `QCC_PR_Lex` has `if (c == '\"' || ((c == 'R' || c == 'Q' || c == 'u' || c == 'U') &&
+  pr_file_p[1] == '\"') || (c == 'u' && pr_file_p[1] == '8' && pr_file_p[2] == '\"'))
+  QCC_PR_LexString ();`. `QCC_PR_LexString` reads parts in a loop, skipping white space and
+  comments before each (`QCC_PR_LexComment`), and takes those prefixes and `L"` too
+  (`(*pr_file_p == 'U' || *pr_file_p == 'u' || *pr_file_p == 'L') && pr_file_p[1] == '\"'`),
+  so `L"..."` is a string only after another part: `"ex_" L"a"` is `ex_a`, and a lone
+  `L"a"` is the name `L` and a string. The prefix belongs to the part's token, and the parts
+  join as FTEF-16.8 says. The vanilla dialect reads each prefix as a name.
+- **FTEF-13.8** A part's prefix sets its `stringtype`: a plain string, with no `-Futf8`
+  (`flag_utf8strings` is off by default), and `R"..."` are 0, "quake output, input is 8bit";
+  `Q"..."` is 1, "quake output, input is utf-8"; `u8"..."`, `u"..."`, `U"..."` and `L"..."` are
+  2, "utf-8 output, input is utf-8" (`u`, `U` and `L` with the warning "char32_t/char16_t/wchar_t
+  strings are not supported, treating as u8 prefix (as utf-8)"). A byte of 0x80 or more starts
+  a UTF-8 sequence only in types 1 and 2, read by `utf8_check`: two bytes for 0 (modified
+  UTF-8) or 0x80 to 0x7FF, three for 0x800 to 0xFFFF (surrogates included), four for 0x10000 to
+  0x10FFFF; any other byte is itself. Type 2 writes each code as UTF-8 (`forceutf8`), in as
+  many bytes as its size needs with no check that it is a Unicode scalar; types 0 and 1 write
+  it as one Quake byte (`forcequake`): a code from 0xE000 to 0xE0FF as its low byte, Quake's
+  glyph, any other as its low byte too (`pr_token[len] = c;`), above 0x7F with the warning
+  "Cannot convert codepoint %#x to quake's charset". So `"\["` is the byte 0x10 and `u8"\["`
+  the three bytes of U+E010, `Q"é"` is 0xE9 and `u8"é"` C3 A9, `"\{256}"` is a NUL and
+  `u8"\xc0\x80"` written as bytes is one NUL. A code of 0x80000000 or more given to
+  `forceutf8` (`\U80000000` or more, in any string, FTEF-13.11) makes FTEQCC loop for ever:
+  `t <<= 5` reaches 0 and `while (c >= t)` never ends; this profile writes it in 7 bytes, and
+  `cargo xtask oracles builtins` counts the pinned FTEQCC, killed after 20 seconds, as
+  differing as this statement says.
+- **FTEF-13.9** A raw string, `R"delim(...)delim"`, takes the bytes up to `(` as its delimiter,
+  at most 62 (`char rawdelim[64]` from index 1, "EOF while parsing raw string delimiter.
+  Expected: R\"delim(string)delim\"" at the end of the file or the 63rd byte, `E0101`), skips a
+  `\` and line break right after the `(` ("generally part of the C preprocessor"), and then
+  keeps every byte as it is, line breaks, backslashes and `"` included, up to the first `)`
+  followed by the delimiter and `"`; the end of the file first is "EOF inside quote".
+- **FTEF-13.10** In a string that is not raw, `\s` and `\b` stand for no character and toggle
+  bronze text for the characters after them (`texttype ^= 0xe080`). A byte read as itself
+  (FTEF-13.8) from a space up gets the high bit (`if (c >= ' ') c |= texttype;`), so a tab
+  stays a tab and a byte of 0x80 or more is unchanged; in types 1 and 2 an ASCII character from
+  a space up becomes the code `0xE080` with it (`cp|0xe080`), a Quake glyph, and a character
+  above ASCII keeps its bytes ("Unable to mask non-ascii chars. Attempting to mask bytes"). So
+  `"\ba"` is 0xE1 and `u8"\ba"` the UTF-8 of U+E0E1. `\.` is `0xe01c | texttype`; the codes
+  of the other escapes take no bronze.
+- **FTEF-13.11** An escape in a string is read by `QCC_PR_LexEscapedCodepoint`: `\n`, `\r`,
+  `\t`, `\a`, `\v`, `\f` and `\#`, `\"`, `\\`, `\?`, `\'` (FTE-20.4); `\[` and `\]` 0xE010 and
+  0xE011; `\.`, `\<`, `\-` and `\>` 0xE01C to 0xE01F; `\(`, `\=`, `\)` and `\+` 0xE080 to 0xE083
+  ("quake specific"); a digit 0xE012 plus the digit under `flag_qcfuncs`, on by default
+  ("yellow numbers"); `\{n}` and `\{xN}` the decimal or hex code up to the `}`, with "Bad
+  character code" at any other byte, the end of the file included; `\u` and `\U` up to four or
+  eight hex digits, fewer with the warning "Unicode character terminated unexpectedly"; `\x`
+  one or two hex digits, "Bad character code" with none; a `\` before a line break that break;
+  a `\` before CR the byte after the CR; anything else "Unknown escape char". This profile
+  reports "Bad character code" as `E0103`, the code of "Unknown escape char" (QCD-2.3). The
+  code of `\u` and `\U` is written as UTF-8 in any string ("\u is a utf-8 code regardless of
+  output encoding") and that of `\x` as one byte in any ("an explicit byte regardless of
+  encoding"); any other as FTEF-13.8 says for the string's type.
+- **FTEF-13.12** A character constant's escape, `'\c'`, is the code `QCC_PR_LexEscapedCodepoint`
+  gives it (FTEF-13.11), the character constant's value. This profile reads `\u`, `\U`, `\x`,
+  `\{`, the Quake characters and the digits as FTEF-13.11 says, but takes any other escape as
+  its byte, with no error, and reports no "Bad character code"; reading them as FTEQCC does is
+  P2-75.
 
 ## FTEF-14 Preprocessor directives and macros
 

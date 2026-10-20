@@ -7,7 +7,31 @@
 //! (`engine/qclib/qcc_pr_lex.c`), which is not a porting upstream, and checked against the
 //! pinned FTEQCC by `cargo xtask oracles builtins`.
 
-use crate::{Code, Lexer, Span, TokenKind};
+use crate::{Code, Dialect, Lexed, Lexer, Span, Token, TokenKind};
+
+/// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token, an
+/// `L"..."` after another part included (FTEF-13.7); `None` when `text` is not one such part.
+#[must_use]
+pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
+    let mut lexer = Lexer {
+        text,
+        pos: 0,
+        dialect: Dialect::Fteqcc,
+        out: Lexed::default(),
+    };
+    let prefix = lexer.fte_string_prefix(true)?;
+    lexer.fte_string(prefix);
+    if lexer.pos != text.len() {
+        return None;
+    }
+    match lexer.out.tokens.pop() {
+        Some(Token {
+            kind: TokenKind::String(bytes),
+            ..
+        }) => Some(bytes),
+        _ => None,
+    }
+}
 
 /// What a string's characters are written as: `QCC_PR_LexString`'s `stringtype`
 /// (FTEF-13.8).

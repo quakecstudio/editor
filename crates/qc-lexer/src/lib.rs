@@ -14,12 +14,14 @@
 //! against id's `qcc` and the tests here check them.
 
 mod atof;
+mod fte_string;
 mod lines;
 
 #[cfg(test)]
 mod tests;
 
 pub use atof::atof;
+pub use fte_string::fteqcc_string_bytes;
 pub use lines::LineIndex;
 // The diagnostic vocabulary lives in `qc-diag`; re-exported here so code written against
 // `qc_lexer::{Code, Diagnostic, Span}` keeps compiling.
@@ -413,18 +415,6 @@ pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     lexer.out
 }
 
-/// Appends a character code to a string's contents: a byte as itself, a larger code as its
-/// UTF-8 bytes, or `?` when it is no Unicode scalar (FTEF-13.4).
-fn push_code(contents: &mut Vec<u8>, code: u32) {
-    if let Ok(byte) = u8::try_from(code) {
-        contents.push(byte);
-        return;
-    }
-    let c = char::from_u32(code).unwrap_or('?');
-    let mut buf = [0_u8; 4];
-    contents.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
-}
-
 /// The code of the UTF-8 sequence at the start of `bytes` and its length; a byte that starts
 /// no valid sequence is its own code, length 1 (FTEF-13.3).
 fn utf8_char(bytes: &[u8]) -> (u32, usize) {
@@ -537,7 +527,22 @@ impl Lexer<'_> {
             self.skip_trivia();
             let Some(c) = self.peek(0) else { return };
             let start = self.pos;
-            if c == b'"' {
+            // FTEF-13.7: an `L` prefix is read only after another part of a string.
+            let joins = matches!(
+                self.out.tokens.last(),
+                Some(Token {
+                    kind: TokenKind::String(_),
+                    ..
+                })
+            );
+            let fte_string = self
+                .dialect
+                .has_fteqcc_extensions()
+                .then(|| self.fte_string_prefix(joins))
+                .flatten();
+            if let Some(prefix) = fte_string {
+                self.fte_string(prefix);
+            } else if c == b'"' {
                 self.string();
             } else if c == b'\'' {
                 self.vector();
@@ -610,13 +615,11 @@ impl Lexer<'_> {
         }
     }
 
-    /// A string literal (QC-6).
+    /// A vanilla string literal (QC-6); an FTEQCC one is [`Self::fte_string`]'s.
     fn string(&mut self) {
         let start = self.pos;
         self.bump(1);
         let mut contents = Vec::new();
-        // FTEF-13.4: `\s` and `\b` toggle Quake's bronze text for what follows.
-        let mut bronze = false;
         loop {
             match self.peek(0) {
                 None => {
@@ -657,29 +660,18 @@ impl Lexer<'_> {
                             "Unknown escape char",
                             Span::new(escape, self.pos),
                         ),
-                        Some(b's' | b'b') if self.dialect.has_fteqcc_extensions() => {
+                        Some(_) => {
                             self.bump(1);
-                            bronze = !bronze;
-                        }
-                        Some(other) => {
-                            self.bump(1);
-                            if let Some(byte) = self.fteqcc_escape(other) {
-                                contents.push(byte);
-                            } else if let Some(code) = self.fteqcc_escape_code(other) {
-                                push_code(&mut contents, code);
-                            } else {
-                                self.error(
-                                    Code::E0103,
-                                    "Unknown escape char",
-                                    Span::new(escape, self.pos),
-                                );
-                            }
+                            self.error(
+                                Code::E0103,
+                                "Unknown escape char",
+                                Span::new(escape, self.pos),
+                            );
                         }
                     }
                 }
-                // A byte of 0x80 or more already has its high bit, so bronze leaves it as it is.
                 Some(b) => {
-                    contents.push(if bronze { b | 0x80 } else { b });
+                    contents.push(b);
                     self.bump(1);
                 }
             }
@@ -704,15 +696,6 @@ impl Lexer<'_> {
             b'#' | b'\\' | b'?' | b'\'' => Some(c),
             _ => None,
         }
-    }
-
-    /// The code an FTEQCC escape `\c` stands for beyond the one-byte escapes of
-    /// [`Self::fteqcc_escape`] (FTEF-13.4): `None` in the vanilla dialect.
-    fn fteqcc_escape_code(&mut self, c: u8) -> Option<u32> {
-        if !self.dialect.has_fteqcc_extensions() {
-            return None;
-        }
-        self.escape_code(c)
     }
 
     /// The code of the FTEQCC escape `\c`, `c` already read, as `QCC_PR_LexEscapedCodepoint`

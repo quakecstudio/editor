@@ -4,13 +4,20 @@
 //! commands that run them take an [`Exec`], so that their tests can stand a [`Fake`] in for
 //! the program and check both the command line xtask builds and what it makes of each answer.
 
-use std::io;
-use std::process::{Command, ExitStatus, Output};
+use std::io::{self, Read};
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 /// Runs a command.
 pub(crate) trait Exec {
     /// Runs `command` to the end and returns its status and what it wrote.
     fn output(&self, command: &mut Command) -> io::Result<Output>;
+
+    /// Runs `command` as [`Exec::output`] does, but kills it once it has run for `limit`, and
+    /// then returns `None`.
+    fn output_within(&self, command: &mut Command, limit: Duration)
+    -> io::Result<Option<Output>>;
 
     /// Runs `command` to the end, its output where the command sends it.
     fn status(&self, command: &mut Command) -> io::Result<ExitStatus>;
@@ -19,14 +26,64 @@ pub(crate) trait Exec {
 /// The system: each command really runs.
 pub(crate) struct System;
 
+/// How often [`System`] looks whether a command given a time limit has ended.
+const POLL: Duration = Duration::from_millis(5);
+
 impl Exec for System {
     fn output(&self, command: &mut Command) -> io::Result<Output> {
         command.output()
     }
 
+    fn output_within(
+        &self,
+        command: &mut Command,
+        limit: Duration,
+    ) -> io::Result<Option<Output>> {
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        // Each pipe is read on its own thread, so a command that writes much cannot block.
+        let stdout = drain(child.stdout.take());
+        let stderr = drain(child.stderr.take());
+        let start = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait()? {
+                break Some(status);
+            }
+            if start.elapsed() >= limit {
+                child.kill()?;
+                child.wait()?;
+                break None;
+            }
+            thread::sleep(POLL);
+        };
+        let stdout = stdout.join().unwrap_or_default();
+        let stderr = stderr.join().unwrap_or_default();
+        Ok(status.map(|status| Output {
+            status,
+            stdout,
+            stderr,
+        }))
+    }
+
     fn status(&self, command: &mut Command) -> io::Result<ExitStatus> {
         command.status()
     }
+}
+
+/// Reads all of `pipe` on a thread of its own; a pipe that fails to read gives nothing.
+fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe
+            && pipe.read_to_end(&mut bytes).is_err()
+        {
+            bytes.clear();
+        }
+        bytes
+    })
 }
 
 #[cfg(test)]
@@ -39,6 +96,7 @@ mod fake {
     use std::io;
     use std::path::PathBuf;
     use std::process::{Command, ExitStatus, Output};
+    use std::time::Duration;
 
     use super::Exec;
 
@@ -53,6 +111,8 @@ mod fake {
         pub(crate) files: Vec<(PathBuf, Vec<u8>)>,
         /// A failure to start the program, in place of running it.
         pub(crate) cannot_run: bool,
+        /// A program that never ends, so a time limit kills it.
+        pub(crate) hangs: bool,
     }
 
     impl Reply {
@@ -109,6 +169,19 @@ mod fake {
                 stdout: reply.stdout.into_bytes(),
                 stderr: reply.stderr.into_bytes(),
             })
+        }
+
+        fn output_within(
+            &self,
+            command: &mut Command,
+            _limit: Duration,
+        ) -> io::Result<Option<Output>> {
+            let (status, reply) = self.run(command)?;
+            Ok((!reply.hangs).then(|| Output {
+                status,
+                stdout: reply.stdout.into_bytes(),
+                stderr: reply.stderr.into_bytes(),
+            }))
         }
 
         fn status(&self, command: &mut Command) -> io::Result<ExitStatus> {
@@ -199,6 +272,61 @@ mod tests {
         assert!(fake.output(&mut Command::new("tool")).is_err());
         assert_eq!(*fake.seen.borrow(), ["tool a b", "tool c", "tool"]);
         assert_eq!(Reply::exit(4).code, 4);
+    }
+
+    #[test]
+    fn a_command_within_its_limit_gives_its_output() {
+        let output = System
+            .output_within(
+                Command::new("cargo").arg("--version"),
+                Duration::from_secs(600),
+            )
+            .unwrap()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).starts_with("cargo "));
+        assert!(
+            System
+                .output_within(
+                    &mut Command::new("no-such-program-xtask"),
+                    Duration::from_secs(1)
+                )
+                .is_err()
+        );
+    }
+
+    // The limit is the behaviour under test: a command that outlives it is killed.
+    #[cfg(unix)]
+    #[test]
+    fn a_command_past_its_limit_is_killed() {
+        let started = Instant::now();
+        let output = System
+            .output_within(
+                Command::new("sh").args(["-c", "exec sleep 60"]),
+                Duration::from_millis(50),
+            )
+            .unwrap();
+        assert!(output.is_none());
+        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    fn a_fake_may_hang() {
+        let fake = Fake::new(|command: &Command| Reply {
+            hangs: command.get_args().count() > 0,
+            ..Reply::exit(2)
+        });
+        let limit = Duration::from_secs(1);
+        assert!(
+            fake.output_within(Command::new("tool").arg("x"), limit)
+                .unwrap()
+                .is_none()
+        );
+        let output = fake
+            .output_within(&mut Command::new("tool"), limit)
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
     }
 
     #[cfg(unix)]

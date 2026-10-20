@@ -153,11 +153,66 @@ fn only_a_vanilla_number_not_above_zero_may_differ() {
         ),
     ] {
         assert_eq!(
-            expected_difference(case, errors, &oracle),
+            expected_difference(case, &Outcome::Rejected, errors, &oracle),
             expected,
             "{case:?} {errors:?} {oracle}"
         );
     }
+}
+
+// spec FTE-23.11: a macro after `#` that leaves `f` initialised with a number is FTEQCC's
+// "Cannot cast" error and no error here; only that case may differ so
+// spec FTEF-13.8: a case FTEQCC never finishes may differ, as the profile ends
+#[test]
+fn fteqcc_differs_only_where_it_casts_or_hangs() {
+    let number = fte("#define N 5\nvoid() f = #N;\n");
+    let string = fte("#define N \"ex_a\"\nvoid() f = #N;\n");
+    let plain = fte("void() f = 5;\n");
+    let hangs = fte("void() f = :\"\\UFFFFFFFF\";\n");
+    let accepted = Outcome::Accepted;
+    let rejected = Outcome::Rejected;
+    for (case, ours, errors, oracle, expected) in [
+        (&number, &accepted, &[][..], &rejected, Some("FTE-23.11")),
+        (&number, &accepted, &[Code::E0209], &rejected, None),
+        (&number, &rejected, &[], &accepted, None),
+        (&number, &bound_as(5, "f"), &[], &rejected, None),
+        (&string, &accepted, &[], &rejected, None),
+        (&plain, &accepted, &[], &rejected, None),
+        (&hangs, &bound_as(0, "x"), &[], &Outcome::Hangs, Some("FTEF-13.8")),
+        (&hangs, &bound_as(0, "x"), &[], &rejected, None),
+    ] {
+        assert_eq!(
+            expected_difference(case, ours, errors, oracle),
+            expected,
+            "{case:?} {ours} {errors:?} {oracle}"
+        );
+    }
+}
+
+// spec FTE-23.10: the profile's binding is read from the preprocessor's text, so a macro after
+// `#` or `:` binds what it stands for; a builtin's own long name is found by its name
+#[test]
+fn bindings_are_read_after_the_preprocessor() {
+    assert_eq!(
+        profile(&fte("#define N #5:ex_a\nvoid() f = N;\n")).0,
+        bound_as(5, "ex_a")
+    );
+    assert_eq!(
+        profile(&fte("#define N ex_a\nvoid() f = :N;\n")).0,
+        bound_as(0, "ex_a")
+    );
+    assert_eq!(profile(&fte("#define N 5\nvoid() f = #N;\n")).0, Outcome::Accepted);
+    let long = "n".repeat(254);
+    assert_eq!(
+        profile(&fte(&format!("void() {long} = #5;\n"))).0,
+        bound_as(5, &long)
+    );
+    assert_eq!(super::function_name(&fte("void f() = #5;\n")), "f");
+    assert_eq!(super::expanded(&fte("void() f = #5;\n")), b"void() f = #5;\n");
+    assert_eq!(
+        super::expanded(&fte("#define N 5\nvoid() f=#N;\n")),
+        b"void ( ) f = 5 ;"
+    );
 }
 
 // spec QC-13.4: id's qcc's `#0` is found from the source text, whatever the number's form
@@ -286,6 +341,10 @@ fn reply(dir: &Path, fteqcc: bool, case: &Case, outcome: &Outcome) -> Reply {
         ..Reply::default()
     };
     match outcome {
+        Outcome::Hangs => Reply {
+            hangs: true,
+            ..Reply::default()
+        },
         Outcome::Rejected => failed("t.qc:1: error: Bad builtin immediate"),
         Outcome::Redeclared if fteqcc => failed("t.qc:2: error: incompatible redeclaration"),
         Outcome::Redeclared => failed("t.qc:2:f redeclared"),

@@ -182,6 +182,34 @@ fn engine_names_end_at_a_nul_and_keep_their_bytes() {
     assert_eq!(binding(r#"#"\bcd""#), name("\u{e3}\u{e4}"));
 }
 
+// spec FTEF-13.7: a prefixed string after `:` or after another string names the builtin, an
+// `L"..."` after another part too, with the bytes its prefix gives it; after `#` a prefix is a
+// macro use, E0209
+#[test]
+fn prefixed_strings_name_builtins() {
+    let name = |n: &str| (None, Some(n.to_owned()));
+    for init in [
+        ":u8\"ex_a\"",
+        ":Q\"ex_a\"",
+        ":u\"ex_a\"",
+        ":U\"ex_a\"",
+        ":R\"(ex_a)\"",
+        ":R\"x(ex_a)x\"",
+        "#\"ex_\" u8\"a\"",
+        "#\"ex_\" L\"a\"",
+        "#\"ex_\" R\"(a)\"",
+        "#\"\" u8\"ex_a\"",
+    ] {
+        assert_eq!(binding(init), name("ex_a"), "{init}");
+    }
+    assert_eq!(binding(":u8\"\\[\""), name("\u{ee}\u{80}\u{90}"));
+    assert_eq!(binding(":\"\\[\""), name("\u{10}"));
+    for init in ["#u8\"ex_a\"", "#R\"(ex_a)\"", "#Q\"ex_a\"", ":L\"ex_a\""] {
+        let source = format!("void() f = {init};\n");
+        assert!(!errors(&fte(&source)).is_empty(), "{init}");
+    }
+}
+
 // spec FTEF-15.7: under FTEQCC a name of 254 bytes is a name and one of 255 is "name too
 // long", in a declaration, after `#number:` and in an expression
 #[test]

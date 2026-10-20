@@ -28,7 +28,9 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
+use qc_preproc::{MemoryLoader, Preprocessor};
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_syntax::{Code, Dialect, ast};
@@ -49,7 +51,13 @@ pub(crate) enum Outcome {
     Redeclared,
     /// Refused for another reason.
     Rejected,
+    /// Still running after [`ORACLE_LIMIT`], and killed: FTEQCC's endless loop for a code of
+    /// 0x80000000 or more (FTEF-13.8).
+    Hangs,
 }
+
+/// How long an oracle may take over one case before it is taken to hang.
+const ORACLE_LIMIT: Duration = Duration::from_secs(20);
 
 impl fmt::Display for Outcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,6 +66,7 @@ impl fmt::Display for Outcome {
             Self::Accepted => f.write_str("accepted"),
             Self::Redeclared => f.write_str("redeclared"),
             Self::Rejected => f.write_str("rejected"),
+            Self::Hangs => f.write_str("hangs"),
         }
     }
 }
@@ -73,6 +82,7 @@ impl Outcome {
             ["accepted"] => Some(Self::Accepted),
             ["redeclared"] => Some(Self::Redeclared),
             ["rejected"] => Some(Self::Rejected),
+            ["hangs"] => Some(Self::Hangs),
             _ => None,
         }
     }
@@ -192,6 +202,50 @@ const VALUES: &[&str] = &[
     "\"ab\\x00cd\"",
     "\"\\bab\"",
     "\"\\bcd\"",
+    // FTEF-13.7 to FTEF-13.11: strings with each prefix, joined, raw, and with the escapes and
+    // bytes each kind of string writes differently.
+    "u8\"ex_a\"",
+    "u\"ex_a\"",
+    "U\"ex_a\"",
+    "Q\"ex_a\"",
+    "L\"ex_a\"",
+    "R\"(ex_a)\"",
+    "R\"x(ex_a)x\"",
+    "R\"(a\nb)\"",
+    "R\"x(a)\"b)x\"",
+    "R\"(a\\nb)\"",
+    "R\"(\\\nab)\"",
+    "R\"\"",
+    "\"ex_\" u8\"a\"",
+    "\"ex_\" L\"a\"",
+    "\"ex_\" R\"(a)\"",
+    "\"ex_\" Q\"a\"",
+    "u8\"ex_\" \"a\"",
+    "\"\" u8\"ex_a\"",
+    "\"\\[\\]a\"",
+    "u8\"\\[\\]a\"",
+    "Q\"\\[a\"",
+    "\"\\{200}a\"",
+    "u8\"\\{200}a\"",
+    "\"\\{256}a\"",
+    "\"\\{6z}\"",
+    "\"\\u00e9a\"",
+    "\"\\U00110000a\"",
+    "u8\"\\bab\"",
+    "Q\"\\bab\"",
+    "\"\\b\\ta\"",
+    "\"\\b a\"",
+    "\"\\b\\.a\"",
+    "u8\"\\b\\.a\"",
+    "\"\\.a\"",
+    "\"\u{e9}a\"",
+    "Q\"\u{e9}a\"",
+    "u8\"\u{e9}a\"",
+    "Q\"\u{e010}a\"",
+    "\"a\\\nb\"",
+    "\"\\xg\"",
+    "\"\\x41\\x4\"",
+    "u8\"\\xe9\"",
 ];
 
 /// What may follow the value: an engine name, written in each way.
@@ -236,6 +290,55 @@ const PAIRED: &[&str] = &[
     "#\"\\bab\"",
     "#\"\\bcd\"",
 ];
+
+/// What the macro `N` of the FTEQCC macro cases stands for (FTE-23.10).
+const MACRO_BODIES: &[&str] = &[
+    "5",
+    "-5",
+    "0",
+    "\"ex_a\"",
+    "\"ex_\" \"a\"",
+    "u8\"ex_a\"",
+    "ex_a",
+    "#5",
+    "#5:ex_a",
+    ":ex_a",
+    "5:ex_b",
+    "#",
+    "",
+];
+
+/// Where the macro cases use `N`: after `#` and `:`, with and without a space, before an engine
+/// name and as one, and with a byte after it that FTEQCC reads as part of the word.
+const MACRO_USES: &[&str] = &[
+    "#N", ":N", "# N", ": N", "#N:ex_b", "#5:N", "#N #5", ":#N", "#N!", "N", "#\"\":N", "##N",
+];
+
+/// The macro cases of other macros: a function-like one, the built-in constants and a name that
+/// is no macro (FTE-23.10).
+const OTHER_MACROS: &[(&str, &str)] = &[
+    ("#define M(x) x\n", "#M(5)"),
+    ("#define M(x) x\n", "#M(\"ex_a\")"),
+    ("#define M(x) x\n", "#M (5)"),
+    ("#define M(x) x\n", "#M"),
+    ("#define M(x) x\n", "#M(#5)"),
+    ("#define M(x) x\n", ":M(ex_a)"),
+    ("#define M() #5\n", "#M()"),
+    ("", "#__LINE__"),
+    ("", "#__FILE__"),
+    ("", "#__NULL__"),
+    ("", "#U"),
+    ("", ":U"),
+    ("#define N 5\n#undef N\n", "#N"),
+];
+
+/// The lengths of the long names given after `#5:` and as a builtin's own name: about id's
+/// limit and FTEQCC's (QC-3.3, FTEF-15.7).
+const NAME_LENGTHS: [usize; 6] = [62, 63, 70, 254, 255, 300];
+
+/// Strings FTEQCC never finishes reading (FTEF-13.8): the oracle is killed after
+/// [`ORACLE_LIMIT`].
+const HANGING: &[&str] = &["\"\\UFFFFFFFF\"", "u8\"\\U80000000\""];
 
 /// The forms of [`PAIRED`] the vanilla dialect is given twice: those of QC-13.3.
 fn vanilla_paired(form: &str) -> bool {
@@ -288,24 +391,65 @@ pub(crate) fn cases() -> Vec<Case> {
             }
         }
     }
+    // FTE-23.10: id's qcc has no preprocessor, so the macro cases are FTEQCC's only.
+    let fte = |source: String| Case {
+        dialect: Dialect::Fteqcc,
+        source,
+    };
+    for body in MACRO_BODIES {
+        for use_ in MACRO_USES {
+            cases.push(fte(format!("#define N {body}\nvoid() f = {use_};\n")));
+        }
+    }
+    for (define, use_) in OTHER_MACROS {
+        cases.push(fte(format!("{define}void() f = {use_};\n")));
+    }
+    for value in HANGING {
+        cases.push(fte(format!("void() f = :{value};\n")));
+    }
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        for length in NAME_LENGTHS {
+            let name = "n".repeat(length);
+            for source in [
+                format!("void() f = #5:{name};\n"),
+                format!("void() {name} = #5;\n"),
+            ] {
+                cases.push(Case { dialect, source });
+            }
+        }
+    }
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
     cases
 }
 
-/// The spec statement that says why the profile's outcome for `case`, with the error codes
-/// `errors`, may differ from `oracle`'s, if one does (FTE-23.8).
+/// The spec statement that says why the profile's outcome `ours` for `case`, with the error
+/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.12).
 pub(crate) fn expected_difference(
     case: &Case,
+    ours: &Outcome,
     errors: &[Code],
     oracle: &Outcome,
 ) -> Option<&'static str> {
+    let vanilla = !case.dialect.has_fteqcc_extensions();
+    if !vanilla {
+        // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
+        if *oracle == Outcome::Hangs {
+            return Some("FTEF-13.8");
+        }
+        // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
+        // cannot cast to a function and this profile, which checks no types, accepts.
+        let uncast = *oracle == Outcome::Rejected
+            && *ours == Outcome::Accepted
+            && errors.is_empty()
+            && value_initialiser(case);
+        return uncast.then_some("FTE-23.11");
+    }
     // QC-27.9: the vanilla profile makes `#0` and negative numbers errors, which id's qcc
     // accepts with no builtin number (QC-13.4). Only that error may differ: without it the
     // profile's outcome must be the oracle's.
-    let vanilla = !case.dialect.has_fteqcc_extensions();
-    if !vanilla || !errors.contains(&Code::E0507) {
+    if !errors.contains(&Code::E0507) {
         return None;
     }
     let rest: Vec<Code> = errors
@@ -366,18 +510,18 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
     }
 }
 
-/// The builtin number and engine name the profile binds the first `f` to: under FTEQCC the
-/// builtin function qc-sema lowers its initialiser to (FTE-23.7), under the vanilla dialect
-/// the number `builtin_binum` gives and the definition's name (QC-13.10).
+/// The builtin number and engine name the profile binds the first function of `case` to:
+/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), after the
+/// preprocessor (FTE-23.10); under the vanilla dialect the number `builtin_binum` gives and the
+/// definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
+    let name = function_name(case);
     if case.dialect.has_fteqcc_extensions() {
-        let decls = db.lower(FileId(0)).decls;
-        let function = decls
-            .iter()
-            .find(|decl| decl.name == "f")?
-            .literal
-            .as_ref()?
-            .builtin_function("f")?;
+        let function = lowered(case)
+            .into_iter()
+            .find(|decl| decl.name == name)?
+            .literal?
+            .builtin_function(name)?;
         return Some(Outcome::Bound {
             number: function.number,
             name: function.name,
@@ -388,7 +532,7 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
         .tree()?
         .declarations()
         .flat_map(|decl| decl.declarators().collect::<Vec<_>>())
-        .find(|declarator| declarator.name().is_some_and(|n| n.text_lossless() == "f"))
+        .find(|declarator| declarator.name().is_some_and(|n| n.text_lossless() == name))
         .and_then(|declarator| match declarator.initializer() {
             Some(ast::Initializer::Builtin(builtin)) => Some(builtin),
             _ => None,
@@ -397,8 +541,79 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     let number = qc_syntax::builtin_binum(&number.text_lossless(), case.dialect)?;
     Some(Outcome::Bound {
         number,
-        name: "f".to_owned(),
+        name: name.to_owned(),
     })
+}
+
+/// The name of the function `case` binds: the name its last line declares with `void() `, `f`
+/// or a long name (FTEF-15.7), or `f`.
+fn function_name(case: &Case) -> &str {
+    case.source
+        .lines()
+        .last()
+        .and_then(|line| line.strip_prefix("void() "))
+        .and_then(|rest| rest.split([' ', '=', ';']).next())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("f")
+}
+
+/// Whether the FTEQCC `case`, read through the preprocessor, initialises its function with a
+/// literal that is no builtin, such as the number a macro after `#` stands for (FTE-23.11).
+fn value_initialiser(case: &Case) -> bool {
+    let name = function_name(case);
+    case.source.contains("#define")
+        && lowered(case).iter().any(|decl| {
+            decl.name == name
+                && decl
+                    .literal
+                    .as_ref()
+                    .is_some_and(|literal| literal.builtin_function(name).is_none())
+        })
+}
+
+/// The declarations of `case` as qc-sema lowers the text its preprocessor makes of it
+/// ([`expanded`]).
+fn lowered(case: &Case) -> Vec<qc_sema::RawDecl> {
+    let mut db = Db::new();
+    db.set_dialect(case.dialect);
+    db.set_file(FileId(0), PathBuf::from("t.qc"), expanded(case));
+    db.lower(FileId(0)).decls
+}
+
+/// The text the preprocessor makes of `case` (QC-9, FTE-23.10), each token as its spelling or
+/// source bytes, apart from the one before it only when both stand so in the source, as
+/// qc-sema renders a file for its parser; `case` itself when it defines no macro.
+fn expanded(case: &Case) -> Vec<u8> {
+    if !case.source.contains("#define") {
+        return case.source.clone().into_bytes();
+    }
+    let mut loader = MemoryLoader::new();
+    loader.insert("t.qc", case.source.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(case.dialect);
+    let Ok(output) = pp.preprocess_file(Path::new("t.qc")) else {
+        return Vec::new();
+    };
+    let sources = pp.sources();
+    let as_written = |token: &qc_preproc::PpToken| token.expansion.is_none() && token.spelling.is_none();
+    let mut text = Vec::new();
+    let mut last: Option<&qc_preproc::PpToken> = None;
+    for token in &output.tokens {
+        let adjacent = last.is_some_and(|last| {
+            as_written(last)
+                && as_written(token)
+                && last.span.file == token.span.file
+                && last.span.span.end == token.span.span.start
+        });
+        if last.is_some() && !adjacent {
+            text.push(b' ');
+        }
+        match &token.spelling {
+            Some(spelling) => text.extend_from_slice(spelling.as_bytes()),
+            None => text.extend_from_slice(sources.text(token.span).unwrap_or_default()),
+        }
+        last = Some(token);
+    }
+    text
 }
 
 /// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
@@ -438,8 +653,11 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     };
     let output = oracles
         .exec
-        .output(command.current_dir(dir))
+        .output_within(command.current_dir(dir), ORACLE_LIMIT)
         .map_err(|e| format!("cannot run {}: {e}", if fteqcc { "fteqcc" } else { "qcc" }))?;
+    let Some(output) = output else {
+        return Ok(Outcome::Hangs);
+    };
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -457,7 +675,13 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
             Outcome::Rejected
         });
     }
-    let bytes = fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
+    // FTE-23.11: FTEQCC writes no progs when it has made nothing to write, as for a function
+    // initialised with 0 a macro gave.
+    if fteqcc && !progs.exists() && text.contains("nothing to write") {
+        return Ok(Outcome::Accepted);
+    }
+    let bytes =
+        fs::read(&progs).map_err(|e| format!("{}: {}: {e}", show(case), progs.display()))?;
     // QC-13.4: id's qcc leaves `#0`'s `first_statement` uninitialised, so what it wrote
     // depends on the host's heap and is not recorded.
     if !fteqcc && vanilla_zero(case) {
@@ -502,7 +726,12 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
     } else {
         1
     };
-    let function = progs.functions().get(index)?;
+    let Some(function) = progs.functions().get(index) else {
+        // FTE-23.10: FTEQCC makes no function for `f` initialised with a string a macro gave,
+        // which it casts with a warning.
+        let fteqcc = case.dialect.has_fteqcc_extensions();
+        return (fteqcc && progs.functions().len() == index).then_some(Outcome::Accepted);
+    };
     // FTEQCC writes every builtin's `first_statement` as `-binum`, a negative number's
     // included (`qccmain.c`, `if (functions[i].code == -1) funcs[i].first_statement =
     // PRLittleLong (-functions[i].builtin);`); id's qcc only a nonzero one's, and `#0`'s is
@@ -546,7 +775,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> T
         let (ours, errors) = profile(case);
         if ours == *oracle {
             tally.agree = tally.agree.saturating_add(1);
-        } else if let Some(statement) = expected_difference(case, &errors, oracle) {
+        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle) {
             let count = tally.expected.entry(statement).or_default();
             *count = count.saturating_add(1);
         } else {

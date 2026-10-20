@@ -1058,7 +1058,9 @@ impl<'a> Parser<'a> {
             return false;
         }
         match next.kind {
-            K::StringLit | K::RParen | K::Comma => true,
+            // FTEF-13.7: a string with a prefix starts with a name's byte.
+            K::StringLit => self.input.source.get(next.span.start) == Some(&b'"'),
+            K::RParen | K::Comma => true,
             K::FloatLit => next
                 .text
                 .bytes()
