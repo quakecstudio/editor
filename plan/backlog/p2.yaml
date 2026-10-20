@@ -1633,6 +1633,11 @@ issues:
   - P2-86
   - P2-87
   - P4-29
+  - P2-88
+  - P2-89
+  - P2-90
+  - P2-91
+  - P2-92
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1640,3 +1645,161 @@ issues:
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
+- key: P2-88
+  title: Fix the defects the codebase mapping found in the L0 format crates
+  labels:
+  - L0-formats
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - ENG-16
+  - MAP-6
+  - FND-6
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of the L0 crates) and confirmed by reading the code:
+    1. Two readers size an allocation by a count the file gives, with no bound from the input. `Md5Anim::frame` allocates from an unchecked count. `Md5Anim::read` reads `numAnimatedComponents` as an unchecked `u64` (crates/qs-mdl/src/md5.rs:637-638) and accepts a tiny file with `numJoints 0` and no `frame` blocks; `frame(0)` then runs `vec![0.0; len]` with that count (md5.rs:693-701), which aborts on allocation failure or panics on capacity overflow. MD5-3.6 says a frame never given is all zero and sets no bound on the count. Neither the proptest (crates/qs-mdl/src/md5/tests.rs:736-743) nor the fuzz target (fuzz/fuzz_targets/qs_mdl.rs, which calls `pose` but not `frame`) reaches it. In the same class, `Bsp::leaf_pvs` sizes the PVS row from model 0's `visleafs` (crates/qs-bsp/src/lib.rs:1699-1721), so a small BSP with `visleafs` near `i32::MAX` makes every call allocate about 268 MB; it is bounded and does not panic, and the fuzz target checks PVS only for rows of at most 65,536 bits (fuzz/fuzz_targets/qs_bsp.rs:50-54).
+    2. The qs-map `DuplicateKey` diagnostic says "qbsp and the game use the first, ericw-tools the last" (crates/qs-map/src/check.rs:36-37, :82). MAP-2.5 says qbsp "looks a key up by its last occurrence", as `QbspEntity::value_for_key` does (crates/qs-map/src/qbsp.rs:196-204), and MAP-2.6 says the game sees the first occurrence of a map qbsp compiled. The qbsp half of the message is wrong.
+    3. The qc-lno property `reading_arbitrary_bytes_never_panics` cannot fail: it asserts `matches!(.., Ok(_) | Err(_))`, which always holds (crates/qc-lno/src/tests.rs:214). Its neighbour `an_accepted_file_round_trips_byte_for_byte` rereads the input bytes rather than the written ones, contrary to its comment (tests.rs:195-197); the assertion before it (tests.rs:194) already pins the round trip, so the reread is only redundant.
+  environment: |
+    main at c706ef0; found by reading the code (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qs-mdl/src/md5.rs and docs/spec/md5.md: a statement that bounds what `numAnimatedComponents` may make `Md5Anim::read` or `frame` allocate (by the input''s size or a named limit), implemented so a small file cannot abort or panic the process; fuzz/fuzz_targets/qs_mdl.rs calls `frame` on every animation it reads'
+  - 'crates/qs-bsp/src/lib.rs and docs/spec/bsp.md: `leaf_pvs`''s allocation bounded the same way, or a statement that records why a row sized by `visleafs` is id''s behaviour and the bound the caller relies on; fuzz/fuzz_targets/qs_bsp.rs checks PVS rows of any size it can afford'
+  - 'crates/qs-map/src/check.rs: the `DuplicateKey` message and rustdoc say what MAP-2.5 and MAP-2.6 say'
+  - 'crates/qc-lno/src/tests.rs: the never-panics property asserts something about the result that can fail (for an accepted file, that its counts match its tables), and the round-trip property drops its redundant reread or rereads what `write` returned'
+  acceptance:
+  - 'A test citing the new MD5 statement reads an animation of a few bytes with `numJoints 0` and `numAnimatedComponents` near `u64::MAX`, and `read` and `frame(0)` give the stated error or a bounded result; the test aborts or panics before the fix'
+  - 'A test citing MAP-2.5 and MAP-2.6 pins the `DuplicateKey` message'
+  - 'A test citing the BSP statement shows `leaf_pvs` on a small file with a huge `visleafs` stays within the stated bound'
+  - 'The rewritten never-panics property fails against a deliberately broken `LnoFile::read`, recorded in the PR'
+  - 'cargo xtask fuzz qs-mdl --time 10m and cargo xtask fuzz qs-bsp --time 10m run clean, recorded in the PR'
+  verify:
+  - cargo test -p qs-mdl -p qs-bsp -p qs-map -p qc-lno; cargo xtask fuzz qs-mdl --time 10m; cargo xtask fuzz qs-bsp --time 10m
+- key: P2-89
+  title: Keep the call depth after a host error and fix the differential host's departures from id
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: M
+  reqs:
+  - FND-3
+  - FND-5
+  - FND-8
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of the L1 crates and qs-differential), each checked against id's source at id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d:
+    1. Host errors reset the call depth. id's `PF_error` (WinQuake/pr_cmds.c) prints and calls `Host_Error ("Program error");` directly; only `PR_RunError` (WinQuake/pr_exec.c) first sets `pr_depth = 0;` ("dump the stack so host_error can shutdown functions"). BUILTIN-3.2 says a host error does not reset the depth, and DIFF-8.4 that the shutdown's `ClientDisconnect` runs start at it, so after `error` 30 calls deep the first QC call fails with `stack overflow`; the oracle scenario at xtask/src/oracles/scenarios/errors.rs:294 pins that. QuakeC Studio collapses every `BuiltinError` into `ErrorKind::Builtin` (`to_run_error`, crates/qc-builtins/src/dispatch.rs:648-657) and `qc_vm::exec::execute` clears the call stack after every error (crates/qc-vm/src/exec.rs:214-237), so its shutdown runs at depth 0 and would diverge from the oracle on any scenario that reaches this. The same holds for VM-2.1: id's `PR_ExecuteProgram` raises `Host_Error ("PR_ExecuteProgram: NULL function");` (WinQuake/pr_exec.c), not `PR_RunError`, and DIFF-8.4 names VM-2.1 beside BUILTIN-3.2, but `execute` clears the stack after `ErrorKind::NullRunFunction` too.
+    2. The map spawner reports a full edict array as `ED_ParseEdict: parse error` (crates/qs-differential/src/host/spawner.rs:44-48). id's `ED_Alloc` calls `Sys_Error ("ED_Alloc: no free edicts");` (WinQuake/pr_edict.c), the error EDICT-6.2 and DIFF-8.1 name, and a fatal error ends the scenario with no shutdown (DIFF-8.6).
+    3. The spawner stores `atoi(value)` for an `ev_entity` key (crates/qs-differential/src/edict8.rs:298-302); id's `ED_ParseEpair` stores `*(int *)d = EDICT_TO_PROG(EDICT_NUM(atoi (s)));` (WinQuake/pr_edict.c). The two agree only for 0, and id's `EDICT_NUM` raises `Sys_Error ("EDICT_NUM: bad number %i", n);` for a number below 0 or from `sv.max_edicts` on (EDICT-1.7), a fatal error the spawner does not raise.
+    4. DIFF-11.2 counts statement coverage over "only the records before the first divergence"; `records_up_to` counts up to and including the diverging change-carrying record (crates/qs-differential/src/suite.rs:202-216), and the test pins the including count (crates/qs-differential/src/suite/tests.rs:208-215).
+    5. The test `message_dest_variants` cannot fail: it asserts `dest == dest` for each `MessageDest` under a DIFF-6.6 citation (crates/qc-builtins/src/tests.rs:1530-1548).
+  environment: |
+    main at c706ef0; found by reading the code and id's source (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qc-builtins (`to_run_error`) and crates/qc-vm (exec.rs, error.rs): a host error a builtin raises reaches the VM as a host error, and after every host error, VM-2.1''s `PR_ExecuteProgram: NULL function` included, the outermost run leaves the call depth where the error left it (BUILTIN-3.2, VM-2.1); a runtime error still resets it (VM-19.1)'
+  - 'crates/qs-differential/src/host.rs: after a host error the shutdown''s `ClientDisconnect` runs start at that depth (DIFF-8.4)'
+  - 'crates/qs-differential/src/host/spawner.rs: a full edict array while the map spawns is `ED_Alloc: no free edicts`, a fatal error with no shutdown (EDICT-6.2, DIFF-8.1, DIFF-8.6)'
+  - 'crates/qs-differential/src/edict8.rs: an `ev_entity` key stores the entity value of edict `atoi(value)`, as `ED_ParseEpair` does (EDICT-8.2), and a number out of range is the fatal `EDICT_NUM: bad number` error (EDICT-1.7, DIFF-8.6)'
+  - 'crates/qs-differential/src/suite.rs, or docs/spec/differential.md with DIFF-11.2 withdrawn and replaced (docs/spec/README.md): the coverage count and the statement agree on the diverging record'
+  - 'crates/qc-builtins/src/tests.rs: the `dest == dest` loop of `message_dest_variants` replaced by an assertion that can fail, keeping its BUILTIN-4.4 `EngineOnly` message assertion'
+  acceptance:
+  - 'A test citing BUILTIN-3.2 and DIFF-8.4 runs `error` 30 calls deep with one entered client and shows the shutdown''s first QC call fail with `stack overflow`, as the oracle scenario does, and a test citing VM-2.1 shows the same after a NULL-function run started 30 calls deep; both fail before the fix; a test citing VM-19.1 still shows depth 0 after a runtime error'
+  - 'Tests citing EDICT-6.2 and EDICT-8.2 pin the spawner''s error text and an `ev_entity` key of `1` and of `-1`, each failing before the fix'
+  - 'A test citing DIFF-11.2 pins the boundary the statement states'
+  - '`cargo xtask differential --fast` still reports zero divergences, recorded in the PR'
+  verify:
+  - cargo test -p qc-vm -p qc-builtins -p qs-differential; cargo xtask oracles; cargo xtask differential --fast
+- key: P2-90
+  title: Fix the defects the codebase mapping found in the repository checks and corpus tooling
+  labels:
+  - repo
+  - area:process
+  - type:bug
+  size: L
+  reqs:
+  - QA-1
+  - TEST-3
+  - LIC-7
+  - PM-6
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of qs-tests, xtask and plan/) and confirmed by reading the code:
+    1. The spec-citation ratchet counts every line whose first non-blank text is `// spec ` in any `.rs` file under `crates/`, `apps/` and `xtask/` (crates/qs-tests/tests/it/spec_coverage.rs:137-157), and so does the per-crate spec check of `cargo xtask readiness` (xtask/src/readiness.rs:876, :1132). TEST-3 asks that every statement "has a test citing it" (docs/testing.md:33). Such lines exist outside tests, for example crates/qs-differential/src/scenario.rs:670 and :688, crates/qc-edict/src/store.rs:296 and crates/qc-builtins/src/dispatch.rs:251, so a statement can count as cited with no test.
+    2. License rule H4 requires each cited upstream's copyright line to come before any other Copyright line (xtask/src/ported.rs:141-151), so a file citing both id-Software/Quake and fte-team/fteqw, which ADR-0017 allows, can never pass: the second upstream's line always follows the first's.
+    3. plan/check.py records an unknown milestone as a problem and then raises `ValueError` from `PHASE_ORDER.index` (plan/check.py:196), so the user gets a traceback instead of the problem list.
+    4. `cargo xtask sema-corpus` checks that every listed difference was used once per module (xtask/src/sema_corpus.rs:115-121, :375-381), so a codebase with several modules fails every module a listed difference does not belong to.
+    5. The corpus cache check is lexical: `dest.starts_with(root)` after joining the current directory, without resolving `..` or symlinks (xtask/src/corpus.rs:172-184), so a `--dest` that reaches the tree through `..` or a symlink passes LIC-7's rule that the corpus is never kept in the source tree.
+    6. `corpus fetch` checks each archive member with `safe_member` just before writing it (xtask/src/corpus/fetch.rs:195-202), so the files written before an unsafe member stay on disk when it aborts.
+    7. `cargo xtask ratchet` reads every past version of ratchets.toml with `git show` and treats a failure as the file being absent (`.ok()`, xtask/src/ratchet.rs:322), so a version it cannot read silently skips the history check for that commit.
+  environment: |
+    main at c706ef0; found by reading the code (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qs-tests/tests/it/spec_coverage.rs and xtask/src/readiness.rs: a `// spec` line outside test code in `crates/` (outside `#[cfg(test)]` modules and `tests` directories and files, as in crates/qc-vm/src/ops.rs, crates/qc-edict/src/store.rs, crates/qc-builtins/src/dispatch.rs and crates/qs-differential/src/scenario.rs) no longer counts; xtask''s oracle scenarios (xtask/src/oracles/scenarios/), which are differential tests, and test vector modules keep counting; the rule is written in docs/spec/README.md; each statement left without a citation gets a test citing it, and those `// spec` comments become plain comments'
+  - 'xtask/src/ported.rs: H4 accepts a header that carries the copyright line of every cited upstream above ours, in the order of the `Ported from` lines, and docs/porting.md shows such a header'
+  - 'plan/check.py: an unknown milestone is reported in the problem list and the run exits 1 without a traceback'
+  - 'xtask/src/sema_corpus.rs: listed differences are counted across a codebase''s modules'
+  - 'xtask/src/corpus.rs and xtask/src/corpus/fetch.rs: the cache check resolves the path through its nearest existing ancestor before comparing, so a cache that does not exist yet is still accepted, and an archive is checked in full before any file of it is written'
+  - 'xtask/src/ratchet.rs: a `git show` failure for a commit that touched ratchets.toml is an error, not an absent file'
+  acceptance:
+  - 'A test shows a `// spec` line in non-test code no longer counts, and the ratchet passes with docs/spec/coverage-baseline.tsv not grown'
+  - 'A licenses test passes a header citing id-Software/Quake and fte-team/fteqw with both copyright lines, and fails it with either missing'
+  - 'A test in plan/test_check.py shows an unknown milestone reported as a problem, with no exception'
+  - 'Tests show a two-module codebase with a difference listed for one module passes sema-corpus, a cache path through `..` or a symlink into the tree is refused, an archive with an unsafe member writes no file, and an unreadable ratchets.toml version fails `cargo xtask ratchet`; each fails before the fix'
+  verify:
+  - cargo test -p qs-tests -p xtask; python3 plan/check.py; (cd plan && python3 -m unittest discover -p 'test_*.py')
+- key: P2-91
+  title: Bring the docs, specs and READMEs back in line with the code and the ADRs
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: M
+  reqs:
+  - PM-3
+  - CONV-13
+  - QA-8
+  depends: []
+  deliverable:
+  - 'ADRs: ADR-0004''s Links say it is partly overridden by ADR-0005, whose engine oracle is id''s engine, not the pinned QuakeSpasm of docs/adr/0004-preview-host-base.md:128-129 and :163 (as ADR-0002:56 does for its own override); the vkQuake pin of ADR-0016 (`27789d73`) against ADR-0012:105 (`47726d89`), and ADR-0015:98 against ADR-0016:194 on ENGT-3.8, reconciled or explained'
+  - 'docs/ci.md:184 and docs/porting.md:211-212 state the VM differential''s bar as ADR-0013 and docs/testing.md:36 do: zero divergences, coverage reported and not gated'
+  - 'docs/spec/: the "every statement is in coverage-baseline.tsv until ... cites it" prose of limits.md:13-16, progs.md:17-20, vm.md:17-19, edicts.md:20-22, builtins.md:33-34, lno.md:26-27 and differential.md:33-35; sibling specs named by plan key as if unwritten (progs.md:18-19, vm.md:17, limits.md:132 and :146-150, trace.md:18, engine-targets.md); ENGT-4.5 and ENGT-4.6 citing the withdrawn ENGT-4.10 (engine-targets.md:280, :287) and FTEF-18.19 and FTEF-18.22 citing the withdrawn FTEF-18.4 (dialect-fteqcc.md:1042, :1084), withdrawn and replaced as docs/spec/README.md says; the "Codegen (later)" prose of dialect-fteqcc.md:24-27 against its active codegen statements; the plan requirements wad2.md:10-11 (MAP-5, MAP-23) and bsp.md:1264-1266 (MAP-6) cite, named as plan requirements; filesystem.md:278-280 and :328-330 updated with the P1-30 (#277) runs; PAK-5''s QuakeSpasm links pinned to the commit bsp.md uses'
+  - 'READMEs and rustdoc: xtask/README.md (13 of the 26 commands main.rs routes, an old `ci` step list); crates/qs-tests/README.md (3 of its 8 modules); crates/qc-lexer/README.md:33 ("depends on no other crate"; it depends on qc-diag), crates/qc-lexer/Cargo.toml:3 and src/lib.rs:3, crates/qc-syntax/Cargo.toml:3 and src/lib.rs:2 ("vanilla" for crates that read FTEQCC too); crates/qc-trace/README.md:19-21; crates/qc-edict/README.md:41-45; crates/qs-differential/README.md:20-21 (fuzz/fuzz_targets/qc_vm.rs uses `qs_differential::generate`); crates/qc-preproc/README.md:64 (`src/tests.rs`; the tests are in `src/tests/`); crates/qs-vfs/README.md:40-48 (omits the `game directory:` line walk.rs:181 prints); crates/qs-mdl/Cargo.toml:3 (omits alias models); crates/qs-bsp/src/lib.rs:10 (BSP-1 to BSP-19; the README says BSP-20); crates/qc-builtins/README.md:41 and src/lib.rs:23 (claim BUILTIN-17, which no code or test cites); crates/qs-install/src/lib.rs:144 (cites FS-6.4 for missing files; the statement is FS-6.5); crates/qc-diag/src/code.rs:160-161 (`ALL` is "every code, in order" but E040x follow E05xx)'
+  - 'Port headers: crates/qc-lexer/src/fte_string.rs:6-8 and crates/qc-syntax/src/ast.rs:11-14 say fteqw is not a porting upstream, which ADR-0017 changed: each takes the ADR-0017 header as crates/qc-preproc/src/fte_macro.rs has, or says it is read for facts only; crates/qc-progs/src/opcode.rs:5 names only `OP_DONE` and crates/qc-progs/src/limits.rs has no header for the values it takes from id; crates/qc-edict/src/lib.rs:5-6 cites `ED_FindField` and `ED_FindGlobal`, which qc-edict does not implement'
+  - 'Agent and process files: the label table of .claude/rules/commits-and-issues.md gains `type:bug` (plan/backlog/_meta.yaml:57); the crate column of .claude/rules/layering.md lists every crate layers.toml maps; the conditionals on landed work in .claude/agents/implementer.md ("from #9"), .claude/skills/work-issue/SKILL.md ("once #9 lands", "Once #2 lands"), AGENTS.md:26-27, .claude/hooks/session-setup.sh:63 and docs/agents/README.md:74 removed; the plan-test commands of CLAUDE.md, .claude/rules/branching.md:38 and .claude/skills/plan-change/SKILL.md:16 run every plan/test_*.py as cargo xtask ci does; .kiro/steering/guardrails.md:72-74, .kiro/hooks/session-setup.json and .kiro/steering/kiro-powers.md:74-79 agree on whether the SessionStart setup runs; the .kiro pointers carry the code-review self-review, the watch intervals and the scheduled-run check of their .claude sources'
+  - 'Top-level docs: docs/roadmap.md:99-105 ("where we are"); docs/design/README.md (design doc revision, UI framework); docs/adr/README.md:35-37 (reserved ADRs); docs/scope.md:41; docs/layers.md:78 (the tests layer also holds qs-bench and qs-differential); docs/conventions.md:362 (calls docs/ an mdBook, with no book.toml); CONTRIBUTING.md:26-30 (the `ci` step list); ratchets.toml''s stale comments (lines 47-53, 64-66, 76-77, 87-88, 98-100, 110-116 and 224-229 say "a later review adds the minimums" above tables that have them; lines 245-246, 278-279, 287-288 and 300-301 name P1-R1 for P2-R1), comments only; plan/requirements.yaml:3 ("backlog.yaml") and CONV-13 (six rule files; .claude/rules/ has seven)'
+  acceptance:
+  - 'Each item is fixed, or where it is a spec statement withdrawn and replaced; the PR lists each with the commit that fixed it'
+  - 'A search for each quoted stale phrase above finds nothing, recorded in the PR'
+  - 'cargo xtask ci passes, the spec-citation ratchet, adr, licenses and plan steps included'
+  verify:
+  - cargo xtask ci
+- key: P2-92
+  title: Strengthen the weak and misattributed tests the codebase mapping found
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: M
+  reqs:
+  - CONV-11
+  - TEST-3
+  depends: []
+  deliverable:
+  - 'qc-vm: `error_resets_depth_but_not_localstack` cites VM-19.3 and asserts only `is_err()` (crates/qc-vm/src/tests.rs:111-117); the adversarial test at src/tests/adversarial.rs:192-215 does not reuse the machine it aborted; src/tests/harness.rs:59 panics on an unknown opcode name; `StubBuiltins` is written twice (src/tests.rs, src/tests/vectors.rs)'
+  - 'qc-edict: near-duplicate too-many-fields tests (crates/qc-edict/src/tests.rs:527-537, :616-625) and an unfinished comment (:500-501)'
+  - 'qc-builtins: `CALL_TARGET_SLOT` 60 lies inside `v_forward` (crates/qc-builtins/src/tests.rs:694); `movetogoal_holds_at_delta_315` asserts that the entity steps (tests.rs:2805-2825)'
+  - 'qc-trace, qc-types, qc-diag, qc-syntax, qs-vfs: tests with no citation: crates/qc-trace/src/tests.rs:1019 (`errors_display`); crates/qc-types/src/tests.rs:212-248; crates/qc-diag/src/tests.rs (`span_helpers`); crates/qc-syntax/src/tests/mod.rs:177-190 and tests/ast_view.rs; crates/qs-vfs/src/tests.rs:614, :648, :694'
+  - 'qc-diag and qc-lexer: `reserved_codes_are_absent` calls E0207 and E0403 to E0405 withdrawn, though QCD-3.7 and QCD-5.3 to QCD-5.5 are active, and E0501 to E0509 warnings, though they are errors (crates/qc-diag/src/tests.rs:53-62); crates/qc-lexer/src/tests.rs:559-560 repeats `// spec QCD-1.1`, and qc-diag''s QCD-1.1 and QCD-1.2 are cited from qc-lexer''s tests rather than qc-diag''s'
+  - 'qc-sema: crates/qc-sema/src/tests/incremental.rs has no citation on its 7 tests and subtracts counters unchecked (:58-61); `types.rs::malformed_type_is_unknown` accepts either shape; crates/qc-sema/src/tests/expansion.rs:88-95 asserts a disjunction; the factories take strings rather than spec structs (CONV-11)'
+  - 'qc-preproc and qs-install: `fs_loader_picks_the_least_case_variant` skips itself on case-insensitive hosts (crates/qc-preproc/src/tests/mod.rs:885-891); `finding_on_this_machine_does_not_fail` reads the developer''s real stores and asserts nothing (crates/qs-install/src/tests.rs:516-518)'
+  - 'qs-differential: host tests that assert only `Ended::Normally` (crates/qs-differential/src/host/tests.rs:121-152, :290-319); no test of EDICT-8.3''s short vectors, the `light` rename, the trailing-space key trim or the `ev_entity` value in src/edict8/tests.rs; the runner tests'' fake oracle reruns the runner, so they prove plumbing only; src/generate.rs:24, :91, :204, :209 and :443 cite VM-17, VM-11.4, VM-11.1 and VM-6.1/VM-7.3 for behaviour those statements do not describe, and :74 and :81 say one server frame where `FRAMES` is 4'
+  - 'xtask, fuzz and plan: xtask/src/engines/tests.rs:140, :278-297 and :325-348 hard-code counts of the live crates/qc-engines/sources.toml; xtask/src/readiness/tests.rs:150-162 match readiness.yml''s text; xtask/src/bench/tests.rs:443-449 fails on a non-Windows host with `PROCESSOR_IDENTIFIER` set; `NOT_RECORDED` (xtask/src/oracles/scenarios/tests.rs:21-31) must equal the cases record.py drops, in another language; the qc-sema fuzz target''s incremental check only copies the first file''s text (fuzz/fuzz_targets/qc_sema.rs:85-92); plan/test_check.py asserts on real issue keys and risk rows'
+  acceptance:
+  - 'Each test named above asserts what its name and citation say and fails when the behaviour it pins is broken, shown per test by a deliberate break or a mutant recorded in the PR'
+  - 'Each test without a citation cites the statement it pins, or says in a comment why none applies (process tests and tooling with no spec)'
+  - 'No ratchet is lowered and docs/spec/coverage-baseline.tsv does not grow; cargo xtask ci passes'
+  verify:
+  - cargo xtask ci
