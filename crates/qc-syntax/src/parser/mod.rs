@@ -801,6 +801,12 @@ impl<'a> Parser<'a> {
                 break function;
             }
             self.bump();
+            // FTEF-15.8: FTEQCC's declarator loop starts with `if (QCC_PR_CheckToken (";"))`
+            // and returns, so a `,` may end the list.
+            if self.fteqcc() && self.at(K::Semicolon) {
+                self.bump();
+                return;
+            }
         };
         if self.at(K::Semicolon) {
             self.bump();

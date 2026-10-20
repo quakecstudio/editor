@@ -585,3 +585,29 @@ fn nested_function_bodies_parse() {
         assert_eq!(bodies, 2, "{body}");
     }
 }
+
+// spec FTEF-15.8: a declaration's declarators may end with a `,` before the `;`, at file level
+// and in a body, every declarator before it kept; a second `,` is no name; the vanilla parser
+// refuses the `,`
+#[test]
+fn a_comma_may_end_the_declarators() {
+    for source in [
+        "void() f = #5, ;\n",
+        "void() f = #5,;\n",
+        "void() g, f = #5,;\n",
+        "float a, b, ;\n",
+    ] {
+        fte_ok(source);
+    }
+    let parsed = fte("void() g, f = #5,;\n");
+    let names: Vec<Vec<u8>> = parsed
+        .tree()
+        .into_iter()
+        .flat_map(|tree| tree.declarations().collect::<Vec<_>>())
+        .flat_map(|decl| decl.declarators().collect::<Vec<_>>())
+        .filter_map(|declarator| declarator.name().map(|name| name.text().to_vec()))
+        .collect();
+    assert_eq!(names, [b"g".to_vec(), b"f".to_vec()]);
+    fte_ok(&in_body("local float x, ;\nx = 1;"));
+    assert!(!fte_errors("void() f = #5, , ;\n").is_empty());
+}
