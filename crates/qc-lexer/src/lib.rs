@@ -522,19 +522,30 @@ impl Lexer<'_> {
         });
     }
 
+    /// Whether the byte at `at` is on a line that starts, after white space, with `#`: a
+    /// directive's line (QC-9.1).
+    fn on_directive_line(&self, at: usize) -> bool {
+        let before = self.text.get(..at).unwrap_or_default();
+        let line = before
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .and_then(|nl| before.get(nl.saturating_add(1)..))
+            .unwrap_or(before);
+        line.iter().find(|&&b| !is_whitespace(b)) == Some(&b'#')
+    }
+
     fn run(&mut self) {
         loop {
             self.skip_trivia();
             let Some(c) = self.peek(0) else { return };
             let start = self.pos;
-            // FTEF-13.7: an `L` prefix is read only after another part of a string.
-            let joins = matches!(
-                self.out.tokens.last(),
-                Some(Token {
-                    kind: TokenKind::String(_),
-                    ..
-                })
-            );
+            // FTEF-13.7: an `L` prefix is read only after another part of a string, which a
+            // directive's string (an `#include` file, a `#warning` text) is not.
+            let joins = self.out.tokens.last().is_some_and(|last| {
+                let same_line = !self.bytes(Span::new(last.span.end, start)).contains(&b'\n');
+                matches!(last.kind, TokenKind::String(_))
+                    && (same_line || !self.on_directive_line(last.span.start))
+            });
             let fte_string = self
                 .dialect
                 .has_fteqcc_extensions()

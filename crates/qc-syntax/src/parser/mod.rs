@@ -1048,27 +1048,13 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// Whether the token after a `#` that ends at `opener` is one FTEQCC's `QCC_PR_Lex` reads
-    /// the `#` before as a token (FTE-23.1): it starts right after the `#`, with `"`, `-`, a
-    /// digit, `)` or `,`.
+    /// Whether FTEQCC's `QCC_PR_Lex` reads a `#` that ends at `opener` as a token (FTE-23.1):
+    /// the byte right after it is `"`, `-`, a digit, `)` or `,`. A string with a prefix
+    /// (FTEF-13.7) starts with a name's byte, so it is not one.
     fn hash_token_follows(&self, opener: Option<usize>) -> bool {
-        let Some(next) = self.current() else {
-            return false;
-        };
-        if Some(next.span.start) != opener {
-            return false;
-        }
-        match next.kind {
-            // FTEF-13.7: a string with a prefix starts with a name's byte.
-            K::StringLit => self.input.source.get(next.span.start) == Some(&b'"'),
-            K::RParen | K::Comma => true,
-            K::FloatLit => next
-                .text
-                .bytes()
-                .next()
-                .is_some_and(|b| b == b'-' || b.is_ascii_digit()),
-            _ => false,
-        }
+        opener
+            .and_then(|at| self.input.source.get(at))
+            .is_some_and(|&b| matches!(b, b'"' | b'-' | b')' | b',') || b.is_ascii_digit())
     }
 
     /// `[frame, next] { ... }` or `{ ... }` (QC-13.1, QC-13.6).

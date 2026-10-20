@@ -228,7 +228,8 @@ impl Lexer<'_> {
             write(contents, code, output);
         } else if code < 0x80 {
             self.bump(len);
-            write(contents, code | BRONZE, output);
+            // `cp|0xe080`: below 0x80 the code shares no bit with it, so the sum is the same.
+            write(contents, BRONZE.wrapping_add(code), output);
         } else {
             // "Unable to mask non-ascii chars. Attempting to mask bytes": the first byte goes
             // as it is, and the rest of the sequence is read again, one byte at a time.
@@ -256,7 +257,6 @@ impl Lexer<'_> {
             b'#' | b'"' | b'\\' | b'?' | b'\'' => u32::from(c),
             b'[' => 0xe010,
             b']' => 0xe011,
-            b'.' => 0xe01c,
             b'<' => 0xe01d,
             b'-' => 0xe01e,
             b'>' => 0xe01f,
@@ -385,8 +385,9 @@ fn write(contents: &mut Vec<u8>, code: u32, output: Output) {
 }
 
 /// `code` as FTEQCC's `forceutf8` writes it (FTEF-13.8): as many bytes as its size needs, up
-/// to 7, with no check that it is a Unicode scalar. A code of 0x80000000 or more makes
-/// FTEQCC loop for ever (its `t <<= 5` reaches 0); it is written here as 7 bytes.
+/// to 7, with no check that it is a Unicode scalar: a lead byte of as many high bits as there
+/// are bytes, then 6 bits in each continuation byte. A code of 0x80000000 or more makes FTEQCC
+/// loop for ever (its `t <<= 5` reaches 0); it is written here as 7 bytes.
 fn utf8(contents: &mut Vec<u8>, code: u32) {
     let code = u64::from(code);
     let mut count = 1_u32;
@@ -400,17 +401,18 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
         count = count.saturating_add(1);
     }
     if count == 1 {
-        contents.push(low_byte(u32::try_from(code & 0x7f).unwrap_or(0)));
+        contents.push(low_byte(u32::try_from(code).unwrap_or(0)));
         return;
     }
     let mut shift = count.saturating_mul(6).saturating_sub(6);
-    let lead =
-        (code.checked_shr(shift).unwrap_or(0) & (0x7f_u64 >> count)) | (0xffff_ff00_u64 >> count);
+    // The lead byte's high bits, `0xffffff00 >> bytecount`, and the code's top bits, which
+    // `bound` keeps below them, so adding them sets both.
+    let lead = (0xff00_u64 >> count).wrapping_add(code.checked_shr(shift).unwrap_or(0));
     contents.push(lead.to_le_bytes().first().copied().unwrap_or(0));
     while shift > 0 {
         shift = shift.saturating_sub(6);
-        let byte = (code.checked_shr(shift).unwrap_or(0) & 0x3f) | 0x80;
-        contents.push(byte.to_le_bytes().first().copied().unwrap_or(0));
+        let bits = code.checked_shr(shift).unwrap_or(0) & 0x3f;
+        contents.push(low_byte(u32::try_from(bits).unwrap_or(0)).wrapping_add(0x80));
     }
 }
 
@@ -419,26 +421,24 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
 /// for 0x800 to 0xFFFF, surrogates included, four for 0x10000 to 0x10FFFF; `None` for any
 /// other byte of 0x80 or more.
 fn utf8_check(bytes: &[u8]) -> Option<(u32, usize)> {
-    let byte = |i: usize| u32::from(bytes.get(i).copied().unwrap_or(0));
-    let follows = |i: usize| byte(i) & 0xc0 == 0x80;
-    let lead = byte(0);
-    if lead & 0x80 == 0 {
-        return Some((lead, 1));
+    let lead = *bytes.first()?;
+    let (len, bits, least) = match lead {
+        0x00..=0x7f => return Some((u32::from(lead), 1)),
+        0xc0..=0xdf => (2, lead & 0x1f, 0x80),
+        0xe0..=0xef => (3, lead & 0x0f, 0x800),
+        0xf0..=0xf7 => (4, lead & 0x07, 0x1_0000),
+        _ => return None,
+    };
+    let mut code = u32::from(bits);
+    for i in 1..len {
+        let next = *bytes.get(i)?;
+        if !(0x80..0xc0).contains(&next) {
+            return None;
+        }
+        code = code.wrapping_mul(64).wrapping_add(u32::from(next & 0x3f));
     }
-    if lead & 0xe0 == 0xc0 && follows(1) {
-        let code = ((lead & 0x1f) << 6) | (byte(1) & 0x3f);
-        return (code == 0 || code >= 0x80).then_some((code, 2));
-    }
-    if lead & 0xf0 == 0xe0 && follows(1) && follows(2) {
-        let code = ((lead & 0x0f) << 12) | ((byte(1) & 0x3f) << 6) | (byte(2) & 0x3f);
-        return (code >= 0x800).then_some((code, 3));
-    }
-    if lead & 0xf8 == 0xf0 && follows(1) && follows(2) && follows(3) {
-        let code = ((lead & 0x07) << 18)
-            | ((byte(1) & 0x3f) << 12)
-            | ((byte(2) & 0x3f) << 6)
-            | (byte(3) & 0x3f);
-        return (0x1_0000..=0x10_ffff).contains(&code).then_some((code, 4));
-    }
-    None
+    // `if (!uc || uc >= (1u<<7))`, `if (uc >= (1u<<11))`, `if (uc >= (1u<<16)) if (uc <=
+    // 0x10ffff)`.
+    let fits = code >= least && code <= 0x10_ffff;
+    (fits || (len == 2 && code == 0)).then_some((code, len))
 }

@@ -186,6 +186,8 @@ fn fteqcc_differs_only_where_it_casts_or_hangs() {
             Some("FTEF-13.8"),
         ),
         (&hangs, &bound_as(0, "x"), &[], &rejected, None),
+        // A case that is not one FTEQCC never finishes is a failure when it times out.
+        (&plain, &accepted, &[], &Outcome::Hangs, None),
     ] {
         assert_eq!(
             expected_difference(case, ours, errors, oracle),
@@ -216,15 +218,20 @@ fn bindings_are_read_after_the_preprocessor() {
         profile(&fte(&format!("void() {long} = #5;\n"))).0,
         bound_as(5, &long)
     );
-    assert_eq!(super::function_name(&fte("void f() = #5;\n")), "f");
+    // QC-9.14: a builtin a macro body writes binds as written.
     assert_eq!(
-        super::expanded(&fte("void() f = #5;\n")),
-        b"void() f = #5;\n"
+        profile(&fte("#define B #5\nvoid() f = B;\n")).0,
+        bound_as(5, "f")
     );
-    assert_eq!(
-        super::expanded(&fte("#define N 5\nvoid() f=#N;\n")),
-        b"void() f= 5 ;"
-    );
+    for (source, name) in [
+        ("void f() = #5;\n", "f"),
+        ("void() n = #5;\n", "f"),
+        ("void() nx = #5;\n", "f"),
+        ("void() nn = #5;\n", "nn"),
+        ("void() g = #5;\nvoid() f = #5;\n", "f"),
+    ] {
+        assert_eq!(super::function_name(&fte(source)), name, "{source:?}");
+    }
 }
 
 // spec QC-13.4: id's qcc's `#0` is found from the source text, whatever the number's form

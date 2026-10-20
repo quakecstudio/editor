@@ -675,3 +675,13 @@ fn hash_before_anything_else_stays() {
     let (_, out) = one("#define N 5\nf = #N;\n");
     assert_eq!(tokens(&out), "f = # 5 ;");
 }
+
+// spec FTE-23.10: a function-like macro after `#` with a bad or unclosed argument list keeps
+// the `#` and reports its error once
+#[test]
+fn a_refused_macro_after_hash_reports_once() {
+    let (toks, errs) = fte("#define M(x) x\nf = #M(1, 2, 3);\n");
+    assert_eq!(errs, vec![Code::E0116]);
+    assert_eq!(toks, "f = # M ( 1 , 2 , 3 ) ;");
+    assert_eq!(fte("#define M(x) x\nf = #M(1\n").1, vec![Code::E0117]);
+}

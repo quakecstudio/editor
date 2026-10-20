@@ -30,7 +30,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use qc_preproc::{MemoryLoader, Preprocessor};
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_syntax::{Code, Dialect, ast};
@@ -440,7 +439,7 @@ pub(crate) fn expected_difference(
     let vanilla = !case.dialect.has_fteqcc_extensions();
     if !vanilla {
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
-        if *oracle == Outcome::Hangs {
+        if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
         }
         // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
@@ -472,6 +471,18 @@ pub(crate) fn expected_difference(
 
 /// The profile's outcome for `case`, and the codes of its errors in the order of their place.
 pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
+    let (mut db, mut errors) = analysed(case);
+    errors.sort_by_key(|(start, _)| *start);
+    let errors: Vec<Code> = errors.into_iter().map(|(_, code)| code).collect();
+    if errors.is_empty() {
+        return (binding(&mut db, case).unwrap_or(Outcome::Accepted), errors);
+    }
+    (refusal(case, &errors), errors)
+}
+
+/// `case` as the compiler reads it, through the preprocessor (`Db::analyze_module`): the
+/// database, and each error's place and code.
+fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     let mut db = Db::new();
     db.set_dialect(case.dialect);
     db.set_file(
@@ -484,17 +495,12 @@ pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
         compiled: vec![FileId(0)],
         autoproto: None,
     });
-    let mut errors: Vec<_> = analysis
+    let errors = analysis
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
-    errors.sort_by_key(|(start, _)| *start);
-    let errors: Vec<Code> = errors.into_iter().map(|(_, code)| code).collect();
-    if errors.is_empty() {
-        return (binding(&mut db, case).unwrap_or(Outcome::Accepted), errors);
-    }
-    (refusal(case, &errors), errors)
+    (db, errors)
 }
 
 /// How the profile refuses `case` with the errors `errors`, in the order of their place.
@@ -516,17 +522,13 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
 }
 
 /// The builtin number and engine name the profile binds the first function of `case` to:
-/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), after the
-/// preprocessor (FTE-23.10); under the vanilla dialect the number `builtin_binum` gives and the
-/// definition's name (QC-13.10).
+/// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), from the
+/// file's expansion (FTE-23.10, QC-9.14); under the vanilla dialect the number
+/// `builtin_binum` gives and the definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     let name = function_name(case);
     if case.dialect.has_fteqcc_extensions() {
-        let function = lowered(case)
-            .into_iter()
-            .find(|decl| decl.name == name)?
-            .literal?
-            .builtin_function(name)?;
+        let function = expanded_literal(db, name)?.builtin_function(name)?;
         return Some(Outcome::Bound {
             number: function.number,
             name: function.name,
@@ -550,6 +552,17 @@ fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     })
 }
 
+/// The literal the analysed `db` lowers the first definition `name` of its file's expansion
+/// to, if any.
+fn expanded_literal<'a>(db: &'a Db, name: &str) -> Option<&'a qc_sema::LiteralValue> {
+    db.expanded_decls(FileId(0))?
+        .decls
+        .iter()
+        .find(|decl| decl.name == name)?
+        .literal
+        .as_ref()
+}
+
 /// The name of the function `case` binds: `f`, or the long name of `n` bytes a case of
 /// [`NAME_LENGTHS`] declares with `void() ` (FTEF-15.7).
 fn function_name(case: &Case) -> &str {
@@ -562,69 +575,17 @@ fn function_name(case: &Case) -> &str {
         .unwrap_or("f")
 }
 
-/// Whether the FTEQCC `case`, read through the preprocessor, initialises its function with a
-/// number or a vector, such as the number a macro after `#` stands for (FTE-23.11).
+/// Whether the FTEQCC `case`, which uses a macro or a built-in constant (FTEF-14.7), initialises
+/// its function with a number or a vector once preprocessed, such as the number a macro after
+/// `#` stands for (FTE-23.11).
 fn value_initialiser(case: &Case) -> bool {
-    let name = function_name(case);
-    uses_macros(case)
-        && lowered(case).iter().any(|decl| {
-            decl.name == name
-                && matches!(
-                    decl.literal,
-                    Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
-                )
-        })
-}
-
-/// Whether `case` defines a macro or uses a built-in constant (FTEF-14.7).
-fn uses_macros(case: &Case) -> bool {
-    case.source.contains("#define") || case.source.contains("__")
-}
-
-/// The declarations of `case` as qc-sema lowers the text its preprocessor makes of it
-/// ([`expanded`]).
-fn lowered(case: &Case) -> Vec<qc_sema::RawDecl> {
-    let mut db = Db::new();
-    db.set_dialect(case.dialect);
-    db.set_file(FileId(0), PathBuf::from("t.qc"), expanded(case));
-    db.lower(FileId(0)).decls
-}
-
-/// The text the preprocessor makes of `case` (QC-9, FTE-23.10), each token as its spelling or
-/// source bytes, touching the one before it only when both come out of the same expansion, or
-/// none, and touch where they are written (QC-9.14), as qc-sema renders a file for its parser;
-/// `case` itself when it uses no macro.
-fn expanded(case: &Case) -> Vec<u8> {
-    if !uses_macros(case) {
-        return case.source.clone().into_bytes();
-    }
-    let mut loader = MemoryLoader::new();
-    loader.insert("t.qc", case.source.as_bytes());
-    let mut pp = Preprocessor::new(loader).with_dialect(case.dialect);
-    let Ok(output) = pp.preprocess_file(Path::new("t.qc")) else {
-        return Vec::new();
-    };
-    let sources = pp.sources();
-    let mut text = Vec::new();
-    let mut last: Option<&qc_preproc::PpToken> = None;
-    for token in &output.tokens {
-        let adjacent = last.is_some_and(|last| {
-            last.spelling.is_none()
-                && token.spelling.is_none()
-                && last.expansion == token.expansion
-                && last.span.file == token.span.file
-                && last.span.span.end == token.span.span.start
-        });
-        if last.is_some() && !adjacent {
-            text.push(b' ');
-        }
-        match &token.spelling {
-            Some(spelling) => text.extend_from_slice(spelling.as_bytes()),
-            None => text.extend_from_slice(sources.text(token.span).unwrap_or_default()),
-        }
-        last = Some(token);
-    }
-    text
+    let uses_macros = case.source.contains("#define") || case.source.contains("#__");
+    let (db, _) = analysed(case);
+    uses_macros
+        && matches!(
+            expanded_literal(&db, function_name(case)),
+            Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
+        )
 }
 
 /// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
@@ -738,7 +699,7 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
         1
     };
     let Some(function) = progs.functions().get(index) else {
-        // FTE-23.10: FTEQCC makes no function for `f` initialised with a string a macro gave,
+        // FTE-23.11: FTEQCC makes no function for `f` initialised with a string a macro gave,
         // which it casts with a warning.
         let fteqcc = case.dialect.has_fteqcc_extensions();
         return (fteqcc && progs.functions().len() == index).then_some(Outcome::Accepted);

@@ -392,7 +392,10 @@ dialect features (P2-01, P2-03).
   text: `QCC_PR_IncludeChunkEx(c->value, ...)` (`qcc_pr_lex.c`,
   fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) lexes the body as it was written,
   and the pinned FTEQCC compiles both examples. A token whose text the preprocessor made (a
-  `##` paste, a `#` string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing.
+  `##` paste, a `#` string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing. FTEQCC
+  substitutes an argument into the body as text, so an argument written against a body token
+  (`#define L(x) x:` used as `L(lbl)`) touches it there; this profile keeps them apart, and
+  reading them as FTEQCC does is P2-77.
 
 ## QC-10 Types
 

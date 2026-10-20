@@ -514,6 +514,25 @@ fn rendering_keeps_a_macro_body_s_spacing() {
     }
 }
 
+// spec QC-9.7: the declarations of a compiled file are those of its expansion, kept from the
+// last analysis, and there are none before one
+#[test]
+fn the_expansion_s_declarations_are_kept() {
+    let files = [("a.qc", "#define D float x;\nD\n")];
+    let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+    assert!(db.expanded_decls(FileId(0)).is_none());
+    db.analyze_module(&input);
+    let names: Vec<_> = db
+        .expanded_decls(FileId(0))
+        .unwrap()
+        .decls
+        .iter()
+        .map(|decl| decl.name.clone())
+        .collect();
+    assert_eq!(names, ["x"]);
+    assert!(db.expanded_decls(FileId(1)).is_none());
+}
+
 // spec QC-9.14: a builtin initialiser or a label a macro makes reads as the same text written
 // in the file would: the FTEQCC `#` before its number (FTE-23.1), a `-` before a digit
 // (FTE-23.4), a label's `:` (FTEF-18.23); a body that writes them apart is read apart

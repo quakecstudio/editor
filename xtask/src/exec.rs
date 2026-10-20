@@ -26,7 +26,7 @@ pub(crate) trait Exec {
 pub(crate) struct System;
 
 /// How often [`System`] looks whether a command given a time limit has ended.
-const POLL: Duration = Duration::from_millis(5);
+const POLL: Duration = Duration::from_millis(1);
 
 impl Exec for System {
     fn output(&self, command: &mut Command) -> io::Result<Output> {
@@ -43,17 +43,15 @@ impl Exec for System {
         let stdout = drain(child.stdout.take());
         let stderr = drain(child.stderr.take());
         let start = Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break Some(status);
-            }
-            if start.elapsed() >= limit {
-                child.kill()?;
-                child.wait()?;
-                break None;
-            }
-            thread::sleep(POLL);
-        };
+        let status = wait_or_expire(
+            || child.try_wait(),
+            || start.elapsed() >= limit,
+            || thread::sleep(POLL),
+        )?;
+        if status.is_none() {
+            child.kill()?;
+            child.wait()?;
+        }
         let stdout = stdout.join().unwrap_or_default();
         let stderr = stderr.join().unwrap_or_default();
         Ok(status.map(|status| Output {
@@ -65,6 +63,25 @@ impl Exec for System {
 
     fn status(&self, command: &mut Command) -> io::Result<ExitStatus> {
         command.status()
+    }
+}
+
+/// Asks `ended` for a command's status until it has one, or until `expired` says its time is
+/// up, which gives `None`; `pause` waits between two asks. The clock is the caller's, so the
+/// loop is tested with no real time.
+fn wait_or_expire<T>(
+    mut ended: impl FnMut() -> io::Result<Option<T>>,
+    mut expired: impl FnMut() -> bool,
+    mut pause: impl FnMut(),
+) -> io::Result<Option<T>> {
+    loop {
+        if let Some(status) = ended()? {
+            return Ok(Some(status));
+        }
+        if expired() {
+            return Ok(None);
+        }
+        pause();
     }
 }
 
@@ -290,19 +307,51 @@ mod tests {
         );
     }
 
-    // The limit is the behaviour under test: a command that outlives it is killed.
+    // A limit already past kills a command that is still running at the first look, with no
+    // wait on the clock.
     #[cfg(unix)]
     #[test]
     fn a_command_past_its_limit_is_killed() {
-        let started = Instant::now();
         let output = System
             .output_within(
                 Command::new("sh").args(["-c", "exec sleep 60"]),
-                Duration::from_millis(50),
+                Duration::ZERO,
             )
             .unwrap();
         assert!(output.is_none());
-        assert!(started.elapsed() < Duration::from_secs(30));
+    }
+
+    #[test]
+    fn waiting_ends_with_the_status_or_at_the_limit() {
+        let mut asks = 0;
+        let mut pauses = 0;
+        let ended = wait_or_expire(
+            || {
+                asks += 1;
+                Ok((asks == 3).then_some(7))
+            },
+            || false,
+            || pauses += 1,
+        );
+        assert_eq!(ended.unwrap(), Some(7));
+        assert_eq!(pauses, 2);
+        let mut looks = 0;
+        let expired = wait_or_expire(
+            || Ok(None::<i32>),
+            || {
+                looks += 1;
+                looks == 2
+            },
+            || {},
+        );
+        assert_eq!(expired.unwrap(), None);
+        assert_eq!(looks, 2);
+        let failed = wait_or_expire(
+            || Err::<Option<i32>, _>(io::Error::other("x")),
+            || true,
+            || {},
+        );
+        assert!(failed.is_err());
     }
 
     #[test]

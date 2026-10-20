@@ -413,7 +413,8 @@ impl<L: Loader> Preprocessor<L> {
     /// In an FTEQCC dialect, a `#` right before the name of a macro it may expand is that
     /// macro's expansion with no `#` (FTE-23.10), as `QCC_PR_Lex` skips the `#` and
     /// `QCC_PR_CheckCompConst` expands the word after it. Returns `item` when it is not such a
-    /// `#`, which the parser then reads as it is; `None` when the `#` is gone.
+    /// `#`, which the parser then reads as it is; `None` when the `#` is gone, or when it went
+    /// out with the name after it.
     fn explicit_use(&mut self, run: &mut Run, item: Item) -> Option<Item> {
         if !self.dialect.has_fteqcc_extensions()
             || item.tok.kind != TokenKind::Punct(Punct::Hash)
@@ -435,9 +436,12 @@ impl<L: Loader> Preprocessor<L> {
             run.pending.push(next);
             return Some(item);
         }
+        // A use `try_expand` refused, a function-like macro's with no or a bad argument list,
+        // goes out as it is: tried again, it would report its error again.
         let next = self.try_expand(run, next)?;
-        run.pending.push(next);
-        Some(item)
+        self.emit(run, item.tok);
+        self.emit(run, next.tok);
+        None
     }
 
     /// The word `QCC_PR_CheckCompConst` reads right after the `#` at `hash` (FTE-23.10): the
