@@ -517,6 +517,11 @@ fn numbers_are_parse2_s() {
     assert_eq!(fte("#define E(a) #05a\nE(:ex_a)\n").0, "#5:ex_a");
     assert_eq!(fte("#define E(a) #0x1F a\nE(:ex_a)\n").0, "#31 :ex_a");
     assert_eq!(fte("#define E(n) n\nE(#16)\n").0, "#16");
+    // A number is one token, so it keeps 1023 bytes as a word does.
+    let digits = "1".repeat(1100);
+    let (pp, out) = one_fte(&format!("#define E(a) {digits}.5\nE()\n"));
+    let number = out.tokens.first().and_then(|t| pp.sources().text(t.span));
+    assert_eq!(number.map(<[u8]>::len), Some(1023));
 }
 
 // spec FTEF-14.26: `##__VA_ARGS__` with no variadic argument takes away only a `,`
@@ -630,6 +635,8 @@ fn other_directives_continue_as_fteqcc_s_do() {
     for (text, want) in [
         ("#undef N \\\nx\ny\n", "y"),
         ("#undef N \\\r\nx\ny\n", "y"),
+        ("#undef N\r\nx\n", "x"),
+        ("#undef N \\ \r\nx\n", "x"),
         ("#undef N /* a*b/c\n*/ x\ny\n", "y"),
         ("#undef N // c\nx\n", "x"),
         ("#undef N\nx\n", "x"),
@@ -706,10 +713,22 @@ fn chunk_text_after_a_use_is_read() {
     assert!(out.tokens[1].touches(&out.tokens[0]));
     let (_, out) = one_fte_in("a\"b.qc", "__FILE__\n");
     assert!(!out.tokens[1].touches(&out.tokens[0]));
+    // A token of no expansion follows none.
+    assert!(out.tokens.iter().all(|t| t.follows.is_none()));
     let (_, errors) = fte("#define M(a) 1\n#define K M(1)\"ab\nK\n");
     assert!(errors.contains(&Code::E0101), "{errors:?}");
     // `0x1.2a` is one number, which takes the `a`.
     assert!(!fte("#define E(a) #0x1.2a\nE(:ex_a)\n").0.contains("ex_a"));
+}
+
+// spec FTEF-14.23: a parameter's name is its bytes, which need not be UTF-8
+#[test]
+fn a_parameter_s_name_is_bytes() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("t.qc", b"#define E(\xe9) :\xe9\nE(ex_a)\n");
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("t.qc")).unwrap();
+    assert_eq!(touching(&out), ":ex_a");
 }
 
 /// `text` as the file `path` under FTEQCC.
@@ -731,9 +750,9 @@ const PIECES: &[&str] = &[
 /// A token's kind, place and whether it starts a line.
 type Read = (TokenKind, qc_lexer::Span, bool);
 
-/// The tokens of `stream` from where reading stands, and its lexical errors from `offset` (code
-/// and place, in order of place).
-fn read_on(stream: &crate::TokenStream, offset: usize) -> (Vec<Read>, Vec<(Code, usize)>) {
+/// The tokens of `stream` from where reading stands, and its lexical errors (code and place, in
+/// the order they were found).
+fn read_on(stream: &crate::TokenStream) -> (Vec<Read>, Vec<(Code, usize)>) {
     let tokens = stream
         .tokens
         .get(stream.pos..)
@@ -741,83 +760,114 @@ fn read_on(stream: &crate::TokenStream, offset: usize) -> (Vec<Read>, Vec<(Code,
         .iter()
         .map(|t| (t.kind.clone(), t.span, t.line_start))
         .collect();
-    let mut errors: Vec<(Code, usize)> = stream
+    let errors = stream
         .diagnostics
         .iter()
-        .filter(|d| d.span.start >= offset)
         .map(|d| (d.code, d.span.start))
         .collect();
-    errors.sort_by_key(|&(_, at)| at);
     (tokens, errors)
 }
 
+/// What reading `stream`, lexed from `text`, on at `offset` must give: the whole rest of the
+/// text from there lexed, after the lexical errors `stream` found before it.
+fn whole_rest(
+    stream: &crate::TokenStream,
+    text: &[u8],
+    offset: usize,
+    dialect: Dialect,
+) -> crate::TokenStream {
+    let rest = crate::lex_from(text, offset..text.len(), dialect);
+    let shift = |s: qc_lexer::Span| {
+        qc_lexer::Span::new(s.start.saturating_add(offset), s.end.saturating_add(offset))
+    };
+    let tokens = rest
+        .tokens
+        .into_iter()
+        .map(|mut t| {
+            t.span = shift(t.span);
+            t.kind = crate::moved_frames(t.kind, shift);
+            t
+        })
+        .collect();
+    let diagnostics = stream
+        .diagnostics
+        .iter()
+        .filter(|d| d.span.start < offset)
+        .cloned()
+        .chain(rest.diagnostics.into_iter().map(|mut d| {
+            d.span = shift(d.span);
+            d
+        }))
+        .collect();
+    crate::TokenStream {
+        tokens,
+        pos: 0,
+        diagnostics,
+    }
+}
+
+/// Each reading on of `text` at `offset` and then at `second`, under each dialect, with reading
+/// first at the start or right at `offset`, and what lexing the whole rest would give: the
+/// first difference, if any.
+fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<String> {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        let stream = crate::TokenStream::lex(text, dialect);
+        let before = stream.tokens.partition_point(|t| t.span.start < offset);
+        let whole = whole_rest(&stream, text, offset, dialect);
+        let shown = String::from_utf8_lossy(text).into_owned();
+        // Reading stood at the start, which leaves the new tokens room before the kept ones,
+        // or right at `offset`, which leaves none.
+        for start in [0, before] {
+            let mut read = crate::TokenStream::lex(text, dialect);
+            read.pos = start;
+            read.resume_at(text, offset, dialect);
+            if read_on(&read) != read_on(&whole) {
+                return Some(format!("{shown:?} at {offset} from {start}, {dialect:?}"));
+            }
+            // Reading on again, further on, from text read on once already.
+            let again = whole_rest(&read, text, second, dialect);
+            read.resume_at(text, second, dialect);
+            if read_on(&read) != read_on(&again) {
+                return Some(format!(
+                    "{shown:?} at {offset} then {second} from {start}, {dialect:?}"
+                ));
+            }
+        }
+    }
+    None
+}
+
+// spec FTEF-14.22: reading on inside a comment before `warning` reads the name, not the raw text
+// a `#warning` would take, after it
+#[test]
+fn reading_on_reads_a_word_after_a_comment_whole() {
+    for (text, offset) in [
+        (&b"#/* */warning x"[..], 3),
+        (
+            b"#/* */warning x
+y",
+            2,
+        ),
+    ] {
+        assert_eq!(reading_on_differs(text, offset, offset), None);
+    }
+}
+
 proptest::proptest! {
-    // spec FTEF-14.22: reading on at a byte a token or comment of the first lexing stood across
-    // gives what lexing the whole rest of the text from there gives, though only as much of it
-    // as needs it is lexed again: the same tokens, places, line starts and lexical errors
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(2048))]
+
+    // spec FTEF-14.22: reading on at a byte gives what lexing the whole rest of the text from
+    // there gives, though only as much of it as needs it is lexed again: the same tokens,
+    // places, line starts and lexical errors, after the errors of the text before it
     #[test]
     fn reading_on_lexes_again_as_the_whole_rest_would(
         pieces in proptest::collection::vec(proptest::sample::select(PIECES), 0..40),
         at in 0_usize..400,
+        further in 0_usize..400,
     ) {
         let text = pieces.concat().into_bytes();
         let offset = at.min(text.len());
-        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
-            let stream = crate::TokenStream::lex(&text, dialect);
-            let before = stream.tokens.partition_point(|t| t.span.start < offset);
-            let gap = before
-                .checked_sub(1)
-                .and_then(|last| stream.tokens.get(last))
-                .map_or(0, |t| t.span.end);
-            let clean = gap <= offset
-                && text
-                    .get(gap..offset)
-                    .is_some_and(|g| g.iter().all(|&b| qc_lexer::is_whitespace(b)));
-            if clean {
-                continue;
-            }
-            let mut whole = crate::TokenStream {
-                tokens: Vec::new(),
-                pos: 0,
-                diagnostics: Vec::new(),
-            };
-            let rest = crate::lex_from(&text, offset..text.len(), dialect);
-            let shift = |s: qc_lexer::Span| {
-                qc_lexer::Span::new(s.start.saturating_add(offset), s.end.saturating_add(offset))
-            };
-            whole.tokens = rest
-                .tokens
-                .into_iter()
-                .map(|mut t| {
-                    t.span = shift(t.span);
-                    t.kind = crate::moved_frames(t.kind, shift);
-                    t
-                })
-                .collect();
-            whole.diagnostics = rest
-                .diagnostics
-                .into_iter()
-                .map(|mut d| {
-                    d.span = shift(d.span);
-                    d
-                })
-                .collect();
-            let shown = String::from_utf8_lossy(&text).into_owned();
-            // Reading stood at the start, which leaves the new tokens room before the kept
-            // ones, or right at `offset`, which leaves none.
-            for start in [0, before] {
-                let mut read = crate::TokenStream::lex(&text, dialect);
-                read.pos = start;
-                read.resume_at(&text, offset, dialect);
-                proptest::prop_assert_eq!(
-                    read_on(&read, offset),
-                    read_on(&whole, offset),
-                    "{:?} at {} from {}",
-                    shown,
-                    offset,
-                    start
-                );
-            }
-        }
+        let second = offset.saturating_add(further).min(text.len());
+        proptest::prop_assert_eq!(reading_on_differs(&text, offset, second), None);
     }
 }

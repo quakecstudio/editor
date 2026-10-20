@@ -626,6 +626,31 @@ fn pragma_file_names_the_file() {
     );
 }
 
+// spec FTEF-14.32: a pragma's text runs to its line's break whatever a comment, a string or a
+// `\` in it would run across, and reading goes on there
+#[test]
+fn a_pragma_s_text_ends_at_its_line_s_break() {
+    for pragma in [
+        "#pragma message x /* y\n",
+        "#pragma message x \"y\n",
+        "#pragma message x \\\n",
+        "#pragma message x /* y */ z\n",
+    ] {
+        let source = format!("{pragma}float f;\n");
+        assert_eq!(fte(&source), ("float f ;".to_owned(), vec![]), "{source:?}");
+    }
+    assert_eq!(fte("#pragma x /* a\nb */ float f;\n").0, "b * / float f ;");
+    assert_eq!(fte("float g;\n#pragma x").0, "float g ;");
+}
+
+// spec FTEF-14.17: a built-in constant's text is a chunk of its own, so a function-like macro's
+// name in it reads no `(` from the text after the constant
+#[test]
+fn a_name_in_a_built_in_constant_reads_on_in_its_text() {
+    let (text, _) = fte("#pragma file(x\"M)\n#define M(a) a a\n__FILE__(7);\n");
+    assert_eq!(text, "\"x\" M \"\" ( 7 ) ;");
+}
+
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
 #[test]
 fn a_frame_value_past_an_int_is_held() {

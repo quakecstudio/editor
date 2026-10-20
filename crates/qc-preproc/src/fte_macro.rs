@@ -17,12 +17,14 @@
 //! function follows is named in its rustdoc.
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use qc_lexer::{Code, Span, Token, TokenKind, lex_with};
 
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Loader, Macro, PpToken, Preprocessor, Run, TokenStream, cond, moved_frames, quote_bytes,
+    Item, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
+    moved_frames, quote_bytes,
 };
 
 /// The most parameters an FTEQCC macro has: `MAXCONSTANTPARAMS` in FTEQCC's `qcc.h`,
@@ -218,7 +220,7 @@ impl Reading<'_> {
 /// The reading of one FTEQCC expansion: the chunk `QCC_PR_IncludeChunkEx` includes, which
 /// stays open until reading goes past its last token (FTEF-14.17).
 pub(crate) struct ChunkReader {
-    text: Text,
+    text: Rc<Text>,
     /// The line a built-in constant read in this chunk has: `currentchunk->currentlinenumber`,
     /// the line FTEQCC was reading when it included the chunk (FTEF-14.27).
     line: u32,
@@ -231,6 +233,9 @@ pub(crate) struct ChunkReader {
     /// The text a macro used in the chunk took as its arguments, whose lexical errors are
     /// not this chunk's (FTEF-14.22).
     consumed: Vec<Span>,
+    /// The offsets of the line breaks in the chunk's text, so the line a use in it ends on is
+    /// found without counting them again for each use (FTEF-14.27).
+    breaks: Vec<usize>,
     /// Whether the token read last was a built-in constant, whose value is a chunk of its own,
     /// so the next token touches nothing (FTEF-14.17).
     detached: bool,
@@ -264,7 +269,7 @@ impl ChunkReader {
                 follows,
             },
             hide: None,
-            chunk_end: Some(token.span.end),
+            place: Place::Chunk(token.span.end),
         })
     }
 
@@ -580,6 +585,14 @@ fn simple_get_token(text: &[u8], mut at: usize) -> Option<Range<usize>> {
     (at > start).then_some(start..at)
 }
 
+/// The offset after the `*/` that ends a `/* */` comment whose text starts at `from`, or the
+/// end of the text when none does.
+fn block_comment_end(text: &[u8], from: usize) -> usize {
+    text.get(from..)
+        .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"))
+        .map_or(text.len(), |at| from.saturating_add(at).saturating_add(2))
+}
+
 /// `QCC_PR_SkipToEndOfLine`: where the line a directive ended on ends, from `at`: `/* */`
 /// comments are passed over, a line break after `\` goes on to the next line (in a `//`
 /// comment too), and a string is passed over unless a `//` comment came before it
@@ -592,14 +605,7 @@ fn skip_to_end_of_line(text: &[u8], mut at: usize) -> usize {
         };
         let rest = text.get(at..).unwrap_or_default();
         if comments && rest.starts_with(b"/*") {
-            at = at.saturating_add(2);
-            while let Some(b) = byte_at(text, at) {
-                if b == b'*' && text.get(at.saturating_add(1)) == Some(&b'/') {
-                    at = at.saturating_add(2);
-                    break;
-                }
-                at = at.saturating_add(1);
-            }
+            at = block_comment_end(text, at.saturating_add(2));
         } else if comments && rest.starts_with(b"//") {
             comments = false;
             at = at.saturating_add(2);
@@ -634,7 +640,7 @@ pub(crate) struct Definition {
     /// The parameters of a function-like macro, as written.
     params: Option<Vec<Vec<u8>>>,
     /// Whether the last parameter is `...`.
-    variadic: bool,
+    variadic: Variadic,
     /// The body as stored.
     value: Text,
 }
@@ -653,7 +659,7 @@ pub(crate) enum DefineError {
 /// every parameter after the first is passed over before a delimiter is looked for. The
 /// parameters, whether the last is `...`, and the offset after the `)`; `Err` with where reading
 /// stopped for a list FTEQCC refuses.
-fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, bool, usize), usize> {
+fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usize), usize> {
     let same_line = |b: u8| b == b' ' || b == b'\t';
     let skip = |mut at: usize| {
         while byte_at(text, at).is_some_and(same_line) {
@@ -662,7 +668,7 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, bool, usize), 
         at
     };
     let mut params: Vec<Vec<u8>> = Vec::new();
-    let mut variadic = false;
+    let mut variadic = Variadic::No;
     let mut at = skip(open.saturating_add(1));
     let mut start = at;
     loop {
@@ -681,7 +687,7 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, bool, usize), 
                 if delimiter != b')' {
                     return Err(at);
                 }
-                variadic = true;
+                variadic = Variadic::Yes;
             } else if params.contains(&param) {
                 // "duplicate macro paramter name '%s'"
                 return Err(at);
@@ -715,7 +721,7 @@ fn read_define(text: &[u8], file: FileId, at: usize) -> (Result<Definition, Defi
     };
     let mut at = name.end;
     let mut params = None;
-    let mut variadic = false;
+    let mut variadic = Variadic::No;
     if text.get(at) == Some(&b'(') {
         match read_params(text, at) {
             Ok((list, dots, after)) => {
@@ -792,14 +798,7 @@ fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
             break;
         }
         if !quote && rest.starts_with(b"/*") {
-            at = at.saturating_add(2);
-            while let Some(b) = byte_at(text, at) {
-                if b == b'*' && text.get(at.saturating_add(1)) == Some(&b'/') {
-                    at = at.saturating_add(2);
-                    break;
-                }
-                at = at.saturating_add(1);
-            }
+            at = block_comment_end(text, at.saturating_add(2));
             continue;
         }
         if byte == b'"' {
@@ -832,7 +831,11 @@ struct Scanned {
 /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every other
 /// byte (a character constant's, a comment's) being part of it. `None` when the text ends
 /// first, "EOF on macro call".
-fn scan_arguments(text: &[u8], open: usize, (named, variadic): (usize, bool)) -> Option<Scanned> {
+fn scan_arguments(
+    text: &[u8],
+    open: usize,
+    (named, variadic): (usize, Variadic),
+) -> Option<Scanned> {
     let mut at = lex_whitespace(text, open.saturating_add(1));
     let mut start = at;
     let mut args = Vec::new();
@@ -848,7 +851,7 @@ fn scan_arguments(text: &[u8], open: usize, (named, variadic): (usize, bool)) ->
         match byte {
             b'(' => level = level.saturating_add(1),
             b',' | b')' if level == 0 => {
-                if byte == b',' && variadic && args.len() >= named {
+                if byte == b',' && variadic == Variadic::Yes && args.len() >= named {
                     extra = extra.saturating_add(1);
                 } else {
                     args.push(start..at);
@@ -909,8 +912,8 @@ enum CallError {
 /// The text of an expansion as `QCC_PR_ExpandPreProcessorMacro` writes it.
 struct Writer<'a> {
     body: &'a Text,
-    params: &'a [String],
-    variadic: bool,
+    params: &'a [Vec<u8>],
+    variadic: Variadic,
     call: &'a Call,
     /// The value of a built-in constant by its name, `QCC_PR_CheckBuiltinCompConst`.
     builtin: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
@@ -923,7 +926,7 @@ struct Writer<'a> {
 impl Writer<'_> {
     /// The argument of the named parameter `token`, `!STRCMP(qcc_token, c->params[p])`.
     fn argument_of(&self, token: &[u8]) -> Option<&Text> {
-        let p = self.params.iter().position(|p| p.as_bytes() == token)?;
+        let p = self.params.iter().position(|p| p.as_slice() == token)?;
         self.call.args.get(p)
     }
 
@@ -1002,7 +1005,7 @@ impl Writer<'_> {
                 } else {
                     self.argument(arg, &mut out);
                 }
-            } else if self.variadic && word.token == b"__VA_ARGS__" {
+            } else if self.variadic == Variadic::Yes && word.token == b"__VA_ARGS__" {
                 // `if (param-1 == c->numparams)`: a variadic argument was given.
                 if let Some(arg) = self
                     .call
@@ -1014,7 +1017,7 @@ impl Writer<'_> {
                 } else if noargexpand && out.bytes.last() == Some(&b',') {
                     out.truncate(out.bytes.len().saturating_sub(1));
                 }
-            } else if self.variadic && word.token == b"__VA_COUNT__" {
+            } else if self.variadic == Variadic::Yes && word.token == b"__VA_COUNT__" {
                 // `QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`
                 let count = self
                     .call
@@ -1135,11 +1138,7 @@ impl<L: Loader> Preprocessor<L> {
             file,
             span: name_span,
         };
-        let params: Option<Vec<String>> = definition.params.map(|list| {
-            list.iter()
-                .map(|p| String::from_utf8_lossy(p).into_owned())
-                .collect()
-        });
+        let params = definition.params;
         let variadic = definition.variadic;
         let mut value = definition.value;
         let old = self.macros.get(&name).cloned();
@@ -1149,7 +1148,7 @@ impl<L: Loader> Preprocessor<L> {
         match old.as_deref().and_then(Macro::text) {
             // "append with no previous define is treated as just a regular define".
             Some(old_value) if append && same_params => {
-                let mut joined = old_value.clone();
+                let mut joined = Text::clone(old_value);
                 joined.push(b" ", Origin::Made(at_name));
                 joined.push_from(&value, 0..value.bytes.len());
                 joined.trim_end();
@@ -1163,7 +1162,7 @@ impl<L: Loader> Preprocessor<L> {
         let mac = Macro {
             params,
             variadic,
-            body: Body::Text(value),
+            body: Body::Text(Rc::new(value)),
             file,
             name_span,
         };
@@ -1193,7 +1192,8 @@ impl<L: Loader> Preprocessor<L> {
             return Some(item);
         }
         let name = name.clone();
-        let body = mac.text().unwrap_or(&NO_TEXT);
+        let stored = mac.text();
+        let body: &Text = stored.map_or(&NO_TEXT, |text| text);
         let use_ = match self.read_use(run, &item, &mac) {
             Ok(use_) => use_,
             Err(CallError::NoCall) => return Some(item),
@@ -1235,9 +1235,10 @@ impl<L: Loader> Preprocessor<L> {
                     limit,
                     at: use_.span,
                 };
-                writer.write()
+                writer.write().map(Rc::new)
             }
-            _ => (body.bytes.len() <= limit).then(|| body.clone()),
+            // An object-like macro's chunk is its stored text, shared, not copied.
+            _ => (body.bytes.len() <= limit).then(|| stored.map_or_else(Rc::default, Rc::clone)),
         };
         let Some(text) = written else {
             run.expanded.tokens = FTE_MAX_EXPANDED_TOKENS;
@@ -1263,6 +1264,9 @@ impl<L: Loader> Preprocessor<L> {
             return None;
         }
         let stream = TokenStream::lex(text.bytes(), self.dialect);
+        let breaks = (0..text.bytes.len())
+            .filter(|&at| text.bytes.get(at) == Some(&b'\n'))
+            .collect();
         run.expanded.tokens = run.expanded.tokens.saturating_add(stream.tokens.len());
         let open = run.open_names.entry(name.clone()).or_default();
         *open = open.saturating_add(1);
@@ -1274,6 +1278,7 @@ impl<L: Loader> Preprocessor<L> {
             name,
             stream,
             consumed: Vec::new(),
+            breaks,
             detached: false,
         });
         None
@@ -1285,16 +1290,25 @@ impl<L: Loader> Preprocessor<L> {
     /// its tokens touch nothing beside them (FTEF-14.17), and its lexical errors reported at the
     /// name (FTEF-14.32). Whether `name`, the name of `item`, is one, and was replaced.
     fn fte_builtin(&self, run: &mut Run, item: &Item, name: &str) -> bool {
-        let line = match item.chunk_end {
-            Some(_) => run.chunks.last().map(|chunk| chunk.line),
-            None => self.sources.line(item.tok.span),
+        // `if (constname[0] != '_' || constname[1] != '_') return NULL;`: most names are none,
+        // and are known before their line is looked for.
+        if !name.starts_with("__") {
+            return false;
+        }
+        let line = match item.place {
+            Place::Chunk(_) => run.chunks.last().map(|chunk| chunk.line),
+            Place::File | Place::Builtin => self.sources.line(item.tok.span),
         };
         let file = run.cursors.last().map(|c| c.name.as_slice());
         let Some(text) = builtin_text(name.as_bytes(), line.unwrap_or(0), file.unwrap_or_default())
         else {
             return false;
         };
-        if let Some(chunk) = run.chunks.last_mut().filter(|_| item.chunk_end.is_some()) {
+        if let Some(chunk) = run
+            .chunks
+            .last_mut()
+            .filter(|_| matches!(item.place, Place::Chunk(_)))
+        {
             chunk.detach();
         }
         let lexed = lex_with(&text, self.dialect);
@@ -1317,7 +1331,7 @@ impl<L: Loader> Preprocessor<L> {
                     follows,
                 },
                 hide: item.hide.clone(),
-                chunk_end: None,
+                place: Place::Builtin,
             });
         }
         run.pending.extend(items.into_iter().rev());
@@ -1327,16 +1341,17 @@ impl<L: Loader> Preprocessor<L> {
     /// The text the name `item` stands in: the innermost chunk for a name read from a chunk,
     /// which is the chunk being read, and otherwise the file being read.
     fn reading<'a>(&'a self, run: &'a Run, item: &Item) -> Option<(Reading<'a>, usize)> {
-        match item.chunk_end {
-            Some(end) => {
+        match item.place {
+            Place::Chunk(end) => {
                 let chunk = run.chunks.last()?;
                 Some((Reading::Chunk(&chunk.text), end))
             }
-            None => {
+            Place::File => {
                 let file = item.tok.span.file;
                 let text = self.sources.file(file)?;
                 Some((Reading::File(file, &text.text), item.tok.span.span.end))
             }
+            Place::Builtin => None,
         }
     }
 
@@ -1388,17 +1403,11 @@ impl<L: Loader> Preprocessor<L> {
                 let line = line.unwrap_or(0);
                 (line, line)
             }
-            Reading::Chunk(text) => {
-                let breaks = text
-                    .bytes()
-                    .get(..end)
-                    .unwrap_or_default()
-                    .iter()
-                    .filter(|&&b| b == b'\n')
-                    .count();
+            Reading::Chunk(_) => {
+                let chunk = run.chunks.last();
+                let breaks = chunk.map_or(0, |chunk| chunk.breaks.partition_point(|&at| at < end));
                 let line = u32::try_from(breaks).unwrap_or(u32::MAX).saturating_add(1);
-                let own = run.chunks.last().map_or(0, |chunk| chunk.line);
-                (own, line)
+                (chunk.map_or(0, |chunk| chunk.line), line)
             }
         };
         Ok(Use {
@@ -1413,8 +1422,8 @@ impl<L: Loader> Preprocessor<L> {
     /// `)`, where `QCC_PR_ExpandPreProcessorMacro` leaves `pr_file_p`; the lexical errors of
     /// the text its arguments took are not reported there (FTEF-14.22).
     fn resume_after(&self, run: &mut Run, item: &Item, after: usize) {
-        match item.chunk_end {
-            Some(end) => {
+        match item.place {
+            Place::Chunk(end) => {
                 if let Some(chunk) = run.chunks.last_mut() {
                     chunk
                         .stream
@@ -1422,7 +1431,8 @@ impl<L: Loader> Preprocessor<L> {
                     chunk.consumed.push(Span::new(end, after));
                 }
             }
-            None => {
+            Place::Builtin => {}
+            Place::File => {
                 let file = self.sources.file(item.tok.span.file);
                 if let (Some(cursor), Some(file)) = (run.cursors.last_mut(), file) {
                     cursor.stream.resume_at(&file.text, after, self.dialect);
@@ -1455,12 +1465,13 @@ impl<L: Loader> Preprocessor<L> {
     /// (FTEF-14.13): the byte after it in the text FTEQCC reads, a file's or a chunk's, is one
     /// [`ends_word`] names, or there is none.
     pub(crate) fn word_ends_after(&self, run: &Run, item: &Item) -> bool {
-        let next = match item.chunk_end {
-            Some(end) => run
+        let next = match item.place {
+            Place::Chunk(end) => run
                 .chunks
                 .last()
                 .and_then(|chunk| chunk.text.bytes.get(end).copied()),
-            None => self
+            Place::Builtin => None,
+            Place::File => self
                 .sources
                 .file(item.tok.span.file)
                 .and_then(|file| file.text.get(item.tok.span.span.end).copied()),
@@ -1474,8 +1485,8 @@ impl<L: Loader> Preprocessor<L> {
     /// chunks of it open (`if (c->inside >= 8)`) and no function-like one with more than 8
     /// (`if (c->inside>8) return false;`).
     fn fte_recursion_stops(&self, run: &Run, item: &Item, (name, mac): (&str, &Macro)) -> bool {
-        let own_chunk =
-            item.chunk_end.is_some() && run.chunks.last().is_some_and(|chunk| chunk.name == name);
+        let own_chunk = matches!(item.place, Place::Chunk(_))
+            && run.chunks.last().is_some_and(|chunk| chunk.name == name);
         let open = run.open_names.get(name).copied().unwrap_or(0);
         own_chunk
             || if mac.params.is_some() {

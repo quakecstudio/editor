@@ -132,12 +132,21 @@ pub struct FileOutput {
 
 #[derive(Debug)]
 struct Macro {
-    params: Option<Vec<String>>,
+    /// The parameters' names, as bytes, for FTEQCC compares them bytewise (FTEF-14.23).
+    params: Option<Vec<Vec<u8>>>,
     /// Whether the parameter list ends in `...` (FTEF-14.5).
-    variadic: bool,
+    variadic: Variadic,
     body: Body,
     file: FileId,
     name_span: Span,
+}
+
+/// Whether a macro's parameter list ends in `...`, taking the arguments after the named ones
+/// (FTEF-14.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Variadic {
+    No,
+    Yes,
 }
 
 /// A macro's body as each dialect keeps it.
@@ -147,7 +156,7 @@ enum Body {
     Tokens(Vec<(FileId, Token)>),
     /// FTEQCC's: the text `QCC_PR_PreProcessor_Define` stored, an `#append`ed part included
     /// (FTEF-14.8, FTEF-14.24).
-    Text(Text),
+    Text(std::rc::Rc<Text>),
 }
 
 impl Macro {
@@ -160,7 +169,7 @@ impl Macro {
     }
 
     /// The body's stored text, under FTEQCC.
-    fn text(&self) -> Option<&Text> {
+    fn text(&self) -> Option<&std::rc::Rc<Text>> {
         match &self.body {
             Body::Text(text) => Some(text),
             Body::Tokens(_) => None,
@@ -228,9 +237,20 @@ fn hide_with(hide: &Hide, live: &Live) -> Hide {
 struct Item {
     tok: PpToken,
     hide: Hide,
-    /// Under FTEQCC, for a token read from an expansion's chunk, the offset in the chunk's
-    /// text where it ends (FTEF-14.13, FTEF-14.22).
-    chunk_end: Option<usize>,
+    /// Where the token was read, for the text after it (FTEF-14.13, FTEF-14.22).
+    place: Place,
+}
+
+/// Where a token was read: under FTEQCC, the text a macro's name in it reads on in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Place {
+    /// A file's text, or under the vanilla dialect anywhere.
+    File,
+    /// An expansion's chunk, the token ending at this offset in its text.
+    Chunk(usize),
+    /// A built-in constant's text, a chunk of its own that holds nothing a macro's name in it
+    /// could read on in (FTEF-14.17, FTEF-14.32).
+    Builtin,
 }
 
 #[derive(Debug)]
@@ -847,7 +867,7 @@ impl<L: Loader> Preprocessor<L> {
                     follows: None,
                 },
                 hide: None,
-                chunk_end: None,
+                place: Place::File,
             });
         }
     }
@@ -1031,8 +1051,18 @@ impl<L: Loader> Preprocessor<L> {
             // the vanilla dialect it stays an unknown directive (QC-9.9).
             "pragma" if fte => {
                 // FTEF-14.32: FTEQCC reads a pragma's text as bytes to the end of its line
-                // (`msg[a++] = *pr_file_p;`), never as code.
-                cursor.skipped.push(whole);
+                // (`msg[a++] = *pr_file_p;`), never as code, and reading goes on at its line's
+                // break (`*pr_file_p != '\n' && *pr_file_p != '\0'`) whatever a comment or a
+                // string in the text would have run across.
+                if let Some(text) = self.sources.file(file).map(|f| f.text.as_slice()) {
+                    let from = name_span.end;
+                    let line_end = text
+                        .get(from..)
+                        .and_then(|rest| rest.iter().position(|&b| b == b'\n'))
+                        .map_or(text.len(), |at| from.saturating_add(at));
+                    cursor.stream.resume_at(text, line_end, self.dialect);
+                    cursor.skipped.push(Span::new(whole.start, line_end));
+                }
                 // FTEQCC compares a pragma's name with `QC_strcasecmp`.
                 let pragma = |word: &str| operand.is_some_and(|o| o.eq_ignore_ascii_case(word));
                 // FTEF-12.6: `#pragma noref N` sets whether the definitions after it are
@@ -1243,7 +1273,7 @@ impl<L: Loader> Preprocessor<L> {
         }
         let mac = Macro {
             params,
-            variadic: false,
+            variadic: Variadic::No,
             body: Body::Tokens(body),
             file,
             name_span: *name_span,
@@ -1475,7 +1505,7 @@ impl<L: Loader> Preprocessor<L> {
                     follows,
                 },
                 hide: hide_with(&a.hide, live),
-                chunk_end: None,
+                place: Place::File,
             });
             before = Some(a);
         }
@@ -1497,7 +1527,7 @@ impl<L: Loader> Preprocessor<L> {
     ) -> Option<Vec<Item>> {
         let params = mac.params.as_deref().unwrap_or_default();
         let param_of = |token: &Token| match &token.kind {
-            TokenKind::Name(n) => params.iter().position(|p| p == n),
+            TokenKind::Name(n) => params.iter().position(|p| p.as_slice() == n.as_bytes()),
             _ => None,
         };
         let size = mac.tokens().iter().fold(0_usize, |size, (_, token)| {
@@ -1538,7 +1568,7 @@ impl<L: Loader> Preprocessor<L> {
                     follows,
                 },
                 hide: hide.clone(),
-                chunk_end: None,
+                place: Place::File,
             });
         }
         Some(result)
@@ -1780,7 +1810,7 @@ fn frame_float(value: i32) -> f32 {
 }
 
 /// Parses `name, name, ...)` from `line[start..]`; returns the names and the index after `)`.
-fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
+fn parse_params(line: &[Token], start: usize) -> Option<(Vec<Vec<u8>>, usize)> {
     let mut params = Vec::new();
     let mut i = start;
     if line
@@ -1791,7 +1821,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
     }
     loop {
         match &line.get(i)?.kind {
-            TokenKind::Name(name) => params.push(name.clone()),
+            TokenKind::Name(name) => params.push(name.clone().into_bytes()),
             // FTEF-14.5: the vanilla dialect has no `...` parameter.
             _ => return None,
         }
@@ -1828,7 +1858,9 @@ fn continues(text: &[u8], from: usize, to: usize) -> bool {
         } else if b == b'/' && next == Some(b'*') {
             in_block = true;
             i = i.saturating_add(1);
-        } else if b == b'/' && next == Some(b'/') {
+        } else if b == b'/' {
+            // Between two tokens only white space and comments stand, so a `/` that starts
+            // no `/* */` comment starts a `//` one.
             return !gap.get(i..).unwrap_or_default().contains(&b'\n');
         } else if b == b'\n' {
             let before = i.checked_sub(1).and_then(|j| gap.get(j)).copied();
