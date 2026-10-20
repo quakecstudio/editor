@@ -666,6 +666,30 @@ impl Builtin {
             .child_tokens()
             .find(|t| matches!(t.kind(), K::FloatLit | K::FrameRef))
     }
+
+    /// The engine name an FTEQCC builtin initialiser binds: the name after `#number:` or `:`
+    /// (FTE-17.4, FTE-17.5), or the value of the string after `#` or `:` (FTE-17.5), its
+    /// escapes read as FTEQCC reads them.
+    #[must_use]
+    pub fn engine_name(&self) -> Option<String> {
+        let token = self
+            .0
+            .child_tokens()
+            .find(|t| matches!(t.kind(), K::Name | K::StringLit))?;
+        if token.kind() == K::Name {
+            return Some(token.text_lossless());
+        }
+        let lexed = qc_lexer::lex_with(token.text(), qc_lexer::Dialect::Fteqcc);
+        match lexed.tokens.as_slice() {
+            [
+                qc_lexer::Token {
+                    kind: qc_lexer::TokenKind::String(bytes),
+                    ..
+                },
+            ] => Some(String::from_utf8_lossy(bytes).into_owned()),
+            _ => None,
+        }
+    }
 }
 
 impl Block {

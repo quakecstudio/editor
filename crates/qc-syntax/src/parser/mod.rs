@@ -853,6 +853,10 @@ impl<'a> Parser<'a> {
                 self.expected(";");
             }
             self.function_body();
+        } else if ty.function && self.fteqcc() && self.at(K::Colon) {
+            // FTE-17.2, FTE-17.5: a `:` after a function declarator is its builtin
+            // initialiser, with no `=`.
+            self.builtin();
         }
         self.finish_node();
         ty.function
@@ -889,7 +893,8 @@ impl<'a> Parser<'a> {
 
     fn initializer(&mut self, ty: TypeShape) {
         if ty.function {
-            if self.at(K::Hash) {
+            // FTE-17.5: FTEQCC opens a builtin initialiser with `#` or `:`.
+            if self.at(K::Hash) || (self.fteqcc() && self.at(K::Colon)) {
                 self.builtin();
             } else if self.fteqcc() && !self.at(K::LBrace) && !self.at(K::LBracket) {
                 // FTEF-15.2: an FTEQCC function may be initialised with another function or
@@ -969,12 +974,25 @@ impl<'a> Parser<'a> {
         self.leave(1);
     }
 
-    /// `#number` (QC-13.3, QC-27.9).
+    /// `#number` (QC-13.3, QC-27.9), and in an FTEQCC dialect `#number:name`, `#"name"`,
+    /// `:name` and the other forms of FTE-17.4 and FTE-17.5.
     fn builtin(&mut self) {
         self.start_node(K::Builtin);
+        let colon = self.at(K::Colon);
         self.bump();
         let number = self.current().map(|t| (t.kind, t.value));
+        let mut named = false;
         match number {
+            // FTE-17.5: FTEQCC takes the engine name from a string after `#` or `:`, or from a
+            // name after `:`; after `#` its lexer reads a name as a macro use.
+            Some((K::StringLit, _)) if self.fteqcc() => {
+                named = true;
+                self.bump();
+            }
+            Some((K::Name, _)) if colon => {
+                named = true;
+                self.bump();
+            }
             Some((K::FloatLit, Some(value))) => {
                 #[expect(
                     clippy::float_cmp,
@@ -993,8 +1011,8 @@ impl<'a> Parser<'a> {
             _ => self.error(Code::E0209, "Bad builtin immediate"),
         }
         // FTE-17.4: FTEQCC's `#number:name` binds a builtin by its engine name, as the
-        // rerelease's `#0:ex_bprint`.
-        if self.fteqcc() && self.at(K::Colon) {
+        // rerelease's `#0:ex_bprint`; FTE-17.5: only when no name was read yet.
+        if self.fteqcc() && !named && self.at(K::Colon) {
             self.bump();
             self.name();
         }
