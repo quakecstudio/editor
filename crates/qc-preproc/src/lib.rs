@@ -1364,7 +1364,8 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// The token a built-in constant expands to at `tok` in the file `path` (FTEF-14.7), if
-    /// `name` is one: `QCC_PR_CheckBuiltinCompConst`.
+    /// `name` is one: `QCC_PR_CheckBuiltinCompConst`. A string's spelling escapes its text,
+    /// so it reads back as the token's bytes (FTEF-14.21).
     fn builtin(&self, path: &Path, tok: &PpToken, name: &str) -> Option<PpToken> {
         let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
         let (kind, spelling) = match name {
@@ -1720,7 +1721,7 @@ fn directive_span(line: &[Token]) -> Span {
     }
 }
 
-/// `text` as a QuakeC string literal, `"` and `\` escaped (FTEF-14.15).
+/// `text` as a QuakeC string literal, `"`, `\` and a line break escaped (FTEF-14.21).
 fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len().saturating_add(2));
     out.push('"');

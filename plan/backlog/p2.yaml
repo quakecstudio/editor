@@ -1505,6 +1505,44 @@ issues:
   - 'Through `Db::analyze_module` under the FTEQCC profile a bodyless function that is not `noref` (by its qualifier or `#pragma noref 1`, FTEF-12.6) is an error whether or not the module refers to it, and a `noref` one only when it is referred to; the corpus still resolves with no error (`cargo xtask fteqcc-profile`, `cargo xtask sema-corpus`); each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-sema
+- key: P2-86
+  title: Restore the qc-lexer and qc-preproc readiness ratchets after the FTEQCC macro port
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-5
+  - TEST-1
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-lexer (src/fte_string.rs), crates/qc-preproc (src/fte_macro.rs, src/lib.rs `builtin`) and docs/spec/dialect-fteqcc.md FTEF-14.21: the L2 Readiness run 39455878689 on main after #486 failed `cargo xtask ratchet` on qc-lexer lines (935 of 937, needs 100%), qc-preproc branches (520 of 574, needs 91%) and two qc-preproc mutants neither killed nor listed as equivalent, the deleted `"` and `\` match arms of `quote` (src/lib.rs). The two uncovered lexer lines and the uncovered preprocessor branches that no input reaches are removed; the reachable ones get tests. The surviving mutants are killed by tests of `__FILE__`''s escaped spelling, recorded as the deliberate divergence FTEF-14.21'
+  acceptance:
+  - 'cargo xtask readiness lines qc-lexer, branches qc-preproc and mutation qc-preproc, measured as the Readiness workflow does, meet the minimums in ratchets.toml with no unlisted survivor and no lowered ratchet; each new test cites the statement it pins'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc
+  - cargo xtask readiness lines qc-lexer
+  - cargo xtask readiness branches qc-preproc
+  - cargo xtask readiness mutation qc-preproc
+- key: P2-87
+  title: Give FTEQCC's `__FILE__` the name as `progs.src` wrote it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-86
+  deliverable:
+  - 'crates/qc-preproc (`builtin`) and docs/spec/dialect-fteqcc.md (FTEF-14.21 withdrawn for a new statement): `QCC_PR_CheckBuiltinCompConst` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `__FILE__` as `QC_snprintfz(retbuf, retbufsize, "\"%s\"", s_filen);` with nothing escaped, reads that text again as a string literal, and ends the name at its first `:` (`erk = strchr(retbuf, '':'');`). The profile escapes the name and keeps it whole (FTEF-14.21), because its name is the host''s normalised path, with `\` separators on Windows and possibly a drive, not `s_filen`. Found by the self-review of P2-86'
+  acceptance:
+  - 'Under the FTEQCC profile `__FILE__` is the string FTEQCC gives for the same project on every host, a `\` and a `:` in the name included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1592,6 +1630,8 @@ issues:
   - P2-82
   - P2-83
   - P2-84
+  - P2-86
+  - P2-87
   - P4-29
   - P2-88
   - P2-89

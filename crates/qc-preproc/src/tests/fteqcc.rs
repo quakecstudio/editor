@@ -501,15 +501,48 @@ fn a_stringified_argument_is_escaped() {
     );
 }
 
-// spec FTEF-14.7: `__FILE__` is the path as a string literal, a line break in it spelled `\n`
+/// The first token of `text` as the file `path`, preprocessed under FTEQCC.
+fn first_token_in(path: &str, text: &str) -> crate::PpToken {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path, text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    out.tokens[0].clone()
+}
+
+// spec FTEF-14.21: `__FILE__` is a string of the file's name, whole, its spelling escaping a
+// `"`, a `\` and a line break, so it reads back as the name
 #[test]
 fn file_constant_escapes_its_path() {
-    let mut loader = MemoryLoader::new();
-    loader.insert("a\nb.qc", "__FILE__\n".as_bytes());
-    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
-    let out = pp.preprocess_file(Path::new("a\nb.qc")).unwrap();
-    assert_eq!(out.tokens[0].kind, TokenKind::String(b"a\nb.qc".to_vec()));
-    assert_eq!(out.tokens[0].spelling.as_deref(), Some(r#""a\nb.qc""#));
+    for (path, spelling) in [
+        ("a\nb.qc", r#""a\nb.qc""#),
+        ("a\"b.qc", r#""a\"b.qc""#),
+        ("a\\b.qc", r#""a\\b.qc""#),
+        ("c:a.qc", r#""c:a.qc""#),
+    ] {
+        let tok = first_token_in(path, "__FILE__\n");
+        assert_eq!(
+            tok.kind,
+            TokenKind::String(path.as_bytes().to_vec()),
+            "{path}"
+        );
+        assert_eq!(tok.spelling.as_deref(), Some(spelling), "{path}");
+        assert_eq!(
+            qc_lexer::fteqcc_string_bytes(spelling.as_bytes()),
+            Some(path.as_bytes().to_vec())
+        );
+    }
+}
+
+// spec FTEF-14.21: a `#param` of an argument holding a built-in string stringifies its
+// escaped spelling
+#[test]
+fn a_stringified_file_constant_holds_its_spelling() {
+    let tok = first_token_in(
+        "d\\x\"y.qc",
+        "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n",
+    );
+    assert_eq!(tok.kind, TokenKind::String(br#""d\\x\"y.qc""#.to_vec()));
 }
 
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
