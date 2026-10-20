@@ -20,7 +20,11 @@ fn run(text: &[u8], dialect: Dialect) -> FileOutput {
 /// The tokens of `text` under `dialect`, each pair that touches (QC-9.16) written together
 /// and the rest apart.
 fn touching(text: &str, dialect: Dialect) -> String {
-    let out = run(text.as_bytes(), dialect);
+    rendered(&run(text.as_bytes(), dialect))
+}
+
+/// `out`'s tokens, each pair that touches (QC-9.16) written together and the rest apart.
+fn rendered(out: &FileOutput) -> String {
     let mut rendered = String::new();
     let mut last: Option<&PpToken> = None;
     for token in &out.tokens {
@@ -236,6 +240,47 @@ fn a_paste_writes_its_sides_together() {
     assert_eq!(fte("#define P(a, b) a##b:\nP(l, bl)"), "lbl:");
     assert_eq!(fte("#define P(a, b) a##b :\nP(l, bl)"), "lbl :");
     assert_eq!(fte("#define P(a, b) a##b:\nP(l, bl )"), "lbl :");
+    assert_eq!(fte("#define P(a, b) a##b\nP(x, y z)"), "xy z");
+}
+
+/// The tokens of `a.qc` and the files it includes, `files`, under FTEQCC, written as
+/// [`touching`] writes them.
+fn touching_in(files: &[(&str, &str)]) -> String {
+    let mut loader = MemoryLoader::new();
+    for (path, text) in files {
+        loader.insert(*path, text.as_bytes());
+    }
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    rendered(&pp.preprocess_file(Path::new("a.qc")).unwrap())
+}
+
+// spec FTEF-14.18: a function-like macro's name at the end of a file's line is not a call,
+// even when the file it includes next starts with a `(`
+#[test]
+fn a_paren_in_an_included_file_opens_no_call() {
+    let files = [
+        ("a.qc", "#define M(x) [x]\nM\n#include \"b.qc\"\n"),
+        ("b.qc", "(1)\n"),
+    ];
+    assert_eq!(touching_in(&files), "M (1)");
+}
+
+// spec FTEF-14.8: `#append` writes a space before the text it adds, so the added text
+// touches nothing of the body before it, in another file too
+#[test]
+fn appended_text_stays_apart_from_the_body() {
+    let files = [
+        ("a.qc", "#define M a\n#include \"b.qc\"\nM\n"),
+        ("b.qc", "#append M :\n"),
+    ];
+    assert_eq!(touching_in(&files), "a :");
+}
+
+// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands
+#[test]
+fn a_nul_after_a_name_ends_the_word() {
+    let out = run(b"#define N 5\nx = N\0;\n", Dialect::Fteqcc);
+    assert!(out.tokens.iter().any(|t| t.expansion.is_some()));
 }
 
 // spec FTEF-14.15: `#param` is the argument's text as written, white space and comments
