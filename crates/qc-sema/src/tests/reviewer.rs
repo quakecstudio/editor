@@ -415,7 +415,7 @@ fn reviewer_a_macro_s_own_name_in_its_argument_is_the_engine_name() {
     assert_eq!(fte_binding("#define E(x) #5:x", "E(E)"), bound(5, "E"));
 }
 
-// spec FTEF-14.15: `#a` writes the argument's text, so a built-in constant in it is its name, not
+// spec FTEF-14.30: `#a` writes the argument's text, so a built-in constant in it is its name, not
 // its value
 #[test]
 fn reviewer_a_stringified_built_in_constant_is_its_name() {
@@ -425,8 +425,8 @@ fn reviewer_a_stringified_built_in_constant_is_its_name() {
     );
 }
 
-// spec FTEF-14.18: a function-like macro an argument names, whose `(` comes after the expansion
-// ends, is not called (FTEF-14.18), so `f` is not bound
+// spec FTEF-14.28: a function-like macro an argument names, whose `(` comes after the expansion
+// ends, is not called (FTEF-14.28), so `f` is not bound
 #[test]
 fn reviewer_a_call_after_the_expansion_ends_binds_nothing() {
     let (errors, function) = fte_binding("#define E(x) x\n#define G(x) #5:x", "E(G)(ex_a)");
