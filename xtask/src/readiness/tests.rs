@@ -768,15 +768,7 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
     let reply = |code: i32| {
         let outcomes = outcomes.clone();
         move |command: &Command| Reply {
-            // Without incremental builds, every mutant rebuilds the crate in full.
-            code: if command
-                .get_envs()
-                .any(|(key, value)| key == "CARGO_INCREMENTAL" && value == Some("1".as_ref()))
-            {
-                code
-            } else {
-                4
-            },
+            code,
             files: vec![(
                 after(command, "--output")
                     .unwrap()
@@ -794,12 +786,43 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         let line = fake.seen.borrow()[0].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
         assert!(line.contains("--jobs "), "{line}");
-        assert!(line.contains("--profile mutants "), "{line}");
-        assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
+        // The fixture is its own workspace, without the `mutants` profile.
+        assert!(!line.contains("--profile"), "{line}");
+        assert!(!line.contains("--minimum-test-timeout"), "{line}");
     }
     let failed = Fake::new(reply(4));
     let error = mutation(&root(), &target, &failed).unwrap_err();
     assert!(error.contains("cargo mutants failed"), "{error}");
+}
+
+#[test]
+fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let incremental = std::cell::RefCell::new(None);
+    let fake = Fake::new(|command: &Command| {
+        incremental.replace(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == "CARGO_INCREMENTAL")
+                .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
+        );
+        Reply {
+            files: vec![(
+                after(command, "--output")
+                    .unwrap()
+                    .join("mutants.out/outcomes.json"),
+                outcomes.clone().into_bytes(),
+            )],
+            ..Reply::default()
+        }
+    });
+    let target = resolve(&root(), "qs-porting-example").unwrap();
+    mutation(&root(), &target, &fake).unwrap();
+    let line = fake.seen.borrow()[0].clone();
+    assert!(line.contains("--profile mutants "), "{line}");
+    assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
+    // Without incremental builds, every mutant rebuilds the crate in full.
+    assert_eq!(incremental.borrow().as_deref(), Some("1"));
 }
 
 #[test]

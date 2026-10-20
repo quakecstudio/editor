@@ -51,7 +51,7 @@ check and never runs on pull requests or on a schedule.
 | Job | Command | Measures |
 | --- | --- | --- |
 | `Readiness coverage` | `cargo xtask readiness lines`, then `branches` | line coverage with `cargo llvm-cov` on the pinned stable toolchain; branch coverage with `cargo llvm-cov --branch` on the date-pinned nightly ([`conventions.md`](conventions.md)) |
-| `Readiness mutation` | `cargo xtask readiness mutation` | a full `cargo mutants` run per crate, built with the `mutants` profile (no debug info, opt-level 1, debug assertions and overflow checks on) and incremental builds, with a test timeout of five times the baseline's and at least 10 s; a mutant that times out counts as caught, one that does not build does not count |
+| `Readiness mutation` | `cargo xtask readiness mutation` | a full `cargo mutants` run per crate, with incremental builds and, for a workspace member, the `mutants` profile (no debug info, opt-level 1, debug assertions and overflow checks on) and a test timeout of five times the baseline's and at least 10 s; a mutant that times out counts as caught, one that does not build does not count |
 | `Readiness flakes (linux, macos, windows)` | `cargo xtask readiness flakes` | each crate's tests 20 times on each OS; every run must pass |
 | `Readiness ratchet` | `cargo xtask readiness spec`, then `cargo xtask ratchet` | the active statements, in the sections the crate README lists under **Spec sections** (`A to B` being every section between, less those it lists under **Not this crate's**) and the single statements it lists under **Spec statements** (none of which may be in the baseline), that a `// spec` test cites; then judges every number against the bar and `ratchets.toml` |
 
