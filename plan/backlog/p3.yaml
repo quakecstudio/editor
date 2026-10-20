@@ -369,8 +369,8 @@ issues:
   - P3-23
   deliverable:
   - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on scripted routes through heavy maps (id1 e1m1, the rerelease''s mg1 and mg3 maps, and an Arcane Dimensions map) on macOS, Windows and Linux; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time'
-  - 'Each budget compared with a pinned QuakeSpasm running the same map and route on the same machine: ADR-0004 says the engine oracle "is a pinned QuakeSpasm built in `oracles/`"'
-  - 'Note: P3-23''s deliverable builds id''s WinQuake as the engine oracle, while ADR-0004 says a pinned QuakeSpasm; the two need reconciling before this issue''s comparison runs, and this issue does not decide which'
+  - 'Each budget compared with a QuakeSpasm build, at a commit pinned in docs/perf-budgets.md, running the same map and route on the same machine (ENG-17): a performance reference only, since QuakeSpasm is one of the engines players run exported mods on (ADR-0005, Decision); the engine oracle is id''s engine (ADR-0005, P3-23)'
+  - 'Note: ADR-0005 (Options, A) says "no outside engine is used even in CI"; running QuakeSpasm as a speed reference has to be reconciled with that before this issue''s comparison runs, and this issue does not decide it'
   acceptance:
   - 'Each new budget is active with a number, run on the reference machines and recorded in the bench history'
   - 'Frame time at p99 is no worse than QuakeSpasm''s on the same route and machine, within a margin stated in docs/perf-budgets.md'
