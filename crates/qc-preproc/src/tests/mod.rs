@@ -245,6 +245,47 @@ fn rescanning_reaches_following_tokens() {
     assert_eq!(tokens(&out), "1 1");
 }
 
+/// `#define M0 1`, then `n - 1` macros each defined as the name of the one before, then a use
+/// of the last.
+fn macro_chain(n: usize) -> String {
+    let mut text = "#define M0 1\n".to_owned();
+    for (before, i) in (1..n).enumerate() {
+        writeln!(text, "#define M{i} M{before}").unwrap();
+    }
+    writeln!(text, "M{}", n.saturating_sub(1)).unwrap();
+    text
+}
+
+// spec QC-9.13: a chain of 10000 and of 100000 macros, each the name of the one before, is
+// expanded to its end under both dialects on a 2 MiB thread, one expansion each, and a second
+// use expands as quickly as the first
+#[test]
+fn a_long_chain_of_macros_expands_to_its_end() {
+    for n in [10_000, 100_000] {
+        let mut text = macro_chain(n);
+        writeln!(text, "M{}", n.saturating_sub(1)).unwrap();
+        for dialect in [qc_lexer::Dialect::Vanilla, qc_lexer::Dialect::Fteqcc] {
+            let text = text.clone();
+            let (toks, errs, expansions) = std::thread::Builder::new()
+                .stack_size(2 << 20)
+                .spawn(move || {
+                    let mut loader = MemoryLoader::new();
+                    loader.insert("a.qc", text.as_bytes());
+                    let mut pp = Preprocessor::new(loader).with_dialect(dialect);
+                    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+                    (tokens(&out), codes(&out), pp.expansions().len())
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            assert_eq!(
+                (toks.as_str(), errs, expansions),
+                ("1 1", vec![], n.saturating_mul(2))
+            );
+        }
+    }
+}
+
 // spec QC-9.4: names in strings and comments are never replaced; a use before the define is not
 #[test]
 fn no_replacement_in_strings_comments_or_before_definition() {

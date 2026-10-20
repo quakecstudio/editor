@@ -368,6 +368,21 @@ dialect features (P2-01, P2-03).
 - **QC-9.12** A conditional block is closed in the file that opens it, whether that file is
   listed in `progs.src` or included. At the end of each file, every block it opened that is
   still open is reported (QC-9.6) and closed, so the next file starts outside it.
+- **QC-9.13** Expansion nests to any depth, with no limit and no diagnostic: a chain of macros,
+  each defined as the name of the one before (`#define M1 M0`, `#define M2 M1`, ...), is
+  rescanned to its end however long it is, and no chain exhausts the stack. FTEQCC sets no
+  nesting limit: `QCC_PR_CheckCompConst` (`qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`)
+  expands a macro unless `currentchunk->cnst != c` fails (`//macros don't expand themselves`)
+  or, for an object-like macro, `if (c->inside >= 8)`, which counts only that macro's own
+  open expansions; each expansion is pushed by `QCC_PR_IncludeChunkEx` as a heap-allocated
+  chunk (`qcc_includechunk_t *chunk = qccHunkAlloc(sizeof(qcc_includechunk_t)); chunk->prev = currentchunk;`),
+  not a C stack frame. But `QCC_PR_Lex` calls itself once for each expansion (`//we expanded
+  a macro. we need to read the tokens out of it now though`, then `QCC_PR_Lex();`), so a long
+  enough chain exhausts FTEQCC's own stack: the pinned FTEQCC, built by `cargo xtask oracles
+  build` on macOS arm64 with its 8 MiB main stack, compiles `float x = M49999;` after a
+  50000-long chain to `x = 1` and dies with `SIGSEGV` at 100000. Expanding every chain to its
+  end is a deliberate divergence from that crash, which depends on the host's stack, not on
+  the program. id's `qcc` has no macros (QC-9). The rule against self-expansion stays QC-9.4's.
 
 ## QC-10 Types
 

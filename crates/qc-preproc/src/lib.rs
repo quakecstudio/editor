@@ -23,7 +23,9 @@ mod tests;
 
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
+use std::cell::Cell;
 use std::collections::HashMap;
+use std::fmt;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
@@ -117,13 +119,43 @@ struct Macro {
 /// The names a token may no longer expand to: the macros whose expansion produced it.
 type Hide = Option<Rc<HideNode>>;
 
-#[derive(Debug)]
+/// How many live hide-set nodes name one macro. A name no live node names is in no token's
+/// hide set, so [`hidden`] answers without walking the set (QC-9.13).
+type Live = Rc<Cell<usize>>;
+
 struct HideNode {
     name: String,
+    live: Live,
     next: Hide,
 }
 
-fn hidden(hide: &Hide, name: &str) -> bool {
+impl fmt::Debug for HideNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // QC-9.13: the set is as long as the expansions nest, so only its head is shown.
+        f.debug_struct("HideNode")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for HideNode {
+    fn drop(&mut self) {
+        self.live.set(self.live.get().saturating_sub(1));
+        // QC-9.13: the nodes only this one holds are unlinked in a loop, not by the recursive
+        // drop of `next`, which would take one stack frame per nested expansion.
+        let mut next = self.next.take();
+        while let Some(node) = next {
+            next = Rc::try_unwrap(node)
+                .ok()
+                .and_then(|mut node| node.next.take());
+        }
+    }
+}
+
+fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
+    if live.get(name).is_none_or(|count| count.get() == 0) {
+        return false;
+    }
     let mut node = hide.as_deref();
     while let Some(n) = node {
         if n.name == name {
@@ -134,9 +166,11 @@ fn hidden(hide: &Hide, name: &str) -> bool {
     false
 }
 
-fn hide_with(hide: &Hide, name: &str) -> Hide {
+fn hide_with(hide: &Hide, name: &str, live: &Live) -> Hide {
+    live.set(live.get().saturating_add(1));
     Some(Rc::new(HideNode {
         name: name.to_owned(),
+        live: Rc::clone(live),
         next: hide.clone(),
     }))
 }
@@ -190,6 +224,8 @@ struct Run {
     /// In an FTEQCC dialect, the number the next frame name gets, FTEQCC's `pr_macrovalue`,
     /// 0 at the start of each file (FTEF-18.17).
     frame_value: i32,
+    /// For each macro name, how many live hide-set nodes name it (QC-9.13).
+    live: HashMap<String, Live>,
     out: FileOutput,
 }
 
@@ -985,7 +1021,7 @@ impl<L: Loader> Preprocessor<L> {
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
         };
-        if hidden(&item.hide, name) {
+        if hidden(&run.live, &item.hide, name) {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
@@ -1060,8 +1096,9 @@ impl<L: Loader> Preprocessor<L> {
             },
             parent: item.tok.expansion,
         });
-        let hide = hide_with(&item.hide, &name);
-        let result = self.substitute(&mac, &args, id, &hide, &name);
+        let live = Rc::clone(run.live.entry(name.clone()).or_default());
+        let hide = hide_with(&item.hide, &name, &live);
+        let result = self.substitute(&mac, &args, id, (&hide, &live), &name);
         run.pending.extend(result.into_iter().rev());
         None
     }
@@ -1074,7 +1111,7 @@ impl<L: Loader> Preprocessor<L> {
         mac: &Macro,
         args: &[Vec<Item>],
         id: ExpansionId,
-        hide: &Hide,
+        (hide, live): (&Hide, &Live),
         name: &str,
     ) -> Vec<Item> {
         let fte = self.dialect.has_fteqcc_extensions();
@@ -1139,7 +1176,7 @@ impl<L: Loader> Preprocessor<L> {
                             expansion: Some(id),
                             spelling: a.tok.spelling.clone(),
                         },
-                        hide: hide_with(&a.hide, name),
+                        hide: hide_with(&a.hide, name, live),
                     })
                     .collect(),
                 None => vec![Item {
