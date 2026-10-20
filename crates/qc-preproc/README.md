@@ -33,6 +33,11 @@ carries its text in `PpToken::spelling`; every other token of an expansion keeps
 the macro's body, and `PpToken::touches` says whether it touches the token before it as
 FTEQCC's text substitution has them, so a renderer can keep that spacing (QC-9.16). Under
 FTEQCC a name is a macro use only where FTEQCC's word ends with it (FTEF-14.13).
+`fte_macro.rs` ports FTEQCC's macro expansion from `fte-team/fteqw`'s `qcc_pr_lex.c`
+(`QCC_PR_CheckCompConst`, `QCC_PR_ExpandPreProcessorMacro` and the functions they call) under
+[ADR-0017](../../docs/adr/0017-port-fteqcc.md)'s clean-port policy: `##` pastes, `#` strings,
+the chunks a macro is expanded in, its recursion and its argument lists (FTEF-14.13 to
+FTEF-14.20).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in

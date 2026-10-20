@@ -322,3 +322,56 @@ fn an_expansion_past_the_bound_is_reported_once() {
     let a23 = qc_lexer::TokenKind::Name("A23".to_owned());
     assert!(out.tokens.iter().any(|t| t.kind == a23));
 }
+
+// spec FTEF-14.14: an argument beside `##` is copied whole: its later tokens touch the
+// joined one, white space after the left one keeps the sides apart, a paste that lexes as a
+// comment writes nothing, and `#` `#` apart is no paste
+#[test]
+fn an_argument_beside_a_paste_is_copied_whole() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define P(a, b) a##b\nP(x, y:z)"), "xy:z");
+    assert_eq!(fte("#define P(a, b) a##b\nP(x , y)"), "x y");
+    assert_eq!(fte("#define P(a, b) a##b\nP(x/**/, y)"), "x y");
+    assert_eq!(fte("#define P(a, b) a##b\nx = P(/, /) 5;"), "x = 5;");
+    assert_eq!(fte("#define P(a, b) a # # b\nP(x, y)"), "x ## y");
+    assert_eq!(fte("#define P(a, b) a#/**/#b\nP(x, y)"), "xy");
+}
+
+// spec FTEF-14.15: only a named parameter is turned into a string, so `#__VA_ARGS__` stays
+// as written; the argument's bytes are kept as they are, and its text is still checked when
+// the body also writes it as code
+#[test]
+fn a_string_keeps_the_argument_s_bytes() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define V(...) #__VA_ARGS__\nV(ab)"), "#__VA_ARGS__");
+    let out = run(b"#define S(a) #a\nS(a\x80b)", Dialect::Fteqcc);
+    assert_eq!(
+        out.tokens[0].kind,
+        qc_lexer::TokenKind::String(b"a\x80b".to_vec())
+    );
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\x80b\""));
+    let out = run("#define S(a) #a\nS(\u{e9})".as_bytes(), Dialect::Fteqcc);
+    assert_eq!(
+        out.tokens[0].kind,
+        qc_lexer::TokenKind::String("\u{e9}".as_bytes().to_vec())
+    );
+    let (_, codes) = fte_with_codes("#define S(a) #a a\nS(\"ab\n)");
+    assert!(codes.contains(&crate::Code::E0102), "{codes:?}");
+    let (_, codes) = fte_with_codes("#define S(a) #a\nS(\"ab\n)");
+    assert!(!codes.contains(&crate::Code::E0102), "{codes:?}");
+}
+
+// spec FTEF-14.20: a built-in constant in an argument not beside `##` is written as its
+// value in the macro's chunk, so it touches the tokens beside it; beside `##` it stays a name
+// spec FTE-23.10: a `#` before a name a paste made reads it as a macro use
+#[test]
+fn a_built_in_constant_in_an_argument_is_its_value() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define K(x) x\nK(__LINE__:)"), "2:");
+    assert_eq!(fte("#define K(x) x\nK(#__LINE__)"), "#2");
+    assert_eq!(fte("#define K(x) x##_a\nK(__LINE__)"), "__LINE___a");
+    assert_eq!(
+        fte("#define N1 5\n#define P(x, a, b) x##a##b\nP(#, N, 1)"),
+        "5"
+    );
+}

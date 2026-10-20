@@ -665,13 +665,12 @@ profile the preprocessor reads them as FTEQCC does.
   followed directly by any other byte, such as `!`, `?`, `%`, `@`, `$`, `'`, `` ` ``, `\`, a
   control byte, DEL or a byte of 0x80 or more, is a name: with `#define N 5`, `x = N!=5;` is
   "Unknown value \"N\"" (`E0301`) and `x = N==5;` is `x = 5==5;`. The byte is the one FTEQCC reads
-  after the name: in a macro's body the body's next byte as stored (QC-9.15), and after an
+  after the name: in a macro's body the body's next byte as stored (QC-9.16), and after an
   argument the body's byte after the parameter, so `#define A(a) a!=5` used as `A(N)` leaves `N` a
   name; at the end of an expansion the word ends. FTE-23.10 reads the word after a `#` in the same
   way, in an expansion as in the source: `#define K #/**/N` then `K` is `5`, as FTEQCC stored the
   body `#N` (the pinned FTEQCC: "Cannot cast from float to void()" for `void() f = K;`,
   FTE-23.11). The vanilla preprocessor expands every name that is a macro (QC-9.4).
-
 - **FTEF-14.14** In a function-like macro's body `a ## b` writes `b`'s text right after `a`'s,
   with the white space before the `##` dropped (`*bufferlen = whitestart;`), and the result is
   lexed again with the rest of the expansion: a text that lexes as one token is that token (`x
@@ -679,18 +678,27 @@ profile the preprocessor reads them as FTEQCC does.
   lexes as more is those tokens, the second against the first (`J(a, +)` with `#define J(a, b) a
   ## b` is `a+`, the name and `+`). Either side may be empty, so `##` at the start or end of the
   body, or beside an empty argument, leaves the other side as it is: `#define P(a, b) a##b` used
-  as `P(#5, )` or `P(, #5)` is `#5`. An argument after `##` is copied whole (`noargexpand`), the
-  white space before its `,` or `)` included.
-- **FTEF-14.15** In a function-like macro's body `#param` is a string of the argument's text as
-  written, from its first token to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
+  as `P(#5, )` or `P(, #5)` is `#5`. `##` is two `#` that touch as the body was stored (`if
+  (pr_file_p[1] == '#')`); `# #` is a `#` before a word (FTEF-14.15). An argument beside `##` is
+  copied whole: one after it by `noargexpand`, one before it because `start[0] == '#' && start[1]
+  == '#'`, each with what stands before its `,` or `)`. So the right argument's later tokens touch
+  the joined one (`P(l, bl:)` writes the label `lbl:`), and white space or a comment after the
+  left argument stays between the sides, as `*bufferlen = whitestart` drops only the body's white
+  space: `P(x , y)` is `x y`. A paste whose text is a comment (`/` and `/`) writes nothing, the
+  comment running to the end of the chunk.
+- **FTEF-14.15** In a function-like macro's body `#param`, `param` a named parameter, is a string
+  of the argument's text as written, from after the white space and comments that follow its `(`
+  or `,` (`QCC_PR_LexWhitespace(false)`) to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
   `paramoffset[p]`, white space and comments included, with `\` before each line break, `\`, NUL
   and `"`. So `#define S(a) #a` used as `S( ex_a )` is `"ex_a "`, `S(ex a)` is `"ex a"`,
-  `S(ex/**/a)` is `"ex/**/a"`, `S(ex\a)` is `"ex\\a"` and `S()` is `""`; the argument's text is a
-  string's, so no lexical error in it is reported. A `#` before a word that is no parameter writes
-  `#` and that word with nothing between (`QCC_PR_ExpandStrCat(..., "#", 1);` then `qcc_token`),
-  so `#define S(a) # 5` is `#5`, a builtin; a `#` at the end of the body writes nothing (`if
-  (!pr_file_p) break;`). An argument that comes from another expansion's text is written as its
-  tokens touch.
+  `S(ex/**/a)` is `"ex/**/a"`, `S(ex\a)` is `"ex\\a"` and `S()` is `""`; every byte is kept, one
+  of 0x80 or more included; the argument's text is a string's, so no lexical error in it is
+  reported unless the body also writes the argument as code. `...` has no name (the loop compares
+  `c->params[p]`), so `#__VA_ARGS__` is a `#` before the word `__VA_ARGS__`. A `#` before a word
+  that is no parameter writes `#` and that word with nothing between (`QCC_PR_ExpandStrCat(...,
+  "#", 1);` then `qcc_token`), so `#define S(a) # 5` is `#5`, a builtin; a `#` at the end of the
+  body writes nothing (`if (!pr_file_p) break;`). An argument that comes from another expansion's
+  text is written as its tokens touch.
 - **FTEF-14.16** An object-like macro's body is included as it was stored
   (`QCC_PR_IncludeChunkEx(c->value, ...)`), and `QCC_PR_ExpandPreProcessorMacro`, which reads `#`
   and `##`, runs only for a macro with a parameter list (`if (c->numparams>=0)`). So in an
@@ -719,9 +727,18 @@ profile the preprocessor reads them as FTEQCC does.
   end of the file inside a use's arguments.
 - **FTEF-14.19** A deliberate divergence: FTEF-14.17 lets an expansion grow exponentially
   (`#define A B B` and `#define B A A` expand to 2^16 names), and FTEQCC builds it all, so this
-  profile makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one file and reports the
-  first use past it once, as "macro expansion too large" (`E0120`), leaving it and later uses as
-  written. No program of the corpus comes near it.
+  profile makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one file, writing at most
+  `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens, and reports the first use past either once, as "macro
+  expansion too large" (`E0120`), leaving it and later uses as written. No program of the corpus
+  comes near it.
+- **FTEF-14.20** In an argument that is not copied whole (FTEF-14.14),
+  `QCC_PR_ExpandPreProcessorMacro` reads each token with `QCC_COM_Parse2` and writes a built-in
+  constant's value in its place (`end = QCC_PR_CheckBuiltinCompConst(qcc_token, retbuf,
+  sizeof(retbuf));`, "we should be testing all defines instead of just built-in ones"), in the
+  macro's own chunk: so with `#define K(x) x`, `K(#__LINE__)` is `#` and the line number touching,
+  a builtin, where the line number of a built-in constant read anywhere else is a chunk of its own
+  (FTEF-14.17). Other macros in an argument are expanded only when the expansion is read.
+
 ## FTEF-15 Declarations
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType_Internal` and

@@ -138,8 +138,8 @@ fn variadic_macros() {
     assert_eq!(codes(&out), vec![Code::E0115]);
 }
 
-// spec FTEF-14.14, FTEF-14.15: `#param` is the argument as a string and `a ## b` one token; a `#` before
-// a word that is no parameter stays.
+// spec FTEF-14.14, FTEF-14.15: `#param` is the argument as a string and `a ## b` one token;
+// a `#` before a word that is no parameter stays.
 #[test]
 fn stringify_and_paste() {
     let (toks, errs) = fte("#define S(a) #a\nS(info_null)\n");
