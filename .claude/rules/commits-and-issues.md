@@ -20,8 +20,9 @@ Read by every agent before it commits, opens a PR or files an issue.
 3. The body explains why, not what; it is separated from the description by a blank line.
 4. A breaking change is marked with `!` after the type or scope, or a `BREAKING CHANGE:`
    footer.
-5. **No `Co-Authored-By` trailers**, from people or agents (project owner's rule; differs
-   from vouch).
+5. **No `Co-Authored-By` trailers**, from people or agents, and no "Generated with" footer
+   or any other attribution in a commit message or a PR body: PRs are squash-merged, so the
+   body becomes the commit (project owner's rule; differs from vouch).
 6. Plain hyphens, never em or en dashes. No emoji. No "critical", "comprehensive" or
    "robust": a fix is a fix.
 
