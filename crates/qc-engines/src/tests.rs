@@ -1349,3 +1349,34 @@ fn reviewer_fteqcc_keys_a_colon_number_as_a_hash_number() {
         ["f is builtin #123456792, which Vanilla does not have"]
     );
 }
+
+// spec ENGT-4.13: under FTEQCC a character constant after `:` is its code and spaces around a
+// `:` engine name do not matter, so `:'a'` is builtin 97 and `#9000 : ex_a` builtin 9000, the
+// numbers the pinned FTEQCC binds (it writes `first_statement` -97 and -9000)
+#[test]
+fn reviewer_fteqcc_keys_a_character_and_a_spaced_name_by_number() {
+    for (initialiser, number) in [(":'a'", 97), ("#9000 : ex_a", 9000)] {
+        let source = format!("void() f = {initialiser};\nvoid() g = {{ f(); }};\n");
+        let messages = fte_messages(Engine::Vanilla, &[&source]);
+        assert_eq!(messages.len(), 1, "{initialiser}: {messages:?}");
+        let message = &messages[0];
+        assert!(
+            message.starts_with(&format!(
+                "f is builtin #{number}, which Vanilla does not have"
+            )),
+            "{initialiser}: {message}"
+        );
+    }
+}
+
+// spec ENGT-4.12: a name's key is its first initialiser in compilation order, across files:
+// with `f` initialised `#9000` in the first file and again in the second, the call is keyed 9000
+#[test]
+fn reviewer_the_first_file_keys_a_builtin_given_in_two() {
+    let first = "void() f = #9000;\n";
+    let second = "void() f = #9000;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Vanilla, &[first, second]),
+        ["f is builtin #9000, which Vanilla does not have"]
+    );
+}
