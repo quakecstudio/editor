@@ -118,12 +118,13 @@ struct Macro {
 /// The names a token may no longer expand to: the macros whose expansion produced it.
 type Hide = Option<Rc<HideNode>>;
 
-/// How many live hide-set nodes name one macro. A name no live node names is in no token's
-/// hide set, so [`hidden`] answers without walking the set (QC-9.13).
+/// One macro name's counter of the live hide-set nodes that name it, one counter per name in
+/// [`Run::live`], so the counter also stands for the name. A name no live node names is in no
+/// token's hide set, so [`hidden`] answers without walking the set (QC-9.13).
 type Live = Rc<Cell<usize>>;
 
 struct HideNode {
-    name: String,
+    /// The macro this node hides, as its counter.
     live: Live,
     next: Hide,
 }
@@ -143,23 +144,26 @@ impl Drop for HideNode {
 }
 
 fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
-    if live.get(name).is_none_or(|count| count.get() == 0) {
+    let Some(mut node) = hide.as_deref() else {
         return false;
-    }
-    let mut node = hide.as_deref();
-    while let Some(n) = node {
-        if n.name == name {
+    };
+    let Some(count) = live.get(name).filter(|count| count.get() > 0) else {
+        return false;
+    };
+    loop {
+        if Rc::ptr_eq(&node.live, count) {
             return true;
         }
-        node = n.next.as_deref();
+        let Some(next) = node.next.as_deref() else {
+            return false;
+        };
+        node = next;
     }
-    false
 }
 
-fn hide_with(hide: &Hide, name: &str, live: &Live) -> Hide {
+fn hide_with(hide: &Hide, live: &Live) -> Hide {
     live.set(live.get().saturating_add(1));
     Some(Rc::new(HideNode {
-        name: name.to_owned(),
         live: Rc::clone(live),
         next: hide.clone(),
     }))
@@ -1088,9 +1092,15 @@ impl<L: Loader> Preprocessor<L> {
             },
             parent: item.tok.expansion,
         });
-        let live = Rc::clone(run.live.entry(name.clone()).or_default());
-        let hide = hide_with(&item.hide, &name, &live);
-        let result = self.substitute(&mac, &args, id, (&hide, &live), &name);
+        let live = if let Some(live) = run.live.get(&name) {
+            Rc::clone(live)
+        } else {
+            let live = Live::default();
+            run.live.insert(name, Rc::clone(&live));
+            live
+        };
+        let hide = hide_with(&item.hide, &live);
+        let result = self.substitute(&mac, &args, id, &hide, &live);
         run.pending.extend(result.into_iter().rev());
         None
     }
@@ -1103,8 +1113,8 @@ impl<L: Loader> Preprocessor<L> {
         mac: &Macro,
         args: &[Vec<Item>],
         id: ExpansionId,
-        (hide, live): (&Hide, &Live),
-        name: &str,
+        hide: &Hide,
+        live: &Live,
     ) -> Vec<Item> {
         let fte = self.dialect.has_fteqcc_extensions();
         let params = mac.params.as_deref().unwrap_or_default();
@@ -1168,7 +1178,7 @@ impl<L: Loader> Preprocessor<L> {
                             expansion: Some(id),
                             spelling: a.tok.spelling.clone(),
                         },
-                        hide: hide_with(&a.hide, name, live),
+                        hide: hide_with(&a.hide, live),
                     })
                     .collect(),
                 None => vec![Item {
