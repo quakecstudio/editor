@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 540901779a60768a3a57b94d18e3ef0a88cf297799a2b12bb3cfcc0a22421ee0 # shrinks to pieces = ["'", "\"", "warning", " ", "\"", "\\", "'", "'", "\n", "\""], at = 9
+cc d09c253481544e20b81f257669aa6313e1da0a81969a69b8191b7552a01dc334 # shrinks to pieces = ["\n", "\n", "$frame", "\r", "\""], at = 1
+cc 5dba0af9fa5a021adbf90546c8f3205b1f0b00174206d1bd240b79d674183bc2 # shrinks to pieces = ["/*", "\n", "\n", "/*", ")\"", "\"", "warning", "//", "\"", "//", "\n", "\n", "\"", "//", "\"", "*/", "\n", ".", " ", "\"", "\"", "\"", "R\"(", " ", "'", "/*", "#", "\n", "a"], at = 31
+cc 7dfe72c63b143a4509bf9cd896a9f758ec174c1091f33067100377ce13d2d834 # shrinks to pieces = [")\"", "\"x\"", ")\"", "\"", "warning", "/*", "\n", "\n", "\n", "\"x\"", "\n", "\n", "\n", "\"x\"", "\n", "*/", ")\"", "$frame", "/*", "/*", "R\"(", "\"x\"", "#", "warning", "\""], at = 50
+cc cda9a2eb23613d48f6166e6c9417816dd1d7e472579a49fc96ea87332f1bb74a # shrinks to pieces = ["*/", "warning", "*/", "\"", "warning", "warning", "\"", "\"", "\"", "warning", "*/", "\"", "'", "'", "'", " ", "/*", "\"", "*/", "\"", "\"", "\"", "\"", "\"", "\""], at = 12

@@ -22,7 +22,7 @@ use qc_lexer::{Code, Span, Token, TokenKind, lex_with};
 
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Loader, Macro, PpToken, Preprocessor, Run, TokenStream, cond, quote_bytes,
+    Item, Loader, Macro, PpToken, Preprocessor, Run, TokenStream, cond, moved_frames, quote_bytes,
 };
 
 /// The most parameters an FTEQCC macro has: `MAXCONSTANTPARAMS` in FTEQCC's `qcc.h`,
@@ -254,9 +254,10 @@ impl ChunkReader {
             .and_then(|before| self.stream.tokens.get(before))
             .filter(|before| !detached && before.span.end == token.span.start)
             .map(|before| self.place(before.span.range()).0);
+        let kind = moved_frames(token.kind, |name| self.place(name.range()).0.span);
         Some(Item {
             tok: PpToken {
-                kind: token.kind,
+                kind,
                 span,
                 expansion: Some(self.id),
                 spelling,
@@ -945,13 +946,14 @@ impl Writer<'_> {
         let mut out = Text::default();
         let mut at = 0_usize;
         loop {
-            if out.bytes.len() > self.limit {
-                return None;
-            }
             let whitestart = out.bytes.len();
             let white_end = lex_whitespace(bytes, at);
             out.push_from(self.body, at..white_end);
             at = white_end;
+            // Everything written so far, the pieces before this one included.
+            if out.bytes.len() > self.limit {
+                return None;
+            }
             let mut noargexpand = false;
             match byte_at(bytes, at) {
                 Some(b'"') => {
@@ -1026,7 +1028,7 @@ impl Writer<'_> {
                 self.copy_token(&word, &mut out);
             }
         }
-        (out.bytes.len() <= self.limit).then_some(out)
+        Some(out)
     }
 
     /// Writes `qcc_token` of `word`, read from the body: its bytes there, or for a string's
@@ -1048,7 +1050,7 @@ impl Writer<'_> {
     fn argument(&self, arg: &Text, out: &mut Text) {
         let bytes = arg.bytes();
         let mut start = 0_usize;
-        while start < bytes.len() {
+        loop {
             let mut end = start;
             while byte_at(bytes, end).is_some_and(cond::fte_white) {
                 end = end.saturating_add(1);
@@ -1072,7 +1074,8 @@ impl Writer<'_> {
     }
 }
 
-/// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\`, NUL and `"`, and
+/// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\` and `"` (a NUL ends
+/// an argument's text, so none is in it), and
 /// in `"` quotes, the string `#param` writes (FTEF-14.31).
 fn markup(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
@@ -1081,7 +1084,6 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
         match byte {
             b'\n' => out.extend_from_slice(b"\\\n"),
             b'\\' => out.extend_from_slice(b"\\\\"),
-            0 => out.extend_from_slice(b"\\0"),
             b'"' => out.extend_from_slice(b"\\\""),
             _ => out.push(byte),
         }

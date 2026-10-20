@@ -28,6 +28,7 @@ use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
+use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
@@ -251,6 +252,67 @@ struct TokenStream {
     diagnostics: Vec<qc_lexer::Diagnostic>,
 }
 
+/// The tokens and lexical errors of the bytes `range` of `text`, their spans from the range's
+/// start, as reading on at that byte reads them (FTEF-14.22): it starts a line only where only
+/// white space comes before it on its line, so in the middle of a line a `#` there starts no
+/// directive and a `#warning` after it no raw text. In the middle of a line the bytes are lexed
+/// after a `;`, a token of its own that changes nothing after it, which is then dropped.
+fn lex_from(text: &[u8], range: Range<usize>, dialect: Dialect) -> qc_lexer::Lexed {
+    let part = text.get(range.clone()).unwrap_or_default();
+    let line_start = text
+        .get(..range.start)
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .take_while(|&&b| b != b'\n')
+        .all(|&b| qc_lexer::is_whitespace(b));
+    if line_start {
+        return lex_with(part, dialect);
+    }
+    let mut after_token = Vec::with_capacity(part.len().saturating_add(1));
+    after_token.push(b';');
+    after_token.extend_from_slice(part);
+    let lexed = lex_with(&after_token, dialect);
+    let back = |span: Span| Span::new(span.start.saturating_sub(1), span.end.saturating_sub(1));
+    qc_lexer::Lexed {
+        tokens: lexed
+            .tokens
+            .into_iter()
+            .skip(1)
+            .map(|mut token| {
+                token.span = back(token.span);
+                token.kind = moved_frames(token.kind, back);
+                token
+            })
+            .collect(),
+        diagnostics: lexed
+            .diagnostics
+            .into_iter()
+            .map(|mut d| {
+                d.span = back(d.span);
+                d
+            })
+            .collect(),
+    }
+}
+
+/// `kind` with the spans of the frame names it holds, if any, moved by `place`: a token lexed
+/// from part of a text stands where `place` says its bytes are (FTEF-14.22, QC-9.7).
+fn moved_frames(kind: TokenKind, place: impl Fn(Span) -> Span) -> TokenKind {
+    match kind {
+        TokenKind::Frames(names) => TokenKind::Frames(
+            names
+                .into_iter()
+                .map(|mut name| {
+                    name.span = place(name.span);
+                    name
+                })
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 impl TokenStream {
     /// The tokens of `text` under `dialect`, read from the first.
     fn lex(text: &[u8], dialect: Dialect) -> Self {
@@ -267,7 +329,9 @@ impl TokenStream {
     /// FTEF-14.24): from the first token at or after it, and the text from `offset` lexed
     /// again unless only white space stands between the token before it and `offset`, so
     /// that no token or comment of the text as first lexed stands across it, and its tokens
-    /// and lexical errors are those of the text from there.
+    /// and lexical errors are those of the text from there. The text is lexed again only as far
+    /// as a token of the first lexing that the new lexing reaches as that one did
+    /// ([`relex_window`]), so a file of many such uses is not lexed again whole for each.
     fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) {
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         let before = next.checked_sub(1).and_then(|last| self.tokens.get(last));
@@ -276,45 +340,106 @@ impl TokenStream {
             && text
                 .get(gap_start..offset)
                 .is_some_and(|gap| gap.iter().all(|&b| qc_lexer::is_whitespace(b)));
-        if !clean {
-            let rest = lex_with(text.get(offset..).unwrap_or_default(), dialect);
-            // Only white space before `offset` on its line: a token there may start a line.
-            let line_start = text
-                .get(..offset)
-                .unwrap_or_default()
-                .iter()
-                .rev()
-                .take_while(|&&b| b != b'\n')
-                .all(|&b| qc_lexer::is_whitespace(b));
-            let shift = |span: Span| {
-                Span::new(
-                    span.start.saturating_add(offset),
-                    span.end.saturating_add(offset),
-                )
-            };
-            self.tokens.truncate(next);
-            let mut first_line = true;
-            let mut end = offset;
-            for mut token in rest.tokens {
-                token.span = shift(token.span);
-                first_line &= !text
-                    .get(end..token.span.start)
-                    .unwrap_or_default()
-                    .contains(&b'\n');
-                if first_line {
-                    token.line_start &= line_start;
-                }
-                end = token.span.end;
-                self.tokens.push(token);
-            }
-            self.diagnostics.retain(|d| d.span.start < offset);
-            self.diagnostics
-                .extend(rest.diagnostics.into_iter().map(|mut d| {
-                    d.span = shift(d.span);
-                    d
-                }));
-        }
+        // The tokens from `read` on are those not read yet, or read again from here.
+        let read = self.pos.min(next);
         self.pos = next;
+        if clean {
+            return;
+        }
+        let window = (next..self.tokens.len())
+            .take(RESYNC_TRIES)
+            .find_map(|kept| Some(kept).zip(self.relex_window(text, offset, kept, dialect)));
+        let (kept, rest) = match window {
+            Some((kept, lexed)) => (kept, lexed),
+            None => (
+                self.tokens.len(),
+                lex_from(text, offset..text.len(), dialect),
+            ),
+        };
+        let resumed = self.tokens.get(kept).map_or(usize::MAX, |t| t.span.start);
+        let shift = |span: Span| {
+            Span::new(
+                span.start.saturating_add(offset),
+                span.end.saturating_add(offset),
+            )
+        };
+        let tokens: Vec<Token> = rest
+            .tokens
+            .into_iter()
+            .map(|mut token| {
+                token.span = shift(token.span);
+                token.kind = moved_frames(token.kind, shift);
+                token
+            })
+            .collect();
+        // The new tokens go in the places before `kept` that hold tokens read or replaced, so
+        // the tokens after them do not move; places left over between hold a token of no text
+        // at `offset`, which keeps the tokens in order and is never read.
+        match kept.checked_sub(tokens.len()).filter(|&at| at >= read) {
+            Some(at) => {
+                let unread = Token {
+                    kind: TokenKind::Punct(Punct::Semicolon),
+                    span: Span::new(offset, offset),
+                    line_start: false,
+                };
+                let places = self.tokens.get_mut(next..at).unwrap_or_default();
+                places.fill(unread);
+                let places = self.tokens.get_mut(at..kept).unwrap_or_default();
+                for (place, token) in places.iter_mut().zip(tokens) {
+                    *place = token;
+                }
+                self.pos = at;
+            }
+            None => {
+                self.tokens.splice(next..kept, tokens);
+            }
+        }
+        let (before, after): (Vec<_>, Vec<_>) = std::mem::take(&mut self.diagnostics)
+            .into_iter()
+            .filter(|d| d.span.start < offset || d.span.start >= resumed)
+            .partition(|d| d.span.start < offset);
+        self.diagnostics = before;
+        self.diagnostics
+            .extend(rest.diagnostics.into_iter().map(|mut d| {
+                d.span = shift(d.span);
+                d
+            }));
+        self.diagnostics.extend(after);
+    }
+
+    /// The text from `offset` to the token `kept` of the first lexing, lexed again, when lexing
+    /// the whole text from `offset` would reach that token as the first lexing did, so the
+    /// tokens from it on stand: the new tokens end before it with only white space after them,
+    /// none is a string (which may join the next, QC-13) or a `#` that may start a directive
+    /// (whose `#warning` text is read raw, FTEF-14.3), nor is the kept token a string, and no
+    /// lexical error runs to it.
+    fn relex_window(
+        &self,
+        text: &[u8],
+        offset: usize,
+        kept: usize,
+        dialect: Dialect,
+    ) -> Option<qc_lexer::Lexed> {
+        let resume = self
+            .tokens
+            .get(kept)
+            .filter(|t| !matches!(t.kind, TokenKind::String(_)))?
+            .span
+            .start;
+        let window = text.get(offset..resume)?;
+        let lexed = lex_from(text, offset..resume, dialect);
+        let last_end = lexed.tokens.last().map_or(0, |t| t.span.end);
+        let lands = lexed.tokens.last().is_none_or(|last| {
+            !matches!(last.kind, TokenKind::String(_)) && last.span.end < window.len()
+        }) && window
+            .get(last_end..)
+            .is_some_and(|after| after.iter().all(|&b| qc_lexer::is_whitespace(b)))
+            && !lexed
+                .tokens
+                .iter()
+                .any(|t| t.kind == TokenKind::Punct(Punct::Hash) && t.line_start)
+            && lexed.diagnostics.iter().all(|d| d.span.end < window.len());
+        lands.then_some(lexed)
     }
 }
 
@@ -409,6 +534,10 @@ const FTE_MAX_FRAME_NAME: usize = 63;
 /// The most chunks of one macro FTEQCC has open at once, `if (c->inside >= 8)` in
 /// `QCC_PR_CheckCompConst` (FTEF-14.17).
 const FTE_MAX_OPEN_CHUNKS: usize = 8;
+
+/// The tokens of the first lexing [`TokenStream::resume_at`] tries, one after another, to lex
+/// again only as far as, before it lexes the rest of the text again (FTEF-14.22).
+const RESYNC_TRIES: usize = 8;
 
 /// The most macro expansions the preprocessor makes in one file, under either dialect
 /// (FTEF-14.28, QC-9.18).
@@ -599,10 +728,7 @@ impl<L: Loader> Preprocessor<L> {
     /// out with the name after it. The name is the one that touches the `#` in the text FTEQCC
     /// reads, a macro's body's as FTEQCC stored it included (QC-9.16).
     fn explicit_use(&mut self, run: &mut Run, item: Item) -> Option<Item> {
-        if !self.dialect.has_fteqcc_extensions()
-            || item.tok.kind != TokenKind::Punct(Punct::Hash)
-            || item.tok.spelling.as_deref().is_some_and(|text| text != "#")
-        {
+        if !self.dialect.has_fteqcc_extensions() || item.tok.kind != TokenKind::Punct(Punct::Hash) {
             return Some(item);
         }
         // In the source a `#` before white space or a stop byte names nothing, and nothing
@@ -1083,9 +1209,7 @@ impl<L: Loader> Preprocessor<L> {
             && open.kind == TokenKind::Punct(Punct::LParen)
             && open.span.start == name_span.end
         {
-            // The vanilla dialect has no `...` parameter (FTEF-14.5).
-            let list = parse_params(line, 4).filter(|(list, _)| !list.iter().any(|p| p == "..."));
-            let Some((list, after)) = list else {
+            let Some((list, after)) = parse_params(line, 4) else {
                 run.report(
                     Code::E0115,
                     format!("bad parameter list for macro {name}"),
@@ -1668,14 +1792,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
     loop {
         match &line.get(i)?.kind {
             TokenKind::Name(name) => params.push(name.clone()),
-            // FTEF-14.5: `...` ends a variadic list.
-            TokenKind::Punct(Punct::Ellipsis) => {
-                params.push("...".to_owned());
-                return match &line.get(i.checked_add(1)?)?.kind {
-                    TokenKind::Punct(Punct::RParen) => Some((params, i.checked_add(2)?)),
-                    _ => None,
-                };
-            }
+            // FTEF-14.5: the vanilla dialect has no `...` parameter.
             _ => return None,
         }
         i = i.checked_add(1)?;

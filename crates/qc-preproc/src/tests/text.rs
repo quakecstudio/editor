@@ -577,3 +577,247 @@ fn made_tokens_and_uses_keep_their_places() {
     let m = pp.expansions().iter().find(|e| e.name == "M").unwrap();
     assert_eq!(pp.sources().text(m.use_span), Some(&b"M"[..]));
 }
+
+// spec FTEF-14.22: reading goes on after each of 20000 uses whose `)` stands in a comment, the
+// text after each lexed again as far as the next line
+#[test]
+fn many_uses_closed_in_comments_read_on() {
+    let mut text = String::from("#define M(x) x\n");
+    for _ in 0..20_000 {
+        text.push_str("M(#5 // )\n) M(/* ) */ 6)\n");
+    }
+    let (_, out) = one_fte(&text);
+    assert_eq!(codes(&out), vec![]);
+    // `#5`, the `)` after the first use's line, and `6`.
+    assert_eq!(out.tokens.len(), 20_000 * 4);
+}
+
+// spec FTEF-14.22: what is read again after a `)` that stood in a token or a comment is as a
+// whole reading of the text from there gives: a string, a `#` at a line start (a directive), a
+// `#warning`'s raw text, an unclosed comment and text with no white space before the next token
+// are each read on whole, and a lexical error right after the `)` is reported once
+#[test]
+fn text_read_again_is_the_text_read_whole() {
+    let cases = [
+        ("M(#5 // )\n\"a\" \"b\")\nx\n", "#5 \"a\" \"b\") x"),
+        ("M(#5 // )\n)#define X 1\nX\n", "#5 )#define X 1 X"),
+        ("M(#5 // )\n)\n#define X 1\nX\n", "#5 ) 1"),
+        ("M(#5 /* ) */ y)y z\n", "#5 */ y)y z"),
+        ("M(1 // )\n/* a\n*/ b)\n", "1 b)"),
+        ("M(1 // )\n)\n#warning a 'b\nc\n", "1 ) c"),
+    ];
+    let got: Vec<(&str, String)> = cases
+        .iter()
+        .map(|&(text, _)| (text, fte(&format!("#define M(x) x\n{text}")).0))
+        .collect();
+    let want: Vec<(&str, String)> = cases
+        .iter()
+        .map(|&(text, want)| (text, want.to_owned()))
+        .collect();
+    assert_eq!(got, want);
+    let (_, errors) = fte("#define M(x) x\nM(1 // )\n)'x\n");
+    assert_eq!(
+        errors.iter().filter(|c| c.is_error()).count(),
+        1,
+        "{errors:?}"
+    );
+}
+
+// spec FTEF-14.30: a directive other than `#define` goes on past a line break after `\` (LF or CR
+// LF) and inside a `/* */` comment, a `*` or `/` in it no end, and a `//` comment ends it
+#[test]
+fn other_directives_continue_as_fteqcc_s_do() {
+    for (text, want) in [
+        ("#undef N \\\nx\ny\n", "y"),
+        ("#undef N \\\r\nx\ny\n", "y"),
+        ("#undef N /* a*b/c\n*/ x\ny\n", "y"),
+        ("#undef N // c\nx\n", "x"),
+        ("#undef N\nx\n", "x"),
+        ("#undef N /* a */\nx\n", "x"),
+        ("#undef N \\x\ny\n", "y"),
+    ] {
+        assert_eq!(fte(text).0, want, "{text:?}");
+    }
+}
+
+// spec FTEF-14.28, QC-9.18: the most expansions a file makes is 2^20, each written to nothing
+// here, so the tokens stay under theirs; a use past it is E0120 under each dialect
+#[test]
+fn the_expansions_of_a_file_are_bounded() {
+    let mut text = String::from("#define A0\n");
+    for i in 1..=20 {
+        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+    }
+    text.push_str("A20 A0\n");
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        let out = run(&text, dialect);
+        assert_eq!(codes(&out), vec![Code::E0120], "{dialect:?}");
+        assert!(out.tokens.len() < 4, "{dialect:?}");
+    }
+}
+
+// spec FTEF-14.28: an expansion whose text is exactly the tokens left is written, under FTEQCC
+// as under the vanilla dialect (QC-9.18)
+#[test]
+fn an_expansion_exactly_at_the_bound_is_written() {
+    let n = 1_398_102;
+    let fte_text = format!("#define D(x) {}\nD(1)\n", vec!["x"; n].join(", "));
+    let out = run(&fte_text, Dialect::Fteqcc);
+    assert_eq!(codes(&out), vec![]);
+    assert_eq!(out.tokens.len(), 2 * n - 1);
+    let out = run(&square(2048), Dialect::Vanilla);
+    assert_eq!(codes(&out), vec![]);
+    assert_eq!(out.tokens.len(), FTE_MAX_EXPANDED_TOKENS);
+}
+
+// spec FTEF-14.24: a string in a function-like macro's body is copied as written; after a `//`
+// a `/*` is no comment, and a string the line goes past ends at a line break
+#[test]
+fn bodies_and_their_lines_keep_strings_and_comments_apart() {
+    let (_, out) = one_fte("#define P(a) \"ex_a\" a\nP(1)\n");
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [TokenKind::String(b"ex_a".to_vec()), TokenKind::Float(1.0)]
+    );
+    assert_eq!(fte("#define N 1 // a /* b\nc */ x\nN\n").0, "c */ x 1");
+    assert_eq!(
+        fte("#define E(n, n) \"ab\nzz\n"),
+        ("zz".to_owned(), vec![Code::E0115])
+    );
+    // A `(` or other stop byte right after `define` names nothing.
+    assert_eq!(fte("#define (x) 5\n").1, vec![Code::E0114]);
+}
+
+// spec QC-9.7: a token pasted from two arguments stands from the first's byte to the second's
+#[test]
+fn a_paste_of_two_arguments_stands_over_both() {
+    let (pp, out) = one_fte("#define J(a, b) a##b\nJ(x, y)\n");
+    let token = out.tokens.first().unwrap();
+    assert_eq!(pp.sources().text(token.span), Some(&b"x, y"[..]));
+}
+
+// spec FTEF-14.32: the tokens of a built-in constant's text read in a chunk touch each other, and
+// a lexical error a chunk's text holds right after a macro used in it took its arguments is
+// reported
+#[test]
+fn chunk_text_after_a_use_is_read() {
+    let (_, out) = one_fte_in("a\"b.qc", "#define F __FILE__\nF\n");
+    assert!(out.tokens[1].touches(&out.tokens[0]));
+    let (_, out) = one_fte_in("a\"b.qc", "__FILE__\n");
+    assert!(!out.tokens[1].touches(&out.tokens[0]));
+    let (_, errors) = fte("#define M(a) 1\n#define K M(1)\"ab\nK\n");
+    assert!(errors.contains(&Code::E0101), "{errors:?}");
+    // `0x1.2a` is one number, which takes the `a`.
+    assert!(!fte("#define E(a) #0x1.2a\nE(:ex_a)\n").0.contains("ex_a"));
+}
+
+/// `text` as the file `path` under FTEQCC.
+fn one_fte_in(path: &str, text: &str) -> (Preprocessor<MemoryLoader>, FileOutput) {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path, text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    (pp, out)
+}
+
+/// Pieces of text whose lexing depends on what comes before: strings, comments, character
+/// constants, directives and raw text.
+const PIECES: &[&str] = &[
+    "\"", "'", "/*", "*/", "//", "\n", " ", "a", "1", ".", "#", "\\", "(", ")", ",", "warning",
+    "\"x\"", "R\"(", ")\"", "$frame", "u8", "\r",
+];
+
+/// A token's kind, place and whether it starts a line.
+type Read = (TokenKind, qc_lexer::Span, bool);
+
+/// The tokens of `stream` from where reading stands, and its lexical errors from `offset` (code
+/// and place, in order of place).
+fn read_on(stream: &crate::TokenStream, offset: usize) -> (Vec<Read>, Vec<(Code, usize)>) {
+    let tokens = stream
+        .tokens
+        .get(stream.pos..)
+        .unwrap_or_default()
+        .iter()
+        .map(|t| (t.kind.clone(), t.span, t.line_start))
+        .collect();
+    let mut errors: Vec<(Code, usize)> = stream
+        .diagnostics
+        .iter()
+        .filter(|d| d.span.start >= offset)
+        .map(|d| (d.code, d.span.start))
+        .collect();
+    errors.sort_by_key(|&(_, at)| at);
+    (tokens, errors)
+}
+
+proptest::proptest! {
+    // spec FTEF-14.22: reading on at a byte a token or comment of the first lexing stood across
+    // gives what lexing the whole rest of the text from there gives, though only as much of it
+    // as needs it is lexed again: the same tokens, places, line starts and lexical errors
+    #[test]
+    fn reading_on_lexes_again_as_the_whole_rest_would(
+        pieces in proptest::collection::vec(proptest::sample::select(PIECES), 0..40),
+        at in 0_usize..400,
+    ) {
+        let text = pieces.concat().into_bytes();
+        let offset = at.min(text.len());
+        for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+            let stream = crate::TokenStream::lex(&text, dialect);
+            let before = stream.tokens.partition_point(|t| t.span.start < offset);
+            let gap = before
+                .checked_sub(1)
+                .and_then(|last| stream.tokens.get(last))
+                .map_or(0, |t| t.span.end);
+            let clean = gap <= offset
+                && text
+                    .get(gap..offset)
+                    .is_some_and(|g| g.iter().all(|&b| qc_lexer::is_whitespace(b)));
+            if clean {
+                continue;
+            }
+            let mut whole = crate::TokenStream {
+                tokens: Vec::new(),
+                pos: 0,
+                diagnostics: Vec::new(),
+            };
+            let rest = crate::lex_from(&text, offset..text.len(), dialect);
+            let shift = |s: qc_lexer::Span| {
+                qc_lexer::Span::new(s.start.saturating_add(offset), s.end.saturating_add(offset))
+            };
+            whole.tokens = rest
+                .tokens
+                .into_iter()
+                .map(|mut t| {
+                    t.span = shift(t.span);
+                    t.kind = crate::moved_frames(t.kind, shift);
+                    t
+                })
+                .collect();
+            whole.diagnostics = rest
+                .diagnostics
+                .into_iter()
+                .map(|mut d| {
+                    d.span = shift(d.span);
+                    d
+                })
+                .collect();
+            let shown = String::from_utf8_lossy(&text).into_owned();
+            // Reading stood at the start, which leaves the new tokens room before the kept
+            // ones, or right at `offset`, which leaves none.
+            for start in [0, before] {
+                let mut read = crate::TokenStream::lex(&text, dialect);
+                read.pos = start;
+                read.resume_at(&text, offset, dialect);
+                proptest::prop_assert_eq!(
+                    read_on(&read, offset),
+                    read_on(&whole, offset),
+                    "{:?} at {} from {}",
+                    shown,
+                    offset,
+                    start
+                );
+            }
+        }
+    }
+}
