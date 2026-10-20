@@ -237,7 +237,6 @@ after its `code-review` self-review is recorded in the PR body (`work-issue`), e
 | The plan: requirements and issues | `plan/requirements.yaml`, `plan/backlog/*.yaml` |
 | Overall plan and current phase | `docs/roadmap.md` |
 | Design and approved mockups | `docs/design/` |
-| Component design docs | `docs/design/components/` (index `README.md`; updated by the PR that changes a component) |
 | Decisions | `docs/adr/` (template `0000-template.md`) |
 | Engine behaviour specs | `docs/spec/` (index `requirements.tsv`, baseline `coverage-baseline.tsv`) |
 | Cached public specs | `specs/` (roster `specs/manifest.tsv`) |
