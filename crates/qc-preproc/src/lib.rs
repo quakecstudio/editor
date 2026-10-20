@@ -1361,7 +1361,8 @@ impl<L: Loader> Preprocessor<L> {
     /// The body of `mac` with its parameters replaced by `args` (QC-9.4) in the vanilla
     /// dialect: a body token follows the one before it where the two touch in the body, an
     /// argument's tokens follow each other as they touch, and an argument stays apart from the
-    /// body (QC-9.16). `None` once it would hold more than `limit` tokens (QC-9.18). Under
+    /// body (QC-9.16). `None`, with nothing written, when it would hold more than `limit`
+    /// tokens (QC-9.18): each body token is one and each parameter its argument's. Under
     /// FTEQCC [`Self::fte_try_expand`] writes the expansion.
     fn substitute(
         mac: &Macro,
@@ -1371,13 +1372,21 @@ impl<L: Loader> Preprocessor<L> {
         limit: usize,
     ) -> Option<Vec<Item>> {
         let params = mac.params.as_deref().unwrap_or_default();
-        let mut result: Vec<Item> = Vec::new();
+        let param_of = |token: &Token| match &token.kind {
+            TokenKind::Name(n) => params.iter().position(|p| p == n),
+            _ => None,
+        };
+        let size = mac.tokens().iter().fold(0_usize, |size, (_, token)| {
+            let written = param_of(token).map_or(1, |arg| args.get(arg).map_or(0, Vec::len));
+            size.saturating_add(written)
+        });
+        if size > limit {
+            return None;
+        }
+        let mut result: Vec<Item> = Vec::with_capacity(size);
         let mut last_in_body: Option<FileSpan> = None;
         let mut after_argument = false;
         for (file, token) in mac.tokens() {
-            if result.len() > limit {
-                return None;
-            }
             let here = FileSpan {
                 file: *file,
                 span: token.span,
@@ -1386,16 +1395,8 @@ impl<L: Loader> Preprocessor<L> {
                 && last_in_body
                     .is_some_and(|last| last.file == here.file && last.span.end == here.span.start);
             last_in_body = Some(here);
-            let param = match &token.kind {
-                TokenKind::Name(n) => params.iter().position(|p| p == n),
-                _ => None,
-            };
-            if let Some(arg) = param {
+            if let Some(arg) = param_of(token) {
                 let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
-                // QC-9.18: the bound holds before an argument is copied, not only after.
-                if result.len().saturating_add(items.len()) > limit {
-                    return None;
-                }
                 result.extend(Self::argument_pieces(items, id, live));
                 after_argument = true;
                 continue;
@@ -1416,7 +1417,7 @@ impl<L: Loader> Preprocessor<L> {
                 chunk_end: None,
             });
         }
-        (result.len() <= limit).then_some(result)
+        Some(result)
     }
 
     /// Reads a vanilla function-like macro's arguments after its `(`, which is `collected[0]`,

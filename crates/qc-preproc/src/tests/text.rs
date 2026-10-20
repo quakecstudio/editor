@@ -378,8 +378,7 @@ fn output_bytes(out: &FileOutput) -> usize {
 
 // spec FTEF-14.28, QC-9.18: one expansion of a body that names its parameter 8000 times, given
 // 8000 tokens (the fourth P2-R2 review's 32018-byte file, 64000000 tokens unbounded), is E0120
-// under each dialect, left as written, its output a few megabytes; 1400 by 1400, 1960000 tokens,
-// is under the bound and written, in a few hundred megabytes
+// under each dialect, left as written, its output a few megabytes
 #[test]
 fn one_expansion_is_bounded_as_it_is_written() {
     assert_eq!(square(8000).len(), 32018);
@@ -389,6 +388,14 @@ fn one_expansion_is_bounded_as_it_is_written() {
         assert_eq!(out.tokens.len(), 8003, "{dialect:?}");
         assert!(out.tokens.iter().all(|t| t.expansion.is_none()));
         assert!(output_bytes(&out) < 16 << 20, "{}", output_bytes(&out));
+    }
+}
+
+// spec FTEF-14.28, QC-9.18: 1400 by 1400, 1960000 tokens, is under the bound and written under
+// each dialect, its output under a gigabyte
+#[test]
+fn an_expansion_under_the_bound_is_written() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         let out = run(&square(1400), dialect);
         assert_eq!(codes(&out), vec![], "{dialect:?}");
         assert_eq!(out.tokens.len(), 1_960_000);

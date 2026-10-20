@@ -428,10 +428,11 @@ dialect features (P2-01, P2-03).
   (`dialect-fteqcc.md` FTEF-14.17), with this profile's bound on the work (FTEF-14.28).
 - **QC-9.18** The preprocessor makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one
   file and writes at most `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens with them, under the vanilla
-  dialect as under FTEQCC (`dialect-fteqcc.md` FTEF-14.28), counting an expansion's tokens as it
-  writes them: a function-like macro whose body names its parameter `n` times writes its argument
-  `n` times, so one expansion alone could write the square of its file's length (a 32018-byte file
-  of `#define D(x)`, 8000 `x` and `D(` given 8000 tokens, 64000000 tokens). The first use past
+  dialect as under FTEQCC (`dialect-fteqcc.md` FTEF-14.28), an expansion's tokens counted before
+  it is written, each body token one and each parameter its argument's: a function-like macro
+  whose body names its parameter `n` times writes its argument `n` times, so one expansion alone
+  could write the square of its file's length (a 32018-byte file of `#define D(x)`, 8000 `x` and
+  `D(` given 8000 tokens, 64000000 tokens). The first use past
   either bound is "macro expansion too large" (`E0120`, QCD-8.13), reported once, and it and later
   uses are left as written. id's `qcc` has no macros (QC-9), so the bound is this project's own,
   that no file exhausts the memory of the semantic model, which preprocesses on every edit.
