@@ -1083,6 +1083,24 @@ issues:
   - cargo xtask engines --check passes on the regenerated tables
   verify:
   - cargo test -p qc-engines -p xtask; cargo xtask engines --check
+- key: P2-62
+  title: Cover every qc-lexer branch the vanilla profile takes
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-1
+  - LANG-5
+  depends:
+  - P2-59
+  deliverable:
+  - 'crates/qc-lexer/src/tests.rs: deterministic vanilla-profile cases for the FTEQCC-only match guards in crates/qc-lexer/src/lib.rs, which only the random `spans_are_ordered_and_in_bounds` property test reached, so readiness run 39338762305 measured 232 of 236 branches on Linux: `$frame_reset`, `$framevalue` and `$framerestore` are frame macro references (FTEF-18.16, QC-8.5), `\s` and `\b` are unknown escapes (QC-6.2), and a `\` before CR or CR LF is an unknown character (FTEF-13.2)'
+  acceptance:
+  - '`cargo xtask readiness branches --out <file> qc-lexer` on the pinned nightly reports 236 of 236, and each new case cites QC-6.2, FTEF-13.2 or FTEF-18.16'
+  verify:
+  - cargo test -p qc-lexer; cargo xtask readiness branches --out branches.json qc-lexer
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1147,6 +1165,7 @@ issues:
   - P2-59
   - P2-60
   - P2-61
+  - P2-62
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
