@@ -43,6 +43,10 @@ pub const LIMIT_MAX_PARMS: usize = 8;
 /// more is "name too long" (QC-3.3, LIMIT-7.2).
 pub const LIMIT_QCC_MAX_NAME: usize = 64;
 
+/// FTEQCC's name buffer, `#define MAX_NAME 256` in FTEQCC's `qcc.h`: under an FTEQCC dialect a
+/// name of `FTEQCC_MAX_NAME - 1` bytes or more is "name too long" (FTEF-15.7).
+pub const FTEQCC_MAX_NAME: usize = 256;
+
 /// `TOP_PRIORITY` in `qcc/pr_comp.c`: the loosest binary operator priority.
 const TOP_PRIORITY: u8 = 6;
 
@@ -435,6 +439,17 @@ impl<'a> Parser<'a> {
             self.expected(what);
             false
         }
+    }
+
+    /// Whether `name` is "name too long" to `PR_ParseName`, `strlen(pr_token) >= MAX_NAME-1`:
+    /// id's `MAX_NAME` is 64 (QC-3.3), FTEQCC's 256 (FTEF-15.7).
+    fn too_long(&self, name: &str) -> bool {
+        let max = if self.fteqcc() {
+            FTEQCC_MAX_NAME
+        } else {
+            LIMIT_QCC_MAX_NAME
+        };
+        name.len() >= max.saturating_sub(1)
     }
 
     /// Whether the parser is in an FTEQCC dialect, so the FTEQCC constructs (FTE-2 to FTE-16)
@@ -884,7 +899,7 @@ impl<'a> Parser<'a> {
             self.error(Code::E0201, "not a name");
             return false;
         }
-        if tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1) {
+        if self.too_long(&tok.text) {
             self.error(Code::E0202, "name too long");
         }
         self.bump();
@@ -1970,7 +1985,7 @@ impl<'a> Parser<'a> {
         let (kind, start, long) = (
             tok.kind,
             tok.span.start,
-            tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1),
+            self.too_long(&tok.text),
         );
         let mut tail = Tail::Plain;
         let (node, assignable) = match kind {

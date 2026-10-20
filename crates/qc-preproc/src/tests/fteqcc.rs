@@ -617,3 +617,42 @@ fn reviewer_a_chain_of_macros_expands_to_its_end() {
         assert_eq!(pp.expansions().len(), n);
     }
 }
+
+// spec FTE-23.10: under FTEQCC a `#` right before a macro's name is the macro's expansion with
+// no `#`: an object-like macro, an empty one, a function-like one with its arguments, a
+// built-in constant, and a `#` a macro's body holds
+#[test]
+fn hash_before_a_macro_is_its_expansion() {
+    for (text, want) in [
+        ("#define N 5\nf = #N;\n", "f = 5 ;"),
+        ("#define N \"x\"\nf = #N:#N\n", "f = \"x\" : \"x\""),
+        ("#define E\nf = #E #5\n", "f = # 5"),
+        ("#define M(x) x\nf = #M(#5)\n", "f = # 5"),
+        ("#define M(x) x\nf = #M (7)\n", "f = 7"),
+        ("f = #__LINE__\n", "f = 1"),
+        ("#define A #N\n#define N 5\nf = A\n", "f = 5"),
+    ] {
+        assert_eq!(fte(text), (want.to_owned(), vec![]), "{text:?}");
+    }
+}
+
+// spec FTE-23.10: a `#` stays when the word right after it is no macro FTEQCC expands there:
+// no macro, a space or another byte first, a word longer than the name, a function-like macro
+// with no arguments, or a `#` in the vanilla dialect
+#[test]
+fn hash_before_anything_else_stays() {
+    for (text, want) in [
+        ("f = #U\n", "f = # U"),
+        ("#define N 5\nf = # N\n", "f = # 5"),
+        ("#define N 5\nf = #N!\n", "f = # 5 !"),
+        // The first `#` stays, before a `#`; the second goes.
+        ("#define N 5\nf = ##N\n", "f = # 5"),
+        ("#define N 5\nf = #\"N\"\n", "f = # \"N\""),
+        ("#define M(x) x\nf = #M;\n", "f = # M ;"),
+        ("#define N 5\nf = #5 #-N\n", "f = # 5 # - 5"),
+    ] {
+        assert_eq!(fte(text), (want.to_owned(), vec![]), "{text:?}");
+    }
+    let (_, out) = one("#define N 5\nf = #N;\n");
+    assert_eq!(tokens(&out), "f = # 5 ;");
+}

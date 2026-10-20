@@ -12,7 +12,7 @@
 
 use qc_lexer::{Code, Span};
 
-use super::{LIMIT_QCC_MAX_NAME, Parser, TypeShape, UNARY_PRIORITY, is_reserved_word};
+use super::{Parser, TypeShape, UNARY_PRIORITY, is_reserved_word};
 use crate::kind::SyntaxKind as K;
 
 /// Most parameters an FTEQCC function type may have: `MAX_PARMS+MAX_EXTRA_PARMS` in
@@ -1062,10 +1062,7 @@ impl Parser<'_> {
         self.bump();
         while self.at(K::ColonColon) && self.nth(1).is_some_and(|t| t.kind == K::Name) {
             self.bump();
-            if self
-                .current()
-                .is_some_and(|t| t.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1))
-            {
+            if self.current().is_some_and(|t| self.too_long(&t.text)) {
                 self.error(Code::E0202, "name too long");
             }
             self.bump();

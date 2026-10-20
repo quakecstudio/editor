@@ -631,6 +631,14 @@ declares parameters without names or with `optional` and `__out`.
 - **FTEF-15.6** `T a, *b` declares `b` a pointer, and `struct { ... } a[4], *p;` declares
   variables of an unnamed struct, as C does; each `*` before a declarator's name is a level of
   pointer (FTEF-4.1).
+- **FTEF-15.7** A name is "name too long" (`E0202`) from 255 bytes, not id's 63 (QC-3.3):
+  `QCC_PR_ParseName` (`qcc_pr_lex.c`) reports `if (strlen(pr_token) >= MAX_NAME-1)
+  QCC_PR_ParseError (ERR_NAMETOOLONG, "name too long");` with `#define MAX_NAME 256` in
+  `qcc.h`. So a name of 254 bytes is accepted in a declaration, after `#number:`, in an
+  expression and after `::`, and one of 255 is the error; the pinned FTEQCC, built by
+  `cargo xtask oracles build`, gives the same for `float n...;`, `void() f = #5:n...;` and
+  `x = n...;` in a body, at 254 and 255 bytes. The name after a lone `:` is no
+  `QCC_PR_ParseName` (FTE-23.6), so it has no limit. The vanilla dialect keeps QC-3.3.
 
 ## FTEF-16 Statements and expressions
 
