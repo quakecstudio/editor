@@ -352,7 +352,8 @@ impl TokenStream {
     /// and lexical errors are those of the text from there. The text is lexed again only as far
     /// as a token of the first lexing that the new lexing reaches as that one did
     /// ([`relex_window`]), so a file of many such uses is not lexed again whole for each.
-    fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) {
+    /// Returns how many bytes were lexed again.
+    fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) -> usize {
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         let before = next.checked_sub(1).and_then(|last| self.tokens.get(last));
         let gap_start = before.map_or(0, |t| t.span.end);
@@ -364,7 +365,7 @@ impl TokenStream {
         let read = self.pos.min(next);
         self.pos = next;
         if clean {
-            return;
+            return 0;
         }
         let window = (next..self.tokens.len())
             .take(RESYNC_TRIES)
@@ -414,25 +415,32 @@ impl TokenStream {
                 self.tokens.splice(next..kept, tokens);
             }
         }
-        let (before, after): (Vec<_>, Vec<_>) = std::mem::take(&mut self.diagnostics)
-            .into_iter()
-            .filter(|d| d.span.start < offset || d.span.start >= resumed)
-            .partition(|d| d.span.start < offset);
-        self.diagnostics = before;
+        // The first lexing's errors before `offset` and from the kept token on stand; those
+        // between are the new lexing's.
+        let old = std::mem::take(&mut self.diagnostics);
+        let after: Vec<_> = old
+            .iter()
+            .filter(|d| d.span.start >= resumed)
+            .cloned()
+            .collect();
+        self.diagnostics = old.into_iter().filter(|d| d.span.start < offset).collect();
         self.diagnostics
             .extend(rest.diagnostics.into_iter().map(|mut d| {
                 d.span = shift(d.span);
                 d
             }));
         self.diagnostics.extend(after);
+        resumed.min(text.len()).saturating_sub(offset)
     }
 
     /// The text from `offset` to the token `kept` of the first lexing, lexed again, when lexing
     /// the whole text from `offset` would reach that token as the first lexing did, so the
     /// tokens from it on stand: the new tokens end before it with only white space after them,
     /// none is a string (which may join the next, QC-13) or a `#` that may start a directive
-    /// (whose `#warning` text is read raw, FTEF-14.3), nor is the kept token a string, and no
-    /// lexical error runs to it.
+    /// (whose `#warning` text is read raw, FTEF-14.3), nor is the kept token a string. A
+    /// lexical error then needs no check of its own: one in a token ends with the token, and
+    /// one outside any token (an unclosed comment, a stray byte) is no white space after the
+    /// last token, so none runs on into the kept token.
     fn relex_window(
         &self,
         text: &[u8],
@@ -457,8 +465,7 @@ impl TokenStream {
             && !lexed
                 .tokens
                 .iter()
-                .any(|t| t.kind == TokenKind::Punct(Punct::Hash) && t.line_start)
-            && lexed.diagnostics.iter().all(|d| d.span.end < window.len());
+                .any(|t| t.kind == TokenKind::Punct(Punct::Hash) && t.line_start);
         lands.then_some(lexed)
     }
 }

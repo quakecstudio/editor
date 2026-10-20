@@ -806,12 +806,31 @@ fn whole_rest(
     }
 }
 
+/// Whether `offset` is inside a line that starts with `#`, before its line break. No use's `)`
+/// and no `#define`'s line ends there, so reading never goes on there, and the text after it, a
+/// `#warning`'s raw text among it, is not lexed as the rest of a line.
+fn in_directive_line(text: &[u8], offset: usize) -> bool {
+    let line_start = text
+        .get(..offset)
+        .and_then(|before| before.iter().rposition(|&b| b == b'\n'))
+        .map_or(0, |at| at.saturating_add(1));
+    let in_line = text.get(offset).is_some_and(|&b| b != b'\n');
+    in_line
+        && text
+            .get(line_start..offset)
+            .and_then(|line| line.iter().find(|&&b| !qc_lexer::is_whitespace(b)))
+            == Some(&b'#')
+}
+
 /// Each reading on of `text` at `offset` and then at `second`, under each dialect, with reading
 /// first at the start or right at `offset`, and what lexing the whole rest would give: the
 /// first difference, if any.
 fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<String> {
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         let stream = crate::TokenStream::lex(text, dialect);
+        if in_directive_line(text, offset) {
+            continue;
+        }
         let before = stream.tokens.partition_point(|t| t.span.start < offset);
         let whole = whole_rest(&stream, text, offset, dialect);
         let shown = String::from_utf8_lossy(text).into_owned();
@@ -824,7 +843,11 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
             if read_on(&read) != read_on(&whole) {
                 return Some(format!("{shown:?} at {offset} from {start}, {dialect:?}"));
             }
-            // Reading on again, further on, from text read on once already.
+            // Reading on again, further on, from text read on once already: reading goes on
+            // after a use's `)`, which stands after where reading last went on.
+            if second <= offset || in_directive_line(text, second) {
+                continue;
+            }
             let again = whole_rest(&read, text, second, dialect);
             read.resume_at(text, second, dialect);
             if read_on(&read) != read_on(&again) {
@@ -837,18 +860,41 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
     None
 }
 
+/// Reading `text`, lexed under FTEQCC, on at `offset`: the bytes lexed again, the tokens the
+/// stream then holds and its lexical errors.
+fn relexed(text: &str, offset: usize) -> (usize, usize, usize) {
+    let mut stream = crate::TokenStream::lex(text.as_bytes(), Dialect::Fteqcc);
+    let bytes = stream.resume_at(text.as_bytes(), offset, Dialect::Fteqcc);
+    (bytes, stream.tokens.len(), stream.diagnostics.len())
+}
+
+// spec FTEF-14.22: the text is lexed again only as far as the next token of the first lexing
+// the new lexing reaches as that one did, and not at all after white space, the new tokens taking
+// places already read
+#[test]
+fn reading_on_lexes_again_only_as_far_as_it_must() {
+    // Only white space before the offset: nothing is lexed again.
+    assert_eq!(relexed("a b", 2), (0, 2, 0));
+    assert_eq!(relexed("a  b", 2), (0, 2, 0));
+    // A comment stood across the offset: `*/ ` is lexed again, its two tokens in the places of
+    // `M` and `(`.
+    assert_eq!(relexed("M(/*)*/ x) y", 5), (3, 5, 0));
+    // A token at a line's start in the text lexed again.
+    assert_eq!(relexed("a/*)\nq*/ b", 4), (5, 5, 0));
+    // A lexical error before the end of the text lexed again.
+    assert_eq!(relexed("a/*)\"\n*/ b", 4), (5, 5, 1));
+    // An error the first lexing found at the offset, after a comment, is found once: lexed
+    // again from there, or kept with the token it is in.
+    assert_eq!(relexed("/**//*", 4), (2, 0, 1));
+    let long = format!("/**/{}", "n".repeat(3000));
+    assert_eq!(relexed(&long, 4), (0, 1, 1));
+}
+
 // spec FTEF-14.22: reading on inside a comment before `warning` reads the name, not the raw text
 // a `#warning` would take, after it
 #[test]
 fn reading_on_reads_a_word_after_a_comment_whole() {
-    for (text, offset) in [
-        (&b"#/* */warning x"[..], 3),
-        (
-            b"#/* */warning x
-y",
-            2,
-        ),
-    ] {
+    for (text, offset) in [(&b"#/* */warning x"[..], 3), (b"#/* */warning x\ny", 2)] {
         assert_eq!(reading_on_differs(text, offset, offset), None);
     }
 }
