@@ -675,8 +675,9 @@ impl Builtin {
     /// The engine name an FTEQCC builtin initialiser binds: the name after `#number:` or `:`
     /// (FTE-17.4, FTE-17.5), or the value of the strings after `#` or `:` (FTE-17.5), joined
     /// as FTEQCC's lexer joins adjacent strings and their escapes read as it reads them
-    /// (FTE-23.5); an empty string names nothing, so the name after it is the one. The name is
-    /// kept to the 255 bytes of FTEQCC's `fname` (FTE-23.6).
+    /// (FTE-23.5), up to the first NUL byte; an empty string names nothing, so the name after it
+    /// is the one. The name is kept to the 255 bytes of FTEQCC's `fname` (FTE-23.6), each byte
+    /// one `char` (Latin-1), as FTEQCC compares names byte for byte.
     #[must_use]
     pub fn engine_name(&self) -> Option<String> {
         let mut joined = Vec::new();
@@ -695,24 +696,21 @@ impl Builtin {
                         joined.extend_from_slice(bytes);
                     }
                 }
-                K::Name if name.is_none() => name = Some(token),
+                K::Name => name = Some(token),
                 _ => {}
             }
         }
-        if joined.is_empty() {
-            let name = name?;
-            let text = name.text();
-            return Some(
-                text.get(..FTEQCC_MAX_ENGINE_NAME)
-                    .unwrap_or(text)
-                    .iter()
-                    .copied()
-                    .map(char::from)
-                    .collect(),
-            );
+        // FTE-23.6: `QC_strlcpy` copies a C string, which ends at its first NUL.
+        if let Some(end) = joined.iter().position(|&b| b == 0) {
+            joined.truncate(end);
         }
-        joined.truncate(FTEQCC_MAX_ENGINE_NAME);
-        Some(String::from_utf8_lossy(&joined).into_owned())
+        let bytes = if joined.is_empty() {
+            name?.text().to_vec()
+        } else {
+            joined
+        };
+        let kept = bytes.get(..FTEQCC_MAX_ENGINE_NAME).unwrap_or(&bytes);
+        Some(kept.iter().copied().map(char::from).collect())
     }
 }
 

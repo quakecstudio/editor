@@ -167,3 +167,17 @@ fn engine_names_keep_255_bytes() {
         Some("s".repeat(254))
     );
 }
+
+// spec FTE-23.6: a string's name ends at its first NUL byte, so one that starts with it names
+// nothing and takes the name after `:`; a name keeps its bytes, each one `char`
+#[test]
+fn engine_names_end_at_a_nul_and_keep_their_bytes() {
+    let name = |n: &str| (None, Some(n.to_owned()));
+    assert_eq!(binding(r#"#"ab\x00cd""#), name("ab"));
+    assert_eq!(binding(r#"#"ab" "\x00cd""#), name("ab"));
+    assert_eq!(binding(r#"#"\x00":ex_b"#), name("ex_b"));
+    assert_eq!(binding(r#"#"\x00" "cd":ex_b"#), name("ex_b"));
+    assert_eq!(binding(r#"#"\x00""#), (None, None));
+    assert_eq!(binding(r#"#"\bab""#), name("\u{e1}\u{e2}"));
+    assert_eq!(binding(r#"#"\bcd""#), name("\u{e3}\u{e4}"));
+}

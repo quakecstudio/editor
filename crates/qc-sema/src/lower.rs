@@ -157,7 +157,32 @@ pub enum LiteralValue {
     Text(String),
 }
 
+/// The number and engine name of a builtin function FTEQCC makes (FTE-23.7): it reuses a
+/// function only for a builtin with both the same.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BuiltinFunction {
+    /// The `binum`.
+    pub number: i32,
+    /// The engine name, or the definition's own name when the initialiser gives none.
+    pub name: String,
+}
+
 impl LiteralValue {
+    /// The builtin function FTEQCC makes for this value initialising a definition named
+    /// `definition`, if it is a builtin: `QCC_PR_GenerateBuiltinFunction(def.sym, binum,
+    /// *fname?fname:def.sym->name)` names it after the definition when it reads no engine name
+    /// (FTE-23.7).
+    #[must_use]
+    pub fn builtin_function(&self, definition: &str) -> Option<BuiltinFunction> {
+        let Self::Builtin { number, name } = self else {
+            return None;
+        };
+        Some(BuiltinFunction {
+            number: *number,
+            name: name.clone().unwrap_or_else(|| definition.to_owned()),
+        })
+    }
+
     /// The value of an initialiser under FTEQCC: a literal's, or else its text (FTEF-17.10).
     fn of_fteqcc(init: Option<&ast::Initializer>) -> Option<Self> {
         let init = init?;
@@ -166,13 +191,18 @@ impl LiteralValue {
             ast::Initializer::Body(_) => None,
             ast::Initializer::Builtin(builtin) => {
                 // FTE-23.7: a builtin is the `binum` FTEQCC binds (FTE-17.6), 0 when it reads
-                // an engine name in place of the number, and its engine name. One FTEQCC
-                // binds no number for is an error, compared by its text.
+                // a string or name in place of the number (FTE-17.5), and its engine name. One
+                // FTEQCC binds no number for, or reads neither for, is an error, compared by
+                // its text.
+                let in_place_of_number = builtin
+                    .syntax()
+                    .child_tokens()
+                    .any(|t| matches!(t.kind(), SyntaxKind::StringLit | SyntaxKind::Name));
                 let number = match builtin.number() {
                     Some(token) => {
                         qc_syntax::builtin_binum(&token.text_lossless(), qc_syntax::Dialect::Fteqcc)
                     }
-                    None => Some(0),
+                    None => in_place_of_number.then_some(0),
                 };
                 Some(number.map_or_else(
                     || Self::Text(token_text(init.syntax())),

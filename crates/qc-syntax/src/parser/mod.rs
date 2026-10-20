@@ -995,12 +995,15 @@ impl<'a> Parser<'a> {
         match number {
             // FTE-17.5: FTEQCC takes the engine name from a string after `#` or `:`, or from a
             // name after `:`; after `#` its lexer reads a name as a macro use. FTE-23.5: its
-            // lexer joins adjacent strings into one, and an empty one names nothing.
+            // lexer joins adjacent strings into one, and one empty up to its first NUL names
+            // nothing.
             Some((K::StringLit, _)) if self.fteqcc() => {
+                let mut first = None;
                 while self.at(K::StringLit) {
-                    named |= self.current().is_some_and(|t| !t.text.is_empty());
+                    first = first.or_else(|| self.current().and_then(|t| t.text.chars().next()));
                     self.bump();
                 }
+                named = first.is_some_and(|c| c != '\0');
             }
             Some((K::Name, _)) if colon => {
                 named = true;

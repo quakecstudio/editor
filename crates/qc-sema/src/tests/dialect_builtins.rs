@@ -11,6 +11,7 @@ use qc_syntax::Dialect;
 use super::{fte_index_of, index_of};
 use crate::db::Db;
 use crate::expand::ModuleInput;
+use crate::lower::{LiteralValue, lower_file};
 use crate::symbol::FileId;
 
 /// The error codes of `source` resolved under the FTEQCC dialect.
@@ -37,6 +38,9 @@ fn builtins_compare_by_number_and_engine_name() {
         ("#5:ex_a", "#6:ex_a", true),
         ("#5:ex_a", ":ex_a", true),
         (":ex_a", ":ex_b", true),
+        // FTE-23.6: names compare byte for byte and end at a NUL.
+        ("#\"\\bab\"", "#\"\\bcd\"", true),
+        ("#\"ab\\x00cd\"", ":ab", false),
         ("#5", "#5:f", false),
         ("#5:f", "#5", false),
         ("#0", ":f", false),
@@ -153,6 +157,35 @@ fn unbound_builtins_and_vanilla_compare_as_before() {
         fte_errors("void() f = #16d;\nvoid() f = #17d;\n"),
         [Code::E0206]
     );
+    // A `#` before neither a number nor a string binds nothing, and is no builtin 0.
+    for (source, literal) in [
+        ("void() f = #;\n", None),
+        (
+            "void() f = #\"\";\n",
+            Some(LiteralValue::Builtin {
+                number: 0,
+                name: None,
+            }),
+        ),
+        (
+            "void() f = :ex_a;\n",
+            Some(LiteralValue::Builtin {
+                number: 0,
+                name: Some("ex_a".to_owned()),
+            }),
+        ),
+    ] {
+        let parse = qc_syntax::parse_with(source.as_bytes(), Dialect::Fteqcc);
+        let decls = lower_file(&parse, Dialect::Fteqcc).decls;
+        let lowered = decls[0].literal.clone();
+        match literal {
+            None => assert!(
+                matches!(lowered, Some(LiteralValue::Text(_))),
+                "{source}: {lowered:?}"
+            ),
+            Some(literal) => assert_eq!(lowered, Some(literal), "{source}"),
+        }
+    }
     let vanilla: Vec<Code> = index_of("void() f = #5;\nvoid() f = #5;\n")
         .diagnostics
         .iter()

@@ -1451,6 +1451,8 @@ fn hex_numbers_with_a_fraction_are_hex_floats() {
         (b"0x.4", 0.25),
         (b"0x1.0f", 1.0),
         (b"0x1.5d", 1.312_5),
+        // The whole part is read in full, not kept to 64 bits.
+        (b"0x10000000000000005.0", 1.844_674_4e19),
     ] {
         assert_eq!(
             fte_kinds(source),
