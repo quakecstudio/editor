@@ -240,6 +240,28 @@ fn self_include_stops_at_the_depth_limit() {
     );
 }
 
+// spec PRJ-6.3: a chain of distinct files, each bringing in the next by `#includelist`, is
+// read to PRJ_MAX_DEPTH files at once and no further, however long it is
+// spec QCD-5.8: the file past the limit is E0408, reported once
+#[test]
+fn reviewer_a_long_includelist_chain_stops_at_the_depth_limit() {
+    let n = 5000;
+    let names: Vec<String> = (0..=n).map(|i| format!("b{i}.qc")).collect();
+    let texts: Vec<String> = (0..n)
+        .map(|i| format!("#includelist\nb{}.qc\n#endlist\n", i + 1))
+        .collect();
+    let mut files: Vec<(&str, &str)> = names
+        .iter()
+        .zip(&texts)
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
+    files.push((names[n].as_str(), ""));
+    let graph = source("#includelist\nb0.qc\n#endlist\n", &files);
+    assert_eq!(graph.files.len(), PRJ_MAX_DEPTH);
+    let last = PRJ_MAX_DEPTH - 2;
+    assert_eq!(diags(&graph), [format!("E0408 b{last}.qc:2")]);
+}
+
 // spec PRJ-6.3: a file being read is read again when brought in, as FTEQCC and cpp do
 #[test]
 fn reentry_reads_the_file_again() {

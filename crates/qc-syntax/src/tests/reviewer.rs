@@ -126,3 +126,96 @@ fn reviewer_fteqcc_parse_is_deterministic() {
         parse_with(source, Dialect::Fteqcc)
     );
 }
+
+/// Checks that `source`, parsed under the FTEQCC profile, reports "nesting too deep", keeps its
+/// tree within 4 x `QC_MAX_NESTING` levels and gives back every byte.
+fn assert_fte_bounded(name: &str, source: &str) {
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert!(
+        parsed.errors().any(|d| d.code == Code::E0509),
+        "{name}: no E0509"
+    );
+    assert!(
+        tree_depth(&parsed.syntax()) <= QC_MAX_NESTING.saturating_mul(4),
+        "{name}: tree too deep"
+    );
+    assert_eq!(parsed.syntax().text(), source.as_bytes(), "{name}");
+}
+
+// spec QC-27.15: the FTEQCC aggregates nest as declarations do: a struct or union inside a
+// struct or union, 100000 deep, closed or left open, stops at the limit with every byte kept
+#[test]
+fn reviewer_fteqcc_aggregate_nesting_is_bounded() {
+    let n = 100_000;
+    for (name, source) in [
+        (
+            "struct",
+            format!("{}float x;{};\n", "struct { ".repeat(n), "} s;".repeat(n)),
+        ),
+        (
+            "union",
+            format!("{}float x;{};\n", "union { ".repeat(n), "} s;".repeat(n)),
+        ),
+        ("unclosed struct", "struct { ".repeat(n)),
+    ] {
+        assert_fte_bounded(name, &source);
+    }
+}
+
+// spec QC-27.15: an FTEQCC initialiser list `{ ... }` inside another, 100000 deep, is a level
+// each
+#[test]
+fn reviewer_fteqcc_initialiser_lists_are_bounded() {
+    let n = 100_000;
+    assert_fte_bounded(
+        "global list",
+        &format!("float x[1] = {}1{};\n", "{".repeat(n), "}".repeat(n)),
+    );
+}
+
+// spec QC-27.15: under the FTEQCC profile the operators that nest to the right or after their
+// operand are bounded too: `?:` nested in its middle, `=` and `+=` chains, `~`, a prefix `*`
+// and a postfix `++` chain, each 100000 deep
+#[test]
+fn reviewer_fteqcc_right_nesting_chains_are_bounded() {
+    let n = 100_000;
+    for (name, body) in [
+        (
+            "?: middle",
+            format!("a = {}1{};", "a ? ".repeat(n), " : 1".repeat(n)),
+        ),
+        ("= chain", format!("{}1;", "a = ".repeat(n))),
+        ("+= chain", format!("{}1;", "a += ".repeat(n))),
+        ("~", format!("a = {}a;", "~".repeat(n))),
+        ("prefix *", format!("a = {}a;", "*".repeat(n))),
+        ("postfix ++", format!("a{};", "++".repeat(n))),
+    ] {
+        let source = Program {
+            body: &body,
+            ..Program::default()
+        }
+        .source();
+        assert_fte_bounded(name, &source);
+    }
+}
+
+// spec FTEF-18.26: the expressions FTEQCC reads outside a function body, an enum value, a
+// parameter's default and a global's initialiser, count prefix operators and parentheses
+// towards the limit like a body's
+#[test]
+fn reviewer_fteqcc_file_scope_expressions_are_bounded() {
+    let n = 100_000;
+    for (name, source) in [
+        (
+            "enum value",
+            format!("enum {{ x = {}1{} }};\n", "(".repeat(n), ")".repeat(n)),
+        ),
+        (
+            "parameter default",
+            format!("void(float x = {}1{}) g;\n", "(".repeat(n), ")".repeat(n)),
+        ),
+        ("global -", format!("float x = {}1;\n", "-".repeat(n))),
+    ] {
+        assert_fte_bounded(name, &source);
+    }
+}

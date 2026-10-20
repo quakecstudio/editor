@@ -568,3 +568,52 @@ fn reviewer_long_logical_chains() {
         assert!(taken == "yes" || taken == "no", "{taken}");
     }
 }
+
+// spec FTEF-14.10: of three blocks left open at the end of a file, the FTEQCC profile reports
+// only the one whose side is being skipped, where the vanilla profile reports each (QC-9.12)
+#[test]
+fn reviewer_open_blocks_at_the_end_of_a_file() {
+    let text = "#ifndef X\n#ifndef Y\na\n#ifdef Z\nb\n";
+    let (_, vanilla) = one(text);
+    assert_eq!(tokens(&vanilla), "a");
+    assert_eq!(codes(&vanilla), vec![Code::E0110; 3]);
+    let (toks, errs) = fte(text);
+    assert_eq!((toks.as_str(), errs), ("a", vec![Code::E0110]));
+}
+
+// spec QC-9.6: conditional blocks nest 100000 deep under both profiles: the innermost text is
+// kept or dropped by every block around it, and each `#endif` closes one
+#[test]
+fn reviewer_deep_conditionals_nest_and_close() {
+    let n = 100_000;
+    for (open, kept) in [("#ifndef X\n", "a"), ("#ifdef X\n", "")] {
+        let text = format!("{}a\n{}b\n", open.repeat(n), "#endif\n".repeat(n));
+        let (_, vanilla) = one(&text);
+        let (toks, errs) = fte(&text);
+        let expected = if kept.is_empty() { "b" } else { "a b" };
+        assert_eq!(tokens(&vanilla), expected);
+        assert_eq!(codes(&vanilla), vec![]);
+        assert_eq!((toks.as_str(), errs), (expected, vec![]));
+    }
+}
+
+// spec QC-9.4: a chain of 1000 object-like macros, each the name of the one before, is
+// rescanned to its end, one expansion each, under both profiles
+#[test]
+fn reviewer_a_chain_of_macros_expands_to_its_end() {
+    let n = 1000;
+    let mut text = "#define M0 1\n".to_owned();
+    for i in 1..n {
+        text.push_str(&format!("#define M{i} M{}\n", i - 1));
+    }
+    text.push_str(&format!("M{}\n", n - 1));
+    for dialect in [qc_lexer::Dialect::Vanilla, qc_lexer::Dialect::Fteqcc] {
+        let mut loader = MemoryLoader::new();
+        loader.insert("a.qc", text.as_bytes());
+        let mut pp = Preprocessor::new(loader).with_dialect(dialect);
+        let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+        assert_eq!(tokens(&out), "1");
+        assert_eq!(codes(&out), vec![]);
+        assert_eq!(pp.expansions().len(), n);
+    }
+}
