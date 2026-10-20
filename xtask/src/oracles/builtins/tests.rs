@@ -140,6 +140,29 @@ fn the_cross_product_holds_the_expansion_families() {
     assert_eq!(super::EXPANSION_STATEMENTS.len(), 18);
 }
 
+// spec FTE-23.14: under FTEQCC the cross product has the macro-text family: separators in an
+// argument's character constant, comment or string, stored bodies, parameter lists, variadic
+// macros, built-in constants' lines and `__FILE__`, and functions with no body
+#[test]
+fn the_cross_product_holds_the_macro_text_family() {
+    let cases = cases();
+    let family = super::macro_text_cases();
+    for source in &family {
+        assert!(cases.contains(&fte(source)), "{source:?}");
+    }
+    assert_eq!(family.len(), 174);
+    for source in [
+        "#define E(n) :n\nvoid() f = E(',');\n",
+        "#define M(x) x\n#define K M /**/ (#5)\nvoid() f = K;\n",
+        "#define E(n, n) n\nvoid() f = E(#5, 6);\n",
+        "#define V(...) :__VA_COUNT__\nvoid() f = V(a, b);\n",
+        "void() f = #5;\nvoid() g;\n",
+        "#pragma file(ex_a:b)\nvoid() f = :__FILE__;\n",
+    ] {
+        assert!(family.iter().any(|s| s == source), "{source:?}");
+    }
+}
+
 // spec FTE-23.14: an outcome is written and read back in one form; any other text is refused
 #[test]
 fn outcomes_round_trip() {

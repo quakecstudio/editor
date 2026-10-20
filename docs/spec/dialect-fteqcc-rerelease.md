@@ -806,7 +806,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   macros (FTEF-14.17), and uses whose `(` or arguments are past a line break, a comment, the end
   of an expansion or the end of the file (FTEF-14.29), arguments beside `##` and built-in
   constants in arguments (FTEF-14.14, FTEF-14.20); 18 statements of `g` that a paste, a
-  string, a nested or an unfinished macro writes; 160 programs of the macro-text family, whose
+  string, a nested or an unfinished macro writes; 174 programs of the macro-text family, whose
   macros FTEQCC reads as text where a token model would not: a `,`, `(` or `)` in an argument's
   character constant, `/* */` or `//` comment or string, against 15 uses each, strings that end in
   `\`, and line breaks and `\` in arguments (FTEF-14.22); built-in constants an argument copies
@@ -816,14 +816,15 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   (FTEF-14.24); strings and numbers after `#` and `##` (FTEF-14.25); parameter lists with
   duplicate, empty, spaced and misplaced names (FTEF-14.23); `__VA_COUNT__`, `,##__VA_ARGS__`
   and empty variadic arguments (FTEF-14.26); functions with no body, `noref` or not and
-  referred to or not (FTEF-17.11); and declarators ended by a `,` (FTEF-15.8); and in both
-  dialects names of 62, 63, 70, 254,
-  255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside
+  referred to or not (FTEF-17.11); declarators ended by a `,` (FTEF-15.8); and `__FILE__` under
+  12 `#pragma file` names and through two macros (FTEF-14.32); and in both dialects names of 62,
+  63, 70, 254, 255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7).
+  Numbers outside
   -2^31 to 2^31 - 1 are left out, since C leaves their conversion to `int` undefined (QC-13.10).
   Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
   makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
   which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
-  (macOS arm64) made 11451 cases: 11368 agree; 68 differ as QC-27.9 says, the vanilla profile
+  (macOS arm64) made 11465 cases: 11382 agree; 68 differ as QC-27.9 says, the vanilla profile
   refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
   13 as FTE-23.11 says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the
   two strings FTEQCC never finishes.

@@ -720,15 +720,9 @@ profile the preprocessor reads them as FTEQCC does.
   macro's own chunk: so with `#define K(x) x`, `K(#__LINE__)` is `#` and the line number touching,
   a builtin, where the line number of a built-in constant read anywhere else is a chunk of its own
   (FTEF-14.17). Other macros in an argument are expanded only when the expansion is read.
-- **FTEF-14.21** A deliberate divergence: a built-in constant's string token holds the bytes of
-  its text, here the file's name, and its spelling is that text with `"`, `\` and a line break
-  escaped, so it reads back as those bytes; a `#param` of an argument that holds it stringifies
-  that spelling (FTEF-14.31). `QCC_PR_CheckBuiltinCompConst` escapes nothing: for `__FILE__` it
-  writes `QC_snprintfz(retbuf, retbufsize, "\"%s\"", s_filen);` and reads that text again, so a
-  `\` in the name starts an escape, and it ends the name at its first `:` (`erk = strchr(retbuf,
-  ':'); if (erk) { erk[0] = '\"'; erk[1] = 0; }`). The preprocessor's name is the host's path,
-  whose separator is `\` on Windows, not the name as `progs.src` wrote it, so this profile keeps
-  the name whole and never reads a separator as an escape.
+- **FTEF-14.21** **Withdrawn** (P2-87, #504): it said this profile keeps a file's name whole in
+  `__FILE__`, escaping it, a deliberate divergence while the name was the host's path. The name
+  is now FTEQCC's, written as FTEQCC writes it. Replaced by FTEF-14.32.
 - **FTEF-14.22** A function-like macro's arguments are found in the text after its `(`, which
   `QCC_PR_ExpandPreProcessorMacro` reads a byte at a time: after the white space and comments
   that follow the `(` (`QCC_PR_LexWhitespace(false)`), a `"` string is passed over (`do {
@@ -866,6 +860,32 @@ profile the preprocessor reads them as FTEQCC does.
   "#", 1);` then `qcc_token`), so `#define S(a) # 5` is `#5`, a builtin; a `#` at the end of the
   body writes nothing (`if (!pr_file_p) break;`). An argument that comes from another expansion's
   text is that text as the expansion wrote it, white space and all.
+- **FTEF-14.32** A built-in constant (FTEF-14.7) is the text `QCC_PR_CheckBuiltinCompConst`
+  writes for it, read as a chunk of its own (FTEF-14.17): `0i` for `__NULL__`, the line (`%i`)
+  for `__LINE__` and in quotes for `__LINESTR__` (FTEF-14.27), `""` for the constants this
+  profile does not know, and for `__FILE__` `QC_snprintfz(retbuf, retbufsize, "\"%s\"",
+  s_filen);` in `char retbuf[256]`, so at most 255 bytes, ended at its first `:` (`erk =
+  strchr(retbuf, ':'); if (erk) { erk[0] = '\"'; erk[1] = 0; }`) with nothing in the name
+  escaped: a `\` in the name starts an escape, a `"` ends the string, a line break is "newline
+  inside quote" (`E0102`) and a name of 254 bytes or more leaves the string open. Its lexical
+  errors are reported at the constant's name. `s_filen` is the name of the file being read: for
+  a compiled file the name it is compiled by (`QCC_PR_CompileFile (char *string, char
+  *filename)`), which the preprocessor takes as its caller gives the path, so a caller gives it
+  as `progs.src` wrote it; for an `#include`d file the bytes between its quotes joined by
+  `QCC_JoinPaths` to the compiled file's name, after its last `/` or `\`, or alone when they
+  start with one (`QCC_FindBestInclude(msg, compilingfile, false);`), so a file another included
+  file includes is named beside the compiled file; and from a `#pragma file(NAME)` or `#pragma
+  file NAME` (any case of `file`) to the end of that file, NAME (`s_filen = e =
+  qccHunkAlloc(strlen(m)+1);`), the pragma's text being bytes to the end of its line, read from
+  after a space or tab or from a `(`, its trailing white space dropped and, from a `(`, ended at
+  the first `)`, and never lexed as code. In a macro's chunk `s_filen` is the file's name, the
+  line and the macro's name joined by `:` (`QC_snprintfz(p, b, "%s:%i:%s", ...)`), which the
+  `:` cut ends at the file's name. So with `progs.src` listing `t.qc`, `void() f = :__FILE__;`
+  binds the name `t.qc`, after `#pragma file(ex_a:b)` `ex_a`, and after `#pragma file(e\\x)`
+  `e\x`; with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the
+  pinned FTEQCC names them `src/a.qc`, `src/x/b.qh` and `src/c.qh`. The semantic model gives the
+  preprocessor each file's path as its input names it, the `progs.src` entry only where the
+  caller makes it so (P2-94).
 
 ## FTEF-15 Declarations
 

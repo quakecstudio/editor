@@ -18,11 +18,11 @@
 
 use std::ops::Range;
 
-use qc_lexer::{Code, Span, Token, TokenKind};
+use qc_lexer::{Code, Span, Token, TokenKind, lex_with};
 
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Loader, Macro, PpToken, Preprocessor, Run, TokenStream, builtin_value, cond, quote_bytes,
+    Item, Loader, Macro, PpToken, Preprocessor, Run, TokenStream, cond, quote_bytes,
 };
 
 /// The most parameters an FTEQCC macro has: `MAXCONSTANTPARAMS` in FTEQCC's `qcc.h`,
@@ -255,10 +255,7 @@ impl ChunkReader {
             };
             let spelling = (!verbatim).then(|| {
                 let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
-                match &token.kind {
-                    TokenKind::String(value) => quote_bytes(value),
-                    _ => String::from_utf8_lossy(bytes).into_owned(),
-                }
+                made_spelling(&token.kind, bytes)
             });
             let detached = std::mem::take(&mut self.detached);
             let follows = index
@@ -285,6 +282,96 @@ impl ChunkReader {
     pub(crate) fn detach(&mut self) {
         self.detached = true;
     }
+}
+
+/// The spelling of a token of the kind `kind` whose text `bytes` an expansion made (QC-9.16):
+/// a string's value as a literal that reads back as it ([`quote_bytes`]), or the text.
+fn made_spelling(kind: &TokenKind, bytes: &[u8]) -> String {
+    match kind {
+        TokenKind::String(value) => quote_bytes(value),
+        _ => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+/// The size of the buffer `QCC_PR_CheckBuiltinCompConst` writes a built-in constant's text in,
+/// `char retbuf[256]`, of which `QC_snprintfz` fills at most 255 bytes (FTEF-14.32).
+const FTE_BUILTIN_TEXT: usize = 256;
+
+/// The text `QCC_PR_CheckBuiltinCompConst` writes for the built-in constant `name`, which FTEQCC
+/// then reads as a chunk of its own (FTEF-14.7, FTEF-14.32), at the line `line` (FTEF-14.27) in
+/// the file named `file`; `None` when `name` is none. `__FILE__` is `"%s"` of the name, kept to
+/// 255 bytes and ended at its first `:` (`erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"';
+/// erk[1] = 0; }`), nothing in it escaped.
+pub(crate) fn builtin_text(name: &[u8], line: u32, file: &[u8]) -> Option<Vec<u8>> {
+    Some(match name {
+        b"__NULL__" => b"0i".to_vec(),
+        b"__FILE__" => {
+            let mut text = Vec::with_capacity(file.len().saturating_add(2));
+            text.push(b'"');
+            text.extend_from_slice(file);
+            text.push(b'"');
+            text.truncate(FTE_BUILTIN_TEXT.saturating_sub(1));
+            if let Some(colon) = text.iter().position(|&b| b == b':') {
+                text.truncate(colon);
+                text.push(b'"');
+            }
+            text
+        }
+        b"__LINE__" => line.to_string().into_bytes(),
+        b"__LINESTR__" => format!("\"{line}\"").into_bytes(),
+        b"__FUNC__" | b"__func__" | b"__TIME__" | b"__DATE__" | b"__QCCVER__" => b"\"\"".to_vec(),
+        b"__RAND__" => b"0".to_vec(),
+        _ => return None,
+    })
+}
+
+/// `QCC_JoinPaths`: `name` after the last `/` or `\` of `base`, or `name` itself when it starts
+/// with one, the name FTEQCC gives an `#include`d file joined to `compilingfile`
+/// (FTEF-14.32).
+pub(crate) fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
+    if name.first().is_some_and(|&b| b == b'/' || b == b'\\') {
+        return name.to_vec();
+    }
+    let dir = base
+        .iter()
+        .rposition(|&b| b == b'/' || b == b'\\')
+        .map_or(0, |last| last.saturating_add(1));
+    let mut joined = base.get(..dir).unwrap_or_default().to_vec();
+    joined.extend_from_slice(name);
+    joined
+}
+
+/// The name a `#pragma file` whose `file` ends at `at` in `text` gives, as `QCC_PR_Precompiler`
+/// reads a pragma's text (FTEF-14.32): after a space or tab, or from a `(`, to the end of the
+/// line, its trailing white space dropped, and within the `(` and the first `)` after it when it
+/// starts with one; `None` when another byte follows `file`, which FTEQCC reads as part of the
+/// pragma's name.
+pub(crate) fn pragma_text(text: &[u8], at: usize) -> Option<Vec<u8>> {
+    let rest = text.get(at..).unwrap_or_default();
+    let line = rest
+        .iter()
+        .position(|&b| b == b'\n' || b == 0)
+        .and_then(|end| rest.get(..end))
+        .unwrap_or(rest);
+    let mut message = match line.first() {
+        None => &[][..],
+        Some(b' ' | b'\t') => line.get(1..).unwrap_or_default(),
+        Some(b'(') => line,
+        Some(_) => return None,
+    };
+    while let Some((&last, before)) = message.split_last()
+        && cond::fte_white(last)
+    {
+        message = before;
+    }
+    if let Some(inside) = message.strip_prefix(b"(") {
+        message = inside
+            .iter()
+            .position(|&b| b == b')')
+            .and_then(|close| inside.get(..close))
+            .unwrap_or(inside);
+    }
+    Some(message.to_vec())
 }
 
 /// The byte at `at` of a text FTEQCC reads, `None` at its end, which a NUL is.
@@ -1097,31 +1184,7 @@ impl<L: Loader> Preprocessor<L> {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
-            let line = match item.chunk_end {
-                Some(_) => run.chunks.last().map(|chunk| chunk.line),
-                None => self.sources.line(item.tok.span),
-            };
-            let Some((kind, spelling)) = builtin_value(name, line.unwrap_or(0), &run.path) else {
-                return Some(item);
-            };
-            if item.chunk_end.is_some()
-                && let Some(chunk) = run.chunks.last_mut()
-            {
-                chunk.detach();
-            }
-            let tok = PpToken {
-                kind,
-                span: item.tok.span,
-                expansion: item.tok.expansion,
-                spelling: Some(spelling),
-                follows: None,
-            };
-            run.pending.push(Item {
-                tok,
-                hide: item.hide,
-                chunk_end: None,
-            });
-            return None;
+            return self.fte_builtin(run, item);
         };
         if self.fte_recursion_stops(run, &item, (name, &mac)) {
             return Some(item);
@@ -1155,12 +1218,13 @@ impl<L: Loader> Preprocessor<L> {
         let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
         let written = match (&use_.call, &mac.params) {
             (Some(call), Some(params)) => {
-                let path = run.path.clone();
+                let file = run
+                    .cursors
+                    .last()
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
                 let line = use_.argument_line;
-                let builtin = move |word: &[u8]| {
-                    let word = std::str::from_utf8(word).ok()?;
-                    builtin_value(word, line, &path).map(|(_, spelling)| spelling.into_bytes())
-                };
+                let builtin = move |word: &[u8]| builtin_text(word, line, &file);
                 let writer = Writer {
                     body,
                     params,
@@ -1209,6 +1273,56 @@ impl<L: Loader> Preprocessor<L> {
             consumed: Vec::new(),
             detached: false,
         });
+        None
+    }
+
+    /// The built-in constant the name `item` is, when no macro has its name (FTEF-14.7): the text
+    /// `QCC_PR_CheckBuiltinCompConst` writes for it ([`builtin_text`]), read as a chunk of its
+    /// own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL);`) before the text after the name, so
+    /// its tokens touch nothing beside them (FTEF-14.17), and its lexical errors reported at the
+    /// name (FTEF-14.32). Returns the item when it is none.
+    fn fte_builtin(&self, run: &mut Run, item: Item) -> Option<Item> {
+        let TokenKind::Name(name) = &item.tok.kind else {
+            return Some(item);
+        };
+        let line = match item.chunk_end {
+            Some(_) => run.chunks.last().map(|chunk| chunk.line),
+            None => self.sources.line(item.tok.span),
+        };
+        let file = run.cursors.last().map(|c| c.name.as_slice());
+        let Some(text) = builtin_text(name.as_bytes(), line.unwrap_or(0), file.unwrap_or_default())
+        else {
+            return Some(item);
+        };
+        if item.chunk_end.is_some()
+            && let Some(chunk) = run.chunks.last_mut()
+        {
+            chunk.detach();
+        }
+        let lexed = lex_with(&text, self.dialect);
+        for d in lexed.diagnostics {
+            run.report(d.code, d.message, item.tok.span);
+        }
+        let mut items = Vec::with_capacity(lexed.tokens.len());
+        let mut end = None;
+        for token in lexed.tokens {
+            let bytes = text.get(token.span.range()).unwrap_or_default();
+            let follows = (item.tok.expansion.is_some() && end == Some(token.span.start))
+                .then_some(item.tok.span);
+            end = Some(token.span.end);
+            items.push(Item {
+                tok: PpToken {
+                    spelling: Some(made_spelling(&token.kind, bytes)),
+                    kind: token.kind,
+                    span: item.tok.span,
+                    expansion: item.tok.expansion,
+                    follows,
+                },
+                hide: item.hide.clone(),
+                chunk_end: None,
+            });
+        }
+        run.pending.extend(items.into_iter().rev());
         None
     }
 

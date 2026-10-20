@@ -514,39 +514,121 @@ fn first_token_in(path: &str, text: &str) -> crate::PpToken {
     out.tokens[0].clone()
 }
 
-// spec FTEF-14.21: `__FILE__` is a string of the file's name, whole, its spelling escaping a
-// `"`, a `\` and a line break, so it reads back as the name
-#[test]
-fn file_constant_escapes_its_path() {
-    for (path, spelling) in [
-        ("a\nb.qc", r#""a\nb.qc""#),
-        ("a\"b.qc", r#""a\"b.qc""#),
-        ("a\\b.qc", r#""a\\b.qc""#),
-        ("c:a.qc", r#""c:a.qc""#),
-    ] {
-        let tok = first_token_in(path, "__FILE__\n");
-        assert_eq!(
-            tok.kind,
-            TokenKind::String(path.as_bytes().to_vec()),
-            "{path}"
-        );
-        assert_eq!(tok.spelling.as_deref(), Some(spelling), "{path}");
-        assert_eq!(
-            qc_lexer::fteqcc_string_bytes(spelling.as_bytes()),
-            Some(path.as_bytes().to_vec())
-        );
-    }
+/// The tokens and codes of `text` in the file `path` under FTEQCC.
+fn fte_in(path: &str, text: &str) -> (Vec<TokenKind>, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path, text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    let kinds = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    (kinds, codes(&out))
 }
 
-// spec FTEF-14.21: a `#param` of an argument holding a built-in string stringifies its
-// escaped spelling
+// spec FTEF-14.32: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
+// its first `:`, and `"`, read as a string literal with nothing in the name escaped
 #[test]
-fn a_stringified_file_constant_holds_its_spelling() {
-    let tok = first_token_in(
-        "d\\x\"y.qc",
-        "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n",
+fn file_constant_is_fteqcc_s_text() {
+    let string = |bytes: &[u8]| TokenKind::String(bytes.to_vec());
+    assert_eq!(
+        fte_in("a.qc", "__FILE__\n"),
+        (vec![string(b"a.qc")], vec![])
     );
-    assert_eq!(tok.kind, TokenKind::String(br#""d\\x\"y.qc""#.to_vec()));
+    assert_eq!(fte_in("c:a.qc", "__FILE__\n"), (vec![string(b"c")], vec![]));
+    let bell = qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"").unwrap();
+    assert_eq!(
+        fte_in("a\\b.qc", "__FILE__\n"),
+        (vec![string(&bell)], vec![])
+    );
+    // The line break ends the string, and the rest of the name opens another.
+    assert_eq!(
+        fte_in("a\nb.qc", "__FILE__\n").1,
+        vec![Code::E0102, Code::E0101]
+    );
+    let (kinds, errors) = fte_in("a\"b.qc", "__FILE__\n");
+    assert_eq!(kinds.first(), Some(&string(b"a")));
+    assert!(errors.iter().any(|c| c.is_error()), "{errors:?}");
+    // 253 bytes fit with both quotes; one more leaves the string open.
+    let fits = "n".repeat(253);
+    assert_eq!(
+        fte_in(&fits, "__FILE__\n"),
+        (vec![string(fits.as_bytes())], vec![])
+    );
+    assert_eq!(fte_in(&"n".repeat(254), "__FILE__\n").1, vec![Code::E0101]);
+    // The spelling of the string reads back as its bytes.
+    assert_eq!(
+        first_token_in("a.qc", "__FILE__\n").spelling.as_deref(),
+        Some("\"a.qc\"")
+    );
+}
+
+// spec FTEF-14.32: an argument copies `__FILE__` as its text, which a `#` then writes into a
+// string as it stands
+#[test]
+fn a_stringified_file_constant_holds_its_text() {
+    let tok = first_token_in("dx.qc", "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n");
+    assert_eq!(tok.kind, TokenKind::String(br#""dx.qc""#.to_vec()));
+}
+
+// spec FTEF-14.32: an included file is named by the bytes between its quotes joined to the
+// compiled file's name after its last `/` or `\`, also when another included file includes it,
+// and alone when it starts with `/`; in a macro's chunk the name is the file's
+#[test]
+fn an_included_file_is_named_beside_the_compiled_file() {
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "src/a.qc",
+        "#include \"x/b.qh\"\n#define F __FILE__\nF\n".as_bytes(),
+    );
+    loader.insert("src/x/b.qh", "__FILE__\n#include \"c.qh\"\n".as_bytes());
+    loader.insert("src/x/c.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+            TokenKind::String(b"src/c.qh".to_vec()),
+            TokenKind::String(b"src/a.qc".to_vec()),
+        ]
+    );
+    assert_eq!(
+        crate::fte_macro::join_paths(b"/abs.qh", b"src\\a.qc"),
+        b"/abs.qh"
+    );
+    assert_eq!(
+        crate::fte_macro::join_paths(b"b.qh", b"src\\a.qc"),
+        b"src\\b.qh"
+    );
+    assert_eq!(crate::fte_macro::join_paths(b"b.qh", b"a.qc"), b"b.qh");
+}
+
+// spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
+// case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
+#[test]
+fn pragma_file_names_the_file() {
+    let names = |text: &str| -> Vec<TokenKind> { fte_in("t.qc", text).0 };
+    let string = |bytes: &[u8]| TokenKind::String(bytes.to_vec());
+    assert_eq!(
+        names("__FILE__\n#pragma file(ex_a.qc) junk\n__FILE__\n"),
+        [string(b"t.qc"), string(b"ex_a.qc")]
+    );
+    assert_eq!(names("#pragma FILE  x y \n__FILE__\n"), [string(b" x y")]);
+    assert_eq!(names("#pragma file(n:m)\n__FILE__\n"), [string(b"n")]);
+    assert_eq!(names("#pragma file(open\n__FILE__\n"), [string(b"open")]);
+    assert_eq!(names("#pragma file\n__FILE__\n"), [string(b"")]);
+    assert_eq!(names("#pragma file:x\n__FILE__\n"), [string(b"t.qc")]);
+    // A pragma's text is bytes, so its `\` is no lexical error; the string FTEQCC then reads
+    // takes `\\` as `\`.
+    assert_eq!(
+        fte_in("t.qc", "#pragma file(e\\\\x)\n__FILE__\n"),
+        (vec![string(b"e\\x")], vec![])
+    );
+    assert_eq!(fte_in("t.qc", "#pragma warning 'x\n").1, vec![]);
+    assert_eq!(
+        names("#pragma file(n)\n#define F __FILE__\nF\n"),
+        [string(b"n")]
+    );
 }
 
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one

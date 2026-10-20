@@ -323,6 +323,9 @@ impl TokenStream {
 struct Cursor {
     file: FileId,
     path: PathBuf,
+    /// Under FTEQCC, the file's name as FTEQCC has it, `s_filen`, which `__FILE__` writes
+    /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
+    name: Vec<u8>,
     stream: TokenStream,
     conds: Vec<Cond>,
     skipped: Vec<Span>,
@@ -340,8 +343,9 @@ impl Cursor {
 /// The state of preprocessing one source file of `progs.src`.
 #[derive(Default)]
 struct Run {
-    /// The source file of `progs.src` being preprocessed.
-    path: PathBuf,
+    /// The name of the source file of `progs.src` being preprocessed, as the caller gave it:
+    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.32).
+    unit: Vec<u8>,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
     frames: Vec<String>,
@@ -563,15 +567,19 @@ impl<L: Loader> Preprocessor<L> {
     ///
     /// The loader's error when the file itself cannot be read; a project reports that as
     /// QCD-5.2. Every other problem is a diagnostic in the output.
+    ///
+    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
+    /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
         let file = self.sources.add(path.clone(), bytes);
         let mut run = Run {
-            path: path.clone(),
+            unit: name.clone(),
             ..Run::default()
         };
-        let cursor = self.cursor(file, path);
+        let cursor = self.cursor(file, path, name);
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
             let Some(item) = self.explicit_use(&mut run, item) else {
@@ -627,7 +635,7 @@ impl<L: Loader> Preprocessor<L> {
         None
     }
 
-    fn cursor(&self, file: FileId, path: PathBuf) -> Cursor {
+    fn cursor(&self, file: FileId, path: PathBuf, name: Vec<u8>) -> Cursor {
         let text = self
             .sources
             .file(file)
@@ -635,6 +643,7 @@ impl<L: Loader> Preprocessor<L> {
         Cursor {
             file,
             path,
+            name,
             stream: TokenStream::lex(text, self.dialect),
             conds: Vec::new(),
             skipped: Vec::new(),
@@ -896,6 +905,9 @@ impl<L: Loader> Preprocessor<L> {
             // including the rerelease's `#pragma warning disable/enable F317` (FTE-16.1); in
             // the vanilla dialect it stays an unknown directive (QC-9.9).
             "pragma" if fte => {
+                // FTEF-14.32: FTEQCC reads a pragma's text as bytes to the end of its line
+                // (`msg[a++] = *pr_file_p;`), never as code.
+                cursor.skipped.push(whole);
                 // FTEQCC compares a pragma's name with `QC_strcasecmp`.
                 let pragma = |word: &str| operand.is_some_and(|o| o.eq_ignore_ascii_case(word));
                 // FTEF-12.6: `#pragma noref N` sets whether the definitions after it are
@@ -918,6 +930,17 @@ impl<L: Loader> Preprocessor<L> {
                     };
                     let index = run.out.tokens.len();
                     run.out.autoproto.push((index, on, at(whole)));
+                }
+                // FTEF-14.32: `#pragma file(NAME)` gives the file the name NAME.
+                if pragma("file")
+                    && let Some(operand) = line.get(2)
+                    && let Some(name) = self
+                        .sources
+                        .file(file)
+                        .and_then(|f| fte_macro::pragma_text(&f.text, operand.span.end))
+                    && let Some(cursor) = run.cursors.last_mut()
+                {
+                    cursor.name = name;
                 }
             }
             _ => {
@@ -1167,6 +1190,7 @@ impl<L: Loader> Preprocessor<L> {
         let file = current.file;
         let Some(Token {
             kind: TokenKind::String(bytes),
+            span: name_span,
             ..
         }) = line.get(2)
         else {
@@ -1177,6 +1201,19 @@ impl<L: Loader> Preprocessor<L> {
             );
             return;
         };
+        // FTEF-14.32: FTEQCC names the file by the bytes between the quotes, joined to the
+        // name of the file being compiled.
+        let written = self
+            .sources
+            .file(file)
+            .and_then(|f| f.text.get(name_span.start.saturating_add(1)..))
+            .unwrap_or_default();
+        let written = written
+            .iter()
+            .position(|&b| b == b'"' || b == b'\n')
+            .and_then(|end| written.get(..end))
+            .unwrap_or(written);
+        let name = fte_macro::join_paths(written, &run.unit);
         let relative = PathBuf::from(String::from_utf8_lossy(bytes).into_owned());
         let base = current
             .path
@@ -1192,7 +1229,7 @@ impl<L: Loader> Preprocessor<L> {
         match self.loader.load(&path) {
             Ok(bytes) => {
                 let included = self.sources.add(path.clone(), bytes);
-                let cursor = self.cursor(included, path);
+                let cursor = self.cursor(included, path, name);
                 run.cursors.push(cursor);
             }
             Err(err) => {
@@ -1699,46 +1736,10 @@ fn directive_span(line: &[Token]) -> Span {
     }
 }
 
-/// The token a built-in constant `name` expands to and its text, `QCC_PR_CheckBuiltinCompConst`
-/// (FTEF-14.7), in the file `path` at the line `line` FTEQCC gives it there (FTEF-14.27); `None`
-/// when `name` is none. A string's text escapes its bytes, so it reads back as the token's
-/// (FTEF-14.21).
-fn builtin_value(name: &str, line: u32, path: &Path) -> Option<(TokenKind, String)> {
-    let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
-    Some(match name {
-        "__NULL__" => (TokenKind::Float(0.0), "0i".to_owned()),
-        "__FILE__" => string(&path.display().to_string()),
-        "__LINE__" => (
-            TokenKind::Float(f32::from(u16::try_from(line).unwrap_or(u16::MAX))),
-            line.to_string(),
-        ),
-        "__LINESTR__" => string(&line.to_string()),
-        "__FUNC__" | "__func__" | "__TIME__" | "__DATE__" | "__QCCVER__" => string(""),
-        "__RAND__" => (TokenKind::Float(0.0), "0".to_owned()),
-        _ => return None,
-    })
-}
-
-/// `text` as a QuakeC string literal, `"`, `\` and a line break escaped (FTEF-14.21).
-fn quote(text: &str) -> String {
-    let mut out = String::with_capacity(text.len().saturating_add(2));
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-/// `bytes` as a QuakeC string literal (FTEF-14.31), as `QCC_PR_ExpandStrCatMarkup` escapes
-/// them: `"`, `\` and a line break escaped; a byte of 0x80 or more is written as `\x`
-/// and its two hex digits, which an FTEQCC string reads back as that byte (FTEF-13.11), so
-/// the literal's text stays UTF-8.
+/// `bytes` as a QuakeC string literal, the spelling of a string an FTEQCC expansion made
+/// (QC-9.16, FTEF-14.31, FTEF-14.32): `"`, `\`, a line break and a carriage return escaped,
+/// and a byte of 0x80 or more written as `\x` and its two hex digits, which an FTEQCC string
+/// reads back as that byte (FTEF-13.11), so the spelling is UTF-8 and reads back as `bytes`.
 fn quote_bytes(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().saturating_add(2));
     out.push('"');

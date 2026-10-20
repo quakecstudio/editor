@@ -371,7 +371,9 @@ fn run(text: &str, dialect: Dialect) -> FileOutput {
 
 /// The bytes `out`'s tokens hold: the memory of the preprocessor's output.
 fn output_bytes(out: &FileOutput) -> usize {
-    out.tokens.capacity() * std::mem::size_of::<PpToken>()
+    out.tokens
+        .capacity()
+        .saturating_mul(std::mem::size_of::<PpToken>())
 }
 
 // spec FTEF-14.28, QC-9.18: one expansion of a body that names its parameter 8000 times, given
@@ -406,7 +408,7 @@ fn fteqcc_bounds_an_expansion_s_bytes() {
     let vanilla = run(&square(2000), Dialect::Vanilla);
     assert_eq!(codes(&vanilla), vec![]);
     assert_eq!(vanilla.tokens.len(), 4_000_000);
-    assert!(4_000_000 < FTE_MAX_EXPANDED_TOKENS);
+    const { assert!(4_000_000 < FTE_MAX_EXPANDED_TOKENS) };
 }
 
 // spec QC-9.18: the vanilla dialect bounds the expansions of a file, an exponential chain of

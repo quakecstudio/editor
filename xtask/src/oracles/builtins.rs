@@ -818,6 +818,27 @@ fn macro_text_cases() -> Vec<String> {
         .into_iter()
         .map(|(define, use_)| format!("{define}\nvoid() f = {use_};\n"))
         .collect();
+    // `__FILE__`, the name `progs.src` lists or a `#pragma file` gives, as FTEQCC writes it
+    // (FTEF-14.32).
+    let long = format!("#pragma file({})\n", "n".repeat(260));
+    for pragma in [
+        "",
+        "#pragma file(ex_a:b)\n",
+        "#pragma file ex_b\n",
+        "#pragma FILE(e\\\\x)\n",
+        "#pragma file(e\\x)\n",
+        "#pragma file(e\\\"x)\n",
+        "#pragma file(e\"x)\n",
+        "#pragma file\n",
+        "#pragma file(sub/ex_c)\n",
+        "#pragma file( ex_d )\n",
+        "#pragma file:x\n",
+        &long,
+    ] {
+        sources.push(format!("{pragma}void() f = :__FILE__;\n"));
+    }
+    sources.push("#define F :__FILE__\n#pragma file(ex_c)\nvoid() f = F;\n".to_owned());
+    sources.push("#define E(n) n\n#pragma file(ex_d)\nvoid() f = E(:__FILE__);\n".to_owned());
     // A function with no body (FTEF-17.11), plain and as the macros above write it, and a
     // declarator list ended by a `,` (FTEF-15.8).
     for source in [
