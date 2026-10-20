@@ -846,7 +846,7 @@ groups:
     deliverable:
     - 'docs/adr/00NN-preview-host-later-engine-improvements.md: an ADR that surveys QuakeSpasm, Ironwail and vkQuake for changes beyond id''s engine, sorts them into categories (id bug fixes, raised limits and protocols such as FitzQuake 666, physics independent of frame rate, rendering, performance), and decides per category whether the preview host follows id or the later engine'
     - Each adopted change becomes a ported fix, a spec statement giving its reason, and an expected difference in the engine differential suite
-    - 'The ADR accounts for which engine is the oracle, an open question: ADR-0004 says a pinned QuakeSpasm, while P3-23''s deliverable builds WinQuake'
+    - 'The engine oracle stays id''s engine (ADR-0005, P3-23): each adopted change is a difference from that oracle, and QuakeSpasm, Ironwail and vkQuake are surveyed as sources of improvements, not as oracles'
     acceptance:
     - The ADR is Accepted with a decision for every category, and each adopted change is filed in plan/ as a port with its spec statement and its expected differential difference
     verify:
