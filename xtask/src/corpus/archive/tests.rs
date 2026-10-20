@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use miniz_oxide::deflate::compress_to_vec;
 
 use super::{Gunzip, Zip, read_tar_gz};
+use crate::test_dirs::fresh;
 
 /// A tar header for `name`, `size` bytes of type `kind`, with a valid checksum.
 fn header(name: &str, prefix: &str, size: usize, kind: u8) -> [u8; 512] {
@@ -250,9 +251,7 @@ fn malformed_tars_are_errors() {
 }
 
 fn temp(name: &str, bytes: &[u8]) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("qs-xtask-archive-{}", std::process::id()));
-    fs::create_dir_all(&dir).unwrap();
-    let path = dir.join(name);
+    let path = fresh(&format!("corpus-archive/{name}")).join(name);
     fs::write(&path, bytes).unwrap();
     path
 }

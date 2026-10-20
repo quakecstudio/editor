@@ -1065,7 +1065,7 @@ fn the_oracles_coverage_needs_id101_and_a_profile() {
 
 #[test]
 fn a_measurement_runs_the_check_for_each_crate_named() {
-    let out = fresh("readiness/run").join("flakes.json");
+    let out = fresh("readiness/run-out").join("flakes.json");
     let fake = Fake::new(|_: &Command| Reply::exit(0));
     let mut command = args("flakes --os linux --out");
     command.push(out.display().to_string());

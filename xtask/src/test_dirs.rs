@@ -27,7 +27,7 @@ use std::sync::{Mutex, PoisonError};
 static CLAIMS: Mutex<BTreeMap<PathBuf, String>> = Mutex::new(BTreeMap::new());
 
 /// The repository.
-pub(crate) fn root() -> PathBuf {
+fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
@@ -70,7 +70,6 @@ pub(crate) fn fresh(name: &str) -> PathBuf {
     dir
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

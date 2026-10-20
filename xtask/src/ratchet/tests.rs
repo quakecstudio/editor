@@ -506,8 +506,8 @@ fn a_crate_measured_twice_is_a_problem() {
 
 #[test]
 fn the_history_appends_one_run_each_time() {
-    let dir = fresh("ratchet-history/appends");
-    let path = dir.join("history.json");
+    // A directory that does not exist yet: recording makes it.
+    let path = fresh("ratchet-history/appends").join("new/history.json");
     let mut report = Report::default();
     let measured = group(&passing("qs-x"), &mut report);
     record(&root(), &path, true, &measured).unwrap();

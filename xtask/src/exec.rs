@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_fake_answers_writes_its_files_and_remembers_each_command() {
-        let dir = fresh("exec-fake");
+        let dir = fresh("exec/fake");
         let file = dir.join("out.txt");
         let fake = Fake::new(|command: &Command| {
             if command.get_args().count() == 0 {
