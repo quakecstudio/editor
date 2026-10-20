@@ -1154,3 +1154,46 @@ proptest! {
         }
     }
 }
+
+// spec TRACE-7.3: engine strings take negative values (EDICT-13.3); after a binary round trip
+// the bits of -1 and -2 each name the latest string record for them before the point read, the
+// temp buffer's -1 changing its text between records, and a value with no record names none
+#[test]
+fn reviewer_negative_engine_string_values_resolve() {
+    let bits = |value: i32| value.cast_unsigned();
+    let trace = Trace {
+        header: header(HeaderSpec::default()),
+        records: vec![
+            Record::String {
+                value: bits(-1),
+                text: text(b"0"),
+            },
+            Record::String {
+                value: bits(-2),
+                text: text(b"start"),
+            },
+            Record::Exit {
+                changes: Changes::default(),
+            },
+            Record::String {
+                value: bits(-1),
+                text: text(b"  0.5"),
+            },
+        ],
+    };
+    let decoded = decode(&encode(&trace)).unwrap();
+    assert_eq!(decoded, trace);
+    assert_eq!(
+        decoded.string_value(3, bits(-1)),
+        StringValue::Engine(&text(b"0"))
+    );
+    assert_eq!(
+        decoded.string_value(4, bits(-1)),
+        StringValue::Engine(&text(b"  0.5"))
+    );
+    assert_eq!(
+        decoded.string_value(4, bits(-2)),
+        StringValue::Engine(&text(b"start"))
+    );
+    assert_eq!(decoded.string_value(4, bits(-3)), StringValue::Unknown);
+}
