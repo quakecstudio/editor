@@ -407,6 +407,11 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
         });
     }
     let bytes = fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
+    // QC-13.4: id's qcc leaves `#0`'s `first_statement` uninitialised, so what it wrote
+    // depends on the host's heap and is not recorded.
+    if !fteqcc && matches!(binding(case), Some(Outcome::Bound { number: 0, .. })) {
+        return Ok(Outcome::Accepted);
+    }
     // PROGS-15.8: these programs have none of id's system definitions.
     let options = ReadOptions {
         check_header_crc: false,

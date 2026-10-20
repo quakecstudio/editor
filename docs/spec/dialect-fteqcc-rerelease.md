@@ -737,8 +737,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   compares each outcome with the profile's: the builtin number and engine name of `f`'s
   function in the `progs.dat` written (`first_statement` is `-binum`, `WriteData`: `if
   (functions[i].code == -1) funcs[i].first_statement = PRLittleLong (-functions[i].builtin);`),
-  or that the compiler accepted it with no builtin number, refused it as a redeclaration, or
-  refused it otherwise. The cross product is `#`, `:`, `# ` and `: `, before each of 86 values
+  or that the compiler accepted it with no builtin number (id's `qcc` for a number not above
+  0, whose `first_statement` it leaves uninitialised for `#0`, QC-13.4), refused it as a
+  redeclaration, or refused it otherwise. The cross product is `#`, `:`, `# ` and `: `, before each of 86 values
   (decimal, octal and hex numbers with their signs; fractions; the `f`, `d`, `i`, `u` and `l`
   suffixes and their combinations; character constants and a vector; names; strings, joined
   across spaces, comments and lines, empty, and longer than FTE-23.6's limit), each with no

@@ -382,11 +382,29 @@ fn oracle_failures_are_errors() {
         oracle(
             &fake_oracles(&dir, &refused),
             &dir,
-            &vanilla("void() f = #0;\n")
+            &vanilla("void() f = #5;\n")
         )
         .unwrap(),
         Outcome::Accepted
     );
+    // QC-13.4: whatever id's qcc wrote for `#0` is not recorded.
+    let heap = dir.join("progs.dat");
+    let uninitialised = Fake::new(move |_: &Command| Reply {
+        files: vec![(heap.clone(), progs_with(&[(7, "f")]))],
+        ..Reply::exit(0)
+    });
+    for (case, outcome) in [
+        (vanilla("void() f = #0;\n"), Outcome::Accepted),
+        (vanilla("void() f = #-0;\n"), Outcome::Accepted),
+        (vanilla("void() f = #7;\n"), bound_as(7, "f")),
+        (fte("void() f = #0;\n"), bound_as(7, "f")),
+    ] {
+        assert_eq!(
+            oracle(&fake_oracles(&dir, &uninitialised), &dir, &case).unwrap(),
+            outcome,
+            "{case:?}"
+        );
+    }
     let empty = dir.join("progs.dat");
     let no_function = Fake::new(move |_: &Command| Reply {
         files: vec![(empty.clone(), progs_with(&[]))],
