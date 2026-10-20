@@ -802,20 +802,20 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   FTE-23.1, FTE-23.4); 102 initialisers a macro writes: `##` with each side empty or not, at each
   place in the body, with and without spaces, three in a row and in an object-like macro
   (FTEF-14.14, FTEF-14.16), `#` before each kind of argument, before no parameter and at the
-  body's end (FTEF-14.30), empty arguments and variadic macros given none, nested and recursive
+  body's end (FTEF-14.31), empty arguments and variadic macros given none, nested and recursive
   macros (FTEF-14.17), and uses whose `(` or arguments are past a line break, a comment, the end
-  of an expansion or the end of the file (FTEF-14.28), arguments beside `##` and built-in
+  of an expansion or the end of the file (FTEF-14.29), arguments beside `##` and built-in
   constants in arguments (FTEF-14.14, FTEF-14.20); 18 statements of `g` that a paste, a
   string, a nested or an unfinished macro writes; 160 programs of the macro-text family, whose
   macros FTEQCC reads as text where a token model would not: a `,`, `(` or `)` in an argument's
   character constant, `/* */` or `//` comment or string, against 15 uses each, strings that end in
-  `\`, and line breaks and `\` in arguments (FTEF-14.21); built-in constants an argument copies
+  `\`, and line breaks and `\` in arguments (FTEF-14.22); built-in constants an argument copies
   after white space, comments and line breaks, and `__LINESTR__` read in nested and multi-line
-  expansions (FTEF-14.26); a function-like macro's name and `(` across 15 gaps a stored body
+  expansions (FTEF-14.27); a function-like macro's name and `(` across 15 gaps a stored body
   drops, and bodies with escaped quotes before a `//`, comments and continuations
-  (FTEF-14.23); strings and numbers after `#` and `##` (FTEF-14.24); parameter lists with
-  duplicate, empty, spaced and misplaced names (FTEF-14.22); `__VA_COUNT__`, `,##__VA_ARGS__`
-  and empty variadic arguments (FTEF-14.25); functions with no body, `noref` or not and
+  (FTEF-14.24); strings and numbers after `#` and `##` (FTEF-14.25); parameter lists with
+  duplicate, empty, spaced and misplaced names (FTEF-14.23); `__VA_COUNT__`, `,##__VA_ARGS__`
+  and empty variadic arguments (FTEF-14.26); functions with no body, `noref` or not and
   referred to or not (FTEF-17.11); and declarators ended by a `,` (FTEF-15.8); and in both
   dialects names of 62, 63, 70, 254,
   255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside

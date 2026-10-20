@@ -5,7 +5,7 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_CheckCompConst, QCC_PR_ExpandPreProcessorMacro, QCC_PR_ExpandStrCatMarkup, QCC_PR_PreProcessor_Define, QCC_PR_IncludeChunkEx, QCC_PR_LexWhitespace, QCC_PR_SimpleGetToken, QCC_PR_SkipToEndOfLine
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_COM_Parse2
 
-//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.28, and
+//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.29, and
 //! `docs/spec/language.md` QC-9.16), ported from FTEQCC's behaviour under ADR-0017's
 //! clean-port policy. FTEQCC keeps a macro's body as the text `QCC_PR_PreProcessor_Define`
 //! stored, finds a use's arguments by scanning the text after its `(`, writes the expansion as
@@ -26,15 +26,15 @@ use crate::{
 };
 
 /// The most parameters an FTEQCC macro has: `MAXCONSTANTPARAMS` in FTEQCC's `qcc.h`,
-/// `#define MAXCONSTANTPARAMS 32` (FTEF-14.22).
+/// `#define MAXCONSTANTPARAMS 32` (FTEF-14.23).
 const FTE_MAX_PARAMS: usize = 32;
 
 /// The length a macro parameter's name stays under: `MAXCONSTANTPARAMLENGTH` in `qcc.h`,
-/// `#define MAXCONSTANTPARAMLENGTH 32` (FTEF-14.22).
+/// `#define MAXCONSTANTPARAMLENGTH 32` (FTEF-14.23).
 const FTE_MAX_PARAM_LENGTH: usize = 32;
 
 /// The most bytes of a token `QCC_COM_Parse2` keeps: its `qcc_token` is `char qcc_token[1024]`
-/// and it stores a byte only `if (len < sizeof(qcc_token)-1)` (FTEF-14.24).
+/// and it stores a byte only `if (len < sizeof(qcc_token)-1)` (FTEF-14.25).
 const FTE_MAX_TOKEN: usize = 1023;
 
 /// Where a run of a [`Text`]'s bytes came from.
@@ -228,14 +228,14 @@ impl Reading<'_> {
 pub(crate) struct ChunkReader {
     text: Text,
     /// The line a built-in constant read in this chunk has: `currentchunk->currentlinenumber`,
-    /// the line FTEQCC was reading when it included the chunk (FTEF-14.26).
+    /// the line FTEQCC was reading when it included the chunk (FTEF-14.27).
     line: u32,
     id: ExpansionId,
     /// The macro the chunk is an expansion of, `chunk->cnst`.
     pub(crate) name: String,
     stream: TokenStream,
     /// The text a macro used in the chunk took as its arguments, whose lexical errors are
-    /// not this chunk's (FTEF-14.21).
+    /// not this chunk's (FTEF-14.22).
     consumed: Vec<Span>,
     /// Whether the token read last was a built-in constant, whose value is a chunk of its own,
     /// so the next token touches nothing (FTEF-14.17).
@@ -339,7 +339,7 @@ fn lex_whitespace(text: &[u8], mut at: usize) -> usize {
 /// Where the skip over a string that `QCC_PR_ExpandPreProcessorMacro` makes from the `"` at `at`
 /// stops: `do { pr_file_p++; } while( (pr_file_p[-1] == '\\' || pr_file_p[0] != '\"') &&
 /// *pr_file_p && *pr_file_p != '\n' );`, at the next `"` with no `\` right before it (a `\\`
-/// before it included), at a line break, or at the end of the text (FTEF-14.21).
+/// before it included), at a line break, or at the end of the text (FTEF-14.22).
 fn string_end(text: &[u8], mut at: usize) -> usize {
     loop {
         let before = text.get(at).copied();
@@ -378,7 +378,7 @@ struct Word {
 /// `QCC_COM_Parse2`: after white space and `//` comments from `at`, a string (its escapes
 /// `\"`, `\\` and `\n` read, reading going on one byte past its closing `"`), a number (digits
 /// and `.`, or `0x` and hex digits and `.`), a word (a letter or `_`, then letters, digits and
-/// `_`), or one byte; each token kept to its first 1023 bytes (FTEF-14.24). `None` at the end of
+/// `_`), or one byte; each token kept to its first 1023 bytes (FTEF-14.25). `None` at the end of
 /// the text.
 fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     loop {
@@ -460,7 +460,7 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
 
 /// `QCC_PR_SimpleGetToken`: the word from `at` after white space on the line, up to white
 /// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
-/// before a comment (FTEF-14.22).
+/// before a comment (FTEF-14.23).
 fn simple_get_token(text: &[u8], mut at: usize) -> Option<Range<usize>> {
     loop {
         let byte = byte_at(text, at)?;
@@ -491,7 +491,7 @@ fn simple_get_token(text: &[u8], mut at: usize) -> Option<Range<usize>> {
 /// `QCC_PR_SkipToEndOfLine`: where the line a directive ended on ends, from `at`: `/* */`
 /// comments are passed over, a line break after `\` goes on to the next line (in a `//`
 /// comment too), and a string is passed over unless a `//` comment came before it
-/// (FTEF-14.23). The offset is that of the line break, or the end of the text.
+/// (FTEF-14.24). The offset is that of the line break, or the end of the text.
 fn skip_to_end_of_line(text: &[u8], mut at: usize) -> usize {
     let mut comments = true;
     loop {
@@ -551,12 +551,12 @@ pub(crate) struct Definition {
 pub(crate) enum DefineError {
     /// "No name defined for compiler constant".
     NoName,
-    /// A parameter list FTEQCC refuses (FTEF-14.22), of the macro named by these bytes.
+    /// A parameter list FTEQCC refuses (FTEF-14.23), of the macro named by these bytes.
     BadParams(Range<usize>),
 }
 
 /// The parameter list of a `#define` whose `(` is at `open`, as `QCC_PR_PreProcessor_Define`
-/// reads it (FTEF-14.22): each parameter runs from after the spaces and tabs that follow the
+/// reads it (FTEF-14.23): each parameter runs from after the spaces and tabs that follow the
 /// `(` or a `,` to the next `,` or `)`, its trailing spaces and tabs dropped; the first byte of
 /// every parameter after the first is passed over before a delimiter is looked for. The
 /// parameters, whether the last is `...`, and the offset after the `)`; `Err` with where reading
@@ -616,7 +616,7 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, bool, usize), 
 /// spaces and tabs that follow the name or the `)` to a line break, to the end of the text, or
 /// to a `//` outside a quote (the quote flag flipping at every `"`, an escaped one included);
 /// each `/* */` comment outside a quote and each `\` before a line break is dropped, the line
-/// break with it, and the spaces and tabs at its end are dropped (FTEF-14.23).
+/// break with it, and the spaces and tabs at its end are dropped (FTEF-14.24).
 fn read_define(text: &[u8], file: FileId, at: usize) -> (Result<Definition, DefineError>, usize) {
     let Some(name) = simple_get_token(text, at) else {
         return (Err(DefineError::NoName), skip_to_end_of_line(text, at));
@@ -650,7 +650,7 @@ fn read_define(text: &[u8], file: FileId, at: usize) -> (Result<Definition, Defi
 }
 
 /// The body of a `#define` from `at`, as `QCC_PR_PreProcessor_Define` stores it, and where it
-/// stopped reading (FTEF-14.23). After a `\` and a line break, a line that starts with `#`
+/// stopped reading (FTEF-14.24). After a `\` and a line break, a line that starts with `#`
 /// (after spaces and tabs) keeps the line break, and so does the next continued line: "#define
 /// hacks however, require that it becomes foo\nbar\nmoo".
 fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
@@ -721,7 +721,7 @@ fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
 }
 
 /// A use's arguments as `QCC_PR_ExpandPreProcessorMacro` finds them in the text after its `(`
-/// (FTEF-14.21).
+/// (FTEF-14.22).
 struct Scanned {
     /// Each argument's bytes, `paramoffset[p]`: from after the white space and comments that
     /// follow its `(` or `,` to its `,` or `)`.
@@ -736,7 +736,7 @@ struct Scanned {
 }
 
 /// The arguments of a use of a macro with `named` named parameters, `variadic` or not, whose
-/// `(` is at `open` in `text` (FTEF-14.21): a `"` string is passed over as [`string_end`]
+/// `(` is at `open` in `text` (FTEF-14.22): a `"` string is passed over as [`string_end`]
 /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every other
 /// byte (a character constant's, a comment's) being part of it. `None` when the text ends
 /// first, "EOF on macro call".
@@ -794,7 +794,7 @@ struct Call {
 }
 
 /// Where a use's name is read and where reading goes on after it, with the lines FTEQCC gives
-/// a built-in constant there (FTEF-14.26).
+/// a built-in constant there (FTEF-14.27).
 struct Use {
     call: Option<Call>,
     /// The use, from its name to its `)`.
@@ -808,9 +808,9 @@ struct Use {
 
 /// Why a use of a function-like macro is not expanded.
 enum CallError {
-    /// No `(` follows the name after spaces and tabs (FTEF-14.28).
+    /// No `(` follows the name after spaces and tabs (FTEF-14.29).
     NoCall,
-    /// The text ends before the `)`, "EOF on macro call" (FTEF-14.28).
+    /// The text ends before the `)`, "EOF on macro call" (FTEF-14.29).
     Unterminated,
 }
 
@@ -822,7 +822,7 @@ struct Writer<'a> {
     call: &'a Call,
     /// The value of a built-in constant by its name, `QCC_PR_CheckBuiltinCompConst`.
     builtin: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
-    /// The most bytes the expansion may write (FTEF-14.27).
+    /// The most bytes the expansion may write (FTEF-14.28).
     limit: usize,
 }
 
@@ -832,7 +832,7 @@ impl Writer<'_> {
         self.params.iter().position(|p| p.as_bytes() == token)
     }
 
-    /// The expansion's text (FTEF-14.14 to FTEF-14.16, FTEF-14.20, FTEF-14.25), or `None` past
+    /// The expansion's text (FTEF-14.14 to FTEF-14.16, FTEF-14.20, FTEF-14.26), or `None` past
     /// the limit. For each piece of the body: its white space and comments are copied; a string
     /// is copied as [`string_end`] reads it; `##` drops the white space just copied and copies
     /// the next argument whole (`noargexpand`); `#` and a named parameter write the argument's
@@ -951,7 +951,7 @@ impl Writer<'_> {
     }
 
     /// Writes the argument `arg` a token at a time, as `QCC_PR_ExpandPreProcessorMacro` does
-    /// for one not beside `##` (FTEF-14.20, FTEF-14.25): each token with the white space and
+    /// for one not beside `##` (FTEF-14.20, FTEF-14.26): each token with the white space and
     /// `//` comments before it, a string as [`string_end`] reads it, a built-in constant's
     /// value in place of it and what stands before it, and nothing after the last token.
     fn argument(&self, arg: &Text, out: &mut Text) {
@@ -986,7 +986,7 @@ impl Writer<'_> {
 }
 
 /// `QCC_PR_ExpandStrCatMarkup`: `bytes` with `\` before each line break, `\`, NUL and `"`, and
-/// in `"` quotes, the string `#param` writes (FTEF-14.30).
+/// in `"` quotes, the string `#param` writes (FTEF-14.31).
 fn markup(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len().saturating_add(2));
     out.push(b'"');
@@ -1004,7 +1004,7 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
 }
 
 impl<L: Loader> Preprocessor<L> {
-    /// `#define` and `#append` under FTEQCC (FTEF-14.22, FTEF-14.23, FTEF-14.8), as
+    /// `#define` and `#append` under FTEQCC (FTEF-14.23, FTEF-14.24, FTEF-14.8), as
     /// `QCC_PR_PreProcessor_Define` reads them from the bytes after the directive's name
     /// `keyword` in `line`: the macro is stored with its body's text, and reading goes on where
     /// the directive's line ends, its text never lexed as code. An `#append` whose parameters
@@ -1088,7 +1088,7 @@ impl<L: Loader> Preprocessor<L> {
     /// spaces and tabs in the text it stands in, whose arguments are found there
     /// ([`scan_arguments`]); the expansion's text is written ([`Writer::write`]) and read as a
     /// chunk of its own, and reading the text the use stood in goes on after its `)`
-    /// (FTEF-14.21).
+    /// (FTEF-14.22).
     pub(crate) fn fte_try_expand(&mut self, run: &mut Run, item: Item) -> Option<Item> {
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
@@ -1237,7 +1237,7 @@ impl<L: Loader> Preprocessor<L> {
     /// The use of the macro `mac` whose name is `item`: for a function-like macro its `(`,
     /// found after spaces and tabs (`while(*pr_file_p == ' ' || *pr_file_p == '\t')`), and its
     /// arguments ([`scan_arguments`]), with the lines FTEQCC gives a built-in constant
-    /// (FTEF-14.26).
+    /// (FTEF-14.27).
     fn read_use(&self, run: &Run, item: &Item, mac: &Macro) -> Result<Use, CallError> {
         let (reading, name_end) = self.reading(run, item).ok_or(CallError::NoCall)?;
         let bytes = reading.bytes();
@@ -1305,7 +1305,7 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Reading of the text the name `item` stood in goes on at `after`, the byte after its use's
     /// `)`, where `QCC_PR_ExpandPreProcessorMacro` leaves `pr_file_p`; the lexical errors of
-    /// the text its arguments took are not reported there (FTEF-14.21).
+    /// the text its arguments took are not reported there (FTEF-14.22).
     fn resume_after(&self, run: &mut Run, item: &Item, after: usize) {
         match item.chunk_end {
             Some(end) => {

@@ -590,7 +590,7 @@ profile the preprocessor reads them as FTEQCC does.
   by the one evaluator the graph uses, so the graph and the preprocessor take the same sides.
 - **FTEF-14.2** **Withdrawn** (P2-81, #492): it said a `//` comment ends a directive, which
   holds for the directive's text but not for the line `QCC_PR_SkipToEndOfLine` skips after it.
-  Replaced by FTEF-14.29 and FTEF-14.23.
+  Replaced by FTEF-14.30 and FTEF-14.24.
 - **FTEF-14.3** `#warning text` is the warning `W0103` "#warning: text"
   (`QCC_PR_ParseWarning(WARN_PRECOMPILERMESSAGE, "#warning: %s", msg);`) and `#error text` the
   error `E0118` "#Error: text" (`QCC_PR_ParseError(ERR_HASHERROR, "#Error: %s", msg);`), each on
@@ -646,7 +646,7 @@ profile the preprocessor reads them as FTEQCC does.
   or a word as `QCC_PR_SimpleGetToken` reads it, up to whitespace, `,`, `;`, `(`, `)`, `]` or
   `//`, whose macro's text, or else the word itself, is read with `atoi`: `1||0` is one word,
   1. The text after a whole expression is not read. The expression is the directive's bytes as
-  written, a line continuation (FTEF-14.29) a space. Where FTEQCC reports an error ("unclosed
+  written, a line continuation (FTEF-14.30) a space. Where FTEQCC reports an error ("unclosed
   bracket condition", "unclosed defined condition", "unexpected end-of-line") this profile
   takes the expression as false.
 - **FTEF-14.12** A deliberate divergence: this profile's `#if` reader nests at most 64 levels
@@ -679,7 +679,7 @@ profile the preprocessor reads them as FTEQCC does.
   end of the body, or beside an empty argument, leaves the other side as it is, and an empty
   argument after `##` joins nothing to what follows it: `#define P(a, b) a##b` used as `P(#5, )`
   or `P(, #5)` is `#5`. `##` is two `#` that touch as the body was stored (`if (pr_file_p[1] ==
-  '#')`); `# #` is a `#` before a word (FTEF-14.30). An argument beside `##` is copied whole: one
+  '#')`); `# #` is a `#` before a word (FTEF-14.31). An argument beside `##` is copied whole: one
   after it by `noargexpand`, one before it because `start[0] == '#' && start[1] == '#'`, each with
   what stands before its `,` or `)`. So the right argument's later tokens touch the joined one
   (`P(l, bl:)` writes the label `lbl:`), and white space or a comment after the left argument
@@ -689,7 +689,7 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.15** **Withdrawn** (P2-80, #491): it said an argument that comes from another
   expansion's text is written into a `#` string as its tokens touch, one space where they do
   not, where FTEQCC keeps that text's white space; this profile now keeps it too. Replaced by
-  FTEF-14.30.
+  FTEF-14.31.
 - **FTEF-14.16** An object-like macro's body is included as it was stored
   (`QCC_PR_IncludeChunkEx(c->value, ...)`), and `QCC_PR_ExpandPreProcessorMacro`, which reads `#`
   and `##`, runs only for a macro with a parameter list (`if (c->numparams>=0)`). So in an
@@ -709,10 +709,10 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.18** **Withdrawn** (P2-81, #492): it said a comment before a function-like macro's
   `(` leaves the name as it is, which holds for the source and for an argument's text but not
   for a macro's stored body, where `QCC_PR_PreProcessor_Define` dropped the comment. Replaced by
-  FTEF-14.28.
+  FTEF-14.29.
 - **FTEF-14.19** **Withdrawn** (P2-83, #494): it said this profile's expansions write at most
   2^22 tokens, which it checked before each expansion and counted after it, so one expansion
-  could write far more. Replaced by FTEF-14.27.
+  could write far more. Replaced by FTEF-14.28.
 - **FTEF-14.20** In an argument that is not copied whole (FTEF-14.14),
   `QCC_PR_ExpandPreProcessorMacro` reads each token with `QCC_COM_Parse2` and writes a built-in
   constant's value in its place (`end = QCC_PR_CheckBuiltinCompConst(qcc_token, retbuf,
@@ -720,7 +720,16 @@ profile the preprocessor reads them as FTEQCC does.
   macro's own chunk: so with `#define K(x) x`, `K(#__LINE__)` is `#` and the line number touching,
   a builtin, where the line number of a built-in constant read anywhere else is a chunk of its own
   (FTEF-14.17). Other macros in an argument are expanded only when the expansion is read.
-- **FTEF-14.21** A function-like macro's arguments are found in the text after its `(`, which
+- **FTEF-14.21** A deliberate divergence: a built-in constant's string token holds the bytes of
+  its text, here the file's name, and its spelling is that text with `"`, `\` and a line break
+  escaped, so it reads back as those bytes; a `#param` of an argument that holds it stringifies
+  that spelling (FTEF-14.31). `QCC_PR_CheckBuiltinCompConst` escapes nothing: for `__FILE__` it
+  writes `QC_snprintfz(retbuf, retbufsize, "\"%s\"", s_filen);` and reads that text again, so a
+  `\` in the name starts an escape, and it ends the name at its first `:` (`erk = strchr(retbuf,
+  ':'); if (erk) { erk[0] = '\"'; erk[1] = 0; }`). The preprocessor's name is the host's path,
+  whose separator is `\` on Windows, not the name as `progs.src` wrote it, so this profile keeps
+  the name whole and never reads a separator as an escape.
+- **FTEF-14.22** A function-like macro's arguments are found in the text after its `(`, which
   `QCC_PR_ExpandPreProcessorMacro` reads a byte at a time: after the white space and comments
   that follow the `(` (`QCC_PR_LexWhitespace(false)`), a `"` string is passed over (`do {
   pr_file_p++; } while( (pr_file_p[-1] == '\\' || pr_file_p[0] != '\"') && *pr_file_p &&
@@ -736,12 +745,12 @@ profile the preprocessor reads them as FTEQCC does.
   `e'x`. The string skip ends only at a `"` with no `\` right before it, a `\\` before it
   included, so a string whose last byte is a `\` runs on past its `"` to the next `"` or the line's
   end, and the argument with it: with `#define E(n) n`, `E(:"ex\\")` runs to the end of the file,
-  which FTEQCC reports as "EOF on macro call" (FTEF-14.28), and `E(:"ex\\") ")"` takes `:"ex\\")
+  which FTEQCC reports as "EOF on macro call" (FTEF-14.29), and `E(:"ex\\") ")"` takes `:"ex\\")
   "` as its argument. A line break, or a `\` before one, is part of an argument like any byte.
   Reading of the text the use stands in goes on after its `)`, read again from there where a
   token of the text as first read stood across it. The arguments' text is read as code only where
   the expansion writes it, so its lexical errors are reported there and nowhere else.
-- **FTEF-14.22** `QCC_PR_PreProcessor_Define` reads a macro's name with `QCC_PR_SimpleGetToken`,
+- **FTEF-14.23** `QCC_PR_PreProcessor_Define` reads a macro's name with `QCC_PR_SimpleGetToken`,
   up to white space, `,`, `;`, `(`, `)`, `]` or `//`, and a parameter list from a `(` right after
   it as bytes: each parameter runs from after the spaces and tabs that follow the `(` or a `,` to
   the next `,` or `)`, its trailing spaces and tabs dropped, and the first byte after a `,` and
@@ -755,7 +764,7 @@ profile the preprocessor reads them as FTEQCC does.
   n` are refused, and `#define E( n ) n` names `n`. `()` is one parameter with no name, so `#define
   E() #5` takes one argument, and a second (FTEF-14.9). A parameter is its bytes: one that is no
   word, such as `a b`, is never matched in the body.
-- **FTEF-14.23** `QCC_PR_PreProcessor_Define` stores a body from after the spaces and tabs that
+- **FTEF-14.24** `QCC_PR_PreProcessor_Define` stores a body from after the spaces and tabs that
   follow the name or the `)` to a line break, the end of the file, or a `//` outside a quote; it
   drops each `/* */` comment outside a quote ("multi-line c style comments become part of the
   define itself. this also negates the need for \ at the end of lines. although we don't bother
@@ -772,11 +781,11 @@ profile the preprocessor reads them as FTEQCC does.
   where an expansion writes it. A function-like macro's name and a `(` that only dropped comments
   and continuations stand between in a body are apart only by the spaces and tabs around them, so
   `#define K M /**/ (#5)`, `#define K M/**/ (#5)` and `#define K M \`, a line break and `(#5)`
-  call `M` (FTEF-14.28). `#append NAME ...` (FTEF-14.8) is read the same way and adds a space and
+  call `M` (FTEF-14.29). `#append NAME ...` (FTEF-14.8) is read the same way and adds a space and
   its body to the macro's stored body when the parameters are the macro's; with others
   ("different number of macro arguments in macro append", "arguments differ in macro append") it
   defines the macro again, with the warning `W0102`.
-- **FTEF-14.24** In a function-like macro's body, and in an argument copied a token at a time
+- **FTEF-14.25** In a function-like macro's body, and in an argument copied a token at a time
   (FTEF-14.20), `QCC_COM_Parse2` reads each token after white space and `//` comments: a number
   (digits and `.`, or `0x` and hex digits and `.`), a word (a letter or `_`, then letters, digits
   and `_`), or one byte, each kept to its first 1023 bytes (`char qcc_token[1024]`, `if (len >=
@@ -787,7 +796,7 @@ profile the preprocessor reads them as FTEQCC does.
   and no quotes, and goes on one byte past the closing `"`: so `#define S(a) #"5"` writes `#5`,
   `#"5"x a` writes `#5` and the argument, the `x` passed over, and `a##"5"` given `#` writes
   `#5`.
-- **FTEF-14.25** In a variadic macro's body `__VA_COUNT__` is FTEQCC's count of the variadic
+- **FTEF-14.26** In a variadic macro's body `__VA_COUNT__` is FTEQCC's count of the variadic
   arguments, `QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`: the arguments found
   less one, and the commas after the named ones. So with `#define V(...) :__VA_COUNT__`, `V()`
   and `V(a)` are `:0` and `V(a, b)` is `:1`, and with `#define V(a, ...) #5:__VA_COUNT__`, `V(a,
@@ -800,7 +809,7 @@ profile the preprocessor reads them as FTEQCC does.
   `V(#5)` are `#5`, while `a,__VA_ARGS__` keeps the `,`. An empty variadic argument is its text,
   commas and all: `#define E(...) #5 __VA_ARGS__` used as `E(, )` writes `#5 , `, the
   declaration `#5` and a `,` before the `;` (FTEF-15.8).
-- **FTEF-14.26** A built-in constant an argument copies as its value (FTEF-14.20) is written in
+- **FTEF-14.27** A built-in constant an argument copies as its value (FTEF-14.20) is written in
   place of the white space and `//` comments `QCC_COM_Parse2` passed over before it too (`end` is
   written, not `argstart` to `argend`), so with `#define E(n) n`, `E(# __LINE__)` is `#2`, the
   builtin 2, as `E(#//`, a line break and `__LINE__)` is the builtin 3. The line a built-in
@@ -813,7 +822,7 @@ profile the preprocessor reads them as FTEQCC does.
   its arguments copy has the line of the chunk the use is in. So `#define L :__LINESTR__` and
   `#define M L` used as `M` on line 3 bind the name `1`, and `#define M(x) :__LINESTR__ x` used
   as `M(`, a line break and `)` from line 2 binds `3`.
-- **FTEF-14.27** A deliberate divergence: FTEF-14.17 lets an expansion grow exponentially
+- **FTEF-14.28** A deliberate divergence: FTEF-14.17 lets an expansion grow exponentially
   (`#define A B B` and `#define B A A` expand to 2^16 names), and one expansion of a body that
   names its parameter `n` times, given an argument of `m` tokens, writes `n` times `m` (a body of
   8000 `x` given 8000 tokens is 64000000), and FTEQCC builds it all. So this profile makes at most
@@ -823,28 +832,28 @@ profile the preprocessor reads them as FTEQCC does.
   its tokens are counted when it is lexed. The first use past either bound is reported once, as
   "macro expansion too large" (`E0120`), and it and later uses are left as written. No program of
   the corpus comes near it. The vanilla dialect has the same bound (`language.md` QC-9.18).
-- **FTEF-14.28** A function-like macro takes its arguments only from the text of the chunk its
+- **FTEF-14.29** A function-like macro takes its arguments only from the text of the chunk its
   name is in: `QCC_PR_CheckCompConst` skips spaces and tabs after the name (`while(*pr_file_p == '
   ' || *pr_file_p == '\t')`) and expands it only `if (*pr_file_p == '(')`, so a line break or a
   comment before the `(`, in the source or in an argument's text copied into an expansion, or the
   end of the expansion the name is in, leaves the name as it is (`M\n(#5)` is the name `M`; with
   `#define N M`, `N(#5)` is too), while in a macro's stored body the comments and continuations
-  between a name and its `(` are gone (FTEF-14.23); and `QCC_PR_ExpandPreProcessorMacro` reads the
-  arguments up to the `)` within that text (FTEF-14.21), reporting "EOF on macro call" (`if
+  between a name and its `(` are gone (FTEF-14.24); and `QCC_PR_ExpandPreProcessorMacro` reads the
+  arguments up to the `)` within that text (FTEF-14.22), reporting "EOF on macro call" (`if
   (!*pr_file_p) QCC_PR_ParseError(ERR_EOF, "EOF on macro call");`) when it ends first. This
   profile reports that as "unterminated argument list for macro NAME" (`E0117`): with `#define
   L(x) x:` and `#define LL L(lbl`, `LL) goto lbl;` is `E0117`, as is the end of the file inside a
   use's arguments.
-- **FTEF-14.29** A directive continues on the next line when its line ends in `\` directly
+- **FTEF-14.30** A directive continues on the next line when its line ends in `\` directly
   before the break: `QCC_PR_SkipToEndOfLine` reads `else if (*pr_file_p == '\\' && pr_file_p[1] ==
   '\n') { /*linux endings*/ pr_file_p+=2;`, and `QCC_PR_PreProcessor_Define` "read[s] over a
   newline if necessary" after a `\`. A `/* */` comment that spans lines does not end the directive
   ("multi-line c style comments become part of the define itself"); a `//` comment ends its text.
   `QCC_PR_SkipToEndOfLine` goes on past a `\` and line break in that comment too, which this
-  profile follows for `#define` and `#append` (FTEF-14.23) and, a known difference, not yet for
-  the other directives, whose line it ends at the comment's line break (P2-85): the pinned FTEQCC
+  profile follows for `#define` and `#append` (FTEF-14.24) and, a known difference, not yet for
+  the other directives, whose line it ends at the comment's line break (P2-93): the pinned FTEQCC
   passes over `zz zz zz` after `#undef X // c \` and after `#ifdef X // c \`.
-- **FTEF-14.30** In a function-like macro's body `#param`, `param` a named parameter, is a string
+- **FTEF-14.31** In a function-like macro's body `#param`, `param` a named parameter, is a string
   of the argument's text as written, from after the white space and comments that follow its `(`
   or `,` (`QCC_PR_LexWhitespace(false)`) to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
   `paramoffset[p]`, white space and comments included, with `\` before each line break, `\`, NUL
@@ -921,7 +930,7 @@ declares parameters without names or with `optional` and `__out`.
   `QCC_PR_ParseDefs` (`qcc_pr_comp.c`) reads them in `do { ... } while (QCC_PR_CheckToken
   (","));`, each starting with `if (QCC_PR_CheckToken (";"))`, which ends the declaration. So
   `void() f = #5, ;` and `void() g, f = #5,;` declare `f` the builtin 5, as the pinned FTEQCC
-  compiles them, and so does `#define E(...) #5 __VA_ARGS__` used as `E(, )` (FTEF-14.25);
+  compiles them, and so does `#define E(...) #5 __VA_ARGS__` used as `E(, )` (FTEF-14.26);
   `void() f = #5, , ;` is refused, a `,` being no name. The vanilla parser is unchanged.
 
 ## FTEF-16 Statements and expressions

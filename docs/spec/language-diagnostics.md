@@ -280,4 +280,4 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   only; the vanilla dialect has the bound too. Replaced by QCD-8.13.
 - **QCD-8.13** `E0120` "macro expansion too large": the first macro use past the preprocessor's
   bound on the expansions of one file, under either dialect (`language.md` QC-9.18,
-  `dialect-fteqcc.md` FTEF-14.27).
+  `dialect-fteqcc.md` FTEF-14.28).

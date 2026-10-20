@@ -20,7 +20,11 @@ fn run(text: &[u8], dialect: Dialect) -> FileOutput {
 /// The tokens of `text` under `dialect`, each pair that touches (QC-9.16) written together
 /// and the rest apart.
 fn touching(text: &str, dialect: Dialect) -> String {
-    let out = run(text.as_bytes(), dialect);
+    rendered(&run(text.as_bytes(), dialect))
+}
+
+/// `out`'s tokens, each pair that touches (QC-9.16) written together and the rest apart.
+fn rendered(out: &FileOutput) -> String {
     let mut rendered = String::new();
     let mut last: Option<&PpToken> = None;
     for token in &out.tokens {
@@ -154,6 +158,7 @@ fn a_body_touches_where_fteqcc_stored_it_touching() {
     let vanilla = |text: &str| touching(text, Dialect::Vanilla);
     assert_eq!(fte("#define L lbl/**/:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl/* a */ /**/:\nL"), "lbl :");
+    assert_eq!(fte("#define L lbl/* a */:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl\\\n:\nL"), "lbl:");
     assert_eq!(fte("#define L lbl\\\r\n:\nL"), "lbl:");
     assert_eq!(fte("#define L(x) x/**/:\nL(lbl)"), "lbl:");
@@ -236,9 +241,53 @@ fn a_paste_writes_its_sides_together() {
     assert_eq!(fte("#define P(a, b) a##b:\nP(l, bl)"), "lbl:");
     assert_eq!(fte("#define P(a, b) a##b :\nP(l, bl)"), "lbl :");
     assert_eq!(fte("#define P(a, b) a##b:\nP(l, bl )"), "lbl :");
+    assert_eq!(fte("#define P(a, b) a##b\nP(x, y z)"), "xy z");
 }
 
-// spec FTEF-14.30: `#param` is the argument's text as written, white space and comments
+/// The tokens of `a.qc` and the files it includes, `files`, under FTEQCC, written as
+/// [`touching`] writes them.
+fn touching_in(files: &[(&str, &str)]) -> String {
+    let mut loader = MemoryLoader::new();
+    for (path, text) in files {
+        loader.insert(*path, text.as_bytes());
+    }
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    rendered(&pp.preprocess_file(Path::new("a.qc")).unwrap())
+}
+
+// spec FTEF-14.29: a function-like macro's name at the end of a file's line is not a call,
+// even when the file it includes next starts with a `(`
+#[test]
+fn a_paren_in_an_included_file_opens_no_call() {
+    let files = [
+        ("a.qc", "#define M(x) [x]\nM\n#include \"b.qc\"\n"),
+        ("b.qc", "(1)\n"),
+    ];
+    assert_eq!(touching_in(&files), "M (1)");
+}
+
+// spec FTEF-14.8: `#append` writes a space before the text it adds, so the added text
+// touches nothing of the body before it, in another file too
+#[test]
+fn appended_text_stays_apart_from_the_body() {
+    let files = [
+        ("a.qc", "#define M a\n#include \"b.qc\"\nM\n"),
+        ("b.qc", "#append M :\n"),
+    ];
+    assert_eq!(touching_in(&files), "a :");
+}
+
+// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands; the
+// text ends there (QC-1.1)
+#[test]
+fn a_nul_after_a_name_ends_the_word() {
+    assert_eq!(
+        touching("#define N 5\nx = N\0;\n", Dialect::Fteqcc),
+        "x = 5"
+    );
+}
+
+// spec FTEF-14.31: `#param` is the argument's text as written, white space and comments
 // included, with no lexical error; a `#` before no parameter writes the next word against
 // it, and one at the end of the body writes nothing
 #[test]
@@ -287,7 +336,7 @@ fn a_macro_is_expanded_again_through_another() {
     assert_eq!(fte("#define K x __LINE__:\nK"), "x 2 :");
 }
 
-// spec FTEF-14.28: a function-like macro takes its `(` after spaces and tabs only, in the
+// spec FTEF-14.29: a function-like macro takes its `(` after spaces and tabs only, in the
 // chunk of its name, and its arguments from that chunk only; one that runs past it is E0117
 // spec QCD-8.10: E0117 "unterminated argument list for macro NAME"
 #[test]
@@ -308,7 +357,7 @@ fn arguments_stay_in_the_chunk_of_the_name() {
 }
 
 // spec QCD-8.13: E0120 "macro expansion too large", reported once
-// spec FTEF-14.27: an expansion that grows past the bound stops there
+// spec FTEF-14.28: an expansion that grows past the bound stops there
 #[test]
 fn an_expansion_past_the_bound_is_reported_once() {
     let mut text = String::from("#define A0 x\n");
@@ -337,7 +386,7 @@ fn an_argument_beside_a_paste_is_copied_whole() {
     assert_eq!(fte("#define P(a, b) a#/**/#b\nP(x, y)"), "xy");
 }
 
-// spec FTEF-14.30: only a named parameter is turned into a string, so `#__VA_ARGS__` stays
+// spec FTEF-14.31: only a named parameter is turned into a string, so `#__VA_ARGS__` stays
 // as written; the argument's bytes are kept as they are, and its text is still checked when
 // the body also writes it as code
 #[test]
@@ -386,7 +435,7 @@ fn a_built_in_constant_in_an_argument_is_its_value() {
     );
 }
 
-// spec FTEF-14.30: a string skips the white space and both kinds of comment before the
+// spec FTEF-14.31: a string skips the white space and both kinds of comment before the
 // argument, keeps a line break as an escape, and an argument from another expansion is
 // written as its tokens touch
 #[test]
@@ -415,7 +464,7 @@ fn a_function_like_macro_opens_nine_chunks() {
     assert_eq!(f, 9);
 }
 
-// spec FTEF-14.28: a function-like macro's name and `(` in one expansion open its arguments
+// spec FTEF-14.29: a function-like macro's name and `(` in one expansion open its arguments
 // whatever spacing the stored body has
 #[test]
 fn a_call_written_in_a_body_expands() {
@@ -424,7 +473,7 @@ fn a_call_written_in_a_body_expands() {
     assert_eq!(fte("#define M(x) x\n#define K M/**/(1)\nK"), "1");
 }
 
-// spec FTEF-14.27: the bound on tokens holds even when the expansions stay under theirs
+// spec FTEF-14.28: the bound on tokens holds even when the expansions stay under theirs
 #[test]
 fn an_expansion_writing_too_many_tokens_is_reported() {
     let mut text = format!("#define A0 {}\n", "x ".repeat(100));
@@ -455,7 +504,7 @@ fn a_paste_is_text_lexed_again() {
     assert_eq!(kinds, relexed);
 }
 
-// spec FTEF-14.30: a string made from an argument of another expansion keeps its bytes, and
+// spec FTEF-14.31: a string made from an argument of another expansion keeps its bytes, and
 // a carriage return is escaped like a line break
 #[test]
 fn a_nested_string_keeps_its_bytes() {
@@ -471,7 +520,7 @@ fn a_nested_string_keeps_its_bytes() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\r\\nb\""));
 }
 
-// spec FTEF-14.28: in an expansion a `(` opens a call only after spaces and tabs, as the
+// spec FTEF-14.29: in an expansion a `(` opens a call only after spaces and tabs, as the
 // text of the argument it came from has them
 #[test]
 fn a_call_in_an_argument_needs_its_parenthesis_on_the_line() {

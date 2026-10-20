@@ -69,9 +69,9 @@ fn vanilla_has_no_if() {
     assert_eq!(tokens(&out), "b");
 }
 
-// spec FTEF-14.29: a directive goes on past a break after `\`, or one inside a `/* */`
+// spec FTEF-14.30: a directive goes on past a break after `\`, or one inside a `/* */`
 // comment, and a `//` comment ends its text
-// spec FTEF-14.23: and the line a `#define` ends on goes on past a `\` and line break in that
+// spec FTEF-14.24: and the line a `#define` ends on goes on past a `\` and line break in that
 // `//` comment, as `QCC_PR_SkipToEndOfLine` reads it, so the next line is not read
 #[test]
 fn directives_continue_after_a_backslash() {
@@ -142,7 +142,7 @@ fn variadic_macros() {
     assert_eq!(codes(&out), vec![Code::E0115]);
 }
 
-// spec FTEF-14.14, FTEF-14.30: `#param` is the argument as a string and `a ## b` one token;
+// spec FTEF-14.14, FTEF-14.31: `#param` is the argument as a string and `a ## b` one token;
 // a `#` before a word that is no parameter stays.
 #[test]
 fn stringify_and_paste() {
@@ -491,7 +491,7 @@ fn a_paste_is_lexed_again() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("12"));
 }
 
-// spec FTEF-14.30: `#param` is a string literal whose spelling escapes `"` and `\`
+// spec FTEF-14.31: `#param` is a string literal whose spelling escapes `"` and `\`
 #[test]
 fn a_stringified_argument_is_escaped() {
     let (_, out) = one_fte("#define Q(a) #a\nQ(say \"a\\\\b\")\n");
@@ -505,15 +505,48 @@ fn a_stringified_argument_is_escaped() {
     );
 }
 
-// spec FTEF-14.7: `__FILE__` is the path as a string literal, a line break in it spelled `\n`
+/// The first token of `text` as the file `path`, preprocessed under FTEQCC.
+fn first_token_in(path: &str, text: &str) -> crate::PpToken {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path, text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    out.tokens[0].clone()
+}
+
+// spec FTEF-14.21: `__FILE__` is a string of the file's name, whole, its spelling escaping a
+// `"`, a `\` and a line break, so it reads back as the name
 #[test]
 fn file_constant_escapes_its_path() {
-    let mut loader = MemoryLoader::new();
-    loader.insert("a\nb.qc", "__FILE__\n".as_bytes());
-    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
-    let out = pp.preprocess_file(Path::new("a\nb.qc")).unwrap();
-    assert_eq!(out.tokens[0].kind, TokenKind::String(b"a\nb.qc".to_vec()));
-    assert_eq!(out.tokens[0].spelling.as_deref(), Some(r#""a\nb.qc""#));
+    for (path, spelling) in [
+        ("a\nb.qc", r#""a\nb.qc""#),
+        ("a\"b.qc", r#""a\"b.qc""#),
+        ("a\\b.qc", r#""a\\b.qc""#),
+        ("c:a.qc", r#""c:a.qc""#),
+    ] {
+        let tok = first_token_in(path, "__FILE__\n");
+        assert_eq!(
+            tok.kind,
+            TokenKind::String(path.as_bytes().to_vec()),
+            "{path}"
+        );
+        assert_eq!(tok.spelling.as_deref(), Some(spelling), "{path}");
+        assert_eq!(
+            qc_lexer::fteqcc_string_bytes(spelling.as_bytes()),
+            Some(path.as_bytes().to_vec())
+        );
+    }
+}
+
+// spec FTEF-14.21: a `#param` of an argument holding a built-in string stringifies its
+// escaped spelling
+#[test]
+fn a_stringified_file_constant_holds_its_spelling() {
+    let tok = first_token_in(
+        "d\\x\"y.qc",
+        "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n",
+    );
+    assert_eq!(tok.kind, TokenKind::String(br#""d\\x\"y.qc""#.to_vec()));
 }
 
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
@@ -533,7 +566,7 @@ fn a_frame_value_past_an_int_is_held() {
     );
 }
 
-// spec FTEF-14.29: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
+// spec FTEF-14.30: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
 // the comment not ending it
 #[test]
 fn a_comment_with_stars_and_slashes_continues_a_directive() {

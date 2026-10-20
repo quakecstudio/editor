@@ -74,7 +74,7 @@ pub struct PpToken {
     /// The expansion that produced it, if any.
     pub expansion: Option<ExpansionId>,
     /// Its text when that is not the bytes at [`PpToken::span`]: a token `##` pasted, a string
-    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.30, FTEF-14.7).
+    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.31, FTEF-14.7).
     pub spelling: Option<String>,
     /// In an expansion, the span of the token of the same expansion that the expansion's text
     /// has right before this one with nothing between them, if any (QC-9.16). Always `None`
@@ -145,7 +145,7 @@ enum Body {
     /// The vanilla dialect's: the body's tokens, each with the file it is in.
     Tokens(Vec<(FileId, Token)>),
     /// FTEQCC's: the text `QCC_PR_PreProcessor_Define` stored, an `#append`ed part included
-    /// (FTEF-14.8, FTEF-14.23).
+    /// (FTEF-14.8, FTEF-14.24).
     Text(Text),
 }
 
@@ -228,7 +228,7 @@ struct Item {
     tok: PpToken,
     hide: Hide,
     /// Under FTEQCC, for a token read from an expansion's chunk, the offset in the chunk's
-    /// text where it ends (FTEF-14.13, FTEF-14.21).
+    /// text where it ends (FTEF-14.13, FTEF-14.22).
     chunk_end: Option<usize>,
 }
 
@@ -263,8 +263,8 @@ impl TokenStream {
     }
 
     /// Reading goes on at the byte `offset` of `text`, the text these tokens were lexed from,
-    /// where FTEQCC's reading goes on after a use's arguments or a `#define` (FTEF-14.21,
-    /// FTEF-14.23): from the first token at or after it, and the text from `offset` lexed
+    /// where FTEQCC's reading goes on after a use's arguments or a `#define` (FTEF-14.22,
+    /// FTEF-14.24): from the first token at or after it, and the text from `offset` lexed
     /// again unless only white space stands between the token before it and `offset`, so
     /// that no token or comment of the text as first lexed stands across it, and its tokens
     /// and lexical errors are those of the text from there.
@@ -356,12 +356,12 @@ struct Run {
     chunks: Vec<ChunkReader>,
     /// How many of [`Run::chunks`] each macro has, FTEQCC's `c->inside`.
     open_names: HashMap<String, usize>,
-    /// The macro expansions this file has made (FTEF-14.27, QC-9.18).
+    /// The macro expansions this file has made (FTEF-14.28, QC-9.18).
     expanded: Expanded,
     out: FileOutput,
 }
 
-/// The work a file's macro expansions have done, against the bound of FTEF-14.27 and QC-9.18.
+/// The work a file's macro expansions have done, against the bound of FTEF-14.28 and QC-9.18.
 #[derive(Debug, Default)]
 struct Expanded {
     expansions: usize,
@@ -407,11 +407,11 @@ const FTE_MAX_FRAME_NAME: usize = 63;
 const FTE_MAX_OPEN_CHUNKS: usize = 8;
 
 /// The most macro expansions the preprocessor makes in one file, under either dialect
-/// (FTEF-14.27, QC-9.18).
+/// (FTEF-14.28, QC-9.18).
 const FTE_MAX_EXPANSIONS: usize = 1 << 20;
 
 /// The most tokens the preprocessor's macro expansions write in one file, under either dialect
-/// (FTEF-14.27, QC-9.18).
+/// (FTEF-14.28, QC-9.18).
 const FTE_MAX_EXPANDED_TOKENS: usize = 1 << 22;
 
 /// What FTEQCC's `s_filen` is while a frame macro is defined or used: one reading of a source
@@ -735,7 +735,7 @@ impl<L: Loader> Preprocessor<L> {
         let rest = stream.tokens.get(stream.pos..)?;
         let mut len = 1_usize;
         if self.dialect.has_fteqcc_extensions() {
-            // FTEF-14.29: a line that ends in `\` before its break goes on.
+            // FTEF-14.30: a line that ends in `\` before its break goes on.
             let text = self
                 .sources
                 .file(cursor.file)
@@ -1131,7 +1131,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// The bytes of `file` from the first of `tokens` to the end of the last, a line
-    /// continuation (FTEF-14.29) read as a space.
+    /// continuation (FTEF-14.30) read as a space.
     fn source_text(&self, file: FileId, tokens: &[Token]) -> String {
         let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
             return String::new();
@@ -1659,7 +1659,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
 }
 
 /// Whether a directive goes on from the token ending at `from` to the one starting at `to`
-/// (FTEF-14.29): on the same line, or every line break between them is right after a `\` or
+/// (FTEF-14.30): on the same line, or every line break between them is right after a `\` or
 /// inside a `/* */` comment. A `//` comment ends the line.
 fn continues(text: &[u8], from: usize, to: usize) -> bool {
     let gap = text.get(from..to).unwrap_or_default();
@@ -1700,8 +1700,9 @@ fn directive_span(line: &[Token]) -> Span {
 }
 
 /// The token a built-in constant `name` expands to and its text, `QCC_PR_CheckBuiltinCompConst`
-/// (FTEF-14.7), in the file `path` at the line `line` FTEQCC gives it there (FTEF-14.26); `None`
-/// when `name` is none.
+/// (FTEF-14.7), in the file `path` at the line `line` FTEQCC gives it there (FTEF-14.27); `None`
+/// when `name` is none. A string's text escapes its bytes, so it reads back as the token's
+/// (FTEF-14.21).
 fn builtin_value(name: &str, line: u32, path: &Path) -> Option<(TokenKind, String)> {
     let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
     Some(match name {
@@ -1718,7 +1719,7 @@ fn builtin_value(name: &str, line: u32, path: &Path) -> Option<(TokenKind, Strin
     })
 }
 
-/// `text` as a QuakeC string literal, `"` and `\` escaped (FTEF-14.30).
+/// `text` as a QuakeC string literal, `"`, `\` and a line break escaped (FTEF-14.21).
 fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len().saturating_add(2));
     out.push('"');
@@ -1734,7 +1735,7 @@ fn quote(text: &str) -> String {
     out
 }
 
-/// `bytes` as a QuakeC string literal (FTEF-14.30), as `QCC_PR_ExpandStrCatMarkup` escapes
+/// `bytes` as a QuakeC string literal (FTEF-14.31), as `QCC_PR_ExpandStrCatMarkup` escapes
 /// them: `"`, `\` and a line break escaped; a byte of 0x80 or more is written as `\x`
 /// and its two hex digits, which an FTEQCC string reads back as that byte (FTEF-13.11), so
 /// the literal's text stays UTF-8.

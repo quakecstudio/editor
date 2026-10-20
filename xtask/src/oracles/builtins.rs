@@ -636,17 +636,17 @@ const EXPANSION_STATEMENTS: &[(&str, &str)] = &[
     ("#define K(x) x", "K(__LINE__:) goto lbl;"),
 ];
 
-/// The bytes that end an argument where FTEQCC's argument scanner finds them (FTEF-14.21).
+/// The bytes that end an argument where FTEQCC's argument scanner finds them (FTEF-14.22).
 const SEPARATORS: [&str; 3] = [",", ")", "("];
 
 /// What stands between a function-like macro's name and its `(` in another macro's body
-/// (FTEF-14.23): white space, comments and line continuations, which the stored body drops.
+/// (FTEF-14.24): white space, comments and line continuations, which the stored body drops.
 const BODY_GAPS: &[&str] = &[
     " ", "\t", " \t ", "/**/", " /**/ ", "/**/ ", " /**/", "/* x */", "/*\n*/", "\\\n", " \\\n",
     "\\\n ", " \\\n ", "\\\r\n", "/**/\\\n",
 ];
 
-/// The macro-text family (FTEF-14.21 to FTEF-14.26, P2-80 to P2-82, from the fourth P2-R2
+/// The macro-text family (FTEF-14.22 to FTEF-14.27, P2-80 to P2-82, from the fourth P2-R2
 /// review): programs whose macros FTEQCC reads as text where a token model would not. A `,`,
 /// `(` or `)` in an argument's character constant, comment or string; strings ending in `\`;
 /// built-in constants in arguments, after white space, comments and line breaks, and in nested
@@ -687,7 +687,7 @@ fn macro_text_cases() -> Vec<String> {
     }
     add("#define S(a) #a", ":S(e'x)".to_owned());
     add("#define S(a) #a", ":S(e\\\"x)".to_owned());
-    // A string after `#` or `##` in a body is read by `QCC_COM_Parse2` (FTEF-14.24).
+    // A string after `#` or `##` in a body is read by `QCC_COM_Parse2` (FTEF-14.25).
     add("#define S(a) #\"5\"", "S(x)".to_owned());
     add("#define S(a) #\"5\"x a", "S(:ex_a)".to_owned());
     add("#define S(a) #\"5\" a", "S(:ex_a)".to_owned());
@@ -697,7 +697,7 @@ fn macro_text_cases() -> Vec<String> {
     add("#define E(a) #5.a", "E(:ex_a)".to_owned());
     add("#define E(a) #0x5a", "E(:ex_a)".to_owned());
     // Built-in constants in arguments, and in expansions within expansions (FTEF-14.20,
-    // FTEF-14.26).
+    // FTEF-14.27).
     for arg in [
         "# __LINE__",
         "#\t__LINE__",
@@ -750,7 +750,7 @@ fn macro_text_cases() -> Vec<String> {
         "#define L __LINESTR__\n#define V(...) __VA_ARGS__ L",
         "V(:)".to_owned(),
     );
-    // Bodies as `QCC_PR_PreProcessor_Define` stores them (FTEF-14.23).
+    // Bodies as `QCC_PR_PreProcessor_Define` stores them (FTEF-14.24).
     for gap in BODY_GAPS {
         add(
             &format!("#define M(x) x\n#define K M{gap}(#5)"),
@@ -772,7 +772,7 @@ fn macro_text_cases() -> Vec<String> {
         add(&format!("#define N {body}"), "N".to_owned());
     }
     add("#define N #5 // c \\\nzz zz", "N".to_owned());
-    // Parameter lists (FTEF-14.22).
+    // Parameter lists (FTEF-14.23).
     for (define, use_) in [
         ("#define E(n, n) n", "E(#5, 6)"),
         ("#define E(n,n) n", "E(#5, 6)"),
@@ -791,7 +791,7 @@ fn macro_text_cases() -> Vec<String> {
     ] {
         add(define, use_.to_owned());
     }
-    // `__VA_COUNT__`, `,##__VA_ARGS__` and empty variadic arguments (FTEF-14.25).
+    // `__VA_COUNT__`, `,##__VA_ARGS__` and empty variadic arguments (FTEF-14.26).
     for (define, use_) in [
         ("#define V(...) :__VA_COUNT__", "V()"),
         ("#define V(...) :__VA_COUNT__", "V(a)"),

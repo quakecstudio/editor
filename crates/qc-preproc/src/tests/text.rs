@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! FTEQCC's macros read as text (`docs/spec/dialect-fteqcc.md` FTEF-14.21 to FTEF-14.27): the
+//! FTEQCC's macros read as text (`docs/spec/dialect-fteqcc.md` FTEF-14.22 to FTEF-14.28): the
 //! argument scanner, the `#define` reader, `QCC_COM_Parse2`'s tokens, variadic macros, built-in
 //! constants' lines, and the bound on what expansions write under both dialects (QC-9.18). The
 //! outcomes of the programs these cases come from were compared with the pinned FTEQCC in the
@@ -43,7 +43,7 @@ fn refused(codes: &[Code]) -> bool {
     codes.iter().any(|code| code.is_error())
 }
 
-// spec FTEF-14.21: a `,`, `(` or `)` in a character constant ends an argument or nests, so `'`
+// spec FTEF-14.22: a `,`, `(` or `)` in a character constant ends an argument or nests, so `'`
 // is one argument and `'` another, and a `'` alone is no character constant
 #[test]
 fn a_character_constant_s_separator_splits_the_arguments() {
@@ -62,7 +62,7 @@ fn a_character_constant_s_separator_splits_the_arguments() {
     assert_eq!(codes(&out), vec![]);
 }
 
-// spec FTEF-14.21: a `,` or `)` in a comment ends an argument too, unless the comment comes right
+// spec FTEF-14.22: a `,` or `)` in a comment ends an argument too, unless the comment comes right
 // after the `(` or a `,`, where the white space and comments before an argument are skipped
 #[test]
 fn a_comment_s_separator_splits_the_arguments_after_its_start() {
@@ -84,7 +84,7 @@ fn a_comment_s_separator_splits_the_arguments_after_its_start() {
     );
 }
 
-// spec FTEF-14.21: a string is passed over, its `,` and `)` in it, but ends only at a `"` with no
+// spec FTEF-14.22: a string is passed over, its `,` and `)` in it, but ends only at a `"` with no
 // `\` before it, so one ending in `\\` runs on to the next `"` or the end of the line
 #[test]
 fn a_string_ends_at_a_quote_with_no_backslash_before_it() {
@@ -105,7 +105,7 @@ fn a_string_ends_at_a_quote_with_no_backslash_before_it() {
     );
 }
 
-// spec FTEF-14.21: reading goes on after the `)`, read again from there where a token stood
+// spec FTEF-14.22: reading goes on after the `)`, read again from there where a token stood
 // across it, a directive's `#` at a line start included; the arguments' lexical errors are
 // reported only where the expansion writes them, and an error right after the `)` is the text's
 #[test]
@@ -138,7 +138,7 @@ fn reading_goes_on_after_the_close() {
     );
 }
 
-// spec FTEF-14.22: a parameter list is read as bytes: a name twice, 33 names, a name of 32 bytes,
+// spec FTEF-14.23: a parameter list is read as bytes: a name twice, 33 names, a name of 32 bytes,
 // a `...` that is not last and a list that does not end are refused; white space around a name
 // is not part of it, `()` is one parameter with no name, and a name that is no word is never
 // matched
@@ -179,7 +179,7 @@ fn parameter_lists_are_read_as_fteqcc_reads_them() {
     assert_eq!(fte("#define E(a b) a\nE(5)\n"), ("a".to_owned(), vec![]));
 }
 
-// spec FTEF-14.22: a macro's name is the word `QCC_PR_SimpleGetToken` reads, up to white space,
+// spec FTEF-14.23: a macro's name is the word `QCC_PR_SimpleGetToken` reads, up to white space,
 // `,`, `;`, `(`, `)`, `]` or `//`, so a comment right after `define` names nothing and one after
 // the name is part of it
 #[test]
@@ -191,7 +191,7 @@ fn a_macro_s_name_is_fteqcc_s_word() {
     assert_eq!(fte("#define N; 5\nN\n").0, "; 5");
 }
 
-// spec FTEF-14.23: a body is stored with its `/* */` comments and its `\` and line breaks dropped,
+// spec FTEF-14.24: a body is stored with its `/* */` comments and its `\` and line breaks dropped,
 // so a function-like macro's name and `(` with only those between them in a body are a call
 #[test]
 fn a_stored_body_calls_across_dropped_text() {
@@ -204,7 +204,7 @@ fn a_stored_body_calls_across_dropped_text() {
     }
 }
 
-// spec FTEF-14.23: the quote flag flips at every `"`, an escaped one too, and a `//` outside a
+// spec FTEF-14.24: the quote flag flips at every `"`, an escaped one too, and a `//` outside a
 // quote ends the body; a `\` and line break is dropped, the byte after it stored whatever it is;
 // a body's text is read as code only where it is expanded
 #[test]
@@ -229,7 +229,7 @@ fn a_body_ends_where_fteqcc_s_quote_flag_says() {
     assert_eq!(fte("#define N 1 /* c\nN\n"), (String::new(), vec![]));
 }
 
-// spec FTEF-14.23: a `\` and line break before a line starting with `#` keeps the line break, and
+// spec FTEF-14.24: a `\` and line break before a line starting with `#` keeps the line break, and
 // so does the next continued line
 #[test]
 fn a_continued_directive_line_keeps_its_line_break() {
@@ -248,7 +248,7 @@ fn a_continued_directive_line_keeps_its_line_break() {
     assert!(!out.tokens[3].touches(&out.tokens[2]));
 }
 
-// spec FTEF-14.23: `#append` adds a space and its body to the stored body when its parameters are
+// spec FTEF-14.24: `#append` adds a space and its body to the stored body when its parameters are
 // the macro's, and with others defines it again with the warning W0102
 #[test]
 fn append_needs_the_macro_s_parameters() {
@@ -267,7 +267,7 @@ fn append_needs_the_macro_s_parameters() {
     assert_eq!(fte("#define A 1\n#append A\nA\n"), ("1".to_owned(), vec![]));
 }
 
-// spec FTEF-14.24: `QCC_COM_Parse2` reads a number of digits and `.`, or `0x` and hex digits, and
+// spec FTEF-14.25: `QCC_COM_Parse2` reads a number of digits and `.`, or `0x` and hex digits, and
 // a word, so a parameter written right after a number is still one; a string after `#` or `##` is
 // its text with no quotes, and reading goes on a byte past its `"`; a token keeps 1023 bytes
 #[test]
@@ -297,7 +297,7 @@ fn body_tokens_are_parse2_s() {
     );
 }
 
-// spec FTEF-14.25: `__VA_COUNT__` is the arguments found less one and the commas after the named
+// spec FTEF-14.26: `__VA_COUNT__` is the arguments found less one and the commas after the named
 // ones; `##__VA_ARGS__` with no variadic argument takes away a `,` right before it
 #[test]
 fn variadic_counts_and_commas() {
@@ -327,7 +327,7 @@ fn variadic_counts_and_commas() {
     assert_eq!(fte("#define E(...) #5 __VA_ARGS__\nE(, )\n").0, "#5 ,");
 }
 
-// spec FTEF-14.26: a built-in constant an argument copies is written in place of the white space
+// spec FTEF-14.27: a built-in constant an argument copies is written in place of the white space
 // and `//` comments before it, at the line of the use's `)`; in a chunk a constant has the line
 // FTEQCC was at in the chunk it was used in, counted from 1
 #[test]
@@ -374,7 +374,7 @@ fn output_bytes(out: &FileOutput) -> usize {
     out.tokens.capacity() * std::mem::size_of::<PpToken>()
 }
 
-// spec FTEF-14.27, QC-9.18: one expansion of a body that names its parameter 8000 times, given
+// spec FTEF-14.28, QC-9.18: one expansion of a body that names its parameter 8000 times, given
 // 8000 tokens (the fourth P2-R2 review's 32018-byte file, 64000000 tokens unbounded), is E0120
 // under each dialect, left as written, its output a few megabytes; 1400 by 1400, 1960000 tokens,
 // is under the bound and written, in a few hundred megabytes
@@ -394,7 +394,7 @@ fn one_expansion_is_bounded_as_it_is_written() {
     }
 }
 
-// spec FTEF-14.27: under FTEQCC an expansion's text may hold no more bytes than the tokens left,
+// spec FTEF-14.28: under FTEQCC an expansion's text may hold no more bytes than the tokens left,
 // so 2000 by 2000, 4000000 tokens in 8000000 bytes, is E0120, which the vanilla dialect, counting
 // its tokens, writes
 #[test]
