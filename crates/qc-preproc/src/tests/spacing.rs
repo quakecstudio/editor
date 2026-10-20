@@ -276,11 +276,11 @@ fn appended_text_stays_apart_from_the_body() {
     assert_eq!(touching_in(&files), "a :");
 }
 
-// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands
+// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands; the
+// text ends there (QC-1.1)
 #[test]
 fn a_nul_after_a_name_ends_the_word() {
-    let out = run(b"#define N 5\nx = N\0;\n", Dialect::Fteqcc);
-    assert!(out.tokens.iter().any(|t| t.expansion.is_some()));
+    assert_eq!(touching("#define N 5\nx = N\0;\n", Dialect::Fteqcc), "x = 5");
 }
 
 // spec FTEF-14.15: `#param` is the argument's text as written, white space and comments
