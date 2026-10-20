@@ -595,6 +595,18 @@ const EXPANSION_INITIALISERS: &[(&str, &str)] = &[
     ("#define S(a) #a", ":S(e\"x\"a)"),
     ("#define K(x) x", "#K(__LINE__)"),
     ("#define K(x) #5:x", "K(__FILE__)"),
+    // From the self-review: arguments beside `##`, `#__VA_ARGS__`, built-in constants in
+    // arguments, a pasted name after `#`, a paste that is a comment, and bytes in a string.
+    ("#define P(a, b) a##b", "P(#5:ex , _a)"),
+    ("#define P(a, b) a##b", "P(#5:e, x_a)"),
+    ("#define P(a, b) a##b", "P(#5:e, x_a :ex_b)"),
+    ("#define P(a, b) a # # b", "P(#, 5)"),
+    ("#define P(a, b) a##b", "P(/, /) #5"),
+    ("#define V(...) #__VA_ARGS__", "V(5)"),
+    ("#define K(x) x", "K(#__LINE__)"),
+    ("#define K(x) x##5", "K(#__LINE__)"),
+    ("#define N1 #5\n#define P(x, a, b) x##a##b", "P(#, N, 1)"),
+    ("#define S(a) #a", ":S(e\u{e9})"),
 ];
 
 /// The macro-expansion cases written as statements of a function `g` after `f`, which binds
@@ -616,6 +628,9 @@ const EXPANSION_STATEMENTS: &[(&str, &str)] = &[
     ("#define L(x) x:\n#define LL L", "LL(lbl) goto lbl;"),
     ("#define L(x) x:", "L(lbl\n) goto lbl;"),
     ("#define S(x) #x", "x = S(5) == \"5\";"),
+    ("#define P(a, b) a##b", "P(l, bl:) goto lbl;"),
+    ("#define P(a, b) a##b", "P(l , bl:) goto lbl;"),
+    ("#define K(x) x", "K(__LINE__:) goto lbl;"),
 ];
 
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's

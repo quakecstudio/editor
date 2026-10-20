@@ -136,8 +136,8 @@ fn the_cross_product_holds_the_expansion_families() {
         );
         assert!(cases.contains(&fte(&source)), "{source:?}");
     }
-    assert_eq!(super::EXPANSION_INITIALISERS.len(), 89);
-    assert_eq!(super::EXPANSION_STATEMENTS.len(), 15);
+    assert_eq!(super::EXPANSION_INITIALISERS.len(), 99);
+    assert_eq!(super::EXPANSION_STATEMENTS.len(), 18);
 }
 
 // spec FTE-23.14: an outcome is written and read back in one form; any other text is refused
