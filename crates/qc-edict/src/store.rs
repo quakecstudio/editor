@@ -293,7 +293,7 @@ impl EdictStore {
             let qualifies = self.edicts.get(number).is_some_and(|edict| {
                 // EDICT-6.3: e->freetime < 2 || sv.time - e->freetime > 0.5, the delay in
                 // double precision against the f32 freetime, strict.
-                // spec EDICT-6.1: free and old enough to reuse.
+                // EDICT-6.1: free and old enough to reuse.
                 edict.free
                     && (edict.freetime < EDICT_REUSE_GRACE
                         || now - f64::from(edict.freetime) > EDICT_REUSE_DELAY)

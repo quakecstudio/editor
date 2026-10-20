@@ -195,6 +195,45 @@ fn an_uncommitted_lowering_fails_too() {
     assert!(problems[0].contains("at working tree"), "{problems:?}");
 }
 
+fn git_in(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn a_version_git_cannot_read_is_an_error() {
+    let dir = repository("unreadable", &[BASE]);
+    let blob = git_in(&dir, &["rev-parse", &format!("HEAD:{FILE}")]);
+    let blob = blob.trim();
+    let (fan, rest) = blob.split_at_checked(2).unwrap();
+    let object = dir.join(".git/objects").join(fan).join(rest);
+    fs::remove_file(&object).unwrap();
+    let error = versions(&dir).unwrap_err();
+    assert!(error.contains("git show"), "{error}");
+}
+
+#[test]
+fn a_commit_that_deleted_the_file_is_a_version_without_it() {
+    let dir = repository("deleted", &[BASE]);
+    git_in(&dir, &["rm", "--quiet", FILE]);
+    git_in(&dir, &["commit", "--quiet", "-m", "delete"]);
+    let versions = versions(&dir).unwrap();
+    let texts: Vec<bool> = versions.iter().map(|(_, text)| text.is_some()).collect();
+    assert_eq!(texts, [true, false], "{versions:?}");
+}
+
 #[test]
 fn a_history_of_proper_changes_passes() {
     let raised = edit("lines = 95", "lines = 97").replace("\"P1-R0\"", "\"P2-R1\"");

@@ -51,10 +51,19 @@ statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
 `crates/qs-tests/tests/it/spec_coverage.rs` checks, on every `cargo test`:
 
 - Every active statement in `docs/spec/*.md` (all but `README.md` and `_`-prefixed templates)
-  is cited by a line starting `// spec <ID>` in a Rust file under `crates/`, `apps/` or
-  `xtask/` (whose oracle module tests the oracles' C through the built oracle; its
-  `fixtures/` cite statements of their own), or is listed in
+  is cited by a line starting `// spec <ID>` in the test code of a Rust file under
+  `crates/`, `apps/` or `xtask/` (whose oracle module tests the oracles' C through the built
+  oracle; its `fixtures/` cite statements of their own), or is listed in
   [`coverage-baseline.tsv`](coverage-baseline.tsv).
+- Only a citation in test code counts, since TEST-3 asks for a test citing each statement.
+  Test code is a file under a `tests` directory or named `tests.rs`; an item marked
+  `#[test]` or `#[cfg(test)]`, such as an inline `mod tests`; the file of a module declared
+  `#[cfg(test)] mod name;` (a test vector module such as `crates/qc-lno/src/vectors.rs`) and
+  the files under its directory; and xtask's oracle scenarios in
+  `xtask/src/oracles/scenarios/`, which are differential tests. A `// spec` line anywhere
+  else cites nothing: shipped code names the statement it follows in a plain comment
+  (`// VM-12.3: ...`) or its rustdoc. `xtask/src/test_code.rs` decides, for this ratchet and
+  for the spec check of `cargo xtask readiness` alike.
 - Every citation names a statement that exists and is not withdrawn. A citation names
   statements (`PREFIX-n.m`), never just a section.
 - No statement in the baseline is cited: once a test cites it, it leaves the baseline in the

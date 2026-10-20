@@ -97,7 +97,19 @@ A file containing ported code has this header, in this order:
   `Ported from <owner>/<repo>@<40-hex commit>: <path>, <Function>[, <Function>...]`.
   A file ported from several id files has several lines.
 - The upstream's copyright line, copied from the upstream table, comes right after the SPDX
-  line and above ours.
+  line and above ours. A file ported from two upstreams, such as an ADR-0017 port that also
+  follows id's code, keeps both lines, in the order of its `Ported from` lines:
+
+```rust
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_lex.c, PR_LexString
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_LexString
+```
+
 - The item that holds the port also names id's function in its rustdoc and links its spec
   section (`Implements EXAMPLE-1`).
 
@@ -115,14 +127,16 @@ block for C), ending at the first line that is blank or not a comment.
 3. **H3.** A ported file has at least one line that passes H2.
 4. **H4.** For each upstream named in an H2 line, the header contains that upstream's
    copyright line from the table above (for `id-Software/*`:
-   `Copyright (C) 1996-1997 Id Software, Inc.`, compared with runs of spaces collapsed), and
-   it appears before any other `Copyright` line.
+   `Copyright (C) 1996-1997 Id Software, Inc.`, compared with runs of spaces collapsed).
+   These lines, each once (`id-Software/Quake` and `id-Software/Quake-Tools` share one), are
+   the header's first `Copyright` lines, in the order the `Ported from` lines first name
+   their upstreams, so every upstream's line is above ours.
 5. **H5.** An upstream named in an H2 line must be in the table above.
 
 The error names the file, the rule and what is missing. These headers are the fixtures for
 the check's tests:
 
-Passes: the header above.
+Passes: the two headers above.
 
 Fails H4, ported from id but without id's copyright line:
 

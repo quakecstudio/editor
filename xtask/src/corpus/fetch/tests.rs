@@ -302,6 +302,39 @@ fn an_unsafe_path_in_the_archive_is_refused() {
     assert!(!tmp.0.join("evil.qc").exists());
 }
 
+// The unsafe member sorts after the safe ones, and still no file of the archive is written.
+#[test]
+fn an_archive_with_an_unsafe_member_writes_no_file() {
+    let tmp = TempDir::new();
+    let evil = repo_archive(&[("qc/defs.qc", DEFS), ("qc/zz/../../evil.qc", b"x")]);
+    let net = FakeNet::serving(&archive_url(), &evil);
+    let err = write_codebase(&manifest(&hex_digest(DEFS)), "rr", &tmp.0, &net).unwrap_err();
+    assert!(
+        err.contains("\"zz/../../evil.qc\" is not a safe relative path"),
+        "{err}"
+    );
+    assert!(!tmp.0.join("codebase").exists());
+    assert!(!tmp.0.join("evil.qc").exists());
+}
+
+#[test]
+fn a_tree_with_an_unsafe_directory_writes_no_codebase() {
+    let tmp = TempDir::new();
+    let mut m = tree_manifest();
+    m.tree[0].dirs = [
+        ("src".to_owned(), "rr".to_owned()),
+        ("z/../../up".to_owned(), "rr".to_owned()),
+    ]
+    .into();
+    let net = FakeNet::serving(&archive_url(), &standard_archive());
+    let err = write_tree(&m, "t", &tmp.0, &net).unwrap_err();
+    assert!(
+        err.contains("\"z/../../up\" is not a safe relative path"),
+        "{err}"
+    );
+    assert!(!tmp.0.join("tree").exists());
+}
+
 // Refuses entries marked never, from any table, and unknown ids.
 #[test]
 fn never_and_unknown_entries_are_refused() {

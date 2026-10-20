@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Below the spec-citation threshold: no test cites FX-1.2.
+//! Below the spec-citation threshold: no test cites FX-1.2. The `// spec` line in
+//! `first` is shipped code, which cites nothing.
 
 pub fn first() -> u8 {
+    // spec FX-1.2: not a test
     1
 }
 

@@ -192,12 +192,13 @@ fn write_codebase_to(
     net: &dyn Net,
 ) -> Result<usize, String> {
     let files = codebase_files(m, id, dest, net)?;
+    // Every member is checked before any is written, so a refused archive writes nothing.
+    if let Some(rel) = files.keys().find(|rel| !safe_member(rel)) {
+        return Err(format!(
+            "codebase {id}: {rel:?} is not a safe relative path"
+        ));
+    }
     for (rel, data) in &files {
-        if !safe_member(rel) {
-            return Err(format!(
-                "codebase {id}: {rel:?} is not a safe relative path"
-            ));
-        }
         write_file(&dir.join(rel), data)?;
     }
     let project = m.entry(id).and_then(|(_, e)| e.project.as_deref());
@@ -222,11 +223,11 @@ pub(crate) fn write_tree(
         .tree(id)
         .ok_or_else(|| format!("tree {id}: no such tree in the manifest"))?;
     let root = dest.join("tree").join(id);
+    if let Some(sub) = tree.dirs.keys().find(|sub| !safe_member(sub)) {
+        return Err(format!("tree {id}: {sub:?} is not a safe relative path"));
+    }
     let mut count = 0_usize;
     for (sub, codebase) in &tree.dirs {
-        if !safe_member(sub) {
-            return Err(format!("tree {id}: {sub:?} is not a safe relative path"));
-        }
         let written = write_codebase_to(m, codebase, &root.join(sub), dest, net)
             .map_err(|e| format!("tree {id}: {e}"))?;
         count = count.saturating_add(written);
