@@ -780,7 +780,7 @@ fn next_think_of(fn_body: &ast::FunctionBody) -> Option<(String, Span)> {
 fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, fte: bool) -> RawBody {
     let mut body = RawBody::default();
     collect_params(fn_ty, fn_body, &mut body.params);
-    // FTEF-18.3, FTEF-18.4: a state header's expressions are values of the function.
+    // FTEF-18.3, FTEF-18.28: a state header's expressions are values of the function.
     for expr in fn_body.state().iter().flat_map(ast::State::exprs) {
         lower_expr(&expr, fte, &mut body.uses);
     }

@@ -128,7 +128,7 @@ pub enum SyntaxKind {
     Colon,
     /// `::` (FTEQCC, FTEF-13.1): a class member's scope.
     ColonColon,
-    /// `..` (FTEQCC, FTEF-18.4, FTEF-18.10): a range.
+    /// `..` (FTEQCC, FTEF-18.18, FTEF-18.10): a range.
     DotDot,
     /// `->` (FTEQCC, FTE-19.2): member access, as `.`.
     Arrow,

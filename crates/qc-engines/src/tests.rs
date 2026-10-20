@@ -759,7 +759,7 @@ fn fteqcc_builtin_numbers_are_the_values_fteqcc_reads() {
     assert_eq!(builtin_number("0x10", Dialect::Vanilla), None);
 }
 
-// spec ENGT-4.11: `#0x11F` is builtin 287, `#0x11F:NAME` too (ENGT-4.6), and `#010` is builtin
+// spec ENGT-4.11: `#0x11F` is builtin 287, `#0x11F:NAME` too (ENGT-4.18), and `#010` is builtin
 // 8 under the FTEQCC dialect but 10 under the vanilla one
 #[test]
 fn fteqcc_number_forms_are_checked_by_their_value() {
@@ -800,7 +800,7 @@ fn w0311_is_a_warning() {
     assert!(found.iter().all(|d| !d.diagnostic.is_error()));
 }
 
-// spec ENGT-4.5, QCD-7.17: calling `bprint = #0:ex_bprint` targeting FTEQW is W0311 naming
+// spec ENGT-4.17, QCD-7.17: calling `bprint = #0:ex_bprint` targeting FTEQW is W0311 naming
 // FTEQW at the callee's name; KEX, QuakeSpasm, Ironwail and vkQuake have ex_bprint
 #[test]
 fn a_named_builtin_targeting_fteqw_is_w0311() {
@@ -839,7 +839,7 @@ fn a_named_builtin_targeting_fteqw_is_w0311() {
     }
 }
 
-// spec ENGT-4.5: the extensions of a named builtin come from the first engine whose table has
+// spec ENGT-4.17: the extensions of a named builtin come from the first engine whose table has
 // the name with some, and an engine with the name has no W0311
 #[test]
 fn a_named_builtin_carries_its_extensions() {
@@ -857,7 +857,7 @@ void() w = { stuffcmdflags(world, 0, \"x\"); };
     assert!(fte_messages(Engine::Fteqw, &[source]).is_empty());
 }
 
-// spec ENGT-4.5: a name with a #N initialiser keeps that number; otherwise its first #0:NAME
+// spec ENGT-4.17: a name with a #N initialiser keeps that number; otherwise its first #0:NAME
 // gives the engine name, compared exactly; a zero written 0.0 counts as zero
 #[test]
 fn the_number_wins_over_an_engine_name() {
@@ -905,7 +905,7 @@ fn only_a_zero_literal_takes_an_engine_name() {
     }
 }
 
-// spec ENGT-4.6: `#N:NAME` with N at least 1 is checked by its number alone
+// spec ENGT-4.18: `#N:NAME` with N at least 1 is checked by its number alone
 #[test]
 fn a_numbered_builtin_with_a_name_is_checked_by_number() {
     let source = "void() f = #287:ex_bprint;\nvoid() w = { f(); };\n";
@@ -1202,7 +1202,7 @@ fn a_dp_project_client_module_reports_an_fte_builtin() {
     );
 }
 
-// spec ENGT-4.5: (P2-R3 review) a zero is any literal whose digits are all zeros, so `#00`
+// spec ENGT-4.17: (P2-R3 review) a zero is any literal whose digits are all zeros, so `#00`
 // and `#0.00` are keyed by the name after the `:`, and `#0.5`, whose digits are not, is no
 // key and gives no W0311 (ENGT-4.12)
 #[test]
@@ -1223,7 +1223,7 @@ fn reviewer_only_all_zero_digits_key_by_name() {
     }
 }
 
-// spec ENGT-4.5: (P2-R3 review) the name of `#0:NAME` is the one after the `:`, however the
+// spec ENGT-4.17: (P2-R3 review) the name of `#0:NAME` is the one after the `:`, however the
 // initialiser is spaced
 #[test]
 fn reviewer_the_name_follows_the_colon() {

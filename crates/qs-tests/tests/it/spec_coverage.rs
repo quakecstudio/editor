@@ -6,10 +6,11 @@
 //! be cited by a `// spec PREFIX-n.m` comment in the test code of a Rust file under `crates/`,
 //! `apps/` or `xtask/` (outside `xtask/fixtures/`), or be listed in
 //! `docs/spec/coverage-baseline.tsv`. Test code is what [`test_code`] says it is: a `// spec`
-//! line in shipped code cites nothing. The ratchet only turns one way: a statement
-//! that loses its last citation fails, and a baseline entry that gains a citation fails until
-//! it is removed from the baseline. `docs/spec/requirements.tsv` is the index of every
-//! statement and must match the spec files. The format is in `docs/spec/README.md`.
+//! line in shipped code cites nothing, so the ratchet reports it as an error. The ratchet only
+//! turns one way: a statement that loses its last citation fails, and a baseline entry that
+//! gains a citation fails until it is removed from the baseline. `docs/spec/requirements.tsv`
+//! is the index of every statement and must match the spec files. The format is in
+//! `docs/spec/README.md`.
 
 #![expect(
     clippy::expect_used,
@@ -26,7 +27,7 @@ use std::path::{Path, PathBuf};
 #[path = "../../../../xtask/src/test_code.rs"]
 mod test_code;
 
-use test_code::{TestCode, test_code};
+use test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
 const REQUIREMENTS_HEADER: &str = "id\tspec\tsection\tstatus\tstatement";
 const BASELINE_HEADER: &str = "id";
@@ -143,6 +144,8 @@ fn parse_spec(spec: &str, text: &str) -> Result<Vec<Statement>, String> {
 
 /// Parses the citations in one Rust file: lines of its test `code` whose first non-blank text
 /// is `// spec `, followed by comma-separated statement IDs and an optional `: paraphrase`.
+/// A `// spec` line outside test code is an error: it cites nothing, so it would look like
+/// coverage that the ratchet does not count (`docs/spec/README.md`).
 fn parse_citations(file: &str, text: &str, code: &TestCode) -> Result<Vec<Citation>, String> {
     let mut citations = Vec::new();
     for (line, number) in text.lines().zip(1_u32..) {
@@ -150,7 +153,7 @@ fn parse_citations(file: &str, text: &str, code: &TestCode) -> Result<Vec<Citati
             continue;
         };
         if !code.contains(number) {
-            continue;
+            return Err(shipped_citation(file, number, rest));
         }
         let ids = rest.split_once(':').map_or(rest, |(ids, _)| ids);
         for id in ids.split(',').map(str::trim) {
@@ -326,7 +329,7 @@ fn citing_files() -> Vec<PathBuf> {
     for dir in ["crates", "apps", "xtask"] {
         rust_files(&repo_root().join(dir), &mut files);
     }
-    let fixtures = repo_root().join("xtask/fixtures");
+    let fixtures = repo_root().join(FIXTURES);
     files.retain(|path| !path.starts_with(&fixtures));
     files.sort();
     files
@@ -501,24 +504,35 @@ fn parse_citations_reads_lists_and_rejects_malformed_ids() {
 }
 
 #[test]
-fn a_citation_in_shipped_code_does_not_count() {
+fn a_citation_in_shipped_code_is_an_error() {
     let text = "fn f() {\n    // spec T-1.1: shipped code\n}\n#[cfg(test)]\nmod tests {\n    // spec T-1.2: a test\n}\n";
     let files = [(PathBuf::from("crates/a/src/ops.rs"), text.to_owned())];
     let code = test_code(&files);
     let code = code.first().expect("one file");
-    let citations = parse_citations("crates/a/src/ops.rs", text, code).expect("parses");
+    let error = parse_citations("crates/a/src/ops.rs", text, code)
+        .expect_err("a shipped-code citation is an error");
+    assert!(
+        error.starts_with("crates/a/src/ops.rs:2: ") && error.contains("outside test code"),
+        "{error}"
+    );
+    let tests_only = "#[cfg(test)]\nmod tests {\n    // spec T-1.2: a test\n}\n";
+    let files = [(PathBuf::from("crates/a/src/ops.rs"), tests_only.to_owned())];
+    let code = test_code(&files);
+    let code = code.first().expect("one file");
+    let citations = parse_citations("crates/a/src/ops.rs", tests_only, code).expect("parses");
     let ids: Vec<&str> = citations.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids, ["T-1.2"]);
-    let errors = check_coverage(
-        &[statement("T-1.1", false), statement("T-1.2", false)],
-        &citations,
-        &baseline(&[]),
-    );
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.starts_with("T-1.1 ") && e.contains("not cited")),
-        "{errors:?}"
+}
+
+#[test]
+fn a_plain_comment_naming_a_statement_in_shipped_code_is_not_a_citation() {
+    let text = "fn f() {\n    // T-1.1: shipped code names the statement it follows\n}\n";
+    let files = [(PathBuf::from("crates/a/src/ops.rs"), text.to_owned())];
+    let code = test_code(&files);
+    let code = code.first().expect("one file");
+    assert_eq!(
+        parse_citations("crates/a/src/ops.rs", text, code),
+        Ok(Vec::new())
     );
 }
 

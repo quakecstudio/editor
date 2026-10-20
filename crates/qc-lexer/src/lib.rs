@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The vanilla QuakeC lexer.
+//! The QuakeC lexer, for the dialect of id's `qcc` and the FTEQCC dialects.
 //!
 //! Splits one source file into tokens with byte spans, as id's `qcc` splits it
 //! (`docs/spec/language.md`, QC-1 to QC-8). Every name is a [`TokenKind::Name`]: no name is
@@ -172,7 +172,7 @@ pub enum Punct {
     ShlEq,
     /// `::` (FTEQCC, FTEF-13.1): a class member's scope, `Class::member`.
     ColonColon,
-    /// `..` (FTEQCC, FTEF-18.4, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
+    /// `..` (FTEQCC, FTEF-18.18, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
     DotDot,
 }
 

@@ -146,12 +146,37 @@ fn a_real_crate_is_measured_for_spec_citations() {
     assert_eq!(score, self::score(7, 7));
 }
 
+/// The values the workflow text gives the key `NIGHTLY`: each line, outside a comment, whose
+/// key is `NIGHTLY`, with any quotes around its value removed.
+fn nightly_definitions(workflow: &str) -> Vec<String> {
+    workflow
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("NIGHTLY:"))
+        .map(|value| {
+            let value = value.split(" #").next().unwrap_or_default().trim();
+            value.trim_matches(|c| c == '"' || c == '\'').to_owned()
+        })
+        .collect()
+}
+
+// No spec statement: this pins that the Readiness workflow installs the nightly that
+// `cargo xtask readiness` runs llvm-cov on.
 #[test]
 fn the_workflow_installs_the_pinned_nightly() {
     let workflow = fs::read_to_string(root().join(".github/workflows/readiness.yml")).unwrap();
+    assert_eq!(
+        nightly_definitions(&workflow),
+        [NIGHTLY],
+        "the Readiness workflow must define NIGHTLY once, as {NIGHTLY}"
+    );
     assert!(
-        workflow.contains(&format!("NIGHTLY: {NIGHTLY}\n")),
-        "the Readiness workflow must pin NIGHTLY: {NIGHTLY}"
+        workflow.contains("rustup toolchain install \"$NIGHTLY\""),
+        "the Readiness workflow installs $NIGHTLY"
+    );
+    // The reading does not depend on the line's formatting.
+    assert_eq!(
+        nightly_definitions("  # NIGHTLY: old\n  NIGHTLY: \"n-1\" # pinned\nNIGHTLY: 'n-2'\n"),
+        ["n-1", "n-2"]
     );
     let date = NIGHTLY.strip_prefix("nightly-").unwrap();
     assert_eq!(date.len(), 10);
@@ -264,19 +289,50 @@ fn citations_are_comment_lines_naming_statements() {
     let text =
         "    // spec VM-1.1, VM-1.2: what it does\n// spec VM-2.1\nlet x = 1; // spec VM-3.1\n";
     assert_eq!(
-        citations(text, &TestCode::File),
+        citations(Path::new("x.rs"), text, &TestCode::File).unwrap(),
         ["VM-1.1", "VM-1.2", "VM-2.1"]
     );
 }
 
 /// TEST-3 asks for a test citing each statement, so a `// spec` line outside
-/// test code cites nothing.
+/// test code cites nothing and is reported rather than silently dropped.
 #[test]
-fn a_citation_outside_test_code_does_not_count() {
+fn a_citation_outside_test_code_is_an_error() {
+    let path = Path::new("crates/a/src/lib.rs");
     let text = "// spec VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
-    let code = test_code(&[(PathBuf::from("crates/a/src/lib.rs"), text.to_owned())]);
-    let code = code.first().unwrap();
-    assert_eq!(citations(text, code), ["VM-1.2"]);
+    let code = test_code(&[(path.to_path_buf(), text.to_owned())]);
+    let error = citations(path, text, code.first().unwrap()).unwrap_err();
+    assert!(
+        error.starts_with("crates/a/src/lib.rs:1: ") && error.contains("outside test code"),
+        "{error}"
+    );
+    let plain = "// VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
+    let code = test_code(&[(path.to_path_buf(), plain.to_owned())]);
+    assert_eq!(
+        citations(path, plain, code.first().unwrap()).unwrap(),
+        ["VM-1.2"]
+    );
+}
+
+/// The spec check reports a `// spec` line in a crate's shipped code, end to end: the spec
+/// fixture with one added to `first` is an error naming the line, not a score.
+#[test]
+fn the_spec_check_fails_on_a_shipped_citation() {
+    let repo = fresh("readiness/spec-shipped").join("repo");
+    copy_dir(&root().join(FIXTURES).join("spec"), &repo);
+    let lib = repo.join("crates/fx-spec/src/lib.rs");
+    let text = fs::read_to_string(&lib).unwrap();
+    let shipped = text.replace(
+        "    // FX-1.2: not a test\n",
+        "    // spec FX-1.2: not a test\n",
+    );
+    assert_ne!(shipped, text);
+    fs::write(&lib, shipped).unwrap();
+    let error = spec(&repo.join("crates/fx-spec")).unwrap_err();
+    assert!(
+        error.starts_with("crates/fx-spec/src/lib.rs:7: ") && error.contains("outside test code"),
+        "{error}"
+    );
 }
 
 #[test]

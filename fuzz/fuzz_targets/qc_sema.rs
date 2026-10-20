@@ -5,8 +5,8 @@
 //! profile, bit 1 autoprototyping. The module is resolved as written (`Db::module_index`) and
 //! through the preprocessor (`Db::analyze_module`), and checked against every engine for
 //! missing builtins (`qc_engines::missing_builtins`). Fails on a panic, on a definition,
-//! reference or diagnostic outside the bytes of its file, and when editing one file and
-//! re-resolving gives another index than resolving the edited files from scratch.
+//! reference or diagnostic outside the bytes of its file, and when editing each file in turn
+//! and re-resolving gives another index than resolving the edited files from scratch.
 
 #![no_main]
 
@@ -82,12 +82,18 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
-    // Editing the last file to the first's text and re-resolving equals a fresh resolution.
-    let mut edited = files.clone();
-    let last = edited.len() - 1;
-    edited[last] = files[0];
-    db.set_file(FileId(last), PathBuf::from(format!("f{last}.qc")), edited[last].to_vec());
-    let mut fresh = db_of(&edited, dialect, autoproto);
-    assert_eq!(db.module_index(&ids), fresh.module_index(&ids));
-    assert_eq!(db.analyze_module(&input), fresh.analyze_module(&input));
+    // Editing each file in turn, to the next file's text with a declaration of its own added
+    // so that every edit changes the file, and re-resolving equals resolving the edited files
+    // from scratch: no file's cached queries outlive an edit of it or of another file.
+    let mut edited: Vec<Vec<u8>> = files.iter().map(|text| text.to_vec()).collect();
+    for index in 0..files.len() {
+        let mut text = files[(index + 1) % files.len()].to_vec();
+        text.extend_from_slice(format!("\nfloat fuzz_edit_{index};\n").as_bytes());
+        edited[index] = text.clone();
+        db.set_file(FileId(index), PathBuf::from(format!("f{index}.qc")), text);
+        let views: Vec<&[u8]> = edited.iter().map(Vec::as_slice).collect();
+        let mut fresh = db_of(&views, dialect, autoproto);
+        assert_eq!(db.module_index(&ids), fresh.module_index(&ids));
+        assert_eq!(db.analyze_module(&input), fresh.analyze_module(&input));
+    }
 });

@@ -8,9 +8,10 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     clippy::indexing_slicing,
     clippy::float_cmp,
-    reason = "test code: a failed expect or index is a failed test"
+    reason = "test code: a failed expect, panic or index is a failed test"
 )]
 
 use std::path::PathBuf;
@@ -67,6 +68,44 @@ fn progs_with_spawn(classname: &'static str) -> Vec<u8> {
         .build()
 }
 
+/// [`progs_with_spawn`] with a second spawn function named `other`, sharing the empty body.
+fn progs_with_spawns(classname: &'static str, other: &'static str) -> Vec<u8> {
+    let entry = |name: &'static str| FuncSpec {
+        name,
+        first_statement: 1,
+        ..FuncSpec::default()
+    };
+    ProgsBuilder::default()
+        .statement(Stmt::op("DONE", 0, 0, 0))
+        .function(entry(classname))
+        .function(entry(other))
+        .function(entry("StartFrame"))
+        .function(entry("PlayerPreThink"))
+        .function(entry("PlayerPostThink"))
+        .function(entry("ClientConnect"))
+        .function(entry("PutClientInServer"))
+        .function(entry("SetNewParms"))
+        .function(entry("ClientDisconnect"))
+        .build()
+}
+
+/// The value `self` is set to in each run record whose change set sets it, in order.
+fn self_values(records: &[Record]) -> Vec<u32> {
+    let slot =
+        u32::try_from(global_by_name("self").expect("a system global").slot).expect("a small slot");
+    records
+        .iter()
+        .filter_map(|r| match r {
+            Record::Run { changes, .. } => changes
+                .globals()
+                .iter()
+                .find(|g| g.slot == slot)
+                .map(|g| g.bits),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The functions `StartFrame`, a spawn function and the client entry points all share one
 /// empty body, so a run record names function 1 whatever the entry point.
 const EMPTY_BODY_FUNCTION: i32 = 1;
@@ -120,41 +159,59 @@ fn a_scenario_spawns_an_entity_and_writes_a_trace() {
     assert_eq!(f32::from_bits(time.bits), 1.0);
 }
 
-// spec EDICT-8.5: an entity whose classname names no spawn function is freed, not spawned.
+// spec EDICT-8.5, EDICT-8.7: an entity whose classname names no spawn function is freed, not
+// spawned, so the next entity's allocation reuses its edict at once.
 #[test]
 fn an_entity_with_no_spawn_function_is_freed() {
-    // The progs has no "monster_ogre" function, so the entity is freed (EDICT-8.5).
-    let bytes = progs_with_spawn("worldspawn");
+    let bytes = progs_with_spawns("worldspawn", "info_null");
     let mut scn = scenario("test");
     scn.frames = 0;
-    let entities = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"monster_ogre\"\n}\n";
-    let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
-    assert_eq!(output.ended, Ended::Normally);
-    // Only worldspawn spawned; monster_ogre was freed, so exactly one spawn run happened
-    // before the settle frames. The settle frames add StartFrame runs, so count runs whose
-    // change set first set self to a non-world entity: here only the settle StartFrames run
-    // with self = world, so the spawn run count is the runs minus the settle frames.
-    assert_eq!(output.ended, Ended::Normally);
+    // The progs has no "monster_ogre" function: that entity takes edict 1 and is freed, so
+    // info_null takes edict 1 again, as it does when nothing comes before it.
+    let freed = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"monster_ogre\"\n}\n\
+                  {\n\"classname\" \"info_null\"\n}\n";
+    let alone = b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"info_null\"\n}\n";
+    let freed = run_scenario(&scn, &bytes, freed).expect("the scenario runs");
+    let alone = run_scenario(&scn, &bytes, alone).expect("the scenario runs");
+    assert_eq!(freed.ended, Ended::Normally);
+    // Two spawn runs, worldspawn and info_null, and the two settle frames: monster_ogre has
+    // none (EDICT-8.5).
+    assert_eq!(run_records(&freed.trace.records), 4);
+    // info_null's spawn run sets self to edict 1, then the settle frames set it to the world.
+    let info_null_self = self_values(&alone.trace.records);
+    assert!(
+        info_null_self.first().is_some_and(|&v| v != 0),
+        "{info_null_self:?}"
+    );
+    assert_eq!(self_values(&freed.trace.records), info_null_self);
 }
 
-// spec EDICT-8.4: an entity with SPAWNFLAG_NOT_DEATHMATCH is inhibited when deathmatch is on.
+// spec EDICT-8.4: an entity with SPAWNFLAG_NOT_DEATHMATCH is inhibited when deathmatch is on,
+// and spawned when it is off.
 #[test]
 fn a_deathmatch_entity_is_inhibited_in_deathmatch() {
-    let bytes = progs_with_spawn("item_health");
-    let mut scn = scenario("test");
-    scn.frames = 0;
-    scn.cvars = vec![Cvar {
-        name: b"deathmatch".to_vec(),
-        text: b"1".to_vec(),
-    }];
-    // spawnflags 2048 is SPAWNFLAG_NOT_DEATHMATCH; with deathmatch on the entity is freed.
-    let entities = b"{\n\"classname\" \"item_health\"\n\"spawnflags\" \"2048\"\n}\n";
-    let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
-    assert_eq!(output.ended, Ended::Normally);
+    let bytes = progs_with_spawns("worldspawn", "item_health");
+    // spawnflags 2048 is SPAWNFLAG_NOT_DEATHMATCH.
+    let entities =
+        b"{\n\"classname\" \"worldspawn\"\n}\n{\n\"classname\" \"item_health\"\n\"spawnflags\" \"2048\"\n}\n";
+    let runs = |deathmatch: &[u8]| {
+        let mut scn = scenario("test");
+        scn.frames = 0;
+        scn.cvars = vec![Cvar {
+            name: b"deathmatch".to_vec(),
+            text: deathmatch.to_vec(),
+        }];
+        let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
+        assert_eq!(output.ended, Ended::Normally);
+        run_records(&output.trace.records)
+    };
+    // worldspawn and the two settle frames; item_health's spawn run only with deathmatch off.
+    assert_eq!(runs(b"1"), 3);
+    assert_eq!(runs(b"0"), 4);
 }
 
 // spec EDICT-8.2: a string key is stored as an engine string, which gets a string record
-// (TRACE-4.10); the angle rename and the field type conversion are applied.
+// (TRACE-4.10).
 // spec DIFF-3.8: each engine string gets a value outside the string table and a string record.
 #[test]
 fn a_string_field_makes_an_engine_string_record() {
@@ -186,7 +243,6 @@ fn a_string_field_makes_an_engine_string_record() {
     assert!(has_start, "the targetname engine string holds 'start'");
 }
 
-// spec EDICT-8.3: a float field key is converted by C atof into the field.
 // spec DIFF-5.1: a server frame sets the frametime global.
 // spec DIFF-5.3: a physics frame runs StartFrame with self and other set to the world.
 #[test]
@@ -266,7 +322,6 @@ fn a_bad_entity_lump_ends_the_scenario() {
 }
 
 // spec DIFF-3.6: the server runs two settle frames of 0.1 seconds after the map loads.
-// spec DIFF-3.6: the server runs two settle frames of 0.1 seconds after the map loads.
 // spec EDICT-8.9: the two settle frames run without setting the frametime global.
 #[test]
 fn the_settle_frames_run_startframe_twice() {
@@ -289,7 +344,7 @@ fn the_settle_frames_run_startframe_twice() {
     );
 }
 
-// A progs with an extra float field proves the EDICT-8.3 atof conversion writes the field: a
+// A progs with an extra float field proves the EDICT-8.2 atof conversion writes the field: a
 // spawn function is not needed, only that loading succeeds with the key applied.
 // spec EDICT-8.2: a key that names no field is ignored.
 #[test]
@@ -314,10 +369,32 @@ fn an_unknown_key_is_ignored() {
         .build();
     let mut scn = scenario("test");
     scn.frames = 0;
-    // "nosuchfield" is unknown and ignored; "custom" is applied (EDICT-8.2); the scenario runs.
-    let entities = b"{\n\"classname\" \"worldspawn\"\n\"nosuchfield\" \"7\"\n\"custom\" \"3\"\n}\n";
-    let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
-    assert_eq!(output.ended, Ended::Normally);
+    // "nosuchfield" is unknown and ignored; "custom" is applied (EDICT-8.2).
+    let with_unknown =
+        b"{\n\"classname\" \"worldspawn\"\n\"nosuchfield\" \"7\"\n\"custom\" \"3\"\n}\n";
+    let without = b"{\n\"classname\" \"worldspawn\"\n\"custom\" \"3\"\n}\n";
+    let first_run = |entities: &[u8]| {
+        let output = run_scenario(&scn, &bytes, entities).expect("the scenario runs");
+        assert_eq!(output.ended, Ended::Normally);
+        let Some(changes) = output.trace.records.iter().find_map(|r| match r {
+            Record::Run { changes, .. } => Some(changes.clone()),
+            _ => None,
+        }) else {
+            panic!("a spawn run");
+        };
+        changes
+    };
+    let changes = first_run(with_unknown);
+    // The unknown key wrote nothing: the spawn run's changes are those of the same entity
+    // without it, field for field and global for global.
+    assert_eq!(changes, first_run(without));
+    let custom: Vec<(u32, u32)> = changes
+        .fields()
+        .iter()
+        .filter(|f| f.edict == 0 && f.field == 105)
+        .map(|f| (f.field, f.bits))
+        .collect();
+    assert_eq!(custom, [(105, 3.0_f32.to_bits())]);
 }
 
 /// A progs whose `worldspawn` calls `ftos` four times: on 0, on 0 again, on `time` (1 at

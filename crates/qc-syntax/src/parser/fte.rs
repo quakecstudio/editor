@@ -901,7 +901,7 @@ impl Parser<'_> {
 
     // ---- statements ----
 
-    /// The state header (FTEF-18.3, FTEF-18.4): `[frame, next]` with an expression for each,
+    /// The state header (FTEF-18.3, FTEF-18.28): `[frame, next]` with an expression for each,
     /// the `,` a warning when missing; or a frame cycle `[++ first .. last]` or
     /// `[-- first .. last]`, `(w)` after the `++` or `--` cycling `weaponframe`.
     pub(super) fn fte_state(&mut self) {
@@ -947,7 +947,7 @@ impl Parser<'_> {
         self.finish_node();
     }
 
-    /// `++ first .. last` or `-- first .. last`, after the `[` (FTEF-18.4). Two constant
+    /// `++ first .. last` or `-- first .. last`, after the `[` (FTEF-18.28). Two constant
     /// frames against the direction are "Forwards State Cycle with backwards range", an
     /// error as FTEQCC raises it (`ERR_STATETYPEMISMATCH`).
     fn frame_cycle(&mut self) {

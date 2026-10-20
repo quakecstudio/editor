@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_LexString, QCC_PR_LexEscapedCodepoint
 
 //! FTEQCC's string literals, as its `QCC_PR_LexString` and `QCC_PR_LexEscapedCodepoint` read
 //! them (`docs/spec/dialect-fteqcc.md`, FTEF-13.7 to FTEF-13.11): the prefixes `R`, `Q`, `u8`,
 //! `u`, `U` and, after a string, `L`; raw strings; the escapes; and the bytes each kind of
-//! string writes. Written from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e
-//! (`engine/qclib/qcc_pr_lex.c`), which is not a porting upstream, and checked against the
-//! pinned FTEQCC by `cargo xtask oracles builtins`.
+//! string writes. Ported from FTEQCC's behaviour under ADR-0017's clean-port policy, written
+//! fresh in this lexer, and checked against the pinned FTEQCC by `cargo xtask oracles builtins`.
 
 use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind};
 

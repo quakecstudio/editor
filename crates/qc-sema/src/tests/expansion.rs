@@ -83,15 +83,19 @@ fn the_files_as_written_do_not_resolve() {
     let (mut db, input) = module(&files, &["defs.qc", "uses.qc"], Dialect::Fteqcc);
     let c = codes(&db.analyze_module(&input));
     assert!(!c.iter().any(|code| code.is_error()), "{c:?}");
+    // As written, uses.qc calls `INHIBIT_COOP`, which only the macro defines, so resolving
+    // the files without the preprocessor reports the name as unknown.
     let ids = [FileId(0), FileId(1)];
-    let parse_errors = ids.iter().any(|&id| db.parse(id).errors().next().is_some());
     let index = db.module_index(&ids);
+    let unknown: Vec<String> = index
+        .diagnostics
+        .iter()
+        .filter(|d| d.diagnostic.code.is_error() && d.file == FileId(1))
+        .map(|d| d.diagnostic.message.clone())
+        .collect();
     assert!(
-        parse_errors
-            || index
-                .diagnostics
-                .iter()
-                .any(|d| d.diagnostic.code.is_error())
+        unknown.iter().any(|m| m.contains("INHIBIT_COOP")),
+        "{unknown:?}"
     );
 }
 

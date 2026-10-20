@@ -4,6 +4,10 @@
 //!
 //! Each type wraps a [`SyntaxNode`] of one kind and names its parts. Every accessor returns
 //! an `Option` or an iterator: the tree of a file with errors may lack any part.
+//!
+//! The FTEQCC limits quoted here, such as the length of a builtin's engine name (FTE-23.6), are
+//! read from fte-team/fteqw for facts only: no function of it is ported into this file, so it
+//! carries no `Ported from` header (ADR-0017).
 
 use crate::kind::SyntaxKind as K;
 use crate::tree::{SyntaxElement, SyntaxNode, SyntaxToken};
@@ -639,7 +643,7 @@ impl State {
     }
 
     /// The next think function's name, when it is written as a name (QC-13.6). An FTEQCC
-    /// frame cycle (FTEF-18.4) has none, and a next function written as another expression
+    /// frame cycle (FTEF-18.28) has none, and a next function written as another expression
     /// (FTEF-18.3) is among [`State::exprs`].
     #[must_use]
     pub fn next(&self) -> Option<SyntaxToken> {
@@ -650,14 +654,14 @@ impl State {
     }
 
     /// Whether this is an FTEQCC frame cycle, `[++ first .. last]` or `[-- first .. last]`
-    /// (FTEF-18.4).
+    /// (FTEF-18.28).
     #[must_use]
     pub fn is_cycle(&self) -> bool {
         self.0.token_of(K::DotDot).is_some()
     }
 
     /// The expressions of the header: the frame and, unless it is a name, the next function
-    /// (FTEF-18.3); or a cycle's first and last frames (FTEF-18.4).
+    /// (FTEF-18.3); or a cycle's first and last frames (FTEF-18.28).
     pub fn exprs(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
     }
