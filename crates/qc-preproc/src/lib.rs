@@ -25,7 +25,6 @@ pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, S
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::fmt;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
@@ -129,15 +128,6 @@ struct HideNode {
     next: Hide,
 }
 
-impl fmt::Debug for HideNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // QC-9.13: the set is as long as the expansions nest, so only its head is shown.
-        f.debug_struct("HideNode")
-            .field("name", &self.name)
-            .finish_non_exhaustive()
-    }
-}
-
 impl Drop for HideNode {
     fn drop(&mut self) {
         self.live.set(self.live.get().saturating_sub(1));
@@ -175,7 +165,9 @@ fn hide_with(hide: &Hide, name: &str, live: &Live) -> Hide {
     }))
 }
 
-#[derive(Clone, Debug)]
+/// A token and its hide set. It has no `Debug`: a derived one would print the hide set by
+/// recursion, one frame per nested expansion (QC-9.13).
+#[derive(Clone)]
 struct Item {
     tok: PpToken,
     hide: Hide,
@@ -213,7 +205,7 @@ impl Cursor {
 }
 
 /// The state of preprocessing one source file of `progs.src`.
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Run {
     /// The source file of `progs.src` being preprocessed.
     path: PathBuf,
