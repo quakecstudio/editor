@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qc_progs::{Function, ProgsFile, write};
-use qc_syntax::Dialect;
+use qc_syntax::{Code, Dialect};
 use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
@@ -109,30 +109,72 @@ fn outcomes_round_trip() {
 }
 
 // spec QC-27.9: the only expected difference is the vanilla profile's error for a builtin
-// number not above 0, where id's qcc does not refuse
+// number not above 0, where id's qcc does not refuse; without that error the outcomes agree
 #[test]
 fn only_a_vanilla_number_not_above_zero_may_differ() {
     let case = vanilla("void() f = #0;\n");
-    assert_eq!(
-        expected_difference(&case, &["E0507"], &Outcome::Accepted),
-        Some("QC-27.9")
-    );
-    assert_eq!(
-        expected_difference(&case, &["E0507"], &Outcome::Redeclared),
-        Some("QC-27.9")
-    );
-    assert_eq!(
-        expected_difference(&case, &["E0507"], &Outcome::Rejected),
-        None
-    );
-    assert_eq!(
-        expected_difference(&case, &["E0209"], &Outcome::Accepted),
-        None
-    );
-    assert_eq!(
-        expected_difference(&fte("void() f = #0;\n"), &["E0507"], &Outcome::Accepted),
-        None
-    );
+    let pair = vanilla("void() f = #0;\nvoid() f = #5;\n");
+    for (case, errors, oracle, expected) in [
+        (
+            &case,
+            &[Code::E0507][..],
+            Outcome::Accepted,
+            Some("QC-27.9"),
+        ),
+        (&case, &[Code::E0507], Outcome::Redeclared, None),
+        (&case, &[Code::E0507], Outcome::Rejected, None),
+        (&case, &[Code::E0507], bound_as(0, "f"), None),
+        (&case, &[Code::E0209], Outcome::Accepted, None),
+        (&case, &[], Outcome::Accepted, None),
+        (
+            &pair,
+            &[Code::E0507, Code::E0206],
+            Outcome::Redeclared,
+            Some("QC-27.9"),
+        ),
+        (&pair, &[Code::E0507, Code::E0206], Outcome::Rejected, None),
+        (
+            &pair,
+            &[Code::E0507, Code::E0209],
+            Outcome::Rejected,
+            Some("QC-27.9"),
+        ),
+        (
+            &pair,
+            &[Code::E0507, Code::E0209],
+            Outcome::Redeclared,
+            None,
+        ),
+        (
+            &fte("void() f = #0;\n"),
+            &[Code::E0507],
+            Outcome::Accepted,
+            None,
+        ),
+    ] {
+        assert_eq!(
+            expected_difference(case, errors, &oracle),
+            expected,
+            "{case:?} {errors:?} {oracle}"
+        );
+    }
+}
+
+// spec QC-13.4: id's qcc's `#0` is found from the source text, whatever the number's form
+#[test]
+fn a_vanilla_zero_is_read_from_the_source() {
+    for (source, zero) in [
+        ("void() f = #0;\n", true),
+        ("void() f = # -0;\n", true),
+        ("void() f = #0.0;\n", true),
+        ("void() g = #0;\nvoid() f = #0;\nvoid() f = #5;\n", true),
+        ("void() f = #5;\n", false),
+        ("void() f = #0.5;\n", false),
+        ("void() f = #-;\n", false),
+        ("void() f;\n", false),
+    ] {
+        assert_eq!(super::vanilla_zero(&vanilla(source)), zero, "{source:?}");
+    }
 }
 
 // spec FTE-23.7: under FTEQCC a redeclaration is reported only when it is the only error, since
@@ -144,7 +186,7 @@ fn the_profile_classifies_its_errors_as_each_compiler_stops() {
     assert_eq!(profile(&fte(twice_bad)).0, Outcome::Rejected);
     assert_eq!(
         profile(&fte("void() f = #5;\nvoid() f = #6;\n")),
-        (Outcome::Redeclared, vec!["E0206"])
+        (Outcome::Redeclared, vec![Code::E0206])
     );
     assert_eq!(
         profile(&vanilla("void() f = #5;\nvoid() f = #5x;\n")).0,
@@ -152,7 +194,7 @@ fn the_profile_classifies_its_errors_as_each_compiler_stops() {
     );
     assert_eq!(
         profile(&vanilla("void() f = #0;\nvoid() f = #5;\n")),
-        (Outcome::Rejected, vec!["E0507", "E0206"])
+        (Outcome::Rejected, vec![Code::E0507, Code::E0206])
     );
     assert_eq!(
         profile(&fte("void() f = #5:ex_a;\n")).0,
@@ -172,7 +214,8 @@ fn progs_with(functions: &[(i32, &str)]) -> Vec<u8> {
     let mut records = vec![Function::default()];
     for (number, name) in functions {
         let s_name = i32::try_from(strings.len()).unwrap();
-        strings.extend_from_slice(name.as_bytes());
+        // Each `char` one byte (Latin-1), as the oracle reads a name back.
+        strings.extend(name.chars().map(|c| u8::try_from(u32::from(c)).unwrap()));
         strings.push(0);
         records.push(Function {
             first_statement: number.wrapping_neg(),
@@ -378,6 +421,7 @@ fn oracle_failures_are_errors() {
     });
     let err = oracle(&fake_oracles(&dir, &refused), &dir, &case).unwrap_err();
     assert!(err.contains("qc-progs refuses"), "{err}");
+    assert!(err.starts_with("fteqcc \"void() f = #5;\\n\": "), "{err}");
     assert_eq!(
         oracle(
             &fake_oracles(&dir, &refused),

@@ -145,7 +145,9 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
             let builtins = builtins::check(root, &oracles, false)?;
-            Ok(vectors && numbers && probes && scenarios && builtins)
+            Ok([vectors, numbers, probes, scenarios, builtins]
+                .iter()
+                .all(|passed| *passed))
         }
         ["builtins"] => builtins::check(root, &build()?, false),
         ["builtins", "--record"] => builtins::check(root, &build()?, true),

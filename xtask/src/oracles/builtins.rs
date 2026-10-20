@@ -31,7 +31,7 @@ use std::process::Command;
 
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
-use qc_syntax::{Dialect, ast};
+use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
@@ -122,6 +122,7 @@ const VALUES: &[&str] = &[
     "0x10f",
     "0x10i",
     "0x10.0",
+    "0x10000000000000005.0",
     "-0x10.0",
     "0x2.",
     "0x1.8",
@@ -187,6 +188,10 @@ const VALUES: &[&str] = &[
     "\"\" \"ab\"",
     "\"ab\" \"\"",
     "\"a\\tb\"",
+    "\"\\x00\"",
+    "\"ab\\x00cd\"",
+    "\"\\bab\"",
+    "\"\\bcd\"",
 ];
 
 /// What may follow the value: an engine name, written in each way.
@@ -227,6 +232,9 @@ const PAIRED: &[&str] = &[
     ":5:ex_a",
     ":0",
     ":0:ex_a",
+    "#\"ex_a\\x00b\"",
+    "#\"\\bab\"",
+    "#\"\\bcd\"",
 ];
 
 /// The forms of [`PAIRED`] the vanilla dialect is given twice: those of QC-13.3.
@@ -290,20 +298,31 @@ pub(crate) fn cases() -> Vec<Case> {
 /// `errors`, may differ from `oracle`'s, if one does (FTE-23.8).
 pub(crate) fn expected_difference(
     case: &Case,
-    errors: &[&str],
+    errors: &[Code],
     oracle: &Outcome,
 ) -> Option<&'static str> {
     // QC-27.9: the vanilla profile makes `#0` and negative numbers errors, which id's qcc
-    // accepts (QC-13.4).
+    // accepts with no builtin number (QC-13.4). Only that error may differ: without it the
+    // profile's outcome must be the oracle's.
     let vanilla = !case.dialect.has_fteqcc_extensions();
-    (vanilla && errors.contains(&NOT_POSITIVE) && *oracle != Outcome::Rejected).then_some("QC-27.9")
+    if !vanilla || !errors.contains(&Code::E0507) {
+        return None;
+    }
+    let rest: Vec<Code> = errors
+        .iter()
+        .copied()
+        .filter(|code| *code != Code::E0507)
+        .collect();
+    let without = if rest.is_empty() {
+        Outcome::Accepted
+    } else {
+        refusal(case, &rest)
+    };
+    (without == *oracle).then_some("QC-27.9")
 }
 
-/// The profile's "builtin number must be positive" (QC-27.9).
-const NOT_POSITIVE: &str = "E0507";
-
 /// The profile's outcome for `case`, and the codes of its errors in the order of their place.
-pub(crate) fn profile(case: &Case) -> (Outcome, Vec<&'static str>) {
+pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
     let mut db = Db::new();
     db.set_dialect(case.dialect);
     db.set_file(
@@ -319,35 +338,52 @@ pub(crate) fn profile(case: &Case) -> (Outcome, Vec<&'static str>) {
     let mut errors: Vec<_> = analysis
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
-        .map(|d| (d.diagnostic.span.start, d.diagnostic.code.as_str()))
+        .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
-    errors.sort_unstable();
-    let errors: Vec<&'static str> = errors.into_iter().map(|(_, code)| code).collect();
+    errors.sort_by_key(|(start, _)| *start);
+    let errors: Vec<Code> = errors.into_iter().map(|(_, code)| code).collect();
     if errors.is_empty() {
-        return (binding(case).unwrap_or(Outcome::Accepted), errors);
+        return (binding(&mut db, case).unwrap_or(Outcome::Accepted), errors);
     }
-    // id's qcc stops at the first error, and finds a redeclaration at its `=`, before the
-    // initialiser (`PR_ParseDefs`); FTEQCC reports one only once it has read the initialiser
-    // (FTE-23.7), so any other error comes first.
+    (refusal(case, &errors), errors)
+}
+
+/// How the profile refuses `case` with the errors `errors`, in the order of their place.
+///
+/// id's qcc stops at the first error, and finds a redeclaration at its `=`, before the
+/// initialiser (`PR_ParseDefs`); FTEQCC reports one only once it has read the initialiser
+/// (FTE-23.7), so any other error comes first.
+fn refusal(case: &Case, errors: &[Code]) -> Outcome {
     let redeclared = if case.dialect.has_fteqcc_extensions() {
-        errors.iter().all(|code| *code == REDECLARED)
+        errors.iter().all(|code| *code == Code::E0206)
     } else {
-        errors.first() == Some(&REDECLARED)
+        errors.first() == Some(&Code::E0206)
     };
-    let outcome = if redeclared {
+    if redeclared {
         Outcome::Redeclared
     } else {
         Outcome::Rejected
-    };
-    (outcome, errors)
+    }
 }
 
-/// The profile's "NAME redeclared" (QCD-3.6).
-const REDECLARED: &str = "E0206";
-
-/// The builtin number and engine name the profile binds the first `f` to.
-fn binding(case: &Case) -> Option<Outcome> {
-    let parse = qc_syntax::parse_with(case.source.as_bytes(), case.dialect);
+/// The builtin number and engine name the profile binds the first `f` to: under FTEQCC the
+/// builtin function qc-sema lowers its initialiser to (FTE-23.7), under the vanilla dialect
+/// the number `builtin_binum` gives and the definition's name (QC-13.10).
+fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
+    if case.dialect.has_fteqcc_extensions() {
+        let decls = db.lower(FileId(0)).decls;
+        let function = decls
+            .iter()
+            .find(|decl| decl.name == "f")?
+            .literal
+            .as_ref()?
+            .builtin_function("f")?;
+        return Some(Outcome::Bound {
+            number: function.number,
+            name: function.name,
+        });
+    }
+    let parse = db.parse(FileId(0));
     let builtin = parse
         .tree()?
         .declarations()
@@ -357,12 +393,27 @@ fn binding(case: &Case) -> Option<Outcome> {
             Some(ast::Initializer::Builtin(builtin)) => Some(builtin),
             _ => None,
         })?;
-    let number = match builtin.number() {
-        Some(token) => qc_syntax::builtin_binum(&token.text_lossless(), case.dialect)?,
-        None => 0,
+    let number = builtin.number()?;
+    let number = qc_syntax::builtin_binum(&number.text_lossless(), case.dialect)?;
+    Some(Outcome::Bound {
+        number,
+        name: "f".to_owned(),
+    })
+}
+
+/// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
+/// source text with Rust's own float parser, not the profile's: id's qcc skips the spaces
+/// after `#` and reads digits, a `-` and dots (`PR_LexNumber`).
+fn vanilla_zero(case: &Case) -> bool {
+    let Some((_, after)) = case.source.split_once('#') else {
+        return false;
     };
-    let name = builtin.engine_name().unwrap_or_else(|| "f".to_owned());
-    Some(Outcome::Bound { number, name })
+    let number: String = after
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    number.parse::<f64>().is_ok_and(|value| value == 0.0)
 }
 
 /// The oracle's outcome for `case`, compiled in `dir`.
@@ -409,7 +460,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let bytes = fs::read(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
     // QC-13.4: id's qcc leaves `#0`'s `first_statement` uninitialised, so what it wrote
     // depends on the host's heap and is not recorded.
-    if !fteqcc && matches!(binding(case), Some(Outcome::Bound { number: 0, .. })) {
+    if !fteqcc && vanilla_zero(case) {
         return Ok(Outcome::Accepted);
     }
     // PROGS-15.8: these programs have none of id's system definitions.
@@ -462,7 +513,8 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
     let name = progs.string(function.s_name)?;
     Some(Outcome::Bound {
         number: function.first_statement.wrapping_neg(),
-        name: String::from_utf8_lossy(name).into_owned(),
+        // Each byte one `char` (Latin-1), as `Builtin::engine_name` gives a name.
+        name: name.iter().copied().map(char::from).collect(),
     })
 }
 
@@ -560,18 +612,18 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
         );
     } else {
         let recorded = read_fixture(root)?;
+        // A changed cross product is recorded again with `--record` once it is right.
         for (key, outcome) in &outcomes {
             if recorded.get(key) != Some(outcome) {
                 ok = false;
-                println!("FAIL  {key:?}: the oracle gives {outcome}, not as {FIXTURE} records");
+                println!(
+                    "FAIL  {key:?}: the oracle gives {outcome}, not as {FIXTURE} records (--record)"
+                );
             }
         }
         if recorded.len() != outcomes.len() {
             ok = false;
-            println!("FAIL  {FIXTURE} records cases the cross product does not make");
-        }
-        if !ok {
-            println!("      run `cargo xtask oracles builtins --record` once the change is right");
+            println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
     let tally = compare(&cases, &outcomes);

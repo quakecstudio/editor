@@ -686,7 +686,8 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
 - **FTE-23.2** An FTEQCC hex number with a fraction is C's `atof` of its text, which reads
   `0x` as a hexadecimal float: `QCC_PR_LexNumber` keeps the `0x` in `pr_token`, takes only
   decimal digits after the `.` (`if (c >= '0' && c <= '9') { pr_token[tokenlen++] = c; }`),
-  and sets `pr_immediate._float = (float)atof(pr_token);`. So `0x10.0` is 16, `-0x10.0` -16,
+  and sets `pr_immediate._float = (float)atof(pr_token);`. The digits before the `.` are read in full, so
+  `0x10000000000000005.0` is about 1.8e19 and binds no number. So `0x10.0` is 16, `-0x10.0` -16,
   `0x1.8` 1.5 and `0x1.08` 1.03125; `0x1.a` is `0x1.` (1) and then a name.
 - **FTE-23.3** A `d` literal is a `double`, and FTEQCC binds no builtin number for it: the
   initialiser takes only `type_float`, `type_integer` and `type_string` immediates, and
@@ -711,7 +712,10 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `= #"";` is builtin 0 named after the function and `= #"":ex_b;` binds `ex_b`. After a
   non-empty string a `:name` is an error, as FTE-17.5 says.
 - **FTE-23.6** An engine name is at most 255 bytes: `QC_strlcpy(fname, ..., sizeof(fname))`
-  into `char fname[256];` keeps the first 255 of a longer string or name. A name after `:` is
+  into `char fname[256];` keeps the first 255 of a longer string or name. It copies a C
+  string, so a string's name ends at its first NUL byte: `#"ab\x00cd"` binds `ab`, and
+  `#"\x00":ex_b` names nothing before the `:` and binds `ex_b`. Names are bytes, compared with
+  `strcmp`, so two bronze names (`\b`, bytes of 0x80 and above) differ when their bytes do. A name after `:` is
   `pr_token`, which `QCC_PR_ParseName`'s "name too long" check does not see.
 - **FTE-23.7** A builtin initialiser makes a builtin function, numbered `binum` and named the
   engine name or, with none, the definition's name, unless it initialises a definition already
@@ -739,17 +743,17 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   (functions[i].code == -1) funcs[i].first_statement = PRLittleLong (-functions[i].builtin);`),
   or that the compiler accepted it with no builtin number (id's `qcc` for a number not above
   0, whose `first_statement` it leaves uninitialised for `#0`, QC-13.4), refused it as a
-  redeclaration, or refused it otherwise. The cross product is `#`, `:`, `# ` and `: `, before each of 86 values
+  redeclaration, or refused it otherwise. The cross product is `#`, `:`, `# ` and `: `, before each of 91 values
   (decimal, octal and hex numbers with their signs; fractions; the `f`, `d`, `i`, `u` and `l`
   suffixes and their combinations; character constants and a vector; names; strings, joined
-  across spaces, comments and lines, empty, and longer than FTE-23.6's limit), each with no
+  across spaces, comments and lines, empty, with a NUL byte or bronze `\b` text, and longer than FTE-23.6's limit), each with no
   engine name or one written five ways after it, and after each of three function
-  declarators; and 29 builtin forms given twice to one function in every pairing, with and
+  declarators; and 32 builtin forms given twice to one function in every pairing, with and
   without another function bound by the first form before them (the vanilla dialect only the
   `#number` forms). Numbers outside -2^31 to 2^31 - 1 are left out, since C leaves their
   conversion to `int` undefined (QC-13.10). The oracles' outcomes are recorded in
   `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo test -p xtask` checks the
-  profile against on every host. The run of 2026-10-20 (macOS arm64) made 7382 cases: 7314
+  profile against on every host. The run of 2026-10-20 (macOS arm64) made 8068 cases: 8000
   agree, and 68 differ as QC-27.9 says, the vanilla profile refusing `#0`, `#-0`, `#0.0` and
   `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice. Before P2-69 and P2-70 the same
   check found 856 cases that differed.
