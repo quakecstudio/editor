@@ -156,9 +156,18 @@ impl LiteralValue {
         match init {
             // A body is a definition, never a value two may share.
             ast::Initializer::Body(_) => None,
-            ast::Initializer::Builtin(_)
-            | ast::Initializer::Aggregate(_)
-            | ast::Initializer::Value(_) => {
+            ast::Initializer::Builtin(builtin) => {
+                // FTEF-17.5: a builtin is the same value as another of its number, the `binum`
+                // FTEQCC binds (FTE-17.6), so `#16777217i` and `#16777216` differ.
+                let binum = builtin.number().and_then(|t| {
+                    qc_syntax::builtin_binum(&t.text_lossless(), qc_syntax::Dialect::Fteqcc)
+                });
+                Some(Self::Text(binum.map_or_else(
+                    || token_text(init.syntax()),
+                    |binum| format!("#{binum}"),
+                )))
+            }
+            ast::Initializer::Aggregate(_) | ast::Initializer::Value(_) => {
                 Self::of(Some(init)).or_else(|| Some(Self::Text(token_text(init.syntax()))))
             }
         }

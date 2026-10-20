@@ -674,6 +674,11 @@ fn string_and_colon_builtins_are_keyed_by_name() {
             "{initialiser}"
         );
     }
+    let bare = "void(string s, ...) bprint :ex_bprint;\nvoid() w = { bprint(\"x\"); };\n";
+    assert_eq!(
+        fte_messages(Engine::Fteqw, &[bare]),
+        ["bprint is builtin #0:ex_bprint, which FTEQW does not have"]
+    );
     let numbered = "void(string s, ...) bprint = :287;\nvoid() w = { bprint(\"x\"); };\n";
     assert_eq!(
         fte_messages(Engine::Kex, &[numbered]),

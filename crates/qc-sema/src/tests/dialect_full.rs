@@ -228,6 +228,21 @@ fn equal_initialisers_are_accepted() {
     assert_eq!(errors(&different), [Code::E0206]);
 }
 
+// spec FTEF-17.5: a builtin's number is the `binum` FTEQCC binds (FTE-17.6): `#16777217i` is
+// not `#16777216`, and `#4294967313i` is `#17`
+#[test]
+fn builtins_compare_by_the_number_fteqcc_binds() {
+    let int = fte_index_of("void() b = #16777217i;\nvoid() b = #16777216;\n");
+    assert_eq!(errors(&int), [Code::E0206]);
+    let wrapped = fte_index_of("void() b = #4294967313i;\nvoid() b = #17;\n");
+    assert_eq!(
+        errors(&wrapped),
+        Vec::<Code>::new(),
+        "{:?}",
+        messages(&wrapped)
+    );
+}
+
 // spec FTEF-17.5: an initialiser that is no literal is compared by its text, token for token:
 // the same tokens spaced differently are the same value, other tokens are not.
 #[test]

@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Diagnostic, Span};
-use qc_lexer::{Dialect, TokenKind};
+use qc_lexer::Dialect;
 use qc_project::ModuleKind;
 use qc_sema::{DefKind, FileId, ModuleIndex};
 use qc_syntax::Parse;
@@ -170,128 +170,20 @@ fn engine_name(builtin: &ast::Builtin, literal: Option<&str>) -> Option<String> 
     // ENGT-4.9: `#` takes the literal as `binum` 0 whenever FTEQCC reads its value as 0; a name
     // is in the initialiser only under FTEQCC, so it is read so. ENGT-4.14: FTEQCC leaves
     // `binum` 0 when it reads the name in place of the number.
-    if literal.is_some_and(|literal| fteqcc_value(literal) != Some(Value::Zero)) {
+    if literal.is_some_and(|literal| qc_syntax::builtin_binum(literal, Dialect::Fteqcc) != Some(0))
+    {
         return None;
     }
     builtin.engine_name()
 }
 
-/// The `binum` a compiler binds for a builtin number literal (ENGT-4.9, ENGT-4.12, ENGT-4.13).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Value {
-    /// 0, the `binum` of a builtin bound by name.
-    Zero,
-    /// A number of at least 1.
-    Number(u32),
-    /// Anything else: a fraction, a negative number, one outside `int` or a literal type the
-    /// compiler does not take.
-    Other,
-}
-
-impl Value {
-    /// The `binum` of an `int`.
-    fn of_int(number: i32) -> Self {
-        match u32::try_from(number) {
-            Ok(0) => Self::Zero,
-            Ok(number) => Self::Number(number),
-            Err(_) => Self::Other,
-        }
-    }
-
-    /// The `binum` of a `float` literal, `(int)pr_immediate._float` once
-    /// `pr_immediate._float == (int)pr_immediate._float` holds (ENGT-4.12): the whole value,
-    /// when it is from -2^31 to 2^31 - 1. Outside that range C's `(int)` is undefined, and the
-    /// x86 build gives -2147483648 (VM-9.2), which fails the comparison.
-    fn of_float(value: f32) -> Self {
-        #[expect(
-            clippy::float_cmp,
-            reason = "spec ENGT-4.12: the compilers take `binum` only when `_float == (int)_float`"
-        )]
-        let whole = value.trunc() == value;
-        let int_range = f64::from(i32::MIN)..-f64::from(i32::MIN);
-        if !whole || !int_range.contains(&f64::from(value)) {
-            return Self::Other;
-        }
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "spec ENGT-4.12: a whole value in `int`'s range converts exactly"
-        )]
-        let number = value as i32;
-        Self::of_int(number)
-    }
-}
-
-/// The value of `literal` when it is one number token of `dialect`, and FTEQCC's integer
-/// suffix, if it has one: the hex, octal, suffixed and fractional forms of FTEF-3.1 under an
-/// FTEQCC dialect, decimals read with `atof` under the vanilla one (QC-4.1).
-fn literal_value(literal: &str, dialect: Dialect) -> Option<(f32, &str)> {
-    let lexed = qc_lexer::lex_with(literal.as_bytes(), dialect);
-    let [token] = lexed.tokens.as_slice() else {
-        return None;
-    };
-    let TokenKind::Float(value) = token.kind else {
-        return None;
-    };
-    // The suffix letters `i`, `u` and `l` are no digit of any base.
-    let digits = literal.trim_end_matches(['i', 'I', 'u', 'U', 'l', 'L']);
-    let suffix = literal.get(digits.len()..).unwrap_or_default();
-    Some((value, suffix))
-}
-
-/// The `binum` FTEQCC's `QCC_PR_ParseInitializerType_Internal` binds for `literal`
-/// (ENGT-4.11, ENGT-4.13): `(int)` of a `float` literal (ENGT-4.12); an `i` literal's `int`,
-/// its whole value kept to 32 bits; and no number for a `u` or `l` literal.
-fn fteqcc_value(literal: &str) -> Option<Value> {
-    let (value, suffix) = literal_value(literal, Dialect::Fteqcc)?;
-    if suffix.is_empty() {
-        return Some(Value::of_float(value));
-    }
-    if !suffix.eq_ignore_ascii_case("i") {
-        return Some(Value::Other);
-    }
-    Some(Value::of_int(fteqcc_int(literal)))
-}
-
-/// `pr_immediate._int = num` for an FTEQCC integer literal: the digits in their base
-/// (FTEF-3.1), times the sign, kept to 32 bits as C's conversion to `int` keeps them on every
-/// build FTEQCC supports (ENGT-4.13).
-fn fteqcc_int(literal: &str) -> i32 {
-    let (negative, rest) = literal
-        .strip_prefix('-')
-        .map_or((false, literal), |rest| (true, rest));
-    let (base, digits) = if let Some(hex) = rest.strip_prefix("0x").or(rest.strip_prefix("0X")) {
-        (16, hex)
-    } else if let Some(octal) = rest.strip_prefix('0') {
-        (8, octal)
-    } else {
-        (10, rest)
-    };
-    let mut num: u64 = 0;
-    for digit in digits.chars().map_while(|c| c.to_digit(base)) {
-        num = num
-            .wrapping_mul(u64::from(base))
-            .wrapping_add(u64::from(digit));
-    }
-    if negative {
-        num = num.wrapping_neg();
-    }
-    let [a, b, c, d, ..] = num.to_le_bytes();
-    i32::from_le_bytes([a, b, c, d])
-}
-
 /// The number of a builtin number literal in `dialect` (ENGT-4.12): the `binum` the dialect's
-/// compiler binds, when it is at least 1, `qcc`'s `(int)` of the literal's `float` value under
-/// the vanilla dialect and FTEQCC's of ENGT-4.13 under an FTEQCC dialect.
+/// compiler binds (`qc_syntax::builtin_binum`), when it is at least 1: `qcc`'s `(int)` of the
+/// literal's `float` value under the vanilla dialect and FTEQCC's of ENGT-4.13 under an FTEQCC
+/// dialect.
 pub(crate) fn builtin_number(text: &str, dialect: Dialect) -> Option<u32> {
-    let value = if dialect.has_fteqcc_extensions() {
-        fteqcc_value(text)?
-    } else {
-        Value::of_float(literal_value(text, dialect)?.0)
-    };
-    match value {
-        Value::Number(number) => Some(number),
-        Value::Zero | Value::Other => None,
-    }
+    let binum = qc_syntax::builtin_binum(text, dialect)?;
+    u32::try_from(binum).ok().filter(|&number| number >= 1)
 }
 
 /// The file and span of every name that is the callee of a call (ENGT-4.2).
