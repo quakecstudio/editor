@@ -18,9 +18,7 @@
   },
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "dev-agents@claude-dev-agents": true,
-    "linked-intent-dev@jszmajda-lid": true,
-    "arrow-maintenance@jszmajda-lid": true
+    "dev-agents@claude-dev-agents": true
   },
   "extraKnownMarketplaces": {
     "claude-dev-agents": {
