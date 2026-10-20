@@ -457,7 +457,7 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
   this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
 - **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
-  FTEF-13.13), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  FTEF-13.13), a byte of 0x80 or more (a UTF-8 sequence, FTEF-13.14), or a byte followed by `'`:
   `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
   `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
   the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
@@ -549,6 +549,16 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   (ERR_INVALIDVECTORIMMEDIATE, "Bad character constant");`, `E0104`). FTEQCC stops at its first
   error; this profile goes on after the escape, and so may also report "Bad character
   constant" after a bad one.
+- **FTEF-13.14** A character constant at a byte of 0x80 or more is read by `utf8_check`
+  (FTEF-13.8): `int b = utf8_check(pr_file_p, &pr_immediate._int);` then `pr_file_p+=b+1;`.
+  Its value is the sequence's code, a surrogate or the modified UTF-8 NUL included, and the
+  byte after the sequence is skipped unread, as the closing `'` it should be, so `'éx` is 233.
+  A byte that starts no sequence `utf8_check` takes (`*value = 0xFFFD; return 0;`) is the code
+  0xFFFD and is skipped alone, so a `'` after it opens a vector. Recorded with the pinned
+  FTEQCC (`fteqcc -Tid` on `void() f = :'...';`, reading `f`'s `first_statement`): `'é'` (C3
+  A9) and `'éx` bind 233, `'\xed\xa0\x80'` 55296, `'\xc0\x80'` 0 and `'\xf0\x90\x80\x80'` 65536;
+  `'\xff;` binds 65533; `'\xff'`, `'\xe9'` and `'\xc1\x81'` are "Bad vector" at the `'` after
+  the byte. The bytes are written here as `\x` escapes.
 
 ## FTEF-14 Preprocessor directives and macros
 

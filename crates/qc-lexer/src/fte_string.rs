@@ -423,7 +423,7 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
 /// `utf8_check` reads it (FTEF-13.8): two bytes for 0 (modified UTF-8) or 0x80 to 0x7FF, three
 /// for 0x800 to 0xFFFF, surrogates included, four for 0x10000 to 0x10FFFF; `None` for any
 /// other byte of 0x80 or more.
-fn utf8_check(bytes: &[u8]) -> Option<(u32, usize)> {
+pub(crate) fn utf8_check(bytes: &[u8]) -> Option<(u32, usize)> {
     let lead = *bytes.first()?;
     let (len, bits, least) = match lead {
         0x00..=0x7f => return Some((u32::from(lead), 1)),

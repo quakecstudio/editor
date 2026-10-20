@@ -1050,8 +1050,6 @@ fn character_constants_and_short_vectors() {
     assert_eq!(lex_with(br"'\", Dialect::Fteqcc).tokens.len(), 1);
     assert_eq!(codes(b"'a'"), vec![Code::E0104]);
     assert_eq!(codes(b"'8 8'"), vec![Code::E0104]);
-    // A lone invalid UTF-8 byte is its own code.
-    assert_eq!(one(b"'\xff'"), TokenKind::Float(255.0));
 }
 
 // spec FTEF-3.1: a type suffix ends a number and is not part of its value.
@@ -1583,6 +1581,36 @@ fn character_constant_escapes_are_read_as_in_strings() {
             (value, vec![Code::E0103]),
             "{escape:?}"
         );
+    }
+}
+
+// spec FTEF-13.14: a character constant at a byte of 0x80 or more is the code FTEQCC's
+// `utf8_check` reads, surrogates and the modified UTF-8 NUL included, and one byte after the
+// sequence is skipped unread; a byte that starts no sequence is 0xFFFD and is skipped alone, so
+// the `'` after it opens a vector
+#[test]
+fn high_byte_character_constants_follow_utf8_check() {
+    for (source, value) in [
+        (&b"'\xc3\xa9'"[..], 233.0),
+        (b"'\xc3\xa9x", 233.0),
+        (b"'\xed\xa0\x80'", 55296.0),
+        (b"'\xc0\x80'", 0.0),
+        (b"'\xf0\x90\x80\x80'", 65536.0),
+    ] {
+        let lexed = lex_with(source, Dialect::Fteqcc);
+        assert!(lexed.diagnostics.is_empty(), "{source:?}");
+        assert_eq!(lexed.tokens.len(), 1, "{source:?}");
+        assert_eq!(lexed.tokens[0].kind, TokenKind::Float(value), "{source:?}");
+    }
+    for source in [&b"'\xff'"[..], b"'\xe9'", b"'\xc1\x81'"] {
+        let lexed = lex_with(source, Dialect::Fteqcc);
+        assert_eq!(
+            lexed.tokens[0].kind,
+            TokenKind::Float(65533.0),
+            "{source:?}"
+        );
+        assert_eq!(lexed.tokens[0].span.end, 2, "{source:?}");
+        assert_eq!(fte_codes(source).last(), Some(&Code::E0104), "{source:?}");
     }
 }
 

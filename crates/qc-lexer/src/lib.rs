@@ -415,21 +415,6 @@ pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
     lexer.out
 }
 
-/// The code of the UTF-8 sequence at the start of `bytes` and its length; a byte that starts
-/// no valid sequence is its own code, length 1 (FTEF-13.3).
-fn utf8_char(bytes: &[u8]) -> (u32, usize) {
-    for len in 1..=4 {
-        if let Some(c) = bytes
-            .get(..len)
-            .and_then(|b| std::str::from_utf8(b).ok())
-            .and_then(|s| s.chars().next())
-        {
-            return (u32::from(c), len);
-        }
-    }
-    (bytes.first().copied().map_or(0, u32::from), 1)
-}
-
 /// Whitespace as `qcc` sees it: every byte `<= ' '` as a signed `char`, so 0x01 to 0x20 and
 /// 0x80 to 0xFF (QC-1.3, QC-2.1).
 #[must_use]
@@ -861,9 +846,14 @@ impl Lexer<'_> {
             }
             code
         } else if first >= 0x80 {
+            // FTEF-13.14: `pr_file_p+=b+1;` skips the sequence and one byte more, unread; a
+            // byte that starts no sequence is `0xFFFD` and is skipped alone.
             let rest = self.text.get(start.saturating_add(1)..).unwrap_or_default();
-            let (code, len) = utf8_char(rest);
-            self.bump(len.saturating_add(2));
+            let (code, skip) = match fte_string::utf8_check(rest) {
+                Some((code, len)) => (code, len.saturating_add(2)),
+                None => (0xfffd, 2),
+            };
+            self.bump(skip);
             code
         } else if second == Some(b'\'') {
             self.bump(3);
