@@ -306,11 +306,9 @@ own builtin tables are fact sources, so its table is what its source implements.
   (`if (pr_file_p[0] == '0' && (pr_file_p[1] == 'x' || pr_file_p[1] == 'X')) { ... base =
   16;`), so `#0x0:NAME` is `binum` 0 with the name `NAME`, the same as `#0:NAME`. A literal
   whose value is not 0, such as `0.5` or `0x1`, is no `0` here.
-- **ENGT-4.10** A builtin's number is that of the first `#N` initialiser of its name, in
-  compilation order (QC-11.5), `N` being the value of its number literal: under the vanilla
-  dialect a decimal literal of at least 1, with an optional fraction of zeros, and under an
-  FTEQCC dialect the value of ENGT-4.11. A literal that gives no number by these rules is no
-  number here and gives no `W0311` (the parser reports it, QCD-3.9).
+- **ENGT-4.10** **Withdrawn** 2026-10-20: it read a vanilla builtin number as the decimal
+  literal, but id's `qcc` binds `f->builtin = (int)pr_immediate._float;`, the literal's float
+  value, so `#16777217` is builtin 16777216; replaced by ENGT-4.12.
 - **ENGT-4.11** Under an FTEQCC dialect a builtin number is the value FTEQCC reads from the
   literal, in any of its number forms (FTEF-3.1), when that value is a whole number of at least
   1: `#16`, `#16.0`, the hex `#0x10` and the integer `#16i` are all 16, and `#010`, which
@@ -322,10 +320,30 @@ own builtin tables are fact sources, so its table is what its source implements.
   QCC_PR_ParseWarning(WARN_OCTAL_IMMEDIATE, "A leading 0 is interpreted as base-8."); base =
   8;`. A value that is not whole, such as `1.5`, is FTEQCC's "Bad builtin immediate" and no
   number here.
+- **ENGT-4.12** A builtin's number is that of the first `#N` initialiser of its name, in
+  compilation order (QC-11.5), `N` being the number the dialect's compiler binds for the
+  literal when it is at least 1: under the vanilla dialect `qcc`'s `(int)` of the literal's
+  float value (QC-13.10), so `#16777217` is 16777216 and `#123456789` is 123456792, and under
+  an FTEQCC dialect FTEQCC's `binum` (ENGT-4.13). A literal that gives no number by these
+  rules, a value outside -2^31 to 2^31 - 1 among them, is no number here and gives no `W0311`
+  (the parser reports it, QCD-3.9).
+- **ENGT-4.13** Under an FTEQCC dialect the number of ENGT-4.11's value is FTEQCC's `binum`
+  (FTE-17.6): `(int)` of a float literal's value, so `#123456789` is 123456792, not the
+  shortest decimal of the float, 123456790; the `int` of an `i` literal, so `#16777217i` is
+  16777217; and no number for a `u` or `l` literal. A float value outside -2^31 to
+  2^31 - 1, such as that of `#2147483647`, which is 2^31, is no number (QC-13.10).
+- **ENGT-4.14** Under an FTEQCC dialect a builtin declared `= #"NAME"`, `= :"NAME"` or
+  `= :NAME` (FTE-17.5) is keyed by `NAME` as `#0:NAME` is (ENGT-4.5), since FTEQCC reads the
+  name in place of the number and leaves `binum` 0 (`int binum = 0;` ...
+  `else if (pr_token_type == tt_immediate && pr_immediate_type == type_string) QC_strlcpy(fname, pr_immediate_string, sizeof(fname));`,
+  `qcc_pr_comp.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`). A call of it
+  whose engine lacks `NAME` is the `W0311` of ENGT-4.5, with the message
+  `FUNC is builtin #0:NAME, which ENGINE does not have`.
 
 ### Test vectors
 
-Recorded with `cargo test -p qc-engines` on 2026-10-19.
+Recorded with `cargo test -p qc-engines` on 2026-10-19, and the rows of ENGT-4.12 to
+ENGT-4.14 on 2026-10-20.
 
 | Source, target | Diagnostic | Statements |
 | --- | --- | --- |
@@ -343,9 +361,15 @@ Recorded with `cargo test -p qc-engines` on 2026-10-19.
 | `stuffcmdflags = #0:stuffcmdflags` called, FTEQCC dialect, KEX | `W0311` "stuffcmdflags is builtin #0:stuffcmdflags, which KEX does not have (FTE_QC_STUFFCMDFLAGS)" | ENGT-4.5 |
 | `void() f = #.0:nothing;` called, FTEQCC dialect, KEX (and the same with `#00`, `#0.00`, `#0x0`, `#0X00` or `#0i`) | `W0311` "f is builtin #0:nothing, which KEX does not have" | ENGT-4.5, ENGT-4.9 |
 | `void() f = #0.5:nothing;` or `#0x1:nothing` called, FTEQCC dialect, KEX | none: neither is zero | ENGT-4.9 |
-| `float(float tabsize, float defaulttype) hash_createtab = #0x11F;` called, FTEQCC dialect, Ironwail | `W0311` "hash_createtab is builtin #287, which Ironwail does not have (FTE_QC_HASHTABLES)" | ENGT-4.10, ENGT-4.11 |
+| `float(float tabsize, float defaulttype) hash_createtab = #0x11F;` called, FTEQCC dialect, Ironwail | `W0311` "hash_createtab is builtin #287, which Ironwail does not have (FTE_QC_HASHTABLES)" | ENGT-4.11, ENGT-4.12 |
 | `void() f = #0101;` called, FTEQCC dialect, Vanilla | `W0311` "f is builtin #65, which Vanilla does not have (DP_QC_ETOS)" | ENGT-4.11 |
-| the same, vanilla dialect, Vanilla | `W0311` "f is builtin #101, which Vanilla does not have (??MVDSV_BUILTINS)" | ENGT-4.10 |
+| the same, vanilla dialect, Vanilla | `W0311` "f is builtin #101, which Vanilla does not have (??MVDSV_BUILTINS)" | ENGT-4.12 |
+| `void() f = #16777217;` called, vanilla dialect, Vanilla | `W0311` "f is builtin #16777216, which Vanilla does not have" | ENGT-4.12 |
+| `void() f = #2147483648;` called, vanilla dialect, Vanilla | none: no number | ENGT-4.12 |
+| `void() f = #123456789;` called, FTEQCC dialect, Vanilla | `W0311` "f is builtin #123456792, which Vanilla does not have" | ENGT-4.13 |
+| `#16777217i`, `#4294967313i`; `#16u`, `#2147483647`, FTEQCC dialect | builtins 16777217 and 17; no number | ENGT-4.13 |
+| `void(string s, ...) bprint = #"ex_bprint";` (or `:"ex_bprint"`, `:ex_bprint`) called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.14 |
+| the same, KEX | none | ENGT-4.14 |
 | `void() clearscene = #300;` called, FTEQW, client module | none | ENGT-4.8 |
 | the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
 | `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |

@@ -17,6 +17,7 @@
 //! This crate is written from the spec, not ported.
 
 pub mod ast;
+mod binum;
 mod input;
 mod kind;
 mod parser;
@@ -26,6 +27,7 @@ mod tree;
 #[cfg(test)]
 mod tests;
 
+pub use binum::builtin_binum;
 pub use kind::SyntaxKind;
 pub use parser::{LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};

@@ -19,7 +19,8 @@ An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 `break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:` at the
 assignment priority (FTE-8.4),
 `const`/`var`/`nosave`, arrays and subscripts, `typedef struct` and `enum`, named enums
-(FTE-15.4), C-style function declarations and `#n:name` builtins (FTE-17), `...` after named
+(FTE-15.4), C-style function declarations and `#n:name`, `#"name"` and `:name` builtins
+(FTE-17), `...` after named
 parameters, default values and user-typed parameters (FTE-18), the bitwise and shift
 operators, `->`, prefix `-`, `+` and `~`, `a -1` and casts (FTE-19), and locals without
 `local`, field and function locals, empty blocks and empty statements (FTE-21, with the

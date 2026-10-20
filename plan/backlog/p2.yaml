@@ -1194,6 +1194,23 @@ issues:
   - 'Two consecutive `cargo xtask readiness branches` and `lines` runs on one commit report identical counts for every crate with property tests, shown in the PR; an xtask test checks that the llvm-cov command carries the seed settings and fails without them'
   verify:
   - cargo test -p xtask; cargo xtask readiness branches --out target/branches.json qc-lexer qc-syntax (twice)
+- key: P2-68
+  title: Stop two readiness mutation tests from sharing one output directory
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  depends:
+  - P2-64
+  deliverable:
+  - 'xtask/src/readiness/tests.rs: `mutation_keeps_proptests_random_seed` (line 824) and the test at line 866 both run `mutation` on `fixture("mutation")`, whose output is `scratch(root).join(format!("mutants-{}", target.name))` under the real `target/xtask/readiness`, so when they run in parallel one reads the other''s half-written `mutants.out/outcomes.json`: `make ci` on the P2-65 to P2-67 branch (#467) failed once with "mutants outcomes: EOF while parsing a value at line 1 column 0" and passed when the test was run alone. Give each test its own scratch directory (or make `mutation` take one), so no two tests share a path'
+  acceptance:
+  - 'No two xtask readiness tests write the same path, checked by a test or by running `cargo test -p xtask readiness` 50 times with no failure, recorded in the PR'
+  verify:
+  - cargo test -p xtask
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1264,6 +1281,7 @@ issues:
   - P2-62
   - P2-63
   - P2-64
+  - P2-68
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

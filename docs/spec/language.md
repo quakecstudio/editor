@@ -368,6 +368,21 @@ dialect features (P2-01, P2-03).
 - **QC-9.12** A conditional block is closed in the file that opens it, whether that file is
   listed in `progs.src` or included. At the end of each file, every block it opened that is
   still open is reported (QC-9.6) and closed, so the next file starts outside it.
+- **QC-9.13** Expansion nests to any depth, with no limit and no diagnostic: a chain of macros,
+  each defined as the name of the one before (`#define M1 M0`, `#define M2 M1`, ...), is
+  rescanned to its end however long it is, and no chain exhausts the stack. FTEQCC sets no
+  nesting limit: `QCC_PR_CheckCompConst` (`qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`)
+  expands a macro unless `currentchunk->cnst != c` fails (`//macros don't expand themselves`)
+  or, for an object-like macro, `if (c->inside >= 8)`, which counts only that macro's own
+  open expansions; each expansion is pushed by `QCC_PR_IncludeChunkEx` as a heap-allocated
+  chunk (`qcc_includechunk_t *chunk = qccHunkAlloc(sizeof(qcc_includechunk_t)); chunk->prev = currentchunk;`),
+  not a C stack frame. But `QCC_PR_Lex` calls itself once for each expansion (`//we expanded
+  a macro. we need to read the tokens out of it now though`, then `QCC_PR_Lex();`), so a long
+  enough chain exhausts FTEQCC's own stack: the pinned FTEQCC, built by `cargo xtask oracles
+  build` on macOS arm64 with its 8 MiB main stack, compiles `float x = M49999;` after a
+  50000-long chain to `x = 1` and dies with `SIGSEGV` at 100000. Expanding every chain to its
+  end is a deliberate divergence from that crash, which depends on the host's stack, not on
+  the program. id's `qcc` has no macros (QC-9). The rule against self-expansion stays QC-9.4's.
 
 ## QC-10 Types
 
@@ -567,6 +582,15 @@ nextthink] {code}".
 - **QC-13.9** A function record holds `first_statement`, `parm_start` (the offset of its
   first parameter), `locals` (QC-21.4), the name and file as string offsets, `numparms` and
   each parameter's size in words. A variadic function's `numparms` is -1.
+- **QC-13.10** The builtin number is the literal's 32-bit float value (QC-4.1) converted to
+  `int`, so above 2^24 it is the float's, not the digits': `PR_ParseImmediateStatements`
+  (`qcc/pr_comp.c`, id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`) reads
+  `if (pr_token_type != tt_immediate || pr_immediate_type != &type_float || pr_immediate._float != (int)pr_immediate._float) PR_ParseError ("Bad builtin immediate"); f->builtin = (int)pr_immediate._float;`,
+  where `PR_LexNumber` gives `return atof (pr_token);`. `#16777217` is builtin 16777216 and
+  `#123456789` is 123456792. A value outside -2^31 to 2^31 - 1 is "Bad builtin immediate":
+  C leaves its conversion to `int` undefined, and the x86 build gives -2147483648 (VM-9.2),
+  which differs from the value. id's `qcc` built for arm64 by `cargo xtask oracles build`
+  saturates instead and binds `#2147483648` as 2147483647; the x86 result is the rule.
 
 ### Test vectors
 
@@ -575,6 +599,8 @@ nextthink] {code}".
 | `void() f = {};` | `DONE` | QC-13.1, QC-13.7 |
 | `void() z = #0;\nvoid() n = #-1;\nvoid() o = #7;` | `first_statement` 0, 1 and -7 | QC-13.3, QC-13.4 |
 | `void() f = #1.5;` | `Bad builtin immediate` | QC-13.3 |
+| `void() f = #16777217;`, `void() g = #123456789;` | builtins 16777216 and 123456792 | QC-13.10 |
+| `void() f = #2147483648;` | `Bad builtin immediate` | QC-13.10 |
 | `void() th2;\n$frame s1 s2\nvoid() th1 = [$s2, th2] { };` (and `th2` defined) | `STATE 1, th2`; `DONE` | QC-13.6 |
 | `$frame s1\nvoid() th1 = [$s1, th3] { };` | `function th3 was not defined` | QC-13.6, QC-11.8 |
 | `float th3;\n$frame s1\nvoid() th1 = [$s1, th3] { };` | `Type mismatch on redeclaration of th3` | QC-13.6 |

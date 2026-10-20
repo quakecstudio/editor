@@ -528,7 +528,7 @@ void() w = { take(hash_createtab); };
     assert!(check(Engine::Vanilla, &[undefined]).is_empty());
 }
 
-// spec ENGT-4.10: the first #N initialiser of a name gives its number, in compilation order
+// spec ENGT-4.12: the first #N initialiser of a name gives its number, in compilation order
 #[test]
 fn the_first_builtin_number_wins() {
     let first = "void() f = #287;\n";
@@ -546,18 +546,27 @@ fn the_first_builtin_number_wins() {
     assert!(check(Engine::Vanilla, &[frame]).is_empty());
 }
 
-// spec ENGT-4.10: under the vanilla dialect a builtin number is decimal digits with an
-// optional fraction of zeros, at least 1
+// spec ENGT-4.12: under the vanilla dialect a builtin number is qcc's `(int)` of the
+// literal's float value, at least 1 and below 2^31
 #[test]
 fn builtin_number_literals() {
-    assert_eq!(builtin_number("1", Dialect::Vanilla), Some(1));
-    assert_eq!(builtin_number("287", Dialect::Vanilla), Some(287));
-    assert_eq!(builtin_number("12.", Dialect::Vanilla), Some(12));
-    assert_eq!(builtin_number("12.000", Dialect::Vanilla), Some(12));
-    assert_eq!(
-        builtin_number("4294967295", Dialect::Vanilla),
-        Some(u32::MAX)
-    );
+    for (literal, number) in [
+        ("1", 1),
+        ("287", 287),
+        ("12.", 12),
+        ("12.000", 12),
+        ("16777216", 16_777_216),
+        ("16777217", 16_777_216),
+        ("16777217.5", 16_777_218),
+        ("123456789", 123_456_792),
+        ("2147483520", 2_147_483_520),
+    ] {
+        assert_eq!(
+            builtin_number(literal, Dialect::Vanilla),
+            Some(number),
+            "{literal}"
+        );
+    }
     for bad in [
         "",
         "0",
@@ -568,10 +577,113 @@ fn builtin_number_literals() {
         "1e2",
         "-1",
         "+1",
+        "2147483584",
+        "2147483647",
+        "2147483648",
+        "4294967295",
         "4294967296",
     ] {
         assert_eq!(builtin_number(bad, Dialect::Vanilla), None, "{bad}");
     }
+}
+
+// spec ENGT-4.12: a vanilla `#16777217` is checked as builtin 16777216, the number qcc binds,
+// and a number at 2^31 or above gives no W0311
+#[test]
+fn a_vanilla_number_is_checked_as_qcc_binds_it() {
+    let source = "void() f = #16777217;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        messages(Engine::Vanilla, &[source]),
+        ["f is builtin #16777216, which Vanilla does not have"]
+    );
+    let outside = "void() f = #2147483648;\nvoid() g = { f(); };\n";
+    assert!(check(Engine::Vanilla, &[outside]).is_empty());
+}
+
+// spec ENGT-4.13: under an FTEQCC dialect a float literal is `(int)` of its value, an `i`
+// literal its int kept to 32 bits, and a `u` or `l` literal or a float outside int no number
+#[test]
+fn fteqcc_binds_a_number_by_its_type() {
+    for (literal, number) in [
+        ("123456789", 123_456_792),
+        ("16777217", 16_777_216),
+        ("16777217f", 16_777_216),
+        ("2147483520", 2_147_483_520),
+        ("16777217i", 16_777_217),
+        ("16777217I", 16_777_217),
+        ("0x1000001i", 16_777_217),
+        ("0X1000001i", 16_777_217),
+        ("0100000001i", 16_777_217),
+        ("4294967313i", 17),
+        ("2147483647i", 2_147_483_647),
+    ] {
+        assert_eq!(
+            builtin_number(literal, Dialect::Fteqcc),
+            Some(number),
+            "{literal}"
+        );
+    }
+    for bad in [
+        "2147483647",
+        "2147483648",
+        "0x80000000",
+        "16u",
+        "16U",
+        "16l",
+        "16ll",
+        "16ui",
+        "2147483648i",
+        "4294967296i",
+        "0i",
+    ] {
+        assert_eq!(builtin_number(bad, Dialect::Fteqcc), None, "{bad}");
+    }
+}
+
+// spec ENGT-4.13: `#123456789` under FTEQCC is W0311 naming builtin 123456792, the number
+// FTEQCC binds, not the float's shortest decimal
+#[test]
+fn reviewer_fteqcc_names_the_number_it_binds() {
+    let source = "void() f = #123456789;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Vanilla, &[source]),
+        ["f is builtin #123456792, which Vanilla does not have"]
+    );
+}
+
+// spec ENGT-4.14: `#"ex_bprint"`, `:"ex_bprint"` and `:ex_bprint` are keyed by the name, as
+// `#0:ex_bprint` is: W0311 for FTEQW, none for KEX, which has it
+#[test]
+fn string_and_colon_builtins_are_keyed_by_name() {
+    for initialiser in [
+        "#\"ex_bprint\"",
+        ":\"ex_bprint\"",
+        ":ex_bprint",
+        ":0:ex_bprint",
+    ] {
+        let source = format!(
+            "void(string s, ...) bprint = {initialiser};\nvoid() w = {{ bprint(\"x\"); }};\n"
+        );
+        assert_eq!(
+            fte_messages(Engine::Fteqw, &[&source]),
+            ["bprint is builtin #0:ex_bprint, which FTEQW does not have"],
+            "{initialiser}"
+        );
+        assert!(
+            fte_messages(Engine::Kex, &[&source]).is_empty(),
+            "{initialiser}"
+        );
+    }
+    let bare = "void(string s, ...) bprint :ex_bprint;\nvoid() w = { bprint(\"x\"); };\n";
+    assert_eq!(
+        fte_messages(Engine::Fteqw, &[bare]),
+        ["bprint is builtin #0:ex_bprint, which FTEQW does not have"]
+    );
+    let numbered = "void(string s, ...) bprint = :287;\nvoid() w = { bprint(\"x\"); };\n";
+    assert_eq!(
+        fte_messages(Engine::Kex, &[numbered]),
+        ["bprint is builtin #287, which KEX does not have (FTE_QC_HASHTABLES)"]
+    );
 }
 
 // spec ENGT-4.11: under an FTEQCC dialect a builtin number is the whole value FTEQCC reads,
@@ -1047,7 +1159,7 @@ fn a_dp_project_client_module_reports_an_fte_builtin() {
 
 // spec ENGT-4.5: (P2-R3 review) a zero is any literal whose digits are all zeros, so `#00`
 // and `#0.00` are keyed by the name after the `:`, and `#0.5`, whose digits are not, is no
-// key and gives no W0311 (ENGT-4.10)
+// key and gives no W0311 (ENGT-4.12)
 #[test]
 fn reviewer_only_all_zero_digits_key_by_name() {
     let call = |number: &str| {

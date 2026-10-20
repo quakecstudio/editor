@@ -160,6 +160,108 @@ fn named_builtins_parse() {
     assert_eq!(vanilla_errors("float() f = #0;"), [Code::E0507]);
 }
 
+/// The number's text and the engine name of the builtin initialiser of the first declarator
+/// of `source`, parsed under FTEQCC with no error.
+fn fte_builtin(source: &str) -> (Option<String>, Option<String>) {
+    let parsed = fte_ok(source);
+    let Some(ast::Initializer::Builtin(builtin)) = first_declarator(&parsed).initializer() else {
+        panic!("no builtin in {source}");
+    };
+    (
+        builtin.number().map(|t| t.text_lossless()),
+        builtin.engine_name(),
+    )
+}
+
+// spec FTE-17.5: a string after `#` or `:`, or a name after `:`, is the builtin's engine name,
+// and `:` takes a number as `#` does
+#[test]
+fn string_and_colon_builtins_parse() {
+    let name = |n: &str| (None, Some(n.to_owned()));
+    for (source, expected) in [
+        (
+            r#"void(string s, ...) bp = #"ex_bprint";"#,
+            name("ex_bprint"),
+        ),
+        ("void(string s, ...) br = :ex_bprint3;", name("ex_bprint3")),
+        (
+            r#"void(string s, ...) bs = :"ex_bprint4";"#,
+            name("ex_bprint4"),
+        ),
+        (r#"void() e = #"a\tb";"#, name("a\tb")),
+        ("void(string s, ...) bq = :5;", (Some("5".to_owned()), None)),
+        (
+            "void(string s, ...) bt = :0:ex_bprint5;",
+            (Some("0".to_owned()), Some("ex_bprint5".to_owned())),
+        ),
+        ("void(string s, ...) bx :ex_bprint6;", name("ex_bprint6")),
+    ] {
+        assert_eq!(fte_builtin(&format!("{source}\n")), expected, "{source}");
+    }
+}
+
+// spec FTE-17.5: a name is read after a string or a name only by FTE-17.4's `#number:`, a name
+// directly after `#` is no builtin, and only a function takes `:`
+#[test]
+fn string_and_colon_builtins_take_no_second_name() {
+    for source in [
+        r#"void(string s, ...) bu = #"ex_a":ex_b;"#,
+        "void(string s, ...) bv = :ex_a:ex_b;",
+        "float fx = :ex_bprint7;",
+    ] {
+        assert_ne!(fte_errors(source), Vec::<Code>::new(), "{source}");
+    }
+    assert_eq!(fte_errors("void() bw = #ex_bprint2;"), [Code::E0209]);
+}
+
+// spec FTE-17.6: FTEQCC binds an `i` literal of any size and a float literal inside int, and
+// takes no `u` or `l` literal or float outside int
+#[test]
+fn builtin_numbers_by_literal_type() {
+    for number in [
+        "16i",
+        "16I",
+        "16777217i",
+        "0x1000001i",
+        "4294967313i",
+        "123456789",
+        "2147483520",
+        "-2147483648",
+        "0x7FFFFF80",
+    ] {
+        let source = format!("void() f = #{number};\n");
+        assert_eq!(fte_errors(&source), Vec::<Code>::new(), "{number}");
+    }
+    for number in [
+        "16u",
+        "16U",
+        "16l",
+        "16ll",
+        "16ul",
+        "2147483647",
+        "2147483648",
+        "0x80000000",
+        "-2147483904",
+    ] {
+        let source = format!("void() f = #{number};\n");
+        assert_eq!(fte_errors(&source), [Code::E0209], "{number}");
+    }
+}
+
+// spec FTE-17.5: under the vanilla profile the string and colon forms stay errors
+#[test]
+fn vanilla_has_no_string_or_colon_builtins() {
+    assert_eq!(
+        vanilla_errors(r#"void() bp = #"ex_bprint";"#),
+        [Code::E0209]
+    );
+    assert_ne!(
+        vanilla_errors("void() br = :ex_bprint;"),
+        Vec::<Code>::new()
+    );
+    assert_ne!(vanilla_errors("void() bx :ex_bprint;"), Vec::<Code>::new());
+}
+
 // spec FTE-18.1: `...` may end a parameter list after named parameters.
 #[test]
 fn varargs_after_named_parameters_parse() {
