@@ -1138,3 +1138,35 @@ void() w = { drawpic('0 0 0', \"a\", '1 1 0', '1 1 1', 1, 0); };
         ["drawpic is builtin #322, which Ironwail does not have"]
     );
 }
+
+// spec ENGT-4.11: under an FTEQCC dialect the number is the value FTEQCC reads, a `float`, so
+// `#16777217`, which a `float` cannot hold, is builtin 16777216, as `#16777216` is
+#[test]
+fn reviewer_fteqcc_reads_a_large_number_as_a_float() {
+    assert_eq!(
+        builtin_number("16777217", Dialect::Fteqcc),
+        Some(16_777_216)
+    );
+    assert_eq!(
+        builtin_number("16777216", Dialect::Fteqcc),
+        Some(16_777_216)
+    );
+    let source = "void() f = #16777217;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Vanilla, &[source]),
+        ["f is builtin #16777216, which Vanilla does not have"]
+    );
+}
+
+// spec ENGT-4.2: under an FTEQCC dialect a parameter named as a builtin shadows it (FTE-22),
+// so calling the parameter is a call of no builtin and gives no W0311, while a call of the
+// global in another function still does
+#[test]
+fn reviewer_a_parameter_that_shadows_a_builtin_is_no_builtin() {
+    let source = "void(string s, ...) bprint = #0:ex_bprint;\n\
+                  void(void(string s) bprint) g = { bprint(\"x\"); };\n\
+                  void() h = { bprint(\"y\"); };\n";
+    let warnings = check_in(Dialect::Fteqcc, Engine::Vanilla, &[source]);
+    let spans: Vec<usize> = warnings.iter().map(|d| d.diagnostic.span.start).collect();
+    assert_eq!(spans, [source.rfind("bprint(").unwrap()]);
+}
