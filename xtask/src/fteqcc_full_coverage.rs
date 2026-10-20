@@ -324,14 +324,10 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{Kind, classify, in_spec, is_suffix, main};
+    use crate::test_dirs::fresh;
 
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../target/xtask-tests")
-            .join(name);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
-        }
+        let dir = fresh(&format!("fteqcc-full-coverage/{name}"));
         fs::create_dir_all(dir.join("sub")).unwrap();
         for (file, text) in files {
             fs::write(dir.join(file), text).unwrap();

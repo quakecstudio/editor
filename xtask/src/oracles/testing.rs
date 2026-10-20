@@ -2,17 +2,12 @@
 
 //! What the oracle module's tests share: oracles that a fake runs, and fresh directories.
 
-#![expect(
-    clippy::panic,
-    reason = "test code: a directory that cannot be made fails the test"
-)]
-
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::Oracles;
 use crate::exec::Exec;
+use crate::test_dirs::fresh;
 
 /// The repository.
 pub(crate) fn root() -> PathBuf {
@@ -21,14 +16,9 @@ pub(crate) fn root() -> PathBuf {
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
 }
 
-/// A new, empty `target/xtask-tests/<name>`.
+/// A new, empty `target/xtask-tests/oracles/<name>`, the running test's own.
 pub(crate) fn fresh_dir(name: &str) -> PathBuf {
-    let dir = root().join("target").join("xtask-tests").join(name);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
-    }
-    fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
-    dir
+    fresh(&format!("oracles/{name}"))
 }
 
 /// Oracles whose programs `exec` runs, named `qcc`, `vm-oracle` and `fteqcc`, working in

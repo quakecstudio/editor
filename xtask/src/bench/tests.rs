@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::test_dirs::fresh;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -17,16 +18,7 @@ fn root() -> PathBuf {
 
 /// A scratch directory for one test, emptied first.
 fn scratch(name: &str) -> PathBuf {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("bench")
-        .join(name);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
-    fs::create_dir_all(&dir).unwrap();
-    dir
+    fresh(&format!("bench/{name}"))
 }
 
 fn table(rows: &str) -> String {
@@ -414,11 +406,7 @@ fn problems_are_reported_with_annotations_in_github_actions() {
 
 #[test]
 fn a_failing_cargo_bench_is_an_error() {
-    let missing = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("bench")
-        .join("no-such-root");
+    let missing = scratch("failing-cargo-bench").join("no-such-root");
     let error = run_benchmarks(&missing, &missing.join("criterion")).unwrap_err();
     assert!(error.contains("cannot run cargo bench"), "{error}");
 }

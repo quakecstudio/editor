@@ -108,6 +108,8 @@ mod ratchet;
 mod readiness;
 mod repo;
 mod sema_corpus;
+#[cfg(test)]
+mod test_dirs;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

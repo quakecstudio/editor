@@ -88,6 +88,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{CURL, Curl, Net};
+    use crate::test_dirs::fresh;
 
     /// A `file:` URL for `path`, which curl reads with no network.
     fn file_url(path: &Path) -> String {
@@ -100,14 +101,7 @@ mod tests {
     }
 
     fn dir(name: &str) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../target/xtask-tests")
-            .join(name);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
-        }
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        fresh(&format!("download/{name}"))
     }
 
     #[test]

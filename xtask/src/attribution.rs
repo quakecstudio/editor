@@ -165,23 +165,14 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::test_dirs::fresh;
 
     const HEAD: &str =
         "# Attribution\n\n| Path | Author | Source | License |\n| --- | --- | --- | --- |\n";
 
     /// A scratch repository with `doc` as `ATTRIBUTION.md` and empty `files`.
     fn fixture(name: &str, doc: &str, files: &[&str]) -> (PathBuf, Vec<String>) {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("xtask-tests")
-            .join("attribution")
-            .join(name);
-        if root.exists() {
-            fs::remove_dir_all(&root).unwrap();
-        }
-        fs::create_dir_all(&root).unwrap();
+        let root = fresh(&format!("attribution/{name}"));
         fs::write(root.join(DOC), doc).unwrap();
         let mut listed = vec![DOC.to_owned()];
         for file in files {

@@ -139,9 +139,8 @@ mod tests {
         reason = "test code: a failed unwrap is a failed test"
     )]
 
-    use std::path::Path;
-
     use super::*;
+    use crate::test_dirs::fresh;
 
     #[test]
     fn the_system_runs_a_command() {
@@ -171,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_fake_answers_writes_its_files_and_remembers_each_command() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/xtask-tests/exec-fake");
+        let dir = fresh("exec-fake");
         let file = dir.join("out.txt");
         let fake = Fake::new(|command: &Command| {
             if command.get_args().count() == 0 {

@@ -219,6 +219,7 @@ mod tests {
 
     use super::{assets_run, default_dest, dest_and_ids, run, safe_member};
     use crate::download::Net;
+    use crate::test_dirs::claim;
 
     /// A network where every file is missing.
     struct Offline;
@@ -244,12 +245,17 @@ mod tests {
         text.split_whitespace().map(str::to_owned).collect()
     }
 
-    /// A cache directory outside the repository.
-    fn cache() -> String {
-        std::env::temp_dir()
-            .join("quakecstudio-xtask-tests-cache")
-            .display()
-            .to_string()
+    /// A cache directory outside the repository, as the source tree refuses one,
+    /// this run's and this test's own.
+    fn cache(name: &str) -> String {
+        let dir = std::env::temp_dir()
+            .join(format!(
+                "quakecstudio-xtask-tests-cache-{}",
+                std::process::id()
+            ))
+            .join(name);
+        claim(&dir);
+        dir.display().to_string()
     }
 
     #[test]
@@ -263,7 +269,7 @@ mod tests {
 
     #[test]
     fn fetch_and_build_report_what_they_cannot_do() {
-        let dest = cache();
+        let dest = cache("fetch-and-build");
         assert!(
             !run(
                 &root(),
@@ -286,7 +292,7 @@ mod tests {
 
     #[test]
     fn assets_run_their_commands() {
-        let dest = cache();
+        let dest = cache("assets");
         assert!(!assets_run(&root(), &args(&format!("fetch --dest {dest}")), &Offline).unwrap());
         assert!(!assets_run(&root(), &args(&format!("precache --dest {dest}")), &Offline).unwrap());
         assert!(assets_run(&root(), &args(&format!("check --dest {dest}")), &Offline).is_err());
@@ -320,7 +326,7 @@ mod tests {
     #[test]
     fn fetch_downloads_the_codebase() {
         let net = Recording::default();
-        let fetch = args(&format!("fetch --dest {} id-1.01", cache()));
+        let fetch = args(&format!("fetch --dest {} id-1.01", cache("fetch")));
         assert!(!run(&root(), &fetch, &net).unwrap());
         assert_eq!(net.0.borrow().len(), 1, "{:?}", net.0.borrow());
     }

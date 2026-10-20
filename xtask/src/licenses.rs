@@ -204,6 +204,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::test_dirs::fresh;
 
     const ID: &str = "Copyright (C) 1996-1997 Id Software, Inc.";
     const COMMIT: &str = "bf4ac424ce754894ac8f1dae6a3981954bc9852d";
@@ -216,14 +217,7 @@ mod tests {
     fn fixture(name: &str, files: &[(&str, String)]) -> (PathBuf, Vec<String>) {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
         let real_root = manifest.parent().unwrap();
-        let root = real_root
-            .join("target")
-            .join("xtask-tests")
-            .join("licenses")
-            .join(name);
-        if root.exists() {
-            fs::remove_dir_all(&root).unwrap();
-        }
+        let root = fresh(&format!("licenses/{name}"));
         let mut listed = Vec::new();
         let porting = fs::read_to_string(real_root.join(ported::DOC)).unwrap();
         let license = fs::read_to_string(real_root.join(LICENSE_FILE)).unwrap();

@@ -10,6 +10,7 @@
     reason = "test code: a failed unwrap is a failed test"
 )]
 
+use crate::test_dirs::fresh;
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
@@ -191,14 +192,7 @@ fn an_unknown_or_missing_command_is_full() {
 /// A scratch git repository with one commit holding `crates/a.rs` and
 /// `docs/a.md`.
 fn repository(name: &str) -> PathBuf {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("ci-changes")
-        .join(name);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
+    let dir = fresh(&format!("ci-changes/{name}"));
     fs::create_dir_all(dir.join("crates")).unwrap();
     fs::create_dir_all(dir.join("docs")).unwrap();
     fs::write(dir.join("crates/a.rs"), "fn a() {}\n").unwrap();
@@ -273,12 +267,7 @@ fn an_empty_diff_is_full() {
 
 #[test]
 fn a_diff_outside_a_repository_is_full() {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("ci-changes")
-        .join("no-repository");
-    fs::create_dir_all(&dir).unwrap();
+    let dir = fresh("ci-changes/no-repository");
     let ceiling = dir.parent().unwrap();
     let output = Command::new("bash")
         .arg(script())
