@@ -439,6 +439,10 @@ const WORD_MACROS: &[(&str, &str)] = &[
     ("#define A(a, b) a b!=5", "A(, N)"),
     ("#define V(...) __VA_ARGS__!=5", "V(N)"),
     ("#define V(...) __VA_ARGS__!=5", "V(N )"),
+    // QC-9.15: a parameter in a word FTEQCC stored across a dropped comment or line break.
+    ("#define A(a) a/**/b", "0; local float ab; ab = A(5)"),
+    ("#define A(a) b/**/a", "0; local float ba; ba = A(5)"),
+    ("#define A(a) a\\\nb", "0; local float ab; ab = A(5)"),
 ];
 
 /// The macros and statements of the label cases (QC-9.15, FTEF-18.23): an argument, or a body
@@ -462,6 +466,8 @@ const LABEL_MACROS: &[(&str, &str)] = &[
     ("#define V(...) __VA_ARGS__:", "V(lbl)"),
     ("#define V(...) __VA_ARGS__:", "V( lbl)"),
     ("#define V(...) __VA_ARGS__:", "V(lbl )"),
+    ("#define E\n#define L lbl E:", "L"),
+    ("#define F(a) a\n#define L lbl F():", "L"),
 ];
 
 /// The macros and initialisers of the cases where a macro's argument meets a builtin's body
@@ -484,6 +490,8 @@ const ARGUMENT_BUILTINS: &[(&str, &str)] = &[
     ("#define E(n, m) n m", "E(#, 5)"),
     ("#define E(n, m) n m", "E(#,5)"),
     ("#define E(n, m) n:m", "E(#5, ex_a)"),
+    ("#define N \"ex_a\"\n#define K #/**/N", "K"),
+    ("#define N 5\n#define K #/**/N", "K"),
 ];
 
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's

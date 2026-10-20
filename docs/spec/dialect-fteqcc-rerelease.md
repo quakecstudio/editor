@@ -791,17 +791,19 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   constants after `:`, each escape of FTEF-13.11 with and without its errors (FTEF-13.13), a macro
   name followed by each of the 64 ASCII bytes from 1 that are no part of a name, each with the
   rest of an expression it starts once the macro is `5` (`!=5`, `?1:2`, `%2`, a line break after
-  `\`), and by characters of two, three and four UTF-8 bytes, 18 macros that put a macro name
-  before such a byte in their body or after an argument (FTEF-14.13), 18 macros whose argument or
-  body token meets a label's `:` (QC-9.15, FTEF-18.23), these three families in a function `g`
-  defined after `f`, which binds `f` only when `g` has no error, and 17 macros whose argument
-  meets a builtin's body token (QC-9.15, FTE-23.1, FTE-23.4); and in both dialects names of 62,
-  63, 70, 254, 255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7).
-  Numbers outside -2^31 to 2^31 - 1 are left out, since C leaves their conversion to `int`
-  undefined (QC-13.10). Under FTEQCC the profile's binding is read from qc-sema's lowering of the
-  text the preprocessor makes. The oracles' outcomes are recorded in
-  `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo test -p xtask` checks the profile
-  against on every host. The run of 2026-10-20 (macOS arm64) made 11164 cases: 11085 agree; 68
-  differ as QC-27.9 says, the vanilla profile refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's
-  `qcc` takes (QC-13.4), alone or given twice; 9 as FTE-23.11 says, a macro or `#__LINE__` giving
-  `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
+  `\`), and by characters of two, three and four UTF-8 bytes, 21 macros that put a macro name
+  before such a byte in their body or after an argument (FTEF-14.13), or a parameter in a word the
+  body stores across a dropped comment or line break (QC-9.15), 20 macros whose argument or body
+  token, or an empty expansion, meets a label's `:` (QC-9.15, FTEF-18.23), these three families in
+  a function `g` defined after `f`, which binds `f` only when `g` has no error, and 19 macros
+  whose argument, or a `#` and a name across a dropped comment, meets a builtin's body token
+  (QC-9.15, FTE-23.1, FTE-23.4); and in both dialects names of 62, 63, 70, 254, 255 and 300 bytes
+  after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside -2^31 to 2^31 - 1
+  are left out, since C leaves their conversion to `int` undefined (QC-13.10). Under FTEQCC the
+  profile's binding is read from qc-sema's lowering of the text the preprocessor makes. The
+  oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo
+  test -p xtask` checks the profile against on every host. The run of 2026-10-20 (macOS arm64)
+  made 11171 cases: 11091 agree; 68 differ as QC-27.9 says, the vanilla profile refusing `#0`,
+  `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice; 10 as FTE-23.11
+  says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the two strings
+  FTEQCC never finishes.
