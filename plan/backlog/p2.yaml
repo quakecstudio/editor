@@ -928,13 +928,11 @@ issues:
   deliverable:
   - 'crates/qs-differential: the host writes a string record (TRACE-4.10) for every engine string a builtin sets, before the `CALL` step record whose change set first shows it, and none for a text set again unchanged, as the oracle''s `qs_emit_string_records` does. The nightly full corpus diverged on every rerelease codebase at the first `ftos` (OFS_RETURN an engine string with no string record, so DIFF-9.4 compared the two runners'' numbers as bits). New statement DIFF-3.9'
   - 'crates/qc-builtins: the mock''s `EngineStrings` notes when the `ftos`/`vtos` buffer is allocated or given a different text (`take_temp_change`), as the oracle''s `qs_engine_string_touched` marks it'
-  - 'xtask/src/oracles/vectors.rs: the VM vector reader refuses a `numglobals:` above 65536 and a function index of 8192 or more (new statement LIMIT-1.5), instead of allocating the stated size; the nightly Fuzz run 39332527448 found the `xtask-vectors` target running out of memory on `numglobals:01111111111`, committed as a regression test'
   acceptance:
   - '`cargo xtask differential --full` reports zero divergences on id 1.01 and all six rerelease codebases, locally and in a Differential workflow run on the branch'
   - 'A host test citing DIFF-3.9 shows the `ftos` string record before its `CALL` step, none for the same text again and a new one when the text changes back, and fails when the record is not written; a qc-builtins test cites DIFF-3.9 for `take_temp_change`'
-  - 'xtask tests citing LIMIT-1.5 accept 65536 globals and function 8191, refuse 65537 and 8192, and replay the fuzz input; `cargo xtask fuzz xtask-vectors --time 5m` finds nothing'
   verify:
-  - cargo test -p qs-differential -p qc-builtins -p xtask; cargo xtask differential --full; the Differential workflow; cargo xtask fuzz xtask-vectors --time 5m
+  - cargo test -p qs-differential -p qc-builtins; cargo xtask differential --full; the Differential workflow
 - key: P2-60
   title: Audit the L0 to L3 crates against CONV-17 and file refactoring issues
   labels:
