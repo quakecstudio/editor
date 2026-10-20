@@ -663,13 +663,12 @@ impl<L: Loader> Preprocessor<L> {
         if let Some(item) = run.pending.pop() {
             return Some(item);
         }
-        while let Some(chunk) = run.chunks.last_mut() {
+        while let Some(mut chunk) = run.chunks.pop() {
             if let Some(item) = chunk.next_item() {
+                run.chunks.push(chunk);
                 return Some(item);
             }
-            if let Some(chunk) = run.chunks.pop() {
-                Self::close_chunk(run, chunk);
-            }
+            Self::close_chunk(run, chunk);
         }
         loop {
             let cursor = run.cursors.last_mut()?;
@@ -932,13 +931,12 @@ impl<L: Loader> Preprocessor<L> {
                     run.out.autoproto.push((index, on, at(whole)));
                 }
                 // FTEF-14.32: `#pragma file(NAME)` gives the file the name NAME.
+                let name_end = line.get(2).map_or(0, |token| token.span.end);
                 if pragma("file")
-                    && let Some(operand) = line.get(2)
                     && let Some(name) = self
                         .sources
                         .file(file)
-                        .and_then(|f| fte_macro::pragma_text(&f.text, operand.span.end))
-                    && let Some(cursor) = run.cursors.last_mut()
+                        .and_then(|f| fte_macro::pragma_text(&f.text, name_end))
                 {
                     cursor.name = name;
                 }

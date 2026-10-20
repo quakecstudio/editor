@@ -433,3 +433,140 @@ fn vanilla_expansions_are_bounded() {
     assert_eq!(codes(&out), vec![Code::E0120]);
     assert!(out.tokens.len() <= FTE_MAX_EXPANDED_TOKENS);
 }
+
+// spec FTEF-14.22: the white space and comments skipped before an argument end a `//` comment at
+// a line feed or a carriage return not before one, and one the text ends in, or a `/* */` comment
+// it ends in, runs the arguments to the end
+#[test]
+fn comments_before_an_argument_end_where_fteqcc_s_do() {
+    assert_eq!(
+        fte("#define M(x) x\nM(// c\r#5)\n"),
+        ("#5".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define M(x) x\nM(// c\r\n#5)\n"),
+        ("#5".to_owned(), vec![])
+    );
+    assert!(fte("#define M(x) x\nM(// c").1.contains(&Code::E0117));
+    assert!(fte("#define M(x) x\nM(/* c").1.contains(&Code::E0117));
+    assert!(fte("#define M(x) x\nM(/* c */").1.contains(&Code::E0117));
+}
+
+// spec FTEF-14.22: a 33rd argument is "Too many parameters in macro call" even for a macro with
+// 32 parameters, which takes 32
+#[test]
+fn thirty_two_arguments_is_fteqcc_s_most() {
+    let params: Vec<String> = (0..32).map(|i| format!("p{i}")).collect();
+    let args = |n: usize| vec!["1"; n].join(", ");
+    let define = format!("#define E({}) p0\n", params.join(", "));
+    assert_eq!(
+        fte(&format!("{define}E({})\n", args(32))),
+        ("1".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte(&format!("{define}E({})\n", args(33))).1,
+        vec![Code::E0116]
+    );
+}
+
+// spec FTEF-14.24: a name at a comment or a `//` ends there, a `\` and line break at the end of
+// the file ends the body, and the line a refused `#define` ends on passes over strings and `/* */`
+// comments before any `//`, and a `\` and CR LF after one
+#[test]
+fn define_lines_end_where_fteqcc_s_do() {
+    assert_eq!(
+        fte("#define // c\nx\n"),
+        ("x".to_owned(), vec![Code::E0114])
+    );
+    assert_eq!(fte("#define N// c\nN\n"), (String::new(), vec![]));
+    assert_eq!(fte("#define N"), (String::new(), vec![]));
+    assert_eq!(fte("#define N 1 \\\n"), (String::new(), vec![]));
+    assert_eq!(
+        fte("#define /* never closed"),
+        (String::new(), vec![Code::E0114])
+    );
+    assert_eq!(
+        fte("#define /* a*b */ N 5\nx\n"),
+        ("x".to_owned(), vec![Code::E0114])
+    );
+    assert_eq!(fte("#define N 1 // c \\\r\n2\nN\n").0, "1");
+    for text in [
+        "\"//\" /* c\nzz */ q\nr\n",
+        "\"a\\\"//\" /* c\nzz */ q\nr\n",
+        "\"a\\\\\" /* c\nzz */ q\nr\n",
+    ] {
+        assert_eq!(
+            fte(&format!("#define E(n, n) {text}")),
+            ("r".to_owned(), vec![Code::E0115]),
+            "{text:?}"
+        );
+    }
+}
+
+// spec FTEF-14.25: a number is digits and `.`, `0` before any other byte one, and `0x` and hex
+// digits and `.`
+#[test]
+fn numbers_are_parse2_s() {
+    assert_eq!(fte("#define E(a) #05a\nE(:ex_a)\n").0, "#5:ex_a");
+    assert_eq!(fte("#define E(a) #0x1F a\nE(:ex_a)\n").0, "#31 :ex_a");
+    assert_eq!(fte("#define E(n) n\nE(#16)\n").0, "#16");
+}
+
+// spec FTEF-14.26: `##__VA_ARGS__` with no variadic argument takes away only a `,`
+#[test]
+fn a_paste_before_no_variadic_argument_keeps_other_text() {
+    assert_eq!(fte("#define V(a, ...) a##__VA_ARGS__\nV(#5)\n").0, "#5");
+    assert_eq!(fte("#define V(a, ...) a:##__VA_ARGS__\nV(#5)\n").0, "#5:");
+}
+
+// spec FTEF-14.24: a macro defined again with another stored body warns, with the same one does
+// not
+#[test]
+fn a_body_stored_again_otherwise_warns() {
+    assert_eq!(
+        fte("#define A 1\n#define A 2\nA\n"),
+        ("2".to_owned(), vec![Code::W0102])
+    );
+    assert_eq!(
+        fte("#define A 1\n#define A 1 /* c */\nA\n"),
+        ("1".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.22: a lexical error in the text a macro used in a chunk took as its arguments is
+// not the chunk's
+#[test]
+fn a_chunk_s_consumed_arguments_report_nothing() {
+    assert_eq!(
+        fte("#define M(a) 1\n#define K M('x)\nK\n"),
+        ("1".to_owned(), vec![])
+    );
+}
+
+// spec QC-9.7: a token pasted from an argument and a body token stands where the argument's
+// byte is, its text its spelling; a use stands from its name to its `)` when they are in that
+// order in one file, and at its name otherwise
+#[test]
+fn made_tokens_and_uses_keep_their_places() {
+    let (pp, out) = one_fte("#define J(a) a##b\nJ(x)\n");
+    let token = out.tokens.first().unwrap();
+    assert_eq!(token.spelling.as_deref(), Some("xb"));
+    assert_eq!(pp.sources().text(token.span), Some(&b"x"[..]));
+    let (pp, out) = one_fte("#define K(x) x(#5)\n#define M(y) y\nK(M)\n");
+    assert_eq!(touching(&out), "#5");
+    let m = pp.expansions().iter().find(|e| e.name == "M").unwrap();
+    assert_eq!(pp.sources().text(m.use_span), Some(&b"M"[..]));
+    let k = pp.expansions().iter().find(|e| e.name == "K").unwrap();
+    assert_eq!(pp.sources().text(k.use_span), Some(&b"K(M)"[..]));
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        "#include \"k.qh\"\n#define M(y) y\nK(M)\n".as_bytes(),
+    );
+    loader.insert("k.qh", "#define K(x) x(#5)\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(touching(&out), "#5");
+    let m = pp.expansions().iter().find(|e| e.name == "M").unwrap();
+    assert_eq!(pp.sources().text(m.use_span), Some(&b"M"[..]));
+}

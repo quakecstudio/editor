@@ -94,15 +94,9 @@ impl Text {
     /// Writes the bytes `range` of `other` at the end, each with its origin there.
     fn push_from(&mut self, other: &Self, range: Range<usize>) {
         let mut at = range.start;
-        while at < range.end {
-            let Some((origin, run_end)) = other.origin(at) else {
-                return;
-            };
+        while let Some((origin, run_end)) = other.origin(at).filter(|_| at < range.end) {
             let end = run_end.min(range.end);
-            let Some(bytes) = other.bytes.get(at..end) else {
-                return;
-            };
-            self.push(bytes, origin);
+            self.push(other.bytes.get(at..end).unwrap_or_default(), origin);
             at = end;
         }
     }
@@ -154,7 +148,7 @@ impl Text {
             (Origin::Made(span), _) => return Some((span, false)),
         };
         let len = range.end.saturating_sub(start);
-        if range.end <= run_end && range.start <= last_byte {
+        if range.end <= run_end {
             let span = Span::new(at, at.saturating_add(len));
             return Some((FileSpan { file, span }, true));
         }
@@ -198,13 +192,11 @@ impl Reading<'_> {
         let mut out = Text::default();
         match self {
             Self::File(file, bytes) => {
-                if let Some(slice) = bytes.get(range.clone()) {
-                    let origin = Origin::Copied {
-                        file: *file,
-                        at: range.start,
-                    };
-                    out.push(slice, origin);
-                }
+                let origin = Origin::Copied {
+                    file: *file,
+                    at: range.start,
+                };
+                out.push(bytes.get(range).unwrap_or_default(), origin);
             }
             Self::Chunk(text) => out.push_from(text, range),
         }
@@ -231,6 +223,8 @@ pub(crate) struct ChunkReader {
     /// the line FTEQCC was reading when it included the chunk (FTEF-14.27).
     line: u32,
     id: ExpansionId,
+    /// The use the chunk is the expansion of, where a token of no place stands.
+    at: FileSpan,
     /// The macro the chunk is an expansion of, `chunk->cnst`.
     pub(crate) name: String,
     stream: TokenStream,
@@ -246,36 +240,37 @@ impl ChunkReader {
     /// The next token of the chunk, written against the one before it when nothing stands
     /// between them in the chunk's text (QC-9.16).
     pub(crate) fn next_item(&mut self) -> Option<Item> {
-        loop {
-            let index = self.stream.pos;
-            let token = self.stream.tokens.get(index)?.clone();
-            self.stream.pos = index.saturating_add(1);
-            let Some((span, verbatim)) = self.text.place(token.span.range()) else {
-                continue;
-            };
-            let spelling = (!verbatim).then(|| {
-                let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
-                made_spelling(&token.kind, bytes)
-            });
-            let detached = std::mem::take(&mut self.detached);
-            let follows = index
-                .checked_sub(1)
-                .and_then(|before| self.stream.tokens.get(before))
-                .filter(|before| !detached && before.span.end == token.span.start)
-                .and_then(|before| self.text.place(before.span.range()))
-                .map(|(before, _)| before);
-            return Some(Item {
-                tok: PpToken {
-                    kind: token.kind,
-                    span,
-                    expansion: Some(self.id),
-                    spelling,
-                    follows,
-                },
-                hide: None,
-                chunk_end: Some(token.span.end),
-            });
-        }
+        let index = self.stream.pos;
+        let token = self.stream.tokens.get(index)?.clone();
+        self.stream.pos = index.saturating_add(1);
+        let (span, verbatim) = self.place(token.span.range());
+        let spelling = (!verbatim).then(|| {
+            let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
+            made_spelling(&token.kind, bytes)
+        });
+        let detached = std::mem::take(&mut self.detached);
+        let follows = index
+            .checked_sub(1)
+            .and_then(|before| self.stream.tokens.get(before))
+            .filter(|before| !detached && before.span.end == token.span.start)
+            .map(|before| self.place(before.span.range()).0);
+        Some(Item {
+            tok: PpToken {
+                kind: token.kind,
+                span,
+                expansion: Some(self.id),
+                spelling,
+                follows,
+            },
+            hide: None,
+            chunk_end: Some(token.span.end),
+        })
+    }
+
+    /// Where the bytes `range` of the chunk stand ([`Text::place`]), a token of the chunk
+    /// always standing somewhere.
+    fn place(&self, range: Range<usize>) -> (FileSpan, bool) {
+        self.text.place(range).unwrap_or((self.at, false))
     }
 
     /// Marks the token read last as a built-in constant's (FTEF-14.17).
@@ -292,6 +287,12 @@ fn made_spelling(kind: &TokenKind, bytes: &[u8]) -> String {
         _ => String::from_utf8_lossy(bytes).into_owned(),
     }
 }
+
+/// The body of a macro that has no stored text: under FTEQCC every macro has one.
+static NO_TEXT: Text = Text {
+    bytes: Vec::new(),
+    runs: Vec::new(),
+};
 
 /// The size of the buffer `QCC_PR_CheckBuiltinCompConst` writes a built-in constant's text in,
 /// `char retbuf[256]`, of which `QC_snprintfz` fills at most 255 bytes (FTEF-14.32).
@@ -530,11 +531,14 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
             verbatim: true,
         });
     };
-    while let Some(byte) = byte_at(text, at) {
+    // The byte at `at` is the token's first, or the `x` of `0x`.
+    let mut byte = byte_at(text, at).unwrap_or(first);
+    loop {
         keep(&mut token, byte);
         at = at.saturating_add(1);
-        if !byte_at(text, at).is_some_and(continues) {
-            break;
+        match byte_at(text, at).filter(|&next| continues(next)) {
+            Some(next) => byte = next,
+            None => break,
         }
     }
     Some(Word {
@@ -911,12 +915,20 @@ struct Writer<'a> {
     builtin: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
     /// The most bytes the expansion may write (FTEF-14.28).
     limit: usize,
+    /// The use, where text that stands nowhere else stands.
+    at: FileSpan,
 }
 
 impl Writer<'_> {
-    /// The index of the named parameter `token`, `!STRCMP(qcc_token, c->params[p])`.
-    fn param(&self, token: &[u8]) -> Option<usize> {
-        self.params.iter().position(|p| p.as_bytes() == token)
+    /// The argument of the named parameter `token`, `!STRCMP(qcc_token, c->params[p])`.
+    fn argument_of(&self, token: &[u8]) -> Option<&Text> {
+        let p = self.params.iter().position(|p| p.as_bytes() == token)?;
+        self.call.args.get(p)
+    }
+
+    /// Where the bytes `range` of `text`, a body or an argument, stand ([`Text::place`]).
+    fn place(&self, text: &Text, range: Range<usize>) -> FileSpan {
+        text.place(range).map_or(self.at, |(span, _)| span)
     }
 
     /// The expansion's text (FTEF-14.14 to FTEF-14.16, FTEF-14.20, FTEF-14.26), or `None` past
@@ -959,15 +971,10 @@ impl Writer<'_> {
                         break;
                     };
                     at = word.next;
-                    let stringified = self
-                        .param(&word.token)
-                        .filter(|&p| p < self.call.args.len());
-                    match stringified {
-                        Some(p) => {
-                            let place = self.body.place(hash..word.next);
-                            if let (Some((span, _)), Some(arg)) = (place, self.call.args.get(p)) {
-                                out.push(&markup(arg.bytes()), Origin::Made(span));
-                            }
+                    match self.argument_of(&word.token) {
+                        Some(arg) => {
+                            let span = self.place(self.body, hash..word.next);
+                            out.push(&markup(arg.bytes()), Origin::Made(span));
                         }
                         None => {
                             out.push_from(self.body, hash..hash.saturating_add(1));
@@ -982,19 +989,16 @@ impl Writer<'_> {
                 break;
             };
             at = word.next;
-            if let Some(p) = self.param(&word.token) {
+            if let Some(arg) = self.argument_of(&word.token) {
                 let mut after = at;
                 while byte_at(bytes, after).is_some_and(cond::fte_white) {
                     after = after.saturating_add(1);
                 }
                 let before_paste = bytes.get(after..after.saturating_add(2)) == Some(b"##");
-                let arg = self.call.args.get(p);
-                match arg {
-                    Some(arg) if noargexpand || before_paste => {
-                        out.push_from(arg, 0..arg.bytes.len());
-                    }
-                    Some(arg) => self.argument(arg, &mut out),
-                    None => {}
+                if noargexpand || before_paste {
+                    out.push_from(arg, 0..arg.bytes.len());
+                } else {
+                    self.argument(arg, &mut out);
                 }
             } else if self.variadic && word.token == b"__VA_ARGS__" {
                 // `if (param-1 == c->numparams)`: a variadic argument was given.
@@ -1016,9 +1020,8 @@ impl Writer<'_> {
                     .len()
                     .saturating_sub(1)
                     .saturating_add(self.call.extra);
-                if let Some((span, _)) = self.body.place(word.start..word.next) {
-                    out.push(count.to_string().as_bytes(), Origin::Made(span));
-                }
+                let span = self.place(self.body, word.start..word.next);
+                out.push(count.to_string().as_bytes(), Origin::Made(span));
             } else {
                 self.copy_token(&word, &mut out);
             }
@@ -1032,7 +1035,8 @@ impl Writer<'_> {
         if word.verbatim {
             let end = word.start.saturating_add(word.token.len());
             out.push_from(self.body, word.start..end);
-        } else if let Some((span, _)) = self.body.place(word.start..word.next) {
+        } else {
+            let span = self.place(self.body, word.start..word.next);
             out.push(&word.token, Origin::Made(span));
         }
     }
@@ -1060,11 +1064,7 @@ impl Writer<'_> {
                 (self.builtin)(&word.token)
             };
             match value {
-                Some(value) => {
-                    if let Some((span, _)) = arg.place(start..end) {
-                        out.push(&value, Origin::Made(span));
-                    }
-                }
+                Some(value) => out.push(&value, Origin::Made(self.place(arg, start..end))),
                 None => out.push_from(arg, start..end),
             }
             start = end;
@@ -1184,15 +1184,14 @@ impl<L: Loader> Preprocessor<L> {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
-            return self.fte_builtin(run, item);
+            let replaced = self.fte_builtin(run, &item, name);
+            return (!replaced).then_some(item);
         };
         if self.fte_recursion_stops(run, &item, (name, &mac)) {
             return Some(item);
         }
         let name = name.clone();
-        let Some(body) = mac.text() else {
-            return Some(item);
-        };
+        let body = mac.text().unwrap_or(&NO_TEXT);
         let use_ = match self.read_use(run, &item, &mac) {
             Ok(use_) => use_,
             Err(CallError::NoCall) => return Some(item),
@@ -1232,6 +1231,7 @@ impl<L: Loader> Preprocessor<L> {
                     call,
                     builtin: &builtin,
                     limit,
+                    at: use_.span,
                 };
                 writer.write()
             }
@@ -1268,6 +1268,7 @@ impl<L: Loader> Preprocessor<L> {
             text,
             line: use_.chunk_line,
             id,
+            at: use_.span,
             name,
             stream,
             consumed: Vec::new(),
@@ -1280,11 +1281,8 @@ impl<L: Loader> Preprocessor<L> {
     /// `QCC_PR_CheckBuiltinCompConst` writes for it ([`builtin_text`]), read as a chunk of its
     /// own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL);`) before the text after the name, so
     /// its tokens touch nothing beside them (FTEF-14.17), and its lexical errors reported at the
-    /// name (FTEF-14.32). Returns the item when it is none.
-    fn fte_builtin(&self, run: &mut Run, item: Item) -> Option<Item> {
-        let TokenKind::Name(name) = &item.tok.kind else {
-            return Some(item);
-        };
+    /// name (FTEF-14.32). Whether `name`, the name of `item`, is one, and was replaced.
+    fn fte_builtin(&self, run: &mut Run, item: &Item, name: &str) -> bool {
         let line = match item.chunk_end {
             Some(_) => run.chunks.last().map(|chunk| chunk.line),
             None => self.sources.line(item.tok.span),
@@ -1292,11 +1290,9 @@ impl<L: Loader> Preprocessor<L> {
         let file = run.cursors.last().map(|c| c.name.as_slice());
         let Some(text) = builtin_text(name.as_bytes(), line.unwrap_or(0), file.unwrap_or_default())
         else {
-            return Some(item);
+            return false;
         };
-        if item.chunk_end.is_some()
-            && let Some(chunk) = run.chunks.last_mut()
-        {
+        if let Some(chunk) = run.chunks.last_mut().filter(|_| item.chunk_end.is_some()) {
             chunk.detach();
         }
         let lexed = lex_with(&text, self.dialect);
@@ -1323,26 +1319,20 @@ impl<L: Loader> Preprocessor<L> {
             });
         }
         run.pending.extend(items.into_iter().rev());
-        None
+        true
     }
 
-    /// The text the name `item` stands in, if it is the text being read: the file of the
-    /// innermost cursor for a name of no expansion, the innermost chunk for a name of one.
+    /// The text the name `item` stands in: the innermost chunk for a name read from a chunk,
+    /// which is the chunk being read, and otherwise the file being read.
     fn reading<'a>(&'a self, run: &'a Run, item: &Item) -> Option<(Reading<'a>, usize)> {
         match item.chunk_end {
             Some(end) => {
-                let chunk = run
-                    .chunks
-                    .last()
-                    .filter(|chunk| Some(chunk.id) == item.tok.expansion)?;
+                let chunk = run.chunks.last()?;
                 Some((Reading::Chunk(&chunk.text), end))
             }
             None => {
                 let file = item.tok.span.file;
-                let reading = run.chunks.is_empty()
-                    && item.tok.expansion.is_none()
-                    && run.cursors.last().is_some_and(|c| c.file == file);
-                let text = self.sources.file(file).filter(|_| reading)?;
+                let text = self.sources.file(file)?;
                 Some((Reading::File(file, &text.text), item.tok.span.span.end))
             }
         }
@@ -1445,19 +1435,16 @@ impl<L: Loader> Preprocessor<L> {
     /// `c->inside--`), and reports its lexical errors outside the text a macro used in it took
     /// as arguments, each where its first byte came from.
     pub(crate) fn close_chunk(run: &mut Run, chunk: ChunkReader) {
-        if let Some(count) = run.open_names.get_mut(&chunk.name) {
-            *count = count.saturating_sub(1);
-        }
-        for d in chunk.stream.diagnostics {
+        let open = run.open_names.entry(chunk.name.clone()).or_default();
+        *open = open.saturating_sub(1);
+        for d in &chunk.stream.diagnostics {
             let consumed = chunk
                 .consumed
                 .iter()
                 .any(|s| s.start <= d.span.start && d.span.start < s.end);
-            if consumed {
-                continue;
-            }
-            if let Some((span, _)) = chunk.text.place(d.span.range()) {
-                run.report(d.code, d.message, span);
+            if !consumed {
+                let (span, _) = chunk.place(d.span.range());
+                run.report(d.code, d.message.clone(), span);
             }
         }
     }

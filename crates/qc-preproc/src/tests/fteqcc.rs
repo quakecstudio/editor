@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
+use crate::fte_macro::join_paths;
 use crate::{Code, MemoryLoader, Preprocessor, TokenKind};
 
 /// The tokens of `text` preprocessed under the FTEQCC dialect, and its diagnostic codes.
@@ -592,15 +593,9 @@ fn an_included_file_is_named_beside_the_compiled_file() {
             TokenKind::String(b"src/a.qc".to_vec()),
         ]
     );
-    assert_eq!(
-        crate::fte_macro::join_paths(b"/abs.qh", b"src\\a.qc"),
-        b"/abs.qh"
-    );
-    assert_eq!(
-        crate::fte_macro::join_paths(b"b.qh", b"src\\a.qc"),
-        b"src\\b.qh"
-    );
-    assert_eq!(crate::fte_macro::join_paths(b"b.qh", b"a.qc"), b"b.qh");
+    assert_eq!(join_paths(b"/abs.qh", b"src\\a.qc"), b"/abs.qh");
+    assert_eq!(join_paths(b"b.qh", b"src\\a.qc"), b"src\\b.qh");
+    assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
 // spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any

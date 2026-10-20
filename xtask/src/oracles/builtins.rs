@@ -696,6 +696,22 @@ fn macro_text_cases() -> Vec<String> {
     add("#define E(a) #5a", "E(:ex_a)".to_owned());
     add("#define E(a) #5.a", "E(:ex_a)".to_owned());
     add("#define E(a) #0x5a", "E(:ex_a)".to_owned());
+    add("#define E(a) #05a", "E(:ex_a)".to_owned());
+    add("#define E(a) #0x1F a", "E(:ex_a)".to_owned());
+    add("#define E(n) n", "E(#16)".to_owned());
+    add("#define J(a) a##b", "J(#5:e)".to_owned());
+    add("#define M(x) x", "M(// c\r#5)".to_owned());
+    add("#define M(x) x", "M(// c\r\n#5)".to_owned());
+    add("#define M(a) #5\n#define K M('x)", "K".to_owned());
+    add("#define K(x) x(#5)\n#define M(y) y", "K(M)".to_owned());
+    add("#define A #5\n#define A #6", "A".to_owned());
+    let params: Vec<String> = (0..32).map(|i| format!("p{i}")).collect();
+    for count in [32, 33] {
+        add(
+            &format!("#define E({}) p0", params.join(", ")),
+            format!("E(#5{})", ", 1".repeat(count - 1)),
+        );
+    }
     // Built-in constants in arguments, and in expansions within expansions (FTEF-14.20,
     // FTEF-14.27).
     for arg in [

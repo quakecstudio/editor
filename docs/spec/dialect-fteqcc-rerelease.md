@@ -806,7 +806,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   macros (FTEF-14.17), and uses whose `(` or arguments are past a line break, a comment, the end
   of an expansion or the end of the file (FTEF-14.29), arguments beside `##` and built-in
   constants in arguments (FTEF-14.14, FTEF-14.20); 18 statements of `g` that a paste, a
-  string, a nested or an unfinished macro writes; 174 programs of the macro-text family, whose
+  string, a nested or an unfinished macro writes; 185 programs of the macro-text family, whose
   macros FTEQCC reads as text where a token model would not: a `,`, `(` or `)` in an argument's
   character constant, `/* */` or `//` comment or string, against 15 uses each, strings that end in
   `\`, and line breaks and `\` in arguments (FTEF-14.22); built-in constants an argument copies
@@ -824,7 +824,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
   makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
   which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
-  (macOS arm64) made 11465 cases: 11382 agree; 68 differ as QC-27.9 says, the vanilla profile
+  (macOS arm64) made 11476 cases: 11393 agree; 68 differ as QC-27.9 says, the vanilla profile
   refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
   13 as FTE-23.11 says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the
   two strings FTEQCC never finishes.
