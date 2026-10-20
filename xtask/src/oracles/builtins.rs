@@ -636,6 +636,210 @@ const EXPANSION_STATEMENTS: &[(&str, &str)] = &[
     ("#define K(x) x", "K(__LINE__:) goto lbl;"),
 ];
 
+/// The bytes that end an argument where FTEQCC's argument scanner finds them (FTEF-14.21).
+const SEPARATORS: [&str; 3] = [",", ")", "("];
+
+/// What stands between a function-like macro's name and its `(` in another macro's body
+/// (FTEF-14.23): white space, comments and line continuations, which the stored body drops.
+const BODY_GAPS: &[&str] = &[
+    " ", "\t", " \t ", "/**/", " /**/ ", "/**/ ", " /**/", "/* x */", "/*\n*/", "\\\n", " \\\n",
+    "\\\n ", " \\\n ", "\\\r\n", "/**/\\\n",
+];
+
+/// The macro-text family (FTEF-14.21 to FTEF-14.26, P2-80 to P2-82, from the fourth P2-R2
+/// review): programs whose macros FTEQCC reads as text where a token model would not. A `,`,
+/// `(` or `)` in an argument's character constant, comment or string; strings ending in `\`;
+/// built-in constants in arguments, after white space, comments and line breaks, and in nested
+/// expansions; bodies stored across comments and continuations, and with escaped quotes before a
+/// `//`; parameter lists with duplicate, empty and spaced names; and variadic macros'
+/// `__VA_COUNT__`, `,##__VA_ARGS__` and empty arguments. Each is a whole program.
+fn macro_text_cases() -> Vec<String> {
+    let mut uses: Vec<(String, String)> = Vec::new();
+    let mut add = |define: &str, use_: String| uses.push((define.to_owned(), use_));
+    for sep in SEPARATORS {
+        add("#define E(n) :n", format!("E('{sep}')"));
+        add("#define E(n) #n", format!("E('{sep}')"));
+        add("#define M(x) x", format!("M(#5 /* {sep} */)"));
+        add("#define M(x) x", format!("M(#5 // {sep}\n)"));
+        add("#define M(x) x", format!("M(/* {sep} */ #5)"));
+        add("#define M(x) x", format!("M(// {sep}\n#5)"));
+        add("#define M(x, y) x", format!("M(#5, /* {sep} */)"));
+        add("#define M(x, y) x", format!("M(#5, /* {sep} */ 6)"));
+        add("#define M(x, y) y", format!("M(/* {sep} */, #5)"));
+        add("#define E(n) :n", format!("E(\"ex{sep}a\")"));
+        add("#define E(n, m) n m", format!("E(#5, :\"a{sep}b\")"));
+        add("#define S(a) #a", format!(":S(e'{sep}')"));
+        add("#define S(a) #a", format!(":S(\"{sep}\")"));
+        add("#define S(a) #a", format!(":S(e/*{sep}*/x)"));
+        add("#define V(...) __VA_ARGS__", format!("V(#5:'{sep}')"));
+    }
+    for arg in [
+        ":\"ex\\\\\"",
+        ":\"ex\\\\\") \")\"",
+        ":\"e\\\"x\"",
+        ":\"e\\\\\\\"x\"",
+        ":\"ex\\\\\" \")\"",
+        "#5:ex_a\\\n",
+        "#5:\"ex_a\"\\\n",
+        "#5:ex\\\n_a",
+    ] {
+        add("#define E(n) n", format!("E({arg})"));
+    }
+    add("#define S(a) #a", ":S(e'x)".to_owned());
+    add("#define S(a) #a", ":S(e\\\"x)".to_owned());
+    // A string after `#` or `##` in a body is read by `QCC_COM_Parse2` (FTEF-14.24).
+    add("#define S(a) #\"5\"", "S(x)".to_owned());
+    add("#define S(a) #\"5\"x a", "S(:ex_a)".to_owned());
+    add("#define S(a) #\"5\" a", "S(:ex_a)".to_owned());
+    add("#define P(a) a##\"5\"", "P(#)".to_owned());
+    add("#define P(a) a##\"5\"x:ex_a", "P(#)".to_owned());
+    add("#define E(a) #5a", "E(:ex_a)".to_owned());
+    add("#define E(a) #5.a", "E(:ex_a)".to_owned());
+    add("#define E(a) #0x5a", "E(:ex_a)".to_owned());
+    // Built-in constants in arguments, and in expansions within expansions (FTEF-14.20,
+    // FTEF-14.26).
+    for arg in [
+        "# __LINE__",
+        "#\t__LINE__",
+        "#//\n__LINE__",
+        "#\n__LINE__",
+        "#/**/__LINE__",
+        "#__LINE__ ",
+        "#__LINE__\n",
+        "\n#__LINE__",
+        "#__LINE__/**/",
+    ] {
+        add("#define E(n) n", format!("E({arg})"));
+    }
+    add("#define K(x) x##5", "K(# __LINE__)".to_owned());
+    add("#define K(x) #x", "#5:K(__LINE__)".to_owned());
+    for arg in [
+        ":__LINESTR__",
+        ":\n__LINESTR__",
+        ": __LINESTR__",
+        "\n:__LINESTR__",
+        ":__LINESTR__\n",
+    ] {
+        add("#define E(n) n", format!("E({arg})"));
+    }
+    add("#define L :__LINESTR__", "\nL".to_owned());
+    add("#define L :__LINESTR__\n#define M L", "M".to_owned());
+    add(
+        "#define L :__LINESTR__\n#define M(x) L x",
+        "M(\n)".to_owned(),
+    );
+    add("#define M(x) :__LINESTR__ x", "M(\n)".to_owned());
+    add("#define K(x) x\n#define M K(:__LINESTR__)", "M".to_owned());
+    add(
+        "#define K(x) x\n#define M(y) K(y)",
+        "M(\n:__LINESTR__)".to_owned(),
+    );
+    add(
+        "#define K(x) x\n#define M(y) K(y)",
+        "M(:\n__LINESTR__)".to_owned(),
+    );
+    add(
+        "#define K(x) x\n#define M(y) K(\\\n:__LINESTR__ y)",
+        "M()".to_owned(),
+    );
+    add(
+        "#define L __LINESTR__\n#define V(...) __VA_ARGS__ L",
+        "V(:\n\n)".to_owned(),
+    );
+    add(
+        "#define L __LINESTR__\n#define V(...) __VA_ARGS__ L",
+        "V(:)".to_owned(),
+    );
+    // Bodies as `QCC_PR_PreProcessor_Define` stores them (FTEF-14.23).
+    for gap in BODY_GAPS {
+        add(
+            &format!("#define M(x) x\n#define K M{gap}(#5)"),
+            "K".to_owned(),
+        );
+    }
+    for body in [
+        ":\"ex\\\"_a//\"",
+        ":\"ex\\\\\"_a//\"",
+        ":\"e//x\"",
+        ":\"ex\\\" /* c */ _a\"",
+        "#5 // c \\\n:ex_a",
+        "#5 /* c \\\n */ :ex_a",
+        "#5 :ex\\\n_a",
+        "#5 :ex/**/_a",
+        "#5 :\"ex /* c */ a\"",
+        "#5 \\\n\\\n:ex_a",
+    ] {
+        add(&format!("#define N {body}"), "N".to_owned());
+    }
+    add("#define N #5 // c \\\nzz zz", "N".to_owned());
+    // Parameter lists (FTEF-14.22).
+    for (define, use_) in [
+        ("#define E(n, n) n", "E(#5, 6)"),
+        ("#define E(n,n) n", "E(#5, 6)"),
+        ("#define E(a, b, a) a", "E(#5, 6, 7)"),
+        ("#define E( n ) n", "E(#5)"),
+        ("#define E(n ,m) n", "E(#5, 6)"),
+        ("#define E(n\t, m\t) m", "E(6, #5)"),
+        ("#define E(a,) a", "E(#5)"),
+        ("#define E(a,b) b", "E(6,#5)"),
+        ("#define E() #5", "E(1, 2)"),
+        ("#define E() #5", "E(1, 2, 3)"),
+        ("#define E(a b) #5", "E(1)"),
+        ("#define E(..., a) a", "E(#5)"),
+        ("#define E(a, ..., b) a", "E(#5)"),
+        ("#define E(a, ...) a", "E(#5, 1, 2)"),
+    ] {
+        add(define, use_.to_owned());
+    }
+    // `__VA_COUNT__`, `,##__VA_ARGS__` and empty variadic arguments (FTEF-14.25).
+    for (define, use_) in [
+        ("#define V(...) :__VA_COUNT__", "V()"),
+        ("#define V(...) :__VA_COUNT__", "V(a)"),
+        ("#define V(...) :__VA_COUNT__", "V(a, b)"),
+        ("#define V(...) :__VA_COUNT__", "V(a, b, c)"),
+        ("#define V(...) :__VA_COUNT__", "V(,)"),
+        ("#define V(a, ...) #5:__VA_COUNT__", "V(a)"),
+        ("#define V(a, ...) #5:__VA_COUNT__", "V(a, b)"),
+        ("#define V(a, ...) #__VA_COUNT__:ex_a", "V(a, b, c)"),
+        ("#define V(a) #5:__VA_COUNT__", "V(a)"),
+        ("#define V(a, ...) a,##__VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a , ## __VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a,##__VA_ARGS__", "V(#5, :ex_a)"),
+        ("#define V(a, ...) a##__VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a,__VA_ARGS__", "V(#5)"),
+        ("#define E(...) #5 __VA_ARGS__", "E(, )"),
+        ("#define E(...) #5 __VA_ARGS__", "E(,)"),
+        ("#define E(...) #5 __VA_ARGS__", "E( , , )"),
+        ("#define E(...) #5 __VA_ARGS__", "E(:ex_a, )"),
+    ] {
+        add(define, use_.to_owned());
+    }
+    let mut sources: Vec<String> = uses
+        .into_iter()
+        .map(|(define, use_)| format!("{define}\nvoid() f = {use_};\n"))
+        .collect();
+    // A function with no body (FTEF-17.11), plain and as the macros above write it, and a
+    // declarator list ended by a `,` (FTEF-15.8).
+    for source in [
+        "void() f = #5;\nvoid() g;\n",
+        "void() f = #5, g;\n",
+        "void() f = #5;\nnoref void() g;\n",
+        "void() f = #5;\nvoid() g;\nvoid() h = {g();};\n",
+        "void() f = #5;\nnoref void() g;\nvoid() h = {g();};\n",
+        "void() f = #5;\n#pragma noref 1\nvoid() g;\n",
+        "void() f = #5;\n#pragma noref 1\nvoid() g;\n#pragma noref 0\nvoid() h = {g();};\n",
+        "#define V(a, ...) a,##__VA_ARGS__\nvoid() f = V(#5, g);\n",
+        "#define V(a, ...) a __VA_ARGS__\nvoid() f = V(#5, :ex_a, b);\n",
+        "void() f = #5, ;\n",
+        "void() f = #5,;\n",
+        "void() f = #5, , ;\n",
+        "void() g, f = #5, ;\n",
+    ] {
+        sources.push(source.to_owned());
+    }
+    sources
+}
+
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's
 /// limit and FTEQCC's (QC-3.3, FTEF-15.7).
 const NAME_LENGTHS: [usize; 6] = [62, 63, 70, 254, 255, 300];
@@ -740,6 +944,9 @@ pub(crate) fn cases() -> Vec<Case> {
     }
     for (define, statement) in EXPANSION_STATEMENTS {
         cases.push(fte(with_body(define, statement)));
+    }
+    for source in macro_text_cases() {
+        cases.push(fte(source));
     }
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for length in NAME_LENGTHS {
