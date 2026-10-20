@@ -768,7 +768,15 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
     let reply = |code: i32| {
         let outcomes = outcomes.clone();
         move |command: &Command| Reply {
-            code,
+            // Without incremental builds, every mutant rebuilds the crate in full.
+            code: if command
+                .get_envs()
+                .any(|(key, value)| key == "CARGO_INCREMENTAL" && value == Some("1".as_ref()))
+            {
+                code
+            } else {
+                4
+            },
             files: vec![(
                 after(command, "--output")
                     .unwrap()
@@ -786,6 +794,8 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         let line = fake.seen.borrow()[0].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
         assert!(line.contains("--jobs "), "{line}");
+        assert!(line.contains("--profile mutants "), "{line}");
+        assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
     }
     let failed = Fake::new(reply(4));
     let error = mutation(&root(), &target, &failed).unwrap_err();

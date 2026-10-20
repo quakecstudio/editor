@@ -421,6 +421,11 @@ pub(crate) fn parse_llvm_cov(text: &str, check: Check) -> Result<Score, String> 
     })
 }
 
+/// The least time, in seconds, cargo mutants gives a mutant's tests. With the
+/// `mutants` profile the slowest L2 suite's caught and missed mutants finish in
+/// under 3 s on a 10-core Mac; GitHub's 4-core runners take about twice as long.
+const MUTANT_TIMEOUT_FLOOR: &str = "10";
+
 fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, String> {
     let out = scratch(root).join(format!("mutants-{}", target.name));
     let mut command = cargo_for(root, target, None);
@@ -430,12 +435,24 @@ fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, Stri
     // One build directory per core: a crate of a few thousand mutants (xtask)
     // tested one at a time outlasts the workflow's time limit.
     let jobs = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    // The `mutants` profile (Cargo.toml) and incremental builds: each mutant
+    // rebuilds one crate and reruns its tests, so a whole build or a debug
+    // build of the property tests is paid once per mutant. CI's rust-cache
+    // sets CARGO_INCREMENTAL=0, which would make every rebuild a full one.
+    // The test timeout stays five times the baseline's, but with a floor of
+    // MUTANT_TIMEOUT_FLOOR seconds rather than cargo-mutants' 20: a mutant that
+    // hangs a fast suite is cut off sooner, and it still counts as caught.
     command
+        .env("CARGO_INCREMENTAL", "1")
         .args([
             "mutants",
             "--all-features",
             "--no-shuffle",
             "--copy-vcs=true",
+            "--profile",
+            "mutants",
+            "--minimum-test-timeout",
+            MUTANT_TIMEOUT_FLOOR,
             "--manifest-path",
         ])
         .arg(manifest(target))
