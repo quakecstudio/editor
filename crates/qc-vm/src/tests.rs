@@ -16,6 +16,7 @@
 
 mod adversarial;
 mod harness;
+mod host_errors;
 mod string_opcodes;
 mod vectors;
 

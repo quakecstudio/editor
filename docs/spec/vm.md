@@ -519,9 +519,10 @@ moving an entity (`builtins.md`). That run is nested inside the run that called 
 - **VM-19.2** `Host_Error` ("This shuts down both the client and server") never returns: no
   further statement of any run executes, at any level of nesting, and `PR_ExecuteProgram` does
   not return to its caller.
-- **VM-19.3** After an error the call depth is 0, but the local stack is not reset: the slots
-  the aborted functions saved stay in use, are never restored and are never released, since
-  nothing outside `pr_exec.c` touches `localstack_used`. The globals keep the values they had
+- **VM-19.3** After a runtime error the call depth is 0 (a host error leaves it, VM-2.1,
+  BUILTIN-3.2), but the local stack is not reset: the slots the aborted functions saved stay
+  in use, are never restored and are never released, since nothing outside `pr_exec.c`
+  touches `localstack_used`. The globals keep the values they had
   when the error happened, including the locals of the aborted functions.
 - **VM-19.4** The errors this spec adds where id's C is undefined (VM-1.4, VM-2.2, VM-2.4,
   VM-3.3, VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6) are runtime errors with the effects of

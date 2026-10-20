@@ -60,9 +60,14 @@ pub struct FieldDef {
 /// `Host_Error` messages.
 ///
 /// The three tokenizer errors are EDICT-8.8; `ParseError` is id's `ED_ParseEdict: parse error`
-/// for an unknown function or field name in `ED_ParseEpair` (EDICT-8.2). The classname errors
-/// of EDICT-8.5 are not errors in id (the entity is freed and a message printed), so the host
-/// frees the edict and goes on; an error the spawn function raises is a [`qc_vm::RunError`].
+/// for an unknown function or field name in `ED_ParseEpair` (EDICT-8.2); `NoFreeEdicts` is
+/// `ED_Alloc` with the array full (EDICT-6.2); `BadEdictNumber` is `EDICT_NUM` given an entity
+/// key's number out of range (EDICT-1.7, EDICT-8.2). `ParseError` is a host error and the rest
+/// are fatal (`Sys_Error`), but all of them happen while the map loads, when no shutdown runs
+/// (DIFF-8.3), so the host treats them alike: one error record with function 0 and statement
+/// -1 (DIFF-8.1), then the scenario ends. The classname errors of EDICT-8.5 are not errors in
+/// id (the entity is freed and a message printed), so the host frees the edict and goes on; an
+/// error the spawn function raises is a [`qc_vm::RunError`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpawnError {
     /// id's `ED_LoadFromFile: found <token> when expecting {` (EDICT-8.8).
@@ -76,6 +81,15 @@ pub enum SpawnError {
     BraceWithoutData,
     /// id's `ED_ParseEdict: parse error` (EDICT-8.2): an unknown function or field name.
     ParseError,
+    /// id's `ED_Alloc: no free edicts` (EDICT-6.2): the map has more entities than the array
+    /// holds.
+    NoFreeEdicts,
+    /// id's `EDICT_NUM: bad number <n>` (EDICT-1.7): an entity key's `atoi(value)` is negative
+    /// or not less than `LIMIT_MAX_EDICTS` (EDICT-8.2).
+    BadEdictNumber {
+        /// The number `atoi` gave.
+        number: i32,
+    },
 }
 
 impl core::fmt::Display for SpawnError {
@@ -89,6 +103,8 @@ impl core::fmt::Display for SpawnError {
             Self::EofInEntity => f.write_str("ED_ParseEntity: EOF without closing brace"),
             Self::BraceWithoutData => f.write_str("ED_ParseEntity: closing brace without data"),
             Self::ParseError => f.write_str("ED_ParseEdict: parse error"),
+            Self::NoFreeEdicts => f.write_str("ED_Alloc: no free edicts"),
+            Self::BadEdictNumber { number } => write!(f, "EDICT_NUM: bad number {number}"),
         }
     }
 }
@@ -231,9 +247,18 @@ pub trait SpawnHost {
     ///
     /// # Errors
     ///
-    /// id's `ED_Alloc: no free edicts` (EDICT-6.2) as a [`qc_vm::RunError`]-free host error; a
-    /// scenario the plan runs never fills the array, so a host may treat it as unreachable.
+    /// [`SpawnError::NoFreeEdicts`], id's fatal `ED_Alloc: no free edicts` (EDICT-6.2), when
+    /// the array is full.
     fn allocate(&mut self, first: bool) -> Result<usize, SpawnError>;
+
+    /// The entity value of edict `number`, id's `EDICT_TO_PROG(EDICT_NUM(number))`, for an
+    /// entity key (EDICT-8.2, EDICT-1.5).
+    ///
+    /// # Errors
+    ///
+    /// [`SpawnError::BadEdictNumber`], id's fatal `EDICT_NUM: bad number <n>` (EDICT-1.7), when
+    /// `number` is negative or not less than `LIMIT_MAX_EDICTS`.
+    fn edict_value(&self, number: i32) -> Result<i32, SpawnError>;
 
     /// The field named `name`, id's `ED_FindField`. `None` when the progs does not declare it
     /// (EDICT-8.2: the key is then ignored).
@@ -272,7 +297,8 @@ pub trait SpawnHost {
 ///
 /// # Errors
 ///
-/// [`SpawnError::ParseError`] for an unknown function or field name.
+/// [`SpawnError::ParseError`] for an unknown function or field name;
+/// [`SpawnError::BadEdictNumber`] for an entity number out of range.
 fn parse_epair<H: SpawnHost>(
     host: &mut H,
     edict: usize,
@@ -295,11 +321,13 @@ fn parse_epair<H: SpawnHost>(
             host.set_field(edict, field.slot.saturating_add(1), Slot::from_f32(y));
             host.set_field(edict, field.slot.saturating_add(2), Slot::from_f32(z));
         }
-        // ev_entity: entity number atoi(value) (EDICT-8.2). id stores the entity value of that
-        // edict; its number is what the trace compares (TRACE-7.1), so the host converts the
-        // number to a value. The port writes the atoi result as id stores EDICT_NUM(atoi): for
-        // a map this is almost always 0 (the world), value 0.
-        Etype::Entity => host.set_field(edict, field.slot, Slot::from_i32(c_atoi(value))),
+        // ev_entity: id stores EDICT_TO_PROG(EDICT_NUM(atoi(s))), the entity value of edict
+        // atoi(value) (EDICT-8.2, EDICT-1.5); EDICT_NUM fails fatally on a number out of range
+        // (EDICT-1.7).
+        Etype::Entity => {
+            let entity = host.edict_value(c_atoi(value))?;
+            host.set_field(edict, field.slot, Slot::from_i32(entity));
+        }
         // ev_function: the function of that name (EDICT-8.2); unknown is a parse error.
         Etype::Function => {
             let name = c_string(value);
@@ -452,7 +480,8 @@ pub fn inhibited(spawnflags: f32, deathmatch: bool, skill: i32) -> bool {
 ///
 /// # Errors
 ///
-/// [`LoadError::Spawn`] on a tokenizer or parse error (EDICT-8.8, EDICT-8.2);
+/// [`LoadError::Spawn`] on a tokenizer or parse error (EDICT-8.8, EDICT-8.2), a full edict
+/// array (EDICT-6.2) or an entity number out of range (EDICT-1.7);
 /// [`LoadError::Run`] when a spawn function raises a runtime error (DIFF-8.1). Nothing after
 /// the error runs.
 pub fn load_from_file<H: SpawnHost>(
@@ -499,7 +528,8 @@ pub fn load_from_file<H: SpawnHost>(
 /// [`qc_vm::RunError`]); [`load_from_file`] threads both out of the loop.
 #[derive(Debug)]
 pub enum LoadError {
-    /// A tokenizer or parse error (EDICT-8.8, EDICT-8.2).
+    /// A tokenizer or parse error (EDICT-8.8, EDICT-8.2), a full edict array (EDICT-6.2) or
+    /// an entity number out of range (EDICT-1.7).
     Spawn(SpawnError),
     /// An error a spawn function raised (DIFF-8.1).
     Run(qc_vm::RunError),

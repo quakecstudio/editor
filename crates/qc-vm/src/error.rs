@@ -114,6 +114,21 @@ pub enum ErrorKind {
         /// The message, exactly as it goes into the trace's error record (TRACE-4.8).
         message: String,
     },
+    /// A host error a builtin raised, id's `Host_Error ("Program error")` called without
+    /// `PR_RunError` (BUILTIN-3.2): `error` and `objerror`.
+    ///
+    /// Unlike a runtime error it leaves the call depth where it was (BUILTIN-3.2, DIFF-8.4).
+    /// The message is the joined text the builtin was given (DIFF-8.2), not `Program error`.
+    Host {
+        /// The message, exactly as it goes into the trace's error record (DIFF-8.2).
+        message: String,
+    },
+    /// A fatal error a builtin raised, id's `Sys_Error` (BUILTIN-3.3): the engine exits, so
+    /// nothing after it runs and no shutdown runs QuakeC (DIFF-8.6).
+    Fatal {
+        /// The message `Sys_Error` is given, as it goes into the trace's error record (DIFF-8.2).
+        message: String,
+    },
 }
 
 impl ErrorKind {
@@ -132,6 +147,49 @@ impl ErrorKind {
             _ => true,
         }
     }
+
+    /// Whether the error went through id's `PR_RunError`, which sets the call depth to 0
+    /// before `Host_Error` (VM-19.1, VM-19.3).
+    ///
+    /// Every runtime error does (VM-19.1, VM-19.4, BUILTIN-3.1). `PR_ExecuteProgram: NULL
+    /// function` (VM-2.1, VM-2.2) and a builtin's host error (BUILTIN-3.2) call `Host_Error`
+    /// directly, and a fatal error (BUILTIN-3.3) calls `Sys_Error`: none of them resets the
+    /// depth, so after one the depth is still the depth at the error (DIFF-8.4).
+    #[must_use]
+    pub const fn resets_depth(&self) -> bool {
+        match self {
+            Self::NullRunFunction | Self::Host { .. } | Self::Fatal { .. } => false,
+            Self::NullCallFunction
+            | Self::StackOverflow
+            | Self::LocalsStackOverflow
+            | Self::Runaway
+            | Self::BadBuiltin
+            | Self::BadOpcode { .. }
+            | Self::AssignmentToWorld
+            | Self::Divergence { .. }
+            | Self::Builtin { .. } => true,
+        }
+    }
+
+    /// Whether the error is fatal, id's `Sys_Error` (BUILTIN-3.3): the engine exits, so a host
+    /// runs no shutdown after it (DIFF-8.6).
+    #[must_use]
+    pub const fn is_fatal(&self) -> bool {
+        match self {
+            Self::Fatal { .. } => true,
+            Self::NullRunFunction
+            | Self::NullCallFunction
+            | Self::StackOverflow
+            | Self::LocalsStackOverflow
+            | Self::Runaway
+            | Self::BadBuiltin
+            | Self::BadOpcode { .. }
+            | Self::AssignmentToWorld
+            | Self::Divergence { .. }
+            | Self::Builtin { .. }
+            | Self::Host { .. } => false,
+        }
+    }
 }
 
 impl fmt::Display for ErrorKind {
@@ -146,7 +204,9 @@ impl fmt::Display for ErrorKind {
             Self::BadOpcode { opcode } => write!(f, "Bad opcode {opcode}"),
             Self::AssignmentToWorld => f.write_str("assignment to world entity"),
             Self::Divergence { statement, detail } => write!(f, "{detail} ({statement})"),
-            Self::Builtin { message } => f.write_str(message),
+            Self::Builtin { message } | Self::Host { message } | Self::Fatal { message } => {
+                f.write_str(message)
+            }
         }
     }
 }

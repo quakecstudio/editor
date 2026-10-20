@@ -346,10 +346,11 @@ can cause the client to think the entity morphed into something else".
   - a key that names no field is ignored, with the message `'<key>' is not a field`;
   - otherwise the value is converted by the field's type: a string becomes a new engine
     string with the escapes of EXAMPLE-1, a float is C `atof`, a vector is three `atof`
-    values separated by single spaces, an entity is entity number `atoi(value)`, a function is
-    the function of that name, and a field is the value of the global whose slot is the
-    named field's offset (id reads `G_INT(def->ofs)`, the field's offset in the entity used
-    as a global slot). An unknown function or field name is the error
+    values separated by single spaces, an entity is the entity value (EDICT-1.5) of edict
+    `atoi(value)` (id's `EDICT_TO_PROG(EDICT_NUM(atoi (s)))`, so a number out of range is
+    EDICT-1.7's `EDICT_NUM: bad number <n>`), a function is the function of that name, and
+    a field is the value of the global whose slot is the named field's offset (id reads
+    `G_INT(def->ofs)`, the field's offset in the entity used as a global slot). An unknown function or field name is the error
     `ED_ParseEdict: parse error`.
 - **EDICT-8.3** A vector value with fewer than three space-separated components reads past the
   end of the value in id's code, which is undefined; this spec fixes the answer: the missing
