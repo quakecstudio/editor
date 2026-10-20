@@ -20,7 +20,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use qc_progs::crc::crc_block;
-use qc_progs::limits::{LIMIT_MAX_DEF_SLOT, LIMIT_QCC_MAX_FUNCTIONS};
 use qc_progs::opcode::Opcode;
 use qc_progs::{Function, Progs, ProgsFile, Statement, write};
 use qc_trace::{Changes, Header, Record, Step, Trace, decode, encode};
@@ -31,11 +30,6 @@ use super::Oracles;
 const VECTORS: &str = "docs/spec/vectors/vm";
 const ENTITY_FIELDS: u32 = 110;
 const DEFAULT_GLOBALS: usize = 128;
-
-/// The most global slots a vector may ask for, `LIMIT_MAX_DEF_SLOT + 1` (LIMIT-1.5).
-fn max_globals() -> usize {
-    usize::from(LIMIT_MAX_DEF_SLOT).saturating_add(1)
-}
 const DEFAULT_EDICTS: u32 = 3;
 const RUNAWAY: &str = "runaway loop error";
 
@@ -281,14 +275,7 @@ pub(super) fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
             }
             "strings" => vector.strings = parse_strings(rest).map_err(|e| at(&e))?,
             "numglobals" => {
-                // LIMIT-1.5: no definition names a slot past LIMIT_MAX_DEF_SLOT, and building
-                // the progs allocates the stated count.
-                let count = rest
-                    .parse::<usize>()
-                    .ok()
-                    .filter(|n| *n <= max_globals())
-                    .ok_or_else(|| at("bad numglobals"))?;
-                vector.numglobals = Some(count);
+                vector.numglobals = Some(rest.parse().map_err(|_| at("bad numglobals"))?);
             }
             "edicts" => vector.edicts = Some(rest.parse().map_err(|_| at("bad edicts"))?),
             "maxclients" => {
@@ -353,14 +340,7 @@ pub(super) fn parse_statement(body: &str) -> Result<Statement, String> {
 
 fn parse_function(vector: &mut Vector, body: &str) -> Result<(), String> {
     let (index, rest) = body.split_once(':').ok_or("bad function line")?;
-    // LIMIT-1.5: id's qcc builds at most LIMIT_QCC_MAX_FUNCTIONS functions, and building the
-    // progs allocates a table up to the highest index.
-    let index: usize = index
-        .trim()
-        .parse()
-        .ok()
-        .filter(|n| *n < LIMIT_QCC_MAX_FUNCTIONS)
-        .ok_or("bad function index")?;
+    let index: usize = index.trim().parse().map_err(|_| "bad function index")?;
     let mut function = Function::default();
     for item in rest.split_whitespace() {
         let (key, value) = item.split_once('=').ok_or("bad function field")?;

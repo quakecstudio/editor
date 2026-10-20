@@ -62,14 +62,14 @@ spec: <statement IDs it pins, comma-separated>
 globals: <slot>=<value> ...          optional, repeatable: initial globals
 fields: e<n>.<field>=<value> ...     optional, repeatable: initial entity fields
 strings: "<text>" ...                optional: strings after the empty one, \xNN escapes
-numglobals: <count>                  optional: 0 to 65536 (LIMIT-1.5)
+numglobals: <count>                  optional
 edicts: <count>                      optional: edicts in use, 1 to 600
 maxclients: <count>                  optional: client slots, 0 to 16
 seed: <number>                       optional: the random state, 0 to 4294967295
 server: loading                      optional
 builtins: engine                     optional: id's builtins instead of the stubs
 entry: <function index>              optional
-functions:                           optional: one line per function index, 0 to 8191 (LIMIT-1.5)
+functions:                           optional: one line per function index
   <n>: first=<s> parm_start=<p> locals=<l> parms=<size>,<size>,...
   <n>: builtin=<number>
 host:                                optional: one host action per line (below)
