@@ -213,7 +213,7 @@ fn intrinsics_resolve() {
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
 }
 
-// spec FTEF-17.5: a second initialiser written the same way, a builtin of the same number and
+// spec FTEF-17.10: a second initialiser written the same way, a builtin of the same number and
 // an enum declared again are no redeclaration; a different one is.
 // spec FTEF-8.2: an enum's names are constants.
 #[test]
@@ -228,7 +228,7 @@ fn equal_initialisers_are_accepted() {
     assert_eq!(errors(&different), [Code::E0206]);
 }
 
-// spec FTEF-17.5: a builtin's number is the `binum` FTEQCC binds (FTE-17.6): `#16777217i` is
+// spec FTEF-17.10: a builtin's number is the `binum` FTEQCC binds (FTE-17.6): `#16777217i` is
 // not `#16777216`, and `#4294967313i` is `#17`
 #[test]
 fn builtins_compare_by_the_number_fteqcc_binds() {
@@ -243,7 +243,7 @@ fn builtins_compare_by_the_number_fteqcc_binds() {
     );
 }
 
-// spec FTEF-17.5: an initialiser that is no literal is compared by its text, token for token:
+// spec FTEF-17.10: an initialiser that is no literal is compared by its text, token for token:
 // the same tokens spaced differently are the same value, other tokens are not.
 #[test]
 fn other_initialisers_compare_token_for_token() {

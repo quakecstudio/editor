@@ -1438,6 +1438,41 @@ fn a_digit_outside_the_base_ends_the_number() {
     assert_eq!(fte_kinds(b"07"), vec![TokenKind::Float(7.0)]);
 }
 
+// spec FTE-23.2: a hex number with a fraction is C's `atof` of it, a hexadecimal float, each
+// decimal digit after the `.` a sixteenth of the one before; the vanilla dialect has no hex
+#[test]
+fn hex_numbers_with_a_fraction_are_hex_floats() {
+    for (source, value) in [
+        (&b"0x10.0"[..], 16.0_f32),
+        (b"0x10.", 16.0),
+        (b"-0x10.0", -16.0),
+        (b"0x1.8", 1.5),
+        (b"0X1.08", 1.031_25),
+        (b"0x.4", 0.25),
+        (b"0x1.0f", 1.0),
+        (b"0x1.5d", 1.312_5),
+        // The whole part is read in full, not kept to 64 bits.
+        (b"0x10000000000000005.0", 1.844_674_4e19),
+    ] {
+        assert_eq!(
+            fte_kinds(source),
+            vec![TokenKind::Float(value)],
+            "{source:?}"
+        );
+    }
+    // The fraction takes only decimal digits.
+    assert_eq!(fte_kinds(b"0x1.a"), vec![TokenKind::Float(1.0), name("a")]);
+    assert_eq!(
+        kinds(b"0x10.0"),
+        vec![
+            TokenKind::Float(0.0),
+            name("x10"),
+            punct(Punct::Dot),
+            TokenKind::Float(0.0)
+        ]
+    );
+}
+
 // spec FTEF-13.4: `\u` takes four hex digits, as many as there are
 #[test]
 fn short_unicode_escape() {

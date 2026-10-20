@@ -8,6 +8,11 @@
 use crate::kind::SyntaxKind as K;
 use crate::tree::{SyntaxElement, SyntaxNode, SyntaxToken};
 
+/// The bytes of an engine name FTEQCC keeps: `QC_strlcpy` into `char fname[256]` in
+/// `QCC_PR_ParseInitializerType_Internal` (`qcc_pr_comp.c`,
+/// fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) copies at most 255 (FTE-23.6).
+const FTEQCC_MAX_ENGINE_NAME: usize = 255;
+
 /// A typed view of a node.
 pub trait AstNode: Sized {
     /// Whether a node of `kind` can be viewed as `Self`.
@@ -668,27 +673,44 @@ impl Builtin {
     }
 
     /// The engine name an FTEQCC builtin initialiser binds: the name after `#number:` or `:`
-    /// (FTE-17.4, FTE-17.5), or the value of the string after `#` or `:` (FTE-17.5), its
-    /// escapes read as FTEQCC reads them.
+    /// (FTE-17.4, FTE-17.5), or the value of the strings after `#` or `:` (FTE-17.5), joined
+    /// as FTEQCC's lexer joins adjacent strings and their escapes read as it reads them
+    /// (FTE-23.5), up to the first NUL byte; an empty string names nothing, so the name after it
+    /// is the one. The name is kept to the 255 bytes of FTEQCC's `fname` (FTE-23.6), each byte
+    /// one `char` (Latin-1), as FTEQCC compares names byte for byte.
     #[must_use]
     pub fn engine_name(&self) -> Option<String> {
-        let token = self
-            .0
-            .child_tokens()
-            .find(|t| matches!(t.kind(), K::Name | K::StringLit))?;
-        if token.kind() == K::Name {
-            return Some(token.text_lossless());
+        let mut joined = Vec::new();
+        let mut name = None;
+        for token in self.0.child_tokens() {
+            match token.kind() {
+                K::StringLit => {
+                    let lexed = qc_lexer::lex_with(token.text(), qc_lexer::Dialect::Fteqcc);
+                    if let [
+                        qc_lexer::Token {
+                            kind: qc_lexer::TokenKind::String(bytes),
+                            ..
+                        },
+                    ] = lexed.tokens.as_slice()
+                    {
+                        joined.extend_from_slice(bytes);
+                    }
+                }
+                K::Name => name = Some(token),
+                _ => {}
+            }
         }
-        let lexed = qc_lexer::lex_with(token.text(), qc_lexer::Dialect::Fteqcc);
-        match lexed.tokens.as_slice() {
-            [
-                qc_lexer::Token {
-                    kind: qc_lexer::TokenKind::String(bytes),
-                    ..
-                },
-            ] => Some(String::from_utf8_lossy(bytes).into_owned()),
-            _ => None,
+        // FTE-23.6: `QC_strlcpy` copies a C string, which ends at its first NUL.
+        if let Some(end) = joined.iter().position(|&b| b == 0) {
+            joined.truncate(end);
         }
+        let bytes = if joined.is_empty() {
+            name?.text().to_vec()
+        } else {
+            joined
+        };
+        let kept = bytes.get(..FTEQCC_MAX_ENGINE_NAME).unwrap_or(&bytes);
+        Some(kept.iter().copied().map(char::from).collect())
     }
 }
 

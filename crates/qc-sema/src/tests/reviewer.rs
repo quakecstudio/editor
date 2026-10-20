@@ -187,7 +187,7 @@ fn reviewer_many_locals_each_resolve_to_their_own() {
     }
 }
 
-// spec FTEF-17.5: under FTEQCC a builtin initialised again with the same number, written as a
+// spec FTEF-17.10: under FTEQCC a builtin initialised again with the same number, written as a
 // float or a fraction of zeros, or with the same `#0:NAME`, is accepted, and with another
 // number is E0206, as the pinned FTEQCC compiles the first two and reports "incompatible
 // redeclaration" for the third

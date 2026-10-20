@@ -67,7 +67,8 @@ cargo test -p qc-engines
   `#0:NAME`, `#"NAME"` and `:NAME` (ENGT-4.14), in the dialect the module was parsed in: a
   number is the one the dialect's compiler binds, `(int)` of the literal's float value
   (ENGT-4.12), and under FTEQCC the value FTEQCC reads, hex, octal and `i` literals included
-  (ENGT-4.11, ENGT-4.13).
+  and `d` literals giving none (ENGT-4.11, ENGT-4.13, ENGT-4.15); a name is the one FTEQCC
+  reads, adjacent strings joined (ENGT-4.16).
 
 ## Module kinds
 

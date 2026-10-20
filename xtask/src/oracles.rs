@@ -7,6 +7,10 @@
 //!   `docs/spec/vectors/vm/` that id's C defines, and its scenario reader against the number
 //!   vectors of `docs/spec/vectors/scenario/numbers.txt`, and runs the input file probes of
 //!   `oracles/probes.rs` and the scenario tests of `oracles/scenarios.rs`.
+//!   It then compiles every builtin initialiser of `oracles/builtins.rs` with FTEQCC and id's
+//!   qcc and checks the dialect profiles against them.
+//! - `cargo xtask oracles builtins [--record]` builds them and runs only that check; with
+//!   `--record` it writes the oracles' outcomes to `xtask/fixtures/oracles/builtin-outcomes.json`.
 //! - `cargo xtask oracles build` only builds them, and prints where the binaries are.
 //! - `cargo xtask oracles id101 <dir>` builds them, compiles id's QuakeC 1.01 in `<dir>` (as
 //!   `cargo xtask corpus fetch id-1.01` writes it) with id's qcc, and runs the VM oracle on the
@@ -26,6 +30,7 @@
 //! lets an unchanged build, such as one restored by CI's cache, skip the compile. Nothing here
 //! is part of the shipped app.
 
+mod builtins;
 mod compile;
 mod extract;
 mod fuzz;
@@ -139,8 +144,13 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
             let numbers = numbers::check(root, &oracles)?;
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
-            Ok(vectors && numbers && probes && scenarios)
+            let builtins = builtins::check(root, &oracles, false)?;
+            Ok([vectors, numbers, probes, scenarios, builtins]
+                .iter()
+                .all(|passed| *passed))
         }
+        ["builtins"] => builtins::check(root, &build()?, false),
+        ["builtins", "--record"] => builtins::check(root, &build()?, true),
         ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
         ["scenarios", names @ ..] => {
             let oracles = build()?;
@@ -169,7 +179,7 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
         }
         _ => Err(
             "usage: cargo xtask oracles [build | scenarios [<name>...] | fuzz <target> [--time <s>] \
-             | id101 <codebase directory> \
+             | builtins [--record] | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),

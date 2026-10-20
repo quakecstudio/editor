@@ -447,6 +447,29 @@ pub const fn is_whitespace(b: u8) -> bool {
     b <= b' ' || b >= 0x80
 }
 
+/// `(float)atof("0x<whole>.<fraction>")` for an FTEQCC hex number with a fraction (FTE-23.2):
+/// C's `atof` reads `0x` as a hexadecimal float, so each decimal digit `QCC_PR_LexNumber` took
+/// after the `.` is a hex digit worth a sixteenth of the one before; `whole` is the hex digits
+/// before the `.`, read in full, as `atof` reads them. The value is exact up to 2^53, where
+/// `atof` rounds once and this rounds at each digit; no builtin number is that large.
+fn hex_float(whole: &[u8], fraction: &[u8]) -> f32 {
+    let mut value = 0.0_f64;
+    for digit in whole.iter().filter_map(|&b| char::from(b).to_digit(16)) {
+        value = value * 16.0 + f64::from(digit);
+    }
+    let mut scale = 1.0_f64;
+    for digit in fraction {
+        scale /= 16.0;
+        value += f64::from(digit.wrapping_sub(b'0')) * scale;
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec FTE-23.2: `(float)atof(...)` rounds the double to a float"
+    )]
+    let value = value as f32;
+    value
+}
+
 const fn is_name_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
@@ -802,6 +825,7 @@ impl Lexer<'_> {
             }
             _ => 10,
         };
+        let digits = self.pos;
         let mut num: u64 = 0;
         while let Some(c) = self.peek(0) {
             let digit = match c {
@@ -817,11 +841,20 @@ impl Lexer<'_> {
                 continue;
             }
             if c == b'.' && self.peek(1) != Some(b'.') {
+                let whole = Span::new(digits, self.pos);
                 self.bump(1);
+                let fraction = self.pos;
                 while self.peek(0).is_some_and(|b| b.is_ascii_digit()) {
                     self.bump(1);
                 }
-                let value = atof(self.bytes(Span::new(start, self.pos)));
+                let value = if base == 16 {
+                    // FTE-23.2: C's `atof` reads `0x` and a fraction as a hexadecimal float.
+                    let fraction = self.bytes(Span::new(fraction, self.pos));
+                    let value = hex_float(self.bytes(whole), fraction);
+                    if negative { -value } else { value }
+                } else {
+                    atof(self.bytes(Span::new(start, self.pos)))
+                };
                 if matches!(self.peek(0), Some(b'f' | b'F' | b'd' | b'D')) {
                     self.bump(1);
                 }

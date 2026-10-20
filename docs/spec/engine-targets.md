@@ -339,11 +339,19 @@ own builtin tables are fact sources, so its table is what its source implements.
   `qcc_pr_comp.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`). A call of it
   whose engine lacks `NAME` is the `W0311` of ENGT-4.5, with the message
   `FUNC is builtin #0:NAME, which ENGINE does not have`.
+- **ENGT-4.15** Under an FTEQCC dialect a `d` literal (`#287d`, `#287.0d`, `#0437d`) gives no
+  key and no `W0311`: it is a `double`, which FTEQCC binds no number for and reports as "Bad
+  builtin immediate" (`dialect-fteqcc-rerelease.md` FTE-23.3). In hex `d` is a digit, so
+  `#0x11d` is 285.
+- **ENGT-4.16** Under an FTEQCC dialect the `NAME` of ENGT-4.14 is the one FTEQCC reads
+  (`dialect-fteqcc-rerelease.md` FTE-23.5, FTE-23.6): adjacent strings joined, so
+  `= #"ex_" "bprint";` is keyed by `ex_bprint`, the name after `:` when the strings are empty
+  (`= #"":ex_bprint;`), and at most its first 255 bytes.
 
 ### Test vectors
 
 Recorded with `cargo test -p qc-engines` on 2026-10-19, and the rows of ENGT-4.12 to
-ENGT-4.14 on 2026-10-20.
+ENGT-4.16 on 2026-10-20.
 
 | Source, target | Diagnostic | Statements |
 | --- | --- | --- |
@@ -370,6 +378,8 @@ ENGT-4.14 on 2026-10-20.
 | `#16777217i`, `#4294967313i`; `#16u`, `#2147483647`, FTEQCC dialect | builtins 16777217 and 17; no number | ENGT-4.13 |
 | `void(string s, ...) bprint = #"ex_bprint";` (or `:"ex_bprint"`, `:ex_bprint`) called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.14 |
 | the same, KEX | none | ENGT-4.14 |
+| `void() f = #287d;` (or `#287.0d`, `#287D`, `#0437d`) called, FTEQCC dialect, Vanilla | none: no number | ENGT-4.15 |
+| `void(string s, ...) bprint = #"ex_" "bprint";` (or `:"ex_b" /* c */ "print"`, `#"":ex_bprint`) called, FTEQCC dialect, FTEQW | `W0311` "bprint is builtin #0:ex_bprint, which FTEQW does not have" | ENGT-4.16 |
 | `void() clearscene = #300;` called, FTEQW, client module | none | ENGT-4.8 |
 | the same, FTEQW, server module | `W0311` "clearscene is builtin #300, which FTEQW does not have" | ENGT-4.8 |
 | `void(entity e) setspawnparms = #78;` called, FTEQW, client module | `W0311` "setspawnparms is builtin #78, which FTEQW does not have" | ENGT-4.8 |

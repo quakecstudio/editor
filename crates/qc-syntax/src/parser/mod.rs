@@ -975,11 +975,18 @@ impl<'a> Parser<'a> {
     }
 
     /// `#number` (QC-13.3, QC-27.9), and in an FTEQCC dialect `#number:name`, `#"name"`,
-    /// `:name` and the other forms of FTE-17.4 and FTE-17.5.
+    /// `:name` and the other forms of FTE-17.4, FTE-17.5 and FTE-23.
     fn builtin(&mut self) {
         self.start_node(K::Builtin);
         let colon = self.at(K::Colon);
+        let opener = self.current().map(|t| t.span.end);
         self.bump();
+        // FTE-23.1: FTEQCC's lexer reads a `#` as a token only right before `"`, `-`, a digit,
+        // `)` or `,`; before anything else it is a macro use, an error with no such macro. The
+        // parser reports only the first error of a declaration, so this one is reported.
+        if self.fteqcc() && !colon && !self.hash_token_follows(opener) {
+            self.error(Code::E0209, "Bad builtin immediate");
+        }
         let number = self.current().map(|t| (t.kind, t.value));
         let binum = self
             .current()
@@ -987,17 +994,23 @@ impl<'a> Parser<'a> {
         let mut named = false;
         match number {
             // FTE-17.5: FTEQCC takes the engine name from a string after `#` or `:`, or from a
-            // name after `:`; after `#` its lexer reads a name as a macro use.
+            // name after `:`; after `#` its lexer reads a name as a macro use. FTE-23.5: its
+            // lexer joins adjacent strings into one, and one empty up to its first NUL names
+            // nothing.
             Some((K::StringLit, _)) if self.fteqcc() => {
-                named = true;
-                self.bump();
+                let mut first = None;
+                while self.at(K::StringLit) {
+                    first = first.or_else(|| self.current().and_then(|t| t.text.chars().next()));
+                    self.bump();
+                }
+                named = first.is_some_and(|c| c != '\0');
             }
             Some((K::Name, _)) if colon => {
                 named = true;
                 self.bump();
             }
-            // QC-13.3, QC-13.10, FTE-17.6: a literal no compiler binds is "Bad builtin
-            // immediate".
+            // QC-13.3, QC-13.10, FTE-17.6, FTE-23.3: a literal no compiler binds is "Bad
+            // builtin immediate".
             Some((K::FloatLit, Some(value))) => {
                 if binum.is_none() {
                     self.error(Code::E0209, "Bad builtin immediate");
@@ -1017,6 +1030,27 @@ impl<'a> Parser<'a> {
             self.name();
         }
         self.finish_node();
+    }
+
+    /// Whether the token after a `#` that ends at `opener` is one FTEQCC's `QCC_PR_Lex` reads
+    /// the `#` before as a token (FTE-23.1): it starts right after the `#`, with `"`, `-`, a
+    /// digit, `)` or `,`.
+    fn hash_token_follows(&self, opener: Option<usize>) -> bool {
+        let Some(next) = self.current() else {
+            return false;
+        };
+        if Some(next.span.start) != opener {
+            return false;
+        }
+        match next.kind {
+            K::StringLit | K::RParen | K::Comma => true,
+            K::FloatLit => next
+                .text
+                .bytes()
+                .next()
+                .is_some_and(|b| b == b'-' || b.is_ascii_digit()),
+            _ => false,
+        }
     }
 
     /// `[frame, next] { ... }` or `{ ... }` (QC-13.1, QC-13.6).
