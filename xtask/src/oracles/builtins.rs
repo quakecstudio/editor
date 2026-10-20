@@ -607,6 +607,9 @@ const EXPANSION_INITIALISERS: &[(&str, &str)] = &[
     ("#define K(x) x##5", "K(#__LINE__)"),
     ("#define N1 #5\n#define P(x, a, b) x##a##b", "P(#, N, 1)"),
     ("#define S(a) #a", ":S(e\u{e9})"),
+    ("#define P(a, b) a##b 5", "P(#, )"),
+    ("#define P(a, b) a##b #6", "P(/, /) #5"),
+    ("#define M(x) x\n#define K(y) y", "K(M\n(#5))"),
 ];
 
 /// The macro-expansion cases written as statements of a function `g` after `f`, which binds

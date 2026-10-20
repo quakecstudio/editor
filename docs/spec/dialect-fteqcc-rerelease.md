@@ -799,7 +799,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   token, or an empty expansion, meets a label's `:` (QC-9.16, FTEF-18.23), these three families in
   a function `g` defined after `f`, which binds `f` only when `g` has no error, 19 macros whose
   argument, or a `#` and a name across a dropped comment, meets a builtin's body token (QC-9.16,
-  FTE-23.1, FTE-23.4); 99 initialisers a macro writes: `##` with each side empty or not, at each
+  FTE-23.1, FTE-23.4); 102 initialisers a macro writes: `##` with each side empty or not, at each
   place in the body, with and without spaces, three in a row and in an object-like macro
   (FTEF-14.14, FTEF-14.16), `#` before each kind of argument, before no parameter and at the
   body's end (FTEF-14.15), empty arguments and variadic macros given none, nested and recursive
@@ -812,7 +812,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
   makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
   which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
-  (macOS arm64) made 11288 cases: 11205 agree; 68 differ as QC-27.9 says, the vanilla profile
+  (macOS arm64) made 11291 cases: 11208 agree; 68 differ as QC-27.9 says, the vanilla profile
   refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
   13 as FTE-23.11 says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the
   two strings FTEQCC never finishes.

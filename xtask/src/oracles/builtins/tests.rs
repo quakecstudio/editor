@@ -136,7 +136,7 @@ fn the_cross_product_holds_the_expansion_families() {
         );
         assert!(cases.contains(&fte(&source)), "{source:?}");
     }
-    assert_eq!(super::EXPANSION_INITIALISERS.len(), 99);
+    assert_eq!(super::EXPANSION_INITIALISERS.len(), 102);
     assert_eq!(super::EXPANSION_STATEMENTS.len(), 18);
 }
 
