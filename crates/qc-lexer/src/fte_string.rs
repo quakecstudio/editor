@@ -7,7 +7,7 @@
 //! (`engine/qclib/qcc_pr_lex.c`), which is not a porting upstream, and checked against the
 //! pinned FTEQCC by `cargo xtask oracles builtins`.
 
-use crate::{Code, Dialect, Lexed, Lexer, Span, Token, TokenKind};
+use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind};
 
 /// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token, an
 /// `L"..."` after another part included (FTEF-13.7); `None` when `text` is not one such part.
@@ -20,17 +20,8 @@ pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
         out: Lexed::default(),
     };
     let prefix = lexer.fte_string_prefix(true)?;
-    lexer.fte_string(prefix);
-    if lexer.pos != text.len() {
-        return None;
-    }
-    match lexer.out.tokens.pop() {
-        Some(Token {
-            kind: TokenKind::String(bytes),
-            ..
-        }) => Some(bytes),
-        _ => None,
-    }
+    let bytes = lexer.fte_string_contents(prefix);
+    (lexer.pos == text.len()).then_some(bytes)
 }
 
 /// What a string's characters are written as: `QCC_PR_LexString`'s `stringtype`
@@ -85,14 +76,21 @@ impl Lexer<'_> {
     /// parser (FTEF-16.8).
     pub(crate) fn fte_string(&mut self, prefix: Prefix) {
         let start = self.pos;
+        let contents = self.fte_string_contents(prefix);
+        self.check_length(contents.len(), Span::new(start, self.pos));
+        self.push(TokenKind::String(contents), start);
+    }
+
+    /// The bytes FTEQCC writes for the string literal part at its prefix (FTEF-13.7 to
+    /// FTEF-13.11), read up to its end.
+    fn fte_string_contents(&mut self, prefix: Prefix) -> Vec<u8> {
+        let start = self.pos;
         self.bump(prefix.len.saturating_add(1));
-        let contents = if prefix.raw {
+        if prefix.raw {
             self.raw_string(start)
         } else {
             self.cooked_string(start, prefix.output)
-        };
-        self.check_length(contents.len(), Span::new(start, self.pos));
-        self.push(TokenKind::String(contents), start);
+        }
     }
 
     /// The rest of a raw string after its `R"` (FTEF-13.9): a delimiter up to `(`, an optional
@@ -396,11 +394,9 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
     let mut count = 1_u32;
     let mut bound = 0x80_u64;
     while code >= bound {
-        bound <<= match count {
-            1 => 4,
-            2..=6 => 5,
-            _ => 6,
-        };
+        // FTEQCC's `else t <<= 6;`, for 7 bytes or more, is reached only in its endless loop:
+        // a code is below 2^32 and the bound for 7 bytes is 2^36, so this loop ends there.
+        bound <<= if count == 1 { 4 } else { 5 };
         count = count.saturating_add(1);
     }
     if count == 1 {

@@ -126,10 +126,10 @@ impl<L: Loader> Preprocessor<L> {
                 span: t.span,
             })
         };
-        // `##` is two `#` that touch where the body was stored.
+        // `##` is two `#` that touch where the body was stored. Only a function-like macro
+        // reads it, and every use below is of one: a `#` read with `params`, or a parameter.
         let paste_at = |at: usize| {
-            params.is_some()
-                && hash_at(at)
+            hash_at(at)
                 && hash_at(at.saturating_add(1))
                 && span_at(at)
                     .zip(span_at(at.saturating_add(1)))
@@ -253,7 +253,7 @@ impl<L: Loader> Preprocessor<L> {
             spelling,
             follows: w.follows(),
         };
-        self.write(w, vec![Item { tok, hide: None }]);
+        self.write(w, Item { tok, hide: None }, Vec::new());
     }
 
     /// Whether the body token at `here` goes on into a word as FTEQCC stored the body: the
@@ -299,27 +299,24 @@ impl<L: Loader> Preprocessor<L> {
             Copy::Whole => !end.touches(&last.tok),
             Copy::TokenByToken => !self.nothing_copied_after(&last.tok, end),
         });
-        if pieces.is_empty() {
+        let mut pieces = pieces.into_iter();
+        let Some(first) = pieces.next() else {
             w.paste = Paste::None;
             return;
-        }
-        self.write(w, pieces);
+        };
+        self.write(w, first, pieces.collect());
         w.gap = space_after;
         if copy == Copy::Whole && space_after {
             w.last = Last::ArgumentThenSpace;
         }
     }
 
-    /// Writes `items` to `w`, joining the first to the last written when a `##` waits
-    /// (FTEF-14.14). Nothing is written after a paste that made a comment.
-    fn write(&self, w: &mut Writer, items: Vec<Item>) {
+    /// Writes `first` and then `rest` to `w`, joining `first` to the last written when a `##`
+    /// waits (FTEF-14.14). Nothing is written after a paste that made a comment.
+    fn write(&self, w: &mut Writer, mut first: Item, mut rest: Vec<Item>) {
         if w.commented_out {
             return;
         }
-        let mut items = items.into_iter();
-        let Some(mut first) = items.next() else {
-            return;
-        };
         w.gap = false;
         w.last = Last::Token;
         match std::mem::replace(&mut w.paste, Paste::None) {
@@ -338,7 +335,6 @@ impl<L: Loader> Preprocessor<L> {
                     let joined_span = joined.last().map(|item| item.tok.span);
                     w.out.extend(joined);
                     // The argument's next token touched the token the paste used up.
-                    let mut rest: Vec<Item> = items.collect();
                     if let Some(next) = rest.first_mut()
                         && next.tok.follows == Some(first_span)
                     {
@@ -350,7 +346,7 @@ impl<L: Loader> Preprocessor<L> {
                 None => w.out.push(first),
             },
         }
-        w.out.extend(items);
+        w.out.extend(rest);
     }
 
     /// `a ## b` (FTEF-14.14): `a`'s text and then `b`'s, which FTEQCC lexes again with the
@@ -391,7 +387,9 @@ impl<L: Loader> Preprocessor<L> {
     /// follow its `(` or `,` (`QCC_PR_LexWhitespace(false)`) up to its `,` or `)`, every byte as
     /// it is, and `QCC_PR_ExpandStrCatMarkup` escapes it into the string. Where the argument is
     /// not text of the source, its tokens are written as they touch. The source text becomes a
-    /// string's, so the span of the argument `arg` is offered to `quiet`.
+    /// string's, so the span of the argument `arg` is offered to `quiet`. The argument and its
+    /// delimiters are all of the chunk the macro's name is in (FTEF-14.18), so the `,` or `)`
+    /// says whether they are the source's.
     fn stringified(
         &self,
         items: &[Item],
@@ -400,9 +398,7 @@ impl<L: Loader> Preprocessor<L> {
         arg: usize,
     ) -> Vec<u8> {
         if let (Some(start), Some(end)) = bounds
-            && start.expansion.is_none()
             && end.expansion.is_none()
-            && items.iter().all(|item| item.tok.expansion.is_none())
             && start.span.file == end.span.file
             && let Some(text) = self
                 .sources
@@ -490,37 +486,26 @@ impl<L: Loader> Preprocessor<L> {
     /// Makes [`Run::open`] the chunks open at a token of `expansion`, as
     /// `QCC_PR_IncludeChunkEx` pushes them and the lexer pops them at their ends: tokens are
     /// read in order, so the expansion is the last open one, a new one used in it, or one of
-    /// those open, the ones after it having ended.
+    /// those open, the ones after it having ended. A new one is made only at a name read in
+    /// its parent, which opened the parent, so the parent is open when its first token is read.
     fn open_chunks_at(&self, run: &mut Run, expansion: Option<ExpansionId>) {
-        loop {
-            let top = run.open.last().copied();
-            if top == expansion {
-                return;
-            }
-            if let Some(id) = expansion
-                && self.expansions.get(id.0).is_some_and(|e| e.parent == top)
-            {
-                self.open_chunk(run, id);
-                return;
-            }
-            let Some(ended) = run.open.pop() else {
-                // Not reached in reading order; take the expansion's chain as it is.
-                let mut chain = Vec::new();
-                let mut at = expansion;
-                while let Some(id) = at {
-                    chain.push(id);
-                    at = self.expansions.get(id.0).and_then(|e| e.parent);
-                }
-                for id in chain.into_iter().rev() {
-                    self.open_chunk(run, id);
-                }
-                return;
-            };
-            if let Some(e) = self.expansions.get(ended.0)
-                && let Some(count) = run.open_names.get_mut(&e.name)
+        let parent = expansion.and_then(|id| self.expansions.get(id.0).map(|e| e.parent));
+        while let Some(ended) = run
+            .open
+            .pop_if(|top| Some(*top) != expansion && parent != Some(Some(*top)))
+        {
+            if let Some(count) = self
+                .expansions
+                .get(ended.0)
+                .and_then(|e| run.open_names.get_mut(&e.name))
             {
                 *count = count.saturating_sub(1);
             }
+        }
+        if let Some(id) = expansion
+            && run.open.last() != Some(&id)
+        {
+            self.open_chunk(run, id);
         }
     }
 
@@ -595,10 +580,13 @@ fn dropped_in_body(mut between: &[u8]) -> bool {
             return true;
         }
         if let Some(comment) = between.strip_prefix(b"/*") {
-            let Some(end) = comment.windows(2).position(|pair| pair == b"*/") else {
-                return false;
-            };
-            between = comment.get(end.saturating_add(2)..).unwrap_or_default();
+            // The lexer reads an unclosed `/*` to the end of the file, so no body token follows
+            // one and the `*/` is always there.
+            let end = comment
+                .windows(2)
+                .position(|pair| pair == b"*/")
+                .map_or(comment.len(), |end| end.saturating_add(2));
+            between = comment.get(end..).unwrap_or_default();
         } else if let Some(rest) = [&b"\\\r\n"[..], b"\\\n", b"\\\r"]
             .iter()
             .find_map(|line_break| between.strip_prefix(*line_break))
