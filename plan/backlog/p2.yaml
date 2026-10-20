@@ -1303,6 +1303,27 @@ issues:
   verify:
   - cargo test -p qc-syntax
   - cargo xtask oracles builtins
+- key: P2-74
+  title: Keep the spacing of a macro's body when the semantic model renders its expansion
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-32
+  - P2-69
+  deliverable:
+  - 'crates/qc-sema/src/expand.rs `render` and `adjacent`, and docs/spec/language.md QC-9.7 (or a new statement beside it): the semantic model renders a module''s expansion as text and puts a space between every two tokens a macro made (`adjacent` is false whenever either token has an `expansion`), so the parser never sees two of them touching. Since P2-69 (#473) made the FTEQCC `#` a builtin only when the byte right after it is `"`, `-`, a digit, `)` or `,` (FTE-23.1), a builtin initialiser from an object-like macro is E0209 under the FTEQCC profile: `#define B #5` then `void() f = B;`, and the same with `#-5`, `#"ex_a"` and `#5:ex_a`, each reaching the parser as `# 5` and so on. The pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `-Tid`) compiles each with no error and binds `#5` as builtin 5 named `f` and `#5:ex_a` as builtin 5 named `ex_a`; before #473 the profile accepted them. The same rendering breaks a C label from a macro (FTEF-18.23, a name with its `:` right after it): `#define L lbl:` then `void() f = { L goto lbl; };` gives W0313, E0204 and E0301, where FTEQCC compiles it. Found by the fourth P2-R3 review (docs/readiness/p2-r3.md) at commit bdfebf5'
+  - 'crates/qc-sema/README.md: the **Spec statements** line lists FTE-23.7, which `LiteralValue::builtin_function` and `Resolver::same_value` implement since #473, so the Readiness `spec` job counts it against qc-sema (the same review found it missing)'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile, `void() f = B;` with `B` defined as `#5`, `#-5`, `#"ex_a"` or `#5:ex_a` gives no error and lowers to the builtin number and engine name the pinned FTEQCC binds, `#define L lbl:` used as a statement is a label, and two tokens of one expansion that are apart in the macro body (or come from different macros or arguments) still render apart; every adjacency rule the parser applies (FTE-23.1, FTE-23.4, FTEF-18.23) is checked with a macro-made case; each with a test citing the statement it pins'
+  - 'qc-sema''s README lists FTE-23.7, and the Readiness `spec` job counts it for qc-sema'
+  verify:
+  - cargo test -p qc-sema
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1379,6 +1400,7 @@ issues:
   - P2-71
   - P2-72
   - P2-73
+  - P2-74
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

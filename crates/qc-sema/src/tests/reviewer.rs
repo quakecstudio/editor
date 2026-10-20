@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 use super::{fte_index_of, index_of, module_index_of, nth_offset};
 use crate::db::Db;
+use crate::expand::ModuleInput;
 use crate::symbol::FileId;
 use crate::ty::{SimpleType, Type};
 
@@ -211,5 +212,137 @@ fn reviewer_builtins_initialised_again_compare_by_number() {
             vec![]
         };
         assert_eq!(codes, expected, "{source}");
+    }
+}
+
+/// The error codes of the FTEQCC module of `files`, read through the preprocessor in that
+/// order (`Db::analyze_module`), each with the index of its file; with FTEQCC's
+/// autoprototyping when `autoproto` is set.
+fn fte_module_errors(files: &[&str], autoproto: bool) -> Vec<(usize, qc_diag::Code)> {
+    let mut db = Db::new();
+    db.set_dialect(qc_syntax::Dialect::Fteqcc);
+    db.set_autoproto(autoproto);
+    let mut input = ModuleInput::default();
+    for (index, text) in files.iter().enumerate() {
+        let id = FileId(index);
+        db.set_file(
+            id,
+            PathBuf::from(format!("f{index}.qc")),
+            text.as_bytes().to_vec(),
+        );
+        input.compiled.push(id);
+    }
+    db.analyze_module(&input)
+        .diagnostics()
+        .filter(|d| d.diagnostic.code.is_error())
+        .map(|d| (d.file.0, d.diagnostic.code))
+        .collect()
+}
+
+// spec FTE-23.7: FTEQCC reuses the first function made with a number and engine name across
+// the whole program, so after `g = #5:ex_a` in the first file, `f` given `#5:ex_a` twice in the
+// second is E0206 there, as the pinned FTEQCC reports "incompatible redeclaration" at b.qc:2
+#[test]
+fn reviewer_the_reused_builtin_function_is_found_across_files() {
+    let first = "void() g = #5:ex_a;\n";
+    let second = "void() f = #5:ex_a;\nvoid() f = #5:ex_a;\n";
+    assert_eq!(
+        fte_module_errors(&[first, second], false),
+        [(1, qc_diag::Code::E0206)]
+    );
+    assert!(fte_module_errors(&[second], false).is_empty());
+}
+
+// spec FTE-23.7: a builtin's number and engine name are compared after macro expansion, as the
+// pinned FTEQCC compiles each of these with no error; a macro that gives a different number
+// is still E0206
+#[test]
+fn reviewer_builtins_compare_after_macro_expansion() {
+    for (source, redeclared) in [
+        (
+            "#define EN ex_a\nvoid() f = #5:EN;\nvoid() f = #5:ex_a;\n",
+            false,
+        ),
+        ("#define N 5\nvoid() f = :N;\nvoid() f = #5;\n", false),
+        (
+            "#define EN ex_a\nvoid() f = :EN;\nvoid() f = :ex_a;\n",
+            false,
+        ),
+        ("#define f h\nvoid() f = #5;\nvoid() h = #5:h;\n", false),
+        ("#define NEG -5\nvoid() f = #5;\nvoid() f = :NEG;\n", true),
+    ] {
+        let expected = if redeclared {
+            vec![(0, qc_diag::Code::E0206)]
+        } else {
+            vec![]
+        };
+        assert_eq!(fte_module_errors(&[source], false), expected, "{source}");
+    }
+}
+
+// spec FTEF-17.8: a builtin first given to a `noref` definition is never compared, however
+// often it is initialised again or with whatever engine name; the pinned FTEQCC compiles both
+// with no error
+#[test]
+fn reviewer_a_noref_builtin_is_never_compared() {
+    for source in [
+        "noref void() f = #5:ex_a;\nvoid() f = #5:ex_b;\nvoid() f = #5:ex_b;\n",
+        "noref void() f = #5:ex_a;\nvoid() f = #5:ex_b;\nvoid() f = #5:ex_a;\n",
+    ] {
+        assert!(fte_module_errors(&[source], false).is_empty(), "{source}");
+    }
+}
+
+// spec FTE-22.3: autoprototyping reads the program twice, but a builtin is compared as in one
+// reading (FTE-23.7): the pinned FTEQCC with `-Fautoproto` reports "incompatible
+// redeclaration" for exactly the second and fourth of these
+#[test]
+fn reviewer_autoprototyping_compares_builtins_as_one_reading() {
+    for (source, redeclared) in [
+        ("void() g = #5:ex_a;\nvoid() f = #5:ex_a;\n", false),
+        ("void() f = #5:ex_a;\nvoid() f = #5:ex_b;\n", true),
+        ("void() f = #5;\nvoid() g = #5:f;\n", false),
+        (
+            "void() g = #5:ex_a;\nvoid() f = #5:ex_a;\nvoid() f = #5:ex_a;\n",
+            true,
+        ),
+        ("void() f = :ex_a;\nvoid() f = #0:ex_a;\n", false),
+    ] {
+        let expected = if redeclared {
+            vec![(0, qc_diag::Code::E0206)]
+        } else {
+            vec![]
+        };
+        assert_eq!(fte_module_errors(&[source], true), expected, "{source}");
+    }
+}
+
+// spec FTE-23.7: the definitions of one declaration make their functions left to right, so
+// after `f = #5:ex_a, g = #5:ex_a` initialising `g` again with `#5:ex_a` finds `f`'s function
+// and is E0206, while a second `f` is not; the pinned FTEQCC agrees on both
+#[test]
+fn reviewer_one_declaration_makes_its_functions_in_order() {
+    for (source, redeclared) in [
+        (
+            "void() f = #5:ex_a, g = #5:ex_a;\nvoid() g = #5:ex_a;\n",
+            true,
+        ),
+        (
+            "void() f = #5:ex_a, g = #5:ex_a;\nvoid() f = #5:ex_a;\n",
+            false,
+        ),
+        (
+            "void() f = #5:ex_a;\nvoid() f = #5:ex_a, g = #5:ex_a;\n",
+            false,
+        ),
+        ("var void() f = #5;\nvar void() f = #5;\n", false),
+        ("const void() f = #5;\nvoid() f = #5;\n", false),
+    ] {
+        let expected = if redeclared {
+            vec![(0, qc_diag::Code::E0206)]
+        } else {
+            vec![]
+        };
+        assert_eq!(fte_module_errors(&[source], false), expected, "{source}");
     }
 }
