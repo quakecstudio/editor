@@ -1395,6 +1395,24 @@ issues:
   verify:
   - cargo test -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-79
+  title: Report an FTEQCC macro's argument list that runs past the end of an expansion
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-76
+  deliverable:
+  - 'crates/qc-preproc (`collect_args`) and docs/spec/dialect-fteqcc.md FTEF-14 (a new statement): `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reads a function-like macro''s arguments from the text of the chunk its name is in and reports "EOF on macro call" (`if (!*pr_file_p) QCC_PR_ParseError(ERR_EOF, "EOF on macro call");`) when that chunk ends first, so with `#define L(x) x:` and `#define LL L(lbl`, the pinned FTEQCC reports `LL) goto lbl;` as "EOF on macro call". The preprocessor reads the arguments on past the end of the expansion, into the text after its use, and reports nothing. Found by the self-review of P2-75 to P2-77'
+  acceptance:
+  - 'Under the FTEQCC dialect an argument list that starts in an expansion and does not end in it is an error, and one that ends in it is read as before; the vanilla dialect is unchanged; recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1476,6 +1494,7 @@ issues:
   - P2-76
   - P2-77
   - P2-78
+  - P2-79
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
