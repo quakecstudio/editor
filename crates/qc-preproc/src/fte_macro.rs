@@ -5,7 +5,7 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_CheckCompConst, QCC_PR_ExpandPreProcessorMacro, QCC_PR_ExpandStrCatMarkup, QCC_PR_PreProcessor_Define, QCC_PR_IncludeChunkEx, QCC_PR_LexWhitespace, QCC_PR_SimpleGetToken, QCC_PR_SkipToEndOfLine
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_COM_Parse2
 
-//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.29, and
+//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.32, and
 //! `docs/spec/language.md` QC-9.16), ported from FTEQCC's behaviour under ADR-0017's
 //! clean-port policy. FTEQCC keeps a macro's body as the text `QCC_PR_PreProcessor_Define`
 //! stored, finds a use's arguments by scanning the text after its `(`, writes the expansion as
