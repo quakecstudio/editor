@@ -439,14 +439,15 @@ fn the_cpu_model_is_read_from_the_os() {
     assert_eq!(cpuinfo_model("processor\t: 0\nCPU part\t: 0xd0c\n"), None);
     let model = cpu_model();
     assert_eq!(model, cpu_model_on(std::env::consts::OS, read_cpu_source));
-    // Each OS has its own source and not the others'.
+    // Each OS has its own source and not the others'. `PROCESSOR_IDENTIFIER` is an
+    // environment variable anyone may set on any OS, so only its presence on Windows is the
+    // OS's; which source each OS reads is `each_os_reads_its_own_cpu_source`'s.
     let os = std::env::consts::OS;
     assert_eq!(read_cpu_source(CpuSource::Sysctl).is_some(), os == "macos");
     assert_eq!(read_cpu_source(CpuSource::CpuInfo).is_some(), os == "linux");
-    assert_eq!(
-        read_cpu_source(CpuSource::ProcessorIdentifier).is_some(),
-        os == "windows"
-    );
+    if os == "windows" {
+        assert!(read_cpu_source(CpuSource::ProcessorIdentifier).is_some());
+    }
     if let Some(model) = &model {
         assert!(!model.is_empty() && model.trim() == model, "{model:?}");
     }

@@ -141,21 +141,22 @@ fn simple_type_spelling() {
     assert_eq!(SimpleType::Entity.as_str(), "entity");
 }
 
-// A missing or malformed type lowers to Unknown without panicking (QCD-1.4 recovery).
+// spec QCD-1.4: the parser recovers from `. f;`, a field type with no inner type, and the
+// semantic model lowers the part it left out to Unknown: the type is Field(Unknown)
 #[test]
 fn malformed_type_is_unknown() {
-    // A field with a missing inner type lowers to Field(Unknown).
     let parse = qc_syntax::parse(b". f;");
+    assert!(parse.errors().next().is_some(), "`. f;` is a syntax error");
     let tree = parse.tree().expect("a tree");
     let decl = tree.declarations().next().expect("a declaration");
-    if let Some(ast::Type::Field(field)) = decl.ty() {
-        let inner = field.inner().map_or(Type::Unknown, |t| Type::from_ast(&t));
-        assert_eq!(inner, Type::Unknown);
-    } else {
-        // Recovery may have produced a different shape; the point is it did not panic.
-        let ty = decl.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
-        assert_eq!(ty.word_size(), 1);
-    }
+    let Some(ast::Type::Field(field)) = decl.ty() else {
+        panic!("`. f;` is a field type: {:?}", decl.ty());
+    };
+    assert!(field.inner().is_none());
+    assert_eq!(
+        Type::from_ast(&ast::Type::Field(field)),
+        Type::Field(std::rc::Rc::new(Type::Unknown))
+    );
 }
 
 /// The `Type::from_ast` calls that resolving the one-file module `source` in `dialect` takes.

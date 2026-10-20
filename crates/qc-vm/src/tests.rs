@@ -22,41 +22,8 @@ mod vectors;
 
 use qc_progs::Progs;
 
+use crate::Machine;
 use crate::exec::{NoBuiltins, NoObserver, ServerState};
-use crate::{Machine, RunError};
-
-/// Builds a minimal progs from `harness`, loads it and runs function 1, returning the error if
-/// any, with no builtins and no observer.
-#[expect(
-    clippy::unwrap_in_result,
-    reason = "test code: a failed unwrap setting up the fixture is a failed test"
-)]
-fn run_minimal(
-    statements: &[harness::Stmt],
-    globals: &[(usize, u32)],
-) -> Result<Machine, RunError> {
-    let bytes = harness::ProgsBuilder::default()
-        .statements(statements)
-        .globals_init(globals)
-        .build();
-    let progs = Progs::read_with(
-        &bytes,
-        &qc_progs::ReadOptions {
-            check_header_crc: false,
-        },
-    )
-    .unwrap();
-    let mut machine = Machine::new(&progs, 0).unwrap();
-    machine
-        .execute_program(
-            &progs,
-            ServerState::Active,
-            &mut NoBuiltins,
-            &mut NoObserver,
-            1,
-        )
-        .map(|()| machine)
-}
 
 // spec VM-1.1: the machine state persists between runs; a fresh machine has empty stacks.
 #[test]
@@ -109,46 +76,61 @@ fn run_does_not_mutate_progs() {
     assert_eq!(machine.globals()[101].0, 0x3F80_0000);
 }
 
-// spec VM-19.6: after an error the call depth is 0 but the local stack is not reset.
+// spec VM-19.6: after a runtime error the call depth is 0 but the local stack is not reset:
+// the slots the aborted functions saved stay in use.
 #[test]
 fn error_resets_depth_but_not_localstack() {
-    // A function with one local calls a bad opcode: the error leaves depth 0, localstack kept.
-    let result = run_minimal(&[harness::Stmt::raw(66, 0, 0, 0)], &[]);
-    assert!(result.is_err());
+    use harness::{Func, Stmt};
+    // f1 (one local) calls f2 (one local), whose first statement is a bad opcode, so two
+    // functions have saved one slot each when the error aborts the run.
+    let bytes = harness::ProgsBuilder::default()
+        .numglobals(256)
+        .functions(vec![
+            Func {
+                first_statement: 1,
+                parm_start: 200,
+                locals: 1,
+                ..Func::default()
+            },
+            Func {
+                first_statement: 3,
+                parm_start: 201,
+                locals: 1,
+                ..Func::default()
+            },
+        ])
+        .statements(&[
+            Stmt::op("CALL0", 100, 0, 0), // 1: f1 calls f2
+            Stmt::op("DONE", 0, 0, 0),    // 2
+            Stmt::raw(66, 0, 0, 0),       // 3: f2: Bad opcode 66
+        ])
+        .globals_init(&[(100, 2)])
+        .build();
+    let progs = Progs::read_with(
+        &bytes,
+        &qc_progs::ReadOptions {
+            check_header_crc: false,
+        },
+    )
+    .unwrap();
+    let mut machine = Machine::new(&progs, 0).unwrap();
+    let error = machine
+        .execute_program(
+            &progs,
+            ServerState::Active,
+            &mut NoBuiltins,
+            &mut NoObserver,
+            1,
+        )
+        .unwrap_err();
+    assert_eq!(error.message(), "Bad opcode 66");
+    assert_eq!(error.function, 2);
+    assert_eq!(machine.depth(), 0);
+    assert_eq!(machine.localstack_used(), 2);
 }
 
-/// A builtins table for the nested-run tests: builtin 2 runs the function in `OFS_PARM0` as a
-/// nested run (the vectors' stub); every other number writes argc to slot 1 and copies slot 4
-/// to slot 2.
-struct StubBuiltins;
-
-impl Builtins for StubBuiltins {
-    fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
-        if number == 2 {
-            let function = context.machine().globals()[4].as_i32();
-            context.execute_program(self, function)?;
-            return Ok(());
-        }
-        let argc = context.machine().argc();
-        let parm0 = context.machine().globals()[4];
-        let argc_float = match u16::try_from(argc) {
-            Ok(n) => f32::from(n),
-            Err(_) => 0.0,
-        };
-        context
-            .machine()
-            .set_global_test(1, Slot::from_f32(argc_float));
-        context.machine().set_global_test(2, parm0);
-        Ok(())
-    }
-
-    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
-        None
-    }
-}
-
-use crate::exec::{Builtins, Context};
 use crate::trace::Trace;
+use harness::StubBuiltins;
 use qc_trace::Record;
 use qc_types::Slot;
 

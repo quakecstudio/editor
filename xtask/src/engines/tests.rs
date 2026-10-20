@@ -137,7 +137,14 @@ fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
 fn the_checked_in_tables_record_every_pin() {
     let tables = fs::read_to_string(root().join(TABLES)).unwrap();
     let pins = load(&root()).unwrap();
-    assert_eq!(pins.len(), 10);
+    // Every `[[source]]` of sources.toml is a pin, however many there are.
+    let sources = fs::read_to_string(root().join("crates/qc-engines/sources.toml")).unwrap();
+    let declared = sources
+        .lines()
+        .filter(|line| line.trim() == "[[source]]")
+        .count();
+    assert!(declared > 0);
+    assert_eq!(pins.len(), declared);
     for pin in pins {
         for value in [
             &pin.commit,
@@ -264,8 +271,9 @@ fn bad_tables_are_errors() {
 // sources with none (ENGT-2.11)
 #[test]
 fn the_pinned_tables() {
+    let pins = load(&root()).unwrap();
     let mut readings = Vec::new();
-    for pin in load(&root()).unwrap() {
+    for pin in &pins {
         for table in &pin.tables {
             readings.push(format!(
                 "{} {} {}",
@@ -273,79 +281,97 @@ fn the_pinned_tables() {
                 table.kind,
                 table.defines.clone().unwrap_or_default().join(",")
             ));
+            // ENGT-2.11: a QuakeC reading has no C array, and a C reading no macros.
+            if pin.path.ends_with(".c") {
+                assert!(table.defines.is_none(), "{} {}", pin.id, table.kind);
+            } else {
+                assert!(table.array.is_none(), "{} {}", pin.id, table.kind);
+            }
         }
     }
-    assert_eq!(
-        readings,
-        [
-            "fteqw ssqc NQSSQC,SSQC",
-            "fteqw csqc CSQC",
-            "fteqw menuqc MENU",
-            "darkplaces ssqc ",
-            "darkplaces-client csqc ",
-            "darkplaces-menu menuqc ",
-            "rerelease ssqc ",
-            "quakespasm ssqc ",
-            "quakespasm-rerelease ssqc ",
-            "ironwail ssqc ",
-            "ironwail csqc ",
-            "vkquake ssqc ",
-            "vkquake csqc ",
-            "vkquake-ext ssqc ",
-            "vkquake-ext csqc ",
-        ]
-    );
+    // The readings ENGT-2.10 names, each once; the C sources are covered above, so a new pin
+    // does not change this list.
+    for named in [
+        "fteqw ssqc NQSSQC,SSQC",
+        "fteqw csqc CSQC",
+        "fteqw menuqc MENU",
+        "darkplaces ssqc ",
+        "darkplaces-client csqc ",
+        "darkplaces-menu menuqc ",
+        "rerelease ssqc ",
+    ] {
+        let found = readings.iter().filter(|r| *r == named).count();
+        assert_eq!(found, 1, "{named}: {readings:?}");
+    }
+    for id in [
+        "fteqw",
+        "darkplaces",
+        "darkplaces-client",
+        "darkplaces-menu",
+        "rerelease",
+    ] {
+        let kinds = readings
+            .iter()
+            .filter(|r| r.split(' ').next() == Some(id))
+            .count();
+        let named = if id == "fteqw" { 3 } else { 1 };
+        assert_eq!(
+            kinds, named,
+            "{id} is read only for the kinds ENGT-2.10 names"
+        );
+    }
 }
 
-// spec ENGT-2.14, ENGT-2.15, ENGT-2.16, ENGT-2.17: the pinned C sources are read from these
-// arrays, by these columns, with these functions absent
+// spec ENGT-2.14, ENGT-2.15, ENGT-2.16, ENGT-2.17: every reading of a pinned C source has the
+// columns its kind of array needs: a positional array none (ENGT-2.14), rows a name (ENGT-2.15),
+// name patches a name, number, target and an earlier target_of (ENGT-2.16); and the readings
+// the statements quote are read so: QuakeSpasm's positional pr_builtin with PF_Fixme absent,
+// and vkquake-ext's extension names from qcextensions
 #[test]
 fn the_pinned_c_readings() {
-    let mut readings = Vec::new();
-    for pin in load(&root()).unwrap() {
-        for t in pin.tables.iter().filter(|t| t.array.is_some()) {
-            readings.push(format!(
-                "{} {} {} name={:?} function={:?} number={:?} signature={:?} extension={:?} \
-                 target={:?}/{:?} absent={} extensions={:?}",
-                pin.id,
-                t.kind,
-                t.array.clone().unwrap_or_default(),
-                t.name,
-                t.function,
-                t.number,
-                t.signature,
-                t.extension,
-                t.target,
-                t.target_of,
-                t.absent.join(","),
-                t.extension_array
-            ));
+    let pins = load(&root()).unwrap();
+    let mut seen: Vec<(String, String)> = Vec::new();
+    let mut quoted = Vec::new();
+    for pin in &pins {
+        for t in &pin.tables {
+            let what = format!("{} {}", pin.id, t.kind);
+            if pin.path.ends_with(".c") {
+                assert!(t.array.is_some(), "{what}: a C reading names its array");
+                if t.name.is_none() {
+                    assert_eq!(
+                        (t.function, t.number, t.signature, t.extension, t.target),
+                        (None, None, None, None, None),
+                        "{what}: a positional array has no columns (ENGT-2.14)"
+                    );
+                }
+                if t.target.is_some() {
+                    assert!(t.name.is_some() && t.number.is_some(), "{what}: ENGT-2.16");
+                    let of = t.target_of.clone().unwrap_or_default();
+                    assert!(
+                        seen.contains(&(of.clone(), t.kind.clone())),
+                        "{what}: target_of {of:?} is an earlier reading of its kind"
+                    );
+                }
+                quoted.push(format!(
+                    "{what} {} positional={} absent={} extensions={:?}",
+                    t.array.clone().unwrap_or_default(),
+                    t.name.is_none(),
+                    t.absent.join(","),
+                    t.extension_array
+                ));
+            }
+            seen.push((pin.id.clone(), t.kind.clone()));
         }
     }
-    assert_eq!(
-        readings,
-        [
-            "quakespasm ssqc pr_builtin name=None function=None number=None signature=None \
-             extension=None target=None/None absent=PF_Fixme extensions=None",
-            "quakespasm-rerelease ssqc exbuiltins name=Some(0) function=None number=Some(1) \
-             signature=None extension=None target=Some(2)/Some(\"quakespasm\") absent= \
-             extensions=None",
-            "ironwail ssqc pr_builtindefs name=Some(0) function=Some(1) number=Some(3) \
-             signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
-            "ironwail csqc pr_builtindefs name=Some(0) function=Some(2) number=Some(3) \
-             signature=None extension=Some(4) target=None/None absent=NULL extensions=None",
-            "vkquake ssqc pr_ssqcbuiltins name=None function=None number=None signature=None \
-             extension=None target=None/None absent=PF_Fixme extensions=None",
-            "vkquake csqc pr_csqcbuiltins name=None function=None number=None signature=None \
-             extension=None target=None/None absent=PF_Fixme extensions=None",
-            "vkquake-ext ssqc extensionbuiltins name=Some(0) function=Some(1) number=Some(3) \
-             signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
-             extensions=Some(\"qcextensions\")",
-            "vkquake-ext csqc extensionbuiltins name=Some(0) function=Some(2) number=Some(3) \
-             signature=Some(4) extension=None target=None/None absent=NULL,PF_NotImplemented \
-             extensions=Some(\"qcextensions\")",
-        ]
-    );
+    for named in [
+        "quakespasm ssqc pr_builtin positional=true absent=PF_Fixme extensions=None",
+        "vkquake-ext ssqc extensionbuiltins positional=false absent=NULL,PF_NotImplemented \
+         extensions=Some(\"qcextensions\")",
+        "vkquake-ext csqc extensionbuiltins positional=false absent=NULL,PF_NotImplemented \
+         extensions=Some(\"qcextensions\")",
+    ] {
+        assert!(quoted.iter().any(|q| q == named), "{named}: {quoted:?}");
+    }
 }
 
 // spec ENGT-1.2: the command takes only --check

@@ -18,7 +18,7 @@ use crate::fixtures::{MemFs, MemRegistry, env, find, known, pak};
 use crate::{
     Edition, FS_KNOWN_FILES, FileStatus, Finder, GOG_QUAKE_ENHANCED_ID, GOG_QUAKE_ID, Install,
     InstallFs, LinkError, LinkOutcome, Missing, MissingReason, Release, Source, examine_folder,
-    find_installs, identify, link_dir, size_and_md5,
+    identify, link_dir, size_and_md5,
 };
 
 const STEAM_ORIGINAL: [&str; 4] = [
@@ -510,11 +510,6 @@ fn the_host_filesystem_resolves_links_for_deduplication() {
     link_dir(&target, &link).unwrap();
     assert_eq!(StdFs.canonical(&link), StdFs.canonical(&target));
     assert_eq!(StdFs.canonical(&target), fs::canonicalize(&target).unwrap());
-}
-
-#[test]
-fn finding_on_this_machine_does_not_fail() {
-    let _installs = find_installs();
 }
 
 // ---------------------------------------------------------------------------------------

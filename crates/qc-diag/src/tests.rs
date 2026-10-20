@@ -4,7 +4,9 @@
 
 #![expect(
     clippy::string_slice,
-    reason = "test code: slicing a known-ASCII code string by byte is sound here"
+    clippy::panic,
+    reason = "test code: slicing a known-ASCII code string by byte is sound here, and a panic \
+              is a failed test"
 )]
 
 use crate::{Code, Diagnostic, Severity, Span};
@@ -40,8 +42,8 @@ fn letter_decides_severity() {
     }
 }
 
-// spec QCD-1.2: a code is never reused for a different diagnostic, so no two codes share a
-// string and a withdrawn code stays unassigned, which Code::ALL being this exact set holds
+// spec QCD-1.2: a code is never reused for a different diagnostic, so no two variants share a
+// code string
 #[test]
 fn no_code_string_is_shared() {
     let mut sorted = Code::ALL.map(Code::as_str).to_vec();
@@ -58,14 +60,52 @@ fn all_lists_every_code_in_order() {
     assert_eq!(listed, sorted);
 }
 
-// spec QCD-1.2: the withdrawn codes E0207 (QCD-3.7), E0403 (QCD-5.3), E0404 (QCD-5.4),
-// E0405 (QCD-5.5) and E0501..=E0509 warnings stay unassigned: no variant carries them as a
-// not-yet-used string, and the codes below are absent from the live set
+/// The code each active statement of the catalogue assigns, with the statement: a statement
+/// `- **QCD-n.m** \`CODE\` ...`, read from `docs/spec/language-diagnostics.md`.
+fn catalogue_codes() -> Vec<(String, String)> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/spec/language-diagnostics.md"
+    );
+    let Ok(text) = std::fs::read_to_string(path) else {
+        panic!("{path} is readable");
+    };
+    let mut codes = Vec::new();
+    for line in text.lines() {
+        let Some(rest) = line.strip_prefix("- **QCD-") else {
+            continue;
+        };
+        let Some((number, body)) = rest.split_once("** ") else {
+            continue;
+        };
+        let Some(code) = body.strip_prefix('`').and_then(|b| b.split_once('`')) else {
+            continue;
+        };
+        codes.push((code.0.to_owned(), format!("QCD-{number}")));
+    }
+    codes
+}
+
+// spec QCD-1.2: a code is never reused for a different diagnostic: no two active statements
+// of the catalogue assign one code, and every code this crate names is one the catalogue
+// assigns, so none can stand for a diagnostic the catalogue does not give it
 #[test]
-fn reserved_codes_are_absent() {
-    let live: Vec<&str> = Code::ALL.map(Code::as_str).to_vec();
-    for reserved in ["E0207", "E0403", "E0404", "E0405"] {
-        assert!(!live.contains(&reserved), "{reserved} must stay unassigned");
+fn every_code_is_assigned_once_by_the_catalogue() {
+    let codes = catalogue_codes();
+    assert!(codes.len() >= Code::ALL.len(), "{} codes read", codes.len());
+    for (i, (code, statement)) in codes.iter().enumerate() {
+        let later = codes.iter().skip(i + 1).find(|(other, _)| other == code);
+        assert!(
+            later.is_none(),
+            "{code} is assigned by {statement} and {later:?}"
+        );
+    }
+    for code in Code::ALL {
+        assert!(
+            codes.iter().any(|(assigned, _)| assigned == code.as_str()),
+            "{} is not assigned by any active statement",
+            code.as_str()
+        );
     }
 }
 
@@ -92,6 +132,8 @@ fn diagnostic_carries_code_message_and_span() {
     assert_eq!(warn.severity(), Severity::Warning);
 }
 
+// No spec statement: QCD-1.3 asks only that a diagnostic has a primary span; its range and
+// containment are this crate's helpers.
 #[test]
 fn span_helpers() {
     let span = Span::new(2, 5);

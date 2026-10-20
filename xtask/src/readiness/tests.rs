@@ -146,12 +146,37 @@ fn a_real_crate_is_measured_for_spec_citations() {
     assert_eq!(score, self::score(7, 7));
 }
 
+/// The values the workflow text gives the key `NIGHTLY`: each line, outside a comment, whose
+/// key is `NIGHTLY`, with any quotes around its value removed.
+fn nightly_definitions(workflow: &str) -> Vec<String> {
+    workflow
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("NIGHTLY:"))
+        .map(|value| {
+            let value = value.split(" #").next().unwrap_or_default().trim();
+            value.trim_matches(|c| c == '"' || c == '\'').to_owned()
+        })
+        .collect()
+}
+
+// No spec statement: this pins that the Readiness workflow installs the nightly that
+// `cargo xtask readiness` runs llvm-cov on.
 #[test]
 fn the_workflow_installs_the_pinned_nightly() {
     let workflow = fs::read_to_string(root().join(".github/workflows/readiness.yml")).unwrap();
+    assert_eq!(
+        nightly_definitions(&workflow),
+        [NIGHTLY],
+        "the Readiness workflow must define NIGHTLY once, as {NIGHTLY}"
+    );
     assert!(
-        workflow.contains(&format!("NIGHTLY: {NIGHTLY}\n")),
-        "the Readiness workflow must pin NIGHTLY: {NIGHTLY}"
+        workflow.contains("rustup toolchain install \"$NIGHTLY\""),
+        "the Readiness workflow installs $NIGHTLY"
+    );
+    // The reading does not depend on the line's formatting.
+    assert_eq!(
+        nightly_definitions("  # NIGHTLY: old\n  NIGHTLY: \"n-1\" # pinned\nNIGHTLY: 'n-2'\n"),
+        ["n-1", "n-2"]
     );
     let date = NIGHTLY.strip_prefix("nightly-").unwrap();
     assert_eq!(date.len(), 10);

@@ -611,6 +611,8 @@ fn gfx_wad_through_the_search_path() {
     assert_eq!(error.to_string(), "Wad file gfx.wad doesn't have WAD2 id");
 }
 
+// spec FS-1.4, PAK-2.11: the files are listed in search order, a game directory's archives
+// before its loose files, and an archive's entries in directory order, shadowed ones too
 #[test]
 fn files_lists_every_element() {
     let vfs = spec_vfs(&["-game", "mod"]);
@@ -645,6 +647,8 @@ fn files_lists_every_element() {
     assert_eq!(vfs.read(&files[7]).unwrap(), b"pak0-f");
 }
 
+// spec PAK-3.4: reading an entry whose range is not wholly inside its archive is an error;
+// the other errors here, a missing archive or loose file, are the reader's own
 #[test]
 fn read_errors() {
     let vfs = spec_vfs(&[]);
@@ -691,6 +695,8 @@ fn read_errors() {
     );
 }
 
+// spec FS-3.10: no limit on the number of archives; where id's engine holds a handle per
+// archive for the session, this reader holds none between reads and reopens one to read it
 #[test]
 fn reads_reopen_archives() {
     let vfs = spec_vfs(&[]);

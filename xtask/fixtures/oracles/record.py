@@ -7,7 +7,8 @@ target/oracles/work/scenarios/<case>/outcome.json. Then, from the repository roo
 
     python3 xtask/fixtures/oracles/record.py
 
-It writes vector-traces.json and scenario-outcomes.json beside itself.
+It writes vector-traces.json, scenario-outcomes.json and scenario-unrecorded.json beside
+itself.
 """
 
 from __future__ import annotations
@@ -68,13 +69,17 @@ def inputs_digest(case: pathlib.Path) -> str:
 def scenarios() -> None:
     """Writes one entry per scenario test: its exit status, output and traces in hex.
 
-    The repository's path in a message becomes `<root>`, which the replay puts back.
+    The repository's path in a message becomes `<root>`, which the replay puts back. The names
+    of the cases left out for the size of their traces go in scenario-unrecorded.json, which
+    the replay test checks every unrecorded case against.
     """
     recorded = {}
+    unrecorded = []
     for path in sorted((WORK / "scenarios").glob("*/outcome.json")):
         outcome = json.loads(path.read_text())
         size = len(outcome["trace"] or []) + len(outcome["again"] or [])
         if size > MAX_SCENARIO_TRACE:
+            unrecorded.append(path.parent.name)
             continue
         recorded[path.parent.name] = {
             "inputs": inputs_digest(path.parent),
@@ -85,6 +90,7 @@ def scenarios() -> None:
             "again": hex_or_none(outcome["again"]),
         }
     write("scenario-outcomes.json", recorded, "scenario tests")
+    write("scenario-unrecorded.json", unrecorded, "scenario tests left out")
 
 
 if __name__ == "__main__":
