@@ -48,7 +48,7 @@ docs-build: ## Build the API docs with warnings denied, and the mdBook once docs
 bench: ## Run the performance-budget benchmarks and record them in the history (docs/perf-budgets.md)
 	$(CARGO) xtask bench
 
-oracles: ## Build the test-only oracles (id's VM and qcc, FTEQCC) and check the VM oracle (needs curl and a C compiler)
+oracles: ## Build the test-only oracles (id's VM and qcc, FTEQCC), check the VM oracle and the builtin differential (needs curl and a C compiler)
 	$(CARGO) xtask oracles
 
 ci: ## Run exactly what CI runs (cargo xtask ci)

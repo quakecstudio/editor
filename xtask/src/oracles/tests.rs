@@ -232,6 +232,10 @@ fn every_command_of_cargo_xtask_oracles_runs() {
     // The fake VM oracle writes no trace, so every check that reads one fails.
     assert!(!run(&dir, &[], &fake, &files).unwrap());
     assert!(!run(&dir, &words("scenarios defaults"), &fake, &files).unwrap());
+    // The fake compilers write no progs.dat, so the builtin differential fails too.
+    assert!(!run(&dir, &words("builtins"), &fake, &files).unwrap());
+    assert!(!run(&dir, &words("builtins --record"), &fake, &files).unwrap());
+    assert!(run(&dir, &words("builtins again"), &fake, &files).is_err());
     assert!(run(&dir, &words("id101 nowhere"), &fake, &files).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
     assert!(run(&dir, &words("rerelease"), &fake, &files).is_err());

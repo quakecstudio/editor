@@ -55,8 +55,9 @@ differ); `error` and `objerror` (the error record carries the joined text, DIFF-
 ## Building
 
 ```bash
-cargo xtask oracles                 # build all three, then run every VM vector, scenario number vector, probe and scenario test through the VM oracle
+cargo xtask oracles                 # build all three, then run every VM vector, scenario number vector, probe and scenario test through the VM oracle, and the builtin differential
 cargo xtask oracles build           # build only; prints where the binaries are
+cargo xtask oracles builtins [--record] # build, then run only the builtin differential (FTEQCC and the rerelease, below); --record writes its fixture
 cargo xtask oracles scenarios [<name>...] # build, then run only the scenario tests, or the ones named
 cargo xtask oracles fuzz <target | all> [--time <s>] # build and run the libFuzzer targets (Fuzzing, below)
 cargo xtask oracles id101 <dir>     # also compile id's QuakeC 1.01 with qcc and trace it
@@ -244,6 +245,21 @@ date of the compile and of the FTEQCC build. When the artifacts already have the
 digests, as after a CI cache hit, they are checked without compiling again. CI runs this in the
 Linux `Test Assets` job and caches `target/oracles/rerelease` on `oracles/`, the xtask oracle
 code and `corpus/manifest.toml`.
+
+### The builtin differential
+
+[`xtask/src/oracles/builtins.rs`](../xtask/src/oracles/builtins.rs) compiles every builtin
+initialiser of a cross product (`#` and `:`; every number, string and name form; engine names;
+each function declarator; every pairing of two initialisers of one function) with FTEQCC under
+the FTEQCC profile and with id's qcc under the vanilla profile, each as a one-file
+`progs.src` in `target/oracles/work/builtins`, and compares what each compiler did (the
+builtin number and engine name it wrote, a redeclaration error, another error) with what the
+profile reads ([`dialect-fteqcc-rerelease.md`](../docs/spec/dialect-fteqcc-rerelease.md)
+FTE-23.8). The oracles' outcomes are recorded in
+[`xtask/fixtures/oracles/builtin-outcomes.json`](../xtask/fixtures/oracles/builtin-outcomes.json):
+`cargo xtask oracles` fails when an oracle gives another outcome than the recording, and
+`cargo test -p xtask` checks the profiles against the recording on every host without the
+oracles. After changing the cross product, run `cargo xtask oracles builtins --record`.
 
 ## Readiness
 
