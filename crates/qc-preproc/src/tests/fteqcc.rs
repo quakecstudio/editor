@@ -636,7 +636,7 @@ fn hash_before_a_macro_is_its_expansion() {
     }
 }
 
-// spec QC-9.14: the tokens of one expansion keep their spans in the macro's body, so two that
+// spec QC-9.15: the tokens of one expansion keep their spans in the macro's body, so two that
 // touch there touch in the output and a renderer can keep the body's spacing
 #[test]
 fn an_expansion_keeps_its_body_s_spans() {

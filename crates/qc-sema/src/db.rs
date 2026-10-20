@@ -395,7 +395,7 @@ impl Db {
     }
 
     /// The lowered declarations of compiled file `file` as [`Db::analyze_module`] last read
-    /// it, from its expansion (QC-9.7, QC-9.14); `None` before a module that compiles it has
+    /// it, from its expansion (QC-9.7, QC-9.15); `None` before a module that compiles it has
     /// been analysed.
     #[must_use]
     pub fn expanded_decls(&self, file: FileId) -> Option<&FileDecls> {

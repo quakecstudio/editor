@@ -488,8 +488,9 @@ fn rendering_writes_a_frame_reference_as_its_number() {
     );
 }
 
-// spec QC-9.14: an expansion keeps its macro body's spacing, and a token from an argument and
-// one from the body, or from two macros, or a macro's and the text around it, stay apart
+// spec QC-9.15: an expansion keeps its macro body's spacing; under FTEQCC an argument touches
+// the body token its parameter touches; tokens from two macros, or a macro's and the text
+// around it, stay apart
 #[test]
 fn rendering_keeps_a_macro_body_s_spacing() {
     for (text, want) in [
@@ -501,8 +502,18 @@ fn rendering_keeps_a_macro_body_s_spacing() {
         ("#define B #  5\nvoid() f = B;\n", "void() f = # 5 ;"),
         (
             "#define M(a) a:\nvoid() f = { M(lbl) };\n",
+            "void() f = { lbl: };",
+        ),
+        (
+            "#define M(a) a :\nvoid() f = { M(lbl) };\n",
             "void() f = { lbl : };",
         ),
+        (
+            "#define M lbl/**/:\nvoid() f = { M };\n",
+            "void() f = { lbl: };",
+        ),
+        ("#define M(a) #a\nvoid() f = M(5);\n", "void() f = \"5\" ;"),
+        ("#define M(a) -a\nvoid() f = #M(5);\n", "void() f = -5 ;"),
         ("#define M(a) a\nvoid() f = M(#5);\n", "void() f = #5 ;"),
         (
             "#define H #\n#define F 5\nvoid() f = H F;\n",
@@ -533,7 +544,7 @@ fn the_expansion_s_declarations_are_kept() {
     assert!(db.expanded_decls(FileId(1)).is_none());
 }
 
-// spec QC-9.14: a builtin initialiser or a label a macro makes reads as the same text written
+// spec QC-9.15: a builtin initialiser or a label a macro makes reads as the same text written
 // in the file would: the FTEQCC `#` before its number (FTE-23.1), a `-` before a digit
 // (FTE-23.4), a label's `:` (FTEF-18.23); a body that writes them apart is read apart
 #[test]
@@ -572,6 +583,42 @@ fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
         "{:?}",
         codes(&analysis)
     );
+}
+
+// spec QC-9.15: through `Db::analyze_module` under FTEQCC, `#define L(x) x:` then `L(lbl)` used
+// as a statement is a label (FTEF-18.23), as are `L(lbl )`, a variadic `V(lbl)` and a body
+// with a comment before its `:`; with the `:` apart in the body, after `L(lbl/**/)` or after
+// `V(lbl )` it is not
+#[test]
+fn an_argument_against_a_body_token_reads_as_written_there() {
+    let errors = |text: &str| {
+        let files = [("a.qc", text)];
+        let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+        codes(&db.analyze_module(&input))
+    };
+    let label = |define: &str, use_: &str| {
+        errors(&format!("{define}\nvoid() f = {{ {use_} goto lbl; }};\n"))
+    };
+    for (define, use_) in [
+        ("#define L(x) x:", "L(lbl)"),
+        ("#define L(x) x:", "L(lbl )"),
+        ("#define L(x) x/**/:", "L(lbl)"),
+        ("#define L(x,y) x y:", "L(,lbl)"),
+        ("#define V(...) __VA_ARGS__:", "V(lbl)"),
+    ] {
+        assert_eq!(label(define, use_), [], "{define} {use_}");
+    }
+    for (define, use_) in [
+        ("#define L(x) x :", "L(lbl)"),
+        ("#define L(x) x:", "L(lbl/**/)"),
+        ("#define L(x,y) x y:", "L(lbl,)"),
+        ("#define V(...) __VA_ARGS__:", "V(lbl )"),
+    ] {
+        assert!(
+            label(define, use_).contains(&Code::E0301),
+            "{define} {use_}"
+        );
+    }
 }
 
 // spec FTEF-14.6: a name `##` makes is rendered as its own text, so it defines and resolves
