@@ -447,6 +447,29 @@ pub const fn is_whitespace(b: u8) -> bool {
     b <= b' ' || b >= 0x80
 }
 
+/// `(float)atof("0x<whole>.<fraction>")` for an FTEQCC hex number with a fraction (FTE-23.2):
+/// C's `atof` reads `0x` as a hexadecimal float, so each decimal digit `QCC_PR_LexNumber` took
+/// after the `.` is a hex digit worth a sixteenth of the one before; `whole` is the digits
+/// before the `.`, as the lexer kept them.
+fn hex_float(whole: u64, fraction: &[u8]) -> f32 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "spec FTE-23.2: `atof` rounds the hex digits to a double"
+    )]
+    let mut value = whole as f64;
+    let mut scale = 1.0_f64;
+    for digit in fraction {
+        scale /= 16.0;
+        value += f64::from(digit.wrapping_sub(b'0')) * scale;
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec FTE-23.2: `(float)atof(...)` rounds the double to a float"
+    )]
+    let value = value as f32;
+    value
+}
+
 const fn is_name_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
@@ -818,10 +841,18 @@ impl Lexer<'_> {
             }
             if c == b'.' && self.peek(1) != Some(b'.') {
                 self.bump(1);
+                let fraction = self.pos;
                 while self.peek(0).is_some_and(|b| b.is_ascii_digit()) {
                     self.bump(1);
                 }
-                let value = atof(self.bytes(Span::new(start, self.pos)));
+                let value = if base == 16 {
+                    // FTE-23.2: C's `atof` reads `0x` and a fraction as a hexadecimal float.
+                    let digits = self.bytes(Span::new(fraction, self.pos));
+                    let value = hex_float(num, digits);
+                    if negative { -value } else { value }
+                } else {
+                    atof(self.bytes(Span::new(start, self.pos)))
+                };
                 if matches!(self.peek(0), Some(b'f' | b'F' | b'd' | b'D')) {
                     self.bump(1);
                 }

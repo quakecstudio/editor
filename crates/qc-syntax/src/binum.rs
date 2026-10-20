@@ -27,10 +27,20 @@ pub fn builtin_binum(text: &str, dialect: Dialect) -> Option<i32> {
     // number token has none.
     let digits = text.trim_end_matches(['i', 'I', 'u', 'U', 'l', 'L']);
     match text.get(digits.len()..).unwrap_or_default() {
+        "" if fteqcc_double(text) => None,
         "" => float_binum(value),
         "i" | "I" => Some(fteqcc_int(digits)),
         _ => None,
     }
+}
+
+/// Whether FTEQCC's `QCC_PR_LexNumber` gives the number literal `text` the type `double`
+/// (FTE-23.3): a `d` or `D` after a fraction, or after the digits of a base it is no digit of,
+/// 8 or 10. A vanilla number token never ends in a letter.
+fn fteqcc_double(text: &str) -> bool {
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let hex = unsigned.starts_with("0x") || unsigned.starts_with("0X");
+    text.ends_with(['d', 'D']) && (!hex || text.contains('.'))
 }
 
 /// `(int)pr_immediate._float`, once `pr_immediate._float == (int)pr_immediate._float` holds
