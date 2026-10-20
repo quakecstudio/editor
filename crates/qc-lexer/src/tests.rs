@@ -361,6 +361,14 @@ fn string_escapes() {
         "string ab @0..6 ^\nE0103 Unknown escape char @2..4\n"
     );
     assert_eq!(codes(b"\"\\t\""), vec![Code::E0103]);
+    // FTEQCC's bronze toggles `\s` and `\b` (FTEF-13.4) are unknown here and toggle nothing.
+    for source in [&b"\"a\\sb\""[..], b"\"a\\bb\""] {
+        assert_eq!(
+            snapshot(source),
+            "string ab @0..6 ^\nE0103 Unknown escape char @2..4\n",
+            "{source:?}"
+        );
+    }
 }
 
 // spec QC-6.3, QCD-2.1, QCD-2.2: a line break inside is "newline inside quote", EOF "EOF inside quote"
@@ -992,7 +1000,9 @@ fn line_continuations_are_trivia() {
         assert!(lexed.diagnostics.is_empty(), "{source:?}");
         assert_eq!(lexed.tokens.len(), 2);
     }
-    assert_eq!(codes(b"a \\\nb"), vec![Code::E0105]);
+    for source in [&b"a \\\nb"[..], b"a \\\r\nb", b"a \\\rb"] {
+        assert_eq!(codes(source), vec![Code::E0105], "{source:?}");
+    }
     // A `\` before anything else is still unknown.
     assert_eq!(
         lex_with(b"a \\ b", Dialect::Fteqcc).diagnostics[0].code,
@@ -1260,8 +1270,20 @@ fn fteqcc_frame_commands() {
         ]
     );
     // Under vanilla each is a frame macro reference (QC-8.5).
-    assert_eq!(kinds(b"$flush"), vec![frame_ref("flush")]);
-    assert_eq!(kinds(b"$modelname"), vec![frame_ref("modelname")]);
+    for command in [
+        "flush",
+        "frame_reset",
+        "framevalue",
+        "framerestore",
+        "modelname",
+    ] {
+        let source = format!("${command}");
+        assert_eq!(
+            kinds(source.as_bytes()),
+            vec![frame_ref(command)],
+            "{source}"
+        );
+    }
 }
 
 // spec FTEF-18.16: an ignored command takes its words up to one that ends at once, not the rest of the line
