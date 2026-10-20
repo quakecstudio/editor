@@ -150,7 +150,7 @@ fn the_cross_product_holds_the_macro_text_family() {
     for source in &family {
         assert!(cases.contains(&fte(source)), "{source:?}");
     }
-    assert_eq!(family.len(), 185);
+    assert_eq!(family.len(), 188);
     for source in [
         "#define E(n) :n\nvoid() f = E(',');\n",
         "#define M(x) x\n#define K M /**/ (#5)\nvoid() f = K;\n",

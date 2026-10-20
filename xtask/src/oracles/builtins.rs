@@ -850,7 +850,8 @@ fn variadic_uses() -> Vec<MacroUse> {
 }
 
 /// `__FILE__`, the name `progs.src` lists or a `#pragma file` gives, as FTEQCC writes it
-/// (FTEF-14.32), under 12 pragmas and through two macros.
+/// (FTEF-14.32), under 12 pragmas and through two macros, and after three pragmas whose text
+/// holds a comment, a string or a `\` that would run across their line break.
 fn file_sources() -> Vec<String> {
     let long = format!("#pragma file({})\n", "n".repeat(260));
     let mut sources: Vec<String> = [
@@ -866,6 +867,9 @@ fn file_sources() -> Vec<String> {
         "#pragma file( ex_d )\n",
         "#pragma file:x\n",
         &long,
+        "#pragma message x /* y\n",
+        "#pragma message x \"y\n",
+        "#pragma message x \\\n",
     ]
     .iter()
     .map(|pragma| format!("{pragma}void() f = :__FILE__;\n"))
