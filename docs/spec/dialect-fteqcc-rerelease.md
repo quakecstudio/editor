@@ -765,7 +765,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
 - **FTE-23.12** **Withdrawn** (P2-75 to P2-77, #480 to #482): it described the cross product
   before it had the character-constant, macro-word, label and macro-argument cases. Replaced by
   FTE-23.13.
-- **FTE-23.13** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on Linux,
+- **FTE-23.13** **Withdrawn** (P2-78, P2-79, #484, #485): it described the cross product before it
+  had the paste, string, recursion and argument-list cases. Replaced by FTE-23.14.
+- **FTE-23.14** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on Linux,
   macOS and Windows) compiles every builtin initialiser of a cross product with the pinned FTEQCC
   under the FTEQCC profile and with id's `qcc` under the vanilla profile, and compares each
   outcome with the profile's: the builtin number and engine name of `f`'s function in the
@@ -784,7 +786,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   forms given twice to one function in every pairing, with and without another function bound by
   the first form before them (the vanilla dialect only the `#number` forms); under FTEQCC, 17
   macro bodies (numbers, strings, a name, builtin initialisers written with and without their
-  spacing, QC-9.15, and nothing) each used 12 ways (after `#` and `:` with and without a space,
+  spacing, QC-9.16, and nothing) each used 12 ways (after `#` and `:` with and without a space,
   before an engine name and as one, before a `!`, alone, after `##` and after `#5`), 13 other uses
   (function-like macros with and without their arguments, the built-in constants, a name that is
   no macro and one undefined again), two strings FTEQCC never finishes (FTEF-13.8), 46 character
@@ -793,17 +795,23 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   rest of an expression it starts once the macro is `5` (`!=5`, `?1:2`, `%2`, a line break after
   `\`), and by characters of two, three and four UTF-8 bytes, 21 macros that put a macro name
   before such a byte in their body or after an argument (FTEF-14.13), or a parameter in a word the
-  body stores across a dropped comment or line break (QC-9.15), 20 macros whose argument or body
-  token, or an empty expansion, meets a label's `:` (QC-9.15, FTEF-18.23), these three families in
-  a function `g` defined after `f`, which binds `f` only when `g` has no error, and 19 macros
-  whose argument, or a `#` and a name across a dropped comment, meets a builtin's body token
-  (QC-9.15, FTE-23.1, FTE-23.4); and in both dialects names of 62, 63, 70, 254, 255 and 300 bytes
-  after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside -2^31 to 2^31 - 1
-  are left out, since C leaves their conversion to `int` undefined (QC-13.10). Under FTEQCC the
-  profile's binding is read from qc-sema's lowering of the text the preprocessor makes. The
-  oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo
-  test -p xtask` checks the profile against on every host. The run of 2026-10-20 (macOS arm64)
-  made 11171 cases: 11091 agree; 68 differ as QC-27.9 says, the vanilla profile refusing `#0`,
-  `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice; 10 as FTE-23.11
-  says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the two strings
-  FTEQCC never finishes.
+  body stores across a dropped comment or line break (QC-9.16), 20 macros whose argument or body
+  token, or an empty expansion, meets a label's `:` (QC-9.16, FTEF-18.23), these three families in
+  a function `g` defined after `f`, which binds `f` only when `g` has no error, 19 macros whose
+  argument, or a `#` and a name across a dropped comment, meets a builtin's body token (QC-9.16,
+  FTE-23.1, FTE-23.4); 89 initialisers a macro writes: `##` with each side empty or not, at each
+  place in the body, with and without spaces, three in a row and in an object-like macro
+  (FTEF-14.14, FTEF-14.16), `#` before each kind of argument, before no parameter and at the
+  body's end (FTEF-14.15), empty arguments and variadic macros given none, nested and recursive
+  macros (FTEF-14.17), and uses whose `(` or arguments are past a line break, a comment, the end
+  of an expansion or the end of the file (FTEF-14.18); and 15 statements of `g` that a paste, a
+  string, a nested or an unfinished macro writes; and in both dialects names of 62, 63, 70, 254,
+  255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside
+  -2^31 to 2^31 - 1 are left out, since C leaves their conversion to `int` undefined (QC-13.10).
+  Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
+  makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
+  which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
+  (macOS arm64) made 11275 cases: 11192 agree; 68 differ as QC-27.9 says, the vanilla profile
+  refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
+  13 as FTE-23.11 says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the
+  two strings FTEQCC never finishes.
