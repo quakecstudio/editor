@@ -740,6 +740,15 @@ profile the preprocessor reads them as FTEQCC does.
   macro's own chunk: so with `#define K(x) x`, `K(#__LINE__)` is `#` and the line number touching,
   a builtin, where the line number of a built-in constant read anywhere else is a chunk of its own
   (FTEF-14.17). Other macros in an argument are expanded only when the expansion is read.
+- **FTEF-14.21** A built-in constant's string is the text `QCC_PR_CheckBuiltinCompConst` writes,
+  `"%s"` with nothing in it escaped, read as a string literal (FTEF-13.8, FTEF-13.11): for
+  `__FILE__`, `QC_snprintfz(retbuf, retbufsize, "\"%s\"", s_filen);`, so a `\` in the file's name
+  starts an escape (`src\new.qc` is `src`, a line break and `ew.qc`), and the name ends at its
+  first `:` (`erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"'; erk[1] = 0; }`, so `c:a.qc`
+  is `c`). A `#param` of an argument that holds the value stringifies that text (FTEF-14.15). A
+  deliberate divergence: a name that is not one string literal when so written, one with a `"`,
+  which FTEQCC reads as more than one token, or a line break, which it reports as "newline inside
+  quote", is this profile's string of the name's bytes.
 
 ## FTEF-15 Declarations
 

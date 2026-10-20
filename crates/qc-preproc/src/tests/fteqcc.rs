@@ -501,15 +501,47 @@ fn a_stringified_argument_is_escaped() {
     );
 }
 
-// spec FTEF-14.7: `__FILE__` is the path as a string literal, a line break in it spelled `\n`
-#[test]
-fn file_constant_escapes_its_path() {
+/// The first token of `text` as the file `path`, preprocessed under FTEQCC.
+fn first_token_in(path: &str, text: &str) -> crate::PpToken {
     let mut loader = MemoryLoader::new();
-    loader.insert("a\nb.qc", "__FILE__\n".as_bytes());
+    loader.insert(path, text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
-    let out = pp.preprocess_file(Path::new("a\nb.qc")).unwrap();
-    assert_eq!(out.tokens[0].kind, TokenKind::String(b"a\nb.qc".to_vec()));
-    assert_eq!(out.tokens[0].spelling.as_deref(), Some(r#""a\nb.qc""#));
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    out.tokens[0].clone()
+}
+
+// spec FTEF-14.21: `__FILE__` is written `"%s"` with nothing escaped and read as a string
+// literal, so a `\` in the name starts an escape; a `:` ends the name
+#[test]
+fn file_constant_is_written_unescaped() {
+    let tok = first_token_in("src\\new.qc", "__FILE__\n");
+    assert_eq!(tok.kind, TokenKind::String(b"src\new.qc".to_vec()));
+    assert_eq!(tok.spelling.as_deref(), Some(r#""src\new.qc""#));
+    let tok = first_token_in("c:a.qc", "__FILE__\n");
+    assert_eq!(tok.kind, TokenKind::String(b"c".to_vec()));
+    assert_eq!(tok.spelling.as_deref(), Some(r#""c""#));
+}
+
+// spec FTEF-14.21: a name that is not one string literal when so written, one with a line
+// break or a `"`, is a string of the name's bytes
+#[test]
+fn file_constant_of_a_name_that_is_no_literal() {
+    let tok = first_token_in("a\nb.qc", "__FILE__\n");
+    assert_eq!(tok.kind, TokenKind::String(b"a\nb.qc".to_vec()));
+    assert_eq!(tok.spelling.as_deref(), Some("\"a\nb.qc\""));
+    let tok = first_token_in("a\"b.qc", "__FILE__\n");
+    assert_eq!(tok.kind, TokenKind::String(b"a\"b.qc".to_vec()));
+}
+
+// spec FTEF-14.21: a `#param` of a built-in string's value stringifies the text FTEQCC wrote,
+// with nothing escaped in it
+#[test]
+fn a_stringified_file_constant_holds_its_unescaped_text() {
+    let tok = first_token_in(
+        "d\\x41.qc",
+        "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n",
+    );
+    assert_eq!(tok.kind, TokenKind::String(br#""d\x41.qc""#.to_vec()));
 }
 
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
