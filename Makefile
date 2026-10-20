@@ -34,7 +34,7 @@ test-coverage: ## Measure test coverage (needs cargo-llvm-cov)
 	$(CARGO) llvm-cov --locked --workspace --all-features
 
 test-mutants: ## Run mutation testing (needs cargo-mutants)
-	$(CARGO) mutants --workspace
+	$(CARGO) mutants --workspace --profile mutants --minimum-test-timeout 10
 
 audit: ## Check dependencies (cargo-deny), SPDX and ported-file headers, and asset attribution
 	$(CARGO) deny --locked --all-features check advisories bans licenses sources

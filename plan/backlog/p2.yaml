@@ -1010,6 +1010,26 @@ issues:
   - 'Under the FTEQCC profile `#123456789` is keyed 123456792, the `(int)` of its `f32` value, and a number whose `f32` is outside `int` follows a stated rule; the vanilla rule for numbers above 2^24 is a spec statement with its quote and a test; `#"ex_bprint"` and `:ex_bprint` are keyed by name and give the W0311 of ENGT-4.5 for an engine without it; each test cites its statement'
   verify:
   - cargo test -p qc-engines
+- key: P2-62
+  title: Speed up the Readiness mutation job and lengthen the agents' watch intervals
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - QA-1
+  deliverable:
+  - 'xtask/src/readiness.rs `mutation` and Cargo.toml: the readiness mutation run builds with a `mutants` profile (no debug info, opt-level 1, debug assertions and overflow checks on, after cargo-mutants'' "Choosing a cargo profile"), with incremental builds despite rust-cache''s CARGO_INCREMENTAL=0, and a test-timeout floor below cargo-mutants'' 20 s; the L2 job took 1h47m in run 39303208067 (Justin, 2026-10-19)'
+  - 'docs/testing.md: the mutation job''s profile and timeout'
+  - '.claude/skills/work-issue/scripts/land.sh, .claude/skills/work-issue/SKILL.md, .claude/agents/implementer.md, .claude/agents/reviewer.md and .claude/rules/development-discipline.md rule 12: `gh pr checks --watch` with `--interval 30` and `gh run watch` with `--interval 60`, so that several agents watching at once stay under GitHub''s secondary rate limit (Justin, 2026-10-19)'
+  acceptance:
+  - On qc-syntax and qc-preproc, a local cargo-mutants 27.1.0 run with the new options gives the same caught, missed, timed-out and unviable mutants as the old command, with the wall time of each recorded in the PR
+  - Options that would change the bar or ADR-0009 are reported to Justin with numbers in the PR and not implemented
+  - shellcheck and shfmt report nothing on land.sh
+  verify:
+  - cargo test -p xtask; the before and after cargo-mutants runs in the PR body
 - key: P2-19
   title: Build the Project, Symbols and Problems panels
   labels:
@@ -1139,6 +1159,41 @@ issues:
   - cargo xtask engines --check passes on the regenerated tables
   verify:
   - cargo test -p qc-engines -p xtask; cargo xtask engines --check
+- key: P2-63
+  title: Cover every qc-lexer branch the vanilla profile takes
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-1
+  - LANG-5
+  depends:
+  - P2-59
+  deliverable:
+  - 'crates/qc-lexer/src/tests.rs: deterministic vanilla-profile cases for the FTEQCC-only match guards in crates/qc-lexer/src/lib.rs, which only the random `spans_are_ordered_and_in_bounds` property test reached, so readiness run 39338762305 measured 232 of 236 branches on Linux: `$frame_reset`, `$framevalue` and `$framerestore` are frame macro references (FTEF-18.16, QC-8.5), `\s` and `\b` are unknown escapes (QC-6.2), and a `\` before CR or CR LF is an unknown character (FTEF-13.2)'
+  acceptance:
+  - '`cargo xtask readiness branches --out <file> qc-lexer` on the pinned nightly reports every branch covered (100.0%), and each new case cites QC-6.2, QC-7.2, FTEF-13.2 or FTEF-18.16'
+  verify:
+  - cargo test -p qc-lexer; cargo xtask readiness branches --out target/branches.json qc-lexer
+- key: P2-64
+  title: Measure readiness coverage with property tests on a fixed seed
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-1
+  depends:
+  - P2-63
+  deliverable:
+  - 'xtask/src/readiness.rs: the `lines` and `branches` checks run `cargo llvm-cov` with proptest on a fixed seed (a deterministic RNG and a pinned case count), so a branch or line reached only by a random case counts the same on every run. readiness.yml sets no seed today, and on one commit the vanilla side of the guard at crates/qc-lexer/src/lib.rs:559 was covered in one local branch run and not in the next (P2-63); qc-syntax, qc-sema and other crates with property tests can drift the same way'
+  acceptance:
+  - 'Two consecutive `cargo xtask readiness branches` and `lines` runs on one commit report identical counts for every crate with property tests, shown in the PR; an xtask test checks that the llvm-cov command carries the seed settings and fails without them'
+  verify:
+  - cargo test -p xtask; cargo xtask readiness branches --out target/branches.json qc-lexer qc-syntax (twice)
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1206,6 +1261,9 @@ issues:
   - P2-65
   - P2-66
   - P2-67
+  - P2-62
+  - P2-63
+  - P2-64
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

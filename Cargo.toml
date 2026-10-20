@@ -161,3 +161,12 @@ opt-level = 3
 inherits = "release"
 lto = "thin"
 codegen-units = 16
+
+# cargo mutants' profile (xtask readiness `mutation`): one incremental rebuild
+# and one test run per mutant. No debug info builds faster, and opt-level 1
+# runs the parser's property tests about five times faster than the test
+# profile; debug assertions and overflow checks stay on, inherited from `test`.
+[profile.mutants]
+inherits = "test"
+debug = "none"
+opt-level = 1
