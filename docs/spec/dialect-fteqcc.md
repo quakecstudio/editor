@@ -457,7 +457,7 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   and the same for a lone `\r` or `\n` (`pr_file_p+=2`). The corpus continues declarations
   this way (`const string g_spray_mat_1 = \`, `shared/environment/Spraylogo.h`).
 - **FTEF-13.3** A `'` opens a character constant when the next byte is `\` (an escape,
-  FTEF-13.12), a byte of 0x80 or more (a UTF-8 sequence), or a byte followed by `'`:
+  FTEF-13.13), a byte of 0x80 or more (a UTF-8 sequence, FTEF-13.14), or a byte followed by `'`:
   `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character constant`, the
   `utf8_check` branch, and `else if (pr_file_p[1] == '\'') {//character constant`. Its value is
   the character's code, a float unless `flag_assume_integer`. Otherwise the `'` opens a vector,
@@ -533,11 +533,33 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   code of `\u` and `\U` is written as UTF-8 in any string ("\u is a utf-8 code regardless of
   output encoding") and that of `\x` as one byte in any ("an explicit byte regardless of
   encoding"); any other as FTEF-13.8 says for the string's type.
-- **FTEF-13.12** A character constant's escape, `'\c'`, is the code `QCC_PR_LexEscapedCodepoint`
-  gives it (FTEF-13.11), the character constant's value. This profile reads `\u`, `\U`, `\x`,
-  `\{`, the Quake characters and the digits as FTEF-13.11 says, but takes any other escape as
-  its byte, with no error, and reports no "Bad character code"; reading them as FTEQCC does is
-  P2-75.
+- **FTEF-13.12** **Withdrawn** (P2-75, #480): it said this profile takes a character
+  constant's escape with no code of its own as its byte, with no error, and reports no "Bad
+  character code" there. Replaced by FTEF-13.13.
+- **FTEF-13.13** A character constant's escape, `'\c'`, is read as a string's is (FTEF-13.11),
+  errors included: `QCC_PR_LexVector` reads `if (*pr_file_p == '\\') {//extended character
+  constant` and then `pr_immediate._float = QCC_PR_LexEscapedCodepoint();` (`_int` under
+  `flag_assume_integer`), the function a string's escapes go through. The constant's value is the
+  code: `'\n'` is 10, `'\['` 0xE010, `'\.'` 0xE01C and `'\x4'` 4. "Unknown escape char" (`'\s'`,
+  `'\b'` and `'\q'`: only a string reads `\s` and `\b`, as bronze, FTEF-13.10), "Bad character
+  code" (`'\{6z}'`, `'\xg'`) and "Unicode character terminated unexpectedly" (`'\u0041'`;
+  `'\u041'` is 65) are errors, `E0103` as in a string. The end of the file right after the `\` is
+  "EOF inside quote" (`E0101`), and no other error; after a `\` and CR FTEQCC takes the NUL
+  as the byte after the CR (`c = *pr_file_p++;`) and reads on past it, and this profile reports `E0101` there too. Any other byte than
+  `'` after the escape is "Bad character constant" (`if (*pr_file_p != '\'') QCC_PR_ParseError
+  (ERR_INVALIDVECTORIMMEDIATE, "Bad character constant");`, `E0104`). FTEQCC stops at its first
+  error; this profile goes on after the escape, and so may also report "Bad character constant"
+  after a bad one.
+- **FTEF-13.14** A character constant at a byte of 0x80 or more is read by `utf8_check`
+  (FTEF-13.8): `int b = utf8_check(pr_file_p, &pr_immediate._int);` then `pr_file_p+=b+1;`.
+  Its value is the sequence's code, a surrogate or the modified UTF-8 NUL included, and the
+  byte after the sequence is skipped unread, as the closing `'` it should be, so `'éx` is 233.
+  A byte that starts no sequence `utf8_check` takes (`*value = 0xFFFD; return 0;`) is the code
+  0xFFFD and is skipped alone, so a `'` after it opens a vector. Recorded with the pinned
+  FTEQCC (`fteqcc -Tid` on `void() f = :'...';`, reading `f`'s `first_statement`): `'é'` (C3
+  A9) and `'éx` bind 233, `'\xed\xa0\x80'` 55296, `'\xc0\x80'` 0 and `'\xf0\x90\x80\x80'` 65536;
+  `'\xff;` binds 65533; `'\xff'`, `'\xe9'` and `'\xc1\x81'` are "Bad vector" at the `'` after
+  the byte. The bytes are written here as `\x` escapes.
 
 ## FTEF-14 Preprocessor directives and macros
 
@@ -635,6 +657,21 @@ profile the preprocessor reads them as FTEQCC does.
   nested deeper is false, as one FTEQCC reports as an error is. FTEQCC's
   `ParsePrecompilerIf` recurses with no limit; this profile bounds it so that no input can
   exhaust the stack, as PRJ-5.10 bounds the vanilla reader and QC-27.15 the parser.
+- **FTEF-14.13** A name is a macro use only when the word `QCC_PR_CheckCompConst` reads at it ends
+  with the name: `QCC_PR_Lex` calls it for every name (`if (flag_hashonly ||
+  !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`), and it takes the word up to the first NUL,
+  `qcc_iswhite` byte (space, CR, LF, tab, VT) or one of `)(+-*/|&=^~[]"{};:<>,.#` (`for (end =
+  pr_file_p; ; end++)`) and looks that word up (`pHash_Get(&compconstantstable, pr_token)`, then
+  `QCC_PR_CheckBuiltinCompConst`). So a macro's name, or a built-in constant's (FTEF-14.7),
+  followed directly by any other byte, such as `!`, `?`, `%`, `@`, `$`, `'`, `` ` ``, `\`, a
+  control byte, DEL or a byte of 0x80 or more, is a name: with `#define N 5`, `x = N!=5;` is
+  "Unknown value \"N\"" (`E0301`) and `x = N==5;` is `x = 5==5;`. The byte is the one FTEQCC reads
+  after the name: in a macro's body the body's next byte as stored (QC-9.15), and after an
+  argument the body's byte after the parameter, so `#define A(a) a!=5` used as `A(N)` leaves `N` a
+  name; at the end of an expansion the word ends. FTE-23.10 reads the word after a `#` in the same
+  way, in an expansion as in the source: `#define K #/**/N` then `K` is `5`, as FTEQCC stored the
+  body `#N` (the pinned FTEQCC: "Cannot cast from float to void()" for `void() f = K;`,
+  FTE-23.11). The vanilla preprocessor expands every name that is a macro (QC-9.4).
 
 ## FTEF-15 Declarations
 

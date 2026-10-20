@@ -10,6 +10,9 @@
 //! concatenated, across comments and lines; each with an engine name after it or none, after
 //! each function declarator; and each pair of the forms either compiler may accept given twice
 //! to one function, with and without another function bound by the first form before them.
+//! Under FTEQCC it also holds macro uses (FTE-23.10), character-constant escapes (FTEF-13.13),
+//! macro names before every kind of byte (FTEF-14.13), and macro arguments against a label's
+//! or a builtin's body token (QC-9.15).
 //!
 //! An outcome is what the compiler did with the program: bound the function `f` to a builtin
 //! number and engine name (read from the `progs.dat` it wrote, PROGS-10.2), accepted it without a
@@ -301,7 +304,7 @@ const MACRO_BODIES: &[&str] = &[
     "ex_a",
     "#5",
     "#5:ex_a",
-    // QC-9.14: a macro's body keeps its spacing.
+    // QC-9.15: a macro's body keeps its spacing.
     "#-5",
     "#\"ex_a\"",
     "# 5",
@@ -334,6 +337,161 @@ const OTHER_MACROS: &[(&str, &str)] = &[
     ("", "#U"),
     ("", ":U"),
     ("#define N 5\n#undef N\n", "#N"),
+];
+
+/// What the character-constant cases write after `:'\` (FTEF-13.13): every escape of
+/// FTEF-13.11, with and without each of its errors, and bytes that are no escape.
+const CHARACTER_ESCAPES: &[&str] = &[
+    "n",
+    "r",
+    "t",
+    "a",
+    "v",
+    "f",
+    "#",
+    "\"",
+    "\\",
+    "?",
+    "'",
+    "[",
+    "]",
+    ".",
+    "<",
+    "-",
+    ">",
+    "(",
+    "=",
+    ")",
+    "+",
+    "0",
+    "9",
+    "{65}",
+    "{x41}",
+    "{256}",
+    "{6z}",
+    "{xg}",
+    "{65",
+    "x41",
+    "X41",
+    "x4",
+    "xg",
+    "x",
+    "u041",
+    "u0041",
+    "u00e9",
+    "U0000041",
+    "U00000041",
+    "u",
+    "s",
+    "b",
+    "q",
+    " ",
+    "\n",
+    "\r\n",
+];
+
+/// After a byte that follows the macro name `N` in the macro-word cases (FTEF-14.13), the rest
+/// of an expression the byte starts once `N` is `5`, if one does.
+fn word_continuation(byte: char) -> &'static str {
+    match byte {
+        '!' | '=' => "=5",
+        '?' => "1:2",
+        '%' | '+' | '-' | '*' | '/' | '|' | '&' | '^' | '<' | '>' => "2",
+        '\\' => "\n",
+        _ => "",
+    }
+}
+
+/// What follows the macro name `N` in the macro-word cases: every ASCII byte from 1 that is no
+/// part of a name, with [`word_continuation`], and characters of two, three and four UTF-8
+/// bytes (FTEF-14.13).
+fn word_followers() -> Vec<String> {
+    let mut followers = Vec::new();
+    for byte in (1..=0x7f_u8).map(char::from) {
+        if byte.is_ascii_alphanumeric() || byte == '_' {
+            continue;
+        }
+        followers.push(format!("{byte}{}", word_continuation(byte)));
+    }
+    followers.extend(["\u{e9}", "\u{20ac}", "\u{10000}"].map(str::to_owned));
+    followers
+}
+
+/// The macro bodies and uses of the macro-word cases in a body or an argument
+/// (FTEF-14.13, QC-9.15): `N`, which stands for `5`, followed in the text FTEQCC reads by a
+/// byte that ends its word or one that does not.
+const WORD_MACROS: &[(&str, &str)] = &[
+    ("#define M N!=5", "M"),
+    ("#define M N !=5", "M"),
+    ("#define M N/**/!=5", "M"),
+    ("#define M N==5", "M"),
+    ("#define M N?1:2", "M"),
+    ("#define M N%2", "M"),
+    ("#define M N", "M!=5"),
+    ("#define M N", "M !=5"),
+    ("#define A(a) a!=5", "A(N)"),
+    ("#define A(a) a !=5", "A(N)"),
+    ("#define A(a) a/**/!=5", "A(N)"),
+    ("#define A(a) a==5", "A(N)"),
+    ("#define A(a) a!=5", "A(N )"),
+    ("#define A(a) a!=5", "A(N/**/)"),
+    ("#define A(a) a", "A(N!=5)"),
+    ("#define A(a, b) a b!=5", "A(, N)"),
+    ("#define V(...) __VA_ARGS__!=5", "V(N)"),
+    ("#define V(...) __VA_ARGS__!=5", "V(N )"),
+    // QC-9.15: a parameter in a word FTEQCC stored across a dropped comment or line break.
+    ("#define A(a) a/**/b", "0; local float ab; ab = A(5)"),
+    ("#define A(a) b/**/a", "0; local float ba; ba = A(5)"),
+    ("#define A(a) a\\\nb", "0; local float ab; ab = A(5)"),
+];
+
+/// The macros and statements of the label cases (QC-9.15, FTEF-18.23): an argument, or a body
+/// token, written against a `:` or apart from it.
+const LABEL_MACROS: &[(&str, &str)] = &[
+    ("#define L lbl:", "L"),
+    ("#define L lbl :", "L"),
+    ("#define L lbl/**/:", "L"),
+    ("#define L lbl\\\n:", "L"),
+    ("#define L(x) x:", "L(lbl)"),
+    ("#define L(x) x :", "L(lbl)"),
+    ("#define L(x) x:", "L( lbl )"),
+    ("#define L(x) x:", "L(/**/lbl)"),
+    ("#define L(x) x:", "L(lbl/**/)"),
+    ("#define L(x) x:", "L(lbl// c\n)"),
+    ("#define L(x) x/**/:", "L(lbl)"),
+    ("#define L(x) x\\\n:", "L(lbl)"),
+    ("#define L(x, y) x y:", "L(, lbl)"),
+    ("#define L(x, y) x y:", "L(lbl, )"),
+    ("#define L(x, y) x:y", "L(lbl, )"),
+    ("#define V(...) __VA_ARGS__:", "V(lbl)"),
+    ("#define V(...) __VA_ARGS__:", "V( lbl)"),
+    ("#define V(...) __VA_ARGS__:", "V(lbl )"),
+    ("#define E\n#define L lbl E:", "L"),
+    ("#define F(a) a\n#define L lbl F():", "L"),
+];
+
+/// The macros and initialisers of the cases where a macro's argument meets a builtin's body
+/// token (QC-9.15, FTE-23.1, FTE-23.4).
+const ARGUMENT_BUILTINS: &[(&str, &str)] = &[
+    ("#define E(n) :n", "E(ex_a)"),
+    ("#define E(n) : n", "E(ex_a)"),
+    ("#define E(n) #5:n", "E(ex_a)"),
+    ("#define E(n) #5: n", "E(ex_a)"),
+    ("#define E(n) n:ex_a", "E(#5)"),
+    ("#define E(n) n :ex_a", "E(#5)"),
+    ("#define E(n) #n", "E(5)"),
+    ("#define E(n) # n", "E(5)"),
+    ("#define E(n) #-n", "E(5)"),
+    ("#define E(n) #- n", "E(5)"),
+    ("#define E(n) -n", "#E(5)"),
+    ("#define E(n) n", "#E(-5)"),
+    ("#define E(n) n", "E(#5)"),
+    ("#define E(n) n", "E(# 5)"),
+    ("#define E(n, m) n m", "E(#, 5)"),
+    ("#define E(n, m) n m", "E(#,5)"),
+    ("#define E(n, m) n:m", "E(#5, ex_a)"),
+    ("#define N \"ex_a\"\n#define K #/**/N", "K"),
+    ("#define N 5\n#define K #/**/N", "K"),
 ];
 
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's
@@ -411,6 +569,30 @@ pub(crate) fn cases() -> Vec<Case> {
     for value in HANGING {
         cases.push(fte(format!("void() f = :{value};\n")));
     }
+    // FTEF-13.13: after `:`, a character constant's code is `f`'s builtin number, or an
+    // escape's error refuses it.
+    for escape in CHARACTER_ESCAPES {
+        cases.push(fte(format!("void() f = :'\\{escape}';\n")));
+    }
+    // FTEF-14.13, QC-9.15: `f` is bound only when `g`'s body, which uses the macros, has no
+    // error; `f` comes first, so its function is the first (`bound`).
+    let with_body = |define: &str, statement: &str| {
+        format!(
+            "#define N 5\n{define}\nvoid() f = #5;\nvoid() g = {{ local float x; {statement} }};\n"
+        )
+    };
+    for follower in word_followers() {
+        cases.push(fte(with_body("", &format!("x = N{follower};"))));
+    }
+    for (define, use_) in WORD_MACROS {
+        cases.push(fte(with_body(define, &format!("x = {use_};"))));
+    }
+    for (define, use_) in LABEL_MACROS {
+        cases.push(fte(with_body(define, &format!("{use_} goto lbl;"))));
+    }
+    for (define, use_) in ARGUMENT_BUILTINS {
+        cases.push(fte(format!("{define}\nvoid() f = {use_};\n")));
+    }
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for length in NAME_LENGTHS {
             let name = "n".repeat(length);
@@ -429,7 +611,7 @@ pub(crate) fn cases() -> Vec<Case> {
 }
 
 /// The spec statement that says why the profile's outcome `ours` for `case`, with the error
-/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.12).
+/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.13).
 pub(crate) fn expected_difference(
     case: &Case,
     ours: &Outcome,
@@ -523,7 +705,7 @@ fn refusal(case: &Case, errors: &[Code]) -> Outcome {
 
 /// The builtin number and engine name the profile binds the first function of `case` to:
 /// under FTEQCC the builtin function qc-sema lowers its initialiser to (FTE-23.7), from the
-/// file's expansion (FTE-23.10, QC-9.14); under the vanilla dialect the number
+/// file's expansion (FTE-23.10, QC-9.15); under the vanilla dialect the number
 /// `builtin_binum` gives and the definition's name (QC-13.10).
 fn binding(db: &mut Db, case: &Case) -> Option<Outcome> {
     let name = function_name(case);

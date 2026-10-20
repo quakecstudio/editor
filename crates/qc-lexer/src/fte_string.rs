@@ -239,9 +239,10 @@ impl Lexer<'_> {
     }
 
     /// The code of the escape whose `\` is at `escape`, the byte after it current, as
-    /// `QCC_PR_LexEscapedCodepoint` reads it (FTEF-13.11). An error is reported at the escape
-    /// and the code read so far returned.
-    fn fte_escape(&mut self, start: usize, escape: usize) -> u32 {
+    /// `QCC_PR_LexEscapedCodepoint` reads it (FTEF-13.11), in a string or a character
+    /// constant (FTEF-13.13) starting at `start`. An error is reported at the escape and the
+    /// code read so far returned.
+    pub(crate) fn fte_escape(&mut self, start: usize, escape: usize) -> u32 {
         let Some(c) = self.peek(0) else {
             self.error(Code::E0101, "EOF inside quote", Span::new(start, self.pos));
             return 0;
@@ -257,6 +258,8 @@ impl Lexer<'_> {
             b'#' | b'"' | b'\\' | b'?' | b'\'' => u32::from(c),
             b'[' => 0xe010,
             b']' => 0xe011,
+            // A string reads `\.` before it gets here, to give it bronze (FTEF-13.10).
+            b'.' => 0xe01c,
             b'<' => 0xe01d,
             b'-' => 0xe01e,
             b'>' => 0xe01f,
@@ -420,7 +423,7 @@ fn utf8(contents: &mut Vec<u8>, code: u32) {
 /// `utf8_check` reads it (FTEF-13.8): two bytes for 0 (modified UTF-8) or 0x80 to 0x7FF, three
 /// for 0x800 to 0xFFFF, surrogates included, four for 0x10000 to 0x10FFFF; `None` for any
 /// other byte of 0x80 or more.
-fn utf8_check(bytes: &[u8]) -> Option<(u32, usize)> {
+pub(crate) fn utf8_check(bytes: &[u8]) -> Option<(u32, usize)> {
     let lead = *bytes.first()?;
     let (len, bits, least) = match lead {
         0x00..=0x7f => return Some((u32::from(lead), 1)),

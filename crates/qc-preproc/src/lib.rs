@@ -74,6 +74,30 @@ pub struct PpToken {
     /// Its text when that is not the bytes at [`PpToken::span`]: a token `##` pasted, a string
     /// `#` made, or a built-in constant's value (FTEF-14.6, FTEF-14.7).
     pub spelling: Option<String>,
+    /// In an expansion, the span of the token of the same expansion that the expansion's text
+    /// has right before this one with nothing between them, if any (QC-9.15). Always `None`
+    /// for a token of no expansion, whose place in the source says what it touches
+    /// ([`PpToken::touches`]).
+    pub follows: Option<FileSpan>,
+}
+
+impl PpToken {
+    /// Whether this token comes right after `last`, with nothing between them, in the text the
+    /// compiler reads (QC-9.15): two tokens of no expansion that touch in the source, or two
+    /// of one expansion, this one [`PpToken::follows`] `last`. A token of an expansion never
+    /// touches one of another expansion or of none, nor one that came to stand before it
+    /// because the tokens between them expanded to nothing.
+    #[must_use]
+    pub fn touches(&self, last: &Self) -> bool {
+        match self.expansion {
+            None => {
+                last.expansion.is_none()
+                    && last.span.file == self.span.file
+                    && last.span.span.end == self.span.span.start
+            }
+            Some(_) => last.expansion == self.expansion && self.follows == Some(last.span),
+        }
+    }
 }
 
 /// A preprocessor or lexical error or warning.
@@ -414,7 +438,8 @@ impl<L: Loader> Preprocessor<L> {
     /// macro's expansion with no `#` (FTE-23.10), as `QCC_PR_Lex` skips the `#` and
     /// `QCC_PR_CheckCompConst` expands the word after it. Returns `item` when it is not such a
     /// `#`, which the parser then reads as it is; `None` when the `#` is gone, or when it went
-    /// out with the name after it.
+    /// out with the name after it. The name is the one that touches the `#` in the text FTEQCC
+    /// reads, a macro's body's as FTEQCC stored it included (QC-9.15).
     fn explicit_use(&mut self, run: &mut Run, item: Item) -> Option<Item> {
         if !self.dialect.has_fteqcc_extensions()
             || item.tok.kind != TokenKind::Punct(Punct::Hash)
@@ -422,16 +447,25 @@ impl<L: Loader> Preprocessor<L> {
         {
             return Some(item);
         }
-        let Some(word) = self.word_after(item.tok.span) else {
+        // In the source a `#` before white space or a stop byte names nothing, and nothing
+        // needs reading after it.
+        let ends_at_hash = item.tok.expansion.is_none()
+            && self
+                .sources
+                .file(item.tok.span.file)
+                .and_then(|file| file.text.get(item.tok.span.span.end))
+                .is_none_or(|&b| ends_word(b));
+        if ends_at_hash {
             return Some(item);
-        };
+        }
         let Some(next) = self.next_item(run) else {
             return Some(item);
         };
-        let names_word = matches!(&next.tok.kind, TokenKind::Name(name) if *name == word)
+        // FTEF-14.13: the name touches the `#` in the text FTEQCC reads, and `try_expand` sees
+        // that its word ends with it.
+        let names_word = matches!(&next.tok.kind, TokenKind::Name(_))
             && next.tok.spelling.is_none()
-            && next.tok.span.file == item.tok.span.file
-            && next.tok.span.span.start == item.tok.span.span.end;
+            && next.tok.touches(&item.tok);
         if !names_word {
             run.pending.push(next);
             return Some(item);
@@ -442,21 +476,6 @@ impl<L: Loader> Preprocessor<L> {
         self.emit(run, item.tok);
         self.emit(run, next.tok);
         None
-    }
-
-    /// The word `QCC_PR_CheckCompConst` reads right after the `#` at `hash` (FTE-23.10): the
-    /// bytes up to the first white space (`qcc_iswhite`) or one of its stop bytes; `None` when
-    /// there is none.
-    fn word_after(&self, hash: FileSpan) -> Option<String> {
-        const STOPS: &[u8] = b")(+-*/|&=^~[]\"{};:<>,.#";
-        let text = self.sources.file(hash.file)?.text.get(hash.span.end..)?;
-        let len = text
-            .iter()
-            .take_while(|&&b| b != 0 && !matches!(b, b' ' | b'\r' | b'\n' | b'\t' | 0x0b))
-            .take_while(|b| !STOPS.contains(b))
-            .count();
-        let word = text.get(..len).filter(|word| !word.is_empty())?;
-        Some(word.iter().copied().map(char::from).collect())
     }
 
     fn cursor(&self, file: FileId, path: PathBuf) -> Cursor {
@@ -533,6 +552,7 @@ impl<L: Loader> Preprocessor<L> {
                     span,
                     expansion: None,
                     spelling: None,
+                    follows: None,
                 },
                 hide: None,
             });
@@ -1072,6 +1092,10 @@ impl<L: Loader> Preprocessor<L> {
         if hidden(&run.live, &item.hide, name) {
             return Some(item);
         }
+        // FTEF-14.13: FTEQCC looks up the word up to a byte that ends it, not the name.
+        if self.dialect.has_fteqcc_extensions() && !self.word_ends_after(run, &item.tok) {
+            return Some(item);
+        }
         let Some(mac) = self.macros.get(name).cloned() else {
             if self.dialect.has_fteqcc_extensions()
                 && let Some(tok) = self.builtin(run, &item.tok, name)
@@ -1087,6 +1111,7 @@ impl<L: Loader> Preprocessor<L> {
         let name = name.clone();
         let mut use_span = item.tok.span;
         let mut args = Vec::new();
+        let mut ends = Vec::new();
         if let Some(params) = &mac.params {
             let open = match self.next_item(run) {
                 Some(next) if next.tok.kind == TokenKind::Punct(Punct::LParen) => next,
@@ -1099,7 +1124,8 @@ impl<L: Loader> Preprocessor<L> {
             let mut collected = vec![open];
             // FTEF-14.5: the arguments after the named ones are one, `__VA_ARGS__`.
             let limit = mac.variadic.then_some(params.len());
-            let Some(close) = self.collect_args(run, &mut collected, &mut args, limit) else {
+            let Some(close) = self.collect_args(run, &mut collected, (&mut args, &mut ends), limit)
+            else {
                 run.report(
                     Code::E0117,
                     format!("unterminated argument list for macro {name}"),
@@ -1152,18 +1178,30 @@ impl<L: Loader> Preprocessor<L> {
             live
         };
         let hide = hide_with(&item.hide, &live);
-        let result = self.substitute(&mac, &args, id, &hide, &live);
+        let result = self.substitute(&mac, &args, &ends, id, &hide, &live);
         run.pending.extend(result.into_iter().rev());
         None
     }
 
     /// The body of `mac` with its parameters replaced by `args` (QC-9.4), and in an FTEQCC
     /// dialect `__VA_ARGS__` by the variadic argument (FTEF-14.5), `#param` by the argument as
-    /// a string and `a ## b` by one token (FTEF-14.6).
+    /// a string and `a ## b` by one token (FTEF-14.6). `ends` holds each argument's `,` or
+    /// `)`.
+    ///
+    /// Each token [`PpToken::follows`] the one before it as the expansion's text has them
+    /// (QC-9.15): a body token when nothing stands between it and the one before it in the
+    /// body, an argument's token as it does the one before it in the argument. An FTEQCC dialect substitutes an argument
+    /// as text (`QCC_PR_ExpandPreProcessorMacro`): there a body token also touches when only
+    /// what `QCC_PR_PreProcessor_Define` drops stands between ([`dropped_in_body`]), an
+    /// argument's first token touches as the parameter does, and the body token after an
+    /// argument as it does the parameter, when nothing FTEQCC keeps follows the argument
+    /// ([`Self::nothing_copied_after`]); a parameter that touches a word there is part of
+    /// it, and no parameter.
     fn substitute(
         &self,
         mac: &Macro,
         args: &[Vec<Item>],
+        ends: &[PpToken],
         id: ExpansionId,
         hide: &Hide,
         live: &Live,
@@ -1182,34 +1220,70 @@ impl<L: Loader> Preprocessor<L> {
         };
         let mut result: Vec<Item> = Vec::new();
         let mut paste = false;
+        // Whether something stands between the text written so far and the next token; the
+        // start of an expansion touches nothing.
+        let mut gap = true;
+        let mut last_in_body: Option<(FileSpan, &Token)> = None;
         let mut index = 0_usize;
         while let Some((file, token)) = mac.body.get(index) {
             index = index.saturating_add(1);
+            let here = FileSpan {
+                file: *file,
+                span: token.span,
+            };
+            let touches_last = last_in_body.is_some_and(|(last, _)| self.touch_in_body(last, here));
+            gap |= !touches_last;
             let next = mac.body.get(index);
+            let next_span = next.map(|(file, t)| FileSpan {
+                file: *file,
+                span: t.span,
+            });
+            // FTEQCC stored the body with its comments and line breaks dropped, so a parameter
+            // that touches a word before or after it is part of that word, no parameter.
+            let in_word = fte
+                && ((touches_last
+                    && last_in_body.is_some_and(|(_, t)| matches!(t.kind, TokenKind::Name(_))))
+                    || next_span.is_some_and(|next| {
+                        self.touch_in_body(here, next)
+                            && self
+                                .sources
+                                .text(next)
+                                .and_then(|t| t.first())
+                                .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'_')
+                    }));
+            last_in_body = Some((here, token));
+            let follows = |gap: bool, written: &[Item]| {
+                (!gap)
+                    .then(|| written.last().map(|item| item.tok.span))
+                    .flatten()
+            };
             let is_hash = |t: Option<&(FileId, Token)>| {
                 t.is_some_and(|(_, t)| t.kind == TokenKind::Punct(Punct::Hash))
             };
             if fte && token.kind == TokenKind::Punct(Punct::Hash) {
-                if is_hash(next) {
+                if let Some((_, next_token)) = next.filter(|_| is_hash(next)) {
                     // `##`: the next token joins the last one.
                     index = index.saturating_add(1);
                     paste = true;
+                    last_in_body = next_span.map(|span| (span, next_token));
                     continue;
                 }
-                if let Some(arg) = next.and_then(|(_, t)| param_of(t)) {
+                if let Some(((_, param), arg)) =
+                    next.and_then(|next| Some((next, param_of(&next.1)?)))
+                {
                     // `#param`: the argument as a string.
                     index = index.saturating_add(1);
+                    last_in_body = next_span.map(|span| (span, param));
                     let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
                     let text = self.items_text(items);
                     let tok = PpToken {
                         kind: TokenKind::String(text.clone().into_bytes()),
-                        span: FileSpan {
-                            file: *file,
-                            span: token.span,
-                        },
+                        span: here,
                         expansion: Some(id),
                         spelling: Some(quote(&text)),
+                        follows: follows(gap, &result),
                     };
+                    gap = false;
                     result.push(Item {
                         tok,
                         hide: hide.clone(),
@@ -1217,34 +1291,61 @@ impl<L: Loader> Preprocessor<L> {
                     continue;
                 }
             }
-            let pieces: Vec<Item> = match param_of(token) {
-                Some(arg) => args
-                    .get(arg)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|a| Item {
+            let pieces: Vec<Item> = match param_of(token).filter(|_| !in_word) {
+                Some(arg) => {
+                    let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
+                    let mut pieces: Vec<Item> = Vec::with_capacity(items.len());
+                    let mut before: Option<&Item> = None;
+                    for a in items {
+                        let follows = match before {
+                            None if fte => follows(gap, &result),
+                            None => None,
+                            Some(before) => a
+                                .tok
+                                .touches(&before.tok)
+                                .then(|| pieces.last().map(|item| item.tok.span))
+                                .flatten(),
+                        };
+                        pieces.push(Item {
+                            tok: PpToken {
+                                kind: a.tok.kind.clone(),
+                                span: a.tok.span,
+                                expansion: Some(id),
+                                spelling: a.tok.spelling.clone(),
+                                follows,
+                            },
+                            hide: hide_with(&a.hide, live),
+                        });
+                        before = Some(a);
+                    }
+                    if !fte {
+                        gap = true;
+                    } else if let Some(before) = before {
+                        // The variadic argument is copied whole, up to its `)`.
+                        gap = !ends.get(arg).is_some_and(|end| {
+                            if arg == params.len() {
+                                end.touches(&before.tok)
+                            } else {
+                                self.nothing_copied_after(&before.tok, end)
+                            }
+                        });
+                    }
+                    pieces
+                }
+                None => {
+                    let follows = follows(gap, &result);
+                    gap = false;
+                    vec![Item {
                         tok: PpToken {
-                            kind: a.tok.kind.clone(),
-                            span: a.tok.span,
+                            kind: token.kind.clone(),
+                            span: here,
                             expansion: Some(id),
-                            spelling: a.tok.spelling.clone(),
+                            spelling: None,
+                            follows,
                         },
-                        hide: hide_with(&a.hide, live),
-                    })
-                    .collect(),
-                None => vec![Item {
-                    tok: PpToken {
-                        kind: token.kind.clone(),
-                        span: FileSpan {
-                            file: *file,
-                            span: token.span,
-                        },
-                        expansion: Some(id),
-                        spelling: None,
-                    },
-                    hide: hide.clone(),
-                }],
+                        hide: hide.clone(),
+                    }]
+                }
             };
             let mut pieces = pieces.into_iter();
             if paste {
@@ -1256,6 +1357,67 @@ impl<L: Loader> Preprocessor<L> {
             result.extend(pieces);
         }
         result
+    }
+
+    /// Whether the word `QCC_PR_CheckCompConst` reads at the name `tok` ends with the name
+    /// (FTEF-14.13): the byte after it in the text FTEQCC reads [`ends_word`]. For a token of
+    /// no expansion that byte is the source's; for a token of an expansion it is the first
+    /// byte of the next token when that one [`PpToken::touches`] it, and otherwise white
+    /// space or the end of the expansion, which ends the word too.
+    fn word_ends_after(&self, run: &Run, tok: &PpToken) -> bool {
+        let next = match tok.expansion {
+            None => self
+                .sources
+                .file(tok.span.file)
+                .and_then(|file| file.text.get(tok.span.span.end).copied()),
+            Some(_) => run
+                .pending
+                .last()
+                .filter(|next| next.tok.touches(tok))
+                .and_then(|next| {
+                    let text = match &next.tok.spelling {
+                        Some(spelling) => Some(spelling.as_bytes()),
+                        None => self.sources.text(next.tok.span),
+                    };
+                    text?.first().copied()
+                }),
+        };
+        next.is_none_or(ends_word)
+    }
+
+    /// Whether FTEQCC copies nothing after `last`, the last token of an argument other than
+    /// the variadic one, whose `,` or `)` is `end` (QC-9.15): it copies such an argument a
+    /// token at a time, each with what stands before it, up to the last token
+    /// `QCC_COM_Parse2` finds, which skips white space and `//` comments but not a `/* */`
+    /// one. A token of an expansion has only white space after it, since FTEQCC dropped the
+    /// body's comments.
+    fn nothing_copied_after(&self, last: &PpToken, end: &PpToken) -> bool {
+        if last.expansion.is_some() || end.expansion.is_some() {
+            return true;
+        }
+        let between = self
+            .sources
+            .file(end.span.file)
+            .filter(|_| last.span.file == end.span.file)
+            .and_then(|file| file.text.get(last.span.span.end..end.span.span.start));
+        between.is_some_and(white_and_line_comments)
+    }
+
+    /// Whether the body token at `next` touches the one at `last` before it (QC-9.15): nothing
+    /// stands between them where they are written, or in an FTEQCC dialect only what
+    /// `QCC_PR_PreProcessor_Define` drops from a body.
+    fn touch_in_body(&self, last: FileSpan, next: FileSpan) -> bool {
+        if last.file != next.file {
+            return false;
+        }
+        let Some(between) = self
+            .sources
+            .file(next.file)
+            .and_then(|file| file.text.get(last.span.end..next.span.start))
+        else {
+            return false;
+        };
+        between.is_empty() || (self.dialect.has_fteqcc_extensions() && dropped_in_body(between))
     }
 
     /// `a ## b`: one token whose text is `a`'s then `b`'s, lexed again (FTEF-14.6).
@@ -1276,6 +1438,7 @@ impl<L: Loader> Preprocessor<L> {
                 span: left.tok.span,
                 expansion: left.tok.expansion,
                 spelling: Some(text),
+                follows: left.tok.follows,
             },
             hide: left.hide,
         }
@@ -1320,18 +1483,19 @@ impl<L: Loader> Preprocessor<L> {
             span: tok.span,
             expansion: tok.expansion,
             spelling: Some(spelling),
+            follows: tok.follows,
         })
     }
 
     /// Reads a function-like macro's arguments after its `(`, which is `collected[0]`, up to
     /// the matching `)`, which is returned. Every token read but the `)` goes to `collected`.
     /// With a `limit`, the commas after that many arguments are part of the last
-    /// (FTEF-14.5).
+    /// (FTEF-14.5). Each argument goes to `args` and the `,` or `)` after it to `ends`.
     fn collect_args(
         &mut self,
         run: &mut Run,
         collected: &mut Vec<Item>,
-        args: &mut Vec<Vec<Item>>,
+        (args, ends): (&mut Vec<Vec<Item>>, &mut Vec<PpToken>),
         limit: Option<usize>,
     ) -> Option<Item> {
         let mut depth = 0_usize;
@@ -1342,10 +1506,12 @@ impl<L: Loader> Preprocessor<L> {
             match item.tok.kind {
                 TokenKind::Punct(Punct::RParen) if depth == 0 => {
                     args.push(current);
+                    ends.push(item.tok.clone());
                     return Some(item);
                 }
                 TokenKind::Punct(Punct::Comma) if depth == 0 && split => {
                     args.push(std::mem::take(&mut current));
+                    ends.push(item.tok.clone());
                 }
                 TokenKind::Punct(Punct::LParen) => {
                     depth = depth.saturating_add(1);
@@ -1631,6 +1797,56 @@ fn continues(text: &[u8], from: usize, to: usize) -> bool {
         i = i.saturating_add(1);
     }
     true
+}
+
+/// Whether `between`, the bytes between two tokens of a macro's body, is only what
+/// `QCC_PR_PreProcessor_Define` drops as it stores the body (QC-9.15): each `/* */` comment
+/// ("multi-line c style comments become part of the define itself", skipped to its `*/`) and
+/// each `\` before a line break ("read over a newline if necessary").
+fn dropped_in_body(mut between: &[u8]) -> bool {
+    loop {
+        if between.is_empty() {
+            return true;
+        }
+        if let Some(comment) = between.strip_prefix(b"/*") {
+            let Some(end) = comment.windows(2).position(|pair| pair == b"*/") else {
+                return false;
+            };
+            between = comment.get(end.saturating_add(2)..).unwrap_or_default();
+        } else if let Some(rest) = [&b"\\\r\n"[..], b"\\\n", b"\\\r"]
+            .iter()
+            .find_map(|line_break| between.strip_prefix(*line_break))
+        {
+            between = rest;
+        } else {
+            return false;
+        }
+    }
+}
+
+/// Whether `text` is only white space (`qcc_iswhite`) and `//` comments, which
+/// `QCC_COM_Parse2` skips (QC-9.15).
+fn white_and_line_comments(mut text: &[u8]) -> bool {
+    loop {
+        let white = text.iter().take_while(|&&b| cond::fte_white(b)).count();
+        text = text.get(white..).unwrap_or_default();
+        let Some(comment) = text.strip_prefix(b"//") else {
+            return text.is_empty();
+        };
+        let end = comment
+            .iter()
+            .position(|&b| b == b'\n')
+            .unwrap_or(comment.len());
+        text = comment.get(end..).unwrap_or_default();
+    }
+}
+
+/// Whether `byte` ends the word `QCC_PR_CheckCompConst` reads as a macro's name
+/// (FTEF-14.13): a NUL, white space (`qcc_iswhite`: space, CR, LF, tab and vertical tab) or
+/// one of `)(+-*/|&=^~[]"{};:<>,.#`.
+fn ends_word(byte: u8) -> bool {
+    const STOPS: &[u8] = b")(+-*/|&=^~[]\"{};:<>,.#";
+    byte == 0 || cond::fte_white(byte) || STOPS.contains(&byte)
 }
 
 /// `text` as a QuakeC string literal, `"` and `\` escaped (FTEF-14.6).

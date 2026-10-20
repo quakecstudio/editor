@@ -383,19 +383,41 @@ dialect features (P2-01, P2-03).
   50000-long chain to `x = 1` and dies with `SIGSEGV` at 100000. Expanding every chain to its
   end is a deliberate divergence from that crash, which depends on the host's stack, not on
   the program. id's `qcc` has no macros (QC-9). The rule against self-expansion stays QC-9.4's.
-- **QC-9.14** An expansion keeps the spacing of the text it came from: two tokens that touch
-  in a macro's body, or in one argument of it, touch in the expansion, and two that do not, or
-  that come from different macros, arguments or a macro and the text around its use, are
-  apart. A rule that reads whether two tokens touch then reads a macro's tokens as it reads
-  the source: under FTEQCC `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and
-  `#define L lbl:` used as a statement is a label (FTEF-18.23). FTEQCC reads an expansion as
-  text: `QCC_PR_IncludeChunkEx(c->value, ...)` (`qcc_pr_lex.c`,
-  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) lexes the body as it was written,
-  and the pinned FTEQCC compiles both examples. A token whose text the preprocessor made (a
-  `##` paste, a `#` string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing. FTEQCC
-  substitutes an argument into the body as text, so an argument written against a body token
-  (`#define L(x) x:` used as `L(lbl)`) touches it there; this profile keeps them apart, and
-  reading them as FTEQCC does is P2-77.
+- **QC-9.14** **Withdrawn** (P2-77, #482): it said an argument written against a body token
+  stays apart from it under FTEQCC too. Replaced by QC-9.15.
+- **QC-9.15** An expansion keeps the spacing of the text it came from: two tokens that touch in a
+  macro's body, or in one argument of it, touch in the expansion, and two that do not, or that
+  come from different macros or a macro and the text around its use, are apart. A rule that reads
+  whether two tokens touch then reads a macro's tokens as it reads the source: under FTEQCC
+  `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and `#define L lbl:` used as a
+  statement is a label (FTEF-18.23). A token whose text the preprocessor made (a `##` paste, a `#`
+  string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing. In the vanilla dialect an
+  argument's tokens are apart from the body's. FTEQCC reads an expansion as text (`qcc_pr_lex.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`): `QCC_PR_IncludeChunkEx` lexes the
+  body as `QCC_PR_PreProcessor_Define` stored it, which drops each `/* */` comment ("multi-line c
+  style comments become part of the define itself", skipped to the `*/` and not copied) and each
+  `\` before a line break, so tokens with only those between them touch under FTEQCC: `#define L
+  lbl/**/:` is a label. `QCC_PR_ExpandPreProcessorMacro` substitutes an argument into the body as
+  text: it copies the body's white space (`QCC_PR_LexWhitespace(true)` then `QCC_PR_ExpandStrCat`)
+  and, for a parameter, the argument's tokens each with what stands before it, white space and
+  comments before its first token dropped (`QCC_PR_LexWhitespace(false)` after the `(` and each
+  `,`) and white space and `//` comments after its last too (the copy loop stops when
+  `QCC_COM_Parse2`, which skips those but not a `/* */` comment, finds no token), and the variadic
+  argument whole, anything before its `)` kept (`QCC_PR_ExpandStrCat(...,
+  paramoffset[c->numparams], strlen(...))`). So under FTEQCC an argument's first token touches the
+  body token before the parameter when the parameter touches it, an argument's last token touches
+  the body token after the parameter when the parameter touches that and nothing the copy keeps
+  follows the argument, and an empty argument leaves the body tokens either side touching when
+  both touch the parameter: `#define L(x) x:` used as `L(lbl)`, `L( lbl)` or `L(lbl )` is the
+  label `lbl:` and as `L(lbl/**/)` is not, `#define V(...) __VA_ARGS__:` used as `V(lbl)` is a
+  label and as `V(lbl )` is not, `#define L(x,y) x y:` used as `L(,lbl)` is a label and as
+  `L(lbl,)` is not, and the pinned FTEQCC compiles each so. A token touches only the one written
+  right before it, so tokens that an expansion to nothing came to stand between stay apart: with
+  `#define E`, `#define K lbl E:` used as a statement is no label, as FTEQCC reads `lbl`, then `E`
+  and the `:` after a space. A parameter that under FTEQCC touches a word across what
+  `QCC_PR_PreProcessor_Define` drops is part of that word as stored, which `QCC_COM_Parse2` reads
+  as one token, and no parameter: `#define A(a) a/**/b` is the name `ab` (the pinned FTEQCC:
+  "Unknown value \"ab\""), while a number before a parameter ends at it.
 
 ## QC-10 Types
 

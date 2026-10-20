@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! What touches what in an expansion (`docs/spec/language.md` QC-9.15), and the word FTEQCC
+//! reads as a macro's name (`docs/spec/dialect-fteqcc.md` FTEF-14.13).
+
+use std::path::Path;
+
+use super::tokens;
+use crate::{FileOutput, MemoryLoader, PpToken, Preprocessor};
+use qc_lexer::Dialect;
+
+/// `text` as `a.qc`, preprocessed under `dialect`.
+fn run(text: &[u8], dialect: Dialect) -> FileOutput {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text);
+    let mut pp = Preprocessor::new(loader).with_dialect(dialect);
+    pp.preprocess_file(Path::new("a.qc")).unwrap()
+}
+
+/// The tokens of `text` under `dialect`, each pair that touches (QC-9.15) written together
+/// and the rest apart.
+fn touching(text: &str, dialect: Dialect) -> String {
+    let out = run(text.as_bytes(), dialect);
+    let mut rendered = String::new();
+    let mut last: Option<&PpToken> = None;
+    for token in &out.tokens {
+        if last.is_some_and(|last| !token.touches(last)) {
+            rendered.push(' ');
+        }
+        rendered.push_str(&tokens(&FileOutput {
+            tokens: vec![token.clone()],
+            ..FileOutput::default()
+        }));
+        last = Some(token);
+    }
+    rendered
+}
+
+/// The bytes that end the word `QCC_PR_CheckCompConst` reads: white space and its stops.
+const WORD_ENDS: &[u8] = b" \r\n\t\x0b)(+-*/|&=^~[]\"{};:<>,.#";
+
+// spec FTEF-14.13: under FTEQCC a macro's name followed directly by a byte that does not end
+// `QCC_PR_CheckCompConst`'s word stays a name, for every such byte; one followed by white
+// space, one of the stop bytes or the end of the file expands
+#[test]
+fn a_macro_expands_only_where_fteqcc_s_word_ends() {
+    for byte in 1..=u8::MAX {
+        if byte.is_ascii_alphanumeric() || byte == b'_' {
+            continue;
+        }
+        let mut text = b"#define N 5\nx = N".to_vec();
+        text.push(byte);
+        text.extend_from_slice(b" 1;\n");
+        let out = run(&text, Dialect::Fteqcc);
+        let expanded = out.tokens.iter().any(|t| t.expansion.is_some());
+        assert_eq!(expanded, WORD_ENDS.contains(&byte), "{byte:#04x}");
+    }
+    assert_eq!(touching("#define N 5\nx = N", Dialect::Fteqcc), "x = 5");
+    assert_eq!(
+        touching("#define N 5\nx = N/**/!", Dialect::Fteqcc),
+        "x = 5 !"
+    );
+    assert_eq!(
+        touching("#define N 5\nx = N\\\n;", Dialect::Fteqcc),
+        "x = N ;"
+    );
+    // A function-like macro and a built-in constant are words too.
+    assert_eq!(
+        touching("#define M(a) a\nx = M!(1)", Dialect::Fteqcc),
+        "x = M!(1)"
+    );
+    assert_eq!(touching("x = __LINE__?", Dialect::Fteqcc), "x = __LINE__?");
+    assert_eq!(touching("x = __LINE__ ?", Dialect::Fteqcc), "x = 1 ?");
+}
+
+// spec FTEF-14.13: the vanilla preprocessor expands a macro's name whatever follows it
+#[test]
+fn vanilla_expands_a_macro_before_any_byte() {
+    for byte in [b'!', b'?', b'%', b'@', b'$', b'\'', b'`', 0x01, 0x7f] {
+        let mut text = b"#define N 5\nx = N".to_vec();
+        text.push(byte);
+        text.extend_from_slice(b" 1;\n");
+        let out = run(&text, Dialect::Vanilla);
+        assert!(
+            out.tokens.iter().any(|t| t.expansion.is_some()),
+            "{byte:#04x}"
+        );
+    }
+}
+
+// spec FTEF-14.13: in an expansion the byte after a name is the one FTEQCC's text has there:
+// the body's next byte, the body's byte after the parameter for an argument's last token, and
+// at the end of the expansion the word ends
+#[test]
+fn the_byte_after_a_name_in_an_expansion_is_the_expansion_s() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define N 5\n#define M N!=5\nx = M;"), "x = N!=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N/**/!=5\nx = M;"), "x = N!=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N !=5\nx = M;"), "x = 5 !=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N\nx = M !=5;"), "x = 5 !=5;");
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a!=5\nx = A(N);"),
+        "x = N!=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a!=5\nx = A(N );"),
+        "x = N!=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a !=5\nx = A(N);"),
+        "x = 5 !=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a==5\nx = A(N);"),
+        "x = 5 ==5 ;"
+    );
+    assert_eq!(fte("#define N 5\n#define A(a) a\nx = A(N!);"), "x = N! ;");
+}
+
+// spec QC-9.15: under FTEQCC an argument's tokens touch the body tokens the parameter
+// touches, after white space and comments before the first are dropped and white space and
+// `//` comments after the last; a `/* */` comment after it, and in the variadic argument
+// anything before the `)`, keeps it apart
+#[test]
+fn an_argument_touches_the_body_tokens_its_parameter_touches() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define L(x) x:\nL(lbl)"), "lbl:");
+    assert_eq!(fte("#define L(x) x:\nL( lbl )"), "lbl:");
+    assert_eq!(fte("#define L(x) x:\nL(/**/lbl// c\n)"), "lbl:");
+    assert_eq!(fte("#define L(x) x:\nL(lbl/**/)"), "lbl :");
+    assert_eq!(fte("#define L(x) x :\nL(lbl)"), "lbl :");
+    assert_eq!(fte("#define L(x) -x\nL(5)"), "-5");
+    assert_eq!(fte("#define L(x) - x\nL(5)"), "- 5");
+    assert_eq!(fte("#define L(x) x:\nL(a b)"), "a b:");
+    assert_eq!(fte("#define L(x) x:\nL(a:b)"), "a:b:");
+    assert_eq!(fte("#define L(x,y) x y:\nL(,lbl)"), "lbl:");
+    assert_eq!(fte("#define L(x,y) x y:\nL(lbl,)"), "lbl :");
+    assert_eq!(fte("#define L(x,y) x:y\nL(lbl,)"), "lbl:");
+    assert_eq!(fte("#define L(x,y) x:y;\nL(lbl,)"), "lbl:;");
+    assert_eq!(fte("#define V(...) __VA_ARGS__:\nV(lbl)"), "lbl:");
+    assert_eq!(fte("#define V(...) __VA_ARGS__:\nV( lbl)"), "lbl:");
+    assert_eq!(fte("#define V(...) __VA_ARGS__:\nV(lbl )"), "lbl :");
+    assert_eq!(fte("#define V(a, ...) a:__VA_ARGS__:\nV(l, m)"), "l:m:");
+    // An argument's last token or its `)` from an expansion has only white space after it,
+    // whatever stands between them in the source (FTEQCC reads no argument list across the
+    // end of an expansion, P2-79).
+    assert_eq!(fte("#define L(x) x:\n#define LL L(lbl\nLL/**/)"), "lbl:");
+    // A `#` string touches as written, but is made, so a renderer keeps it apart.
+    assert_eq!(fte("#define S(x) #x:\nS(lbl)"), "\"lbl\":");
+}
+
+// spec QC-9.15: under FTEQCC two body tokens with only `/* */` comments and `\` line breaks
+// between them touch, as `QCC_PR_PreProcessor_Define` drops those; the vanilla dialect keeps
+// them apart, and keeps an argument apart from the body
+#[test]
+fn a_body_touches_where_fteqcc_stored_it_touching() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    let vanilla = |text: &str| touching(text, Dialect::Vanilla);
+    assert_eq!(fte("#define L lbl/**/:\nL"), "lbl:");
+    assert_eq!(fte("#define L lbl/* a */ /**/:\nL"), "lbl :");
+    assert_eq!(fte("#define L lbl\\\n:\nL"), "lbl:");
+    assert_eq!(fte("#define L lbl\\\r\n:\nL"), "lbl:");
+    assert_eq!(fte("#define L(x) x/**/:\nL(lbl)"), "lbl:");
+    assert_eq!(vanilla("#define L x/**/;\nL"), "x ;");
+    assert_eq!(vanilla("#define L x;\nL"), "x;");
+    assert_eq!(vanilla("#define L(x) x;\nL(y)"), "y ;");
+    assert_eq!(vanilla("#define L(x) x;\nL(a;b)"), "a;b ;");
+    // Tokens of two expansions, or of an expansion and the source, never touch.
+    assert_eq!(fte("#define A a\n#define B b\nA+B"), "a + b");
+    assert_eq!(fte("#define A a\nA:"), "a :");
+}
+
+// spec QC-9.15: a token touches only the one written right before it, so two body tokens
+// that a macro expanding to nothing came to stand between stay apart, in both dialects
+#[test]
+fn tokens_with_an_empty_expansion_between_them_stay_apart() {
+    for dialect in [Dialect::Fteqcc, Dialect::Vanilla] {
+        let at = |text: &str| touching(text, dialect);
+        assert_eq!(at("#define E\n#define K lbl E;\nK"), "lbl ;");
+        assert_eq!(at("#define F(a) a\n#define K lbl F();\nK"), "lbl ;");
+        assert_eq!(at("#define F(a) a\n#define K lbl F(1);\nK"), "lbl 1 ;");
+        assert_eq!(at("#define E\n#define K(x) x E;\nK(lbl)"), "lbl ;");
+    }
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define E\n#define K(x, y) x y:\nK(lbl, E)"), "lbl :");
+}
+
+// spec QC-9.15: under FTEQCC a parameter that touches a word only across a dropped comment or
+// line break is part of that word, as FTEQCC stored it, and no parameter; a number before it
+// ends there, so the parameter stays one
+#[test]
+fn a_parameter_inside_a_stored_word_is_no_parameter() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define A(a) a/**/b\nA(5)"), "ab");
+    assert_eq!(fte("#define A(a) b/**/a\nA(5)"), "ba");
+    assert_eq!(fte("#define A(a) a\\\nb\nA(5)"), "ab");
+    assert_eq!(fte("#define A(a) a/**/1\nA(5)"), "a1");
+    assert_eq!(fte("#define A(a) 1/**/a\nA(x)"), "1x");
+    assert_eq!(fte("#define A(a) a/**/+\nA(5)"), "5+");
+    assert_eq!(
+        touching("#define A(a) a/**/b\nA(5)", Dialect::Vanilla),
+        "5 b"
+    );
+    assert_eq!(touching("#define L(x) -x\nL(5)", Dialect::Vanilla), "- 5");
+}
+
+// spec FTE-23.10, FTEF-14.13: a `#` reads the name that touches it in the text FTEQCC reads,
+// a body's as stored included, so `#/**/N` in a body is `N`'s expansion with no `#`
+#[test]
+fn a_hash_in_a_body_reads_the_name_that_touches_it() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define N 5\n#define K #/**/N\nx = K;"), "x = 5 ;");
+    assert_eq!(fte("#define N 5\n#define K #N\nx = K;"), "x = 5 ;");
+    assert_eq!(fte("#define N 5\n#define K # N\nx = K;"), "x = # 5 ;");
+    assert_eq!(
+        fte("#define N 5\n#define K(a) #a\nx = K(N);"),
+        "x = \"N\" ;"
+    );
+    assert_eq!(fte("#define N 5\n#define K #N!\nx = K;"), "x = #N! ;");
+}
