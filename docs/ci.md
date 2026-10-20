@@ -181,7 +181,7 @@ divergences) runs on every change in the `Test Assets (linux)` job above.
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Differential` | Linux | `cargo xtask differential --full`: builds the oracles, compiles the rerelease with FTEQCC, builds the corpus progs, then runs every oracle-built codebase (id 1.01 and the six rerelease codebases) in the VM oracle and QuakeC Studio's runner, comparing traces (DIFF-9) and measuring statement coverage (DIFF-11); enforces zero divergences and the 90% statement-coverage bar (TEST-6) |
+| `Differential` | Linux | `cargo xtask differential --full`: builds the oracles, compiles the rerelease with FTEQCC, builds the corpus progs, then runs every oracle-built codebase (id 1.01 and the six rerelease codebases) in the VM oracle and QuakeC Studio's runner, comparing traces (DIFF-9) and measuring statement coverage (DIFF-11); enforces zero divergences, and reports statement coverage without gating on it ([ADR-0013](adr/0013-differential-coverage-bar.md), TEST-6) |
 
 [`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
 (`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,

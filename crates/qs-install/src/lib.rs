@@ -141,7 +141,7 @@ pub enum Edition {
     Rerelease,
 }
 
-/// Why a file is reported missing (FS-6.4).
+/// Why a file is reported missing (FS-6.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MissingReason {
     /// The original game is installed without `id1/pak1.pak`: it is the shareware game.

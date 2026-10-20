@@ -359,7 +359,7 @@ crates/      qs-* library crates, one per layer component; qs-tests for cross-cr
 apps/        desktop app, CLI, LSP server binaries (names from ADR-0006)
 xtask/       build automation called from make
 fuzz/        libfuzzer targets, outside the workspace
-docs/        mdBook: guide, ADRs, specs, gates
+docs/        Markdown: guide, ADRs, specs, gates
 specs/       cached public specifications (verbatim)
 plan/        requirements, backlog, coverage check
 packaging/   per-OS installers

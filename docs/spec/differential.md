@@ -30,9 +30,9 @@ id's server does, the section cites the function, in
 [`limits.md`](limits.md). This page does not repeat them. The oracle's scenario tests
 (`xtask/src/oracles/scenarios/`, run through the built oracle by `cargo xtask oracles`) cite
 DIFF-1 to DIFF-8 and DIFF-10, and `crates/qs-tests` checks the vectors of DIFF-2.7 to
-DIFF-2.9; DIFF-9 and DIFF-11, which compare and count traces, are in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until the runner cites them. `qc-builtins`
-and the runner cite the statements they implement as well.
+DIFF-2.9; the tests of `qs-differential` cite DIFF-9 and DIFF-11, which compare and count
+traces. The tests of `qc-builtins` and `qs-differential` cite the statements they implement
+as well.
 
 "The clock" is the server clock `sv.time`, a C `double`; "(f32)x" is `x` rounded to the
 nearest `f32`, as C's assignment of a `double` to a `float` rounds it.

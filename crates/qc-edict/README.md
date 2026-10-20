@@ -40,6 +40,8 @@ the memory and the allocation rules.
 
 The spawn, remove and reuse rules are checked against id's `ED_Alloc`, `ED_Free`,
 `ED_ClearEdict`, `EDICT_NUM` and `NUM_FOR_EDICT` through the VM oracle, which runs the
-17 vectors of [`docs/spec/vectors/vm/edicts.txt`](../../docs/spec/vectors/vm/edicts.txt) on
-every CI run once `qc-vm` (P1-10) drives this store. Until then the unit tests here pin each
-statement to the recorded rows of `edicts.md` "Allocation and freeing" and "Layout".
+17 vectors of [`docs/spec/vectors/vm/edicts.txt`](../../docs/spec/vectors/vm/edicts.txt)
+whenever `cargo xtask oracles` runs in CI, checking its trace against each vector's
+expectations. `qc-vm`'s vector runner does not run that file, so on this side the unit tests
+here pin each statement to the same recorded rows of `edicts.md` "Allocation and freeing" and
+"Layout".

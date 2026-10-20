@@ -3,7 +3,7 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/progs.h, EDICT_NUM, NUM_FOR_EDICT, EDICT_TO_PROG, PROG_TO_EDICT, NEXT_EDICT
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, PR_LoadProgs, ED_Alloc, ED_Free, ED_ClearEdict, ED_FindField, ED_FindGlobal
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, PR_LoadProgs, ED_Alloc, ED_Free, ED_ClearEdict
 
 //! The server's edict store: the entities the engine and QuakeC share.
 //!

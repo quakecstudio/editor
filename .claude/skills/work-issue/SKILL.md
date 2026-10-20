@@ -26,9 +26,9 @@ Issue: #$ARGUMENTS
 
 1. `git switch main && git pull --ff-only`, then `git switch -c <type>/<issue-number>-<short-slug>`, for example `feat/45-qc-types`. Mark the issue In Progress on the project board: `${CLAUDE_SKILL_DIR}/scripts/start.sh $ARGUMENTS` (quiet on success; closing the issue moves it to Done).
 2. Do exactly what the deliverable says, at the paths it names. Follow `docs/conventions.md`: no panics, `unwrap` or `expect` in shipped crates; a crate depends only on lower layers; every source file starts with the `GPL-3.0-or-later` SPDX line.
-   - Porting from id's source is encouraged (the project is GPL-3.0-or-later, ADR-0002). Keep id's copyright line in the file header, cite the file and function you ported, write the behaviour up in `docs/spec/`, and prove it with a differential test against the oracle. Follow `docs/porting.md` once #9 lands.
+   - Porting from id's source is encouraged (the project is GPL-3.0-or-later, ADR-0002). Keep id's copyright line in the file header, cite the file and function you ported, write the behaviour up in `docs/spec/`, and prove it with a differential test against the oracle, as `docs/porting.md` says.
 3. Meet every acceptance criterion with a test or a recorded result. Tests that pin a spec rule cite the spec section.
-4. Run the checks that exist so far. Once #2 lands that is `make ci` (or `cargo xtask ci`); until then run `python3 plan/check.py` and the tests of whatever you touched.
+4. Run the checks: `make ci` (or `cargo xtask ci`), which includes the plan checks and every test.
 5. If the work shows the plan is wrong or incomplete, change it with the `plan-change` skill. Plan changes and follow-up issues, doc fixes and small fixes found along the way go in this issue's PR as separate, clearly messaged commits, never in a PR of their own, since every PR runs the full CI matrix. Never leave them in a comment.
 
 ## 3. Land it

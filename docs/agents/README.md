@@ -71,7 +71,7 @@ When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR 
 | --- | --- |
 | 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope and the signing secrets. The license is decided; the agent closes the gate. |
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
-| 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. The grammar (#71) lives in `quakecstudio/tree-sitter-quakec`. |
+| 2 | Autonomous except the UI work, which follows egui ([ADR-0003](../adr/0003-ui-framework.md)) and the approved mockups. The grammar (#71) lives in `quakecstudio/tree-sitter-quakec`. |
 | 3 | The preview host is our Rust app in `apps/preview-host` (ADR-0004), checked against id's engine built in `oracles/`. Engine integration tests need the redistributable test assets chosen in #17. |
 | 4 | Autonomous through signing (#23: the secrets are set; agents build the signing workflow) and release, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |

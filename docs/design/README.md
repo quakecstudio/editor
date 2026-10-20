@@ -2,7 +2,7 @@
 
 | File | What it is |
 | --- | --- |
-| [`design-doc.md`](design-doc.md) | The design document (revision 36, 2026-10-15): goals, licensing, architecture, foundations, compiler, engine bridge, agent, UI, map editor, quality, MVP scope, risks |
+| [`design-doc.md`](design-doc.md) | The design document (revision 38, 2026-10-15): goals, licensing, architecture, foundations, compiler, engine bridge, agent, UI, map editor, quality, MVP scope, risks |
 | [`mockups/`](mockups/) | The approved mockups of the main screens (approved on [#199](https://github.com/quakecstudio/editor/issues/199#issuecomment-6202660819)) |
 | [`visual.md`](visual.md) | The visual design: colour, type, spacing, icons, motion and window chrome ([ADR-0010](../adr/0010-visual-design.md)) |
 | [`tokens.toml`](tokens.toml) | The theme tokens for dark and light, the single source the UI layer reads; `cargo xtask contrast` checks them against WCAG AA |
@@ -11,7 +11,7 @@ The plan in [`../../plan/`](../../plan/README.md) turns the design document into
 
 ## Mockups
 
-These are design targets for the UI layer (L7), not screenshots. The app is built to match them once the UI framework is chosen ([#10](https://github.com/quakecstudio/editor/issues/10)) and the app shell exists ([#73](https://github.com/quakecstudio/editor/issues/73)).
+These are design targets for the UI layer (L7), not screenshots. The app is built to match them on egui, the UI framework [ADR-0003](../adr/0003-ui-framework.md) chose, once the app shell exists ([#73](https://github.com/quakecstudio/editor/issues/73)).
 
 | Image | Shows | Requirements |
 | --- | --- | --- |

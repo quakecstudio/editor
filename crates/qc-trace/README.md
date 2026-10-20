@@ -18,7 +18,7 @@ of id's code.
   [`docs/spec/vectors/trace/`](../../docs/spec/vectors/trace/README.md).
 - **Not this crate's:** the statements about what an emitter records and when, TRACE-1.3,
   TRACE-3.1, TRACE-3.4, TRACE-3.5, TRACE-4.1 to TRACE-4.7 and TRACE-4.9, which `qc-vm`'s trace
-  hook tests cite; until then they are in the coverage baseline.
+  hook tests cite.
 - **Shipped:** yes.
 
 ## Invariants

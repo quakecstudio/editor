@@ -17,19 +17,22 @@ below follow FTEQCC, whose source is `engine/qclib/qcc_pr_comp.c`, `qcc_pr_lex.c
 `qccmain.c` of [fte-team/fteqw](https://github.com/fte-team/fteqw) at commit
 `f937b9d88f71fc4429db5fe56c6a98d922711b2e` (the commit [`progs.md`](progs.md),
 [`lno.md`](lno.md) and [`dialect-fteqcc-rerelease.md`](dialect-fteqcc-rerelease.md) already
-cite); it was read on 2026-10-17. FTEQCC is not a registered porting upstream
-([`../porting.md`](../porting.md)), so nothing here is ported from it: these statements are
-this project's own rules, written to parse and resolve what FTEQCC accepts.
+cite); it was read on 2026-10-17. These statements describe what FTEQCC accepts, so that we
+parse and resolve it. Since [ADR-0017](../adr/0017-port-fteqcc.md), `engine/qclib/` of
+fte-team/fteqw is a registered porting upstream ([`../porting.md`](../porting.md#upstreams)),
+and code that ports an FTEQCC function, such as `qc-preproc`'s macro expansion, cites that
+function in its file header.
 
 This file is the parse-and-resolve spec (P2-25): syntax and type rules. **Code generation is
 out of scope and is marked later.** Each section's final statement is a `Codegen (later)`
-note that names the issue (L-01) which fills in the progs output; until then those statements
-do not exist here and are not cited. Many of these constructs need FTE's version 7 progs
-format ([`progs.md`](progs.md) PROGS-19 to PROGS-21), unlike the rerelease subset, which fits
-version 6 (`dialect-fteqcc-rerelease.md` FTE-1).
+note that names the issue (L-01) which fixes the progs output. Those notes are active
+statements that no code implements yet, so they are listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) until L-01's tests cite them. Many of these
+constructs need FTE's version 7 progs format ([`progs.md`](progs.md) PROGS-19 to PROGS-21),
+unlike the rerelease subset, which fits version 6 (`dialect-fteqcc-rerelease.md` FTE-1).
 
-To be implemented by the dialect profiles and `qc-sema` (P2-26); until code cites them the
-resolution statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv). The
+Implemented by the dialect profiles and `qc-sema` (P2-26); a statement no test cites yet is
+listed in [`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)). The
 construct-detection statements (the `.1` of each section) are cited by the coverage check in
 [`xtask/src/fteqcc_full_coverage.rs`](../../xtask/src/fteqcc_full_coverage.rs), which scans
 the FTEQCC corpus mods for each construct class and fails if the source holds a class no
@@ -1163,6 +1166,6 @@ FTEF-18.5.
 
 Larger vectors: [`vectors/dialect-fteqcc/`](vectors/). The recorded coverage run over the
 FTEQCC corpus mods is
-[`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The
-resolution statements (the `.2`/`.3` and later statements that say "Codegen (later)") are
-filled in when P2-26 (parse and resolve) and L-01 (codegen) land, each checked against FTEQCC.
+[`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The vectors of
+the `Codegen (later)` statements are added when L-01 (codegen) fixes them, each checked
+against FTEQCC.

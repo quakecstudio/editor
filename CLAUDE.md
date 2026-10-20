@@ -125,12 +125,11 @@ The plan:
 
 ```bash
 python3 plan/check.py --write-coverage            # every requirement covered, dependencies valid, templates complete
-(cd plan && python3 -m unittest test_check.py)    # the checker's own tests
+(cd plan && python3 -m unittest discover -p 'test_*.py')  # every plan test, as cargo xtask ci runs them
 python3 plan/gen_readiness.py                     # after adding or relabelling feature or test issues
 python3 plan/apply.py --repo quakecstudio/editor  # sync labels, milestones and issues (idempotent)
 python3 plan/status.py                            # the current phase's progress; the last line is the verdict
 python3 plan/status.py --readme                   # refresh the README's Next run block (current phase and /goal command)
-(cd plan && python3 -m unittest test_status.py)   # status tests
 ```
 
 **Toolchain:** Rust 1.99.0, edition 2024, pinned in `rust-toolchain.toml`; max line width 100.

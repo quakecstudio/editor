@@ -1,6 +1,6 @@
 # Every requirement in the QuakeC IDE design document, one ID each.
-# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 36, 2026-10-15).
-# Each requirement must be covered by at least one issue in backlog.yaml;
+# Source: docs/design/design-doc.md (the "QuakeC IDE - Design Document", rev 38, 2026-10-15).
+# Each requirement must be covered by at least one issue in plan/backlog/*.yaml;
 # plan/check.py fails if one is not.
 #
 # kind: stated  = written in the design doc
@@ -248,7 +248,7 @@ sections:
       - {id: CONV-10, kind: stated, text: "Conventional Commits, branch naming, squash merges, no direct pushes to main, worktrees for parallel agents; no Co-Authored-By trailers"}
       - {id: CONV-11, kind: stated, text: "Test placement, single integration test binary, spec-struct fixtures, no wall-clock waits, tests cite the spec section they pin with a coverage ratchet"}
       - {id: CONV-12, kind: stated, text: "Specs are the source of truth: never state required behaviour from memory; public specs cached verbatim in specs/ with manifest and sha256"}
-      - {id: CONV-13, kind: stated, text: "CLAUDE.md, AGENTS.md and .claude/rules/ (branching, commits-and-issues, development-discipline, specs-are-source-of-truth, porting, layering) and a session-setup hook"}
+      - {id: CONV-13, kind: stated, text: "CLAUDE.md, AGENTS.md and .claude/rules/ (branching, commits-and-issues, development-discipline, specs-are-source-of-truth, porting, layering, testing) and a session-setup hook"}
       - {id: CONV-14, kind: stated, text: "Repository layout: crates/ with a project prefix, apps/, xtask/, fuzz/ outside the workspace, docs/ mdBook, specs/, plan/, packaging/"}
       - {id: CONV-15, kind: stated, text: "Repository files: dual license files (per ADR), README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT"}
       - {id: CONV-16, kind: stated, text: "tracing for diagnostics, one paths module (XDG vs native dirs decided in an ADR), user-facing strings in one catalog"}

@@ -98,11 +98,13 @@ Each phase starts when the previous gate closes, so a slip in one phase moves ev
 
 ## Where we are
 
-Phase 0 is closed ([gate report](gates/p0.md)). The repo, `cargo xtask ci`, CI on three OSes with a protected `main`, the plan and board, and the ADR, porting and readiness processes are all in place. Every Phase 0 decision is recorded as an accepted ADR (0001 to 0011).
+Phase 0 is closed ([gate report](gates/p0.md)): the repo, `cargo xtask ci`, CI on three OSes with a protected `main`, the plan and board, and the ADR, porting and readiness processes, with every Phase 0 decision an accepted ADR (0001 to 0011).
 
-Phase 1 is next: specs and Rust ports of id's formats and VM, the oracles and the differential runner, and the lexer, preprocessor and lossless parser. `python3 plan/status.py --phase P1` lists what is ready.
+Phase 1 is closed ([gate report](gates/p1.md)): specs and Rust ports of id's formats and VM, the oracles and the differential runner, proved against id's code.
 
-The largest risk in Phase 1 is proving qc-vm against id's VM statement by statement (R-1). The largest risk on the way to the MVP is the Rust preview host (R-11).
+Phase 2, the language core and editor, is in progress: the lexer, preprocessor, parser, project graph, semantic model and engine-target database are built, with FTEQCC's dialect ported under ADR-0017, and the L2 and L3 readiness reviews are under way ([`readiness/`](readiness/)). `python3 plan/status.py --phase P2` lists what is ready.
+
+The largest risk on the way to the MVP is the Rust preview host (R-11).
 
 ## Working an issue
 

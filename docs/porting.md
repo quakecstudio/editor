@@ -223,7 +223,9 @@ agree. Together they must cover:
 - **Breadth.** The corpus (id 1.01 and rerelease QuakeC, public mods) and, for parsers and
   the VM, fuzz-generated input.
 - **The bar** in [`testing.md`](testing.md) (TEST-6): zero divergences, and at least 90% of the
-  oracle's statements or code paths exercised.
+  oracle's statements or code paths exercised; for the id VM differential suite, zero
+  divergences, with statement coverage measured and reported but not gated
+  ([ADR-0013](adr/0013-differential-coverage-bar.md)).
 - **Sensitivity.** A deliberately broken port fails the differential test. cargo-mutants on
   the port finds no surviving mutant that the differential test should catch.
 

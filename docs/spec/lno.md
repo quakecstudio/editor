@@ -23,8 +23,8 @@ Public documentation is one line of GMQCC's manual page (`doc/gmqcc.1`): `-flno`
 linenumber file along with the output .dat file." No other published description of the
 layout was found; everything below is from the code.
 
-Implemented by `qc-lno` (P1-28). Every statement in this file is in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until that crate cites it.
+Implemented by `qc-lno` (P1-28). A statement no test cites yet is listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)).
 
 `i32` and `u32` are 32-bit little-endian integers. The counts the file shares with a
 `progs.dat` are the header fields of PROGS-2.1.

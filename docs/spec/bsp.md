@@ -1262,7 +1262,8 @@ what `qs-bsp` does. QS prints many messages without failing (`Con_Warning`, `Con
   (`case BSPVERSION_QUAKE64:`, Quake 64's), and fails any other with
   `Mod_LoadBrushModel: %s has unsupported version number (%i)`. `qs-bsp` reads neither format
   with any loader and fails both, and every other version that is not BSP29 or BSP2, with
-  BSP-1.2's error: MAP-6 asks for Quake's formats only. The vector `version-30` loads in QS and
+  BSP-1.2's error: the plan requirement MAP-6 (`plan/requirements.yaml`) asks for Quake's
+  formats only. The vector `version-30` loads in QS and
   fails in `qs-bsp`, a difference the differential run expects.
 - **BSP-20.3** A texture whose width or height is 0 leaves its slot empty:
   `if (mt->width == 0 || mt->height == 0)` then

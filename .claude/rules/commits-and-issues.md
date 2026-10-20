@@ -76,7 +76,7 @@ From `plan/backlog/_meta.yaml`, created by `plan/apply.py`:
 
 | Kind | Labels |
 | --- | --- |
-| Type (one) | `type:feature`, `type:spec`, `type:decision`, `type:spike`, `type:test`, `type:chore`, `type:gate`, `type:readiness` |
+| Type (one) | `type:feature`, `type:spec`, `type:decision`, `type:spike`, `type:test`, `type:chore`, `type:gate`, `type:readiness`, `type:bug` |
 | Layer | `L0-formats` to `L7-ui`, `apps`, `c-tools`, `repo` |
 | Area | `area:compiler`, `area:vm`, `area:language`, `area:preview`, `area:agent`, `area:editor`, `area:map`, `area:release`, `area:docs`, `area:legal`, `area:process` |
 | Size | `size:S` (up to 2 days), `size:M` (up to a week), `size:L` (up to two weeks) |

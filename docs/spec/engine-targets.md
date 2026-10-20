@@ -9,8 +9,10 @@ a builtin the target engine lacks (PRIN-8). Implemented by `qc-engines`, with th
 `cargo xtask engines` (`xtask/src/engines.rs`).
 
 The ten files the tables are generated from are **fact sources, not porting upstreams**:
-only facts are taken from them (names, numbers, signatures), never comment text or code, and
-none of them is listed in [`../porting.md`](../porting.md#upstreams).
+only facts are taken from them (names, numbers, signatures), never comment text or code.
+None of these files is a porting upstream: [`../porting.md`](../porting.md#upstreams) lists
+`fte-team/fteqw` for `engine/qclib/` only ([ADR-0017](../adr/0017-port-fteqcc.md)), which
+does not include `quakec/menusys/fteextensions.qc`, and lists none of the other repositories.
 [ADR-0014](../adr/0014-engine-fact-sources.md) records the decision for the first three and
 its legal basis, [ADR-0015](../adr/0015-darkplaces-client-menu-fact-sources.md), which
 supersedes it, extends it to DarkPlaces' client and menu QuakeC definitions, and
