@@ -61,6 +61,8 @@ pub enum Code {
     E0118,
     /// "Name for frame macro NAME is too long" (QCD-2.8).
     E0119,
+    /// "macro expansion too large" (QCD-8.12).
+    E0120,
     /// "not a name" (QCD-3.1).
     E0201,
     /// "name too long" (QCD-3.2).
@@ -156,7 +158,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 64] = [
+    pub const ALL: [Self; 65] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -176,6 +178,7 @@ impl Code {
         Self::E0117,
         Self::E0118,
         Self::E0119,
+        Self::E0120,
         Self::E0201,
         Self::E0202,
         Self::E0203,
@@ -246,6 +249,7 @@ impl Code {
             Self::E0117 => "E0117",
             Self::E0118 => "E0118",
             Self::E0119 => "E0119",
+            Self::E0120 => "E0120",
             Self::E0201 => "E0201",
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
@@ -334,6 +338,7 @@ impl Code {
             | Self::E0117
             | Self::E0118
             | Self::E0119
+            | Self::E0120
             | Self::E0201
             | Self::E0202
             | Self::E0203

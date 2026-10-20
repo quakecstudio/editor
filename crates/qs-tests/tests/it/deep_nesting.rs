@@ -3,7 +3,7 @@
 //! Input nested far past the limit goes through the whole front end under the FTEQCC
 //! profile (P2-50): the parser bounds its tree (QC-27.15, QC-27.16, FTEF-18.26), so lowering
 //! and resolving the tree cannot exhaust the stack either. A long chain of macros goes through
-//! the preprocessor in front of them without exhausting it (QC-9.13, P2-65).
+//! the preprocessor in front of them without exhausting it (QC-9.17, P2-65).
 
 #![expect(
     clippy::unwrap_used,
@@ -73,7 +73,7 @@ fn deep_fteqcc_input_resolves() {
     }
 }
 
-// spec QC-9.13: a file of 100000 chained `#define`s and a declaration using the last goes
+// spec QC-9.17: a file of 100000 chained `#define`s and a declaration using the last goes
 // through `Db::analyze_module` under each dialect on a 2 MiB thread, with no diagnostic
 #[test]
 fn a_long_chain_of_macros_resolves() {

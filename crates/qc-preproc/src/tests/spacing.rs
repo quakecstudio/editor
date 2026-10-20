@@ -141,10 +141,6 @@ fn an_argument_touches_the_body_tokens_its_parameter_touches() {
     assert_eq!(fte("#define V(...) __VA_ARGS__:\nV( lbl)"), "lbl:");
     assert_eq!(fte("#define V(...) __VA_ARGS__:\nV(lbl )"), "lbl :");
     assert_eq!(fte("#define V(a, ...) a:__VA_ARGS__:\nV(l, m)"), "l:m:");
-    // An argument's last token or its `)` from an expansion has only white space after it,
-    // whatever stands between them in the source (FTEQCC reads no argument list across the
-    // end of an expansion, P2-79).
-    assert_eq!(fte("#define L(x) x:\n#define LL L(lbl\nLL/**/)"), "lbl:");
     // A `#` string touches as written, but is made, so a renderer keeps it apart.
     assert_eq!(fte("#define S(x) #x:\nS(lbl)"), "\"lbl\":");
 }
@@ -217,4 +213,68 @@ fn a_hash_in_a_body_reads_the_name_that_touches_it() {
         "x = \"N\" ;"
     );
     assert_eq!(fte("#define N 5\n#define K #N!\nx = K;"), "x = #N! ;");
+}
+
+/// The tokens of `text` under FTEQCC as [`touching`] writes them, and its diagnostic codes.
+fn fte_with_codes(text: &str) -> (String, Vec<crate::Code>) {
+    let out = run(text.as_bytes(), Dialect::Fteqcc);
+    let codes = out.diagnostics.iter().map(|d| d.code).collect();
+    (touching(text, Dialect::Fteqcc), codes)
+}
+
+// spec FTEF-14.17: a macro is not expanded in its own chunk, and otherwise while fewer than
+// 8 chunks of it are open, so one used again through another is expanded again; a built-in
+// constant's value touches neither token beside it
+#[test]
+fn a_macro_is_expanded_again_through_another() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define A A\nA"), "A");
+    assert_eq!(fte("#define A B\n#define B A\nA"), "A");
+    assert_eq!(
+        fte("#define A x B\n#define B +A\nA"),
+        format!("{}x +A", "x + ".repeat(7))
+    );
+    assert_eq!(
+        touching("#define A x B\n#define B +A\nA", Dialect::Vanilla),
+        "x +A"
+    );
+    assert_eq!(fte("#define A(x) x\nA(A(1))"), "A(1)");
+    assert_eq!(fte("#define K x__LINE__:\nK"), "x__LINE__:");
+    assert_eq!(fte("#define K x __LINE__:\nK"), "x 2 :");
+}
+
+// spec FTEF-14.18: a function-like macro takes its `(` after spaces and tabs only, in the
+// chunk of its name, and its arguments from that chunk only; one that runs past it is E0117
+// spec QCD-8.10: E0117 "unterminated argument list for macro NAME"
+#[test]
+fn arguments_stay_in_the_chunk_of_the_name() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define M(x) x\nM \t(1)"), "1");
+    assert_eq!(fte("#define M(x) x\nM\n(1)"), "M (1)");
+    assert_eq!(fte("#define M(x) x\nM/**/(1)"), "M (1)");
+    assert_eq!(fte("#define M(x) x\n#define N M\nN(1)"), "M (1)");
+    assert_eq!(touching("#define M(x) x\nM\n(1)", Dialect::Vanilla), "1");
+    let (toks, codes) = fte_with_codes("#define L(x) x:\n#define LL L(lbl\nLL)");
+    assert_eq!(
+        (toks.as_str(), codes),
+        ("L(lbl )", vec![crate::Code::E0117])
+    );
+    let (_, codes) = fte_with_codes("#define M(x) x\n#define N(y) M(y\nN(1))");
+    assert_eq!(codes, vec![crate::Code::E0117]);
+}
+
+// spec QCD-8.12: E0120 "macro expansion too large", reported once
+// spec FTEF-14.19: an expansion that grows past the bound stops there
+#[test]
+fn an_expansion_past_the_bound_is_reported_once() {
+    let mut text = String::from("#define A0 x\n");
+    for i in 1..24 {
+        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+    }
+    text.push_str("A23 A23\n");
+    let out = run(text.as_bytes(), Dialect::Fteqcc);
+    let codes: Vec<_> = out.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, vec![crate::Code::E0120]);
+    let a23 = qc_lexer::TokenKind::Name("A23".to_owned());
+    assert!(out.tokens.iter().any(|t| t.kind == a23));
 }

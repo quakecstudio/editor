@@ -673,6 +673,32 @@ profile the preprocessor reads them as FTEQCC does.
   body `#N` (the pinned FTEQCC: "Cannot cast from float to void()" for `void() f = K;`,
   FTE-23.11). The vanilla preprocessor expands every name that is a macro (QC-9.4).
 
+- **FTEF-14.17** A macro is not expanded in the chunk of its own expansion (`if (c &&
+  (!currentchunk || currentchunk->cnst != c))`, "macros don't expand themselves"), and otherwise
+  is, while fewer than 8 chunks of it are open for an object-like macro (`if (c->inside >= 8)`) or
+  at most 8 for a function-like one (`if (c->inside>8) return false;`). The open chunks are the
+  expansion a token comes from and those that expansion was used in, back to the source: a chunk
+  stays open until its last token is read. So a macro used again through another is expanded
+  again: with `#define A #5 B` and `#define B :A`, `A` is `#5 :#5 :...` eight times over, which
+  the pinned FTEQCC refuses, where QC-9.4's rule leaves `#5 :A`. A built-in constant's value
+  (FTEF-14.7) is a chunk of its own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL)`), so it
+  touches neither token beside it. This profile reads FTEQCC macros by this rule and no hide set;
+  the vanilla dialect keeps QC-9.4's.
+- **FTEF-14.18** A function-like macro takes its arguments only from the text of the chunk its
+  name is in: `QCC_PR_CheckCompConst` skips spaces and tabs after the name (`while(*pr_file_p == '
+  ' || *pr_file_p == '\t')`) and expands it only `if (*pr_file_p == '(')`, so a line break or a
+  comment before the `(`, or the end of the expansion the name is in, leaves the name as it is
+  (`M\n(#5)` is the name `M`; with `#define N M`, `N(#5)` is too); and
+  `QCC_PR_ExpandPreProcessorMacro` reads the arguments up to the `)` within that text, reporting
+  "EOF on macro call" (`if (!*pr_file_p) QCC_PR_ParseError(ERR_EOF, "EOF on macro call");`) when
+  it ends first. This profile reports that as "unterminated argument list for macro NAME"
+  (`E0117`): with `#define L(x) x:` and `#define LL L(lbl`, `LL) goto lbl;` is `E0117`, as is the
+  end of the file inside a use's arguments.
+- **FTEF-14.19** A deliberate divergence: FTEF-14.17 lets an expansion grow exponentially
+  (`#define A B B` and `#define B A A` expand to 2^16 names), and FTEQCC builds it all, so this
+  profile makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one file and reports the
+  first use past it once, as "macro expansion too large" (`E0120`), leaving it and later uses as
+  written. No program of the corpus comes near it.
 ## FTEF-15 Declarations
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_ParseInitializerType_Internal` and

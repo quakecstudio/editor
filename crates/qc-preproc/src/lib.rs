@@ -144,7 +144,7 @@ type Hide = Option<Rc<HideNode>>;
 
 /// One macro name's counter of the live hide-set nodes that name it, one counter per name in
 /// [`Run::live`], so the counter also stands for the name. A name no live node names is in no
-/// token's hide set, so [`hidden`] answers without walking the set (QC-9.13).
+/// token's hide set, so [`hidden`] answers without walking the set (QC-9.17).
 type Live = Rc<Cell<usize>>;
 
 struct HideNode {
@@ -156,7 +156,7 @@ struct HideNode {
 impl Drop for HideNode {
     fn drop(&mut self) {
         self.live.set(self.live.get().saturating_sub(1));
-        // QC-9.13: the nodes only this one holds are unlinked in a loop, not by the recursive
+        // QC-9.17: the nodes only this one holds are unlinked in a loop, not by the recursive
         // drop of `next`, which would take one stack frame per nested expansion.
         let mut next = self.next.take();
         while let Some(node) = next {
@@ -194,7 +194,7 @@ fn hide_with(hide: &Hide, live: &Live) -> Hide {
 }
 
 /// A token and its hide set. It has no `Debug`: a derived one would print the hide set by
-/// recursion, one frame per nested expansion (QC-9.13).
+/// recursion, one frame per nested expansion (QC-9.17).
 #[derive(Clone)]
 struct Item {
     tok: PpToken,
@@ -244,8 +244,16 @@ struct Run {
     /// In an FTEQCC dialect, the number the next frame name gets, FTEQCC's `pr_macrovalue`,
     /// 0 at the start of each file (FTEF-18.17).
     frame_value: i32,
-    /// For each macro name, how many live hide-set nodes name it (QC-9.13).
+    /// For each macro name, how many live hide-set nodes name it (QC-9.17).
     live: HashMap<String, Live>,
+    /// In an FTEQCC dialect, the chunks open where the token being read stands: its
+    /// expansion and those it was used in, outermost first (FTEF-14.17).
+    open: Vec<ExpansionId>,
+    /// How many of [`Run::open`] each macro has.
+    open_names: HashMap<String, usize>,
+    /// How many macro expansions this file has made, and whether `E0120` was reported
+    /// (FTEF-14.19).
+    expanded: (usize, bool),
     out: FileOutput,
 }
 
@@ -263,6 +271,13 @@ impl Run {
 /// and `QCC_PR_MacroFrame` reports a name `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))`
 /// (FTEF-18.22).
 const FTE_MAX_FRAME_NAME: usize = 63;
+
+/// The most chunks of one macro FTEQCC has open at once, `if (c->inside >= 8)` in
+/// `QCC_PR_CheckCompConst` (FTEF-14.17).
+const FTE_MAX_OPEN_CHUNKS: usize = 8;
+
+/// The most macro expansions this profile makes in one file under FTEQCC (FTEF-14.19).
+const FTE_MAX_EXPANSIONS: usize = 1 << 20;
 
 /// What FTEQCC's `s_filen` is while a frame macro is defined or used: one reading of a source
 /// file, a new one for each compiled file and each `#include` of a file, or one macro
@@ -1089,17 +1104,23 @@ impl<L: Loader> Preprocessor<L> {
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
         };
-        if hidden(&run.live, &item.hide, name) {
+        let fte = self.dialect.has_fteqcc_extensions();
+        if !fte && hidden(&run.live, &item.hide, name) {
             return Some(item);
         }
         // FTEF-14.13: FTEQCC looks up the word up to a byte that ends it, not the name.
-        if self.dialect.has_fteqcc_extensions() && !self.word_ends_after(run, &item.tok) {
+        if fte && !self.word_ends_after(run, &item.tok) {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
-            if self.dialect.has_fteqcc_extensions()
-                && let Some(tok) = self.builtin(run, &item.tok, name)
-            {
+            if fte && let Some(tok) = self.builtin(run, &item.tok, name) {
+                // FTEF-14.17: a built-in's value is a chunk of its own, so the token after it
+                // touches nothing.
+                if let Some(next) = run.pending.last_mut()
+                    && next.tok.touches(&item.tok)
+                {
+                    next.tok.follows = None;
+                }
                 run.pending.push(Item {
                     tok,
                     hide: item.hide,
@@ -1108,13 +1129,23 @@ impl<L: Loader> Preprocessor<L> {
             }
             return Some(item);
         };
+        if fte && self.fte_recursion_stops(run, &item.tok, name, mac.params.is_some()) {
+            return Some(item);
+        }
         let name = name.clone();
         let mut use_span = item.tok.span;
         let mut args = Vec::new();
         let mut ends = Vec::new();
+        // What a use that is not expanded after all gives back, its arguments read.
+        let mut collected_back = Vec::new();
         if let Some(params) = &mac.params {
             let open = match self.next_item(run) {
-                Some(next) if next.tok.kind == TokenKind::Punct(Punct::LParen) => next,
+                Some(next)
+                    if next.tok.kind == TokenKind::Punct(Punct::LParen)
+                        && (!fte || self.fte_opens_arguments(&item.tok, &next.tok)) =>
+                {
+                    next
+                }
                 Some(next) => {
                     run.pending.push(next);
                     return Some(item);
@@ -1124,7 +1155,10 @@ impl<L: Loader> Preprocessor<L> {
             let mut collected = vec![open];
             // FTEF-14.5: the arguments after the named ones are one, `__VA_ARGS__`.
             let limit = mac.variadic.then_some(params.len());
-            let Some(close) = self.collect_args(run, &mut collected, (&mut args, &mut ends), limit)
+            // FTEF-14.18: FTEQCC reads the arguments from the text of the name's chunk only.
+            let chunk = fte.then_some(item.tok.expansion);
+            let Some(close) =
+                self.collect_args(run, &mut collected, (&mut args, &mut ends), (limit, chunk))
             else {
                 run.report(
                     Code::E0117,
@@ -1159,6 +1193,21 @@ impl<L: Loader> Preprocessor<L> {
                 run.pending.extend(collected.into_iter().rev());
                 return Some(item);
             }
+            collected.push(close);
+            collected_back = collected;
+        }
+        // FTEF-14.19: FTEQCC's recursion rule lets an expansion grow exponentially; this
+        // profile stops at a bound.
+        if fte {
+            if run.expanded.0 >= FTE_MAX_EXPANSIONS {
+                if !run.expanded.1 {
+                    run.expanded.1 = true;
+                    run.report(Code::E0120, "macro expansion too large", use_span);
+                }
+                run.pending.extend(collected_back.into_iter().rev());
+                return Some(item);
+            }
+            run.expanded.0 = run.expanded.0.saturating_add(1);
         }
         let id = ExpansionId(self.expansions.len());
         self.expansions.push(Expansion {
@@ -1385,14 +1434,105 @@ impl<L: Loader> Preprocessor<L> {
         next.is_none_or(ends_word)
     }
 
+    /// Whether FTEQCC leaves the name `tok` of the macro `name` as it is because the macro is
+    /// already being expanded (FTEF-14.17): `QCC_PR_CheckCompConst` expands no macro in the
+    /// chunk of its own expansion (`currentchunk->cnst != c`), no object-like macro with 8
+    /// chunks of it open (`if (c->inside >= 8)`) and no function-like one with more than 8
+    /// (`if (c->inside>8) return false;`). The open chunks are the expansion `tok` came from
+    /// and those it was used in, back to the source ([`Self::open_chunks_at`]).
+    fn fte_recursion_stops(
+        &self,
+        run: &mut Run,
+        tok: &PpToken,
+        name: &str,
+        function_like: bool,
+    ) -> bool {
+        self.open_chunks_at(run, tok.expansion);
+        if run
+            .open
+            .last()
+            .and_then(|id| self.expansions.get(id.0))
+            .is_some_and(|e| e.name == name)
+        {
+            return true;
+        }
+        let open = run.open_names.get(name).copied().unwrap_or(0);
+        if function_like {
+            open > FTE_MAX_OPEN_CHUNKS
+        } else {
+            open >= FTE_MAX_OPEN_CHUNKS
+        }
+    }
+
+    /// Makes [`Run::open`] the chunks open at a token of `expansion`: tokens are read in order,
+    /// so the expansion is the last open one, a new one used in it, or one of those open, the
+    /// ones after it having ended.
+    fn open_chunks_at(&self, run: &mut Run, expansion: Option<ExpansionId>) {
+        loop {
+            let top = run.open.last().copied();
+            if top == expansion {
+                return;
+            }
+            if let Some(id) = expansion
+                && self.expansions.get(id.0).is_some_and(|e| e.parent == top)
+            {
+                self.open_chunk(run, id);
+                return;
+            }
+            let Some(ended) = run.open.pop() else {
+                // Not reached in reading order; take the expansion's chain as it is.
+                let mut chain = Vec::new();
+                let mut at = expansion;
+                while let Some(id) = at {
+                    chain.push(id);
+                    at = self.expansions.get(id.0).and_then(|e| e.parent);
+                }
+                for id in chain.into_iter().rev() {
+                    self.open_chunk(run, id);
+                }
+                return;
+            };
+            if let Some(e) = self.expansions.get(ended.0)
+                && let Some(count) = run.open_names.get_mut(&e.name)
+            {
+                *count = count.saturating_sub(1);
+            }
+        }
+    }
+
+    fn open_chunk(&self, run: &mut Run, id: ExpansionId) {
+        run.open.push(id);
+        if let Some(e) = self.expansions.get(id.0) {
+            let count = run.open_names.entry(e.name.clone()).or_default();
+            *count = count.saturating_add(1);
+        }
+    }
+
+    /// Whether the `(` `open` after the name `name` of a function-like macro opens its
+    /// arguments under FTEQCC (FTEF-14.18): `QCC_PR_CheckCompConst` skips only spaces and tabs
+    /// after the name (`while(*pr_file_p == ' ' || *pr_file_p == '\t')`) and then needs the
+    /// `(` in the same chunk (`if (*pr_file_p == '(')`), so a line break or a comment before
+    /// it, or the end of the expansion the name is in, leaves the name as it is.
+    fn fte_opens_arguments(&self, name: &PpToken, open: &PpToken) -> bool {
+        if name.expansion.is_some() || open.expansion.is_some() {
+            return name.expansion == open.expansion;
+        }
+        name.span.file == open.span.file
+            && self
+                .sources
+                .file(open.span.file)
+                .and_then(|file| file.text.get(name.span.span.end..open.span.span.start))
+                .is_some_and(|between| between.iter().all(|&b| b == b' ' || b == b'\t'))
+    }
+
     /// Whether FTEQCC copies nothing after `last`, the last token of an argument other than
-    /// the variadic one, whose `,` or `)` is `end` (QC-9.15): it copies such an argument a
+    /// the variadic one, whose `,` or `)` is `end` (QC-9.16): it copies such an argument a
     /// token at a time, each with what stands before it, up to the last token
     /// `QCC_COM_Parse2` finds, which skips white space and `//` comments but not a `/* */`
     /// one. A token of an expansion has only white space after it, since FTEQCC dropped the
-    /// body's comments.
+    /// body's comments, and its `end` is in the same expansion (FTEF-14.18).
     fn nothing_copied_after(&self, last: &PpToken, end: &PpToken) -> bool {
-        if last.expansion.is_some() || end.expansion.is_some() {
+        if last.expansion.is_some() {
             return true;
         }
         let between = self
@@ -1483,25 +1623,31 @@ impl<L: Loader> Preprocessor<L> {
             span: tok.span,
             expansion: tok.expansion,
             spelling: Some(spelling),
-            follows: tok.follows,
+            follows: None,
         })
     }
 
     /// Reads a function-like macro's arguments after its `(`, which is `collected[0]`, up to
     /// the matching `)`, which is returned. Every token read but the `)` goes to `collected`.
     /// With a `limit`, the commas after that many arguments are part of the last
-    /// (FTEF-14.5). Each argument goes to `args` and the `,` or `)` after it to `ends`.
+    /// (FTEF-14.5). Each argument goes to `args` and the `,` or `)` after it to `ends`. With a
+    /// `chunk`, a token of any other expansion, or of none, ends the list unclosed
+    /// (FTEF-14.18).
     fn collect_args(
         &mut self,
         run: &mut Run,
         collected: &mut Vec<Item>,
         (args, ends): (&mut Vec<Vec<Item>>, &mut Vec<PpToken>),
-        limit: Option<usize>,
+        (limit, chunk): (Option<usize>, Option<Option<ExpansionId>>),
     ) -> Option<Item> {
         let mut depth = 0_usize;
         let mut current = Vec::new();
         loop {
             let item = self.next_item(run)?;
+            if chunk.is_some_and(|chunk| item.tok.expansion != chunk) {
+                run.pending.push(item);
+                return None;
+            }
             let split = limit.is_none_or(|n| args.len() < n);
             match item.tok.kind {
                 TokenKind::Punct(Punct::RParen) if depth == 0 => {
