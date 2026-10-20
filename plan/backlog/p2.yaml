@@ -1211,6 +1211,23 @@ issues:
   - 'No two xtask readiness tests write the same path, checked by a test or by running `cargo test -p xtask readiness` 50 times with no failure, recorded in the PR'
   verify:
   - cargo test -p xtask
+- key: P2-69
+  title: Read FTEQCC builtin literals as FTEQCC's lexer reads them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-66
+  deliverable:
+  - 'crates/qc-syntax (src/binum.rs `builtin_binum`, src/parser/mod.rs `builtin`, src/ast.rs `Builtin::engine_name`) and docs/spec/dialect-fteqcc-rerelease.md FTE-17.5 and FTE-17.6: the third P2-R2 review (docs/readiness/p2-r2.md) compared the FTEQCC profile at commit 5c552de with the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, built by `cargo xtask oracles build`) and found three builtin forms it reads differently. (1) A `d` literal is a double: `QCC_PR_LexNumber` (qcc_pr_lex.c) gives `16d` and `16.0d` `pr_immediate_type = type_double;`, which no branch of `QCC_PR_ParseInitializerType_Internal` takes, so FTEQCC reports "Bad builtin immediate" for `= #16d;`, `= #16.0d;` and `= :16d;`, where the profile reports nothing and `builtin_binum` gives 16; FTE-17.6 names only the `u` and `l` suffixes. (2) `#` is a builtin only when the next byte is one of those `QCC_PR_Lex` lists: `if (c == ''#'' && !(pr_file_p[1]=='')'' || pr_file_p[1]=='','' || pr_file_p[1]==''\"'' || pr_file_p[1]==''-'' || (pr_file_p[1]>=''0'' && pr_file_p[1] <=''9'')))	//hash and not number` reads anything else as a macro use, so FTEQCC reports "Explicit precompiler usage when not defined" for `= # 5;`, `= # "nm10";` and `= #''a'';`, which the profile accepts (binding 5, `nm10` and 97); `:` takes all three (`= :''a'';` is 97, `= : "nmr";` is `nmr`). (3) Adjacent string literals join: FTEQCC binds `= #"ab" "cd";` by the name `abcd` and `= :"x" "y";` by `xy` with 0 warnings, where the profile reports E0203 and `engine_name` gives the first string'
+  acceptance:
+  - 'Under the FTEQCC profile `= #16d;`, `= #16.0d;`, `= :16d;`, `= # 5;`, `= # "x";` and `= #''a'';` are E0209 and `builtin_binum` gives `16d` no number; `= #"ab" "cd";` and `= :"x" "y";` parse with no error and `engine_name` gives `abcd` and `xy`; `= :''a'';`, `= : "nmr";` and the vanilla `= # 5;`, which id''s `qcc` binds as 5, stay as they are; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1282,6 +1299,7 @@ issues:
   - P2-63
   - P2-64
   - P2-68
+  - P2-69
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
