@@ -66,7 +66,7 @@ expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
 
 ## Invariants
 
-Each has a property test in `src/tests.rs`:
+Each has a property test in `src/tests/mod.rs`:
 
 - Text with no directives and no `$` comes out as the lexer's tokens, each its own origin.
 - Every expanded token's span holds its text, and its origin is the macro use in the

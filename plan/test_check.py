@@ -54,6 +54,13 @@ class CheckRules(unittest.TestCase):
     def test_later_phase_dependency(self):
         self.assert_flags(lambda r, k, i: k["P1-10"]["depends"].append("P2-06"), "from a later phase")
 
+    def test_unknown_milestone_is_a_problem_not_an_exception(self):
+        # P1-10 depends on earlier issues and P2 issues depend on it, so both sides of the
+        # phase comparison meet an issue with no phase.
+        for milestone in ("P9", "Phase 1", None):
+            self.assert_flags(lambda r, k, i, m=milestone: k["P1-10"].update(milestone=m),
+                              f"P1-10: unknown milestone {milestone}")
+
     def test_layer_label(self):
         self.assert_flags(lambda r, k, i: k["P0-06"]["labels"].remove("repo"),
                           "P0-06: needs exactly one layer label, has []")

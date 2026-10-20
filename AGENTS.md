@@ -23,7 +23,7 @@ whatever tool runs it.
 
 `.claude/hooks/session-setup.sh` runs at session start (registered in
 `.claude/settings.json`). On Linux it installs the system packages above, rustup and `prek`
-when they are missing, and installs the git hooks once `.pre-commit-config.yaml` exists. Each
+when they are missing, and installs the git hooks from `.pre-commit-config.yaml`. Each
 step skips silently if the network policy blocks its download, and the hook always exits 0.
 It does nothing on macOS or Windows, where you set up the tools yourself.
 

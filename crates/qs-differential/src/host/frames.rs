@@ -27,15 +27,14 @@ use super::{
 /// The fatal error the physics frame raises on a bad movetype (DIFF-5.3, DIFF-5.4).
 ///
 /// id's `Sys_Error`, raised by the host outside any run, so its error record has function 0
-/// and statement -1 (DIFF-8.1); the trace records it here. The returned [`RunError`] carries
-/// the same message so the host's error path ends the scenario; a fatal error runs no shutdown
-/// (DIFF-8.6), but for the host loop of P1-61 a bad movetype only appears in error tests, and
-/// the trace record is already written.
+/// and statement -1 (DIFF-8.1); the trace records it here. The returned [`RunError`] is
+/// [`ErrorKind::Fatal`] with the same message, so the host's error path ends the scenario with
+/// no shutdown (DIFF-8.6).
 fn bad_movetype(host: &mut Host<'_>, which: &str, movetype: i32) -> RunError {
     let message = format!("SV_Physics{which}: bad movetype {movetype}");
-    host.trace.host_error(0, -1, &message);
+    host.trace.host_error(&host.machine, 0, -1, &message);
     RunError {
-        kind: ErrorKind::Builtin { message },
+        kind: ErrorKind::Fatal { message },
         function: 0,
         statement: -1,
         trace: Vec::new(),

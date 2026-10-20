@@ -2,7 +2,7 @@
 // Copyright (C) 1996-1997 Id Software, Inc.
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Alloc, ED_Free, ED_FindField, ED_FindFunction
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_edict.c, ED_Alloc, ED_Free, ED_FindField, ED_FindFunction, EDICT_NUM
 
 //! The [`SpawnHost`] the EDICT-8 port drives when spawning a map (EDICT-8).
 //!
@@ -39,14 +39,25 @@ impl SpawnHost for Spawner<'_, '_, '_> {
             // EDICT-4.2: the map's first entity goes into edict 0 without clearing it.
             Ok(0)
         } else {
-            // EDICT-6: ED_Alloc at the map-start clock (1.0, EDICT-8.1).
+            // EDICT-6: ED_Alloc at the map-start clock (1.0, EDICT-8.1); a full array is the
+            // fatal ED_Alloc: no free edicts (EDICT-6.2), the store's only alloc error.
             let clock = self.host.builtins.engine().clock;
             self.host
                 .machine
                 .edicts_mut()
                 .alloc(clock)
-                .map_err(|_| SpawnError::ParseError)
+                .map_err(|_| SpawnError::NoFreeEdicts)
         }
+    }
+
+    fn edict_value(&self, number: i32) -> Result<i32, SpawnError> {
+        // EDICT-1.7: EDICT_NUM fails for a number below 0 or from LIMIT_MAX_EDICTS on.
+        self.host
+            .machine
+            .edicts()
+            .edict_num(number)
+            .map(|entity| entity.0)
+            .map_err(|_| SpawnError::BadEdictNumber { number })
     }
 
     fn find_field(&self, name: &[u8]) -> Option<FieldDef> {

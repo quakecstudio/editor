@@ -667,7 +667,7 @@ fn read_frametime(word: Word<'_>, at: usize) -> Result<f64, Refused> {
     let value: f64 = text
         .parse()
         .map_err(|_| refuse(at, "frametime is not a number"))?;
-    // spec DIFF-2.8: refused unless the double is greater than 0 and at most 1.
+    // DIFF-2.8: refused unless the double is greater than 0 and at most 1.
     if value > 0.0 && value <= 1.0 {
         Ok(value)
     } else {
@@ -685,7 +685,7 @@ fn read_model_number(word: Word<'_>, at: usize) -> Result<f32, Refused> {
     let value: f32 = text
         .parse()
         .map_err(|_| refuse(at, "a model or v_angle number"))?;
-    // spec DIFF-2.8: a number whose nearest f32 is infinite is refused.
+    // DIFF-2.8: a number whose nearest f32 is infinite is refused.
     if value.is_finite() {
         Ok(value)
     } else {

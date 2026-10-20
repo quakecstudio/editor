@@ -275,9 +275,12 @@ layout below is from these pages, read on 2026-10-16:
   the rerelease also treats folders in `%userprofile%\saved games\Nightdive Studios\Quake\`
   as game directories.
 
-None of this was checked against an install for this spec; the tests of
-[#42](https://github.com/quakecstudio/editor/issues/42) and
-[#43](https://github.com/quakecstudio/editor/issues/43) confirm it on real installs.
+The real-install runs of P1-30 ([#277](https://github.com/quakecstudio/editor/issues/277#issuecomment-6222650777),
+macOS, Justin's GOG Quake Enhanced, from main at `5dbf5a3` on 2026-10-16) confirm this layout:
+the rerelease is the install folder itself, its `id1` holds `pak0.pak` (1282 entries) and no
+`pak1.pak`, `-game hipnotic`, `rogue`, `dopa` and `mg1` each load over it, and `QuakeEX.kpf`
+is in the base directory. Steam's `rerelease` folder and runs on Windows and Linux were not
+checked.
 
 ### Behaviour
 
@@ -325,9 +328,12 @@ these pages, read on 2026-10-16:
 
 The rerelease's archives change with its updates (the two `mg1` rows are two of them), so
 the table cannot list every rerelease file; FS-6.3 makes an unlisted one an ordinary
-result. None of this was checked against a real install for this spec; the manual check of
-[#43](https://github.com/quakecstudio/editor/issues/43), on the same machines as
-[#277](https://github.com/quakecstudio/editor/issues/277), records it.
+result. The P1-30 runs ([#277](https://github.com/quakecstudio/editor/issues/277#issuecomment-6222650777),
+macOS, from main at `5dbf5a3` on 2026-10-16) recognised Justin's two GOG installs: the
+innoextract one with the original game in `app`, its `PAK0.PAK` (1.06) and `PAK1.PAK` known
+by checksum and the edition Registered, and the Quake Enhanced folder with the original game
+in `dos`, the rerelease at its root and the editions Registered and Rerelease. Steam's
+layout and runs on Windows and Linux were not checked.
 
 ### Behaviour
 

@@ -79,7 +79,7 @@ def load_backlog() -> tuple[dict, list[dict]]:
         groups = data.get("groups") or [data]
         for g in groups:
             for issue in g["issues"]:
-                issue["milestone"] = g["milestone"]
+                issue["milestone"] = g.get("milestone")  # a missing one is reported by check()
                 issue["_file"] = path.name
                 issues.append(issue)
     add_gate_dependencies(issues)
@@ -176,7 +176,7 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
             for field in ("summary", "environment"):
                 if not i.get(field):
                     errors.append(f"{k}: a bug needs {field} (bug.yml)")
-        if i["milestone"] not in milestones:
+        if i["milestone"] not in milestones or i["milestone"] not in PHASE_ORDER:
             errors.append(f"{k}: unknown milestone {i['milestone']}")
         if i.get("size") not in sizes:
             errors.append(f"{k}: size must be one of {sorted(sizes)}")
@@ -193,12 +193,14 @@ def check(reqs: dict, meta: dict, issues: list[dict]) -> list[str]:
             if r not in reqs:
                 errors.append(f"{k}: unknown requirement {r}")
 
-    phase = {k: PHASE_ORDER.index(i["milestone"]) for k, i in by_key.items()}
+    # An issue in an unknown milestone is reported above and has no phase to compare.
+    phase = {k: PHASE_ORDER.index(i["milestone"]) for k, i in by_key.items()
+             if i["milestone"] in PHASE_ORDER}
     for k, i in by_key.items():
         for d in i.get("depends", []):
             if d not in by_key:
                 errors.append(f"{k}: unknown dependency {d}")
-            elif phase[d] > phase[k]:
+            elif d in phase and k in phase and phase[d] > phase[k]:
                 errors.append(f"{k}: depends on {d} from a later phase")
 
     # cycles

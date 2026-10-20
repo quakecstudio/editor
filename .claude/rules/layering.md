@@ -8,15 +8,17 @@ including why crates in one layer may build on each other.
 
 | Layer | Holds | Crates (existing or planned) |
 | --- | --- | --- |
-| L0 formats | File formats as id defined them: progs.dat, .lno, PAK, WAD2, .map, BSP29/BSP2, MDL; the paths module; logging; the game filesystem | `qs-paths`, `qs-log`, `qc-progs`, `qc-types`, `qc-lno`, `qs-pak`, `qs-wad`, `qs-vfs` |
+| L0 formats | File formats as id defined them: progs.dat, .lno, PAK, WAD2, .map, BSP29/BSP2, MDL; the paths module; logging; diagnostics; the game filesystem and install detection | `qs-paths`, `qs-log`, `qc-diag`, `qc-progs`, `qc-types`, `qc-lno`, `qs-pak`, `qs-wad`, `qs-wav`, `qs-bsp`, `qs-map`, `qs-mdl`, `qs-vfs`, `qs-install` |
 | L1 VM | What the engine executes: the VM, edicts, builtins | `qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`, `qs-porting-example` |
 | L2 syntax | Preprocessor, lossless CST, `progs.src` project graph | `qc-lexer`, `qc-preproc`, `qc-syntax`, `qc-project` |
-| L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions | |
+| L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions | `qc-sema`, `qc-engines` |
 | L4 bridges | Our QuakeC and map compilers; the engine bridge | |
 | L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP | |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP | |
 | L7 UI | The app on the chosen framework (ADR-0003) | |
 | apps | Desktop app, CLI, LSP server binaries | `apps/*` |
+| tests | Test-only crates, outside the ranking | `qs-tests`, `qs-bench`, `qs-differential` |
+| tooling | Build automation, outside the ranking | `xtask` |
 
 The table is the summary; the design is in
 [`docs/design/design-doc.md`](../../docs/design/design-doc.md) (Architecture) and
@@ -28,7 +30,7 @@ project prefix from ADR-0006 (`docs/conventions.md`, Repository layout).
 
 - `layers.toml` maps every crate to a layer and `cargo xtask layers` fails on an upward or
   unmapped dependency. A new crate is added to `layers.toml` in the same PR.
-- Test-only crates (`qs-tests`, layer `tests`) and tooling (`xtask`, layer `tooling`) may depend
+- Test-only crates (`qs-tests`, `qs-bench` and `qs-differential`, layer `tests`) and tooling (`xtask`, layer `tooling`) may depend
   on anything; nothing may depend on them.
 
 ## What follows from it

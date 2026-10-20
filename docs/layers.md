@@ -75,7 +75,7 @@ layer names `tests` and `tooling` instead of L0 to L7 or `apps`:
 
 | Layer | Crates | Rule |
 | --- | --- | --- |
-| `tests` | `qs-tests`, the single cross-crate integration test binary | may depend on any crate |
+| `tests` | `qs-tests`, the single cross-crate integration test binary; `qs-bench`, the performance-budget benchmarks; `qs-differential`, the differential VM harness | may depend on any crate |
 | `tooling` | `xtask` | may depend on any crate |
 
 No crate may depend on a `tests` or `tooling` crate.

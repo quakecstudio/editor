@@ -122,6 +122,20 @@ fn ericw_tokens() {
     );
 }
 
+// spec MAP-2.5, MAP-2.6: the duplicated-key message says what each reader keeps: qbsp looks a
+// key up by its last occurrence, the game sees the first of a map qbsp compiled, and
+// ericw-tools keeps the last value.
+#[test]
+fn duplicate_key_message() {
+    assert_eq!(
+        DiagnosticKind::DuplicateKey {
+            key: b"wad".to_vec()
+        }
+        .to_string(),
+        "a duplicated key: qbsp reads the last, the game the first, ericw-tools the last"
+    );
+}
+
 // spec MAP-2.5, MAP-2.9: duplicated keys and keys with whitespace at an end.
 #[test]
 fn keys() {

@@ -29,6 +29,7 @@ use serde_json::Value;
 
 use crate::exec::{Exec, System};
 use crate::oracles::{COVERAGE_ENV, vm_oracle};
+use crate::test_code::{TestCode, test_code};
 
 /// The date-pinned nightly that measures branch coverage, the only check that
 /// needs nightly. The `Readiness` workflow installs the same toolchain, and a
@@ -797,8 +798,8 @@ fn repeat(runs: u64, mut run: impl FnMut() -> Result<bool, String>) -> Result<Sc
 /// Statement citations for the crate in `dir`: the sections its README lists
 /// after `**Spec sections:**`, their active statements in the nearest
 /// `docs/spec/requirements.tsv` above it, the single statements it lists after
-/// `**Spec statements:**`, and the `// spec` citations in the Rust files under
-/// that tree's [`CITING_TREES`] (`docs/spec/README.md`).
+/// `**Spec statements:**`, and the `// spec` citations in the test code of the
+/// Rust files under that tree's [`CITING_TREES`] (`docs/spec/README.md`).
 ///
 /// A crate that implements only some statements of a section claims them one
 /// by one on the `**Spec statements:**` line, so the section's other
@@ -831,14 +832,7 @@ fn spec(dir: &Path) -> Result<Score, String> {
     let baseline_text = fs::read_to_string(&baseline_path)
         .map_err(|error| format!("{}: {error}", baseline_path.display()))?;
     let baseline = baseline_statements(&baseline_text)?;
-    let mut cited = BTreeSet::new();
-    for tree in CITING_TREES {
-        for file in rust_files(&spec_root.join(tree))? {
-            let text = fs::read_to_string(&file)
-                .map_err(|error| format!("{}: {error}", file.display()))?;
-            cited.extend(citations(&text));
-        }
-    }
+    let cited = cited_in_tests(spec_root)?;
     let claims = Claims {
         sections,
         statements: spec_statements(&readme),
@@ -1033,13 +1027,36 @@ fn active_statements(index: &str) -> Result<Vec<(String, String)>, String> {
     Ok(statements)
 }
 
-/// Statement IDs cited by lines whose first text is `// spec <ID>, <ID>: ...`.
-pub(crate) fn citations(text: &str) -> Vec<String> {
+/// The statement IDs cited in test code ([`test_code`]) by the Rust files of
+/// `root`'s [`CITING_TREES`], as the spec-citation ratchet reads them.
+fn cited_in_tests(root: &Path) -> Result<BTreeSet<String>, String> {
+    let mut files = Vec::new();
+    for tree in CITING_TREES {
+        for file in rust_files(&root.join(tree))? {
+            let text = fs::read_to_string(&file)
+                .map_err(|error| format!("{}: {error}", file.display()))?;
+            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
+            files.push((relative, text));
+        }
+    }
+    let mut cited = BTreeSet::new();
+    for ((_, text), code) in files.iter().zip(test_code(&files)) {
+        cited.extend(citations(text, &code));
+    }
+    Ok(cited)
+}
+
+/// Statement IDs cited by lines of `code` whose first text is
+/// `// spec <ID>, <ID>: ...`; a `// spec` line outside test code cites nothing.
+pub(crate) fn citations(text: &str, code: &TestCode) -> Vec<String> {
     let mut ids = Vec::new();
-    for line in text.lines() {
+    for (line, number) in text.lines().zip(1_u32..) {
         let Some(rest) = line.trim_start().strip_prefix("// spec ") else {
             continue;
         };
+        if !code.contains(number) {
+            continue;
+        }
         let list = rest.split_once(':').map_or(rest, |(list, _)| list);
         ids.extend(list.split(',').map(|id| id.trim().to_owned()));
     }

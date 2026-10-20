@@ -1352,6 +1352,45 @@ mod bodies {
         assert_eq!(f.machine.edicts().is_free(1), Some(true));
     }
 
+    // spec BUILTIN-3.2: error and objerror are host errors: they reach the VM as one and leave
+    // the call depth where they raised it, here the entry function's 1.
+    #[test]
+    fn error_and_objerror_are_host_errors_that_keep_the_depth() {
+        for number in [10_u32, 11] {
+            let (strings, offsets) = string_table(&["deep"]);
+            let mut f = Fixture::new(number, 1, strings, 0);
+            f.set_parm_i(0, offsets[0]);
+            let error = f.run(ServerState::Active).expect_err("host error");
+            assert_eq!(
+                error.kind,
+                qc_vm::ErrorKind::Host {
+                    message: "deep".to_owned()
+                }
+            );
+            assert_eq!(f.machine.depth(), 1, "builtin {number}");
+        }
+    }
+
+    // spec BUILTIN-3.3: break is a fatal error, which reaches the VM as one and leaves the depth.
+    // spec BUILTIN-3.1: a builtin's runtime error resets the depth to 0, as PR_RunError does.
+    #[test]
+    fn fatal_and_runtime_builtin_errors_keep_their_class() {
+        let mut fatal = Fixture::new(6, 0, vec![0], 0);
+        let error = fatal.run(ServerState::Active).expect_err("fatal error");
+        assert!(error.kind.is_fatal());
+        assert_eq!(fatal.machine.depth(), 1);
+
+        let mut runtime = Fixture::new(5, 0, vec![0], 0);
+        let error = runtime.run(ServerState::Active).expect_err("runtime error");
+        assert_eq!(
+            error.kind,
+            qc_vm::ErrorKind::Builtin {
+                message: "unimplemented bulitin".to_owned()
+            }
+        );
+        assert_eq!(runtime.machine.depth(), 0);
+    }
+
     // ----- BUILTIN-2: argument checks (the DIFF-6.6 messages) -----
 
     // spec BUILTIN-2.7: an entity value that names no edict is invalid entity.
@@ -1527,19 +1566,22 @@ mod bodies {
         assert_eq!(f.field_v(1, "origin"), [10.0, 20.0, 30.0]);
     }
 
-    // spec DIFF-6.6: the four argument-check messages are the mock's runtime errors; a message
-    // destination enum round-trips its variants (used by the Write builtins).
+    // spec BUILTIN-13.1, DIFF-6.5: each message destination counts into its own buffer:
+    // MSG_BROADCAST the unreliable datagram, MSG_ALL the reliable one, MSG_INIT the signon
+    // buffer, and MSG_ONE into none of them.
+    // spec BUILTIN-4.4: a typed engine-only error reports its builtin's number and name.
     #[test]
     fn message_dest_variants() {
-        for dest in [
-            MessageDest::Broadcast,
-            MessageDest::One,
-            MessageDest::All,
-            MessageDest::Init,
-        ] {
-            assert_eq!(dest, dest);
-        }
-        // A typed engine-only error still reports its message (BUILTIN-4.4).
+        let sizes = |dest: MessageDest| {
+            let mut engine = MockEngine::new("start", 0, 1);
+            assert!(!engine.append_message(dest, 3));
+            let b = &engine.buffers;
+            (b.unreliable, b.reliable, b.signon)
+        };
+        assert_eq!(sizes(MessageDest::Broadcast), (3, 0, 0));
+        assert_eq!(sizes(MessageDest::All), (0, 3, 0));
+        assert_eq!(sizes(MessageDest::Init), (0, 0, 3));
+        assert_eq!(sizes(MessageDest::One), (0, 0, 0));
         let error = BuiltinError::EngineOnly {
             number: 16,
             name: "traceline",

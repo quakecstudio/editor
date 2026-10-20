@@ -7,7 +7,7 @@
 // Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/world.c, SV_HullForEntity
 
 //! Reads compiled maps: BSP29 as id's engine loads it, the two BSP2 variants, and `.lit`
-//! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-19).
+//! coloured light (`docs/spec/bsp.md`, BSP-1 to BSP-20).
 //!
 //! [`Bsp::read`] is id's `Mod_LoadBrushModel` and the loaders it calls, in the same order,
 //! with the bounds and index checks id's engine leaves out. Its caller's [`BspLoader`] picks
@@ -104,6 +104,9 @@ pub const BSP_ANIM_CYCLE: i32 = 2;
 pub const BSP_VERTEX_SIZE: usize = 12;
 /// The leaves the engine's visibility row holds, `MAX_MAP_LEAFS` (BSP-6).
 pub const BSP_MAX_MAP_LEAFS: usize = 8192;
+/// The widest visibility row in bytes, `i32::MAX >> 3`, from the largest `visleafs` (BSP-6.7):
+/// the most one [`Bsp::leaf_pvs`] allocates.
+pub const BSP_MAX_VIS_ROW: usize = 268_435_455;
 /// Bytes in a BSP29 node, `sizeof(dnode_t)` (BSP-7.1).
 pub const BSP_NODE_SIZE: usize = 24;
 /// Bytes in a texinfo, `sizeof(texinfo_t)` (BSP-8.1).
@@ -1694,7 +1697,7 @@ impl<'a> Bsp<'a> {
     }
 
     /// The bytes of a visibility row: `(visleafs + 7) >> 3` for model 0's `visleafs`
-    /// (BSP-6.2).
+    /// (BSP-6.2), at most [`BSP_MAX_VIS_ROW`], and 0 for a negative `visleafs` (BSP-6.7).
     #[must_use]
     pub fn vis_row_size(&self) -> usize {
         let visleafs = self.models.first().map_or(0, |model| model.visleafs);
@@ -1703,6 +1706,10 @@ impl<'a> Bsp<'a> {
 
     /// The leaves `leaf` sees, id's `Mod_LeafPVS` and `Mod_DecompressVis`: bit `k` is leaf
     /// `k + 1` (BSP-6.2 to BSP-6.5).
+    ///
+    /// The row is [`Bsp::vis_row_size`] bytes, sized by model 0's `visleafs` alone, as id's and
+    /// QuakeSpasm's are, so a small file can make it as wide as [`BSP_MAX_VIS_ROW`]; that is
+    /// the bound on what one call allocates (BSP-6.7).
     ///
     /// # Errors
     ///

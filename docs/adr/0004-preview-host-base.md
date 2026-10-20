@@ -184,6 +184,7 @@ The plan changes are in this ADR's pull request:
 
 ## Links
 
+- Partly overridden by [ADR-0005](0005-default-preview-target.md): the engine oracle is id's engine, built from the pinned id-Software/Quake source in `oracles/`, not the pinned QuakeSpasm named in Decision and in P3-23 under Consequences.
 - Issue: [#12](https://github.com/quakecstudio/editor/issues/12); pull request: this ADR's draft PR.
 - Justin's question on [#13](https://github.com/quakecstudio/editor/issues/13#issuecomment-6205060482).
 - Related: [ADR-0002](0002-license-model.md) (GPL-3.0-or-later), [#14](https://github.com/quakecstudio/editor/issues/14) default preview target, [#21](https://github.com/quakecstudio/editor/issues/21) MVP scope, [#190](https://github.com/quakecstudio/editor/issues/190) embedded game view.

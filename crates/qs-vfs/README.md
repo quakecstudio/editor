@@ -35,9 +35,11 @@ it (BSP-18); a `.lit` QuakeSpasm ignores is a `warning:` line, since the map sti
 cargo run --release -p qs-vfs --example walk -- -basedir <install> [-game <dir>]
 ```
 
-On LibreQuake's `lite` release (the `librequake-lite` test asset), 2026-10-16:
+On LibreQuake's `lite` release (the `librequake-lite` test asset), 2026-10-16, and again on
+2026-10-20 with the same output:
 
 ```
+game directory: <asset>/id1
 registered: true, modified: true
 archive <asset>/id1/pak1.pak: 60 entries, directory CRC 47719, modified true
 archive <asset>/id1/pak0.pak: 353 entries, directory CRC 34223, modified true

@@ -82,8 +82,9 @@ const NUM_SPAWN_PARMS: usize = 16;
 pub enum Ended {
     /// The scenario ran to the end of its frames with no error (DIFF-3.7).
     Normally,
-    /// A runtime or host error ended it, after which the server was shut down (DIFF-8.3). The
-    /// error record is already in the trace (TRACE-4.6).
+    /// An error ended it (DIFF-8): after a runtime or host error with the server active the
+    /// server was shut down (DIFF-8.3); after a fatal error, or one while the map loaded,
+    /// nothing more ran (DIFF-8.6). The error record is already in the trace (TRACE-4.6).
     Error,
 }
 
@@ -193,9 +194,17 @@ impl Host<'_> {
     /// Runs the scenario: the map, the clients, the frames and the shutdown (DIFF-3 to DIFF-8).
     fn run(&mut self, progs: &Progs<'_>, entities: &[u8]) -> Ended {
         // DIFF-8.1, DIFF-8.3: an error while the map loads ends the scenario with no shutdown,
-        // since the server is not yet active.
-        if self.start_map(progs, entities).is_err() {
-            return Ended::Error;
+        // since the server is not yet active. A run's error already has its record (TRACE-4.6);
+        // an error the host raises while spawning, outside any run, gets one with function 0
+        // and statement -1 (DIFF-8.1).
+        match self.start_map(progs, entities) {
+            Ok(()) => {}
+            Err(LoadError::Spawn(error)) => {
+                self.trace
+                    .host_error(&self.machine, 0, -1, &error.to_string());
+                return Ended::Error;
+            }
+            Err(LoadError::Run(_)) => return Ended::Error,
         }
         // DIFF-4: the clients enter.
         for slot in 0..self.scenario.clients {
@@ -311,10 +320,20 @@ impl Host<'_> {
     }
 
     /// DIFF-8.3: after a runtime or host error, shut the server down, running each entered
-    /// client's `ClientDisconnect`, then end the scenario.
-    fn shut_down(&mut self, progs: &Progs<'_>, _error: &RunError) -> Ended {
-        // The error record is already written by the failed run's observer (TRACE-4.6). The
-        // server is active (from the settle frames on), so Host_ShutdownServer runs.
+    /// client's `ClientDisconnect`, then end the scenario; after a fatal error, end it with no
+    /// shutdown (DIFF-8.6).
+    ///
+    /// Each `ClientDisconnect` run starts at the depth the error left (DIFF-8.4): 0 after a
+    /// runtime error, the depth at the error after a host error (`qc_vm` keeps it,
+    /// [`qc_vm::ErrorKind::resets_depth`]).
+    fn shut_down(&mut self, progs: &Progs<'_>, error: &RunError) -> Ended {
+        // The error record is already written by the failed run's observer (TRACE-4.6), or by
+        // the host for an error outside a run (DIFF-8.1).
+        if error.kind.is_fatal() {
+            // DIFF-8.6: Sys_Error calls Host_Shutdown, which runs no QuakeC, and exits.
+            return Ended::Error;
+        }
+        // The server is active (from the settle frames on), so Host_ShutdownServer runs.
         for slot in 0..self.entered.len() {
             if self.entered.get(slot).copied() != Some(true) {
                 continue;

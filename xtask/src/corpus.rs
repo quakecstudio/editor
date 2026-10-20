@@ -28,7 +28,7 @@ pub(crate) mod manifest;
 mod verify;
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use crate::download::{CURL, Net};
@@ -176,13 +176,36 @@ fn dest_and_ids(root: &Path, args: &[String]) -> Result<(PathBuf, Vec<String>), 
     let dest = env::current_dir()
         .map(|cwd| cwd.join(&dest))
         .unwrap_or(dest);
-    if dest.starts_with(root) {
+    if resolve(&dest).starts_with(resolve(root)) {
         return Err(format!(
             "the cache {} is inside the source tree; corpus files are never kept there (LIC-7)",
             dest.display()
         ));
     }
     Ok((dest, ids))
+}
+
+/// `path` with its symlinks and `..` resolved, one part at a time: each prefix that exists is
+/// canonicalized, so a symlink anywhere along it is followed, and a part that does not exist
+/// yet, which cannot be a symlink, is kept as written, a `..` after it removing it. A cache
+/// that does not exist yet resolves through its nearest existing ancestor.
+fn resolve(path: &Path) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::CurDir => {}
+            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
+                resolved.push(part);
+                if let Ok(canonical) = resolved.canonicalize() {
+                    resolved = canonical;
+                }
+            }
+        }
+    }
+    resolved
 }
 
 /// `$QS_TEST_ASSETS`, else `quakecstudio/test-assets` under `$XDG_CACHE_HOME`, else under the
@@ -377,6 +400,53 @@ mod tests {
         assert_eq!(ids, ["id-1.01"]);
         assert!(dest_and_ids(&root, &["--dest".to_owned()]).is_err());
         assert!(dest_and_ids(&root, &["--online".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn a_cache_reaching_the_source_tree_through_dot_dot_is_refused() {
+        let root = root();
+        let name = root.file_name().unwrap().to_string_lossy().into_owned();
+        let through = root
+            .parent()
+            .unwrap()
+            .join("not-yet")
+            .join("..")
+            .join(&name)
+            .join("cache");
+        let err =
+            dest_and_ids(&root, &["--dest".to_owned(), through.display().to_string()]).unwrap_err();
+        assert!(err.contains("inside the source tree"), "{err}");
+        let back_out = root.join("not-yet").join("..").join("target");
+        assert!(
+            dest_and_ids(
+                &root,
+                &["--dest".to_owned(), back_out.display().to_string()]
+            )
+            .is_err()
+        );
+        let beside = root
+            .join("not-yet")
+            .join("..")
+            .join("..")
+            .join("elsewhere-cache");
+        assert!(dest_and_ids(&root, &["--dest".to_owned(), beside.display().to_string()]).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_cache_reaching_the_source_tree_through_a_symlink_is_refused() {
+        let dir = std::path::PathBuf::from(cache("symlink"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("tree");
+        if link.exists() {
+            std::fs::remove_file(&link).unwrap();
+        }
+        std::os::unix::fs::symlink(root(), &link).unwrap();
+        let dest = link.join("not-yet").join("cache").display().to_string();
+        let err = dest_and_ids(&root(), &["--dest".to_owned(), dest]).unwrap_err();
+        assert!(err.contains("inside the source tree"), "{err}");
+        let beside = dir.join("cache").display().to_string();
+        assert!(dest_and_ids(&root(), &["--dest".to_owned(), beside]).is_ok());
     }
 
     #[test]

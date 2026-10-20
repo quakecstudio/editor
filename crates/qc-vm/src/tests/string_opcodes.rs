@@ -178,7 +178,7 @@ fn not_s_empty_engine_string_is_true() {
 }
 
 // spec VM-7.3: a string value that is neither a table offset nor an engine-allocated string
-// fails with the VM-19.4 runtime error rather than reading out-of-bounds memory.
+// fails with the VM-19.7 runtime error rather than reading out-of-bounds memory.
 #[test]
 fn eq_s_unknown_value_is_runtime_error() {
     // The dispatch holds only -1; slot 101 names -5, which is no engine string.
@@ -199,7 +199,7 @@ fn eq_s_unknown_value_is_runtime_error() {
 }
 
 // spec VM-8.3: NOT_S on a value that is neither a table offset nor an engine string fails with
-// the VM-19.4 runtime error.
+// the VM-19.7 runtime error.
 #[test]
 fn not_s_unknown_value_is_runtime_error() {
     let mut builtins = EngineStringBuiltins::default();

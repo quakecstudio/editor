@@ -263,7 +263,20 @@ fn spec_sections_come_from_the_readme_line() {
 fn citations_are_comment_lines_naming_statements() {
     let text =
         "    // spec VM-1.1, VM-1.2: what it does\n// spec VM-2.1\nlet x = 1; // spec VM-3.1\n";
-    assert_eq!(citations(text), ["VM-1.1", "VM-1.2", "VM-2.1"]);
+    assert_eq!(
+        citations(text, &TestCode::File),
+        ["VM-1.1", "VM-1.2", "VM-2.1"]
+    );
+}
+
+/// TEST-3 asks for a test citing each statement, so a `// spec` line outside
+/// test code cites nothing.
+#[test]
+fn a_citation_outside_test_code_does_not_count() {
+    let text = "// spec VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
+    let code = test_code(&[(PathBuf::from("crates/a/src/lib.rs"), text.to_owned())]);
+    let code = code.first().unwrap();
+    assert_eq!(citations(text, code), ["VM-1.2"]);
 }
 
 #[test]
@@ -677,10 +690,7 @@ fn the_oracles_spec_sections_come_from_their_readme() {
 #[test]
 fn citations_are_read_from_xtask_too() {
     assert_eq!(CITING_TREES, ["crates", "apps", "xtask"]);
-    let mut cited = BTreeSet::new();
-    for file in rust_files(&root().join("xtask").join("src")).unwrap() {
-        cited.extend(citations(&fs::read_to_string(file).unwrap()));
-    }
+    let cited = cited_in_tests(&root()).unwrap();
     assert!(cited.contains("PROGS-22.1"), "{cited:?}");
 }
 

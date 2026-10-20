@@ -314,12 +314,19 @@ pub(crate) fn check_change(
 pub(crate) type Version = (String, Option<String>);
 
 /// Every committed version of `ratchets.toml`, oldest first, then the working
-/// tree's if it differs from the last commit.
+/// tree's if it differs from the last commit. A commit that deleted the file is
+/// a version without it; a version git cannot read is an error, since skipping
+/// it would skip the history check of that commit.
 pub(crate) fn versions(root: &Path) -> Result<Vec<Version>, String> {
     let shas = git(root, &["log", "--format=%H", "--reverse", "--", FILE])?;
     let mut versions = Vec::new();
     for sha in shas.lines().filter(|line| !line.is_empty()) {
-        let text = git(root, &["show", &format!("{sha}:{FILE}")]).ok();
+        let listed = git(root, &["ls-tree", "--name-only", sha, "--", FILE])?;
+        let text = if listed.trim().is_empty() {
+            None
+        } else {
+            Some(git(root, &["show", &format!("{sha}:{FILE}")])?)
+        };
         versions.push((sha.to_owned(), text));
     }
     let working = fs::read_to_string(root.join(FILE)).ok();

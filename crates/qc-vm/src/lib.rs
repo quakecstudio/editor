@@ -17,7 +17,7 @@
 //! The VM runs untrusted `progs.dat`, so every operand, global slot, field slot, jump target
 //! and call index is bounds- and type-checked exactly as the spec fixes id's undefined C
 //! (VM-1.4, VM-2.2, VM-2.4, VM-3.3, VM-7.3, VM-11.4, VM-12.5, VM-14.3, VM-15.6): id reads or
-//! writes out of bounds, this VM returns a runtime error before changing any state.
+//! writes out of bounds, this VM returns an error before changing any state (VM-19.7).
 //!
 //! A [`Trace`](trace::Trace) hook records what each statement did in the shared trace format
 //! ([`qc_trace`], `trace.md`), so the differential runner can compare this VM against the id

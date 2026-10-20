@@ -15,7 +15,7 @@ call in `sv_move.c`, `sv_main.c`, `world.c`, `mathlib.c`, `common.c`, `cvar.c`, 
 at commit `c0d1b91c74eb654365ac7755bc837e497caaca73`, cross-checked against the 2021 rerelease's
 `quakec/defs.qc` (BUILTIN-17).
 
-Implemented by `qc-builtins` (P1-16); `differential.md` (P1-27) defines
+Implemented by `qc-builtins` (P1-16); [`differential.md`](differential.md) defines
 the deterministic mock behaviour both VMs share. This spec does not repeat what other specs
 state:
 
@@ -30,8 +30,8 @@ state:
 The collision, movement and visibility code these builtins call (`SV_Move`, `SV_movestep`,
 `SV_CheckBottom`, `SV_LinkEdict`, the PVS) belongs to the server simulation (`qs-sim`, P3-24)
 and its engine spec (P3); this spec states what each builtin asks of it and what it writes
-back. Every statement in this file is in [`coverage-baseline.tsv`](coverage-baseline.tsv)
-until `qc-builtins` cites it.
+back. A statement no test cites yet is listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)).
 
 Notation: `PARM0` to `PARM7` are the parameter slots `OFS_PARM0` to `OFS_PARM7`; `RETURN` is
 `OFS_RETURN`. "The float in PARM1" reads slot 7 as an f32 (PROGS-17.1). `self` is the edict the
@@ -90,7 +90,7 @@ engine never looks at the function's name or parameter list.
 - **BUILTIN-2.5** A string argument is the text at the string value (PROGS-17.2, EDICT-13.1),
   read up to its NUL. A value that is neither inside the string table nor an engine-made
   string reads other memory, which is undefined in C; this spec fixes the answer: the builtin
-  fails with a runtime error (VM-19.4).
+  fails with a runtime error (VM-19.7).
 - **BUILTIN-2.6** A builtin that keeps a string argument (`setmodel`, the precache builtins,
   `lightstyle`) keeps the reference, not a copy of the text, so it sees later changes to that
   text, such as a new `ftos` result (BUILTIN-7.4).
@@ -99,7 +99,7 @@ engine never looks at the function's name or parameter list.
   `enemy`), is not checked by id's code: `PROG_TO_EDICT` adds it to the start of the edict
   array. A value that names no edict (EDICT-1.9) makes the builtin read or write memory that is
   not an edict, which is undefined in C. This spec fixes the answer: the builtin fails with a
-  runtime error (VM-19.4) where it reads the value (BUILTIN-2.9). A value that names an edict
+  runtime error (VM-19.7) where it reads the value (BUILTIN-2.9). A value that names an edict
   passes, even one at or above `num_edicts` or a free one.
 - **BUILTIN-2.8** A string value is valid when it is from 0 to `numstrings - 1`, an offset into
   the string table (including one into the middle of a string, PROGS-11.3), or exactly the
@@ -133,8 +133,8 @@ engine never looks at the function's name or parameter list.
 
 ### Behaviour
 
-- **BUILTIN-3.1** A **runtime error** is `PR_RunError` with the message given: VM-19.1 to
-  VM-19.3 say what it does.
+- **BUILTIN-3.1** A **runtime error** is `PR_RunError` with the message given: VM-19.1,
+  VM-19.2 and VM-19.6 say what they do.
 - **BUILTIN-3.2** A **host error** is a call to `Host_Error ("Program error")` without
   `PR_RunError`: the aborted runs never continue (VM-19.2) and the server shuts down, but no
   statement or call stack is printed and the call depth is not reset to 0, unlike VM-19.1.
@@ -168,7 +168,7 @@ the differential runner (P1-27). Each builtin's class is in the table of BUILTIN
   that depend on buffer sizes when it keeps the sizes of BUILTIN-13.
 - **BUILTIN-4.4** Class **world**: the builtin needs the map's collision hulls, the area tree
   of linked edicts or the PVS. It cannot be mocked faithfully without the server simulation
-  (`qs-sim`, P3-24); `qc-builtins` marks it engine-only, and `differential.md` (P1-27) says
+  (`qs-sim`, P3-24); `qc-builtins` marks it engine-only, and [`differential.md`](differential.md) says
   what the deterministic mock returns instead.
 
 ## BUILTIN-5 Numbers, names and prototypes
@@ -535,7 +535,7 @@ statements give each expression as id writes it, because that decides the last b
 - **BUILTIN-12.6** `lightstyle(style, value)` converts `style` to an integer and stores `value`
   (the reference, BUILTIN-2.6) as that lightstyle. id does not check the style number against
   `LIMIT_MAX_LIGHTSTYLES` (64), so a number outside 0 to 63 writes outside the array, which is
-  undefined in C; this spec fixes the answer: it fails with a runtime error (VM-19.4) before
+  undefined in C; this spec fixes the answer: it fails with a runtime error (VM-19.7) before
   storing anything.
 - **BUILTIN-12.7** When the server is active, `lightstyle` also appends `svc_lightstyle` (12),
   the style as a char and `value` with its NUL to the reliable message of every client slot

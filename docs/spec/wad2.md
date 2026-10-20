@@ -7,8 +7,9 @@ Describes the WAD2 lump archive and how the engine reads it, as implemented by
 `WinQuake/wad.c` and `WinQuake/wad.h` in
 [id-Software/Quake](https://github.com/id-Software/Quake) at commit
 `bf4ac424ce754894ac8f1dae6a3981954bc9852d`. The engine reads one WAD2 file, `gfx.wad`,
-for its 2D graphics; map editors and compilers use WAD2 files of textures (MAP-5,
-MAP-23). Implemented by `crates/qs-wad`
+for its 2D graphics; map editors and compilers use WAD2 files of textures (plan requirements
+MAP-5 and MAP-23 in [`plan/requirements.yaml`](../../plan/requirements.yaml), not sections of
+[`map.md`](map.md)). Implemented by `crates/qs-wad`
 ([#42](https://github.com/quakecstudio/editor/issues/42)).
 
 All integers in a WAD2 file are 32-bit two's-complement signed little-endian values read

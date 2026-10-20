@@ -32,6 +32,6 @@ index below lists every ADR, in order, with the title and status its file states
 | [0017](0017-port-fteqcc.md) | Port FTEQCC's compiler behaviour from FTEQW's source | Accepted |
 <!-- /adr:index -->
 
-ADR-0003 to ADR-0010 are reserved by the Phase 0 issues that name them in their deliverables
-(`python3 plan/status.py --phase P0` shows which are still open). Pick a new number above every
-file here and every number the plan reserves.
+A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;
+every number the plan reserves so far has its file here. Pick a new number above every file
+here and every number the plan reserves.
