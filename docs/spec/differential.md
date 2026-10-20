@@ -211,6 +211,13 @@ the map's BSP replaced by the scenario.
 - **DIFF-3.8** Each engine string (EDICT-13.1) gets a value outside the string table, by
   EDICT-13.3, and a string record when its text is set (TRACE-4.10). Its number is each
   runner's own; DIFF-9.4 compares the text.
+- **DIFF-3.9** DIFF-3.8 holds for the strings a builtin sets as for the host's: `ftos` and
+  `vtos` write their one buffer (BUILTIN-7.4) and return its value, so each call whose text
+  differs from that value's latest string record writes a string record before the `CALL`'s
+  step record, whose change set first shows the value in `OFS_RETURN`. A call that sets the
+  same text again writes none, as the oracle's `qs_emit_string_records` skips an unchanged
+  text (`oracles/vm/host.c`). Without the record the value has no text in its trace
+  (TRACE-7.3), and DIFF-9.4 compares the two runners' different numbers as bits.
 
 ## DIFF-4 Clients
 

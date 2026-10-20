@@ -208,12 +208,19 @@ pub const LIMIT_MAX_MSGLEN: usize = 8000;
 /// negative values -1, -2, ... in the order the strings are made, and the differential
 /// comparison compares their text, not their numbers (EDICT-13.3, DIFF-9.4). `ftos` and `vtos`
 /// share one buffer value, so each call overwrites the previous text (BUILTIN-7.4).
+///
+/// It also notes when the buffer's text changes, so the differential host can write a string
+/// record for it (TRACE-4.10, DIFF-3.9), as the oracle's `qs_engine_string_touched` marks the
+/// buffer for its next change-carrying record ([`EngineStrings::take_temp_change`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EngineStrings {
     /// The `ftos`/`vtos` buffer value, once allocated (BUILTIN-7.4).
     temp_value: Option<i32>,
     /// Every engine string's text, by value; the temp buffer's is updated in place.
     entries: Vec<(i32, Vec<u8>)>,
+    /// Whether the buffer was allocated or given a different text since the last
+    /// `take_temp_change` (DIFF-3.9).
+    temp_changed: bool,
 }
 
 impl EngineStrings {
@@ -228,11 +235,15 @@ impl EngineStrings {
                 let value = self.next_value();
                 self.temp_value = Some(value);
                 self.entries.push((value, Vec::new()));
+                self.temp_changed = true;
                 value
             }
         };
-        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value) {
+        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value)
+            && entry.1 != text
+        {
             entry.1 = text;
+            self.temp_changed = true;
         }
         value
     }
@@ -244,6 +255,16 @@ impl EngineStrings {
         let value = self.next_value();
         self.entries.push((value, text));
         value
+    }
+
+    /// The temp buffer's value and text when it was allocated or given a different text since
+    /// the last call, else `None`; the note is then cleared (DIFF-3.9).
+    pub fn take_temp_change(&mut self) -> Option<(i32, Vec<u8>)> {
+        if !core::mem::take(&mut self.temp_changed) {
+            return None;
+        }
+        let value = self.temp_value?;
+        Some((value, self.text(value)?.to_vec()))
     }
 
     /// The text of the engine string `value`, or `None` when no engine string has it.

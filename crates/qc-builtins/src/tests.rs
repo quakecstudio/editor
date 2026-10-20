@@ -453,6 +453,24 @@ mod mock_engine {
         assert_eq!(strings.text(first), Some(b"2".as_slice()));
     }
 
+    // spec DIFF-3.9: the temp buffer's change is reported once with its current text when it is
+    // allocated or given a different text; the same text again, or a made string, is none.
+    #[test]
+    fn engine_strings_take_temp_change() {
+        let mut strings = EngineStrings::default();
+        assert_eq!(strings.take_temp_change(), None);
+        strings.make(b"map".to_vec());
+        assert_eq!(strings.take_temp_change(), None);
+        let temp = strings.set_temp(b"1".to_vec());
+        strings.set_temp(b"2".to_vec());
+        assert_eq!(strings.take_temp_change(), Some((temp, b"2".to_vec())));
+        assert_eq!(strings.take_temp_change(), None);
+        strings.set_temp(b"2".to_vec());
+        assert_eq!(strings.take_temp_change(), None);
+        strings.set_temp(b"1".to_vec());
+        assert_eq!(strings.take_temp_change(), Some((temp, b"1".to_vec())));
+    }
+
     // spec DIFF-4.2: client_active is true only for a slot 1..=len with a player; slot 0 and a
     // slot past the end are never active.
     #[test]

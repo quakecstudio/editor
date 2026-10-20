@@ -39,6 +39,7 @@ mod trace;
 
 use spawner::Spawner;
 pub use trace::TraceBuilder;
+use trace::{StringBuiltins, StringObserver, StringQueue};
 
 /// `EDICT_MAP_START_TIME` (EDICT-8.1, DIFF-3.2): the clock when a map starts.
 pub const MAP_START_TIME: f64 = 1.0;
@@ -371,15 +372,25 @@ impl Host<'_> {
         } else {
             ServerState::Loading
         };
+        // DIFF-3.9: an engine string a builtin sets is recorded before the CALL's step record.
+        let queue = StringQueue::default();
+        let mut builtins = StringBuiltins {
+            builtins: &mut self.builtins,
+            queue: &queue,
+        };
+        let mut observer = StringObserver {
+            trace: &mut self.trace,
+            queue: &queue,
+        };
         self.machine
-            .execute_program(progs, server, &mut self.builtins, &mut self.trace, function)
+            .execute_program(progs, server, &mut builtins, &mut observer, function)
     }
 
     /// Makes an engine string holding `text`, records it in the trace (TRACE-4.10) and returns
     /// its value (EDICT-13.1).
     pub(crate) fn make_string(&mut self, text: Vec<u8>) -> i32 {
         let value = self.builtins.engine_mut().strings.make(text.clone());
-        self.trace.string_made(value, text);
+        self.trace.string_set(value, text);
         value
     }
 

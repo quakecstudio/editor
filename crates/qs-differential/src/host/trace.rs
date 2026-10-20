@@ -8,22 +8,26 @@
 //! TRACE-4.8), and it records the globals and entity fields that changed since the previous
 //! change-carrying record (TRACE-3). It differs from `qc-vm`'s own
 //! [`Trace`](qc_vm::trace::Trace) only in also emitting string records (TRACE-4.10) for the
-//! engine strings the host makes (`mapname`, the world's `model`, each client's `netname`),
-//! and error records for a host error the frame loop raises outside a run (DIFF-8.1). The
+//! engine strings the host makes (`mapname`, the world's `model`, each client's `netname`)
+//! and for the `ftos`/`vtos` buffer when a builtin changes its text (DIFF-3.9), and error records for a host error the frame loop raises outside a run (DIFF-8.1). The
 //! change-set algorithm is the same: snapshot the globals and every in-use edict's fields, and
 //! list what differs.
 
+use std::cell::Cell;
+
+use qc_builtins::{MockBuiltins, MockEngine};
 use qc_edict::EDICT_HEADER_SIZE;
 use qc_progs::Progs;
 use qc_trace::{Changes, FieldChange, GlobalChange, Header, Record, Step, Text, Trace, TraceError};
 use qc_types::Slot;
-use qc_vm::{Machine, Observer, RunError};
+use qc_vm::{Builtins, Context, Machine, Observer, RunError};
 
 /// Builds a [`qc_trace::Trace`] from a whole scenario (TRACE-1.1).
 ///
 /// Created after the progs is loaded and before the first run (TRACE-1.3), then passed to
-/// every [`Machine::execute_program`](qc_vm::Machine::execute_program) call as the observer.
-/// The host also calls [`TraceBuilder::string_made`] when it makes an engine string and
+/// every [`Machine::execute_program`](qc_vm::Machine::execute_program) call as the observer,
+/// inside a [`StringObserver`]. The host calls [`TraceBuilder::string_set`] for each engine
+/// string whose text is set, by the host or by a builtin (DIFF-3.9), and
 /// [`TraceBuilder::host_error`] for a host error outside a run. [`TraceBuilder::finish`]
 /// returns the header and records.
 #[derive(Clone, Debug)]
@@ -37,6 +41,86 @@ pub struct TraceBuilder {
     last_fields: Vec<Vec<Slot>>,
     /// String records waiting to be flushed before the next change-carrying record (TRACE-4.10).
     pending_strings: Vec<Record>,
+}
+
+/// The `ftos`/`vtos` buffer's new value and text after a builtin call, waiting for the observer
+/// to record it before the `CALL`'s step record (TRACE-4.10, DIFF-3.9).
+///
+/// [`StringBuiltins`] sets it after each builtin call and [`StringObserver`] takes it before
+/// each record; the VM holds the two as separate borrows, so they share it. No mock builtin
+/// starts a nested run, so a builtin call is always followed by its own step record.
+pub(crate) type StringQueue = Cell<Option<(i32, Vec<u8>)>>;
+
+/// The mock builtins, queueing the temp buffer's text when a builtin changes it (DIFF-3.9).
+pub(crate) struct StringBuiltins<'a> {
+    /// The mock engine's builtins (DIFF-6, DIFF-7).
+    pub(crate) builtins: &'a mut MockBuiltins<MockEngine>,
+    /// Where the change goes.
+    pub(crate) queue: &'a StringQueue,
+}
+
+impl Builtins for StringBuiltins<'_> {
+    fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
+        let result = self.builtins.call(number, context);
+        // DIFF-3.9: `ftos` and `vtos` set the temp buffer's text (BUILTIN-7.4); the string
+        // record goes before the CALL's step record, whose change set first shows the value.
+        if let Some(change) = self.builtins.engine_mut().strings.take_temp_change() {
+            self.queue.set(Some(change));
+        }
+        result
+    }
+
+    fn engine_string(&self, value: i32) -> Option<&[u8]> {
+        self.builtins.engine_string(value)
+    }
+}
+
+/// The trace observer, recording a queued temp-buffer change before each record (DIFF-3.9),
+/// as the oracle's `begin_change_record` writes the touched strings before every record.
+pub(crate) struct StringObserver<'a> {
+    /// The trace being built.
+    pub(crate) trace: &'a mut TraceBuilder,
+    /// The change [`StringBuiltins`] queued.
+    pub(crate) queue: &'a StringQueue,
+}
+
+impl StringObserver<'_> {
+    /// Moves a queued change into the trace's pending string records (TRACE-4.10).
+    fn record_strings(&mut self) {
+        if let Some((value, text)) = self.queue.take() {
+            self.trace.string_set(value, text);
+        }
+    }
+}
+
+impl Observer for StringObserver<'_> {
+    fn run(&mut self, machine: &Machine, function: i32) {
+        self.record_strings();
+        self.trace.run(machine, function);
+    }
+
+    fn step(
+        &mut self,
+        machine: &Machine,
+        function: i32,
+        statement: i32,
+        opcode: u16,
+        builtin: Option<u32>,
+    ) {
+        self.record_strings();
+        self.trace
+            .step(machine, function, statement, opcode, builtin);
+    }
+
+    fn exit(&mut self, machine: &Machine) {
+        self.record_strings();
+        self.trace.exit(machine);
+    }
+
+    fn error(&mut self, machine: &Machine, error: &RunError) {
+        self.record_strings();
+        self.trace.error(machine, error);
+    }
 }
 
 impl TraceBuilder {
@@ -94,12 +178,13 @@ impl TraceBuilder {
         self.header
     }
 
-    /// Records that the host made an engine string `value` holding `text` (TRACE-4.10).
+    /// Records that engine string `value` now holds `text` (TRACE-4.10): the host made it, or a
+    /// builtin set its text (DIFF-3.9).
     ///
     /// The string record is written before the next change-carrying record (the one whose
     /// change set may first show the value), as the oracle writes it (`trace.c`,
     /// `begin_change_record`).
-    pub fn string_made(&mut self, value: i32, text: Vec<u8>) {
+    pub fn string_set(&mut self, value: i32, text: Vec<u8>) {
         if let Ok(text) = Text::new(text) {
             self.pending_strings.push(Record::String {
                 value: value.cast_unsigned(),
