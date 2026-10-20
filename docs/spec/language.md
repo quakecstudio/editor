@@ -582,6 +582,15 @@ nextthink] {code}".
 - **QC-13.9** A function record holds `first_statement`, `parm_start` (the offset of its
   first parameter), `locals` (QC-21.4), the name and file as string offsets, `numparms` and
   each parameter's size in words. A variadic function's `numparms` is -1.
+- **QC-13.10** The builtin number is the literal's 32-bit float value (QC-4.1) converted to
+  `int`, so above 2^24 it is the float's, not the digits': `PR_ParseImmediateStatements`
+  (`qcc/pr_comp.c`, id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`) reads
+  `if (pr_token_type != tt_immediate || pr_immediate_type != &type_float || pr_immediate._float != (int)pr_immediate._float) PR_ParseError ("Bad builtin immediate"); f->builtin = (int)pr_immediate._float;`,
+  where `PR_LexNumber` gives `return atof (pr_token);`. `#16777217` is builtin 16777216 and
+  `#123456789` is 123456792. A value outside -2^31 to 2^31 - 1 is "Bad builtin immediate":
+  C leaves its conversion to `int` undefined, and the x86 build gives -2147483648 (VM-9.2),
+  which differs from the value. id's `qcc` built for arm64 by `cargo xtask oracles build`
+  saturates instead and binds `#2147483648` as 2147483647; the x86 result is the rule.
 
 ### Test vectors
 
@@ -590,6 +599,8 @@ nextthink] {code}".
 | `void() f = {};` | `DONE` | QC-13.1, QC-13.7 |
 | `void() z = #0;\nvoid() n = #-1;\nvoid() o = #7;` | `first_statement` 0, 1 and -7 | QC-13.3, QC-13.4 |
 | `void() f = #1.5;` | `Bad builtin immediate` | QC-13.3 |
+| `void() f = #16777217;`, `void() g = #123456789;` | builtins 16777216 and 123456792 | QC-13.10 |
+| `void() f = #2147483648;` | `Bad builtin immediate` | QC-13.10 |
 | `void() th2;\n$frame s1 s2\nvoid() th1 = [$s2, th2] { };` (and `th2` defined) | `STATE 1, th2`; `DONE` | QC-13.6 |
 | `$frame s1\nvoid() th1 = [$s1, th3] { };` | `function th3 was not defined` | QC-13.6, QC-11.8 |
 | `float th3;\n$frame s1\nvoid() th1 = [$s1, th3] { };` | `Type mismatch on redeclaration of th3` | QC-13.6 |

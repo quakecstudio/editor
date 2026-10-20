@@ -981,6 +981,11 @@ impl<'a> Parser<'a> {
         let colon = self.at(K::Colon);
         self.bump();
         let number = self.current().map(|t| (t.kind, t.value));
+        // FTE-17.6: the letters of FTEQCC's integer suffix are no digit of any base.
+        let suffix = self.current().map_or(String::new(), |t| {
+            let digits = t.text.trim_end_matches(['i', 'I', 'u', 'U', 'l', 'L']);
+            t.text.get(digits.len()..).unwrap_or_default().to_owned()
+        });
         let mut named = false;
         match number {
             // FTE-17.5: FTEQCC takes the engine name from a string after `#` or `:`, or from a
@@ -999,7 +1004,16 @@ impl<'a> Parser<'a> {
                     reason = "spec QC-13.3: `qcc` compares the value with its int conversion"
                 )]
                 let integral = value.trunc() == value;
-                if !integral {
+                // QC-13.10: `(int)` of a float outside `int` is -2147483648 on the x86 build,
+                // which fails the comparison. FTE-17.6: an `i` literal is an `int`, bound as
+                // it is, and a `u` or `l` literal is no builtin number.
+                let int_range = f64::from(i32::MIN)..-f64::from(i32::MIN);
+                let bound = match suffix.as_str() {
+                    "" => integral && int_range.contains(&f64::from(value)),
+                    "i" | "I" => true,
+                    _ => false,
+                };
+                if !bound {
                     self.error(Code::E0209, "Bad builtin immediate");
                 } else if value <= 0.0 && !self.fteqcc() {
                     // FTE-17.4: FTEQCC takes any integral number, 0 included.

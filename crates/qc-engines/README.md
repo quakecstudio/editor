@@ -64,8 +64,10 @@ cargo test -p qc-engines
 - `SOURCES` and `Source`: the pinned fact sources and their checksums.
 - `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module of a
   kind checked against a target engine, for builtins declared `#N` and, under FTEQCC,
-  `#0:NAME`, in the dialect the module was parsed in: under FTEQCC a number is the value
-  FTEQCC reads, hex and octal included (ENGT-4.11).
+  `#0:NAME`, `#"NAME"` and `:NAME` (ENGT-4.14), in the dialect the module was parsed in: a
+  number is the one the dialect's compiler binds, `(int)` of the literal's float value
+  (ENGT-4.12), and under FTEQCC the value FTEQCC reads, hex, octal and `i` literals included
+  (ENGT-4.11, ENGT-4.13).
 
 ## Module kinds
 

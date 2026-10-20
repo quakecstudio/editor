@@ -214,6 +214,40 @@ fn string_and_colon_builtins_take_no_second_name() {
     assert_eq!(fte_errors("void() bw = #ex_bprint2;"), [Code::E0209]);
 }
 
+// spec FTE-17.6: FTEQCC binds an `i` literal of any size and a float literal inside int, and
+// takes no `u` or `l` literal or float outside int
+#[test]
+fn builtin_numbers_by_literal_type() {
+    for number in [
+        "16i",
+        "16I",
+        "16777217i",
+        "0x1000001i",
+        "4294967313i",
+        "123456789",
+        "2147483520",
+        "-2147483648",
+        "0x7FFFFF80",
+    ] {
+        let source = format!("void() f = #{number};\n");
+        assert_eq!(fte_errors(&source), Vec::<Code>::new(), "{number}");
+    }
+    for number in [
+        "16u",
+        "16U",
+        "16l",
+        "16ll",
+        "16ul",
+        "2147483647",
+        "2147483648",
+        "0x80000000",
+        "-2147483904",
+    ] {
+        let source = format!("void() f = #{number};\n");
+        assert_eq!(fte_errors(&source), [Code::E0209], "{number}");
+    }
+}
+
 // spec FTE-17.5: under the vanilla profile the string and colon forms stay errors
 #[test]
 fn vanilla_has_no_string_or_colon_builtins() {

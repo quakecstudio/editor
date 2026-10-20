@@ -431,6 +431,22 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   `= :0:ex_bprint5;` and `void(string s, ...) bx :ex_bprint6;` with 0 warnings, and rejects
   `= #"ex_a":ex_b;`, `= :ex_a:ex_b;`, `= #ex_bprint2;` and `float fx = :ex_bprint7;`. The
   vanilla profile reads none of these forms (QC-13.3).
+- **FTE-17.6** The number of a builtin initialiser is FTEQCC's `binum`, which depends on the
+  literal's type (FTEF-3.1): a `float` literal is bound as in QC-13.10, `(int)` of its value
+  once that value is whole and from -2^31 to 2^31 - 1, so `#123456789` is 123456792; an
+  integer literal with the `i` suffix is its `int`, the whole number kept to 32 bits, so
+  `#16777217i` is 16777217 and `#4294967313i` is 17; and a literal with a `u` or `l` suffix is
+  "Bad builtin immediate" (`E0209`). `QCC_PR_ParseInitializerType_Internal` (`qcc_pr_comp.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) reads
+  `if (pr_token_type == tt_immediate && pr_immediate_type == type_float && pr_immediate._float == (int)pr_immediate._float) binum = (int)pr_immediate._float; else if (pr_token_type == tt_immediate && pr_immediate_type == type_integer) binum = pr_immediate._int;`,
+  then the string and name of FTE-17.5, `else QCC_PR_ParseError (ERR_BADBUILTINIMMEDIATE, "Bad builtin immediate");`;
+  `QCC_PR_LexNumber` (`qcc_pr_lex.c`) gives a number with no suffix and no fraction the type
+  `float` (`pr_immediate._float = (float)(num*sign);`), an `i` suffix `type_integer` with
+  `pr_immediate._int = num;`, and a `u` or `l` suffix `type_uint`, `type_int64` or
+  `type_uint64`, which no branch takes. The pinned FTEQCC binds `#16777217i` as 16777217,
+  `#0x1000001i` as 16777217 and `#4294967313i` as 17, and rejects `#16u`, `#16l` and `#16ll`;
+  built for arm64 it binds `#2147483648` as 2147483647, where the x86 result of VM-9.2 is the
+  rule.
 
 ## FTE-18 Parameter lists
 

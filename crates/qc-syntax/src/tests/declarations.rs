@@ -261,6 +261,28 @@ fn bad_builtin_immediate() {
     assert_eq!(error_codes("$frame a\nvoid() f = #$a;"), vec![]);
 }
 
+// spec QC-13.10: a builtin number whose float value is outside int is "Bad builtin immediate";
+// one above 2^24 is bound by its float value, so it parses
+#[test]
+fn a_builtin_number_outside_int_is_bad() {
+    for source in [
+        "void() f = #16777217;",
+        "void() f = #123456789;",
+        "void() f = #2147483520;",
+        "void() f = #16777217.5;",
+    ] {
+        assert_eq!(error_codes(source), vec![], "{source}");
+    }
+    for source in [
+        "void() f = #2147483584;",
+        "void() f = #2147483647;",
+        "void() f = #2147483648;",
+        "void() f = #99999999999;",
+    ] {
+        assert_eq!(error_codes(source), vec![Code::E0209], "{source}");
+    }
+}
+
 // spec QC-27.9, QCD-6.7: `#0` and negative builtin numbers are errors, E0507
 #[test]
 fn builtin_number_must_be_positive() {
