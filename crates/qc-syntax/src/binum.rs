@@ -80,3 +80,43 @@ fn fteqcc_int(literal: &str) -> i32 {
     let [a, b, c, d, ..] = num.to_le_bytes();
     i32::from_le_bytes([a, b, c, d])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::builtin_binum;
+    use qc_lexer::Dialect;
+
+    // spec FTE-17.6: an `i` literal binds its whole number kept to 32 bits, in any base and
+    // with its sign; a `u` or `l` literal binds nothing
+    #[test]
+    fn fteqcc_integer_literals_bind_their_int() {
+        for (text, binum) in [
+            ("16i", Some(16)),
+            ("16777217i", Some(16_777_217)),
+            ("0x1000001i", Some(16_777_217)),
+            ("0X10I", Some(16)),
+            ("010i", Some(8)),
+            ("4294967313i", Some(17)),
+            ("2147483648i", Some(i32::MIN)),
+            ("-5i", Some(-5)),
+            ("16u", None),
+            ("16l", None),
+        ] {
+            assert_eq!(builtin_binum(text, Dialect::Fteqcc), binum, "{text}");
+        }
+    }
+
+    // spec QC-13.10: a float literal binds `(int)` of its value inside `int`, nothing outside
+    #[test]
+    fn float_literals_bind_their_int_inside_int() {
+        for (text, binum) in [
+            ("16777217", Some(16_777_216)),
+            ("123456789", Some(123_456_792)),
+            ("1.5", None),
+            ("2147483648", None),
+            ("a", None),
+        ] {
+            assert_eq!(builtin_binum(text, Dialect::Vanilla), binum, "{text}");
+        }
+    }
+}
