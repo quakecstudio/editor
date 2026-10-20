@@ -376,11 +376,25 @@ pub(crate) const PROPTEST_FIXED: [(&str, &str); 3] = [
     ("PROPTEST_CASES", "256"),
 ];
 
+/// Runs `command`'s property tests on [`PROPTEST_FIXED`] alone. proptest's
+/// `contextualize_config` reads every `PROPTEST_*` variable, and some of the
+/// others (`PROPTEST_MAX_DEFAULT_SIZE_RANGE`, the reject limits) change what
+/// is generated, so each one in `inherited`, the names in xtask's environment,
+/// is removed.
+fn fix_proptest(command: &mut Command, inherited: impl IntoIterator<Item = OsString>) {
+    for name in inherited {
+        if name.to_string_lossy().starts_with("PROPTEST_") {
+            command.env_remove(name);
+        }
+    }
+    command.envs(PROPTEST_FIXED);
+}
+
 fn coverage(root: &Path, target: &Target, check: Check, exec: &dyn Exec) -> Result<Score, String> {
     let report = scratch(root).join(format!("{}-{}.json", check.name(), target.name));
     let branches = check == Check::Branches;
     let mut command = cargo_for(root, target, branches.then_some(NIGHTLY));
-    command.envs(PROPTEST_FIXED);
+    fix_proptest(&mut command, std::env::vars_os().map(|(name, _)| name));
     command
         .args(["llvm-cov", "--locked", "--all-features", "--manifest-path"])
         .arg(manifest(target))

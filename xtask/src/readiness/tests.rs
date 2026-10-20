@@ -778,6 +778,34 @@ fn coverage_runs_property_tests_on_a_fixed_seed() {
 }
 
 #[test]
+fn an_inherited_proptest_setting_is_removed_and_others_kept() {
+    let mut command = Command::new("cargo");
+    let inherited = [
+        "PROPTEST_MAX_DEFAULT_SIZE_RANGE",
+        "PROPTEST_RNG_SEED",
+        "PATH",
+    ];
+    fix_proptest(&mut command, inherited.map(OsString::from));
+    let envs: BTreeMap<_, _> = command
+        .get_envs()
+        .map(|(key, value)| {
+            let value = value.map(|value| value.to_string_lossy().into_owned());
+            (key.to_string_lossy().into_owned(), value)
+        })
+        .collect();
+    let set = |value: &str| Some(value.to_owned());
+    assert_eq!(
+        envs,
+        BTreeMap::from([
+            ("PROPTEST_CASES".to_owned(), set("256")),
+            ("PROPTEST_MAX_DEFAULT_SIZE_RANGE".to_owned(), None),
+            ("PROPTEST_RNG_ALGORITHM".to_owned(), set("cc")),
+            ("PROPTEST_RNG_SEED".to_owned(), set("461")),
+        ])
+    );
+}
+
+#[test]
 fn mutation_keeps_proptests_random_seed() {
     let outcomes = recorded("mutation", "outcomes.json");
     let envs = std::cell::RefCell::new(None);
