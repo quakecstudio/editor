@@ -25,7 +25,8 @@ Branch names carry the Conventional Commit type of the work and the issue number
 - Never amend or rebase commits that are already pushed to a shared branch.
 - An agent may add its own PR to the merge queue once CI passes
   (`.claude/skills/work-issue/scripts/land.sh`), except for `needs:human` issues, which wait
-  for Justin.
+  for Justin. An implementer first reviews its own diff with the `code-review` skill and
+  records the outcome in the PR body (`work-issue`, "Land it").
 
 ## Before opening a PR
 

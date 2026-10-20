@@ -189,11 +189,11 @@ groups:
     - TEST-11
     - TEST-12
     depends:
-    - P2-60
+    - P2-61
     - P1-R1
     - P0-24
     deliverable:
-    - 'docs/readiness/p2-r1.md following docs/readiness/_template.md, covering: P2-60'
+    - 'docs/readiness/p2-r1.md following docs/readiness/_template.md, covering: P2-61'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
