@@ -374,4 +374,60 @@ fn a_built_in_constant_in_an_argument_is_its_value() {
         fte("#define N1 5\n#define P(x, a, b) x##a##b\nP(#, N, 1)"),
         "5"
     );
+    // A name a paste made in an outer expansion is text in the argument like any other.
+    assert_eq!(
+        fte("#define K(x) x:\n#define O(x) K(__LI##x)\nO(NE__)"),
+        "3:"
+    );
+}
+
+// spec FTEF-14.15: a string skips the white space and both kinds of comment before the
+// argument, keeps a line break as an escape, and an argument from another expansion is
+// written as its tokens touch
+#[test]
+fn a_string_skips_what_lex_whitespace_skips() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define S(a) #a\nS(/* c */ex)"), "\"ex\"");
+    assert_eq!(fte("#define S(a) #a\nS(// c\nex)"), "\"ex\"");
+    assert_eq!(fte("#define S(a) #a\nS(/**/ex/**/)"), "\"ex/**/\"");
+    let out = run(b"#define S(a) #a\nS(a\nb)", Dialect::Fteqcc);
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\nb\""));
+    assert_eq!(
+        fte("#define S(a) #a\n#define T(x) S(x+y z)\nT(1)"),
+        "\"1+y z\""
+    );
+}
+
+// spec FTEF-14.17: a function-like macro used again through another is expanded while at
+// most 8 chunks of it are open, so 9 times
+#[test]
+fn a_function_like_macro_opens_nine_chunks() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", &b"#define F(x) G(x)\n#define G(x) F(x)\nF(1)\n"[..]);
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let f = pp.expansions().iter().filter(|e| e.name == "F").count();
+    assert_eq!(f, 9);
+}
+
+// spec FTEF-14.18: a function-like macro's name and `(` in one expansion open its arguments
+// whatever spacing the stored body has
+#[test]
+fn a_call_written_in_a_body_expands() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define M(x) x\n#define K M (1)\nK"), "1");
+    assert_eq!(fte("#define M(x) x\n#define K M/**/(1)\nK"), "1");
+}
+
+// spec FTEF-14.19: the bound on tokens holds even when the expansions stay under theirs
+#[test]
+fn an_expansion_writing_too_many_tokens_is_reported() {
+    let mut text = format!("#define A0 {}\n", "x ".repeat(100));
+    for i in 1..17 {
+        text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
+    }
+    text.push_str("A16\n");
+    let out = run(text.as_bytes(), Dialect::Fteqcc);
+    let codes: Vec<_> = out.diagnostics.iter().map(|d| d.code).collect();
+    assert_eq!(codes, vec![crate::Code::E0120]);
 }

@@ -698,7 +698,8 @@ profile the preprocessor reads them as FTEQCC does.
   that is no parameter writes `#` and that word with nothing between (`QCC_PR_ExpandStrCat(...,
   "#", 1);` then `qcc_token`), so `#define S(a) # 5` is `#5`, a builtin; a `#` at the end of the
   body writes nothing (`if (!pr_file_p) break;`). An argument that comes from another expansion's
-  text is written as its tokens touch.
+  text is written as its tokens touch, one space where they do not; FTEQCC keeps the white space
+  of that text as it was written, a difference only the string's spaces show.
 - **FTEF-14.16** An object-like macro's body is included as it was stored
   (`QCC_PR_IncludeChunkEx(c->value, ...)`), and `QCC_PR_ExpandPreProcessorMacro`, which reads `#`
   and `##`, runs only for a macro with a parameter list (`if (c->numparams>=0)`). So in an

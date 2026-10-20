@@ -268,9 +268,7 @@ impl<L: Loader> Preprocessor<L> {
         if !whole {
             for piece in &mut pieces {
                 let value = match &piece.tok.kind {
-                    TokenKind::Name(name) if piece.tok.spelling.is_none() => {
-                        self.builtin(path, &piece.tok, name)
-                    }
+                    TokenKind::Name(name) => self.builtin(path, &piece.tok, name),
                     _ => None,
                 };
                 if let Some(value) = value {
@@ -518,8 +516,12 @@ impl<L: Loader> Preprocessor<L> {
     /// `(` in the same chunk (`if (*pr_file_p == '(')`), so a line break or a comment before
     /// it, or the end of the expansion the name is in, leaves the name as it is.
     pub(crate) fn fte_opens_arguments(&self, name: &PpToken, open: &PpToken) -> bool {
-        if name.expansion.is_some() || open.expansion.is_some() {
-            return name.expansion == open.expansion;
+        if name.expansion != open.expansion {
+            return false;
+        }
+        // A stored body has only spaces and tabs between its tokens.
+        if name.expansion.is_some() {
+            return true;
         }
         name.span.file == open.span.file
             && self
