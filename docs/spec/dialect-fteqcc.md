@@ -712,10 +712,14 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   any old function with no args will do"): `nil`, `randomv`, `alloca`, `entnum`, `autocvar`,
   `used_model`, `used_sound`, `va_arg` and `_`, with `sizeof` and `_length`. `autocvar(name,
   default)` takes the cvar's name, which is no value, and `sizeof` may take a type word.
-- **FTEF-17.5** A name initialised again is accepted when the "dupe initialisation"
+- **FTEF-17.5** **Withdrawn** 2026-10-20 (P2-70): it compared a builtin by its number alone,
+  but FTEQCC reuses a builtin function only for the same number and engine name; replaced by
+  FTEF-17.10.
+- **FTEF-17.10** A name initialised again is accepted when the "dupe initialisation"
   comparison finds the two values equal word by word: this profile compares two literals by
-  value (FTE-22.5), any other initialiser by its text, token for token, and a builtin by its
-  number. An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
+  value (FTE-22.5), a builtin by its number and engine name as FTE-23.7 says, any other
+  initialiser, a builtin FTEQCC binds no number for among them, by its text, token for token.
+  An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
   `QCC_PR_DummyDef`, which looks for no earlier definition. A function body is never equal to
   another.
 - **FTEF-17.6** Under this profile a redeclaration is a type mismatch only when neither type

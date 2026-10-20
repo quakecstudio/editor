@@ -607,7 +607,7 @@ list starts empty in each file (QC-8.3).
   `float SIGIL_E1 = 1;` in both `rerelease-mg1/defs.qc` and `rerelease-mg1/items_runes.qc`.
   This profile compares two literal initialisers by value and accepts them when equal, and a
   differing literal is still "NAME redeclared" (QCD-3.6); other initialisers compare as
-  FTEF-17.5 says.
+  FTEF-17.10 says.
 - **FTE-22.3** With `-Fautoproto` every top-level declaration of the program is visible in every
   function body: `qccmain.c` describes the flag as "Causes compilation to take two passes
   instead of one. The first pass, only the definitions are read. The second pass actually
@@ -630,3 +630,137 @@ over the six codebases is
 The progs-encoding vectors (the `.4`/`.3` statements that say "fixed by P2-06") are filled in
 when that issue lands, each checked against FTEQCC's output and the rerelease's runtime
 behaviour.
+
+## FTE-23 Builtin initialisers, read end to end
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_Lex`, `QCC_PR_LexNumber` and `QCC_PR_LexString`;
+`qcc_pr_comp.c`, `QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateBuiltinFunction` and
+the "dupe initialisation" comparison of `QCC_PR_GenerateInitializerType`; `qccmain.c`,
+`WriteData`; fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`, the FTEQCC that
+`cargo xtask oracles build` builds. id's `qcc`: `qcc/pr_lex.c`, `qcc/pr_comp.c`,
+id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`.
+
+FTE-17.4 to FTE-17.6 say which builtin initialisers FTEQCC takes. This section follows one
+from the first byte to the function FTEQCC writes: how its lexer reads what follows `#` or
+`:`, what each literal's type is, how strings join, what an engine name is, and when a second
+initialiser of the same function is the same builtin. A builtin initialiser is
+`QCC_PR_ParseInitializerType_Internal`'s function case:
+
+```c
+char fname[256];
+...
+if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
+{
+	int binum = 0;
+	if (pr_token_type == tt_immediate
+	&& pr_immediate_type == type_float
+	&& pr_immediate._float == (int)pr_immediate._float)
+		binum = (int)pr_immediate._float;
+	else if (pr_token_type == tt_immediate && pr_immediate_type == type_integer)
+		binum = pr_immediate._int;
+	else if (pr_token_type == tt_immediate && pr_immediate_type == type_string)
+		QC_strlcpy(fname, pr_immediate_string, sizeof(fname));
+	else if (pr_token_type == tt_name)
+		QC_strlcpy(fname, pr_token, sizeof(fname));
+	else
+		QCC_PR_ParseError (ERR_BADBUILTINIMMEDIATE, "Bad builtin immediate");
+	QCC_PR_Lex();
+
+	if (!*fname && QCC_PR_CheckToken (":"))
+		QC_strlcpy(fname, QCC_PR_ParseName(), sizeof(fname));
+```
+
+### Behaviour
+
+- **FTE-23.1** Under FTEQCC a `#` opens a builtin only when the byte right after it is `"`,
+  `-`, a digit, `)` or `,`. `QCC_PR_Lex` reads any other as a macro use: `if (c == '#' &&
+  !(pr_file_p[1]==')' || pr_file_p[1]==',' || pr_file_p[1]=='\"' || pr_file_p[1]=='-' ||
+  (pr_file_p[1]>='0' && pr_file_p[1] <='9')))	//hash and not number`, then `if
+  (!QCC_PR_CheckCompConst()) { ... QCC_PR_ParseError(ERR_CONSTANTNOTDEFINED, "Explicit
+  precompiler usage when not defined %s", pr_token); }`. So `= # 5;`, `= # "x";`, `= #'a';`,
+  `= #.5;`, `= #+5;`, `= #(5);`, `= #/**/5;`, `= #\t5;` and `= #;` are errors, which this
+  profile reports as `E0209`, and `= #5;`, `= #-5;` and `= #"x";` are builtins. `:` is plain
+  punctuation, so `= : 5;`, `= :'a';` (97) and `= : "nmr";` (`nmr`) are builtins. The
+  vanilla `#` is plain punctuation too (`pr_punctuation[]` in id's `qcc/pr_lex.c` lists
+  `"#"`), and id's `qcc` binds `= # 5;` as 5, as the vanilla profile does.
+- **FTE-23.2** An FTEQCC hex number with a fraction is C's `atof` of its text, which reads
+  `0x` as a hexadecimal float: `QCC_PR_LexNumber` keeps the `0x` in `pr_token`, takes only
+  decimal digits after the `.` (`if (c >= '0' && c <= '9') { pr_token[tokenlen++] = c; }`),
+  and sets `pr_immediate._float = (float)atof(pr_token);`. So `0x10.0` is 16, `-0x10.0` -16,
+  `0x1.8` 1.5 and `0x1.08` 1.03125; `0x1.a` is `0x1.` (1) and then a name.
+- **FTE-23.3** A `d` literal is a `double`, and FTEQCC binds no builtin number for it: the
+  initialiser takes only `type_float`, `type_integer` and `type_string` immediates, and
+  `QCC_PR_LexNumber` gives `type_double` to a `d` or `D` after a fraction (`else if (c == 'd'
+  || c == 'D') { pr_immediate_type = type_double;`) and after the digits of base 8 or 10
+  (`else if (c == 'd' || c == 'D') {	//note: conflicts with hex.`). So `= #16d;`,
+  `= #16.0d;`, `= #0d;`, `= #010d;`, `= #0x1.5d;` and `= :16d;` are "Bad builtin immediate"
+  (`E0209`), and `qc_syntax::builtin_binum` gives them no number. In base 16 `d` and `f` are
+  digits (`c < 'a'+base-10`), so `#0x1d` is 29 and `#0x10f` 271; in base 8 or 10 `f` makes a
+  `float`, so `#16f` and `#16.0f` are 16.
+- **FTE-23.4** A `-` is part of a number only right before a digit (`QCC_PR_Lex`: `( c=='-' &&
+  pr_file_p[1]>='0' && pr_file_p[1] <='9')`), and FTEQCC binds a negative builtin number like
+  any other (FTE-17.4): `#-5` and `:-5i` are -5, `#-0x10` -16. `= #- 5;`, `= #-.5;`, `= :- 5;`
+  and `= :-.5;` read the `-` alone and are "Bad builtin immediate" (`E0209`).
+- **FTE-23.5** Adjacent string literals are one string (FTEF-16.8): `QCC_PR_LexString` loops,
+  skipping whitespace and comments with `QCC_PR_LexComment(&pr_token_precomment);` before each
+  part, until `else if (first) { ... } else break;`. So `= #"ab" "cd";` binds the engine name
+  `abcd`, `= :"x" "y";` `xy`, and the parts may stand on separate lines or around a comment.
+  An empty string sets no name: `fname` stays empty, so the builtin is named after the
+  definition (`QCC_PR_GenerateBuiltinFunction(def.sym, binum, *fname?fname:def.sym->name)`)
+  with `binum` 0, and `if (!*fname && QCC_PR_CheckToken (":"))` still reads a name after it:
+  `= #"";` is builtin 0 named after the function and `= #"":ex_b;` binds `ex_b`. After a
+  non-empty string a `:name` is an error, as FTE-17.5 says.
+- **FTE-23.6** An engine name is at most 255 bytes: `QC_strlcpy(fname, ..., sizeof(fname))`
+  into `char fname[256];` keeps the first 255 of a longer string or name. A name after `:` is
+  `pr_token`, which `QCC_PR_ParseName`'s "name too long" check does not see.
+- **FTE-23.7** A builtin initialiser makes a builtin function, numbered `binum` and named the
+  engine name or, with none, the definition's name, unless it initialises a definition already
+  initialised and FTEQCC finds one to reuse: `if (basedef && basedef->initialized)` it takes
+  the first function, in the order they were made, with `functions[i].code == -1 &&
+  functions[i].builtin == binum` and `!strcmp(functions[i].name, fname)`, or with no `fname`
+  `(!*functions[i].name || !strcmp(functions[i].name, defname))`; `if (!tmp.cast) f =
+  QCC_PR_GenerateBuiltinFunction(def.sym, binum, *fname?fname:def.sym->name);`. The "dupe
+  initialisation" comparison then reports `"incompatible redeclaration"` unless the function is
+  the one the definition has. So a second builtin initialiser is the same value exactly when
+  its number and engine name are those of the first and no function with them was made before
+  the definition's: under this profile it is otherwise `E0206`. `#0:ex_a` then `#0:ex_b`,
+  `#5:ex_a` then `#5:ex_b`, `#5` then `#5:ex_a` and `#0` then `:ex_a` are `E0206`; `:ex_a`
+  then `:"ex_a"`, `#0:ex_a` then `:ex_a`, `#"ex_a"` then `:ex_a`, `#5` then `#5.0`, and, for a
+  definition `f`, `#5` then `#5:f` and `#0` then `:f` are not. After `void() g = #5:ex_a;`,
+  `void() f = #5:ex_a;` given twice is `E0206`, since FTEQCC reuses `g`'s function; a function
+  made for a redeclaration it reuses none for counts as made then. FTEQCC reports the
+  redeclaration only once it has read the initialiser, so a bad literal in it is that error
+  instead; id's `qcc` reports `"%s redeclared"` at the `=`, before it (`PR_ParseDefs`).
+- **FTE-23.8** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on
+  Linux, macOS and Windows) compiles every builtin initialiser of a cross product with the
+  pinned FTEQCC under the FTEQCC profile and with id's `qcc` under the vanilla profile, and
+  compares each outcome with the profile's: the builtin number and engine name of `f`'s
+  function in the `progs.dat` written (`first_statement` is `-binum`, `WriteData`: `if
+  (functions[i].code == -1) funcs[i].first_statement = PRLittleLong (-functions[i].builtin);`),
+  or that the compiler accepted it with no builtin number, refused it as a redeclaration, or
+  refused it otherwise. The cross product is `#`, `:`, `# ` and `: `, before each of 86 values
+  (decimal, octal and hex numbers with their signs; fractions; the `f`, `d`, `i`, `u` and `l`
+  suffixes and their combinations; character constants and a vector; names; strings, joined
+  across spaces, comments and lines, empty, and longer than FTE-23.6's limit), each with no
+  engine name or one written five ways after it, and after each of three function
+  declarators; and 29 builtin forms given twice to one function in every pairing, with and
+  without another function bound by the first form before them (the vanilla dialect only the
+  `#number` forms). Numbers outside -2^31 to 2^31 - 1 are left out, since C leaves their
+  conversion to `int` undefined (QC-13.10). The oracles' outcomes are recorded in
+  `xtask/fixtures/oracles/builtin-outcomes.json`, which `cargo test -p xtask` checks the
+  profile against on every host. The run of 2026-10-20 (macOS arm64) made 7382 cases: 7314
+  agree, and 68 differ as QC-27.9 says, the vanilla profile refusing `#0`, `#-0`, `#0.0` and
+  `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice. Before P2-69 and P2-70 the same
+  check found 856 cases that differed.
+- **FTE-23.9** A `#` before a macro's name is that macro's expansion with no `#`, which the
+  cross product leaves out: `QCC_PR_CheckCompConst` expands it and `QCC_PR_Lex` reads on, so
+  with `#define N 5`, `= #N;` is `= 5;` ("Cannot cast from float to void()") and with
+  `#define N "ex_a"` an implicit cast of the string. This profile reports every `#NAME` as
+  `E0209`, as FTE-17.5 says for a name that is no macro; reading the macro as FTEQCC does is
+  P2-71. String literals with a prefix (`R"..."`, `Q"..."`, `u8"..."`, `u"..."`, `U"..."`),
+  which `QCC_PR_Lex` reads as strings (`if (c == '\"' || ((c == 'R' || c == 'Q' || c == 'u' ||
+  c == 'U') && pr_file_p[1] == '\"') || (c == 'u' && pr_file_p[1] == '8' && pr_file_p[2] ==
+  '\"'))`), are left out too: this profile does not lex them (P2-72). So is a name of 63 to 254
+  bytes after `#number:`, which `QCC_PR_ParseName` takes (`if (strlen(pr_token) >= MAX_NAME-1)`
+  with `#define MAX_NAME 256` in `qcc.h`) and this profile, like every name, reports as
+  `E0202` from 63 bytes (QC-3.3); FTEQCC's longer names are P2-73.
