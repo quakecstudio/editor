@@ -318,8 +318,9 @@ fn an_unknown_key_is_ignored() {
     assert_eq!(output.ended, Ended::Normally);
 }
 
-/// A progs whose `worldspawn` calls `ftos` three times: on 0, on 0 again and on `time` (1 at
-/// spawn, EDICT-8.1), so the temp buffer's text goes `0`, `0`, `1` (BUILTIN-7.4). `ftos` is
+/// A progs whose `worldspawn` calls `ftos` four times: on 0, on 0 again, on `time` (1 at
+/// spawn, EDICT-8.1) and on 0 from slot 100, so the temp buffer's text goes `0`, `0`, `1`, `0`
+/// (BUILTIN-7.4). `ftos` is
 /// builtin 26 under the name of the system function global `SetChangeParms`, whose slot the
 /// builder fills with its index and which a scenario that ends normally never runs (DIFF-3.7).
 fn progs_calling_ftos() -> Vec<u8> {
@@ -334,6 +335,8 @@ fn progs_calling_ftos() -> Vec<u8> {
         .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
         .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
         .statement(Stmt::op("STORE_F", 31, 4, 0))
+        .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
+        .statement(Stmt::op("STORE_F", 100, 4, 0))
         .statement(Stmt::op("CALL1", ftos_slot, 0, 0))
         .statement(Stmt::op("DONE", 0, 0, 0))
         .function(FuncSpec {
@@ -389,8 +392,13 @@ fn ftos_writes_a_string_record_before_its_call() {
     // and the second CALL, setting "0" again, writes none.
     let first_call = step_index(records, 2);
     let zero = string_records(records, b"0");
-    assert_eq!(zero.len(), 1, "\"0\" is written once");
+    assert_eq!(
+        zero.len(),
+        2,
+        "\"0\" is written for the first and the fourth CALL only"
+    );
     assert!(zero[0] < first_call);
+    assert!(step_index(records, 3) < string_records(records, b"1")[0]);
     // OFS_RETURN at the CALL reads as the engine string "0" through the trace (TRACE-7.3).
     let ret = records[first_call]
         .changes()
@@ -412,4 +420,7 @@ fn ftos_writes_a_string_record_before_its_call() {
     let one = string_records(records, b"1");
     assert_eq!(one.len(), 1);
     assert!(store < one[0] && one[0] < third_call);
+
+    // The fourth CALL changes it back to "0": a record again, between the STORE_F and it.
+    assert!(step_index(records, 6) < zero[1] && zero[1] < step_index(records, 7));
 }

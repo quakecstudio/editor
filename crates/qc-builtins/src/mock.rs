@@ -209,18 +209,18 @@ pub const LIMIT_MAX_MSGLEN: usize = 8000;
 /// comparison compares their text, not their numbers (EDICT-13.3, DIFF-9.4). `ftos` and `vtos`
 /// share one buffer value, so each call overwrites the previous text (BUILTIN-7.4).
 ///
-/// It also lists the values whose text was set since the last [`EngineStrings::take_changed`],
-/// so the differential host can write a string record for each (TRACE-4.10, DIFF-3.9), as the
-/// oracle's `qs_engine_string_touched` marks a string for its next change-carrying record.
+/// It also notes when the buffer's text changes, so the differential host can write a string
+/// record for it (TRACE-4.10, DIFF-3.9), as the oracle's `qs_engine_string_touched` marks the
+/// buffer for its next change-carrying record ([`EngineStrings::take_temp_change`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EngineStrings {
     /// The `ftos`/`vtos` buffer value, once allocated (BUILTIN-7.4).
     temp_value: Option<i32>,
     /// Every engine string's text, by value; the temp buffer's is updated in place.
     entries: Vec<(i32, Vec<u8>)>,
-    /// The values whose text was set since the last `take_changed`, each once, in the order
-    /// they were first set (TRACE-4.10).
-    changed: Vec<i32>,
+    /// Whether the buffer was allocated or given a different text since the last
+    /// `take_temp_change` (DIFF-3.9).
+    temp_changed: bool,
 }
 
 impl EngineStrings {
@@ -235,13 +235,16 @@ impl EngineStrings {
                 let value = self.next_value();
                 self.temp_value = Some(value);
                 self.entries.push((value, Vec::new()));
+                self.temp_changed = true;
                 value
             }
         };
-        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value) {
+        if let Some(entry) = self.entries.iter_mut().find(|(key, _)| *key == value)
+            && entry.1 != text
+        {
             entry.1 = text;
+            self.temp_changed = true;
         }
-        self.mark_changed(value);
         value
     }
 
@@ -251,29 +254,17 @@ impl EngineStrings {
     pub fn make(&mut self, text: Vec<u8>) -> i32 {
         let value = self.next_value();
         self.entries.push((value, text));
-        self.mark_changed(value);
         value
     }
 
-    /// The engine strings whose text was set (made, or the temp buffer overwritten) since the
-    /// last call, each once with its current text, in the order they were first set; the list
-    /// is then empty (TRACE-4.10).
-    pub fn take_changed(&mut self) -> Vec<(i32, Vec<u8>)> {
-        let changed = core::mem::take(&mut self.changed);
-        let mut out = Vec::with_capacity(changed.len());
-        for value in changed {
-            if let Some(text) = self.text(value) {
-                out.push((value, text.to_vec()));
-            }
+    /// The temp buffer's value and text when it was allocated or given a different text since
+    /// the last call, else `None`; the note is then cleared (DIFF-3.9).
+    pub fn take_temp_change(&mut self) -> Option<(i32, Vec<u8>)> {
+        if !core::mem::take(&mut self.temp_changed) {
+            return None;
         }
-        out
-    }
-
-    /// Lists `value` as changed for the next [`EngineStrings::take_changed`], once.
-    fn mark_changed(&mut self, value: i32) {
-        if !self.changed.contains(&value) {
-            self.changed.push(value);
-        }
+        let value = self.temp_value?;
+        Some((value, self.text(value)?.to_vec()))
     }
 
     /// The text of the engine string `value`, or `None` when no engine string has it.

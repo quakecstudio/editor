@@ -389,11 +389,8 @@ impl Host<'_> {
     /// Makes an engine string holding `text`, records it in the trace (TRACE-4.10) and returns
     /// its value (EDICT-13.1).
     pub(crate) fn make_string(&mut self, text: Vec<u8>) -> i32 {
-        let strings = &mut self.builtins.engine_mut().strings;
-        let value = strings.make(text);
-        for (changed, text) in strings.take_changed() {
-            self.trace.string_made(changed, text);
-        }
+        let value = self.builtins.engine_mut().strings.make(text.clone());
+        self.trace.string_set(value, text);
         value
     }
 
