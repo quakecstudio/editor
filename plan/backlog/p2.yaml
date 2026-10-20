@@ -1413,6 +1413,27 @@ issues:
   - 'Under the FTEQCC dialect an argument list that starts in an expansion and does not end in it is an error, and one that ends in it is read as before; the vanilla dialect is unchanged; recorded against the pinned FTEQCC; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-preproc
+- key: P2-86
+  title: Restore the qc-lexer and qc-preproc readiness ratchets after the FTEQCC macro port
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-5
+  - TEST-1
+  depends:
+  - P2-78
+  deliverable:
+  - 'crates/qc-lexer (src/fte_string.rs), crates/qc-preproc (src/fte_macro.rs, src/lib.rs `builtin`) and docs/spec/dialect-fteqcc.md FTEF-14.21: the L2 Readiness run 39455878689 on main after #486 failed `cargo xtask ratchet` on qc-lexer lines (935 of 937, needs 100%), qc-preproc branches (520 of 574, needs 91%) and two qc-preproc mutants neither killed nor listed as equivalent, the deleted `"` and `\` match arms of `quote` (src/lib.rs). The two uncovered lexer lines and the uncovered preprocessor branches that no input reaches are removed; the reachable ones get tests. The surviving mutants showed that `__FILE__` escaped its file name where `QCC_PR_CheckBuiltinCompConst` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `"%s"` unescaped and cuts the name at its first `:`; the built-in constants are written as FTEQCC writes them and the escaping function is gone'
+  acceptance:
+  - 'cargo xtask readiness lines qc-lexer, branches qc-preproc and mutation qc-preproc, measured as the Readiness workflow does, meet the minimums in ratchets.toml with no unlisted survivor and no lowered ratchet; each new test cites the statement it pins'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc
+  - cargo xtask readiness lines qc-lexer
+  - cargo xtask readiness branches qc-preproc
+  - cargo xtask readiness mutation qc-preproc
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1495,6 +1516,7 @@ issues:
   - P2-77
   - P2-78
   - P2-79
+  - P2-86
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
