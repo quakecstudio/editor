@@ -61,7 +61,7 @@ pub enum Code {
     E0118,
     /// "Name for frame macro NAME is too long" (QCD-2.8).
     E0119,
-    /// "macro expansion too large" (QCD-8.12).
+    /// "macro expansion too large" (QCD-8.13).
     E0120,
     /// "not a name" (QCD-3.1).
     E0201,

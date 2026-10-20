@@ -69,8 +69,10 @@ fn vanilla_has_no_if() {
     assert_eq!(tokens(&out), "b");
 }
 
-// spec FTEF-14.2: a directive goes on past a break after `\`, or one inside a `/* */` comment,
-// and a `//` comment ends it.
+// spec FTEF-14.29: a directive goes on past a break after `\`, or one inside a `/* */`
+// comment, and a `//` comment ends its text
+// spec FTEF-14.23: and the line a `#define` ends on goes on past a `\` and line break in that
+// `//` comment, as `QCC_PR_SkipToEndOfLine` reads it, so the next line is not read
 #[test]
 fn directives_continue_after_a_backslash() {
     let (toks, errs) = fte("#define F(a) {\\\n\tg(a);\\\n}\nF(x)\n");
@@ -78,6 +80,8 @@ fn directives_continue_after_a_backslash() {
     let (toks, _) = fte("#define G 1 /* a\ncomment */ 2\nG\n");
     assert_eq!(toks, "1 2");
     let (toks, _) = fte("#define H 1 // c \\\n2\nH\n");
+    assert_eq!(toks, "1");
+    let (toks, _) = fte("#define H 1 // c\n2\nH\n");
     assert_eq!(toks, "2 1");
     let (toks, _) = fte("#define K 1\r\n2\nK\n");
     assert_eq!(toks, "2 1");
@@ -138,7 +142,7 @@ fn variadic_macros() {
     assert_eq!(codes(&out), vec![Code::E0115]);
 }
 
-// spec FTEF-14.14, FTEF-14.15: `#param` is the argument as a string and `a ## b` one token;
+// spec FTEF-14.14, FTEF-14.30: `#param` is the argument as a string and `a ## b` one token;
 // a `#` before a word that is no parameter stays.
 #[test]
 fn stringify_and_paste() {
@@ -487,7 +491,7 @@ fn a_paste_is_lexed_again() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("12"));
 }
 
-// spec FTEF-14.15: `#param` is a string literal whose spelling escapes `"` and `\`
+// spec FTEF-14.30: `#param` is a string literal whose spelling escapes `"` and `\`
 #[test]
 fn a_stringified_argument_is_escaped() {
     let (_, out) = one_fte("#define Q(a) #a\nQ(say \"a\\\\b\")\n");
@@ -529,7 +533,7 @@ fn a_frame_value_past_an_int_is_held() {
     );
 }
 
-// spec FTEF-14.2: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
+// spec FTEF-14.29: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
 // the comment not ending it
 #[test]
 fn a_comment_with_stars_and_slashes_continues_a_directive() {

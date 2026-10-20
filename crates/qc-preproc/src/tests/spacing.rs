@@ -238,7 +238,7 @@ fn a_paste_writes_its_sides_together() {
     assert_eq!(fte("#define P(a, b) a##b:\nP(l, bl )"), "lbl :");
 }
 
-// spec FTEF-14.15: `#param` is the argument's text as written, white space and comments
+// spec FTEF-14.30: `#param` is the argument's text as written, white space and comments
 // included, with no lexical error; a `#` before no parameter writes the next word against
 // it, and one at the end of the body writes nothing
 #[test]
@@ -287,7 +287,7 @@ fn a_macro_is_expanded_again_through_another() {
     assert_eq!(fte("#define K x __LINE__:\nK"), "x 2 :");
 }
 
-// spec FTEF-14.18: a function-like macro takes its `(` after spaces and tabs only, in the
+// spec FTEF-14.28: a function-like macro takes its `(` after spaces and tabs only, in the
 // chunk of its name, and its arguments from that chunk only; one that runs past it is E0117
 // spec QCD-8.10: E0117 "unterminated argument list for macro NAME"
 #[test]
@@ -307,8 +307,8 @@ fn arguments_stay_in_the_chunk_of_the_name() {
     assert_eq!(codes, vec![crate::Code::E0117]);
 }
 
-// spec QCD-8.12: E0120 "macro expansion too large", reported once
-// spec FTEF-14.19: an expansion that grows past the bound stops there
+// spec QCD-8.13: E0120 "macro expansion too large", reported once
+// spec FTEF-14.27: an expansion that grows past the bound stops there
 #[test]
 fn an_expansion_past_the_bound_is_reported_once() {
     let mut text = String::from("#define A0 x\n");
@@ -337,7 +337,7 @@ fn an_argument_beside_a_paste_is_copied_whole() {
     assert_eq!(fte("#define P(a, b) a#/**/#b\nP(x, y)"), "xy");
 }
 
-// spec FTEF-14.15: only a named parameter is turned into a string, so `#__VA_ARGS__` stays
+// spec FTEF-14.30: only a named parameter is turned into a string, so `#__VA_ARGS__` stays
 // as written; the argument's bytes are kept as they are, and its text is still checked when
 // the body also writes it as code
 #[test]
@@ -355,10 +355,15 @@ fn a_string_keeps_the_argument_s_bytes() {
         out.tokens[0].kind,
         qc_lexer::TokenKind::String("\u{e9}".as_bytes().to_vec())
     );
+    // The argument `"ab` and its line break: written as code, its last token is the string,
+    // with the line break after it dropped, so the expansion ends inside it.
     let (_, codes) = fte_with_codes("#define S(a) #a a\nS(\"ab\n)");
-    assert!(codes.contains(&crate::Code::E0102), "{codes:?}");
+    assert!(codes.contains(&crate::Code::E0101), "{codes:?}");
     let (_, codes) = fte_with_codes("#define S(a) #a\nS(\"ab\n)");
-    assert!(!codes.contains(&crate::Code::E0102), "{codes:?}");
+    assert!(
+        !codes.contains(&crate::Code::E0101) && !codes.contains(&crate::Code::E0102),
+        "{codes:?}"
+    );
 }
 
 // spec FTEF-14.20: a built-in constant in an argument not beside `##` is written as its
@@ -381,7 +386,7 @@ fn a_built_in_constant_in_an_argument_is_its_value() {
     );
 }
 
-// spec FTEF-14.15: a string skips the white space and both kinds of comment before the
+// spec FTEF-14.30: a string skips the white space and both kinds of comment before the
 // argument, keeps a line break as an escape, and an argument from another expansion is
 // written as its tokens touch
 #[test]
@@ -410,7 +415,7 @@ fn a_function_like_macro_opens_nine_chunks() {
     assert_eq!(f, 9);
 }
 
-// spec FTEF-14.18: a function-like macro's name and `(` in one expansion open its arguments
+// spec FTEF-14.28: a function-like macro's name and `(` in one expansion open its arguments
 // whatever spacing the stored body has
 #[test]
 fn a_call_written_in_a_body_expands() {
@@ -419,7 +424,7 @@ fn a_call_written_in_a_body_expands() {
     assert_eq!(fte("#define M(x) x\n#define K M/**/(1)\nK"), "1");
 }
 
-// spec FTEF-14.19: the bound on tokens holds even when the expansions stay under theirs
+// spec FTEF-14.27: the bound on tokens holds even when the expansions stay under theirs
 #[test]
 fn an_expansion_writing_too_many_tokens_is_reported() {
     let mut text = format!("#define A0 {}\n", "x ".repeat(100));
@@ -450,7 +455,7 @@ fn a_paste_is_text_lexed_again() {
     assert_eq!(kinds, relexed);
 }
 
-// spec FTEF-14.15: a string made from an argument of another expansion keeps its bytes, and
+// spec FTEF-14.30: a string made from an argument of another expansion keeps its bytes, and
 // a carriage return is escaped like a line break
 #[test]
 fn a_nested_string_keeps_its_bytes() {
@@ -466,7 +471,7 @@ fn a_nested_string_keeps_its_bytes() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\r\\nb\""));
 }
 
-// spec FTEF-14.18: in an expansion a `(` opens a call only after spaces and tabs, as the
+// spec FTEF-14.28: in an expansion a `(` opens a call only after spaces and tabs, as the
 // text of the argument it came from has them
 #[test]
 fn a_call_in_an_argument_needs_its_parenthesis_on_the_line() {

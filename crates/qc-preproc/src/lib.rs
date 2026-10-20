@@ -24,7 +24,7 @@ mod tests;
 
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
-use fte_macro::ends_word;
+use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
@@ -74,7 +74,7 @@ pub struct PpToken {
     /// The expansion that produced it, if any.
     pub expansion: Option<ExpansionId>,
     /// Its text when that is not the bytes at [`PpToken::span`]: a token `##` pasted, a string
-    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.15, FTEF-14.7).
+    /// `#` made, or a built-in constant's value (FTEF-14.14, FTEF-14.30, FTEF-14.7).
     pub spelling: Option<String>,
     /// In an expansion, the span of the token of the same expansion that the expansion's text
     /// has right before this one with nothing between them, if any (QC-9.16). Always `None`
@@ -134,11 +134,37 @@ struct Macro {
     params: Option<Vec<String>>,
     /// Whether the parameter list ends in `...` (FTEF-14.5).
     variadic: bool,
-    /// The body's tokens, each with the file it is in (an `#append`ed part may be in another,
-    /// FTEF-14.8).
-    body: Vec<(FileId, Token)>,
+    body: Body,
     file: FileId,
     name_span: Span,
+}
+
+/// A macro's body as each dialect keeps it.
+#[derive(Debug)]
+enum Body {
+    /// The vanilla dialect's: the body's tokens, each with the file it is in.
+    Tokens(Vec<(FileId, Token)>),
+    /// FTEQCC's: the text `QCC_PR_PreProcessor_Define` stored, an `#append`ed part included
+    /// (FTEF-14.8, FTEF-14.23).
+    Text(Text),
+}
+
+impl Macro {
+    /// The body's tokens, under the vanilla dialect.
+    fn tokens(&self) -> &[(FileId, Token)] {
+        match &self.body {
+            Body::Tokens(tokens) => tokens,
+            Body::Text(_) => &[],
+        }
+    }
+
+    /// The body's stored text, under FTEQCC.
+    fn text(&self) -> Option<&Text> {
+        match &self.body {
+            Body::Text(text) => Some(text),
+            Body::Tokens(_) => None,
+        }
+    }
 }
 
 /// The names a token may no longer expand to: the macros whose expansion produced it.
@@ -201,6 +227,9 @@ fn hide_with(hide: &Hide, live: &Live) -> Hide {
 struct Item {
     tok: PpToken,
     hide: Hide,
+    /// Under FTEQCC, for a token read from an expansion's chunk, the offset in the chunk's
+    /// text where it ends (FTEF-14.13, FTEF-14.21).
+    chunk_end: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -213,15 +242,89 @@ struct Cond {
     taken: bool,
 }
 
+/// The tokens lexed from one text, a file's or an FTEQCC expansion's, and where reading
+/// stands in them.
+#[derive(Debug, Default)]
+struct TokenStream {
+    tokens: Vec<Token>,
+    pos: usize,
+    diagnostics: Vec<qc_lexer::Diagnostic>,
+}
+
+impl TokenStream {
+    /// The tokens of `text` under `dialect`, read from the first.
+    fn lex(text: &[u8], dialect: Dialect) -> Self {
+        let lexed = lex_with(text, dialect);
+        Self {
+            tokens: lexed.tokens,
+            pos: 0,
+            diagnostics: lexed.diagnostics,
+        }
+    }
+
+    /// Reading goes on at the byte `offset` of `text`, the text these tokens were lexed from,
+    /// where FTEQCC's reading goes on after a use's arguments or a `#define` (FTEF-14.21,
+    /// FTEF-14.23): from the first token at or after it, and the text from `offset` lexed
+    /// again unless only white space stands between the token before it and `offset`, so
+    /// that no token or comment of the text as first lexed stands across it, and its tokens
+    /// and lexical errors are those of the text from there.
+    fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) {
+        let next = self.tokens.partition_point(|t| t.span.start < offset);
+        let before = next.checked_sub(1).and_then(|last| self.tokens.get(last));
+        let gap_start = before.map_or(0, |t| t.span.end);
+        let clean = gap_start <= offset
+            && text
+                .get(gap_start..offset)
+                .is_some_and(|gap| gap.iter().all(|&b| qc_lexer::is_whitespace(b)));
+        if !clean {
+            let rest = lex_with(text.get(offset..).unwrap_or_default(), dialect);
+            // Only white space before `offset` on its line: a token there may start a line.
+            let line_start = text
+                .get(..offset)
+                .unwrap_or_default()
+                .iter()
+                .rev()
+                .take_while(|&&b| b != b'\n')
+                .all(|&b| qc_lexer::is_whitespace(b));
+            let shift = |span: Span| {
+                Span::new(
+                    span.start.saturating_add(offset),
+                    span.end.saturating_add(offset),
+                )
+            };
+            self.tokens.truncate(next);
+            let mut first_line = true;
+            let mut end = offset;
+            for mut token in rest.tokens {
+                token.span = shift(token.span);
+                first_line &= !text
+                    .get(end..token.span.start)
+                    .unwrap_or_default()
+                    .contains(&b'\n');
+                if first_line {
+                    token.line_start &= line_start;
+                }
+                end = token.span.end;
+                self.tokens.push(token);
+            }
+            self.diagnostics.retain(|d| d.span.start < offset);
+            self.diagnostics
+                .extend(rest.diagnostics.into_iter().map(|mut d| {
+                    d.span = shift(d.span);
+                    d
+                }));
+        }
+        self.pos = next;
+    }
+}
+
 /// One file being read: listed in `progs.src` or included.
 #[derive(Debug)]
 struct Cursor {
     file: FileId,
     path: PathBuf,
-    tokens: Vec<Token>,
-    pos: usize,
+    stream: TokenStream,
     conds: Vec<Cond>,
-    lex_diagnostics: Vec<qc_lexer::Diagnostic>,
     skipped: Vec<Span>,
     skip_start: Option<usize>,
     /// The end of an `#includelist` line whose `#endlist` has not been reached (FTEF-14.4).
@@ -248,17 +351,17 @@ struct Run {
     frame_value: i32,
     /// For each macro name, how many live hide-set nodes name it (QC-9.17).
     live: HashMap<String, Live>,
-    /// In an FTEQCC dialect, the chunks open where the token being read stands: its
-    /// expansion and those it was used in, outermost first (FTEF-14.17).
-    open: Vec<ExpansionId>,
-    /// How many of [`Run::open`] each macro has.
+    /// In an FTEQCC dialect, the chunks open where reading stands, outermost first: the
+    /// expansion being read and those it was used in (FTEF-14.17).
+    chunks: Vec<ChunkReader>,
+    /// How many of [`Run::chunks`] each macro has, FTEQCC's `c->inside`.
     open_names: HashMap<String, usize>,
-    /// The macro expansions this file has made under FTEQCC (FTEF-14.19).
+    /// The macro expansions this file has made (FTEF-14.27, QC-9.18).
     expanded: Expanded,
     out: FileOutput,
 }
 
-/// The work a file's FTEQCC macro expansions have done, against the bound of FTEF-14.19.
+/// The work a file's macro expansions have done, against the bound of FTEF-14.27 and QC-9.18.
 #[derive(Debug, Default)]
 struct Expanded {
     expansions: usize,
@@ -270,6 +373,17 @@ struct Expanded {
 impl Expanded {
     fn over_bound(&self) -> bool {
         self.expansions >= FTE_MAX_EXPANSIONS || self.tokens >= FTE_MAX_EXPANDED_TOKENS
+    }
+
+    /// Reports `E0120` at the use `span` (QCD-8.13), the first time in the file.
+    fn report(&mut self, span: FileSpan, diagnostics: &mut Vec<Diagnostic>) {
+        if !std::mem::replace(&mut self.reported, true) {
+            diagnostics.push(Diagnostic {
+                code: Code::E0120,
+                message: "macro expansion too large".to_owned(),
+                span,
+            });
+        }
     }
 }
 
@@ -292,11 +406,12 @@ const FTE_MAX_FRAME_NAME: usize = 63;
 /// `QCC_PR_CheckCompConst` (FTEF-14.17).
 const FTE_MAX_OPEN_CHUNKS: usize = 8;
 
-/// The most macro expansions this profile makes in one file under FTEQCC (FTEF-14.19).
+/// The most macro expansions the preprocessor makes in one file, under either dialect
+/// (FTEF-14.27, QC-9.18).
 const FTE_MAX_EXPANSIONS: usize = 1 << 20;
 
-/// The most tokens this profile's macro expansions write in one file under FTEQCC
-/// (FTEF-14.19).
+/// The most tokens the preprocessor's macro expansions write in one file, under either dialect
+/// (FTEF-14.27, QC-9.18).
 const FTE_MAX_EXPANDED_TOKENS: usize = 1 << 22;
 
 /// What FTEQCC's `s_filen` is while a frame macro is defined or used: one reading of a source
@@ -517,14 +632,11 @@ impl<L: Loader> Preprocessor<L> {
             .sources
             .file(file)
             .map_or(&[][..], |f| f.text.as_slice());
-        let lexed = lex_with(text, self.dialect);
         Cursor {
             file,
             path,
-            tokens: lexed.tokens,
-            pos: 0,
+            stream: TokenStream::lex(text, self.dialect),
             conds: Vec::new(),
-            lex_diagnostics: lexed.diagnostics,
             skipped: Vec::new(),
             skip_start: None,
             list_start: None,
@@ -535,14 +647,24 @@ impl<L: Loader> Preprocessor<L> {
         self.sources.file(file).map_or(0, |f| f.lines.line(offset))
     }
 
-    /// The next token after directives and skipped blocks, from the pushed-back tokens first.
+    /// The next token after directives and skipped blocks: from the pushed-back tokens first,
+    /// then under FTEQCC from the chunk being read, each chunk closed when reading goes past
+    /// its last token (FTEF-14.17), then from the file.
     fn next_item(&mut self, run: &mut Run) -> Option<Item> {
         if let Some(item) = run.pending.pop() {
             return Some(item);
         }
+        while let Some(chunk) = run.chunks.last_mut() {
+            if let Some(item) = chunk.next_item() {
+                return Some(item);
+            }
+            if let Some(chunk) = run.chunks.pop() {
+                Self::close_chunk(run, chunk);
+            }
+        }
         loop {
             let cursor = run.cursors.last_mut()?;
-            let Some(token) = cursor.tokens.get(cursor.pos).cloned() else {
+            let Some(token) = cursor.stream.tokens.get(cursor.stream.pos).cloned() else {
                 self.finish_cursor(run);
                 continue;
             };
@@ -550,29 +672,31 @@ impl<L: Loader> Preprocessor<L> {
             if let Some(start) = cursor.list_start {
                 // FTEF-14.4: the lines of an `#includelist` produce no tokens, up to `#endlist`.
                 let end = self.directive_end(cursor);
-                let name = cursor.tokens.get(cursor.pos.saturating_add(1));
+                let stream = &mut cursor.stream;
+                let name = stream.tokens.get(stream.pos.saturating_add(1));
                 let ends = end.is_some()
                     && name.is_some_and(|n| n.kind == TokenKind::Name("endlist".to_owned()));
                 if ends && let Some(end) = end {
                     cursor.skipped.push(Span::new(start, token.span.start));
                     cursor.list_start = None;
-                    cursor.pos = end;
+                    stream.pos = end;
                 } else {
-                    cursor.pos = cursor.pos.saturating_add(1);
+                    stream.pos = stream.pos.saturating_add(1);
                 }
                 continue;
             }
             if let Some(end) = self.directive_end(cursor) {
-                let line: Vec<Token> = cursor
+                let stream = &mut cursor.stream;
+                let line: Vec<Token> = stream
                     .tokens
-                    .get(cursor.pos..end)
+                    .get(stream.pos..end)
                     .unwrap_or_default()
                     .to_vec();
-                cursor.pos = end;
+                stream.pos = end;
                 self.directive(run, &line);
                 continue;
             }
-            cursor.pos = cursor.pos.saturating_add(1);
+            cursor.stream.pos = cursor.stream.pos.saturating_add(1);
             if !cursor.taking() {
                 continue;
             }
@@ -589,27 +713,29 @@ impl<L: Loader> Preprocessor<L> {
                     follows: None,
                 },
                 hide: None,
+                chunk_end: None,
             });
         }
     }
 
     /// If the cursor is at a directive (QC-9.1), the index one past its last token.
     fn directive_end(&self, cursor: &Cursor) -> Option<usize> {
-        let hash = cursor.tokens.get(cursor.pos)?;
+        let stream = &cursor.stream;
+        let hash = stream.tokens.get(stream.pos)?;
         if hash.kind != TokenKind::Punct(Punct::Hash) || !hash.line_start {
             return None;
         }
         let line = self.line(cursor.file, hash.span.start);
-        let name = cursor.tokens.get(cursor.pos.checked_add(1)?)?;
+        let name = stream.tokens.get(stream.pos.checked_add(1)?)?;
         if !matches!(name.kind, TokenKind::Name(_))
             || self.line(cursor.file, name.span.start) != line
         {
             return None;
         }
-        let rest = cursor.tokens.get(cursor.pos..)?;
+        let rest = stream.tokens.get(stream.pos..)?;
         let mut len = 1_usize;
         if self.dialect.has_fteqcc_extensions() {
-            // FTEF-14.2: a line that ends in `\` before its break goes on.
+            // FTEF-14.29: a line that ends in `\` before its break goes on.
             let text = self
                 .sources
                 .file(cursor.file)
@@ -627,7 +753,7 @@ impl<L: Loader> Preprocessor<L> {
                 .take_while(|t| self.line(cursor.file, t.span.start) == line)
                 .count();
         }
-        cursor.pos.checked_add(len)
+        stream.pos.checked_add(len)
     }
 
     /// Ends the innermost file: open blocks are reported and closed (QC-9.6, QC-9.12), and
@@ -643,7 +769,7 @@ impl<L: Loader> Preprocessor<L> {
         if let Some(start) = cursor.list_start.take() {
             cursor.skipped.push(Span::new(start, len));
         }
-        for d in cursor.lex_diagnostics {
+        for d in cursor.stream.diagnostics {
             let skipped = cursor
                 .skipped
                 .iter()
@@ -755,6 +881,7 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             _ if !was_taking => {}
+            "define" | "append" if fte => self.fte_define(run, file, line),
             "define" => self.define(run, file, line),
             "undef" => {
                 if let Some(n) = operand {
@@ -897,13 +1024,12 @@ impl<L: Loader> Preprocessor<L> {
                     cursor.list_start = Some(whole.end);
                 }
             }
-            // FTEF-14.8: `#append` adds to a macro's body, `#eof` ends the file, and the build
-            // directives produce no tokens.
-            "append" => self.append(run, file, line),
+            // FTEF-14.8: `#eof` ends the file, and the build directives produce no tokens;
+            // `directive` gives `#append` to `fte_define`.
             "eof" => {
                 if let Some(cursor) = run.cursors.last_mut() {
                     cursor.skip_start.get_or_insert(whole.end);
-                    cursor.pos = cursor.tokens.len();
+                    cursor.stream.pos = cursor.stream.tokens.len();
                 }
             }
             "endlist" | "output" | "forcecrc" | "copyright" | "pack" | "package" | "merge"
@@ -913,7 +1039,8 @@ impl<L: Loader> Preprocessor<L> {
         true
     }
 
-    /// `#define` (QC-9.3), with the operand errors of QC-9.9.
+    /// `#define` in the vanilla dialect (QC-9.3), with the operand errors of QC-9.9; under
+    /// FTEQCC [`Self::fte_define`] reads it.
     fn define(&mut self, run: &mut Run, file: FileId, line: &[Token]) {
         let at = |span: Span| FileSpan { file, span };
         let whole = match (line.first(), line.last()) {
@@ -935,7 +1062,9 @@ impl<L: Loader> Preprocessor<L> {
             && open.kind == TokenKind::Punct(Punct::LParen)
             && open.span.start == name_span.end
         {
-            let Some((list, after)) = parse_params(line, 4) else {
+            // The vanilla dialect has no `...` parameter (FTEF-14.5).
+            let list = parse_params(line, 4).filter(|(list, _)| !list.iter().any(|p| p == "..."));
+            let Some((list, after)) = list else {
                 run.report(
                     Code::E0115,
                     format!("bad parameter list for macro {name}"),
@@ -946,22 +1075,6 @@ impl<L: Loader> Preprocessor<L> {
             params = Some(list);
             body_start = after;
         }
-        let mut variadic = false;
-        if let Some(list) = &mut params
-            && list.last().is_some_and(|p| p == "...")
-        {
-            if !self.dialect.has_fteqcc_extensions() {
-                run.report(
-                    Code::E0115,
-                    format!("bad parameter list for macro {name}"),
-                    at(whole),
-                );
-                return;
-            }
-            // FTEF-14.5: a last parameter `...` makes the macro variadic.
-            list.pop();
-            variadic = true;
-        }
         let body: Vec<(FileId, Token)> = line
             .get(body_start..)
             .unwrap_or_default()
@@ -969,13 +1082,13 @@ impl<L: Loader> Preprocessor<L> {
             .map(|t| (file, t.clone()))
             .collect();
         if let Some(old) = self.macros.get(name) {
-            let same_body = old.body.len() == body.len()
-                && old
-                    .body
+            let old_body = old.tokens();
+            let same_body = old_body.len() == body.len()
+                && old_body
                     .iter()
                     .zip(&body)
                     .all(|(a, b)| a.1.kind == b.1.kind);
-            if old.params != params || old.variadic != variadic || !same_body {
+            if old.params != params || !same_body {
                 run.report(
                     Code::W0102,
                     format!("macro {name} redefined"),
@@ -985,50 +1098,19 @@ impl<L: Loader> Preprocessor<L> {
         }
         let mac = Macro {
             params,
-            variadic,
-            body,
+            variadic: false,
+            body: Body::Tokens(body),
             file,
             name_span: *name_span,
         };
         self.macros.insert(name.clone(), Rc::new(mac));
     }
 
-    /// `#append NAME text` (FTEF-14.8): the macro's body with `text` after it, or a `#define`
-    /// when `NAME` is not defined.
-    fn append(&mut self, run: &mut Run, file: FileId, line: &[Token]) {
-        let Some(Token {
-            kind: TokenKind::Name(name),
-            ..
-        }) = line.get(2)
-        else {
-            self.define(run, file, line);
-            return;
-        };
-        let Some(old) = self.macros.get(name).cloned() else {
-            self.define(run, file, line);
-            return;
-        };
-        let mut body = old.body.clone();
-        body.extend(
-            line.get(3..)
-                .unwrap_or_default()
-                .iter()
-                .map(|t| (file, t.clone())),
-        );
-        let mac = Macro {
-            params: old.params.clone(),
-            variadic: old.variadic,
-            body,
-            file: old.file,
-            name_span: old.name_span,
-        };
-        self.macros.insert(name.clone(), Rc::new(mac));
-    }
-
     /// The value of an `#if` or `#elif` expression (FTEF-14.1), evaluated as the project graph
     /// evaluates it in this dialect (PRJ-5.5, FTEF-14.11), a macro's value being its body's
-    /// text. The expression is its tokens' text; under an FTEQCC profile it is the bytes as
-    /// written, since FTEQCC reads words up to whitespace (FTEF-14.11).
+    /// text: its tokens' text, or under FTEQCC the text it stored (`c->value`). The expression
+    /// is its tokens' text; under an FTEQCC profile it is the bytes as written, since FTEQCC
+    /// reads words up to whitespace (FTEF-14.11).
     fn condition(&self, file: FileId, tokens: &[Token]) -> bool {
         let expr = if self.dialect.has_fteqcc_extensions() {
             self.source_text(file, tokens)
@@ -1036,17 +1118,20 @@ impl<L: Loader> Preprocessor<L> {
             self.line_text(file, tokens)
         };
         let value = |name: &str| {
-            self.macros.get(name).map(|m| {
-                let parts: Vec<String> =
-                    m.body.iter().map(|(f, t)| self.token_text(*f, t)).collect();
-                parts.join(" ")
+            self.macros.get(name).map(|m| match &m.body {
+                Body::Text(text) => String::from_utf8_lossy(text.bytes()).into_owned(),
+                Body::Tokens(tokens) => {
+                    let parts: Vec<String> =
+                        tokens.iter().map(|(f, t)| self.token_text(*f, t)).collect();
+                    parts.join(" ")
+                }
             })
         };
         cond::eval(&expr, &value, self.dialect)
     }
 
     /// The bytes of `file` from the first of `tokens` to the end of the last, a line
-    /// continuation (FTEF-14.2) read as a space.
+    /// continuation (FTEF-14.29) read as a space.
     fn source_text(&self, file: FileId, tokens: &[Token]) -> String {
         let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
             return String::new();
@@ -1118,55 +1203,30 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Expands `item` if it names a macro it may expand to (QC-9.4, QC-9.10), or in an FTEQCC
-    /// dialect a built-in constant (FTEF-14.7). Returns the item when it is not replaced.
+    /// dialect a built-in constant (FTEF-14.7), which [`Self::fte_try_expand`] does. Returns
+    /// the item when it is not replaced. A use past the bound on a file's expansions (QC-9.18)
+    /// is left as written, with `E0120` the first time.
     fn try_expand(&mut self, run: &mut Run, item: Item) -> Option<Item> {
+        if self.dialect.has_fteqcc_extensions() {
+            return self.fte_try_expand(run, item);
+        }
         let TokenKind::Name(name) = &item.tok.kind else {
             return Some(item);
         };
-        let fte = self.dialect.has_fteqcc_extensions();
-        if !fte && hidden(&run.live, &item.hide, name) {
-            return Some(item);
-        }
-        // FTEF-14.13: FTEQCC looks up the word up to a byte that ends it, not the name.
-        if fte && !self.word_ends_after(run, &item.tok) {
+        if hidden(&run.live, &item.hide, name) {
             return Some(item);
         }
         let Some(mac) = self.macros.get(name).cloned() else {
-            if fte && let Some(tok) = self.builtin(&run.path, &item.tok, name) {
-                // FTEF-14.17: a built-in's value is a chunk of its own, so the token after it
-                // touches nothing.
-                if let Some(next) = run.pending.last_mut()
-                    && next.tok.touches(&item.tok)
-                {
-                    next.tok.follows = None;
-                }
-                run.pending.push(Item {
-                    tok,
-                    hide: item.hide,
-                });
-                return None;
-            }
             return Some(item);
         };
-        if fte && self.fte_recursion_stops(run, &item.tok, (name, &mac)) {
-            return Some(item);
-        }
         let name = name.clone();
         let mut use_span = item.tok.span;
         let mut args = Vec::new();
-        let mut ends = Vec::new();
-        // The `(` and each argument's `,` or `)` (FTEF-14.15).
-        let mut bounds = Vec::new();
         // What a use that is not expanded after all gives back, its arguments read.
         let mut collected_back = Vec::new();
         if let Some(params) = &mac.params {
             let open = match self.next_item(run) {
-                Some(next)
-                    if next.tok.kind == TokenKind::Punct(Punct::LParen)
-                        && (!fte || self.fte_opens_arguments(&item.tok, &next.tok)) =>
-                {
-                    next
-                }
+                Some(next) if next.tok.kind == TokenKind::Punct(Punct::LParen) => next,
                 Some(next) => {
                     run.pending.push(next);
                     return Some(item);
@@ -1174,13 +1234,7 @@ impl<L: Loader> Preprocessor<L> {
                 None => return Some(item),
             };
             let mut collected = vec![open];
-            // FTEF-14.5: the arguments after the named ones are one, `__VA_ARGS__`.
-            let limit = mac.variadic.then_some(params.len());
-            // FTEF-14.18: FTEQCC reads the arguments from the text of the name's chunk only.
-            let chunk = fte.then_some(item.tok.expansion);
-            let Some(close) =
-                self.collect_args(run, &mut collected, (&mut args, &mut ends), (limit, chunk))
-            else {
+            let Some(close) = self.collect_args(run, &mut collected, &mut args) else {
                 run.report(
                     Code::E0117,
                     format!("unterminated argument list for macro {name}"),
@@ -1197,44 +1251,42 @@ impl<L: Loader> Preprocessor<L> {
             {
                 use_span.span.end = close.tok.span.span.end;
             }
-            // FTEF-14.5: a variadic use may give no variadic argument. FTEF-14.9: FTEQCC checks
-            // the count only at a comma, so one argument more than the parameters is accepted
-            // and unused.
-            let one_more = args.len() == params.len().saturating_add(1);
-            let count_ok = args.len() == params.len()
-                || (one_more && (mac.variadic || self.dialect.has_fteqcc_extensions()));
-            if !count_ok {
+            collected.push(close);
+            if args.len() != params.len() {
                 let message = format!(
                     "macro {name} expects {} arguments, found {}",
                     params.len(),
                     args.len()
                 );
                 run.report(Code::E0116, message, use_span);
-                collected.push(close);
                 run.pending.extend(collected.into_iter().rev());
                 return Some(item);
             }
-            bounds.extend(collected.first().map(|open| open.tok.clone()));
-            bounds.extend(ends.iter().cloned());
-            collected.push(close);
             collected_back = collected;
         }
-        // FTEF-14.19: FTEQCC's recursion rule lets an expansion grow exponentially; this
-        // profile stops at a bound.
-        if fte {
-            if run.expanded.over_bound() {
-                if !run.expanded.reported {
-                    run.expanded.reported = true;
-                    run.report(Code::E0120, "macro expansion too large", use_span);
-                }
-                run.pending.extend(collected_back.into_iter().rev());
-                return Some(item);
-            }
-            run.expanded.expansions = run.expanded.expansions.saturating_add(1);
-        }
+        let live = if let Some(live) = run.live.get(&name) {
+            Rc::clone(live)
+        } else {
+            let live = Live::default();
+            run.live.insert(name.clone(), Rc::clone(&live));
+            live
+        };
+        let hide = hide_with(&item.hide, &live);
         let id = ExpansionId(self.expansions.len());
+        let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
+        let result = (!run.expanded.over_bound())
+            .then(|| Self::substitute(&mac, &args, id, (&hide, &live), limit))
+            .flatten();
+        let Some(result) = result else {
+            run.expanded.tokens = FTE_MAX_EXPANDED_TOKENS;
+            run.expanded.report(use_span, &mut run.out.diagnostics);
+            run.pending.extend(collected_back.into_iter().rev());
+            return Some(item);
+        };
+        run.expanded.expansions = run.expanded.expansions.saturating_add(1);
+        run.expanded.tokens = run.expanded.tokens.saturating_add(result.len());
         self.expansions.push(Expansion {
-            name: name.clone(),
+            name,
             use_span,
             definition: FileSpan {
                 file: mac.file,
@@ -1242,52 +1294,19 @@ impl<L: Loader> Preprocessor<L> {
             },
             parent: item.tok.expansion,
         });
-        let mut quiet = Vec::new();
-        // FTEF-14.17: FTEQCC keeps no hide sets, so none is built.
-        let result = if fte {
-            self.fte_substitute(&mac, &args, &bounds, id, (&mut quiet, &run.path))
-        } else {
-            let live = if let Some(live) = run.live.get(&name) {
-                Rc::clone(live)
-            } else {
-                let live = Live::default();
-                run.live.insert(name, Rc::clone(&live));
-                live
-            };
-            let hide = hide_with(&item.hide, &live);
-            self.substitute(&mac, &args, id, (&hide, &live))
-        };
-        // FTEF-14.19: the tokens expansions write are bounded too.
-        run.expanded.tokens = run.expanded.tokens.saturating_add(result.len());
-        for span in quiet {
-            if let Some(cursor) = run.cursors.iter_mut().find(|c| c.file == span.file) {
-                cursor.skipped.push(span.span);
-            }
-        }
         run.pending.extend(result.into_iter().rev());
         None
     }
 
-    /// The tokens of an argument, `items`, as the expansion `id` writes them: the first after
-    /// `first`, if anything, and each other as it touches the one before it (QC-9.16); with a
-    /// hide set made from `live` in the vanilla dialect.
-    fn argument_pieces(
-        items: &[Item],
-        first: Option<FileSpan>,
-        id: ExpansionId,
-        live: Option<&Live>,
-    ) -> Vec<Item> {
+    /// The tokens of an argument, `items`, as the expansion `id` writes them, each as it
+    /// touches the one before it (QC-9.16), with a hide set made from `live`.
+    fn argument_pieces(items: &[Item], id: ExpansionId, live: &Live) -> Vec<Item> {
         let mut pieces: Vec<Item> = Vec::with_capacity(items.len());
         let mut before: Option<&Item> = None;
         for a in items {
-            let follows = match before {
-                None => first,
-                Some(before) => a
-                    .tok
-                    .touches(&before.tok)
-                    .then(|| pieces.last().map(|item| item.tok.span))
-                    .flatten(),
-            };
+            let follows = before
+                .filter(|before| a.tok.touches(&before.tok))
+                .and_then(|_| pieces.last().map(|item| item.tok.span));
             pieces.push(Item {
                 tok: PpToken {
                     kind: a.tok.kind.clone(),
@@ -1296,7 +1315,8 @@ impl<L: Loader> Preprocessor<L> {
                     spelling: a.tok.spelling.clone(),
                     follows,
                 },
-                hide: live.map_or_else(|| a.hide.clone(), |live| hide_with(&a.hide, live)),
+                hide: hide_with(&a.hide, live),
+                chunk_end: None,
             });
             before = Some(a);
         }
@@ -1306,19 +1326,23 @@ impl<L: Loader> Preprocessor<L> {
     /// The body of `mac` with its parameters replaced by `args` (QC-9.4) in the vanilla
     /// dialect: a body token follows the one before it where the two touch in the body, an
     /// argument's tokens follow each other as they touch, and an argument stays apart from the
-    /// body (QC-9.16). Under FTEQCC [`Self::fte_substitute`] writes the expansion.
+    /// body (QC-9.16). `None` once it would hold more than `limit` tokens (QC-9.18). Under
+    /// FTEQCC [`Self::fte_try_expand`] writes the expansion.
     fn substitute(
-        &self,
         mac: &Macro,
         args: &[Vec<Item>],
         id: ExpansionId,
         (hide, live): (&Hide, &Live),
-    ) -> Vec<Item> {
+        limit: usize,
+    ) -> Option<Vec<Item>> {
         let params = mac.params.as_deref().unwrap_or_default();
         let mut result: Vec<Item> = Vec::new();
         let mut last_in_body: Option<FileSpan> = None;
         let mut after_argument = false;
-        for (file, token) in &mac.body {
+        for (file, token) in mac.tokens() {
+            if result.len() > limit {
+                return None;
+            }
             let here = FileSpan {
                 file: *file,
                 span: token.span,
@@ -1333,7 +1357,11 @@ impl<L: Loader> Preprocessor<L> {
             };
             if let Some(arg) = param {
                 let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
-                result.extend(Self::argument_pieces(items, None, id, Some(live)));
+                // QC-9.18: the bound holds before an argument is copied, not only after.
+                if result.len().saturating_add(items.len()) > limit {
+                    return None;
+                }
+                result.extend(Self::argument_pieces(items, id, live));
                 after_argument = true;
                 continue;
             }
@@ -1350,81 +1378,32 @@ impl<L: Loader> Preprocessor<L> {
                     follows,
                 },
                 hide: hide.clone(),
+                chunk_end: None,
             });
         }
-        result
+        (result.len() <= limit).then_some(result)
     }
 
-    /// A token's bytes: its spelling, or its bytes in the source.
-    fn item_bytes(&self, tok: &PpToken) -> Vec<u8> {
-        match &tok.spelling {
-            Some(spelling) => spelling.as_bytes().to_vec(),
-            None => self.sources.text(tok.span).unwrap_or_default().to_vec(),
-        }
-    }
-
-    /// The token a built-in constant expands to at `tok` in the file `path` (FTEF-14.7), if
-    /// `name` is one: `QCC_PR_CheckBuiltinCompConst`.
-    fn builtin(&self, path: &Path, tok: &PpToken, name: &str) -> Option<PpToken> {
-        let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
-        let (kind, spelling) = match name {
-            "__NULL__" => (TokenKind::Float(0.0), "0i".to_owned()),
-            "__FILE__" => string(&path.display().to_string()),
-            "__LINE__" | "__LINESTR__" => {
-                let line = self.sources.line(self.origin(tok)).unwrap_or(0);
-                if name == "__LINE__" {
-                    (
-                        TokenKind::Float(f32::from(u16::try_from(line).unwrap_or(u16::MAX))),
-                        line.to_string(),
-                    )
-                } else {
-                    string(&line.to_string())
-                }
-            }
-            "__FUNC__" | "__func__" | "__TIME__" | "__DATE__" | "__QCCVER__" => string(""),
-            "__RAND__" => (TokenKind::Float(0.0), "0".to_owned()),
-            _ => return None,
-        };
-        Some(PpToken {
-            kind,
-            span: tok.span,
-            expansion: tok.expansion,
-            spelling: Some(spelling),
-            follows: None,
-        })
-    }
-
-    /// Reads a function-like macro's arguments after its `(`, which is `collected[0]`, up to
-    /// the matching `)`, which is returned. Every token read but the `)` goes to `collected`.
-    /// With a `limit`, the commas after that many arguments are part of the last
-    /// (FTEF-14.5). Each argument goes to `args` and the `,` or `)` after it to `ends`. With a
-    /// `chunk`, a token of any other expansion, or of none, ends the list unclosed
-    /// (FTEF-14.18).
+    /// Reads a vanilla function-like macro's arguments after its `(`, which is `collected[0]`,
+    /// up to the matching `)`, which is returned. Every token read but the `)` goes to
+    /// `collected`, and each argument to `args` (QC-9.10).
     fn collect_args(
         &mut self,
         run: &mut Run,
         collected: &mut Vec<Item>,
-        (args, ends): (&mut Vec<Vec<Item>>, &mut Vec<PpToken>),
-        (limit, chunk): (Option<usize>, Option<Option<ExpansionId>>),
+        args: &mut Vec<Vec<Item>>,
     ) -> Option<Item> {
         let mut depth = 0_usize;
         let mut current = Vec::new();
         loop {
             let item = self.next_item(run)?;
-            if chunk.is_some_and(|chunk| item.tok.expansion != chunk) {
-                run.pending.push(item);
-                return None;
-            }
-            let split = limit.is_none_or(|n| args.len() < n);
             match item.tok.kind {
                 TokenKind::Punct(Punct::RParen) if depth == 0 => {
                     args.push(current);
-                    ends.push(item.tok.clone());
                     return Some(item);
                 }
-                TokenKind::Punct(Punct::Comma) if depth == 0 && split => {
+                TokenKind::Punct(Punct::Comma) if depth == 0 => {
                     args.push(std::mem::take(&mut current));
-                    ends.push(item.tok.clone());
                 }
                 TokenKind::Punct(Punct::LParen) => {
                     depth = depth.saturating_add(1);
@@ -1680,7 +1659,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<String>, usize)> {
 }
 
 /// Whether a directive goes on from the token ending at `from` to the one starting at `to`
-/// (FTEF-14.2): on the same line, or every line break between them is right after a `\` or
+/// (FTEF-14.29): on the same line, or every line break between them is right after a `\` or
 /// inside a `/* */` comment. A `//` comment ends the line.
 fn continues(text: &[u8], from: usize, to: usize) -> bool {
     let gap = text.get(from..to).unwrap_or_default();
@@ -1720,7 +1699,26 @@ fn directive_span(line: &[Token]) -> Span {
     }
 }
 
-/// `text` as a QuakeC string literal, `"` and `\` escaped (FTEF-14.15).
+/// The token a built-in constant `name` expands to and its text, `QCC_PR_CheckBuiltinCompConst`
+/// (FTEF-14.7), in the file `path` at the line `line` FTEQCC gives it there (FTEF-14.26); `None`
+/// when `name` is none.
+fn builtin_value(name: &str, line: u32, path: &Path) -> Option<(TokenKind, String)> {
+    let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
+    Some(match name {
+        "__NULL__" => (TokenKind::Float(0.0), "0i".to_owned()),
+        "__FILE__" => string(&path.display().to_string()),
+        "__LINE__" => (
+            TokenKind::Float(f32::from(u16::try_from(line).unwrap_or(u16::MAX))),
+            line.to_string(),
+        ),
+        "__LINESTR__" => string(&line.to_string()),
+        "__FUNC__" | "__func__" | "__TIME__" | "__DATE__" | "__QCCVER__" => string(""),
+        "__RAND__" => (TokenKind::Float(0.0), "0".to_owned()),
+        _ => return None,
+    })
+}
+
+/// `text` as a QuakeC string literal, `"` and `\` escaped (FTEF-14.30).
 fn quote(text: &str) -> String {
     let mut out = String::with_capacity(text.len().saturating_add(2));
     out.push('"');
@@ -1736,7 +1734,7 @@ fn quote(text: &str) -> String {
     out
 }
 
-/// `bytes` as a QuakeC string literal (FTEF-14.15), as `QCC_PR_ExpandStrCatMarkup` escapes
+/// `bytes` as a QuakeC string literal (FTEF-14.30), as `QCC_PR_ExpandStrCatMarkup` escapes
 /// them: `"`, `\` and a line break escaped; a byte of 0x80 or more is written as `\x`
 /// and its two hex digits, which an FTEQCC string reads back as that byte (FTEF-13.11), so
 /// the literal's text stays UTF-8.
