@@ -400,11 +400,63 @@ impl<L: Loader> Preprocessor<L> {
         let cursor = self.cursor(file, path);
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
+            let Some(item) = self.explicit_use(&mut run, item) else {
+                continue;
+            };
             if let Some(item) = self.try_expand(&mut run, item) {
                 self.emit(&mut run, item.tok);
             }
         }
         Ok(run.out)
+    }
+
+    /// In an FTEQCC dialect, a `#` right before the name of a macro it may expand is that
+    /// macro's expansion with no `#` (FTE-23.10), as `QCC_PR_Lex` skips the `#` and
+    /// `QCC_PR_CheckCompConst` expands the word after it. Returns `item` when it is not such a
+    /// `#`, which the parser then reads as it is; `None` when the `#` is gone, or when it went
+    /// out with the name after it.
+    fn explicit_use(&mut self, run: &mut Run, item: Item) -> Option<Item> {
+        if !self.dialect.has_fteqcc_extensions()
+            || item.tok.kind != TokenKind::Punct(Punct::Hash)
+            || item.tok.spelling.is_some()
+        {
+            return Some(item);
+        }
+        let Some(word) = self.word_after(item.tok.span) else {
+            return Some(item);
+        };
+        let Some(next) = self.next_item(run) else {
+            return Some(item);
+        };
+        let names_word = matches!(&next.tok.kind, TokenKind::Name(name) if *name == word)
+            && next.tok.spelling.is_none()
+            && next.tok.span.file == item.tok.span.file
+            && next.tok.span.span.start == item.tok.span.span.end;
+        if !names_word {
+            run.pending.push(next);
+            return Some(item);
+        }
+        // A use `try_expand` refused, a function-like macro's with no or a bad argument list,
+        // goes out as it is: tried again, it would report its error again.
+        let next = self.try_expand(run, next)?;
+        self.emit(run, item.tok);
+        self.emit(run, next.tok);
+        None
+    }
+
+    /// The word `QCC_PR_CheckCompConst` reads right after the `#` at `hash` (FTE-23.10): the
+    /// bytes up to the first white space (`qcc_iswhite`) or one of its stop bytes; `None` when
+    /// there is none.
+    fn word_after(&self, hash: FileSpan) -> Option<String> {
+        const STOPS: &[u8] = b")(+-*/|&=^~[]\"{};:<>,.#";
+        let text = self.sources.file(hash.file)?.text.get(hash.span.end..)?;
+        let len = text
+            .iter()
+            .take_while(|&&b| b != 0 && !matches!(b, b' ' | b'\r' | b'\n' | b'\t' | 0x0b))
+            .take_while(|b| !STOPS.contains(b))
+            .count();
+        let word = text.get(..len).filter(|word| !word.is_empty())?;
+        Some(word.iter().copied().map(char::from).collect())
     }
 
     fn cursor(&self, file: FileId, path: PathBuf) -> Cursor {

@@ -684,16 +684,10 @@ impl Builtin {
         let mut name = None;
         for token in self.0.child_tokens() {
             match token.kind() {
+                // FTEF-13.7: a part may have a prefix, an `L` among them after another part.
                 K::StringLit => {
-                    let lexed = qc_lexer::lex_with(token.text(), qc_lexer::Dialect::Fteqcc);
-                    if let [
-                        qc_lexer::Token {
-                            kind: qc_lexer::TokenKind::String(bytes),
-                            ..
-                        },
-                    ] = lexed.tokens.as_slice()
-                    {
-                        joined.extend_from_slice(bytes);
+                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(token.text()) {
+                        joined.extend_from_slice(&bytes);
                     }
                 }
                 K::Name => name = Some(token),

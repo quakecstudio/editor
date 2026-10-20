@@ -43,8 +43,8 @@ fn bound_as(number: i32, name: &str) -> Outcome {
     }
 }
 
-// spec FTE-23.8: every case of the cross product is recorded, and the profile's outcome is the
-// pinned FTEQCC's or id's qcc's, or differs only as QC-27.9 says
+// spec FTE-23.12: every case of the cross product is recorded, and the profile's outcome is the
+// pinned FTEQCC's or id's qcc's, or differs only as QC-27.9, FTE-23.11 and FTEF-13.8 say
 #[test]
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();
@@ -56,12 +56,12 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
-        ["QC-27.9"]
+        ["FTE-23.11", "FTEF-13.8", "QC-27.9"]
     );
     assert!(tally.agree > 6000, "{tally}");
 }
 
-// spec FTE-23.8: the cross product has both dialects, every prefix, value, suffix and
+// spec FTE-23.12: the cross product has both dialects, every prefix, value, suffix and
 // declarator, and each pair with and without `g` first, each case once
 #[test]
 fn the_cross_product_holds_every_form_once() {
@@ -90,7 +90,7 @@ fn the_cross_product_holds_every_form_once() {
     assert!(cases.contains(&vanilla(&format!("void() f = :{};\n", "n".repeat(300)))));
 }
 
-// spec FTE-23.8: an outcome is written and read back in one form; any other text is refused
+// spec FTE-23.12: an outcome is written and read back in one form; any other text is refused
 #[test]
 fn outcomes_round_trip() {
     for outcome in [
@@ -153,10 +153,84 @@ fn only_a_vanilla_number_not_above_zero_may_differ() {
         ),
     ] {
         assert_eq!(
-            expected_difference(case, errors, &oracle),
+            expected_difference(case, &Outcome::Rejected, errors, &oracle),
             expected,
             "{case:?} {errors:?} {oracle}"
         );
+    }
+}
+
+// spec FTE-23.11: a macro after `#` that leaves `f` initialised with a number is FTEQCC's
+// "Cannot cast" error and no error here; only that case may differ so
+// spec FTEF-13.8: a case FTEQCC never finishes may differ, as the profile ends
+#[test]
+fn fteqcc_differs_only_where_it_casts_or_hangs() {
+    let number = fte("#define N 5\nvoid() f = #N;\n");
+    let string = fte("#define N \"ex_a\"\nvoid() f = #N;\n");
+    let plain = fte("void() f = 5;\n");
+    let hangs = fte("void() f = :\"\\UFFFFFFFF\";\n");
+    let accepted = Outcome::Accepted;
+    let rejected = Outcome::Rejected;
+    for (case, ours, errors, oracle, expected) in [
+        (&number, &accepted, &[][..], &rejected, Some("FTE-23.11")),
+        (&number, &accepted, &[Code::E0209], &rejected, None),
+        (&number, &rejected, &[], &accepted, None),
+        (&number, &bound_as(5, "f"), &[], &rejected, None),
+        (&string, &accepted, &[], &rejected, None),
+        (&plain, &accepted, &[], &rejected, None),
+        (
+            &hangs,
+            &bound_as(0, "x"),
+            &[],
+            &Outcome::Hangs,
+            Some("FTEF-13.8"),
+        ),
+        (&hangs, &bound_as(0, "x"), &[], &rejected, None),
+        // A case that is not one FTEQCC never finishes is a failure when it times out.
+        (&plain, &accepted, &[], &Outcome::Hangs, None),
+    ] {
+        assert_eq!(
+            expected_difference(case, ours, errors, oracle),
+            expected,
+            "{case:?} {ours} {errors:?} {oracle}"
+        );
+    }
+}
+
+// spec FTE-23.10: the profile's binding is read from the preprocessor's text, so a macro after
+// `#` or `:` binds what it stands for; a builtin's own long name is found by its name
+#[test]
+fn bindings_are_read_after_the_preprocessor() {
+    assert_eq!(
+        profile(&fte("#define N #5:ex_a\nvoid() f = N;\n")).0,
+        bound_as(5, "ex_a")
+    );
+    assert_eq!(
+        profile(&fte("#define N ex_a\nvoid() f = :N;\n")).0,
+        bound_as(0, "ex_a")
+    );
+    assert_eq!(
+        profile(&fte("#define N 5\nvoid() f = #N;\n")).0,
+        Outcome::Accepted
+    );
+    let long = "n".repeat(254);
+    assert_eq!(
+        profile(&fte(&format!("void() {long} = #5;\n"))).0,
+        bound_as(5, &long)
+    );
+    // QC-9.14: a builtin a macro body writes binds as written.
+    assert_eq!(
+        profile(&fte("#define B #5\nvoid() f = B;\n")).0,
+        bound_as(5, "f")
+    );
+    for (source, name) in [
+        ("void f() = #5;\n", "f"),
+        ("void() n = #5;\n", "f"),
+        ("void() nx = #5;\n", "f"),
+        ("void() nn = #5;\n", "nn"),
+        ("void() g = #5;\nvoid() f = #5;\n", "f"),
+    ] {
+        assert_eq!(super::function_name(&fte(source)), name, "{source:?}");
     }
 }
 
@@ -241,7 +315,7 @@ fn read(bytes: &[u8]) -> qc_progs::Progs<'_> {
     qc_progs::Progs::read_with(bytes, &options).unwrap()
 }
 
-// spec FTE-23.8: `f`'s function is the first, or the second after `g`'s; FTEQCC writes every
+// spec FTE-23.12: `f`'s function is the first, or the second after `g`'s; FTEQCC writes every
 // builtin's number as `-first_statement`, id's qcc only a nonzero one's (QC-13.4)
 #[test]
 fn bound_reads_f_s_function_by_its_place() {
@@ -272,8 +346,16 @@ fn bound_reads_f_s_function_by_its_place() {
         bound(&read(&zero), &fte("void() f = #0;\n")),
         Some(bound_as(0, "f"))
     );
+    // FTE-23.11: FTEQCC makes no function for `f` initialised with a string; a function
+    // missing before `f`'s place is no such case.
     let none = progs_with(&[]);
-    assert_eq!(bound(&read(&none), &fte("void() f = #0;\n")), None);
+    assert_eq!(
+        bound(&read(&none), &fte("void() f = #0;\n")),
+        Some(Outcome::Accepted)
+    );
+    assert_eq!(bound(&read(&none), &vanilla("void() f = #5;\n")), None);
+    let after_g = fte("void() g = #5;\nvoid() f = #5;\n");
+    assert_eq!(bound(&read(&none), &after_g), None);
 }
 
 /// What the fake compilers write for each outcome: FTEQCC's and qcc's own words.
@@ -286,9 +368,18 @@ fn reply(dir: &Path, fteqcc: bool, case: &Case, outcome: &Outcome) -> Reply {
         ..Reply::default()
     };
     match outcome {
+        Outcome::Hangs => Reply {
+            hangs: true,
+            ..Reply::default()
+        },
         Outcome::Rejected => failed("t.qc:1: error: Bad builtin immediate"),
         Outcome::Redeclared if fteqcc => failed("t.qc:2: error: incompatible redeclaration"),
         Outcome::Redeclared => failed("t.qc:2:f redeclared"),
+        // FTEQCC accepts with no builtin only a function it makes none for (FTE-23.11).
+        Outcome::Accepted if fteqcc => Reply {
+            files: vec![(dir.join("progs.dat"), progs_with(&[]))],
+            ..Reply::exit(0)
+        },
         Outcome::Accepted => Reply {
             files: vec![(dir.join("progs.dat"), b"not a progs".to_vec())],
             ..Reply::exit(0)
@@ -339,7 +430,7 @@ fn repository(name: &str, fixture: &BTreeMap<String, Outcome>) -> PathBuf {
     dir
 }
 
-// spec FTE-23.8: the check runs every case through the oracle of its dialect and passes when
+// spec FTE-23.12: the check runs every case through the oracle of its dialect and passes when
 // the oracles give what the fixture records and the profile agrees
 #[test]
 fn check_passes_when_the_oracles_give_the_recording() {
@@ -353,7 +444,7 @@ fn check_passes_when_the_oracles_give_the_recording() {
     assert!(fake.seen.borrow().iter().any(|line| line == "qcc"));
 }
 
-// spec FTE-23.8: an oracle that gives another outcome than the fixture fails the check, and
+// spec FTE-23.12: an oracle that gives another outcome than the fixture fails the check, and
 // `--record` writes what the oracles gave
 #[test]
 fn check_fails_on_a_stale_recording_and_records_anew() {
@@ -375,7 +466,7 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     assert!(!check(&repo, &oracles, false).unwrap());
 }
 
-// spec FTE-23.8: an oracle whose outcome the profile does not share fails the check, even
+// spec FTE-23.12: an oracle whose outcome the profile does not share fails the check, even
 // when the recording has it
 #[test]
 fn check_fails_when_the_profile_differs() {
@@ -392,7 +483,7 @@ fn check_fails_when_the_profile_differs() {
     assert_eq!(compare(&cases(), &missing).differ, 2);
 }
 
-// spec FTE-23.8: a compiler that cannot run, a progs it does not write, and an FTEQCC progs
+// spec FTE-23.12: a compiler that cannot run, a progs it does not write, and an FTEQCC progs
 // qc-progs refuses are errors of the check, not outcomes
 #[test]
 fn oracle_failures_are_errors() {
@@ -454,11 +545,58 @@ fn oracle_failures_are_errors() {
         files: vec![(empty.clone(), progs_with(&[]))],
         ..Reply::exit(0)
     });
-    let err = oracle(&fake_oracles(&dir, &no_function), &dir, &case).unwrap_err();
+    let after_g = fte("void() g = #5;\nvoid() f = #5;\n");
+    let err = oracle(&fake_oracles(&dir, &no_function), &dir, &after_g).unwrap_err();
     assert!(err.contains("no function f"), "{err}");
 }
 
-// spec FTE-23.8: a refusal is a redeclaration only when the first error the compiler reports at
+// spec FTE-23.12: an oracle killed at its time limit hangs, an FTEQCC with nothing to write
+// accepts, and one that writes no progs for another reason is an error of the check
+#[test]
+fn oracles_that_hang_or_write_nothing() {
+    let dir = fresh_dir("builtins-hang");
+    let case = fte("void() f = :\"\\UFFFFFFFF\";\n");
+    let hangs = Fake::new(|_: &Command| Reply {
+        hangs: true,
+        ..Reply::default()
+    });
+    assert_eq!(
+        oracle(&fake_oracles(&dir, &hangs), &dir, &case).unwrap(),
+        Outcome::Hangs
+    );
+    let says = |stdout: &'static str| {
+        Fake::new(move |_: &Command| Reply {
+            stdout: stdout.to_owned(),
+            ..Reply::exit(0)
+        })
+    };
+    let zero = fte("#define N 0\nvoid() f = #N;\n");
+    assert_eq!(
+        oracle(
+            &fake_oracles(&dir, &says("nothing to write\n")),
+            &dir,
+            &zero
+        )
+        .unwrap(),
+        Outcome::Accepted
+    );
+    let err = oracle(&fake_oracles(&dir, &says("done\n")), &dir, &zero).unwrap_err();
+    assert!(
+        err.contains("No such file") || err.contains("cannot find"),
+        "{err}"
+    );
+    let vanilla_nothing = vanilla("void() f = #5;\n");
+    assert!(
+        oracle(
+            &fake_oracles(&dir, &says("nothing to write\n")),
+            &dir,
+            &vanilla_nothing
+        )
+        .is_err()
+    );
+}
+
+// spec FTE-23.12: a refusal is a redeclaration only when the first error the compiler reports at
 // a line of the file is its redeclaration error; warnings and "defined here" notes are skipped
 #[test]
 fn oracle_reads_the_first_error() {
@@ -505,7 +643,7 @@ fn oracle_reads_the_first_error() {
     }
 }
 
-// spec FTE-23.8: a fixture that is not JSON, or holds an outcome in no known form, is refused
+// spec FTE-23.12: a fixture that is not JSON, or holds an outcome in no known form, is refused
 #[test]
 fn a_bad_fixture_is_refused() {
     let dir = fresh_dir("builtins-bad-fixture");
@@ -526,7 +664,7 @@ fn a_bad_fixture_is_refused() {
     );
 }
 
-// spec FTE-23.8: the tally names each statement an expected difference is recorded under
+// spec FTE-23.12: the tally names each statement an expected difference is recorded under
 #[test]
 fn the_tally_prints_each_count() {
     let mut tally = Tally {

@@ -1324,6 +1324,58 @@ issues:
   - 'qc-sema''s README lists FTE-23.7, and the Readiness `spec` job counts it for qc-sema'
   verify:
   - cargo test -p qc-sema
+- key: P2-75
+  title: Read FTEQCC's character-constant escapes as its string escapes
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-72
+  deliverable:
+  - 'crates/qc-lexer (`character`, `escape_code`, `braced_code`) and docs/spec/dialect-fteqcc.md (a statement replacing FTEF-13.12): `QCC_PR_LexVector` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reads a character constant''s escape with `QCC_PR_LexEscapedCodepoint`, as a string does (FTEF-13.11), so "Unknown escape char", "Bad character code" for `\{` with a byte that is no digit or `\x` with no hex digit, and "Unicode character terminated unexpectedly" for `\u` and `\U` are errors there too. The FTEQCC lexer reads a character constant with the old `escape_code`, which takes any other escape as its byte and reports none of these (FTEF-13.12). Found while writing FTEF-13.11 for P2-72'
+  acceptance:
+  - 'Under the FTEQCC dialect every escape of FTEF-13.11 in a character constant gives the code and the error FTEQCC gives, recorded against the pinned FTEQCC for each escape (a differential or the spec''s test vectors); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-lexer
+- key: P2-76
+  title: Expand an FTEQCC macro only where FTEQCC's macro check ends its word
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-71
+  deliverable:
+  - 'crates/qc-preproc (`try_expand`) and docs/spec/dialect-fteqcc.md FTEF-14 (a new statement): `QCC_PR_Lex` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) looks a name up as a macro with `QCC_PR_CheckCompConst`, whose word runs to the first white space or one of `)(+-*/|&=^~[]"{};:<>,.#`, not to the end of the name. So a name followed directly by another byte, such as `!`, `''`, `?`, `@`, `$`, `%` or a byte of 0x80 or more, is no macro use: with `#define N 5`, the pinned FTEQCC reports `if (N!=5)` as "Unknown value \"N\"". The FTEQCC preprocessor expands every name that is a macro; FTE-23.10 already reads the word this way after a `#`. Found while writing FTE-23.10 for P2-71'
+  acceptance:
+  - 'Under the FTEQCC dialect a macro name followed directly by a byte that does not end `QCC_PR_CheckCompConst`''s word stays a name, for each such byte, and one followed by a byte that ends it expands; the vanilla dialect expands as before; recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-77
+  title: Render a macro argument against the body token it is written next to
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-74
+  deliverable:
+  - 'crates/qc-sema/src/expand.rs `adjacent` (and the span `qc-preproc` gives a substituted argument, if needed) and docs/spec/language.md (a statement replacing QC-9.14): FTEQCC substitutes a function-like macro''s argument into the body as text (`QCC_PR_ExpandPreProcessorMacro`, qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), so an argument written against a body token touches it: `#define L(x) x:` used as the statement `L(lbl)` is the label `lbl:` (FTEF-18.23), and `#define B(n) #n` would be a builtin if `#` did not stringize. The semantic model keeps an argument''s tokens apart from the body''s (QC-9.14), so `L(lbl)` renders as `lbl :`. Found by the self-review of P2-74 (#478)'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile, an argument and a body token that touch in the body (`x:` with `x` a parameter) render touching, and ones apart in the body stay apart; `#define L(x) x:` then `L(lbl)` used as a statement is a label, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1401,6 +1453,9 @@ issues:
   - P2-72
   - P2-73
   - P2-74
+  - P2-75
+  - P2-76
+  - P2-77
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register

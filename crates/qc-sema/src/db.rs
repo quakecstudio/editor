@@ -394,6 +394,14 @@ impl Db {
         analysis
     }
 
+    /// The lowered declarations of compiled file `file` as [`Db::analyze_module`] last read
+    /// it, from its expansion (QC-9.7, QC-9.14); `None` before a module that compiles it has
+    /// been analysed.
+    #[must_use]
+    pub fn expanded_decls(&self, file: FileId) -> Option<&FileDecls> {
+        self.expanded.get(&file).map(|expanded| &expanded.decls)
+    }
+
     /// The parse and lowering of compiled file `file` whose expansion is `text`: the cached
     /// ones when the expansion is unchanged, otherwise parsed and lowered again.
     fn expanded_file(&mut self, file: FileId, text: &[u8]) -> ExpandedFile {

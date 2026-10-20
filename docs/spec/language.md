@@ -383,6 +383,19 @@ dialect features (P2-01, P2-03).
   50000-long chain to `x = 1` and dies with `SIGSEGV` at 100000. Expanding every chain to its
   end is a deliberate divergence from that crash, which depends on the host's stack, not on
   the program. id's `qcc` has no macros (QC-9). The rule against self-expansion stays QC-9.4's.
+- **QC-9.14** An expansion keeps the spacing of the text it came from: two tokens that touch
+  in a macro's body, or in one argument of it, touch in the expansion, and two that do not, or
+  that come from different macros, arguments or a macro and the text around its use, are
+  apart. A rule that reads whether two tokens touch then reads a macro's tokens as it reads
+  the source: under FTEQCC `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and
+  `#define L lbl:` used as a statement is a label (FTEF-18.23). FTEQCC reads an expansion as
+  text: `QCC_PR_IncludeChunkEx(c->value, ...)` (`qcc_pr_lex.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) lexes the body as it was written,
+  and the pinned FTEQCC compiles both examples. A token whose text the preprocessor made (a
+  `##` paste, a `#` string, a built-in constant, FTEF-14.6, FTEF-14.7) touches nothing. FTEQCC
+  substitutes an argument into the body as text, so an argument written against a body token
+  (`#define L(x) x:` used as `L(lbl)`) touches it there; this profile keeps them apart, and
+  reading them as FTEQCC does is P2-77.
 
 ## QC-10 Types
 

@@ -199,7 +199,9 @@ checklist.
 
 `main` only accepts changes through the merge queue: work on a branch named
 `<type>/<issue>-<slug>` and open a PR with `Closes #<issue>`. Conventional Commits, at most 72
-characters, imperative. **No Co-Authored-By trailers.** An agent may add its own PR to the
+characters, imperative. **No Co-Authored-By trailers, and no "Generated with" footer or any
+other attribution in a PR body or commit**: PRs are squash-merged, so the body becomes the
+commit. An agent may add its own PR to the
 merge queue once CI passes (`.claude/skills/work-issue/scripts/land.sh`), an implementer only
 after its `code-review` self-review is recorded in the PR body (`work-issue`), except for
 `needs:human` issues, which wait for Justin. Parallel agents use separate worktrees. See

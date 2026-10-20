@@ -124,26 +124,49 @@ fn fte_analysis_errors(source: &str) -> Vec<Code> {
         .collect()
 }
 
-// spec FTE-23.9: the profile reads `#NAME` as no builtin even when `NAME` is a macro, does not
-// lex a prefixed string, and reports a name of 63 bytes after `#number:` as too long, where the
-// pinned FTEQCC expands the macro, reads the string and takes the name
+// spec FTE-23.10: read as the compiler reads it, a `#` before a macro is the macro's expansion,
+// and before a name that is no macro E0209
+// spec FTE-23.11: a number a macro gives a function is no error here, as no type is checked
 #[test]
-fn the_forms_the_cross_product_leaves_out_are_errors() {
+fn a_hash_before_a_macro_reads_its_expansion() {
     for source in [
         "#define N 5\nvoid() f = #N;\n",
         "#define N \"ex_a\"\nvoid() f = #N;\n",
-        "void() f = :u8\"ex_a\";\n",
-        "void() f = #\"ex_\" u8\"a\";\n",
+        "#define N ex_a\nvoid() f = :N;\n",
+        "#define M(x) x\nvoid() f = #M(\"ex_a\");\n",
     ] {
-        assert!(!fte_analysis_errors(source).is_empty(), "{source:?}");
+        assert_eq!(fte_analysis_errors(source), [], "{source:?}");
     }
+    assert_eq!(fte_analysis_errors("void() f = #N;\n"), [Code::E0209]);
     assert_eq!(
-        fte_analysis_errors("#define N 5\nvoid() f = #N;\n"),
+        fte_analysis_errors("#define N 5\nvoid() f = # N;\n"),
         [Code::E0209]
     );
-    let long = format!("void() f = #5:{};\n", "n".repeat(63));
+}
+
+// spec FTEF-13.7: a prefixed string is a string, after `:` and joined after `#` and a string
+#[test]
+fn prefixed_strings_are_read_as_strings() {
+    for source in [
+        "void() f = :u8\"ex_a\";\n",
+        "void() f = #\"ex_\" u8\"a\";\n",
+        "void() f = #\"ex_\" L\"a\";\n",
+        "void() f = :R\"x(ex_a)x\";\n",
+    ] {
+        assert_eq!(fte_analysis_errors(source), [], "{source:?}");
+    }
+    assert_eq!(
+        fte_analysis_errors("void() f = #u8\"ex_a\";\n"),
+        [Code::E0209]
+    );
+}
+
+// spec FTEF-15.7: a name of 254 bytes after `#number:` is taken and one of 255 is too long
+#[test]
+fn fteqcc_names_after_a_builtin_number_are_up_to_254_bytes() {
+    let long = format!("void() f = #5:{};\n", "n".repeat(255));
     assert_eq!(fte_analysis_errors(&long), [Code::E0202]);
-    let short = format!("void() f = #5:{};\n", "n".repeat(62));
+    let short = format!("void() f = #5:{};\n", "n".repeat(254));
     assert_eq!(fte_analysis_errors(&short), []);
 }
 

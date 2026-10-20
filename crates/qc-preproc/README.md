@@ -26,8 +26,11 @@ QCD-7.27),
 directives continued after a `\`, `#warning`, `#error` and `#message`,
 `#includelist` blocks (the graph's to compile), `#append`, `#eof` and the build directives,
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
-argument, and the built-in constants such as `__NULL__`. A token `##` or `#` made, or a
-built-in's value, carries its text in `PpToken::spelling`.
+argument, and the built-in constants such as `__NULL__`. A `#` right before the name of a
+macro or built-in constant is that expansion with no `#`, as FTEQCC's lexer reads it
+(`dialect-fteqcc-rerelease.md`, FTE-23.10). A token `##` or `#` made, or a built-in's value,
+carries its text in `PpToken::spelling`; every other token of an expansion keeps its span in
+the macro's body, so its spacing there can be kept (QC-9.14).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in

@@ -361,7 +361,7 @@ fn string_escapes() {
         "string ab @0..6 ^\nE0103 Unknown escape char @2..4\n"
     );
     assert_eq!(codes(b"\"\\t\""), vec![Code::E0103]);
-    // FTEQCC's bronze toggles `\s` and `\b` (FTEF-13.4) are unknown here and toggle nothing.
+    // FTEQCC's bronze toggles `\s` and `\b` (FTEF-13.10) are unknown here and toggle nothing.
     for source in [&b"\"a\\sb\""[..], b"\"a\\bb\""] {
         assert_eq!(
             snapshot(source),
@@ -932,16 +932,24 @@ fn fte_string(source: &[u8]) -> (Vec<u8>, Vec<Code>) {
     }
 }
 
-// spec FTEF-13.4: the Quake character escapes, `\{n}`, `\{xN}`, `\x`, `\u`, `\U` and the
-// digits; a code above a byte is written as UTF-8; any other escape stays unknown.
+// spec FTEF-13.11: the Quake character escapes, `\{n}`, `\{xN}`, `\x`, `\u`, `\U` and the
+// digits; any other escape stays unknown
+// spec FTEF-13.8: a plain string writes a Quake glyph's code as its low byte, and `u8"..."`
+// as UTF-8
 #[test]
 fn full_fteqcc_escapes() {
     let utf8 = |code: u32| char::from_u32(code).unwrap().to_string().into_bytes();
+    let u8_string = |source: &[u8]| {
+        let mut prefixed = b"u8".to_vec();
+        prefixed.extend_from_slice(source);
+        fte_string(&prefixed)
+    };
     assert_eq!(fte_string(br#""\x41\x4""#), (b"A\x04".to_vec(), vec![]));
     assert_eq!(fte_string(br#""\{65}\{x42}""#), (b"AB".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""A\U00000042""#), (b"AB".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""\[""#).0, utf8(0xe010));
-    assert_eq!(fte_string(br#""\]""#).0, utf8(0xe011));
+    assert_eq!(fte_string(br#""A\U0000042""#), (b"AB".to_vec(), vec![]));
+    assert_eq!(fte_string(br#""\[""#).0, b"\x10".to_vec());
+    assert_eq!(u8_string(br#""\[""#).0, utf8(0xe010));
+    assert_eq!(fte_string(br#""\]""#).0, b"\x11".to_vec());
     for (escape, code) in [
         (b'.', 0xe01c),
         (b'<', 0xe01d),
@@ -955,8 +963,10 @@ fn full_fteqcc_escapes() {
         (b'9', 0xe01b),
     ] {
         let source = [b'"', b'\\', escape, b'"'];
+        let low = vec![u8::try_from(code & 0xff).unwrap()];
+        assert_eq!(fte_string(&source), (low, vec![]), "{}", char::from(escape));
         assert_eq!(
-            fte_string(&source),
+            u8_string(&source),
             (utf8(code), vec![]),
             "{}",
             char::from(escape)
@@ -965,9 +975,10 @@ fn full_fteqcc_escapes() {
     // `\s` and `\b` toggle bronze text, which sets the high bit, and stand for nothing.
     assert_eq!(fte_string(br#""a\bb\sc""#), (b"a\xe2c".to_vec(), vec![]));
     assert_eq!(codes(br#""\b""#), vec![Code::E0103]);
-    // `\{` stops at a byte that is not a digit; a code that is no scalar is `?`.
-    assert_eq!(fte_string(br#""\{6z}""#).0, b"\x06z}".to_vec());
-    assert_eq!(fte_string(br#""\UFFFFFFFF""#).0, b"?".to_vec());
+    // A code above a byte is its low byte in a plain string; `\u` is UTF-8 in any string.
+    assert_eq!(fte_string(br#""\{200}\{256}""#).0, b"\xc8\x00".to_vec());
+    assert_eq!(u8_string(br#""\{200}""#).0, utf8(200));
+    assert_eq!(fte_string(b"\"\xc3\xa9\"").0, utf8(0xe9));
     assert_eq!(fte_string(br#""\q""#).1, vec![Code::E0103]);
     // Vanilla has none of them.
     assert_eq!(codes(br#""\x41""#), vec![Code::E0103]);
@@ -1473,28 +1484,62 @@ fn hex_numbers_with_a_fraction_are_hex_floats() {
     );
 }
 
-// spec FTEF-13.4: `\u` takes four hex digits, as many as there are
+// spec FTEF-13.11: `\u` and `\U` take four and eight hex digits, as many as there are, and are
+// "Unicode character terminated unexpectedly" unless they stop one digit short
 #[test]
 fn short_unicode_escape() {
-    assert_eq!(fte_string(br#""\u0041B""#), (b"AB".to_vec(), vec![]));
-    assert_eq!(fte_string(br#""\u41""#), (b"A".to_vec(), vec![]));
-    assert_eq!(fte_kinds(br"'\u0041'"), vec![TokenKind::Float(65.0)]);
+    let unexpected = vec![Code::E0103];
+    let escape = |digits: &str| format!("\"\\{digits}Z\"").into_bytes();
+    assert_eq!(
+        fte_string(&escape("u0041")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    assert_eq!(fte_string(&escape("u041")), (b"AZ".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(&escape("u41")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    assert_eq!(fte_string(&escape("U0000041")), (b"AZ".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(&escape("U00000041")),
+        (b"AZ".to_vec(), unexpected.clone())
+    );
+    // A fifth hex digit is no part of `\u`.
+    assert_eq!(fte_string(&escape("u12345")).0, b"\xe1\x88\xb45Z".to_vec());
+    assert_eq!(fte_string(br#""\u""#), (b"\x00".to_vec(), unexpected));
 }
 
-// spec FTEF-13.4: bronze text sets the high bit of each ASCII byte and leaves a byte of 0x80
-// or more as it is
+// spec FTEF-13.12: a character constant's escape is the code of FTEF-13.11
+#[test]
+fn character_constant_escapes_are_codes() {
+    assert_eq!(fte_kinds(br"'\u0041'"), vec![TokenKind::Float(65.0)]);
+    assert_eq!(fte_kinds(br"'\['"), vec![TokenKind::Float(57360.0)]);
+}
+
+// spec FTEF-13.10: bronze text sets the high bit of each byte from a space up and leaves a
+// control byte and a byte of 0x80 or more as they are
 #[test]
 fn bronze_text_keeps_high_bytes() {
     assert_eq!(fte_string(b"\"\\b\xe9a\"").0, b"\xe9\xe1".to_vec());
     assert_eq!(fte_string(b"\"\\s\x80\"").0, b"\x80".to_vec());
+    assert_eq!(fte_string(b"\"\\b\t \"").0, b"\t\xa0".to_vec());
+    assert_eq!(fte_string(b"\"\\b\\t\"").0, b"\t".to_vec());
 }
 
-// spec FTEF-13.4: `\{n}` reads digits to the `}`; at the end of the file the code ends there
-// and the string is unterminated (QCD-2.1)
+// spec FTEF-13.11: `\{n}` reads digits to the `}`; any other byte, the end of the file
+// included, is "Bad character code" (E0103), and the string then goes on
 #[test]
 fn braced_escape_at_end_of_file() {
-    assert_eq!(fte_string(br#""\{65"#), (b"A".to_vec(), vec![Code::E0101]));
+    assert_eq!(
+        fte_string(br#""\{65"#),
+        (b"A".to_vec(), vec![Code::E0103, Code::E0101])
+    );
     assert_eq!(fte_string(br#""\{x41}""#), (b"A".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(br#""\{6z}""#),
+        (b"\x06z}".to_vec(), vec![Code::E0103])
+    );
+    assert_eq!(fte_string(br#""\{xg}""#).1, vec![Code::E0103]);
 }
 
 // spec FTEF-13.3: an escaped character constant is the escape's code, and a byte with no
@@ -1563,4 +1608,212 @@ fn frame_names_and_slashes() {
     assert_eq!(names(b"$frame a // b c\nd"), ["a"]);
     assert_eq!(names(b"$frame a /* b */ c"), ["a"]);
     assert_eq!(fte_kinds(b"$frame a // b c\nd")[1..], [name("d")]);
+}
+
+fn string(bytes: &[u8]) -> TokenKind {
+    TokenKind::String(bytes.to_vec())
+}
+
+// spec FTEF-13.7: under FTEQCC `R"`, `Q"`, `u"`, `U"` and `u8"` start a string, and `L"` only
+// right after another string; vanilla reads each prefix as a name
+#[test]
+fn prefixed_strings_are_strings() {
+    for source in [
+        &b"\"ab\""[..],
+        b"R\"(ab)\"",
+        b"Q\"ab\"",
+        b"u\"ab\"",
+        b"U\"ab\"",
+        b"u8\"ab\"",
+    ] {
+        let lexed = lex_with(source, Dialect::Fteqcc);
+        assert!(lexed.diagnostics.is_empty(), "{source:?}");
+        assert_eq!(fte_kinds(source), [string(b"ab")], "{source:?}");
+        assert_eq!(
+            lexed.tokens[0].span,
+            Span::new(0, source.len()),
+            "{source:?}"
+        );
+    }
+    assert_eq!(fte_kinds(b"\"a\" L\"b\""), [string(b"a"), string(b"b")]);
+    assert_eq!(
+        fte_kinds(b"\"a\" /* c */\nL\"b\""),
+        [string(b"a"), string(b"b")]
+    );
+    assert_eq!(fte_kinds(b"L\"b\""), [name("L"), string(b"b")]);
+    assert_eq!(fte_kinds(b"x L\"b\""), [name("x"), name("L"), string(b"b")]);
+    assert_eq!(fte_kinds(b"u8 \"b\""), [name("u8"), string(b"b")]);
+    assert_eq!(fte_kinds(b"u16\"b\""), [name("u16"), string(b"b")]);
+    assert_eq!(kinds(b"u8\"b\""), [name("u8"), string(b"b")]);
+    assert_eq!(kinds(b"R\"(b)\"").len(), 2);
+}
+
+// spec FTEF-13.8: `Q"..."` reads UTF-8 and writes Quake bytes, `u8"..."`, `u"..."`, `U"..."`
+// and `L"..."` read and write UTF-8, a plain string takes its bytes as they are; UTF-8 is read
+// as FTEQCC's `utf8_check` reads it and written as its `forceutf8` writes it
+#[test]
+fn each_prefix_writes_its_bytes() {
+    let one = |source: &[u8]| fte_string(source).0;
+    assert_eq!(one(b"Q\"\xc3\xa9\""), b"\xe9");
+    assert_eq!(one(b"Q\"\xee\x80\x90\""), b"\x10");
+    assert_eq!(one(b"Q\"\xff\""), b"\xff");
+    assert_eq!(one(b"u8\"\xc3\xa9\""), b"\xc3\xa9");
+    assert_eq!(one(b"u\"\\[\""), b"\xee\x80\x90");
+    assert_eq!(one(b"U\"\\{200}\""), b"\xc3\x88");
+    assert_eq!(one(b"\"\xc3\xa9\\[\""), b"\xc3\xa9\x10");
+    // Modified UTF-8's two-byte NUL is a NUL; an overlong form is no sequence.
+    assert_eq!(one(b"u8\"\xc0\x80\""), b"\x00");
+    assert_eq!(one(b"u8\"\xc1\x81\""), b"\xc1\x81");
+    // Surrogates are read and written; above 0x10FFFF is no sequence on input.
+    assert_eq!(one(b"u8\"\xed\xa0\x80\""), b"\xed\xa0\x80");
+    assert_eq!(one(b"u8\"\xf4\x90\x80\x80\""), b"\xf4\x90\x80\x80");
+    assert_eq!(one(b"Q\"\xf4\x90\x80\x80\""), b"\xf4\x90\x80\x80");
+    // `\u` and `\U` are UTF-8 even in a plain string, whatever the code.
+    assert_eq!(one(br#""\U0010FFFF""#), b"\xf4\x8f\xbf\xbf");
+    assert_eq!(one(br#""\U00110000""#), b"\xf4\x90\x80\x80");
+    assert_eq!(one(br#""\uD800""#), b"\xed\xa0\x80");
+    assert_eq!(one(br#""\U7FFFFFFF""#), b"\xfd\xbf\xbf\xbf\xbf\xbf");
+    assert_eq!(one(br#""\UFFFFFFFF""#), b"\xfe\x83\xbf\xbf\xbf\xbf\xbf");
+    // `\x` is a byte even in a UTF-8 string.
+    assert_eq!(one(br#"u8"\xe9""#), b"\xe9");
+    // Each length of sequence is read whole, and its code is Quake's low byte.
+    assert_eq!(one(b"Q\"\xe2\x82\xac\""), b"\xac");
+    assert_eq!(one(b"Q\"\xf0\x9f\x98\x81\""), b"\x01");
+    assert_eq!(one(b"Q\"\xf4\x8f\xbf\xbf\""), b"\xff");
+    assert_eq!(one(b"Q\"\xdf\xbf\""), b"\xff");
+    // Overlong forms, a lead byte with no continuation, and a lead of 0xF8 or more are bytes.
+    assert_eq!(one(b"Q\"\xe0\x9f\xbf\""), b"\xe0\x9f\xbf");
+    assert_eq!(one(b"Q\"\xf0\x8f\xbf\xbf\""), b"\xf0\x8f\xbf\xbf");
+    assert_eq!(one(b"Q\"\xe2\x82a\""), b"\xe2\x82a");
+    assert_eq!(one(b"Q\"\xe2\xc2\xac\""), b"\xe2\xac");
+    assert_eq!(one(b"Q\"\xf0\x9f\x98a\""), b"\xf0\x9f\x98a");
+    assert_eq!(one(b"Q\"\xf8\x88\x80\x80\x80\""), b"\xf8\x88\x80\x80\x80");
+    assert_eq!(one(b"Q\"\xc2\""), b"\xc2");
+    // Every length `forceutf8` writes.
+    for (code, bytes) in [
+        (0x7f_u32, &b"\x7f"[..]),
+        (0x80, b"\xc2\x80"),
+        (0x7ff, b"\xdf\xbf"),
+        (0x800, b"\xe0\xa0\x80"),
+        (0xffff, b"\xef\xbf\xbf"),
+        (0x1_0000, b"\xf0\x90\x80\x80"),
+        (0x1f_ffff, b"\xf7\xbf\xbf\xbf"),
+        (0x20_0000, b"\xf8\x88\x80\x80\x80"),
+        (0x3ff_ffff, b"\xfb\xbf\xbf\xbf\xbf"),
+        (0x400_0000, b"\xfc\x84\x80\x80\x80\x80"),
+        (0x8000_0000, b"\xfe\x82\x80\x80\x80\x80\x80"),
+    ] {
+        let source = format!("u8\"\\{{x{code:x}}}\"");
+        assert_eq!(one(source.as_bytes()), bytes, "{code:#x}");
+    }
+}
+
+// spec FTEF-13.7: one string token's bytes, an `L` part's included, and nothing for a text
+// that is not one whole string part
+#[test]
+fn a_string_part_gives_its_bytes() {
+    use super::fteqcc_string_bytes;
+    assert_eq!(fteqcc_string_bytes(b"\"ab\""), Some(b"ab".to_vec()));
+    assert_eq!(fteqcc_string_bytes(b"L\"ab\""), Some(b"ab".to_vec()));
+    assert_eq!(
+        fteqcc_string_bytes(b"u8\"\\[\""),
+        Some(b"\xee\x80\x90".to_vec())
+    );
+    assert_eq!(fteqcc_string_bytes(b"\"ab\" "), None);
+    assert_eq!(fteqcc_string_bytes(b"ab"), None);
+    assert_eq!(fteqcc_string_bytes(b""), None);
+}
+
+// spec FTEF-13.7: a string on a directive's line is no part an `L` on a later line joins, though
+// one on the same line is
+#[test]
+fn an_l_after_a_directive_s_string_is_a_name() {
+    let after = |source: &[u8]| {
+        let kinds = fte_kinds(source);
+        kinds[kinds.len() - 2..].to_vec()
+    };
+    assert_eq!(after(b"#include \"a\"\nL\"x\""), [name("L"), string(b"x")]);
+    assert_eq!(after(b"#warning hi\nL\"x\""), [name("L"), string(b"x")]);
+    assert_eq!(
+        after(b"#define X \"a\" L\"b\""),
+        [string(b"a"), string(b"b")]
+    );
+    assert_eq!(after(b"  \"a\"\nL\"b\""), [string(b"a"), string(b"b")]);
+}
+
+// spec FTEF-13.9: a raw string runs from its delimiter's `(` to `)`, the delimiter and `"`, its
+// bytes as they are, line breaks and backslashes included, a `\` and line break right after
+// the `(` skipped; a delimiter of more than 62 bytes, or one with no `(`, is an error
+#[test]
+fn raw_strings_keep_their_bytes() {
+    let one = |source: &[u8]| fte_string(source);
+    assert_eq!(one(b"R\"(a\nb)\""), (b"a\nb".to_vec(), vec![]));
+    assert_eq!(
+        one(b"R\"xy(a)x)\"xy\"b)xy\""),
+        (b"a)x)\"xy\"b".to_vec(), vec![])
+    );
+    assert_eq!(one(b"R\"(\\n\\b\")\""), (b"\\n\\b\"".to_vec(), vec![]));
+    for skipped in [&b"\\\n"[..], b"\\\r\n", b"\\\r"] {
+        let mut source = b"R\"(".to_vec();
+        source.extend_from_slice(skipped);
+        source.extend_from_slice(b"a)\"");
+        assert_eq!(one(&source), (b"a".to_vec(), vec![]), "{skipped:?}");
+    }
+    assert_eq!(one(b"R\"(\\\\\na)\"").0, b"\\\\\na");
+    let delimited = |len: usize| {
+        let delimiter = "d".repeat(len);
+        format!("R\"{delimiter}(a){delimiter}\"").into_bytes()
+    };
+    assert_eq!(one(&delimited(62)), (b"a".to_vec(), vec![]));
+    // The rest is lexed again after the error, and its closing `"` opens a string.
+    assert_eq!(one(&delimited(63)).1, [Code::E0101, Code::E0101]);
+    assert_eq!(one(b"R\"abc").1, [Code::E0101]);
+    assert_eq!(one(b"R\"(abc").1, [Code::E0101]);
+    // The raw string ends where it ends, and what follows is lexed again.
+    assert_eq!(
+        fte_kinds(b"R\"(a)\" + 1"),
+        [
+            string(b"a"),
+            TokenKind::Punct(Punct::Plus),
+            TokenKind::Float(1.0)
+        ]
+    );
+}
+
+// spec FTEF-13.10: bronze text in a UTF-8 string is the Quake glyph's private-use code, from
+// a space up, and a non-ASCII character keeps its bytes
+#[test]
+fn bronze_text_in_each_kind_of_string() {
+    let one = |source: &[u8]| fte_string(source).0;
+    assert_eq!(one(br#"u8"\ba""#), b"\xee\x83\xa1");
+    assert_eq!(one(br#"Q"\ba""#), b"\xe1");
+    assert_eq!(one(b"u8\"\\b\t\""), b"\t");
+    assert_eq!(one(b"u8\"\\b\xc3\xa9\""), b"\xc3\xa9");
+    assert_eq!(one(br#"u8"\b\.""#), b"\xee\x82\x9c");
+    assert_eq!(one(br#""\b\.""#), b"\x9c");
+    assert_eq!(one(br#""\.""#), b"\x1c");
+    // A space is the first byte bronze changes, 0x7F the last; 0x80 is a character above ASCII.
+    assert_eq!(one(b"u8\"\\b \""), b"\xee\x82\xa0");
+    assert_eq!(one(b"u8\"\\b\x1f\""), b"\x1f");
+    assert_eq!(one(b"u8\"\\b\x7f\""), b"\xee\x83\xbf");
+    assert_eq!(one(b"u8\"\\b\xc2\x80\""), b"\xc2\x80");
+}
+
+// spec FTEF-13.11: `\x` needs a hex digit, an escaped line break is a line break, and an
+// escaped CR is the byte after it
+#[test]
+fn string_escapes_as_fteqcc_reads_them() {
+    assert_eq!(
+        fte_string(br#""\xg""#),
+        (b"\x00g".to_vec(), vec![Code::E0103])
+    );
+    assert_eq!(fte_string(b"\"a\\\nb\""), (b"a\nb".to_vec(), vec![]));
+    assert_eq!(fte_string(b"\"a\\\r\nb\""), (b"a\nb".to_vec(), vec![]));
+    assert_eq!(fte_string(b"\"a\\\rb\""), (b"ab".to_vec(), vec![]));
+    assert_eq!(
+        fte_string(b"\"a\\\r"),
+        (b"a\x00".to_vec(), vec![Code::E0101, Code::E0101])
+    );
+    assert_eq!(fte_string(b"\"a\\"), (b"a".to_vec(), vec![Code::E0101]));
+    assert_eq!(fte_string(b"\"a\nb\"").1, [Code::E0102, Code::E0101]);
 }

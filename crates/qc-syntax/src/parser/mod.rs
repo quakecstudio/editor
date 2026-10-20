@@ -43,6 +43,10 @@ pub const LIMIT_MAX_PARMS: usize = 8;
 /// more is "name too long" (QC-3.3, LIMIT-7.2).
 pub const LIMIT_QCC_MAX_NAME: usize = 64;
 
+/// FTEQCC's name buffer, `#define MAX_NAME 256` in FTEQCC's `qcc.h`: under an FTEQCC dialect a
+/// name of `FTEQCC_MAX_NAME - 1` bytes or more is "name too long" (FTEF-15.7).
+pub const FTEQCC_MAX_NAME: usize = 256;
+
 /// `TOP_PRIORITY` in `qcc/pr_comp.c`: the loosest binary operator priority.
 const TOP_PRIORITY: u8 = 6;
 
@@ -435,6 +439,17 @@ impl<'a> Parser<'a> {
             self.expected(what);
             false
         }
+    }
+
+    /// Whether `name` is "name too long" to `PR_ParseName`, `strlen(pr_token) >= MAX_NAME-1`:
+    /// id's `MAX_NAME` is 64 (QC-3.3), FTEQCC's 256 (FTEF-15.7).
+    fn too_long(&self, name: &str) -> bool {
+        let max = if self.fteqcc() {
+            FTEQCC_MAX_NAME
+        } else {
+            LIMIT_QCC_MAX_NAME
+        };
+        name.len() >= max.saturating_sub(1)
     }
 
     /// Whether the parser is in an FTEQCC dialect, so the FTEQCC constructs (FTE-2 to FTE-16)
@@ -884,7 +899,7 @@ impl<'a> Parser<'a> {
             self.error(Code::E0201, "not a name");
             return false;
         }
-        if tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1) {
+        if self.too_long(&tok.text) {
             self.error(Code::E0202, "name too long");
         }
         self.bump();
@@ -982,8 +997,9 @@ impl<'a> Parser<'a> {
         let opener = self.current().map(|t| t.span.end);
         self.bump();
         // FTE-23.1: FTEQCC's lexer reads a `#` as a token only right before `"`, `-`, a digit,
-        // `)` or `,`; before anything else it is a macro use, an error with no such macro. The
-        // parser reports only the first error of a declaration, so this one is reported.
+        // `)` or `,`; before anything else it is a macro use, an error with no such macro, as
+        // the preprocessor has already read a macro's (FTE-23.10). The parser reports only the
+        // first error of a declaration, so this one is reported.
         if self.fteqcc() && !colon && !self.hash_token_follows(opener) {
             self.error(Code::E0209, "Bad builtin immediate");
         }
@@ -1032,25 +1048,13 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
-    /// Whether the token after a `#` that ends at `opener` is one FTEQCC's `QCC_PR_Lex` reads
-    /// the `#` before as a token (FTE-23.1): it starts right after the `#`, with `"`, `-`, a
-    /// digit, `)` or `,`.
+    /// Whether FTEQCC's `QCC_PR_Lex` reads a `#` that ends at `opener` as a token (FTE-23.1):
+    /// the byte right after it is `"`, `-`, a digit, `)` or `,`. A string with a prefix
+    /// (FTEF-13.7) starts with a name's byte, so it is not one.
     fn hash_token_follows(&self, opener: Option<usize>) -> bool {
-        let Some(next) = self.current() else {
-            return false;
-        };
-        if Some(next.span.start) != opener {
-            return false;
-        }
-        match next.kind {
-            K::StringLit | K::RParen | K::Comma => true,
-            K::FloatLit => next
-                .text
-                .bytes()
-                .next()
-                .is_some_and(|b| b == b'-' || b.is_ascii_digit()),
-            _ => false,
-        }
+        opener
+            .and_then(|at| self.input.source.get(at))
+            .is_some_and(|&b| matches!(b, b'"' | b'-' | b')' | b',') || b.is_ascii_digit())
     }
 
     /// `[frame, next] { ... }` or `{ ... }` (QC-13.1, QC-13.6).
@@ -1967,11 +1971,7 @@ impl<'a> Parser<'a> {
             self.error(Code::E0201, "not a name");
             return None;
         };
-        let (kind, start, long) = (
-            tok.kind,
-            tok.span.start,
-            tok.text.len() >= LIMIT_QCC_MAX_NAME.saturating_sub(1),
-        );
+        let (kind, start, long) = (tok.kind, tok.span.start, self.too_long(&tok.text));
         let mut tail = Tail::Plain;
         let (node, assignable) = match kind {
             K::Not => {

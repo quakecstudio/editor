@@ -617,3 +617,71 @@ fn reviewer_a_chain_of_macros_expands_to_its_end() {
         assert_eq!(pp.expansions().len(), n);
     }
 }
+
+// spec FTE-23.10: under FTEQCC a `#` right before a macro's name is the macro's expansion with
+// no `#`: an object-like macro, an empty one, a function-like one with its arguments, a
+// built-in constant, and a `#` a macro's body holds
+#[test]
+fn hash_before_a_macro_is_its_expansion() {
+    for (text, want) in [
+        ("#define N 5\nf = #N;\n", "f = 5 ;"),
+        ("#define N \"x\"\nf = #N:#N\n", "f = \"x\" : \"x\""),
+        ("#define E\nf = #E #5\n", "f = # 5"),
+        ("#define M(x) x\nf = #M(#5)\n", "f = # 5"),
+        ("#define M(x) x\nf = #M (7)\n", "f = 7"),
+        ("f = #__LINE__\n", "f = 1"),
+        ("#define A #N\n#define N 5\nf = A\n", "f = 5"),
+    ] {
+        assert_eq!(fte(text), (want.to_owned(), vec![]), "{text:?}");
+    }
+}
+
+// spec QC-9.14: the tokens of one expansion keep their spans in the macro's body, so two that
+// touch there touch in the output and a renderer can keep the body's spacing
+#[test]
+fn an_expansion_keeps_its_body_s_spans() {
+    let (_, out) = one_fte("#define B #5 6\nf = B;\n");
+    let body: Vec<_> = out
+        .tokens
+        .iter()
+        .filter(|t| t.expansion.is_some())
+        .map(|t| t.span.span)
+        .collect();
+    assert_eq!(body.len(), 3);
+    assert_eq!(body[0].end, body[1].start);
+    assert!(body[1].end < body[2].start);
+    let expansions: Vec<_> = out.tokens.iter().map(|t| t.expansion).collect();
+    assert_eq!(expansions[2], expansions[3]);
+    assert_ne!(expansions[1], expansions[2]);
+}
+
+// spec FTE-23.10: a `#` stays when the word right after it is no macro FTEQCC expands there:
+// no macro, a space or another byte first, a word longer than the name, a function-like macro
+// with no arguments, or a `#` in the vanilla dialect
+#[test]
+fn hash_before_anything_else_stays() {
+    for (text, want) in [
+        ("f = #U\n", "f = # U"),
+        ("#define N 5\nf = # N\n", "f = # 5"),
+        ("#define N 5\nf = #N!\n", "f = # 5 !"),
+        // The first `#` stays, before a `#`; the second goes.
+        ("#define N 5\nf = ##N\n", "f = # 5"),
+        ("#define N 5\nf = #\"N\"\n", "f = # \"N\""),
+        ("#define M(x) x\nf = #M;\n", "f = # M ;"),
+        ("#define N 5\nf = #5 #-N\n", "f = # 5 # - 5"),
+    ] {
+        assert_eq!(fte(text), (want.to_owned(), vec![]), "{text:?}");
+    }
+    let (_, out) = one("#define N 5\nf = #N;\n");
+    assert_eq!(tokens(&out), "f = # 5 ;");
+}
+
+// spec FTE-23.10: a function-like macro after `#` with a bad or unclosed argument list keeps
+// the `#` and reports its error once
+#[test]
+fn a_refused_macro_after_hash_reports_once() {
+    let (toks, errs) = fte("#define M(x) x\nf = #M(1, 2, 3);\n");
+    assert_eq!(errs, vec![Code::E0116]);
+    assert_eq!(toks, "f = # M ( 1 , 2 , 3 ) ;");
+    assert_eq!(fte("#define M(x) x\nf = #M(1\n").1, vec![Code::E0117]);
+}

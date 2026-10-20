@@ -197,10 +197,10 @@ fn only_until_is_a_keyword() {
     assert_eq!(fte_errors(&in_body("__foo(a);")), []);
 }
 
-// spec QC-3.3: a scoped member name past the length limit is "name too long"
+// spec FTEF-15.7: a scoped member name past FTEQCC's length limit is "name too long"
 #[test]
 fn long_scoped_member_name() {
-    let long = "m".repeat(70);
+    let long = "m".repeat(crate::FTEQCC_MAX_NAME - 1);
     assert_eq!(
         fte_errors(&in_body(&format!("a = A::{long};"))),
         [Code::E0202]
