@@ -257,7 +257,7 @@ struct FteIf<'a> {
 }
 
 /// `qcc_iswhite` in FTEQCC's `cmdlib.h`.
-const fn fte_white(byte: u8) -> bool {
+pub(crate) const fn fte_white(byte: u8) -> bool {
     matches!(byte, b' ' | b'\r' | b'\n' | b'\t' | 0x0b)
 }
 

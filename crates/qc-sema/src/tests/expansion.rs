@@ -587,8 +587,8 @@ fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
 
 // spec QC-9.15: through `Db::analyze_module` under FTEQCC, `#define L(x) x:` then `L(lbl)` used
 // as a statement is a label (FTEF-18.23), as are `L(lbl )`, a variadic `V(lbl)` and a body
-// with a comment before its `:`; with the `:` apart in the body, after `L(lbl/**/)` or after
-// `V(lbl )` it is not
+// with a comment before its `:`; with the `:` apart in the body, after `L(lbl/**/)`, after
+// `V(lbl )` or with an empty expansion before the `:` it is not
 #[test]
 fn an_argument_against_a_body_token_reads_as_written_there() {
     let errors = |text: &str| {
@@ -613,6 +613,8 @@ fn an_argument_against_a_body_token_reads_as_written_there() {
         ("#define L(x) x:", "L(lbl/**/)"),
         ("#define L(x,y) x y:", "L(lbl,)"),
         ("#define V(...) __VA_ARGS__:", "V(lbl )"),
+        ("#define E\n#define L lbl E:", "L"),
+        ("#define F(a) a\n#define L lbl F():", "L"),
     ] {
         assert!(
             label(define, use_).contains(&Code::E0301),

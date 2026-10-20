@@ -165,3 +165,51 @@ fn a_body_touches_where_fteqcc_stored_it_touching() {
     assert_eq!(fte("#define A a\n#define B b\nA+B"), "a + b");
     assert_eq!(fte("#define A a\nA:"), "a :");
 }
+
+// spec QC-9.15: a token touches only the one written right before it, so two body tokens
+// that a macro expanding to nothing came to stand between stay apart, in both dialects
+#[test]
+fn tokens_with_an_empty_expansion_between_them_stay_apart() {
+    for dialect in [Dialect::Fteqcc, Dialect::Vanilla] {
+        let at = |text: &str| touching(text, dialect);
+        assert_eq!(at("#define E\n#define K lbl E;\nK"), "lbl ;");
+        assert_eq!(at("#define F(a) a\n#define K lbl F();\nK"), "lbl ;");
+        assert_eq!(at("#define F(a) a\n#define K lbl F(1);\nK"), "lbl 1 ;");
+        assert_eq!(at("#define E\n#define K(x) x E;\nK(lbl)"), "lbl ;");
+    }
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define E\n#define K(x, y) x y:\nK(lbl, E)"), "lbl :");
+}
+
+// spec QC-9.15: under FTEQCC a parameter that touches a word only across a dropped comment or
+// line break is part of that word, as FTEQCC stored it, and no parameter; a number before it
+// ends there, so the parameter stays one
+#[test]
+fn a_parameter_inside_a_stored_word_is_no_parameter() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define A(a) a/**/b\nA(5)"), "ab");
+    assert_eq!(fte("#define A(a) b/**/a\nA(5)"), "ba");
+    assert_eq!(fte("#define A(a) a\\\nb\nA(5)"), "ab");
+    assert_eq!(fte("#define A(a) a/**/1\nA(5)"), "a1");
+    assert_eq!(fte("#define A(a) 1/**/a\nA(x)"), "1x");
+    assert_eq!(fte("#define A(a) a/**/+\nA(5)"), "5+");
+    assert_eq!(
+        touching("#define A(a) a/**/b\nA(5)", Dialect::Vanilla),
+        "5 b"
+    );
+}
+
+// spec FTE-23.10, FTEF-14.13: a `#` reads the name that touches it in the text FTEQCC reads,
+// a body's as stored included, so `#/**/N` in a body is `N`'s expansion with no `#`
+#[test]
+fn a_hash_in_a_body_reads_the_name_that_touches_it() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define N 5\n#define K #/**/N\nx = K;"), "x = 5 ;");
+    assert_eq!(fte("#define N 5\n#define K #N\nx = K;"), "x = 5 ;");
+    assert_eq!(fte("#define N 5\n#define K # N\nx = K;"), "x = # 5 ;");
+    assert_eq!(
+        fte("#define N 5\n#define K(a) #a\nx = K(N);"),
+        "x = \"N\" ;"
+    );
+    assert_eq!(fte("#define N 5\n#define K #N!\nx = K;"), "x = #N! ;");
+}

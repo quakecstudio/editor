@@ -833,11 +833,16 @@ impl Lexer<'_> {
             let escape = start.saturating_add(1);
             self.bump(2);
             // FTEQCC stops at "EOF inside quote", before it looks for the closing `'`.
-            let eof = self.peek(0).is_none();
+            let reported = self.out.diagnostics.len();
             let code = self.fte_escape(start, escape);
+            let ended = self
+                .out
+                .diagnostics
+                .get(reported..)
+                .is_some_and(|new| new.iter().any(|d| d.code == Code::E0101));
             if self.peek(0) == Some(b'\'') {
                 self.bump(1);
-            } else if !eof {
+            } else if !ended {
                 self.error(
                     Code::E0104,
                     "Bad character constant",

@@ -1616,7 +1616,7 @@ fn high_byte_character_constants_follow_utf8_check() {
 
 // spec FTEF-13.13: a bad `\{` or `\x` is "Bad character code" (E0103), and with no `'` after
 // the escape the constant is also "Bad character constant" (E0104); the end of the file
-// right after the `\` is "EOF inside quote" (E0101) alone
+// inside the escape is "EOF inside quote" (E0101) alone
 #[test]
 fn character_constant_escape_errors() {
     let both = vec![Code::E0103, Code::E0104];
@@ -1625,6 +1625,7 @@ fn character_constant_escape_errors() {
     assert_eq!(fte_character(br"'\xg"), (0.0, both.clone()));
     assert_eq!(fte_character(br"'\x"), (0.0, both));
     assert_eq!(fte_character(br"'\"), (0.0, vec![Code::E0101]));
+    assert_eq!(fte_character(b"'\\\r"), (0.0, vec![Code::E0101]));
     assert_eq!(fte_character(br"'\n"), (10.0, vec![Code::E0104]));
 }
 

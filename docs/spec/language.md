@@ -411,7 +411,13 @@ dialect features (P2-01, P2-03).
   both touch the parameter: `#define L(x) x:` used as `L(lbl)`, `L( lbl)` or `L(lbl )` is the
   label `lbl:` and as `L(lbl/**/)` is not, `#define V(...) __VA_ARGS__:` used as `V(lbl)` is a
   label and as `V(lbl )` is not, `#define L(x,y) x y:` used as `L(,lbl)` is a label and as
-  `L(lbl,)` is not, and the pinned FTEQCC compiles each so.
+  `L(lbl,)` is not, and the pinned FTEQCC compiles each so. A token touches only the one written
+  right before it, so tokens that an expansion to nothing came to stand between stay apart: with
+  `#define E`, `#define K lbl E:` used as a statement is no label, as FTEQCC reads `lbl`, then `E`
+  and the `:` after a space. A parameter that under FTEQCC touches a word across what
+  `QCC_PR_PreProcessor_Define` drops is part of that word as stored, which `QCC_COM_Parse2` reads
+  as one token, and no parameter: `#define A(a) a/**/b` is the name `ab` (the pinned FTEQCC:
+  "Unknown value \"ab\""), while a number before a parameter ends at it.
 
 ## QC-10 Types
 
