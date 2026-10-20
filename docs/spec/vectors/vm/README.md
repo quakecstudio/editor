@@ -62,7 +62,7 @@ spec: <statement IDs it pins, comma-separated>
 globals: <slot>=<value> ...          optional, repeatable: initial globals
 fields: e<n>.<field>=<value> ...     optional, repeatable: initial entity fields
 strings: "<text>" ...                optional: strings after the empty one, \xNN escapes
-numglobals: <count>                  optional
+numglobals: <count>                  optional: global slots, 1 to 65536
 edicts: <count>                      optional: edicts in use, 1 to 600
 maxclients: <count>                  optional: client slots, 0 to 16
 seed: <number>                       optional: the random state, 0 to 4294967295

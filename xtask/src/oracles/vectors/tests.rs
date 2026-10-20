@@ -291,6 +291,29 @@ fn keeps_a_well_formed_after_line() {
 }
 
 #[test]
+fn bounds_the_counts() {
+    for (line, ok) in [
+        ("numglobals: 1", true),
+        ("numglobals: 65536", true),
+        ("numglobals: 0", false),
+        ("numglobals: 65537", false),
+        ("numglobals: 01111111111", false),
+        ("numglobals: x", false),
+        ("edicts: 1", true),
+        ("edicts: 600", true),
+        ("edicts: 0", false),
+        ("edicts: 601", false),
+        ("maxclients: 0", true),
+        ("maxclients: 16", true),
+        ("maxclients: 17", false),
+        ("maxclients: -1", false),
+    ] {
+        let text = format!("== v\n{line}\n");
+        assert_eq!(parse("t.txt", &text).is_ok(), ok, "{line}");
+    }
+}
+
+#[test]
 fn refuses_a_malformed_error_line() {
     for bad in ["error \"open", "errors", "error \"a # b\""] {
         let text = format!("== v\nexpect:\n  {bad}\n");

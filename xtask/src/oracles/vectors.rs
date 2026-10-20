@@ -211,6 +211,23 @@ fn verdict(vector: &Vector, result: Result<(), String>, x86_64: bool) -> Verdict
 
 // --- Parsing the vector files ---
 
+/// Most global slots a vector may ask for: a statement's operands are 16 bits, so a progs
+/// has no use for a slot past 65535 (`LIMIT_MAX_DEF_SLOT` in `docs/spec/limits.md`).
+const MAX_GLOBALS: usize = 65536;
+
+/// Most edicts a vector may have in use, the format's bound (`docs/spec/vectors/vm/README.md`).
+const MAX_EDICTS: usize = 600;
+
+/// Most client slots a vector may have, the format's bound.
+const MAX_CLIENTS: usize = 16;
+
+/// A decimal count from `min` to `max`, or `None` for any other text.
+fn count(text: &str, min: usize, max: usize) -> Option<usize> {
+    text.parse::<usize>()
+        .ok()
+        .filter(|n| (min..=max).contains(n))
+}
+
 pub(super) fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
     let mut vectors: Vec<Vector> = Vec::new();
     let mut block = "";
@@ -275,11 +292,24 @@ pub(super) fn parse(file: &str, text: &str) -> Result<Vec<Vector>, String> {
             }
             "strings" => vector.strings = parse_strings(rest).map_err(|e| at(&e))?,
             "numglobals" => {
-                vector.numglobals = Some(rest.parse().map_err(|_| at("bad numglobals"))?);
+                vector.numglobals = Some(
+                    count(rest, 1, MAX_GLOBALS)
+                        .ok_or_else(|| at(&format!("numglobals must be 1 to {MAX_GLOBALS}")))?,
+                );
             }
-            "edicts" => vector.edicts = Some(rest.parse().map_err(|_| at("bad edicts"))?),
+            "edicts" => {
+                vector.edicts = Some(
+                    count(rest, 1, MAX_EDICTS)
+                        .and_then(|n| u32::try_from(n).ok())
+                        .ok_or_else(|| at(&format!("edicts must be 1 to {MAX_EDICTS}")))?,
+                );
+            }
             "maxclients" => {
-                vector.maxclients = Some(rest.parse().map_err(|_| at("bad maxclients"))?);
+                vector.maxclients = Some(
+                    count(rest, 0, MAX_CLIENTS)
+                        .and_then(|n| u32::try_from(n).ok())
+                        .ok_or_else(|| at(&format!("maxclients must be 0 to {MAX_CLIENTS}")))?,
+                );
             }
             "seed" => vector.seed = Some(rest.parse().map_err(|_| at("bad seed"))?),
             "datagram" => {
