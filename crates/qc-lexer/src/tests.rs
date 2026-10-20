@@ -993,6 +993,8 @@ fn scope_operator_lexes() {
 
 // spec FTEF-13.2: a `\` before LF, CR or CR LF joins the lines in FTEQCC; vanilla has no such
 // byte.
+// spec QC-7.2, QCD-2.5: in vanilla that `\` is "Unknown punctuation", and the line break and
+// the name after it are kept.
 #[test]
 fn line_continuations_are_trivia() {
     for source in [&b"a \\\nb"[..], b"a \\\r\nb", b"a \\\rb"] {
@@ -1002,6 +1004,7 @@ fn line_continuations_are_trivia() {
     }
     for source in [&b"a \\\nb"[..], b"a \\\r\nb", b"a \\\rb"] {
         assert_eq!(codes(source), vec![Code::E0105], "{source:?}");
+        assert_eq!(kinds(source), vec![name("a"), name("b")], "{source:?}");
     }
     // A `\` before anything else is still unknown.
     assert_eq!(
@@ -1269,7 +1272,7 @@ fn fteqcc_frame_commands() {
             name("x")
         ]
     );
-    // Under vanilla each is a frame macro reference (QC-8.5).
+    // Under vanilla each is a frame macro reference (QC-8.5), and takes no word after it.
     for command in [
         "flush",
         "frame_reset",
@@ -1277,13 +1280,17 @@ fn fteqcc_frame_commands() {
         "framerestore",
         "modelname",
     ] {
-        let source = format!("${command}");
+        let source = format!("${command} w");
         assert_eq!(
             kinds(source.as_bytes()),
-            vec![frame_ref(command)],
+            vec![frame_ref(command), name("w")],
             "{source}"
         );
     }
+    assert_eq!(
+        kinds(b"$framevalue 12"),
+        vec![frame_ref("framevalue"), TokenKind::Float(12.0)]
+    );
 }
 
 // spec FTEF-18.16: an ignored command takes its words up to one that ends at once, not the rest of the line
