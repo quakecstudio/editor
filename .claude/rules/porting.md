@@ -33,6 +33,12 @@ Rules that are easy to miss:
 
 - Port only from an upstream and commit listed in `docs/porting.md`. `Quake-Tools/qutils/`
   (the map tools) is not portable until the license review rules on it (P4-22).
+- FTEQCC (`fte-team/fteqw`, `engine/qclib/`) is portable under ADR-0017's clean-port policy:
+  port its behaviour, not its structure; cite its functions as the authority; write the Rust
+  fresh in our lexer, preprocessor, CST and semantic model, with no globals, no transliterated
+  control flow and CONV-17 throughout; one implementation with dialect profiles; the oracle
+  differentials stay as the proof. Its copyright line is `Copyright (c) 2004-2025 FTE's team
+  and its contributors`.
 - Never commit id's C. Oracles fetch it by commit and checksum.
 - Keep the behaviour, not the C: no globals (they become an explicit context), errors as
   `Err` values, every wrap, truncation and float comparison written out with the `#[expect]`
