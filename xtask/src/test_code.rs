@@ -26,6 +26,22 @@ use std::path::{Path, PathBuf};
 /// `#[cfg(test)]` marks it.
 pub(crate) const DIFFERENTIAL_TESTS: [&str; 1] = ["xtask/src/oracles/scenarios"];
 
+/// xtask's fixture repositories, relative to the repository root. Their files cite the
+/// statements of their own small `docs/spec/`, not the repository's, so neither the
+/// spec-citation ratchet nor `cargo xtask readiness` reads them as the repository's citations.
+pub(crate) const FIXTURES: &str = "xtask/fixtures";
+
+/// The error for a `// spec` line outside test code: line `line` of `file`, whose text after
+/// `// spec ` is `rest`. Such a line cites nothing (TEST-3 asks for a test), so the
+/// spec-citation ratchet and `cargo xtask readiness` both report it rather than drop it, and
+/// it cannot pass for coverage.
+pub(crate) fn shipped_citation(file: &str, line: u32, rest: &str) -> String {
+    format!(
+        "{file}:{line}: a `// spec` line outside test code cites nothing; name the statement in \
+         a plain comment (`// {rest}`) or cite it from a test"
+    )
+}
+
 /// The test code of one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TestCode {

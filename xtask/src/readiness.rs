@@ -29,7 +29,7 @@ use serde_json::Value;
 
 use crate::exec::{Exec, System};
 use crate::oracles::{COVERAGE_ENV, vm_oracle};
-use crate::test_code::{TestCode, test_code};
+use crate::test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
 /// The date-pinned nightly that measures branch coverage, the only check that
 /// needs nightly. The `Readiness` workflow installs the same toolchain, and a
@@ -1033,9 +1033,13 @@ fn cited_in_tests(root: &Path) -> Result<BTreeSet<String>, String> {
     let mut files = Vec::new();
     for tree in CITING_TREES {
         for file in rust_files(&root.join(tree))? {
+            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
+            // The fixture repositories cite their own statements, as the ratchet skips them.
+            if relative.starts_with(FIXTURES) {
+                continue;
+            }
             let text = fs::read_to_string(&file)
                 .map_err(|error| format!("{}: {error}", file.display()))?;
-            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
             files.push((relative, text));
         }
     }
@@ -1057,11 +1061,8 @@ pub(crate) fn citations(path: &Path, text: &str, code: &TestCode) -> Result<Vec<
             continue;
         };
         if !code.contains(number) {
-            return Err(format!(
-                "{}:{number}: a `// spec` line outside test code cites nothing; name the \
-                 statement in a plain comment (`// {rest}`) or cite it from a test",
-                path.display()
-            ));
+            let file = path.to_string_lossy().replace('\\', "/");
+            return Err(shipped_citation(&file, number, rest));
         }
         let list = rest.split_once(':').map_or(rest, |(list, _)| list);
         ids.extend(list.split(',').map(|id| id.trim().to_owned()));

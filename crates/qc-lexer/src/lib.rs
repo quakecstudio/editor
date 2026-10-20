@@ -172,7 +172,7 @@ pub enum Punct {
     ShlEq,
     /// `::` (FTEQCC, FTEF-13.1): a class member's scope, `Class::member`.
     ColonColon,
-    /// `..` (FTEQCC, FTEF-18.4, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
+    /// `..` (FTEQCC, FTEF-18.18, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
     DotDot,
 }
 

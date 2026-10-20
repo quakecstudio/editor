@@ -314,6 +314,27 @@ fn a_citation_outside_test_code_is_an_error() {
     );
 }
 
+/// The spec check reports a `// spec` line in a crate's shipped code, end to end: the spec
+/// fixture with one added to `first` is an error naming the line, not a score.
+#[test]
+fn the_spec_check_fails_on_a_shipped_citation() {
+    let repo = fresh("readiness/spec-shipped").join("repo");
+    copy_dir(&root().join(FIXTURES).join("spec"), &repo);
+    let lib = repo.join("crates/fx-spec/src/lib.rs");
+    let text = fs::read_to_string(&lib).unwrap();
+    let shipped = text.replace(
+        "    // FX-1.2: not a test\n",
+        "    // spec FX-1.2: not a test\n",
+    );
+    assert_ne!(shipped, text);
+    fs::write(&lib, shipped).unwrap();
+    let error = spec(&repo.join("crates/fx-spec")).unwrap_err();
+    assert!(
+        error.starts_with("crates/fx-spec/src/lib.rs:7: ") && error.contains("outside test code"),
+        "{error}"
+    );
+}
+
 #[test]
 fn a_bad_index_or_an_empty_section_is_an_error() {
     assert!(active_statements("id\tspec\n").is_err());

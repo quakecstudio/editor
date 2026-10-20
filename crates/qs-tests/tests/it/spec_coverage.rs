@@ -8,8 +8,9 @@
 //! `docs/spec/coverage-baseline.tsv`. Test code is what [`test_code`] says it is: a `// spec`
 //! line in shipped code cites nothing, so the ratchet reports it as an error. The ratchet only
 //! turns one way: a statement that loses its last citation fails, and a baseline entry that
-//! gains a citation fails until it is removed from the baseline. `docs/spec/requirements.tsv` is the index of every
-//! statement and must match the spec files. The format is in `docs/spec/README.md`.
+//! gains a citation fails until it is removed from the baseline. `docs/spec/requirements.tsv`
+//! is the index of every statement and must match the spec files. The format is in
+//! `docs/spec/README.md`.
 
 #![expect(
     clippy::expect_used,
@@ -26,7 +27,7 @@ use std::path::{Path, PathBuf};
 #[path = "../../../../xtask/src/test_code.rs"]
 mod test_code;
 
-use test_code::{TestCode, test_code};
+use test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
 const REQUIREMENTS_HEADER: &str = "id\tspec\tsection\tstatus\tstatement";
 const BASELINE_HEADER: &str = "id";
@@ -152,10 +153,7 @@ fn parse_citations(file: &str, text: &str, code: &TestCode) -> Result<Vec<Citati
             continue;
         };
         if !code.contains(number) {
-            return Err(format!(
-                "{file}:{number}: a `// spec` line outside test code cites nothing; name the \
-                 statement in a plain comment (`// {rest}`) or cite it from a test"
-            ));
+            return Err(shipped_citation(file, number, rest));
         }
         let ids = rest.split_once(':').map_or(rest, |(ids, _)| ids);
         for id in ids.split(',').map(str::trim) {
@@ -331,7 +329,7 @@ fn citing_files() -> Vec<PathBuf> {
     for dir in ["crates", "apps", "xtask"] {
         rust_files(&repo_root().join(dir), &mut files);
     }
-    let fixtures = repo_root().join("xtask/fixtures");
+    let fixtures = repo_root().join(FIXTURES);
     files.retain(|path| !path.starts_with(&fixtures));
     files.sort();
     files
