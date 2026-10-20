@@ -43,10 +43,11 @@ came from a session that went wrong without it.
 11. **Three strikes, then re-diagnose.** If a command fails three times, stop retrying and
     check the diagnosis again from scratch; the cause can change while you retry.
 12. **Watch, don't sleep.** Never wait on CI or GitHub with a long `sleep` such as
-    `sleep 600; gh run view ...`. Use `gh pr checks <pr> --watch --fail-fast` for a PR's
-    checks and `gh run watch <run-id> --exit-status` for a workflow run. Run long local jobs
-    (cargo-mutants, fuzzing, differential runs) in the background with a completion
-    notification instead of sleep-polling them.
+    `sleep 600; gh run view ...`. Use `gh pr checks <pr> --watch --fail-fast --interval 30`
+    for a PR's checks and `gh run watch <run-id> --exit-status --interval 60` for a workflow
+    run: gh's defaults (every 10 s and every 3 s) trip GitHub's secondary rate limit when
+    several agents watch at once. Run long local jobs (cargo-mutants, fuzzing, differential
+    runs) in the background with a completion notification instead of sleep-polling them.
 
 ## Agents working together
 
