@@ -675,17 +675,18 @@ profile the preprocessor reads them as FTEQCC does.
   with the white space before the `##` dropped (`*bufferlen = whitestart;`), and the result is
   lexed again with the rest of the expansion: a text that lexes as one token is that token (`x
   ##_net` with `x` given `health` is the name `health_net`, `#1##6` the builtin 16), and one that
-  lexes as more is those tokens, the second against the first (`J(a, +)` with `#define J(a, b) a
-  ## b` is `a+`, the name and `+`). Either side may be empty, so `##` at the start or end of the
-  body, or beside an empty argument, leaves the other side as it is: `#define P(a, b) a##b` used
-  as `P(#5, )` or `P(, #5)` is `#5`. `##` is two `#` that touch as the body was stored (`if
-  (pr_file_p[1] == '#')`); `# #` is a `#` before a word (FTEF-14.15). An argument beside `##` is
-  copied whole: one after it by `noargexpand`, one before it because `start[0] == '#' && start[1]
-  == '#'`, each with what stands before its `,` or `)`. So the right argument's later tokens touch
-  the joined one (`P(l, bl:)` writes the label `lbl:`), and white space or a comment after the
-  left argument stays between the sides, as `*bufferlen = whitestart` drops only the body's white
-  space: `P(x , y)` is `x y`. A paste whose text is a comment (`/` and `/`) writes nothing, the
-  comment running to the end of the chunk.
+  lexes as more is the tokens of that text, each against the one before (`J(a, +)` with `#define
+  J(a, b) a ## b` is `a+`, the name and `+`). Either side may be empty, so `##` at the start or
+  end of the body, or beside an empty argument, leaves the other side as it is, and an empty
+  argument after `##` joins nothing to what follows it: `#define P(a, b) a##b` used as `P(#5, )`
+  or `P(, #5)` is `#5`. `##` is two `#` that touch as the body was stored (`if (pr_file_p[1] ==
+  '#')`); `# #` is a `#` before a word (FTEF-14.15). An argument beside `##` is copied whole: one
+  after it by `noargexpand`, one before it because `start[0] == '#' && start[1] == '#'`, each with
+  what stands before its `,` or `)`. So the right argument's later tokens touch the joined one
+  (`P(l, bl:)` writes the label `lbl:`), and white space or a comment after the left argument
+  stays between the sides, as `*bufferlen = whitestart` drops only the body's white space: `P(x ,
+  y)` is `x y`. A paste whose text opens a comment (`/` and `/`, or `/` and `*`) writes nothing
+  more: the comment runs to the end of the chunk.
 - **FTEF-14.15** In a function-like macro's body `#param`, `param` a named parameter, is a string
   of the argument's text as written, from after the white space and comments that follow its `(`
   or `,` (`QCC_PR_LexWhitespace(false)`) to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
@@ -714,18 +715,18 @@ profile the preprocessor reads them as FTEQCC does.
   again: with `#define A #5 B` and `#define B :A`, `A` is `#5 :#5 :...` eight times over, which
   the pinned FTEQCC refuses, where QC-9.4's rule leaves `#5 :A`. A built-in constant's value
   (FTEF-14.7) is a chunk of its own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL)`), so it
-  touches neither token beside it. This profile reads FTEQCC macros by this rule and no hide set;
-  the vanilla dialect keeps QC-9.4's.
+  touches neither token beside it. This profile reads FTEQCC macros by this rule and keeps no hide
+  set for them; the vanilla dialect keeps QC-9.4's.
 - **FTEF-14.18** A function-like macro takes its arguments only from the text of the chunk its
   name is in: `QCC_PR_CheckCompConst` skips spaces and tabs after the name (`while(*pr_file_p == '
   ' || *pr_file_p == '\t')`) and expands it only `if (*pr_file_p == '(')`, so a line break or a
-  comment before the `(`, or the end of the expansion the name is in, leaves the name as it is
-  (`M\n(#5)` is the name `M`; with `#define N M`, `N(#5)` is too); and
-  `QCC_PR_ExpandPreProcessorMacro` reads the arguments up to the `)` within that text, reporting
-  "EOF on macro call" (`if (!*pr_file_p) QCC_PR_ParseError(ERR_EOF, "EOF on macro call");`) when
-  it ends first. This profile reports that as "unterminated argument list for macro NAME"
-  (`E0117`): with `#define L(x) x:` and `#define LL L(lbl`, `LL) goto lbl;` is `E0117`, as is the
-  end of the file inside a use's arguments.
+  comment before the `(`, in the source or in an argument's text copied into an expansion, or the
+  end of the expansion the name is in, leaves the name as it is (`M\n(#5)` is the name `M`; with
+  `#define N M`, `N(#5)` is too); and `QCC_PR_ExpandPreProcessorMacro` reads the arguments up to
+  the `)` within that text, reporting "EOF on macro call" (`if (!*pr_file_p)
+  QCC_PR_ParseError(ERR_EOF, "EOF on macro call");`) when it ends first. This profile reports that
+  as "unterminated argument list for macro NAME" (`E0117`): with `#define L(x) x:` and `#define LL
+  L(lbl`, `LL) goto lbl;` is `E0117`, as is the end of the file inside a use's arguments.
 - **FTEF-14.19** A deliberate divergence: FTEF-14.17 lets an expansion grow exponentially
   (`#define A B B` and `#define B A A` expand to 2^16 names), and FTEQCC builds it all, so this
   profile makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one file, writing at most

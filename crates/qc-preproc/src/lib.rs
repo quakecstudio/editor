@@ -253,10 +253,24 @@ struct Run {
     open: Vec<ExpansionId>,
     /// How many of [`Run::open`] each macro has.
     open_names: HashMap<String, usize>,
-    /// How many macro expansions this file has made, how many tokens they wrote, and
-    /// whether `E0120` was reported (FTEF-14.19).
-    expanded: (usize, usize, bool),
+    /// The macro expansions this file has made under FTEQCC (FTEF-14.19).
+    expanded: Expanded,
     out: FileOutput,
+}
+
+/// The work a file's FTEQCC macro expansions have done, against the bound of FTEF-14.19.
+#[derive(Debug, Default)]
+struct Expanded {
+    expansions: usize,
+    tokens: usize,
+    /// `E0120` was reported, which happens once a file.
+    reported: bool,
+}
+
+impl Expanded {
+    fn over_bound(&self) -> bool {
+        self.expansions >= FTE_MAX_EXPANSIONS || self.tokens >= FTE_MAX_EXPANDED_TOKENS
+    }
 }
 
 impl Run {
@@ -464,7 +478,7 @@ impl<L: Loader> Preprocessor<L> {
     fn explicit_use(&mut self, run: &mut Run, item: Item) -> Option<Item> {
         if !self.dialect.has_fteqcc_extensions()
             || item.tok.kind != TokenKind::Punct(Punct::Hash)
-            || item.tok.spelling.is_some()
+            || item.tok.spelling.as_deref().is_some_and(|text| text != "#")
         {
             return Some(item);
         }
@@ -1134,7 +1148,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             return Some(item);
         };
-        if fte && self.fte_recursion_stops(run, &item.tok, name, mac.params.is_some()) {
+        if fte && self.fte_recursion_stops(run, &item.tok, (name, &mac)) {
             return Some(item);
         }
         let name = name.clone();
@@ -1208,15 +1222,15 @@ impl<L: Loader> Preprocessor<L> {
         // FTEF-14.19: FTEQCC's recursion rule lets an expansion grow exponentially; this
         // profile stops at a bound.
         if fte {
-            if run.expanded.0 >= FTE_MAX_EXPANSIONS || run.expanded.1 >= FTE_MAX_EXPANDED_TOKENS {
-                if !run.expanded.2 {
-                    run.expanded.2 = true;
+            if run.expanded.over_bound() {
+                if !run.expanded.reported {
+                    run.expanded.reported = true;
                     run.report(Code::E0120, "macro expansion too large", use_span);
                 }
                 run.pending.extend(collected_back.into_iter().rev());
                 return Some(item);
             }
-            run.expanded.0 = run.expanded.0.saturating_add(1);
+            run.expanded.expansions = run.expanded.expansions.saturating_add(1);
         }
         let id = ExpansionId(self.expansions.len());
         self.expansions.push(Expansion {
@@ -1228,29 +1242,23 @@ impl<L: Loader> Preprocessor<L> {
             },
             parent: item.tok.expansion,
         });
-        let live = if let Some(live) = run.live.get(&name) {
-            Rc::clone(live)
-        } else {
-            let live = Live::default();
-            run.live.insert(name, Rc::clone(&live));
-            live
-        };
-        let hide = hide_with(&item.hide, &live);
         let mut quiet = Vec::new();
+        // FTEF-14.17: FTEQCC keeps no hide sets, so none is built.
         let result = if fte {
-            self.fte_substitute(
-                &mac,
-                &args,
-                &bounds,
-                id,
-                (&hide, &live),
-                (&mut quiet, &run.path),
-            )
+            self.fte_substitute(&mac, &args, &bounds, id, (&mut quiet, &run.path))
         } else {
+            let live = if let Some(live) = run.live.get(&name) {
+                Rc::clone(live)
+            } else {
+                let live = Live::default();
+                run.live.insert(name, Rc::clone(&live));
+                live
+            };
+            let hide = hide_with(&item.hide, &live);
             self.substitute(&mac, &args, id, (&hide, &live))
         };
         // FTEF-14.19: the tokens expansions write are bounded too.
-        run.expanded.1 = run.expanded.1.saturating_add(result.len());
+        run.expanded.tokens = run.expanded.tokens.saturating_add(result.len());
         for span in quiet {
             if let Some(cursor) = run.cursors.iter_mut().find(|c| c.file == span.file) {
                 cursor.skipped.push(span.span);
@@ -1261,12 +1269,13 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// The tokens of an argument, `items`, as the expansion `id` writes them: the first after
-    /// `first`, if anything, and each other as it touches the one before it (QC-9.16).
+    /// `first`, if anything, and each other as it touches the one before it (QC-9.16); with a
+    /// hide set made from `live` in the vanilla dialect.
     fn argument_pieces(
         items: &[Item],
         first: Option<FileSpan>,
         id: ExpansionId,
-        live: &Live,
+        live: Option<&Live>,
     ) -> Vec<Item> {
         let mut pieces: Vec<Item> = Vec::with_capacity(items.len());
         let mut before: Option<&Item> = None;
@@ -1287,7 +1296,7 @@ impl<L: Loader> Preprocessor<L> {
                     spelling: a.tok.spelling.clone(),
                     follows,
                 },
-                hide: hide_with(&a.hide, live),
+                hide: live.map_or_else(|| a.hide.clone(), |live| hide_with(&a.hide, live)),
             });
             before = Some(a);
         }
@@ -1324,7 +1333,7 @@ impl<L: Loader> Preprocessor<L> {
             };
             if let Some(arg) = param {
                 let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
-                result.extend(Self::argument_pieces(items, None, id, live));
+                result.extend(Self::argument_pieces(items, None, id, Some(live)));
                 after_argument = true;
                 continue;
             }
@@ -1346,11 +1355,12 @@ impl<L: Loader> Preprocessor<L> {
         result
     }
 
-    /// A token's text: its spelling, or its bytes in the source.
-    fn item_text(&self, tok: &PpToken) -> String {
-        tok.spelling.clone().unwrap_or_else(|| {
-            String::from_utf8_lossy(self.sources.text(tok.span).unwrap_or_default()).into_owned()
-        })
+    /// A token's bytes: its spelling, or its bytes in the source.
+    fn item_bytes(&self, tok: &PpToken) -> Vec<u8> {
+        match &tok.spelling {
+            Some(spelling) => spelling.as_bytes().to_vec(),
+            None => self.sources.text(tok.span).unwrap_or_default().to_vec(),
+        }
     }
 
     /// The token a built-in constant expands to at `tok` in the file `path` (FTEF-14.7), if
@@ -1738,6 +1748,7 @@ fn quote_bytes(bytes: &[u8]) -> String {
             b'"' => out.push_str("\\\""),
             b'\\' => out.push_str("\\\\"),
             b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
             0x80..=0xff => out.push_str(&format!("\\x{b:02x}")),
             _ => out.push(char::from(b)),
         }

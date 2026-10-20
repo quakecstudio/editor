@@ -431,3 +431,47 @@ fn an_expansion_writing_too_many_tokens_is_reported() {
     let codes: Vec<_> = out.diagnostics.iter().map(|d| d.code).collect();
     assert_eq!(codes, vec![crate::Code::E0120]);
 }
+
+// spec FTEF-14.14: an empty argument after `##` joins nothing, a paste that makes a comment
+// ends the chunk, and a pasted text is lexed again into its own tokens
+#[test]
+fn a_paste_is_text_lexed_again() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define P(a, b) a##b c\nP(x, )"), "x c");
+    assert_eq!(fte("#define P(a, b, c) a##b##c\nP(x, , y)"), "xy");
+    assert_eq!(fte("#define P(a, b) a##b z\nx = P(/, /) 5;"), "x = 5;");
+    let out = run(b"#define P(a, b) a##b\nP(+, +=)", Dialect::Fteqcc);
+    let kinds: Vec<_> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    let relexed: Vec<_> = qc_lexer::lex_with(b"++=", Dialect::Fteqcc)
+        .tokens
+        .into_iter()
+        .map(|t| t.kind)
+        .collect();
+    assert_eq!(kinds, relexed);
+}
+
+// spec FTEF-14.15: a string made from an argument of another expansion keeps its bytes, and
+// a carriage return is escaped like a line break
+#[test]
+fn a_nested_string_keeps_its_bytes() {
+    let out = run(
+        b"#define S(a) #a\n#define T(x) S(x)\nT(\"\x80\")",
+        Dialect::Fteqcc,
+    );
+    assert_eq!(
+        out.tokens[0].kind,
+        qc_lexer::TokenKind::String(b"\"\x80\"".to_vec())
+    );
+    let out = run(b"#define S(a) #a\nS(a\r\nb)", Dialect::Fteqcc);
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\r\\nb\""));
+}
+
+// spec FTEF-14.18: in an expansion a `(` opens a call only after spaces and tabs, as the
+// text of the argument it came from has them
+#[test]
+fn a_call_in_an_argument_needs_its_parenthesis_on_the_line() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define M(x) x\n#define K(y) y\nK(M\n(1))"), "M (1)");
+    assert_eq!(fte("#define M(x) x\n#define K(y) y\nK(M/**/(1))"), "M (1)");
+    assert_eq!(fte("#define M(x) x\n#define K(y) y\nK(M (1))"), "1");
+}

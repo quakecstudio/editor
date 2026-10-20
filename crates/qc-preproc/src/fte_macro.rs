@@ -20,8 +20,8 @@ use std::path::Path;
 use qc_lexer::{Punct, Span, Token, TokenKind, lex_with};
 
 use crate::{
-    ExpansionId, FTE_MAX_OPEN_CHUNKS, FileSpan, Hide, Item, Live, Loader, Macro, PpToken,
-    Preprocessor, Run, cond,
+    ExpansionId, FTE_MAX_OPEN_CHUNKS, FileSpan, Item, Loader, Macro, PpToken, Preprocessor, Run,
+    cond,
 };
 
 /// What a `##` joins the next text to (FTEF-14.14).
@@ -36,6 +36,25 @@ enum Paste {
     AfterSpace,
 }
 
+/// What the text written so far ends with, for a `##` after it (FTEF-14.14).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Last {
+    /// A token, or nothing.
+    Token,
+    /// An argument copied whole and the white space or comment after it.
+    ArgumentThenSpace,
+}
+
+/// How an argument is copied into the expansion (FTEF-14.14, FTEF-14.20).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Copy {
+    /// As it was written, up to its `,` or `)`: beside `##` (`noargexpand`) and the variadic
+    /// argument.
+    Whole,
+    /// A token at a time, its built-in constants written as their values.
+    TokenByToken,
+}
+
 /// The state of one expansion's text as `QCC_PR_ExpandPreProcessorMacro` writes it.
 struct Writer {
     out: Vec<Item>,
@@ -43,9 +62,10 @@ struct Writer {
     /// start of a chunk touches nothing.
     gap: bool,
     paste: Paste,
-    /// Whether the last thing written was an argument copied whole whose text ends in white
-    /// space (FTEF-14.14).
-    space_after_argument: bool,
+    last: Last,
+    /// Whether a paste made a `//` or `/*` comment, which runs to the end of the chunk, so
+    /// nothing after it is written.
+    commented_out: bool,
 }
 
 impl Writer {
@@ -81,7 +101,6 @@ impl<L: Loader> Preprocessor<L> {
         args: &[Vec<Item>],
         bounds: &[PpToken],
         id: ExpansionId,
-        (hide, live): (&Hide, &Live),
         (quiet, path): (&mut Vec<FileSpan>, &Path),
     ) -> Vec<Item> {
         let params = mac.params.as_deref();
@@ -124,7 +143,8 @@ impl<L: Loader> Preprocessor<L> {
             out: Vec::new(),
             gap: true,
             paste: Paste::None,
-            space_after_argument: false,
+            last: Last::Token,
+            commented_out: false,
         };
         let mut last_in_body: Option<(FileSpan, &Token)> = None;
         let mut literal_next = false;
@@ -154,10 +174,9 @@ impl<L: Loader> Preprocessor<L> {
                         .get(at.saturating_add(1))
                         .zip(span_at(at.saturating_add(1)))
                         .map(|((_, t), span)| (span, t));
-                    w.paste = if w.space_after_argument {
-                        Paste::AfterSpace
-                    } else {
-                        Paste::Join
+                    w.paste = match w.last {
+                        Last::ArgumentThenSpace => Paste::AfterSpace,
+                        Last::Token => Paste::Join,
                     };
                     w.gap = false;
                     continue;
@@ -180,7 +199,7 @@ impl<L: Loader> Preprocessor<L> {
                     );
                     let spelling = Some(crate::quote_bytes(&text));
                     let kind = TokenKind::String(text);
-                    self.write_token(&mut w, (kind, spelling), here, (id, hide));
+                    self.write_token(&mut w, (kind, spelling), here, id);
                     continue;
                 }
                 // `if (!pr_file_p) break;`: a `#` at the end of the body writes nothing.
@@ -188,23 +207,27 @@ impl<L: Loader> Preprocessor<L> {
                     continue;
                 }
                 // `#` and then the next word, `qcc_token`, with nothing between.
-                self.write_token(&mut w, (token.kind.clone(), None), here, (id, hide));
+                self.write_token(&mut w, (token.kind.clone(), None), here, id);
                 literal_next = true;
                 continue;
             }
             let param = param_of(token).filter(|_| !in_word && !literal_next);
             literal_next = false;
             let Some(arg) = param else {
-                self.write_token(&mut w, (token.kind.clone(), None), here, (id, hide));
+                self.write_token(&mut w, (token.kind.clone(), None), here, id);
                 continue;
             };
             as_code.insert(arg);
             let items = args.get(arg).map(Vec::as_slice).unwrap_or_default();
             // An argument beside `##`, and the variadic one, are copied whole
             // (`noargexpand`, `strlen(paramoffset[p])`).
-            let whole = w.paste != Paste::None || paste_at(index) || arg == named.len();
+            let copy = if w.paste != Paste::None || paste_at(index) || arg == named.len() {
+                Copy::Whole
+            } else {
+                Copy::TokenByToken
+            };
             let end = bounds.get(arg.saturating_add(1));
-            self.write_argument(&mut w, items, (end, whole), (id, live, path));
+            self.write_argument(&mut w, items, (end, copy), (id, path));
         }
         for (arg, span) in quiet_candidates {
             if !as_code.contains(&arg) {
@@ -221,7 +244,7 @@ impl<L: Loader> Preprocessor<L> {
         w: &mut Writer,
         (kind, spelling): (TokenKind, Option<String>),
         here: FileSpan,
-        (id, hide): (ExpansionId, &Hide),
+        id: ExpansionId,
     ) {
         let tok = PpToken {
             kind,
@@ -230,13 +253,7 @@ impl<L: Loader> Preprocessor<L> {
             spelling,
             follows: w.follows(),
         };
-        self.write(
-            w,
-            vec![Item {
-                tok,
-                hide: hide.clone(),
-            }],
-        );
+        self.write(w, vec![Item { tok, hide: None }]);
     }
 
     /// Whether the body token at `here` goes on into a word as FTEQCC stored the body: the
@@ -253,19 +270,20 @@ impl<L: Loader> Preprocessor<L> {
         })
     }
 
-    /// Writes the argument `items`, whose `,` or `)` is `end`, to `w`: copied `whole`
-    /// (`noargexpand`) or a token at a time with its built-in constants written as their
-    /// values (`end = QCC_PR_CheckBuiltinCompConst(qcc_token, ...)`, FTEF-14.20), and leaves
-    /// `w.gap` as the white space after it stands (QC-9.16).
+    /// Writes the argument `items`, whose `,` or `)` is `end`, to `w`, as `copy` says
+    /// (`noargexpand`, or a token at a time with its built-in constants written as their
+    /// values, `end = QCC_PR_CheckBuiltinCompConst(qcc_token, ...)`, FTEF-14.20), and leaves
+    /// `w.gap` as the white space after it stands (QC-9.16). An empty argument writes nothing,
+    /// and a `##` before it then joins nothing.
     fn write_argument(
         &self,
         w: &mut Writer,
         items: &[Item],
-        (end, whole): (Option<&PpToken>, bool),
-        (id, live, path): (ExpansionId, &Live, &Path),
+        (end, copy): (Option<&PpToken>, Copy),
+        (id, path): (ExpansionId, &Path),
     ) {
-        let mut pieces = Self::argument_pieces(items, w.follows(), id, live);
-        if !whole {
+        let mut pieces = Self::argument_pieces(items, w.follows(), id, None);
+        if copy == Copy::TokenByToken {
             for piece in &mut pieces {
                 let value = match &piece.tok.kind {
                     TokenKind::Name(name) => self.builtin(path, &piece.tok, name),
@@ -277,28 +295,33 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
         }
-        let space_after = items.last().zip(end).is_some_and(|(last, end)| {
-            if whole {
-                !end.touches(&last.tok)
-            } else {
-                !self.nothing_copied_after(&last.tok, end)
-            }
+        let space_after = items.last().zip(end).is_some_and(|(last, end)| match copy {
+            Copy::Whole => !end.touches(&last.tok),
+            Copy::TokenByToken => !self.nothing_copied_after(&last.tok, end),
         });
         if pieces.is_empty() {
+            w.paste = Paste::None;
             return;
         }
         self.write(w, pieces);
         w.gap = space_after;
-        w.space_after_argument = whole && space_after;
+        if copy == Copy::Whole && space_after {
+            w.last = Last::ArgumentThenSpace;
+        }
     }
 
     /// Writes `items` to `w`, joining the first to the last written when a `##` waits
-    /// (FTEF-14.14).
+    /// (FTEF-14.14). Nothing is written after a paste that made a comment.
     fn write(&self, w: &mut Writer, items: Vec<Item>) {
+        if w.commented_out {
+            return;
+        }
         let mut items = items.into_iter();
         let Some(mut first) = items.next() else {
             return;
         };
+        w.gap = false;
+        w.last = Last::Token;
         match std::mem::replace(&mut w.paste, Paste::None) {
             Paste::None => w.out.push(first),
             Paste::AfterSpace => {
@@ -308,7 +331,10 @@ impl<L: Loader> Preprocessor<L> {
             Paste::Join => match w.out.pop() {
                 Some(last) => {
                     let first_span = first.tok.span;
-                    let joined = self.paste(last, first);
+                    let Some(joined) = self.paste(last, first) else {
+                        w.commented_out = true;
+                        return;
+                    };
                     let joined_span = joined.last().map(|item| item.tok.span);
                     w.out.extend(joined);
                     // The argument's next token touched the token the paste used up.
@@ -319,46 +345,44 @@ impl<L: Loader> Preprocessor<L> {
                         next.tok.follows = joined_span;
                     }
                     w.out.extend(rest);
-                    w.gap = false;
-                    w.space_after_argument = false;
                     return;
                 }
                 None => w.out.push(first),
             },
         }
         w.out.extend(items);
-        w.gap = false;
-        w.space_after_argument = false;
     }
 
     /// `a ## b` (FTEF-14.14): `a`'s text and then `b`'s, which FTEQCC lexes again with the
-    /// rest of the chunk. When that is one token it is that token; when it is none (a comment,
-    /// `//` or `/*`, which runs to the end of the chunk) neither side is written; otherwise `a`
-    /// stays and `b` is written against it.
-    fn paste(&self, left: Item, mut right: Item) -> Vec<Item> {
-        let text = format!(
-            "{}{}",
-            self.item_text(&left.tok),
-            self.item_text(&right.tok)
-        );
-        let lexed = lex_with(text.as_bytes(), self.dialect);
-        match lexed.tokens.as_slice() {
-            [] => Vec::new(),
-            [one] => vec![Item {
+    /// rest of the chunk: the tokens of that text, each written against the one before, the
+    /// first where `a` was. `None` when the text opens a comment (`//` or `/*`), which runs to
+    /// the end of the chunk.
+    fn paste(&self, left: Item, right: Item) -> Option<Vec<Item>> {
+        let mut text = self.item_bytes(&left.tok);
+        text.extend(self.item_bytes(&right.tok));
+        let lexed = lex_with(&text, self.dialect);
+        if lexed.tokens.is_empty() {
+            return None;
+        }
+        let mut out: Vec<Item> = Vec::with_capacity(lexed.tokens.len());
+        for token in &lexed.tokens {
+            let spelling = text.get(token.span.range()).unwrap_or_default();
+            out.push(Item {
                 tok: PpToken {
-                    kind: one.kind.clone(),
+                    kind: token.kind.clone(),
                     span: left.tok.span,
                     expansion: left.tok.expansion,
-                    spelling: Some(text),
-                    follows: left.tok.follows,
+                    spelling: Some(String::from_utf8_lossy(spelling).into_owned()),
+                    follows: if out.is_empty() {
+                        left.tok.follows
+                    } else {
+                        Some(left.tok.span)
+                    },
                 },
-                hide: left.hide,
-            }],
-            _ => {
-                right.tok.follows = Some(left.tok.span);
-                vec![left, right]
-            }
+                hide: left.hide.clone(),
+            });
         }
+        Some(out)
     }
 
     /// The bytes `#param` writes for the argument `items` between the delimiters `bounds`, its
@@ -402,7 +426,7 @@ impl<L: Loader> Preprocessor<L> {
             if before.is_some_and(|before| !item.tok.touches(before)) {
                 text.push(b' ');
             }
-            text.extend_from_slice(self.item_text(&item.tok).as_bytes());
+            text.extend(self.item_bytes(&item.tok));
             before = Some(&item.tok);
         }
         text
@@ -444,8 +468,7 @@ impl<L: Loader> Preprocessor<L> {
         &self,
         run: &mut Run,
         tok: &PpToken,
-        name: &str,
-        function_like: bool,
+        (name, mac): (&str, &Macro),
     ) -> bool {
         self.open_chunks_at(run, tok.expansion);
         if run
@@ -457,7 +480,7 @@ impl<L: Loader> Preprocessor<L> {
             return true;
         }
         let open = run.open_names.get(name).copied().unwrap_or(0);
-        if function_like {
+        if mac.params.is_some() {
             open > FTE_MAX_OPEN_CHUNKS
         } else {
             open >= FTE_MAX_OPEN_CHUNKS
@@ -519,8 +542,7 @@ impl<L: Loader> Preprocessor<L> {
         if name.expansion != open.expansion {
             return false;
         }
-        // A stored body has only spaces and tabs between its tokens.
-        if name.expansion.is_some() {
+        if open.follows == Some(name.span) {
             return true;
         }
         name.span.file == open.span.file
