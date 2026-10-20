@@ -1486,6 +1486,9 @@ issues:
   size: L
   reqs:
   - CONV-17
+  - LANG-5
+  - TEST-4
+  - TEST-5
   depends:
   - P2-81
   deliverable:
@@ -1498,13 +1501,19 @@ issues:
   - 'Commit for qc-project: Public items changed: `qc_project::ProjectError::Manifest`, `GraphFile::parent`; dependent crates touched: qc-sema (tests), xtask only if it names them'
   - 'Commit for qc-syntax: crates/qc-syntax: the findings qc-syntax/1 to qc-syntax/5, qc-syntax/8 to qc-syntax/12, qc-syntax/14, qc-syntax/15, qc-syntax/17, qc-syntax/18 and its part of qc-lexer/8 of docs/audits/conv-17-l0-l3.md. `RecoveryFault` and `DeletionFailure` in place of `Result<usize, String>` and `DeletionReport::failures: Vec<String>`; one `Keyword` enum with `from_word` applying FTEF-15.1 once, in place of the string sets and `at_word` sites, with keyword words bumped as their own `SyntaxKind` so that the `ast` accessors read kinds; `ast::Item` and `SourceFile::items` used by recovery and by qc-sema''s `lower_file`; `Scope` and `BlockKind` enums for the recovery and block bools; a `LinePosition` enum; one paren lookahead, star skip, error skip and nesting guard; `TypeShape` constants; `FieldExpr::operator`; `SyntaxKind::from_token_kind`; `ast::Type::params` and `ast::Builtin::binding` used by qc-sema and qc-engines; qc-lexer''s `latin1`'
   - 'Commit for qc-syntax: Public items changed: `qc_syntax::recovery::DeletionReport`, `SyntaxKind` (new variants), `ast::AccessorMember`, `ast::EnumDecl`, new `ast::Item`, `ast::Type::params`, `ast::Builtin::binding`; dependent crates touched: qc-sema, qc-engines, qs-tests and xtask (parse_corpus.rs and every exhaustive match on `SyntaxKind`)'
+  - 'Commit for the FTEQCC grammar differential (approved by Justin, 2026-10-20): a generator in xtask that writes random FTEQCC programs from the grammar of docs/spec/dialect-fteqcc.md and docs/spec/dialect-fteqcc-rerelease.md, covering every declaration form, every keyword and qualifier spelling including the `__`-prefixed ones (FTEF-15.1), class and accessor member forms, statements and enums, and compares, for each program, whether the FTEQCC profile and the pinned FTEQCC accept or reject it, and the diagnostic code where both reject. It runs as part of the oracle differential (`cargo xtask oracles builtins` or a sibling `cargo xtask oracles` check run by the same CI workflow), so that valid FTEQCC input the profile rejects, or input it accepts that FTEQCC rejects, fails the run unless an expected difference names the spec statement that explains it. A seeded corpus of the generated programs and the oracle''s outcomes is recorded as a fixture under xtask/fixtures/oracles/ (as builtin-outcomes.json is), so that `cargo test -p xtask` replays it without the oracle'
+  - 'Commit for the duplicate-diagnostic invariant (approved by Justin, 2026-10-20): a statement in docs/spec/language-diagnostics.md that the lexer, preprocessor and parser never report two diagnostics with the same code at the same span, checked in the `parser` and `qc-preproc` fuzz targets (fuzz/fuzz_targets/parser.rs, qc_preproc.rs) and in the qc-lexer, qc-preproc and qc-syntax property tests'
+  - 'A difference the grammar differential finds is fixed in a commit of its own with the spec statement and a test that cites it, as P2-84 and P2-85 are, or named as an expected difference with the statement that explains it; the refactor commits themselves change no behaviour'
   acceptance:
   - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
   - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
   - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
   - 'The spellings each place accepts are those of P2-84''s fix, and the lossless round trip of the corpus is unchanged (`cargo xtask parse-corpus` or the qs-tests corpus case)'
+  - 'The grammar differential runs in CI over a case count stated in the PR and in the generator''s rustdoc, and reports 0 differences that no expected difference explains; the recorded corpus replays in `cargo test -p xtask` without the oracle'
+  - 'The duplicate-diagnostic invariant holds in the property tests and in a fuzz run of the `parser` and `qc-preproc` targets whose length and result are recorded in the PR (the 24-hour TEST-5 run stays with the readiness review), and catches P2-85: with P2-85''s fix reverted the invariant fails on its double E0101, recorded in the PR'
   verify:
   - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+  - 'cargo xtask oracles (the grammar differential); cargo xtask fuzz parser --time 10m and cargo xtask fuzz qc-preproc --time 10m'
 - key: P2-83
   title: Refactor the L3 semantics crates to CONV-17
   labels:

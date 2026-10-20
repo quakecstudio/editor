@@ -390,3 +390,27 @@ filed as its own issue, because the refactoring issues must leave behaviour unch
   `"a\` CR, reports two identical `E0101 "EOF inside quote"` diagnostics with span 0..4:
   `fte_escape` reports one (`crates/qc-lexer/src/fte_string.rs:295`), then `cooked_string`'s
   loop finds the end of input and reports another (`:157-158`).
+
+### Why the test suite missed them
+
+L2's suite is held to fuzzing, coverage and mutation testing (docs/testing.md; the P2-R2
+reviews measured each), but none of those checks could see these two defects:
+
+- **Fuzzing** checks that the parser and preprocessor do not crash and that the tree is
+  lossless (QA-2). A wrong accept or reject, or a diagnostic reported twice, is neither.
+- **Coverage and mutation** measure the code that exists against the tests that exist. P2-84
+  is a case with no code at all: `enum_head_and_body` has no `__class` branch. P2-85's second
+  E0101 comes from two reports that are each right on their own, and covering both lines does
+  not ask how many E0101s one input gets.
+- **The differentials** compare the profile with FTEQCC only on the forms someone wrote
+  down, such as the builtin-initialiser cross product of `cargo xtask oracles builtins`. No one
+  wrote `enum __class`.
+- **The root cause of P2-84** is two keyword lists that drifted apart: `fte_word` in the
+  lookahead and `at_word` in the parse (qc-syntax/2). A test of either list alone passes.
+
+P2-82 adds two checks aimed at this class of defect, approved by Justin on 2026-10-20:
+
+- a grammar-based FTEQCC differential fuzz that compares accept or reject, and the diagnostic
+  code, with the pinned FTEQCC;
+- a fuzz and property invariant that no code is reported twice at one span, which catches
+  P2-85.
