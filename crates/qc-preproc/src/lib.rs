@@ -1364,22 +1364,13 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// The token a built-in constant expands to at `tok` in the file `path` (FTEF-14.7), if
-    /// `name` is one: `QCC_PR_CheckBuiltinCompConst`. A string is written `"%s"`, nothing in
-    /// it escaped, and read as an FTEQCC string literal (FTEF-14.21).
+    /// `name` is one: `QCC_PR_CheckBuiltinCompConst`. A string's spelling escapes its text,
+    /// so it reads back as the token's bytes (FTEF-14.21).
     fn builtin(&self, path: &Path, tok: &PpToken, name: &str) -> Option<PpToken> {
-        let string = |text: &str| {
-            let spelling = format!("\"{text}\"");
-            let bytes = qc_lexer::fteqcc_string_bytes(spelling.as_bytes())
-                .unwrap_or_else(|| text.as_bytes().to_vec());
-            (TokenKind::String(bytes), spelling)
-        };
+        let string = |text: &str| (TokenKind::String(text.as_bytes().to_vec()), quote(text));
         let (kind, spelling) = match name {
             "__NULL__" => (TokenKind::Float(0.0), "0i".to_owned()),
-            // `erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"'; erk[1] = 0; }`
-            "__FILE__" => {
-                let file = path.display().to_string();
-                string(file.split(':').next().unwrap_or_default())
-            }
+            "__FILE__" => string(&path.display().to_string()),
             "__LINE__" | "__LINESTR__" => {
                 let line = self.sources.line(self.origin(tok)).unwrap_or(0);
                 if name == "__LINE__" {
@@ -1728,6 +1719,22 @@ fn directive_span(line: &[Token]) -> Span {
         (Some(first), Some(last)) => Span::new(first.span.start, last.span.end),
         _ => Span::new(0, 0),
     }
+}
+
+/// `text` as a QuakeC string literal, `"`, `\` and a line break escaped (FTEF-14.21).
+fn quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len().saturating_add(2));
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// `bytes` as a QuakeC string literal (FTEF-14.15), as `QCC_PR_ExpandStrCatMarkup` escapes

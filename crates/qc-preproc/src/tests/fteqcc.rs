@@ -510,38 +510,39 @@ fn first_token_in(path: &str, text: &str) -> crate::PpToken {
     out.tokens[0].clone()
 }
 
-// spec FTEF-14.21: `__FILE__` is written `"%s"` with nothing escaped and read as a string
-// literal, so a `\` in the name starts an escape; a `:` ends the name
+// spec FTEF-14.21: `__FILE__` is a string of the file's name, whole, its spelling escaping a
+// `"`, a `\` and a line break, so it reads back as the name
 #[test]
-fn file_constant_is_written_unescaped() {
-    let tok = first_token_in("src\\new.qc", "__FILE__\n");
-    assert_eq!(tok.kind, TokenKind::String(b"src\new.qc".to_vec()));
-    assert_eq!(tok.spelling.as_deref(), Some(r#""src\new.qc""#));
-    let tok = first_token_in("c:a.qc", "__FILE__\n");
-    assert_eq!(tok.kind, TokenKind::String(b"c".to_vec()));
-    assert_eq!(tok.spelling.as_deref(), Some(r#""c""#));
+fn file_constant_escapes_its_path() {
+    for (path, spelling) in [
+        ("a\nb.qc", r#""a\nb.qc""#),
+        ("a\"b.qc", r#""a\"b.qc""#),
+        ("a\\b.qc", r#""a\\b.qc""#),
+        ("c:a.qc", r#""c:a.qc""#),
+    ] {
+        let tok = first_token_in(path, "__FILE__\n");
+        assert_eq!(
+            tok.kind,
+            TokenKind::String(path.as_bytes().to_vec()),
+            "{path}"
+        );
+        assert_eq!(tok.spelling.as_deref(), Some(spelling), "{path}");
+        assert_eq!(
+            qc_lexer::fteqcc_string_bytes(spelling.as_bytes()),
+            Some(path.as_bytes().to_vec())
+        );
+    }
 }
 
-// spec FTEF-14.21: a name that is not one string literal when so written, one with a line
-// break or a `"`, is a string of the name's bytes
+// spec FTEF-14.21: a `#param` of an argument holding a built-in string stringifies its
+// escaped spelling
 #[test]
-fn file_constant_of_a_name_that_is_no_literal() {
-    let tok = first_token_in("a\nb.qc", "__FILE__\n");
-    assert_eq!(tok.kind, TokenKind::String(b"a\nb.qc".to_vec()));
-    assert_eq!(tok.spelling.as_deref(), Some("\"a\nb.qc\""));
-    let tok = first_token_in("a\"b.qc", "__FILE__\n");
-    assert_eq!(tok.kind, TokenKind::String(b"a\"b.qc".to_vec()));
-}
-
-// spec FTEF-14.21: a `#param` of a built-in string's value stringifies the text FTEQCC wrote,
-// with nothing escaped in it
-#[test]
-fn a_stringified_file_constant_holds_its_unescaped_text() {
+fn a_stringified_file_constant_holds_its_spelling() {
     let tok = first_token_in(
-        "d\\x41.qc",
+        "d\\x\"y.qc",
         "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n",
     );
-    assert_eq!(tok.kind, TokenKind::String(br#""d\x41.qc""#.to_vec()));
+    assert_eq!(tok.kind, TokenKind::String(br#""d\\x\"y.qc""#.to_vec()));
 }
 
 // spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
