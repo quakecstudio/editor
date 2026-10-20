@@ -19,7 +19,7 @@ You are the orchestrator. You do not implement issues yourself; you keep the que
    gh run list --branch main --event schedule --limit 40 --json workflowName,conclusion,createdAt,url --jq 'group_by(.workflowName)|map(max_by(.createdAt))|.[]|select(.conclusion!="success")'
    ```
 
-   Empty output means every one passed. If anything failed, it is fixed (or filed with `plan-change` and delegated to an `implementer`) before new work starts: a red nightly on `main` is a defect in work already merged.
+   Empty output means every one passed. A run still going (an empty `conclusion`) has not failed; look again on the next pass. A failure whose fix has merged, with a green `workflow_dispatch` run of that workflow on the fix, stays listed until the next scheduled run and needs nothing more. If anything else failed, it is fixed (or filed with `plan-change` and delegated to an `implementer`) before new work starts: a red nightly on `main` is a defect in work already merged.
 2. Run `python3 plan/status.py --phase <phase> --track <track>`. Its last line is the verdict:
    - `COMPLETE`: every issue in the track is closed. Go to "Finish".
    - `WAITING ON PEOPLE #n ...`: everything left is blocked by `needs:human` issues. Make sure each of those has been prepared (below), then go to "Finish".
