@@ -230,7 +230,7 @@ fn locals_shadow_globals() {
 
 // spec FTE-22.5: a constant initialised twice with the same literal is accepted; a different
 // literal is still "NAME redeclared".
-// spec FTEF-17.5: so is an initialiser written differently, and a body is never equal.
+// spec FTEF-17.10: so is an initialiser written differently, and a body is never equal.
 #[test]
 fn equal_reinitialisation_is_accepted() {
     let index = fte_index_of(

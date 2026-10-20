@@ -16,6 +16,7 @@
 )]
 
 mod dialect;
+mod dialect_builtins;
 mod dialect_full;
 mod dialect_resolution;
 mod dialect_statements;

@@ -686,6 +686,51 @@ fn string_and_colon_builtins_are_keyed_by_name() {
     );
 }
 
+// spec ENGT-4.15: under an FTEQCC dialect a `d` literal is a double, which FTEQCC binds no
+// number for, so it gives no key and no W0311; in hex `d` is a digit
+#[test]
+fn double_literals_give_no_key() {
+    for literal in ["287d", "287.0d", "287D", "0437d"] {
+        assert_eq!(builtin_number(literal, Dialect::Fteqcc), None, "{literal}");
+        let source = format!("void() f = #{literal};\nvoid() g = {{ f(); }};\n");
+        assert!(
+            fte_messages(Engine::Vanilla, &[&source]).is_empty(),
+            "{literal}"
+        );
+    }
+    assert_eq!(builtin_number("0x11d", Dialect::Fteqcc), Some(285));
+    let hex = "void() f = #0x11F;\nvoid() g = { f(); };\n";
+    assert_eq!(
+        fte_messages(Engine::Vanilla, &[hex]),
+        ["f is builtin #287, which Vanilla does not have (FTE_QC_HASHTABLES)"]
+    );
+}
+
+// spec ENGT-4.16: the name of ENGT-4.14 is the adjacent strings joined, and after an empty
+// string the name after `:`, as FTEQCC reads them
+#[test]
+fn joined_strings_key_a_builtin_by_their_name() {
+    for initialiser in [
+        "#\"ex_\" \"bprint\"",
+        ":\"ex_b\" /* c */ \"print\"",
+        "#\"\":ex_bprint",
+        "#\"ex_bprint\" \"\"",
+    ] {
+        let source = format!(
+            "void(string s, ...) bprint = {initialiser};\nvoid() w = {{ bprint(\"x\"); }};\n"
+        );
+        assert_eq!(
+            fte_messages(Engine::Fteqw, &[&source]),
+            ["bprint is builtin #0:ex_bprint, which FTEQW does not have"],
+            "{initialiser}"
+        );
+        assert!(
+            fte_messages(Engine::Kex, &[&source]).is_empty(),
+            "{initialiser}"
+        );
+    }
+}
+
 // spec ENGT-4.11: under an FTEQCC dialect a builtin number is the whole value FTEQCC reads,
 // in any number form: hex, octal (a leading 0), an integer suffix or a fraction of zeros; a
 // value that is not whole, zero or too large is no number

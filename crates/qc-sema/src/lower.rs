@@ -144,28 +144,43 @@ pub enum LiteralValue {
     Vector([u32; 3]),
     /// A string literal as written, quotes included (QC-6).
     String(String),
+    /// Under FTEQCC, a builtin initialiser: the `binum` FTEQCC binds and the engine name it
+    /// reads, `None` when it reads none and names the builtin after the definition (FTE-23.7).
+    Builtin {
+        /// The builtin number (FTE-17.6), 0 for a builtin bound by name alone (FTE-17.5).
+        number: i32,
+        /// The engine name (`ast::Builtin::engine_name`).
+        name: Option<String>,
+    },
     /// Under FTEQCC, any other initialiser, as its tokens' text: two written the same way
-    /// have the same value (FTEF-17.5).
+    /// have the same value (FTEF-17.10).
     Text(String),
 }
 
 impl LiteralValue {
-    /// The value of an initialiser under FTEQCC: a literal's, or else its text (FTEF-17.5).
+    /// The value of an initialiser under FTEQCC: a literal's, or else its text (FTEF-17.10).
     fn of_fteqcc(init: Option<&ast::Initializer>) -> Option<Self> {
         let init = init?;
         match init {
             // A body is a definition, never a value two may share.
             ast::Initializer::Body(_) => None,
             ast::Initializer::Builtin(builtin) => {
-                // FTEF-17.5: a builtin is the same value as another of its number, the `binum`
-                // FTEQCC binds (FTE-17.6), so `#16777217i` and `#16777216` differ.
-                let binum = builtin.number().and_then(|t| {
-                    qc_syntax::builtin_binum(&t.text_lossless(), qc_syntax::Dialect::Fteqcc)
-                });
-                Some(Self::Text(binum.map_or_else(
-                    || token_text(init.syntax()),
-                    |binum| format!("#{binum}"),
-                )))
+                // FTE-23.7: a builtin is the `binum` FTEQCC binds (FTE-17.6), 0 when it reads
+                // an engine name in place of the number, and its engine name. One FTEQCC
+                // binds no number for is an error, compared by its text.
+                let number = match builtin.number() {
+                    Some(token) => {
+                        qc_syntax::builtin_binum(&token.text_lossless(), qc_syntax::Dialect::Fteqcc)
+                    }
+                    None => Some(0),
+                };
+                Some(number.map_or_else(
+                    || Self::Text(token_text(init.syntax())),
+                    |number| Self::Builtin {
+                        number,
+                        name: builtin.engine_name(),
+                    },
+                ))
             }
             ast::Initializer::Aggregate(_) | ast::Initializer::Value(_) => {
                 Self::of(Some(init)).or_else(|| Some(Self::Text(token_text(init.syntax()))))
@@ -173,14 +188,9 @@ impl LiteralValue {
         }
     }
 
-    /// The value of a literal initialiser, if `init` is one.
+    /// The value of a literal initialiser, if `init` is one. The vanilla profile compares no
+    /// two values (QCD-3.6), so it keeps no builtin's.
     fn of(init: Option<&ast::Initializer>) -> Option<Self> {
-        if let Some(ast::Initializer::Builtin(builtin)) = init {
-            // FTEF-17.5: a builtin is the same value as another of its number.
-            return builtin
-                .number()
-                .map(|t| Self::Text(format!("#{}", atof(t.text_lossless().as_bytes()))));
-        }
         let Some(ast::Initializer::Value(ast::Expr::Literal(literal))) = init else {
             return None;
         };
@@ -382,7 +392,7 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
         let Some(token) = node.child_tokens().find(|t| t.kind() == SyntaxKind::Name) else {
             continue;
         };
-        // FTEF-17.5: FTEQCC makes each enum name a new constant with `QCC_PR_DummyDef`, which
+        // FTEF-17.10: FTEQCC makes each enum name a new constant with `QCC_PR_DummyDef`, which
         // looks for no earlier definition, so an enum declared again is no redeclaration; the
         // name is kept as declared, not initialised.
         out.push(RawDecl::new(

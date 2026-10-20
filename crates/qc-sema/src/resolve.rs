@@ -113,6 +113,7 @@ pub(crate) fn resolve_mapped(
         fteqcc,
         globals: HashMap::new(),
         literals: HashMap::new(),
+        builtin_functions: HashMap::new(),
         members: files
             .iter()
             .flat_map(|f| f.members.iter().cloned())
@@ -185,6 +186,9 @@ struct Resolver<'a> {
     globals: HashMap<String, DefId>,
     /// The literal each initialised global was given, for FTE-22.5.
     literals: HashMap<DefId, LiteralValue>,
+    /// For each builtin number and engine name, the definition whose builtin function FTEQCC
+    /// made first with them: the one a redeclaration with them reuses (FTE-23.7).
+    builtin_functions: HashMap<(i32, String), DefId>,
     /// The field names of every struct and accessor the module defines (FTE-14.1, FTEF-6,
     /// FTEF-10).
     members: HashSet<String>,
@@ -255,6 +259,24 @@ fn is_intrinsic(name: &str) -> bool {
 /// when there is none, and otherwise its value when it is a single literal.
 type Init<'a> = Option<Option<&'a LiteralValue>>;
 
+/// The number and engine name of FTEQCC's builtin function for `literal`, a definition named
+/// `name`'s initialiser, if it is a builtin: `QCC_PR_GenerateBuiltinFunction(def.sym, binum,
+/// *fname?fname:def.sym->name)` names the function after the definition when it reads no
+/// engine name (FTE-23.7).
+fn builtin_key(literal: &LiteralValue, name: &str) -> Option<(i32, String)> {
+    let LiteralValue::Builtin {
+        number,
+        name: engine_name,
+    } = literal
+    else {
+        return None;
+    };
+    Some((
+        *number,
+        engine_name.clone().unwrap_or_else(|| name.to_owned()),
+    ))
+}
+
 impl<'a> Resolver<'a> {
     /// The source location of the span `span` of file `file`'s parsed text: through the
     /// file's origin map when it was preprocessed (QC-9.7), else the span itself.
@@ -319,6 +341,7 @@ impl<'a> Resolver<'a> {
             generated: false,
         });
         if let Some(Some(literal)) = init {
+            self.note_builtin_function(id, name, literal);
             self.literals.insert(id, literal.clone());
         }
         // QC-11.7: `PR_GetDef` makes `name_x`, `name_y` and `name_z` for a new vector, and
@@ -369,9 +392,14 @@ impl<'a> Resolver<'a> {
             // when the two are the same value; FTEF-17.8: it does not compare them when the
             // first is `noref`.
             let same = self.fteqcc
-                && ((literal.is_some() && literal == self.literals.get(&existing))
+                && (literal.is_some_and(|literal| self.same_value(existing, name, literal))
                     || self.unused.contains(&existing));
             if !same {
+                // FTE-23.7: FTEQCC makes a new builtin function for a builtin it reuses none
+                // for.
+                if let Some(literal) = literal {
+                    self.note_builtin_function(existing, name, literal);
+                }
                 // QCD-3.6: initialising a name that is already initialised.
                 self.index.diagnostics.push(diag(
                     Code::E0206,
@@ -385,7 +413,32 @@ impl<'a> Resolver<'a> {
             def.initialized = true;
         }
         if let Some(literal) = literal {
+            self.note_builtin_function(existing, name, literal);
             self.literals.insert(existing, literal.clone());
+        }
+    }
+
+    /// Whether `literal`, initialising `existing` (named `name`) again, is the value it has
+    /// (FTE-22.5, FTEF-17.10). A builtin is when FTEQCC reuses `existing`'s builtin function
+    /// for it (FTE-23.7): the one it made first with the same number and engine name, the
+    /// definition's own name standing in for none.
+    fn same_value(&self, existing: DefId, name: &str, literal: &LiteralValue) -> bool {
+        let Some(first) = self.literals.get(&existing) else {
+            return false;
+        };
+        match (builtin_key(first, name), builtin_key(literal, name)) {
+            (Some(first), Some(key)) => {
+                first == key && self.builtin_functions.get(&key) == Some(&existing)
+            }
+            _ => first == literal,
+        }
+    }
+
+    /// Records the builtin function FTEQCC makes for `def` when `literal` is a builtin, unless
+    /// one with its number and engine name was made before (FTE-23.7).
+    fn note_builtin_function(&mut self, def: DefId, name: &str, literal: &LiteralValue) {
+        if let Some(key) = builtin_key(literal, name) {
+            self.builtin_functions.entry(key).or_insert(def);
         }
     }
 

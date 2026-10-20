@@ -78,8 +78,9 @@ a class, struct, union, typedef, enum or accessor names a type, which may be dec
 class's members are found through the class and its parents, in a member function's body
 before the globals, and after `.` or `->` through the class of what the access is made on;
 `Class::member` defines the member its class declares; `this`, `super`, `prior` and FTEQCC's
-intrinsics are no names to define; equal initialisers, builtins of one number, enums declared
-again and `noref` definitions are no redeclaration (FTEF-17.5, FTEF-17.8); a redeclaration
+intrinsics are no names to define; equal initialisers, builtins of one number and engine name
+that FTEQCC would bind to one function (FTE-23.7), enums declared again and `noref`
+definitions are no redeclaration (FTEF-17.10, FTEF-17.8); a redeclaration
 involving a type name or a pointer is no type mismatch (FTEF-17.6); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
 variable (FTEF-15.5); a function with no body is reported only where it is referred to

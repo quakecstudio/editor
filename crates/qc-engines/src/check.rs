@@ -7,7 +7,7 @@
 //! diagnostic only when its callee name means a global builtin function. A builtin is keyed by
 //! its number, the one the dialect's compiler binds (ENGT-4.12, ENGT-4.13), or, under an
 //! FTEQCC dialect, by the engine name of `#0:NAME` (ENGT-4.5), `#"NAME"` or `:NAME`
-//! (ENGT-4.14).
+//! (ENGT-4.14), read as FTEQCC reads it (ENGT-4.15, ENGT-4.16).
 
 use std::collections::{HashMap, HashSet};
 
@@ -165,7 +165,8 @@ fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
 /// The engine name of a builtin initialiser whose number literal, if it has one, is `literal`
 /// (ENGT-4.5): the name of `#0:NAME` when the literal is zero as FTEQCC reads it, any number
 /// form whose value is 0 (`0`, `00`, `.0`, `0x0`, `0i`), and the name of `#"NAME"`, `:"NAME"`
-/// and `:NAME`, which have no number (ENGT-4.14).
+/// and `:NAME`, which have no number (ENGT-4.14): the strings joined, or after empty ones the
+/// name after `:`, kept to 255 bytes (ENGT-4.16).
 fn engine_name(builtin: &ast::Builtin, literal: Option<&str>) -> Option<String> {
     // ENGT-4.9: `#` takes the literal as `binum` 0 whenever FTEQCC reads its value as 0; a name
     // is in the initialiser only under FTEQCC, so it is read so. ENGT-4.14: FTEQCC leaves
@@ -180,7 +181,7 @@ fn engine_name(builtin: &ast::Builtin, literal: Option<&str>) -> Option<String> 
 /// The number of a builtin number literal in `dialect` (ENGT-4.12): the `binum` the dialect's
 /// compiler binds (`qc_syntax::builtin_binum`), when it is at least 1: `qcc`'s `(int)` of the
 /// literal's `float` value under the vanilla dialect and FTEQCC's of ENGT-4.13 under an FTEQCC
-/// dialect.
+/// dialect, which binds none for a `d` literal (ENGT-4.15).
 pub(crate) fn builtin_number(text: &str, dialect: Dialect) -> Option<u32> {
     let binum = qc_syntax::builtin_binum(text, dialect)?;
     u32::try_from(binum).ok().filter(|&number| number >= 1)
