@@ -469,6 +469,7 @@ mod tests {
         use std::path::PathBuf;
 
         use super::*;
+        use crate::test_dirs::fresh;
 
         const SPEC: &str = "specs/demo/1.0/page.md";
         const TEXT: &str = "The server MUST reply.\n";
@@ -478,14 +479,7 @@ mod tests {
         /// A scratch repository holding the script, a README, a manifest with
         /// one row for `SPEC`, and `SPEC` itself containing `text`.
         fn fixture(name: &str, text: &str) -> PathBuf {
-            let dir = root()
-                .join("target")
-                .join("xtask-tests")
-                .join("verify-specs")
-                .join(name);
-            if dir.exists() {
-                fs::remove_dir_all(&dir).unwrap();
-            }
+            let dir = fresh(&format!("verify-specs/{name}"));
             fs::create_dir_all(dir.join("scripts")).unwrap();
             fs::create_dir_all(dir.join("specs/demo/1.0")).unwrap();
             fs::copy(

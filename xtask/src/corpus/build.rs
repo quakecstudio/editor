@@ -181,6 +181,7 @@ mod tests {
     use crate::exec::{Fake, Reply};
     use crate::oracles::sha256::hex_digest;
     use crate::oracles::testing::fake_oracles;
+    use crate::test_dirs::fresh;
 
     #[test]
     fn only_codebases_an_oracle_compiles_are_built() {
@@ -246,7 +247,7 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let manifest = Manifest::load(&root.join(super::super::MANIFEST)).unwrap();
         let ids = ["copper".to_owned(), "quakec-1.06".to_owned()];
-        let dest = root.join("target/xtask-tests/corpus-build");
+        let dest = fresh("corpus/build");
         assert_eq!(
             cmd_build(root, &manifest, &dest, &ids, &FakeNet::default()),
             [

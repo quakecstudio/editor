@@ -238,16 +238,11 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{main, vanilla_rejects_every_extension};
+    use crate::test_dirs::fresh;
 
     /// Builds a throwaway codebase directory with a `progs.src` and files.
     fn codebase(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../target/xtask-tests")
-            .join(name);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
-        }
-        fs::create_dir_all(&dir).unwrap();
+        let dir = fresh(&format!("fteqcc-profile/{name}"));
         for (file, text) in files {
             fs::write(dir.join(file), text).unwrap();
         }

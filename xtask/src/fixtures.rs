@@ -327,6 +327,7 @@ mod tests {
 
     use super::*;
     use crate::exec::{Fake, Reply};
+    use crate::test_dirs::claim;
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -369,6 +370,7 @@ mod tests {
     // One test, not two: every run of the check rebuilds the same scratch workspace.
     #[test]
     fn the_clippy_fixtures_pass_only_when_each_fires_its_lint_alone() {
+        claim(&root().join("target/xtask/clippy-fixtures"));
         let fake = Fake::new(clippy_that_agrees);
         let report = clippy(&root(), &fake).unwrap();
         assert_eq!(report.problems, Vec::<String>::new());
@@ -420,6 +422,7 @@ mod tests {
 
     #[test]
     fn the_deny_cases_pass_when_each_reports_its_error() {
+        claim(&root().join("target/xtask/deny-fixtures"));
         let fake = Fake::new(deny_that_agrees);
         let report = deny(&root(), &fake).unwrap();
         assert_eq!(report.problems, Vec::<String>::new());

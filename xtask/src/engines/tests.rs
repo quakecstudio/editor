@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use super::{Facts, Item, Key, TABLES, extract, is_extension_name, load, run};
 use crate::download::Net;
 use crate::oracles::sha256::hex_digest;
+use crate::test_dirs::fresh;
 
 /// A network serving fixed bodies by URL.
 struct Canned(BTreeMap<String, Vec<u8>>);
@@ -98,12 +99,7 @@ fn workspace_with(spec: &WorkspaceSpec<'_>) -> Workspace {
         source,
         tables,
     } = *spec;
-    let dir = root()
-        .join("target/xtask-tests")
-        .join(format!("engines-{name}"));
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
+    let dir = fresh(&format!("engines/{name}"));
     fs::create_dir_all(dir.join("crates/qc-engines/src")).unwrap();
     fs::create_dir_all(dir.join("corpus")).unwrap();
     let sha = hex_digest(source.as_bytes());

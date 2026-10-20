@@ -143,23 +143,27 @@ pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
     let tools = Tools {
         exec: &System,
         assets: std::env::var_os("QS_TEST_ASSETS"),
+        scratch: scratch(root),
     };
     run_check(root, args, &tools)
 }
 
-/// What a measurement runs: the programs `exec` runs, and the corpus directory
-/// `QS_TEST_ASSETS` names, for the oracles' coverage.
+/// What a measurement runs: the programs `exec` runs, the corpus directory
+/// `QS_TEST_ASSETS` names, for the oracles' coverage, and the directory the
+/// tools write their reports and builds in, [`scratch`] (a test gives each
+/// measurement its own).
 struct Tools<'a> {
     exec: &'a dyn Exec,
     assets: Option<OsString>,
+    scratch: PathBuf,
 }
 
 /// [`main`] with these tools.
 fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, String> {
     let options = parse_args(args)?;
     // The tools write their reports here and do not create it themselves.
-    let scratch = scratch(root);
-    fs::create_dir_all(&scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
+    let scratch = &tools.scratch;
+    fs::create_dir_all(scratch).map_err(|error| format!("{}: {error}", scratch.display()))?;
     let mut measurement = Measurement {
         check: options.check,
         os: options.os,
@@ -313,13 +317,13 @@ fn measure(
     let score = match (check, target.kind) {
         (Check::Lines | Check::Branches, Kind::Oracles) => c_coverage(root, check, tools)?,
         (Check::Lines | Check::Branches, Kind::Member | Kind::Standalone) => {
-            coverage(root, target, check, tools.exec)?
+            coverage(root, target, check, tools)?
         }
         (Check::Mutation, Kind::Oracles) => return Ok(None),
-        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target, tools.exec)?,
+        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target, tools)?,
         (Check::Spec, _) => spec(&target.dir)?,
         (Check::Flakes, Kind::Oracles) => oracle_flakes(root, tools.exec)?,
-        (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target, tools.exec)?,
+        (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target, tools)?,
     };
     Ok(Some(score))
 }
@@ -328,9 +332,9 @@ fn cargo() -> std::ffi::OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
 }
 
-/// A cargo command for `target`, with its own target directory if it is a
-/// standalone fixture.
-fn cargo_for(root: &Path, target: &Target, toolchain: Option<&str>) -> Command {
+/// A cargo command for `target`, with its own target directory in `scratch` if
+/// it is a standalone fixture.
+fn cargo_for(root: &Path, scratch: &Path, target: &Target, toolchain: Option<&str>) -> Command {
     let mut command = match toolchain {
         // `+toolchain` needs rustup's cargo proxy, not the cargo running xtask.
         Some(toolchain) => {
@@ -342,7 +346,7 @@ fn cargo_for(root: &Path, target: &Target, toolchain: Option<&str>) -> Command {
     };
     command.current_dir(root);
     if target.kind == Kind::Standalone {
-        command.env("CARGO_TARGET_DIR", scratch(root).join(&target.name));
+        command.env("CARGO_TARGET_DIR", scratch.join(&target.name));
     }
     command
 }
@@ -390,10 +394,17 @@ fn fix_proptest(command: &mut Command, inherited: impl IntoIterator<Item = OsStr
     command.envs(PROPTEST_FIXED);
 }
 
-fn coverage(root: &Path, target: &Target, check: Check, exec: &dyn Exec) -> Result<Score, String> {
-    let report = scratch(root).join(format!("{}-{}.json", check.name(), target.name));
+fn coverage(
+    root: &Path,
+    target: &Target,
+    check: Check,
+    tools: &Tools<'_>,
+) -> Result<Score, String> {
+    let report = tools
+        .scratch
+        .join(format!("{}-{}.json", check.name(), target.name));
     let branches = check == Check::Branches;
-    let mut command = cargo_for(root, target, branches.then_some(NIGHTLY));
+    let mut command = cargo_for(root, &tools.scratch, target, branches.then_some(NIGHTLY));
     fix_proptest(&mut command, std::env::vars_os().map(|(name, _)| name));
     command
         .args(["llvm-cov", "--locked", "--all-features", "--manifest-path"])
@@ -403,7 +414,7 @@ fn coverage(root: &Path, target: &Target, check: Check, exec: &dyn Exec) -> Resu
     if branches {
         command.arg("--branch");
     }
-    let output = run(exec, &mut command, "cargo llvm-cov")?;
+    let output = run(tools.exec, &mut command, "cargo llvm-cov")?;
     if !output.status.success() {
         return Err(format!(
             "{}: cargo llvm-cov failed (a failing test fails it too):\n{}",
@@ -458,9 +469,9 @@ pub(crate) fn parse_llvm_cov(text: &str, check: Check) -> Result<Score, String> 
 /// run of any caught or missed mutant in the four L2 crates took 3.0 s.
 const MUTANT_TIMEOUT_FLOOR: &str = "10";
 
-fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, String> {
-    let out = scratch(root).join(format!("mutants-{}", target.name));
-    let mut command = cargo_for(root, target, None);
+fn mutation(root: &Path, target: &Target, tools: &Tools<'_>) -> Result<Score, String> {
+    let out = tools.scratch.join(format!("mutants-{}", target.name));
+    let mut command = cargo_for(root, &tools.scratch, target, None);
     // cargo mutants tests a copy of the tree, which without `.git` fails the
     // tests that read the repository through git (xtask's licenses,
     // attribution and corpus checks), so no mutant would be tested.
@@ -496,7 +507,7 @@ fn mutation(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, Stri
         .arg(jobs.to_string())
         .arg("--output")
         .arg(&out);
-    let output = run(exec, &mut command, "cargo mutants")?;
+    let output = run(tools.exec, &mut command, "cargo mutants")?;
     // 0: every mutant caught; 2: some missed; 3: some timed out. Anything else
     // (a usage error, a failing baseline) means there is no score.
     if !matches!(output.status.code(), Some(0 | 2 | 3)) {
@@ -582,16 +593,16 @@ pub(crate) fn mutant_key(name: &str) -> String {
     format!("{file}: {description}")
 }
 
-fn flakes(root: &Path, target: &Target, exec: &dyn Exec) -> Result<Score, String> {
+fn flakes(root: &Path, target: &Target, tools: &Tools<'_>) -> Result<Score, String> {
     let test = |no_run: bool| {
-        let mut command = cargo_for(root, target, None);
+        let mut command = cargo_for(root, &tools.scratch, target, None);
         command
             .args(["test", "--locked", "--all-features", "--manifest-path"])
             .arg(manifest(target));
         if no_run {
             command.arg("--no-run");
         }
-        run(exec, &mut command, "cargo test")
+        run(tools.exec, &mut command, "cargo test")
     };
     let build = test(true)?;
     if !build.status.success() {
@@ -660,7 +671,7 @@ fn c_coverage(root: &Path, check: Check, tools: &Tools<'_>) -> Result<Score, Str
             id101.display()
         ));
     }
-    let dir = scratch(root).join(format!("{}-{ORACLES}", check.name()));
+    let dir = tools.scratch.join(format!("{}-{ORACLES}", check.name()));
     if dir.exists() {
         fs::remove_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))?;
     }

@@ -240,6 +240,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::test_dirs::fresh;
 
     /// One crate in a fixture workspace: name, directory, layer (`None` =
     /// missing from layers.toml) and extra manifest text (dependencies).
@@ -258,16 +259,7 @@ mod tests {
     }
 
     fn workspace(name: &str, specs: &[Spec], extra_layers: &str) -> PathBuf {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("xtask-tests")
-            .join("layers")
-            .join(name);
-        if root.exists() {
-            fs::remove_dir_all(&root).unwrap();
-        }
+        let root = fresh(&format!("layers/{name}"));
         fs::create_dir_all(root.join("crates")).unwrap();
         fs::create_dir_all(root.join("fuzz")).unwrap();
         fs::write(

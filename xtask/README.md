@@ -27,4 +27,6 @@ Build automation for the workspace, run as `cargo xtask <command>` (the alias is
 ignored, so a new file is caught before it is committed.
 
 Scratch workspaces go under `target/xtask/`; the self-tests' fixture workspaces go under
-`target/xtask-tests/`.
+`target/xtask-tests/`. The tests run in parallel, so each one writes only directories of its
+own: it takes them from `test_dirs::fresh`, or `test_dirs::claim`s a fixed path, and a test
+that claims a directory overlapping another test's fails.

@@ -218,6 +218,7 @@ mod tests {
     )]
 
     use super::*;
+    use crate::oracles::testing::fresh_dir;
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -283,10 +284,7 @@ mod tests {
 
     #[test]
     fn a_corpus_is_seeded_once() {
-        let corpus = root().join("target/xtask-tests/oracle-fuzz-corpus");
-        if corpus.exists() {
-            fs::remove_dir_all(&corpus).unwrap();
-        }
+        let corpus = fresh_dir("fuzz-corpus").join("corpus");
         let seeds = [b"a".to_vec(), b"b".to_vec()];
         assert_eq!(seed(&corpus, &seeds).unwrap(), 2);
         assert_eq!(fs::read(corpus.join("seed-0001")).unwrap(), b"b");

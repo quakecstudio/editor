@@ -232,20 +232,10 @@ mod tests {
 
     use super::{check_dir, prefix_mismatch, reported_by_fteqcc, reported_entries};
     use crate::exec::{Fake, Reply};
-
-    fn root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
-    }
+    use crate::test_dirs;
 
     fn fresh(name: &str) -> PathBuf {
-        let dir = root().join("target/xtask-tests/project-fteqcc").join(name);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).unwrap();
-        }
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        test_dirs::fresh(&format!("project-fteqcc/{name}"))
     }
 
     /// A codebase directory and a scratch work directory beside it, never inside it (as the

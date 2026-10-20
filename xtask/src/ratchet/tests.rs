@@ -7,6 +7,7 @@
 )]
 
 use super::*;
+use crate::test_dirs::fresh;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -143,15 +144,7 @@ fn a_ratchet_goes_away_only_with_its_crate() {
 
 /// A scratch git repository holding `versions` of `ratchets.toml`, one commit each.
 fn repository(name: &str, versions: &[&str]) -> PathBuf {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("ratchet")
-        .join(name);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
-    fs::create_dir_all(&dir).unwrap();
+    let dir = fresh(&format!("ratchet/{name}"));
     let git = |args: &[&str]| {
         let output = Command::new("git")
             .arg("-C")
@@ -513,14 +506,8 @@ fn a_crate_measured_twice_is_a_problem() {
 
 #[test]
 fn the_history_appends_one_run_each_time() {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("ratchet-history");
-    if dir.exists() {
-        fs::remove_dir_all(&dir).unwrap();
-    }
-    let path = dir.join("history.json");
+    // A directory that does not exist yet: recording makes it.
+    let path = fresh("ratchet-history/appends").join("new/history.json");
     let mut report = Report::default();
     let measured = group(&passing("qs-x"), &mut report);
     record(&root(), &path, true, &measured).unwrap();
@@ -594,11 +581,7 @@ fn the_command_fails_a_lowered_file() {
 
 #[test]
 fn a_history_path_that_cannot_be_read_is_an_error() {
-    let dir = root()
-        .join("target")
-        .join("xtask-tests")
-        .join("ratchet-history-unreadable");
-    fs::create_dir_all(&dir).unwrap();
+    let dir = fresh("ratchet-history/unreadable");
     let path = dir.join("history.json");
     // Not UTF-8: reading fails, and the run must not start a new history over it.
     fs::write(&path, [0xff, 0xfe]).unwrap();
