@@ -88,3 +88,91 @@ fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
     let (_, codes) = on_small_stack(text, qc_lexer::Dialect::Fteqcc);
     assert_eq!(codes, vec![Code::E0120]);
 }
+
+/// The tokens and diagnostic codes of `text` as `a.qc` under FTEQCC.
+fn fte(text: &str) -> (String, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    (tokens(&out), codes(&out))
+}
+
+// The cases below were compiled with the pinned FTEQCC (fte-team/fteqw@f937b9d, `-Tid`) by the
+// fourth P2-R2 review, each as `void() f = USE;` after its definitions, and the profile agreed
+// with every one through `cargo xtask oracles builtins`.
+
+// spec FTEF-14.18: a `\` and line break between a name and its `(` in a body is dropped as the
+// body is stored, so the `(` follows the name and opens its arguments
+#[test]
+fn reviewer_a_continued_line_in_a_body_still_opens_the_arguments() {
+    assert_eq!(
+        fte("#define M(x) x\n#define K M\\\n(#5)\nK"),
+        ("# 5".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.14: one argument pasted to itself is its text twice, and `x##_a` given as an
+// argument to another macro is pasted before that macro reads it
+#[test]
+fn reviewer_pastes_join_an_argument_to_itself_and_inside_an_argument() {
+    assert_eq!(
+        fte("#define E(n) #5:n##n\nE(ex)"),
+        ("# 5 : exex".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define E(x) #5:x\n#define F(x) E(x##_a)\nF(ex)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.15: a string in an argument is one piece of it, so its comma splits nothing, and
+// `#a` writes the string's own quotes escaped
+#[test]
+fn reviewer_a_string_s_comma_does_not_split_an_argument() {
+    let (text, codes) = fte("#define S(a) #a\n:S(\"a,b\")");
+    assert_eq!((text.as_str(), codes), (": \"\\\"a,b\\\"\"", vec![]));
+}
+
+// spec FTEF-14.5: white space around a parameter's name in the list is not part of it
+#[test]
+fn reviewer_spaces_around_a_parameter_name_are_dropped() {
+    assert_eq!(
+        fte("#define E( n ) :n\nE(ex_a)"),
+        (": ex_a".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define E(n , m) n:m\nE(#5, ex_a)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.9: one empty argument more than the parameters is accepted and unused, two are
+// E0116, and a variadic macro takes any number of empty ones
+#[test]
+fn reviewer_trailing_empty_arguments_count_as_fteqcc_counts_them() {
+    assert_eq!(
+        fte("#define E(n) n\nE(#5:ex_a,)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+    assert_eq!(fte("#define E(n) n\nE(#5:ex_a,,)").1, vec![Code::E0116]);
+    assert_eq!(
+        fte("#define E(a,...) #5:a\nE(ex_a, , ,)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.20: a macro named in an argument is expanded when the expansion is read, in the
+// macro's chunk, and a function-like macro written with its arguments inside an argument is
+// expanded there
+#[test]
+fn reviewer_a_macro_in_an_argument_expands_where_it_is_read() {
+    assert_eq!(
+        fte("#define E(x) #5:x\n#define ex_a ex_b\nE(ex_a)"),
+        ("# 5 : ex_b".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define E(x) x\n#define G(x) #5:x\nE(G(ex_a))"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+}

@@ -1413,6 +1413,98 @@ issues:
   - 'Under the FTEQCC dialect an argument list that starts in an expansion and does not end in it is an error, and one that ends in it is read as before; the vanilla dialect is unchanged; recorded against the pinned FTEQCC; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-preproc
+- key: P2-80
+  title: Split and copy FTEQCC macro arguments as FTEQCC's argument scanner does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (`collect_args`, `fte_macro.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.18 and FTEF-14.20 (or new statements beside them): `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) finds an argument''s end by scanning bytes, skipping only a `"` string (`do { pr_file_p++; } while( (pr_file_p[-1] == ''\\'' || pr_file_p[0] != ''\"'') && *pr_file_p && *pr_file_p != ''\n'' );`), so a `,` or `)` inside a character constant or a comment ends the argument, and a string whose last byte before its `"` is a `\` does not end there. The fourth P2-R2 review compared the profile at commit 2a48d73 with the pinned FTEQCC (`-Tid`, as cases of `cargo xtask oracles builtins` of the form `void() f = USE;`): with `#define E(n) :n`, FTEQCC refuses `E('','')`, `E('')'')` and `E(''('')` ("Bad vector"), which the profile binds as builtins 44, 41 and 40; with `#define M(x) x`, FTEQCC refuses `M(#5 /* ) */)` ("EOF inside comment"), `M(#5 /* , */)` and `M(#5 // )` then a line break and `)`, which the profile binds as builtin 5; with `#define E(n) n`, FTEQCC refuses `E(:"ex\\")` and `E(:"ex\\") ")"` and `E(#5:ex_a\` then a line break and `)`, which the profile accepts; with `#define S(a) #a`, FTEQCC binds `:S(e''x)` by the name `e''x`, which the profile refuses (its lexer opens a character constant at the `''`). And a built-in constant an argument copies as its value replaces the white space and `//` comment before it as well (`end = QCC_PR_CheckBuiltinCompConst(...)` is written in place of `argstart` to `argend`): with `#define E(n) n`, FTEQCC binds `E(# __LINE__)` as builtin 2, and `E(#//` then a line break and `__LINE__)`, and with `#define K(x) x`, `K(#` then a line break and `__LINE__)`, as builtin 3, where the profile refuses all three'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-81
+  title: Store an FTEQCC macro's body as FTEQCC's `#define` reader does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (the `#define` reader, `fte_opens_arguments`) and docs/spec/dialect-fteqcc.md FTEF-14 (new statements, and FTEF-14.18 corrected): `QCC_PR_PreProcessor_Define` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) stores a body with each `/* */` comment and each `\` before a line break dropped and the white space around them kept, so a function-like macro''s name and its `(` written apart only by those in a body are apart only by spaces when the body is read: with `#define M(x) x`, the pinned FTEQCC (`-Tid`) binds `void() f = K;` as builtin 5 for each of `#define K M /**/ (#5)`, `#define K M/**/ (#5)`, `#define K M \` then a line break and `(#5)`, and `#define K M\` then a line break and ` (#5)`, where the profile at commit 2a48d73 leaves `M` a name and refuses `f` (FTEF-14.18 says a comment before the `(` leaves the name, which holds for the source but not for a stored body). The reader also toggles its `quote` flag at every `"`, an escaped one included (`if (*s == ''\"'') quote=!quote;`), and ends the body at a `//` outside it, so `#define N :"ex\"_a//"` stores `:"ex\"_a` and FTEQCC refuses `void() f = N;`, which the profile binds by the name `ex"_a//`. And a parameter list naming one parameter twice is an error ("duplicate macro paramter name"), so FTEQCC refuses `#define E(n, n) n`, which the profile accepts. Found by the fourth P2-R2 review'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, a duplicate parameter name is a diagnostic, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-82
+  title: "Expand FTEQCC's `__VA_COUNT__` and its `,##__VA_ARGS__`"
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (`fte_macro.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.5 (or new statements beside it): in a variadic macro''s body `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `__VA_COUNT__` as the number of variadic arguments (`QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`, and "__VA_COUNT__ without any variable args" when a named one is missing), and a `##` before `__VA_ARGS__` with no variadic argument removes the `,` before it (`else if (noargexpand) { if(*bufferlen>0 && (*buffer)[*bufferlen-1] == '','') *bufferlen-=1; }`). The fourth P2-R2 review compared the profile at commit 2a48d73 with the pinned FTEQCC (`-Tid`): FTEQCC binds `#define V(...) :__VA_COUNT__` then `void() f = V(a, b);` as builtin 1, where the profile binds the name `__VA_COUNT__`; it refuses `#define V(a, ...) #5:__VA_COUNT__` with `V(a, b)`, which the profile binds by the name `__VA_COUNT__`; it binds `#define V(a, ...) a,##__VA_ARGS__` with `V(#5)` as builtin 5, which the profile refuses; and it binds `#define E(...) #5 __VA_ARGS__` with `E(, )` as builtin 5, which the profile refuses. FTEF-14.5 names neither form'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-83
+  title: Bound the tokens one macro expansion writes
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  - QA-2
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (`Preprocessor::expand`, `Expanded`) and docs/spec/dialect-fteqcc.md FTEF-14.19, with docs/spec/language.md for the vanilla dialect: FTEF-14.19 says this profile''s expansions write "at most `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens", but the bound is checked before an expansion is made and counts its tokens after, so one expansion of a body that names its parameter many times, given a long argument, writes body uses times argument tokens with no `E0120`. The fourth P2-R2 review measured, at commit 2a48d73 in a release build on macOS arm64, `#define D(x)` followed by 8000 `x` and a use `D(` followed by 8000 `1` and `)`, a 32018-byte file: 64000000 tokens and no diagnostic under either dialect, 5.5 s under FTEQCC and 7.5 s under the vanilla dialect (which states no bound at all), with 10.4 GB peak resident memory for the test process that ran both; a 2000-by-2000 file of 8018 bytes writes 4000000 tokens. Doubling the file quadruples the tokens (a 16018-byte file writes 16000000), so a file of a few tens of kilobytes exhausts the memory of the semantic model, which preprocesses on every edit. The bound should hold for each expansion as it is written, under both dialects (a stated limit with its diagnostic for the vanilla dialect, as FTEF-14.19 states FTEQCC''s)'
+  acceptance:
+  - 'Under each dialect the 8000-by-8000 file above is preprocessed with the bound''s diagnostic and no more tokens than the stated bound, in a qc-preproc test citing the statement it pins; files of the corpus are unchanged (`cargo xtask fteqcc-profile`, `cargo xtask sema-corpus`)'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-84
+  title: Report an FTEQCC function with no body as FTEQCC does
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-sema/src/resolve.rs `check_undefined_functions` and docs/spec/dialect-fteqcc.md FTEF-17.7 (withdrawn and replaced): FTEF-17.7 says "A function with no body is an error only where the module refers to it: the bodyless check skips a definition when `d->unused && !d->used`", but `unused` is the `noref` mark, so FTEQCC (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reports "function %s has no body" for every bodyless function that is not both `noref` and unreferenced. The fifth P2-R3 review compiled with the pinned FTEQCC (`-Tid`): `void() f = #5;` then `void() g;` is "t.qc:2: error: function g has no body", as are `void() f = #5, g;` and the macro forms `#define V(a, ...) a,##__VA_ARGS__` with `V(#5, g)` and `#define V(a, ...) a __VA_ARGS__` with `V(#5, :ex_a, b)`; `noref void() g;` compiles. The FTEQCC profile at commit 2a48d73 reports no error for any of them, and E0211 only for a referenced one (`check_undefined_functions`, whose rustdoc says FTEQCC "skips an unreferenced one marked `noref`, which this model does not follow"); no statement states that as a divergence. Found by the fifth P2-R3 review'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile a bodyless function that is not `noref` (by its qualifier or `#pragma noref 1`, FTEF-12.6) is an error whether or not the module refers to it, and a `noref` one only when it is referred to; the corpus still resolves with no error (`cargo xtask fteqcc-profile`, `cargo xtask sema-corpus`); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1495,6 +1587,11 @@ issues:
   - P2-77
   - P2-78
   - P2-79
+  - P2-80
+  - P2-81
+  - P2-82
+  - P2-83
+  - P2-84
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
