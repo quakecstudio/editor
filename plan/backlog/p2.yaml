@@ -1211,6 +1211,43 @@ issues:
   - 'No two xtask readiness tests write the same path, checked by a test or by running `cargo test -p xtask readiness` 50 times with no failure, recorded in the PR'
   verify:
   - cargo test -p xtask
+- key: P2-69
+  title: Read FTEQCC builtin literals as FTEQCC's lexer reads them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-66
+  deliverable:
+  - 'crates/qc-syntax (src/binum.rs `builtin_binum`, src/parser/mod.rs `builtin`, src/ast.rs `Builtin::engine_name`) and docs/spec/dialect-fteqcc-rerelease.md FTE-17.5 and FTE-17.6: the third P2-R2 review (docs/readiness/p2-r2.md) compared the FTEQCC profile at commit 5c552de with the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, built by `cargo xtask oracles build`) and found three builtin forms it reads differently. (1) A `d` literal is a double: `QCC_PR_LexNumber` (qcc_pr_lex.c) gives `16d` and `16.0d` `pr_immediate_type = type_double;`, which no branch of `QCC_PR_ParseInitializerType_Internal` takes, so FTEQCC reports "Bad builtin immediate" for `= #16d;`, `= #16.0d;` and `= :16d;`, where the profile reports nothing and `builtin_binum` gives 16; FTE-17.6 names only the `u` and `l` suffixes. (2) `#` is a builtin only when the next byte is one of those `QCC_PR_Lex` lists: `if (c == ''#'' && !(pr_file_p[1]=='')'' || pr_file_p[1]=='','' || pr_file_p[1]==''\"'' || pr_file_p[1]==''-'' || (pr_file_p[1]>=''0'' && pr_file_p[1] <=''9'')))	//hash and not number` reads anything else as a macro use, so FTEQCC reports "Explicit precompiler usage when not defined" for `= # 5;`, `= # "nm10";` and `= #''a'';`, which the profile accepts (binding 5, `nm10` and 97); `:` takes all three (`= :''a'';` is 97, `= : "nmr";` is `nmr`). (3) Adjacent string literals join: FTEQCC binds `= #"ab" "cd";` by the name `abcd` and `= :"x" "y";` by `xy` with 0 warnings, where the profile reports E0203 and `engine_name` gives the first string'
+  acceptance:
+  - 'Under the FTEQCC profile `= #16d;`, `= #16.0d;`, `= :16d;`, `= # 5;`, `= # "x";` and `= #''a'';` are E0209 and `builtin_binum` gives `16d` no number; `= #"ab" "cd";` and `= :"x" "y";` parse with no error and `engine_name` gives `abcd` and `xy`; `= :''a'';`, `= : "nmr";` and the vanilla `= # 5;`, which id''s `qcc` binds as 5, stay as they are; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-70
+  title: Compare and key FTEQCC builtins by their number and engine name
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-6
+  - PRIN-8
+  depends:
+  - P2-67
+  - P2-69
+  deliverable:
+  - 'crates/qc-sema/src/lower.rs `LiteralValue::of_fteqcc` and docs/spec/dialect-fteqcc.md FTEF-17.5: since #467 a builtin initialiser with a number is compared as `#<binum>` alone, so the engine name is dropped. The third P2-R3 review (docs/readiness/p2-r3.md) found, at commit 5c552de, that `void() f = #0:ex_a;` then `void() f = #0:ex_b;`, `#5:ex_a` then `#5:ex_b`, and `#5` then `#5:ex_a` give no E0206, where the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reports "incompatible redeclaration" for each; before #467 a builtin initialiser was compared by its token text, which tells these apart. A builtin with no number is still compared by its text, so `:ex_a` then `:"ex_a"`, `#0:ex_a` then `:ex_a`, and `#"ex_a"` then `:ex_a` are E0206, where FTEQCC compiles each with 0 warnings. FTEQCC reuses an earlier builtin function only when it is the same builtin: in `QCC_PR_ParseInitializerType_Internal` (qcc_pr_comp.c), `if (*fname)` it takes `functions[i]` with `functions[i].builtin == binum` and `!strcmp(functions[i].name, fname)`, otherwise one with `functions[i].builtin == binum` and `(!*functions[i].name || !strcmp(functions[i].name, defname))`, and else makes a new one, `QCC_PR_GenerateBuiltinFunction(def.sym, binum, *fname?fname:def.sym->name)`; so a builtin is its `binum` and its engine name, the definition''s own name when it gives none'
+  - 'crates/qc-engines/src/check.rs and docs/spec/engine-targets.md ENGT-4.13 and ENGT-4.14: after P2-69, a `d` literal (`#16d`) gives no key, where `builtin_number` gives 16 today, and `#"ab" "cd"` is keyed by `abcd`'
+  acceptance:
+  - 'Under FTEQCC each pair above gives E0206 exactly when the pinned FTEQCC reports "incompatible redeclaration", including `#5` then `#5:f` for a definition `f`, which FTEQCC accepts; `#16d` gives no W0311 and `#"ab" "cd"` is keyed by `abcd`; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema -p qc-engines
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1282,6 +1319,8 @@ issues:
   - P2-63
   - P2-64
   - P2-68
+  - P2-69
+  - P2-70
   - P4-29
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
