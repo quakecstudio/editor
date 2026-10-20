@@ -1089,9 +1089,12 @@ impl<L: Loader> Preprocessor<L> {
         if hidden(&run.live, &item.hide, name) {
             return Some(item);
         }
+        // FTEF-14.13: FTEQCC looks up the word up to a byte that ends it, not the name.
+        let fte = self.dialect.has_fteqcc_extensions();
         let Some(mac) = self.macros.get(name).cloned() else {
-            if self.dialect.has_fteqcc_extensions()
+            if fte
                 && let Some(tok) = self.builtin(run, &item.tok, name)
+                && self.word_ends_after(run, &item.tok)
             {
                 run.pending.push(Item {
                     tok,
@@ -1101,6 +1104,9 @@ impl<L: Loader> Preprocessor<L> {
             }
             return Some(item);
         };
+        if fte && !self.word_ends_after(run, &item.tok) {
+            return Some(item);
+        }
         let name = name.clone();
         let mut use_span = item.tok.span;
         let mut args = Vec::new();
@@ -1327,6 +1333,32 @@ impl<L: Loader> Preprocessor<L> {
             result.extend(pieces);
         }
         result
+    }
+
+    /// Whether the word `QCC_PR_CheckCompConst` reads at the name `tok` ends with the name
+    /// (FTEF-14.13): the byte after it in the text FTEQCC reads [`ends_word`]. For a token of
+    /// no expansion that byte is the source's; for a token of an expansion it is the first
+    /// byte of the next token when that one [`PpToken::touches`] it, and otherwise white
+    /// space or the end of the expansion, which ends the word too.
+    fn word_ends_after(&self, run: &Run, tok: &PpToken) -> bool {
+        let next = match tok.expansion {
+            None => self
+                .sources
+                .file(tok.span.file)
+                .and_then(|file| file.text.get(tok.span.span.end).copied()),
+            Some(_) => run
+                .pending
+                .last()
+                .filter(|next| next.tok.touches(tok))
+                .and_then(|next| {
+                    let text = match &next.tok.spelling {
+                        Some(spelling) => Some(spelling.as_bytes()),
+                        None => self.sources.text(next.tok.span),
+                    };
+                    text?.first().copied()
+                }),
+        };
+        next.is_none_or(ends_word)
     }
 
     /// Whether FTEQCC copies nothing after `last`, the last token of an argument other than

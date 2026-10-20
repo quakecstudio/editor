@@ -656,6 +656,19 @@ profile the preprocessor reads them as FTEQCC does.
   nested deeper is false, as one FTEQCC reports as an error is. FTEQCC's
   `ParsePrecompilerIf` recurses with no limit; this profile bounds it so that no input can
   exhaust the stack, as PRJ-5.10 bounds the vanilla reader and QC-27.15 the parser.
+- **FTEF-14.13** A name is a macro use only when the word `QCC_PR_CheckCompConst` reads at it
+  ends with the name: `QCC_PR_Lex` calls it for every name (`if (flag_hashonly ||
+  !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`), and it takes the word up to the first NUL,
+  `qcc_iswhite` byte (space, CR, LF, tab, VT) or one of `)(+-*/|&=^~[]"{};:<>,.#` (`for (end =
+  pr_file_p; ; end++)`) and looks that word up (`pHash_Get(&compconstantstable, pr_token)`,
+  then `QCC_PR_CheckBuiltinCompConst`). So a macro's name, or a built-in constant's (FTEF-14.7),
+  followed directly by any other byte, such as `!`, `?`, `%`, `@`, `$`, `'`, `` ` ``, `\`, a
+  control byte, DEL or a byte of 0x80 or more, is a name: with `#define N 5`, `x = N!=5;` is
+  "Unknown value \"N\"" (`E0301`) and `x = N==5;` is `x = 5==5;`. The byte is the one FTEQCC
+  reads after the name: in a macro's body the body's next byte as stored (QC-9.15), and after
+  an argument the body's byte after the parameter, so `#define A(a) a!=5` used as `A(N)` leaves
+  `N` a name; at the end of an expansion the word ends. FTE-23.10 reads the word after a `#` in
+  the same way. The vanilla preprocessor expands every name that is a macro (QC-9.4).
 
 ## FTEF-15 Declarations
 

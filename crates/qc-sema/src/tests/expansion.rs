@@ -621,6 +621,36 @@ fn an_argument_against_a_body_token_reads_as_written_there() {
     }
 }
 
+// spec FTEF-14.13: through `Db::analyze_module` under FTEQCC a macro's name followed by `!`
+// stays a name, "Unknown value", in the source, in a body and after an argument; followed by
+// `=`, white space or the end of an expansion it expands
+#[test]
+fn a_macro_followed_by_a_byte_that_does_not_end_its_word_is_unknown() {
+    let errors = |define: &str, use_: &str| {
+        let text = format!("#define N 5\n{define}\nvoid() g = {{ local float x; x = {use_}; }};\n");
+        let files = [("a.qc", text.as_str())];
+        let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+        codes(&db.analyze_module(&input))
+    };
+    for (define, use_) in [
+        ("", "N!=5"),
+        ("#define M N!=5", "M"),
+        ("#define A(a) a!=5", "A(N)"),
+        ("", "N\\\n"),
+    ] {
+        assert_eq!(errors(define, use_), [Code::E0301], "{define} {use_}");
+    }
+    for (define, use_) in [
+        ("", "N==5"),
+        ("", "N !=5"),
+        ("#define M N !=5", "M"),
+        ("#define A(a) a !=5", "A(N)"),
+        ("#define M N", "M !=5"),
+    ] {
+        assert_eq!(errors(define, use_), [], "{define} {use_}");
+    }
+}
+
 // spec FTEF-14.6: a name `##` makes is rendered as its own text, so it defines and resolves
 // like any other.
 #[test]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What touches what in an expansion (`docs/spec/language.md` QC-9.15).
+//! What touches what in an expansion (`docs/spec/language.md` QC-9.15), and the word FTEQCC
+//! reads as a macro's name (`docs/spec/dialect-fteqcc.md` FTEF-14.13).
 
 use std::path::Path;
 
@@ -33,6 +34,87 @@ fn touching(text: &str, dialect: Dialect) -> String {
         last = Some(token);
     }
     rendered
+}
+
+/// The bytes that end the word `QCC_PR_CheckCompConst` reads: white space and its stops.
+const WORD_ENDS: &[u8] = b" \r\n\t\x0b)(+-*/|&=^~[]\"{};:<>,.#";
+
+// spec FTEF-14.13: under FTEQCC a macro's name followed directly by a byte that does not end
+// `QCC_PR_CheckCompConst`'s word stays a name, for every such byte; one followed by white
+// space, one of the stop bytes or the end of the file expands
+#[test]
+fn a_macro_expands_only_where_fteqcc_s_word_ends() {
+    for byte in 1..=u8::MAX {
+        if byte.is_ascii_alphanumeric() || byte == b'_' {
+            continue;
+        }
+        let mut text = b"#define N 5\nx = N".to_vec();
+        text.push(byte);
+        text.extend_from_slice(b" 1;\n");
+        let out = run(&text, Dialect::Fteqcc);
+        let expanded = out.tokens.iter().any(|t| t.expansion.is_some());
+        assert_eq!(expanded, WORD_ENDS.contains(&byte), "{byte:#04x}");
+    }
+    assert_eq!(touching("#define N 5\nx = N", Dialect::Fteqcc), "x = 5");
+    assert_eq!(
+        touching("#define N 5\nx = N/**/!", Dialect::Fteqcc),
+        "x = 5 !"
+    );
+    assert_eq!(
+        touching("#define N 5\nx = N\\\n;", Dialect::Fteqcc),
+        "x = N ;"
+    );
+    // A function-like macro and a built-in constant are words too.
+    assert_eq!(
+        touching("#define M(a) a\nx = M!(1)", Dialect::Fteqcc),
+        "x = M!(1)"
+    );
+    assert_eq!(touching("x = __LINE__?", Dialect::Fteqcc), "x = __LINE__?");
+    assert_eq!(touching("x = __LINE__ ?", Dialect::Fteqcc), "x = 1 ?");
+}
+
+// spec FTEF-14.13: the vanilla preprocessor expands a macro's name whatever follows it
+#[test]
+fn vanilla_expands_a_macro_before_any_byte() {
+    for byte in [b'!', b'?', b'%', b'@', b'$', b'\'', b'`', 0x01, 0x7f] {
+        let mut text = b"#define N 5\nx = N".to_vec();
+        text.push(byte);
+        text.extend_from_slice(b" 1;\n");
+        let out = run(&text, Dialect::Vanilla);
+        assert!(
+            out.tokens.iter().any(|t| t.expansion.is_some()),
+            "{byte:#04x}"
+        );
+    }
+}
+
+// spec FTEF-14.13: in an expansion the byte after a name is the one FTEQCC's text has there:
+// the body's next byte, the body's byte after the parameter for an argument's last token, and
+// at the end of the expansion the word ends
+#[test]
+fn the_byte_after_a_name_in_an_expansion_is_the_expansion_s() {
+    let fte = |text: &str| touching(text, Dialect::Fteqcc);
+    assert_eq!(fte("#define N 5\n#define M N!=5\nx = M;"), "x = N!=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N/**/!=5\nx = M;"), "x = N!=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N !=5\nx = M;"), "x = 5 !=5 ;");
+    assert_eq!(fte("#define N 5\n#define M N\nx = M !=5;"), "x = 5 !=5;");
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a!=5\nx = A(N);"),
+        "x = N!=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a!=5\nx = A(N );"),
+        "x = N!=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a !=5\nx = A(N);"),
+        "x = 5 !=5 ;"
+    );
+    assert_eq!(
+        fte("#define N 5\n#define A(a) a==5\nx = A(N);"),
+        "x = 5 ==5 ;"
+    );
+    assert_eq!(fte("#define N 5\n#define A(a) a\nx = A(N!);"), "x = N! ;");
 }
 
 // spec QC-9.15: under FTEQCC an argument's tokens touch the body tokens the parameter

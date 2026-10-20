@@ -663,7 +663,7 @@ fn hash_before_anything_else_stays() {
     for (text, want) in [
         ("f = #U\n", "f = # U"),
         ("#define N 5\nf = # N\n", "f = # 5"),
-        ("#define N 5\nf = #N!\n", "f = # 5 !"),
+        ("#define N 5\nf = #N!\n", "f = # N !"),
         // The first `#` stays, before a `#`; the second goes.
         ("#define N 5\nf = ##N\n", "f = # 5"),
         ("#define N 5\nf = #\"N\"\n", "f = # \"N\""),
