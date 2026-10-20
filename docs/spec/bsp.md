@@ -280,12 +280,26 @@ when one of the entity's leaves is in the set of the client's leaf.
   `visofs` but -1 into an empty lump fails to load (BSP-1.8). `qbsp`'s `BeginBSPFile` sets
   only leaf 0's `contents` in its zeroed leaf array, so leaf 0's `visofs` is 0, also in a
   BSP that `vis` has not processed.
+- **BSP-6.7** A row's width follows model 0's `visleafs` alone, not the number of leaves the
+  file holds: id's `Mod_DecompressVis` has `row = (model->numleafs+7)>>3;` and
+  `Mod_LoadBrushModel` sets `mod->numleafs = bm->visleafs;`, and QS does the same, growing its
+  buffer to the row (`mod_decompressed = (byte *) realloc (mod_decompressed,
+  mod_decompressed_capacity);`). So a file of a few hundred bytes can make every row, and the
+  all-visible row of BSP-6.4 that reads no input, as wide as `visleafs` says. `visleafs` is a
+  signed 32-bit count, so a row is at most `BSP_MAX_VIS_ROW` bytes, the bound on what one
+  leaf's set costs; id's `numleafs+7` overflows `int` for the seven largest counts, which is
+  undefined in C, and this spec fixes the answer as `BSP_MAX_VIS_ROW`. A `visleafs` of -7 to
+  -1 gives a row of 0 bytes; one of -8 or less makes `row` negative, for which id's
+  all-visible loop `while (row)` does not end, and this spec fixes the answer as a row of 0
+  bytes too. id's buffer holds `MAX_MAP_LEAFS/8` bytes, so in id's code a row
+  wider than that is undefined (BSP-20.18); this spec follows QS for every loader.
 
 ### Constants
 
 | Name | Value | Source |
 | --- | --- | --- |
 | `BSP_MAX_MAP_LEAFS` | 8192 | `WinQuake/bspfile.h`, `MAX_MAP_LEAFS`; the size of `Mod_DecompressVis`'s row buffer is `MAX_MAP_LEAFS/8` |
+| `BSP_MAX_VIS_ROW` | 268435455 | `(2147483647 + 7) >> 3` with the sum held at `INT_MAX`: the row of the largest `visleafs` (BSP-6.7) |
 
 ### Test vectors
 

@@ -135,6 +135,14 @@ impl SpawnHost for RecordingHost {
             Ok(self.allocated)
         }
     }
+    fn edict_value(&self, number: i32) -> Result<i32, SpawnError> {
+        // EDICT-1.5, EDICT-1.7 with 105 field slots: an edict is 516 bytes, 600 of them.
+        if (0..600).contains(&number) {
+            Ok(number * 516)
+        } else {
+            Err(SpawnError::BadEdictNumber { number })
+        }
+    }
     fn find_field(&self, name: &[u8]) -> Option<FieldDef> {
         self.fields
             .iter()

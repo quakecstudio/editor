@@ -42,7 +42,8 @@ input over the spec's `base` alias model:
 - Every sprite frame's pixels are exactly `width * height` bytes inside the file (SPR-2.2,
   SPR-2.4).
 - Every MD5 accessor answers for each index below its count and for none above (MD5-2.8,
-  MD5-3.6).
+  MD5-3.6), and every animation frame holds `numAnimatedComponents` values, a count no larger
+  than the file (MD5-3.11).
 
 ## Differential result
 

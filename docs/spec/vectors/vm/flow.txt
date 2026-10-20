@@ -354,7 +354,7 @@ expect:
   done
 
 == stack_overflow
-spec: VM-15.1, VM-19.3
+spec: VM-15.1, VM-19.6
 steps: 31
 globals: 100=i2
 functions:
@@ -394,7 +394,7 @@ expect:
   error "PR_ExecuteProgram: locals stack overflow"
 
 == locals_stack_overflow_nested
-spec: VM-15.2, VM-19.3
+spec: VM-15.2, VM-19.6
 numglobals: 2048
 globals: 100=i2
 functions:
@@ -583,7 +583,7 @@ expect:
   done
 
 == nested_error_aborts_all
-spec: VM-18.4, VM-19.2, VM-19.3
+spec: VM-18.4, VM-19.2, VM-19.6
 globals: 100=i3 101=i2 102=8
 functions:
   1: first=1 parm_start=110 locals=3
@@ -605,7 +605,7 @@ expect:
   error "Bad opcode 66"
 
 == address_world_error_state
-spec: VM-19.1, VM-19.3
+spec: VM-19.1, VM-19.6
 globals: 101=i105 103=4
 functions:
   1: first=1 parm_start=110 locals=2
@@ -619,7 +619,7 @@ expect:
   2 ADDRESS
   error "assignment to world entity"
 
-# Divergences: id's C is undefined here, and this spec fixes an error (VM-19.4). The
+# Divergences: id's C is undefined here, and this spec fixes an error (VM-19.7). The
 # message is the implementation's, so these vectors expect any error, and they do not run
 # against the oracle.
 

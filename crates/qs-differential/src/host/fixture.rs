@@ -68,6 +68,9 @@ pub(crate) struct ProgsBuilder {
     pub(crate) statements: Vec<Stmt>,
     pub(crate) functions: Vec<FuncSpec>,
     pub(crate) extra_fields: Vec<ExtraField>,
+    /// Initial values of global slots, (slot, 32-bit pattern), applied after the function
+    /// globals: a `CALL` operand holding a function index, say.
+    pub(crate) globals: Vec<(usize, u32)>,
 }
 
 impl ProgsBuilder {
@@ -83,6 +86,11 @@ impl ProgsBuilder {
 
     pub(crate) fn extra_field(mut self, field: ExtraField) -> Self {
         self.extra_fields.push(field);
+        self
+    }
+
+    pub(crate) fn global(mut self, slot: usize, value: u32) -> Self {
+        self.globals.push((slot, value));
         self
     }
 
@@ -146,6 +154,9 @@ impl ProgsBuilder {
             {
                 *cell = (*index).cast_unsigned();
             }
+        }
+        for &(slot, value) in &self.globals {
+            global_words[slot] = value;
         }
         let globals: Vec<u8> = global_words.iter().flat_map(|w| w.to_le_bytes()).collect();
 

@@ -177,13 +177,13 @@ pub fn numstatements(progs_bytes: &[u8]) -> Result<u32, SuiteError> {
 }
 
 /// The number of QuakeC Studio change-carrying records before the first divergence of
-/// `comparison` (DIFF-11.2): all of them when the traces agree, and the index of the first
-/// diverging record otherwise.
+/// `comparison` (DIFF-11.2): all of them when the traces agree, and otherwise the records
+/// before the first diverging change-carrying record, which itself is not counted.
 #[must_use]
 pub fn records_before(trace: &Trace, comparison: &Comparison) -> usize {
     match comparison {
         Comparison::Equal => trace.records.len(),
-        Comparison::Failure(divergence) => records_up_to(trace, carrier_index(divergence)),
+        Comparison::Failure(divergence) => records_before_carrier(trace, carrier_index(divergence)),
     }
 }
 
@@ -199,16 +199,16 @@ fn carrier_index(divergence: &Divergence) -> usize {
     }
 }
 
-/// The number of records in `trace` up to and including the `carrier`-th change-carrying
-/// record, so [`coverage::executed`] counts the step records of the agreeing prefix
-/// (DIFF-11.2). A `carrier` at or past the number of change-carrying records counts the whole
-/// trace.
-fn records_up_to(trace: &Trace, carrier: usize) -> usize {
+/// The number of records in `trace` before the `carrier`-th change-carrying record, so
+/// [`coverage::executed`] counts the step records of the agreeing prefix and not the record
+/// the VMs disagree on (DIFF-11.2). A `carrier` at or past the number of change-carrying
+/// records, where this trace is the shorter, counts the whole trace.
+fn records_before_carrier(trace: &Trace, carrier: usize) -> usize {
     let mut carriers = 0_usize;
     for (position, record) in trace.records.iter().enumerate() {
         if record.changes().is_some() {
             if carriers == carrier {
-                return position.saturating_add(1);
+                return position;
             }
             carriers = carriers.saturating_add(1);
         }

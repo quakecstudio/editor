@@ -364,7 +364,7 @@ fn vector_cmp(
 /// value is resolved against the engine-allocated strings the [`Builtins`] dispatch owns
 /// (EDICT-13.3), id's `PR_GetString` reading `pr_strings + value` for both. Only a value that
 /// is neither a table offset nor an engine string names memory outside both, which is
-/// undefined in C; this spec fails it with the VM-19.4 runtime error.
+/// undefined in C; this spec fails it with the VM-19.7 runtime error.
 fn resolve_string<'a>(
     progs: &'a Progs<'_>,
     builtins: &'a dyn Builtins,

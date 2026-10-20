@@ -4,7 +4,7 @@
 //!
 //! Written by an independent reviewer who did not write the VM, to attack combinations the
 //! hand-written vectors in `docs/spec/vectors/vm/` do not exercise directly: a nested run's own
-//! runaway counter (LIMIT-4.2), the machine state a `stack overflow` leaves behind (VM-19.3),
+//! runaway counter (LIMIT-4.2), the machine state a `stack overflow` leaves behind (VM-19.6),
 //! and a machine reused after an aborted run (VM-1.1). Each test builds a progs with the shared
 //! harness, runs it, and checks the VM against the statement the `// spec` comment names.
 
@@ -102,14 +102,14 @@ fn nested_run_has_its_own_runaway_counter() {
         error.function, 3,
         "the runaway fires in the nested function"
     );
-    // Every run ended and the depth is reset (VM-19.3).
+    // Every run ended and the depth is reset (VM-19.6).
     assert_eq!(machine.depth(), 0);
 }
 
-// spec VM-19.3: a runtime error sets the call depth to 0 but does NOT reset the local stack;
+// spec VM-19.6: a runtime error sets the call depth to 0 but does NOT reset the local stack;
 // the aborted functions keep their slots. The `stack_overflow` vector records
 // `after: depth=0 localstack=0` because its recursive function has no locals; this pins the
-// other half of VM-19.3, that a deep recursion whose functions DO have locals leaves the local
+// other half of VM-19.6, that a deep recursion whose functions DO have locals leaves the local
 // stack non-empty after the "stack overflow" error.
 #[test]
 fn stack_overflow_keeps_the_local_stack() {
@@ -155,18 +155,18 @@ fn stack_overflow_keeps_the_local_stack() {
         .unwrap_err();
     assert_eq!(error.message(), "stack overflow");
     assert_eq!(error.kind, ErrorKind::StackOverflow);
-    // VM-19.3: depth is reset to 0, but the local stack is NOT, so the aborted frames' saved
+    // VM-19.6: depth is reset to 0, but the local stack is NOT, so the aborted frames' saved
     // locals remain and localstack_used is greater than 0.
     assert_eq!(machine.depth(), 0);
     assert!(
         machine.localstack_used() > 0,
-        "the aborted frames' locals are kept (VM-19.3), got {}",
+        "the aborted frames' locals are kept (VM-19.6), got {}",
         machine.localstack_used()
     );
 }
 
-// spec VM-1.1, VM-19.3: the machine persists between runs, and an aborted run leaves the local
-// stack dirty (VM-19.3). A fresh PR_ExecuteProgram on the same machine must still start from
+// spec VM-1.1, VM-19.6: the machine persists between runs, and an aborted run leaves the local
+// stack dirty (VM-19.6). A fresh PR_ExecuteProgram on the same machine must still start from
 // call depth 0 and run correctly, so the dirty local stack of the earlier abort does not leak
 // into the new run's result. The vectors run one program per machine; this pins reuse.
 #[test]

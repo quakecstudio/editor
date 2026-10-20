@@ -24,6 +24,8 @@ use crate::scenario::{Cvar, DIFF_DEFAULT_FRAMETIME, DIFF_DEFAULT_SEED, Scenario}
 use super::fixture::{ExtraField, FuncSpec, ProgsBuilder, Stmt};
 use super::{Ended, run_scenario};
 
+mod errors;
+
 /// A scenario with the given fields filled in and the rest at their defaults (DIFF-2.2).
 fn scenario(map: &str) -> Scenario {
     Scenario {
@@ -251,7 +253,7 @@ fn a_progs_refused_writes_no_trace() {
     );
 }
 
-// spec EDICT-8.8: text that is not `{` where an entity should start is a parse error.
+// spec EDICT-8.8: text that is not `{` where an entity should start ends the scenario.
 #[test]
 fn a_bad_entity_lump_ends_the_scenario() {
     let bytes = progs_with_spawn("worldspawn");

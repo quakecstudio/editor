@@ -197,7 +197,8 @@ fn records_before_counts_the_whole_trace_when_equal() {
     assert_eq!(records_before(&trace, &Comparison::Equal), 3);
 }
 
-// spec DIFF-11.2: a divergence at a change-carrying record stops the count at that record.
+// spec DIFF-11.2: only the records before the first divergence count: the diverging
+// change-carrying record itself does not.
 // spec DIFF-9.5: the divergence names the index of the first differing change-carrying record.
 #[test]
 fn records_before_stops_at_the_divergence() {
@@ -205,25 +206,32 @@ fn records_before_stops_at_the_divergence() {
         header: header(),
         records: vec![step(1, 10), step(2, 11), step(3, 12)],
     };
-    // A record divergence at change-carrying index 1 (the second step): count records 0 and 1.
+    // A record divergence at change-carrying index 1 (the second step): count record 0 only.
     let divergence = Comparison::Failure(Divergence::Record {
         index: 1,
         statement_a: 2,
         statement_b: 2,
         what: "opcode",
     });
-    assert_eq!(records_before(&trace, &divergence), 2);
-    // A length divergence at index 2: all three records precede it.
+    assert_eq!(records_before(&trace, &divergence), 1);
+    // A length divergence at index 2, this trace the longer: its third record has no
+    // counterpart, so the two before it count.
     let length = Comparison::Failure(Divergence::Length {
         index: 2,
         shorter_is_a: false,
     });
-    assert_eq!(records_before(&trace, &length), 3);
-    // A header divergence compared nothing: index 0, so only the first record counts.
+    assert_eq!(records_before(&trace, &length), 2);
+    // At index 3, this trace the shorter: every record it has agreed.
+    let shorter = Comparison::Failure(Divergence::Length {
+        index: 3,
+        shorter_is_a: true,
+    });
+    assert_eq!(records_before(&trace, &shorter), 3);
+    // A header divergence compared nothing: index 0, so no record counts.
     let header_div = Comparison::Failure(Divergence::Header {
         field: "numstrings",
     });
-    assert_eq!(records_before(&trace, &header_div), 1);
+    assert_eq!(records_before(&trace, &header_div), 0);
 }
 
 // spec DIFF-1.1: a scenario runs in both runners and the two traces are compared; here the
