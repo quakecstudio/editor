@@ -23,6 +23,7 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub use fte_directive::{FileStart, FteEvent, FteFileReader, ModuleState};
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart};

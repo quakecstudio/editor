@@ -219,13 +219,20 @@ fn directive_names_match_by_their_first_bytes() {
         "#forcecrcx",
         "#merge",
         "#datafile",
-        "#output",
     ] {
         assert!(
             matches!(directive(build), Some(Directive::Build { .. })),
             "{build}"
         );
     }
+    assert!(matches!(
+        directive("#output  \"p.dat\""),
+        Some(Directive::Output { name: Some(name), .. }) if name == (10..15)
+    ));
+    assert!(matches!(
+        directive("#output"),
+        Some(Directive::Output { name: None, .. })
+    ));
     assert!(matches!(
         directive("#packages"),
         Some(Directive::Package { .. })

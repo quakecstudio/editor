@@ -245,6 +245,42 @@ malformed directive without a diagnostic.
   preprocessor does the same. So with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which
   includes `c.qh`, the graph reads `src/x/c.qh`, and `src/c.qh` when that is missing. Xonotic, which
   the C preprocessor reads before GMQCC compiles it, relies on the first of these.
+- **PRJ-5.13** Under the FTEQCC dialect the graph reads each QuakeC file, the source of the source
+  form, each list entry, each `#includelist` entry and each `#include`d file, with the
+  preprocessor's directive reader (`qc_preproc::FteFileReader`) in place of the lines of PRJ-5.1
+  and the reading of PRJ-5.3 to PRJ-5.5, as FTEQCC's `QCC_PR_Precompiler` reads it
+  (`engine/qclib/qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`;
+  `dialect-fteqcc.md` FTEF-14.33 to FTEF-14.48). A directive is at a `#` that `QCC_PR_NewLine`
+  reaches, at a compiled file's start after spaces and tabs and at an included file's first byte
+  (FTEF-14.34), its name matched by its first bytes, so `#defined N 1` defines `N` and `#iffy`
+  opens no block; its line ends where `QCC_PR_SkipToEndOfLine` ends it (FTEF-14.35), so after
+  `#undef N // c \` the next line, an `#include` too, is the directive's; `#if` and `#elif` read
+  as FTEF-14.33 says; a side that is not taken is skipped by `QCC_PR_FalsePreProcessorIf`
+  (FTEF-14.37), whose one count of open sides runs from file to file, so a side an included file
+  leaves open is closed, or ended by an `#else`, in the file that included it, and QC-9.12 does
+  not hold; `#eof` and `#package` end the file, and `#pragma DONT_COMPILE_THIS_FILE` passes over
+  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.44); an
+  `#includelist`'s words, and the directives on its lines, are read as FTEF-14.41 says, so a
+  word in quotes names a file with the quotes in its name; and `FTEQCC` and `__FTEQCC__` are
+  defined before the module's `defines` (FTEF-14.48). Between directives the code is passed over
+  a token at a time, as `QCC_PR_Lex` reads it: a string, a raw string `R"d(...)d"` over lines
+  too, a character constant, a name, a number or one byte, and a `\` before a line break with the
+  break, as `QCC_PR_LexPunctuation` passes over it with no `QCC_PR_NewLine`, so a `#` that starts
+  the next line is no directive. A list-form `progs.src` is still read as PRJ-5.1 and QC-23 say.
+  So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
+  an `#include` or an `#includelist`, after or around each directive form of FTEF-14.34 to
+  FTEF-14.44: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
+  one file that binds `f` FTEQCC binds it from exactly when the graph lists it.
+- **PRJ-5.14** Deliberate divergences of PRJ-5.13, as the graph expands no macro: a directive a
+  macro's body or arguments hold is run where it stands in the file's text, not where the
+  expansion is read (FTEF-14.45, FTEF-14.46); an `#include` in the text `#pragma
+  DONT_COMPILE_THIS_FILE` passes over brings in no file, where FTEQCC passes over that file's text
+  too, running its directives; an `#include` among an `#includelist`'s lines brings its file in
+  as an `#include`, where FTEQCC reads that file's words as the list's (FTEF-14.47); a program
+  FTEQCC stops at an error, such as an `#error` or "unexpected tokens at end of line", is read on
+  to its end; and an `#includelist` or `DONT_COMPILE_THIS_FILE` met while 64 others are open in
+  one file ends that file, as the preprocessor's bound on nested directives does (FTEF-14.47), so
+  that no file exhausts the graph's memory.
 
 ## PRJ-6 The file graph
 

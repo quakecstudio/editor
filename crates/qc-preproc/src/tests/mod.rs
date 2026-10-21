@@ -1046,6 +1046,7 @@ proptest! {
 }
 mod directives;
 mod fteqcc;
+mod graph;
 mod reviewer;
 mod spacing;
 mod text;

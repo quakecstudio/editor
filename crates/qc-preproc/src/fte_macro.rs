@@ -553,13 +553,13 @@ fn block_comment_end(text: &[u8], from: usize) -> usize {
 /// A `#define` or `#append` as `QCC_PR_PreProcessor_Define` reads it.
 pub(crate) struct Definition {
     /// The macro's name.
-    name: Range<usize>,
+    pub(crate) name: Range<usize>,
     /// The parameters of a function-like macro, as written.
-    params: Option<Vec<Vec<u8>>>,
+    pub(crate) params: Option<Vec<Vec<u8>>>,
     /// Whether the last parameter is `...`.
-    variadic: Variadic,
+    pub(crate) variadic: Variadic,
     /// The body as stored.
-    value: Text,
+    pub(crate) value: Text,
     /// The first `#` that starts a continued line of the body, "preprocessor directive within
     /// preprocessor macro" (FTEF-14.46).
     evil: Option<usize>,
@@ -640,7 +640,10 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usiz
 /// (the quote flag flipping at every `"`, an escaped one included); each `/* */` comment outside
 /// a quote and each `\` before a line break is dropped, the line break with it, and the spaces
 /// and tabs at its end are dropped (FTEF-14.24).
-fn read_define(reading: &Reading<'_>, at: usize) -> (Result<Definition, DefineError>, usize) {
+pub(crate) fn read_define(
+    reading: &Reading<'_>,
+    at: usize,
+) -> (Result<Definition, DefineError>, usize) {
     let text = reading.bytes();
     let (name, stop) = simple_get_token(text, at);
     let Some(name) = name else {

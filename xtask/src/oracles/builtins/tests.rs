@@ -18,7 +18,7 @@ use qc_types::Slot;
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
     Case, FIXTURE, Outcome, Project, Tally, ULong, bound, cases, check, check_where, compare,
-    expected_difference, oracle, profile, read_fixture,
+    expected_difference, graph_cases, graph_differences, oracle, profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
@@ -44,7 +44,9 @@ fn bound_as(number: i32, name: &str) -> Outcome {
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();
     let cases = cases();
-    let keys: Vec<String> = cases.iter().map(Case::key).collect();
+    let mut keys: Vec<String> = cases.iter().chain(&graph_cases()).map(Case::key).collect();
+    keys.sort();
+    keys.dedup();
     assert_eq!(keys.len(), recorded.len());
     assert!(keys.iter().all(|key| recorded.contains_key(key)));
     let tally = compare(&cases, &recorded, ULong::Bits64);
@@ -54,6 +56,60 @@ fn the_profile_agrees_with_the_recorded_oracles() {
         ["FTE-23.11", "FTEF-13.8", "FTEF-14.47", "QC-27.9"]
     );
     assert!(tally.agree > 6000, "{tally}");
+}
+
+// spec PRJ-5.13: for every graph case the project graph lists the file that binds `f` exactly
+// when the recorded FTEQCC binds `f` from it, and FTEQCC either binds `f` or accepts the
+// program without it, so that each case says what it read
+#[test]
+fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
+    let recorded = read_fixture(&root()).unwrap();
+    let differ = graph_differences(&recorded);
+    assert!(differ.is_empty(), "{differ:#?}");
+    let cases = graph_cases();
+    assert_eq!(cases.len(), 148);
+    let read = cases
+        .iter()
+        .filter(|case| matches!(recorded[&case.key()], Outcome::Bound { .. }))
+        .count();
+    assert!(read > 100 && read < 140, "{read} of {} read", cases.len());
+}
+
+// spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle refused
+// the program, or which is not recorded, is a difference
+#[test]
+fn graph_differences_are_found() {
+    let recorded = read_fixture(&root()).unwrap();
+    let cases = graph_cases();
+    let first = cases[0].key();
+    assert_eq!(recorded[&first], bound_as(5, "f"));
+    for (outcome, expected) in [
+        (
+            Outcome::Accepted,
+            "the oracle does not read the file, the graph does",
+        ),
+        (Outcome::Rejected, "oracle rejected, which reads no file"),
+        (bound_as(6, "f"), "oracle bound 6 f, which reads no file"),
+    ] {
+        let mut changed = recorded.clone();
+        changed.insert(first.clone(), outcome);
+        let differ = graph_differences(&changed);
+        assert_eq!(differ.len(), 1, "{differ:?}");
+        assert!(differ[0].ends_with(expected), "{differ:?}");
+    }
+    let unread = cases
+        .iter()
+        .find(|case| recorded[&case.key()] == Outcome::Accepted)
+        .unwrap()
+        .key();
+    let mut changed = recorded.clone();
+    changed.insert(unread, bound_as(5, "f"));
+    let differ = graph_differences(&changed);
+    assert!(differ[0].ends_with("the oracle reads the file, the graph does not"));
+    let mut missing = recorded;
+    missing.remove(&first);
+    let differ = graph_differences(&missing);
+    assert!(differ[0].ends_with("not recorded in xtask/fixtures/oracles/builtin-outcomes.json"));
 }
 
 // spec FTEF-14.50: an oracle where `unsigned long` is 32 bits may read a `#pragma line` number

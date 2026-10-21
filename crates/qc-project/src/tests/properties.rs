@@ -25,6 +25,11 @@ fn lines() -> impl Strategy<Value = String> {
         Just("/* open".to_owned()),
         Just("close */".to_owned()),
         Just("d.qh b.qc".to_owned()),
+        Just("#pragma DONT_COMPILE_THIS_FILE".to_owned()),
+        Just("#eof".to_owned()),
+        Just("#undef X // c \\".to_owned()),
+        Just("string s = R\"x(".to_owned()),
+        Just(")x\";".to_owned()),
         "[ -~]{0,20}",
     ];
     prop::collection::vec(line, 0..20).prop_map(|v| v.join("\n"))
@@ -32,7 +37,8 @@ fn lines() -> impl Strategy<Value = String> {
 
 proptest! {
     // spec PRJ-6.1: on any input the graph ends, every parent comes before its child, and
-    // spec PRJ-6.4: the graph never holds more than PRJ_MAX_FILES entries
+    // spec PRJ-6.4: the graph never holds more than PRJ_MAX_FILES entries, and
+    // spec PRJ-5.13: so under FTEQCC, whose files the directive reader reads
     #[test]
     fn any_input_builds_a_graph(
         root in lines(),
@@ -41,7 +47,12 @@ proptest! {
         bytes in prop::collection::vec(any::<u8>(), 0..200),
     ) {
         let bytes = String::from_utf8_lossy(&bytes).into_owned();
-        for src_text in [&root, &bytes] {
+        let dialects = [
+            qc_lexer::Dialect::Vanilla,
+            qc_lexer::Dialect::Fteqcc,
+            qc_lexer::Dialect::Gmqcc,
+        ];
+        for (src_text, dialect) in [&root, &bytes].into_iter().flat_map(|t| dialects.map(|d| (t, d))) {
             let files = [
                 ("main.src", src_text.as_str()),
                 ("a.qc", a.as_str()),
@@ -49,7 +60,12 @@ proptest! {
                 ("sub/c.qc", c.as_str()),
                 ("d.qh", "#pragma once\n"),
             ];
-            let graph = build(&GraphSpec { files: &files, src: "main.src", ..GraphSpec::default() });
+            let graph = build(&GraphSpec {
+                files: &files,
+                src: "main.src",
+                dialect,
+                ..GraphSpec::default()
+            });
             prop_assert!(graph.files.len() <= PRJ_MAX_FILES);
             for (i, file) in graph.files.iter().enumerate() {
                 if let Some(parent) = file.parent {

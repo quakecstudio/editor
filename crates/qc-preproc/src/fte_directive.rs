@@ -17,6 +17,10 @@
 //! the text `#pragma DONT_COMPILE_THIS_FILE` passes over. The FTEQCC function each function
 //! follows is named in its rustdoc.
 
+mod graph;
+
+pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
+
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -500,8 +504,14 @@ pub(crate) enum Directive {
     /// `#warning` and its text.
     Warning { message: Vec<u8>, end: LineEnd },
     /// A directive that changes only the build: `#message`, `#copyright`, `#forcecrc`,
-    /// `#merge`, `#datafile` and `#output` (FTEF-14.39).
+    /// `#merge` and `#datafile` (FTEF-14.39).
     Build { end: LineEnd },
+    /// `#output` and the bytes of the string after it, which names the module's output for the
+    /// project graph (PRJ-5.6); `None` when no string follows (FTEF-14.39).
+    Output {
+        name: Option<Range<usize>>,
+        end: LineEnd,
+    },
     /// `#pack`, too many of them or not (FTEF-14.39).
     Pack { end: LineEnd, too_many: bool },
     /// `#package`, which ends the text being read once its line is read.
@@ -628,8 +638,10 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             },
         }
     } else if rest.starts_with(b"output") {
-        let end = simple_get_string(text, skip_blanks(text, after(6)));
-        Directive::Build {
+        let open = skip_blanks(text, after(6));
+        let end = simple_get_string(text, open);
+        Directive::Output {
+            name: (end > open).then(|| open.saturating_add(1)..end.saturating_sub(1)),
             end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"pragma") {
@@ -869,6 +881,98 @@ pub(crate) fn false_side_after(
         return Side::Eof;
     }
     false_side(text, end.saturating_add(1), earlier, level)
+}
+
+/// An `#if` or `#elif` expression from `from` in `text`, read as `ParsePrecompilerIf` reads it
+/// (FTEF-14.33), each macro's text being what `macros` gives: whether it is true, or FTEQCC's
+/// error, and where reading it stopped, which for an expression nested too deeply (FTEF-14.12)
+/// is `from`.
+pub(crate) fn condition(
+    text: &[u8],
+    from: usize,
+    macros: &dyn Fn(&str) -> Option<String>,
+) -> (Result<bool, FteIfError>, usize) {
+    let (value, read) = cond::fte_if(text.get(from..).unwrap_or_default(), macros);
+    match value {
+        Ok(value) => (Ok(value != 0), from.saturating_add(read)),
+        Err(FteIfError::TooDeep) => (Err(FteIfError::TooDeep), from),
+        Err(error) => (Err(error), from.saturating_add(read)),
+    }
+}
+
+/// An `#elif` that `QCC_PR_FalsePreProcessorIf` tests (FTEF-14.37): the `#` at `hash`, which
+/// test it reads from `at`, the first byte after `elif`, `elifdef` or `elifndef`, and whether
+/// that byte is no space or tab ("malformed #elif").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Elif {
+    pub(crate) hash: usize,
+    pub(crate) test: ElifTest,
+    pub(crate) at: usize,
+    pub(crate) malformed: bool,
+}
+
+/// Where a skipped side ends (FTEF-14.37).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Skipped {
+    /// At the side the `#else` or `#elif` whose `#` is at `hash` takes, whose line ends at `end`.
+    Taken { hash: usize, end: LineEnd },
+    /// At the line break of the block's `#endif`.
+    Endif(usize),
+    /// At the end of the text: "#if with no endif".
+    Eof,
+}
+
+/// `QCC_PR_FalsePreProcessorIf` from `from`, the end of the line of a conditional whose side is
+/// skipped (FTEF-14.37), to the side an `#else` takes, or the first `#elif` that `test` finds
+/// true, or to the block's `#endif`. `test` gives an `#elif`'s value, where reading its test
+/// stopped and how the rest of its line is read.
+pub(crate) fn skip_side(
+    text: &[u8],
+    from: usize,
+    earlier: Earlier,
+    mut test: impl FnMut(Elif) -> (bool, usize, Junk),
+) -> Skipped {
+    let mut level = 1_usize;
+    let mut side = false_side(text, from, earlier, &mut level);
+    loop {
+        match side {
+            Side::Else { hash, end } => return Skipped::Taken { hash, end },
+            Side::Elif {
+                hash,
+                test: kind,
+                at,
+                malformed,
+            } => {
+                let (value, stop, junk) = test(Elif {
+                    hash,
+                    test: kind,
+                    at,
+                    malformed,
+                });
+                if value {
+                    let end = skip_to_end_of_line(text, stop, junk);
+                    return Skipped::Taken { hash, end };
+                }
+                side = false_side_after(text, stop, earlier, &mut level);
+            }
+            Side::Endif(end) => return Skipped::Endif(end),
+            Side::Eof => return Skipped::Eof,
+        }
+    }
+}
+
+/// Whether the name `QCC_PR_SimpleGetToken` reads from `at` in `text` is a macro as
+/// `is_defined` says, as `#elifdef` (`Defined`) or `#elifndef` asks, and where reading it
+/// stopped (FTEF-14.37).
+pub(crate) fn elif_defined(
+    text: &[u8],
+    at: usize,
+    test: ElifTest,
+    is_defined: impl Fn(&str) -> bool,
+) -> (bool, usize) {
+    let (name, stop) = simple_get_token(text, at);
+    let name = lossy(name.and_then(|n| text.get(n)).unwrap_or_default());
+    (is_defined(&name) == (test == ElifTest::Defined), stop)
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
@@ -1317,7 +1421,9 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::W0103, message, at(end.at));
                 Resume::At(end.at)
             }
-            Directive::Build { end } => end.resume(run, &reading, hash),
+            Directive::Build { end } | Directive::Output { end, .. } => {
+                end.resume(run, &reading, hash)
+            }
             Directive::Pack { end, too_many } => {
                 if too_many {
                     let message = "No more than 5 packs are allowed";
@@ -1369,18 +1475,16 @@ impl<L: Loader> Preprocessor<L> {
         hash: usize,
         from: usize,
     ) -> (bool, usize, Junk) {
-        let text = reading.bytes();
         let macros = |name: &str| self.fte_macro_value(name);
-        let (value, read) = cond::fte_if(text.get(from..).unwrap_or_default(), &macros);
-        let stop = from.saturating_add(read);
+        let (value, stop) = condition(reading.bytes(), from, &macros);
         match value {
-            Ok(value) => (value != 0, stop, Junk::Checked),
+            Ok(value) => (value, stop, Junk::Checked),
             Err(FteIfError::Reported(message)) => {
                 run.report(Code::E0121, message, reading.place(hash..stop));
                 (false, stop, Junk::Ignored)
             }
             // FTEF-14.12: FTEQCC would read on, so what is left of the line is no junk.
-            Err(FteIfError::TooDeep) => (false, from, Junk::Ignored),
+            Err(FteIfError::TooDeep) => (false, stop, Junk::Ignored),
         }
     }
 
@@ -1398,46 +1502,31 @@ impl<L: Loader> Preprocessor<L> {
     ) -> Resume {
         let text = bytes.bytes();
         let reading = bytes.reading();
-        let mut level = 1_usize;
-        let mut side = false_side(text, from, earlier, &mut level);
-        loop {
-            match side {
-                Side::Else { hash: other, end } => {
-                    self.fte.ifs = self.fte.ifs.saturating_add(1);
-                    return end.resume(run, &reading, other);
+        let skipped = skip_side(text, from, earlier, |elif| {
+            if elif.malformed {
+                let other = elif.hash;
+                let span = reading.place(other..elif.at.max(other.saturating_add(1)));
+                run.report(Code::E0121, "malformed #elif", span);
+            }
+            match elif.test {
+                ElifTest::Expression => self.fte_condition(run, &reading, elif.hash, elif.at),
+                ElifTest::Defined | ElifTest::NotDefined => {
+                    let defined = |name: &str| self.macros.contains_key(name);
+                    let (value, stop) = elif_defined(text, elif.at, elif.test, defined);
+                    (value, stop, Junk::Checked)
                 }
-                Side::Elif {
-                    hash: other,
-                    test,
-                    at,
-                    malformed,
-                } => {
-                    if malformed {
-                        let span = reading.place(other..at.max(other.saturating_add(1)));
-                        run.report(Code::E0121, "malformed #elif", span);
-                    }
-                    let (value, stop, junk) = match test {
-                        ElifTest::Expression => self.fte_condition(run, &reading, other, at),
-                        ElifTest::Defined | ElifTest::NotDefined => {
-                            let (name, stop) = simple_get_token(text, at);
-                            let name = lossy(name.and_then(|n| text.get(n)).unwrap_or_default());
-                            let defined = self.macros.contains_key(&name);
-                            (defined == (test == ElifTest::Defined), stop, Junk::Checked)
-                        }
-                    };
-                    if value {
-                        self.fte.ifs = self.fte.ifs.saturating_add(1);
-                        let end = skip_to_end_of_line(text, stop, junk);
-                        return end.resume(run, &reading, other);
-                    }
-                    side = false_side_after(text, stop, earlier, &mut level);
-                }
-                Side::Endif(end) => return Resume::At(end),
-                Side::Eof => {
-                    let at = reading.place(hash..from.max(hash.saturating_add(1)));
-                    run.report(Code::E0110, "#if with no endif", at);
-                    return Resume::End;
-                }
+            }
+        });
+        match skipped {
+            Skipped::Taken { hash: other, end } => {
+                self.fte.ifs = self.fte.ifs.saturating_add(1);
+                end.resume(run, &reading, other)
+            }
+            Skipped::Endif(end) => Resume::At(end),
+            Skipped::Eof => {
+                let at = reading.place(hash..from.max(hash.saturating_add(1)));
+                run.report(Code::E0110, "#if with no endif", at);
+                Resume::End
             }
         }
     }
