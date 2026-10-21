@@ -158,7 +158,7 @@ const fn is_assignment(kind: K) -> bool {
 }
 
 /// What a parsed type is, for the checks on declarations.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct TypeShape {
     function: bool,
     field: bool,
@@ -616,8 +616,11 @@ impl<'a> Parser<'a> {
     /// FTE-13).
     fn declaration(&mut self) {
         self.start_node(K::Declaration);
-        if self.fteqcc() {
-            self.fte_qualifiers();
+        // FTEF-19.21: after a qualifier the type may be left out, an `int`.
+        if self.fteqcc() && self.fte_qualifiers() && self.fte_type_omitted() {
+            self.declarators(TypeShape::default(), false);
+            self.finish_node();
+            return;
         }
         match self.type_or_user_type() {
             Some(ty) => self.declarators(ty, false),
@@ -641,6 +644,12 @@ impl<'a> Parser<'a> {
     fn typedef_decl(&mut self) {
         self.start_node(K::TypedefDecl);
         self.bump_as(K::TypedefKw);
+        // FTEF-19.9: `typedef;` defines no type, which `QCC_PR_ParseDefs` warns of.
+        if self.at(K::Semicolon) {
+            self.bump();
+            self.finish_node();
+            return;
+        }
         let tagged_body = self.nth(1).is_some_and(|t| t.kind == K::LBrace)
             || (self.nth(1).is_some_and(|t| t.kind == K::Name)
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
@@ -661,6 +670,12 @@ impl<'a> Parser<'a> {
             // FTEF-18.27: after a struct that lost its `}`, a declaration line is the next
             // declaration, not the typedef's name.
             self.error(Code::E0201, "not a name");
+            self.finish_node();
+            return;
+        }
+        // FTEF-19.9: `typedef float;` defines no type either.
+        if self.at(K::Semicolon) {
+            self.bump();
             self.finish_node();
             return;
         }
@@ -1342,14 +1357,21 @@ impl<'a> Parser<'a> {
                 "continue" if self.nth(1).is_some_and(|t| t.kind == K::Semicolon) => {
                     self.break_continue_stmt(K::ContinueStmt, K::ContinueKw, "continue");
                 }
+                // FTEF-19.9: `typedef` in a function body names a type there.
+                "typedef" if self.fteqcc() => self.typedef_decl(),
                 // FTEF-16.1: a statement of the full dialect that declares locals.
                 _ if self.fteqcc() && self.fte_looks_like_local() => self.local_decl(false),
                 _ if self.looks_like_declaration(0) => self.local_decl(false),
                 // FTE-21.1: FTEQCC's `QCC_PR_ParseStatement` reads a statement that starts
                 // with a type name as a definition, so a user type followed by a name,
                 // `poseInfo pose = ...`, declares a local.
+                // FTEF-19.1: a qualifier that does not start a definition there is a name, and
+                // FTEF-2.10: so is a C type word `fte_looks_like_local` did not take.
                 word if self.fteqcc()
                     && !is_reserved_word(word)
+                    && !fte::is_decl_qualifier(word)
+                    && !fte::is_c_type_word(word)
+                    && !self.at_volatile(0)
                     && self.nth(1).is_some_and(|t| t.kind == K::Name) =>
                 {
                     self.local_decl(false);
@@ -1550,8 +1572,12 @@ impl<'a> Parser<'a> {
         if self.fteqcc() {
             // FTE-21.1: FTEQCC needs no `local`, for a field local `.float f;` too, and
             // `QCC_PR_ParseDefs` reads the qualifiers (FTE-10 to FTE-12, FTEF-15.1) with or
-            // without it.
-            self.fte_qualifiers();
+            // without it. FTEF-19.21: after a qualifier the type may be left out, an `int`.
+            if self.fte_qualifiers() && self.fte_type_omitted() {
+                self.declarators(TypeShape::default(), true);
+                self.finish_node();
+                return;
+            }
         } else if !keyword {
             if self.at(K::Dot) {
                 self.error(Code::E0201, "not a name");

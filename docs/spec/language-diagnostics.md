@@ -88,6 +88,54 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.12** `E0212` "Forwards State Cycle with backwards range": under an FTEQCC profile, a
   frame cycle whose two constant frames run against its `++` or `--`, FTEQCC's error of the
   same text (`dialect-fteqcc.md`, FTEF-18.28), over the two frames.
+- **QCD-3.13** `E0213` "Cannot cast from TYPE to TYPE": under an FTEQCC profile, an initialiser
+  or default value FTEQCC's implicit cast refuses, at the value (`dialect-fteqcc.md`, FTEF-19.2,
+  FTEF-19.10).
+- **QCD-3.14** `E0214` "initializer for 'NAME' is not constant": under an FTEQCC profile, a
+  global or `static` initialised with a name that is no constant, at the name (FTEF-19.3).
+- **QCD-3.15** `E0215` "Duplicate definition of NAME.": under an FTEQCC profile, a parameter
+  given again, at its name (FTEF-19.1).
+- **QCD-3.16** `E0216` "redeclaration of function body": under an FTEQCC profile, a body for a
+  definition already initialised, at the name (FTEF-19.4).
+- **QCD-3.17** `E0217` "Default value not a constant": under an FTEQCC profile, a default value
+  that names no constant, at the value (FTEF-19.6).
+- **QCD-3.18** `E0218` "Default value not initialized yet": under an FTEQCC profile, a default
+  value naming a constant with no value yet, at the value (FTEF-19.6).
+- **QCD-3.19** `E0219` "Cannot redeclare typedef NAME from TYPE to TYPE": under an FTEQCC
+  profile, a typedef naming another type than the typedef of its name before it, at the name
+  (FTEF-19.9).
+- **QCD-3.20** `E0220` "Array sizes for redecleration of NAME do not match (A->B)": under an
+  FTEQCC profile, a redeclaration of another array size, at the name; "(A -> B)" for a local
+  (FTEF-19.8).
+- **QCD-3.21** `E0221` "shared values may not be assigned an initial value": under an FTEQCC
+  profile, a `shared` definition given a value, at the name (FTEF-19.11).
+- **QCD-3.22** `E0222` "wrapper function does not wrap anything": under an FTEQCC profile, a
+  `wrap` body for a function with none before it, at the name (FTEF-19.4).
+- **QCD-3.23** `E0223` "Wrapper function \"NAME\" does not refer to its prior function": under
+  an FTEQCC profile, a `wrap` body that does not use `prior`, at the name (FTEF-19.4).
+- **QCD-3.24** `E0224` "bad combination of modifiers with typedef (defining NAME)": under an
+  FTEQCC profile, a typedef with a storage qualifier, at its name (FTEF-19.9).
+- **QCD-3.25** `E0225` "NAME is not a class": under an FTEQCC profile, `Scope::name` defined
+  with a scope that is no class or struct, at the name (FTEF-19.15).
+- **QCD-3.26** `E0226` "NAME is not part of class CLASS": under an FTEQCC profile,
+  `Struct::name` defined with no definition of that name before it, at the name (FTEF-19.15).
+- **QCD-3.27** `E0227` "Implicit type mismatch. Needed TYPE, got TYPE.": under an FTEQCC
+  profile, an enum value or a state frame of a type that converts to no number, at the value
+  (FTEF-19.10, FTEF-19.14).
+- **QCD-3.28** `E0228` "enum - NAME is not a compile-time constant": under an FTEQCC profile, an
+  enum value naming no constant with a value, at the name (FTEF-19.10).
+- **QCD-3.29** `E0229` "values for enums of this type must be initialised": under an FTEQCC
+  profile, an enum name with no value of a base type that is no number, at the name
+  (FTEF-19.10).
+- **QCD-3.30** `E0230` "accumulate applies only to functions, not NAME": under an FTEQCC
+  profile, `accumulate` on what is no function, at the name (FTEF-19.16).
+- **QCD-3.31** `E0231` "can't redefine non-static as static": under an FTEQCC profile, `static`
+  on a name another file defined, at the name (FTEF-19.12).
+- **QCD-3.32** `E0232` "_() intrinsic accepts only a string immediate": under an FTEQCC profile,
+  a string initialised with `_()` of anything but one string literal, at the initialiser
+  (FTEF-19.2).
+- **QCD-3.33** `E0233` "initializer-string too long": under an FTEQCC profile, an 8-bit array
+  initialised with a string of more bytes than its size, at the initialiser (FTEF-19.8).
 
 ## QCD-4 Expression and statement errors
 
@@ -113,6 +161,16 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (`dialect-fteqcc.md`, FTEF-18.24).
 - **QCD-4.7** `E0307` "More than eight parameters": nine or more arguments to a variadic
   function (QC-18.2).
+- **QCD-4.9** `E0309` "Type mismatch: TYPE, should be void()": under an FTEQCC profile, a state
+  header's next function that is a literal but 0, at the literal (`dialect-fteqcc.md`,
+  FTEF-19.14).
+- **QCD-4.10** `E0310` "Cannot use 'this' outside of an OO function": under an FTEQCC profile,
+  `this` in a function that is no member function and has no definition of the name, at the
+  name (FTEF-19.16).
+- **QCD-4.11** `E0311` "Cannot use 'super' outside of an OO function": the same for `super`
+  (FTEF-19.16).
+- **QCD-4.12** `E0312` "class NAME has no super": under an FTEQCC profile, `super` in a member
+  function of a class with no parent, at the name (FTEF-19.16).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -254,6 +312,63 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   profile, a `#define` or `#append` whose body has a continued line that starts with `#`, at
   that `#`, when `#pragma warning enable F303` (or `on` or `toggle`) has made FTEQCC's F303 a
   warning (`dialect-fteqcc.md`, FTEF-14.46).
+- **QCD-7.32** `W0207` "NAME duplicate definition ignored", or "nonstatic redeclaration of NAME
+  ignored": under an FTEQCC profile, a local declared again with its type, at its name
+  (`dialect-fteqcc.md`, FTEF-19.1).
+- **QCD-7.33** `W0208` "Local \"NAME\" hides global with same name and type": under an FTEQCC
+  profile, a new parameter or local named as a global of the same kind of type, at its name
+  (FTEF-19.1).
+- **QCD-7.34** `W0209` "Optional arguments differ on redeclaration of NAME. TYPE, should be
+  TYPE": under an FTEQCC profile, a redeclaration that differs only in optional arguments, at
+  the name (FTEF-19.7).
+- **QCD-7.35** `W0210` "NAME builtin was wrongly redefined as TYPE. ignoring later definition",
+  or "NAME builtin was redefined as TYPE. ignoring alternative definition": under an FTEQCC
+  profile, a redeclaration FTEQCC keeps the first type of, at the name (FTEF-19.7).
+- **QCD-7.36** `W0211` "Type redeclaration of TYPE NAME replaces existing variable": under an
+  FTEQCC profile, a global marked unused that nothing refers to declared with another type, at
+  the name (FTEF-19.7).
+- **QCD-7.37** `W0212` "Redeclaration of NAME would change to const." (or "non-const."), or
+  "Redeclaration of NAME changes const.": under an FTEQCC profile, a redeclaration that would
+  change the constness its first declaration gave, at the name (FTEF-19.3).
+- **QCD-7.38** `W0213` "Autocvar \"NAME\" defined with local scope. promoting to global.", or
+  "defined as constant." or "defined as static." and "attempting to correct that for you.":
+  under an FTEQCC profile, an `autocvar_` defined as a local, a constant or a static, at the name
+  (FTEF-19.16).
+- **QCD-7.39** `W0214` "extern keyword may only apply to qc functions.", "Conflicting storage
+  classes.", "Conflicting constness." or "function modifier on non-function.": under an FTEQCC
+  profile, qualifiers FTEQCC ignores, at the name (FTEF-19.11, FTEF-19.16).
+- **QCD-7.40** `W0215` "typedef defines no types": under an FTEQCC profile, a `typedef` with no
+  name, at the typedef (FTEF-19.9).
+- **QCD-7.41** `W0216` "NAME is not part of class CLASS": under an FTEQCC profile,
+  `Class::name` defined for a member the class does not declare, at the name (FTEF-19.15).
+- **QCD-7.42** `W0217` "NAME already declared as a builtin": under an FTEQCC profile, a body
+  replacing `anglemod`'s or `crossproduct`'s builtin, at the name (FTEF-19.4).
+- **QCD-7.43** `W0218` "NAME redeclared to accumulate after initial declaration": under an
+  FTEQCC profile, `accumulate` on a function initialised without it, at the name (FTEF-19.4).
+- **QCD-7.44** `W0314` "Variable \"NAME\" is deprecated", followed by ": REASON" when it gives
+  one: under an FTEQCC profile, a use of a `__deprecated` definition, at the use (FTEF-19.13).
+- **QCD-7.45** `W0219` "initializer for NAME is not initialised yet, NAME will be treated as 0":
+  under an FTEQCC profile, a constant with no value yet initialising a constant, at the name
+  (FTEF-19.3).
+- **QCD-7.46** `W0220` "Implicit cast from TYPE to TYPE": under an FTEQCC profile, an implicit
+  cast FTEQCC makes with its warning, at the value (FTEF-19.2).
+- **QCD-7.47** `W0221` "\"NAME\" keyword used as variable name - coexisting": under an FTEQCC
+  profile, a definition named as an enabled keyword, at the name (FTEF-19.16).
+- **QCD-7.48** `W0222` "Parameter N of NAME is not named": under an FTEQCC profile, a parameter
+  with no name of a function with a body, at the parameter (FTEF-19.1).
+- **QCD-7.49** `W0223` "incompatible redeclaration. Please validate builtin numbers.
+  parseentitydata is #613": under an FTEQCC profile, `parseentitydata` given another builtin
+  after `#608` or `#613`, at the name (FTEF-19.5).
+- **QCD-7.50** `W0224` "legacy enum base type. Use \"enum [class] [name_e]:type\" instead":
+  under an FTEQCC profile, an enum's base type written before its `{` with no `:`, at the first
+  name (FTEF-19.10).
+- **QCD-7.51** `W0225` "enumflags - VALUE not an integer value", or "enumflags - 0xV(V) has
+  multiple bits set": under an FTEQCC profile, an `enumflags` value that is no single bit, at the
+  name (FTEF-19.10).
+- **QCD-7.52** `W0226` "ignoring unsupported unsigned keyword, type will be signed", "long
+  doubles are not supported, using double" and "ignoring unsupported const keyword": under an
+  FTEQCC profile, a type FTEQCC narrows or a `const` it ignores in a type (FTEF-2.9,
+  FTEF-2.11).
 
 ## QCD-8 Preprocessor errors
 

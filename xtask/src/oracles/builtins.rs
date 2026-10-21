@@ -40,6 +40,7 @@ use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
+mod declarations;
 mod directives;
 
 /// The recorded outcomes of the oracles, relative to the repository.
@@ -103,6 +104,9 @@ pub(crate) struct Case {
     pub(crate) encoding: Encoding,
     /// The files around it, or `None` for `t.qc` alone.
     pub(crate) project: Option<Project>,
+    /// Whether FTEQCC is given `-Werror` and the profile's warnings count as errors, so the
+    /// case compares the two compilers' warnings (FTEF-19).
+    pub(crate) werror: bool,
 }
 
 /// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
@@ -187,6 +191,7 @@ impl Case {
             source,
             encoding: Encoding::Utf8,
             project: None,
+            werror: false,
         }
     }
 
@@ -226,6 +231,9 @@ impl Case {
             if let Some(name) = progs.encoding.name() {
                 key.push_str(&format!("|progs.src {name}"));
             }
+        }
+        if self.werror {
+            key.push_str("|-Werror");
         }
         key
     }
@@ -1178,6 +1186,7 @@ pub(crate) fn cases() -> Vec<Case> {
         }
     }
     cases.extend(directives::cases());
+    cases.extend(declarations::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1393,34 +1402,31 @@ pub(crate) fn expected_difference(
         let opened_a_file = case
             .texts()
             .any(|t| t.contains("#merge") || t.contains("#datafile"));
-        if refused_here_only && (crashed_at_eof || opened_a_file) {
-            return Some("FTEF-14.47");
-        }
-        // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
-        // cannot cast to a function and this profile, which checks no types, accepts.
-        let uncast = *oracle == Outcome::Rejected
-            && *ours == Outcome::Accepted
-            && errors.is_empty()
-            && value_initialiser(case);
-        return uncast.then_some("FTE-23.11");
+        return (refused_here_only && (crashed_at_eof || opened_a_file)).then_some("FTEF-14.47");
     }
     // QC-27.9: the vanilla profile makes `#0` and negative numbers errors, which id's qcc
-    // accepts with no builtin number (QC-13.4). Only that error may differ: without it the
-    // profile's outcome must be the oracle's.
-    if !errors.contains(&Code::E0507) {
-        return None;
-    }
+    // accepts with no builtin number (QC-13.4); QC-27.8: and an initialiser that is no
+    // literal, which id's qcc reads as the last literal it lexed (QC-11.4). Only those errors
+    // may differ: without them the profile's outcome must be the oracle's.
+    let divergences = [(Code::E0506, "QC-27.8"), (Code::E0507, "QC-27.9")];
+    let statement = divergences
+        .iter()
+        .find(|(code, _)| errors.contains(code))
+        .map(|(_, statement)| *statement)?;
     let rest: Vec<Code> = errors
         .iter()
         .copied()
-        .filter(|code| *code != Code::E0507)
+        .filter(|code| divergences.iter().all(|(divergence, _)| divergence != code))
         .collect();
-    let without = if rest.is_empty() {
+    let without = if !rest.is_empty() {
+        refusal(case, &rest)
+    } else if errors.contains(&Code::E0507) {
         Outcome::Accepted
     } else {
-        refusal(case, &rest)
+        let (mut db, _) = analysed(case);
+        binding(&mut db, case).unwrap_or(Outcome::Accepted)
     };
-    (without == *oracle).then_some("QC-27.9")
+    (without == *oracle).then_some(statement)
 }
 
 /// The profile's outcome for `case`, and the codes of its errors in the order of their place.
@@ -1457,7 +1463,7 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     });
     let errors = analysis
         .diagnostics()
-        .filter(|d| d.diagnostic.code.is_error())
+        .filter(|d| case.werror || d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
     (db, errors)
@@ -1545,19 +1551,6 @@ fn eof_past_first_line(text: &str) -> bool {
         .any(|line| line.trim_start_matches([' ', '\t']).starts_with("#eof"))
 }
 
-/// Whether the FTEQCC `case`, which uses a macro or a built-in constant (FTEF-14.7), initialises
-/// its function with a number or a vector once preprocessed, such as the number a macro after
-/// `#` stands for (FTE-23.11).
-fn value_initialiser(case: &Case) -> bool {
-    let uses_macros = case.source.contains("#define") || case.source.contains("#__");
-    let (db, _) = analysed(case);
-    uses_macros
-        && matches!(
-            expanded_literal(&db, function_name(case)),
-            Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
-        )
-}
-
 /// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
 /// source text with Rust's own float parser, not the profile's: id's qcc skips the spaces
 /// after `#` and reads digits, a `-` and dots (`PR_LexNumber`).
@@ -1606,6 +1599,11 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let mut command = if fteqcc {
         let mut command = Command::new(&oracles.fteqcc);
         command.arg("-Tid");
+        if case.werror {
+            // Q208, "no end_sys_fields defined", is what every program without system
+            // definitions gets.
+            command.args(["-Werror", "-Wno-Q208"]);
+        }
         command.args(case.include_dirs().map(|dir| format!("-I{dir}")));
         command
     } else {
@@ -1635,7 +1633,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
             Outcome::Rejected
         });
     }
-    // FTE-23.11: FTEQCC writes no progs when it has made nothing to write, as for a function
+    // FTE-23.16: FTEQCC writes no progs when it has made nothing to write, as for a function
     // initialised with 0 a macro gave.
     if fteqcc && !progs.exists() && text.contains("nothing to write") {
         return Ok(Outcome::Accepted);
@@ -1687,7 +1685,7 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
         1
     };
     let Some(function) = progs.functions().get(index) else {
-        // FTE-23.11: FTEQCC makes no function for `f` initialised with a string a macro gave,
+        // FTE-23.16: FTEQCC makes no function for `f` initialised with a string a macro gave,
         // which it casts with a warning. PRJ-4.7: id's qcc makes none when its own `progs.src`
         // does not list the file that binds `f`.
         let fteqcc = case.dialect.has_fteqcc_extensions();

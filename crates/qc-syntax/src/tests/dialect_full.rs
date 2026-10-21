@@ -86,23 +86,33 @@ fn type_shape(source: &str) -> Vec<SyntaxKind> {
     kinds
 }
 
+/// The diagnostics of `source` under the FTEQCC dialect, warnings included.
+fn fte_diagnostics(source: &str) -> Vec<(Code, String)> {
+    fte(source)
+        .diagnostics()
+        .iter()
+        .map(|d| (d.code, d.message.clone()))
+        .collect()
+}
+
 // spec FTEF-2.1: `int` and `integer` are types.
-// spec FTEF-2.2: `unsigned`, `signed`, `char`, `short` and `long` combine into one type.
-// spec FTEF-2.3: `double` is a type.
-// spec FTEF-2.4: the C type words combine in the orders C allows, `long long`, `long int`.
+// spec FTEF-2.7: the enabled bare words and any `__` word are C type words.
+// spec FTEF-2.8: the words the loop takes make one type.
 #[test]
 fn c_scalar_types_parse() {
     for source in [
         "int x;\n",
         "integer x;\n",
         "unsigned int x;\n",
-        "signed char x;\n",
-        "unsigned short x;\n",
-        "long long x;\n",
-        "long int x;\n",
-        "double x;\n",
-        "long double x;\n",
+        "int unsigned x;\n",
+        "__signed __char x;\n",
+        "unsigned __short x;\n",
+        "__long __long x;\n",
+        "__long int x;\n",
+        "__double x;\n",
+        "__LONG __double x;\n",
         "__int x;\n",
+        "_Bool x;\n",
     ] {
         let parsed = fte_ok(source);
         let decl = parsed.tree().unwrap().declarations().next().unwrap();
@@ -113,11 +123,128 @@ fn c_scalar_types_parse() {
     }
 }
 
-// spec FTEF-2.5: `const` and `volatile` are read as part of a type and change nothing of it.
+// spec FTEF-2.7: a bare word whose keyword is disabled is no C type word, so the parser reads it
+// as a type's name, which the semantic model finds is no type (FTEF-19.20)
 #[test]
-fn const_and_volatile_in_types_parse() {
-    fte_ok("void(const string s) f;\n");
-    fte_ok("void(volatile float v) f;\n");
+fn disabled_c_words_are_names() {
+    for word in ["long", "double", "signed", "short", "char"] {
+        let source = format!("{word} __long x;\n");
+        let parsed = fte(&source);
+        let decl = parsed.tree().unwrap().declarations().next().unwrap();
+        let Some(ast::Type::Simple(simple)) = decl.ty() else {
+            panic!("{source}");
+        };
+        assert_eq!(simple.text(), word, "{source}");
+    }
+}
+
+// spec FTEF-2.8: a leading `register` is a storage qualifier `QCC_PR_ParseDefs` reads before the
+// type, which the C words then make
+#[test]
+fn a_leading_register_is_no_part_of_the_type() {
+    let parsed = fte("__register int x;\n");
+    let decl = parsed.tree().unwrap().declarations().next().unwrap();
+    let Some(ast::Type::Simple(simple)) = decl.ty() else {
+        panic!("no type");
+    };
+    assert_eq!(simple.text(), "int");
+    assert_eq!(parsed.errors().count(), 0);
+}
+
+// spec FTEF-2.8: a word the loop does not take, or one after a registered type name, is the
+// declarator's name
+#[test]
+fn the_loop_ends_the_type() {
+    for (source, ty) in [
+        ("int int i;\n", "int"),
+        ("unsigned unsigned u;\n", "unsigned"),
+        ("int float f;\n", "int"),
+        ("__long __long int x;\n", "__long __long"),
+        ("__int unsigned x;\n", "__int"),
+        ("unsigned _Bool b;\n", "unsigned"),
+    ] {
+        let parsed = fte(source);
+        let decl = parsed.tree().unwrap().declarations().next().unwrap();
+        let Some(ast::Type::Simple(simple)) = decl.ty() else {
+            panic!("{source}");
+        };
+        assert_eq!(simple.text(), ty, "{source}");
+        assert!(parsed.errors().next().is_some(), "{source}");
+    }
+}
+
+// spec QCD-7.52: W0226 for an unsigned float, a long double and a `const` in a type
+// spec FTEF-2.9: a narrowed type is a warning at its first word
+#[test]
+fn narrowed_types_warn() {
+    assert_eq!(
+        fte_diagnostics("unsigned float f;\n"),
+        [(
+            Code::W0226,
+            "ignoring unsupported unsigned keyword, type will be signed".to_owned()
+        )]
+    );
+    assert_eq!(
+        fte_diagnostics("__long __double d;\n"),
+        [(
+            Code::W0226,
+            "long doubles are not supported, using double".to_owned()
+        )]
+    );
+    assert_eq!(fte_diagnostics("unsigned __long u;\n"), []);
+}
+
+// spec FTEF-2.10: in a body a bare enabled C word or a registered type name starts a
+// definition, and another `__` C word is a value
+#[test]
+fn c_words_in_a_body() {
+    let locals = |body: &str| {
+        let source = format!("void() g = {{ {body} }};\n");
+        fte(&source)
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == SyntaxKind::LocalDecl)
+            .count()
+    };
+    for body in [
+        "int x;",
+        "integer x;",
+        "unsigned x;",
+        "_Bool x;",
+        "__int x;",
+        "__double x;",
+    ] {
+        assert_eq!(locals(body), 1, "{body}");
+    }
+    for body in [
+        "__long x;",
+        "__short x;",
+        "__unsigned x;",
+        "__volatile float x;",
+    ] {
+        assert_eq!(locals(body), 0, "{body}");
+    }
+}
+
+// spec FTEF-2.11: `const` in a type is read with a warning, `volatile` only after `__`
+#[test]
+fn const_and_volatile_in_types() {
+    let const_warning = (Code::W0226, "ignoring unsupported const keyword".to_owned());
+    assert_eq!(
+        fte_diagnostics(".const float x;\n"),
+        std::slice::from_ref(&const_warning)
+    );
+    assert_eq!(
+        fte_diagnostics("float *const p;\n"),
+        std::slice::from_ref(&const_warning)
+    );
+    assert_eq!(
+        fte_diagnostics("void(const string s) f;\n"),
+        [const_warning]
+    );
+    assert_eq!(fte_diagnostics("__volatile float v;\n"), []);
+    assert_eq!(fte_diagnostics("void(__volatile float v) f;\n"), []);
+    assert!(fte("void(volatile float v) f;\n").errors().next().is_some());
 }
 
 // spec FTEF-4.1: `T *` is a pointer type, any number of levels, after any base type.

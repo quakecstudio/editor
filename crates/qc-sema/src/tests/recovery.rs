@@ -84,6 +84,10 @@ fn nameless_declarations_declare_nothing() {
         let after = format!("{source}void() g = {{ u1 = 1; }};\n");
         let mut expected = vec!["Unknown value \"u1\""];
         expected.extend(bodyless);
+        if source.starts_with("typedef") {
+            // FTEF-19.9: a typedef that defines no type is a warning.
+            expected.insert(0, "typedef defines no types");
+        }
         assert_eq!(unknown(&after), expected, "{source:?}");
     }
 }
