@@ -13,7 +13,7 @@ ericw-tools) is never cached here; builds fetch it by commit and checksum.
 
 | Directory | Specification | Origin | License |
 | --- | --- | --- | --- |
-| `lsp/3.18/` | Language Server Protocol 3.18, every page and the meta model, plus in `includes/` the shared pages the specification includes that a server implements: the lifecycle messages and the URI type | [microsoft/language-server-protocol](https://github.com/microsoft/language-server-protocol), branch `gh-pages`, `_specifications/lsp/3.18/`, and `_includes/messages/3.18/` and `_includes/types/` for `includes/` | CC-BY-4.0 |
+| `lsp/3.18/` | Language Server Protocol 3.18, every page and the meta model, plus in `includes/` the shared pages the specification includes that a server implements: the lifecycle messages, `window/showMessage` and the URI type | [microsoft/language-server-protocol](https://github.com/microsoft/language-server-protocol), branch `gh-pages`, `_specifications/lsp/3.18/`, and `_includes/messages/3.18/` and `_includes/types/` for `includes/` | CC-BY-4.0 |
 | `mcp/2026-07-28/` | Model Context Protocol 2026-07-28, every specification page, plus `schema/schema.ts` and `schema/schema.json` | [modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol), branch `main`, `docs/specification/2026-07-28/` and `schema/2026-07-28/` | Apache-2.0 (specification), MIT for older contributions |
 | `acp/v1/` | Agent Client Protocol v1 (stable), every protocol page, plus `schema/schema.json` and `schema/meta.json` | [agentclientprotocol/agent-client-protocol](https://github.com/agentclientprotocol/agent-client-protocol), branch `main`, `docs/protocol/v1/` and `schema/v1/` | Apache-2.0 |
 
