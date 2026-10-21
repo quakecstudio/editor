@@ -9,9 +9,10 @@ use proptest::prelude::*;
 use qc_lexer::{Dialect, Span};
 
 use super::{codes, tokens};
-use crate::fte_directive::qcc_load_file;
+use crate::fte_directive::{qcc_load_file, qcc_load_in_place};
 use crate::{
-    Code, FileOutput, FileStart, FteFileReader, MemoryLoader, ModuleState, Preprocessor, TextOrigin,
+    Code, FileOutput, FileStart, FteFileReader, MemoryLoader, ModuleState, Preprocessor,
+    TextOrigin, fte_directive_end,
 };
 
 /// `text` as UTF-16LE after its byte order mark.
@@ -343,4 +344,41 @@ proptest! {
             }
         }
     }
+}
+
+// spec FTEF-14.56: the loader's text in place keeps a file's offsets: each NUL a space, a UTF-8
+// byte order mark kept in front with the text starting after it, and none for a wide file
+#[test]
+fn the_loaded_text_in_place_keeps_the_file_s_offsets() {
+    assert_eq!(qcc_load_in_place(b"a\0#b\0"), Some((b"a #b ".to_vec(), 0)));
+    assert_eq!(
+        qcc_load_in_place(b"\xef\xbb\xbf#x\0"),
+        Some((b"\xef\xbb\xbf#x ".to_vec(), 3))
+    );
+    assert_eq!(
+        qcc_load_in_place(b"\xef\xbb\xbf\xef\xbb\xbf#"),
+        Some((b"\xef\xbb\xbf\xef\xbb\xbf#".to_vec(), 3))
+    );
+    assert_eq!(qcc_load_in_place(b""), Some((Vec::new(), 0)));
+    assert_eq!(qcc_load_in_place(&utf16le("#define N 1\n")), None);
+    assert_eq!(qcc_load_in_place(b"\x00\x00\xfe\xff"), None);
+}
+
+// spec FTEF-14.56: read in that text from where it starts, a directive after a NUL or a UTF-8
+// byte order mark ends where the preprocessor reads on, and one after a second mark starts no line
+#[test]
+fn a_directive_is_found_in_the_loaded_text_in_place() {
+    let end = |bytes: &[u8]| {
+        let (text, start) = qcc_load_in_place(bytes).unwrap();
+        let hash = text.iter().position(|&b| b == b'#').unwrap();
+        let rest = &text[start..];
+        fte_directive_end(rest, 0, hash - start).map(|end| end + start)
+    };
+    assert_eq!(end(b"x;\0\n#define N 1\ny"), Some(15));
+    assert_eq!(end(b"\0#undef N\ny"), Some(9));
+    assert_eq!(end(b"\xef\xbb\xbf#undef N\ny"), Some(11));
+    assert_eq!(end(b"\xef\xbb\xbf  #undef N\ny"), Some(13));
+    assert_eq!(end(b"\xef\xbb\xbf\xef\xbb\xbf#undef N\ny"), None);
+    // The vanilla reading, the bytes with no mark skipped, finds none after a mark.
+    assert_eq!(fte_directive_end(b"\xef\xbb\xbf#undef N\ny", 0, 3), None);
 }

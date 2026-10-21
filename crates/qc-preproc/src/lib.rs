@@ -24,13 +24,15 @@ mod source;
 #[cfg(test)]
 mod tests;
 
-pub use fte_directive::{FileStart, FteEvent, FteFileReader, ModuleState};
+pub use fte_directive::{
+    FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_file, qcc_load_in_place,
+};
 pub use fte_line::{fte_directive_end, relex_from};
 pub use source::{
     FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
 };
 
-use fte_directive::{Bytes, FteState, Position, Resume, TextStart, qcc_load_file};
+use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
 use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;

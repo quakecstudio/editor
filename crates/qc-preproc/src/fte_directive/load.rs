@@ -145,7 +145,7 @@ fn encode(code: u32, text: &mut Vec<u8>) -> usize {
 /// a space (`else if (!mem[check])`, `mem[check] = ' ';`). It also writes a line break after the
 /// text (`mem[len] = '\n';`), which this function does not add: the readers take the end of the
 /// text for the end of its last line (FTEF-14.54).
-pub(crate) fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
+pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
     let (mut text, origin) = if let Some(wide) = Wide::of(&bytes) {
         let from = wide.mark().len();
         let (text, offsets) = decode_utf(wide, bytes.get(from..).unwrap_or_default(), from);
@@ -163,4 +163,21 @@ pub(crate) fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
         }
     }
     (text, origin)
+}
+
+/// [`qcc_load_file`]'s text for a file of `bytes`, kept at the file's own offsets for a reader
+/// of the file as written, the syntax tree, and where that text starts. Implements FTEF-14.56.
+///
+/// The bytes of a UTF-8 byte order mark `QCC_SanitizeCharSet` skips stay in front, so the text
+/// starts after them, and each NUL byte is a space. `None` for a file the loader decodes from
+/// UTF-16 or UTF-32, whose text is at other offsets than its bytes.
+#[must_use]
+pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Vec<u8>, usize)> {
+    let (text, origin) = qcc_load_file(bytes.to_vec());
+    let TextOrigin::Shifted(start) = origin else {
+        return None;
+    };
+    let mut kept = bytes.get(..start)?.to_vec();
+    kept.extend(text);
+    Some((kept, start))
 }

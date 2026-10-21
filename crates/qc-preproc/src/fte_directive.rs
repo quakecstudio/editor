@@ -21,7 +21,7 @@ mod graph;
 mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
-pub(crate) use load::qcc_load_file;
+pub use load::{qcc_load_file, qcc_load_in_place};
 
 use std::ops::Range;
 use std::path::PathBuf;
