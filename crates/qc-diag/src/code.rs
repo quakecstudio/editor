@@ -141,6 +141,18 @@ pub enum Code {
     E0233,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
+    /// "type mismatch for OP" (QCD-4.2).
+    E0302,
+    /// "not a function" (QCD-4.3).
+    E0303,
+    /// "too many parameters" (QCD-4.4).
+    E0304,
+    /// "too few parameters" (QCD-4.5).
+    E0305,
+    /// "type mismatch on parm N" (QCD-4.6).
+    E0306,
+    /// "More than eight parameters" (QCD-4.7).
+    E0307,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
     E0308,
     /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
@@ -297,7 +309,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 133] = [
+    pub const ALL: [Self; 139] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -357,6 +369,12 @@ impl Code {
         Self::E0232,
         Self::E0233,
         Self::E0301,
+        Self::E0302,
+        Self::E0303,
+        Self::E0304,
+        Self::E0305,
+        Self::E0306,
+        Self::E0307,
         Self::E0308,
         Self::E0309,
         Self::E0310,
@@ -477,6 +495,12 @@ impl Code {
             Self::E0232 => "E0232",
             Self::E0233 => "E0233",
             Self::E0301 => "E0301",
+            Self::E0302 => "E0302",
+            Self::E0303 => "E0303",
+            Self::E0304 => "E0304",
+            Self::E0305 => "E0305",
+            Self::E0306 => "E0306",
+            Self::E0307 => "E0307",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
@@ -670,6 +694,12 @@ impl Code {
             | Self::E0232
             | Self::E0233
             | Self::E0301
+            | Self::E0302
+            | Self::E0303
+            | Self::E0304
+            | Self::E0305
+            | Self::E0306
+            | Self::E0307
             | Self::E0308
             | Self::E0501
             | Self::E0502
