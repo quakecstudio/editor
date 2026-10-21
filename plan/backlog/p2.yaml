@@ -1663,6 +1663,7 @@ issues:
   - P2-115
   - P2-116
   - P2-117
+  - P2-118
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2330,4 +2331,33 @@ issues:
   - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
   verify:
   - cargo test -p qc-sema -p qc-engines
+  - cargo xtask oracles builtins
+- key: P2-118
+  title: Honour FTEQCC's warning settings and lexer flags on the definitions path
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-4
+  - LANG-5
+  summary: |
+    What the L2 port (P2-116, #547) and the L3 port (P2-117, #546) left on the L3 side, since #546 merged before #547:
+    1. The definition warnings W0207 to W0226 and W0314 do not pass through FTEQCC's warning settings (`-W` flags, `#pragma warning`, `-Werror`): they need `FteWarning::of_code` entries and `WarningSettings::reported_code`, as the L2 warnings have.
+    2. `Db::parse` does not call `qc_syntax::parse_module_source`, so a module's source-form root is not read past a `#!` line (PRJ-4.10).
+    3. `fteqcc_string_bytes` lexes a string with the default lexer flags, not the file's (`FileOutput::lex_flags`), so under `utf8`, or with `qcfuncs` off, a string's value differs.
+    4. The parser reads `@` (a `qccx` unary in `QCC_PR_Term`) and `^^` as no operator.
+    5. The `assumeint`, `assumedouble` and `caseinsensitive` flags (FTEF-12.14) do not change the types and keywords the semantic model reads.
+  depends:
+  - P2-116
+  - P2-117
+  deliverable:
+  - 'crates/qc-sema (and crates/qc-syntax where the parser reads a term): items 1 to 5 ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, with spec statements in docs/spec/, citing tests and differential cases, in one PR'
+  - 'docs/spec/inventory-l3.md: a row for each item, naming its Rust counterpart, statements and differential cases'
+  acceptance:
+  - 'Each item has a statement and a citing test; a definition warning disabled with `-Wno-...` or `#pragma warning disable`, or made an error with `-Werror`, is reported as FTEQCC reports it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-sema -p qc-syntax
   - cargo xtask oracles builtins
