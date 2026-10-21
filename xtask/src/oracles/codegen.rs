@@ -432,16 +432,22 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
         let text = serde_json::to_string_pretty(&raw).map_err(|e| e.to_string())?;
         let path = root.join(FIXTURE);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
         fs::write(&path, format!("{text}\n")).map_err(|e| format!("{}: {e}", path.display()))?;
         println!(
             "oracles: recorded {} codegen outcomes in {FIXTURE}",
             outcomes.len()
         );
     } else {
-        let recorded = read_fixture(root)?;
+        let recorded = read_fixture(root).unwrap_or_else(|e| {
+            println!("FAIL  {e}");
+            BTreeMap::new()
+        });
         if recorded.len() != outcomes.len() {
             ok = false;
-            println!("FAIL  {FIXTURE} records cases CASES does not have (--record)");
+            println!("FAIL  {FIXTURE} does not record every case (--record)");
         }
         for (name, outcome) in &outcomes {
             if recorded.get(name) != Some(outcome) {
