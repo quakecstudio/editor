@@ -3,10 +3,12 @@
 //! The parser's input: the lexer's tokens, with every byte between them classified as
 //! trivia, and directive lines grouped so the parser can step over them: under the vanilla
 //! dialect to the first line break after the `#` (QC-9.1), under an FTEQCC dialect where the
-//! preprocessor ends them (FTEF-14.51).
+//! preprocessor ends them (FTEF-14.51), in the text FTEQCC's file loader gives (FTEF-14.56).
+
+use std::borrow::Cow;
 
 use qc_lexer::{Diagnostic, Dialect, Punct, Span, TokenKind, is_whitespace, lex_with};
-use qc_preproc::{fte_directive_end, relex_from};
+use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from};
 
 use crate::kind::SyntaxKind;
 
@@ -77,20 +79,69 @@ enum Line {
     Fte { end: usize },
 }
 
+/// What the lexer reads of a file, at the file's own offsets, so that the tree's spans are
+/// the file's bytes (FTEF-14.56).
+struct Lexable<'a> {
+    /// The bytes the lexer reads.
+    text: Cow<'a, [u8]>,
+    /// Where the text a directive is read in starts: after a UTF-8 byte order mark FTEQCC's
+    /// loader skips, else 0.
+    start: usize,
+    /// Where the text ends: the first NUL under the vanilla dialect (QC-1.1), else the end.
+    end: usize,
+}
+
+impl<'a> Lexable<'a> {
+    /// `source`, a `text`, as `dialect` reads it: a source file under an FTEQCC dialect in the
+    /// loader's text in place (`qc_preproc::qcc_load_in_place`, FTEF-14.56); under the vanilla
+    /// dialect, a UTF-16 or UTF-32 file, whose decoded text is at other offsets, and a
+    /// preprocessor's text, which no loader read, its bytes to the first NUL (QC-1.1).
+    fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+        let loaded = (dialect.has_fteqcc_extensions() && text == Text::Source)
+            .then(|| qcc_load_in_place(source))
+            .flatten();
+        match loaded {
+            Some((text, start)) => Self {
+                text,
+                start,
+                end: source.len(),
+            },
+            None => Self {
+                text: Cow::Borrowed(source),
+                start: 0,
+                end: source.iter().position(|&b| b == 0).unwrap_or(source.len()),
+            },
+        }
+    }
+
+    /// The text a directive is read in, from [`Self::start`] to [`Self::end`].
+    fn directive_text(&self) -> &[u8] {
+        self.text.get(self.start..self.end).unwrap_or_default()
+    }
+
+    /// Where the preprocessor ends the directive whose `#` is at `hash`, the code before it
+    /// read from `from`, all at the file's offsets (FTEF-14.51).
+    fn directive_end(&self, from: usize, hash: usize) -> Option<usize> {
+        let at = |offset: usize| offset.saturating_sub(self.start);
+        let end = fte_directive_end(self.directive_text(), at(from), at(hash))?;
+        Some(end.saturating_add(self.start))
+    }
+}
+
 impl<'a> Input<'a> {
     /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
     /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
-    /// under an FTEQCC dialect.
+    /// under an FTEQCC dialect, read in the text FTEQCC's file loader gives (FTEF-14.56).
     pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
-        let mut lexed = lex_with(source, dialect);
+        let lexable = Lexable::new(source, dialect, text);
+        let mut lexed = lex_with(&lexable.text, dialect);
         let mut input = Self {
             source,
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),
             tokens: Vec::with_capacity(lexed.tokens.len()),
             diagnostics: Vec::new(),
         };
-        let text_end = source.iter().position(|&b| b == 0).unwrap_or(source.len());
-        let until_nul = source.get(..text_end).unwrap_or_default();
+        let text_end = lexable.end;
         let fte = dialect.has_fteqcc_extensions();
         let mut at = 0_usize;
         let mut line: Option<Line> = None;
@@ -126,7 +177,7 @@ impl<'a> Input<'a> {
                         .get(index)
                         .is_some_and(|t| t.kind == TokenKind::Punct(Punct::Hash));
                     let end = hash
-                        .then(|| fte_directive_end(until_nul, from, span.start))
+                        .then(|| lexable.directive_end(from, span.start))
                         .flatten();
                     if let Some(end) = end {
                         // The preprocessor reads the directive's text as bytes, so the lexical
@@ -136,7 +187,7 @@ impl<'a> Input<'a> {
                             .diagnostics
                             .retain(|d| !directive.contains(&d.span.start));
                         // The `#` ends by `end`, so it stays at `index`.
-                        relex_from(&mut lexed, source, end, dialect);
+                        relex_from(&mut lexed, &lexable.text, end, dialect);
                         input.pieces.push(Piece::OpenDirective);
                         line = Some(Line::Fte { end });
                     }
@@ -154,7 +205,7 @@ impl<'a> Input<'a> {
                 input.pieces.push(Piece::Leaf(kind, token.span));
                 continue;
             }
-            let column0 = token.span.start == 0
+            let column0 = token.span.start == lexable.start
                 || source
                     .get(token.span.start.wrapping_sub(1))
                     .is_some_and(|&b| b == b'\n');
@@ -162,7 +213,7 @@ impl<'a> Input<'a> {
                 TokenKind::Name(name) => (name.clone(), None),
                 TokenKind::String(bytes) => (latin1(bytes), None),
                 TokenKind::Float(value) => (
-                    latin1(source.get(token.span.range()).unwrap_or_default()),
+                    latin1(lexable.text.get(token.span.range()).unwrap_or_default()),
                     Some(*value),
                 ),
                 TokenKind::Punct(punct) => (punct.as_str().to_owned(), None),
@@ -170,7 +221,7 @@ impl<'a> Input<'a> {
                 | TokenKind::FrameRef(_)
                 | TokenKind::Frames(_)
                 | TokenKind::FrameCommand(_) => (
-                    latin1(source.get(token.span.range()).unwrap_or_default()),
+                    latin1(lexable.text.get(token.span.range()).unwrap_or_default()),
                     None,
                 ),
             };

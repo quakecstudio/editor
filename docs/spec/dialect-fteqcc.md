@@ -572,7 +572,8 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
 `QCC_PR_LexInteger`, `QCC_PR_NewLine`, `QCC_PR_LexWhitespace`, `QCC_FindBestInclude`,
 `QCC_JoinPaths`, `QCC_PR_AddIncludePath`, `QCC_PR_ExpandPreProcessorMacro`,
 `QCC_PR_ExpandStrCatMarkup`, `QCC_PR_IncludeChunkEx`, `QCC_PR_CheckCompConst` and
-`QCC_PR_CheckBuiltinCompConst`; `qcc_cmdlib.c`, `QCC_COM_Parse` and `QCC_COM_Parse2`;
+`QCC_PR_CheckBuiltinCompConst`; `qcc_cmdlib.c`, `QCC_COM_Parse`, `QCC_COM_Parse2`,
+`QCC_LoadFile`, `QCC_SanitizeCharSet` and `decodeUTF`;
 `qccmain.c`, `QCC_SetDefaultProperties`; `qcc_pr_comp.c`, `QCC_Include` and
 `QCC_PR_CompileFile`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Vanilla preprocessor:
 [`language.md`](language.md) QC-9; the project graph's reading of the same directives:
@@ -1150,6 +1151,70 @@ profile the preprocessor reads them as FTEQCC does.
   `#define M(x) x`, `void() f = M(#5 \`, a line break, `#define Y 6` and `);` is refused, and the
   project graph's code (PRJ-5.13); the syntax tree makes no directive node of such a `#`
   (FTEF-14.51).
+- **FTEF-14.54** A source file is read as the text FTEQCC's `QCC_LoadFile` (`qcc_cmdlib.c`) hands
+  its lexer, by the preprocessor and by the project graph (PRJ-5.13), a compiled file and an
+  `#include`d one alike. `QCC_SanitizeCharSet` decodes a file that starts with the byte order mark
+  of UTF-32LE (`ff fe 00 00`), UTF-32BE (`00 00 fe ff`), UTF-16LE (`ff fe`) or UTF-16BE (`fe ff`),
+  tested in that order, to UTF-8 with `decodeUTF`, skips a UTF-8 one (`mem += 3;`), and leaves any
+  other file as it is. `decodeUTF` reads whole code units only (`chars = inbytes / w;`), joins a
+  high surrogate to a low one after it (`if (inc >= 0xd800u && inc < 0xdc00u && i+1 < chars)`),
+  writes any other surrogate in three bytes as any value of U+0800 to U+FFFF, and makes a value
+  past U+10FFFF U+FFFD (`if (inc > 0x10FFFF) inc = 0xFFFD;`). Then every NUL byte of the text is a
+  space (`else if (!mem[check])`, `mem[check] = ' ';`), so the text goes on past a NUL where QC-1.1
+  ends it: the pinned FTEQCC refuses `void() f = #5;`, a line break, a NUL and `zz zz zz` ("\"zz\"
+  is not a type"), refuses `#define N #5`, a NUL, `zz`, a line break and `void() f = N;`, and binds
+  `f` to builtin 5 after `#ifdef Q`, a line break, `zz`, a NUL, a line break and `#endif`. A NUL
+  first in a compiled file is a space `QCC_PR_NewLine` passes over, and first in an included file a
+  byte before its `#`, so no directive starts there (FTEF-14.52). After a UTF-8 byte order mark a
+  directive starts a compiled file's first line, after spaces and tabs too, and an included file's
+  first byte; FTEQCC binds `f` to builtin 5 from `#define N #5` and `void() f = N;` after one, with
+  and without two spaces before the `#`, and from `void() f = #5;` written as UTF-16LE after its
+  mark. A diagnostic's place in the file is the bytes its text came from: 3 bytes on after a UTF-8
+  mark, and in a decoded file the code unit each byte came from (`qc_preproc::SourceFile::file_span`).
+  FTEQCC also warns "file contains null bytes" (`WARN_UNEXPECTEDPUNCT`) once for a file with a NUL,
+  which this profile does not, as the warning changes nothing that is compiled. `QCC_LoadFile` then
+  writes a line break after the text (`mem[len] = '\n';`), which this profile does not add: its
+  readers take the end of the text for the end of its last line, as the directive family's cases of
+  each directive at the end of a file with no line break show. The vanilla dialect
+  keeps QC-1.1: a file's bytes, its text ending at the first NUL.
+- **FTEF-14.55** FTEQCC's `atoi` is the host C library's, and this profile reads it as an LP64 host
+  (64-bit Linux and macOS) does, on every host: `(int)strtol(s, NULL, 10)` (glibc `stdlib/atoi.c`,
+  `return (int) strtol (nptr, (char **) NULL, 10);`; Apple Libc `stdlib/FreeBSD/atoi.c`, `return
+  (int)strtol_l(str, (char **)NULL, 10, __current_locale());`, FTEQCC setting no locale), which
+  passes over the bytes the C locale's `isspace` takes (space, tab, LF, VT, FF and CR), reads a
+  sign and decimal digits, holds a value past a 64-bit `long` at `LONG_MAX` or `LONG_MIN`, and keeps
+  the low 32 bits in the `int`. It is the `atoi` of each FTEQCC reading that names one: an `#if`
+  value (FTEF-14.33), whose `int eval` (`eval = atoi(pr_token);`, `eval = atoi(c->value);`) is
+  compared and negated as an `int`; `#pack`'s number (`QCC_PR_LexInteger`, `return atoi
+  (pr_token);`, FTEF-14.39); the `noref` and `autoproto` pragmas (FTEF-12.6, FTEF-12.10); and
+  `$framevalue` (`pr_macrovalue = atoi(pr_token);`, FTEF-18.16). So, as the pinned FTEQCC reads them
+  on macOS arm64, `#if 4294967296`, `#if -99999999999999999999` and `#define X 4294967296` then `#if
+  X` are false; `#if 4294967297 == 1`, `#if 2147483648 < 0`, `#if -2147483649 > 0` and `#if
+  99999999999999999999 == -1` are true; `#if` or a `#define X` body of U+00A0, U+3000 or U+0085
+  before `1` is false, as `strtol` passes over none of their bytes; `#pack 4294967296` is one pack;
+  and `$framevalue 4294967301` numbers the next frame 5, `$framevalue 99999999999` 1215752191. Where
+  `long` is 32 bits (LLP64, 64-bit Windows) `strtol` holds a value past an `int` at `INT_MAX` or
+  `INT_MIN`, so there `#if 4294967296` is true: a deliberate divergence from that build, as
+  FTEF-14.50's, so that a project reads the same wherever it is opened, and the builtin
+  differential lists a case whose directive holds a number the two read otherwise as expected where
+  the oracle ran on an LLP64 host, a project graph case among them (PRJ-5.13). The vanilla
+  dialect's expressions keep PRJ-5.5.
+- **FTEF-14.56** Under this profile the syntax tree reads its directive nodes (FTEF-14.51) in the
+  text `QCC_LoadFile` gives (FTEF-14.54), at the file's own offsets
+  (`qc_preproc::qcc_load_in_place`), so that it makes a node of
+  each directive the preprocessor runs and stays the file's bytes: each NUL byte is read as a
+  space, so the text goes on past it and a directive on a later line is a node, and a directive's
+  start is found in the text after a UTF-8 byte order mark at the file's start, so `#define N 1`
+  on the first line after one is a node, after spaces and tabs too. Only that first mark is
+  skipped: after a second one the `#` starts no line, as FTEQCC reads it. The NUL and the mark
+  stay in the tree as white space, and a value read from a token's text, an engine name's string
+  among them (`ast::Builtin::engine_name`, FTE-17.5), reads a NUL as that space. Text a
+  preprocessor wrote (`qc_syntax::parse_preprocessed`) is no file the loader read and still ends
+  at its first NUL. A file that starts with a UTF-16 or UTF-32 byte order mark is
+  read by the tree as its bytes to the first NUL, as under the vanilla dialect (QC-1.1): the
+  preprocessor reads its decoded text (FTEF-14.54), whose offsets are not the file's, so how such
+  a file is shown is the semantic model's choice, not the tree's. The vanilla dialect keeps
+  QC-1.1.
 
 ## FTEF-15 Declarations
 
@@ -1345,7 +1410,7 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 `QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`, `QCC_PR_DiscardExpression`,
 `QCC_PR_DiscardRef`, `QCC_PR_ParseImmediateStatements`, `QCC_TryEvaluateCast`, `QCC_Include`;
 `qcc_pr_lex.c`, `QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`,
-`QCC_PR_MacroFrame`, `QCC_PR_FindMacro`, `QCC_PR_IncludeChunkEx`; `qccmain.c`, the keyword
+`QCC_PR_MacroFrame`, `QCC_PR_FindMacro`, `QCC_PR_ExpandMacro`, `QCC_PR_IncludeChunkEx`; `qccmain.c`, the keyword
 table and `QCC_SetDefaultProperties` (every warning on, `qccwarningaction[i] = WA_WARN;`, but
 those it lists),
 fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
@@ -1588,6 +1653,19 @@ FTEF-18.5.
   The include goes on with the frame numbering of the file that includes it, which only a
   compiled file restarts (FTEF-18.17). This profile reports a frame macro used inside a macro
   expansion at the macro body's token.
+- **FTEF-18.30** A frame macro whose number is below 0 is unknown where it is expanded: a
+  reference and `$framerestore` take their number from `QCC_PR_ExpandMacro`, which refuses any
+  negative one as it refuses a name with no macro, `QCC_PR_FindMacro`'s `-1`: `int i =
+  QCC_PR_FindMacro(pr_token); if (i < 0) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame
+  macro $%s", pr_token);`. So `$framevalue -5`, `$frame a` and `x = $a;` is the error `E0106` "Unknown frame macro $a"
+  at `$a` (QCD-2.6), as is a `$framevalue` whose `atoi` is negative (FTEF-14.55):
+  `-99999999999` is -1215752191 and `2147483648` is -2147483648 on an LP64 host. The lookup's
+  warnings (FTEF-18.21, FTEF-18.29) come first, as `QCC_PR_FindMacro` gives them. A refused
+  `$framerestore` leaves the number of the next frame name as it was. `$modelname` calls
+  `QCC_PR_FindMacro` itself (FTEF-18.16), so a negative model name macro still numbers the
+  next frame. Under the vanilla profile frames are numbered from 0 (QC-8.5) and none is
+  negative. The cases are in the directive family of `cargo xtask oracles builtins`
+  (`FRAME_VALUES` in `xtask/src/oracles/builtins/directives.rs`).
 
 ### Test vectors
 

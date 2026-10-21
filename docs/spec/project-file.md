@@ -140,8 +140,9 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
 
 ## PRJ-4 The two forms of progs.src
 
-**Source:** `qcc/qcc.c`, `main`, and `qcc/cmdlib.c`, `COM_Parse` (Quake-Tools); FTEQCC
-`QCC_main` (the `*qcc_token == '#'` test), `QCC_ContinueCompile` and `QCC_COM_Parse`.
+**Source:** `qcc/qcc.c`, `main`, and `qcc/cmdlib.c`, `COM_Parse` and `LoadFile` (Quake-Tools);
+FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`),
+`QCC_ContinueCompile` and `QCC_COM_Parse`.
 
 ### Behaviour
 
@@ -162,6 +163,51 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
   not at all.
 - **PRJ-4.5** A module's source that cannot be read is error `E0402` (QCD-5.2) and the
   module has no files.
+- **PRJ-4.6** Under the FTEQCC and GMQCC dialects a module's source is read as the text FTEQCC's
+  `QCC_LoadFile` gives it (`dialect-fteqcc.md` FTEF-14.54): FTEQCC's `QCC_main` loads it with
+  `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)` before `pr_file_p =
+  QCC_COM_Parse(qccmsrc);` reads its first word and `if (*qcc_token == '#')` picks the source
+  form (`qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`). So a source
+  that starts with a UTF-16 or UTF-32 byte order mark is decoded before PRJ-4.1 tells its form
+  and before a list's words are read, a UTF-8 mark is skipped once, and each NUL byte is a space
+  that splits two words; the source form is then read as PRJ-5.13 says. The graph cases of the
+  directive family of `cargo xtask oracles builtins` with a `progs.src` of their own (`progs_cases`
+  in `xtask/src/oracles/builtins/directives.rs`) hold each form in each wide encoding and with
+  NULs and marks, and the graph lists the file that binds `f` exactly when the pinned FTEQCC binds
+  it. The GMQCC dialect reads its source so too, as it reads every file with FTEQCC's reader
+  (PRJ-5.15): GMQCC's own reading is not quoted here and waits for its dialect profile, as
+  PRJ-5.15 says. Under the vanilla dialect the source is read as PRJ-4.7 says.
+- **PRJ-4.7** Under the vanilla dialect a module's form is told from, and a list's words are read
+  from, its bytes past a UTF-8 byte order mark (PRJ-5.1) up to the NUL byte where id's `qcc` ends
+  its list (QC-23.7): the first NUL between words, or that ends a word or a `//` comment. A quoted
+  word runs on past a NUL in it, here to its closing quote or its line's end, and names the file
+  of its text up to that NUL. So `progs.dat`, a NUL and `a.qc` list no file, and a source that
+  starts with a NUL is a list with no token, error `E0401`. A source in source form is then read
+  as its bytes (PRJ-5.1), as before. The vanilla graph cases of the directive family of
+  `cargo xtask oracles builtins` with a `progs.src` of their own (`VANILLA_PROGS` in
+  `xtask/src/oracles/builtins/directives.rs`) hold a NUL between words, in and after a word, in a
+  `//` comment and in a quoted word, and the graph lists the file that binds `f` exactly when the
+  pinned id `qcc` binds it.
+- **PRJ-4.8** Under the FTEQCC and GMQCC dialects a module's source whose text, as PRJ-4.6 gives
+  it, starts with the two bytes `#!` has its first line passed over before PRJ-4.1 tells its form,
+  before a list's words are read and before the source form is read as PRJ-5.13 says and as the
+  preprocessor reads it: FTEQCC's `QCC_main` (`qccmain.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) runs `if (qccmsrc[0] == '#' &&
+  qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');` ("ignore the first line if it starts with
+  a #! for unix scripts") after `QCC_LoadFile` and before `pr_file_p = QCC_COM_Parse(qccmsrc);`.
+  The line is passed over whatever it holds: a `\` at its end joins nothing to the next line,
+  and a `/*` or `"` in it opens nothing. The test is of the first two bytes of that text, so it
+  holds after a UTF-8 mark that is skipped and in a decoded UTF-16 or UTF-32 source, and not
+  after a blank or a NUL. A source of one such line with no line feed is all passed over, since
+  `QCC_LoadFile` writes a line feed after the text, and is a list with no token, error `E0401`
+  (PRJ-4.3), as an empty source is; the pinned FTEQCC reads either with an empty output name and
+  writes nothing ("nothing to write"), which the graph does not follow. The line keeps
+  its place, so the lines after it keep their numbers. The vanilla dialect reads a `#!` line as
+  PRJ-4.1 and PRJ-4.7 say. The graph cases of the directive family of
+  `cargo xtask oracles builtins` with a `progs.src` of their own hold a `#!` first line before a
+  list and before a source form, after a UTF-8 mark and in each wide encoding, and with a `\`,
+  a `/*` and a `"` in it, and the graph lists the file that binds `f` exactly when the pinned
+  FTEQCC binds it. The GMQCC dialect reads its source so too, as PRJ-4.6 says.
 
 ## PRJ-5 Directives the graph follows
 
@@ -266,7 +312,7 @@ malformed directive without a diagnostic.
   preprocessor reads it, a token of its lexer at a time, a `#` token that starts a line as
   FTEF-14.52 says being a directive's, so no string, raw string `R"d(...)d"`, character constant
   or comment starts one, and the graph meets a directive where the preprocessor does. A list-form
-  `progs.src` is still read as PRJ-5.1 and QC-23 say.
+  `progs.src` is still read as PRJ-5.1 and QC-23 say, in the text PRJ-4.6 gives.
   So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
   an `#include` or an `#includelist`, after or around each directive form of FTEF-14.35 to
   FTEF-14.44 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose

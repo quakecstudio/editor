@@ -398,8 +398,8 @@ fn frame_commands_number_frames() {
     // `$modelname NAME`: a name with no macro numbers from -1, the earlier model name becomes
     // a macro of the number reached, and a model name that is a macro numbers from it.
     assert_eq!(
-        frames("$modelname m1\n$frame a b\n$modelname m2\nx = $a + $m1;"),
-        ("x = -1 + 1 ;".to_owned(), vec![])
+        frames("$modelname m1\n$frame a b c\n$modelname m2\nx = $b + $m1;"),
+        ("x = 0 + 2 ;".to_owned(), vec![])
     );
     assert_eq!(
         frames("$frame m2 q r\n$modelname m2\n$frame s\nx = $s;"),
@@ -549,8 +549,8 @@ fn a_frame_name_of_64_bytes_is_too_long() {
 #[test]
 fn a_long_model_name_is_cut() {
     let fits = "m".repeat(63);
-    let text = format!("$modelname {fits}\n$modelname next\nx = ${fits};");
-    assert_eq!(fte(&text), ("x = -1 ;".to_owned(), vec![]));
+    let text = format!("$modelname {fits}\n$frame a\n$modelname next\nx = ${fits};");
+    assert_eq!(fte(&text), ("x = 0 ;".to_owned(), vec![]));
     let cut = "n".repeat(63);
     let text = format!("$modelname {cut}x\n$frame a\n$modelname next\ny = ${cut};");
     let (_, out) = one_fte(&text);
@@ -751,21 +751,74 @@ fn a_name_in_a_built_in_constant_reads_on_in_its_text() {
     assert_eq!(text, "\"x\" M \"\" ( 7 ) ;");
 }
 
-// spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
+// spec FTEF-18.16: `$framevalue N` numbers from `atoi`'s `int`, the low 32 bits of a 64-bit
+// `strtol` (FTEF-14.55), as the pinned FTEQCC gives `x` 5, 1215752192 and 2147483648
 #[test]
-fn a_frame_value_past_an_int_is_held() {
+fn a_frame_value_past_an_int_keeps_its_low_32_bits() {
     assert_eq!(
-        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
-        ("x = 2147483600 ;".to_owned(), vec![])
+        fte("$framevalue 4294967301\n$frame a\nx = $a;"),
+        ("x = 5 ;".to_owned(), vec![])
     );
     assert_eq!(
-        fte("$framevalue -99999999999\n$frame a\nx = $a;"),
-        ("x = -2147483600 ;".to_owned(), vec![])
+        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
+        ("x = 1215752200 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$framevalue -2147483649\n$frame a\nx = $a;"),
+        ("x = 2147483600 ;".to_owned(), vec![])
     );
     assert_eq!(
         fte("$framevalue -2\n$frame a b c\nx = $c;"),
         ("x = 0 ;".to_owned(), vec![])
     );
+}
+
+// spec FTEF-18.30: a frame macro numbered below 0 is "Unknown frame macro" where a reference or a
+// `$framerestore` expands it, as the pinned FTEQCC refuses `$framevalue -99999999999` and
+// `$framevalue 2147483648` before `$frame a` and `x = $a;`
+#[test]
+fn a_negative_frame_macro_is_unknown_where_it_is_expanded() {
+    let unknown = |text: &str| fte(text).1;
+    for value in ["-1", "-5", "-99999999999", "2147483648", "-2147483648"] {
+        assert_eq!(
+            unknown(&format!("$framevalue {value}\n$frame a\nx = $a;")),
+            vec![Code::E0106],
+            "{value}"
+        );
+    }
+    let (_, out) = one_fte("$framevalue -3\n$frame a\nx = $a;");
+    assert_eq!(tokens(&out), "x = $a ;");
+    assert_eq!(out.diagnostics[0].message, "Unknown frame macro $a");
+    // 0 and above expand; the names after a negative one count up to them.
+    assert_eq!(
+        fte("$framevalue -2\n$frame a b c\nx = $c; y = $b;"),
+        ("x = 0 ; y = $b ;".to_owned(), vec![Code::E0106])
+    );
+    // `$framerestore` of a negative macro is unknown and leaves the numbering as it was.
+    assert_eq!(
+        fte("$framevalue -4\n$frame a\n$framevalue 7\n$framerestore a\n$frame d\nx = $d;"),
+        ("x = 7 ;".to_owned(), vec![Code::E0106])
+    );
+    // A `$modelname` lookup is `QCC_PR_FindMacro`'s alone, so a negative macro numbers from it.
+    assert_eq!(
+        fte("$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d e f g h\nx = $h;"),
+        ("x = 0 ;".to_owned(), vec![])
+    );
+    // The lookup's warnings come before the refusal, as `QCC_PR_FindMacro` gives them.
+    let (_, out) = one_fte("$framevalue -1\n$frame A\nx = $a;");
+    assert_eq!(codes(&out), [Code::W0104, Code::E0106]);
+}
+
+// spec QC-8.5: the vanilla profile numbers frames from 0 and has no `$framevalue`, so no
+// frame macro is negative
+#[test]
+fn vanilla_frame_macros_are_never_negative() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", "$frame a b\nx = $b;\n".as_bytes());
+    let mut pp = Preprocessor::new(loader);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(tokens(&out), "x = 1 ;");
+    assert_eq!(codes(&out), vec![]);
 }
 
 // spec FTEF-14.35: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in

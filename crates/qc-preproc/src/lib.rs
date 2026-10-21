@@ -24,9 +24,13 @@ mod source;
 #[cfg(test)]
 mod tests;
 
-pub use fte_directive::{FileStart, FteEvent, FteFileReader, ModuleState};
+pub use fte_directive::{
+    FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_as, qcc_load_file, qcc_load_in_place,
+};
 pub use fte_line::{fte_directive_end, relex_from};
-pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
+pub use source::{
+    FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
+};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
 use fte_macro::{ChunkReader, Text, ends_word};
@@ -837,15 +841,31 @@ impl<L: Loader> Preprocessor<L> {
     /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
+        self.preprocess(path, FileStart::Compiled)
+    }
+
+    /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
+    /// (PRJ-4.4), as [`Self::preprocess_file`] does, but in an FTEQCC dialect with a first line
+    /// that starts with `#!` passed over, as FTEQCC's `QCC_main` passes over it (PRJ-4.8).
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_source(&mut self, path: &Path) -> io::Result<FileOutput> {
+        self.preprocess(path, FileStart::Source)
+    }
+
+    /// [`Self::preprocess_file`] of a file that starts as `start` says.
+    fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
-        let file = self.sources.add(path.clone(), bytes);
+        let file = self.add_source(path.clone(), bytes, start);
         let mut run = Run {
             unit: name.clone(),
             ..Run::default()
         };
-        let cursor = self.cursor(file, path, name, TextStart::Compiled);
+        let cursor = self.cursor(file, path, name, start.text_start());
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
             let Some(item) = self.explicit_use(&mut run, item) else {
@@ -856,6 +876,18 @@ impl<L: Loader> Preprocessor<L> {
             }
         }
         Ok(run.out)
+    }
+
+    /// Adds the file at `path`, of `bytes`, to the files read: in an FTEQCC dialect the text
+    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.54), past a `#!` first line in a
+    /// module's source (PRJ-4.8), in the vanilla dialect the bytes (QC-1.1).
+    fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>, start: FileStart) -> FileId {
+        let (text, origin) = if self.dialect.has_fteqcc_extensions() {
+            qcc_load_as(bytes, start)
+        } else {
+            (bytes, TextOrigin::default())
+        };
+        self.sources.add(path, text, origin)
     }
 
     /// In an FTEQCC dialect, a `#` right before the name of a macro it may expand is that
@@ -1316,7 +1348,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, FileSpan { file, span: whole });
             return;
         }
-        let included = self.sources.add(path.clone(), bytes);
+        let included = self.add_source(path.clone(), bytes, FileStart::Included);
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let cursor = self.cursor(included, path, name, TextStart::Included);
         run.cursors.push(cursor);
@@ -1627,6 +1659,15 @@ impl<L: Loader> Preprocessor<L> {
         Some(frame.value)
     }
 
+    /// The number the FTEQCC frame macro `name` expands to, as `QCC_PR_ExpandMacro` takes it
+    /// for a reference or a `$framerestore`: [`Self::find_frame`]'s value, with its warnings,
+    /// when it is 0 or more, and none otherwise, as for a name with no macro (`if (i < 0)
+    /// QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame macro $%s", pr_token);`,
+    /// FTEF-18.30).
+    fn expand_frame(&self, run: &mut Run, name: &str, at: Here) -> Option<i32> {
+        self.find_frame(run, name, at).filter(|value| *value >= 0)
+    }
+
     /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
     fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: Here) {
         match command {
@@ -1636,11 +1677,10 @@ impl<L: Loader> Preprocessor<L> {
                 run.frame_value = 0;
             }
             FrameCommand::Value(word) => {
-                // A number past an `int` is held at the nearest one.
-                let value = cond::atoi(word).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
-                run.frame_value = i32::try_from(value).unwrap_or_default();
+                // FTEF-14.55: `pr_macrovalue = atoi(pr_token);`, FTEQCC's `int`.
+                run.frame_value = cond::fte_atoi(word.as_bytes());
             }
-            FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
+            FrameCommand::Restore(name) => match self.expand_frame(run, name, at) {
                 Some(value) => run.frame_value = value,
                 None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at.0),
             },
@@ -1709,7 +1749,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             TokenKind::FrameRef(word) => {
                 let value = if carry {
-                    self.find_frame(run, word, (tok.span, FrameFile::of(&tok)))
+                    self.expand_frame(run, word, (tok.span, FrameFile::of(&tok)))
                 } else {
                     let index = run.frames.iter().position(|f| f == word);
                     index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))

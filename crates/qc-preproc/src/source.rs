@@ -29,10 +29,51 @@ pub struct FileSpan {
 pub struct SourceFile {
     /// Its path, as resolved (QC-9.2).
     pub path: PathBuf,
-    /// Its bytes, shared with the preprocessor's readers of it.
+    /// Its text, the bytes the preprocessor reads, shared with the preprocessor's readers of it.
     pub text: Rc<[u8]>,
     /// Its line starts (QC-1.2).
     pub lines: LineIndex,
+    /// Where its text stands in the file's bytes.
+    pub origin: TextOrigin,
+}
+
+/// Where the text of a [`SourceFile`], which the preprocessor reads, stands in the file's bytes:
+/// under an FTEQCC dialect FTEQCC's file loader may skip or decode some (FTEF-14.54).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TextOrigin {
+    /// The file's bytes from this offset on, one byte of the text for each: past the UTF-8 byte
+    /// order mark FTEQCC skips, or from the start.
+    Shifted(usize),
+    /// Decoded from UTF-16 or UTF-32: for each byte of the text, and then for its end, the offset
+    /// in the file of the code unit it came from.
+    Decoded(Vec<usize>),
+}
+
+impl Default for TextOrigin {
+    fn default() -> Self {
+        Self::Shifted(0)
+    }
+}
+
+impl SourceFile {
+    /// The bytes of the file that `span`, a span of its text, came from.
+    #[must_use]
+    pub fn file_span(&self, span: Span) -> Span {
+        Span::new(self.file_offset(span.start), self.file_offset(span.end))
+    }
+
+    /// The offset in the file of the byte at `offset` of the text; past the text's end, the
+    /// offset after the last code unit read.
+    fn file_offset(&self, offset: usize) -> usize {
+        match &self.origin {
+            TextOrigin::Shifted(skipped) => offset.saturating_add(*skipped),
+            TextOrigin::Decoded(offsets) => offsets
+                .get(offset)
+                .or_else(|| offsets.last())
+                .copied()
+                .unwrap_or_default(),
+        }
+    }
 }
 
 /// Every file read while preprocessing a project, in the order read. A file included twice
@@ -43,12 +84,17 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
-    /// Adds a file and returns its id.
-    pub fn add(&mut self, path: PathBuf, text: Vec<u8>) -> FileId {
+    /// Adds a file whose text stands in its bytes as `origin` says, and returns its id.
+    pub fn add(&mut self, path: PathBuf, text: Vec<u8>, origin: TextOrigin) -> FileId {
         let id = FileId(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
         let lines = LineIndex::new(&text);
         let text = Rc::from(text);
-        self.files.push(SourceFile { path, text, lines });
+        self.files.push(SourceFile {
+            path,
+            text,
+            lines,
+            origin,
+        });
         id
     }
 

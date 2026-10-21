@@ -1655,6 +1655,14 @@ issues:
   - P2-107
   - P2-108
   - P2-109
+  - P2-110
+  - P2-111
+  - P2-112
+  - P2-113
+  - P2-114
+  - P2-115
+  - P2-116
+  - P2-117
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2166,3 +2174,160 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo xtask readiness mutation qc-preproc
+- key: P2-110
+  title: Read an FTEQCC file's syntax tree from the text FTEQCC's file loader gives
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-syntax (`input.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.51: under an FTEQCC dialect the syntax tree makes a directive node of the text the preprocessor reads as one directive (FTEF-14.51), but it reads the file''s bytes, where the preprocessor and the project graph read the text FTEQCC''s `QCC_LoadFile` hands its lexer (FTEF-14.54, P2-107): the tree lexes only to the first NUL (`until_nul` in `input.rs`, QC-1.1), where FTEQCC makes each NUL a space and reads on, and `qc_preproc::fte_directive_end` sees a UTF-8 byte order mark before the first line''s `#`, so `#define N 1` on the first line after one is no directive node, though the preprocessor runs it. The tree stays lossless (a NUL and the mark are trivia of the file as written), and a UTF-16 or UTF-32 file, which the preprocessor decodes, is shown as the semantic model decides'
+  acceptance:
+  - 'Under the FTEQCC dialect the syntax tree of a file with a NUL before a directive line, and of one whose first line is a directive after a UTF-8 byte order mark, makes the directive nodes the preprocessor runs, and stays lossless; the vanilla dialect keeps QC-1.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-111
+  title: Refuse an FTEQCC frame macro whose number is negative as an unknown one
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (`Preprocessor::find_frame` and the frame macro reference) and docs/spec/dialect-fteqcc.md FTEF-18.16 (or a new statement beside it): FTEQCC''s `QCC_PR_FindMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) returns a frame macro''s value, and `-1` for a name with none, and `QCC_PR_ExpandMacro` refuses any negative result (`if (i < 0) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame macro $%s", pr_token);`), so a frame macro numbered below 0 by `$framevalue` is unknown where it is used. While working P2-107 and P2-108 the pinned FTEQCC (`-Tid`, macOS arm64) refused `$framevalue -99999999999` and `$framevalue 2147483648`, each then `$frame a` and `x = $a;` in a function, with "Unknown frame macro $a" (`atoi` gives -1215752191 and -2147483648, FTEF-14.55), where this profile numbers the frame from the negative value and accepts the program'
+  acceptance:
+  - 'Under the FTEQCC dialect a frame macro reference whose macro is numbered below 0 is "Unknown frame macro", as the pinned FTEQCC refuses it; `$framerestore` of such a macro is checked against FTEQCC the same way; each with a test citing the statement it pins and the cases recorded as the pinned FTEQCC compiles them'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-112
+  title: Read an FTEQCC module's progs.src as FTEQCC's file loader gives it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `source_form` and the list-form `Cursor`) and docs/spec/project-file.md PRJ-4.1 or PRJ-5.13: FTEQCC loads `progs.src` itself with `QCC_LoadFile` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)`), so it is decoded from UTF-16 or UTF-32 after a byte order mark and its NUL bytes are spaces (FTEF-14.54, P2-107), before `QCC_COM_Parse` reads its first word and its `#` test picks the source or the list form. The project graph reads `progs.src` as its bytes past a UTF-8 byte order mark only (`source_form`, `Cursor::new`), so under an FTEQCC dialect a UTF-16LE source-form `progs.src` is read as a list of words, and a NUL in a list-form one splits its words otherwise than FTEQCC does. The code review of #532 found this'
+  acceptance:
+  - 'Under an FTEQCC dialect the project graph reads a `progs.src` written as UTF-16 or UTF-32 after its mark, and one with NUL bytes, in the form and with the words the pinned FTEQCC reads, recorded as cases of `cargo xtask oracles builtins` or of the project graph''s differential; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-113
+  title: End a vanilla progs.src at its first NUL byte as id's qcc does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    Under the vanilla dialect the project graph (crates/qc-project/src/graph.rs) reads a list-form `progs.src` past a NUL byte, as white space between two words, where id's qcc ends its text there: `progs.dat`, a NUL, `a.qc` and a line break lists `a.qc` in the graph and no file in id's qcc.
+  environment: |
+    feat/534-fteqcc-loader-followups; found while writing the PRJ-4.6 tests of P2-112 (crates/qc-project/src/tests/forms.rs)
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `progs_text`, `source_form` and the list-form `Cursor`) and docs/spec/language.md QC-23 or docs/spec/project-file.md PRJ-4: id''s qcc reads `progs.src` with `LoadFile` (`qcc/cmdlib.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: `buffer = SafeMalloc (length+1); ((byte *)buffer)[length] = 0;`) and splits it with `COM_Parse`, which stops at a NUL (`if (c == 0) { com_eof = true; return NULL; }`), so its list ends at the first NUL byte. Under the vanilla dialect the project graph reads on past one: while working P2-112, `progs.dat`, a NUL and `a.qc` listed `a.qc`'
+  acceptance:
+  - 'Under the vanilla dialect the project graph tells the form of, and reads the list of, a `progs.src` only to its first NUL byte, as id''s qcc does, recorded as a case of the vanilla graph''s differential or a recorded run of id''s qcc; the FTEQCC dialect keeps PRJ-4.6; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-114
+  title: 'Pass over a progs.src first line that starts with #! as FTEQCC does'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`), crates/qc-preproc (the compiled root of a source-form module) and docs/spec/project-file.md PRJ-4: FTEQCC''s `QCC_main` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) passes over the first line of the module''s source when it starts with `#!` (`if (qccmsrc[0] == ''#'' && qccmsrc[1] == ''!'') qccmsrc = strchr(qccmsrc, ''\n'');`, "ignore the first line if it starts with a #! for unix scripts"), before `QCC_COM_Parse` reads the first word that picks the form. The project graph reads that line''s `#` as the start of the source form and the preprocessor reads it as code'
+  acceptance:
+  - 'Under the FTEQCC dialect a `progs.src` whose first line starts with `#!` is read in the form, and with the files, the pinned FTEQCC reads it in, list form and source form alike, recorded as cases of `cargo xtask oracles builtins`; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+  - cargo test -p qc-preproc
+- key: P2-115
+  title: Split a vanilla progs.src word at a byte of 0x80 or more as id's qcc does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    Under the vanilla dialect the project graph (crates/qc-project/src/graph.rs, `com_parse_words` and `com_parse_end`) keeps a byte of 0x80 to 0xFF inside a list-form `progs.src` word, where id's qcc reads it as white space that ends the word: on the pinned id qcc, `progs.dat`, a line break and `b.qh` 0xE9 `x.qc` compiles `b.qh` and `x.qc`, while the graph lists one file named `b.qh` 0xE9 `x.qc`. A project with a non-ASCII byte in a listed name, such as a UTF-8 `café.qc`, gets a graph that lists a file id's qcc never opens.
+  environment: |
+    fix/538-progs-src-nul-and-script-line; found by the code review of P2-113's PR, confirmed with the pinned id qcc built by `cargo xtask oracles build` on macOS arm64, where `char` is signed as on the x86 build
+  depends:
+  - P2-113
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `com_parse_words`, `com_parse_end`) and docs/spec/language.md QC-23: id''s `COM_Parse` (`qcc/cmdlib.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73) reads its text through `char *data` into `int c`, and tests `while ( (c = *data) <= '' '')` and `} while (c>32);`, so on the x86 build, where `char` is signed, a byte of 0x80 or more is below the space, as QC-1.3 says of the lexer'
+  acceptance:
+  - 'Under the vanilla dialect the project graph splits a list-form `progs.src` word at a byte of 0x80 to 0xFF, and skips such bytes between words, as the pinned id qcc does, recorded as vanilla graph cases of `cargo xtask oracles builtins`; the FTEQCC dialect keeps its own reading; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-116
+  title: Port every function on FTEQCC's and id qcc's path from progs.src to tokens
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'docs/spec/inventory-l2.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/`: qcc.c, cmdlib.c, pr_lex.c) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/`: qccmain.c, qcc_cmdlib.c, qcc_pr_lex.c and what they call) runs from opening `progs.src` or a compiled file to handing a token to the parser, including the C library calls whose behaviour matters (atoi, strtol, strtoul, strtod, isspace and similar). It is built from the lineage. The doc first records, quoted from the sources, whether FTEQCC''s compiler descends from id''s qcc: fteqw''s first commit of engine/qclib (7c00f2b1, Spoike, 2004-08-23, "Initial Checkin") has `QCC_PR_LexName` and `QCC_PR_LexPunctuation` with bodies identical to id''s `PR_LexName` and `PR_LexPunctuation` but for white space, and qcc_cmdlib.c''s `DefaultExtension`, `DefaultPath`, `StripFilename`, `StripExtension`, `ExtractFilePath`, `ExtractFileBase`, `ExtractFileExtension` and `ParseNum` match id''s cmdlib.c line for line, so it does. GMQCC (graphitemaster/gmqcc, MIT, first commit 48a95ec by Dale Weiler, 2012-04-09) uses none of id''s function names or globals (`COM_Parse`, `PR_Lex`, `pr_file_p`, `LoadFile`), so it was written independently; the doc records that too, with the evidence. Then: (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_LexString` with `QCC_PR_LexString`, `COM_Parse` with `QCC_COM_Parse`, `LoadFile` with `QCC_LoadFile`), whose content is the behavioural difference between the two bodies, which is what the FTEQCC profile adds on top of our id qcc port; (2) the FTEQCC-only functions on the path (`QCC_PR_ConditionCompilation`, `QCC_PR_LexOctal`, `QCC_PR_IncludeChunk` and the rest), all of whose behaviour is new; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-lexer, crates/qc-preproc, crates/qc-syntax and crates/qc-project, with spec statements in docs/spec/, citing tests and cases of `cargo xtask oracles builtins` (or the graph''s differential), in one PR. Rows that #533 (P2-109) and #541 (P2-113, P2-114) cover count once they merge'
+  acceptance:
+  - 'docs/spec/inventory-l2.md records the lineage evidence, quoted, for FTEQCC and GMQCC, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc -p qc-syntax -p qc-project
+  - cargo xtask oracles builtins
+- key: P2-117
+  title: Port every function on FTEQCC's and id qcc's path from tokens to definitions
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-26
+  deliverable:
+  - 'docs/spec/inventory-l3.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/pr_comp.c` and the pr_lex.c parsing helpers it calls: `PR_ParseName`, `PR_FindType`, `PR_ParseType`, `PR_Expect`, `PR_Check`, `PR_ParseError`) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/qcc_pr_comp.c` and what it calls) runs from a token to a definition and a diagnostic, as far as qc-sema models them today: declarations, types, resolution, initialisers and the diagnostics the profiles report. Codegen (P2-06 onward) is out of scope. It is built from the lineage, as P2-116''s inventory-l2.md records it (FTEQCC''s qcc_pr_comp.c descends from id''s pr_comp.c: fteqw 7c00f2b1 has `QCC_PR_ParseImmediate`, `QCC_PrecacheSound` and `QCC_PrecacheFile` grown from id''s bodies; GMQCC was written independently): (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_ParseDefs` with `QCC_PR_ParseDefs`, `PR_GetDef` with `QCC_PR_GetDef`), whose content is the behavioural difference between the two bodies; (2) the FTEQCC-only functions on the path; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-sema (and crates/qc-engines where a row reaches it), with spec statements in docs/spec/, citing tests and differential cases, in one PR'
+  acceptance:
+  - 'docs/spec/inventory-l3.md maps the path from the lineage, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-sema -p qc-engines
+  - cargo xtask oracles builtins

@@ -37,11 +37,20 @@ project graph the same reader (`FteFileReader`, with `ModuleState` for what a mo
 file to file): it runs the directives of an FTEQCC file as the preprocessor does, reads the
 code between them as the preprocessor does, a token of the lexer at a time, and says which files
 the file brings in, by `#include` and `#includelist`, and which pragmas and `#output` it holds
-(PRJ-5.13, PRJ-5.14). `#if` and `#elif` use
+(PRJ-5.13, PRJ-5.14). Both read a file as the text FTEQCC's `QCC_LoadFile` hands its lexer
+(`fte_directive/load.rs`, FTEF-14.54): decoded from UTF-16 or UTF-32 after a byte order mark, past
+a UTF-8 one, and with each NUL byte a space; `SourceFile::file_span` maps a span of that text back
+to the file's bytes, and `qcc_load_in_place` gives the syntax tree that text at the file's own
+offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` with
+`qcc_load_as` too (PRJ-4.6). `qcc_load_as` with `FileStart::Source`, which
+`Preprocessor::preprocess_source` and the graph use for a module's source, also passes over, in
+place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.8). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
-64 levels, FTEF-14.12 and PRJ-5.10). `#pragma noref` and `#pragma autoproto` are recorded for the
+64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
+(`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
 semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands
-(FTEF-18.16, FTEF-18.17), its frame macro diagnostics, "Stale macro used", "Duplicate macro
+(FTEF-18.16, FTEF-18.17), a frame macro numbered below 0 unknown where it is expanded
+(FTEF-18.30), its frame macro diagnostics, "Stale macro used", "Duplicate macro
 defined", "Name for frame macro NAME is too long" and "$modelname name too long" (FTEF-18.29;
 QCD-2.8, QCD-7.25 to QCD-7.27),
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
@@ -73,8 +82,9 @@ FTEF-14.51).
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md); the loaders' case rules
   PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md). A readiness run attributes only
   these sections to the crate, and every active statement of each is cited by a test here.
-- **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`), and the graph's
-  reader of an FTEQCC or GMQCC file, PRJ-5.13 to PRJ-5.15 (`FteFileReader`), in
+- **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`), the graph's
+  reader of an FTEQCC or GMQCC file, PRJ-5.13 to PRJ-5.15 (`FteFileReader`), and the `#!` first
+  line of a module's source, PRJ-4.8 (`qcc_load_as`), in
   [`project-file.md`](../../docs/spec/project-file.md).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes

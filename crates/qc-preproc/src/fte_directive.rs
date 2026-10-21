@@ -18,8 +18,12 @@
 //! follows is named in its rustdoc.
 
 mod graph;
+mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
+#[cfg(test)]
+pub(crate) use load::skip_script_line;
+pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place};
 
 use std::ops::Range;
 use std::path::PathBuf;
@@ -43,7 +47,7 @@ pub(crate) const FTE_MAX_MACRO_NAME: usize = 63;
 const FTE_MAX_MESSAGE: usize = 1023;
 
 /// The most packs `#pack` names: "No more than 5 packs are allowed" (FTEF-14.39).
-const FTE_MAX_PACKS: i64 = 5;
+const FTE_MAX_PACKS: i32 = 5;
 
 /// The byte at `at` of a text FTEQCC reads, `None` at its end, which a NUL is.
 pub(crate) fn byte_at(text: &[u8], at: usize) -> Option<u8> {
@@ -381,8 +385,8 @@ fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
 
 /// `QCC_PR_LexInteger`: the offset after the number at `at`, which takes the byte there
 /// whatever it is, then digits, `a` to `f` and `.` not before another `.`; and the number
-/// `atoi` reads from those bytes.
-fn lex_integer(text: &[u8], at: usize) -> (usize, i64) {
+/// `atoi` reads from those bytes into FTEQCC's `int` (FTEF-14.55).
+fn lex_integer(text: &[u8], at: usize) -> (usize, i32) {
     let mut end = at;
     if text.get(at) == Some(&b'0') && matches!(text.get(at.saturating_add(1)), Some(b'x' | b'X')) {
         end = end.saturating_add(2);
@@ -398,8 +402,7 @@ fn lex_integer(text: &[u8], at: usize) -> (usize, i64) {
         end = end.saturating_add(1);
     }
     let end = end.min(text.len());
-    let digits = String::from_utf8_lossy(text.get(at..end).unwrap_or_default()).into_owned();
-    (end, cond::atoi(&digits))
+    (end, cond::fte_atoi(text.get(at..end).unwrap_or_default()))
 }
 
 /// `QCC_COM_Parse`: after white space and comments from `at`, a `"` string with its escapes
@@ -1695,7 +1698,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, at);
             return;
         }
-        let included = self.sources.add(path.clone(), text);
+        let included = self.add_source(path.clone(), text, FileStart::Included);
         let cursor = self.cursor(included, path, full, TextStart::Included);
         run.cursors.push(cursor);
     }
@@ -1754,12 +1757,10 @@ impl<L: Loader> Preprocessor<L> {
         } else if pragma.is("noref") {
             // FTEF-12.6: `defaultnoref = !!atoi(msg);`
             let index = run.out.tokens.len();
-            run.out
-                .noref
-                .push((index, cond::atoi(&lossy(message)) != 0));
+            run.out.noref.push((index, cond::fte_atoi(message) != 0));
         } else if pragma.is("autoproto") {
             // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`
-            let on = message.is_empty() || cond::atoi(&lossy(message)) != 0;
+            let on = message.is_empty() || cond::fte_atoi(message) != 0;
             let index = run.out.tokens.len();
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
             run.out.autoproto.push((index, on, at));

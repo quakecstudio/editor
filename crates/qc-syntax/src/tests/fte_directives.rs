@@ -49,16 +49,21 @@ fn tree_code(source: &str) -> Vec<Span> {
         .collect()
 }
 
-/// The spans of the tokens the FTEQCC preprocessor gives for `source`; `None` when it uses a
-/// macro, whose expansion the tree, which runs no directive, does not write.
+/// The spans in the file of the tokens the FTEQCC preprocessor gives for `source`; `None` when
+/// it uses a macro, whose expansion the tree, which runs no directive, does not write.
 fn preprocessed_code(source: &str) -> Option<Vec<Span>> {
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", source.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let file = |t: &qc_preproc::PpToken| pp.sources().file(t.span.file).unwrap();
     out.tokens
         .iter()
-        .map(|t| t.expansion.is_none().then_some(t.span.span))
+        .map(|t| {
+            t.expansion
+                .is_none()
+                .then(|| file(t).file_span(t.span.span))
+        })
         .collect()
 }
 
@@ -161,6 +166,97 @@ fn a_continued_line_is_part_of_the_directive() {
     assert_eq!(fte(cases[3]), ["#if 1 // c \\\nfloat y;", "#endif"]);
     assert_eq!(fte(cases[4]), ["#error e // c \\\nfloat y;"]);
     assert_same_code(&cases);
+}
+
+// spec FTEF-14.56: under FTEQCC the tree reads the text FTEQCC's file loader gives: each NUL
+// byte a space, so a directive after one is a node, and after a UTF-8 byte order mark, so a
+// directive on the first line is one; the tree stays the file's bytes
+#[test]
+fn directives_are_read_in_the_text_the_loader_gives() {
+    let cases = [
+        "float a;\0\n#define N 1\nfloat b;\n",
+        "\0#define N 1\nfloat b;\n",
+        "float a;\0#define N 1\nfloat b;\n",
+        "#define N 1\0zz\nfloat b;\n",
+        "// c\0\n#undef Q\nfloat b;\n",
+        "\u{feff}#define N 1\nfloat b;\n",
+        "\u{feff}  #define N 1\nfloat b;\n",
+        "\u{feff}float a;\n#define N 1\n",
+        "\u{feff}\u{feff}#define N 1\nfloat b;\n",
+    ];
+    assert_eq!(fte(cases[0]), ["#define N 1"]);
+    assert_eq!(fte(cases[1]), ["#define N 1"]);
+    assert_eq!(fte(cases[2]), Vec::<String>::new());
+    assert_eq!(fte(cases[3]), ["#define N 1\0zz"]);
+    assert_eq!(fte(cases[4]), ["#undef Q"]);
+    // The tree runs no conditional, so a skipped side is not compared with the preprocessor.
+    assert_eq!(
+        fte("#ifdef Q\0\nfloat q;\n\0#endif\n"),
+        ["#ifdef Q\0", "#endif"]
+    );
+    assert_eq!(fte(cases[5]), ["#define N 1"]);
+    assert_eq!(fte(cases[6]), ["#define N 1"]);
+    assert_eq!(fte(cases[7]), ["#define N 1"]);
+    // Only the first mark is skipped, so the `#` after a second one starts no line.
+    assert_eq!(fte(cases[8]), Vec::<String>::new());
+    assert_same_code(&cases);
+    // The NUL and the mark are trivia; nothing after a NUL is skipped.
+    let parsed = parse_with(cases[0].as_bytes(), Dialect::Fteqcc);
+    assert!(
+        parsed
+            .syntax()
+            .tokens()
+            .all(|t| t.kind() != SyntaxKind::Skipped)
+    );
+    assert_eq!(parsed.errors().count(), 0);
+    let parsed = parse_with(cases[5].as_bytes(), Dialect::Fteqcc);
+    assert_eq!(parsed.errors().count(), 0);
+}
+
+// spec FTEF-14.56: a UTF-16 or UTF-32 file, which the preprocessor decodes, is read by the tree
+// as its bytes to the first NUL, as under the vanilla dialect
+#[test]
+fn a_wide_file_is_read_as_its_bytes() {
+    let wide: Vec<u8> = [0xff, 0xfe]
+        .into_iter()
+        .chain("#define N 1\n".encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    let parsed = parse_with(&wide, Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), wide);
+    let vanilla = parse_with(&wide, Dialect::Vanilla);
+    assert_eq!(parsed.syntax().debug_tree(), vanilla.syntax().debug_tree());
+}
+
+// spec FTEF-14.56: a preprocessor's text is no file the loader read, so it still ends at its
+// first NUL under FTEQCC, the rest skipped (QC-1.1)
+#[test]
+fn preprocessed_text_ends_at_a_nul() {
+    let source = b"float a;\0float b;\n";
+    let parsed = parse_preprocessed(source, Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source);
+    let skipped: Vec<Span> = parsed
+        .syntax()
+        .tokens()
+        .filter(|t| t.kind() == SyntaxKind::Skipped)
+        .map(|t| t.span())
+        .collect();
+    assert_eq!(skipped, [Span::new(8, source.len())]);
+}
+
+// spec QC-1.1: under the vanilla dialect the tree's text still ends at the first NUL, the rest
+// of the file skipped
+#[test]
+fn the_vanilla_tree_ends_at_a_nul() {
+    let source = "float a;\0\n#define N 1\n";
+    assert_eq!(vanilla(source), Vec::<String>::new());
+    let parsed = parse_with(source.as_bytes(), Dialect::Vanilla);
+    let skipped: Vec<Span> = parsed
+        .syntax()
+        .tokens()
+        .filter(|t| t.kind() == SyntaxKind::Skipped)
+        .map(|t| t.span())
+        .collect();
+    assert_eq!(skipped, [Span::new(8, source.len())]);
 }
 
 // spec FTEF-14.51: the vanilla dialect keeps its node, a `#` and a name to the first line

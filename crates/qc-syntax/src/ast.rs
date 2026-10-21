@@ -690,7 +690,13 @@ impl Builtin {
             match token.kind() {
                 // FTEF-13.7: a part may have a prefix, an `L` among them after another part.
                 K::StringLit => {
-                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(token.text()) {
+                    // FTEF-14.56: a NUL byte of the file is a space in the loader's text.
+                    let text: Vec<u8> = token
+                        .text()
+                        .iter()
+                        .map(|&byte| if byte == 0 { b' ' } else { byte })
+                        .collect();
+                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(&text) {
                         joined.extend_from_slice(&bytes);
                     }
                 }

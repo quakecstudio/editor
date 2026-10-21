@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect};
-use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond};
+use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_as};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -144,6 +144,12 @@ fn dir_of(path: &Path) -> PathBuf {
     path.parent().map(Path::to_path_buf).unwrap_or_default()
 }
 
+/// Whether `byte` is one of the bytes `COM_Parse` makes a token of its own, which ends a word
+/// (QC-23.2).
+const fn single_token(byte: u8) -> bool {
+    matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
+}
+
 /// Splits `line` into tokens as `COM_Parse` does (QC-23.2), skipping `/* */` comments too
 /// (PRJ-4.2). Returns the tokens and whether the line ends inside a `/* */` comment.
 fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
@@ -175,17 +181,19 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
                     .get(start..)
                     .and_then(|rest| rest.iter().position(|b| *b == b'"'))
                     .map_or(line.len(), |len| start.saturating_add(len));
-                words.push(lossy(line.get(start..end)));
+                // QC-23.7: the token is a C string, so a NUL in the quotes ends its name.
+                let quoted = line.get(start..end).unwrap_or_default();
+                words.push(lossy(quoted.split(|b| *b == 0).next()));
                 i = end.saturating_add(1);
             }
-            (b'{' | b'}' | b'(' | b')' | b'\'' | b':', _) => {
+            _ if single_token(byte) => {
                 words.push(char::from(byte).to_string());
                 i = i.saturating_add(1);
             }
             _ => {
                 let start = i;
                 while let Some(&b) = line.get(i) {
-                    if b <= b' ' || matches!(b, b'{' | b'}' | b'(' | b')' | b'\'' | b':') {
+                    if b <= b' ' || single_token(b) {
                         break;
                     }
                     i = i.saturating_add(1);
@@ -395,6 +403,16 @@ impl Cursor {
             in_comment: false,
             pending: VecDeque::new(),
             fte: None,
+        }
+    }
+
+    /// A list-form `progs.src` whose text is `text`, as [`progs_text`] gives it.
+    fn list(path: PathBuf, text: Vec<u8>) -> Self {
+        let base = Base::Progs { output_seen: false };
+        Self {
+            text,
+            pos: 0,
+            ..Self::new(path, Vec::new(), None, base)
         }
     }
 
@@ -686,7 +704,10 @@ impl<L: Loader> Builder<'_, L> {
             // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
             // `progs.src` with its preprocessor, so the pragma there holds for the module.
             "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
-                self.graph.autoproto = Some(args.first().is_none_or(|n| cond::atoi(n) != 0));
+                let on = args
+                    .first()
+                    .is_none_or(|n| cond::fte_atoi(n.as_bytes()) != 0);
+                self.graph.autoproto = Some(on);
             }
             _ => {}
         }
@@ -821,11 +842,49 @@ impl<L: Loader> Builder<'_, L> {
     }
 }
 
+/// The text of a module's source that its form is told from and a list is read from: under
+/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54)
+/// past a `#!` first line (PRJ-4.8), under the vanilla dialect its bytes past a UTF-8 byte order
+/// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.7).
+fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
+    if dialect.has_fteqcc_extensions() {
+        qcc_load_as(bytes.to_vec(), FileStart::Source).0
+    } else {
+        let text = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+        text.get(..com_parse_end(text)).unwrap_or(text).to_vec()
+    }
+}
+
+/// Where id's `COM_Parse` ends the text of a list, read token by token as it reads them, with no
+/// `/* */` comments: at the first NUL byte it meets between tokens or that ends a word or a `//`
+/// comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A quoted token runs
+/// on past a NUL in it to its closing quote, or, as [`com_parse_words`] reads a quote, to its
+/// line's end. The end of `text` when it has no such NUL.
+fn com_parse_end(text: &[u8]) -> usize {
+    let until = |from: usize, stop: fn(u8) -> bool| {
+        let rest = text.get(from..).unwrap_or_default();
+        rest.iter()
+            .position(|&b| stop(b))
+            .map_or(text.len(), |len| from.saturating_add(len))
+    };
+    let mut i = 0_usize;
+    while let Some(&byte) = text.get(i) {
+        let next = i.saturating_add(1);
+        i = match (byte, text.get(next)) {
+            (0, _) => return i,
+            (b'/', Some(&b'/')) => until(next, |b| b == 0 || b == b'\n'),
+            (b'"', _) => until(next, |b| b == b'"' || b == b'\n').saturating_add(1),
+            _ if byte <= b' ' || single_token(byte) => next,
+            _ => until(next, |b| b <= b' ' || single_token(b)),
+        };
+    }
+    text.len()
+}
+
 /// Whether the first token of `text`, split as `COM_Parse` splits (QC-23.2) with `/* */`
 /// comments skipped, starts with `#` (PRJ-4.1). `None` when there is no token.
 fn source_form(text: &[u8]) -> Option<bool> {
     let mut in_comment = false;
-    let text = text.strip_prefix(UTF8_BOM).unwrap_or(text);
     for line in text.split(|b| *b == b'\n') {
         let (words, still) = com_parse_words(line, in_comment);
         in_comment = still;
@@ -874,7 +933,8 @@ pub fn build_graph<L: Loader>(
             return builder.graph;
         }
     };
-    match source_form(&text) {
+    let listed = progs_text(&text, dialect);
+    match source_form(&listed) {
         Some(true) => {
             builder.graph.form = Some(Form::Source);
             builder.graph.files.push(GraphFile {
@@ -883,7 +943,7 @@ pub fn build_graph<L: Loader>(
                 parent: None,
             });
             let cursor = if dialect.has_fteqcc_extensions() {
-                Cursor::fteqcc(src, text, Some(0), FileStart::Compiled)
+                Cursor::fteqcc(src, text, Some(0), FileStart::Source)
             } else {
                 Cursor::new(src, text, Some(0), Base::Code)
             };
@@ -891,8 +951,7 @@ pub fn build_graph<L: Loader>(
         }
         Some(false) => {
             builder.graph.form = Some(Form::List);
-            let base = Base::Progs { output_seen: false };
-            builder.stack.push(Cursor::new(src, text, None, base));
+            builder.stack.push(Cursor::list(src, listed));
         }
         None => {
             builder.graph.form = Some(Form::List);

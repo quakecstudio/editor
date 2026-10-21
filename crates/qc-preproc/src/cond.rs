@@ -56,6 +56,43 @@ pub fn atoi(text: &str) -> i64 {
     }
 }
 
+/// The bytes the C locale's `isspace` takes, which `strtol` passes over first: space, tab, LF,
+/// VT, FF and CR.
+const fn c_space(byte: u8) -> bool {
+    matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// FTEQCC's `atoi` of `text`, as an LP64 host's C library has it (FTEF-14.55): `(int)strtol(text,
+/// NULL, 10)`. `strtol` passes over the bytes the C locale's `isspace` takes, reads a sign and
+/// decimal digits, and holds a value past a 64-bit `long` at `LONG_MAX` or `LONG_MIN`; the cast
+/// to `int` keeps its low 32 bits. Implements FTEF-14.55.
+#[must_use]
+pub fn fte_atoi(text: &[u8]) -> i32 {
+    let start = text.iter().position(|&b| !c_space(b)).unwrap_or(text.len());
+    let text = text.get(start..).unwrap_or_default();
+    let (negative, digits) = match text.first() {
+        Some(b'-') => (true, text.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, text.get(1..).unwrap_or_default()),
+        _ => (false, text),
+    };
+    // The magnitude, at most 2^63, which `LONG_MIN` holds.
+    let limit = i64::MIN.unsigned_abs();
+    let mut magnitude = 0_u64;
+    for &byte in digits.iter().take_while(|b| b.is_ascii_digit()) {
+        magnitude = magnitude
+            .saturating_mul(10)
+            .saturating_add(u64::from(byte.wrapping_sub(b'0')))
+            .min(limit);
+    }
+    let long = if negative {
+        0_i64.wrapping_sub_unsigned(magnitude)
+    } else {
+        i64::try_from(magnitude).unwrap_or(i64::MAX)
+    };
+    let [a, b, c, d, ..] = long.to_le_bytes();
+    i32::from_le_bytes([a, b, c, d])
+}
+
 fn tokens(expr: &str) -> Option<Vec<Tok>> {
     let bytes = expr.as_bytes();
     let mut out = Vec::new();
@@ -251,7 +288,7 @@ pub(crate) enum FteIfError {
 pub(crate) fn fte_if(
     text: &[u8],
     macros: &dyn Fn(&str) -> Option<String>,
-) -> (Result<i64, FteIfError>, usize) {
+) -> (Result<i32, FteIfError>, usize) {
     let mut reader = FteIf {
         text,
         pos: 0,
@@ -327,7 +364,7 @@ impl FteIf<'_> {
 
     /// `ParsePrecompilerIf(level)` one nesting deeper, for a parenthesis, a `!` or an
     /// operator's right side: [`FteIfError::TooDeep`] past the nesting limit.
-    fn nested(&mut self, level: u8) -> Result<i64, FteIfError> {
+    fn nested(&mut self, level: u8) -> Result<i32, FteIfError> {
         self.depth = self
             .depth
             .checked_add(1)
@@ -339,7 +376,7 @@ impl FteIf<'_> {
     }
 
     /// `ParsePrecompilerIf(level)`: an error where FTEQCC reports one.
-    fn level(&mut self, level: u8) -> Result<i64, FteIfError> {
+    fn level(&mut self, level: u8) -> Result<i32, FteIfError> {
         let Some(below) = level.checked_sub(1) else {
             return self.value();
         };
@@ -351,12 +388,12 @@ impl FteIf<'_> {
             FTE_LOGICAL if self.starts_with(b"||") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
-                Ok(i64::from(rhs != 0 || value != 0))
+                Ok(i32::from(rhs != 0 || value != 0))
             }
             FTE_LOGICAL if self.starts_with(b"&&") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
-                Ok(i64::from(rhs != 0 && value != 0))
+                Ok(i32::from(rhs != 0 && value != 0))
             }
             FTE_COMPARISON => {
                 let Some(op) = FTE_COMPARISONS.into_iter().find(|op| self.starts_with(op)) else {
@@ -372,15 +409,16 @@ impl FteIf<'_> {
                     b"!=" => value != rhs,
                     _ => value == rhs,
                 };
-                Ok(i64::from(result))
+                Ok(i32::from(result))
             }
             _ => Ok(value),
         }
     }
 
     /// The `PPI_VALUE` case: `(expr)`, `!value`, `defined NAME` or `defined(NAME)`, or a word,
-    /// a macro's text or the word itself read with `atoi`.
-    fn value(&mut self) -> Result<i64, FteIfError> {
+    /// a macro's text or the word itself read with `atoi` into FTEQCC's `int eval`
+    /// (FTEF-14.55).
+    fn value(&mut self) -> Result<i32, FteIfError> {
         self.skip_white();
         if self.peek(0) == Some(b'(') {
             self.advance(1);
@@ -394,7 +432,7 @@ impl FteIf<'_> {
         }
         if self.peek(0) == Some(b'!') {
             self.advance(1);
-            return Ok(i64::from(self.nested(FTE_NOT)? == 0));
+            return Ok(i32::from(self.nested(FTE_NOT)? == 0));
         }
         if self.starts_with(b"defined") {
             self.advance(7);
@@ -412,12 +450,13 @@ impl FteIf<'_> {
                 }
                 self.advance(1);
             }
-            return Ok(i64::from(defined));
+            return Ok(i32::from(defined));
         }
         let word = self
             .word()
             .ok_or(FteIfError::Reported("unexpected end-of-line"))?;
-        Ok((self.macros)(&word).map_or_else(|| atoi(&word), |body| atoi(&body)))
+        let text = (self.macros)(&word).unwrap_or(word);
+        Ok(fte_atoi(text.as_bytes()))
     }
 }
 
@@ -427,7 +466,7 @@ mod tests {
 
     use qc_lexer::Dialect;
 
-    use super::atoi;
+    use super::{atoi, fte_atoi};
 
     fn eval(expr: &str, macros: &HashMap<String, String>) -> bool {
         super::eval(
@@ -734,6 +773,84 @@ mod tests {
             ("/* c */ 1", false),
         ] {
             assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
+    }
+
+    // spec FTEF-14.55: FTEQCC's `atoi` is `(int)strtol(s, NULL, 10)` on an LP64 host: C white
+    // space, a sign and decimal digits, held at `LONG_MAX` or `LONG_MIN`, then the low 32 bits
+    #[test]
+    fn fte_atoi_is_an_lp64_strtol_cut_to_an_int() {
+        for (text, want) in [
+            (&b"42"[..], 42),
+            (b"  -7x", -7),
+            (b"+5", 5),
+            (b"\t\n\x0b\x0c\r 3", 3),
+            (b"", 0),
+            (b"-", 0),
+            (b"+", 0),
+            (b"x1", 0),
+            (b"--1", 0),
+            (b"0x10", 0),
+            (b"010", 10),
+            (b"2147483647", i32::MAX),
+            (b"2147483648", i32::MIN),
+            (b"-2147483648", i32::MIN),
+            (b"-2147483649", i32::MAX),
+            (b"4294967296", 0),
+            (b"4294967297", 1),
+            (b"-4294967297", -1),
+            (b"9223372036854775807", -1),
+            (b"9223372036854775808", -1),
+            (b"99999999999999999999", -1),
+            (b"-9223372036854775808", 0),
+            (b"-9223372036854775809", 0),
+            (b"-99999999999999999999", 0),
+            // U+00A0, U+3000 and U+0085 are no white space the C locale's `isspace` takes.
+            ("\u{a0}1".as_bytes(), 0),
+            ("\u{3000}1".as_bytes(), 0),
+            ("\u{85}1".as_bytes(), 0),
+            (b"\x001", 0),
+        ] {
+            assert_eq!(fte_atoi(text), want, "{text:?}");
+        }
+    }
+
+    // spec FTEF-14.55: an `#if` value is FTEQCC's `int`, so it is compared and negated as one,
+    // and Unicode white space before it leaves no number
+    #[test]
+    fn fteqcc_if_values_are_ints() {
+        let mut m = macros();
+        m.insert("X".to_owned(), "4294967296".to_owned());
+        m.insert("NBSP".to_owned(), "\u{a0}1".to_owned());
+        for (expr, want) in [
+            ("4294967296", false),
+            ("-99999999999999999999", false),
+            ("X", false),
+            ("!X", true),
+            ("NBSP", false),
+            ("\u{a0}1", false),
+            ("\u{3000}1", false),
+            ("\u{85}1", false),
+            ("4294967297 == 1", true),
+            ("2147483648 < 0", true),
+            ("-2147483649 > 0", true),
+            ("99999999999999999999 == -1", true),
+            ("2147483647 > 0", true),
+        ] {
+            assert_eq!(fte_eval(expr, &m), want, "{expr}");
+        }
+    }
+
+    // spec PRJ-5.5: the vanilla reader keeps its 64-bit value
+    #[test]
+    fn vanilla_if_values_are_unchanged() {
+        let m = macros();
+        for (expr, want) in [
+            ("4294967296", true),
+            ("2147483648 < 0", false),
+            ("-2147483649 > 0", false),
+        ] {
+            assert_eq!(eval(expr, &m), want, "{expr}");
         }
     }
 }

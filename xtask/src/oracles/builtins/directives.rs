@@ -9,7 +9,7 @@
 
 use qc_syntax::Dialect;
 
-use super::{Case, Project};
+use super::{Case, Encoding, ProgsSrc, Project};
 
 /// What binds `f` once the directive before it has been read.
 pub(super) const BIND: &str = "void() f = #5;\n";
@@ -204,7 +204,122 @@ const CONDITIONALS: &[&str] = &[
     "#ifdef __FTEQCC__\nvoid() f = #5;\n#endif\n",
     "#if FTEQCC\nzz zz zz\n#endif\nvoid() f = #5;\n",
     "#undef FTEQCC\n#ifdef FTEQCC\nzz zz zz\n#endif\nvoid() f = #5;\n",
+    // FTEF-14.55: each value is `atoi`'s `int`, the low 32 bits of a 64-bit `strtol`, which
+    // passes over only the C locale's white space.
+    "#if 4294967296\nzz\n#endif\nvoid() f = #5;\n",
+    "#if -99999999999999999999\nzz\n#endif\nvoid() f = #5;\n",
+    "#define X 4294967296\n#if X\nzz\n#endif\nvoid() f = #5;\n",
+    "#if 4294967297 == 1\nvoid() f = #5;\n#endif\n",
+    "#if 2147483648 < 0\nvoid() f = #5;\n#endif\n",
+    "#if -2147483649 > 0\nvoid() f = #5;\n#endif\n",
+    "#if 99999999999999999999 == -1\nvoid() f = #5;\n#endif\n",
+    "#if 9223372036854775808 == -1\nvoid() f = #5;\n#endif\n",
+    "#if -9223372036854775809 == 0\nvoid() f = #5;\n#endif\n",
+    "#if 2147483647 > 0\nvoid() f = #5;\n#endif\n",
+    "#if !4294967296\nvoid() f = #5;\n#endif\n",
+    "#if 4294967296 || 0\nzz\n#endif\nvoid() f = #5;\n",
+    "#if \u{a0}1\nzz\n#endif\nvoid() f = #5;\n",
+    "#if \u{3000}1\nzz\n#endif\nvoid() f = #5;\n",
+    "#if \u{85}1\nzz\n#endif\nvoid() f = #5;\n",
+    "#define X \u{a0}1\n#if X\nzz\n#endif\nvoid() f = #5;\n",
+    "#define X \u{3000}1\n#if X\nzz\n#endif\nvoid() f = #5;\n",
+    "#define X \u{85}1\n#if X\nzz\n#endif\nvoid() f = #5;\n",
+    "#define X \x0c1\n#if X\nvoid() f = #5;\n#endif\n",
+    // `pr_file_p++;` after the number passes one byte, the space, not the line break.
+    "#pack 4294967296 \nvoid() f = #5;\n",
+    "#pack 4294967302 \nvoid() f = #5;\n",
 ];
+
+/// Programs whose bytes FTEQCC's file loader changes (FTEF-14.54): each NUL byte is a space, and
+/// a UTF-8 byte order mark at the start is skipped.
+const LOADED: &[&str] = &[
+    "void() f = #5;\n\0zz zz zz\n",
+    "#define N #5\0zz\nvoid() f = N;\n",
+    "#ifdef Q\nzz\0\n#endif\nvoid() f = #5;\n",
+    "\0#define N #5\nvoid() f = N;\n",
+    "void() f = #5;\0\n",
+    "void() f\0= #5;\n",
+    "// c\0\nvoid() f = #5;\n",
+    "/* c\0 */ void() f = #5;\n",
+    "#define N #5 // c\0\nvoid() f = N;\n",
+    "\u{feff}#define N #5\nvoid() f = N;\n",
+    "\u{feff}  #define N #5\nvoid() f = N;\n",
+    "\u{feff}void() f = #5;\n",
+    "\u{feff}\u{feff}#define N #5\nvoid() f = N;\n",
+    "void() f = #5;\n\u{feff}#define N 1\n",
+];
+
+/// `$framevalue` numbers about 0 and past an `int`, each read by `atoi` (FTEF-14.55), before a
+/// frame name that a function then uses: one numbered below 0 is unknown (FTEF-18.30).
+const FRAME_VALUES: &[&str] = &[
+    "-1",
+    "-5",
+    "0",
+    "5",
+    "2147483647",
+    "-2147483648",
+    "2147483648",
+    "4294967295",
+    "4294967296",
+    "-99999999999",
+    "99999999999",
+];
+
+/// Frame macro uses about 0 (FTEF-18.30): names counted up past a negative start, a
+/// `$framerestore` of a negative macro, `$modelname`'s own lookup, and a lookup in any case.
+const FRAME_USES: &[&str] = &[
+    "$framevalue -2\n$frame a b c\nfloat x = $c;\n",
+    "$framevalue -2\n$frame a b c\nfloat x = $b;\n",
+    "$framevalue -4\n$frame a\n$framevalue 7\n$framerestore a\n$frame d\n",
+    "$frame a b\n$framerestore b\n$frame d\nfloat x = $d;\n",
+    "$framevalue 4\n$frame a\n$framevalue -7\n$framerestore a\n$frame d\nfloat x = $d;\n",
+    "$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d e f g h\nfloat x = $h;\n",
+    "$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d\nfloat x = $d;\n",
+    "$framevalue -1\n$frame A\nfloat x = $a;\n",
+    "$modelname m\n$frame a\nfloat x = $a;\n",
+];
+
+/// Each [`FRAME_VALUES`] number before `$frame a` and a use of `$a`, and each of
+/// [`FRAME_USES`], then `f`'s binding.
+fn frame_cases() -> Vec<String> {
+    let values = FRAME_VALUES
+        .iter()
+        .map(|value| format!("$framevalue {value}\n$frame a\nfloat x = $a;\n{BIND}"));
+    let uses = FRAME_USES.iter().map(|uses| format!("{uses}{BIND}"));
+    values.chain(uses).collect()
+}
+
+/// Programs written as UTF-16 and as UTF-32 after their byte order marks, which FTEQCC's file
+/// loader decodes (FTEF-14.54).
+const WIDE: &[&str] = &[
+    "void() f = #5;\n",
+    "#define N #5\nvoid() f = N;\n",
+    "// \u{e9}\u{20ac}\u{1f600}\nvoid() f = #5;\n",
+    "void() f = #5;\n\0zz zz zz\n",
+    "#ifdef Q\nzz\0\n#endif\nvoid() f = #5;\n",
+];
+
+/// The encodings each program of [`WIDE`] is written in.
+const WIDE_ENCODINGS: [Encoding; 4] = [
+    Encoding::Utf16Le,
+    Encoding::Utf16Be,
+    Encoding::Utf32Le,
+    Encoding::Utf32Be,
+];
+
+/// Each program of [`WIDE`] in each wide encoding.
+fn wide_cases() -> Vec<Case> {
+    let mut cases = Vec::new();
+    for source in WIDE {
+        for encoding in WIDE_ENCODINGS {
+            cases.push(Case {
+                encoding,
+                ..Case::new(Dialect::Fteqcc, (*source).to_owned())
+            });
+        }
+    }
+    cases
+}
 
 /// Directives on a line of their own after a use's `(` or `,`, or in the text of an argument
 /// (FTEF-14.45), each with the argument that comes after it.
@@ -680,6 +795,23 @@ const INCLUDE_PROJECTS: &[IncludeProject] = &[
         "#pragma warning disable F303\n#define D \\\n#include \"b.qh\" \\\n\nvoid() f = D;\n",
         &[("b.qh", "#5\n")],
     ),
+    // FTEF-14.54: an included file's text as FTEQCC's file loader gives it, whose first byte
+    // `QCC_PR_Precompiler` reads.
+    (
+        "t.qc",
+        "#include \"b.qh\"\nvoid() f = N;\n",
+        &[("b.qh", "\u{feff}#define N #5\n")],
+    ),
+    (
+        "t.qc",
+        "#include \"b.qh\"\nvoid() f = N;\n",
+        &[("b.qh", "\0#define N #5\n")],
+    ),
+    (
+        "t.qc",
+        "#include \"b.qh\"\nzz\n",
+        &[("b.qh", "void() f = #5;\n\0#ifdef Q\n")],
+    ),
 ];
 
 /// The case of `source` compiled as `compiled` with `files` beside it.
@@ -692,10 +824,12 @@ fn project_case(compiled: &str, source: &str, files: &[(&str, String)]) -> Case 
     Case {
         dialect: Dialect::Fteqcc,
         source: source.to_owned(),
+        encoding: Encoding::Utf8,
         project: Some(Project {
             compiled: compiled.to_owned(),
             files,
             include_dirs: Vec::new(),
+            progs: None,
         }),
     }
 }
@@ -856,6 +990,15 @@ const GRAPH_FORMS: &[&str] = &[
     "#pragma unknown\n@@",
     "#pragma DONT_COMPILE_THIS_FILE\n@@",
     "#pragmas once\n@@",
+    // FTEF-14.54: the text FTEQCC's file loader gives.
+    "\u{feff}@@",
+    "\u{feff}  @@",
+    "// c\0\n@@",
+    "/* c\0 */\n@@",
+    "\0@@",
+    "#ifdef Q\nzz\0\n#endif\n@@",
+    "#if 4294967296\n#else\n@@\n#endif",
+    "#if \u{a0}1\n#else\n@@\n#endif",
     // FTEF-14.53: a `\` that joins a line of code to the next leaves its `#` code.
     "#define undef 6;\n#define N\nfloat g = \\\n#undef N\n#ifdef N\n@@\n#endif",
     "#define undef 6;\n#define N\nfloat g = \\\r\n#undef N\n#ifdef N\n@@\n#endif",
@@ -951,7 +1094,112 @@ pub(super) fn graph_cases() -> Vec<Case> {
         files.extend(others.iter().map(|&(name, text)| (name, text.to_owned())));
         cases.push(project_case("t.qc", source, &files));
     }
+    // FTEF-14.54: a file of UTF-16 or UTF-32 is read decoded.
+    for encoding in WIDE_ENCODINGS {
+        for (line, name) in GRAPH_LINES {
+            let source = format!("// c\n{line}\n");
+            cases.push(Case {
+                encoding,
+                ..project_case("t.qc", &source, &[(name, BIND.to_owned())])
+            });
+        }
+    }
+    cases.extend(progs_cases());
     cases
+}
+
+/// `progs.src` files of either form that FTEQCC's file loader changes (PRJ-4.6, FTEF-14.54),
+/// written as UTF-8: each NUL byte is a space, and a UTF-8 byte order mark at the start is
+/// skipped, once. Each names `b.qh`, which binds `f`, and `x.qc`, which binds nothing, so that
+/// the words `QCC_COM_Parse` reads decide whether `f` is bound. None is the list of
+/// `progs.dat` and one file, which a case without a `progs.src` of its own writes.
+const LOADED_PROGS: &[&str] = &[
+    "progs.dat\nx.qc\0b.qh\n",
+    "progs.dat\0b.qh\n",
+    "progs.dat\nb.qh\0\n",
+    "progs.dat\n\0b.qh\nx.qc\n",
+    "\0#include \"b.qh\"\n",
+    "\0\0 #include \"x.qc\"\n#include \"b.qh\"\n",
+    "progs.dat\nx.qc\0\0b.qh\n",
+    "\u{feff}#include \"b.qh\"\n",
+    "\u{feff}progs.dat\nb.qh\nx.qc\n",
+];
+
+/// `progs.src` files whose first line starts with `#!`, which FTEQCC's `QCC_main` passes over
+/// (PRJ-4.8), written as UTF-8: before a list and before a source form, holding a `\`, a `/*`
+/// or a `"`, after a UTF-8 byte order mark and with CRLF line ends. All but the one whose line
+/// names `b.qh` bind `f`.
+pub(super) const SCRIPT_PROGS: &[&str] = &[
+    "#!/usr/bin/fteqcc\nprogs.dat\nb.qh\n",
+    "#!/usr/bin/fteqcc\n#include \"b.qh\"\n",
+    "#!\nprogs.dat\nb.qh\n",
+    "#!x \\\n#include \"b.qh\"\n",
+    "#!x \\\nprogs.dat\nb.qh\n",
+    "#!x /*\n#include \"b.qh\"\n// */\n",
+    "#!x /*\nprogs.dat\nb.qh\n",
+    "#!x \"\n#include \"b.qh\"\n",
+    "\u{feff}#!x\nprogs.dat\nb.qh\n",
+    "\u{feff}#!x\n#include \"b.qh\"\n",
+    "#!x\r\nprogs.dat\r\nb.qh\r\n",
+    "#!b.qh\nprogs.dat\nx.qc\n",
+];
+
+/// `progs.src` files of either form written in each wide encoding, which FTEQCC's file loader
+/// decodes (PRJ-4.6, FTEF-14.54), with a `#!` first line too (PRJ-4.8).
+const WIDE_PROGS: &[&str] = &[
+    "#include \"b.qh\"\n",
+    "progs.dat\nb.qh\n",
+    "progs.dat\nx.qc\0b.qh\n",
+    "// c\n#include \"b.qh\"\n",
+    "#!x\nprogs.dat\nb.qh\n",
+];
+
+/// Vanilla `progs.src` lists with a NUL byte, where id's qcc ends the list (QC-23.7, PRJ-4.7):
+/// between words, in and after a word, in a `//` comment, at a line's start, and in a quoted
+/// word, which reads on past it. Those that list `b.qh` before the NUL, or after it in the
+/// quoted word's case, bind `f`.
+pub(super) const VANILLA_PROGS: &[&str] = &[
+    "progs.dat\0b.qh\n",
+    "progs.dat\nx.qc\0b.qh\n",
+    "progs.dat\nb.qh\0x.qc\n",
+    "progs.dat\nx.qc\n\0b.qh\n",
+    "progs.dat\nx.qc \0 b.qh\n",
+    "progs.dat\nb.qh\n\0x.qc\n",
+    "progs.dat\n// c\0\nb.qh\n",
+    "progs.dat\n// \"\0\nb.qh\n",
+    "progs.dat\n\"x.qc\0junk\" b.qh\n",
+];
+
+/// The graph cases of a `progs.src` of their own (PRJ-4.6, PRJ-4.7, PRJ-4.8): [`LOADED_PROGS`]
+/// and [`SCRIPT_PROGS`] as UTF-8 and [`WIDE_PROGS`] in each wide encoding under the FTEQCC
+/// dialect, and [`VANILLA_PROGS`] under the vanilla dialect, beside `b.qh` and `x.qc`.
+fn progs_cases() -> Vec<Case> {
+    let fteqcc = |text| (Dialect::Fteqcc, text, Encoding::Utf8);
+    let utf8 = LOADED_PROGS
+        .iter()
+        .chain(SCRIPT_PROGS)
+        .map(|&text| fteqcc(text));
+    let wide = WIDE_PROGS
+        .iter()
+        .flat_map(|&text| WIDE_ENCODINGS.map(|encoding| (Dialect::Fteqcc, text, encoding)));
+    let vanilla = VANILLA_PROGS
+        .iter()
+        .map(|&text| (Dialect::Vanilla, text, Encoding::Utf8));
+    utf8.chain(wide)
+        .chain(vanilla)
+        .map(|(dialect, text, encoding)| {
+            let files = [("b.qh", BIND.to_owned()), ("x.qc", "float y;\n".to_owned())];
+            let mut case = project_case("t.qc", "", &files);
+            case.dialect = dialect;
+            if let Some(project) = &mut case.project {
+                project.progs = Some(ProgsSrc {
+                    text: text.to_owned(),
+                    encoding,
+                });
+            }
+            case
+        })
+        .collect()
 }
 
 /// Every case of the directive family.
@@ -969,6 +1217,8 @@ pub(super) fn cases() -> Vec<Case> {
         pragma_cases(),
         INCLUDE_LISTS.iter().map(|&s| s.to_owned()).collect(),
         JOINED.iter().map(|&s| s.to_owned()).collect(),
+        LOADED.iter().map(|&s| s.to_owned()).collect(),
+        frame_cases(),
     ];
     let mut cases: Vec<Case> = sources
         .into_iter()
@@ -976,5 +1226,6 @@ pub(super) fn cases() -> Vec<Case> {
         .map(|source| Case::new(Dialect::Fteqcc, source))
         .collect();
     cases.extend(include_cases());
+    cases.extend(wide_cases());
     cases
 }
