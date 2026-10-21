@@ -1088,7 +1088,7 @@ pub(crate) fn cases() -> Vec<Case> {
 }
 
 /// The spec statement that says why the profile's outcome `ours` for `case`, with the error
-/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.14).
+/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.15).
 pub(crate) fn expected_difference(
     case: &Case,
     ours: &Outcome,
