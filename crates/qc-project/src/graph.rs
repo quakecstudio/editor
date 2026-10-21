@@ -12,7 +12,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect};
-use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond};
+use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_file};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -396,6 +396,13 @@ impl Cursor {
             pending: VecDeque::new(),
             fte: None,
         }
+    }
+
+    /// A list-form `progs.src` whose text is `text`, as [`progs_text`] gives it.
+    fn list(path: PathBuf, text: Vec<u8>) -> Self {
+        let mut cursor = Self::new(path, Vec::new(), None, Base::Progs { output_seen: false });
+        cursor.text = text;
+        cursor
     }
 
     /// A QuakeC file of an FTEQCC or GMQCC module, read as FTEQCC reads it from `start`
@@ -824,11 +831,21 @@ impl<L: Loader> Builder<'_, L> {
     }
 }
 
+/// The text of a module's source that its form is told from and a list is read from: under
+/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54),
+/// under the vanilla dialect its bytes past a UTF-8 byte order mark (PRJ-5.1).
+fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
+    if dialect.has_fteqcc_extensions() {
+        qcc_load_file(bytes.to_vec()).0
+    } else {
+        bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes).to_vec()
+    }
+}
+
 /// Whether the first token of `text`, split as `COM_Parse` splits (QC-23.2) with `/* */`
 /// comments skipped, starts with `#` (PRJ-4.1). `None` when there is no token.
 fn source_form(text: &[u8]) -> Option<bool> {
     let mut in_comment = false;
-    let text = text.strip_prefix(UTF8_BOM).unwrap_or(text);
     for line in text.split(|b| *b == b'\n') {
         let (words, still) = com_parse_words(line, in_comment);
         in_comment = still;
@@ -877,7 +894,8 @@ pub fn build_graph<L: Loader>(
             return builder.graph;
         }
     };
-    match source_form(&text) {
+    let listed = progs_text(&text, dialect);
+    match source_form(&listed) {
         Some(true) => {
             builder.graph.form = Some(Form::Source);
             builder.graph.files.push(GraphFile {
@@ -894,8 +912,7 @@ pub fn build_graph<L: Loader>(
         }
         Some(false) => {
             builder.graph.form = Some(Form::List);
-            let base = Base::Progs { output_seen: false };
-            builder.stack.push(Cursor::new(src, text, None, base));
+            builder.stack.push(Cursor::list(src, listed));
         }
         None => {
             builder.graph.form = Some(Form::List);
