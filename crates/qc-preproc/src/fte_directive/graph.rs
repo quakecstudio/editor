@@ -14,7 +14,8 @@ use std::collections::HashMap;
 
 use super::{
     Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, byte_at, condition,
-    elif_defined, read, simple_get_token, skip_blanks, skip_side, skip_to_end_of_line, whitespace,
+    elif_defined, lossy, read, simple_get_token, skip_blanks, skip_side, skip_to_end_of_line,
+    whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
 use crate::{FileId, Variadic};
@@ -535,9 +536,4 @@ const fn utf8_len(lead: u8) -> usize {
         0xf0..=0xf7 => 4,
         _ => 1,
     }
-}
-
-/// `bytes` as text, each byte that is no UTF-8 replaced.
-fn lossy(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).into_owned()
 }
