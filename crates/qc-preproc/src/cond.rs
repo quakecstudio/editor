@@ -10,6 +10,8 @@
 
 use qc_lexer::Dialect;
 
+use crate::fte_directive::simple_get_token;
+
 /// Deepest nesting of `!` and parentheses an expression may have; a deeper one is false, so
 /// no input exhausts the stack.
 const MAX_DEPTH: u32 = 64;
@@ -314,40 +316,13 @@ impl FteIf<'_> {
         }
     }
 
-    /// `QCC_PR_SimpleGetToken`: whitespace skipped, then the bytes up to whitespace, `,`, `;`,
-    /// `(`, `)`, `]` or `//`. `None` at the end of the line, at a comment, or when no byte is
-    /// taken.
+    /// `QCC_PR_SimpleGetToken` from where reading stands ([`simple_get_token`]): the word, and
+    /// reading goes on after it.
     fn word(&mut self) -> Option<String> {
-        while let Some(b) = self.peek(0) {
-            if !fte_white(b) {
-                break;
-            }
-            if b == b'\n' {
-                return None;
-            }
-            self.advance(1);
-        }
-        if self.peek(0) == Some(b'/') && matches!(self.peek(1), Some(b'/' | b'*')) {
-            // "comment alert": a `//` comment is read to its line break.
-            if self.peek(1) == Some(b'/') {
-                while self.peek(0).is_some_and(|b| b != b'\n') {
-                    self.advance(1);
-                }
-            }
-            return None;
-        }
-        let start = self.pos;
-        while let Some(b) = self.peek(0) {
-            let stop = fte_white(b)
-                || matches!(b, b',' | b';' | b')' | b'(' | b']')
-                || (b == b'/' && self.peek(1) == Some(b'/'));
-            if stop {
-                break;
-            }
-            self.advance(1);
-        }
-        let word = self.text.get(start..self.pos)?;
-        (!word.is_empty()).then(|| String::from_utf8_lossy(word).into_owned())
+        let (word, stop) = simple_get_token(self.text, self.pos);
+        self.pos = stop;
+        let word = self.text.get(word?)?;
+        Some(String::from_utf8_lossy(word).into_owned())
     }
 
     /// `ParsePrecompilerIf(level)` one nesting deeper, for a parenthesis, a `!` or an

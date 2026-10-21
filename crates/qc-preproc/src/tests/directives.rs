@@ -7,9 +7,9 @@ use std::path::Path;
 
 use super::{codes, one_fte, tokens};
 use crate::fte_directive::{
-    Directive, ElifTest, Gap, IfTest, LineEnd, Side, TextStart, WarningAction, add_include_dir,
-    com_parse, false_side, false_side_after, include_candidates, include_dir, join_paths,
-    pragma_line, read, simple_get_token, skip_to_end_of_line, starts_line, whitespace,
+    Definer, Directive, Earlier, ElifTest, ElseWord, FteState, Gap, IfTest, Junk, LineEnd, Pragma,
+    Side, TextStart, WarningAction, com_parse, false_side, false_side_after, include_candidates,
+    join_paths, read, simple_get_token, skip_to_end_of_line, starts_line, whitespace,
 };
 use crate::{Code, FileOutput, MemoryLoader, Preprocessor};
 
@@ -83,7 +83,10 @@ fn white_space_stops_at_a_directive() {
 // finds the junk outside comments, a string included
 #[test]
 fn lines_end_where_skip_to_end_of_line_ends_them() {
-    let skip = |text: &str, check: bool| skip_to_end_of_line(text.as_bytes(), 0, check);
+    let skip = |text: &str, check: bool| {
+        let junk = if check { Junk::Checked } else { Junk::Ignored };
+        skip_to_end_of_line(text.as_bytes(), 0, junk)
+    };
     assert_eq!(skip(" // c \\\nzz\nx", true), end(10, false));
     assert_eq!(skip(" // c \\\r\nzz\nx", true), end(11, false));
     assert_eq!(skip(" /* c\n */\nx", true), end(9, false));
@@ -161,13 +164,16 @@ fn directive_names_match_by_their_first_bytes() {
     assert!(matches!(
         directive("#defined N 5"),
         Some(Directive::Define {
-            append: false,
+            definer: Definer::Define,
             word_end: 8
         })
     ));
     assert!(matches!(
         directive("# \t\x0b\x01\u{80}append N"),
-        Some(Directive::Define { append: true, .. })
+        Some(Directive::Define {
+            definer: Definer::Append,
+            ..
+        })
     ));
     assert!(matches!(
         directive("#undefine N"),
@@ -179,11 +185,17 @@ fn directive_names_match_by_their_first_bytes() {
     ));
     assert!(matches!(
         directive("#elsewhere"),
-        Some(Directive::Else { elif: false, .. })
+        Some(Directive::Else {
+            word: ElseWord::Else,
+            ..
+        })
     ));
     assert!(matches!(
         directive("#elif 1"),
-        Some(Directive::Else { elif: true, .. })
+        Some(Directive::Else {
+            word: ElseWord::Elif,
+            ..
+        })
     ));
     assert!(matches!(
         directive("#endiff"),
@@ -289,7 +301,12 @@ fn operands_of_undef_and_ifdef() {
 fn skipped_sides_end_where_false_preprocessor_if_ends_them() {
     let side = |text: &str, had_true: bool| {
         let mut level = 1;
-        (false_side(text.as_bytes(), 0, had_true, &mut level), level)
+        let earlier = if had_true {
+            Earlier::SideTaken
+        } else {
+            Earlier::NoSideTaken
+        };
+        (false_side(text.as_bytes(), 0, earlier, &mut level), level)
     };
     assert_eq!(side("\nx\n#endif\ny", false), (Side::Endif(9), 0));
     assert_eq!(side("\n  #  endif x\n", false), (Side::Endif(13), 0));
@@ -353,11 +370,14 @@ fn skipped_sides_end_where_false_preprocessor_if_ends_them() {
     let mut level = 1;
     let text = b"0\nzz\n#endif\n";
     assert_eq!(
-        false_side_after(text, 1, false, &mut level),
+        false_side_after(text, 1, Earlier::NoSideTaken, &mut level),
         Side::Endif(11)
     );
     let mut level = 1;
-    assert_eq!(false_side_after(b"0", 1, false, &mut level), Side::Eof);
+    assert_eq!(
+        false_side_after(b"0", 1, Earlier::NoSideTaken, &mut level),
+        Side::Eof
+    );
 }
 
 // spec FTEF-14.40: `QCC_JoinPaths` and `QCC_FindBestInclude` try the name beside the file being
@@ -382,23 +402,46 @@ fn includes_are_found_beside_the_compiled_file() {
 // file, at most 8, each once, an empty one as `.`
 #[test]
 fn include_directories() {
-    assert_eq!(include_dir(b"x", b"src/a.qc"), b"src/x/");
-    assert_eq!(include_dir(b"\"x/y\\\\\" // c", b"src/a.qc"), b"src/x/y\\");
+    let dir = |message: &[u8]| pragma(message).include_dir(b"src/a.qc");
+    assert_eq!(dir(b"x"), b"src/x/");
+    assert_eq!(dir(b"\"x/y\\\\\" // c"), b"src/x/y\\");
+    assert_eq!(dir(b"\"x/y\\\" // c"), b"src/x/y\" // c/");
+    assert_eq!(dir(b""), b"src/");
+    let mut state = FteState::default();
+    state.add_include_dir(b"a/");
+    state.add_include_dir(b"a/");
+    state.add_include_dir(b"b");
+    state.add_include_dir(b"");
     assert_eq!(
-        include_dir(b"\"x/y\\\" // c", b"src/a.qc"),
-        b"src/x/y\" // c/"
+        state.include_dirs,
+        [b"a/".to_vec(), b"b/".to_vec(), b"./".to_vec()]
     );
-    assert_eq!(include_dir(b"", b"src/a.qc"), b"src/");
-    let mut dirs = Vec::new();
-    add_include_dir(&mut dirs, b"a/");
-    add_include_dir(&mut dirs, b"a/");
-    add_include_dir(&mut dirs, b"b");
-    add_include_dir(&mut dirs, b"");
-    assert_eq!(dirs, [b"a/".to_vec(), b"b/".to_vec(), b"./".to_vec()]);
     for i in 0..10 {
-        add_include_dir(&mut dirs, format!("d{i}/").as_bytes());
+        state.add_include_dir(format!("d{i}/").as_bytes());
     }
-    assert_eq!(dirs.len(), 8);
+    assert_eq!(state.include_dirs.len(), 8);
+}
+
+/// A pragma with the text `message`.
+fn pragma(message: &[u8]) -> Pragma {
+    Pragma {
+        name: b"p".to_vec(),
+        message: message.to_vec(),
+    }
+}
+
+// spec FTEF-14.32: `#pragma file` names the file its text names, or within the `(` it starts
+// with and the first `)` after it
+#[test]
+fn pragma_file_names() {
+    for (text, name) in [
+        (&b"(a)b"[..], &b"a"[..]),
+        (b"( a ", b" a "),
+        (b"a)", b"a)"),
+        (b"", b""),
+    ] {
+        assert_eq!(pragma(text).file_name(), name, "{text:?}");
+    }
 }
 
 // spec FTEF-14.43: `#pragma line` reads its number with `strtoul` in base 0, keeps the low 32
@@ -424,7 +467,7 @@ fn pragma_line_reads_strtoul() {
         ("-99999999999999999999", -1),
         ("\t\x0c 12zz", 12),
     ] {
-        assert_eq!(pragma_line(text.as_bytes()), line, "{text:?}");
+        assert_eq!(pragma(text.as_bytes()).line(), line, "{text:?}");
     }
 }
 

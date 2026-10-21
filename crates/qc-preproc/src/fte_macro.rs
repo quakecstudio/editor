@@ -22,8 +22,8 @@ use std::rc::Rc;
 use qc_lexer::{Code, Span, TokenKind, lex_with};
 
 use crate::fte_directive::{
-    self, Bytes, FTE_MAX_MACRO_NAME, Resume, TextStart, WarningAction, byte_at, line_ending,
-    simple_get_token,
+    self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WarningAction, byte_at,
+    simple_get_token, whitespace,
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
@@ -415,60 +415,6 @@ pub(crate) fn builtin_text(name: &[u8], line: i32, file: &[u8]) -> Option<Vec<u8
         b"__RAND__" => b"0".to_vec(),
         _ => return None,
     })
-}
-
-/// The name `#pragma file` gives with the text `message` (FTEF-14.32): the text, or within the
-/// `(` it starts with and the first `)` after it.
-pub(crate) fn pragma_file_name(message: &[u8]) -> Vec<u8> {
-    match message.strip_prefix(b"(") {
-        Some(inside) => inside
-            .iter()
-            .position(|&b| b == b')')
-            .and_then(|close| inside.get(..close))
-            .unwrap_or(inside)
-            .to_vec(),
-        None => message.to_vec(),
-    }
-}
-
-/// `QCC_PR_LexWhitespace(true)`, which runs no directive, over a macro's body: the offset after
-/// the white space (`qcc_iswhite`), `//` comments to their line break and `/* */` comments from
-/// `at`. A `/* */` comment that does not end runs to the end of the text, where FTEQCC reports
-/// "EOF inside comment".
-fn lex_whitespace(text: &[u8], mut at: usize) -> usize {
-    loop {
-        while byte_at(text, at).is_some_and(cond::fte_white) {
-            at = at.saturating_add(1);
-        }
-        let next = text.get(at.saturating_add(1)).copied();
-        match (byte_at(text, at), next) {
-            (Some(b'/'), Some(b'/')) => {
-                while let Some(b) = byte_at(text, at) {
-                    if line_ending(b, text.get(at.saturating_add(1)).copied()) {
-                        break;
-                    }
-                    at = at.saturating_add(1);
-                }
-                if byte_at(text, at).is_some() {
-                    at = at.saturating_add(1);
-                }
-            }
-            (Some(b'/'), Some(b'*')) => {
-                at = at.saturating_add(1);
-                loop {
-                    at = at.saturating_add(1);
-                    if byte_at(text, at.saturating_add(1)).is_none() {
-                        return at.saturating_add(1);
-                    }
-                    if text.get(at..at.saturating_add(2)) == Some(b"*/") {
-                        break;
-                    }
-                }
-                at = at.saturating_add(2);
-            }
-            _ => return at,
-        }
-    }
 }
 
 /// Where the skip over a string that `QCC_PR_ExpandPreProcessorMacro` makes from the `"` at `at`
@@ -881,7 +827,8 @@ impl Writer<'_> {
         let mut at = 0_usize;
         loop {
             let whitestart = out.bytes.len();
-            let white_end = lex_whitespace(bytes, at);
+            // `QCC_PR_LexWhitespace(true)` runs no directive, so it stops at a line's `#` too.
+            let (Gap::Text(white_end) | Gap::LineStart(white_end)) = whitespace(bytes, at);
             out.push_from(self.body, at..white_end);
             at = white_end;
             // Everything written so far, the pieces before this one included.
@@ -1040,7 +987,7 @@ impl<L: Loader> Preprocessor<L> {
         run: &mut Run,
         bytes: &Bytes,
         (hash, word_end): (usize, usize),
-        append: bool,
+        definer: Definer,
     ) -> Result<usize, usize> {
         let reading = bytes.reading();
         let text = reading.bytes();
@@ -1087,7 +1034,7 @@ impl<L: Loader> Preprocessor<L> {
             .is_some_and(|old| old.params == params && old.variadic == variadic);
         match old.as_deref().and_then(Macro::text) {
             // "append with no previous define is treated as just a regular define".
-            Some(old_value) if append && same_params => {
+            Some(old_value) if definer == Definer::Append && same_params => {
                 let mut joined = Text::clone(old_value);
                 joined.push(b" ", Origin::Made(at_name));
                 joined.push_from(&value, 0..value.bytes.len());

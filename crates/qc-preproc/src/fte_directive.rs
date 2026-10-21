@@ -24,7 +24,7 @@ use std::rc::Rc;
 use qc_lexer::{Code, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
-use crate::fte_macro::{Reading, Text, pragma_file_name};
+use crate::fte_macro::{Reading, Text};
 use crate::{
     Body, ChunkReader, FileId, FileSpan, Loader, Macro, Preprocessor, Run, Variadic, normalize,
 };
@@ -170,11 +170,33 @@ pub(crate) struct LineEnd {
     pub(crate) junk: bool,
 }
 
+impl LineEnd {
+    /// Reading goes on at this end of the line of the directive whose `#` is at `hash` in
+    /// `reading`; its junk is "unexpected tokens at end of line" (FTEF-14.35).
+    fn resume(self, run: &mut Run, reading: &Reading<'_>, hash: usize) -> Resume {
+        if self.junk {
+            let at = reading.place(hash..self.at.max(hash.saturating_add(1)));
+            run.report(Code::E0121, JUNK, at);
+        }
+        Resume::At(self.at)
+    }
+}
+
+/// Whether `QCC_PR_SkipToEndOfLine` is called with `errorifnonwhite` (FTEF-14.35).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Junk {
+    /// The line's junk is "unexpected tokens at end of line".
+    Checked,
+    /// The line is read with no check.
+    Ignored,
+}
+
 /// `QCC_PR_SkipToEndOfLine(errorifnonwhite)` from `at` (FTEF-14.35): to the line break or the
 /// end of the text, passing over `/* */` comments, strings before any `//`, and each `\` and
-/// line break, in a `//` comment too. With `check` the first byte that is no white space,
-/// outside a comment and before a `//`, a string's `"` included, is junk.
-pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, check: bool) -> LineEnd {
+/// line break, in a `//` comment too. With [`Junk::Checked`] the first byte that is no white
+/// space, outside a comment and before a `//`, a string's `"` included, is junk.
+pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, junk_is: Junk) -> LineEnd {
+    let check = junk_is == Junk::Checked;
     let mut comments = true;
     let mut junk = false;
     loop {
@@ -433,6 +455,24 @@ impl Pragma {
     }
 }
 
+/// Which of `#define` and `#append` defines a macro (FTEF-14.39).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Definer {
+    /// `#define`: the body replaces any the macro had.
+    Define,
+    /// `#append`: the body is added to the macro's, when its parameters are the same.
+    Append,
+}
+
+/// Which of `#else` and `#elif` leaves a taken side (FTEF-14.37).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ElseWord {
+    /// `#else`, whose line is read with [`Junk::Checked`].
+    Else,
+    /// `#elif`, whose line is read with no check.
+    Elif,
+}
+
 /// A directive as `QCC_PR_Precompiler` reads it, before it is run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Directive {
@@ -440,7 +480,7 @@ pub(crate) enum Directive {
     Hanging(LineEnd),
     /// `#define` or `#append`, whose name `QCC_PR_PreProcessor_Define` reads after the word
     /// that ends at `word_end`, the directive's own (FTEF-14.24).
-    Define { append: bool, word_end: usize },
+    Define { definer: Definer, word_end: usize },
     /// `#undef` and the name after it, possibly empty (FTEF-14.36).
     Undef { name: Range<usize>, end: LineEnd },
     /// `#if`, `#ifdef` or `#ifndef`; for a name, the name and the line's end.
@@ -452,8 +492,8 @@ pub(crate) enum Directive {
     /// `#if` and a byte that is no white space after its name: "Unknown pragma", and reading
     /// goes on after the word, as code (FTEF-14.36).
     NotIf { word_end: usize },
-    /// `#else`, or with `elif` `#elif`, on a side that is taken (FTEF-14.37).
-    Else { elif: bool, end: LineEnd },
+    /// `#else` or `#elif` on a side that is taken (FTEF-14.37).
+    Else { word: ElseWord, end: LineEnd },
     /// `#endif`.
     Endif { end: LineEnd },
     /// `#eof`, which ends the text being read.
@@ -493,7 +533,11 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         match byte_at(text, at) {
             None => break,
             Some(b'\r' | b'\n') => {
-                return Some(Directive::Hanging(skip_to_end_of_line(text, at, false)));
+                return Some(Directive::Hanging(skip_to_end_of_line(
+                    text,
+                    at,
+                    Junk::Ignored,
+                )));
             }
             Some(b) if b > b' ' && b < 0x80 => break,
             Some(_) => at = at.saturating_add(1),
@@ -501,70 +545,76 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     }
     let rest = text.get(at..).unwrap_or_default();
     let after = |len: usize| at.saturating_add(len);
-    let line = |from: usize, check: bool| skip_to_end_of_line(text, from, check);
+    let line = |from: usize, junk: Junk| skip_to_end_of_line(text, from, junk);
     let directive = if rest.starts_with(b"define") || rest.starts_with(b"append") {
         let (_, word_end) = simple_get_token(text, at);
-        Directive::Define {
-            append: rest.starts_with(b"append"),
-            word_end,
-        }
+        let definer = if rest.starts_with(b"append") {
+            Definer::Append
+        } else {
+            Definer::Define
+        };
+        Directive::Define { definer, word_end }
     } else if rest.starts_with(b"undef") {
         let (name, stop) = simple_get_token(text, skip_blanks(text, after(5)));
         Directive::Undef {
             name: name.unwrap_or(stop..stop),
-            end: line(stop, true),
+            end: line(stop, Junk::Checked),
         }
     } else if rest.starts_with(b"if") {
         read_if(text, at)
     } else if rest.starts_with(b"else") || rest.starts_with(b"elif") {
-        let elif = rest.starts_with(b"elif");
+        let (word, junk) = if rest.starts_with(b"elif") {
+            (ElseWord::Elif, Junk::Ignored)
+        } else {
+            (ElseWord::Else, Junk::Checked)
+        };
         Directive::Else {
-            elif,
-            end: line(after(4), !elif),
+            word,
+            end: line(after(4), junk),
         }
     } else if rest.starts_with(b"endif") {
         Directive::Endif {
-            end: line(after(5), true),
+            end: line(after(5), Junk::Checked),
         }
     } else if rest.starts_with(b"eof") {
         Directive::Eof
     } else if rest.starts_with(b"error") {
         Directive::Error {
             message: message(text, after(5), |b| b == b'\t' || b == b'\n'),
-            end: line(after(5), false),
+            end: line(after(5), Junk::Ignored),
         }
     } else if rest.starts_with(b"warning") {
         Directive::Warning {
             message: message(text, after(7), |b| b == b'\r' || b == b'\n'),
-            end: line(after(7), false),
+            end: line(after(7), Junk::Ignored),
         }
     } else if rest.starts_with(b"message") {
         Directive::Build {
-            end: line(after(7), false),
+            end: line(after(7), Junk::Ignored),
         }
     } else if rest.starts_with(b"copyright") {
         Directive::Build {
-            end: line(after(9), false),
+            end: line(after(9), Junk::Ignored),
         }
     } else if rest.starts_with(b"package") {
         Directive::Package {
-            end: line(after(7), true),
+            end: line(after(7), Junk::Checked),
         }
     } else if rest.starts_with(b"pack") {
         read_pack(text, after(4))
     } else if rest.starts_with(b"forcecrc") {
         let (end, _) = lex_integer(text, after(8));
         Directive::Build {
-            end: line(end, true),
+            end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"merge") {
         let end = simple_get_string(text, skip_blanks(text, after(5)));
         Directive::Build {
-            end: line(end, true),
+            end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"includelist") {
         Directive::IncludeList {
-            end: line(after(11), true),
+            end: line(after(11), Junk::Checked),
         }
     } else if rest.starts_with(b"include") {
         read_include(text, skip_blanks(text, after(7)))
@@ -584,7 +634,7 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     } else if rest.starts_with(b"output") {
         let end = simple_get_string(text, skip_blanks(text, after(6)));
         Directive::Build {
-            end: line(end, true),
+            end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"pragma") {
         read_pragma(text, skip_blanks(text, after(6)))
@@ -635,7 +685,7 @@ fn read_if(text: &[u8], at: usize) -> Directive {
     Directive::If {
         test,
         name: name.unwrap_or(stop..stop),
-        end: skip_to_end_of_line(text, stop, true),
+        end: skip_to_end_of_line(text, stop, Junk::Checked),
     }
 }
 
@@ -651,7 +701,7 @@ fn read_pack(text: &[u8], at: usize) -> Directive {
         (end.saturating_add(1), packs > FTE_MAX_PACKS)
     };
     Directive::Pack {
-        end: skip_to_end_of_line(text, end.min(text.len()), true),
+        end: skip_to_end_of_line(text, end.min(text.len()), Junk::Checked),
         too_many,
     }
 }
@@ -665,7 +715,7 @@ fn read_include(text: &[u8], at: usize) -> Directive {
         _ => {
             return Directive::Include {
                 name: Err("Not a string literal (on a #include)"),
-                end: skip_to_end_of_line(text, at, false),
+                end: skip_to_end_of_line(text, at, Junk::Ignored),
             };
         }
     };
@@ -677,7 +727,7 @@ fn read_include(text: &[u8], at: usize) -> Directive {
             Some(b'\n') | None => {
                 return Directive::Include {
                     name: Err("#include continued over line boundry"),
-                    end: skip_to_end_of_line(text, end, false),
+                    end: skip_to_end_of_line(text, end, Junk::Ignored),
                 };
             }
             Some(_) => end = end.saturating_add(1),
@@ -685,7 +735,7 @@ fn read_include(text: &[u8], at: usize) -> Directive {
     }
     Directive::Include {
         name: Ok(text.get(start..end).unwrap_or_default().to_vec()),
-        end: skip_to_end_of_line(text, end.saturating_add(1), true),
+        end: skip_to_end_of_line(text, end.saturating_add(1), Junk::Checked),
     }
 }
 
@@ -743,13 +793,24 @@ pub(crate) enum Side {
     Eof,
 }
 
+/// Whether a side of the block being skipped was taken before, `QCC_PR_FalsePreProcessorIf`'s
+/// `hadtrue` (FTEF-14.37).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Earlier {
+    /// No side was taken: an `#else` or a true `#elif` takes the next.
+    NoSideTaken,
+    /// A side was taken: the skip runs to the block's `#endif`.
+    SideTaken,
+}
+
 /// `QCC_PR_FalsePreProcessorIf` from `at`, the end of a directive's line, inside a block that
 /// is `level` deep in a skipped side: each line after spaces and tabs, a `#` and spaces and tabs
 /// starting `endif` closes a level, one starting `if` opens one, and at the block's own level,
-/// while no side was taken (`!had_true`), one starting `else` or `elif` is a side to try. Each
-/// line ends where `QCC_PR_SkipToEndOfLine` ends it. Returns what it stopped at and the block's
-/// level there, for an `#elif` whose test is false to go on from.
-pub(crate) fn false_side(text: &[u8], mut at: usize, had_true: bool, level: &mut usize) -> Side {
+/// while no side was taken ([`Earlier::NoSideTaken`]), one starting `else` or `elif` is a side to
+/// try. Each line ends where `QCC_PR_SkipToEndOfLine` ends it. Returns what it stopped at and the
+/// block's level there, for an `#elif` whose test is false to go on from.
+pub(crate) fn false_side(text: &[u8], mut at: usize, earlier: Earlier, level: &mut usize) -> Side {
+    let open = earlier == Earlier::NoSideTaken;
     loop {
         at = skip_blanks(text, at);
         if byte_at(text, at).is_none() {
@@ -764,11 +825,11 @@ pub(crate) fn false_side(text: &[u8], mut at: usize, had_true: bool, level: &mut
             if rest.starts_with(b"if") {
                 *level = level.saturating_add(1);
             }
-            if !had_true && *level == 1 && rest.starts_with(b"else") {
-                let end = skip_to_end_of_line(text, name.saturating_add(4), true);
+            if open && *level == 1 && rest.starts_with(b"else") {
+                let end = skip_to_end_of_line(text, name.saturating_add(4), Junk::Checked);
                 return Side::Else { hash: at, end };
             }
-            if !had_true && *level == 1 && rest.starts_with(b"elif") {
+            if open && *level == 1 && rest.starts_with(b"elif") {
                 let after = name.saturating_add(4);
                 let tail = text.get(after..).unwrap_or_default();
                 let (test, from) = if tail.starts_with(b"def") {
@@ -788,7 +849,7 @@ pub(crate) fn false_side(text: &[u8], mut at: usize, had_true: bool, level: &mut
             }
             at = name;
         }
-        let end = skip_to_end_of_line(text, at, false).at;
+        let end = skip_to_end_of_line(text, at, Junk::Ignored).at;
         if *level == 0 {
             return Side::Endif(end);
         }
@@ -801,12 +862,17 @@ pub(crate) fn false_side(text: &[u8], mut at: usize, had_true: bool, level: &mut
 
 /// `QCC_PR_FalsePreProcessorIf` going on after an `#elif` whose test was false, from `at`,
 /// where its test stopped reading.
-pub(crate) fn false_side_after(text: &[u8], at: usize, had_true: bool, level: &mut usize) -> Side {
-    let end = skip_to_end_of_line(text, at, false).at;
+pub(crate) fn false_side_after(
+    text: &[u8],
+    at: usize,
+    earlier: Earlier,
+    level: &mut usize,
+) -> Side {
+    let end = skip_to_end_of_line(text, at, Junk::Ignored).at;
     if byte_at(text, end).is_none() {
         return Side::Eof;
     }
-    false_side(text, end.saturating_add(1), had_true, level)
+    false_side(text, end.saturating_add(1), earlier, level)
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
@@ -832,51 +898,71 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
     names
 }
 
-/// The include directory `#pragma includedir` adds for its text `message`, in a file being
-/// compiled as `compiling` (FTEF-14.44): its first token read with `QCC_COM_Parse`, with a `/`
-/// after it unless it ends in `/` or `\`, joined to `compiling`.
-pub(crate) fn include_dir(message: &[u8], compiling: &[u8]) -> Vec<u8> {
-    let mut dir = com_parse(message, 0)
-        .map(|(token, _)| token)
-        .unwrap_or_default();
-    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-        dir.push(b'/');
-    }
-    join_paths(&dir, compiling)
-}
-
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
 /// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.44).
 const FTE_MAX_INCLUDE_DIRS: usize = 8;
 
-/// `QCC_PR_AddIncludePath(new)`: `dirs` with `new` added after them, `.` for an empty one and a
-/// `/` after it unless it ends in `/` or `\`, unless it is there already or `dirs` is full.
-pub(crate) fn add_include_dir(dirs: &mut Vec<Vec<u8>>, new: &[u8]) {
-    let given: &[u8] = if new.is_empty() { b"." } else { new };
-    if dirs.iter().any(|dir| dir.as_slice() == given) || dirs.len() >= FTE_MAX_INCLUDE_DIRS {
-        return;
+impl FteState {
+    /// `QCC_PR_AddIncludePath(new)`: `new` added after the include directories, `.` for an empty
+    /// one and a `/` after it unless it ends in `/` or `\`, unless it is there already or there
+    /// are 8 (FTEF-14.44).
+    pub(crate) fn add_include_dir(&mut self, new: &[u8]) {
+        let dirs = &mut self.include_dirs;
+        let given: &[u8] = if new.is_empty() { b"." } else { new };
+        if dirs.iter().any(|dir| dir.as_slice() == given) || dirs.len() >= FTE_MAX_INCLUDE_DIRS {
+            return;
+        }
+        let mut dir = given.to_vec();
+        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+            dir.push(b'/');
+        }
+        dirs.push(dir);
     }
-    let mut dir = given.to_vec();
-    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-        dir.push(b'/');
-    }
-    dirs.push(dir);
 }
 
-/// The line `#pragma line` gives the line after it (FTEF-14.43): `pr_source_line =
-/// strtoul(m, &m, 0)-1;`, `m` the text after a `(` it starts with, and the line break after the
-/// pragma counting one, the number `strtoul` reads kept to the 32 bits of FTEQCC's `int`.
-pub(crate) fn pragma_line(message: &[u8]) -> i32 {
-    let text = message.strip_prefix(b"(").unwrap_or(message);
-    let value = strtoul(text);
-    // `(int)(value - 1) + 1`: the low 32 bits of `value`, as two's complement.
-    i32::from_le_bytes(
-        value
-            .to_le_bytes()
-            .first_chunk::<4>()
-            .copied()
-            .unwrap_or_default(),
-    )
+impl Pragma {
+    /// The include directory `#pragma includedir` adds, in a file being compiled as `compiling`
+    /// (FTEF-14.44): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
+    /// it ends in `/` or `\`, joined to `compiling`.
+    pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
+        let mut dir = com_parse(&self.message, 0)
+            .map(|(token, _)| token)
+            .unwrap_or_default();
+        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+            dir.push(b'/');
+        }
+        join_paths(&dir, compiling)
+    }
+
+    /// The name `#pragma file` gives (FTEF-14.32): the text, or within the `(` it starts with and
+    /// the first `)` after it.
+    pub(crate) fn file_name(&self) -> Vec<u8> {
+        match self.message.strip_prefix(b"(") {
+            Some(inside) => inside
+                .iter()
+                .position(|&b| b == b')')
+                .and_then(|close| inside.get(..close))
+                .unwrap_or(inside)
+                .to_vec(),
+            None => self.message.clone(),
+        }
+    }
+
+    /// The line `#pragma line` gives the line after it (FTEF-14.43): `pr_source_line =
+    /// strtoul(m, &m, 0)-1;`, `m` the text after a `(` it starts with, and the line break after
+    /// the pragma counting one, the number `strtoul` reads kept to the 32 bits of FTEQCC's `int`.
+    pub(crate) fn line(&self) -> i32 {
+        let text = self.message.strip_prefix(b"(").unwrap_or(&self.message);
+        let value = strtoul(text);
+        // `(int)(value - 1) + 1`: the low 32 bits of `value`, as two's complement.
+        i32::from_le_bytes(
+            value
+                .to_le_bytes()
+                .first_chunk::<4>()
+                .copied()
+                .unwrap_or_default(),
+        )
+    }
 }
 
 /// C's `strtoul(text, &end, 0)` on a 64-bit `unsigned long`: white space, a sign, then `0x` and
@@ -1165,25 +1251,26 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0121, "Hanging # with no directive", at(end.at));
                 Resume::At(end.at)
             }
-            Directive::Define { append, word_end } => {
-                match self.fte_define(run, bytes, (hash, word_end), append) {
+            Directive::Define { definer, word_end } => {
+                match self.fte_define(run, bytes, (hash, word_end), definer) {
                     Ok(stop) => {
-                        line_end(run, &reading, hash, skip_to_end_of_line(text, stop, true))
+                        let end = skip_to_end_of_line(text, stop, Junk::Checked);
+                        end.resume(run, &reading, hash)
                     }
                     // FTEQCC's compile stops at the error, so the line's rest is no error too.
-                    Err(stop) => Resume::At(skip_to_end_of_line(text, stop, false).at),
+                    Err(stop) => Resume::At(skip_to_end_of_line(text, stop, Junk::Ignored).at),
                 }
             }
             Directive::Undef { name, end } => {
                 self.macros
                     .remove(&lossy(text.get(name).unwrap_or_default()));
-                line_end(run, &reading, hash, end)
+                end.resume(run, &reading, hash)
             }
             Directive::If { test, name, end } => {
                 let (value, end) = match test {
                     IfTest::Expression(from) => {
                         let (value, stop) = self.fte_condition(run, &reading, hash, from);
-                        (value, skip_to_end_of_line(text, stop, true))
+                        (value, skip_to_end_of_line(text, stop, Junk::Checked))
                     }
                     IfTest::Defined | IfTest::NotDefined => {
                         let name = lossy(text.get(name).unwrap_or_default());
@@ -1191,28 +1278,31 @@ impl<L: Loader> Preprocessor<L> {
                         (defined == (test == IfTest::Defined), end)
                     }
                 };
-                let resume = line_end(run, &reading, hash, end);
+                let resume = end.resume(run, &reading, hash);
                 if value {
                     self.fte.ifs = self.fte.ifs.saturating_add(1);
                     return resume;
                 }
-                self.fte_false_side(run, bytes, hash, end.at, false)
+                self.fte_false_side(run, bytes, hash, end.at, Earlier::NoSideTaken)
             }
             Directive::NotIf { word_end } => Resume::At(word_end),
-            Directive::Else { elif, end } => {
+            Directive::Else { word, end } => {
                 if self.fte.ifs == 0 {
                     // "#else outside of #if", where FTEQCC's compile stops.
-                    let name = if elif { "elif" } else { "else" };
+                    let name = match word {
+                        ElseWord::Else => "else",
+                        ElseWord::Elif => "elif",
+                    };
                     let message = format!("#{name} without #ifdef or #ifndef");
                     run.report(Code::E0109, message, at(end.at));
                     return Resume::At(end.at);
                 }
                 self.fte.ifs = self.fte.ifs.saturating_sub(1);
-                line_end(run, &reading, hash, end);
-                self.fte_false_side(run, bytes, hash, end.at, true)
+                end.resume(run, &reading, hash);
+                self.fte_false_side(run, bytes, hash, end.at, Earlier::SideTaken)
             }
             Directive::Endif { end } => {
-                let resume = line_end(run, &reading, hash, end);
+                let resume = end.resume(run, &reading, hash);
                 if self.fte.ifs == 0 {
                     let message = "#endif without #ifdef or #ifndef";
                     run.report(Code::E0109, message, at(end.at));
@@ -1231,20 +1321,20 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::W0103, message, at(end.at));
                 Resume::At(end.at)
             }
-            Directive::Build { end } => line_end(run, &reading, hash, end),
+            Directive::Build { end } => end.resume(run, &reading, hash),
             Directive::Pack { end, too_many } => {
                 if too_many {
                     let message = "No more than 5 packs are allowed";
                     run.report(Code::E0121, message, at(end.at));
                 }
-                line_end(run, &reading, hash, end)
+                end.resume(run, &reading, hash)
             }
             Directive::Package { end } => {
-                line_end(run, &reading, hash, end);
+                end.resume(run, &reading, hash);
                 Resume::End
             }
             Directive::IncludeList { end } => {
-                line_end(run, &reading, hash, end);
+                end.resume(run, &reading, hash);
                 self.fte_include_list(run, bytes, hash, end.at)
             }
             Directive::Include { name, end } => {
@@ -1256,7 +1346,7 @@ impl<L: Loader> Preprocessor<L> {
                         return Resume::At(end.at);
                     }
                 };
-                let resume = line_end(run, &reading, hash, end);
+                let resume = end.resume(run, &reading, hash);
                 // `if (!*newfile) return;`: an empty name includes nothing, anywhere.
                 if name.is_empty() {
                     return resume;
@@ -1294,11 +1384,11 @@ impl<L: Loader> Preprocessor<L> {
                 (false, stop)
             }
             // FTEF-14.12: FTEQCC would read on, so what is left of the line is no junk.
-            Err(FteIfError::TooDeep) => (false, skip_to_end_of_line(text, from, false).at),
+            Err(FteIfError::TooDeep) => (false, skip_to_end_of_line(text, from, Junk::Ignored).at),
         }
     }
 
-    /// `QCC_PR_FalsePreProcessorIf(had_true, ...)` from `from`, the end of the line of the
+    /// `QCC_PR_FalsePreProcessorIf(hadtrue, ...)` from `from`, the end of the line of the
     /// conditional whose `#` is at `hash` (FTEF-14.37): the side skipped to the `#else` or the
     /// first true `#elif` after it, which open a taken side, or to the block's `#endif`; at the
     /// end of the text, "#if with no endif" at the conditional.
@@ -1308,17 +1398,17 @@ impl<L: Loader> Preprocessor<L> {
         bytes: &Bytes,
         hash: usize,
         from: usize,
-        had_true: bool,
+        earlier: Earlier,
     ) -> Resume {
         let text = bytes.bytes();
         let reading = bytes.reading();
         let mut level = 1_usize;
-        let mut side = false_side(text, from, had_true, &mut level);
+        let mut side = false_side(text, from, earlier, &mut level);
         loop {
             match side {
                 Side::Else { hash: other, end } => {
                     self.fte.ifs = self.fte.ifs.saturating_add(1);
-                    return line_end(run, &reading, other, end);
+                    return end.resume(run, &reading, other);
                 }
                 Side::Elif {
                     hash: other,
@@ -1341,10 +1431,10 @@ impl<L: Loader> Preprocessor<L> {
                     };
                     if value {
                         self.fte.ifs = self.fte.ifs.saturating_add(1);
-                        let end = skip_to_end_of_line(text, stop, true);
-                        return line_end(run, &reading, other, end);
+                        let end = skip_to_end_of_line(text, stop, Junk::Checked);
+                        return end.resume(run, &reading, other);
                     }
-                    side = false_side_after(text, stop, had_true, &mut level);
+                    side = false_side_after(text, stop, earlier, &mut level);
                 }
                 Side::Endif(end) => return Resume::At(end),
                 Side::Eof => {
@@ -1377,7 +1467,8 @@ impl<L: Loader> Preprocessor<L> {
             let word = next.map(|next| (next, simple_get_token(text, next)));
             match word {
                 Some((next, (Some(word), stop))) if text.get(word.clone()) == Some(b"#endlist") => {
-                    return line_end(run, &reading, next, skip_to_end_of_line(text, stop, true));
+                    let end = skip_to_end_of_line(text, stop, Junk::Checked);
+                    return end.resume(run, &reading, next);
                 }
                 Some((_, (Some(_), stop))) => {
                     at = stop;
@@ -1471,7 +1562,7 @@ impl<L: Loader> Preprocessor<L> {
         if pragma.is("once") {
             self.fte.once.push(run.unit.clone());
         } else if pragma.is("file") {
-            let name = pragma_file_name(message);
+            let name = pragma.file_name();
             match bytes {
                 Bytes::File(file, _) => {
                     if let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == *file) {
@@ -1485,7 +1576,7 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
         } else if pragma.is("line") {
-            let line = pragma_line(message);
+            let line = pragma.line();
             let from = end.saturating_add(1);
             match bytes {
                 Bytes::File(file, _) => {
@@ -1500,8 +1591,8 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
         } else if pragma.is("includedir") {
-            let dir = include_dir(message, &run.unit);
-            add_include_dir(&mut self.fte.include_dirs, &dir);
+            let dir = pragma.include_dir(&run.unit);
+            self.fte.add_include_dir(&dir);
         } else if pragma.is("noref") {
             // FTEF-12.6: `defaultnoref = !!atoi(msg);`
             let index = run.out.tokens.len();
@@ -1519,16 +1610,6 @@ impl<L: Loader> Preprocessor<L> {
         }
         Resume::At(end)
     }
-}
-
-/// Reading goes on at the end of the line of the directive whose `#` is at `hash` in
-/// `reading`, `end`; its junk is "unexpected tokens at end of line" (FTEF-14.35).
-fn line_end(run: &mut Run, reading: &Reading<'_>, hash: usize, end: LineEnd) -> Resume {
-    if end.junk {
-        let at = reading.place(hash..end.at.max(hash.saturating_add(1)));
-        run.report(Code::E0121, JUNK, at);
-    }
-    Resume::At(end.at)
 }
 
 /// `bytes` as text, each byte that is no UTF-8 replaced.
