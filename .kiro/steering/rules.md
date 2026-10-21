@@ -19,7 +19,8 @@ or a PR.
 
 Conventional Commits (imperative, at most 72 characters, no trailing period), no
 `Co-Authored-By` trailers, plain hyphens only. PRs say how each acceptance criterion is met
-and end with `Closes #<issue>`. Never edit an issue body on GitHub; change `plan/` instead.
+and end with `Closes #<issue>`; an issue the PR must leave open is written `Refs #N`, never
+with a closing verb next to it in any phrasing (`land.sh` refuses one). Never edit an issue body on GitHub; change `plan/` instead.
 Read `.claude/rules/commits-and-issues.md` before committing, opening a PR or filing an
 issue.
 

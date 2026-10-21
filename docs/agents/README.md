@@ -32,7 +32,7 @@ Creating new GitHub repositories (such as `quakecstudio/tree-sitter-quakec`) is 
 | `implementer` subagent | All build work (specs, ports, features, tests, tooling, docs) and decision drafts |
 | `reviewer` subagent | Readiness reviews and phase gates; never fixes what it reviews |
 | `.claude/skills/work-issue/scripts/start.sh` | Sets the issue's Status on the project board to In Progress when work starts; closing it moves it to Done |
-| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge |
+| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge; first refuses a body with a closing keyword in a negated sentence (`check-pr-body.sh`) |
 
 `status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness and gates), `human` (`needs:human` or `escalated`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
 
