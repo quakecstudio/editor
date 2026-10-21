@@ -1657,6 +1657,7 @@ issues:
   - P2-109
   - P2-110
   - P2-111
+  - P2-112
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2204,3 +2205,21 @@ issues:
   - 'Under the FTEQCC dialect a frame macro reference whose macro is numbered below 0 is "Unknown frame macro", as the pinned FTEQCC refuses it; `$framerestore` of such a macro is checked against FTEQCC the same way; each with a test citing the statement it pins and the cases recorded as the pinned FTEQCC compiles them'
   verify:
   - cargo test -p qc-preproc
+- key: P2-112
+  title: Read an FTEQCC module's progs.src as FTEQCC's file loader gives it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `source_form` and the list-form `Cursor`) and docs/spec/project-file.md PRJ-4.1 or PRJ-5.13: FTEQCC loads `progs.src` itself with `QCC_LoadFile` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)`), so it is decoded from UTF-16 or UTF-32 after a byte order mark and its NUL bytes are spaces (FTEF-14.54, P2-107), before `QCC_COM_Parse` reads its first word and its `#` test picks the source or the list form. The project graph reads `progs.src` as its bytes past a UTF-8 byte order mark only (`source_form`, `Cursor::new`), so under an FTEQCC dialect a UTF-16LE source-form `progs.src` is read as a list of words, and a NUL in a list-form one splits its words otherwise than FTEQCC does. The code review of #532 found this'
+  acceptance:
+  - 'Under an FTEQCC dialect the project graph reads a `progs.src` written as UTF-16 or UTF-32 after its mark, and one with NUL bytes, in the form and with the words the pinned FTEQCC reads, recorded as cases of `cargo xtask oracles builtins` or of the project graph''s differential; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
