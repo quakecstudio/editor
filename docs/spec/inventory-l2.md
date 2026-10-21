@@ -75,10 +75,10 @@ rest of each command line is not modelled (INV-1.1).
 
 | Function | File | On the path | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `main` | `qcc.c` | Opens `progs.src` (`-src` names its directory), reads the output and then each listed file with `COM_Parse`, compiles them in order and stops after the first file with an error | `qc_project::build_graph` (list form) | QC-23.1, QC-23.3, QC-23.4, QC-23.5, PRJ-4.1, PRJ-4.3, QC-24.5 | `VANILLA_PROGS`, `cases` | ported |
-| `LoadFile` | `cmdlib.c` | Reads a whole file and writes a NUL after it, so the text ends at its first NUL | `qc_lexer::lex_with`, `qc_project` `progs_text` | QC-1.1, QC-23.7, PRJ-4.7 | `VANILLA_PROGS`, `cases` | ported |
+| `main` | `qcc.c` | Opens `progs.src` (`-src` names its directory), reads the output and then each listed file with `COM_Parse`, compiles them in order and stops after the first file with an error | `qc_project::build_graph` (list form) | QC-23.1, QC-23.3, QC-23.4, QC-23.5, PRJ-4.1, PRJ-4.12, QC-24.5 | `VANILLA_PROGS`, `cases` | ported |
+| `LoadFile` | `cmdlib.c` | Reads a whole file and writes a NUL after it, so the text ends at its first NUL | `qc_lexer::lex_with`, `qc_project` `progs_text` | QC-1.1, QC-23.7, PRJ-4.11 | `VANILLA_PROGS`, `cases` | ported |
 | `SafeOpenRead`, `filelength`, `SafeRead`, `SafeMalloc`, `Error` | `cmdlib.c` | A file that cannot be opened is fatal, "Error opening %s: %s" | `qc_project::build_graph`, `qc_preproc::Loader` | QCD-5.2, PRJ-4.5 | none: a missing file is the loader's, which the graph's unit tests hold | ported |
-| `COM_Parse` | `cmdlib.c` | Splits `progs.src` into words: white space is a byte `<= ' '` as a signed `char`, `//` comments, quoted words, `{ } ( ) ' :` alone | `qc_project` `com_parse_words` | QC-23.2, QC-23.7, PRJ-4.7 | `VANILLA_PROGS` | unported |
+| `COM_Parse` | `cmdlib.c` | Splits `progs.src` into words: white space is a byte `<= ' '` as a signed `char`, `//` comments, quoted words, `{ } ( ) ' :` alone | `qc_project` `com_parse_words` | QC-23.2, QC-23.7, PRJ-4.11 | `VANILLA_PROGS` | unported |
 | `CheckParm` | `cmdlib.c` | `-src`, `-asm`, `-help` | none | INV-1.1 | none: the command line is not modelled | not modelled |
 | `PR_BeginCompilation` | `qcc.c` | Allocates the program's tables; no lexical effect | none | INV-1.2 | none: no lexical behaviour | not modelled |
 | `PR_CompileFile` | `pr_comp.c` | Clears the frame macros, counts the first line, lexes the first token, then parses declarations, recovering after an error | `qc_preproc::Preprocessor`, `qc_syntax::parse_with` | QC-8.3, QC-1.2, QC-24.2, QC-24.7 | `cases` | ported |
@@ -98,7 +98,7 @@ rest of each command line is not modelled (INV-1.1).
 
 | id | FTEQCC | What FTEQCC adds | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `main` | `QCC_main`, `QCC_ContinueCompile` | `progs.src` loaded with `QCC_LoadFile`; a `#!` first line passed over; source form when the first `QCC_COM_Parse` word starts with `#`; in list form the output read with `QCC_PR_LexWhitespace` and `QCC_PR_SimpleGetToken`, each entry with `QCC_PR_LexWhitespace` (which runs directives) and `QCC_COM_Parse`, and found with `QCC_FindBestInclude` | `qc_project::build_graph`, `qc_preproc` `skip_script_line` | PRJ-4.6, PRJ-4.8, PRJ-5.13, FTEF-12.10 | `LOADED_PROGS`, `WIDE_PROGS`, `progs_cases` | unported |
+| `main` | `QCC_main`, `QCC_ContinueCompile` | `progs.src` loaded with `QCC_LoadFile`; a `#!` first line passed over; source form when the first `QCC_COM_Parse` word starts with `#`; in list form the output read with `QCC_PR_LexWhitespace` and `QCC_PR_SimpleGetToken`, each entry with `QCC_PR_LexWhitespace` (which runs directives) and `QCC_COM_Parse`, and found with `QCC_FindBestInclude` | `qc_project::build_graph`, `qc_preproc` `skip_script_line` | PRJ-4.6, PRJ-4.10, PRJ-5.13, FTEF-12.10 | `LOADED_PROGS`, `WIDE_PROGS`, `progs_cases` | unported |
 | `LoadFile` | `QCC_LoadFile`, `QCC_LoadFileHunk` | Decodes a UTF-16 or UTF-32 file after its mark, skips a UTF-8 mark, makes each NUL a space ("file contains null bytes"), writes a line feed after the text | `qc_preproc` `qcc_load_file`, `qcc_load_in_place` | FTEF-14.64, FTEF-14.56, PRJ-4.6 | `LOADED`, `wide_cases`, `LOADED_PROGS`, `WIDE_PROGS` | ported |
 | `SafeOpenRead`, `filelength`, `SafeRead` | `QCC_ReadFile`, `QCC_FileSize` (`qcctui.c`) | A file that cannot be read is fatal "Couldn't open file %s" | `qc_preproc::Loader` | QCD-5.2, PRJ-4.5 | `include_cases` | ported |
 | `COM_Parse` | `QCC_COM_Parse` | White space is `qcc_iswhite` (space, CR, LF, tab, VT); `/* */` comments; `,` a word of its own and the end of a word, as is `"`; a quoted word takes `\"`, `\\`, `\n`, `\r` and `\t`, ends at a NUL and at a line break after an escaped quote | `qc_project` `com_parse_words`, `qc_preproc` `com_parse` | PRJ-4.6, FTEF-14.65 | `LOADED_PROGS` | unported |
@@ -136,7 +136,7 @@ rest of each command line is not modelled (INV-1.1).
 | `QCC_PR_LexComment` | `qcc_pr_lex.c` | Comments before a token kept for documentation; reads white space as `QCC_PR_LexWhitespace` | `qc_lexer` `Lexer::skip_trivia` | FTEF-14.45 | `place_cases` | ported |
 | `QCC_RegisterSourceFile` | `qccmain.c` | `#pragma sourcefile` and `-srcfile` programs, each once | `qc_project` `sourcefiles` | FTEF-12.3, PRJ-5.7 | none: the graph's unit tests hold it, as FTEQCC compiles the registered programs one after another | ported |
 | `StartNewStyleCompile`, `new_QCC_ContinueCompile` | `qccmain.c` | The source form: `progs.src` read as QuakeC from its first line | `qc_preproc::Preprocessor`, `qc_project` | PRJ-4.4, PRJ-5.13 | `progs_cases` | ported |
-| `QCC_GenerateRelativePath` | `qccmain.c` | A list's output name joined to `progs.src`'s directory | `qc_project` `declared_output` | PRJ-4.3, PRJ-3.2 | none: the declared output changes nothing the graph reads (PRJ-3.2) | ported |
+| `QCC_GenerateRelativePath` | `qccmain.c` | A list's output name joined to `progs.src`'s directory | `qc_project` `declared_output` | PRJ-4.12, PRJ-3.2 | none: the declared output changes nothing the graph reads (PRJ-3.2) | ported |
 | `QCC_FindQCFiles` | `qccmain.c` | `-Facc` with no `progs.src`: every `.qc` in the directory | none | INV-1.1 | none: the command line is not modelled | not modelled |
 | `QCC_ImportProgs`, `QCC_AddFile` | `qcc_pr_comp.c`, `qcc_cmdlib.c` | `#merge` and `#datafile` read a file into the build | none | FTEF-14.47 | none: the build's files | not modelled |
 | `QCC_WarningForName`, `QCC_NameForWarning` | `qccmain.c` | Warning names (`F303`, `Q120`, `octal`) for `#pragma warning` | `qc_preproc` warning settings | FTEF-14.65, FTEF-14.46 | `EVIL_SETTINGS` | unported |
@@ -225,7 +225,7 @@ reach from `progs.src` to a token. **Default** is what `fteqcc -Tid` does with i
 | `QCC_PR_ExpandPreProcessorMacro` | "'#%s' is not a macro parameter in %s" | warning | none | FTEF-14.31 | unported |
 | `QCC_PR_Lex` | "Explicit precompiler usage when not defined %s" | error | E0209 | FTEF-14.52, FTE-23.10 | ported |
 | `QCC_LoadFile` | "file contains null bytes" | warning | none | FTEF-14.64 | ported |
-| `QCC_main` | "No destination filename.  qcc -help for info." | error | E0401 | PRJ-4.3, PRJ-4.8 | unported |
+| `QCC_main` | "No destination filename.  qcc -help for info." | error | E0401 | PRJ-4.12, PRJ-4.10 | unported |
 
 ## Statements of this inventory
 

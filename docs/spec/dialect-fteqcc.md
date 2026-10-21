@@ -1468,6 +1468,29 @@ profile the preprocessor reads them as FTEQCC does.
   bytes or more, which overruns FTEQCC's `char msg[1024]` first, as `#copyright`'s, which copies
   only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
   of 1024 bytes or more is that undefined behaviour, which this profile does not model.
+- **FTEF-14.66** `QCC_PR_SimpleGetToken`, `QCC_PR_SimpleGetString` and `QCC_PR_LexMacroName`
+  read into `pr_token` and stop the compile with `QCC_Error (ERR_INTERNAL, "token exceeds %i
+  chars", i)` at a 1024th byte (`if (i == sizeof(qcc_token)-1)`), and `QCC_PR_SimpleGetString`
+  with "new line inside string" at a line break in its string. So a name of 1024 bytes after
+  `#define`, `#undef`, `#ifdef`, `#ifndef`, `#elifdef` or `#elifndef`, a word of an `#if` or
+  `#elif` expression, an `#includelist` word or a list's output (PRJ-4.9), and a string of 1024
+  bytes or with a line break after `#output`, `#merge` or `#datafile`, are each an error, `E0121`
+  with FTEQCC's text, and a frame macro word of 1024 bytes is `E0502` with it; 1023 bytes are
+  read. A `#pragma`'s name, or its text after the name, of 1024 bytes runs past `char
+  msg[1024]`, which `msg[a++] = *pr_file_p;` fills with no bound, and the pinned build aborts
+  (exit -6): this profile reports `E0121` "#pragma name or text longer than FTEQCC's 1023 bytes",
+  a deliberate divergence. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
+  (`if (len >= sizeof(qcc_token)-1) ;`), which a pragma's words and a list's files are read
+  with. After such an error FTEQCC's compile stops: the preprocessor reads no more of the file
+  and the graph no more of it, but the lexer reads on after a frame word, so diagnostics FTEQCC
+  would not reach may follow it. The pinned FTEQCC (`fteqcc -Tid`) gives each error at 1024 bytes
+  and none at 1023.
+- **FTEF-14.67** `QCC_PR_LexWhitespace` reports a `/* */` comment the text ends in with
+  `QCC_PR_ParseError(0, "EOF inside comment\n");` where it reads white space outside the lexer's
+  tokens: after a use's `(` and each `,` (FTEF-14.22), before each `#includelist` word
+  (FTEF-14.41) and before each word of a list-form `progs.src` (PRJ-4.9). This profile reports it
+  as `E0501` "EOF inside comment" at the comment's `/*`, and the reading ends at the end of the
+  text; the pinned FTEQCC gives it for a list `progs.dat`, `t.qc /* open`.
 
 ## FTEF-15 Declarations
 

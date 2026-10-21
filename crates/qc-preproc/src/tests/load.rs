@@ -439,7 +439,7 @@ fn skipped(text: &[u8]) -> Vec<u8> {
     text
 }
 
-// spec PRJ-4.8: a first line that starts with `#!` becomes spaces up to its line feed, which is
+// spec PRJ-4.10: a first line that starts with `#!` becomes spaces up to its line feed, which is
 // kept with the rest, so offsets and lines stand; a text of that line alone is all spaces
 #[test]
 fn a_script_line_is_passed_over_in_place() {
@@ -485,7 +485,7 @@ fn fte_root(bytes: &[u8], start: FileStart) -> (String, Vec<Code>) {
     (tokens(&out), codes(&out))
 }
 
-// spec PRJ-4.8: the preprocessor reads a module's source past a `#!` first line, so a `\`, `/*`
+// spec PRJ-4.10: the preprocessor reads a module's source past a `#!` first line, so a `\`, `/*`
 // or `"` in it changes nothing after it and the line numbers stand; a listed file and the vanilla
 // dialect read the line
 #[test]
@@ -525,7 +525,7 @@ fn the_preprocessor_passes_over_a_source_script_line() {
     assert_eq!(tokens(&vanilla), "# ! x");
 }
 
-// spec PRJ-4.8: the graph's reader of the module's source passes over a `#!` first line too, and
+// spec PRJ-4.10: the graph's reader of the module's source passes over a `#!` first line too, and
 // a compiled file's reads it
 #[test]
 fn the_graph_reader_passes_over_a_source_script_line() {

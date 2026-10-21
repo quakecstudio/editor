@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use super::{codes, one_fte, tokens};
+use crate::fte_directive::FteState;
 use crate::fte_tables::{OPCODES, REAL_OPCODES};
 use crate::{
     Code, FileOutput, FteFlag, FteWarning, MemoryLoader, Preprocessor, WarningAction,
@@ -220,14 +221,41 @@ fn include_directories_past_fteqcc_s_table_warn() {
         )]
     );
     assert_eq!(pp.fte.include_dirs.len(), 8);
+    // A `-I` name, which no `msg` buffer holds, reaches the table's 2048 bytes.
+    let mut state = FteState::default();
     let long = "d".repeat(2047);
-    let (pp, out) = one_fte(&format!("#pragma includedir {long}\n"));
-    assert_eq!(out.diagnostics[0].message, "Include path too long.");
-    assert!(pp.fte.include_dirs.is_empty());
-    let fits = "d".repeat(2046);
+    assert_eq!(
+        state.add_include_dir(long.as_bytes()),
+        Some("Include path too long.")
+    );
+    assert!(state.include_dirs.is_empty());
+    assert_eq!(state.add_include_dir("d".repeat(2046).as_bytes()), None);
+    assert_eq!(state.include_dirs.len(), 1);
+    let fits = "d".repeat(1012);
     let (pp, out) = one_fte(&format!("#pragma includedir {fits}\n"));
     assert!(out.diagnostics.is_empty());
     assert_eq!(pp.fte.include_dirs.len(), 1);
+}
+
+// spec FTEF-14.66: a `#pragma` name or text of 1024 bytes runs past FTEQCC's `msg[1024]`, which
+// the pinned build aborts at, and is an error that ends the file
+#[test]
+fn a_pragma_past_fteqcc_s_buffer_is_an_error() {
+    let message = "#pragma name or text longer than FTEQCC's 1023 bytes";
+    let text = |len: usize| format!("#pragma includedir {}\nfloat x;\n", "d".repeat(len));
+    let (_, out) = one_fte(&text(1024));
+    assert_eq!(
+        out.diagnostics
+            .iter()
+            .map(|d| (d.code, d.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(Code::E0121, message)]
+    );
+    assert_eq!(tokens(&out), "");
+    let (_, out) = one_fte(&text(1023));
+    assert!(out.diagnostics.is_empty());
+    let (_, out) = one_fte(&format!("#pragma {}\n", "n".repeat(1024)));
+    assert_eq!(codes(&out), [Code::E0121]);
 }
 
 // spec FTEF-14.61: a `#` in a body before a token that names no parameter warns at each

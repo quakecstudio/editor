@@ -1126,7 +1126,7 @@ const LOADED_PROGS: &[&str] = &[
 ];
 
 /// `progs.src` files whose first line starts with `#!`, which FTEQCC's `QCC_main` passes over
-/// (PRJ-4.8), written as UTF-8: before a list and before a source form, holding a `\`, a `/*`
+/// (PRJ-4.10), written as UTF-8: before a list and before a source form, holding a `\`, a `/*`
 /// or a `"`, after a UTF-8 byte order mark and with CRLF line ends. All but the one whose line
 /// names `b.qh` bind `f`.
 pub(super) const SCRIPT_PROGS: &[&str] = &[
@@ -1145,7 +1145,7 @@ pub(super) const SCRIPT_PROGS: &[&str] = &[
 ];
 
 /// `progs.src` files of either form written in each wide encoding, which FTEQCC's file loader
-/// decodes (PRJ-4.6, FTEF-14.64), with a `#!` first line too (PRJ-4.8).
+/// decodes (PRJ-4.6, FTEF-14.64), with a `#!` first line too (PRJ-4.10).
 const WIDE_PROGS: &[&str] = &[
     "#include \"b.qh\"\n",
     "progs.dat\nb.qh\n",
@@ -1154,7 +1154,7 @@ const WIDE_PROGS: &[&str] = &[
     "#!x\nprogs.dat\nb.qh\n",
 ];
 
-/// Vanilla `progs.src` lists with a NUL byte, where id's qcc ends the list (QC-23.7, PRJ-4.7):
+/// Vanilla `progs.src` lists with a NUL byte, where id's qcc ends the list (QC-23.7, PRJ-4.11):
 /// between words, in and after a word, in a `//` comment, at a line's start, and in a quoted
 /// word, which reads on past it. Those that list `b.qh` before the NUL, or after it in the
 /// quoted word's case, bind `f`.
@@ -1170,7 +1170,7 @@ pub(super) const VANILLA_PROGS: &[&str] = &[
     "progs.dat\n\"x.qc\0junk\" b.qh\n",
 ];
 
-/// The graph cases of a `progs.src` of their own (PRJ-4.6, PRJ-4.7, PRJ-4.8): [`LOADED_PROGS`]
+/// The graph cases of a `progs.src` of their own (PRJ-4.6, PRJ-4.11, PRJ-4.10): [`LOADED_PROGS`]
 /// and [`SCRIPT_PROGS`] as UTF-8 and [`WIDE_PROGS`] in each wide encoding under the FTEQCC
 /// dialect, and [`VANILLA_PROGS`] under the vanilla dialect, beside `b.qh` and `x.qc`.
 fn progs_cases() -> Vec<Case> {

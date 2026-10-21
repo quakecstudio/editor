@@ -110,7 +110,8 @@ fn white_space_stops_at_a_directive() {
     assert_eq!(gap("/* \n */#x"), Gap::Text(7));
     assert_eq!(gap("\n x"), Gap::Text(2));
     assert_eq!(gap("// c"), Gap::Text(4));
-    assert_eq!(gap("/* c"), Gap::Text(4));
+    // FTEF-14.67: FTEQCC reports "EOF inside comment" there.
+    assert_eq!(gap("/* c"), Gap::Unclosed(0));
     assert_eq!(gap(""), Gap::Text(0));
     assert_eq!(gap("/x"), Gap::Text(0));
     assert_eq!(gap("\n\n#"), Gap::LineStart(2));

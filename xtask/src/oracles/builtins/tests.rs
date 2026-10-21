@@ -62,7 +62,7 @@ fn the_profile_agrees_with_the_recorded_oracles() {
 // spec PRJ-5.13: for every graph case the project graph lists the file that binds `f` exactly
 // when the recorded FTEQCC binds `f` from it, and FTEQCC either binds `f` or accepts the
 // program without it, so that each case says what it read; the vanilla cases are id qcc's
-// (PRJ-4.7)
+// (PRJ-4.11)
 #[test]
 fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let recorded = read_fixture(&root()).unwrap();
@@ -133,7 +133,7 @@ fn the_graph_cases_hold_progs_src_files_of_their_own() {
     );
 }
 
-// spec PRJ-4.8: the graph cases hold FTEQCC `progs.src` files with a `#!` first line, of both
+// spec PRJ-4.10: the graph cases hold FTEQCC `progs.src` files with a `#!` first line, of both
 // forms, as UTF-8 and in each wide encoding, each of which the recorded FTEQCC reads `b.qh` from
 // but the one whose first line names it
 #[test]
@@ -161,7 +161,7 @@ fn the_graph_cases_hold_script_lines() {
     assert_eq!(widened.count(), 4);
 }
 
-// spec PRJ-4.7: the graph cases hold vanilla `progs.src` lists with a NUL, which the recorded id
+// spec PRJ-4.11: the graph cases hold vanilla `progs.src` lists with a NUL, which the recorded id
 // qcc reads to that NUL: it binds `f` exactly when `b.qh` comes before it or in a quoted word
 #[test]
 fn the_graph_cases_hold_vanilla_lists_with_a_nul() {

@@ -287,7 +287,7 @@ fn the_prelude_defines_macros_and_is_not_compiled() {
     assert_eq!(names, ["seen"]);
 }
 
-// spec PRJ-4.8: under FTEQCC the prelude, the module's source, is read past a `#!` first line, so
+// spec PRJ-4.10: under FTEQCC the prelude, the module's source, is read past a `#!` first line, so
 // the `\` that ends it joins nothing to the `#define` after it; a compiled file reads the line
 #[test]
 fn the_prelude_passes_over_a_script_line() {

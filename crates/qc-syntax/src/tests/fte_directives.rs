@@ -456,3 +456,36 @@ fn only_a_source_file_has_fteqcc_nodes() {
         ["#undef X // c \\\nfloat y;"]
     );
 }
+
+// spec PRJ-4.10: a module's source passes over a `#!` first line under FTEQCC and GMQCC, after a
+// UTF-8 mark too, its bytes trivia; any other file, and the vanilla dialect, read the line
+#[test]
+fn a_module_source_passes_over_a_script_line() {
+    let errors = |parsed: &crate::Parse| parsed.errors().count();
+    for source in [
+        &b"#!/usr/bin/fteqcc -Tid\nfloat x;\n"[..],
+        b"\xef\xbb\xbf#!x \\\nfloat x;\n",
+        b"#!x /*\nfloat x;\n",
+    ] {
+        for dialect in [Dialect::Fteqcc, Dialect::Gmqcc] {
+            let parsed = crate::parse_module_source(source, dialect);
+            assert_eq!(parsed.syntax().text(), source);
+            assert_eq!(errors(&parsed), 0, "{source:?}");
+            let skipped = parsed
+                .syntax()
+                .tokens()
+                .find(|t| t.kind() == SyntaxKind::Skipped)
+                .map(|t| t.text().to_vec());
+            assert!(
+                skipped.is_some_and(|text| text.starts_with(b"#!")),
+                "{source:?}"
+            );
+            assert_ne!(errors(&parse_with(source, dialect)), 0, "{source:?}");
+        }
+        let vanilla = crate::parse_module_source(source, Dialect::Vanilla);
+        assert_ne!(errors(&vanilla), 0, "{source:?}");
+    }
+    // Only at the very start.
+    let late = crate::parse_module_source(b" #!x\nfloat x;\n", Dialect::Fteqcc);
+    assert_ne!(errors(&late), 0);
+}

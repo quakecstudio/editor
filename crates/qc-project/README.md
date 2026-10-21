@@ -16,8 +16,8 @@ dialect each QuakeC file is read with the preprocessor's directive reader
 (PRJ-5.13, PRJ-5.14), and under GMQCC with the same reader, as the preprocessor reads a GMQCC
 file, with no `FTEQCC` defined (PRJ-5.15). Under the FTEQCC and GMQCC dialects a module's
 `progs.src` is read as FTEQCC's loader gives it, past a first line that starts with `#!`
-(PRJ-4.6, PRJ-4.8); under the vanilla dialect a list ends at the NUL byte where id's `qcc` ends
-it (PRJ-4.7, QC-23.7).
+(PRJ-4.6, PRJ-4.10); under the vanilla dialect a list ends at the NUL byte where id's `qcc` ends
+it (PRJ-4.11, QC-23.7).
 
 Files open as the host file system opens them, as FTEQCC and id's `qcc` do, and a name whose
 case differs from the file it opened is warning W0402 on every OS, so a project that would
@@ -37,7 +37,7 @@ project.
 - **Also cited here, in sections another crate completes:** the `progs.src` reading of QC-23.1
   to QC-23.3 and QC-23.5 to QC-23.7 in [`language.md`](../../docs/spec/language.md) (QC-23.4, the
   output path relative to the working directory, is id's `qcc`; the graph resolves it against
-  the `progs.src` directory, PRJ-4.3); the project error codes QCD-5.1, QCD-5.2 and QCD-5.6 to
+  the `progs.src` directory, PRJ-4.12); the project error codes QCD-5.1, QCD-5.2 and QCD-5.6 to
   QCD-5.8; and the case warning QCD-7.16. The compiler-stage errors QCD-5.3 to QCD-5.5 and the
   resolution warnings of QCD-7 belong to the compiler and the semantic model, so QC-23, QCD-5
   and QCD-7 are not declared above.

@@ -222,7 +222,7 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
-                // PRJ-4.8: the prelude is the module's source, read as `QCC_main` reads it.
+                // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
                 let output = if compiled {
                     pp.preprocess_file(path)
                 } else {

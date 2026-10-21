@@ -5,7 +5,8 @@
 
 #![expect(
     clippy::indexing_slicing,
-    reason = "test code: a failed index is a failed test"
+    clippy::panic,
+    reason = "test code: a failed index or panic is a failed test"
 )]
 
 use crate::{Code, Dialect, LexFlag, LexFlags, Lexed, Punct, TokenKind, lex_flagged, lex_with};
@@ -177,10 +178,7 @@ fn qccx_and_assumeint_hex_numbers() {
     // A decimal number is the float of its value.
     assert_eq!(kinds(b"16", qccx), [TokenKind::Float(16.0)]);
     let assume = with(LexFlag::AssumeInt);
-    assert_eq!(
-        kinds(b"0x100000001", assume),
-        [TokenKind::Float(4_294_967_296.0)]
-    );
+    assert_eq!(float_bits(b"0x100000001", assume), 2_f32.powi(32).to_bits());
     assert!(lexed(b"0x100000001", assume).diagnostics.is_empty());
     assert!(
         lexed(b"0x100000001", qccx.with(LexFlag::AssumeInt, true))

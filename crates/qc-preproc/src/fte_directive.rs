@@ -22,15 +22,13 @@ mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
 pub(crate) use load::first_nul;
-#[cfg(test)]
-pub(crate) use load::skip_script_line;
-pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place};
+pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Dialect, Span};
+use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text};
@@ -118,7 +116,7 @@ fn joined(text: &[u8], from: usize, hash: usize) -> bool {
     let mut at = from;
     let mut joined = false;
     loop {
-        let Gap::Text(stop) = whitespace(text, at) else {
+        let (Gap::Text(stop) | Gap::Unclosed(stop)) = whitespace(text, at) else {
             return false;
         };
         if stop >= hash {
@@ -155,12 +153,28 @@ pub(crate) enum Gap {
     /// At this `#`, the first byte after a line ending and the spaces and tabs after it, where
     /// `QCC_PR_NewLine` calls `QCC_PR_Precompiler`.
     LineStart(usize),
+    /// At the end of the text, inside the `/* */` comment that starts at this offset: FTEQCC's
+    /// "EOF inside comment" (FTEF-14.67).
+    Unclosed(usize),
+}
+
+/// FTEQCC's error for a `/* */` comment the text ends in (FTEF-14.67).
+pub(crate) const EOF_IN_COMMENT: &str = "EOF inside comment";
+
+/// Why [`Preprocessor::fte_whitespace`] read no further than the white space.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WhiteStop {
+    /// A directive it ran ended the text (`#eof`, `#package`).
+    Ended,
+    /// The text ends in the `/* */` comment that starts at this offset, FTEQCC's "EOF inside
+    /// comment" (FTEF-14.67).
+    Unclosed(usize),
 }
 
 /// `QCC_PR_LexWhitespace(false)` from `at`: past white space (`qcc_iswhite`), `//` comments to
 /// their line break and `/* */` comments, up to the first other byte or a `#` at a line's
 /// start ([`Gap`]). A `/* */` comment that does not end runs to the end of the text, where
-/// FTEQCC reports "EOF inside comment".
+/// FTEQCC reports "EOF inside comment" ([`Gap::Unclosed`]).
 pub(crate) fn whitespace(text: &[u8], mut at: usize) -> Gap {
     let new_line = |at: usize| {
         let at = skip_blanks(text, at);
@@ -193,11 +207,12 @@ pub(crate) fn whitespace(text: &[u8], mut at: usize) -> Gap {
                 }
             }
             (Some(b'/'), Some(b'*')) => {
+                let open = at;
                 at = at.saturating_add(1);
                 loop {
                     at = at.saturating_add(1);
                     if byte_at(text, at.saturating_add(1)).is_none() {
-                        return Gap::Text(at.saturating_add(1).min(text.len()));
+                        return Gap::Unclosed(open);
                     }
                     if text.get(at..at.saturating_add(2)) == Some(b"*/") {
                         break;
@@ -304,6 +319,23 @@ pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, junk_is: Junk) -> 
 /// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
 /// before a comment, or when no byte is taken. Also where reading stopped: a `//` comment is
 /// read to its line break.
+/// FTEQCC's error for a word or string past [`FTEQCC_MAX_WORD`] bytes, which
+/// `QCC_PR_SimpleGetToken` and `QCC_PR_SimpleGetString` give with `QCC_Error` (FTEF-14.66).
+pub(crate) const WORD_TOO_LONG: &str = "token exceeds 1023 chars";
+
+/// This profile's error for a `#pragma` whose name or text FTEQCC's `char msg[1024]` cannot
+/// hold, which the pinned build aborts at (FTEF-14.66).
+const PRAGMA_TOO_LONG: &str = "#pragma name or text longer than FTEQCC's 1023 bytes";
+
+/// FTEQCC's error for a line break in a string `QCC_PR_SimpleGetString` reads (FTEF-14.66).
+const NEW_LINE_IN_STRING: &str = "new line inside string";
+
+/// Whether `word`, read by [`simple_get_token`], is longer than FTEQCC's readers take
+/// (FTEF-14.66).
+pub(crate) fn too_long(word: Option<&Range<usize>>) -> bool {
+    word.is_some_and(|word| word.len() > FTEQCC_MAX_WORD)
+}
+
 pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usize>>, usize) {
     loop {
         let Some(byte) = byte_at(text, at) else {
@@ -342,31 +374,37 @@ pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usiz
 /// `QCC_PR_SimpleGetString`: after white space on the line, the `"` string from there, read to
 /// its closing quote, `pr_token`'s text (`\n`, `\r` and `\t` the bytes they name, and `\` before
 /// any other byte that byte), and where reading stopped, after the quote; nothing is read, and
-/// reading stays, at a line break, a comment, a byte that opens no string, or a string with a
-/// line break in it (FTEQCC's "new line inside string", which stops the compile).
-fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
+/// reading stays, at a line break, a comment, a byte that opens no string, or the end of the text
+/// in the string. A line break in the string, and a 1024th byte, stop FTEQCC's compile: the
+/// error, "new line inside string" or "token exceeds 1023 chars" (FTEF-14.66).
+fn simple_get_string(text: &[u8], mut at: usize) -> Result<(Option<Vec<u8>>, usize), &'static str> {
     loop {
         let Some(byte) = byte_at(text, at) else {
-            return (None, at.min(text.len()));
+            return Ok((None, at.min(text.len())));
         };
         if !fte_white(byte) {
             break;
         }
         if byte == b'\n' {
-            return (None, at);
+            return Ok((None, at));
         }
         at = at.saturating_add(1);
     }
     if byte_at(text, at) != Some(b'"') {
-        return (None, at);
+        return Ok((None, at));
     }
     let mut token = Vec::new();
     let mut end = at.saturating_add(1);
     while let Some(byte) = byte_at(text, end) {
         end = end.saturating_add(1);
+        if byte == b'\n' {
+            return Err(NEW_LINE_IN_STRING);
+        }
+        if byte != b'"' && token.len() >= FTEQCC_MAX_WORD {
+            return Err(WORD_TOO_LONG);
+        }
         match byte {
-            b'\n' => return (None, at),
-            b'"' => return (Some(token), end),
+            b'"' => return Ok((Some(token), end)),
             b'\\' => {
                 let Some(escaped) = byte_at(text, end) else {
                     break;
@@ -382,7 +420,7 @@ fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
             other => token.push(other),
         }
     }
-    (None, at)
+    Ok((None, at))
 }
 
 /// `QCC_PR_LexInteger`: the offset after the number at `at`, which takes the byte there
@@ -409,8 +447,11 @@ fn lex_integer(text: &[u8], at: usize) -> (usize, i32) {
 
 /// `QCC_COM_Parse`: after white space and comments from `at`, a `"` string with its escapes
 /// read, one of `{`, `}`, `)`, `(`, `'`, `:` and `,`, or a word up to white space or one of
-/// those or `"`; the token and where reading goes on, `None` at the end of the text.
-pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
+/// those or `"`; the token and where reading goes on, `None` at the end of the text. The token
+/// holds at most the 1023 bytes `qcc_token` does, the bytes past them dropped (`if (len >=
+/// sizeof(qcc_token)-1) ; else ...`, FTEF-14.66). Implements PRJ-4.9.
+#[must_use]
+pub fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
     loop {
         while byte_at(text, at).is_some_and(fte_white) {
             at = at.saturating_add(1);
@@ -465,7 +506,9 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
                 (b'\n' | b'\r', _) if token.last() == Some(&b'"') => return Some((token, at)),
                 (byte, _) => byte,
             };
-            token.push(byte);
+            if token.len() < FTEQCC_MAX_WORD {
+                token.push(byte);
+            }
         }
     }
     let single = |b: u8| matches!(b, b'{' | b'}' | b')' | b'(' | b'\'' | b':' | b',');
@@ -473,7 +516,9 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
         return Some((vec![first], at.saturating_add(1)));
     }
     while let Some(byte) = byte_at(text, at) {
-        token.push(byte);
+        if token.len() < FTEQCC_MAX_WORD {
+            token.push(byte);
+        }
         at = at.saturating_add(1);
         match byte_at(text, at) {
             Some(b) if single(b) || b == b'"' || fte_white(b) => break,
@@ -580,6 +625,9 @@ pub(crate) enum Directive {
     },
     /// `#pragma` (FTEF-14.43, FTEF-14.65); its line ends at the break.
     Pragma { pragma: Pragma, end: usize },
+    /// A word or string of the directive that stops FTEQCC's compile (`QCC_Error`), FTEQCC's
+    /// error and where reading stopped (FTEF-14.66).
+    Fatal { message: &'static str, at: usize },
 }
 
 /// The directive at the `#` at `hash` (FTEF-14.52), as `QCC_PR_Precompiler` reads it: after the
@@ -609,7 +657,13 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     let after = |len: usize| at.saturating_add(len);
     let line = |from: usize, junk: Junk| skip_to_end_of_line(text, from, junk);
     let directive = if rest.starts_with(b"define") || rest.starts_with(b"append") {
-        let (_, word_end) = simple_get_token(text, at);
+        let (word, word_end) = simple_get_token(text, at);
+        if too_long(word.as_ref()) {
+            return Some(Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: word_end,
+            });
+        }
         let definer = if rest.starts_with(b"append") {
             Definer::Append
         } else {
@@ -618,6 +672,12 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         Directive::Define { definer, word_end }
     } else if rest.starts_with(b"undef") {
         let (name, stop) = simple_get_token(text, skip_blanks(text, after(5)));
+        if too_long(name.as_ref()) {
+            return Some(Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: stop,
+            });
+        }
         Directive::Undef {
             name: name.unwrap_or(stop..stop),
             end: line(stop, Junk::Checked),
@@ -669,9 +729,11 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"merge") {
-        let (_, end) = simple_get_string(text, skip_blanks(text, after(5)));
-        Directive::Build {
-            end: line(end, Junk::Checked),
+        match simple_get_string(text, skip_blanks(text, after(5))) {
+            Ok((_, end)) => Directive::Build {
+                end: line(end, Junk::Checked),
+            },
+            Err(message) => Directive::Fatal { message, at },
         }
     } else if rest.starts_with(b"includelist") {
         Directive::IncludeList {
@@ -681,7 +743,10 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         read_include(text, skip_blanks(text, after(7)))
     } else if rest.starts_with(b"datafile") {
         // `pr_file_p++;` after the string, then on to the line break as bytes.
-        let (_, end) = simple_get_string(text, skip_blanks(text, after(8)));
+        let end = match simple_get_string(text, skip_blanks(text, after(8))) {
+            Ok((_, end)) => end,
+            Err(message) => return Some(Directive::Fatal { message, at }),
+        };
         let end = end.saturating_add(1);
         let end = text
             .get(end..)
@@ -694,10 +759,12 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             },
         }
     } else if rest.starts_with(b"output") {
-        let (name, end) = simple_get_string(text, skip_blanks(text, after(6)));
-        Directive::Output {
-            name,
-            end: line(end, Junk::Checked),
+        match simple_get_string(text, skip_blanks(text, after(6))) {
+            Ok((name, end)) => Directive::Output {
+                name,
+                end: line(end, Junk::Checked),
+            },
+            Err(message) => Directive::Fatal { message, at },
         }
     } else if rest.starts_with(b"pragma") {
         read_pragma(text, skip_blanks(text, after(6)))
@@ -732,6 +799,12 @@ fn read_if(text: &[u8], at: usize) -> Directive {
     };
     if !byte_at(text, from).is_some_and(fte_white) {
         let (word, word_end) = simple_get_token(text, at);
+        if too_long(word.as_ref()) {
+            return Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: word_end,
+            };
+        }
         return Directive::NotIf {
             word: word.unwrap_or(word_end..word_end),
         };
@@ -747,6 +820,12 @@ fn read_if(text: &[u8], at: usize) -> Directive {
         };
     }
     let (name, stop) = simple_get_token(text, from);
+    if too_long(name.as_ref()) {
+        return Directive::Fatal {
+            message: WORD_TOO_LONG,
+            at: stop,
+        };
+    }
     Directive::If {
         test,
         name: name.unwrap_or(stop..stop),
@@ -822,6 +901,14 @@ fn read_pragma(text: &[u8], at: usize) -> Directive {
             if byte != b'(' {
                 continue;
             }
+        }
+        // FTEF-14.66: `msg[a++] = *pr_file_p;` into `char msg[1024]` with no bound, and
+        // `msg[a] = '\0';` after: a name or text of 1024 bytes runs past it.
+        if message.len() >= FTEQCC_MAX_WORD {
+            return Directive::Fatal {
+                message: PRAGMA_TOO_LONG,
+                at: at.saturating_add(len),
+            };
         }
         message.push(byte);
     }
@@ -1026,10 +1113,13 @@ pub(crate) fn elif_defined(
     at: usize,
     test: ElifTest,
     is_defined: impl Fn(&str) -> bool,
-) -> (bool, usize) {
+) -> (Result<bool, &'static str>, usize) {
     let (name, stop) = simple_get_token(text, at);
+    if too_long(name.as_ref()) {
+        return (Err(WORD_TOO_LONG), stop);
+    }
     let name = lossy(name.and_then(|n| text.get(n)).unwrap_or_default());
-    (is_defined(&name) == (test == ElifTest::Defined), stop)
+    (Ok(is_defined(&name) == (test == ElifTest::Defined)), stop)
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
@@ -1336,21 +1426,23 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `QCC_PR_LexWhitespace(false)` from `at` in `bytes` (FTEF-14.45): the offset of the first
     /// byte that is no white space and in no comment, running each directive at a line's start
-    /// on the way; `None` when one ends the text.
+    /// on the way; [`WhiteStop`] when one ends the text or the text ends in a comment
+    /// (FTEF-14.67), which the caller reports.
     pub(crate) fn fte_whitespace(
         &mut self,
         run: &mut Run,
         bytes: &Bytes,
         mut at: usize,
-    ) -> Option<usize> {
+    ) -> Result<usize, WhiteStop> {
         loop {
             match whitespace(bytes.bytes(), at) {
-                Gap::Text(at) => return Some(at),
+                Gap::Text(at) => return Ok(at),
+                Gap::Unclosed(open) => return Err(WhiteStop::Unclosed(open)),
                 Gap::LineStart(hash) => {
                     match self.fte_directive(run, bytes, hash, Position::Nested) {
                         Some(Resume::At(end)) => at = end,
-                        Some(Resume::End) => return None,
-                        None => return Some(hash),
+                        Some(Resume::End) => return Err(WhiteStop::Ended),
+                        None => return Ok(hash),
                     }
                 }
             }
@@ -1399,6 +1491,11 @@ impl<L: Loader> Preprocessor<L> {
             Directive::Hanging(end) => {
                 run.report(Code::E0121, "Hanging # with no directive", at(end.at));
                 Resume::At(end.at)
+            }
+            // FTEF-14.66: `QCC_Error` stops the compile, so nothing more of the text is read.
+            Directive::Fatal { message, at: stop } => {
+                run.report(Code::E0121, message, at(stop));
+                Resume::End
             }
             Directive::Define { definer, word_end } => {
                 match self.fte_define(run, bytes, (hash, word_end), definer) {
@@ -1571,8 +1668,13 @@ impl<L: Loader> Preprocessor<L> {
                 ElifTest::Expression => self.fte_condition(run, &reading, elif.hash, elif.at),
                 ElifTest::Defined | ElifTest::NotDefined => {
                     let defined = |name: &str| self.macros.contains_key(name);
-                    let (value, stop) = elif_defined(text, elif.at, elif.test, defined);
-                    (value, stop, Junk::Checked)
+                    match elif_defined(text, elif.at, elif.test, defined) {
+                        (Ok(value), stop) => (value, stop, Junk::Checked),
+                        (Err(message), stop) => {
+                            run.report(Code::E0121, message, reading.place(elif.hash..stop));
+                            (false, stop, Junk::Ignored)
+                        }
+                    }
                 }
             }
         });
@@ -1607,12 +1709,26 @@ impl<L: Loader> Preprocessor<L> {
         let reading = bytes.reading();
         let mut at = from;
         loop {
-            let next = self.fte_whitespace(run, bytes, at);
+            let next = match self.fte_whitespace(run, bytes, at) {
+                Ok(next) => Some(next),
+                Err(WhiteStop::Ended) => None,
+                // FTEF-14.67: the compile's error is the comment's, and the list ends with it.
+                Err(WhiteStop::Unclosed(open)) => {
+                    let span = reading.place(open..open.saturating_add(2));
+                    run.report(Code::E0501, EOF_IN_COMMENT, span);
+                    return Resume::End;
+                }
+            };
             let word = next.map(|next| (next, simple_get_token(text, next)));
             match word {
                 Some((next, (Some(word), stop))) if text.get(word.clone()) == Some(b"#endlist") => {
                     let end = skip_to_end_of_line(text, stop, Junk::Checked);
                     return end.resume(run, &reading, next);
+                }
+                Some((next, (Some(word), stop))) if too_long(Some(&word)) => {
+                    let span = reading.place(next..stop);
+                    run.report(Code::E0121, WORD_TOO_LONG, span);
+                    return Resume::End;
                 }
                 Some((_, (Some(_), stop))) => {
                     at = stop;
@@ -1639,8 +1755,15 @@ impl<L: Loader> Preprocessor<L> {
     fn fte_dont_compile(&mut self, run: &mut Run, bytes: &Bytes, from: usize) -> Resume {
         let mut at = from;
         loop {
-            let Some(next) = self.fte_whitespace(run, bytes, at) else {
-                return Resume::End;
+            let next = match self.fte_whitespace(run, bytes, at) {
+                Ok(next) => next,
+                Err(WhiteStop::Ended) => return Resume::End,
+                // FTEF-14.67.
+                Err(WhiteStop::Unclosed(open)) => {
+                    let span = bytes.reading().place(open..open.saturating_add(2));
+                    run.report(Code::E0501, EOF_IN_COMMENT, span);
+                    return Resume::End;
+                }
             };
             if byte_at(bytes.bytes(), next).is_none() {
                 return Resume::End;

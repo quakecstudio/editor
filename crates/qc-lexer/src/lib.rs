@@ -42,6 +42,10 @@ pub const QC_MAX_TOKEN: usize = 2048;
 /// or number that long runs past FTEQCC's buffer (FTEF-13.20).
 pub const FTEQCC_MAX_TOKEN: usize = 8192;
 
+/// The most bytes FTEQCC's `QCC_PR_LexMacroName` takes for a frame macro word,
+/// `sizeof(qcc_token)-1`; a 1024th is "token exceeds 1023 chars" (FTEF-14.66).
+pub const FTEQCC_MAX_WORD: usize = 1023;
+
 /// Longest frame name id's `qcc` can store, without its NUL.
 ///
 /// `QC_MAX_FRAME_NAME` in QC-8, from `pr_framemacros[MAX_FRAMES][16]` in `qcc/pr_lex.c`.
@@ -1582,6 +1586,12 @@ impl Lexer<'_> {
                 break;
             }
             self.bump(1);
+        }
+        // FTEF-14.66: `if (i == sizeof(qcc_token)-1) QCC_Error (ERR_INTERNAL, "token exceeds
+        // %i chars", i);`, before a 1024th byte.
+        if self.pos.saturating_sub(start) > FTEQCC_MAX_WORD {
+            let span = Span::new(start, self.pos);
+            self.error(Code::E0502, "token exceeds 1023 chars", span);
         }
         (self.pos > start).then(|| Span::new(start, self.pos))
     }

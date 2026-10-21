@@ -28,7 +28,8 @@ mod source;
 mod tests;
 
 pub use fte_directive::{
-    FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_as, qcc_load_file, qcc_load_in_place,
+    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
+    qcc_load_in_place, skip_script_line,
 };
 pub use fte_line::{fte_directive_end, relex_from};
 pub use fte_pragma::FlagSettings;
@@ -1025,7 +1026,7 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
     /// (PRJ-4.4), as [`Self::preprocess_file`] does, but in an FTEQCC dialect with a first line
-    /// that starts with `#!` passed over, as FTEQCC's `QCC_main` passes over it (PRJ-4.8).
+    /// that starts with `#!` passed over, as FTEQCC's `QCC_main` passes over it (PRJ-4.10).
     ///
     /// # Errors
     ///
@@ -1076,7 +1077,7 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Adds the file at `path`, of `bytes`, to the files read: in an FTEQCC dialect the text
     /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.64), past a `#!` first line in a
-    /// module's source (PRJ-4.8), in the vanilla dialect the bytes (QC-1.1).
+    /// module's source (PRJ-4.10), in the vanilla dialect the bytes (QC-1.1).
     fn add_source(
         &mut self,
         run: &mut Run,

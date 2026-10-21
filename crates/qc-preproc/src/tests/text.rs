@@ -447,8 +447,9 @@ fn vanilla_expansions_are_bounded() {
 }
 
 // spec FTEF-14.22: the white space and comments skipped before an argument end a `//` comment at
-// a line feed or a carriage return not before one, and one the text ends in, or a `/* */` comment
-// it ends in, runs the arguments to the end
+// a line feed or a carriage return not before one, and one the text ends in runs the arguments to
+// the end
+// spec FTEF-14.67: a `/* */` comment the text ends in there is "EOF inside comment" instead
 #[test]
 fn comments_before_an_argument_end_where_fteqcc_s_do() {
     assert_eq!(
@@ -460,7 +461,8 @@ fn comments_before_an_argument_end_where_fteqcc_s_do() {
         ("#5".to_owned(), vec![])
     );
     assert!(fte("#define M(x) x\nM(// c").1.contains(&Code::E0117));
-    assert!(fte("#define M(x) x\nM(/* c").1.contains(&Code::E0117));
+    let unclosed = fte("#define M(x) x\nM(/* c").1;
+    assert!(unclosed.contains(&Code::E0501) && !unclosed.contains(&Code::E0117));
     assert!(fte("#define M(x) x\nM(/* c */").1.contains(&Code::E0117));
 }
 

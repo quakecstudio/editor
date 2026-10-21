@@ -64,6 +64,8 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
             .and_then(|rest| rest.iter().position(|&b| b == b'\n' || b == 0))
             .map_or(text.len(), |len| hash.saturating_add(len)),
         Directive::Pragma { end, .. } => end,
+        // FTEF-14.66: the compile stops there, so the preprocessor reads no more of the text.
+        Directive::Fatal { .. } => text.len(),
     };
     Some(end)
 }

@@ -1698,7 +1698,7 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
     };
     let Some(function) = progs.functions().get(index) else {
         // FTE-23.11: FTEQCC makes no function for `f` initialised with a string a macro gave,
-        // which it casts with a warning. PRJ-4.7: id's qcc makes none when its own `progs.src`
+        // which it casts with a warning. PRJ-4.11: id's qcc makes none when its own `progs.src`
         // does not list the file that binds `f`.
         let fteqcc = case.dialect.has_fteqcc_extensions();
         let own_progs = case.project.as_ref().is_some_and(|p| p.progs.is_some());
@@ -1762,7 +1762,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
 
 /// Whether the project graph of `case`, a graph case of the directive family, lists a file that
 /// binds `f` (PRJ-5.13): the module is the `progs.src` the oracle reads, under the case's
-/// dialect (PRJ-4.7).
+/// dialect (PRJ-4.11).
 fn graph_binds(case: &Case) -> bool {
     let mut loader = qc_project::MemoryLoader::new();
     let compiled = case.compiled();

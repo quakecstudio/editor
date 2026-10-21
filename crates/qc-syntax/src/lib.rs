@@ -98,6 +98,15 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
     parse_text(source, dialect, input::Text::Source, &[])
 }
 
+/// Parses a module's source in source form (`docs/spec/project-file.md` PRJ-4.4), in `dialect`:
+/// as [`parse_with`], except that under an FTEQCC dialect a first line that starts with `#!` is
+/// passed over, as FTEQCC's `QCC_main` passes over it before it reads the source (PRJ-4.10), its
+/// bytes trivia the lexer skipped. Never fails, and the tree's text is `source`, byte for byte.
+#[must_use]
+pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
+    parse_text(source, dialect, input::Text::ModuleSource, &[])
+}
+
 /// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
 /// holds no directive lines, so a `#` first on its line is the token it is and the parser
 /// reads it as it reads a `#` anywhere else.

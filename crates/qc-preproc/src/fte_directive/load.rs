@@ -9,7 +9,7 @@
 //! `QCC_LoadFile` reads the file's bytes, `QCC_SanitizeCharSet` decodes a file that starts with a
 //! UTF-32 or UTF-16 byte order mark to UTF-8 and skips a UTF-8 one, and every NUL byte left is a
 //! space. In a module's source `QCC_main` then passes over a first line that starts with `#!`
-//! (`docs/spec/project-file.md` PRJ-4.8).
+//! (`docs/spec/project-file.md` PRJ-4.10).
 
 use std::borrow::Cow;
 
@@ -224,7 +224,7 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
 
 /// [`qcc_load_file`]'s text for a file of `bytes` that starts as `start` says, and where it
 /// stands in them: for the module's source ([`FileStart::Source`]) past a first line that starts
-/// with `#!`, as `QCC_main` reads it (PRJ-4.8, [`skip_script_line`]), which keeps its offsets.
+/// with `#!`, as `QCC_main` reads it (PRJ-4.10, [`skip_script_line`]), which keeps its offsets.
 #[must_use]
 pub fn qcc_load_as(bytes: Vec<u8>, start: FileStart) -> (Vec<u8>, TextOrigin) {
     let (mut text, origin) = qcc_load_file(bytes);
@@ -237,13 +237,13 @@ pub fn qcc_load_as(bytes: Vec<u8>, start: FileStart) -> (Vec<u8>, TextOrigin) {
 /// `QCC_main`'s pass over the first line of a module's source, `text` as [`qcc_load_file`] gives
 /// it, when that line starts with `#!`: "ignore the first line if it starts with a #! for unix
 /// scripts" (`if (qccmsrc[0] == '#' && qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');`).
-/// Implements PRJ-4.8.
+/// Implements PRJ-4.10.
 ///
 /// The line's bytes before its line feed become spaces, so the text keeps its offsets and its
 /// lines: FTEQCC reads on from the line feed, which ends the line the next one is counted from.
 /// A text with no line feed is all that line, as `QCC_LoadFile` writes one after the text
 /// (`mem[len] = '\n';`), and becomes all spaces.
-pub(crate) fn skip_script_line(text: &mut [u8]) {
+pub fn skip_script_line(text: &mut [u8]) {
     if !text.starts_with(b"#!") {
         return;
     }

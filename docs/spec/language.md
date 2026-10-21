@@ -1110,7 +1110,20 @@ A summary for code generation; the sections cited hold the rules.
   for the closing quote (`if (c=='\"')`), so it reads on past a NUL in it; the token is then a C
   string, and the name `main` opens is its text up to that NUL: `"a.qc` NUL `x" b.qc` lists
   `a.qc` and `b.qc`. The vanilla graph cases of `cargo xtask oracles builtins` hold these
-  (`project-file.md` PRJ-4.7).
+  (`project-file.md` PRJ-4.11).
+- **QC-23.8** `COM_Parse` reads its text through `char *data` into `int c` and tests
+  `while ( (c = *data) <= ' ')` and `} while (c>32);`, so on the x86 build, where `char` is
+  signed, a byte of 0x80 to 0xFF is below the space, as QC-1.3 says of the lexer: it is white
+  space between words and ends a word, and is kept only in a quoted word. So `progs.dat`, a line
+  break and `b.qh` 0xE9 `x.qc` list `b.qh` and `x.qc`, and a UTF-8 `café.qc` is the word `caf`
+  and then `.qc`. The vanilla graph cases of `cargo xtask oracles builtins` (`VANILLA_PROGS`)
+  hold one, and the pinned id `qcc` compiles both files.
+- **QC-23.9** A quoted word's loop stops only at its closing quote (`if (c=='\"')`), so the word
+  runs across line breaks, which it keeps: `"a.qc`, a line break and `b.qc"` is one name, which
+  id's `qcc` fails to open. A quote the text ends in has no end: the loop reads on past
+  `LoadFile`'s NUL and past the buffer, and the pinned build crashes (exit -10). This profile
+  ends the list there with error `E0101` "EOF inside quote" at the line the quote opens on, a
+  deliberate divergence. The vanilla graph cases (`VANILLA_PROGS`) hold both.
 
 ## QC-24 Errors and recovery
 

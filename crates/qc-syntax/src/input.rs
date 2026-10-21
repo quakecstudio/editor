@@ -11,7 +11,7 @@ use qc_lexer::{
     Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_flagged,
     lex_with,
 };
-use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from};
+use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from, skip_script_line};
 
 use crate::kind::SyntaxKind;
 
@@ -54,8 +54,21 @@ pub(crate) enum Text {
     /// A source file as written: a `#` and a name first on a line open a directive line
     /// (QC-9.1).
     Source,
+    /// A module's source in source form (PRJ-4.4), read as [`Self::Source`] but that, under an
+    /// FTEQCC dialect, a first line that starts with `#!` is passed over (PRJ-4.10).
+    ModuleSource,
     /// Text a preprocessor wrote, which holds no directive lines: every `#` is a token.
     Preprocessed,
+}
+
+impl Text {
+    /// Whether the text is a source file as written, with directive lines.
+    const fn is_source(self) -> bool {
+        match self {
+            Self::Source | Self::ModuleSource => true,
+            Self::Preprocessed => false,
+        }
+    }
 }
 
 /// The tokens and trivia of one file.
@@ -100,7 +113,28 @@ impl<'a> Lexable<'a> {
     /// dialect, a UTF-16 or UTF-32 file, whose decoded text is at other offsets, and a
     /// preprocessor's text, which no loader read, its bytes to the first NUL (QC-1.1).
     fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
-        let loaded = (dialect.has_fteqcc_extensions() && text == Text::Source)
+        let mut lexable = Self::loaded(source, dialect, text);
+        // PRJ-4.10: `QCC_main` passes over the line, which the tree keeps as bytes the lexer
+        // skipped.
+        let script = dialect.has_fteqcc_extensions()
+            && text == Text::ModuleSource
+            && lexable
+                .text
+                .get(lexable.start..)
+                .is_some_and(|rest| rest.starts_with(b"#!"));
+        if script {
+            let mut owned = lexable.text.into_owned();
+            if let Some(rest) = owned.get_mut(lexable.start..) {
+                skip_script_line(rest);
+            }
+            lexable.text = Cow::Owned(owned);
+        }
+        lexable
+    }
+
+    /// [`Self::new`] before a module source's `#!` line is passed over.
+    fn loaded(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+        let loaded = (dialect.has_fteqcc_extensions() && text.is_source())
             .then(|| qcc_load_in_place(source))
             .flatten();
         match loaded {
@@ -253,7 +287,7 @@ impl<'a> Input<'a> {
             // it (FTEF-14.53).
             let from = at;
             at = span.end;
-            if line.is_none() && text == Text::Source {
+            if line.is_none() && text.is_source() {
                 if fte {
                     let hash = lexed
                         .tokens
@@ -344,7 +378,7 @@ impl<'a> Input<'a> {
         // A preprocessor's text is the tokens the preprocessor lexed from the files and their
         // expansions, which reported their lexical errors and warnings there, so lexing it again
         // reports none (QC-9.21).
-        if text == Text::Source {
+        if text.is_source() {
             input.diagnostics = lexed.diagnostics;
         }
         if text_end < source.len() {

@@ -22,8 +22,8 @@ use std::rc::Rc;
 use qc_lexer::{Code, Span, TokenKind};
 
 use crate::fte_directive::{
-    self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, byte_at, simple_get_token,
-    whitespace,
+    self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
+    byte_at, simple_get_token, too_long, whitespace,
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
@@ -585,6 +585,9 @@ pub(crate) enum DefineError {
     /// A name of 64 bytes or more, "Compiler constant name length is too long or short"
     /// (FTEF-14.42).
     NameTooLong,
+    /// A name past the 1023 bytes `QCC_PR_SimpleGetToken` reads, "token exceeds 1023 chars"
+    /// (FTEF-14.66).
+    WordTooLong,
     /// A parameter list FTEQCC refuses (FTEF-14.23), and FTEQCC's error for it.
     BadParams(ParamError),
 }
@@ -710,6 +713,9 @@ pub(crate) fn read_define(
     let Some(name) = name else {
         return (Err(DefineError::NoName), stop);
     };
+    if too_long(Some(&name)) {
+        return (Err(DefineError::WordTooLong), stop);
+    }
     if name.len() > FTE_MAX_MACRO_NAME {
         let end = name.end;
         return (Err(DefineError::NameTooLong), end);
@@ -861,6 +867,19 @@ enum CallError {
     /// The text ends before the `)`, "EOF on macro call" (FTEF-14.29); `refused` is where
     /// reading goes on.
     Unterminated { refused: Refused },
+    /// The text ends in a `/* */` comment in the arguments, whose "EOF inside comment" is the
+    /// compile's error (FTEF-14.67): the use is read again as written, and the lexer reports the
+    /// comment there.
+    Unclosed { refused: Refused },
+}
+
+/// Why [`Preprocessor::fte_scan_arguments`] found no `)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScanEnd {
+    /// The text ended, or a directive ended it: "EOF on macro call".
+    Eof,
+    /// The text ends in a `/* */` comment after the `(` or a `,` (FTEF-14.67).
+    Unclosed,
 }
 
 /// Where reading goes on after a use of a function-like macro that is refused, an error where
@@ -918,7 +937,10 @@ impl Writer<'_> {
         loop {
             let whitestart = out.bytes.len();
             // `QCC_PR_LexWhitespace(true)` runs no directive, so it stops at a line's `#` too.
-            let (Gap::Text(white_end) | Gap::LineStart(white_end)) = whitespace(bytes, at);
+            let white_end = match whitespace(bytes, at) {
+                Gap::Text(end) | Gap::LineStart(end) => end,
+                Gap::Unclosed(_) => bytes.len(),
+            };
             out.push_from(self.body, at..white_end);
             at = white_end;
             // Everything written so far, the pieces before this one included.
@@ -1096,6 +1118,10 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0121, message, whole);
                 return Err(end);
             }
+            Err(DefineError::WordTooLong) => {
+                run.report(Code::E0121, WORD_TOO_LONG, whole);
+                return Err(end);
+            }
             Err(DefineError::BadParams(error)) => {
                 run.report(Code::E0115, error.message(), whole);
                 return Err(end);
@@ -1213,6 +1239,7 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0117, message, item.tok.span);
                 return self.refuse(run, item, refused);
             }
+            Err(CallError::Unclosed { refused }) => return self.refuse(run, item, refused),
         };
         let named = mac.params.as_ref().map_or(0, Vec::len);
         if let Some(call) = &use_.call
@@ -1394,13 +1421,19 @@ impl<L: Loader> Preprocessor<L> {
             let before = run.directives_run;
             let scanned = self.fte_scan_arguments(run, &bytes, open, (params.len(), mac.variadic));
             let ran = run.directives_run != before;
-            let Some(scanned) = scanned else {
-                let refused = if ran {
-                    Refused::After(text.len())
-                } else {
-                    Refused::AsWritten
-                };
-                return Err(CallError::Unterminated { refused });
+            let scanned = match scanned {
+                Ok(scanned) => scanned,
+                Err(end) => {
+                    let refused = if ran {
+                        Refused::After(text.len())
+                    } else {
+                        Refused::AsWritten
+                    };
+                    return Err(match end {
+                        ScanEnd::Eof => CallError::Unterminated { refused },
+                        ScanEnd::Unclosed => CallError::Unclosed { refused },
+                    });
+                }
             };
             end = scanned.close.saturating_add(1);
             if ran {
@@ -1453,27 +1486,34 @@ impl<L: Loader> Preprocessor<L> {
     /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every
     /// other byte (a character constant's, a comment's) being part of it. The white space after
     /// the `(` and each `,` is read as `QCC_PR_LexWhitespace(false)` reads it, which runs the
-    /// directives at the starts of its lines (FTEF-14.45). `None` when the text ends first, "EOF
-    /// on macro call", or a directive ends it.
+    /// directives at the starts of its lines (FTEF-14.45). [`ScanEnd::Eof`] when the text ends
+    /// first, "EOF on macro call", or a directive ends it; [`ScanEnd::Unclosed`] when it ends in a
+    /// comment there (FTEF-14.67).
     fn fte_scan_arguments(
         &mut self,
         run: &mut Run,
         bytes: &Bytes,
         open: usize,
         (named, variadic): (usize, Variadic),
-    ) -> Option<Scanned> {
+    ) -> Result<Scanned, ScanEnd> {
         let text = bytes.bytes();
-        let mut at = self.fte_whitespace(run, bytes, open.saturating_add(1))?;
+        let white = |stop: WhiteStop| match stop {
+            WhiteStop::Ended => ScanEnd::Eof,
+            WhiteStop::Unclosed(_) => ScanEnd::Unclosed,
+        };
+        let mut at = self
+            .fte_whitespace(run, bytes, open.saturating_add(1))
+            .map_err(white)?;
         let mut start = at;
         let mut args = Vec::new();
         let mut extra = 0_usize;
         let mut too_many = false;
         let mut level = 0_usize;
         loop {
-            let mut byte = byte_at(text, at)?;
+            let mut byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
             if byte == b'"' {
                 at = string_end(text, at);
-                byte = byte_at(text, at)?;
+                byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
             }
             match byte {
                 b'(' => level = level.saturating_add(1),
@@ -1483,14 +1523,16 @@ impl<L: Loader> Preprocessor<L> {
                     } else {
                         args.push(start..at);
                         if byte == b')' {
-                            return Some(Scanned {
+                            return Ok(Scanned {
                                 args,
                                 extra,
                                 too_many,
                                 close: at,
                             });
                         }
-                        at = self.fte_whitespace(run, bytes, at.saturating_add(1))?;
+                        at = self
+                            .fte_whitespace(run, bytes, at.saturating_add(1))
+                            .map_err(white)?;
                         start = at;
                         too_many |= args.len() == FTE_MAX_PARAMS || args.len() > named;
                         continue;

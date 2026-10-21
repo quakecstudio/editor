@@ -122,7 +122,7 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
 - **PRJ-3.2** A module's output path is its `output` when `quakec.toml` gives one, and
   otherwise `build/<mod>/<file>` with the file name of its kind: `PRJ_SSQC_OUTPUT`,
   `PRJ_CSQC_OUTPUT` or `PRJ_MENUQC_OUTPUT`. The output the `progs.src` itself declares
-  (PRJ-4.3, PRJ-5.6) is kept as the module's declared output and does not change where the
+  (PRJ-4.12, PRJ-5.6) is kept as the module's declared output and does not change where the
   IDE writes (ADR-0008: nothing is written outside the project).
 - **PRJ-3.3** In a bare project a module's kind is `csqc` when the file name of its declared
   output is `csprogs.dat`, `menuqc` when it is `menu.dat`, compared without regard to ASCII
@@ -153,10 +153,8 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
   comments are skipped and a line whose first non-blank byte is `#` followed by a name is a
   directive (PRJ-5), not tokens. Neither changes a list id's `qcc` accepts: no such list has
   a `/*` or a line starting `#` and a name, because each would be a file name it cannot open.
-- **PRJ-4.3** In list form the first token is the declared output, resolved against the
-  directory of the `progs.src`, and every later token is a source file, resolved against the
-  same directory and compiled in the order listed (QC-23.3). The `progs.src` itself is not
-  compiled. A list with no token is error `E0401` (QCD-5.1).
+- **PRJ-4.3** **Withdrawn** (P2-116, #544): it made a list with no token error `E0401` under
+  every dialect, but FTEQCC reads one with no error (PRJ-4.9). Replaced by PRJ-4.12.
 - **PRJ-4.4** In source form the file is itself the first file compiled: its text is
   QuakeC, and the files it brings in with `#include` and `#includelist` are compiled where
   they appear. It declares its output with `#output` or `#pragma progs_dat` (PRJ-5.6), or
@@ -176,19 +174,32 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
   NULs and marks, and the graph lists the file that binds `f` exactly when the pinned FTEQCC binds
   it. The GMQCC dialect reads its source so too, as it reads every file with FTEQCC's reader
   (PRJ-5.15): GMQCC's own reading is not quoted here and waits for its dialect profile, as
-  PRJ-5.15 says. Under the vanilla dialect the source is read as PRJ-4.7 says.
-- **PRJ-4.7** Under the vanilla dialect a module's form is told from, and a list's words are read
-  from, its bytes past a UTF-8 byte order mark (PRJ-5.1) up to the NUL byte where id's `qcc` ends
-  its list (QC-23.7): the first NUL between words, or that ends a word or a `//` comment. A quoted
-  word runs on past a NUL in it, here to its closing quote or its line's end, and names the file
-  of its text up to that NUL. So `progs.dat`, a NUL and `a.qc` list no file, and a source that
-  starts with a NUL is a list with no token, error `E0401`. A source in source form is then read
-  as its bytes (PRJ-5.1), as before. The vanilla graph cases of the directive family of
-  `cargo xtask oracles builtins` with a `progs.src` of their own (`VANILLA_PROGS` in
-  `xtask/src/oracles/builtins/directives.rs`) hold a NUL between words, in and after a word, in a
-  `//` comment and in a quoted word, and the graph lists the file that binds `f` exactly when the
-  pinned id `qcc` binds it.
-- **PRJ-4.8** Under the FTEQCC and GMQCC dialects a module's source whose text, as PRJ-4.6 gives
+  PRJ-5.15 says. Under the vanilla dialect the source is read as PRJ-4.11 says.
+- **PRJ-4.7** **Withdrawn** (P2-116, #544): it ended a quoted word at its line's end, but id's
+  `COM_Parse` reads it on to its closing quote across lines (QC-23.9). Replaced by PRJ-4.11.
+- **PRJ-4.8** **Withdrawn** (P2-116, #544): it made a source of only a `#!` line error `E0401`,
+  but FTEQCC reads it as a list with no word, which is no error (PRJ-4.9). Replaced by PRJ-4.10.
+- **PRJ-4.9** Under the FTEQCC and GMQCC dialects a list-form source is read as FTEQCC's
+  `QCC_main` and `QCC_ContinueCompile` read it (`qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`), by the graph's reader
+  of PRJ-5.13 (`qc_preproc::FteFileReader::progs`). Its form is that of the first word
+  `QCC_COM_Parse` reads (`if (*qcc_token == '#')`). Then `QCC_PR_LexWhitespace(false)` reads the
+  white space and comments, and runs each directive at a line's start (FTEF-14.45, FTEF-14.52),
+  before the output and before each later word. The output is the word `QCC_PR_SimpleGetToken`
+  reads, which ends at white space, `,`, `;`, `(`, `)`, `]` or `//` and may be empty, naming no
+  output. Each later word is `QCC_COM_Parse`'s (`qc_preproc::com_parse`): `,`, `{`, `}`, `(`,
+  `)`, `'` and `:` are each a word of their own and `"` ends a word; a quoted word takes `\"`,
+  `\\`, `\n`, `\r` and `\t` and ends at its closing quote, at a line break after an escaped quote
+  and at the end of the text; a word keeps at most 1023 bytes (FTEF-14.66). Each names a file
+  found as `QCC_FindBestInclude(qcc_token, compilingrootfile, 2)` finds it, joined to the
+  source's directory and then to each include directory. So `progs.dat,a.qc` names the file `,`,
+  which the pinned FTEQCC fails at ("Couldn't open file ,"), `progs.dat;x` names `;x` and
+  `a.qc(b.qc)` names `(`. A list with no word, an empty source or one of only white space,
+  comments or a `#!` line (PRJ-4.10), has no output and no file and is no error:
+  `if (!qccmsrc) QCC_Error (ERR_NOOUTPUT, ...)` follows `qccmsrc = pr_file_p;`, which is never
+  null, and the pinned FTEQCC writes nothing ("nothing to write") and exits 0. An output past
+  1023 bytes is "token exceeds 1023 chars" (`E0121`, FTEF-14.66) and a comment the text ends in
+  "EOF inside comment" (`E0501`, FTEF-14.67), after which the graph reads no more of the list.
+- **PRJ-4.10** Under the FTEQCC and GMQCC dialects a module's source whose text, as PRJ-4.6 gives
   it, starts with the two bytes `#!` has its first line passed over before PRJ-4.1 tells its form,
   before a list's words are read and before the source form is read as PRJ-5.13 says and as the
   preprocessor reads it: FTEQCC's `QCC_main` (`qccmain.c`,
@@ -199,15 +210,31 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
   and a `/*` or `"` in it opens nothing. The test is of the first two bytes of that text, so it
   holds after a UTF-8 mark that is skipped and in a decoded UTF-16 or UTF-32 source, and not
   after a blank or a NUL. A source of one such line with no line feed is all passed over, since
-  `QCC_LoadFile` writes a line feed after the text, and is a list with no token, error `E0401`
-  (PRJ-4.3), as an empty source is; the pinned FTEQCC reads either with an empty output name and
-  writes nothing ("nothing to write"), which the graph does not follow. The line keeps
+  `QCC_LoadFile` writes a line feed after the text, and is a list with no word, which is no error
+  (PRJ-4.9), as an empty source is. The line keeps
   its place, so the lines after it keep their numbers. The vanilla dialect reads a `#!` line as
-  PRJ-4.1 and PRJ-4.7 say. The graph cases of the directive family of
+  PRJ-4.1 and PRJ-4.11 say. The graph cases of the directive family of
   `cargo xtask oracles builtins` with a `progs.src` of their own hold a `#!` first line before a
   list and before a source form, after a UTF-8 mark and in each wide encoding, and with a `\`,
   a `/*` and a `"` in it, and the graph lists the file that binds `f` exactly when the pinned
   FTEQCC binds it. The GMQCC dialect reads its source so too, as PRJ-4.6 says.
+- **PRJ-4.11** Under the vanilla dialect a module's form is told from, and a list's words are read
+  from, its bytes past a UTF-8 byte order mark (PRJ-5.1) up to the NUL byte where id's `qcc` ends
+  its list (QC-23.7): the first NUL between words, or that ends a word or a `//` comment. A quoted
+  word runs on past a NUL in it, to its closing quote, across lines
+  (QC-23.9), and names the file
+  of its text up to that NUL. So `progs.dat`, a NUL and `a.qc` list no file, and a source that
+  starts with a NUL is a list with no token, error `E0401`. A source in source form is then read
+  as its bytes (PRJ-5.1), as before. The vanilla graph cases of the directive family of
+  `cargo xtask oracles builtins` with a `progs.src` of their own (`VANILLA_PROGS` in
+  `xtask/src/oracles/builtins/directives.rs`) hold a NUL between words, in and after a word, in a
+  `//` comment and in a quoted word, and the graph lists the file that binds `f` exactly when the
+  pinned id `qcc` binds it.
+- **PRJ-4.12** In list form the first token is the declared output, resolved against the
+  directory of the `progs.src`, and every later token is a source file, resolved against the
+  same directory and compiled in the order listed (QC-23.3). The `progs.src` itself is not
+  compiled. Under the vanilla dialect a list with no token is error `E0401` (QCD-5.1); under the
+  FTEQCC and GMQCC dialects it is no error (PRJ-4.9).
 
 ## PRJ-5 Directives the graph follows
 
@@ -355,6 +382,10 @@ malformed directive without a diagnostic.
   file's first line is a directive's only at its first byte. The GMQCC dialect's own reading
   waits for its dialect profile. GMQCC's own macros are a module's `defines` (PRJ-5.4), as
   Xonotic's `quakec.toml` gives `GMQCC`.
+- **PRJ-5.16** Under the vanilla dialect the graph reads each QuakeC file, a source-form source
+  among them, only to its first NUL byte, as id's `LoadFile` and the lexer end its text (QC-1.1),
+  so a directive after the NUL is not followed. Under the FTEQCC and GMQCC dialects a NUL is a
+  space (FTEF-14.64).
 
 ## PRJ-6 The file graph
 
@@ -380,6 +411,12 @@ malformed directive without a diagnostic.
 - **PRJ-6.5** Every diagnostic names the file and the 1-based line of the directive or list
   entry that raised it, or line 0 when it is about the whole source: one that cannot be read
   or has no token.
+- **PRJ-6.6** A file that cannot be opened, a listed one (`E0402`) or an included one (`E0111`),
+  is fatal to both compilers: id's `SafeOpenRead` calls `Error`, which exits, and FTEQCC's
+  `QCC_FindBestInclude` calls `QCC_Error`, so neither compiles a file after it nor writes its
+  output. The graph reports each such file and reads on, so every file a module names is
+  listed. This is a deliberate divergence: the compile's outcome, an error, is the same, and
+  the IDE shows every missing file at once rather than one a build.
 
 ### Constants
 
@@ -477,7 +514,7 @@ that ignores case (macOS and Windows by default) and fails on one that does not 
 
 ### Behaviour
 
-- **PRJ-7.1** A name that brings a file into the graph (a list entry, PRJ-4.3; an
+- **PRJ-7.1** A name that brings a file into the graph (a list entry, PRJ-4.12; an
   `#include`, PRJ-5.2; an `#includelist` entry, PRJ-5.3), once resolved, is opened as the
   host file system opens that path, as both compilers do: exactly where the file system
   matches case, and ignoring case where it does not. The entry's path is the resolved name
