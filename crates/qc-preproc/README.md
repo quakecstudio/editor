@@ -48,7 +48,13 @@ place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.10
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
 (`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
-semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands
+semantic model (FTEF-12.6, FTEF-12.10). `#pragma flag` sets FTEQCC's compiler flags
+(`FlagSettings`, FTEF-12.11): the text from there on is lexed again with the flags the lexer
+reads (`Lexing`, FTEF-12.12), each change marked in `FileOutput::lex_flags`, and `hashonly` and
+`nofileline` change the preprocessor's own reading (FTEF-12.13). A word or string of a directive
+past FTEQCC's 1023 bytes, a pragma past its `msg[1024]` and a comment the text ends in are FTEQCC's
+errors (FTEF-14.66, FTEF-14.67). The graph's reader also reads a list-form `progs.src`
+(`FteFileReader::progs`, PRJ-4.9), whose words `com_parse` reads as `QCC_COM_Parse` does. FTEQCC's frame numbering and its further `$` commands
 (FTEF-18.16, FTEF-18.17), a frame macro numbered below 0 unknown where it is expanded
 (FTEF-18.30), its frame macro diagnostics, "Stale macro used", "Duplicate macro
 defined", "Name for frame macro NAME is too long" and "$modelname name too long" (FTEF-18.29;

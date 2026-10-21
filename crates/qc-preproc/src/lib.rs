@@ -965,7 +965,7 @@ impl<L: Loader> Preprocessor<L> {
             .map(|dir| dir.as_os_str().as_encoded_bytes().to_vec())
             .collect();
         if self.dialect.has_fteqcc_extensions() {
-            // FTEF-14.59: FTEQCC prints a `-I` option's warning against no file, "cmdline".
+            // FTEF-14.68: FTEQCC prints a `-I` option's warning against no file, "cmdline".
             for dir in &self.command_line_dirs {
                 let _ = self.fte.add_include_dir(dir);
             }

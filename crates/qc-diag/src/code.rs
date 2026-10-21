@@ -174,6 +174,9 @@ pub enum Code {
     /// A `#NAME` in a string under FTEQCC's `macroinstrings` flag, its warning with no name
     /// (QCD-7.44).
     W0122,
+    /// "Hanging \\" and a CR: a `\` and a lone CR in an FTEQCC string, its warning with no name
+    /// (QCD-7.45).
+    W0123,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -197,7 +200,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 84] = [
+    pub const ALL: [Self; 85] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -273,6 +276,7 @@ impl Code {
         Self::W0120,
         Self::W0121,
         Self::W0122,
+        Self::W0123,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -363,6 +367,7 @@ impl Code {
             Self::W0120 => "W0120",
             Self::W0121 => "W0121",
             Self::W0122 => "W0122",
+            Self::W0123 => "W0123",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -401,6 +406,7 @@ impl Code {
             | Self::W0120
             | Self::W0121
             | Self::W0122
+            | Self::W0123
             | Self::W0201
             | Self::W0203
             | Self::W0204

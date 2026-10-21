@@ -62,6 +62,37 @@ const BYTE_LINES: &[&[u8]] = &[
     b"string s = \"a\xffb\";\n",
 ];
 
+/// Lines before [`BIND`] under FTEQCC's compiler flags, each set by a `#pragma flag` (FTEF-12.12,
+/// FTEF-12.13), with the line that reads the same bytes under the default flags beside it:
+/// `qccx`'s `:` between string parts, character constants and `%N` immediates, an error unless
+/// `#pragma warning` makes F313 none; `qcfuncs` off and its octal escapes; `ILP32`'s 32-bit `l`,
+/// made an error with F312; `ssp`'s `**`, made an error with F321; and `hashonly`, under which
+/// a name is no macro's.
+const FLAG_LINES: &[&str] = &[
+    "#pragma flag enable qccx\nstring s = \"a\":\"b\";\n",
+    "string s = \"a\":\"b\";\n",
+    "#pragma flag enable qccx\nfloat x = 'a';\n",
+    "#pragma flag enable qccx\n#pragma warning disable F313\nfloat x = 'a';\n",
+    "#pragma flag enable qccx\nfloat x = %5;\n",
+    "#pragma flag enable qccx\n#pragma warning disable F313\nfloat x = %5;\n",
+    "#pragma flag enable qccx\n#pragma flag disable qccx\nfloat x = 'a';\n",
+    "#pragma flag disable qcfuncs\nstring s = \"\\8\";\n",
+    "#pragma flag disable qcfuncs\nstring s = \"\\101\\7\";\n",
+    "string s = \"\\8\";\n",
+    "#pragma warning error F312\n#pragma flag enable ILP32\nfloat x = 0x100000000l;\n",
+    "#pragma warning error F312\nfloat x = 0x100000000l;\n",
+    "#pragma flag enable ssp\n#pragma warning error F321\nfloat x = 2**3;\n",
+    "#define F f\n#pragma flag enable hashonly\nfloat F;\n",
+    "#define F f\nfloat F;\n",
+];
+
+/// Byte sequences under a flag that no `&str` holds, as [`BYTE_LINES`] are written: `utf8`'s
+/// plain strings, read as UTF-8 (FTEF-12.12).
+const FLAG_BYTE_LINES: &[&[u8]] = &[
+    b"#pragma flag enable utf8\nstring s = \"a\xffb\";\n",
+    b"#pragma flag enable utf8\nstring s = \"a\xc3\xa9b\";\n",
+];
+
 /// Builtin numbers past 64 bits, which FTEQCC's `long long` wraps (FTEF-13.19).
 const NUMBERS: &[&str] = &[
     "18446744073709551621",
@@ -89,7 +120,16 @@ pub(super) fn cases() -> Vec<Case> {
             "s".repeat(length.saturating_sub(half))
         ));
     }
-    let mut cases = Vec::new();
+    let mut cases: Vec<Case> = FLAG_LINES
+        .iter()
+        .map(|line| Case::new(Dialect::Fteqcc, format!("{line}{BIND}")))
+        .collect();
+    for line in FLAG_BYTE_LINES {
+        let line: String = line.iter().copied().map(char::from).collect();
+        let mut case = Case::new(Dialect::Fteqcc, format!("{line}{BIND}"));
+        case.encoding = Encoding::Latin1;
+        cases.push(case);
+    }
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for source in &sources {
             cases.push(Case::new(dialect, source.clone()));

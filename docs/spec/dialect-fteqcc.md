@@ -736,6 +736,10 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   (`POW_F`) and `><` (`CROSS_V`) the priority of `*` (`PC_MULDIV`) and `<=>` (`SPACESHIP_F`) that
   of `==` (`PC_EQUALITY`), as this parser does. `@` (a `qccx` unary in `QCC_PR_Term`) and `^^`
   (which no opcode has) are tokens the parser of this profile reads as no operator.
+- **FTEF-13.25** In a string, `\` before a CR is the byte after the CR (`c = *pr_file_p++;` in
+  `QCC_PR_LexEscapedCodepoint`), and when that byte is no LF FTEQCC warns `"Hanging \\\\\r"`
+  (`WARN_HANGINGSLASHR`, `W0123`), the text `Hanging \\` and a CR: the pinned FTEQCC gives it for
+  `"a`, `\`, a CR and `b"`. A `\` before a CR and an LF is the LF, with no warning.
 
 ## FTEF-14 Preprocessor directives and macros
 
@@ -1126,7 +1130,7 @@ profile the preprocessor reads them as FTEQCC does.
   an included file includes is found beside the compiled file: with `progs.src` listing
   `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the pinned FTEQCC reads `src/c.qh`
   and refuses the program when only `src/x/c.qh` exists. An empty name includes nothing, and a
-  name `#pragma once` marked is not read again (FTEF-14.65). The file is read next, as text of
+  name `#pragma once` marked is not read again (FTEF-14.70). The file is read next, as text of
   its own, after the directive's line. The vanilla dialect keeps QC-9.2.
 - **FTEF-14.41** `#includelist` reads its line with `errorifnonwhite`, then words: before each,
   white space and comments are read as `QCC_PR_LexWhitespace(false)` reads them, which runs the
@@ -1162,7 +1166,7 @@ profile the preprocessor reads them as FTEQCC does.
   FTEQCC's diagnostics report the line too; this profile's diagnostics keep the place of their
   text, a deliberate divergence, as a span in the file says more than a line FTEQCC was told.
 - **FTEF-14.44** **Withdrawn** (P2-116, #544): it said this profile keeps only F303's warning
-  setting and does not report "Unknown pragma". Replaced by FTEF-14.65.
+  setting and does not report "Unknown pragma". Replaced by FTEF-14.70.
 - **FTEF-14.45** `QCC_PR_LexWhitespace(false)`, which reads the white space and comments after a
   function-like macro use's `(` and after each `,` of its arguments (FTEF-14.22), and before
   each word of an `#includelist` and each byte `DONT_COMPILE_THIS_FILE` passes over, calls
@@ -1224,7 +1228,7 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-14.37) is kept, being `QCC_PR_Precompiler`'s own.
 - **FTEF-14.49** A module's include directories (PRJ-5.2) are FTEQCC's `-I` options:
   `QCC_PR_CommandLinePrecompilerOptions` gives each to `QCC_PR_AddIncludePath(name)` (`else if (
-  !strncmp(myargv[i], "-I", 2) )`), which keeps it as `#pragma includedir` does (FTEF-14.65): a `/`
+  !strncmp(myargv[i], "-I", 2) )`), which keeps it as `#pragma includedir` does (FTEF-14.70): a `/`
   after it unless it ends in one, at most 8. `QCC_SetDefaultProperties` calls it after
   `QCC_PR_CloseProcessor`, so they are the first include directories, before any `#pragma
   includedir` adds one, and they are there again for the second autoprototyping pass (FTEF-14.48).
@@ -1377,15 +1381,9 @@ profile the preprocessor reads them as FTEQCC does.
   text's end is "EOF inside quote in define NAME". So `#define A 1` then `#define A() 1` is
   F316's, and `#define F(a) a` then `#append F(b) 2` gives "arguments differ in macro append" and
   "Alternate precompiler definition of F (a -> 2)", as the pinned FTEQCC prints them.
-- **FTEF-14.59** `QCC_PR_AddIncludePath`'s warnings, which have no name (`WARN_STRINGTOOLONG`,
-  `W0117`), are reported for a `#pragma includedir`: "Too many include dirs. Ignoring and hoping the
-  stars align." for a ninth directory, and "Include path too long." for one that with its `/` has
-  2048 bytes or more, as the copy is bounded by the whole table (`sizeof(qccincludedir)`, `char
-  qccincludedir[MAXINCLUDEDIRS][256]`), and the directory is then not kept. A name of 256 to 2047
-  bytes runs on into the next slots of FTEQCC's table, which this profile does not model: it keeps
-  the name whole, as a later directory FTEQCC adds overwrites the bytes. A module's `-I` options
-  (FTEF-14.49) are added the same way, and FTEQCC prints their warnings against no file
-  (`s_filen` "cmdline"), which this profile does not report.
+- **FTEF-14.59** **Withdrawn** (P2-116, #544): it gave "Include path too long." for a `#pragma
+  includedir` of 2048 bytes, which FTEQCC's `char msg[1024]` cannot hold (FTEF-14.66). Replaced
+  by FTEF-14.68.
 - **FTEF-14.61** In a function-like macro's body a `#` before a token that names no parameter, read
   with `QCC_COM_Parse2`, is written as `#` and the token, and is FTEQCC's warning "'#TOKEN' is not
   a macro parameter in NAME" (`QCC_PR_ParseWarning(0, ...)`, the warning of code 0, with no name,
@@ -1450,24 +1448,8 @@ profile the preprocessor reads them as FTEQCC does.
   the code unit each byte came from, and the file's end for the line feed
   (`qc_preproc::SourceFile::file_span`). The vanilla dialect keeps QC-1.1: a file's bytes, its text
   ending at the first NUL.
-- **FTEF-14.65** Of the other pragmas, these change what the preprocessor reads:
-  `DONT_COMPILE_THIS_FILE` passes over the rest of the text a byte at a time after white space
-  read as `QCC_PR_LexWhitespace(false)` reads it, so the directives at the starts of its lines
-  still run, an `#error` refusing the program; `once` marks the file being compiled
-  (`strcpy(onced->name, compilingfile);`), not the file it is in, so a header's `#pragma once`
-  keeps nothing from being read twice; `includedir` adds the directory its first token
-  (`QCC_COM_Parse`) names, a `/` after it unless it ends in one, joined to the file being
-  compiled, after the others, at most 8 (`MAXINCLUDEDIRS`, FTEF-14.59); `noref` and `autoproto`
-  take their text with `atoi` (FTEF-12.6, FTEF-12.10), so `#pragma noref(1)` is 0; `warning STATE
-  NAME ...` sets FTEQCC's warning settings (FTEF-14.63); and `flag` and `keyword` set the compiler
-  flags (FTEF-12.11). The rest, `COPYRIGHT`, `compress`, `forcecrc`, `framerate`, `file`
-  (FTEF-14.32), `line` (FTEF-14.43), `nosave`, `defaultstatic`, `wrasm`, `optimise` and
-  `optimize`, `sourcefile`, `TARGET`, `PROGS_SRC`, `PROGS_DAT` and `opcode`, change the build,
-  with the warnings of FTEF-12.11, and an unknown one is the Q120 warning "Unknown pragma 'NAME'"
-  (`W0113`). `#pragma COPYRIGHT`'s warning "Copyright message is too long" needs a text of 1024
-  bytes or more, which overruns FTEQCC's `char msg[1024]` first, as `#copyright`'s, which copies
-  only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
-  of 1024 bytes or more is that undefined behaviour, which this profile does not model.
+- **FTEF-14.65** **Withdrawn** (P2-116, #544): it left a `#pragma` line of 1024 bytes or more
+  unmodelled, which this profile now reports as an error (FTEF-14.66). Replaced by FTEF-14.70.
 - **FTEF-14.66** `QCC_PR_SimpleGetToken`, `QCC_PR_SimpleGetString` and `QCC_PR_LexMacroName`
   read into `pr_token` and stop the compile with `QCC_Error (ERR_INTERNAL, "token exceeds %i
   chars", i)` at a 1024th byte (`if (i == sizeof(qcc_token)-1)`), and `QCC_PR_SimpleGetString`
@@ -1491,6 +1473,42 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-14.41) and before each word of a list-form `progs.src` (PRJ-4.9). This profile reports it
   as `E0501` "EOF inside comment" at the comment's `/*`, and the reading ends at the end of the
   text; the pinned FTEQCC gives it for a list `progs.dat`, `t.qc /* open`.
+- **FTEF-14.68** `QCC_PR_AddIncludePath`'s warnings have no name (`WARN_STRINGTOOLONG`, `W0117`):
+  "Too many include dirs. Ignoring and hoping the stars align." for a ninth directory a `#pragma
+  includedir` adds, and "Include path too long." for a directory that with its `/` has 2048 bytes
+  or more, as the copy is bounded by the whole table (`sizeof(qccincludedir)`, `char
+  qccincludedir[MAXINCLUDEDIRS][256]`), the directory then not kept. A `#pragma includedir` cannot
+  name one so long: its text past 1023 bytes runs past FTEQCC's `msg` (FTEF-14.66), and
+  `QCC_COM_Parse` and `char newinc[1024]` hold 1023 bytes of it. Only a module's `-I` option
+  (FTEF-14.49) can, and FTEQCC prints its warnings against no file (`s_filen` "cmdline"), which
+  this profile does not report. A name of 256 to 1023 bytes runs on into the next slots of
+  FTEQCC's table, which this profile does not model: it keeps the name whole, as a later directory
+  FTEQCC adds overwrites the bytes.
+- **FTEF-14.69** `#copyright` copies into `msg` only the bytes after its name that are white
+  space (`for (a = 0; a < sizeof(msg)-1 && qcc_iswhite(pr_file_p[a]) && pr_file_p[a] != '\0';
+  a++)`), at most 1023, so its test `if (strlen(msg) >= sizeof(QCC_copyright))` against `char
+  QCC_copyright[1024]` never holds and "Copyright message is too long" is never given; this
+  profile gives no diagnostic for a `#copyright` of any length. The pinned FTEQCC gives none for
+  2000 bytes of text or of spaces.
+- **FTEF-14.70** Of the other pragmas, these change what the preprocessor reads:
+  `DONT_COMPILE_THIS_FILE` passes over the rest of the text a byte at a time after white space
+  read as `QCC_PR_LexWhitespace(false)` reads it, so the directives at the starts of its lines
+  still run, an `#error` refusing the program; `once` marks the file being compiled
+  (`strcpy(onced->name, compilingfile);`), not the file it is in, so a header's `#pragma once`
+  keeps nothing from being read twice; `includedir` adds the directory its first token
+  (`QCC_COM_Parse`) names, a `/` after it unless it ends in one, joined to the file being
+  compiled, after the others, at most 8 (`MAXINCLUDEDIRS`, FTEF-14.68); `noref` and `autoproto`
+  take their text with `atoi` (FTEF-12.6, FTEF-12.10), so `#pragma noref(1)` is 0; `warning STATE
+  NAME ...` sets FTEQCC's warning settings (FTEF-14.63); and `flag` and `keyword` set the compiler
+  flags (FTEF-12.11). The rest, `COPYRIGHT`, `compress`, `forcecrc`, `framerate`, `file`
+  (FTEF-14.32), `line` (FTEF-14.43), `nosave`, `defaultstatic`, `wrasm`, `optimise` and
+  `optimize`, `sourcefile`, `TARGET`, `PROGS_SRC`, `PROGS_DAT` and `opcode`, change the build,
+  with the warnings of FTEF-12.11, and an unknown one is the Q120 warning "Unknown pragma 'NAME'"
+  (`W0113`). `#pragma COPYRIGHT`'s warning "Copyright message is too long" needs a text of 1024
+  bytes or more, which overruns FTEQCC's `char msg[1024]` first, as `#copyright`'s, which copies
+  only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
+  of 1024 bytes or more is that undefined behaviour, which this profile reports as an error
+  (FTEF-14.66).
 
 ## FTEF-15 Declarations
 

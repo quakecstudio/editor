@@ -16,8 +16,12 @@ dialect each QuakeC file is read with the preprocessor's directive reader
 (PRJ-5.13, PRJ-5.14), and under GMQCC with the same reader, as the preprocessor reads a GMQCC
 file, with no `FTEQCC` defined (PRJ-5.15). Under the FTEQCC and GMQCC dialects a module's
 `progs.src` is read as FTEQCC's loader gives it, past a first line that starts with `#!`
-(PRJ-4.6, PRJ-4.10); under the vanilla dialect a list ends at the NUL byte where id's `qcc` ends
-it (PRJ-4.11, QC-23.7).
+(PRJ-4.6, PRJ-4.10), and a list form with the same reader, as `QCC_main` and
+`QCC_ContinueCompile` read it, a list with no word no error (PRJ-4.9); under the vanilla dialect
+a list is split as id's `COM_Parse` splits it, a byte of 0x80 or more white space and a quoted
+word running across lines (QC-23.8, QC-23.9), and it ends at the NUL byte where id's `qcc` ends
+it (PRJ-4.11, QC-23.7), as each vanilla file does (PRJ-5.16). A file that cannot be opened is
+reported and the graph reads on, where both compilers stop (PRJ-6.6).
 
 Files open as the host file system opens them, as FTEQCC and id's `qcc` do, and a name whose
 case differs from the file it opened is warning W0402 on every OS, so a project that would
@@ -35,7 +39,7 @@ project.
   attributes only these sections to the crate, and every active statement of each is cited by a
   test here.
 - **Also cited here, in sections another crate completes:** the `progs.src` reading of QC-23.1
-  to QC-23.3 and QC-23.5 to QC-23.7 in [`language.md`](../../docs/spec/language.md) (QC-23.4, the
+  to QC-23.3 and QC-23.5 to QC-23.9 in [`language.md`](../../docs/spec/language.md) (QC-23.4, the
   output path relative to the working directory, is id's `qcc`; the graph resolves it against
   the `progs.src` directory, PRJ-4.12); the project error codes QCD-5.1, QCD-5.2 and QCD-5.6 to
   QCD-5.8; and the case warning QCD-7.16. The compiler-stage errors QCD-5.3 to QCD-5.5 and the

@@ -551,7 +551,7 @@ pub(crate) enum IfTest {
     Expression(usize),
 }
 
-/// A pragma as `QCC_PR_Precompiler` reads it (FTEF-14.43, FTEF-14.65): its name, and the text
+/// A pragma as `QCC_PR_Precompiler` reads it (FTEF-14.43, FTEF-14.70): its name, and the text
 /// after it, from after a space or tab or from a `(`, to the end of the line, its trailing white
 /// space dropped.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -623,7 +623,7 @@ pub(crate) enum Directive {
         name: Result<Vec<u8>, &'static str>,
         end: LineEnd,
     },
-    /// `#pragma` (FTEF-14.43, FTEF-14.65); its line ends at the break.
+    /// `#pragma` (FTEF-14.43, FTEF-14.70); its line ends at the break.
     Pragma { pragma: Pragma, end: usize },
     /// A word or string of the directive that stops FTEQCC's compile (`QCC_Error`), FTEQCC's
     /// error and where reading stopped (FTEF-14.66).
@@ -1146,19 +1146,19 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
 }
 
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
-/// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.65).
+/// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.70).
 const FTE_MAX_INCLUDE_DIRS: usize = 8;
 
 /// `sizeof(qccincludedir)`, the size `QCC_PR_AddIncludePath` copies a name into: the whole
-/// table, `char qccincludedir[MAXINCLUDEDIRS][256]` (FTEF-14.59).
+/// table, `char qccincludedir[MAXINCLUDEDIRS][256]` (FTEF-14.68).
 const FTE_INCLUDE_TABLE_BYTES: usize = 2048;
 
 impl FteState {
     /// `QCC_PR_AddIncludePath(new)`: `new` added after the include directories, `.` for an empty
     /// one and a `/` after it unless it ends in `/` or `\`, unless it is there already or there
-    /// are 8 (FTEF-14.65).
+    /// are 8 (FTEF-14.70).
     ///
-    /// Returns FTEQCC's warning, if any (FTEF-14.59): "Too many include dirs. Ignoring and hoping
+    /// Returns FTEQCC's warning, if any (FTEF-14.68): "Too many include dirs. Ignoring and hoping
     /// the stars align." for a ninth, and "Include path too long." for a name that with its `/`
     /// does not fit `sizeof(qccincludedir)`, which is the whole table's 2048 bytes; the name is
     /// then not kept.
@@ -1185,7 +1185,7 @@ impl FteState {
 
 impl Pragma {
     /// The include directory `#pragma includedir` adds, in a file being compiled as `compiling`
-    /// (FTEF-14.65): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
+    /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
         let mut dir = com_parse(&self.message, 0)
@@ -1324,7 +1324,7 @@ pub(crate) enum Position {
 }
 
 /// What FTEQCC keeps from file to file while it compiles a module (FTEF-14.37, FTEF-14.40,
-/// FTEF-14.65): its `static int ifs`, `qccincludedir`, `qccincludeonced` and
+/// FTEF-14.70): its `static int ifs`, `qccincludedir`, `qccincludeonced` and
 /// `qccwarningaction[WARN_EVILPREPROCESSOR]`.
 #[derive(Debug, Default)]
 pub(crate) struct FteState {
@@ -1365,7 +1365,7 @@ impl<L: Loader> Preprocessor<L> {
             flags: self.fte.flags,
             ..FteState::default()
         };
-        // FTEF-14.59: FTEQCC prints a `-I` option's warning against no file, "cmdline".
+        // FTEF-14.68: FTEQCC prints a `-I` option's warning against no file, "cmdline".
         for dir in &self.command_line_dirs {
             let _ = self.fte.add_include_dir(dir);
         }
@@ -1751,7 +1751,7 @@ impl<L: Loader> Preprocessor<L> {
 
     /// The rest of the text from `from`, which `#pragma DONT_COMPILE_THIS_FILE` passes over a
     /// byte at a time after white space read as `QCC_PR_LexWhitespace(false)` reads it, which
-    /// runs the directives at the starts of its lines (FTEF-14.65).
+    /// runs the directives at the starts of its lines (FTEF-14.70).
     fn fte_dont_compile(&mut self, run: &mut Run, bytes: &Bytes, from: usize) -> Resume {
         let mut at = from;
         loop {
@@ -1825,7 +1825,7 @@ impl<L: Loader> Preprocessor<L> {
         run.cursors.push(cursor);
     }
 
-    /// `#pragma` (FTEF-14.43, FTEF-14.65), whose `#` is at `hash` and whose line ends at `end`
+    /// `#pragma` (FTEF-14.43, FTEF-14.70), whose `#` is at `hash` and whose line ends at `end`
     /// in `bytes`: `DONT_COMPILE_THIS_FILE`, `once`, `file`, `line`, `includedir`, `noref`,
     /// `autoproto` and `warning` change what is read; the others change only the build.
     fn fte_pragma(
@@ -1961,7 +1961,7 @@ impl<L: Loader> Preprocessor<L> {
 
 impl<L: Loader> Preprocessor<L> {
     /// The name `#pragma once` marks and `#pragma includedir` joins its directory to: the file
-    /// being compiled (FTEF-14.65), or under GMQCC the file holding the pragma (PRJ-5.12).
+    /// being compiled (FTEF-14.70), or under GMQCC the file holding the pragma (PRJ-5.12).
     fn pragma_base(&self, run: &Run, bytes: &Bytes) -> Vec<u8> {
         let holding = match bytes {
             Bytes::File(file, _) if self.dialect == Dialect::Gmqcc => {

@@ -192,8 +192,10 @@ fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
     );
 }
 
-// spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle refused
-// the program, or which is not recorded, is a difference
+// spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle neither
+// bound `f` nor accepted nor rejected the program, or which is not recorded, is a difference
+// spec PRJ-6.6: one whose oracle rejected the program is a difference unless the graph reports an
+// error
 #[test]
 fn graph_differences_are_found() {
     let recorded = read_fixture(&root()).unwrap();
@@ -205,8 +207,15 @@ fn graph_differences_are_found() {
             Outcome::Accepted,
             "the oracle does not read the file, the graph does",
         ),
-        (Outcome::Rejected, "oracle rejected, which reads no file"),
+        (
+            Outcome::Rejected,
+            "oracle rejected, the graph reports no error",
+        ),
         (bound_as(6, "f"), "oracle bound 6 f, which reads no file"),
+        (
+            Outcome::Redeclared,
+            "oracle redeclared, which reads no file",
+        ),
     ] {
         let mut changed = recorded.clone();
         changed.insert(first.clone(), outcome);

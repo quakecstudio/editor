@@ -323,7 +323,7 @@ fn open_blocks_at_the_end_of_a_file() {
 
 // spec FTEF-12.6: `#pragma noref N` is recorded at the token it precedes, so the definitions
 // after it are `noref` or not
-// spec FTEF-14.65: its text is read with `atoi`, so one with no number, or a `(`, is 0
+// spec FTEF-14.70: its text is read with `atoi`, so one with no number, or a `(`, is 0
 #[test]
 fn noref_pragmas_are_recorded() {
     let (_, out) = one_fte(

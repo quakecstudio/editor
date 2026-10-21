@@ -285,7 +285,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   FTEQCC's F316 a warning (`dialect-fteqcc.md`, FTEF-14.58).
 - **QCD-7.39** `W0117` "TEXT": under an FTEQCC profile, a warning FTEQCC gives no name, which no
   `#pragma warning` sets, at the construct, with FTEQCC's text: "Include path too long.", "Too many
-  include dirs. Ignoring and hoping the stars align." (FTEF-14.59), "file contains null bytes N/LEN"
+  include dirs. Ignoring and hoping the stars align." (FTEF-14.68), "file contains null bytes N/LEN"
   (FTEF-14.64), "Unknown target 'NAME'. Ignored." with its list and "target revision N is unknown,
   assuming revision M" (FTEF-12.11), and "'#NAME' is not a macro parameter in MACRO" (FTEF-14.61)
   (`dialect-fteqcc.md`).
@@ -305,6 +305,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   under an FTEQCC profile with FTEQCC's `macroinstrings` flag on, a `#NAME` in a string, FTEQCC's
   `WARN_MACROINSTRING`, which `warningnames[]` does not name and FTEQCC ignores by default, so no
   `#pragma warning` makes it reported (`dialect-fteqcc.md`, FTEF-12.12).
+- **QCD-7.45** `W0123` "Hanging \\" and a CR: under an FTEQCC profile, a `\` in a string before a
+  CR that no LF follows, FTEQCC's `WARN_HANGINGSLASHR`, which `warningnames[]` does not name and
+  which is a warning by default (`dialect-fteqcc.md`, FTEF-13.25).
 
 ## QCD-8 Preprocessor errors
 

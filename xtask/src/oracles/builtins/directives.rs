@@ -141,6 +141,33 @@ const NAME_FORMS: &[&str] = &[
 const NAME_LENGTHS: [usize; 5] = [1, 62, 63, 64, 65];
 
 /// `#define` and `#append` of names of each length, used.
+/// Words and strings about the 1023 bytes FTEQCC's word readers take, and `#pragma` text about
+/// its `char msg[1024]` (FTEF-14.66): at 1024 each stops the compile, at 1023 none does, though
+/// a 1023-byte frame name fails for its length. A comment the text ends in, before an
+/// `#includelist` word or in a use's arguments, is "EOF inside comment" (FTEF-14.67).
+fn word_bound_cases() -> Vec<String> {
+    let mut sources = Vec::new();
+    for length in [1023, 1024] {
+        let word = "w".repeat(length);
+        sources.push(format!("#undef {word}\nvoid() f = #5;\n"));
+        sources.push(format!("#ifdef {word}\n#endif\nvoid() f = #5;\n"));
+        sources.push(format!("#if defined {word}\n#endif\nvoid() f = #5;\n"));
+        sources.push(format!("$frame {word}\nvoid() f = #5;\n"));
+        let dir = "d".repeat(length);
+        sources.push(format!("#pragma includedir {dir}\nvoid() f = #5;\n"));
+    }
+    // An `#includelist` word and a `#merge` name of 1023 bytes name a file no file system holds,
+    // and `#merge` fails at any name the build has no progs of (`QCC_ImportProgs`, not modelled),
+    // so only their own errors are cases.
+    let long = "w".repeat(1024);
+    sources.push(format!("#includelist\n{long}\n#endlist\nvoid() f = #5;\n"));
+    sources.push(format!("#merge \"{long}\"\nvoid() f = #5;\n"));
+    sources.push("void() f = #5;\n#merge \"abc\n".to_owned());
+    sources.push("void() f = #5;\n#includelist\n/* open\n".to_owned());
+    sources.push("#define M(x) x\nvoid() f = #5;\nfloat y = M( /* open\n".to_owned());
+    sources
+}
+
 fn name_length_cases() -> Vec<String> {
     let mut sources = Vec::new();
     for length in NAME_LENGTHS {
@@ -491,7 +518,7 @@ fn continued(snippet: &str) -> String {
 /// `//` comment's line, after a `/* */` comment and in the middle of a line (FTEF-14.52); in a
 /// skipped side (FTEF-14.37); after a use's `(` or `,` and in the middle of an argument
 /// (FTEF-14.45); in a macro's body (FTEF-14.46); in an `#includelist` (FTEF-14.41); after
-/// `#pragma DONT_COMPILE_THIS_FILE` (FTEF-14.65).
+/// `#pragma DONT_COMPILE_THIS_FILE` (FTEF-14.70).
 fn snippet_cases() -> Vec<String> {
     let mut sources = Vec::new();
     for &(snippet, words) in SNIPPETS {
@@ -567,7 +594,7 @@ fn line_pragma_cases() -> Vec<String> {
 }
 
 /// The other pragmas FTEQCC knows, each of which this profile accepts and reads to its line's
-/// break (FTEF-14.65).
+/// break (FTEF-14.70).
 const PRAGMAS: &[&str] = &[
     "#pragma DONT_COMPILE_THIS_FILE\nzz zz zz\n",
     "#pragma dont_compile_this_file\nzz zz zz\n",
@@ -919,7 +946,7 @@ fn include_cases() -> Vec<Case> {
 /// Where a graph form puts the line that brings the file in that binds `f`.
 const HERE: &str = "@@";
 
-/// Directive forms of FTEF-14.33 to FTEF-14.65 before, around or after the line that brings in
+/// Directive forms of FTEF-14.33 to FTEF-14.70 before, around or after the line that brings in
 /// the one file that binds `f`, so that FTEQCC binds `f` only by reading that file: the project
 /// graph lists the file the pinned FTEQCC compiles when it lists that file exactly when FTEQCC
 /// binds `f` (PRJ-5.13). A form that FTEQCC refuses reads no file the graph lists.
@@ -981,7 +1008,7 @@ const GRAPH_FORMS: &[&str] = &[
     "#eof\n@@",
     "#eofx\n@@",
     "#package\n@@",
-    // FTEF-14.40 to FTEF-14.65: includes, lists and pragmas.
+    // FTEF-14.40 to FTEF-14.70: includes, lists and pragmas.
     "#include \"\"\n@@",
     "#includelist\n#endlist\n@@",
     "#pragma line(10)\n@@",
@@ -1168,6 +1195,28 @@ pub(super) const VANILLA_PROGS: &[&str] = &[
     "progs.dat\n// c\0\nb.qh\n",
     "progs.dat\n// \"\0\nb.qh\n",
     "progs.dat\n\"x.qc\0junk\" b.qh\n",
+    "progs.dat\nx.qc\u{e9}b.qh\n",
+    "progs.dat\n\u{e9}b.qh\u{e9}\n",
+    "progs.dat\n\"b.qh\nx.qc\" b.qh\n",
+    "progs.dat\nb.qh \"x.qc\n",
+];
+
+/// FTEQCC list-form `progs.src` files, read as `QCC_main` and `QCC_ContinueCompile` read them
+/// (PRJ-4.9): `,` a word of its own and `;` none, a word that a `"` ends, comments, directives at
+/// the lines' starts, a list with no word, and a comment the list ends in.
+const FTE_LIST_PROGS: &[&str] = &[
+    "progs.dat,b.qh\n",
+    ",b.qh\n",
+    "progs.dat\nb.qh,x.qc\n",
+    "progs.dat;x\nb.qh\n",
+    "progs.dat\n\"x.qc\" /* c */ b.qh\n",
+    "progs.dat\nx.qc\"b.qh\"\n",
+    "progs.dat\n#define X\n#ifdef X\nb.qh\n#else\nx.qc\n#endif\n",
+    "progs.dat\n#ifdef X\nb.qh\n#else\nx.qc\n#endif\n",
+    "",
+    "// c\n",
+    "progs.dat\nb.qh /* open\n",
+    "progs.dat\nb.qh(x.qc)\n",
 ];
 
 /// The graph cases of a `progs.src` of their own (PRJ-4.6, PRJ-4.11, PRJ-4.10): [`LOADED_PROGS`]
@@ -1178,6 +1227,7 @@ fn progs_cases() -> Vec<Case> {
     let utf8 = LOADED_PROGS
         .iter()
         .chain(SCRIPT_PROGS)
+        .chain(FTE_LIST_PROGS)
         .map(|&text| fteqcc(text));
     let wide = WIDE_PROGS
         .iter()
@@ -1208,6 +1258,7 @@ pub(super) fn cases() -> Vec<Case> {
         line_end_cases(),
         NAME_FORMS.iter().map(|&s| s.to_owned()).collect(),
         name_length_cases(),
+        word_bound_cases(),
         CONDITIONALS.iter().map(|&s| s.to_owned()).collect(),
         argument_cases(),
         evil_cases(),

@@ -743,7 +743,7 @@ impl<L: Loader> Builder<'_, L> {
         };
         let pragma = name.to_ascii_lowercase();
         let (args, _, _) = com_parse_words(args, false, None);
-        // FTEF-14.65: FTEQCC joins an include directory to the file being compiled and marks
+        // FTEF-14.70: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
         let marked = if self.dialect == Dialect::Fteqcc {
             &cursor.unit

@@ -391,3 +391,19 @@ fn unreadable_manifest_is_an_error() {
     );
     assert!(std::error::Error::source(&err).is_some());
 }
+
+// spec PRJ-3.4: a module gives the compilers no option but its defines and include directories,
+// so a key for any other part of a command line is an unknown key
+#[test]
+fn a_module_takes_no_other_compiler_option() {
+    for key in ["options", "flags", "warnings", "args"] {
+        let message = manifest_error(&format!("{ONE_MODULE}{key} = [\"-Fqccx\"]\n"));
+        assert!(message.contains(key), "{key}: {message}");
+    }
+    let project = open_manifest(
+        &format!("{ONE_MODULE}defines = [\"A=1\"]\ninclude_dirs = [\"inc\"]\n"),
+        &[("proj/progs.src", "progs.dat\n")],
+    )
+    .unwrap();
+    assert_eq!(project.modules.len(), 1);
+}

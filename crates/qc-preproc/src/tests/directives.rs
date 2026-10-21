@@ -168,7 +168,7 @@ fn simple_tokens() {
     assert_eq!(token("  "), (None, 2));
 }
 
-// spec FTEF-14.65: `QCC_COM_Parse` reads a string with its escapes, a punctuation byte or a word,
+// spec FTEF-14.70: `QCC_COM_Parse` reads a string with its escapes, a punctuation byte or a word,
 // after white space and comments
 #[test]
 fn com_parse_reads_tokens() {
@@ -442,7 +442,7 @@ fn includes_are_found_beside_the_compiled_file() {
     );
 }
 
-// spec FTEF-14.65: `#pragma includedir` adds its first token with a `/`, joined to the compiled
+// spec FTEF-14.70: `#pragma includedir` adds its first token with a `/`, joined to the compiled
 // file, at most 8, each once, an empty one as `.`
 #[test]
 fn include_directories() {
@@ -515,7 +515,7 @@ fn pragma_line_reads_strtoul() {
     }
 }
 
-// spec FTEF-14.65: `#pragma warning STATE NAME...` sets F303 as each state says, `toggle` a
+// spec FTEF-14.70: `#pragma warning STATE NAME...` sets F303 as each state says, `toggle` a
 // warning for an error, and leaves it for another name or state
 // spec FTEF-14.63: the names are matched in any case, and each changes the setting of its own
 // warning
@@ -807,7 +807,7 @@ fn includes_follow_find_best_include() {
     assert_eq!(codes(&out), vec![Code::E0112]);
 }
 
-// spec FTEF-14.65: `#pragma once` marks the compiled file, not the file it is in
+// spec FTEF-14.70: `#pragma once` marks the compiled file, not the file it is in
 #[test]
 fn pragma_once_marks_the_compiled_file() {
     let out = compile(&[("a.qc", "#pragma once\n#include \"a.qc\"\nx\n")], "a.qc");
@@ -878,7 +878,7 @@ fn pragma_line_numbers_the_lines() {
     assert_eq!(fte("#pragma line 9").0, "");
 }
 
-// spec FTEF-14.65: `DONT_COMPILE_THIS_FILE` passes over the rest of the text, the directives
+// spec FTEF-14.70: `DONT_COMPILE_THIS_FILE` passes over the rest of the text, the directives
 // at its lines' starts still run; `includedir` and the other pragmas change the build
 #[test]
 fn dont_compile_this_file_runs_only_directives() {

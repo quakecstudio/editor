@@ -127,6 +127,17 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
 - **PRJ-3.3** In a bare project a module's kind is `csqc` when the file name of its declared
   output is `csprogs.dat`, `menuqc` when it is `menu.dat`, compared without regard to ASCII
   case, and `ssqc` otherwise, including when it declares none.
+- **PRJ-3.4** A module is compiled as id's `qcc` is run with no option in the directory of its
+  source (`qcc/qcc.c`, `main`), and as `fteqcc -Tid` there with a `-I` for each of its include
+  directories and a `-D` for each of its defines (FTEF-14.48, FTEF-14.49); `-srcfile`, which names
+  the source as the module's `src` does, changes nothing else. `quakec.toml` gives no other
+  option, so the rest of each command line is not modelled: id's `-src`, `-asm`, `-copy`, `-pak`,
+  `-bspmodels` and `-help` (`CheckParm`), and FTEQCC's other options (`QCC_CheckParm`,
+  `QCC_ReadParm`), among them `-o`, the `-F` flags and `-K` keywords, the `-W` warning settings,
+  `-qc`, `-E` and `-Facc`, with which FTEQCC compiles every `.qc` file of the directory when there
+  is no `progs.src` (`QCC_FindQCFiles`). What each compiler sets up for code generation before its
+  first file, id's `PR_BeginCompilation` among it, has no part in reading the files and is the
+  compiler's (L-01).
 
 ### Constants
 
@@ -332,7 +343,7 @@ malformed directive without a diagnostic.
   (FTEF-14.37), whose one count of open sides runs from file to file, so a side an included file
   leaves open is closed, or ended by an `#else`, in the file that included it, and QC-9.12 does
   not hold; `#eof` and `#package` end the file, and `#pragma DONT_COMPILE_THIS_FILE` passes over
-  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.65); an
+  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.70); an
   `#includelist`'s words, and the directives on its lines, are read as FTEF-14.41 says, so a
   word in quotes names a file with the quotes in its name; and `FTEQCC` and `__FTEQCC__` are
   defined before the module's `defines` (FTEF-14.48). Between directives the code is read as the
@@ -342,7 +353,7 @@ malformed directive without a diagnostic.
   `progs.src` is still read as PRJ-5.1 and QC-23 say, in the text PRJ-4.6 gives.
   So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
   an `#include` or an `#includelist`, after or around each directive form of FTEF-14.35 to
-  FTEF-14.65 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
+  FTEF-14.70 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
   one file that binds `f` FTEQCC binds it from exactly when the graph lists it.
 - **PRJ-5.14** Deliberate divergences of PRJ-5.13, as the graph expands no macro: a directive a
   macro's body or arguments hold is run where it stands in the file's text, not where the

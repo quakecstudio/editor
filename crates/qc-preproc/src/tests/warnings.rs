@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! FTEQCC's warnings on the preprocessor's path and its warning settings (FTEF-12.11, FTEF-14.57
-//! to FTEF-14.65): each case was compiled with the pinned FTEQCC (`fteqcc -Tid`), which gave the
+//! to FTEF-14.70): each case was compiled with the pinned FTEQCC (`fteqcc -Tid`), which gave the
 //! same warnings with the same texts.
 
 use std::path::Path;
@@ -200,9 +200,9 @@ fn definitions_warn_and_refuse_as_fteqcc_does() {
     );
 }
 
-// spec FTEF-14.59: a ninth include directory and one too long for FTEQCC's table warn, and are
+// spec FTEF-14.68: a ninth include directory and one too long for FTEQCC's table warn, and are
 // not kept
-// spec FTEF-14.65: `includedir` adds at most 8 directories, as FTEQCC's table holds
+// spec FTEF-14.70: `includedir` adds at most 8 directories, as FTEQCC's table holds
 #[test]
 fn include_directories_past_fteqcc_s_table_warn() {
     let mut text = String::new();

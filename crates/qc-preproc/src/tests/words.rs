@@ -97,3 +97,10 @@ fn comments_the_text_ends_in() {
     // A closed one is no error.
     assert!(errors("#includelist\n/* c */\n#endlist\n").is_empty());
 }
+
+// spec FTEF-14.69: a `#copyright` of any length gives no diagnostic
+#[test]
+fn a_long_copyright_is_no_error() {
+    assert!(errors(&format!("#copyright {}\n", "c".repeat(2000))).is_empty());
+    assert!(errors(&format!("#copyright{}x\n", " ".repeat(1500))).is_empty());
+}

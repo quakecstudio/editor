@@ -2343,3 +2343,19 @@ fn fteqcc_vector_white_space_is_lex_whitespace_s() {
     // id's reader takes the `/` as the first component's first byte (QC-5.1).
     assert!(codes(b"'/*c*/1 2 3'").contains(&Code::E0104));
 }
+
+// spec FTEF-13.25: `\` before a lone CR in an FTEQCC string is the byte after the CR, with
+// "Hanging \\" and a CR; before a CR and an LF it is the LF
+// spec QCD-7.45: W0123 has FTEQCC's text
+#[test]
+fn fteqcc_hanging_backslash_cr() {
+    let lexed = lex_with(b"\"a\\\rb\"", Dialect::Fteqcc);
+    assert_eq!(lexed.tokens[0].kind, TokenKind::String(b"ab".to_vec()));
+    assert_eq!(
+        fte_diagnostics(b"\"a\\\rb\""),
+        vec![(Code::W0123, "Hanging \\\\\r".to_owned())]
+    );
+    let lexed = lex_with(b"\"a\\\r\nb\"", Dialect::Fteqcc);
+    assert_eq!(lexed.tokens[0].kind, TokenKind::String(b"a\nb".to_vec()));
+    assert!(lexed.diagnostics.is_empty());
+}

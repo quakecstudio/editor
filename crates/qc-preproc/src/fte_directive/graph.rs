@@ -125,7 +125,7 @@ pub enum FteEvent {
     /// `#output` and the bytes of the string after it (PRJ-5.6).
     Output { name: Vec<u8>, line: u32 },
     /// A `#pragma`, its name and its text (FTEF-14.43), but `DONT_COMPILE_THIS_FILE`, which the
-    /// reader runs itself (FTEF-14.65).
+    /// reader runs itself (FTEF-14.70).
     Pragma {
         name: Vec<u8>,
         text: Vec<u8>,
@@ -331,7 +331,7 @@ impl FteFileReader {
     /// code outside any reading is [`Self::code`]'s.
     fn word(&mut self, at: usize) -> Option<FteEvent> {
         match self.modes.last() {
-            // FTEF-14.65: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
+            // FTEF-14.70: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
             None | Some(Mode::DontCompile) => self.at = at.saturating_add(1),
             // FTEF-14.41: a word `QCC_PR_SimpleGetToken` reads, `#endlist` ending the list.
             Some(Mode::List { .. }) => {
@@ -411,7 +411,7 @@ impl FteFileReader {
     }
 
     /// Runs `directive`, read at the `#` at `hash`, as `QCC_PR_Precompiler` does for the graph
-    /// (FTEF-14.35 to FTEF-14.65, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
+    /// (FTEF-14.35 to FTEF-14.70, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
     fn run(
         &mut self,
         state: &mut ModuleState,

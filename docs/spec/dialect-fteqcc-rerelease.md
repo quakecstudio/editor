@@ -836,7 +836,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   in an `#includelist` (FTEF-14.41), after `DONT_COMPILE_THIS_FILE` and on the first line of an
   included file with and without spaces before it (FTEF-14.52); 10 bodies with directive lines
   under 11 settings of F303 (FTEF-14.46); `#pragma line` in 17 forms, with `__LINE__` and
-  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.65); 12 programs whose code a `\`
+  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.70); 12 programs whose code a `\`
   joins to a line holding a directive's text, as code and as a macro's argument, and after a
   `//` comment's `\` or a blank line (FTEF-14.53); and 101 projects of several
   files, whose `#include`s are found beside the compiled file and in include directories

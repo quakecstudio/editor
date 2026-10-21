@@ -1760,10 +1760,10 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
     tally
 }
 
-/// Whether the project graph of `case`, a graph case of the directive family, lists a file that
-/// binds `f` (PRJ-5.13): the module is the `progs.src` the oracle reads, under the case's
-/// dialect (PRJ-4.11).
-fn graph_binds(case: &Case) -> bool {
+/// What the project graph of `case`, a graph case of the directive family, makes of the
+/// `progs.src` the oracle reads, under the case's dialect (PRJ-4.11, PRJ-5.13): whether it lists a
+/// file that binds `f`, and whether it reports an error.
+fn graph_reads(case: &Case) -> (bool, bool) {
     let mut loader = qc_project::MemoryLoader::new();
     let compiled = case.compiled();
     loader.insert("progs.src", case.progs_src_bytes());
@@ -1783,7 +1783,9 @@ fn graph_binds(case: &Case) -> bool {
         &dirs,
         case.dialect,
     );
-    graph.files.iter().any(|file| binding.contains(&file.path))
+    let binds = graph.files.iter().any(|file| binding.contains(&file.path));
+    let errs = graph.diagnostics.iter().any(|d| d.code.is_error());
+    (binds, errs)
 }
 
 /// The project graph's cases (PRJ-5.13): programs whose one file that binds `f` FTEQCC reads,
@@ -1795,15 +1797,24 @@ pub(crate) fn graph_cases() -> Vec<Case> {
 
 /// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
 /// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
-/// round, or whose oracle neither bound `f` to `#5` nor accepted the program, so that the case
-/// says nothing of what it read (PRJ-5.13). Where `long` is 32 bits a case whose directive holds
-/// a number `atoi` reads otherwise may read the other file (FTEF-14.55).
+/// round; whose oracle rejected the program where the graph reports no error, as each compiler
+/// stops at the error the graph reports (PRJ-6.6); or whose oracle neither bound `f` to `#5`, nor
+/// accepted nor rejected the program, so that the case says nothing of what it read (PRJ-5.13).
+/// Where `long` is 32 bits a case whose directive holds a number `atoi` reads otherwise may read
+/// the other file (FTEF-14.55).
 pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
     let mut differ = Vec::new();
     for case in graph_cases() {
         let read = match outcomes.get(&case.key()) {
             Some(Outcome::Bound { number: 5, .. }) => true,
             Some(Outcome::Accepted) => false,
+            Some(Outcome::Rejected) => {
+                if !graph_reads(&case).1 {
+                    let why = "oracle rejected, the graph reports no error";
+                    differ.push(format!("{}: {why}", show(&case)));
+                }
+                continue;
+            }
             Some(oracle) => {
                 differ.push(format!(
                     "{}: oracle {oracle}, which reads no file",
@@ -1816,7 +1827,7 @@ pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULo
                 continue;
             }
         };
-        if graph_binds(&case) != read && !ulong.atoi_reads_otherwise(&case) {
+        if graph_reads(&case).0 != read && !ulong.atoi_reads_otherwise(&case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {

@@ -408,10 +408,14 @@ impl Lexer<'_> {
                     None => high,
                 }
             }
-            // A `\` before CR is the byte after the CR, which should be a LF.
+            // A `\` before CR is the byte after the CR, which should be a LF: `if (c != '\n')
+            // QCC_PR_ParseWarning(WARN_HANGINGSLASHR, "Hanging \\\\\r");` (FTEF-13.25).
             b'\r' => match self.peek(0) {
                 Some(next) => {
                     self.bump(1);
+                    if next != b'\n' {
+                        self.error(Code::W0123, "Hanging \\\\\r", Span::new(escape, self.pos));
+                    }
                     u32::from(next)
                 }
                 None => {
