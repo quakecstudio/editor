@@ -43,11 +43,11 @@ impl Builtin {
     }
 
     pub(crate) fn info(self) -> CommandInfo {
-        CommandInfo::new(self.command_id(), self.summary(), schema_of::<NoParams>())
-    }
-
-    pub(crate) fn command_id(self) -> CommandId {
-        CommandId::builtin(self.id())
+        CommandInfo::new(
+            CommandId::builtin(self.id()),
+            self.summary(),
+            schema_of::<NoParams>(),
+        )
     }
 }
 

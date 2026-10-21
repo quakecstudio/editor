@@ -678,6 +678,15 @@ fn a_new_registry_holds_the_builtins_in_id_order() {
     let registry = Registry::<Doc>::default();
     let ids: Vec<&str> = registry.commands().map(|c| c.id().as_str()).collect();
     assert_eq!(ids, BUILTIN_IDS);
+    let summaries: Vec<&str> = registry.commands().map(|c| c.summary()).collect();
+    assert_eq!(
+        summaries,
+        [
+            "Lists every command with its id, summary and parameter schema.",
+            "Makes the most recently undone change again.",
+            "Takes back the most recent change that has not been undone.",
+        ]
+    );
     for id in BUILTIN_IDS {
         assert_eq!(CommandId::new(id).unwrap().as_str(), id);
     }
