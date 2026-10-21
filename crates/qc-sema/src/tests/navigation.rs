@@ -2,7 +2,7 @@
 
 //! Navigation tests: go-to-definition and find-references (GOAL-1).
 
-use super::{index_of, nth_offset};
+use super::{fte_index_of, index_of, nth_offset};
 use crate::symbol::{DefId, FileId};
 
 // spec QC-12.5: go-to-definition from a use jumps to the definition's name.
@@ -152,4 +152,54 @@ fn references_at_from_use() {
     let use_offset = nth_offset(source, "n", 1);
     let refs = index.references_at(FileId(0), use_offset, true);
     assert_eq!(refs.len(), 2);
+}
+
+// spec QC-11.5: a function's body after its prototype declares the same definition again, so
+// go-to-definition from the body's name jumps to the prototype and find-references lists the
+// body with the declarations.
+#[test]
+fn a_redeclaration_names_its_definition() {
+    let source = "void() f;\nvoid() g = { f(); };\nvoid() f = { };";
+    let index = index_of(source);
+    let prototype = nth_offset(source, "f", 0);
+    let body = nth_offset(source, "f", 2);
+    let (def, location) = index.definition_at(FileId(0), body).expect("the prototype");
+    assert_eq!(location.span.start, prototype);
+    let starts: Vec<usize> = index
+        .references(def, true)
+        .iter()
+        .map(|l| l.span.start)
+        .collect();
+    assert_eq!(starts, [prototype, body, nth_offset(source, "f", 1)]);
+    // Without the declarations, only the call.
+    assert_eq!(index.references(def, false).len(), 1);
+}
+
+// spec QC-11.5: a second declaration with another type is reported and still names the first
+// definition.
+#[test]
+fn a_mismatched_redeclaration_names_its_definition() {
+    let source = "float x;\nstring x;";
+    let index = index_of(source);
+    let second = nth_offset(source, "x", 1);
+    let (def, location) = index.definition_at(FileId(0), second).expect("the first x");
+    assert_eq!(location.span.start, nth_offset(source, "x", 0));
+    assert_eq!(index.redeclarations.len(), 1);
+    assert_eq!(index.redeclarations[0].def, def);
+}
+
+// spec FTEF-19.7: a declaration that replaces an unused definition (W0211) is a new
+// definition, not a redeclaration of the one it replaces.
+#[test]
+fn a_replacing_declaration_is_no_redeclaration() {
+    let source =
+        "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n";
+    let index = fte_index_of(source);
+    let third = nth_offset(source, "anglemod", 2);
+    let (def, location) = index.definition_at(FileId(0), third).expect("the new anglemod");
+    assert_eq!(location.span.start, third);
+    // The body redeclares the builtin; the third declaration redeclares nothing.
+    assert_eq!(index.redeclarations.len(), 1);
+    assert_ne!(index.redeclarations[0].def, def);
+    assert_eq!(index.redeclarations[0].location.span.start, nth_offset(source, "anglemod", 1));
 }

@@ -136,9 +136,10 @@ the member's name, and the values of `enumflags` and other constants are not com
 - `Definition`, `Reference`, `DefId`, `DefKind`, `Location`, `FileId` (`symbol`): the symbols
   a module declares and the uses of them.
 - `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved
-  definition list, references and diagnostics, each diagnostic with its file.
+  definition list, references, later declarations of a name (QC-11.5) and diagnostics, each
+  diagnostic with its file.
 - `ModuleIndex::definition_at`, `references`, `references_at` (`nav`): go-to-definition and
-  find-references.
+  find-references, a later declaration naming the definition it declares again.
 - `FileDecls`, `lower_file` (`lower`): the per-file raw declarations the resolver joins.
 
 ## Tests

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Property tests (TEST-4) for the invariants the crate README states: every definition,
-//! reference and diagnostic is at a span of its source file, under both profiles and through
+//! reference, redeclaration and diagnostic is at a span of its source file, under both profiles and through
 //! the preprocessor or not; and re-resolving after an edit gives what resolving the edited
 //! files from scratch gives.
 
@@ -105,7 +105,7 @@ fn index_inside(files: &[String], index: &ModuleIndex) -> Result<(), TestCaseErr
     for def in &index.defs {
         prop_assert!(inside(files, def.location), "{def:?}");
     }
-    for reference in &index.refs {
+    for reference in index.refs.iter().chain(&index.redeclarations) {
         prop_assert!(inside(files, reference.location), "{reference:?}");
     }
     for d in &index.diagnostics {

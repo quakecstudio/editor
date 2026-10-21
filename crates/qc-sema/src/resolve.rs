@@ -74,6 +74,10 @@ pub struct ModuleIndex {
     pub defs: Vec<Definition>,
     /// Every resolved name use, in source order (QC-12.5).
     pub refs: Vec<Reference>,
+    /// Every global declaration after the first of a name, each naming the definition it
+    /// declares again (QC-11.5): a function's body after its prototype, or a second
+    /// `float x;`. In declaration order. Find-references lists them with the declaration.
+    pub redeclarations: Vec<Reference>,
     /// The semantic diagnostics, in the order found, each with its file.
     pub diagnostics: Vec<FileDiagnostic>,
 }
@@ -561,6 +565,11 @@ impl<'a> Resolver<'a> {
             && optional_beyond(&b.params, params)
     }
 
+    /// Records that the declaration at `location` declares `def` again (QC-11.5).
+    fn redeclared(&mut self, location: Location, def: DefId) {
+        self.index.redeclarations.push(Reference { location, def });
+    }
+
     /// Declares, or redeclares, a global-scope name (QC-11.5), and the components of a
     /// vector or vector field it declares anew (QC-11.7).
     ///
@@ -590,6 +599,10 @@ impl<'a> Resolver<'a> {
         decl: &DeclFacts<'_>,
     ) -> DefId {
         if let Some(existing) = self.lookup_global(name) {
+            // QC-11.5: a name declared again names the definition it redeclares, unless
+            // FTEQCC replaces that definition below.
+            let at = self.index.redeclarations.len();
+            self.redeclared(location, existing);
             let redeclaration = Redeclaration {
                 existing,
                 name,
@@ -616,6 +629,7 @@ impl<'a> Resolver<'a> {
                 }
                 TypeCheck::Mismatch => return existing,
                 TypeCheck::Replaced => {
+                    self.index.redeclarations.truncate(at);
                     if let Some(defs) = self.globals.get_mut(name) {
                         defs.retain(|d| *d != existing);
                     }
@@ -1014,7 +1028,11 @@ impl<'a> Resolver<'a> {
         let mut aborted = self.fteqcc && self.check_defaults(file, decl);
         let existing = match self.find_existing(decl, location) {
             Ok(existing) => existing,
-            Err(found) => return pending(found),
+            Err(found) => {
+                // QC-11.5: a refused redeclaration still names the definition.
+                self.redeclared(location, found);
+                return pending(found);
+            }
         };
         aborted |= qualifier_fatal;
         // FTEF-19.12: `static` on a name another file defined is "can't redefine non-static
@@ -1090,6 +1108,7 @@ impl<'a> Resolver<'a> {
                 "incompatible redeclaration. Ignoring replacement of qc function with builtin."
                     .to_owned(),
             );
+            self.redeclared(location, existing);
             return Vec::new();
         }
         let statics = (self.fteqcc && decl.has(&Qualifier::Static)).then_some(self.unit);
