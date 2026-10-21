@@ -191,8 +191,9 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
 - **PRJ-4.8** **Withdrawn** (P2-116, #544): it made a source of only a `#!` line error `E0401`,
   but FTEQCC reads it as a list with no word, which is no error (PRJ-4.9). Replaced by PRJ-4.10.
 - **PRJ-4.9** Under the FTEQCC and GMQCC dialects a list-form source is read as FTEQCC's
-  `QCC_main` and `QCC_ContinueCompile` read it (`qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`), by the graph's reader
-  of PRJ-5.13 (`qc_preproc::FteFileReader::progs`). Its form is that of the first word
+  `QCC_main` and `QCC_ContinueCompile` read it (`qccmain.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`), by the graph's reader of PRJ-5.13
+  (`qc_preproc::FteFileReader::progs`). Its form is that of the first word
   `QCC_COM_Parse` reads (`if (*qcc_token == '#')`). Then `QCC_PR_LexWhitespace(false)` reads the
   white space and comments, and runs each directive at a line's start (FTEF-14.45, FTEF-14.52),
   before the output and before each later word. The output is the word `QCC_PR_SimpleGetToken`

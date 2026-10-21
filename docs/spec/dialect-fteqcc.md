@@ -732,8 +732,8 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   that matches the input winning ("longer symbols must be before a shorter partial match"),
   which has, besides the vanilla tokens and those of FTE-19.1, `<=>`, `*^`, `><`, `@` and `^^`
   (`qc_lexer::Punct::FTEQCC_TABLE`); a byte it does not list is FTEF-13.15's "Unknown
-  punctuation". So `a<=>b` is `a`, `<=>`, `b` and `a><b` is `a`, `><`, `b`. `QCC_PrioritiseOpcodes` gives `*^`
-  (`POW_F`) and `><` (`CROSS_V`) the priority of `*` (`PC_MULDIV`) and `<=>` (`SPACESHIP_F`) that
+  punctuation". So `a<=>b` is `a`, `<=>`, `b` and `a><b` is `a`, `><`, `b`.
+  `QCC_PrioritiseOpcodes` gives `*^` (`POW_F`) and `><` (`CROSS_V`) the priority of `*` (`PC_MULDIV`) and `<=>` (`SPACESHIP_F`) that
   of `==` (`PC_EQUALITY`), as this parser does. `@` (a `qccx` unary in `QCC_PR_Term`) and `^^`
   (which no opcode has) are tokens the parser of this profile reads as no operator.
 - **FTEF-13.25** In a string, `\` before a CR is the byte after the CR (`c = *pr_file_p++;` in
