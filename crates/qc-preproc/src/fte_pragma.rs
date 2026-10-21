@@ -10,6 +10,8 @@
 //! ([`FlagSettings`]), and `optimise`, `opcode` and `TARGET`, which change only the build, each
 //! with the warnings FTEQCC gives for what it does not know.
 
+use qc_lexer::{LexFlag, LexFlags};
+
 use crate::cond::fte_atoi;
 use crate::fte_directive::com_parse;
 use crate::fte_tables::{
@@ -84,6 +86,24 @@ impl FlagSettings {
             .and_then(|at| self.on.get(at))
             .copied()
             .unwrap_or(false)
+    }
+
+    /// The flags among these that the lexer reads (FTEF-12.12).
+    #[must_use]
+    pub fn lex_flags(&self) -> LexFlags {
+        [
+            (FteFlag::Qcfuncs, LexFlag::QcFuncs),
+            (FteFlag::Qccx, LexFlag::Qccx),
+            (FteFlag::Utf8strings, LexFlag::Utf8Strings),
+            (FteFlag::Ilp32, LexFlag::Ilp32),
+            (FteFlag::Dblstarexp, LexFlag::Ssp),
+            (FteFlag::AssumeInteger, LexFlag::AssumeInt),
+            (FteFlag::Macroinstrings, LexFlag::MacroInStrings),
+        ]
+        .into_iter()
+        .fold(LexFlags::NONE, |flags, (fte, lex)| {
+            flags.with(lex, self.is_on(fte))
+        })
     }
 
     /// Sets `flag`, in every row that names it.

@@ -781,7 +781,7 @@ fn whole_rest(
     offset: usize,
     dialect: Dialect,
 ) -> crate::TokenStream {
-    let rest = crate::lex_from(text, offset..text.len(), dialect);
+    let rest = crate::lex_from(text, offset..text.len(), crate::Lexing::plain(dialect));
     let shift = |s: qc_lexer::Span| {
         qc_lexer::Span::new(s.start.saturating_add(offset), s.end.saturating_add(offset))
     };
@@ -809,6 +809,7 @@ fn whole_rest(
         pos: 0,
         diagnostics,
         read_on: offset,
+        key: crate::Lexing::plain(dialect).key(),
     }
 }
 
@@ -833,7 +834,7 @@ fn in_directive_line(text: &[u8], offset: usize) -> bool {
 /// first difference, if any.
 fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<String> {
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
-        let stream = crate::TokenStream::lex(text, dialect);
+        let stream = crate::TokenStream::lex(text, crate::Lexing::plain(dialect));
         if in_directive_line(text, offset) {
             continue;
         }
@@ -843,9 +844,9 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
         // Reading stood at the start, which leaves the new tokens room before the kept ones,
         // or right at `offset`, which leaves none.
         for start in [0, before] {
-            let mut read = crate::TokenStream::lex(text, dialect);
+            let mut read = crate::TokenStream::lex(text, crate::Lexing::plain(dialect));
             read.pos = start;
-            read.resume_at(text, offset, dialect);
+            read.resume_at(text, offset, crate::Lexing::plain(dialect));
             if read_on(&read) != read_on(&whole) {
                 return Some(format!("{shown:?} at {offset} from {start}, {dialect:?}"));
             }
@@ -855,7 +856,7 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
                 continue;
             }
             let again = whole_rest(&read, text, second, dialect);
-            read.resume_at(text, second, dialect);
+            read.resume_at(text, second, crate::Lexing::plain(dialect));
             if read_on(&read) != read_on(&again) {
                 return Some(format!(
                     "{shown:?} at {offset} then {second} from {start}, {dialect:?}"
@@ -869,8 +870,13 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
 /// Reading `text`, lexed under FTEQCC, on at `offset`: the bytes lexed again, the tokens the
 /// stream then holds and its lexical errors.
 fn relexed(text: &str, offset: usize) -> (usize, usize, usize) {
-    let mut stream = crate::TokenStream::lex(text.as_bytes(), Dialect::Fteqcc);
-    let bytes = stream.resume_at(text.as_bytes(), offset, Dialect::Fteqcc);
+    let mut stream =
+        crate::TokenStream::lex(text.as_bytes(), crate::Lexing::plain(Dialect::Fteqcc));
+    let bytes = stream.resume_at(
+        text.as_bytes(),
+        offset,
+        crate::Lexing::plain(Dialect::Fteqcc),
+    );
     (bytes, stream.tokens.len(), stream.diagnostics.len())
 }
 

@@ -169,6 +169,11 @@ pub enum Code {
     W0119,
     /// "2d vector", FTEQCC's F311 (QCD-7.42).
     W0120,
+    /// A float FTEQCC writes as an `int`'s bits, FTEQCC's F313, with its text (QCD-7.43).
+    W0121,
+    /// A `#NAME` in a string under FTEQCC's `macroinstrings` flag, its warning with no name
+    /// (QCD-7.44).
+    W0122,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -192,7 +197,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 82] = [
+    pub const ALL: [Self; 84] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -266,6 +271,8 @@ impl Code {
         Self::W0118,
         Self::W0119,
         Self::W0120,
+        Self::W0121,
+        Self::W0122,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -354,6 +361,8 @@ impl Code {
             Self::W0118 => "W0118",
             Self::W0119 => "W0119",
             Self::W0120 => "W0120",
+            Self::W0121 => "W0121",
+            Self::W0122 => "W0122",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -390,6 +399,8 @@ impl Code {
             | Self::W0118
             | Self::W0119
             | Self::W0120
+            | Self::W0121
+            | Self::W0122
             | Self::W0201
             | Self::W0203
             | Self::W0204

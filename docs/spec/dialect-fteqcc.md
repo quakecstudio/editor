@@ -431,9 +431,8 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   appear before any definitions" (`WARN_BADPRAGMA`, on by default) at the directive, once: the
   check stands inside `if (!autoprototyped)`, so the second autoprototyping pass skips the
   pragma without a word.
-- **FTEF-12.8** A `#pragma` affects the build and diagnostics, not the token stream; it emits
-  no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
-  output (the target format, the CRC, the flags) is realised by L-01.
+- **FTEF-12.8** **Withdrawn** (P2-116, #544): it said a `#pragma` does not affect the token
+  stream, but `#pragma flag` turns on and off flags `QCC_PR_Lex` reads. Replaced by FTEF-12.12.
 - **FTEF-12.11** The build pragmas are read as `QCC_PR_Precompiler` reads them, against FTEQCC's
   tables (`qc_preproc`'s `fte_tables.rs`, written out of `qccmain.c` and `qcc_pr_comp.c`), each
   warning FTEQCC gives being its Q120 (`WARN_BADPRAGMA`, `W0113`) unless said otherwise.
@@ -463,7 +462,60 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `#pragma TARGET fte_99999`. Two warnings depend on what the compiler has made so far, which the
   preprocessor does not know, and are not modelled: `optimise` inside a function ("unable to
   change optimisation options mid-function") and a `TARGET` that switches to or from Hexen II
-  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.8).
+  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.14).
+- **FTEF-12.12** Seven of the flags `#pragma flag` sets (FTEF-12.11) change how FTEQCC lexes,
+  and hold from the token after the directive: `QCC_PR_Lex` reads each token as the parser asks
+  for it, with the flags of that moment (`qc_lexer::LexFlags`, `qc_lexer::lex_flagged`). The
+  pinned FTEQCC (`fteqcc -Tid`) gives each result below.
+  `qcfuncs` (`flag_qcfuncs`, on by default): with it off, `\0` to `\7` in a string are C's octal
+  escape, the digit and up to two more octal digits (`if (flag_qcfuncs) c = 0xe012 + c - '0';
+  ... else //C compat`), and `\8` or `\9` is the error "Bad character code \8" (`E0103`).
+  `qccx` (`flag_qccx`): a `:` after a string part, comments before it passed over, writes a NUL
+  into the string and reading goes on (`if (flag_qccx && *pr_file_p == ':') { pr_file_p++;
+  pr_token[len++] = 0; continue; }`), so `"a":"b"` is the string `a`, NUL, `b`; a character
+  constant is a float whose bits are its code, with "char constant: denormal" (F313,
+  `WARN_DENORMAL`, an error by default, `W0121`); `%` before a digit or `-` is "denormalized
+  immediate" (F313) and a float whose bits are the `int` `QCC_PR_LexInteger` reads after it,
+  `atoi` of `0x` and the digits, `a` to `f` and `.` that follow, so a hex `%0x5` is 0; and a hex
+  number with no suffix goes to `qccxhex`: a float whose bits are the number's low 32 bits, with
+  "numerical overflow" (`W0111`) where those bits are not the number and are no negative `int`.
+  `utf8` (`flag_utf8strings`): a plain string is read and written as `u8"..."` is
+  (`stringtype = flag_utf8strings?2:0;`), so a byte that starts no UTF-8 sequence is "Input
+  string is not valid utf-8". `ILP32` (`flag_ILP32`): a number needs `ll` to be 64 bits
+  (`islong >= (flag_ILP32?2:1)`), so `0x100000000l` is an `int` with "numerical overflow".
+  `ssp` (`flag_dblstarexp`): `**` is the token `*^`, with "** is unsafe around pointers, use *^
+  instead." (F321, `WARN_GMQCC_SPECIFIC`, `W0118`). `assumeint` (`flag_assume_integer`): a number
+  with no suffix and no `.` is an integer, with no float's "numerical overflow ... will be
+  rounded", and a character constant is an integer, `qccx` aside; its value stays a float
+  (FTEF-13.5), and "Numerical truncation" when such an integer becomes a float is the
+  compiler's. `macroinstrings` (`flag_macroinstrings`): a `#` in a string starts a name that runs
+  to white space or one of `)(+-*/\|&=^~[]"{};:,.#`; `QCC_PR_CheckCompConstString` looks it up and
+  then looks up each macro's text as a name again for as long as it names a macro, and the text
+  it ends on is written into the string as it is, trailing spaces and tabs dropped, with "Macro
+  NAME expansion in string" (`WARN_MACROINSTRING`, `W0122`); a name of no macro writes the `#` as
+  a byte and is "Unable to expand string macro NAME" unless empty, and a string the text would
+  take to 8191 bytes or more is "String length exceeds 8191" (`E0502`). So with `#define FOO
+  bar` and two spaces and `#define BAR FOO`, `"a#BAR.c"` is `abar.c`. A deliberate divergence:
+  the lookup stops after 64 macros, as FTEQCC's recursion has no bound and never returns for a
+  macro whose text names itself. The preprocessor lexes the rest of a text again when the flags
+  change, or under `macroinstrings` when a macro is defined or undefined, and marks each change
+  by token in `FileOutput::lex_flags`, which `qc_syntax::parse_preprocessed_flagged` reads to
+  lex the preprocessed text again as FTEQCC lexed it.
+- **FTEF-12.13** Two flags change the preprocessor's reading. `hashonly` (`flag_hashonly`): a name
+  is a macro's or a built-in constant's only after a `#` (`if (flag_hashonly ||
+  !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`), so with `#define FOO 5`, `FOO` is the name
+  `FOO` and `#FOO` is `5`. `nofileline` (`flag_nopragmafileline`): `#pragma file` and `#pragma
+  line` change nothing (`if (!flag_nopragmafileline)`).
+- **FTEF-12.14** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
+  parse, the compiler or its console output rather than to the tokens: `acc` (its `|` in a string
+  as a line feed, and reacc's type names) has no `FLAG_MIDCOMPILE`, so only the command line's
+  `-Facc` sets it, and this profile reads no command line; `caseinsensitive` (names and keywords
+  compared in any case, `QCC_PR_CheckName`, `QCC_PR_CheckKeyword`), `assumedouble` (a number with
+  a `.` is a `double`, a type this profile's tokens do not carry, FTEF-13.5) and the keyword
+  flags are the parser's and the type checker's (L3); `cpriority` reorders `pr_opcodes` for the
+  parser; `msvcstyle` and `debugmacros` change only what FTEQCC prints. A pragma emits no progs
+  output of its own (as FTE-16.3); its effects on the output (the target format, the CRC, the
+  flags) are realised by codegen (L-01).
 
 ## FTEF-13 Further tokens
 
@@ -676,6 +728,14 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   after each (`QCC_PR_LexVector`), not with `QCC_PR_LexComment`, so a comment before the first
   component is passed over and a `//` comment between components ends at a lone CR: the pinned
   FTEQCC accepts `'/*c*/1 2 3'` and `'1 // c`, a CR and `2 3'`.
+- **FTEF-13.24** Under FTEQCC the punctuation is `pr_punctuation[]`, tried in its order, the first
+  that matches the input winning ("longer symbols must be before a shorter partial match"),
+  which has, besides the vanilla tokens and those of FTE-19.1, `<=>`, `*^`, `><`, `@` and `^^`
+  (`qc_lexer::Punct::FTEQCC_TABLE`); a byte it does not list is FTEF-13.15's "Unknown
+  punctuation". So `a<=>b` is `a`, `<=>`, `b` and `a><b` is `a`, `><`, `b`. `QCC_PrioritiseOpcodes` gives `*^`
+  (`POW_F`) and `><` (`CROSS_V`) the priority of `*` (`PC_MULDIV`) and `<=>` (`SPACESHIP_F`) that
+  of `==` (`PC_EQUALITY`), as this parser does. `@` (a `qccx` unary in `QCC_PR_Term`) and `^^`
+  (which no opcode has) are tokens the parser of this profile reads as no operator.
 
 ## FTEF-14 Preprocessor directives and macros
 

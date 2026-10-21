@@ -128,6 +128,9 @@ pub(crate) struct Rendered {
     /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
     /// setting (FTEF-12.6).
     pub(crate) noref: Vec<(usize, bool)>,
+    /// The compiler flags FTEQCC's lexer read: the rendered offset from which each holds, and the
+    /// flags (FTEF-12.12).
+    pub(crate) lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
 }
 
 /// The preprocessed module: each compiled file rendered, and the preprocessor's diagnostics
@@ -281,17 +284,22 @@ fn run<L: Loader>(
             });
         }
         let mut rendered = render(pp, files, &output.tokens);
+        let offset_of = |rendered: &Rendered, token: usize| {
+            rendered
+                .origins
+                .origins
+                .get(token)
+                .map_or(rendered.text.len(), |(start, _)| *start)
+        };
         rendered.noref = output
             .noref
             .iter()
-            .map(|&(token, on)| {
-                let offset = rendered
-                    .origins
-                    .origins
-                    .get(token)
-                    .map_or(rendered.text.len(), |(start, _)| *start);
-                (offset, on)
-            })
+            .map(|&(token, on)| (offset_of(&rendered, token), on))
+            .collect();
+        rendered.lex_flags = output
+            .lex_flags
+            .iter()
+            .map(|&(token, flags)| (offset_of(&rendered, token), flags))
             .collect();
         out.files.push(rendered);
     }

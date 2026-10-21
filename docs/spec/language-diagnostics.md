@@ -297,6 +297,14 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (`dialect-fteqcc.md`, FTEF-13.22).
 - **QCD-7.42** `W0120` "2d vector": under an FTEQCC profile, a vector of two components, while
   `#pragma warning` has made FTEQCC's F311 a warning (`dialect-fteqcc.md`, FTEF-13.22).
+- **QCD-7.43** `W0121` "char constant: denormal" or "denormalized immediate": under an FTEQCC
+  profile with FTEQCC's `qccx` flag on, a character constant or a `%N` immediate whose float is an
+  `int`'s bits, FTEQCC's F313, an error unless a `#pragma warning` makes it otherwise
+  (`dialect-fteqcc.md`, FTEF-12.12).
+- **QCD-7.44** `W0122` "Macro NAME expansion in string" or "Unable to expand string macro NAME":
+  under an FTEQCC profile with FTEQCC's `macroinstrings` flag on, a `#NAME` in a string, FTEQCC's
+  `WARN_MACROINSTRING`, which `warningnames[]` does not name and FTEQCC ignores by default, so no
+  `#pragma warning` makes it reported (`dialect-fteqcc.md`, FTEF-12.12).
 
 ## QCD-8 Preprocessor errors
 

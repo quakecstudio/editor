@@ -156,6 +156,16 @@ pub enum SyntaxKind {
     Shl,
     /// `<<=` (FTEQCC, FTE-19.1).
     ShlEq,
+    /// `<=>` (FTEQCC, FTEF-13.24).
+    Spaceship,
+    /// `*^` (FTEQCC, FTEF-13.24).
+    StarCaret,
+    /// `><` (FTEQCC, FTEF-13.24).
+    Cross,
+    /// `@` (FTEQCC, FTEF-13.24).
+    At,
+    /// `^^` (FTEQCC, FTEF-13.24).
+    CaretCaret,
 
     /// `for` starting a statement (FTEQCC, FTE-2).
     ForKw,
@@ -422,6 +432,11 @@ impl SyntaxKind {
             Punct::ShrEq => Self::ShrEq,
             Punct::Shl => Self::Shl,
             Punct::ShlEq => Self::ShlEq,
+            Punct::Spaceship => Self::Spaceship,
+            Punct::StarCaret => Self::StarCaret,
+            Punct::Cross => Self::Cross,
+            Punct::At => Self::At,
+            Punct::CaretCaret => Self::CaretCaret,
         }
     }
 }

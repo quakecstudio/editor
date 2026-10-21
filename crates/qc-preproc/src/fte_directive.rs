@@ -35,8 +35,8 @@ use qc_lexer::{Code, Dialect, Span};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text};
 use crate::{
-    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
-    WarningSettings, fte_pragma, normalize,
+    Body, ChunkReader, FileId, FileSpan, FlagSettings, FteFlag, Loader, Macro, Preprocessor, Run,
+    Variadic, WarningSettings, fte_pragma, normalize,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -1293,6 +1293,7 @@ impl<L: Loader> Preprocessor<L> {
                 evil: false,
             };
             self.macros.insert(name.to_owned(), Rc::new(mac));
+            self.macros_changed();
         }
     }
 
@@ -1413,7 +1414,9 @@ impl<L: Loader> Preprocessor<L> {
                 let name = lossy(text.get(name).unwrap_or_default());
                 // FTEF-14.57: `QCC_PR_ParseWarning(WARN_UNDEFNOTDEFINED, "Precompiler constant %s
                 // was not defined", name);`
-                if self.macros.remove(&name).is_none() {
+                if self.macros.remove(&name).is_some() {
+                    self.macros_changed();
+                } else {
                     let message = format!("Precompiler constant {name} was not defined");
                     run.report(Code::W0114, message, at(end.at));
                 }
@@ -1717,7 +1720,7 @@ impl<L: Loader> Preprocessor<L> {
         if pragma.is("once") {
             let marked = self.pragma_base(run, bytes);
             self.fte.once.push(marked);
-        } else if pragma.is("file") {
+        } else if pragma.is("file") && !self.fte.flags.is_on(FteFlag::Nopragmafileline) {
             let name = pragma.file_name();
             match bytes {
                 Bytes::File(file, _) => {
@@ -1731,7 +1734,7 @@ impl<L: Loader> Preprocessor<L> {
                     }
                 }
             }
-        } else if pragma.is("line") {
+        } else if pragma.is("line") && !self.fte.flags.is_on(FteFlag::Nopragmafileline) {
             let line = pragma.line();
             let from = end.saturating_add(1);
             match bytes {
@@ -1765,8 +1768,13 @@ impl<L: Loader> Preprocessor<L> {
             run.out.autoproto.push((index, on, at));
         } else if pragma.is("keyword") || pragma.is("flag") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            let lexed_with = self.fte.flags.lex_flags();
             for warning in self.fte.flags.apply_pragma(message) {
                 run.report(Code::W0113, warning, at);
+            }
+            let flags = self.fte.flags.lex_flags();
+            if flags != lexed_with {
+                run.out.lex_flags.push((run.out.tokens.len(), flags));
             }
         } else if pragma.is("optimise") || pragma.is("optimize") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));

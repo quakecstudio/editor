@@ -162,6 +162,8 @@ pub enum FteWarning {
     BadTarget,
     /// `WARN_DEBUGGING`, the warning of code 0, which has no name.
     Debugging,
+    /// `WARN_MACROINSTRING`, which has no name.
+    MacroInString,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -234,7 +236,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 66] = [
+const ALL: [FteWarning; 67] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -301,6 +303,7 @@ const ALL: [FteWarning; 66] = [
     FteWarning::StringTooLong,
     FteWarning::BadTarget,
     FteWarning::Debugging,
+    FteWarning::MacroInString,
 ];
 
 impl FteWarning {
@@ -330,7 +333,8 @@ impl FteWarning {
             | Self::Uninitialized
             | Self::SelfNotThis
             | Self::UnsafeLocalPointer
-            | Self::IdenticalPrecompiler => WarningAction::Ignore,
+            | Self::IdenticalPrecompiler
+            | Self::MacroInString => WarningAction::Ignore,
             Self::EvilPreprocessor | Self::Denormal => WarningAction::Error,
             Self::PrecompilerMessage
             | Self::TooManyParams
@@ -407,6 +411,8 @@ impl FteWarning {
             Code::W0118 => Self::GmqccSpecific,
             Code::W0119 => Self::NotUtf8,
             Code::W0120 => Self::FteSpecific,
+            Code::W0121 => Self::Denormal,
+            Code::W0122 => Self::MacroInString,
             _ => return None,
         })
     }

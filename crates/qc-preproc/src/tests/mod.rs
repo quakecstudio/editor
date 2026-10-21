@@ -1047,6 +1047,7 @@ proptest! {
     }
 }
 mod directives;
+mod flags;
 mod fteqcc;
 mod graph;
 mod lines;

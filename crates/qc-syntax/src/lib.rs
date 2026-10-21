@@ -95,7 +95,7 @@ pub fn parse(source: &[u8]) -> Parse {
 /// tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Source)
+    parse_text(source, dialect, input::Text::Source, &[])
 }
 
 /// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
@@ -107,11 +107,31 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
 /// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Preprocessed)
+    parse_text(source, dialect, input::Text::Preprocessed, &[])
 }
 
-fn parse_text(source: &[u8], dialect: Dialect, text: input::Text) -> Parse {
-    let mut parser = parser::Parser::new(input::Input::new(source, dialect, text), dialect);
+/// [`parse_preprocessed`] of text whose tokens FTEQCC lexed under the compiler flags `flags`
+/// gives (FTEF-12.12): each the byte the flags hold from and the flags, in order, as
+/// `qc_preproc::FileOutput::lex_flags` marks them by token. The text before the first holds the
+/// default flags. `macroinstrings` is not read: the preprocessor's string token already holds the
+/// text a `#NAME` in it wrote, and this text has no macros to look up.
+#[must_use]
+pub fn parse_preprocessed_flagged(
+    source: &[u8],
+    dialect: Dialect,
+    flags: &[(usize, qc_lexer::LexFlags)],
+) -> Parse {
+    parse_text(source, dialect, input::Text::Preprocessed, flags)
+}
+
+fn parse_text(
+    source: &[u8],
+    dialect: Dialect,
+    text: input::Text,
+    flags: &[(usize, qc_lexer::LexFlags)],
+) -> Parse {
+    let input = input::Input::new(source, dialect, text, flags);
+    let mut parser = parser::Parser::new(input, dialect);
     parser.source_file();
     let (green, diagnostics) = parser.finish();
     Parse { green, diagnostics }

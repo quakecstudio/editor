@@ -7,7 +7,10 @@
 
 use std::borrow::Cow;
 
-use qc_lexer::{Diagnostic, Dialect, Punct, Span, TokenKind, is_whitespace, lex_with};
+use qc_lexer::{
+    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_flagged,
+    lex_with,
+};
 use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from};
 
 use crate::kind::SyntaxKind;
@@ -142,6 +145,47 @@ impl<'a> Lexable<'a> {
     }
 }
 
+/// The tokens and lexical errors of `text`, each part from a byte `flags` names lexed under the
+/// flags it gives there (FTEF-12.12), `macroinstrings` aside, the text before the first under the
+/// default flags.
+fn lex_marked(text: &[u8], dialect: Dialect, flags: &[(usize, LexFlags)]) -> qc_lexer::Lexed {
+    if flags.is_empty() {
+        return lex_with(text, dialect);
+    }
+    let mut out = qc_lexer::Lexed::default();
+    let mut start = 0_usize;
+    let mut current = LexFlags::default();
+    let end = (text.len(), LexFlags::default());
+    for &(at, next) in flags.iter().chain(std::iter::once(&end)) {
+        let at = at.clamp(start, text.len());
+        let part = text.get(start..at).unwrap_or_default();
+        let lexed = lex_flagged(
+            part,
+            dialect,
+            current.with(LexFlag::MacroInStrings, false),
+            &|_| None,
+        );
+        let shift = |span: Span| {
+            Span::new(
+                span.start.saturating_add(start),
+                span.end.saturating_add(start),
+            )
+        };
+        out.tokens.extend(lexed.tokens.into_iter().map(|mut token| {
+            token.span = shift(token.span);
+            token
+        }));
+        out.diagnostics
+            .extend(lexed.diagnostics.into_iter().map(|mut d| {
+                d.span = shift(d.span);
+                d
+            }));
+        start = at;
+        current = next;
+    }
+    out
+}
+
 /// Ends at `len`, the file's end, the tokens and lexical errors that reach past it: the loader's
 /// line feed after the file's bytes is read, and is no byte of the tree (FTEF-14.64). Only the
 /// last of either, which stand in order, can reach it.
@@ -165,9 +209,14 @@ impl<'a> Input<'a> {
     /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
     /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
     /// under an FTEQCC dialect, read in the text FTEQCC's file loader gives (FTEF-14.56).
-    pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+    pub(crate) fn new(
+        source: &'a [u8],
+        dialect: Dialect,
+        text: Text,
+        flags: &[(usize, LexFlags)],
+    ) -> Self {
         let lexable = Lexable::new(source, dialect, text);
-        let mut lexed = lex_with(&lexable.text, dialect);
+        let mut lexed = lex_marked(&lexable.text, dialect, flags);
         clamp_to(&mut lexed, source.len());
         let mut input = Self {
             source,

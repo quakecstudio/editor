@@ -852,3 +852,25 @@ fn an_indented_hash_on_an_included_file_s_first_line_is_code() {
         "{found:?}"
     );
 }
+
+// spec FTEF-12.12: a compiled file's expansion is parsed with the flags FTEQCC's lexer read, a
+// `#pragma flag` holding from the token after it, and parsed again when only the flags change
+#[test]
+fn an_expansion_is_parsed_with_the_lexer_s_flags() {
+    let source = "#pragma flag enable qccx\nstring s = \"a\":\"b\";\nfloat x = %5;\n";
+    let files = [("t.qc", source)];
+    let (mut db, input) = module(&files, &["t.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    // `%5` is F313's "denormalized immediate", an error by default, and nothing else is.
+    assert_eq!(codes(&analysis), [Code::E0125], "{:?}", analysis.syntax);
+    let plain = "string s = \"a\":\"b\";\n";
+    let (mut db, input) = module(&[("t.qc", plain)], &["t.qc"], Dialect::Fteqcc);
+    assert!(!db.analyze_module(&input).syntax.is_empty());
+    // The same rendered text under other flags is parsed again, not served from the cache.
+    db.set_file(
+        FileId(0),
+        PathBuf::from("t.qc"),
+        format!("#pragma flag enable qccx\n{plain}").into_bytes(),
+    );
+    assert!(db.analyze_module(&input).syntax.is_empty());
+}

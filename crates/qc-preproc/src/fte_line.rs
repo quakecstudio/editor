@@ -13,7 +13,7 @@ use crate::fte_directive::{
     skip_to_end_of_line, starts_line,
 };
 use crate::fte_macro::{Reading, read_define};
-use crate::{FileId, Relexed, merge_errors};
+use crate::{FileId, Lexing, Relexed, merge_errors};
 
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
 /// `text` ends: the offset the preprocessor reads on from after it, with nothing run. `None`
@@ -107,7 +107,7 @@ fn elif_test_end(text: &[u8], hash: usize) -> Option<usize> {
 /// the lexical errors between are the new lexing's. A token lexed again starts a line only where
 /// only white space comes before it on its line.
 pub fn relex_from(lexed: &mut Lexed, text: &[u8], offset: usize, dialect: Dialect) {
-    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, dialect) else {
+    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, Lexing::plain(dialect)) else {
         return;
     };
     let first = lexed.tokens.partition_point(|t| t.span.end <= offset);

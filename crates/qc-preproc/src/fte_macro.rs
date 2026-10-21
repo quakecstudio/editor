@@ -19,7 +19,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, TokenKind, lex_with};
+use qc_lexer::{Code, Span, TokenKind};
 
 use crate::fte_directive::{
     self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, byte_at, simple_get_token,
@@ -27,7 +27,7 @@ use crate::fte_directive::{
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
+    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
     moved_frames, quote_bytes,
 };
 
@@ -321,6 +321,12 @@ impl ChunkReader {
         .then_some(hash)
     }
 
+    /// The chunk's text from where reading stands, lexed again when it was lexed otherwise than
+    /// `lexing` lexes it (FTEF-12.12).
+    pub(crate) fn refresh(&mut self, lexing: Lexing<'_>) {
+        self.stream.refresh(&self.text.bytes, lexing);
+    }
+
     /// The chunk's text as a directive reads it.
     pub(crate) fn bytes(&self) -> Bytes {
         Bytes::Chunk(Rc::clone(&self.text), self.at)
@@ -328,10 +334,10 @@ impl ChunkReader {
 
     /// Reading of the chunk goes on at `resume`, after the directive at `hash`, whose text is
     /// read as no code.
-    pub(crate) fn resume(&mut self, hash: usize, resume: Resume, dialect: qc_lexer::Dialect) {
+    pub(crate) fn resume(&mut self, hash: usize, resume: Resume, lexing: Lexing<'_>) {
         let end = match resume {
             Resume::At(end) => {
-                self.stream.resume_at(&self.text.bytes, end, dialect);
+                self.stream.resume_at(&self.text.bytes, end, lexing);
                 end
             }
             Resume::End => {
@@ -1170,6 +1176,7 @@ impl<L: Loader> Preprocessor<L> {
             evil: definition.evil.is_some(),
         };
         self.macros.insert(name, Rc::new(mac));
+        self.macros_changed();
         Ok(end)
     }
 
@@ -1274,7 +1281,7 @@ impl<L: Loader> Preprocessor<L> {
         if text.bytes.is_empty() {
             return None;
         }
-        let stream = TokenStream::lex(text.bytes(), self.dialect);
+        let stream = TokenStream::lex(text.bytes(), self.lexing());
         let breaks = (0..text.bytes.len())
             .filter(|&at| text.bytes.get(at) == Some(&b'\n'))
             .collect();
@@ -1324,7 +1331,7 @@ impl<L: Loader> Preprocessor<L> {
         {
             chunk.detach();
         }
-        let lexed = lex_with(&text, self.dialect);
+        let lexed = self.lexing().lex(&text);
         for d in lexed.diagnostics {
             run.report(d.code, d.message, item.tok.span);
         }
@@ -1513,7 +1520,7 @@ impl<L: Loader> Preprocessor<L> {
                 if let Some(chunk) = run.chunks.last_mut() {
                     chunk
                         .stream
-                        .resume_at(&chunk.text.bytes, after, self.dialect);
+                        .resume_at(&chunk.text.bytes, after, self.lexing());
                     chunk.consumed.push(Span::new(end, after));
                 }
             }
@@ -1521,7 +1528,7 @@ impl<L: Loader> Preprocessor<L> {
             Place::File => {
                 let file = self.sources.file(item.tok.span.file);
                 if let (Some(cursor), Some(file)) = (run.cursors.last_mut(), file) {
-                    cursor.stream.resume_at(&file.text, after, self.dialect);
+                    cursor.stream.resume_at(&file.text, after, self.lexing());
                     let consumed = Span::new(item.tok.span.span.end, after);
                     cursor.skipped.push(consumed);
                 }

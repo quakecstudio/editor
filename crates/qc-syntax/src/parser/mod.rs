@@ -122,12 +122,24 @@ const UNARY_PRIORITY: u8 = 1;
 
 /// The priority of a binary operator (QC-15.1), from `pr_opcodes`, plus the FTEQCC operators
 /// at the matching vanilla priority (FTE-6, FTE-7, FTE-19.3): FTEQCC's default
-/// `QCC_PrioritiseOpcodes` puts shifts, `^`, `&` and `|` in the class of `*` and `/`.
+/// `QCC_PrioritiseOpcodes` puts shifts, `^`, `&` and `|` in the class of `*` and `/`, with
+/// `*^` and `><` (`PC_MULDIV`), and `<=>` in the class of `==` (`PC_EQUALITY`, FTEF-13.24).
 const fn binary_priority(kind: K) -> Option<u8> {
     match kind {
-        K::Star | K::Slash | K::Amp | K::Pipe | K::Percent | K::Caret | K::Shr | K::Shl => Some(2),
+        K::Star
+        | K::Slash
+        | K::Amp
+        | K::Pipe
+        | K::Percent
+        | K::Caret
+        | K::Shr
+        | K::Shl
+        | K::StarCaret
+        | K::Cross => Some(2),
         K::Plus | K::Minus => Some(ADD_PRIORITY),
-        K::EqEq | K::NotEq | K::LessEq | K::GreaterEq | K::Less | K::Greater => Some(4),
+        K::EqEq | K::NotEq | K::LessEq | K::GreaterEq | K::Less | K::Greater | K::Spaceship => {
+            Some(4)
+        }
         // `=` and the FTEQCC compound assignments (FTE-6, FTE-19.3) are right-associative at
         // the assignment priority.
         kind if is_assignment(kind) => Some(ASSIGN_PRIORITY),

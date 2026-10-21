@@ -21,7 +21,7 @@ use super::{
     skip_to_end_of_line, starts_line, whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
-use crate::{FileId, TokenStream, Variadic};
+use crate::{FileId, Lexing, TokenStream, Variadic};
 
 /// The most `#includelist`s and `#pragma DONT_COMPILE_THIS_FILE`s one inside another's reading
 /// the graph reads, as the preprocessor's bound on nested directives (FTEF-14.47, PRJ-5.14).
@@ -196,7 +196,7 @@ impl FteFileReader {
     pub fn new(bytes: Vec<u8>, start: FileStart) -> Self {
         let (text, _) = qcc_load_as(bytes, start);
         Self {
-            stream: TokenStream::lex(&text, Dialect::Fteqcc),
+            stream: TokenStream::lex(&text, Lexing::plain(Dialect::Fteqcc)),
             text,
             at: 0,
             resume: None,
@@ -250,7 +250,8 @@ impl FteFileReader {
     /// run; any other token is passed over.
     fn code(&mut self, state: &mut ModuleState) -> Option<FteEvent> {
         if let Some(at) = self.resume.take() {
-            self.stream.resume_at(&self.text, at, Dialect::Fteqcc);
+            self.stream
+                .resume_at(&self.text, at, Lexing::plain(Dialect::Fteqcc));
         }
         let Some(token) = self.stream.tokens.get(self.stream.pos) else {
             self.ended = true;

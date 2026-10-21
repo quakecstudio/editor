@@ -47,7 +47,9 @@ use std::ops::Range;
 use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 
-use qc_lexer::{Code, Dialect, FrameCommand, Punct, Span, Token, TokenKind, lex_with};
+use qc_lexer::{
+    Code, Dialect, FrameCommand, LexFlag, LexFlags, Punct, Span, Token, TokenKind, lex_flagged,
+};
 
 /// Most frames one source file may define.
 ///
@@ -148,6 +150,10 @@ pub struct FileOutput {
     /// the settings from there on (FTEF-14.63), for the warnings the parser and the semantic
     /// model report.
     pub warnings: Vec<(usize, WarningSettings)>,
+    /// In an FTEQCC dialect, the compiler flags the lexer reads where the file starts, at token
+    /// 0, and after each `#pragma flag` that changes them: the index of the first token after it
+    /// and the flags from there on (FTEF-12.12), for a reader that lexes the tokens' text again.
+    pub lex_flags: Vec<(usize, LexFlags)>,
 }
 
 #[derive(Debug)]
@@ -293,6 +299,93 @@ struct TokenStream {
     /// Where reading last went on after text read otherwise than as these tokens, a directive's
     /// or a use's arguments ([`Self::resume_at`]); 0 before it has.
     read_on: usize,
+    /// How the tokens from where reading stands were lexed ([`Lexing::key`]).
+    key: LexKey,
+}
+
+/// How a text is lexed: in its dialect and, under FTEQCC, with the compiler flags in force and
+/// the macros a string's `#NAME` reads under `macroinstrings` (FTEF-12.12).
+#[derive(Clone, Copy)]
+pub(crate) struct Lexing<'a> {
+    dialect: Dialect,
+    flags: LexFlags,
+    macros: Option<&'a HashMap<String, Rc<Macro>>>,
+    /// How many times the macros have changed, which matters under `macroinstrings` only.
+    edits: u64,
+}
+
+/// What decides how [`Lexing`] lexes a text, besides the text: two lexings of one key lex it
+/// alike.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct LexKey {
+    flags: LexFlags,
+    edits: u64,
+}
+
+impl Lexing<'_> {
+    /// The lexing of `dialect` with FTEQCC's default flags and no macro.
+    pub(crate) fn plain(dialect: Dialect) -> Self {
+        Self {
+            dialect,
+            flags: LexFlags::default(),
+            macros: None,
+            edits: 0,
+        }
+    }
+
+    fn key(self) -> LexKey {
+        LexKey {
+            flags: self.flags,
+            edits: if self.flags.has(LexFlag::MacroInStrings) {
+                self.edits
+            } else {
+                0
+            },
+        }
+    }
+
+    /// The tokens and lexical errors of `text`.
+    fn lex(self, text: &[u8]) -> qc_lexer::Lexed {
+        let macros = self.macros;
+        let lookup = move |name: &[u8]| {
+            let mac = macros?.get(&*String::from_utf8_lossy(name))?;
+            Some(
+                mac.text()
+                    .map(|text| text.bytes().to_vec())
+                    .unwrap_or_default(),
+            )
+        };
+        lex_flagged(text, self.dialect, self.flags, &lookup)
+    }
+}
+
+/// `lexed`, the lexing of a text from its byte `offset`, with its spans moved to the text's.
+fn shifted(lexed: qc_lexer::Lexed, offset: usize) -> qc_lexer::Lexed {
+    let shift = |span: Span| {
+        Span::new(
+            span.start.saturating_add(offset),
+            span.end.saturating_add(offset),
+        )
+    };
+    qc_lexer::Lexed {
+        tokens: lexed
+            .tokens
+            .into_iter()
+            .map(|mut token| {
+                token.span = shift(token.span);
+                token.kind = moved_frames(token.kind, shift);
+                token
+            })
+            .collect(),
+        diagnostics: lexed
+            .diagnostics
+            .into_iter()
+            .map(|mut d| {
+                d.span = shift(d.span);
+                d
+            })
+            .collect(),
+    }
 }
 
 /// The tokens and lexical errors of the bytes `range` of `text`, their spans from the range's
@@ -300,7 +393,7 @@ struct TokenStream {
 /// white space comes before it on its line, so in the middle of a line a `#` there starts no
 /// directive and a `#warning` after it no raw text. In the middle of a line the bytes are lexed
 /// after a `;`, a token of its own that changes nothing after it, which is then dropped.
-fn lex_from(text: &[u8], range: Range<usize>, dialect: Dialect) -> qc_lexer::Lexed {
+fn lex_from(text: &[u8], range: Range<usize>, lexing: Lexing<'_>) -> qc_lexer::Lexed {
     let part = text.get(range.clone()).unwrap_or_default();
     let line_start = text
         .get(..range.start)
@@ -308,14 +401,14 @@ fn lex_from(text: &[u8], range: Range<usize>, dialect: Dialect) -> qc_lexer::Lex
         .iter()
         .rev()
         .take_while(|&&b| b != b'\n')
-        .all(|&b| dialect.is_whitespace(b));
+        .all(|&b| lexing.dialect.is_whitespace(b));
     if line_start {
-        return lex_with(part, dialect);
+        return lexing.lex(part);
     }
     let mut after_token = Vec::with_capacity(part.len().saturating_add(1));
     after_token.push(b';');
     after_token.extend_from_slice(part);
-    let lexed = lex_with(&after_token, dialect);
+    let lexed = lexing.lex(&after_token);
     let back = |span: Span| Span::new(span.start.saturating_sub(1), span.end.saturating_sub(1));
     qc_lexer::Lexed {
         tokens: lexed
@@ -357,15 +450,36 @@ fn moved_frames(kind: TokenKind, place: impl Fn(Span) -> Span) -> TokenKind {
 }
 
 impl TokenStream {
-    /// The tokens of `text` under `dialect`, read from the first.
-    fn lex(text: &[u8], dialect: Dialect) -> Self {
-        let lexed = lex_with(text, dialect);
+    /// The tokens of `text` as `lexing` lexes it, read from the first.
+    fn lex(text: &[u8], lexing: Lexing<'_>) -> Self {
+        let lexed = lexing.lex(text);
         Self {
             tokens: lexed.tokens,
             pos: 0,
             diagnostics: lexed.diagnostics,
             read_on: 0,
+            key: lexing.key(),
         }
+    }
+
+    /// Under FTEQCC, the text `text` from where reading stands lexed again when its tokens were
+    /// lexed otherwise than `lexing` lexes it (FTEF-12.12): since a `#pragma flag` changed the
+    /// flags the lexer reads, or under `macroinstrings` the macros changed. FTEQCC lexes each
+    /// token as it reads it, with the flags and macros of that moment.
+    fn refresh(&mut self, text: &[u8], lexing: Lexing<'_>) {
+        let key = lexing.key();
+        if key == self.key {
+            return;
+        }
+        self.key = key;
+        let offset = self.read_offset().min(text.len());
+        let next = self.tokens.partition_point(|t| t.span.start < offset);
+        let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
+        self.tokens.truncate(next);
+        self.tokens.extend(rest.tokens);
+        self.pos = next;
+        self.diagnostics.retain(|d| d.span.start < offset);
+        self.diagnostics.extend(rest.diagnostics);
     }
 
     /// Where reading stands: after the last token read, or where reading went on after a
@@ -400,13 +514,13 @@ impl TokenStream {
     /// as a token of the first lexing that the new lexing reaches as that one did
     /// ([`Relexed`]), so a file of many such uses is not lexed again whole for each.
     /// Returns how many bytes were lexed again.
-    fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) -> usize {
+    fn resume_at(&mut self, text: &[u8], offset: usize, lexing: Lexing<'_>) -> usize {
         self.read_on = offset;
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         // The tokens from `read` on are those not read yet, or read again from here.
         let read = self.pos.min(next);
         self.pos = next;
-        let Some(relexed) = Relexed::from(&self.tokens, text, offset, dialect) else {
+        let Some(relexed) = Relexed::from(&self.tokens, text, offset, lexing) else {
             return 0;
         };
         let Relexed {
@@ -459,7 +573,8 @@ impl Relexed {
     /// it. Otherwise only as far as a token of the first lexing that the new lexing reaches as
     /// that one did ([`Relexed::window`]), so a text of many such places is not lexed again
     /// whole for each.
-    fn from(tokens: &[Token], text: &[u8], offset: usize, dialect: Dialect) -> Option<Self> {
+    fn from(tokens: &[Token], text: &[u8], offset: usize, lexing: Lexing<'_>) -> Option<Self> {
+        let dialect = lexing.dialect;
         let next = tokens.partition_point(|t| t.span.start < offset);
         let before = next.checked_sub(1).and_then(|last| tokens.get(last));
         let gap_start = before.map_or(0, |t| t.span.end);
@@ -476,29 +591,15 @@ impl Relexed {
         }
         let window = (next..tokens.len())
             .take(RESYNC_TRIES)
-            .find_map(|kept| Some(kept).zip(Self::window(tokens, text, offset, kept, dialect)));
+            .find_map(|kept| Some(kept).zip(Self::window(tokens, text, offset, kept, lexing)));
         let (kept, rest) =
-            window.unwrap_or_else(|| (tokens.len(), lex_from(text, offset..text.len(), dialect)));
-        let shift = |span: Span| {
-            Span::new(
-                span.start.saturating_add(offset),
-                span.end.saturating_add(offset),
-            )
-        };
-        let moved = rest.tokens.into_iter().map(|mut token| {
-            token.span = shift(token.span);
-            token.kind = moved_frames(token.kind, shift);
-            token
-        });
-        let diagnostics = rest.diagnostics.into_iter().map(|mut d| {
-            d.span = shift(d.span);
-            d
-        });
+            window.unwrap_or_else(|| (tokens.len(), lex_from(text, offset..text.len(), lexing)));
+        let rest = shifted(rest, offset);
         Some(Self {
             kept,
             resumed: tokens.get(kept).map_or(usize::MAX, |t| t.span.start),
-            tokens: moved.collect(),
-            diagnostics: diagnostics.collect(),
+            tokens: rest.tokens,
+            diagnostics: rest.diagnostics,
         })
     }
 
@@ -515,15 +616,16 @@ impl Relexed {
         text: &[u8],
         offset: usize,
         kept: usize,
-        dialect: Dialect,
+        lexing: Lexing<'_>,
     ) -> Option<qc_lexer::Lexed> {
+        let dialect = lexing.dialect;
         let resume = tokens
             .get(kept)
             .filter(|t| !matches!(t.kind, TokenKind::String(_)))?
             .span
             .start;
         let window = text.get(offset..resume)?;
-        let lexed = lex_from(text, offset..resume, dialect);
+        let lexed = lex_from(text, offset..resume, lexing);
         let last_end = lexed.tokens.last().map_or(0, |t| t.span.end);
         let lands = lexed.tokens.last().is_none_or(|last| {
             !matches!(last.kind, TokenKind::String(_)) && last.span.end < window.len()
@@ -753,6 +855,9 @@ pub struct Preprocessor<L> {
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
+    /// How many times a macro has been defined or undefined, so a text lexed under
+    /// `macroinstrings` is lexed again after it (FTEF-12.12).
+    macro_edits: u64,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -794,7 +899,27 @@ impl<L: Loader> Preprocessor<L> {
             fte: FteState::default(),
             command_line_dirs: Vec::new(),
             include_dirs: Vec::new(),
+            macro_edits: 0,
         }
+    }
+
+    /// How a text is lexed from here: in the dialect and, under FTEQCC, with the compiler flags
+    /// in force and the macros defined (FTEF-12.12).
+    pub(crate) fn lexing(&self) -> Lexing<'_> {
+        if !self.dialect.has_fteqcc_extensions() {
+            return Lexing::plain(self.dialect);
+        }
+        Lexing {
+            dialect: self.dialect,
+            flags: self.fte.flags.lex_flags(),
+            macros: Some(&self.macros),
+            edits: self.macro_edits,
+        }
+    }
+
+    /// Notes that a macro was defined or undefined (FTEF-12.12).
+    pub(crate) fn macros_changed(&mut self) {
+        self.macro_edits = self.macro_edits.wrapping_add(1);
     }
 
     /// Starts FTEQCC's second autoprototyping pass, `-Fautoproto` (FTE-22.3, FTE-22.4): every
@@ -807,6 +932,7 @@ impl<L: Loader> Preprocessor<L> {
     /// The files are then preprocessed again in order.
     pub fn restart(&mut self) {
         self.macros.clear();
+        self.macros_changed();
         if self.dialect.has_fteqcc_extensions() {
             self.fte_default_properties();
         }
@@ -923,6 +1049,9 @@ impl<L: Loader> Preprocessor<L> {
             ..Run::default()
         };
         run.out.warnings.extend(warnings.map(|w| (0, w)));
+        if self.dialect.has_fteqcc_extensions() {
+            run.out.lex_flags.push((0, self.fte.flags.lex_flags()));
+        }
         let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());
         run.cursors.push(cursor);
@@ -930,6 +1059,14 @@ impl<L: Loader> Preprocessor<L> {
             let Some(item) = self.explicit_use(&mut run, item) else {
                 continue;
             };
+            // FTEF-12.13: `if (flag_hashonly || !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`, so
+            // under `hashonly` only a name after a `#` is a macro's or a built-in constant's.
+            let hash_only = self.dialect.has_fteqcc_extensions()
+                && self.fte.flags.is_on(fte_tables::FteFlag::Hashonly);
+            if hash_only && matches!(item.tok.kind, TokenKind::Name(_)) {
+                self.emit(&mut run, item.tok);
+                continue;
+            }
             if let Some(item) = self.try_expand(&mut run, item) {
                 self.emit(&mut run, item.tok);
             }
@@ -1020,7 +1157,7 @@ impl<L: Loader> Preprocessor<L> {
             path,
             read_as: name.clone(),
             name,
-            stream: TokenStream::lex(text, self.dialect),
+            stream: TokenStream::lex(text, self.lexing()),
             conds: Vec::new(),
             skipped: Vec::new(),
             skip_start: None,
@@ -1044,13 +1181,14 @@ impl<L: Loader> Preprocessor<L> {
         }
         let fte = self.dialect.has_fteqcc_extensions();
         while let Some(mut chunk) = run.chunks.pop() {
+            chunk.refresh(self.lexing());
             if fte && let Some(hash) = chunk.directive_at() {
                 let bytes = chunk.bytes();
                 run.chunks.push(chunk);
                 let resume = self.fte_directive(run, &bytes, hash, Position::Line);
                 chunk = run.chunks.pop()?;
                 if let Some(resume) = resume {
-                    chunk.resume(hash, resume, self.dialect);
+                    chunk.resume(hash, resume, self.lexing());
                     run.chunks.push(chunk);
                     continue;
                 }
@@ -1063,6 +1201,9 @@ impl<L: Loader> Preprocessor<L> {
         }
         loop {
             let cursor = run.cursors.last_mut()?;
+            if let Some(file) = self.sources.file(cursor.file) {
+                cursor.stream.refresh(&file.text, self.lexing());
+            }
             let Some(token) = cursor.stream.tokens.get(cursor.stream.pos).cloned() else {
                 self.finish_cursor(run);
                 continue;
@@ -1146,7 +1287,7 @@ impl<L: Loader> Preprocessor<L> {
         };
         let end = match resume {
             Resume::At(end) => {
-                cursor.stream.resume_at(&text, end, self.dialect);
+                cursor.stream.resume_at(&text, end, self.lexing());
                 end
             }
             Resume::End => {

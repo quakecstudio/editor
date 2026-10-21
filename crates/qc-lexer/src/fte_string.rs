@@ -10,7 +10,7 @@
 //! string writes. Ported from FTEQCC's behaviour under ADR-0017's clean-port policy, written
 //! fresh in this lexer, and checked against the pinned FTEQCC by `cargo xtask oracles builtins`.
 
-use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind};
+use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind, is_fteqcc_whitespace};
 
 /// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token, an
 /// `L"..."` after another part included (FTEF-13.7); `None` when `text` is not one such part.
@@ -20,6 +20,8 @@ pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
         text,
         pos: 0,
         dialect: Dialect::Fteqcc,
+        flags: crate::LexFlags::default(),
+        macros: &|_| None,
         out: Lexed::default(),
         joined: 0,
     };
@@ -27,6 +29,15 @@ pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
     let bytes = lexer.fte_string_contents(prefix);
     (lexer.pos == text.len()).then_some(bytes)
 }
+
+/// The bytes that end a `#NAME` in a string under `macroinstrings`, besides white space
+/// (FTEF-12.12): `QCC_PR_LexString`'s list.
+const STRING_MACRO_STOPS: &[u8] = b")(+-*/\\|&=^~[]\"{};:,.#";
+
+/// The most times this profile looks up a macro's text as a name for a `#NAME` in a string: a
+/// deliberate divergence, as `QCC_PR_CheckCompConstString` recurses with no bound and so never
+/// returns for a macro whose text names itself (FTEF-12.12).
+const FTEQCC_MAX_STRING_MACRO_LOOKUPS: usize = 64;
 
 /// What a string's characters are written as: `QCC_PR_LexString`'s `stringtype`
 /// (FTEF-13.8).
@@ -73,6 +84,10 @@ impl Lexer<'_> {
     pub(crate) fn fte_string_prefix(&self, joins: bool) -> Option<Prefix> {
         let prefix = |len, output, raw| Some(Prefix { len, output, raw });
         match (self.peek(0)?, self.peek(1), self.peek(2)) {
+            // FTEF-12.12: `stringtype = flag_utf8strings?2:0;`.
+            (b'"', _, _) if self.flags.has(crate::LexFlag::Utf8Strings) => {
+                prefix(0, Output::Utf8, false)
+            }
             (b'"', _, _) => prefix(0, Output::Quake, false),
             (b'R', Some(b'"'), _) => prefix(1, Output::Quake, true),
             (b'Q', Some(b'"'), _) => prefix(1, Output::QuakeFromUtf8, false),
@@ -92,8 +107,10 @@ impl Lexer<'_> {
     /// takes the total past them.
     pub(crate) fn fte_string(&mut self, prefix: Prefix, joins: bool) {
         let start = self.pos;
-        let contents = self.fte_string_contents(prefix);
         let before = if joins { self.joined } else { 0 };
+        // The parts before this one, which a macro's text in it counts on from (FTEF-12.12).
+        self.joined = before;
+        let contents = self.fte_string_contents(prefix);
         self.joined = before.saturating_add(contents.len());
         if self.joined > FTEQCC_MAX_STRING && before <= FTEQCC_MAX_STRING {
             self.error(Code::E0502, STRING_TOO_LONG, Span::new(start, self.pos));
@@ -198,6 +215,9 @@ impl Lexer<'_> {
                     self.bump(1);
                     return contents;
                 }
+                b'#' if self.flags.has(crate::LexFlag::MacroInStrings) => {
+                    self.string_macro(&mut contents, output);
+                }
                 b'\\' => {
                     let escape = self.pos;
                     self.bump(1);
@@ -237,6 +257,59 @@ impl Lexer<'_> {
 
     /// A byte of a string that starts no escape, and the UTF-8 sequence it starts when the
     /// input is UTF-8 (FTEF-13.8, FTEF-13.10).
+    /// `#NAME` in a string under `macroinstrings`, at its `#` (FTEF-12.12): the name runs to
+    /// white space or one of FTEQCC's stop bytes, and is looked up as
+    /// `QCC_PR_CheckCompConstString` does, a macro's text looked up again as a name for as long as
+    /// it names one. The text found is written as it is, its trailing spaces and tabs dropped,
+    /// with "Macro NAME expansion in string"; a name of no macro is "Unable to expand string macro
+    /// NAME" unless it is empty, and the `#` is written as a byte with no mask.
+    fn string_macro(&mut self, contents: &mut Vec<u8>, output: Output) {
+        let hash = self.pos;
+        let name_start = hash.saturating_add(1);
+        let rest = self.text.get(name_start..).unwrap_or_default();
+        let len = rest
+            .iter()
+            .position(|&b| is_fteqcc_whitespace(b) || STRING_MACRO_STOPS.contains(&b))
+            .unwrap_or(rest.len());
+        let name = rest.get(..len).unwrap_or_default().to_vec();
+        let name_end = name_start.saturating_add(len);
+        let mut value = None;
+        for _ in 0..FTEQCC_MAX_STRING_MACRO_LOOKUPS {
+            match (self.macros)(value.as_deref().unwrap_or(&name)) {
+                Some(text) => value = Some(text),
+                None => break,
+            }
+        }
+        let shown = String::from_utf8_lossy(&name).into_owned();
+        let Some(mut value) = value else {
+            if !name.is_empty() {
+                self.error(
+                    Code::W0122,
+                    format!("Unable to expand string macro {shown}"),
+                    Span::new(hash, name_end),
+                );
+            }
+            self.bump(1);
+            self.write_code(contents, u32::from(b'#'), output, hash);
+            return;
+        };
+        self.error(
+            Code::W0122,
+            format!("Macro {shown} expansion in string"),
+            Span::new(hash, name_end),
+        );
+        let total = self.joined.saturating_add(contents.len());
+        if total.saturating_add(value.len()) >= FTEQCC_MAX_STRING {
+            self.error(Code::E0502, STRING_TOO_LONG, Span::new(hash, name_end));
+        } else {
+            while value.last().is_some_and(|&b| b == b' ' || b == b'\t') {
+                value.pop();
+            }
+            contents.extend_from_slice(&value);
+        }
+        self.pos = name_end;
+    }
+
     fn character_in_string(&mut self, contents: &mut Vec<u8>, b: u8, bronze: u32, output: Output) {
         let sequence = match output {
             Output::Quake => None,
@@ -312,7 +385,12 @@ impl Lexer<'_> {
             b'=' => 0xe081,
             b')' => 0xe082,
             b'+' => 0xe083,
-            b'0'..=b'9' => 0xe012_u32.wrapping_add(u32::from(c.wrapping_sub(b'0'))),
+            // "yellow numbers" under `flag_qcfuncs`, on by default; C's octal escape without it
+            // (FTEF-12.12).
+            b'0'..=b'9' if self.flags.has(crate::LexFlag::QcFuncs) => {
+                0xe012_u32.wrapping_add(u32::from(c.wrapping_sub(b'0')))
+            }
+            b'0'..=b'9' => self.fte_octal(c, escape),
             b'{' => self.fte_braced(escape),
             b'u' => self.fte_hex(escape, 4),
             b'U' => self.fte_hex(escape, 8),
@@ -351,6 +429,33 @@ impl Lexer<'_> {
                 u32::from(c)
             }
         }
+    }
+
+    /// C's octal escape whose first digit `first` is read, at `escape`, as FTEQCC reads it without
+    /// `qcfuncs` (FTEF-12.12): `8` or `9` first is "Bad character code \\%c", and up to two more
+    /// octal digits follow.
+    fn fte_octal(&mut self, first: u8, escape: usize) -> u32 {
+        if first >= b'8' {
+            self.error(
+                Code::E0103,
+                format!("Bad character code \\{}", char::from(first)),
+                Span::new(escape, self.pos),
+            );
+            return 0;
+        }
+        let mut code = u32::from(first.wrapping_sub(b'0'));
+        for _ in 0..2 {
+            match self.peek(0) {
+                Some(d @ b'0'..=b'7') => {
+                    code = code
+                        .wrapping_mul(8)
+                        .wrapping_add(u32::from(d.wrapping_sub(b'0')));
+                    self.bump(1);
+                }
+                _ => break,
+            }
+        }
+        code
     }
 
     /// `\{n}` or `\{xN}`, the `{` read: digits up to the `}`; any other byte is "Bad character

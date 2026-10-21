@@ -14,6 +14,7 @@
 //! against id's `qcc` and the tests here check them.
 
 mod atof;
+mod flags;
 mod fte_string;
 mod lines;
 
@@ -21,6 +22,7 @@ mod lines;
 mod tests;
 
 pub use atof::atof;
+pub use flags::{LexFlag, LexFlags};
 pub use fte_string::{FTEQCC_MAX_STRING, STRING_TOO_LONG, fteqcc_string_bytes};
 pub use lines::LineIndex;
 // The diagnostic vocabulary lives in `qc-diag`; re-exported here so code written against
@@ -201,6 +203,16 @@ pub enum Punct {
     ColonColon,
     /// `..` (FTEQCC, FTEF-18.18, FTEF-18.10): a range, `[++ a .. b]` and `case a .. b:`.
     DotDot,
+    /// `<=>` (FTEQCC, FTEF-13.24): a three-way comparison.
+    Spaceship,
+    /// `*^` (FTEQCC, FTEF-13.24): a power; `**` under FTEQCC's `ssp` flag.
+    StarCaret,
+    /// `><` (FTEQCC, FTEF-13.24): a vector cross product.
+    Cross,
+    /// `@` (FTEQCC, FTEF-13.24).
+    At,
+    /// `^^` (FTEQCC, FTEF-13.24): a logical exclusive or.
+    CaretCaret,
 }
 
 impl Punct {
@@ -277,6 +289,69 @@ impl Punct {
         Self::DotDot,
     ];
 
+    /// FTEQCC's `pr_punctuation[]`, every punctuation token in the order `QCC_PR_LexPunctuation`
+    /// tries them, the first that matches the input winning (FTEF-13.24): "longer symbols must
+    /// be before a shorter partial match". `->`, `(+)` and `(-)` are read as `.`, `|=` and `&~=`
+    /// by `pr_punctuationremap[]`, which the parser does (FTE-19.2).
+    pub const FTEQCC_TABLE: [Self; 56] = [
+        Self::AndAnd,
+        Self::OrOr,
+        Self::Spaceship,
+        Self::LessEq,
+        Self::GreaterEq,
+        Self::EqEq,
+        Self::NotEq,
+        Self::SlashEq,
+        Self::StarEq,
+        Self::PlusEq,
+        Self::MinusEq,
+        Self::SetBits,
+        Self::ClearBits,
+        Self::OrEq,
+        Self::AndNotEq,
+        Self::AndEq,
+        Self::PlusPlus,
+        Self::MinusMinus,
+        Self::Arrow,
+        Self::CaretEq,
+        Self::ColonColon,
+        Self::Semicolon,
+        Self::Comma,
+        Self::Not,
+        Self::StarCaret,
+        Self::Star,
+        Self::Slash,
+        Self::LParen,
+        Self::RParen,
+        Self::Minus,
+        Self::Plus,
+        Self::Eq,
+        Self::LBracket,
+        Self::RBracket,
+        Self::LBrace,
+        Self::RBrace,
+        Self::Ellipsis,
+        Self::DotDot,
+        Self::Dot,
+        Self::Cross,
+        Self::ShlEq,
+        Self::Shl,
+        Self::Less,
+        Self::ShrEq,
+        Self::Shr,
+        Self::Greater,
+        Self::Question,
+        Self::Hash,
+        Self::At,
+        Self::And,
+        Self::Or,
+        Self::Percent,
+        Self::CaretCaret,
+        Self::Caret,
+        Self::Tilde,
+        Self::Colon,
+    ];
+
     /// The token's text.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -332,6 +407,11 @@ impl Punct {
             Self::ShlEq => "<<=",
             Self::ColonColon => "::",
             Self::DotDot => "..",
+            Self::Spaceship => "<=>",
+            Self::StarCaret => "*^",
+            Self::Cross => "><",
+            Self::At => "@",
+            Self::CaretCaret => "^^",
         }
     }
 }
@@ -427,6 +507,19 @@ pub fn lex(source: &[u8]) -> Lexed {
 /// other rule is the same.
 #[must_use]
 pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
+    lex_flagged(source, dialect, LexFlags::default(), &|_| None)
+}
+
+/// [`lex_with`] with FTEQCC's compiler flags `flags` (FTEF-12.12), which an FTEQCC dialect reads;
+/// the vanilla dialect reads none. Under `macroinstrings`, `macros` gives the text of the macro a
+/// name names, `None` when there is none.
+#[must_use]
+pub fn lex_flagged(
+    source: &[u8],
+    dialect: Dialect,
+    flags: LexFlags,
+    macros: &dyn Fn(&[u8]) -> Option<Vec<u8>>,
+) -> Lexed {
     let text = source
         .iter()
         .position(|&b| b == 0)
@@ -436,6 +529,8 @@ pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
         text,
         pos: 0,
         dialect,
+        flags,
+        macros,
         out: Lexed::default(),
         joined: 0,
     };
@@ -514,6 +609,42 @@ fn f64_to_i64(value: f64) -> i64 {
     value
 }
 
+/// C's `atoi` as an LP64 host reads it (FTEF-14.55): white space, a sign and decimal digits,
+/// held at `long`'s range, the low 32 bits kept.
+fn c_atoi(text: &[u8]) -> i32 {
+    let mut at = text
+        .iter()
+        .take_while(|&&b| matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'))
+        .count();
+    let negative = match text.get(at) {
+        Some(b'-') => {
+            at = at.saturating_add(1);
+            true
+        }
+        Some(b'+') => {
+            at = at.saturating_add(1);
+            false
+        }
+        _ => false,
+    };
+    let mut value = 0_i64;
+    for &b in text
+        .get(at..)
+        .unwrap_or_default()
+        .iter()
+        .take_while(|b| b.is_ascii_digit())
+    {
+        let digit = i64::from(b.wrapping_sub(b'0'));
+        value = value.saturating_mul(10).saturating_add(if negative {
+            digit.wrapping_neg()
+        } else {
+            digit
+        });
+    }
+    let [a, b, c, d, ..] = value.to_le_bytes();
+    i32::from_le_bytes([a, b, c, d])
+}
+
 const fn is_name_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
@@ -529,6 +660,10 @@ struct Lexer<'a> {
     text: &'a [u8],
     pos: usize,
     dialect: Dialect,
+    /// FTEQCC's compiler flags the lexer reads (FTEF-12.12).
+    flags: LexFlags,
+    /// The text of the macro a name names, for `macroinstrings` (FTEF-12.12).
+    macros: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
     out: Lexed,
     /// Under FTEQCC, the bytes of the string parts read together so far, which
     /// `QCC_PR_LexString` joins into one token (FTEF-13.20).
@@ -620,7 +755,21 @@ impl Lexer<'_> {
                 .has_fteqcc_extensions()
                 .then(|| self.fte_string_prefix(joins))
                 .flatten();
-            if let Some(prefix) = fte_string {
+            let qccx_join = self.qccx() && joins && c == b':';
+            let qccx_immediate = self.qccx()
+                && c == b'%'
+                && self
+                    .peek(1)
+                    .is_some_and(|b| b == b'-' || b.is_ascii_digit());
+            if qccx_join {
+                // FTEF-12.12: `if (flag_qccx && *pr_file_p == ':') { pr_file_p++;
+                // pr_token[len++] = 0; continue; }`, a NUL in the string being read.
+                self.bump(1);
+                self.joined = self.joined.saturating_add(1);
+                self.push(TokenKind::String(vec![0]), start);
+            } else if qccx_immediate {
+                self.denormal_immediate();
+            } else if let Some(prefix) = fte_string {
                 self.fte_string(prefix, joins);
             } else if c == b'"' {
                 self.string();
@@ -1007,7 +1156,9 @@ impl Lexer<'_> {
                     }
                 }
                 b'i' | b'I' | b'u' | b'U' | b'l' | b'L' => {
-                    let long = self.integer_suffix(c);
+                    // `if (islong >= (flag_ILP32?2:1))`: 64 bits (FTEF-12.12).
+                    let ls = self.integer_suffix(c);
+                    let long = ls >= if self.flags.has(LexFlag::Ilp32) { 2 } else { 1 };
                     // `pr_immediate._int = num;`, then the warning unless `_int` is negative.
                     let [a, b, c, d, ..] = signed.to_le_bytes();
                     let int = i32::from_le_bytes([a, b, c, d]);
@@ -1027,12 +1178,26 @@ impl Lexer<'_> {
         } else {
             signed
         };
-        // `(float)(num*sign)`: the whole number rounded to the nearest float.
-        let value = i64_to_f32(signed);
         let suffixed = self
             .bytes(Span::new(digits, self.pos))
             .last()
             .is_some_and(|b| !b.is_ascii_hexdigit());
+        // FTEF-12.12: with `assumeint` a number with no suffix is an integer, whose value this
+        // profile keeps as a float (FTEF-13.5), with no float's warning; with `qccx` a hex one
+        // is `goto qccxhex;`, an `int` whose bits are the float.
+        if !suffixed && self.flags.has(LexFlag::AssumeInt) {
+            return i64_to_f32(signed);
+        }
+        if !suffixed && base == 16 && self.flags.has(LexFlag::Qccx) {
+            let [a, b, c, d, ..] = signed.to_le_bytes();
+            let int = i32::from_le_bytes([a, b, c, d]);
+            if i64::from(int) != signed && int >= 0 {
+                self.overflow(start, "numerical overflow".to_owned());
+            }
+            return f32::from_bits(int.cast_unsigned());
+        }
+        // `(float)(num*sign)`: the whole number rounded to the nearest float.
+        let value = i64_to_f32(signed);
         // `if ((longlong)pr_immediate._float != (longlong)num && base == 16)` for a number with
         // no suffix: "numerical overflow %lld will be rounded to %f".
         if base == 16 && !suffixed && f32_to_i64(value) != signed {
@@ -1075,26 +1240,29 @@ impl Lexer<'_> {
 
     /// The integer suffix of an FTEQCC number, whose first byte `c` is next: `i` or `u`, then
     /// an optional `l` or `ll`; or `l` or `ll`, then an optional `i` or `u` (FTEF-3.1).
-    /// Returns whether it has an `l`, which makes the literal 64 bits wide
-    /// (`islong >= (flag_ILP32?2:1)`, FTEF-13.19).
-    fn integer_suffix(&mut self, c: u8) -> bool {
+    /// Returns how many `l`s it has, FTEQCC's `islong` (`islong >= (flag_ILP32?2:1)`, FTEF-13.19,
+    /// FTEF-12.12).
+    fn integer_suffix(&mut self, c: u8) -> u8 {
         self.bump(1);
         if matches!(c, b'l' | b'L') {
+            let mut ls = 1;
             if self.peek(0) == Some(c) {
                 self.bump(1);
+                ls = 2;
             }
             if matches!(self.peek(0), Some(b'i' | b'I' | b'u' | b'U')) {
                 self.bump(1);
             }
-            true
+            ls
         } else if let Some(l @ (b'l' | b'L')) = self.peek(0) {
             self.bump(1);
             if self.peek(0) == Some(l) {
                 self.bump(1);
+                return 2;
             }
-            true
+            1
         } else {
-            false
+            0
         }
     }
 
@@ -1183,9 +1351,25 @@ impl Lexer<'_> {
                 None => (0xfffd, 2),
             };
             self.bump(skip);
+            if self.qccx_char() {
+                // FTEF-12.12: `pr_immediate._int` keeps the code, the float its bits.
+                self.denormal(start, "char constant: denormal");
+                self.push(TokenKind::Float(f32::from_bits(code)), start);
+                return true;
+            }
             code
         } else if second == Some(b'\'') {
             self.bump(3);
+            if self.qccx_char() {
+                // FTEF-12.12: `pr_immediate._int = pr_file_p[0];`, a signed `char`.
+                self.denormal(start, "char constant: denormal");
+                let bits = i32::from(i8::from_le_bytes([first]));
+                self.push(
+                    TokenKind::Float(f32::from_bits(bits.cast_unsigned())),
+                    start,
+                );
+                return true;
+            }
             u32::from(first)
         } else {
             return false;
@@ -1193,6 +1377,51 @@ impl Lexer<'_> {
         let value = code.to_string().parse::<f32>().unwrap_or(f32::MAX);
         self.push(TokenKind::Float(value), start);
         true
+    }
+
+    /// Whether FTEQCC's `qccx` flag is on, in an FTEQCC dialect (FTEF-12.12), and reads a character
+    /// constant, a `%N` or a `:` in a string as QCCX does.
+    const fn qccx(&self) -> bool {
+        self.dialect.has_fteqcc_extensions() && self.flags.has(LexFlag::Qccx)
+    }
+
+    /// Whether a character constant is QCCX's float of an `int`'s bits: `flag_qccx` without
+    /// `flag_assume_integer`, which makes it an integer first (FTEF-12.12).
+    const fn qccx_char(&self) -> bool {
+        self.qccx() && !self.flags.has(LexFlag::AssumeInt)
+    }
+
+    /// FTEQCC's F313 warning at the token from `start` (FTEF-12.12).
+    fn denormal(&mut self, start: usize, message: &str) {
+        self.error(Code::W0121, message, Span::new(start, self.pos));
+    }
+
+    /// QCCX's `%N`, at its `%` under the `qccx` flag (FTEF-12.12): "denormalized immediate", and
+    /// a float whose bits are the `int` `QCC_PR_LexInteger` reads after the `%`.
+    fn denormal_immediate(&mut self) {
+        let start = self.pos;
+        self.bump(1);
+        let digits = self.pos;
+        if self.peek(0) == Some(b'0') && matches!(self.peek(1), Some(b'x' | b'X')) {
+            self.bump(2);
+        }
+        // `do { ... } while (...)`: the first byte is taken whatever it is.
+        self.bump(1);
+        while self.peek(0).is_some_and(|b| {
+            b.is_ascii_digit()
+                || (b'a'..=b'f').contains(&b)
+                || (b == b'.' && self.peek(1) != Some(b'.'))
+        }) {
+            self.bump(1);
+        }
+        // `return atoi (pr_token);`, which reads a hex number's `0` only.
+        let text = self.bytes(Span::new(digits, self.pos)).to_vec();
+        let bits = c_atoi(&text);
+        self.denormal(start, "denormalized immediate");
+        self.push(
+            TokenKind::Float(f32::from_bits(bits.cast_unsigned())),
+            start,
+        );
     }
 
     /// A name (QC-3.1).
@@ -1469,18 +1698,26 @@ impl Lexer<'_> {
         let start = self.pos;
         let rest = self.text.get(start..).unwrap_or_default();
         let fteqcc = self.dialect.has_fteqcc_extensions();
-        let found = fteqcc
-            .then(|| {
-                Punct::FTEQCC
-                    .into_iter()
-                    .find(|p| rest.starts_with(p.as_str().as_bytes()))
-            })
-            .flatten()
-            .or_else(|| {
-                Punct::ALL
-                    .into_iter()
-                    .find(|p| rest.starts_with(p.as_str().as_bytes()))
-            });
+        if fteqcc && self.flags.has(LexFlag::Ssp) && rest.starts_with(b"**") {
+            // FTEF-12.12: `strcpy (pr_token, "*^");` with F321's warning.
+            self.bump(2);
+            self.error(
+                Code::W0118,
+                "** is unsafe around pointers, use *^ instead.",
+                Span::new(start, self.pos),
+            );
+            self.push(TokenKind::Punct(Punct::StarCaret), start);
+            return;
+        }
+        let table: &[Punct] = if fteqcc {
+            &Punct::FTEQCC_TABLE
+        } else {
+            &Punct::ALL
+        };
+        let found = table
+            .iter()
+            .copied()
+            .find(|p| rest.starts_with(p.as_str().as_bytes()));
         if let Some(punct) = found {
             self.bump(punct.as_str().len());
             self.push(TokenKind::Punct(punct), start);
