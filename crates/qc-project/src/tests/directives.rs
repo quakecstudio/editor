@@ -275,7 +275,7 @@ fn if_nesting_limit() {
     assert_eq!(brought(&body(64), &files), ["no.qc"]);
 }
 
-// spec FTEF-14.11: the graph of an FTEQCC module reads #if as FTEQCC does, a vanilla one with C's precedence
+// spec FTEF-14.33: the graph of an FTEQCC module reads #if as FTEQCC does, a vanilla one with C's precedence
 #[test]
 fn if_reads_in_the_module_dialect() {
     let files = [("yes.qc", "")];
