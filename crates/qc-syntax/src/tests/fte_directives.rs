@@ -172,6 +172,46 @@ fn comments_and_strings_on_a_directive_line() {
     assert_same_code(&cases);
 }
 
+// spec FTEF-14.51: an `#elif` ends where its test stops reading, as the preprocessor reads one
+// after a side it skipped, and its line goes on as `QCC_PR_SkipToEndOfLine` reads it
+#[test]
+fn an_elif_ends_after_its_test() {
+    let cases = [
+        "#if 0\n#elif (1/*)\n*/ float y;\n#endif\n",
+        "#if 0\n#elifndef Q // \\\nfloat y;\n#endif\nfloat z;\n",
+    ];
+    assert_eq!(fte(cases[0]), ["#if 0", "#elif (1/*)", "#endif"]);
+    assert_eq!(
+        fte(cases[1]),
+        ["#if 0", "#elifndef Q // \\\nfloat y;", "#endif"]
+    );
+    assert_same_code(&cases);
+}
+
+// spec FTEF-14.51: the preprocessor reads a directive's text as bytes, so a lexical error in
+// it is none, and one after it is the new lexing's
+#[test]
+fn a_directive_s_text_has_no_lexical_error() {
+    for source in [
+        "#define X \"a\nfloat y;\n",
+        "#pragma x \"abc\nfloat y;\n",
+        "#if 1\"a\nfloat y;\n#endif\n",
+    ] {
+        let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+        assert_eq!(super::errors(&parsed), vec![], "{source:?}");
+    }
+    // The first lexing's string `"a b` and its error stand across the node's end at 5, and the
+    // new lexing's `"c` is unclosed.
+    let parsed = parse_with(b"#if\"a b\"c\n", Dialect::Fteqcc);
+    let lexical: Vec<_> = parsed
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code == crate::Code::E0102)
+        .map(|d| d.span.start)
+        .collect();
+    assert_eq!(lexical, [7]);
+}
+
 // spec FTEF-14.51: a node ends after the operand the directive reads: a `#define`'s body,
 // which ends at a `//` and goes on past a `/* */` comment and a `\` (FTEF-14.24), and an `#if`
 // expression (FTEF-14.33)

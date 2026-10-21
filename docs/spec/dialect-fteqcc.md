@@ -1113,20 +1113,24 @@ profile the preprocessor reads them as FTEQCC does.
   after spaces and tabs on its first line starts one too, and it ends where the preprocessor
   reads on after it with nothing run: at the end of its line as `QCC_PR_SkipToEndOfLine` ends it
   (FTEF-14.35), after the operand the directive reads, a `#define`'s body (FTEF-14.24) or an
-  `#if` expression (FTEF-14.33) among them; at a `#pragma`'s line break (FTEF-14.43); after the
-  word of an `#if`, `#ifdef` or `#ifndef` with no white space after its name (`#if(1)`,
-  FTEF-14.36); and at an `#eof`'s line break, as FTEQCC reads nothing after it. So `#undef X //
-  c \`, a line break and `float y;` is one node of two lines, and `#pragma p // c \` ends at its
-  line break. A `#` after a `/* */` comment on its line or in the middle of a line, and a `#`
-  whose name matches no directive (`#foo`), are read as code (FTE-23.10). Where a token, or a
-  comment or skipped bytes, of the file as lexed from its start stands across the end, the text
-  from the end is lexed again, as the preprocessor reads on there (FTEF-14.22), so `#if"a b"`
-  is a node `#if"a` and the code ` b"`. The text an `#if` or `#else` skips, an `#includelist`'s
-  list (FTEF-14.41) and what `#eof`, `#package` and `DONT_COMPILE_THIS_FILE` leave unread are
-  parsed as code. The vanilla dialect keeps QC-9.1's node: a `#` first on its line before a
-  name on that line, to the first line break after it; so does the semantic model's parse of
-  a rendering of the preprocessor's output under every dialect, whose directives have been run
-  (`qc_syntax::DirectiveLines::ToLineBreak`).
+  `#if` expression (FTEF-14.33) among them, and for an `#elif`, `#elifdef` or `#elifndef` after
+  its test, as `QCC_PR_FalsePreProcessorIf` reads one after the side before it was skipped
+  (FTEF-14.37), so `#elif (1/*)` ends at its `)`; at a `#pragma`'s line break (FTEF-14.43);
+  after the word of an `#if`, `#ifdef` or `#ifndef` with no white space after its name
+  (`#if(1)`, FTEF-14.36); and at an `#eof`'s line break, as FTEQCC reads nothing after it. So
+  `#undef X // c \`, a line break and `float y;` is one node of two lines, and `#pragma p // c
+  \` ends at its line break. A `#` after a `/* */` comment on its line or in the middle of a
+  line, and a `#` whose name matches no directive (`#foo`), are read as code (FTE-23.10).
+  Unless only white space stands between the end and the token before it, the text from the end
+  is lexed again as the preprocessor lexes it where it reads on (`qc_preproc::relex_from`,
+  FTEF-14.22), so `#if"a b"` is a node `#if"a` and the code ` b"`. A lexical error the first
+  lexing found in a node's text, as the unclosed string of `#define X "a`, is reported by
+  neither, as the preprocessor reads that text as bytes. The text an `#if` or `#else` skips, an
+  `#includelist`'s list (FTEF-14.41) and what `#eof`, `#package` and `DONT_COMPILE_THIS_FILE`
+  leave unread are parsed as code. The vanilla dialect keeps QC-9.1's node: a `#` first on its
+  line before a name on that line, to the first line break after it; so does the semantic
+  model's parse of a rendering of the preprocessor's output under every dialect, whose
+  directives have been run (`qc_syntax::DirectiveLines::ToLineBreak`).
 
 ## FTEF-15 Declarations
 

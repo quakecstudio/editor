@@ -352,56 +352,22 @@ impl TokenStream {
     /// that no token or comment of the text as first lexed stands across it, and its tokens
     /// and lexical errors are those of the text from there. The text is lexed again only as far
     /// as a token of the first lexing that the new lexing reaches as that one did
-    /// ([`relex_window`]), so a file of many such uses is not lexed again whole for each.
+    /// ([`Relexed`]), so a file of many such uses is not lexed again whole for each.
     /// Returns how many bytes were lexed again.
     fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) -> usize {
         let next = self.tokens.partition_point(|t| t.span.start < offset);
-        let before = next.checked_sub(1).and_then(|last| self.tokens.get(last));
-        let gap_start = before.map_or(0, |t| t.span.end);
-        let clean = gap_start <= offset
-            && text
-                .get(gap_start..offset)
-                .is_some_and(|gap| gap.iter().all(|&b| qc_lexer::is_whitespace(b)));
         // The tokens from `read` on are those not read yet, or read again from here.
         let read = self.pos.min(next);
         self.pos = next;
-        if clean {
+        let Some(relexed) = Relexed::from(&self.tokens, text, offset, dialect) else {
             return 0;
-        }
-        let window = (next..self.tokens.len())
-            .take(RESYNC_TRIES)
-            .find_map(|kept| {
-                Some(kept).zip(Self::relex_window(
-                    &self.tokens,
-                    text,
-                    offset,
-                    kept,
-                    dialect,
-                ))
-            });
-        let (kept, rest) = match window {
-            Some((kept, lexed)) => (kept, lexed),
-            None => (
-                self.tokens.len(),
-                lex_from(text, offset..text.len(), dialect),
-            ),
         };
-        let resumed = self.tokens.get(kept).map_or(usize::MAX, |t| t.span.start);
-        let shift = |span: Span| {
-            Span::new(
-                span.start.saturating_add(offset),
-                span.end.saturating_add(offset),
-            )
-        };
-        let tokens: Vec<Token> = rest
-            .tokens
-            .into_iter()
-            .map(|mut token| {
-                token.span = shift(token.span);
-                token.kind = moved_frames(token.kind, shift);
-                token
-            })
-            .collect();
+        let Relexed {
+            kept,
+            resumed,
+            tokens,
+            diagnostics,
+        } = relexed;
         // The new tokens go in the places before `kept` that hold tokens read or replaced, so
         // the tokens after them do not move; places left over between hold a token of no text
         // at `offset`, which keeps the tokens in order and is never read.
@@ -424,33 +390,76 @@ impl TokenStream {
                 self.tokens.splice(next..kept, tokens);
             }
         }
-        // The first lexing's errors before `offset` and from the kept token on stand; those
-        // between are the new lexing's.
-        let old = std::mem::take(&mut self.diagnostics);
-        let after: Vec<_> = old
-            .iter()
-            .filter(|d| d.span.start >= resumed)
-            .cloned()
-            .collect();
-        self.diagnostics = old.into_iter().filter(|d| d.span.start < offset).collect();
-        self.diagnostics
-            .extend(rest.diagnostics.into_iter().map(|mut d| {
-                d.span = shift(d.span);
-                d
-            }));
-        self.diagnostics.extend(after);
+        merge_errors(&mut self.diagnostics, offset, resumed, diagnostics);
         resumed.min(text.len()).saturating_sub(offset)
     }
+}
 
-    /// The text from `offset` to the token `kept` of `tokens`, the first lexing, lexed again, when lexing
-    /// the whole text from `offset` would reach that token as the first lexing did, so the
-    /// tokens from it on stand: the new tokens end before it with only white space after them,
-    /// none is a string (which may join the next, QC-13) or a `#` that may start a directive
-    /// (whose `#warning` text is read raw, FTEF-14.38), nor is the kept token a string. A
-    /// lexical error then needs no check of its own: one in a token ends with the token, and
-    /// one outside any token (an unclosed comment, a stray byte) is no white space after the
-    /// last token, so none runs on into the kept token.
-    fn relex_window(
+/// The tokens and lexical errors of a text from a byte where reading goes on, lexed again as
+/// [`TokenStream::resume_at`] lexes them: in place of the tokens of the first lexing from the
+/// one that ends after that byte up to the token `kept`, which starts at `resumed`.
+struct Relexed {
+    kept: usize,
+    resumed: usize,
+    tokens: Vec<Token>,
+    diagnostics: Vec<qc_lexer::Diagnostic>,
+}
+
+impl Relexed {
+    /// The text from `offset` of `text`, whose first lexing under `dialect` is `tokens`,
+    /// lexed again (FTEF-14.22): `None` when only white space stands between the token before
+    /// `offset` and `offset`, as then no token or comment of the first lexing stands across
+    /// it. Otherwise only as far as a token of the first lexing that the new lexing reaches as
+    /// that one did ([`Relexed::window`]), so a text of many such places is not lexed again
+    /// whole for each.
+    fn from(tokens: &[Token], text: &[u8], offset: usize, dialect: Dialect) -> Option<Self> {
+        let next = tokens.partition_point(|t| t.span.start < offset);
+        let before = next.checked_sub(1).and_then(|last| tokens.get(last));
+        let gap_start = before.map_or(0, |t| t.span.end);
+        let clean = gap_start <= offset
+            && text
+                .get(gap_start..offset)
+                .is_some_and(|gap| gap.iter().all(|&b| qc_lexer::is_whitespace(b)));
+        if clean {
+            return None;
+        }
+        let window = (next..tokens.len())
+            .take(RESYNC_TRIES)
+            .find_map(|kept| Some(kept).zip(Self::window(tokens, text, offset, kept, dialect)));
+        let (kept, rest) =
+            window.unwrap_or_else(|| (tokens.len(), lex_from(text, offset..text.len(), dialect)));
+        let shift = |span: Span| {
+            Span::new(
+                span.start.saturating_add(offset),
+                span.end.saturating_add(offset),
+            )
+        };
+        let moved = rest.tokens.into_iter().map(|mut token| {
+            token.span = shift(token.span);
+            token.kind = moved_frames(token.kind, shift);
+            token
+        });
+        let diagnostics = rest.diagnostics.into_iter().map(|mut d| {
+            d.span = shift(d.span);
+            d
+        });
+        Some(Self {
+            kept,
+            resumed: tokens.get(kept).map_or(usize::MAX, |t| t.span.start),
+            tokens: moved.collect(),
+            diagnostics: diagnostics.collect(),
+        })
+    }
+
+    /// The text from `offset` to the token `kept` of `tokens`, the first lexing, lexed again,
+    /// when lexing the whole text from `offset` would reach that token as the first lexing did,
+    /// so the tokens from it on stand: the new tokens end before it with only white space after
+    /// them, none is a string (which may join the next, QC-13) or a `#` that may start a
+    /// directive (whose `#warning` text is read raw, FTEF-14.38), nor is the kept token a
+    /// string. A lexical error then needs no check of its own: one in a token ends with the
+    /// token, and one outside any token (an unclosed comment, a stray byte) is no white space
+    /// after the last token, so none runs on into the kept token.
+    fn window(
         tokens: &[Token],
         text: &[u8],
         offset: usize,
@@ -476,6 +485,27 @@ impl TokenStream {
                 .any(|t| t.kind == TokenKind::Punct(Punct::Hash) && t.line_start);
         lands.then_some(lexed)
     }
+}
+
+/// The lexical errors after the text from `offset` was lexed again up to the byte `resumed`
+/// ([`Relexed`]): the first lexing's errors before `offset` and from `resumed` on stand; those
+/// between are `again`, the new lexing's.
+fn merge_errors(
+    errors: &mut Vec<qc_lexer::Diagnostic>,
+    offset: usize,
+    resumed: usize,
+    again: Vec<qc_lexer::Diagnostic>,
+) {
+    let mut after = Vec::new();
+    for d in std::mem::take(errors) {
+        if d.span.start < offset {
+            errors.push(d);
+        } else if d.span.start >= resumed {
+            after.push(d);
+        }
+    }
+    errors.extend(again);
+    errors.extend(after);
 }
 
 /// One file being read: listed in `progs.src` or included.
