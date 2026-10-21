@@ -536,10 +536,11 @@ fn gmqcc_includes_are_found_beside_the_including_file_first() {
     assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/c.qh"]);
     let graph = listed(&files[..2], gmqcc);
     assert_eq!(diags(&graph), ["E0111 src/x/b.qh:1"]);
+    // The message shows the path as the host writes it.
+    let message = graph.diagnostics[0].message.replace('\\', "/");
     assert!(
-        graph.diagnostics[0]
-            .message
-            .starts_with("cannot include src/x/c.qh")
+        message.starts_with("cannot include src/x/c.qh"),
+        "{message}"
     );
 }
 
