@@ -388,6 +388,8 @@ issues:
   - MVP-2
   - OPEN-5
   depends:
+  - P3-31
+  - P3-32
   - P5-05
   - P3-22
   - P3-23
@@ -607,3 +609,43 @@ issues:
   - Every id1 map and the rerelease start map pass within the recorded tolerances; a deliberate lighting bug fails
   verify:
   - Nightly job on all three OSes
+- key: P3-31
+  title: Complete FTEQCC vector and class members after a member access
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-7
+  - GOAL-1
+  summary: |
+    Found while shipping the language server (P2-14): after `.` or `->` completion offers the module's fields only. Under FTEQCC a vector's `.x`, `.y` and `.z` (FTE-9.1) and a class's members (FTEF-17) may follow too, but which depends on the type of what the access is made on, which the semantic model does not compute yet.
+  depends:
+  - P2-14
+  deliverable:
+  - 'crates/qc-ide: completion after a member access under an FTEQCC profile offers the members of the base''s type: `x`, `y` and `z` for a vector, the members of a class and its parents, and the fields for an entity'
+  acceptance:
+  - 'Tests citing FTE-9.1 and FTEF-17: completion after `v.` for a vector `v`, after `this.` in a class method, and after `self.` for an entity'
+  verify:
+  - cargo test -p qc-ide
+- key: P3-32
+  title: Read a module's files again when an include line is typed
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-7
+  - LANG-4
+  summary: |
+    Found while shipping the language server (P2-14): the analysis host builds each module's file graph when the project opens, again when a `quakec.toml` or `.src` file changes, and when the language server sees a save. An `#include` line added while typing in a `.qc` file brings in its file only after the next save, until when the names it declares are unknown.
+  depends:
+  - P2-14
+  deliverable:
+  - 'crates/qc-ide: an edit to an open file that adds, removes or changes an `#include` directive (PRJ-5) reads the module''s file graph again, keeping the open files'' text, so the included file''s names resolve without a save'
+  acceptance:
+  - 'A test citing PRJ-5.1: typing `#include "b.qh"` in an open file makes a name `b.qh` declares resolve, and deleting the line makes it unknown again, with no save between'
+  verify:
+  - cargo test -p qc-ide

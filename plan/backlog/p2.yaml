@@ -395,10 +395,12 @@ issues:
   - P0-15
   deliverable:
   - 'apps/lsp (binary name from ADR-0006): definition, references, rename, hover docs (including engine-target docs), completion, semantic tokens, inlay hints, diagnostics'
+  - 'crates/qc-ide (L3): the same features with no protocol, in byte offsets and paths, over a host that keeps one qc-sema database per module, so the server and the desktop editor share them (the design doc: "the LSP binary is the same crates behind a different front end"), as rust-analyzer splits its ide crate from its server'
   acceptance:
   - LSP integration tests drive each request against the rerelease codebase with expected results
   verify:
   - cargo test in apps/lsp
+  - cargo xtask lsp-corpus on the rerelease in the corpus CI job, against docs/spec/vectors/lsp/rerelease.txt
 - key: P2-15
   title: Write the tree-sitter grammar
   labels:
@@ -1664,6 +1666,8 @@ issues:
   - P2-116
   - P2-117
   - P2-118
+  - P2-119
+  - P2-120
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2361,3 +2365,44 @@ issues:
   verify:
   - cargo test -p qc-sema -p qc-syntax
   - cargo xtask oracles builtins
+- key: P2-119
+  title: Pass a module's defines to the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-10
+  summary: |
+    Found while shipping the language server (P2-14): `qc_project::Module::defines` (PRJ-2.6), which the project graph defines before the module's first file (PRJ-5.4), never reach the semantic model, since `qc_sema::ModuleInput` has no defines and `Db::analyze_module` preprocesses with none. A module whose `quakec.toml` gives `defines` is resolved, and its diagnostics reported in the editor and the language server, as if the build defined nothing, while its file graph was read with them.
+  environment: |
+    main at 84965ed; found by reading the code (crates/qc-sema/src/expand.rs `ModuleInput`, which has no defines), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qc-sema: `ModuleInput` carries the module''s defines (`ModuleInput::from_module` takes them from `Module::defines`), and `Db::analyze_module` defines them before the first file as the graph does (PRJ-5.4)'
+  acceptance:
+  - 'A test citing PRJ-5.4: a module whose project file defines `X` resolves the `#ifdef X` side of a conditional, and the same module with no defines the other side'
+  verify:
+  - cargo test -p qc-sema -p qc-ide
+- key: P2-120
+  title: Log the language server's crashes
+  labels:
+  - apps
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - QA-7
+  summary: |
+    Found while shipping the language server (P2-14): `quakec-lsp` installs no `qs-log` subscriber, so a crash in it leaves no record. `qs_log::LogConfig::for_app` writes `quakec-studio.log`, which the IDE writes too, and two processes rotating one file would lose events; the server needs a log file of its own in the same directory.
+  depends:
+  - P2-14
+  deliverable:
+  - 'crates/qs-log: a `LogConfig` names its log file, `quakec-studio.log` by default'
+  - 'apps/lsp: `quakec-lsp` initialises `qs-log` with `quakec-lsp.log` in `qs_paths::AppDirs::logs()` at startup, so a panic writes a crash record (QA-7); a failure to initialise logging does not stop the server'
+  acceptance:
+  - A qs-log test that a config with another file name writes and rotates that file, and an apps/lsp test of the config the server builds
+  verify:
+  - cargo test -p qs-log -p quakec-lsp
