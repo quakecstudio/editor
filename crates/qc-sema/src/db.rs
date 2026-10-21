@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use qc_diag::Diagnostic;
-use qc_syntax::Parse;
+use qc_syntax::{DirectiveLines, Parse};
 
 use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
 use crate::lower::{FileDecls, lower_file};
@@ -411,7 +411,8 @@ impl Db {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_with(text, self.dialect);
+        // The rendering's directives have been run, so its lines are read as QC-9.1 reads them.
+        let parse = qc_syntax::parse_with_lines(text, self.dialect, DirectiveLines::ToLineBreak);
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {

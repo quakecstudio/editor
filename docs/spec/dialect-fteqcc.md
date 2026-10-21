@@ -1124,7 +1124,9 @@ profile the preprocessor reads them as FTEQCC does.
   is a node `#if"a` and the code ` b"`. The text an `#if` or `#else` skips, an `#includelist`'s
   list (FTEF-14.41) and what `#eof`, `#package` and `DONT_COMPILE_THIS_FILE` leave unread are
   parsed as code. The vanilla dialect keeps QC-9.1's node: a `#` first on its line before a
-  name on that line, to the first line break after it.
+  name on that line, to the first line break after it; so does the semantic model's parse of
+  a rendering of the preprocessor's output under every dialect, whose directives have been run
+  (`qc_syntax::DirectiveLines::ToLineBreak`).
 
 ## FTEF-15 Declarations
 

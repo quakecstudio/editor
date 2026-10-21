@@ -557,7 +557,8 @@ fn the_expansion_s_declarations_are_kept() {
 fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
     let binding = |text: &str| {
         let rendered = rendered(text, Dialect::Fteqcc);
-        let parse = qc_syntax::parse_with(rendered.as_bytes(), Dialect::Fteqcc);
+        let lines = qc_syntax::DirectiveLines::ToLineBreak;
+        let parse = qc_syntax::parse_with_lines(rendered.as_bytes(), Dialect::Fteqcc, lines);
         let errors: Vec<Code> = parse.errors().map(|d| d.code).collect();
         let function = lower_file(&parse, Dialect::Fteqcc)
             .decls

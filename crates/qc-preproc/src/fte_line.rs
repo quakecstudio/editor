@@ -6,16 +6,17 @@
 
 //! Where an FTEQCC directive's text ends, for a reader that shows the file as written and runs
 //! no directive: the syntax tree (`docs/spec/dialect-fteqcc.md`, FTEF-14.51). The ends are
-//! those the preprocessor reads on from, found with its own reader (`fte_directive`).
+//! those the preprocessor reads on from, found with its own reader (`fte_directive`), and the
+//! text after one is lexed again as the preprocessor lexes it.
 
-use qc_lexer::{Dialect, Lexed, Span};
+use qc_lexer::{Dialect, Lexed, Span, is_whitespace};
 
-use crate::FileId;
 use crate::cond::{self, FteIfError};
 use crate::fte_directive::{
     Directive, IfTest, Junk, TextStart, read, skip_to_end_of_line, starts_line,
 };
 use crate::fte_macro::{Reading, read_define};
+use crate::{FileId, RESYNC_TRIES, TokenStream};
 
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
 /// `text` ends: the offset the preprocessor reads on from after it, with nothing run. `None`
@@ -76,35 +77,65 @@ pub fn fte_directive_end(text: &[u8], hash: usize) -> Option<usize> {
     Some(end)
 }
 
-/// The tokens and lexical errors of `text` from the byte `offset` on, as the preprocessor lexes
-/// them when it reads on there after a directive, their spans in `text`: a token there starts a
-/// line only where only white space comes before it on its line (FTEF-14.22).
-#[must_use]
-pub fn lex_after(text: &[u8], offset: usize, dialect: Dialect) -> Lexed {
-    let lexed = crate::lex_from(text, offset..text.len(), dialect);
+/// Reading goes on at the byte `offset` of `text`, after a directive, in `lexed`, the first
+/// lexing of the whole text under `dialect`, as the preprocessor reads on there
+/// (`TokenStream::resume_at`, FTEF-14.22): unless only white space stands between the token
+/// before `offset` and `offset`, the tokens that end after `offset` are lexed again from there,
+/// only as far as a token of the first lexing that the new lexing reaches as that one did, and
+/// the lexical errors between are the new lexing's. A token lexed again starts a line only where
+/// only white space comes before it on its line.
+pub fn relex_from(lexed: &mut Lexed, text: &[u8], offset: usize, dialect: Dialect) {
+    let tokens = &mut lexed.tokens;
+    let next = tokens.partition_point(|t| t.span.start < offset);
+    let before = next.checked_sub(1).and_then(|last| tokens.get(last));
+    let gap_start = before.map_or(0, |t| t.span.end);
+    let clean = gap_start <= offset
+        && text
+            .get(gap_start..offset)
+            .is_some_and(|gap| gap.iter().all(|&b| is_whitespace(b)));
+    if clean {
+        return;
+    }
+    let first = tokens.partition_point(|t| t.span.end <= offset);
+    let window = (next..tokens.len()).take(RESYNC_TRIES).find_map(|kept| {
+        Some(kept).zip(TokenStream::relex_window(
+            tokens, text, offset, kept, dialect,
+        ))
+    });
+    let (kept, rest) = window.unwrap_or_else(|| {
+        (
+            tokens.len(),
+            crate::lex_from(text, offset..text.len(), dialect),
+        )
+    });
+    let resumed = tokens.get(kept).map_or(usize::MAX, |t| t.span.start);
     let shift = |span: Span| {
         Span::new(
             span.start.saturating_add(offset),
             span.end.saturating_add(offset),
         )
     };
-    Lexed {
-        tokens: lexed
-            .tokens
-            .into_iter()
-            .map(|mut token| {
-                token.span = shift(token.span);
-                token.kind = crate::moved_frames(token.kind, shift);
-                token
-            })
-            .collect(),
-        diagnostics: lexed
-            .diagnostics
-            .into_iter()
-            .map(|mut d| {
-                d.span = shift(d.span);
-                d
-            })
-            .collect(),
+    let again = rest.tokens.into_iter().map(|mut token| {
+        token.span = shift(token.span);
+        token.kind = crate::moved_frames(token.kind, shift);
+        token
+    });
+    tokens.splice(first..kept, again);
+    // The first lexing's errors before `offset` and from the kept token on stand; those
+    // between are the new lexing's.
+    let mut later = Vec::new();
+    for d in std::mem::take(&mut lexed.diagnostics) {
+        if d.span.start < offset {
+            lexed.diagnostics.push(d);
+        } else if d.span.start >= resumed {
+            later.push(d);
+        }
     }
+    lexed
+        .diagnostics
+        .extend(rest.diagnostics.into_iter().map(|mut d| {
+            d.span = shift(d.span);
+            d
+        }));
+    lexed.diagnostics.extend(later);
 }

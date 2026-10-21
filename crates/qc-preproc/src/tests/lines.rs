@@ -2,9 +2,9 @@
 
 //! Where an FTEQCC directive's text ends for a reader that runs none (`fte_line`, FTEF-14.51).
 
-use qc_lexer::{Dialect, Span, TokenKind};
+use qc_lexer::{Dialect, Lexed, Span, TokenKind, lex_with};
 
-use crate::{fte_directive_end, lex_after};
+use crate::{fte_directive_end, relex_from};
 
 /// The text of the directive at the start of `text`, `None` when there is none.
 fn directive(text: &str) -> Option<&str> {
@@ -70,25 +70,56 @@ fn only_a_hash_new_line_reaches_starts_a_directive() {
     assert_eq!(directive("x\r#endif\nz"), Some("#endif"));
 }
 
-// spec FTEF-14.51: the text from a directive's end is lexed as the preprocessor reads on there,
-// a token starting a line only where white space alone is before it, its spans in the text
+/// The spans of `lexed`'s tokens and the starts of its errors.
+fn spans(lexed: &Lexed) -> (Vec<(usize, usize)>, Vec<usize>) {
+    let tokens = lexed.tokens.iter().map(|t| (t.span.start, t.span.end));
+    let errors = lexed.diagnostics.iter().map(|d| d.span.start);
+    (tokens.collect(), errors.collect())
+}
+
+/// `text` lexed under FTEQCC, then lexed again from `offset`.
+fn relexed(text: &[u8], offset: usize) -> Lexed {
+    let mut lexed = lex_with(text, Dialect::Fteqcc);
+    relex_from(&mut lexed, text, offset, Dialect::Fteqcc);
+    lexed
+}
+
+// spec FTEF-14.51: the text from a directive's end is lexed again as the preprocessor reads on
+// there: not at all after white space alone, and otherwise only as far as a token the new
+// lexing reaches as the first did, the first lexing's errors after it kept
 #[test]
-fn text_after_a_directive_is_lexed_from_its_end() {
-    let text = b"#if\"a b\";\n$frame f g\n";
-    let lexed = lex_after(text, 5, Dialect::Fteqcc);
-    let spans: Vec<Span> = lexed.tokens.iter().map(|t| t.span).collect();
-    assert_eq!(spans.first(), Some(&Span::new(6, 7)));
-    assert!(lexed.diagnostics.iter().all(|d| d.span.start >= 5));
-    assert!(!lexed.diagnostics.is_empty());
+fn text_after_a_directive_is_lexed_again_as_the_preprocessor_reads_on() {
+    let text = b"#undef X\nfloat y;";
+    assert_eq!(
+        spans(&relexed(text, 8)),
+        spans(&lex_with(text, Dialect::Fteqcc))
+    );
+    let text = b"#undef X // c\nfloat y; \"s\n";
+    let first = lex_with(text, Dialect::Fteqcc);
+    assert_eq!(spans(&first).1, [23]);
+    assert_eq!(spans(&relexed(text, 13)), spans(&first));
+    // A token across the end is lexed again from there, in the middle of a line after a
+    // token of its own, and its error is the new lexing's.
+    let lexed = relexed(b"#if\"a b\";\n$frame f g\n", 5);
+    assert_eq!(
+        spans(&lexed),
+        (vec![(0, 1), (1, 3), (6, 7), (7, 9), (10, 20)], vec![7])
+    );
     let frames = lexed.tokens.iter().find_map(|t| match &t.kind {
         TokenKind::Frames(names) => Some(names.iter().map(|n| n.span).collect::<Vec<_>>()),
         _ => None,
     });
     assert_eq!(frames, Some(vec![Span::new(17, 18), Span::new(19, 20)]));
-    let line = lex_after(b"x;\n#warning w\n", 2, Dialect::Fteqcc);
+    // An error of the first lexing that the new one does not make is gone.
+    let text = b"#if\"a b\" \"c\n";
+    assert_eq!(spans(&lex_with(text, Dialect::Fteqcc)).1, [9]);
+    assert_eq!(spans(&relexed(text, 5)).1, Vec::<usize>::new());
+    // A token lexed again starts a line where only white space is before it on its line.
+    let lexed = relexed(b"#undef X // c\n#warning w\n", 13);
     assert!(
-        line.tokens
+        lexed
+            .tokens
             .iter()
-            .any(|t| t.line_start && t.span.start == 3)
+            .any(|t| t.line_start && t.span.start == 14)
     );
 }

@@ -8,7 +8,7 @@ use std::path::Path;
 use proptest::prelude::*;
 use qc_preproc::{MemoryLoader, Preprocessor};
 
-use crate::{Dialect, Span, SyntaxKind, SyntaxNode, parse_with};
+use crate::{Dialect, DirectiveLines, Span, SyntaxKind, SyntaxNode, parse_with, parse_with_lines};
 
 /// Whether `token`'s node, or a node above it, is a directive.
 fn in_directive(node: &SyntaxNode) -> bool {
@@ -275,4 +275,32 @@ proptest! {
         let source = lines.concat();
         prop_assert_eq!(tree_code(&source), preprocessed_code(&source));
     }
+}
+
+// spec FTEF-14.51: a rendering of the preprocessor's output, whose directives have been run,
+// is read with QC-9.1's lines under FTEQCC too, so a `#` it leaves first on a line before no
+// name is code
+#[test]
+fn a_rendering_keeps_the_lines_of_qc_9_1() {
+    let lines = |source: &str| {
+        let parsed = parse_with_lines(
+            source.as_bytes(),
+            Dialect::Fteqcc,
+            DirectiveLines::ToLineBreak,
+        );
+        parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == SyntaxKind::Directive)
+            .map(|n| String::from_utf8(n.text()).unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(lines("#undef X // c \\\nfloat y;\n"), ["#undef X"]);
+    assert_eq!(lines("# \nvoid() f = #5;\n"), Vec::<String>::new());
+    assert_eq!(fte("# \nvoid() f = #5;\n"), ["# "]);
+    assert_eq!(DirectiveLines::of(Dialect::Gmqcc), DirectiveLines::Fteqcc);
+    assert_eq!(
+        DirectiveLines::of(Dialect::Vanilla),
+        DirectiveLines::ToLineBreak
+    );
 }

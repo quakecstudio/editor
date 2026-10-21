@@ -24,7 +24,7 @@ mod source;
 #[cfg(test)]
 mod tests;
 
-pub use fte_line::{fte_directive_end, lex_after};
+pub use fte_line::{fte_directive_end, relex_from};
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
@@ -370,7 +370,15 @@ impl TokenStream {
         }
         let window = (next..self.tokens.len())
             .take(RESYNC_TRIES)
-            .find_map(|kept| Some(kept).zip(self.relex_window(text, offset, kept, dialect)));
+            .find_map(|kept| {
+                Some(kept).zip(Self::relex_window(
+                    &self.tokens,
+                    text,
+                    offset,
+                    kept,
+                    dialect,
+                ))
+            });
         let (kept, rest) = match window {
             Some((kept, lexed)) => (kept, lexed),
             None => (
@@ -434,7 +442,7 @@ impl TokenStream {
         resumed.min(text.len()).saturating_sub(offset)
     }
 
-    /// The text from `offset` to the token `kept` of the first lexing, lexed again, when lexing
+    /// The text from `offset` to the token `kept` of `tokens`, the first lexing, lexed again, when lexing
     /// the whole text from `offset` would reach that token as the first lexing did, so the
     /// tokens from it on stand: the new tokens end before it with only white space after them,
     /// none is a string (which may join the next, QC-13) or a `#` that may start a directive
@@ -443,14 +451,13 @@ impl TokenStream {
     /// one outside any token (an unclosed comment, a stray byte) is no white space after the
     /// last token, so none runs on into the kept token.
     fn relex_window(
-        &self,
+        tokens: &[Token],
         text: &[u8],
         offset: usize,
         kept: usize,
         dialect: Dialect,
     ) -> Option<qc_lexer::Lexed> {
-        let resume = self
-            .tokens
+        let resume = tokens
             .get(kept)
             .filter(|t| !matches!(t.kind, TokenKind::String(_)))?
             .span
