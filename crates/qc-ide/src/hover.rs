@@ -12,11 +12,14 @@ use std::path::Path;
 
 use qc_engines::{Builtin, BuiltinRef, Engine};
 use qc_project::{Loader, ModuleKind};
-use qc_sema::{DefKind, Definition};
+use qc_sema::{DefId, DefKind, Definition, Location};
+use qc_syntax::{SyntaxNode, SyntaxToken};
 
 use crate::FileRange;
 use crate::host::{AnalysisHost, ModuleData, ModuleState};
-use crate::syntax::{declaration_of, declared_as, doc_comment, name_at, name_token_near, token_at};
+use crate::syntax::{
+    declaration_of, declared_as, doc_comment, has_body, name_at, name_token_near, token_at,
+};
 
 /// What the hover of a name shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,7 +82,7 @@ impl<L: Loader> AnalysisHost<L> {
             name: def.name.clone(),
             kind: def.kind,
             declaration: declaration(state, data, def),
-            docs: docs(state, data, def),
+            docs: docs(state, data, def, target.def),
             builtin: builtin_info(state, data, def),
         })
     }
@@ -88,35 +91,58 @@ impl<L: Loader> AnalysisHost<L> {
 /// How `def` was declared: its declaration's text when its name is written there, else its
 /// type and name.
 fn declaration(state: &ModuleState, data: &ModuleData, def: &Definition) -> String {
-    declaration_node(state, data, def)
-        .and_then(|(decl, token, _)| declared_as(&decl, &token))
+    declaration_at(state, data, def, def.location)
+        .and_then(|(decl, token)| declared_as(&decl, &token))
         .unwrap_or_else(|| format!("{} {}", def.ty.fteqcc_name(), def.name))
 }
 
-/// The comment of `def`'s declaration.
-fn docs(state: &ModuleState, data: &ModuleData, def: &Definition) -> Option<String> {
-    let (decl, _, file) = declaration_node(state, data, def)?;
-    doc_comment(data.parses.get(file.0)?, &decl)
+/// The comment that documents `def`, definition `id`.
+///
+/// A function's prototypes in a shared `defs.qc` are often under a section comment, and its body
+/// under its real documentation, so the comment of the declaration with the body wins, then
+/// that of the first declaration that has one.
+fn docs(state: &ModuleState, data: &ModuleData, def: &Definition, id: DefId) -> Option<String> {
+    let declarations = std::iter::once(def.location).chain(
+        data.analysis
+            .index
+            .redeclarations
+            .iter()
+            .filter(|r| r.def == id)
+            .map(|r| r.location),
+    );
+    let mut first = None;
+    for location in declarations {
+        let Some((decl, token)) = declaration_at(state, data, def, location) else {
+            continue;
+        };
+        let Some(docs) = data
+            .parses
+            .get(location.file.0)
+            .and_then(|parse| doc_comment(parse, &decl))
+        else {
+            continue;
+        };
+        if has_body(&decl, &token) {
+            return Some(docs);
+        }
+        first = first.or(Some(docs));
+    }
+    first
 }
 
-/// The declaration node, name token and file of `def`'s first declaration, when its name is
-/// written there.
-fn declaration_node(
+/// The declaration node and name token of `def` at `location`, when its name is written there.
+fn declaration_at(
     state: &ModuleState,
     data: &ModuleData,
     def: &Definition,
-) -> Option<(
-    qc_syntax::SyntaxNode,
-    qc_syntax::SyntaxToken,
-    qc_sema::FileId,
-)> {
-    let location = def.location;
+    location: Location,
+) -> Option<(SyntaxNode, SyntaxToken)> {
     if !name_at(state.db.file_text(location.file), location.span, &def.name) {
         return None;
     }
     let token = token_at(data.parses.get(location.file.0)?, location.span)?;
     let decl = declaration_of(&token)?;
-    Some((decl, token, location.file))
+    Some((decl, token))
 }
 
 /// The engines that have `def`, when it is a builtin.

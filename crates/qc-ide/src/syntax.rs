@@ -133,14 +133,18 @@ pub(crate) fn doc_comment(parse: &Parse, decl: &SyntaxNode) -> Option<String> {
             _ => break,
         }
     }
-    if !above.is_empty() {
-        above.reverse();
-        return Some(above.join("\n"));
+    above.reverse();
+    let joined = above.join("\n");
+    // A banner of empty comment lines around the text is not part of it.
+    let joined = joined.trim();
+    if !joined.is_empty() {
+        return Some(joined.to_owned());
     }
     for token in tokens.get(last.checked_add(1)?..)? {
         match token.kind() {
             SyntaxKind::LineComment | SyntaxKind::BlockComment => {
-                return Some(comment_text(token));
+                let text = comment_text(token);
+                return (!text.is_empty()).then_some(text);
             }
             SyntaxKind::Whitespace if line_breaks(token) == 0 => {}
             _ => return None,
@@ -184,6 +188,16 @@ fn comment_text(token: &SyntaxToken) -> String {
         })
         .unwrap_or(&text);
     inner.trim().to_owned()
+}
+
+/// Whether the declarator of `name` in declaration `decl` has a function body.
+pub(crate) fn has_body(decl: &SyntaxNode, name: &SyntaxToken) -> bool {
+    ast::Declaration::cast(decl.clone()).is_some_and(|d| {
+        d.declarators().any(|dr| {
+            dr.name().is_some_and(|n| n.span() == name.span())
+                && matches!(dr.initializer(), Some(ast::Initializer::Body(_)))
+        })
+    })
 }
 
 /// The names of the parameters of the function a declaration declares, in order, `None` for

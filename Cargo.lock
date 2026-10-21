@@ -991,6 +991,7 @@ dependencies = [
  "qc-types",
  "qs-map",
  "qs-pak",
+ "quakec-lsp",
  "serde",
  "serde_json",
  "toml",

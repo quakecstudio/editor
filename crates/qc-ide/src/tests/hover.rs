@@ -123,3 +123,16 @@ fn hover_of_a_client_builtin_reads_the_client_tables() {
     );
     assert!(!info.engines.iter().any(|(e, _)| *e == Engine::Vanilla));
 }
+
+// spec QC-11.5: a function's documentation is the comment of the declaration with its body, over
+// a section comment above its prototype; a banner of empty comment lines is no text
+#[test]
+fn hover_prefers_the_comment_of_the_body() {
+    let text = "//\n// combat.qc\n//\nvoid() hurt;\n//\n//\nvoid() idle;\n\n\
+                /*\nhurt\n\nTakes health.\n*/\nvoid() hurt = { };\n";
+    let mut host = one(text);
+    let hurt = host.hover(&path("a.qc"), nth(text, "hurt", 0)).unwrap();
+    assert_eq!(hurt.docs.as_deref(), Some("hurt\n\nTakes health."));
+    let idle = host.hover(&path("a.qc"), nth(text, "idle", 0)).unwrap();
+    assert_eq!(idle.docs, None);
+}
