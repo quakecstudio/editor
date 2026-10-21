@@ -117,11 +117,11 @@ jobs:
         env:
           # A mutant that stops a reader advancing can make a test take the
           # runner's 16 GB before its timeout ends it, and the runner then loses
-          # its agent (P2-109). Each test binary cargo runs gets 4 GiB of data
+          # its agent (P2-109). Each test binary cargo runs gets 3 GiB of data
           # memory (RLIMIT_DATA), so an allocation past it fails and aborts that
           # binary, which fails the mutant's tests, and the four jobs together
           # stay inside the runner. Builds are not limited.
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=4294967296 --
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --
         run: |
           read -ra crates <<< "$CRATES"
           (while sleep 10; do echo "DIAG $(free -m | awk '/Mem:/ {print "used " $3 " of " $2}') $(df -m / | awk 'NR==2 {print "disk free " $4}') $(ps -eo rss=,comm= --sort=-rss | head -3 | tr '\n' ' ')"; done) &
