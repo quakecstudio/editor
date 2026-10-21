@@ -1655,6 +1655,8 @@ issues:
   - P2-107
   - P2-108
   - P2-109
+  - P2-110
+  - P2-111
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2166,3 +2168,39 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo xtask readiness mutation qc-preproc
+- key: P2-110
+  title: Read an FTEQCC file's syntax tree from the text FTEQCC's file loader gives
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-syntax (`input.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.51: under an FTEQCC dialect the syntax tree makes a directive node of the text the preprocessor reads as one directive (FTEF-14.51), but it reads the file''s bytes, where the preprocessor and the project graph read the text FTEQCC''s `QCC_LoadFile` hands its lexer (FTEF-14.54, P2-107): the tree lexes only to the first NUL (`until_nul` in `input.rs`, QC-1.1), where FTEQCC makes each NUL a space and reads on, and `qc_preproc::fte_directive_end` sees a UTF-8 byte order mark before the first line''s `#`, so `#define N 1` on the first line after one is no directive node, though the preprocessor runs it. The tree stays lossless (a NUL and the mark are trivia of the file as written), and a UTF-16 or UTF-32 file, which the preprocessor decodes, is shown as the semantic model decides'
+  acceptance:
+  - 'Under the FTEQCC dialect the syntax tree of a file with a NUL before a directive line, and of one whose first line is a directive after a UTF-8 byte order mark, makes the directive nodes the preprocessor runs, and stays lossless; the vanilla dialect keeps QC-1.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-111
+  title: Refuse an FTEQCC frame macro whose number is negative as an unknown one
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (`Preprocessor::find_frame` and the frame macro reference) and docs/spec/dialect-fteqcc.md FTEF-18.16 (or a new statement beside it): FTEQCC''s `QCC_PR_FindMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) returns a frame macro''s value, and `-1` for a name with none, and `QCC_PR_ExpandMacro` refuses any negative result (`if (i < 0) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame macro $%s", pr_token);`), so a frame macro numbered below 0 by `$framevalue` is unknown where it is used. While working P2-107 and P2-108 the pinned FTEQCC (`-Tid`, macOS arm64) refused `$framevalue -99999999999` and `$framevalue 2147483648`, each then `$frame a` and `x = $a;` in a function, with "Unknown frame macro $a" (`atoi` gives -1215752191 and -2147483648, FTEF-14.55), where this profile numbers the frame from the negative value and accepts the program'
+  acceptance:
+  - 'Under the FTEQCC dialect a frame macro reference whose macro is numbered below 0 is "Unknown frame macro", as the pinned FTEQCC refuses it; `$framerestore` of such a macro is checked against FTEQCC the same way; each with a test citing the statement it pins and the cases recorded as the pinned FTEQCC compiles them'
+  verify:
+  - cargo test -p qc-preproc
