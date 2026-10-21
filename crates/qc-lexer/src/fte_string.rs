@@ -12,15 +12,16 @@
 
 use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind, is_fteqcc_whitespace};
 
-/// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token, an
-/// `L"..."` after another part included (FTEF-13.7); `None` when `text` is not one such part.
+/// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token under
+/// the compiler flags `flags` (FTEF-12.12), an `L"..."` after another part included
+/// (FTEF-13.7); `None` when `text` is not one such part.
 #[must_use]
-pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
+pub fn fteqcc_string_bytes(text: &[u8], flags: crate::LexFlags) -> Option<Vec<u8>> {
     let mut lexer = Lexer {
         text,
         pos: 0,
         dialect: Dialect::Fteqcc,
-        flags: crate::LexFlags::default(),
+        flags,
         marks: &[],
         macros: &|_| None,
         out: Lexed::default(),

@@ -120,17 +120,22 @@ fn nofileline_ignores_file_and_line_pragmas() {
     assert_eq!(tokens(&out), r#"101 "x.qc""#);
 }
 
-// spec FTEF-12.14: the flags that belong to the parse, the compiler or its output change no
+// spec FTEF-12.15: the flags that belong to the parse, the compiler or its output change no
 // token, and `acc`, which a pragma cannot set, leaves a `|` in a string as it is
+// spec FTEF-19.24: `assumedouble` changes no token, and is marked for the semantic model
 #[test]
 fn other_flags_change_no_token() {
     let text = "x = 1.5 \"a|b\" 'a';\n";
     let (_, plain) = one_fte(text);
     let (_, out) = one_fte(&format!(
-        "#pragma flag enable assumedouble cpriority msvcstyle debugmacros\n{text}"
+        "#pragma flag enable cpriority msvcstyle debugmacros\n{text}"
     ));
     assert_eq!(tokens(&out), tokens(&plain));
     assert_eq!(out.lex_flags, [(0, LexFlags::default())]);
+    let (_, out) = one_fte(&format!("#pragma flag enable assumedouble\n{text}"));
+    assert_eq!(tokens(&out), tokens(&plain));
+    let double = LexFlags::default().with(qc_lexer::LexFlag::AssumeDouble, true);
+    assert_eq!(out.lex_flags, [(0, LexFlags::default()), (0, double)]);
     assert!(codes(&out).is_empty());
     let (_, out) = one_fte(&format!("#pragma flag enable acc caseinsens\n{text}"));
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);

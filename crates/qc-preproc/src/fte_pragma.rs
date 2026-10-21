@@ -128,11 +128,24 @@ impl FlagSettings {
             (FteFlag::Dblstarexp, LexFlag::Ssp),
             (FteFlag::AssumeInteger, LexFlag::AssumeInt),
             (FteFlag::Macroinstrings, LexFlag::MacroInStrings),
+            (FteFlag::AssumeDouble, LexFlag::AssumeDouble),
         ]
         .into_iter()
         .fold(LexFlags::NONE, |flags, (fte, lex)| {
             flags.with(lex, self.is_on(fte))
         })
+    }
+
+    /// Sets the first row of `compiler_flag[]` whose abbreviation is `name` in any case, as a
+    /// command-line option does, whether or not it may change mid-compile; nothing when no row
+    /// is so named (FTEF-14.71).
+    pub(crate) fn set_named(&mut self, name: &[u8], on: bool) {
+        if let Some(row) = FLAGS
+            .iter()
+            .find(|row| row.name.as_bytes().eq_ignore_ascii_case(name))
+        {
+            self.set(row.flag, on);
+        }
     }
 
     /// Sets `flag`, in every row that names it.

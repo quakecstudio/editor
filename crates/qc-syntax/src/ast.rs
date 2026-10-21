@@ -681,9 +681,10 @@ impl Builtin {
     /// as FTEQCC's lexer joins adjacent strings and their escapes read as it reads them
     /// (FTE-23.5), up to the first NUL byte; an empty string names nothing, so the name after it
     /// is the one. The name is kept to the 255 bytes of FTEQCC's `fname` (FTE-23.6), each byte
-    /// one `char` (Latin-1), as FTEQCC compares names byte for byte.
+    /// one `char` (Latin-1), as FTEQCC compares names byte for byte. The strings are read with
+    /// `flags`, the compiler flags they were lexed with (FTEF-12.12, FTEF-19.23).
     #[must_use]
-    pub fn engine_name(&self) -> Option<String> {
+    pub fn engine_name(&self, flags: qc_lexer::LexFlags) -> Option<String> {
         let mut joined = Vec::new();
         let mut name = None;
         for token in self.0.child_tokens() {
@@ -696,7 +697,7 @@ impl Builtin {
                         .iter()
                         .map(|&byte| if byte == 0 { b' ' } else { byte })
                         .collect();
-                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(&text) {
+                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(&text, flags) {
                         joined.extend_from_slice(&bytes);
                     }
                 }
