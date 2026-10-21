@@ -29,7 +29,7 @@ fn one(code: Code, message: &str) -> Vec<(Code, String)> {
 
 // spec FTEF-12.11: `#pragma flag` and `keyword` read their state first and their names after,
 // matched in `compiler_flag[]`, with FTEQCC's three warnings
-// spec QCD-7.35: W0113 is FTEQCC's Q120 with its text
+// spec QCD-7.56: W0113 is FTEQCC's Q120 with its text
 #[test]
 fn flag_pragmas_warn_as_fteqcc_does() {
     assert_eq!(
@@ -60,7 +60,7 @@ fn flag_pragmas_warn_as_fteqcc_does() {
 
 // spec FTEF-12.11: `optimise`, `opcode` and `TARGET` warn for what FTEQCC's tables do not hold,
 // and an unknown pragma is "Unknown pragma 'NAME'"
-// spec QCD-7.39: W0117 is a warning FTEQCC gives no name, a target's among them
+// spec QCD-7.60: W0117 is a warning FTEQCC gives no name, a target's among them
 #[test]
 fn build_pragmas_warn_against_fteqcc_s_tables() {
     assert_eq!(
@@ -127,7 +127,7 @@ fn build_pragmas_warn_against_fteqcc_s_tables() {
 
 // spec FTEF-14.57: `#undef` of no macro, the empty name included, warns first, and an `#if`
 // form with no white space after its name is "Unknown pragma" with the word
-// spec QCD-7.36: W0114 is "Precompiler constant NAME was not defined"
+// spec QCD-7.57: W0114 is "Precompiler constant NAME was not defined"
 #[test]
 fn undef_of_no_macro_and_a_bad_if_warn() {
     assert_eq!(
@@ -150,8 +150,8 @@ fn undef_of_no_macro_and_a_bad_if_warn() {
 
 // spec FTEF-14.58: a definition's errors have FTEQCC's texts, and its warnings are F315's and
 // F316's
-// spec QCD-7.37: W0115 is F315 with its text
-// spec QCD-7.38: W0116 is F316, reported once a pragma turns it on
+// spec QCD-7.58: W0115 is F315 with its text
+// spec QCD-7.59: W0116 is F316, reported once a pragma turns it on
 #[test]
 fn definitions_warn_and_refuse_as_fteqcc_does() {
     assert_eq!(

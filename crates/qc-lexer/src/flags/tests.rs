@@ -114,7 +114,7 @@ fn qccx_colon_joins_string_parts_with_a_nul() {
 
 // spec FTEF-12.12: under `qccx` a character constant is a float whose bits are its code, with
 // "char constant: denormal", unless `assumeint` makes it an integer first
-// spec QCD-7.43: W0121 is FTEQCC's F313 with its text
+// spec QCD-7.64: W0121 is FTEQCC's F313 with its text
 #[test]
 fn qccx_character_constants_are_bits() {
     let qccx = with(LexFlag::Qccx);
@@ -231,7 +231,7 @@ fn ilp32_needs_two_ls() {
 }
 
 // spec FTEF-12.12: under `ssp` `**` is the token `*^`, with FTEQCC's F321
-// spec QCD-7.40: W0118 has FTEQCC's text
+// spec QCD-7.61: W0118 has FTEQCC's text
 #[test]
 fn ssp_double_star() {
     let ssp = with(LexFlag::Ssp);
@@ -280,7 +280,7 @@ fn in_strings(source: &[u8]) -> Lexed {
 
 // spec FTEF-12.12: under `macroinstrings` `#NAME` in a string is the text the name's macros
 // end on, trailing spaces and tabs dropped; a name of no macro leaves the `#`
-// spec QCD-7.44: W0122 has FTEQCC's two texts
+// spec QCD-7.65: W0122 has FTEQCC's two texts
 #[test]
 fn macro_names_in_strings() {
     let found = in_strings(br##""a#BAR.c""##);

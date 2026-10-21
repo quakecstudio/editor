@@ -557,6 +557,21 @@ functions to be prototyped before their definition."
   and QC-11.3. A local initialiser is stored once in the progs' global area, like a global
   constant; it is not executed on each call, and later literals of the same value reuse the
   local (QC-20.2).
+- **QC-11.11** A vector's initialiser does not initialise its components: `PR_ParseDefs` sets
+  `def->initialized = 1;` on the vector's definition only, and `PR_GetDef` made the components
+  as definitions of their own. So `vector v = '1 2 3'; float v_x = 2;` compiles, and writes 2
+  over the vector's first word.
+- **QC-11.12** A `.vector` field's components are made with `qcc`'s own `type_floatfield`
+  (`PR_GetDef (&type_floatfield, element, scope, true);`), a type `PR_FindType` never returns,
+  since `pr.types` holds only `type_function` and the types it interned (`InitData`: `pr.types
+  = &type_function;`). So a component and a `.float` written in the source are of different
+  types, in either order: `.vector fv; .float fv_x;` and `.float fv_x; .vector fv;` are "Type
+  mismatch on redeclaration of fv_x". A `float` or a `void()` is the same type however made:
+  `type_float` and `type_function` are the ones the parser gives.
+- **QC-11.13** A local's initialiser initialises the definition the local is, and that
+  definition may be initialised once (QC-11.5): `local float y = 1; local float y = 2;` is "y
+  redeclared", and so is a local initialised where its name is an initialised global, or a
+  global an earlier function's local initialised (QC-12.3).
 
 ### Test vectors
 
@@ -573,6 +588,10 @@ functions to be prototyped before their definition."
 | `void() f;` | `function f was not defined`, then fatal `compilation errors` | QC-11.8 |
 | `void() f = { local .float g; };` | `Fields and functions must be global` | QC-11.9 |
 | `float a;\nvoid() f = { local float l = 5; a = 5; };` | `STORE_F l, a`: the literal 5 is the local `l` | QC-11.10 |
+| `vector v = '1 2 3';\nfloat v_x = 2;` | compiles | QC-11.11 |
+| `.vector fv;\n.float fv_x;` | `Type mismatch on redeclaration of fv_x` | QC-11.12 |
+| `float x = 1;\nvoid() g = { local float x = 2; };` | `x redeclared` | QC-11.13 |
+| `float x;\nvoid() g = { local float x = 2; };\nvoid() h = { local float x = 3; };` | `x redeclared` | QC-11.13 |
 
 ## QC-12 Scopes and name lookup
 

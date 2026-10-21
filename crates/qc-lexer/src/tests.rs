@@ -2116,7 +2116,7 @@ fn fteqcc_comments_end_as_its_readers_end_them() {
 
 // spec FTEF-13.18: an FTEQCC `/* */` comment's `*/` is looked for from the byte after its `*`,
 // a `/*` inside it is a warning and one with no end is "EOF inside comment"
-// spec QCD-7.34: W0112 is FTEQCC's F325, at the `/*`
+// spec QCD-7.55: W0112 is FTEQCC's F325, at the `/*`
 // spec QCD-8.18: E0501 has FTEQCC's text under an FTEQCC profile
 #[test]
 fn fteqcc_block_comments() {
@@ -2153,8 +2153,8 @@ fn fteqcc_block_comments() {
 // spec FTEF-13.19: an FTEQCC number accumulates in a wrapping `long long`; a leading 0 before a
 // digit warns; and an `f`, `d` or `i` suffix, or base 16 with none, warns where the value stored
 // is not the number
-// spec QCD-7.32: W0110 is FTEQCC's warning `octal`, at the `0`
-// spec QCD-7.33: W0111 is FTEQCC's F312
+// spec QCD-7.53: W0110 is FTEQCC's warning `octal`, at the `0`
+// spec QCD-7.54: W0111 is FTEQCC's F312
 #[test]
 fn fteqcc_number_values_and_warnings() {
     let one = |source: &str| {
@@ -2282,8 +2282,8 @@ fn fteqcc_string_input_errors() {
 
 // spec FTEF-13.22: FTEQCC's F301 and F311 warnings, which its settings ignore unless a pragma
 // turns them on, are the lexer's to give
-// spec QCD-7.41: W0119 is F301 with its text
-// spec QCD-7.42: W0120 is F311's "2d vector"
+// spec QCD-7.62: W0119 is F301 with its text
+// spec QCD-7.63: W0120 is F311's "2d vector"
 #[test]
 fn fteqcc_off_by_default_string_and_vector_warnings() {
     let prefix =
@@ -2350,7 +2350,7 @@ fn fteqcc_vector_white_space_is_lex_whitespace_s() {
 
 // spec FTEF-13.25: `\` before a lone CR in an FTEQCC string is the byte after the CR, with
 // "Hanging \\" and a CR; before a CR and an LF it is the LF
-// spec QCD-7.45: W0123 has FTEQCC's text
+// spec QCD-7.66: W0123 has FTEQCC's text
 #[test]
 fn fteqcc_hanging_backslash_cr() {
     let lexed = lex_with(b"\"a\\\rb\"", Dialect::Fteqcc);

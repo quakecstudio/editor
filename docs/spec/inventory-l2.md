@@ -110,7 +110,7 @@ rest of each command line is not modelled (PRJ-3.4).
 | `PR_LexVector` | `QCC_PR_LexVector` | Character constants, two-component vectors, `QCC_PR_LexFloat` components, the `qccx` character constants | `qc_lexer` `Lexer::vector`, `Lexer::character` | FTEF-13.3, FTEF-13.6, FTEF-13.13, FTEF-13.14, FTEF-13.23, FTEF-12.12 | `VALUES`, `CHARACTER_ESCAPES`, `FLAG_LINES` | ported |
 | `PR_LexName` | `QCC_PR_LexName` | A byte of 0x80 or more starts and continues a name, read as UTF-8 by `utf8_check`; an invalid sequence is "Invalid UTF-8 code sequence" | `qc_lexer` `Lexer::fte_name` | FTEF-13.16, QCD-2.9 | `LINES`, `BYTE_LINES` | ported |
 | `PR_LexPunctuation` | `QCC_PR_LexPunctuation` | FTEQCC's longer table and its remapping (`->` to `.`, `(+)` to `|=`, `(-)` to `&~=`); `\` and a line break join lines; `**` under the `ssp` flag; "Unknown punctuation: '\x%x'" | `qc_lexer` `Lexer::punctuation`, `Punct::FTEQCC_TABLE` | FTEF-13.1, FTEF-13.2, FTEF-13.15, FTEF-13.24, FTEF-14.53, FTEF-12.12, FTE-5, FTE-6, FTE-7, FTE-8, FTE-19 | `VALUES`, `JOINED`, `LINES`, `FLAG_LINES` | ported |
-| `PR_LexWhitespace` | `QCC_PR_LexWhitespace`, `QCC_PR_LexComment` | White space is `qcc_iswhite` only, so a control byte or a byte of 0x80 or more is no white space; a lone CR ends a line; each line ending runs `QCC_PR_NewLine`; "EOF inside comment", "\"/*\" inside comment" | `qc_lexer` `Lexer::skip_trivia`, `qc_preproc` `fte_whitespace`, `whitespace` | FTEF-13.15, FTEF-13.18, FTEF-14.45, FTEF-14.52, FTEF-14.67, QCD-7.34 | `LINES`, `place_cases`, `word_bound_cases` | ported |
+| `PR_LexWhitespace` | `QCC_PR_LexWhitespace`, `QCC_PR_LexComment` | White space is `qcc_iswhite` only, so a control byte or a byte of 0x80 or more is no white space; a lone CR ends a line; each line ending runs `QCC_PR_NewLine`; "EOF inside comment", "\"/*\" inside comment" | `qc_lexer` `Lexer::skip_trivia`, `qc_preproc` `fte_whitespace`, `whitespace` | FTEF-13.15, FTEF-13.18, FTEF-14.45, FTEF-14.52, FTEF-14.67, QCD-7.55 | `LINES`, `place_cases`, `word_bound_cases` | ported |
 | `PR_FindMacro`, `PR_ParseFrame`, `PR_LexGrab`, `PR_SimpleGetToken` | `QCC_PR_FindMacro`, `QCC_PR_ParseFrame`, `QCC_PR_LexGrab`, `QCC_PR_LexMacroName`, `QCC_PR_MacroFrame`, `QCC_PR_ExpandMacro`, `QCC_PR_SimpleGetToken` | `$framesave`, `$flush`, `$frame_reset`, `$framevalue`, `$framerestore`, `$modelname`; case-insensitive and stale lookups; names up to 63 bytes and 8192 macros; a word of at most 1023 bytes ("token exceeds 1023 chars") | `qc_lexer` `Lexer::dollar`, `macro_name`, `qc_preproc` frame list, `simple_get_token` | FTEF-18.13, FTEF-18.14, FTEF-18.16, FTEF-18.21, FTEF-18.29, FTEF-18.30, FTEF-14.66 | `frame_cases`, `FRAME_VALUES`, `FRAME_USES`, `word_bound_cases` | ported |
 | `PR_Lex` | `QCC_PR_Lex` | Macros expanded at each name and after `#` (`QCC_PR_CheckCompConst`), only after `#` under `hashonly`; `%5` under `qccx`; a string's prefixes; chunks ended with `QCC_PR_UnInclude`; each token read with the flags of its moment | `qc_preproc::Preprocessor`, `Lexing`, `qc_lexer` `Lexer::run` | FTEF-14.13, FTE-23.10, FTEF-14.17, FTEF-12.12, FTEF-12.13 | `cases`, `FLAG_LINES` | ported |
 | `PR_ParseError` | `QCC_PR_ParseError`, `QCC_PR_ParseWarning`, `QCC_PR_Warning`, `QCC_PR_PrintWarning`, `QCC_Error` | Warnings, each ignored, warned or an error as `qccwarningaction` and `#pragma warning` set it; an `ERR_` code given to `QCC_PR_ParseWarning` is an error; `QCC_Error` ends the compile | `qc_diag::Diagnostic`, `qc_preproc::WarningSettings` | QCD-8.14, QCD-8.17, FTEF-14.46, FTEF-14.63, FTE-16 | `evil_cases`, `EVIL_SETTINGS`, `FLAG_LINES` | ported |
@@ -185,7 +185,7 @@ reach from `progs.src` to a token. **Default** is what `fteqcc -Tid` does with i
 | Site | Message | Default | Profile | Statements | Status |
 | --- | --- | --- | --- | --- | --- |
 | `QCC_PR_AddIncludePath` | "Include path too long." | warning | none: only a `-I` option reaches it, printed against "cmdline" | FTEF-14.68 | not modelled |
-| `QCC_PR_AddIncludePath` | "Too many include dirs. Ignoring and hoping the stars align." | warning | W0117 | FTEF-14.68, QCD-7.39 | ported |
+| `QCC_PR_AddIncludePath` | "Too many include dirs. Ignoring and hoping the stars align." | warning | W0117 | FTEF-14.68, QCD-7.60 | ported |
 | `QCC_FindBestInclude` | "Couldn't open file %s" | error | E0111, E0402 | FTEF-14.40, PRJ-4.9, PRJ-6.6 | ported |
 | `ParsePrecompilerIf` | "unclosed bracket condition", "unclosed defined condition", "unexpected end-of-line" | error | E0121 | FTEF-14.33 | ported |
 | `QCC_PR_SkipToEndOfLine` | "unexpected tokens at end of line" | error | E0121 | FTEF-14.35 | ported |
@@ -204,37 +204,37 @@ reach from `progs.src` to a token. **Default** is what `fteqcc -Tid` does with i
 | `QCC_PR_Precompiler` | "Unknown pragma '%s'" | warning | W0113 | FTEF-12.11, FTEF-14.70 | ported |
 | `QCC_PR_Precompiler` | a `#pragma` name or text past `msg[1024]`, which the pinned build aborts at | error | E0121 | FTEF-14.66 | ported |
 | `QCC_PR_LexEscapedCodepoint` | "EOF inside quote", "Bad character code", "Unknown escape char %c", "Unicode character terminated unexpectedly" | error | E0101, E0103 | FTEF-13.11, FTEF-13.13, FTEF-12.12 | ported |
-| `QCC_PR_LexEscapedCodepoint` | "Hanging \\" and a CR | warning | W0123 | FTEF-13.25, QCD-7.45 | ported |
+| `QCC_PR_LexEscapedCodepoint` | "Hanging \\" and a CR | warning | W0123 | FTEF-13.25, QCD-7.66 | ported |
 | `QCC_PR_LexString` | "EOF while parsing raw string delimiter", "EOF inside quote", "newline inside quote" | error | E0101, E0102 | FTEF-13.9, QCD-2.1, QCD-2.2 | ported |
 | `QCC_PR_LexString` | "char32_t/char16_t/wchar_t strings are not supported, ..." | ignored | W0119 | FTEF-13.8, FTEF-13.22 | ported |
 | `QCC_PR_LexString` | "Input string is not valid utf-8", "Unable to mask non-ascii chars. Attempting to mask bytes" | error | E0103 | FTEF-13.10, FTEF-13.21, FTEF-12.12 | ported |
 | `QCC_PR_LexString` | "Cannot convert codepoint %#x to quake's charset", "Bad unicode character code - codepoint is above 0x10FFFFu" | ignored | W0119 | FTEF-13.8, FTEF-13.22 | ported |
 | `QCC_PR_LexString` | "String length exceeds %u" | error | E0502 | FTEF-13.20, FTEF-12.12 | ported |
-| `QCC_PR_LexString` | "Unable to expand string macro %s", "Macro %s expansion in string" | ignored | W0122 | FTEF-12.12, QCD-7.44 | ported |
-| `QCC_PR_LexNumber` | "A leading 0 is interpreted as base-8." | warning | W0110 | FTEF-13.19, QCD-7.32 | ported |
-| `QCC_PR_LexNumber` | "numerical overflow" | warning | W0111 | FTEF-13.19, FTEF-12.12, QCD-7.33 | ported |
+| `QCC_PR_LexString` | "Unable to expand string macro %s", "Macro %s expansion in string" | ignored | W0122 | FTEF-12.12, QCD-7.65 | ported |
+| `QCC_PR_LexNumber` | "A leading 0 is interpreted as base-8." | warning | W0110 | FTEF-13.19, QCD-7.53 | ported |
+| `QCC_PR_LexNumber` | "numerical overflow" | warning | W0111 | FTEF-13.19, FTEF-12.12, QCD-7.54 | ported |
 | `QCC_PR_LexNumber` | "bad suffix on number %s" | error | E0124 | FTEF-13.17, QCD-2.10 | ported |
 | `QCC_PR_LexVector` | "Bad character constant", "Bad vector" | error | E0104 | FTEF-13.13, QCD-2.4 | ported |
-| `QCC_PR_LexVector` | "2d vector" | ignored | W0120 | FTEF-13.3, QCD-7.42 | ported |
-| `QCC_PR_LexVector`, `QCC_PR_Lex` | "char constant: denormal", "denormalized immediate" | error | W0121, as E0125 | FTEF-12.12, QCD-7.43 | ported |
+| `QCC_PR_LexVector` | "2d vector" | ignored | W0120 | FTEF-13.3, QCD-7.63 | ported |
+| `QCC_PR_LexVector`, `QCC_PR_Lex` | "char constant: denormal", "denormalized immediate" | error | W0121, as E0125 | FTEF-12.12, QCD-7.64 | ported |
 | `QCC_PR_LexName` | "Invalid UTF-8 code sequence ..." | error | E0123 | FTEF-13.16, QCD-2.9 | ported |
-| `QCC_PR_LexPunctuation` | "** is unsafe around pointers, use *^ instead." | warning | W0118 | FTEF-12.12, QCD-7.40 | ported |
+| `QCC_PR_LexPunctuation` | "** is unsafe around pointers, use *^ instead." | warning | W0118 | FTEF-12.12, QCD-7.61 | ported |
 | `QCC_PR_LexPunctuation` | "Unknown punctuation: '\x%x'" | error | E0105 | FTEF-13.15, QCD-2.5 | ported |
 | `QCC_PR_LexWhitespace`, `QCC_PR_LexComment` | "EOF inside comment" | error | E0501 | FTEF-13.18, FTEF-14.67, QC-27.2 | ported |
-| `QCC_PR_LexWhitespace`, `QCC_PR_LexComment` | "\"/*\" inside comment" | warning | W0112 | FTEF-13.18, QCD-7.34 | ported |
+| `QCC_PR_LexWhitespace`, `QCC_PR_LexComment` | "\"/*\" inside comment" | warning | W0112 | FTEF-13.18, QCD-7.55 | ported |
 | `QCC_PR_FindMacro`, `QCC_PR_MacroFrame`, `QCC_PR_LexGrab`, `QCC_PR_ExpandMacro` | "Stale macro used", "Case insensitive frame macro", "Duplicate macro defined", "Name for frame macro %s is too long", "Too many frame macros defined", "hanging $", "$modelname name too long", "Unknown frame macro $%s" | warning, error | W0105, W0104, W0106, E0119, E0107, W0107, E0106 | FTEF-18.29, FTEF-18.21, FTEF-18.30, QCD-7.24 to QCD-7.27 | ported |
 | `QCC_PR_SimpleGetString`, `QCC_PR_SimpleGetToken`, `QCC_PR_LexMacroName` | "new line inside string", "token exceeds %i chars" | error | E0121, E0502 | FTEF-14.66 | ported |
-| `QCC_PR_UndefineName` | "Precompiler constant %s was not defined" | warning | W0114 | FTEF-14.57, QCD-7.36 | ported |
+| `QCC_PR_UndefineName` | "Precompiler constant %s was not defined" | warning | W0114 | FTEF-14.57, QCD-7.57 | ported |
 | `QCC_PR_DefineName` | "Compiler constant name length is too long or short" | error | E0121 | FTEF-14.42 | ported |
 | `QCC_PR_DefineName` | "Duplicate definition for Precompiler constant %s" | warning | none: only a `-D` option reaches it, printed against "cmdline" | FTEF-14.62 | not modelled |
 | `QCC_PR_PreProcessor_Define` | "No name defined for compiler constant", "May not have more than %i parameters to a macro", "parameter name is too long (max %i)", "varadic argument must be last", "duplicate macro paramter name '%s'", "missing ) in macro parameter list" | error | E0114, E0115 | FTEF-14.5, FTEF-14.23, FTEF-14.58 | ported |
-| `QCC_PR_PreProcessor_Define` | "different number of macro arguments in macro append", "arguments differ in macro append" | warning | W0115 | FTEF-14.24, FTEF-14.58, QCD-7.37 | ported |
+| `QCC_PR_PreProcessor_Define` | "different number of macro arguments in macro append", "arguments differ in macro append" | warning | W0115 | FTEF-14.24, FTEF-14.58, QCD-7.58 | ported |
 | `QCC_PR_PreProcessor_Define` | "preprocessor directive within preprocessor macro %s" | error | E0122, W0109 | FTEF-14.46 | ported |
-| `QCC_PR_PreProcessor_Define` | "EOF inside quote in define %s" | warning | W0115 | FTEF-14.58, QCD-7.37 | ported |
-| `QCC_PR_PreProcessor_Define` | "Alternate precompiler definition of %s (%s -> %s)" | warning | W0115 | FTEF-14.58, QCD-7.37 | ported |
-| `QCC_PR_PreProcessor_Define` | "Identical precompiler definition of %s" | ignored | W0116 | FTEF-14.58, QCD-7.38 | ported |
+| `QCC_PR_PreProcessor_Define` | "EOF inside quote in define %s" | warning | W0115 | FTEF-14.58, QCD-7.58 | ported |
+| `QCC_PR_PreProcessor_Define` | "Alternate precompiler definition of %s (%s -> %s)" | warning | W0115 | FTEF-14.58, QCD-7.58 | ported |
+| `QCC_PR_PreProcessor_Define` | "Identical precompiler definition of %s" | ignored | W0116 | FTEF-14.58, QCD-7.59 | ported |
 | `QCC_PR_ExpandPreProcessorMacro` | "Too many parameters in macro call", "EOF on macro call", "Not enough macro parameters", "__VA_COUNT__ without any variable args" | error | E0116, E0117 | FTEF-14.9, FTEF-14.22, FTEF-14.26 | ported |
-| `QCC_PR_ExpandPreProcessorMacro` | "'#%s' is not a macro parameter in %s" | warning | W0117 | FTEF-14.61, QCD-7.39 | ported |
+| `QCC_PR_ExpandPreProcessorMacro` | "'#%s' is not a macro parameter in %s" | warning | W0117 | FTEF-14.61, QCD-7.60 | ported |
 | `QCC_PR_Lex` | "Explicit precompiler usage when not defined %s" | error | E0209 | FTEF-14.52, FTE-23.10 | ported |
-| `QCC_LoadFile` | "file contains null bytes" | warning | W0117 | FTEF-14.64, QCD-7.39 | ported |
+| `QCC_LoadFile` | "file contains null bytes" | warning | W0117 | FTEF-14.64, QCD-7.60 | ported |
 | `QCC_main` | "No destination filename.  qcc -help for info." | error | none: FTEQCC never reaches it | PRJ-4.9 | ported |

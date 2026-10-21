@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The upstream inventories (`docs/spec/inventory-*.md`, P2-116, P2-117): every row of their
-//! tables is `ported` or `not modelled`, every statement ID a row names is an active statement
+//! The L2 upstream inventory (`docs/spec/inventory-l2.md`, P2-116): every row of its tables is
+//! `ported` or `not modelled`, every statement ID a row names is an active statement
 //! (or a section) of `docs/spec/requirements.tsv`, a `not modelled` row names the statement that
 //! says why, and every case family a row names is a `fn` or `const` of the builtin differential
 //! (`xtask/src/oracles/builtins.rs` and `builtins/*.rs`), or the row says `none` and why.
@@ -188,34 +188,13 @@ fn breaches(name: &str, text: &str, known: &Known) -> Vec<String> {
     found
 }
 
-/// The inventories under `docs/spec/`, by file name.
-fn inventories(root: &Path) -> Vec<(String, String)> {
-    let mut found: Vec<(String, String)> = fs::read_dir(root.join("docs/spec"))
-        .expect("docs/spec")
-        .map(|entry| entry.expect("an entry").path())
-        .filter_map(|path| {
-            let name = path.file_name()?.to_str()?.to_owned();
-            (name.starts_with("inventory-") && name.ends_with(".md"))
-                .then(|| (name, fs::read_to_string(&path).expect("an inventory")))
-        })
-        .collect();
-    found.sort();
-    found
-}
-
 #[test]
 fn every_inventory_row_is_ported_or_not_modelled_and_proven() {
     let root = repo_root();
     let known = Known::read(&root);
-    let all = inventories(&root);
-    assert!(
-        all.iter().any(|(name, _)| name == "inventory-l2.md"),
-        "docs/spec/inventory-l2.md is missing"
-    );
-    let found: Vec<String> = all
-        .iter()
-        .flat_map(|(name, text)| breaches(name, text, &known))
-        .collect();
+    let text = fs::read_to_string(root.join("docs/spec/inventory-l2.md"))
+        .expect("docs/spec/inventory-l2.md");
+    let found = breaches("inventory-l2.md", &text, &known);
     assert!(
         found.is_empty(),
         "inventory breaches:\n{}",

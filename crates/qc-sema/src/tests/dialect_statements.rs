@@ -156,11 +156,12 @@ fn builtin_after_body_is_a_warning() {
         ["W0206 incompatible redeclaration. Ignoring replacement of qc function with builtin."]
     );
     assert!(!Code::W0206.is_error());
-    // A builtin and then a body, or a body twice, is still "NAME redeclared" (QCD-3.6).
+    // A builtin and then a body, or a body twice, is a "redeclaration of function body" and
+    // still "NAME redeclared" (QCD-3.6, FTEF-19.4).
     let index = fte_index_of("float(float a) cos = #61;\nfloat(float a) cos = { return a; };\n");
-    assert_eq!(errors(&index), [Code::E0206]);
+    assert_eq!(errors(&index), [Code::E0216, Code::E0206]);
     let index = fte_index_of("float() g = { return 1; };\nfloat() g = { return 2; };\n");
-    assert_eq!(errors(&index), [Code::E0206]);
+    assert_eq!(errors(&index), [Code::E0216, Code::E0206]);
     // A builtin of another type is the type mismatch of QCD-3.5.
     let index = fte_index_of("float(float a) tan = { return a; };\nvoid() tan = #62;\n");
     assert_eq!(errors(&index), [Code::E0205]);

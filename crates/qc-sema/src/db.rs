@@ -37,7 +37,9 @@ use qc_syntax::Parse;
 
 use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess};
 use crate::lower::{FileDecls, lower_file};
-use crate::resolve::{FileDiagnostic, ModuleIndex, ResolveOptions, resolve_mapped, resolve_module};
+use crate::resolve::{
+    FileDiagnostic, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
+};
 use crate::symbol::{FileId, Location};
 
 /// How many times each memoized query actually ran, as opposed to being served from cache.
@@ -381,13 +383,30 @@ impl Db {
             .iter()
             .map(|r| r.noref.as_slice())
             .collect();
+        // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
+        // `*extensions.qc`.
+        let extensions = self
+            .paths
+            .iter()
+            .filter(|(_, path)| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.to_ascii_lowercase().ends_with("extensions.qc"))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        let sources = Sources {
+            maps: &maps,
+            noref: &noref,
+            extensions,
+        };
         self.bump_module_index();
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
         };
         let analysis = ModuleAnalysis {
-            index: resolve_mapped(&decls, &maps, &noref, options),
+            index: resolve_mapped(&decls, &sources, options),
             syntax,
         };
         self.analysis = Some(Memo {

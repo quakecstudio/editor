@@ -15,10 +15,13 @@
 //! `$frame` lines (QC-8.2) are kept as
 //! trivia; frame macro references are [`SyntaxKind::FrameRef`] literals, resolved later.
 //!
-//! This crate is written from the spec, not ported.
+//! This crate is written from the spec, not ported, but for [`c_scalar`], the loop over C
+//! type words of FTEQCC's `QCC_PR_ParseType`, which is ported so the parser and the semantic
+//! model read those words as FTEQCC does.
 
 pub mod ast;
 mod binum;
+pub mod c_scalar;
 mod input;
 mod kind;
 mod parser;

@@ -39,8 +39,9 @@ fn bound_as(number: i32, name: &str) -> Outcome {
 }
 
 // spec FTE-23.15: every case of the cross product is recorded, and the profile's outcome is the
-// pinned FTEQCC's or id's qcc's, or differs only as QC-27.9, FTE-23.11, FTEF-13.8 and
+// pinned FTEQCC's or id's qcc's, or differs only as QC-27.8, QC-27.9, FTEF-13.8 and
 // FTEF-14.47 say
+// spec FTEF-19.18: the definitions family is recorded and agrees but for QC-27.8
 #[test]
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();
@@ -54,7 +55,7 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
-        ["FTE-23.11", "FTEF-13.8", "FTEF-14.47", "QC-27.9"]
+        ["FTEF-13.8", "FTEF-14.47", "QC-27.8", "QC-27.9"]
     );
     assert!(tally.agree > 6000, "{tally}");
 }
@@ -660,6 +661,30 @@ fn outcomes_round_trip() {
     }
 }
 
+// spec QC-27.8: so may the vanilla profile's error for an initialiser that is no literal, where
+// id's qcc reads the last literal it lexed; without that error `f` is bound
+// spec QC-11.4: the recorded id's qcc compiles `float x = y;` after a float literal
+#[test]
+fn a_vanilla_initialiser_that_is_no_literal_may_differ() {
+    let case = vanilla("void() f = #5;\nfloat k = 7;\nfloat y;\nfloat x = y;\n");
+    for (errors, oracle, expected) in [
+        (&[Code::E0506][..], bound_as(5, "f"), Some("QC-27.8")),
+        (&[Code::E0506], Outcome::Rejected, None),
+        (
+            &[Code::E0506, Code::E0207],
+            Outcome::Rejected,
+            Some("QC-27.8"),
+        ),
+        (&[Code::E0207], Outcome::Rejected, None),
+    ] {
+        assert_eq!(
+            expected_difference(&case, &Outcome::Rejected, errors, &oracle, ULong::Bits64),
+            expected,
+            "{errors:?} {oracle}"
+        );
+    }
+}
+
 // spec QC-27.9: the only expected difference is the vanilla profile's error for a builtin
 // number not above 0, where id's qcc does not refuse; without that error the outcomes agree
 #[test]
@@ -712,11 +737,11 @@ fn only_a_vanilla_number_not_above_zero_may_differ() {
     }
 }
 
-// spec FTE-23.11: a macro after `#` that leaves `f` initialised with a number is FTEQCC's
-// "Cannot cast" error and no error here; only that case may differ so
+// spec FTE-23.16: a macro after `#` that leaves `f` initialised with a number is FTEQCC's
+// "Cannot cast" error and the profile's, so no such case may differ
 // spec FTEF-13.8: a case FTEQCC never finishes may differ, as the profile ends
 #[test]
-fn fteqcc_differs_only_where_it_casts_or_hangs() {
+fn fteqcc_differs_only_where_it_hangs() {
     let number = fte("#define N 5\nvoid() f = #N;\n");
     let string = fte("#define N \"ex_a\"\nvoid() f = #N;\n");
     let plain = fte("void() f = 5;\n");
@@ -724,7 +749,8 @@ fn fteqcc_differs_only_where_it_casts_or_hangs() {
     let accepted = Outcome::Accepted;
     let rejected = Outcome::Rejected;
     for (case, ours, errors, oracle, expected) in [
-        (&number, &accepted, &[][..], &rejected, Some("FTE-23.11")),
+        (&number, &accepted, &[][..], &rejected, None),
+        (&number, &rejected, &[Code::E0213], &rejected, None),
         (&number, &accepted, &[Code::E0209], &rejected, None),
         (&number, &rejected, &[], &accepted, None),
         (&number, &bound_as(5, "f"), &[], &rejected, None),
@@ -761,9 +787,10 @@ fn bindings_are_read_after_the_preprocessor() {
         profile(&fte("#define N ex_a\nvoid() f = :N;\n")).0,
         bound_as(0, "ex_a")
     );
+    // FTE-23.16: the number cannot be cast to the function.
     assert_eq!(
         profile(&fte("#define N 5\nvoid() f = #N;\n")).0,
-        Outcome::Accepted
+        Outcome::Rejected
     );
     let long = "n".repeat(254);
     assert_eq!(
@@ -898,7 +925,7 @@ fn bound_reads_f_s_function_by_its_place() {
         bound(&read(&zero), &fte("void() f = #0;\n")),
         Some(bound_as(0, "f"))
     );
-    // FTE-23.11: FTEQCC makes no function for `f` initialised with a string; a function
+    // FTE-23.16: FTEQCC makes no function for `f` initialised with a string; a function
     // missing before `f`'s place is no such case.
     let none = progs_with(&[]);
     assert_eq!(
@@ -927,7 +954,7 @@ fn reply(dir: &Path, fteqcc: bool, case: &Case, outcome: &Outcome) -> Reply {
         Outcome::Rejected => failed("t.qc:1: error: Bad builtin immediate"),
         Outcome::Redeclared if fteqcc => failed("t.qc:2: error: incompatible redeclaration"),
         Outcome::Redeclared => failed("t.qc:2:f redeclared"),
-        // FTEQCC accepts with no builtin only a function it makes none for (FTE-23.11).
+        // FTEQCC accepts with no builtin only a function it makes none for (FTE-23.16).
         Outcome::Accepted if fteqcc => Reply {
             files: vec![(dir.join("progs.dat"), progs_with(&[]))],
             ..Reply::exit(0)
@@ -962,9 +989,13 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             .iter()
             .filter_map(|arg| arg.strip_prefix("-I").map(str::to_owned))
             .collect();
+        let werror = args.iter().any(|arg| arg == "-Werror");
         assert_eq!(
             args.len(),
-            include_dirs.len().saturating_add(usize::from(fteqcc))
+            include_dirs
+                .len()
+                .saturating_add(usize::from(fteqcc))
+                .saturating_add(usize::from(werror).saturating_mul(2))
         );
         assert!(fteqcc || include_dirs.is_empty());
         let (list, list_encoding) = decoded(&fs::read(dir.join("progs.src")).unwrap());
@@ -1001,6 +1032,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             source,
             encoding,
             project,
+            werror,
         };
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
     }

@@ -863,6 +863,7 @@ fn project_case(compiled: &str, source: &str, files: &[(&str, String)]) -> Case 
             include_dirs: Vec::new(),
             progs: None,
         }),
+        werror: false,
     }
 }
 

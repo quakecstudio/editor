@@ -60,7 +60,11 @@ the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
-the syntactic ones.
+the syntactic ones. The one exception is `src/c_scalar.rs`, ported from FTEQCC's
+`QCC_PR_ParseType` and `QCC_PR_CheckKeyword` (FTEF-2.7 to FTEF-2.11): which C type words the
+default keywords enable, the loop that reads them and the type they make, with the
+"ignoring unsupported" warnings `W0226` (QCD-7.52). The parser reads a type's C words with it,
+and `qc-sema` names the type with it.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer` and `qc-preproc`, whose FTEQCC directive reader
   ends a directive line.

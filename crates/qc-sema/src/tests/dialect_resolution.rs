@@ -242,13 +242,18 @@ fn equal_reinitialisation_is_accepted() {
         error_codes(&fte_index_of("float A = 1;\nfloat A = 2;\n")),
         [Code::E0206]
     );
+    // FTEF-19.5: a constant's name gives its value.
     assert_eq!(
         error_codes(&fte_index_of("float A = 1;\nfloat B = 1;\nfloat A = B;\n")),
+        Vec::<Code>::new()
+    );
+    assert_eq!(
+        error_codes(&fte_index_of("float A = 1;\nfloat B = 2;\nfloat A = B;\n")),
         [Code::E0206]
     );
     assert_eq!(
         error_codes(&fte_index_of("void() f = { };\nvoid() f = { };\n")),
-        [Code::E0206]
+        [Code::E0216, Code::E0206]
     );
     assert_eq!(
         error_codes(&index_of("float A = 1;\nfloat A = 1;")),
@@ -300,8 +305,9 @@ fn type_names_are_definitions() {
     // A local of a type the model does not know is never a type mismatch, and a local named
     // like the type shadows it (FTE-22.1).
     assert_eq!(all_codes(&index), Vec::<Code>::new());
+    // FTEF-19.20: a name no type has is "not a type", and the local is not made.
     let unknown = fte_index_of("void() f = { poseInfo p; float p; };\n");
-    assert_eq!(all_codes(&unknown), Vec::<Code>::new());
+    assert_eq!(all_codes(&unknown), [Code::E0203]);
 }
 
 // spec FTE-21.1: the names a local's initialiser uses are resolved, a value or an aggregate.
