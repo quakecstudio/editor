@@ -885,30 +885,10 @@ profile the preprocessor reads them as FTEQCC does.
   FTEQCC reports an error, "unclosed bracket condition", "unclosed defined condition" or
   "unexpected end-of-line" (`#if` with nothing after it), the preprocessor reports it (`E0121`)
   and takes the expression as false; the graph takes it as false.
-- **FTEF-14.34** `QCC_PR_Precompiler` reads a directive at a `#` that `QCC_PR_NewLine` reaches:
-  the first byte after a line ending (LF, or a CR not before a LF, `qcc_islineending`) that the
-  white-space reader passes, a `//` comment's included, and the spaces and tabs after it (`while
-  (*pr_file_p==' ' || *pr_file_p == '\t') pr_file_p++;`), or the start of a file being compiled
-  after its spaces and tabs (`QCC_PR_CompileFile` calls `QCC_PR_NewLine` first). An `#include`d
-  file is read with `QCC_PR_Precompiler()` at its first byte and no spaces skipped, so `  #define
-  N 5` on its first line is no directive. A `#` after a `/* */` comment on its line, or after one
-  that spans lines, or in the middle of a line, is none. After the `#` every byte up to `' '` but
-  a line break is passed over (`for (directive = pr_file_p+1; *directive; directive++)`, `if
-  (*directive > ' ') break;`, a byte of 0x80 or more too, as FTEQCC's `char` is signed), so `#
-  define` and `#` and a tab or a vertical tab before `define` are directives; a line break first
-  is "Hanging # with no directive" (`E0121`). The name is matched by its first bytes (`if
-  (!strncmp(directive, "define", 6))`), in FTEQCC's order: `define`, `append`, `undef`, `if`,
-  `else` and `elif`, `endif`, `eof`, `error`, `warning`, `message`, `copyright`, `package`,
-  `pack`, `forcecrc`, `merge`, `includelist`, `include`, `datafile`, `output` and `pragma`. So
-  `#defined`, `#iffy`, `#elsewhere`, `#endiff`, `#eofx`, `#errors`, `#includes` and `#pragmas`
-  are those directives. A name that matches none, `#endlist` and `#foo` among them, leaves the
-  `#` to be read as code (FTE-23.10), `#NAME` a macro's use, and FTEQCC's "Explicit precompiler
-  usage when not defined NAME" when `NAME` is no macro: the preprocessor reports that as `E0121`
-  for a `#` that stands first on its line of the output, as after a comment at a line's start,
-  where the semantic model would read the line as a directive's and drop it, and the parser
-  reports the rest as `E0209` (FTE-23.10). Each directive's operand is read
-  from its name's end as its own name's length gives it (`pr_file_p = directive+5;` for
-  `undef`), so `#undefine N` undefines `ine`.
+- **FTEF-14.34** **Withdrawn** (P2-103, #520): it said the preprocessor reports FTEQCC's "Explicit
+  precompiler usage when not defined NAME" as `E0121` for a `#` that stands first on its line of the
+  output, where the semantic model would drop the line as a directive's. The semantic model now
+  parses the output with no directive lines (QC-9.19). Replaced by FTEF-14.52.
 - **FTEF-14.35** After a directive's operand `QCC_PR_SkipToEndOfLine` reads to its line's break,
   passing over `/* */` comments, which may span lines, strings before any `//`, and each `\`
   and line break (LF or CR LF), in a `//` comment too, so after `#undef X // c \` or `#ifdef X
@@ -989,7 +969,7 @@ profile the preprocessor reads them as FTEQCC does.
   before `#endlist`, reached or made by a directive in the list (`#eof`, `#package`,
   `DONT_COMPILE_THIS_FILE`), is FTEQCC's "eof in includelist", which the preprocessor reports as
   `E0406` "#includelist without #endlist" at the `#includelist`. `#endlist` outside a list is no
-  directive (FTEF-14.34).
+  directive (FTEF-14.52).
 - **FTEF-14.42** `QCC_PR_DefineName` refuses a macro name of 64 bytes or more (`if (strlen(name)
   >= MAXCONSTANTNAMELENGTH || !*name) QCC_PR_ParseError(ERR_NAMETOOLONG, "Compiler constant name
   length is too long or short");`, `#define MAXCONSTANTNAMELENGTH 64` in `qcc.h`), for `#define`
@@ -1033,7 +1013,7 @@ profile the preprocessor reads them as FTEQCC does.
   function-like macro use's `(` and after each `,` of its arguments (FTEF-14.22), and before
   each word of an `#includelist` and each byte `DONT_COMPILE_THIS_FILE` passes over, calls
   `QCC_PR_NewLine(false)` at each line ending, which runs a directive at the next line's start
-  (FTEF-14.34): so with `#define M(x) x`, `M(`, a line break, `#define Y #5`, a line break and
+  (FTEF-14.52): so with `#define M(x) x`, `M(`, a line break, `#define Y #5`, a line break and
   `Y)` defines `Y` and expands to `#5`, and `M(`, a line break, `#ifdef Q`, `zz`, `#endif` and
   `#5)` is `#5`. The directive's line is no part of the argument, which starts after the white
   space. A line break in the middle of an argument is part of it (FTEF-14.22), so a directive on
@@ -1109,7 +1089,7 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.51** Under this profile the syntax tree, which shows a file as written and runs no
   directive (both sides of a conditional are parsed), makes a directive node of the text
   the preprocessor reads as one directive (`qc_preproc::fte_directive_end`). It starts at a `#`
-  that `QCC_PR_NewLine` reaches (FTEF-14.34), the file read as one being compiled, so a `#`
+  that `QCC_PR_NewLine` reaches (FTEF-14.52), the file read as one being compiled, so a `#`
   after spaces and tabs on its first line starts one too, and it ends where the preprocessor
   reads on after it with nothing run: at the end of its line as `QCC_PR_SkipToEndOfLine` ends it
   (FTEF-14.35), after the operand the directive reads, a `#define`'s body (FTEF-14.24) or an
@@ -1128,9 +1108,31 @@ profile the preprocessor reads them as FTEQCC does.
   neither, as the preprocessor reads that text as bytes. The text an `#if` or `#else` skips, an
   `#includelist`'s list (FTEF-14.41) and what `#eof`, `#package` and `DONT_COMPILE_THIS_FILE`
   leave unread are parsed as code. The vanilla dialect keeps QC-9.1's node: a `#` first on its
-  line before a name on that line, to the first line break after it; so does the semantic
-  model's parse of a rendering of the preprocessor's output under every dialect, whose
-  directives have been run (`qc_syntax::DirectiveLines::ToLineBreak`).
+  line before a name on that line, to the first line break after it. A rendering of the
+  preprocessor's output has no directive lines in either dialect (QC-9.19).
+- **FTEF-14.52** `QCC_PR_Precompiler` reads a directive at a `#` that `QCC_PR_NewLine` reaches:
+  the first byte after a line ending (LF, or a CR not before a LF, `qcc_islineending`) that the
+  white-space reader passes, a `//` comment's included, and the spaces and tabs after it (`while
+  (*pr_file_p==' ' || *pr_file_p == '\t') pr_file_p++;`), or the start of a file being compiled
+  after its spaces and tabs (`QCC_PR_CompileFile` calls `QCC_PR_NewLine` first). An `#include`d
+  file is read with `QCC_PR_Precompiler()` at its first byte and no spaces skipped, so `  #define
+  N 5` on its first line is no directive. A `#` after a `/* */` comment on its line, or after one
+  that spans lines, or in the middle of a line, is none. After the `#` every byte up to `' '` but
+  a line break is passed over (`for (directive = pr_file_p+1; *directive; directive++)`, `if
+  (*directive > ' ') break;`, a byte of 0x80 or more too, as FTEQCC's `char` is signed), so `#
+  define` and `#` and a tab or a vertical tab before `define` are directives; a line break first
+  is "Hanging # with no directive" (`E0121`). The name is matched by its first bytes (`if
+  (!strncmp(directive, "define", 6))`), in FTEQCC's order: `define`, `append`, `undef`, `if`,
+  `else` and `elif`, `endif`, `eof`, `error`, `warning`, `message`, `copyright`, `package`,
+  `pack`, `forcecrc`, `merge`, `includelist`, `include`, `datafile`, `output` and `pragma`. So
+  `#defined`, `#iffy`, `#elsewhere`, `#endiff`, `#eofx`, `#errors`, `#includes` and `#pragmas`
+  are those directives. A name that matches none, `#endlist` and `#foo` among them, leaves the
+  `#` to be read as code (FTE-23.10), `#NAME` a macro's use, and FTEQCC's "Explicit precompiler
+  usage when not defined NAME" when `NAME` is no macro, which this profile refuses where the
+  parser reads the `#`, first on its line of the output too (QC-9.19): `E0209` in a builtin
+  initialiser (FTE-23.10), the parser's other errors elsewhere. Each directive's operand is read
+  from its name's end as its own name's length gives it (`pr_file_p = directive+5;` for
+  `undef`), so `#undefine N` undefines `ine`.
 
 ## FTEF-15 Declarations
 

@@ -15,10 +15,10 @@ references are literals, resolved later. Under the vanilla dialect a directive l
 `#` first on its line to the line break (QC-9.1); under an FTEQCC dialect it is the text the
 preprocessor reads as one directive, found with `qc_preproc::fte_directive_end`, and the text
 after it is lexed again as the preprocessor lexes it (`qc_preproc::relex_from`, FTEF-14.51).
-`parse_with_lines` chooses the lines: the semantic model reads a rendering of the
-preprocessor's output, whose directives have been run, with QC-9.1's in every dialect.
 
-`parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`.
+`parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
+`parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
+lines, so a `#` first on its line is a token (QC-9.19).
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
 `break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:` at the

@@ -43,6 +43,16 @@ pub(crate) struct Tok {
     pub(crate) value: Option<f32>,
 }
 
+/// What a parser's input text is, which decides whether it has directive lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Text {
+    /// A source file as written: a `#` and a name first on a line open a directive line
+    /// (QC-9.1).
+    Source,
+    /// Text a preprocessor wrote, which holds no directive lines: every `#` is a token.
+    Preprocessed,
+}
+
 /// The tokens and trivia of one file.
 #[derive(Debug)]
 pub(crate) struct Input<'a> {
@@ -54,31 +64,6 @@ pub(crate) struct Input<'a> {
 
 fn latin1(bytes: &[u8]) -> String {
     bytes.iter().copied().map(char::from).collect()
-}
-
-/// Which text of a file the tree groups as directive lines, which the parser steps over.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DirectiveLines {
-    /// A `#` first on its line before a name on that line, to the first line break after it
-    /// (QC-9.1): the vanilla dialect's lines, and those of a rendering of the preprocessor's
-    /// output, whose directives have been run.
-    ToLineBreak,
-    /// The text the FTEQCC preprocessor reads as one directive (FTEF-14.51): an FTEQCC
-    /// dialect's lines in a file as written.
-    Fteqcc,
-}
-
-impl DirectiveLines {
-    /// The lines of a file as written in `dialect`: [`DirectiveLines::Fteqcc`] in an FTEQCC
-    /// dialect ([`Dialect::has_fteqcc_extensions`]), else [`DirectiveLines::ToLineBreak`].
-    #[must_use]
-    pub const fn of(dialect: Dialect) -> Self {
-        if dialect.has_fteqcc_extensions() {
-            Self::Fteqcc
-        } else {
-            Self::ToLineBreak
-        }
-    }
 }
 
 /// The directive line being read.
@@ -93,9 +78,10 @@ enum Line {
 }
 
 impl<'a> Input<'a> {
-    /// Lexes `source` in `dialect` and classifies everything between the tokens, grouping
-    /// `lines` as directive lines.
-    pub(crate) fn new(source: &'a [u8], dialect: Dialect, lines: DirectiveLines) -> Self {
+    /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
+    /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
+    /// under an FTEQCC dialect.
+    pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
         let mut lexed = lex_with(source, dialect);
         let mut input = Self {
             source,
@@ -104,8 +90,8 @@ impl<'a> Input<'a> {
             diagnostics: Vec::new(),
         };
         let text_end = source.iter().position(|&b| b == 0).unwrap_or(source.len());
-        let text = source.get(..text_end).unwrap_or_default();
-        let fte = lines == DirectiveLines::Fteqcc;
+        let until_nul = source.get(..text_end).unwrap_or_default();
+        let fte = dialect.has_fteqcc_extensions();
         let mut at = 0_usize;
         let mut line: Option<Line> = None;
         let mut index = 0_usize;
@@ -130,13 +116,15 @@ impl<'a> Input<'a> {
             }
             input.gap(at, span.start);
             at = span.end;
-            if line.is_none() {
+            if line.is_none() && text == Text::Source {
                 if fte {
                     let hash = lexed
                         .tokens
                         .get(index)
                         .is_some_and(|t| t.kind == TokenKind::Punct(Punct::Hash));
-                    let end = hash.then(|| fte_directive_end(text, span.start)).flatten();
+                    let end = hash
+                        .then(|| fte_directive_end(until_nul, span.start))
+                        .flatten();
                     if let Some(end) = end {
                         // The preprocessor reads the directive's text as bytes, so the lexical
                         // errors in it are none (FTEF-14.51).

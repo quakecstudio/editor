@@ -18,7 +18,7 @@ use crate::{FileId, Relexed, merge_errors};
 
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
 /// `text` ends: the offset the preprocessor reads on from after it, with nothing run. `None`
-/// when the `#` starts no directive: `QCC_PR_NewLine` does not reach it (FTEF-14.34), as when a
+/// when the `#` starts no directive: `QCC_PR_NewLine` does not reach it (FTEF-14.52), as when a
 /// `/* */` comment or other text is before it on its line, or its name matches no directive.
 ///
 /// The file is read as one being compiled (`QCC_PR_CompileFile`), so a `#` on its first line

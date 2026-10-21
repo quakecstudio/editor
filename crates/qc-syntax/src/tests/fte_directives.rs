@@ -8,7 +8,7 @@ use std::path::Path;
 use proptest::prelude::*;
 use qc_preproc::{MemoryLoader, Preprocessor};
 
-use crate::{Dialect, DirectiveLines, Span, SyntaxKind, SyntaxNode, parse_with, parse_with_lines};
+use crate::{Dialect, Span, SyntaxKind, SyntaxNode, parse_preprocessed, parse_with};
 
 /// Whether `token`'s node, or a node above it, is a directive.
 fn in_directive(node: &SyntaxNode) -> bool {
@@ -71,7 +71,7 @@ fn assert_same_code(sources: &[&str]) {
     }
 }
 
-// spec FTEF-14.51: a directive node starts at a `#` `QCC_PR_NewLine` reaches (FTEF-14.34):
+// spec FTEF-14.51: a directive node starts at a `#` `QCC_PR_NewLine` reaches (FTEF-14.52):
 // after a line ending and spaces and tabs, at the file's start after them, and with white
 // space between the `#` and the name
 #[test]
@@ -92,7 +92,7 @@ fn a_directive_starts_where_new_line_reads_a_hash() {
 }
 
 // spec FTEF-14.51: a `#` after a `/* */` comment on its line, in the middle of a line, or
-// before a name that matches no directive is read as code (FTEF-14.34, FTE-23.10)
+// before a name that matches no directive is read as code (FTEF-14.52, FTE-23.10)
 #[test]
 fn a_hash_new_line_does_not_reach_is_code() {
     let cases = [
@@ -109,7 +109,7 @@ fn a_hash_new_line_does_not_reach_is_code() {
 }
 
 // spec FTEF-14.51: a directive's name is matched by its first bytes and a `#` alone on its
-// line is a directive, so each is one node (FTEF-14.34)
+// line is a directive, so each is one node (FTEF-14.52)
 #[test]
 fn names_matched_by_their_first_bytes_are_directives() {
     let cases = [
@@ -317,30 +317,20 @@ proptest! {
     }
 }
 
-// spec FTEF-14.51: a rendering of the preprocessor's output, whose directives have been run,
-// is read with QC-9.1's lines under FTEQCC too, so a `#` it leaves first on a line before no
-// name is code
+// spec FTEF-14.51: the FTEQCC nodes are a source file's; a rendering of the preprocessor's
+// output has none, and GMQCC reads a file as FTEQCC does
 #[test]
-fn a_rendering_keeps_the_lines_of_qc_9_1() {
-    let lines = |source: &str| {
-        let parsed = parse_with_lines(
-            source.as_bytes(),
-            Dialect::Fteqcc,
-            DirectiveLines::ToLineBreak,
-        );
-        parsed
+fn only_a_source_file_has_fteqcc_nodes() {
+    let source = "#undef X // c \\\nfloat y;\n";
+    let rendered = parse_preprocessed(source.as_bytes(), Dialect::Fteqcc);
+    assert!(
+        !rendered
             .syntax()
             .descendants()
-            .filter(|n| n.kind() == SyntaxKind::Directive)
-            .map(|n| String::from_utf8(n.text()).unwrap())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(lines("#undef X // c \\\nfloat y;\n"), ["#undef X"]);
-    assert_eq!(lines("# \nvoid() f = #5;\n"), Vec::<String>::new());
-    assert_eq!(fte("# \nvoid() f = #5;\n"), ["# "]);
-    assert_eq!(DirectiveLines::of(Dialect::Gmqcc), DirectiveLines::Fteqcc);
+            .any(|n| n.kind() == SyntaxKind::Directive)
+    );
     assert_eq!(
-        DirectiveLines::of(Dialect::Vanilla),
-        DirectiveLines::ToLineBreak
+        directives(source, Dialect::Gmqcc),
+        ["#undef X // c \\\nfloat y;"]
     );
 }

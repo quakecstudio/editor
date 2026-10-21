@@ -29,7 +29,6 @@ mod tree;
 mod tests;
 
 pub use binum::builtin_binum;
-pub use input::DirectiveLines;
 pub use kind::SyntaxKind;
 pub use parser::{FTEQCC_MAX_NAME, LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
@@ -93,18 +92,26 @@ pub fn parse(source: &[u8]) -> Parse {
 /// under the vanilla dialect each keyword construct is reported once as `E0510` "NAME is an
 /// FTEQCC extension" (QCD-6.10) and the operator and declaration extensions keep their
 /// vanilla diagnostic, so the two profiles are observably different. Never fails, and the
-/// tree's text is `source`, byte for byte. The directive lines are those of a file as written
-/// in `dialect` ([`DirectiveLines::of`]).
+/// tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
-    parse_with_lines(source, dialect, DirectiveLines::of(dialect))
+    parse_text(source, dialect, input::Text::Source)
 }
 
-/// [`parse_with`], grouping `lines` as directive lines: [`DirectiveLines::ToLineBreak`] for a
-/// rendering of the preprocessor's output in any dialect.
+/// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
+/// holds no directive lines, so a `#` first on its line is the token it is and the parser
+/// reads it as it reads a `#` anywhere else.
+///
+/// The preprocessor runs every directive, so a `#` left in its output is code: one after a
+/// comment at a line's start (QC-9.1, FTEF-14.52), or one a macro's expansion wrote.
+/// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
-pub fn parse_with_lines(source: &[u8], dialect: Dialect, lines: DirectiveLines) -> Parse {
-    let mut parser = parser::Parser::new(input::Input::new(source, dialect, lines), dialect);
+pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
+    parse_text(source, dialect, input::Text::Preprocessed)
+}
+
+fn parse_text(source: &[u8], dialect: Dialect, text: input::Text) -> Parse {
+    let mut parser = parser::Parser::new(input::Input::new(source, dialect, text), dialect);
     parser.source_file();
     let (green, diagnostics) = parser.finish();
     Parse { green, diagnostics }
