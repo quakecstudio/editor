@@ -131,6 +131,8 @@ pub enum Code {
     E0231,
     /// "_() intrinsic accepts only a string immediate" (QCD-3.32).
     E0232,
+    /// "initializer-string too long" (QCD-3.33).
+    E0233,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -242,6 +244,9 @@ pub enum Code {
     W0224,
     /// "enumflags - VALUE has multiple bits set" and "enumflags - VALUE not an integer value" (QCD-7.51).
     W0225,
+    /// "ignoring unsupported unsigned keyword, type will be signed", "long doubles are not
+    /// supported, using double" and "ignoring unsupported const keyword" (QCD-7.52).
+    W0226,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -256,7 +261,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 114] = [
+    pub const ALL: [Self; 116] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -311,6 +316,7 @@ impl Code {
         Self::E0230,
         Self::E0231,
         Self::E0232,
+        Self::E0233,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -366,6 +372,7 @@ impl Code {
         Self::W0223,
         Self::W0224,
         Self::W0225,
+        Self::W0226,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -412,6 +419,7 @@ impl Code {
             Self::E0212 => "E0212",
             Self::E0231 => "E0231",
             Self::E0232 => "E0232",
+            Self::E0233 => "E0233",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -450,6 +458,7 @@ impl Code {
             Self::W0223 => "W0223",
             Self::W0224 => "W0224",
             Self::W0225 => "W0225",
+            Self::W0226 => "W0226",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -519,6 +528,7 @@ impl Code {
             | Self::W0223
             | Self::W0224
             | Self::W0225
+            | Self::W0226
             | Self::W0311
             | Self::W0312
             | Self::W0313
@@ -571,6 +581,7 @@ impl Code {
             | Self::E0212
             | Self::E0231
             | Self::E0232
+            | Self::E0233
             | Self::E0301
             | Self::E0308
             | Self::E0501

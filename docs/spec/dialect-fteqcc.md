@@ -86,10 +86,12 @@ subset does not.
 ## FTEF-2 Integer and the other C scalar types
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_ParseType` (the C-type branch: `signed`, `unsigned`,
-`long`, `short`, `char`, `int`, `integer`, `float`, `double`, `_Bool`), the type globals
-(`type_integer`, `type_uint`, `type_int64`, `type_uint64`, `type_sint8`, `type_uint8`,
-`type_sint16`, `type_uint16`); `qccmain.c`, the `compiler_flag[]` keyword table,
-fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+`long`, `short`, `char`, `int`, `integer`, `float`, `double`, `_Bool`), `QCC_PR_CheckKeyword`
+and `QCC_TypeForName`, the type globals (`type_integer`, `type_uint`, `type_int64`,
+`type_uint64`, `type_sint8`, `type_uint8`, `type_sint16`, `type_uint16`); `qcc_pr_comp.c`,
+`QCC_PR_ParseStatement`; `qccmain.c`, the `compiler_flag[]` keyword table and
+`QCC_PR_NewType`'s calls, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Ported in
+`crates/qc-syntax/src/c_scalar.rs`.
 
 Vanilla `qcc` has `void`, `float`, `vector`, `string` and `entity` only (QC-10.1): `int`,
 `integer`, `bool`, `double` and the rest are read as names and are "not a type" (QC-11). The
@@ -102,29 +104,65 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   `keyword_int` and `keyword_integer` both resolve to it (`QCC_PR_ParseType`, the C-type
   branch, `int`/`integer` set `bits = 32`). The corpus declares locals, globals, fields,
   parameters and return types of this type.
-- **FTEF-2.2** `unsigned` makes an integer type unsigned (`type_uint`); `signed` is the
-  default and accepted. The C width keywords resolve as FTEQCC's `QCC_PR_ParseType` sets them:
-  `char` is 8-bit (`type_sint8`/`type_uint8`), `short` 16-bit (`type_sint16`/`type_uint16`),
-  `int`/`integer` 32-bit (`type_integer`/`type_uint`), `long` 64-bit
-  (`type_int64`/`type_uint64`). `long long` is also 64-bit, with FTEQCC's warning "long longs
-  are not supported, using long".
-- **FTEF-2.3** `double` is a 64-bit float type (`type_double`); `float` stays the 32-bit QC
-  float (QC-10). `_Bool` resolves to `type_bint` or `type_bfloat` by the `int` keyword flag
-  (`QCC_PR_ParseType`, the `_Bool` case). The corpus's `bool` is this project's rendering of a
-  boolean scalar; FTEQCC's own `bool` comes from the engine's extension headers
-  (`fteextensions.qc`), so it is a defined type rather than a built-in keyword, and resolves
-  as that definition says.
-- **FTEF-2.4** FTEQCC accepts combinations in any order that C allows (`signed`/`unsigned`
-  with `long`/`short`/`int`/`char`, `long int`, `short int`, `long long`), parsed by the
-  keyword loop in `QCC_PR_ParseType`. It warns and narrows where a width is unsupported
-  ("long doubles are not supported, using double"); the narrowing is FTEQCC's and this spec
-  follows it.
-- **FTEF-2.5** `const` and `volatile` are accepted type qualifiers; FTEQCC's `QCC_PR_ParseType`
-  reads and warns "ignoring unsupported const keyword" and treats everything as volatile. The
-  qualifier changes whether the name may be assigned, not its type (see also
-  `dialect-fteqcc-rerelease.md` FTE-10 for `const`).
+- **FTEF-2.2** **Withdrawn** (P2-117, #545): it said `signed`, `char`, `short` and `long` are
+  types, but their keywords are disabled by default (`nondefaultkeyword` in `compiler_flag[]`),
+  so bare they are "not a type". Replaced by FTEF-2.7 and FTEF-2.8.
+- **FTEF-2.3** **Withdrawn** (P2-117, #545): it said `double` is a type, but `keyword_double` is
+  disabled by default: the double is `__double`. Replaced by FTEF-2.7 and FTEF-2.8.
+- **FTEF-2.4** **Withdrawn** (P2-117, #545): it said the C words combine in any order C allows,
+  but the loop takes a word only while its test holds (`long int` is 32 bits, `int long` ends
+  at `int`). Replaced by FTEF-2.8 and FTEF-2.9.
+- **FTEF-2.5** **Withdrawn** (P2-117, #545): it said `volatile` is accepted, but
+  `keyword_volatile` is disabled by default. Replaced by FTEF-2.11.
 - **FTEF-2.6** Codegen (later): how each width is stored and which need version 7 is fixed by
   L-01.
+- **FTEF-2.7** A C type word is matched as `QCC_PR_CheckKeyword(keywordenabled, string)` matches
+  it: a token that starts with `__` matches its keyword in any case whether or not the keyword
+  is enabled (`if (pr_token[0] == '_' && pr_token[1] == '_') { if (stricmp(string,
+  pr_token+2)) return false; ...`), and a bare word only when its keyword is enabled, case
+  sensitively. By default (`compiler_flag[]`) `int` and `integer` (`typekeyword`) and
+  `unsigned` (`defaultkeyword`) are enabled, `float` and `_Bool` (`QCC_PR_CheckKeyword(true,
+  "_Bool")`) always are, and `double`, `long`, `short`, `char`, `signed`, `register` and
+  `volatile` (`nondefaultkeyword`) are not: `long l;`, `double d;`, `signed x;`, `short s;`
+  and `char c;` are "\"WORD\" is not a type" (`E0203`), and `__long l;`, `__double d;` and
+  `__CHAR c;` are types.
+- **FTEF-2.8** `QCC_PR_ParseType` first looks the word up with `QCC_TypeForName`, which finds the
+  types `QCC_PR_NewType` registers (`float`, `__double`, `__int`, `__int32`, `__uint`,
+  `__uint32`, `__int64`, `__uint64`, `__int8`, `__uint8`, `__int16`, `__uint16`, `__bint`, ...):
+  such a word is the type alone, so in `__int unsigned x;` the name is `unsigned`. Else its loop
+  over C words takes, after an optional leading `register`, each word whose test holds and
+  stops at the first that fails: `signed` and `unsigned` when neither was read; `long` while no
+  width is set, a second making the width `longlongbits` (64); `int` or `integer` while no
+  width is set or it is 16, setting 32 when none is; `short` (16) and `char` (8) while none is
+  set; `_Bool` while none is set and no sign was read, which ends the type as `type_bint`
+  (`__bint`, the `int` keyword being enabled); `float` while no width is set and no `long` was
+  read (32, a float); `double` while no width is set or after `long` (64, or 128 after `long`,
+  a float). A word the loop does not take is the declarator's name, so `int int i;`, `unsigned
+  unsigned u;`, `int float f;` and `__long __long int x;` are errors. With no width set the
+  width is `longbits`, 64, after `long` and 32 otherwise (`flag_ILP32` is set only by `-std=c`);
+  then a float of 64 bits or more is `__double` and else `float`, and an integer of more than 32
+  bits is `__int64`, of 8 or fewer `__int8`, of 16 or fewer `__int16` and else `__int32`, each
+  unsigned (`__uint64`, `__uint8`, `__uint16`, `__uint32`) after `unsigned`. So `__long int` is
+  `__int32`, `unsigned __long` is `__uint64`, `__short int` is `__int16`, `__register` alone is
+  `__int32` and `unsigned float` is `float`. FTEQCC's `bool` is no keyword: it comes from the
+  engine's extension headers (`fteextensions.qc`), a defined type.
+- **FTEF-2.9** An `unsigned` float is the warning `W0226` "ignoring unsupported unsigned keyword,
+  type will be signed", and a float of more than 64 bits (`__long __double`) "long doubles are
+  not supported, using double", in that order, at the type's first word. The integer branch's
+  "long longs are not supported, using long" is never given: `long long` sets 64 bits, and only
+  more than 64 warns.
+- **FTEF-2.10** In a function body a statement defines locals at a name `QCC_TypeForName` finds
+  or at one of the bare words `QCC_PR_ParseStatement` tests with their keyword enabled
+  (`integer`, `unsigned`, `int` and `_Bool` among the C words; FTEF-19.1 lists the others).
+  `STRCMP` compares the bare word, so a `__` C word that names no registered type is a value
+  there: `__long x;` in a body is "Unknown value \"__long\"", and `__int x;` defines a local.
+- **FTEF-2.11** A type may start with `const`, which `QCC_PR_ParseType` reads and ignores with the
+  warning `W0226` "ignoring unsupported const keyword", and then with `volatile`, read and
+  ignored, which by default only `__volatile` spells; a `*` may be followed by `const`, with
+  the same warning (`if (QCC_PR_CheckKeyword(keyword_const, "const")) QCC_PR_ParseWarning
+  (WARN_IGNOREDKEYWORD, "ignoring unsupported const keyword");`). A bare `volatile` is a name,
+  so `void(volatile float v) f;` is an error. At file level `__volatile float v;` is a
+  definition; in a body it is a value (FTEF-2.10). How `const` makes a constant is FTE-10.
 
 ## FTEF-3 Integer, double and typed numeric literals
 
@@ -1728,7 +1766,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   (`__int32`, `__double`, `.float`, `void()`, `entity*`; parameter names, which the model does
   not keep, are left out). A literal's type is `QCC_PR_LexNumber`'s (FTEF-3.1; a character
   constant is a float); a name's is its definition's, and in a member function a field's name
-  is `this.field`, of the field's type. `QCC_TryEvaluateCast` with `implicit` set casts: a type
+  is `this.field`, of the field's type. The C type words name the type FTEF-2.8 makes, and a
+  registered type name its type (`__int32`, `__double`); an 8- or 16-bit integer and `__bint`
+  are types this profile does not follow. `QCC_TryEvaluateCast` with `implicit` set casts: a type
   to itself; a null, an integer, unsigned or float constant whose word is 0
   (`QCC_SRef_IsNull`), to any type but a struct or union; numbers among the float, integer,
   unsigned, 64-bit and double types; a float or an integer to a vector, with the warning
@@ -1747,7 +1787,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   local and an `autocvar_` are not. A later declaration does not change it (`//
   def->constant = isconst;` is commented out) and warns `W0212` "Redeclaration of NAME would
   change to const." (or "non-const.") when initialised, "Redeclaration of NAME changes const."
-  when not. A name initialising a global or a `static` that is no constant is the error `E0214`
+  when not; a new definition is compared with the constness it gets, which differs only for an
+  initialised `autocvar_` (FTEF-19.16), so `float autocvar_x = 1;` gives the warning too. A
+  name initialising a global or a `static` that is no constant is the error `E0214`
   "initializer for 'NAME' is not constant" (`QCC_PR_GenerateInitializerType`, `if
   (!tmp.sym->constant)`); a plain or `const` local's initialiser is not checked. A constant that
   has no value yet gives the warning `W0219` "initializer for NAME is not initialised yet, NAME
@@ -1791,8 +1833,12 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   type is the warning `W0210` "NAME builtin was wrongly redefined as TYPE. ignoring later
   definition", and in a file named `*extensions.qc` (any case) of a function "NAME builtin was
   redefined as TYPE. ignoring alternative definition": the first type stays and the
-  declaration goes on. A `noref` global not yet used is replaced by a declaration of another
-  type, with the warning `W0211` "Type redeclaration of TYPE NAME replaces existing variable".
+  declaration goes on. A global marked unused that nothing refers to, `def->unused &&
+  !def->referenced`, is replaced by a declaration of another type, with the warning `W0211`
+  "Type redeclaration of TYPE NAME replaces existing variable": a builtin a body replaced
+  (FTEF-19.4) is one. A `noref` mark is a reference too (`if (noref) { def->unused = true;
+  def->referenced = true; }`), so a `noref` global declared again with another type is
+  `E0205`.
   A function declared again as `T(...)` with no parameters is no difference ("c89-style dumb
   redeclarations"). Any other difference is `E0205`, with FTEQCC's text "Type mismatch on
   redeclaration of NAME. A, should be B".
@@ -1801,8 +1847,15 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   redecleration of NAME do not match (A->B)" (in a function body "(A -> B)"), a declaration that
   is no array giving 0, so `float x[2]; float x;` is the error. `[]` gives no size, and an
   unsized definition takes the size a later one gives; an unsized array's initialiser sizes it
-  (`QCC_PR_ParseDefArray` counts the elements of `{ ... }`). A size that is no number literal is
-  not compared (FTEF-19.17).
+  (`QCC_PR_ParseDefArray` counts the elements of `{ ... }`, and a string's bytes and its
+  terminator, `dim[0] = pr_immediate_strlen+1;`). A size that is no number literal is not
+  compared (FTEF-19.17). An array is initialised with `{ ... }`, or an array of an 8-bit
+  integer (`__int8`, `__uint8`, `__char`: `def.cast->type == ev_bitfld && def.cast->bits == 8`)
+  with a string: anything else is the error `E0204` "expected {, found X"
+  (`QCC_PR_ParseInitializerType_Internal`, `QCC_PR_Expect("{");`). A string of more bytes than
+  the array's size is the error, not fatal, `E0233` "initializer-string too long" (`if
+  (pr_immediate_strlen > arraysize) QCC_PR_ParseWarning (ERR_BADARRAYSIZE, ...)`), so `__char
+  c[2] = "ab";` is no error.
 - **FTEF-19.9** A `typedef` of a name a typedef already names must name the same type, as
   `QCC_TypeForName` resolves a typedef to its type (`if (t && t->type == ev_typedef) return
   t->aux_type;`): else the error `E0219` "Cannot redeclare typedef NAME from A to B", so
@@ -1812,11 +1865,14 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   modifiers with typedef (defining NAME)", `static`, `noref` and `nosave` among them, as no
   `#pragma` makes them the default here; `typedef;` and `typedef float;` define nothing, with the
   warning `W0215` "typedef defines no types". A `typedef` in a function body is a definition
-  statement (FTEF-19.1), whose type name this profile reads as any other type name.
+  statement (FTEF-19.1), checked as one at file level, whose type name this profile reads as
+  any other type name.
 - **FTEF-19.10** An enum's names are constants of the enum's base type, `float` unless `: type`
   gives another, made with `QCC_PR_DummyDef`. A name's value is the one after its `=`, a number
   or a numeric constant converted to the base type, or the one before it plus 1; under
-  `enumflags` times 2, starting at 1, and 1 after a 0 (`if (!next_i) next_f = next_i = 1;`). A
+  `enumflags` times 2, starting at 1, and 1 after a 0 (`if (!next_i) next_f = next_i = 1;`).
+  Each enum starts its count again. After a value this profile does not compute (FTEF-19.17)
+  the names that follow have no value it compares. A
   string or vector after `=` is the error `E0227` "Implicit type mismatch. Needed float, got
   string." (`QCC_SupplyConversion`), a name that is no constant with a value the error `E0228`
   "enum - NAME is not a compile-time constant", and a base type that is no number with no value
@@ -1899,3 +1955,36 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   end_sys_fields defined", is what every program without system definitions gets). Its run of
   2026-10-21 (macOS arm64) agrees on every case but the vanilla `float k = 7; float y; float x
   = y;`, which differs as QC-27.8 says.
+- **FTEF-19.19** The locals a `for` statement defines, in its first clause or anywhere in its
+  body, leave scope at its end: `QCC_PR_ParseStatement_For` keeps `subscopestart =
+  pr.local_tail` and, when `pr_subscopedlocals` is off (only `extern "C"` sets it), `subscopestop
+  = pr.local_tail->nextlocal`, which is the end of the list, and after the statement removes
+  every local after `subscopestart` from `localstable` ("remove any new locals from the
+  hashtable. typically this is just the stuff inside the for(here;;)"). So after the loop the
+  name is the global again, or "Unknown value", and a local of the name is a new definition of
+  any type: `for (float i = 0;;) {} for (string i = "";;) {}` is two locals. A local the
+  statement found again (`float i; for (float i = 0;;) {}`, FTEF-19.1) was not made there and
+  stays. Only `for` does this: a block, `while`, `do`, `if` and `switch` keep their locals.
+- **FTEF-19.20** A name that is a definition's type, or part of it (a field's, a pointer's, a
+  function's return or parameter type), must be a type at that point: C type words
+  (FTEF-2.8), a name `QCC_PR_NewType` registers (`variant`, `__variant`, `__string`,
+  `__vector`, `__entity`, `__bfloat` and the scalars of FTEF-2.8), or a class, struct, union,
+  typedef, enum or accessor declared before it, at file level or, for a local, by a `typedef`
+  earlier in the same body (`QCC_TypeForName` finds a typedef whose `scope` is `pr_scope`).
+  Else `QCC_PR_ParseType` gives the error `E0203` "\"NAME\" is not a type", which ends the
+  declaration, so `foo x;`, `.foo x;`, `foo *p;` and `t x; typedef float t;` are errors and
+  `class C; C c;` is not. In a body FTEQCC reads such a statement as an expression ("Unknown
+  value \"NAME\"", FTEF-2.10); this profile, whose parser cannot tell a type name from a value,
+  reports the same `E0203` there and makes no local, an error either way. A type of more than
+  one word that is no run of C words (`struct tag`, an inline `enum` or `struct`) and the types
+  of a class's or struct's members are not checked (FTEF-19.17).
+- **FTEF-19.21** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
+  `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
+  hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
+  `if (hadmodifier) { //banned since c99... basetype = type_integer; }`. So `const x = 5;`,
+  `static y;`, `noref z;`, `var v;`, `__register r;` and, in a body, `static y;` define
+  `__int32`s, checked as any definition is (`const x = 5; float x;` is a type mismatch, `const
+  k = "a";` the warning "Implicit cast from string to __int32"). The parser reads the type as
+  left out when a qualifier is followed by a name and then `;`, `,`, `=` or `[`; a name that is
+  a type there (`static t;` after `typedef float t;`) is not told apart, and is read as the
+  name.

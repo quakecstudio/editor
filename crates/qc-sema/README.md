@@ -68,12 +68,13 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md), the builtin
   functions of FTE-23.7 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
-  QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.32, QCD-4.1, QCD-4.9 to QCD-4.12, QCD-5.4,
+  QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.33, QCD-4.1, QCD-4.9 to QCD-4.12, QCD-5.4,
   QCD-7.3, QCD-7.23, QCD-7.28 and QCD-7.32 to QCD-7.51. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
-  FTEF-17.12, and the definitions of FTEF-19.1 to FTEF-19.16. The other statements of those
+  FTEF-17.12, the C scalar types FTEF-2.8 names, and the definitions of FTEF-19.1 to
+  FTEF-19.16, FTEF-19.19 and FTEF-19.20. The other statements of those
   sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
   expressions, operator checks and code generation. The definitions are ported from id's
   `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
@@ -110,7 +111,8 @@ default value is cast to its definition's type as `QCC_TryEvaluateCast` casts it
 initialises a global must be a constant, whose value the redeclaration comparison then reads,
 a parameter given twice is an error, a duplicate local or a local hiding a global a warning,
 redeclarations follow `typecmp` and `typecmp_lax` with FTEQCC's exceptions, array sizes and
-typedefs must agree, enums have their values, `static` globals are their unit's, and the
+typedefs must agree, enums have their values, `static` globals are their unit's, a type name
+must be a type declared before it, a `for` statement's locals leave scope at its end, and the
 warnings of those functions are reported with FTEQCC's texts. The definitions family of
 `cargo xtask oracles builtins` checks each against id's `qcc` and the pinned FTEQCC (FTEF-19.18).
 

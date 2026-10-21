@@ -14,6 +14,8 @@
 //! spelling of a type in FTEQCC's messages. Written as a clean port: the rule is one table of
 //! the types' kinds, not the C's chain of conditions.
 
+use qc_syntax::c_scalar::{CScalar, CWords};
+
 use crate::ty::{SimpleType, Type};
 
 /// The type FTEQCC gives a literal (FTEF-3.1, FTEF-3.3, QC-4, QC-5, QC-6).
@@ -123,29 +125,52 @@ impl Literal {
     }
 }
 
-/// The kind of a type as FTEQCC's cast rule reads it, its `etype_t`; `Opaque` for a type the
-/// semantic model does not follow (FTEF-17.12), which no check is made on.
+/// The kind of a type, FTEQCC's `etype_t`, as its cast rule and redeclaration checks read it;
+/// `Opaque` for a type the semantic model does not follow (FTEF-17.12), on which no check is
+/// made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Kind {
+pub enum Kind {
+    /// `void`.
     Void,
+    /// `string`.
     String,
+    /// `float`.
     Float,
+    /// `vector`.
     Vector,
+    /// `entity`.
     Entity,
+    /// A field type.
     Field,
+    /// A function type.
     Function,
+    /// A pointer type.
     Pointer,
+    /// `__int32`: `int`, `integer`, `signed`.
     Integer,
+    /// `__uint32`: `unsigned`.
     Uint,
+    /// `__int64`: `long`.
     Int64,
+    /// `__uint64`: `unsigned long`.
     Uint64,
+    /// `__double`: `double`.
     Double,
+    /// A type the model does not follow: one a program names, a narrower integer, `_Bool`.
     Opaque,
 }
 
+/// The scalar the C type words `words` make, when the loop takes all of them (FTEF-2.8).
+fn c_scalar(words: &str) -> Option<CScalar> {
+    let count = words.split(' ').count();
+    let (taken, ty) = CWords::read(words.split(' '));
+    ty.filter(|_| taken == count).map(|t| t.scalar)
+}
+
 impl Kind {
-    /// The kind of a type the model holds. A C type word maps to its `etype_t` (FTEF-2.1 to
-    /// FTEF-2.3); a narrower integer, `_Bool` and a type a program names are opaque.
+    /// The kind of a type the model holds. C type words, and the type names FTEQCC registers,
+    /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8); an 8- or 16-bit integer,
+    /// `__bint` and a type a program names are opaque.
     fn of(ty: &Type) -> Self {
         match ty {
             Type::Simple(SimpleType::Void) => Self::Void,
@@ -156,15 +181,57 @@ impl Kind {
             Type::Field(_) => Self::Field,
             Type::Function(_) => Self::Function,
             Type::Pointer(_) => Self::Pointer,
-            Type::Named(name) => match name.as_ref() {
-                "int" | "integer" | "signed" | "signed int" | "int signed" => Self::Integer,
-                "unsigned" | "unsigned int" | "int unsigned" => Self::Uint,
-                "long" | "long int" | "signed long" | "long long" => Self::Int64,
-                "unsigned long" | "long unsigned" => Self::Uint64,
-                "double" => Self::Double,
-                _ => Self::Opaque,
-            },
+            Type::Named(name) => Self::of_c_words(name),
             Type::Unknown => Self::Opaque,
+        }
+    }
+
+    /// The kind the C type words `words` name, as the parser took them (FTEF-2.8), or
+    /// `Opaque` when they are not all taken.
+    fn of_c_words(words: &str) -> Self {
+        let Some(scalar) = c_scalar(words) else {
+            return Self::Opaque;
+        };
+        match scalar {
+            CScalar::Float => Self::Float,
+            CScalar::Double => Self::Double,
+            CScalar::Integer => Self::Integer,
+            CScalar::Uint => Self::Uint,
+            CScalar::Int64 => Self::Int64,
+            CScalar::Uint64 => Self::Uint64,
+            CScalar::Int16 | CScalar::Uint16 | CScalar::Int8 | CScalar::Uint8 | CScalar::Bool => {
+                Self::Opaque
+            }
+        }
+    }
+
+    /// Whether a value of this kind is a number: FTEQCC's float, integer and double types.
+    #[must_use]
+    pub fn is_numeric(self) -> bool {
+        matches!(
+            self,
+            Self::Float | Self::Integer | Self::Uint | Self::Int64 | Self::Uint64 | Self::Double
+        )
+    }
+
+    /// The name of this kind in FTEQCC's messages (`basictypenames`): `float`, `__int32`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Void => "void",
+            Self::String => "string",
+            Self::Float => "float",
+            Self::Vector => "vector",
+            Self::Entity => "entity",
+            Self::Field => "field",
+            Self::Function => "function",
+            Self::Pointer => "pointer",
+            Self::Integer => "__int32",
+            Self::Uint => "__uint32",
+            Self::Int64 => "__int64",
+            Self::Uint64 => "__uint64",
+            Self::Double => "__double",
+            Self::Opaque => "__variant",
         }
     }
 
@@ -187,12 +254,9 @@ impl Kind {
     /// integers and functions and between integers and entities, "acceptable but probably an
     /// error".
     fn casts_to(self, to: Self) -> bool {
-        use Kind::{
-            Double, Entity, Float, Function, Int64, Integer, Pointer, String, Uint, Uint64,
-        };
-        let numeric = |k: Self| matches!(k, Float | Integer | Uint | Int64 | Uint64 | Double);
+        use Kind::{Entity, Float, Function, Integer, Pointer, String, Uint};
         let wordish = |k: Self| matches!(k, Pointer | String | Integer | Uint | Function);
-        (numeric(self) && numeric(to))
+        (self.is_numeric() && to.is_numeric())
             || (to == Self::Vector && matches!(self, Float | Integer))
             || (to == Entity && self == Entity)
             || (to == Pointer && self == Pointer)
@@ -312,20 +376,8 @@ impl Type {
             Type::Field(inner) => format!(".{}", inner.fteqcc_name()),
             Type::Pointer(inner) => format!("{}*", inner.fteqcc_name()),
             Type::Named(name) => match Kind::of(ty) {
-                Kind::Integer => "__int32".to_owned(),
-                Kind::Uint => "__uint32".to_owned(),
-                Kind::Int64 => "__int64".to_owned(),
-                Kind::Uint64 => "__uint64".to_owned(),
-                Kind::Double => "__double".to_owned(),
-                Kind::Void
-                | Kind::String
-                | Kind::Float
-                | Kind::Vector
-                | Kind::Entity
-                | Kind::Field
-                | Kind::Function
-                | Kind::Pointer
-                | Kind::Opaque => name.to_string(),
+                Kind::Opaque => name.to_string(),
+                kind => kind.name().to_owned(),
             },
             Type::Function(func) => {
                 let mut params: Vec<String> = func.params.iter().map(Type::fteqcc_name).collect();
@@ -337,28 +389,56 @@ impl Type {
         }
     }
 
-    /// The kind of this type, FTEQCC's `etype_t`, by name: `float`, `.`-less `field`,
-    /// `__int32`; `None` for a type the model does not follow. Two types of one kind are what
+    /// The C scalar this type is, when it is C type words or a registered type name
+    /// (FTEF-2.8).
+    #[must_use]
+    pub fn fteqcc_scalar(&self) -> Option<CScalar> {
+        match self {
+            Type::Named(name) => c_scalar(name),
+            Type::Simple(_)
+            | Type::Field(_)
+            | Type::Function(_)
+            | Type::Pointer(_)
+            | Type::Unknown => None,
+        }
+    }
+
+    /// The kind of this type, FTEQCC's `etype_t`. Two types of one kind are what
     /// `WARN_SAMENAMEASGLOBAL` compares (FTEF-19.1), and an enum's base is numeric by it
     /// (FTEF-19.10).
     #[must_use]
-    pub fn fteqcc_kind(&self) -> Option<&'static str> {
-        Some(match Kind::of(self) {
-            Kind::Void => "void",
-            Kind::String => "string",
-            Kind::Float => "float",
-            Kind::Vector => "vector",
-            Kind::Entity => "entity",
-            Kind::Field => "field",
-            Kind::Function => "function",
-            Kind::Pointer => "pointer",
-            Kind::Integer => "__int32",
-            Kind::Uint => "__uint32",
-            Kind::Int64 => "__int64",
-            Kind::Uint64 => "__uint64",
-            Kind::Double => "__double",
-            Kind::Opaque => return None,
-        })
+    pub fn fteqcc_kind(&self) -> Kind {
+        Kind::of(self)
+    }
+
+    /// Whether a redeclaration with type `other` declares the same type as this one under
+    /// FTEQCC's `typecmp` (FTEF-17.12): equal, a C type word compared by the kind it names, a
+    /// field or function compared part by part, and any type the model does not follow
+    /// agreeing with any other.
+    #[must_use]
+    pub fn fteqcc_same(&self, other: &Self) -> bool {
+        if self == other {
+            return true;
+        }
+        match (self, other) {
+            (Self::Field(a), Self::Field(b)) => a.fteqcc_same(b),
+            (Self::Function(a), Self::Function(b)) => {
+                a.variadic == b.variadic
+                    && a.params.len() == b.params.len()
+                    && a.ret.fteqcc_same(&b.ret)
+                    && a.params
+                        .iter()
+                        .zip(&b.params)
+                        .all(|(x, y)| x.fteqcc_same(y))
+            }
+            _ => {
+                // A pointer and a type a program names are not followed, so they agree with
+                // anything; the rest agree when they are of one kind, as `int` and `integer`.
+                let unfollowed = |k: Kind| matches!(k, Kind::Opaque | Kind::Pointer);
+                let (a, b) = (self.fteqcc_kind(), other.fteqcc_kind());
+                unfollowed(a) || unfollowed(b) || a == b
+            }
+        }
     }
 }
 

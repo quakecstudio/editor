@@ -15,7 +15,7 @@ use super::{ModuleSpec, fte_index_of, index_of, resolve};
 use crate::db::Db;
 use crate::expand::ModuleInput;
 use crate::resolve::ModuleIndex;
-use crate::symbol::FileId;
+use crate::symbol::{DefId, FileId};
 
 /// Every diagnostic of `index`, as its code and message.
 fn diagnostics(index: &ModuleIndex) -> Vec<(Code, String)> {
@@ -545,6 +545,28 @@ fn default_values() {
 // spec QCD-7.36: W0211 "Type redeclaration of TYPE NAME replaces existing variable"
 #[test]
 fn redeclarations_of_another_type() {
+    // A C type word is the type it names, in any order (FTEF-17.12, FTEF-19.2).
+    assert_eq!(fte("int x;\nfloat x;\n"), [Code::E0205]);
+    assert_eq!(fte("int x;\ninteger x;\n"), []);
+    assert_eq!(
+        fte("void(int a) g;\nvoid(float a) g = #6;\n"),
+        [Code::E0205, Code::E0211]
+    );
+    assert_eq!(fte("typedef int t;\nt x;\nvector x;\n"), [Code::E0205]);
+    assert_eq!(fte("__long __double d = \"a\";\n"), [Code::E0213]);
+    assert_eq!(fte("unsigned __long __long u = \"a\";\n"), [Code::E0213]);
+    // `int` after `long` sets 32 bits, so this is `__uint32` (FTEF-2.8).
+    assert_eq!(
+        fte_messages("__long unsigned int u = 1;\n__uint64 u;\n")[0].1,
+        "Type mismatch on redeclaration of u. __uint64, should be __uint32"
+    );
+    assert_eq!(fte("unsigned __long u = 1;\n__uint64 u;\n"), [Code::W0212]);
+    assert_eq!(fte("__long int l = 1;\n__int32 l;\n"), [Code::W0212]);
+    assert_eq!(fte("unsigned x;\nint x;\n"), [Code::E0205]);
+    assert_eq!(
+        fte_messages("unsigned __long __long u = 1;\nvector u;\n")[0].1,
+        "Type mismatch on redeclaration of u. vector, should be __uint64"
+    );
     assert_eq!(
         fte_only("float(float a, optional float b) g;\nfloat(float a) g = #6;\n"),
         (
@@ -638,8 +660,31 @@ fn an_extensions_file_keeps_the_first_declaration() {
 
 // spec FTEF-19.8: a redeclaration's array size is the definition's, an unsized one takes it
 // spec QCD-3.20: E0220 "Array sizes for redecleration of NAME do not match (A->B)"
+// spec QCD-3.33: E0233 "initializer-string too long"
 #[test]
 fn array_sizes_of_redeclarations() {
+    // A string sizes an unsized array by its bytes and terminator, and initialises only an
+    // array of `char`.
+    assert_eq!(
+        fte_messages("float x[] = \"ab\";\n"),
+        [(Code::E0204, "expected {, found \"ab\"".to_owned())]
+    );
+    assert_eq!(fte("__char c[] = \"ab\";\n__char c[3];\n"), [Code::W0212]);
+    assert_eq!(fte("__char c[] = \"ab\";\n__char c[2];\n"), [Code::E0220]);
+    assert_eq!(
+        fte("__uint8 c[] = \"ab\";\nunsigned __char c[3];\n"),
+        [Code::W0212]
+    );
+    assert_eq!(fte("__short c[] = \"ab\";\n"), [Code::E0204]);
+    assert_eq!(
+        fte_messages("__char c[2] = \"abc\";\nfloat y = \"a\";\n"),
+        [
+            (Code::E0233, "initializer-string too long".to_owned()),
+            (Code::E0213, "Cannot cast from string to float".to_owned()),
+        ]
+    );
+    assert_eq!(fte("__char c[2] = \"ab\";\n"), []);
+    assert_eq!(fte("void() g = { float x[2] = 5; };\n"), [Code::E0204]);
     assert_eq!(
         fte_only("float x[2];\nfloat x[3];\n"),
         (
@@ -668,6 +713,12 @@ fn array_sizes_of_redeclarations() {
 // spec QCD-7.40: W0215 "typedef defines no types"
 #[test]
 fn typedefs() {
+    // A typedef in a body is checked as one at file level.
+    assert_eq!(fte("void() g = { typedef; };\n"), [Code::W0215]);
+    assert_eq!(
+        fte("void() g = { typedef const float t; };\n"),
+        [Code::E0224]
+    );
     assert_eq!(
         fte_only("typedef float t;\ntypedef vector t;\n"),
         (
@@ -704,6 +755,17 @@ fn typedefs() {
 // spec QCD-7.51: W0225 "enumflags - ..."
 #[test]
 fn enum_values() {
+    // Each enum counts from its first name.
+    assert_eq!(fte("enum { A, B };\nenum { C, D };\nfloat C = 0;\n"), []);
+    assert_eq!(
+        fte("enum { A, B, C };\nenumflags { D, E };\nfloat D = 1;\n"),
+        []
+    );
+    // After a value the model does not compute, the names that follow have none.
+    assert_eq!(
+        fte("enum { A = 1+1, B, C };\nfloat C = 0;\n"),
+        [Code::E0206]
+    );
     assert_eq!(fte("enum { A, B };\nfloat A = 0;\n"), []);
     assert_eq!(fte("enum { A, B };\nfloat A = 1;\n"), [Code::E0206]);
     assert_eq!(
@@ -827,6 +889,20 @@ fn statics_are_their_units() {
     assert_eq!(fte("float x;\nstatic float x;\n"), []);
 }
 
+// spec FTEF-19.10: `Enum::value` names the enum's value before a global of the plain name
+#[test]
+fn a_strict_enums_value_before_a_global() {
+    let index =
+        fte_index_of("float A;\nenum class E : float { A };\nvoid() g = { float y; y = E::A; };\n");
+    let value = index
+        .defs
+        .iter()
+        .position(|d| d.name == "E::A")
+        .map(DefId)
+        .unwrap();
+    assert_eq!(index.refs.iter().filter(|r| r.def == value).count(), 1);
+}
+
 // spec FTEF-19.13: a use of a deprecated definition is a warning, with its reason
 // spec QCD-7.44: W0314 "Variable \"NAME\" is deprecated"
 #[test]
@@ -900,6 +976,296 @@ fn scoped_definitions() {
     assert_eq!(fte_only("float D::b;\n").1, "D is not a class");
 }
 
+// spec FTEF-19.21: after a qualifier the type may be left out, and is `int`
+#[test]
+fn an_omitted_type_is_int() {
+    for source in [
+        "const x = 5;\n",
+        "static y;\n",
+        "noref z;\n",
+        "nosave w;\n",
+        "var v;\n",
+        "static y, z;\n",
+        "shared s;\n",
+        "const p[2] = {1,2};\n",
+        "__used u;\n",
+        "__register r;\n",
+        "void() g = { static y; y = 1; };\n",
+        "void() g = { const c = 2; };\n",
+    ] {
+        assert_eq!(fte(source), [], "{source}");
+    }
+    assert_eq!(
+        fte_messages("const x = 5;\nfloat x;\n"),
+        [(
+            Code::E0205,
+            "Type mismatch on redeclaration of x. float, should be __int32".to_owned()
+        )]
+    );
+    assert_eq!(fte("const x = 5;\nint x;\n"), [Code::W0212]);
+    assert_eq!(
+        fte_messages("const k = \"a\";\n"),
+        [(
+            Code::W0220,
+            "Implicit cast from string to __int32".to_owned()
+        )]
+    );
+    assert_eq!(fte("inline i;\n"), [Code::W0214]);
+    assert_eq!(fte("extern e;\n"), [Code::W0214]);
+    // With no qualifier a lone name is no definition.
+    assert_eq!(vanilla("float x;\n"), []);
+}
+
+// spec FTEF-19.20: a definition's type names must be types declared before it
+#[test]
+fn type_names_must_be_types() {
+    assert_eq!(
+        fte_messages("foo x;\n"),
+        [(Code::E0203, "\"foo\" is not a type".to_owned())]
+    );
+    assert_eq!(fte(".foo x;\n"), [Code::E0203]);
+    assert_eq!(fte("foo *p;\n"), [Code::E0203]);
+    assert_eq!(fte("void(foo a) g = #6;\n"), [Code::E0203]);
+    assert_eq!(fte("foo(float a) g = #6;\n"), [Code::E0203]);
+    assert_eq!(fte("t x;\ntypedef float t;\n"), [Code::E0203]);
+    assert_eq!(fte("typedef float t;\nt x;\n"), []);
+    assert_eq!(fte("class C;\nC c;\n"), []);
+    assert_eq!(fte("enum E { A };\nE e;\n"), []);
+    assert_eq!(fte("struct S { float a; };\nS s;\n"), []);
+    // A struct's tag written in another's members is a type too.
+    assert_eq!(
+        fte("typedef struct { struct inner_s { float a; } *list; } outer_t;\ninner_s *p;\n"),
+        []
+    );
+    assert_eq!(
+        fte("inner_s *p;\nstruct inner_s { float a; };\n"),
+        [Code::E0203]
+    );
+    assert_eq!(
+        fte("variant v; __variant w; __string s; __vector v2; __entity e; __bfloat b;\n"),
+        []
+    );
+    assert_eq!(
+        fte("__int8 a; __uint16 b; __bint c; unsigned __long d;\n"),
+        []
+    );
+    // FTEF-2.7: a C word whose keyword is disabled is a name, and no type.
+    for word in ["long", "double", "signed", "short", "char"] {
+        let source = format!("{word} x;\n");
+        assert_eq!(
+            fte_messages(&source),
+            [(Code::E0203, format!("\"{word}\" is not a type"))],
+            "{source}"
+        );
+    }
+    // A declaration that is no type defines nothing, so its name stays unknown.
+    assert_eq!(
+        fte("foo x;\nvoid() g = { x = 1; };\n"),
+        [Code::E0203, Code::E0301]
+    );
+    // A body's typedef is a type for the locals after it in that body only.
+    assert_eq!(fte("void() g = { typedef float t; t x; };\n"), []);
+    assert_eq!(
+        fte("void() g = { t x; typedef float t; };\n"),
+        [Code::E0203]
+    );
+    assert_eq!(
+        fte("void() g = { typedef float t; };\nvoid() h = { t x; };\n"),
+        [Code::E0203]
+    );
+    // Vanilla has its own parse error for a name that is no type (QCD-3.3).
+    assert_eq!(vanilla("float x;\n"), []);
+}
+
+// spec FTEF-19.19: a `for` statement's locals, in its clause or its body, leave scope at its end
+#[test]
+fn a_for_statements_locals_leave_scope() {
+    assert_eq!(
+        fte("void() g = { for (float i = 0;;) {} for (string i = \"\";;) { i = \"a\"; } };\n"),
+        []
+    );
+    let index = fte_index_of(
+        "void() g = { for (float i = 0;;) { i = 1; } for (string i = \"\";;) { i; } };\n",
+    );
+    let locals: Vec<DefId> = index
+        .defs
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.name == "i")
+        .map(|(n, _)| DefId(n))
+        .collect();
+    assert_eq!(locals.len(), 2);
+    let uses: Vec<DefId> = index
+        .refs
+        .iter()
+        .filter(|r| locals.contains(&r.def))
+        .map(|r| r.def)
+        .collect();
+    assert_eq!(uses, locals);
+    assert_eq!(
+        fte("void() g = { for (float i = 0;;) {} i = 1; };\n"),
+        [Code::E0301]
+    );
+    assert_eq!(
+        fte("void() g = { for (float i = 0;;) { float j; break; } j = 1; };\n"),
+        [Code::E0301]
+    );
+    assert_eq!(
+        fte("void() g = { for (float i = 0;;) { for (string j = \"\";;) {} j = \"a\"; } };\n"),
+        [Code::E0301]
+    );
+    assert_eq!(
+        fte("void() g = { for (;;) { float i; break; } string i; };\n"),
+        []
+    );
+    // A local the statement finds again was not made there, and stays.
+    assert_eq!(
+        fte("void() g = { float i; for (string i = \"\";;) {} };\n"),
+        [Code::E0205]
+    );
+    // Only `for` ends its locals.
+    assert_eq!(
+        fte("void() g = { while (1) { float i; break; } string i; };\n"),
+        [Code::E0205]
+    );
+    // After the loop the name is the global again.
+    let index = fte_index_of("float i;\nvoid() g = { for (string i = \"\";;) {} i = 1; };\n");
+    let global = index
+        .defs
+        .iter()
+        .position(|d| d.name == "i")
+        .map(DefId)
+        .unwrap();
+    assert_eq!(index.refs.iter().filter(|r| r.def == global).count(), 1);
+}
+
+// spec FTEF-19.1: the qualifiers a declaration starts with are each read
+// spec FTEF-15.1: written as such or after `__`
+#[test]
+fn qualifiers_are_read() {
+    use crate::lower::{Qualifier, lower_file};
+    let source = "nonstatic float a;\n__used float b;\nnosave float c;\n__strip float d;\n\
+                  __ignore float e;\n__auto float g;\n__register float h;\n";
+    let parse = qc_syntax::parse_with(source.as_bytes(), Dialect::Fteqcc);
+    let decls = lower_file(&parse, Dialect::Fteqcc).decls;
+    let qualifiers: Vec<Vec<Qualifier>> = decls.into_iter().map(|d| d.qualifiers).collect();
+    assert_eq!(
+        qualifiers,
+        [
+            vec![Qualifier::Nonstatic],
+            vec![Qualifier::Used],
+            vec![Qualifier::Nosave],
+            vec![Qualifier::Strip],
+            vec![Qualifier::Strip],
+            vec![Qualifier::Auto],
+            vec![Qualifier::Auto],
+        ]
+    );
+}
+
+// spec FTEF-19.2: a character constant is a float, `_` a translation only when it is the callee
+#[test]
+fn character_constants_and_calls() {
+    assert_eq!(fte("float f = 'a';\n"), []);
+    assert_eq!(fte("string s = 'a';\n"), [Code::E0213]);
+    assert_eq!(fte("string(float a) t = #6;\nstring s = t(5);\n"), []);
+}
+
+// spec FTEF-19.7: the type with more parameters becomes the definition's, and an out parameter
+// differs from one that is not
+#[test]
+fn optional_arguments_and_out_parameters() {
+    assert_eq!(
+        fte(
+            "float(float a) g;\nfloat(float a, optional float b) g = #6;\n\
+             float(float a, optional float b) g;\n"
+        ),
+        [Code::W0209]
+    );
+    assert_eq!(
+        fte("void(float a, optional float c) g;\nvoid(float a) g = #6;\n"),
+        [Code::W0209]
+    );
+    for out in ["__out float b", "__inout float b", "float &b"] {
+        let source =
+            format!("void(float a, {out}, optional float c) g;\nvoid(float a, float b) g = #6;\n");
+        assert_eq!(fte(&source), [Code::E0205, Code::E0211], "{source:?}");
+    }
+    assert_eq!(
+        fte("void(float a, float b, optional float c) g;\nvoid(float a, float b) g = #6;\n"),
+        [Code::W0209]
+    );
+}
+
+// spec FTEF-19.7: a declaration that replaces a variable is a new definition, which later uses
+// refer to
+#[test]
+fn a_replaced_definition_is_the_one_used() {
+    let index = fte_index_of(
+        "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n\
+         void() h = { anglemod(1); };\n",
+    );
+    let defs: Vec<_> = index
+        .defs
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| d.name == "anglemod")
+        .map(|(i, _)| DefId(i))
+        .collect();
+    assert_eq!(defs.len(), 2);
+    let used: Vec<_> = index
+        .refs
+        .iter()
+        .filter(|r| defs.contains(&r.def))
+        .map(|r| r.def)
+        .collect();
+    assert_eq!(used, [defs[1]]);
+}
+
+// spec QC-11.7: an array of vectors has no components (FTEF-19.5: `!arraysize`)
+#[test]
+fn vector_arrays_have_no_components() {
+    assert_eq!(fte("vector v[2];\nvector v_x;\n"), []);
+    assert_eq!(fte("vector v;\nvector v_x;\n"), [Code::E0205]);
+}
+
+// spec QC-13.5: a vector parameter whose global lies below the one before is bad parm order
+#[test]
+fn a_vector_parameter_below_the_one_before() {
+    assert!(
+        vanilla("vector a;\nfloat b;\nvoid(float b, vector a) g = {};\n").contains(&Code::E0404)
+    );
+}
+
+// spec FTEF-19.10: an enum's value after `=` is of the base's kind and a constant with a value
+#[test]
+fn enum_values_of_other_bases() {
+    assert_eq!(fte("enum : vector { A = '1 2 3' };\n"), []);
+    assert_eq!(fte("enum : vector { A = 1 };\n"), [Code::E0227]);
+    assert_eq!(fte("enum : string { A = '1 2 3' };\n"), [Code::E0227]);
+    assert_eq!(fte("const float y;\nenum { A = y };\n"), [Code::E0228]);
+    assert_eq!(fte("enum : float { A };\n"), []);
+    for word in ["vector", "string", "entity", "int"] {
+        let source = format!("enum {word} {{ A }};\n");
+        let found = fte(&source);
+        assert_eq!(found.first(), Some(&Code::W0224), "{source:?}");
+        assert!(!found.contains(&Code::W0221), "{source:?}");
+    }
+    assert_eq!(fte("enum void { A };\n"), [Code::W0224, Code::E0229]);
+}
+
+// spec FTEF-19.16: `extern` on what is no function is counted with no other storage class
+#[test]
+fn extern_and_static_on_a_variable() {
+    assert_eq!(
+        fte_messages("extern static float x;\n"),
+        [(
+            Code::W0214,
+            "extern keyword may only apply to qc functions.".to_owned()
+        )]
+    );
+}
+
 // spec FTEF-19.17: an initialiser that is an expression is compared by its text and not typed,
 // an `extern` function is no error whatever the target, and an attribute before the type is
 // refused, as the pinned FTEQCC refuses it
@@ -942,8 +1308,12 @@ fn intrinsics_autocvars_keywords_and_qualifiers() {
         )
     );
     assert_eq!(
-        fte_only("const float autocvar_x = 1;\n").1,
-        "Autocvar \"autocvar_x\" defined as constant. attempting to correct that for you."
+        messages("const float autocvar_x = 1;\n"),
+        [
+            "Autocvar \"autocvar_x\" defined as constant. attempting to correct that for you.",
+            // The definition made no constant, its initialiser would make it one.
+            "Redeclaration of autocvar_x would change to const."
+        ]
     );
     assert_eq!(
         fte_only("float var = 1;\n"),

@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use super::{ConstType, Literal, Source};
+use super::{ConstType, Kind, Literal, Source};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
@@ -146,6 +146,105 @@ fn named_definitions_cast_by_their_type() {
     let entity = simple(SimpleType::Entity);
     assert!(Source::Typed(&entity).refused(&simple(SimpleType::Float)));
     assert!(!Source::Typed(&entity).refused(&named("int")));
+}
+
+// spec FTEF-19.2: C type words and registered type names are the type FTEF-2.8 makes, an 8-
+// or 16-bit integer none the model follows
+#[test]
+fn c_words_name_their_kinds() {
+    for (words, kind) in [
+        ("int", Kind::Integer),
+        ("__signed int", Kind::Integer),
+        ("integer", Kind::Integer),
+        ("unsigned", Kind::Uint),
+        ("int unsigned", Kind::Uint),
+        ("__long", Kind::Int64),
+        ("__long __long", Kind::Int64),
+        ("__long int", Kind::Integer),
+        ("unsigned __long", Kind::Uint64),
+        ("__long unsigned", Kind::Uint64),
+        ("__double", Kind::Double),
+        ("__long __double", Kind::Double),
+        ("unsigned float", Kind::Float),
+        ("__int32", Kind::Integer),
+        ("__uint", Kind::Uint),
+        ("__int64", Kind::Int64),
+        ("__uint64", Kind::Uint64),
+        ("__char", Kind::Opaque),
+        ("__short", Kind::Opaque),
+        ("_Bool", Kind::Opaque),
+        ("int int", Kind::Opaque),
+        ("long", Kind::Opaque),
+        ("Player", Kind::Opaque),
+    ] {
+        assert_eq!(named(words).fteqcc_kind(), kind, "{words}");
+    }
+    assert_eq!(named("unsigned __long").fteqcc_name(), "__uint64");
+    assert_eq!(named("__long __double").fteqcc_name(), "__double");
+    assert_eq!(named("Player").fteqcc_name(), "Player");
+    assert!(Kind::Double.is_numeric());
+    assert!(!Kind::Vector.is_numeric());
+}
+
+// spec FTEF-19.2: a pointer casts to a pointer and a string, integers among themselves, and
+// the casts that warn are those "acceptable but probably an error" and to a vector
+#[test]
+fn pointers_and_warnings() {
+    let pointer = |ty: SimpleType| Type::Pointer(Rc::new(simple(ty)));
+    let float_ptr = pointer(SimpleType::Float);
+    assert!(!Source::Typed(&float_ptr).refused(&pointer(SimpleType::Vector)));
+    assert!(!Source::Typed(&float_ptr).refused(&simple(SimpleType::String)));
+    assert!(Source::Typed(&float_ptr).refused(&simple(SimpleType::Float)));
+    assert!(Source::Typed(&float_ptr).refused(&simple(SimpleType::Entity)));
+    let int = named("int");
+    let entity = simple(SimpleType::Entity);
+    let string = simple(SimpleType::String);
+    assert!(!Source::Typed(&int).warns(&named("unsigned")));
+    assert!(Source::Typed(&int).warns(&entity));
+    assert!(Source::Typed(&entity).warns(&int));
+    assert!(Source::Typed(&string).warns(&int));
+    assert!(!Source::Typed(&string).warns(&string));
+    assert!(!Source::Typed(&int).warns(&simple(SimpleType::Float)));
+    assert!(literal("1").warns(&simple(SimpleType::Vector)));
+    assert!(!literal("0").warns(&simple(SimpleType::Vector)));
+    assert!(!literal("1").warns(&simple(SimpleType::String)));
+    let f = |param: SimpleType| {
+        Type::Function(Rc::new(FunctionType {
+            ret: simple(SimpleType::Void),
+            params: vec![simple(param)],
+            variadic: false,
+        }))
+    };
+    assert!(Source::Typed(&f(SimpleType::Float)).warns(&f(SimpleType::Vector)));
+    assert!(!Source::Typed(&f(SimpleType::Float)).warns(&f(SimpleType::Float)));
+}
+
+// spec FTEF-17.12: two types are FTEQCC's same type part by part, a C word by its kind
+#[test]
+fn types_are_the_same_part_by_part() {
+    let f = |ret: Type, params: Vec<Type>, variadic: bool| {
+        Type::Function(Rc::new(FunctionType {
+            ret,
+            params,
+            variadic,
+        }))
+    };
+    let float = simple(SimpleType::Float);
+    assert!(named("int").fteqcc_same(&named("integer")));
+    assert!(!named("int").fteqcc_same(&float));
+    assert!(named("Player").fteqcc_same(&float));
+    assert!(Type::Pointer(Rc::new(float.clone())).fteqcc_same(&simple(SimpleType::Vector)));
+    assert!(!Type::Field(Rc::new(float.clone())).fteqcc_same(&Type::Field(Rc::new(named("int")))));
+    assert!(f(float.clone(), vec![named("int")], false).fteqcc_same(&f(
+        float.clone(),
+        vec![named("integer")],
+        false
+    )));
+    assert!(!f(float.clone(), vec![], true).fteqcc_same(&f(float.clone(), vec![], false)));
+    assert!(
+        !f(float.clone(), vec![float.clone()], false).fteqcc_same(&f(float.clone(), vec![], false))
+    );
+    assert!(!f(float.clone(), vec![], false).fteqcc_same(&f(named("int"), vec![], false)));
 }
 
 // spec FTEF-19.2: the message spells a type as FTEQCC's `TypeName` does

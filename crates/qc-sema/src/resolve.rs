@@ -31,8 +31,9 @@ use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_syntax::Dialect;
+use qc_syntax::c_scalar::CScalar;
 
-use crate::cast::{ConstType, Source};
+use crate::cast::{ConstType, Kind, Source};
 use crate::expand::OriginMap;
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, FileDecls, LiteralValue, MemberBase, MemberKind,
@@ -161,7 +162,8 @@ pub(crate) fn resolve_mapped(
         redefinable: HashSet::new(),
         unused: HashSet::new(),
         bodies: HashSet::new(),
-        enum_next: None,
+        enum_next: EnumCursor::Start,
+        type_names: HashSet::new(),
     };
     // FTE-22.3: with autoprototyping FTEQCC's first pass reads only the definitions, so the
     // second, which compiles the bodies, finds every top-level name already declared.
@@ -183,15 +185,17 @@ pub(crate) fn resolve_mapped(
         if let Some(&(_, last)) = events.last() {
             noref_on = last;
         }
+        let mut tags = file.struct_tags.iter().peekable();
         for decl in &file.decls {
+            // FTEF-19.20: a struct's tag is a type from where it is written.
+            while let Some((tag, _)) = tags.next_if(|(_, at)| *at < decl.span.end) {
+                r.type_names.insert(tag.clone());
+            }
             let pragma = events
                 .iter()
                 .take_while(|(at, _)| *at <= decl.span.start)
                 .last()
                 .map_or(start, |&(_, on)| on);
-            if decl.enum_item.is_none() {
-                r.enum_next = None;
-            }
             let pending = r.declare_top_level(file_id, decl, pragma);
             if (decl.has(&Qualifier::Noref) || pragma)
                 && let Some(def) = r.lookup_global(&decl.name)
@@ -215,6 +219,18 @@ pub(crate) fn resolve_mapped(
     }
     r.finish()
 }
+
+/// The names FTEQCC's `QCC_PR_NewType` registers for `QCC_TypeForName` that are no C scalar
+/// (FTEF-19.20): `type_variant`'s two names and the `__` names of the core types
+/// (`qccmain.c`).
+const REGISTERED_TYPES: [&str; 6] = [
+    "__variant",
+    "variant",
+    "__string",
+    "__vector",
+    "__entity",
+    "__bfloat",
+];
 
 /// What the resolver knows of an FTEQCC class (FTEF-9).
 #[derive(Debug)]
@@ -252,6 +268,9 @@ struct Facts {
     accumulate: bool,
     /// Initialised with a builtin (FTEF-17.9).
     builtin: bool,
+    /// For a local a `for` statement defines, the byte offset where the statement ends and
+    /// the local leaves `localstable` (FTEF-19.19).
+    scope_end: Option<usize>,
 }
 
 struct Resolver<'a> {
@@ -303,9 +322,12 @@ struct Resolver<'a> {
     unused: HashSet<DefId>,
     /// The functions defined with a body, which a later builtin does not replace (FTEF-17.9).
     bodies: HashSet<DefId>,
-    /// The value the next name of the enum being read gets when it is given none, and whether
-    /// the values double (FTEF-19.10); `None` outside an enum or once a value is unknown.
-    enum_next: Option<f64>,
+    /// The value the next name of the enum being read gets when it is given none
+    /// (FTEF-19.10).
+    enum_next: EnumCursor,
+    /// The names declared as types so far: classes, structs, unions, typedefs, enums and
+    /// accessors (FTEF-19.20).
+    type_names: HashSet<String>,
 }
 
 /// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
@@ -457,10 +479,6 @@ impl<'a> Resolver<'a> {
         })
     }
 
-    fn fact(&self, def: DefId) -> Facts {
-        self.facts.get(def.0).cloned().unwrap_or_default()
-    }
-
     fn fact_mut(&mut self, def: DefId) -> Option<&mut Facts> {
         self.facts.get_mut(def.0)
     }
@@ -494,8 +512,8 @@ impl<'a> Resolver<'a> {
                 return ty;
             };
             match self.typedefs.get(name.as_ref()) {
-                Some(aliased) if aliased != &ty => ty = aliased.clone(),
-                Some(_) | None => return ty,
+                Some(aliased) => ty = aliased.clone(),
+                None => return ty,
             }
         }
         ty
@@ -505,7 +523,7 @@ impl<'a> Resolver<'a> {
     /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.12).
     fn same_type(&self, old: &Type, ty: &Type) -> bool {
         if self.fteqcc {
-            self.resolved(old).compatible(&self.resolved(ty))
+            self.resolved(old).fteqcc_same(&self.resolved(ty))
         } else {
             old == ty || *old == Type::Unknown || *ty == Type::Unknown
         }
@@ -523,11 +541,15 @@ impl<'a> Resolver<'a> {
         let (Type::Function(a), Type::Function(b)) = (old, ty) else {
             return false;
         };
-        if !a.ret.compatible(&b.ret) {
+        if !a.ret.fteqcc_same(&b.ret) {
             return false;
         }
         let shared = a.params.len().min(b.params.len());
-        let types_agree = a.params.iter().zip(&b.params).all(|(x, y)| x.compatible(y));
+        let types_agree = a
+            .params
+            .iter()
+            .zip(&b.params)
+            .all(|(x, y)| x.fteqcc_same(y));
         let outs_agree = old_params.iter().zip(params).all(|(x, y)| x.out == y.out);
         let optional_beyond = |list: &[Type], info: &[RawParamInfo]| {
             (shared..list.len()).all(|i| info.get(i).is_some_and(|p| p.optional))
@@ -678,15 +700,22 @@ impl<'a> Resolver<'a> {
             return TypeCheck::Mismatch;
         };
         let old = def.ty.clone();
-        let facts = self.fact(r.existing);
+        let kind = def.kind;
+        let facts = self.facts.get(r.existing.0);
+        let field_component = facts.is_some_and(|f| f.field_component);
+        let referenced = facts.is_some_and(|f| f.referenced);
+        let params = facts.map_or(&[][..], |f| f.params.as_slice());
+        let defaults_ok = defaults_agree(params, r.params);
+        let resolved_old = self.resolved(&old);
+        let resolved_ty = self.resolved(r.ty);
+        let lax = Self::lax_same(&resolved_old, params, &resolved_ty, r.params);
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
-        if !self.fteqcc && facts.field_component != component && def.kind == DefKind::Field {
+        if !self.fteqcc && field_component != component && kind == DefKind::Field {
             self.mismatch(r.name, r.location, &old, r.ty);
             return TypeCheck::Mismatch;
         }
-        let same =
-            self.same_type(&old, r.ty) && (!self.fteqcc || defaults_agree(&facts.params, r.params));
+        let same = self.same_type(&old, r.ty) && (!self.fteqcc || defaults_ok);
         if same {
             return TypeCheck::Same;
         }
@@ -694,11 +723,10 @@ impl<'a> Resolver<'a> {
             self.mismatch(r.name, r.location, &old, r.ty);
             return TypeCheck::Mismatch;
         }
-        let old = self.resolved(&old);
-        let ty = self.resolved(r.ty);
+        let (old, ty) = (resolved_old, resolved_ty);
         // FTEF-19.7: at file level a difference only in optional arguments is a warning, and
         // a declaration with more parameters gives the definition its type.
-        if Self::lax_same(&old, &facts.params, &ty, r.params) {
+        if lax {
             let (Type::Function(a), Type::Function(b)) = (&old, &ty) else {
                 return TypeCheck::Same;
             };
@@ -751,7 +779,7 @@ impl<'a> Resolver<'a> {
             );
             return TypeCheck::Ignored;
         }
-        if self.unused.contains(&r.existing) && !facts.referenced {
+        if self.unused.contains(&r.existing) && !referenced {
             self.report(
                 Code::W0211,
                 r.location,
@@ -801,7 +829,7 @@ impl<'a> Resolver<'a> {
             Some(ArrayDim::Sized(n)) => Some(n),
             Some(ArrayDim::Unsized | ArrayDim::Unknown) => None,
         };
-        let old = self.fact(r.existing).array;
+        let old = self.facts.get(r.existing.0).and_then(|f| f.array);
         let (Some(new), Some(was)) = (size(r.array), size(old)) else {
             if matches!(old, Some(ArrayDim::Unsized))
                 && let Some(facts) = self.fact_mut(r.existing)
@@ -919,12 +947,15 @@ impl<'a> Resolver<'a> {
     /// file level and not `var`, initialised, a function or a field (`GDF_CONST`). An
     /// `autocvar_` never is (FTEF-19.16).
     fn constant_at_file_level(decl: &RawDecl) -> bool {
-        if decl.name.starts_with("autocvar_") {
-            return false;
-        }
+        !decl.name.starts_with("autocvar_") && Self::constness(decl, decl.initialized)
+    }
+
+    /// FTEF-19.3: the constness `QCC_PR_ParseDefs` gives a file-level declaration, initialised
+    /// or not: `const`, or not `var` and initialised, a function or a field.
+    fn constness(decl: &RawDecl, initialised: bool) -> bool {
         decl.has(&Qualifier::Const)
             || (!decl.has(&Qualifier::Var)
-                && (decl.initialized || decl.ty.is_function() || decl.ty.is_field()))
+                && (initialised || decl.ty.is_function() || decl.ty.is_field()))
     }
 
     /// Declares one top-level declaration, and returns the function bodies it brings, to
@@ -938,6 +969,7 @@ impl<'a> Resolver<'a> {
     ) -> Vec<Pending<'a>> {
         let location = self.at(file, decl.span);
         if let Some(kind) = decl.type_kind {
+            self.type_names.insert(decl.name.clone());
             self.declare_type_name(kind, decl, location);
             // FTEF-17.1: a type's name may be declared again, a class first forward and then
             // with its body, and a typedef in more than one header.
@@ -952,6 +984,9 @@ impl<'a> Resolver<'a> {
             && let Some(item) = &decl.enum_item
         {
             self.declare_enum_item(file, decl, item, location);
+            return Vec::new();
+        }
+        if self.fteqcc && self.check_type_names(&decl.ty, &[], decl.span.start, location) {
             return Vec::new();
         }
         let qualifier_fatal = self.fteqcc && self.warn_qualifiers(decl, location);
@@ -1003,6 +1038,9 @@ impl<'a> Resolver<'a> {
             existing.is_some_and(|d| self.index.def(d).is_some_and(|d| d.initialized));
         if self.fteqcc && !aborted {
             aborted |= self.check_initialisation(decl, existing, location);
+        }
+        if self.fteqcc && !aborted {
+            aborted |= self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref());
         }
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
         let value = if aborted || (!self.fteqcc && was_initialized && decl.initialized) {
@@ -1085,7 +1123,7 @@ impl<'a> Resolver<'a> {
         }
         if decl.has(&Qualifier::Weak) || decl.has(&Qualifier::Accumulate) {
             self.redefinable.insert(def);
-        } else if decl.initialized && !self.fact(def).accumulate {
+        } else if decl.initialized && !self.facts.get(def.0).is_some_and(|f| f.accumulate) {
             self.redefinable.remove(&def);
         }
         pending(def)
@@ -1135,7 +1173,7 @@ impl<'a> Resolver<'a> {
         if !decl.name.starts_with("autocvar_") {
             return;
         }
-        let what = if decl.has(&Qualifier::Const) || Self::constant_at_file_level_raw(decl) {
+        let what = if Self::constness(decl, decl.initialized) {
             "constant"
         } else if decl.has(&Qualifier::Static) {
             "static"
@@ -1152,14 +1190,6 @@ impl<'a> Resolver<'a> {
         );
     }
 
-    /// The constness test of [`Resolver::constant_at_file_level`] without the `autocvar_`
-    /// exception, for its warning (FTEF-19.16).
-    fn constant_at_file_level_raw(decl: &RawDecl) -> bool {
-        decl.has(&Qualifier::Const)
-            || (!decl.has(&Qualifier::Var)
-                && (decl.initialized || decl.ty.is_function() || decl.ty.is_field()))
-    }
-
     /// FTEF-19.4, FTEF-19.11: what `QCC_PR_ParseDefs` reports of an initialiser before it reads
     /// it: a `shared` definition given a value; a body for a definition already initialised,
     /// "redeclaration of function body", but for `anglemod` and `crossproduct`, whose builtin
@@ -1174,7 +1204,7 @@ impl<'a> Resolver<'a> {
             if decl.has(&Qualifier::Accumulate)
                 && let Some(existing) = existing
                 && self.index.def(existing).is_some_and(|d| d.initialized)
-                && !self.fact(existing).accumulate
+                && !self.facts.get(existing.0).is_some_and(|f| f.accumulate)
             {
                 self.report(
                     Code::W0218,
@@ -1188,8 +1218,15 @@ impl<'a> Resolver<'a> {
             self.warn_constness_change(decl, existing, location, false);
             return false;
         }
-        let facts = existing.map(|d| self.fact(d)).unwrap_or_default();
-        if decl.has(&Qualifier::Shared) || facts.shared {
+        let flag = |read: fn(&Facts) -> bool| {
+            existing.is_some_and(|d| self.facts.get(d.0).is_some_and(read))
+        };
+        let (shared, accumulating, builtin) = (
+            flag(|f| f.shared),
+            flag(|f| f.accumulate),
+            flag(|f| f.builtin),
+        );
+        if decl.has(&Qualifier::Shared) || shared {
             self.report(
                 Code::E0221,
                 location,
@@ -1206,8 +1243,8 @@ impl<'a> Resolver<'a> {
             return false;
         }
         self.warn_constness_change(decl, existing, location, true);
-        if decl.has(&Qualifier::Accumulate) || facts.accumulate {
-            if initialized && !facts.accumulate && !wrap {
+        if decl.has(&Qualifier::Accumulate) || accumulating {
+            if initialized && !accumulating && !wrap {
                 self.report(
                     Code::W0218,
                     location,
@@ -1249,7 +1286,7 @@ impl<'a> Resolver<'a> {
             return false;
         }
         if initialized && existing.is_some_and(|e| !self.redefinable.contains(&e)) {
-            if facts.builtin && REPLACEABLE_BUILTINS.contains(&decl.name.as_str()) {
+            if builtin && REPLACEABLE_BUILTINS.contains(&decl.name.as_str()) {
                 self.report(
                     Code::W0217,
                     location,
@@ -1270,7 +1307,9 @@ impl<'a> Resolver<'a> {
     }
 
     /// FTEF-19.3: a redeclaration that would make a definition constant, or not, is a warning;
-    /// the definition keeps the constness its first declaration gave it.
+    /// the definition keeps the constness its first declaration gave it. A new definition is
+    /// compared with the constness it is about to get, which differs only for an initialised
+    /// `autocvar_`, made no constant (FTEF-19.16).
     fn warn_constness_change(
         &mut self,
         decl: &RawDecl,
@@ -1278,22 +1317,21 @@ impl<'a> Resolver<'a> {
         location: Location,
         initialised: bool,
     ) {
-        let Some(existing) = existing else {
-            return;
+        let was = match existing {
+            Some(existing) => {
+                if self
+                    .index
+                    .def(existing)
+                    .is_some_and(|d| d.member_of.is_some())
+                {
+                    return;
+                }
+                self.facts.get(existing.0).is_some_and(|f| f.constant)
+            }
+            None => Self::constant_at_file_level(decl),
         };
-        let was = self.fact(existing).constant;
-        let now = if initialised {
-            decl.has(&Qualifier::Const) || !decl.has(&Qualifier::Var)
-        } else {
-            decl.has(&Qualifier::Const)
-                || (!decl.has(&Qualifier::Var) && (decl.ty.is_function() || decl.ty.is_field()))
-        };
-        if was == now
-            || self
-                .index
-                .def(existing)
-                .is_some_and(|d| d.member_of.is_some())
-        {
+        let now = Self::constness(decl, initialised);
+        if was == now {
             return;
         }
         let message = if initialised {
@@ -1548,6 +1586,47 @@ impl<'a> Resolver<'a> {
             .flatten())
     }
 
+    /// FTEF-19.8: an array is initialised with `{ ... }`, or an array of `char` with a string;
+    /// `QCC_PR_ParseInitializerType_Internal` takes anything else for "expected {, found X",
+    /// a fatal error. Returns whether it was reported.
+    fn check_array_value(
+        &mut self,
+        file: FileId,
+        array: Option<ArrayDim>,
+        ty: &Type,
+        value: Option<&RawValue>,
+    ) -> bool {
+        let (Some(_), Some(value)) = (array, value) else {
+            return false;
+        };
+        let string = matches!(
+            value.kind,
+            ValueKind::Literal(literal) if literal.ty == ConstType::String
+        );
+        // `def.cast->type == ev_bitfld && def.cast->bits == 8`: an 8-bit integer.
+        let chars = matches!(ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Uint8));
+        if string && chars {
+            if let (Some(ArrayDim::Sized(size)), Some(len)) = (array, value.string_len)
+                && len > size
+            {
+                let location = self.at(file, value.span);
+                self.report(
+                    Code::E0233,
+                    location,
+                    "initializer-string too long".to_owned(),
+                );
+            }
+            return false;
+        }
+        let location = self.at(file, value.span);
+        self.report(
+            Code::E0204,
+            location,
+            format!("expected {{, found {}", value.first),
+        );
+        true
+    }
+
     /// FTEQCC's implicit cast of `source` to `to` (FTEF-19.2): "Cannot cast", an error, or
     /// "Implicit cast", a warning, or neither. Returns whether the cast is refused.
     fn cast_value(&mut self, source: Source<'_>, to: &Type, location: Location) -> bool {
@@ -1587,7 +1666,7 @@ impl<'a> Resolver<'a> {
                     let Some(source) = self.lookup_global(name) else {
                         continue;
                     };
-                    if !self.fact(source).constant {
+                    if !self.facts.get(source.0).is_some_and(|f| f.constant) {
                         self.report(
                             Code::E0217,
                             location,
@@ -1638,7 +1717,7 @@ impl<'a> Resolver<'a> {
                 };
                 let ty = self.resolved(ty);
                 match self.typedefs.get(&decl.name) {
-                    Some(old) if !Self::same_typedef(old, &ty) => {
+                    Some(old) if !old.fteqcc_same(&ty) => {
                         let message = format!(
                             "Cannot redeclare typedef {} from {} to {}",
                             decl.name,
@@ -1669,19 +1748,6 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Whether a typedef names again the type `old` an earlier one named (FTEF-19.9): FTEQCC's
-    /// `typecmp`, structural, with a C type word compared by the kind it names and any other
-    /// type a program names not compared.
-    fn same_typedef(old: &Type, ty: &Type) -> bool {
-        match (old.fteqcc_kind(), ty.fteqcc_kind()) {
-            (Some(a), Some(b)) if a != b => false,
-            (Some(_), Some(_)) => {
-                old == ty || matches!(old, Type::Named(_)) || matches!(ty, Type::Named(_))
-            }
-            (None, _) | (_, None) => true,
-        }
-    }
-
     /// An enum's name (FTEF-19.10): a constant of the enum's base type whose value is the one
     /// after `=`, a literal or a constant, or else the one before it plus one, doubled for
     /// `enumflags`. `QCC_PR_ParseEnum` makes it with `QCC_PR_DummyDef`, which looks for no
@@ -1702,14 +1768,18 @@ impl<'a> Resolver<'a> {
             );
         }
         let base = self.resolved(&item.base);
-        let numeric = matches!(
-            base.fteqcc_kind(),
-            Some("float" | "__int32" | "__uint32" | "__int64" | "__uint64" | "__double")
-        );
-        let next = self.enum_next.unwrap_or(if item.flags { 1.0 } else { 0.0 });
+        let numeric = base.fteqcc_kind().is_numeric();
+        if item.first {
+            self.enum_next = EnumCursor::Start;
+        }
+        let next = match self.enum_next {
+            EnumCursor::Start => Some(if item.flags { 1.0 } else { 0.0 }),
+            EnumCursor::Known(next) => Some(next),
+            EnumCursor::Unknown => None,
+        };
         let value: Option<f64> = match item.value.as_ref() {
             None => {
-                if !numeric && base.fteqcc_kind().is_some() {
+                if !numeric && base.fteqcc_kind() != Kind::Opaque {
                     self.report(
                         Code::E0229,
                         location,
@@ -1717,7 +1787,7 @@ impl<'a> Resolver<'a> {
                     );
                     None
                 } else {
-                    Some(next)
+                    next
                 }
             }
             Some(value) => self.enum_value(file, value, item.number, &base),
@@ -1727,7 +1797,8 @@ impl<'a> Resolver<'a> {
         {
             self.warn_enumflag(v, &base, location);
         }
-        self.enum_next = value.map(|v| {
+        // A value the model does not compute leaves every later implicit one unknown.
+        self.enum_next = value.map_or(EnumCursor::Unknown, |v| {
             if item.flags {
                 // FTEF-19.10: `next_i <<= 1;` then `if (!next_i) next_f = next_i = 1;`, where
                 // `next_i` holds the value's integer part.
@@ -1736,13 +1807,13 @@ impl<'a> Resolver<'a> {
                     reason = "spec FTEF-19.10: `next_i = next_f` keeps the value's integer part"
                 )]
                 let whole = v as i64;
-                if whole.wrapping_shl(1) == 0 {
+                EnumCursor::Known(if whole.wrapping_shl(1) == 0 {
                     1.0
                 } else {
                     v * 2.0
-                }
+                })
             } else {
-                v + 1.0
+                EnumCursor::Known(v + 1.0)
             }
         });
         let literal = value
@@ -1796,7 +1867,7 @@ impl<'a> Resolver<'a> {
             clippy::float_cmp,
             reason = "spec FTEF-19.10: `(double)i != next_f` compares the integer back exactly"
         )]
-        let fraction = base.fteqcc_kind() != Some("__int32") && whole as f64 != value;
+        let fraction = base.fteqcc_kind() != Kind::Integer && whole as f64 != value;
         let message = if fraction {
             format!("enumflags - {value:.6} not an integer value")
         } else if whole.count_ones() > 1 {
@@ -1819,12 +1890,17 @@ impl<'a> Resolver<'a> {
         base: &Type,
     ) -> Option<f64> {
         let location = self.at(file, value.span);
-        let wanted = base.fteqcc_kind().unwrap_or("float");
+        let kind = base.fteqcc_kind();
+        let wanted = if kind == Kind::Opaque {
+            Kind::Float.name()
+        } else {
+            kind.name()
+        };
         match &value.kind {
             ValueKind::Literal(literal) => {
                 let got = literal.ty.name();
                 let numeric = !matches!(literal.ty, ConstType::String | ConstType::Vector);
-                let numeric_base = wanted != "string" && wanted != "vector";
+                let numeric_base = kind.is_numeric() || kind == Kind::Opaque;
                 if numeric != numeric_base || (!numeric && got != wanted) {
                     self.report(
                         Code::E0227,
@@ -1837,8 +1913,8 @@ impl<'a> Resolver<'a> {
             }
             ValueKind::Name(name) => {
                 let def = self.lookup_global(name)?;
-                let constant =
-                    self.fact(def).constant && self.index.def(def).is_some_and(|d| d.initialized);
+                let constant = self.facts.get(def.0).is_some_and(|f| f.constant)
+                    && self.index.def(def).is_some_and(|d| d.initialized);
                 if !constant {
                     self.report(
                         Code::E0228,
@@ -2102,7 +2178,12 @@ impl<'a> Resolver<'a> {
             owner,
             locals_start: self.index.defs.len(),
             class,
+            at: 0,
         };
+        for d in &body.diagnostics {
+            let location = self.at(file, d.span);
+            self.report(d.code, location, d.message.clone());
+        }
         if self.fteqcc {
             let function = self
                 .index
@@ -2154,10 +2235,79 @@ impl<'a> Resolver<'a> {
                 );
                 continue;
             }
-            self.declare_local(file, scope, local, location);
+            // FTEF-19.20: a type name no type has is "not a type", and no local is made.
+            if self.fteqcc
+                && self.check_type_names(&local.ty, &body.typedefs, local.span.start, location)
+            {
+                continue;
+            }
+            let made = self.index.defs.len();
+            let at = Scope {
+                at: local.span.start,
+                ..scope
+            };
+            self.declare_local(file, at, local, location);
+            // FTEF-19.19: what the declaration made new leaves scope with its `for`; a local
+            // it found again stays.
+            if let Some(end) = local.scope_end {
+                for f in self.facts.iter_mut().skip(made) {
+                    f.scope_end = Some(end);
+                }
+            }
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
         self.resolve_uses(file, Some(scope), &body.uses);
+    }
+
+    /// FTEF-19.20: reports the first name in `ty` that is no type at `at`, "\"NAME\" is not a
+    /// type", which ends the declaration; `typedefs` are a body's, each with where it stands.
+    /// Returns whether one was reported.
+    fn check_type_names(
+        &mut self,
+        ty: &Type,
+        typedefs: &[(String, usize)],
+        at: usize,
+        location: Location,
+    ) -> bool {
+        let Some(name) = self.unknown_type_name(ty, typedefs, at) else {
+            return false;
+        };
+        let message = format!("\"{name}\" is not a type");
+        self.report(Code::E0203, location, message);
+        true
+    }
+
+    /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
+    /// name FTEQCC registers, a type declared before, or one of `typedefs` before `at`. A name
+    /// of more than one word that is no run of C words (`struct tag`, an inline enum or
+    /// struct) is not checked (FTEF-19.17).
+    fn unknown_type_name<'t>(
+        &self,
+        ty: &'t Type,
+        typedefs: &[(String, usize)],
+        at: usize,
+    ) -> Option<&'t str> {
+        match ty {
+            Type::Named(name) => {
+                let known = name.contains(char::is_whitespace)
+                    || ty.fteqcc_scalar().is_some()
+                    || REGISTERED_TYPES.contains(&name.as_ref())
+                    || self.type_names.contains(name.as_ref())
+                    || typedefs
+                        .iter()
+                        .any(|(t, start)| t == name.as_ref() && *start < at);
+                (!known).then_some(name.as_ref())
+            }
+            Type::Field(inner) | Type::Pointer(inner) => {
+                self.unknown_type_name(inner, typedefs, at)
+            }
+            Type::Function(func) => self.unknown_type_name(&func.ret, typedefs, at).or_else(|| {
+                func.params
+                    .iter()
+                    .find_map(|p| self.unknown_type_name(p, typedefs, at))
+            }),
+            Type::Simple(_) | Type::Unknown => None,
+        }
     }
 
     /// FTEF-19.14: FTEQCC converts a state header's frame to a float, "Implicit type
@@ -2218,6 +2368,10 @@ impl<'a> Resolver<'a> {
     fn resolve_uses(&mut self, file: FileId, scope: Option<Scope>, uses: &[RawUse]) {
         for use_ in uses {
             let location = self.at(file, use_.span);
+            let scope = scope.map(|s| Scope {
+                at: use_.span.start,
+                ..s
+            });
             let found = match (&use_.scope, use_.kind) {
                 (Some(prefix), _) if self.fteqcc => self.resolve_scoped(scope, prefix, &use_.name),
                 (_, UseKind::Value) => self.resolve_value(scope, &use_.name),
@@ -2308,10 +2462,12 @@ impl<'a> Resolver<'a> {
         {
             return Found::Def(def);
         }
-        if let Some(def) = self.lookup_global(name) {
+        // A definition named `Scope::name`, as a strict enum's value is (FTEF-19.10), comes
+        // before the plain name.
+        if let Some(def) = self.lookup_global(&format!("{prefix}::{name}")) {
             return Found::Def(def);
         }
-        if let Some(def) = self.lookup_global(&format!("{prefix}::{name}")) {
+        if let Some(def) = self.lookup_global(name) {
             return Found::Def(def);
         }
         if prefix == "super" && class.is_none() {
@@ -2450,6 +2606,10 @@ impl<'a> Resolver<'a> {
             self.report(Code::E0206, location, format!("{} redeclared", local.name));
             return;
         }
+        if self.fteqcc && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
+        {
+            return;
+        }
         let Ok(value) =
             self.check_value(file, &local.name, &local.ty, local.value.as_ref(), holder)
         else {
@@ -2534,7 +2694,7 @@ impl<'a> Resolver<'a> {
                 if self.check_array(&redeclaration, true) {
                     return Some(existing);
                 }
-                let was_static = self.fact(existing).static_local;
+                let was_static = self.facts.get(existing.0).is_some_and(|f| f.static_local);
                 if kind == DefKind::Param {
                     self.report(
                         Code::E0215,
@@ -2572,7 +2732,7 @@ impl<'a> Resolver<'a> {
             && !facts.component
             && let Some(global) = self.lookup_global(name)
             && self.index.def(global).is_some_and(|g| {
-                g.ty.fteqcc_kind() == ty.fteqcc_kind() && ty.fteqcc_kind().is_some()
+                g.ty.fteqcc_kind() == ty.fteqcc_kind() && ty.fteqcc_kind() != Kind::Opaque
             })
         {
             // FTEF-19.1: WARN_SAMENAMEASGLOBAL, for a global of the same kind of type only.
@@ -2619,14 +2779,23 @@ impl<'a> Resolver<'a> {
         Some(id)
     }
 
-    /// The parameter or local of the function in `scope` named `name` (QC-12.1).
+    /// The parameter or local of the function in `scope` named `name` (QC-12.1), but for one
+    /// whose `for` statement ended before the lookup (FTEF-19.19).
     fn lookup_local(&self, scope: Scope, name: &str) -> Option<DefId> {
         self.index
             .defs
             .iter()
             .enumerate()
             .skip(scope.locals_start)
-            .find(|(_, d)| d.owner == Some(scope.owner) && d.name == name)
+            .find(|(index, d)| {
+                d.owner == Some(scope.owner)
+                    && d.name == name
+                    && self
+                        .facts
+                        .get(*index)
+                        .and_then(|f| f.scope_end)
+                        .is_none_or(|end| scope.at < end)
+            })
             .map(|(index, _)| DefId(index))
     }
 
@@ -2716,6 +2885,17 @@ struct ScopedFacts {
     statics: bool,
 }
 
+/// Where the count of the enum being read is (FTEF-19.10).
+#[derive(Clone, Copy, Debug)]
+enum EnumCursor {
+    /// At its first name: 0, or 1 for `enumflags`.
+    Start,
+    /// At this value.
+    Known(f64),
+    /// After a value the model does not compute.
+    Unknown,
+}
+
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which it reads nothing more of
 /// the declaration.
 struct Fatal;
@@ -2753,4 +2933,7 @@ struct Scope {
     owner: DefId,
     locals_start: usize,
     class: Option<DefId>,
+    /// The byte offset the lookup is made at, which a `for` statement's locals are found
+    /// before the end of (FTEF-19.19).
+    at: usize,
 }

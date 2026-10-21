@@ -13,6 +13,7 @@
 use qc_lexer::{Code, Span};
 
 use super::{Parser, TypeShape, UNARY_PRIORITY, is_reserved_word};
+use crate::c_scalar::{CScalar, CWord, CWords};
 use crate::kind::SyntaxKind as K;
 
 /// Most parameters an FTEQCC function type may have: `MAX_PARMS+MAX_EXTRA_PARMS` in
@@ -70,29 +71,18 @@ fn starts_local_statement(word: &str) -> bool {
     matches!(word, "var" | "noref" | "static" | "extern" | "const")
 }
 
-/// Whether `word` is one of the C scalar type words `QCC_PR_ParseType` combines (FTEF-2.4),
-/// or `float`, which joins them (`long double`, `unsigned float`).
-fn is_c_type_word(word: &str) -> bool {
-    let (prefixed, rest) = bare(word);
-    let rest = if prefixed {
-        rest.to_ascii_lowercase()
-    } else {
-        rest.to_owned()
-    };
-    matches!(
-        rest.as_str(),
-        "signed"
-            | "unsigned"
-            | "long"
-            | "short"
-            | "int"
-            | "integer"
-            | "char"
-            | "double"
-            | "register"
-            | "volatile"
-            | "_Bool"
-    )
+/// Whether `word` starts a C scalar type `QCC_PR_ParseType` reads with its loop of C type
+/// words (FTEF-2.7): a word of [`CWord::of`] but a bare `float`, which is the vanilla type.
+pub(super) fn is_c_type_word(word: &str) -> bool {
+    word != "float" && CWord::of(word).is_some()
+}
+
+/// Whether a statement that starts with the C type word `word` defines locals (FTEF-2.10):
+/// `QCC_PR_ParseStatement` tests the bare words with their keyword enabled, `integer`,
+/// `unsigned`, `int` and `_Bool`, and a name `QCC_TypeForName` finds; a `__` word that is no
+/// type's name is a value there.
+fn c_word_starts_local(word: &str) -> bool {
+    matches!(word, "integer" | "unsigned" | "int" | "_Bool") || CScalar::named(word).is_some()
 }
 
 /// The class member qualifiers of `QCC_PR_ParseEntClass` (FTEF-9.2, FTEF-9.3).
@@ -111,6 +101,35 @@ fn is_param_qualifier(word: &str) -> bool {
 
 impl Parser<'_> {
     /// Whether the token `n` ahead is a name spelling `word`, or `__word` in any case.
+    /// Whether a declaration whose qualifiers were read leaves its type out (FTEF-19.21): a
+    /// name followed by what ends a declarator, `;`, `,`, `=` or `[`, where
+    /// `QCC_PR_ParseType` with `silentfail` finds no type and `QCC_PR_ParseDefs` assumes
+    /// `int`.
+    pub(super) fn fte_type_omitted(&self) -> bool {
+        self.at(K::Name)
+            && self
+                .nth(1)
+                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket))
+    }
+
+    /// Whether the token `n` ahead is `volatile` after `__`, the only spelling FTEQCC's
+    /// default keywords take (FTEF-2.11).
+    pub(super) fn at_volatile(&self, n: usize) -> bool {
+        self.nth(n).is_some_and(|t| {
+            t.kind == K::Name
+                && t.text
+                    .strip_prefix("__")
+                    .is_some_and(|rest| rest.eq_ignore_ascii_case("volatile"))
+        })
+    }
+
+    /// FTEF-2.11: "ignoring unsupported const keyword" at the current token.
+    fn warn_const(&mut self) {
+        if let Some(span) = self.current().map(|t| t.span) {
+            self.warning_at(Code::W0226, "ignoring unsupported const keyword", span);
+        }
+    }
+
     pub(super) fn fte_word(&self, n: usize, word: &str) -> bool {
         self.nth(n).is_some_and(|t| {
             t.kind == K::Name && {
@@ -139,13 +158,16 @@ impl Parser<'_> {
     }
 
     /// The qualifiers before a declaration's type (FTEF-15.1), each its own node; a
-    /// `__deprecated` takes its optional `("reason")`.
-    pub(super) fn fte_qualifiers(&mut self) {
+    /// `__deprecated` takes its optional `("reason")`. Returns whether it read one,
+    /// `QCC_PR_ParseDefs`'s `hadmodifier`.
+    pub(super) fn fte_qualifiers(&mut self) -> bool {
+        let mut read = false;
         while let Some(text) = self
             .current()
             .filter(|t| t.kind == K::Name && is_decl_qualifier(&t.text))
             .map(|t| t.text.clone())
         {
+            read = true;
             self.start_node(K::Qualifier);
             match text.as_str() {
                 "const" => self.bump_as(K::ConstKw),
@@ -162,6 +184,7 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
+        read
     }
 
     /// Whether the current name starts a file-level declaration (FTEF-15.1): a qualifier, a
@@ -172,7 +195,13 @@ impl Parser<'_> {
             return false;
         };
         match tok.kind {
-            K::Name if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) => true,
+            K::Name
+                if is_decl_qualifier(&tok.text)
+                    || is_c_type_word(&tok.text)
+                    || self.at_volatile(0) =>
+            {
+                true
+            }
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if matches!(tok.text.as_str(), "struct" | "union" | "enum" | "enumflags") => {
                 true
@@ -202,8 +231,15 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        if starts_local_statement(&tok.text) || is_c_type_word(&tok.text) {
+        if starts_local_statement(&tok.text) {
             return true;
+        }
+        if is_c_type_word(&tok.text) {
+            return c_word_starts_local(&tok.text);
+        }
+        if self.at_volatile(0) {
+            // FTEF-2.11: `QCC_PR_ParseStatement` tests the bare `volatile` only.
+            return false;
         }
         if is_decl_qualifier(&tok.text) {
             // FTEF-19.1: `QCC_PR_ParseStatement` starts a definition at only some of the
@@ -267,8 +303,15 @@ impl Parser<'_> {
     }
 
     fn fte_type_inner(&mut self) -> Option<TypeShape> {
-        if self.fte_word(0, "const") || self.fte_word(0, "volatile") {
-            // `QCC_PR_ParseType` reads and ignores both (FTEF-2.5).
+        if self.fte_word(0, "const") {
+            // FTEF-2.11: `QCC_PR_ParseType` reads a `const` and ignores it, with a warning.
+            self.warn_const();
+            self.start_node(K::Qualifier);
+            self.bump();
+            self.finish_node();
+        }
+        if self.at_volatile(0) {
+            // FTEF-2.11: and a `volatile`, its keyword disabled but after `__`.
             self.start_node(K::Qualifier);
             self.bump();
             self.finish_node();
@@ -317,6 +360,8 @@ impl Parser<'_> {
             self.builder.start_node_at(checkpoint, K::PointerType);
             self.bump();
             if self.fte_word(0, "const") {
+                // FTEF-2.11: `T *const` is the pointer, with the warning.
+                self.warn_const();
                 self.bump();
             }
             self.finish_node();
@@ -389,13 +434,24 @@ impl Parser<'_> {
             return true;
         }
         if is_c_type_word(&text) {
+            // FTEF-2.8: the type is the words the loop takes; the next word is the name.
+            let mut words = Vec::new();
+            while let Some(t) = self.nth(words.len()).filter(|t| t.kind == K::Name) {
+                words.push(t.text.clone());
+            }
+            let (taken, ty) = CWords::read(words.iter().map(String::as_str));
+            let span = self.current().map(|t| t.span);
             self.start_node(K::SimpleType);
-            while self.current().is_some_and(|t| {
-                t.kind == K::Name && (is_c_type_word(&t.text) || t.text == "float")
-            }) {
+            for _ in 0..taken {
                 self.bump();
             }
             self.finish_node();
+            // FTEF-2.9: a narrowed type is warned about.
+            if let (Some(ty), Some(span)) = (ty, span) {
+                for warning in ty.warnings() {
+                    self.warning_at(Code::W0226, warning, span);
+                }
+            }
             return true;
         }
         if let Some(keyword) = super::type_keyword(&text) {

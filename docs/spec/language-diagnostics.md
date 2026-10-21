@@ -134,6 +134,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.32** `E0232` "_() intrinsic accepts only a string immediate": under an FTEQCC profile,
   a string initialised with `_()` of anything but one string literal, at the initialiser
   (FTEF-19.2).
+- **QCD-3.33** `E0233` "initializer-string too long": under an FTEQCC profile, an 8-bit array
+  initialised with a string of more bytes than its size, at the initialiser (FTEF-19.8).
 
 ## QCD-4 Expression and statement errors
 
@@ -323,8 +325,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   or "NAME builtin was redefined as TYPE. ignoring alternative definition": under an FTEQCC
   profile, a redeclaration FTEQCC keeps the first type of, at the name (FTEF-19.7).
 - **QCD-7.36** `W0211` "Type redeclaration of TYPE NAME replaces existing variable": under an
-  FTEQCC profile, a `noref` global not yet used declared with another type, at the name
-  (FTEF-19.7).
+  FTEQCC profile, a global marked unused that nothing refers to declared with another type, at
+  the name (FTEF-19.7).
 - **QCD-7.37** `W0212` "Redeclaration of NAME would change to const." (or "non-const."), or
   "Redeclaration of NAME changes const.": under an FTEQCC profile, a redeclaration that would
   change the constness its first declaration gave, at the name (FTEF-19.3).
@@ -363,6 +365,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.51** `W0225` "enumflags - VALUE not an integer value", or "enumflags - 0xV(V) has
   multiple bits set": under an FTEQCC profile, an `enumflags` value that is no single bit, at the
   name (FTEF-19.10).
+- **QCD-7.52** `W0226` "ignoring unsupported unsigned keyword, type will be signed", "long
+  doubles are not supported, using double" and "ignoring unsupported const keyword": under an
+  FTEQCC profile, a type FTEQCC narrows or a `const` it ignores in a type (FTEF-2.9,
+  FTEF-2.11).
 
 ## QCD-8 Preprocessor errors
 

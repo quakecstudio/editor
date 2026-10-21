@@ -317,11 +317,11 @@ fn a_for_clause_type_and_name_declare() {
     assert!(clause.children().any(|n| n.kind() == SyntaxKind::LocalDecl));
 }
 
-// spec FTEF-2.4: only the C type words combine; `float` is a type of its own name, so a C word
-// after it is the declarator's name
+// spec FTEF-2.8: `float` is a type of its own name, found before the C words, so a C word after
+// it is the declarator's name
 #[test]
 fn a_c_word_after_a_vanilla_type_is_a_name() {
-    let ty = fte("float long x;\n")
+    let ty = fte("float __long x;\n")
         .syntax()
         .descendants()
         .find_map(SimpleType::cast)

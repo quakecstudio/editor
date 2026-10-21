@@ -11,6 +11,7 @@
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_syntax::ast::{self, AstNode as _};
+use qc_syntax::c_scalar::CWords;
 use qc_syntax::{Dialect, Parse, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
@@ -30,8 +31,9 @@ pub struct RawDecl {
     pub local: bool,
     /// Whether the declaration has an initialiser (QC-11.5).
     pub initialized: bool,
-    /// The value of an initialiser that is a single literal, which FTEQCC compares when a
-    /// name is initialised twice (FTE-22.5); `None` for any other initialiser or none.
+    /// Under FTEQCC, the value of its initialiser, which FTEQCC compares when a name is
+    /// initialised twice (FTE-22.5, FTEF-17.10); `None` for none, and under the vanilla
+    /// profile, which compares no two values (QCD-3.6).
     pub literal: Option<LiteralValue>,
     /// For a function definition, the lowered body; otherwise `None`.
     pub body: Option<RawBody>,
@@ -144,6 +146,11 @@ pub struct RawValue {
     pub span: Span,
     /// What it is.
     pub kind: ValueKind,
+    /// The text of its first token, which FTEQCC's "expected {, found X" names (FTEF-19.8).
+    pub first: String,
+    /// For a string literal, its bytes as FTEQCC reads them, `pr_immediate_strlen`
+    /// (FTEF-19.8); `None` for any other value.
+    pub string_len: Option<u32>,
 }
 
 /// The shape of a value initialiser (QC-11.3, FTEF-19.2).
@@ -204,6 +211,8 @@ pub struct EnumItem {
     /// Whether this is the first name of an enum whose base type is written in FTEQCC's
     /// legacy form, before the `{` with no `:` (FTEF-19.10).
     pub legacy: bool,
+    /// Whether this is the enum's first name, where its count starts (FTEF-19.10).
+    pub first: bool,
 }
 
 impl RawDecl {
@@ -320,7 +329,24 @@ fn raw_value(expr: &ast::Expr, fte: bool) -> RawValue {
         }
         _ => ValueKind::Other,
     };
-    RawValue { span, kind }
+    let first = expr
+        .syntax()
+        .descendants_with_tokens()
+        .find_map(|e| match e {
+            qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t.text_lossless()),
+            qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+        })
+        .unwrap_or_default();
+    let string_len = match expr {
+        ast::Expr::Literal(literal) => string_len(literal),
+        _ => None,
+    };
+    RawValue {
+        span,
+        kind,
+        first,
+        string_len,
+    }
 }
 
 /// Whether `call` calls FTEQCC's `_` translation intrinsic (FTEF-19.2).
@@ -335,6 +361,23 @@ fn is_translate(call: &ast::CallExpr) -> bool {
 /// The first dimension of a declarator's array suffixes, sized by `init` when it is `[]`
 /// (FTEF-5.1): `QCC_PR_ParseDefArray` counts an aggregate's elements, or a string's bytes and its
 /// terminator.
+/// The bytes of the string literal `literal` as FTEQCC's lexer reads them,
+/// `pr_immediate_strlen` (FTEF-19.8); `None` when it is no string.
+fn string_len(literal: &ast::Literal) -> Option<u32> {
+    if literal.kind() != Some(ast::LiteralKind::String) {
+        return None;
+    }
+    let text = literal.token()?.text_lossless();
+    let lexed = qc_lexer::lex_with(text.as_bytes(), Dialect::Fteqcc);
+    match lexed.tokens.as_slice() {
+        [token] => match &token.kind {
+            qc_lexer::TokenKind::String(bytes) => u32::try_from(bytes.len()).ok(),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn array_dim(declarator: &ast::Declarator, init: Option<&ast::Initializer>) -> Option<ArrayDim> {
     let suffix = declarator.array_suffixes().next()?;
     let mut exprs = suffix.children().filter_map(ast::Expr::cast);
@@ -349,6 +392,14 @@ fn array_dim(declarator: &ast::Declarator, init: Option<&ast::Initializer>) -> O
                     })
                     .count();
                 u32::try_from(count).map_or(ArrayDim::Unknown, ArrayDim::Sized)
+            }
+            // `dim[0] = pr_immediate_strlen+1;`: the string's bytes and its terminator.
+            Some(ast::Initializer::Value(ast::Expr::Literal(literal)))
+                if literal.kind() == Some(ast::LiteralKind::String) =>
+            {
+                string_len(literal)
+                    .and_then(|n| n.checked_add(1))
+                    .map_or(ArrayDim::Unknown, ArrayDim::Sized)
             }
             Some(_) => ArrayDim::Unknown,
             None => ArrayDim::Unsized,
@@ -534,15 +585,6 @@ impl LiteralValue {
         }
     }
 
-    /// The value of a literal initialiser, if `init` is one. The vanilla profile compares no
-    /// two values (QCD-3.6), so it keeps no builtin's.
-    fn of(init: Option<&ast::Initializer>) -> Option<Self> {
-        let Some(ast::Initializer::Value(expr)) = init else {
-            return None;
-        };
-        Self::of_literal(expr, Dialect::Vanilla)
-    }
-
     /// The value of the expression `expr` under FTEQCC's comparison, or the vanilla one: a
     /// literal's, or under FTEQCC its text (FTEF-17.10).
     fn of_expr(expr: &ast::Expr, fte: bool) -> Option<Self> {
@@ -599,6 +641,12 @@ pub struct RawBody {
     pub state_literals: Vec<(StatePart, RawValue)>,
     /// The parameters with no name, each by its number from 1 and its span (FTEF-19.1).
     pub unnamed_params: Vec<(usize, Span)>,
+    /// What lowering found wrong in the body that resolution does not see: a `typedef` that
+    /// defines no type or has storage qualifiers (FTEF-19.9).
+    pub diagnostics: Vec<Diagnostic>,
+    /// The names the body's `typedef`s define, each with where it stands; a local's type may
+    /// be one defined before it (FTEF-19.20).
+    pub typedefs: Vec<(String, usize)>,
 }
 
 /// A part of a state header `[frame, next]` (QC-13.6).
@@ -642,6 +690,9 @@ pub struct RawLocal {
     pub literal: Option<LiteralValue>,
     /// The first array dimension, when the declarator has one (FTEF-19.8).
     pub array: Option<ArrayDim>,
+    /// The byte offset where the innermost `for` statement it is defined in ends, after which
+    /// its name is no longer found (FTEF-19.19); `None` outside any `for`.
+    pub scope_end: Option<usize>,
 }
 
 impl RawLocal {
@@ -737,6 +788,9 @@ pub struct FileDecls {
     /// What lowering found wrong with a declaration that resolution does not see: a `typedef`
     /// that defines no type or has storage qualifiers (FTEF-19.9).
     pub diagnostics: Vec<Diagnostic>,
+    /// The tag of every `struct` or `union` the file writes, nested in another's members too,
+    /// with where it stands: `QCC_PR_ParseStruct` makes it a type there (FTEF-19.20).
+    pub struct_tags: Vec<(String, usize)>,
 }
 
 /// Lowers one parsed file to its raw declarations (QC-11, QC-13), in `dialect`.
@@ -757,6 +811,20 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
         return out;
     };
     let fte = dialect.has_fteqcc_extensions();
+    for node in tree
+        .syntax()
+        .descendants()
+        .filter(|n| n.kind() == SyntaxKind::StructType)
+    {
+        let tag = node.children_with_tokens().find_map(|e| match e {
+            qc_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Name => Some(t),
+            qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+        });
+        if let Some(tag) = tag {
+            out.struct_tags
+                .push((tag.text_lossless(), tag.span().start));
+        }
+    }
     // Walk the top-level nodes in source order, so a name an `enum` or `typedef` declares is
     // visible to the declarations after it (QC-12.5, QC-23.3). Only an FTEQCC parse has
     // `enum` and `typedef` nodes.
@@ -881,13 +949,15 @@ fn lower_enum(en: &ast::EnumDecl, out: &mut Vec<RawDecl>) {
             value: value.as_ref().map(|e| raw_value(e, true)),
             number,
             legacy: legacy && index == 0,
+            first: index == 0,
         });
         out.push(decl);
     }
 }
 
 /// The base type a word before an enum's `{` names in FTEQCC's legacy form (FTEF-19.10): a
-/// simple type, or a C type word (FTEF-2); `None` for a name, the enum's own.
+/// simple type, or a C type word or registered type name (FTEF-2.8); `None` for a name, the
+/// enum's own.
 fn legacy_base(word: &str) -> Option<Type> {
     let simple = match word {
         "float" => SimpleType::Float,
@@ -895,7 +965,7 @@ fn legacy_base(word: &str) -> Option<Type> {
         "string" => SimpleType::String,
         "entity" => SimpleType::Entity,
         "void" => SimpleType::Void,
-        "int" | "integer" | "double" | "unsigned" | "signed" | "long" | "short" | "char" => {
+        word if CWords::read([word]).1.is_some() => {
             return Some(Type::Named(std::rc::Rc::from(word)));
         }
         _ => return None,
@@ -939,30 +1009,10 @@ fn lower_typedef(td: &ast::TypedefDecl, out: &mut FileDecls) {
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
         lower_enum(&en, &mut out.decls);
     }
-    let qualifiers = qualifiers_of(td.syntax());
+    out.diagnostics.extend(typedef_diagnostics(td));
     let Some(token) = td.name() else {
-        // FTEF-19.9: `typedef;` and `typedef float;` define no type, a warning.
-        let span = td.syntax().span();
-        out.diagnostics.push(Diagnostic {
-            code: Code::W0215,
-            message: "typedef defines no types".to_owned(),
-            span,
-        });
         return;
     };
-    // FTEF-19.9: a storage qualifier on a typedef is "bad combination of modifiers with
-    // typedef"; `static`, `noref` and `nosave` too, as the defaults FTEQCC compares them
-    // with are off.
-    if !qualifiers.is_empty() {
-        out.diagnostics.push(Diagnostic {
-            code: Code::E0224,
-            message: format!(
-                "bad combination of modifiers with typedef (defining {})",
-                token.text_lossless()
-            ),
-            span: token.span(),
-        });
-    }
     let mut decl = RawDecl::type_name(&token, TypeKind::Typedef);
     // FTEF-19.9: the type it names, which a typedef of the same name must name again. An
     // array typedef names a type the model does not follow.
@@ -982,6 +1032,30 @@ fn lower_typedef(td: &ast::TypedefDecl, out: &mut FileDecls) {
             .map_or(Type::Unknown, |t| Type::from_ast(&t)),
     );
     out.decls.push(decl);
+}
+
+/// FTEF-19.9: what is wrong with a `typedef` alone: `typedef;` and `typedef float;` define no
+/// type, a warning; a storage qualifier is "bad combination of modifiers with typedef", and
+/// `static`, `noref` and `nosave` too, as the defaults FTEQCC compares them with are off.
+fn typedef_diagnostics(td: &ast::TypedefDecl) -> Vec<Diagnostic> {
+    let Some(token) = td.name() else {
+        return vec![Diagnostic {
+            code: Code::W0215,
+            message: "typedef defines no types".to_owned(),
+            span: td.syntax().span(),
+        }];
+    };
+    if qualifiers_of(td.syntax()).is_empty() {
+        return Vec::new();
+    }
+    vec![Diagnostic {
+        code: Code::E0224,
+        message: format!(
+            "bad combination of modifiers with typedef (defining {})",
+            token.text_lossless()
+        ),
+        span: token.span(),
+    }]
 }
 
 /// An FTEQCC class: its name as a type, and its parent and members (FTEF-9). A member
@@ -1169,7 +1243,9 @@ fn lower_declaration(decl: &ast::Declaration, fte: bool, out: &mut Vec<RawDecl>)
     for en in decl.syntax().descendants().filter_map(ast::EnumDecl::cast) {
         lower_enum(&en, out);
     }
-    let base = decl.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
+    let base = decl
+        .ty()
+        .map_or_else(|| omitted_type(decl.syntax(), fte), |t| Type::from_ast(&t));
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), fte, out);
     // FTEF-15.1: the qualifiers before the type hold for every declarator.
@@ -1209,10 +1285,11 @@ fn lower_declarators(
         let init = declarator.initializer();
         let mut raw = RawDecl::new(name, span, ty.clone());
         raw.initialized = init.is_some();
+        // QCD-3.6: the vanilla profile compares no two values, so it keeps none.
         raw.literal = if fte {
             LiteralValue::of_fteqcc(init.as_ref())
         } else {
-            LiteralValue::of(init.as_ref())
+            None
         };
         raw.scope = declarator.scope().map(|t| t.text_lossless());
         raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
@@ -1384,6 +1461,14 @@ fn lower_block(block: &ast::Block, fte: bool, body: &mut RawBody) {
     for stmt in block.statements() {
         lower_stmt(&stmt, fte, body);
     }
+    // FTEF-19.9: a `typedef` in a body is checked as one at file level.
+    for td in block.syntax().children().filter_map(ast::TypedefDecl::cast) {
+        body.diagnostics.extend(typedef_diagnostics(&td));
+        if let Some(name) = td.name() {
+            body.typedefs
+                .push((name.text_lossless(), name.span().start));
+        }
+    }
 }
 
 fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
@@ -1423,8 +1508,11 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
             }
         }
         // FTEQCC `for (init; cond; step) body` (FTE-2). The init clause may declare a loop
-        // local; the clauses hold expressions whose names are used (QC-12.5).
+        // local; the clauses hold expressions whose names are used (QC-12.5). The locals the
+        // statement defines, in its clauses or its body, leave scope at its end (FTEF-19.19);
+        // a `for` inside it has already ended its own.
         ast::Stmt::For(for_stmt) => {
+            let first = body.locals.len();
             for clause in for_stmt.clauses() {
                 if let Some(local) = clause.children().find_map(ast::LocalDecl::cast) {
                     lower_local(&local, fte, body);
@@ -1436,6 +1524,10 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
             }
             if let Some(inner) = for_stmt.body() {
                 lower_stmt(&inner, fte, body);
+            }
+            let end = for_stmt.syntax().span().end;
+            for local in body.locals.iter_mut().skip(first) {
+                local.scope_end.get_or_insert(end);
             }
         }
         // FTEQCC `switch (e) { ... }` (FTE-3): the scrutinee, each `case` value and the
@@ -1472,8 +1564,20 @@ fn lower_stmt(stmt: &ast::Stmt, fte: bool, body: &mut RawBody) {
     }
 }
 
+/// The type of a declaration that writes none: under FTEQCC after a qualifier `int`, as
+/// `QCC_PR_ParseDefs` assumes when `hadmodifier` is set (FTEF-19.21); else unknown.
+fn omitted_type(node: &SyntaxNode, fte: bool) -> Type {
+    if fte && node.children().any(|n| n.kind() == SyntaxKind::Qualifier) {
+        Type::Named(std::rc::Rc::from("int"))
+    } else {
+        Type::Unknown
+    }
+}
+
 fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
-    let base = local.ty().map_or(Type::Unknown, |t| Type::from_ast(&t));
+    let base = local
+        .ty()
+        .map_or_else(|| omitted_type(local.syntax(), fte), |t| Type::from_ast(&t));
     // QC-11.9 holds only in vanilla: FTEQCC allows a field or function local (FTE-21.2).
     let bad = !fte && (base.is_field() || base.is_function());
     for declarator in local.declarators() {
@@ -1505,7 +1609,7 @@ fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
         let literal = if fte {
             LiteralValue::of_fteqcc(init.as_ref())
         } else {
-            LiteralValue::of(init.as_ref())
+            None
         };
         body.locals.push(RawLocal {
             name: name_token.text_lossless(),
@@ -1517,6 +1621,7 @@ fn lower_local(local: &ast::LocalDecl, fte: bool, body: &mut RawBody) {
             value,
             literal,
             array: array_dim(&declarator, init.as_ref()),
+            scope_end: None,
         });
     }
 }
