@@ -124,6 +124,7 @@ jobs:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=4294967296 --
         run: |
           read -ra crates <<< "$CRATES"
+          (while sleep 10; do echo "DIAG $(free -m | awk '/Mem:/ {print "used " $3 " of " $2}') $(df -m / | awk 'NR==2 {print "disk free " $4}') $(ps -eo rss=,comm= --sort=-rss | head -3 | tr '\n' ' ')"; done) &
           cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
