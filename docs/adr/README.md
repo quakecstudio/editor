@@ -30,6 +30,7 @@ index below lists every ADR, in order, with the title and status its file states
 | [0015](0015-darkplaces-client-menu-fact-sources.md) | Also use DarkPlaces' client and menu QuakeC definitions as fact-only sources | Accepted |
 | [0016](0016-quakespasm-lineage-fact-sources.md) | Use the QuakeSpasm lineage's builtin tables as fact-only sources | Accepted |
 | [0017](0017-port-fteqcc.md) | Port FTEQCC's compiler behaviour from FTEQW's source | Accepted |
+| [0018](0018-quakespasm-lineage-porting-upstreams.md) | Make QuakeSpasm, Ironwail and vkQuake porting upstreams for the preview host | Accepted |
 <!-- /adr:index -->
 
 A `type:decision` issue reserves the ADR number its deliverable names in `plan/backlog/`;
