@@ -1199,6 +1199,19 @@ profile the preprocessor reads them as FTEQCC does.
   differential lists a case whose directive holds a number the two read otherwise as expected where
   the oracle ran on an LLP64 host, a project graph case among them (PRJ-5.13). The vanilla
   dialect's expressions keep PRJ-5.5.
+- **FTEF-14.56** Under this profile the syntax tree reads its directive nodes (FTEF-14.51) in the
+  text `QCC_LoadFile` gives (FTEF-14.54), at the file's own offsets
+  (`qc_preproc::qcc_load_in_place`), so that it makes a node of
+  each directive the preprocessor runs and stays the file's bytes: each NUL byte is read as a
+  space, so the text goes on past it and a directive on a later line is a node, and a directive's
+  start is found in the text after a UTF-8 byte order mark at the file's start, so `#define N 1`
+  on the first line after one is a node, after spaces and tabs too. Only that first mark is
+  skipped: after a second one the `#` starts no line, as FTEQCC reads it. The NUL and the mark
+  stay in the tree as white space. A file that starts with a UTF-16 or UTF-32 byte order mark is
+  read by the tree as its bytes to the first NUL, as under the vanilla dialect (QC-1.1): the
+  preprocessor reads its decoded text (FTEF-14.54), whose offsets are not the file's, so how such
+  a file is shown is the semantic model's choice, not the tree's. The vanilla dialect keeps
+  QC-1.1.
 
 ## FTEF-15 Declarations
 
@@ -1394,7 +1407,7 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 `QCC_PR_RefExpression`, `QCC_PR_RefTerm`, `QCC_PR_ParseDefs`, `QCC_PR_DiscardExpression`,
 `QCC_PR_DiscardRef`, `QCC_PR_ParseImmediateStatements`, `QCC_TryEvaluateCast`, `QCC_Include`;
 `qcc_pr_lex.c`, `QCC_PR_LexMacroName`, `QCC_PR_LexGrab`, `QCC_PR_CheckKeyword`,
-`QCC_PR_MacroFrame`, `QCC_PR_FindMacro`, `QCC_PR_IncludeChunkEx`; `qccmain.c`, the keyword
+`QCC_PR_MacroFrame`, `QCC_PR_FindMacro`, `QCC_PR_ExpandMacro`, `QCC_PR_IncludeChunkEx`; `qccmain.c`, the keyword
 table and `QCC_SetDefaultProperties` (every warning on, `qccwarningaction[i] = WA_WARN;`, but
 those it lists),
 fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
@@ -1637,6 +1650,19 @@ FTEF-18.5.
   The include goes on with the frame numbering of the file that includes it, which only a
   compiled file restarts (FTEF-18.17). This profile reports a frame macro used inside a macro
   expansion at the macro body's token.
+- **FTEF-18.30** A frame macro whose number is below 0 is unknown where it is expanded: a
+  reference and `$framerestore` take their number from `QCC_PR_ExpandMacro`, which refuses any
+  negative one as it refuses a name with no macro, `QCC_PR_FindMacro`'s `-1`: `int i =
+  QCC_PR_FindMacro(pr_token); if (i < 0) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame
+  macro $%s", pr_token);`. So `$framevalue -5`, `$frame a` and `x = $a;` is the error `E0106` "Unknown frame macro $a"
+  at `$a` (QCD-2.6), as is a `$framevalue` whose `atoi` is negative (FTEF-14.55):
+  `-99999999999` is -1215752191 and `2147483648` is -2147483648 on an LP64 host. The lookup's
+  warnings (FTEF-18.21, FTEF-18.29) come first, as `QCC_PR_FindMacro` gives them. A refused
+  `$framerestore` leaves the number of the next frame name as it was. `$modelname` calls
+  `QCC_PR_FindMacro` itself (FTEF-18.16), so a negative model name macro still numbers the
+  next frame. Under the vanilla profile frames are numbered from 0 (QC-8.5) and none is
+  negative. The cases are in the directive family of `cargo xtask oracles builtins`
+  (`FRAME_VALUES` in `xtask/src/oracles/builtins/directives.rs`).
 
 ### Test vectors
 

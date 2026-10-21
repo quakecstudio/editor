@@ -40,12 +40,15 @@ the file brings in, by `#include` and `#includelist`, and which pragmas and `#ou
 (PRJ-5.13, PRJ-5.14). Both read a file as the text FTEQCC's `QCC_LoadFile` hands its lexer
 (`fte_directive/load.rs`, FTEF-14.54): decoded from UTF-16 or UTF-32 after a byte order mark, past
 a UTF-8 one, and with each NUL byte a space; `SourceFile::file_span` maps a span of that text back
-to the file's bytes. `#if` and `#elif` use
+to the file's bytes, and `qcc_load_in_place` gives the syntax tree that text at the file's own
+offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` with
+`qcc_load_file` too (PRJ-4.6). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
 (`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
 semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands
-(FTEF-18.16, FTEF-18.17), its frame macro diagnostics, "Stale macro used", "Duplicate macro
+(FTEF-18.16, FTEF-18.17), a frame macro numbered below 0 unknown where it is expanded
+(FTEF-18.30), its frame macro diagnostics, "Stale macro used", "Duplicate macro
 defined", "Name for frame macro NAME is too long" and "$modelname name too long" (FTEF-18.29;
 QCD-2.8, QCD-7.25 to QCD-7.27),
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro

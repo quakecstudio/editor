@@ -14,7 +14,9 @@ are parsed. Directive lines and `$frame` lines are trivia to the parser; frame m
 references are literals, resolved later. Under the vanilla dialect a directive line runs from a
 `#` first on its line to the line break (QC-9.1); under an FTEQCC dialect it is the text the
 preprocessor reads as one directive, found with `qc_preproc::fte_directive_end`, and the text
-after it is lexed again as the preprocessor lexes it (`qc_preproc::relex_from`, FTEF-14.51).
+after it is lexed again as the preprocessor lexes it (`qc_preproc::relex_from`, FTEF-14.51),
+all in the text FTEQCC's file loader gives, at the file's offsets: each NUL byte a space, and
+the text after a UTF-8 byte order mark (`qc_preproc::qcc_load_in_place`, FTEF-14.56).
 
 `parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
 `parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
