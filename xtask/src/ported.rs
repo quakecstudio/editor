@@ -3,7 +3,7 @@
 //! The ported-file header rule from `docs/porting.md` ("The rule
 //! `cargo xtask licenses` enforces", rules H1 to H5).
 //!
-//! The registered upstreams and the copyright line each one requires are read
+//! The registered upstreams and the copyright lines each one lists are read
 //! from the "Upstreams" table in that document, so registering an upstream is a
 //! change to the document only.
 
@@ -19,8 +19,18 @@ const OUR_HOLDER: &str = "QuakeC Studio contributors";
 pub(crate) struct Upstream {
     /// `owner/repo`, as a `Ported from` line names it.
     pub(crate) repo: String,
-    /// The copyright lines its row lists, at least one of which a file ported from it keeps.
+    /// The copyright lines its row lists, runs of spaces collapsed; a file ported from it
+    /// keeps at least one.
     pub(crate) copyrights: Vec<String>,
+}
+
+impl Upstream {
+    /// Whether a header line, runs of spaces collapsed, carries one of this row's lines.
+    fn lists(&self, line: &str) -> bool {
+        self.copyrights
+            .iter()
+            .any(|copyright| line.contains(copyright.as_str()))
+    }
 }
 
 /// Reads the "Upstreams" table of `docs/porting.md`: the first backticked
@@ -43,7 +53,7 @@ pub(crate) fn upstreams(doc: &str) -> Result<Vec<Upstream>, String> {
         let repo = backticked(first).find(|text| text.contains('/'));
         let copyrights: Vec<String> = backticked(last)
             .filter(|text| text.starts_with("Copyright"))
-            .map(str::to_owned)
+            .map(collapse_spaces)
             .collect();
         if let Some(repo) = repo
             && !copyrights.is_empty()
@@ -134,8 +144,9 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
         );
     }
 
-    // The copyright lines the cited upstreams require, each once, in the order of the
-    // `Ported from` lines; two upstreams of one owner can share a line.
+    // The cited upstreams in the order of the `Ported from` lines, each once; rows listing
+    // the same lines (id's two repositories) count once. Rows that only share some lines (the
+    // QuakeSpasm lineage) stay separate, and check_copyrights orders them.
     let mut required: Vec<&Upstream> = Vec::new();
     for repo in cited {
         let Some(upstream) = upstreams.iter().find(|upstream| upstream.repo == repo) else {
@@ -153,53 +164,91 @@ pub(crate) fn check_header(header: &[&str], upstreams: &[Upstream]) -> Vec<Strin
     problems
 }
 
-/// Rule H4: the header carries at least one of each of `required`'s copyright lines; the
-/// header's first `Copyright` line is one of the first upstream's, and each upstream's first
-/// line comes in `required`'s order and above ours.
+/// Rule H4: the header carries at least one of each of `required`'s copyright lines.
+///
+/// When every row cited lists one line (id's, FTEQW's), those lines are the header's first
+/// `Copyright` lines, in `required`'s order. When a row lists several (the QuakeSpasm lineage,
+/// whose files carry different sets of lines and may share some), the header's first
+/// `Copyright` line is the first upstream's, each later upstream's first line is found
+/// searching on from the earlier one's, other lines may sit among them, and no line a cited
+/// row lists is below ours.
 fn check_copyrights(header: &[&str], required: &[&Upstream]) -> Vec<String> {
     let copyrights: Vec<String> = header
         .iter()
         .filter(|line| line.contains("Copyright"))
         .map(|line| collapse_spaces(line))
         .collect();
-    let mut firsts = Vec::new();
     let mut problems = Vec::new();
     for upstream in required {
-        let first = copyrights.iter().position(|line| {
-            upstream
-                .copyrights
-                .iter()
-                .any(|want| line.contains(&collapse_spaces(want)))
-        });
-        match first {
-            Some(at) => firsts.push((upstream, at)),
-            None => problems.push(format!(
+        if !copyrights.iter().any(|line| upstream.lists(line)) {
+            problems.push(format!(
                 "H4: cites {} but the header lacks its copyright line {}",
                 upstream.repo,
                 listed(upstream)
-            )),
+            ));
         }
     }
     if !problems.is_empty() {
         return problems;
     }
+
+    if required
+        .iter()
+        .all(|upstream| upstream.copyrights.len() == 1)
+    {
+        let misplaced = required
+            .iter()
+            .zip(&copyrights)
+            .find(|(upstream, line)| !upstream.lists(line));
+        if let Some((upstream, _)) = misplaced {
+            problems.push(format!(
+                "H4: {} must come before any other Copyright line, the upstreams' lines in the \
+                 order of their `Ported from` lines",
+                listed(upstream)
+            ));
+        }
+        return problems;
+    }
+
     let ours = copyrights
         .iter()
         .position(|line| line.contains(OUR_HOLDER))
         .unwrap_or(copyrights.len());
-    // The first upstream's line opens the Copyright lines; a later upstream's may follow other
-    // lines the earlier upstream files carry.
-    let mut previous = 0;
-    for (n, (upstream, at)) in firsts.into_iter().enumerate() {
-        if at < previous || at >= ours || (n == 0 && at != 0) {
+    let mut from = 0;
+    for (n, upstream) in required.iter().enumerate() {
+        let found = copyrights
+            .iter()
+            .enumerate()
+            .skip(from)
+            .find(|(_, line)| upstream.lists(line));
+        let Some((at, _)) = found else {
             problems.push(format!(
-                "H4: {} must come before any other Copyright line, the upstreams' lines in the \
-                 order of their `Ported from` lines and above ours",
+                "H4: a line of {}, {}, must come after the lines of the upstreams cited \
+                 before it",
+                upstream.repo,
                 listed(upstream)
             ));
-            break;
+            return problems;
+        };
+        if n == 0 && at != 0 {
+            problems.push(format!(
+                "H4: the header's first Copyright line must be {} of {}, whose `Ported from` \
+                 line comes first",
+                listed(upstream),
+                upstream.repo
+            ));
+            return problems;
         }
-        previous = at;
+        from = at;
+    }
+    let below = copyrights
+        .iter()
+        .skip(ours)
+        .find(|line| required.iter().any(|upstream| upstream.lists(line)));
+    if let Some(line) = below {
+        problems.push(format!(
+            "H4: `{line}` is an upstream's copyright line and must come above ours"
+        ));
     }
     problems
 }
@@ -520,14 +569,18 @@ mod tests {
     const QS: &str = "sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5";
     const IRONWAIL: &str = "andrei-drexler/ironwail@08d578136ff43d7d1ef38e636dfbfd3e844be7cd";
     const VKQUAKE: &str = "Novum/vkQuake@27789d7333a46674474d871137bb71e056719628";
+    // The bare lines: ID_LINE, FTE_LINE and OURS above are these as header comment lines.
     const ID_COPYRIGHT: &str = "Copyright (C) 1996-1997 Id Software, Inc.";
+    const FTE_COPYRIGHT: &str = "Copyright (c) 2004-2025 FTE's team and its contributors";
+    const OUR_COPYRIGHT: &str = "Copyright (C) 2026 QuakeC Studio contributors";
     const QS_ID: &str = "Copyright (C) 1996-2001 Id Software, Inc.";
     const FITZ: &str = "Copyright (C) 2002-2009 John Fitzgibbons and others";
     const QS_DEVS: &str = "Copyright (C) 2010-2014 QuakeSpasm developers";
     const DUSKE: &str = "Copyright (C) 2007-2008 Kristian Duske";
     const SPIKE: &str = "Copyright (C) 2016 Spike";
+    const GNEITING: &str = "Copyright (C) 2016 Axel Gneiting";
 
-    /// A header with the given Copyright lines (`ours` among them where the test puts it) and
+    /// A header with the given Copyright lines (ours among them where the test puts it) and
     /// one `Ported from` line per citation.
     fn lineage(copyrights: &[&str], cites: &[&str]) -> String {
         let mut text = "// SPDX-License-Identifier: GPL-3.0-or-later\n".to_owned();
@@ -543,46 +596,63 @@ mod tests {
         text
     }
 
-    const OURS_LINE: &str = "Copyright (C) 2026 QuakeC Studio contributors";
+    fn id_cite() -> String {
+        format!("id-Software/Quake@{COMMIT}")
+    }
+
+    fn fte_cite() -> String {
+        format!("fte-team/fteqw@{FTE_COMMIT}")
+    }
 
     // ADR-0018: a port from the QuakeSpasm lineage keeps its upstream file's lines, including
     // ones its row does not list, above ours
     #[test]
     fn h4_passes_a_lineage_port_with_its_file_s_lines() {
-        let text = lineage(&[QS_ID, FITZ, DUSKE, QS_DEVS, OURS_LINE], &[QS]);
+        let text = lineage(&[QS_ID, FITZ, DUSKE, QS_DEVS, OUR_COPYRIGHT], &[QS]);
         assert!(rules(&text).is_empty(), "{text}");
-        let spaced = lineage(&["Copyright (C) 2016      Spike", OURS_LINE], &[IRONWAIL]);
+        let spaced = lineage(
+            &["Copyright (C) 2016      Spike", OUR_COPYRIGHT],
+            &[IRONWAIL],
+        );
         assert!(rules(&spaced).is_empty(), "{spaced}");
-        let pr_ext = lineage(&[ID_COPYRIGHT, SPIKE, OURS_LINE], &[VKQUAKE]);
+        let pr_ext = lineage(&[ID_COPYRIGHT, SPIKE, OUR_COPYRIGHT], &[VKQUAKE]);
         assert!(rules(&pr_ext).is_empty(), "{pr_ext}");
     }
 
-    // ADR-0018: two lineage upstreams may share lines; id's line and a lineage row's lines
-    // come in citation order
+    // ADR-0018: lineage rows may share lines, and each upstream's first line is found after
+    // the upstreams cited before it, so valid citation orders pass
     #[test]
     fn h4_orders_lineage_upstreams_by_citation() {
-        let shared = lineage(&[QS_ID, FITZ, QS_DEVS, SPIKE, OURS_LINE], &[QS, IRONWAIL]);
+        let shared = lineage(
+            &[QS_ID, FITZ, QS_DEVS, SPIKE, OUR_COPYRIGHT],
+            &[QS, IRONWAIL],
+        );
         assert!(rules(&shared).is_empty(), "{shared}");
-        let id_cite = format!("id-Software/Quake@{COMMIT}");
-        let id_first = lineage(&[ID_COPYRIGHT, QS_ID, QS_DEVS, OURS_LINE], &[&id_cite, QS]);
+        let id = id_cite();
+        let fte = fte_cite();
+        let id_first = lineage(&[ID_COPYRIGHT, QS_ID, QS_DEVS, OUR_COPYRIGHT], &[&id, QS]);
         assert!(rules(&id_first).is_empty(), "{id_first}");
-        let reversed = lineage(&[QS_ID, QS_DEVS, ID_COPYRIGHT, OURS_LINE], &[&id_cite, QS]);
-        assert_eq!(rules(&reversed), ["H4"]);
-        let fte_cite = format!("fte-team/fteqw@{FTE_COMMIT}");
-        let fte = FTE_LINE.trim_start_matches("// ").trim_end();
-        let three = [id_cite.as_str(), &fte_cite, QS];
-        let in_order = lineage(&[ID_COPYRIGHT, fte, QS_ID, OURS_LINE], &three);
+        let id_qs_vk = lineage(
+            &[ID_COPYRIGHT, QS_ID, GNEITING, OUR_COPYRIGHT],
+            &[&id, QS, VKQUAKE],
+        );
+        assert!(rules(&id_qs_vk).is_empty(), "{id_qs_vk}");
+        let qs_fte_iw = lineage(
+            &[QS_ID, FTE_COPYRIGHT, SPIKE, OUR_COPYRIGHT],
+            &[QS, &fte, IRONWAIL],
+        );
+        assert!(rules(&qs_fte_iw).is_empty(), "{qs_fte_iw}");
+        let three = [id.as_str(), &fte, QS];
+        let in_order = lineage(&[ID_COPYRIGHT, FTE_COPYRIGHT, QS_ID, OUR_COPYRIGHT], &three);
         assert!(rules(&in_order).is_empty(), "{in_order}");
-        let swapped = lineage(&[ID_COPYRIGHT, QS_ID, fte, OURS_LINE], &three);
-        assert_eq!(rules(&swapped), ["H4"]);
     }
 
-    // ADR-0018: none of the row's lines, an unlisted line first, or the row's lines below ours
-    // all fail H4
+    // ADR-0018: none of the row's lines, an unlisted or later upstream's line first, a later
+    // upstream's lines only above an earlier one's, or a row's line below ours all fail H4
     #[test]
     fn h4_fails_a_lineage_port_without_its_lines_in_place() {
         let missing = check_header(
-            &header(&lineage(&[DUSKE, OURS_LINE], &[QS])),
+            &header(&lineage(&[DUSKE, OUR_COPYRIGHT], &[QS])),
             &id_upstreams(),
         );
         assert_eq!(missing.len(), 1, "{missing:?}");
@@ -591,19 +661,34 @@ mod tests {
             "{missing:?}"
         );
         assert!(missing[0].contains("(one of `"), "{missing:?}");
-        assert_eq!(rules(&lineage(&[DUSKE, QS_ID, OURS_LINE], &[QS])), ["H4"]);
-        assert_eq!(rules(&lineage(&[OURS_LINE, QS_ID], &[QS])), ["H4"]);
-        assert_eq!(
-            rules(&lineage(
-                &[
-                    QS_ID,
-                    OURS_LINE,
-                    FTE_LINE.trim_start_matches("// ").trim_end()
-                ],
-                &[QS, &format!("fte-team/fteqw@{FTE_COMMIT}")]
-            )),
-            ["H4"]
+        let id = id_cite();
+        let fte = fte_cite();
+        let failing = [
+            lineage(&[DUSKE, QS_ID, OUR_COPYRIGHT], &[QS]),
+            lineage(&[OUR_COPYRIGHT, QS_ID], &[QS]),
+            lineage(&[QS_ID, QS_DEVS, ID_COPYRIGHT, OUR_COPYRIGHT], &[&id, QS]),
+            lineage(
+                &[ID_COPYRIGHT, QS_ID, FTE_COPYRIGHT, OUR_COPYRIGHT],
+                &[&id, &fte, QS],
+            ),
+            lineage(&[QS_ID, OUR_COPYRIGHT, FTE_COPYRIGHT], &[QS, &fte]),
+            lineage(&[QS_ID, OUR_COPYRIGHT, QS_DEVS], &[QS]),
+        ];
+        for text in &failing {
+            assert_eq!(rules(text), ["H4"], "{text}");
+        }
+    }
+
+    // A lineage row's looser placement does not apply to one-line rows: id's and FTEQW's lines
+    // stay the header's first Copyright lines
+    #[test]
+    fn h4_keeps_one_line_rows_first() {
+        let stranger = "Copyright (C) 2020 Stranger";
+        let text = lineage(
+            &[ID_COPYRIGHT, stranger, FTE_COPYRIGHT, OUR_COPYRIGHT],
+            &[&id_cite(), &fte_cite()],
         );
+        assert_eq!(rules(&text), ["H4"]);
     }
 
     #[test]

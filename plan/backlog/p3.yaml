@@ -458,7 +458,7 @@ issues:
   - P0-12
   deliverable:
   - 'docs/adr/0018-quakespasm-lineage-porting-upstreams.md, the ADR deciding whether rows for sezero/quakespasm, andrei-drexler/ironwail and Novum/vkQuake, each pinned by commit with the copyright lines its files carry, are added to the upstream table in docs/porting.md, which makes their code portable rather than only describable. Decided by Justin Plock on 2026-10-20: they are porting upstreams for the preview host under ADR-0017''s clean-port policy, and id''s engine stays the oracle (ADR-0005)'
-  - 'What the ADR starts from: docs/porting.md already says adding an upstream "(FTEQCC, ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after checking that its license allows use under GPL-3.0-or-later"; ADR-0004''s table records all three as GPL-2.0-or-later; ADR-0004 already makes QuakeSpasm the reference for the rerelease and modern-mod behaviour; and porting code is distinct from the fact-only sources of ADR-0016 (P4-29), which take only builtin facts'
+  - 'What the ADR started from: docs/porting.md said, before ADR-0018, that adding an upstream "(ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after checking that its license allows use under GPL-3.0-or-later"; ADR-0004''s table records all three as GPL-2.0-or-later; ADR-0004 already makes QuakeSpasm the reference for the rerelease and modern-mod behaviour; and porting code is distinct from the fact-only sources of ADR-0016 (P4-29), which take only builtin facts'
   - Settled before P3-22 specifies the engine, so the spec knows which upstreams it may port from
   acceptance:
   - The ADR is Accepted, and if it adds any upstream, docs/porting.md has its row with the pinned commit and copyright line

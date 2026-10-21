@@ -207,8 +207,8 @@ Carried by this ADR's pull request (`Closes #448`):
   lines its files carry, and says how a port from them keeps its upstream file's lines.
   `.claude/rules/porting.md` summarises it.
 - `cargo xtask licenses` rule H4 reads every copyright line a row lists. A header citing one of
-  these upstreams must carry at least one of that row's lines, above ours and in the order of
-  the `Ported from` lines; the other lines its upstream file carries are kept by the porter and
+  these upstreams must carry at least one of that row's lines, the first upstream's opening
+  its `Copyright` lines, above ours and in the order of the `Ported from` lines; the other lines its upstream file carries are kept by the porter and
   checked in review, since the check does not fetch upstream files. A row with one line, such
   as id's or FTEQW's, works as before.
 - In `plan/`, P3-30's deliverable names this file, P3-22 may cite the three engines' functions,

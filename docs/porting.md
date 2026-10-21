@@ -31,9 +31,11 @@ a ported file must keep.
 The QuakeSpasm lineage's files carry different sets of copyright lines, so their rows list the
 lines most of them carry. A file ported from one of them keeps every `Copyright` line of the
 header of each upstream file it ports, in that file's order, including lines the row does not
-list (`Copyright (C) 2007-2008 Kristian Duske`, ...); rule H4 checks only that at least one of
-the row's lines is there. A ported upstream file whose header has none of the row's lines needs
-its line added to the row first. Bundled third-party files (`lodepng.c`, `miniz.c`,
+list (`Copyright (C) 2007-2008 Kristian Duske`, ...); rule H4 checks that at least one of the
+row's lines is there and that the header's first `Copyright` line is one of them, and review
+checks the rest against the cited file. An upstream file whose first `Copyright` line is not in
+the row (vkQuake's files that carry only `Copyright (C) 2023 Axel Gneiting`, say) needs that
+line added to the row before it is ported. Bundled third-party files (`lodepng.c`, `miniz.c`,
 `strlcpy.c`, ...) and files with no notice are not portable.
 
 **Not yet portable:** `Quake-Tools/qutils/` (qbsp, vis, light and the other map tools). Its
@@ -165,11 +167,16 @@ block for C), ending at the first line that is blank or not a comment.
    copyright lines from the table above (for `id-Software/*`, its only line,
    `Copyright (C) 1996-1997 Id Software, Inc.`), compared with runs of spaces collapsed;
    upstreams whose rows list the same lines (`id-Software/Quake` and
-   `id-Software/Quake-Tools`) count once. The header's first `Copyright` line is one of the
-   first-named upstream's lines; each upstream's first line in the header comes in the order
-   the `Ported from` lines first name their upstreams; and all of them are above ours, the
-   line naming `QuakeC Studio contributors`. Other lines a QuakeSpasm-lineage file carries
-   may sit among them.
+   `id-Software/Quake-Tools`) count once.
+   - When every upstream named has a one-line row (id's, FTEQW's), those lines, each once, are
+     the header's first `Copyright` lines, in the order the `Ported from` lines first name
+     their upstreams, so every upstream's line is above ours.
+   - When one has a row of several lines (the QuakeSpasm lineage), the header's first
+     `Copyright` line is one of the first-named upstream's; each later upstream's first line
+     is found searching on from the earlier upstream's, so the upstreams come in the order
+     their `Ported from` lines name them and may share lines; other lines the upstream files
+     carry may sit among them; and no line a named upstream's row lists is below ours, the
+     line naming `QuakeC Studio contributors`.
 5. **H5.** An upstream named in an H2 line must be in the table above.
 
 The error names the file, the rule and what is missing. These headers are the fixtures for
