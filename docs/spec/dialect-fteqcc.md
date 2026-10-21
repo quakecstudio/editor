@@ -1106,6 +1106,25 @@ profile the preprocessor reads them as FTEQCC does.
   project reads the same wherever it is opened; the builtin differential records the LP64 outcomes
   and lists the cases a 32-bit `strtoul` reads otherwise as expected where the oracle ran on an
   LLP64 host.
+- **FTEF-14.51** Under this profile the syntax tree, which shows a file as written and runs no
+  directive (both sides of a conditional are parsed), makes a directive node of the text
+  the preprocessor reads as one directive (`qc_preproc::fte_directive_end`). It starts at a `#`
+  that `QCC_PR_NewLine` reaches (FTEF-14.34), the file read as one being compiled, so a `#`
+  after spaces and tabs on its first line starts one too, and it ends where the preprocessor
+  reads on after it with nothing run: at the end of its line as `QCC_PR_SkipToEndOfLine` ends it
+  (FTEF-14.35), after the operand the directive reads, a `#define`'s body (FTEF-14.24) or an
+  `#if` expression (FTEF-14.33) among them; at a `#pragma`'s line break (FTEF-14.43); after the
+  word of an `#if`, `#ifdef` or `#ifndef` with no white space after its name (`#if(1)`,
+  FTEF-14.36); and at an `#eof`'s line break, as FTEQCC reads nothing after it. So `#undef X //
+  c \`, a line break and `float y;` is one node of two lines, and `#pragma p // c \` ends at its
+  line break. A `#` after a `/* */` comment on its line or in the middle of a line, and a `#`
+  whose name matches no directive (`#foo`), are read as code (FTE-23.10). Where a token, or a
+  comment or skipped bytes, of the file as lexed from its start stands across the end, the text
+  from the end is lexed again, as the preprocessor reads on there (FTEF-14.22), so `#if"a b"`
+  is a node `#if"a` and the code ` b"`. The text an `#if` or `#else` skips, an `#includelist`'s
+  list (FTEF-14.41) and what `#eof`, `#package` and `DONT_COMPILE_THIS_FILE` leave unread are
+  parsed as code. The vanilla dialect keeps QC-9.1's node: a `#` first on its line before a
+  name on that line, to the first line break after it.
 
 ## FTEF-15 Declarations
 

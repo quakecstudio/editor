@@ -11,7 +11,8 @@
 //! rust-analyzer's `rowan` ([`GreenNode`], [`SyntaxNode`]), with a typed view in [`ast`].
 //!
 //! The tree is of the file as written: macros are not expanded and both sides of a
-//! conditional are parsed. Directive lines (QC-9.1) and `$frame` lines (QC-8.2) are kept as
+//! conditional are parsed. Directive lines (QC-9.1; under an FTEQCC dialect FTEF-14.51) and
+//! `$frame` lines (QC-8.2) are kept as
 //! trivia; frame macro references are [`SyntaxKind::FrameRef`] literals, resolved later.
 //!
 //! This crate is written from the spec, not ported.

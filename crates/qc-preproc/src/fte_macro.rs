@@ -640,7 +640,10 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usiz
 /// (the quote flag flipping at every `"`, an escaped one included); each `/* */` comment outside
 /// a quote and each `\` before a line break is dropped, the line break with it, and the spaces
 /// and tabs at its end are dropped (FTEF-14.24).
-fn read_define(reading: &Reading<'_>, at: usize) -> (Result<Definition, DefineError>, usize) {
+pub(crate) fn read_define(
+    reading: &Reading<'_>,
+    at: usize,
+) -> (Result<Definition, DefineError>, usize) {
     let text = reading.bytes();
     let (name, stop) = simple_get_token(text, at);
     let Some(name) = name else {

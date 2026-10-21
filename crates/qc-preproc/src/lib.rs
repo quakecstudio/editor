@@ -17,12 +17,14 @@
 
 pub mod cond;
 mod fte_directive;
+mod fte_line;
 mod fte_macro;
 mod source;
 
 #[cfg(test)]
 mod tests;
 
+pub use fte_line::{fte_directive_end, lex_after};
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
