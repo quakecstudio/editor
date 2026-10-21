@@ -49,10 +49,14 @@
 //! # Spec sections
 //!
 //! Implements the semantic parts of QC-10 (types), QC-11 (declarations), QC-12 (scopes and
-//! lookup) and QC-13.6 (state-header names) of `docs/spec/language.md`, and reports QCD-3.5,
-//! QCD-3.6, QCD-3.11, QCD-4.1 and QCD-7.3 of `docs/spec/language-diagnostics.md`. Written
-//! from the spec, not ported.
+//! lookup), QC-13.5 (parameter order) and QC-13.6 (state-header names) of
+//! `docs/spec/language.md`, and FTEF-19 (definitions as FTEQCC makes them) of
+//! `docs/spec/dialect-fteqcc.md`, and reports the diagnostics of
+//! `docs/spec/language-diagnostics.md` those name. The definitions are ported from id's
+//! `PR_ParseDefs` and `PR_GetDef` and FTEQCC's `QCC_PR_ParseDefs` and `QCC_PR_GetDef`
+//! (`docs/spec/inventory-l3.md`).
 
+pub mod cast;
 pub mod db;
 pub mod expand;
 pub mod lower;

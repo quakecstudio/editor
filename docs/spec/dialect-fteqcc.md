@@ -1372,9 +1372,9 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   An enum's names are never redeclared: `QCC_PR_ParseEnum` makes each with
   `QCC_PR_DummyDef`, which looks for no earlier definition. A function body is never equal to
   another.
-- **FTEF-17.6** Under this profile a redeclaration is a type mismatch only when neither type
-  involves a type name, a pointer or an unknown type, whose meaning the model does not follow
-  (a typedef may name `float`); otherwise QC-11.5 holds as written.
+- **FTEF-17.6** **Withdrawn** (P2-117, #545): it took every type name for one whose meaning the
+  model does not follow, but a typedef's name is the type it names (`QCC_TypeForName`,
+  FTEF-19.9). Replaced by FTEF-17.12.
 - **FTEF-17.7** **Withdrawn** (P2-84, #495): it said a function with no body is an error only
   where the module refers to it, but the check's `d->unused` is the `noref` mark, so FTEQCC
   reports every bodyless function that is not both `noref` and unreferenced. Replaced by
@@ -1402,6 +1402,12 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   and the pinned FTEQCC refuses each; `noref void() g;` compiles, and a `noref` function that is
   called is an error. A member function is not checked, and a class's `spawnfunc_Name`
   (FTEF-9.5), whose body FTEQCC writes when the program does not, is never undefined.
+- **FTEF-17.12** Under this profile a redeclaration is a type mismatch only when neither type,
+  with each typedef's name read as the type it names (`QCC_TypeForName`: `if (t && t->type ==
+  ev_typedef) return t->aux_type;`, FTEF-19.9), involves another type name (a class, struct,
+  union, accessor or enum), a pointer or an unknown type, whose meaning the model does not
+  follow; otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. So
+  `typedef float t; t x; float x;` is no mismatch and `typedef float t; t x; vector x;` is one.
 
 ## FTEF-18 Further statements, terms and frame macros
 
@@ -1674,3 +1680,222 @@ FTEQCC corpus mods is
 [`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The vectors of
 the `Codegen (later)` statements are added when L-01 (codegen) fixes them, each checked
 against FTEQCC.
+
+## FTEF-19 Definitions as FTEQCC makes them
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs`, `QCC_PR_GetDef`, `QCC_PR_DummyDef`,
+`QCC_PR_ParseInitializerType_Internal`, `QCC_PR_GenerateInitializerType`,
+`QCC_PR_ParseDefaultInitialiser`, `QCC_PR_ParseEnum`, `QCC_PR_ParseDefArray`,
+`QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseState`, `QCC_PR_ParseRefValue`,
+`QCC_TryEvaluateCast`, `QCC_EvaluateCast` and `QCC_PR_ParseStatement`; `qcc_pr_lex.c`,
+`QCC_PR_LexNumber`, `QCC_PR_ParseFunctionType`, `QCC_TypeForName`, `typecmp` and `typecmp_lax`;
+`qccmain.c`, the keyword and warning tables, `QCC_SetDefaultProperties` and
+`QCC_PR_FinishCompilation`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. The
+function-by-function inventory is [`inventory-l3.md`](inventory-l3.md).
+
+FTEQCC's compiler descends from id's `qcc` (`inventory-l2.md`), and its `QCC_PR_ParseDefs` and
+`QCC_PR_GetDef` grew from id's `PR_ParseDefs` and `PR_GetDef` (QC-11, QC-12). These statements
+are what the FTEQCC profile adds on top of them, ported into `qc-sema`'s resolver
+(`crates/qc-sema/src/resolve.rs`, `crates/qc-sema/src/cast.rs`) and proven by the definitions
+family of `cargo xtask oracles builtins` (FTEF-19.18). Where a statement names a warning, the
+pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties` turns off
+(`qccwarningaction[i] = WA_WARN;`, FTEF-18).
+
+### Behaviour
+
+- **FTEF-19.1** Parameters and locals are found in their function first (`QCC_PR_GetDef` scans
+  `localstable` when `scope` is set). A parameter given twice, or named as a component of an
+  earlier vector parameter, is the error `E0215` "Duplicate definition of NAME.": the parameters
+  are made with `QCC_PR_GetSRef (type->params[u].type, pr_parm_names[u], pr_scope, 2, 0, 0)`, and
+  `if (allocate == 2) QCC_PR_ParseErrorPrintDef (ERR_TYPEMISMATCHREDEC, def, "Duplicate
+  definition of %s%s%s.", ...)`. A vector parameter after a parameter named as its component is
+  no error: `QCC_PR_DummyDef` makes the components with no lookup. A local declared again with
+  its type is the warning `W0207` "NAME duplicate definition ignored", or "nonstatic redeclaration
+  of NAME ignored" after a `static` one, and the same definition; a `static` local declared again
+  is neither; another type is `E0205`. A new parameter or local named as a global of the same
+  kind of type (`def->type->type == type->type`) is the warning `W0208` "Local \"NAME\" hides
+  global with same name and type"; a global of another kind gives none. A parameter of a
+  function with a body that has no name is the warning `W0222` "Parameter N of NAME is not
+  named", N counted from 1; a lone `void` is no parameter (FTEF-15.3). In a function body a
+  statement defines locals when it starts with `local`, a type, a type name, `.`, or one of the
+  words `QCC_PR_ParseStatement` tests with their keyword enabled: `var`, `noref`, `static`,
+  `extern`, `const`, `typedef`, `class`, `struct`, `union` and `enum` (`register`, `volatile` and
+  `auto` are disabled keywords, `nondefaultkeyword`); `shared`, `nosave`, `inline` and the `__`
+  words start no definition there, so `shared float x;` is "Unknown value \"shared\"".
+- **FTEF-19.2** A value initialiser, a parameter's default value and a function initialised
+  with a value are cast to the definition's type by `QCC_EvaluateCast(tmp, type, true)`, which
+  refuses with the error `E0213` "Cannot cast from A to B", A and B as `TypeName` writes them
+  (`__int32`, `__double`, `.float`, `void()`, `entity*`; parameter names, which the model does
+  not keep, are left out). A literal's type is `QCC_PR_LexNumber`'s (FTEF-3.1; a character
+  constant is a float); a name's is its definition's, and in a member function a field's name
+  is `this.field`, of the field's type. `QCC_TryEvaluateCast` with `implicit` set casts: a type
+  to itself; a null, an integer, unsigned or float constant whose word is 0
+  (`QCC_SRef_IsNull`), to any type but a struct or union; numbers among the float, integer,
+  unsigned, 64-bit and double types; a float or an integer to a vector, with the warning
+  `W0220` "Implicit cast from A to B"; pointers, strings, integers, unsigned and functions among
+  themselves, and an integer to an entity and back, the casts "acceptable but probably an
+  error", with `W0220` but between the two integer types. Nothing else casts: `float x = "a";`,
+  `entity e = 1;`, `void() g = 5;`, `string s = 5l;`, `vector v = 5u;` and `entity e = 0d;` are
+  `E0213`, and `entity e = 0;`, `string s = -0;` and `void() g = 0;` cast. A string initialised
+  with `_(...)` takes one string literal, else the error `E0232` "_() intrinsic accepts only a
+  string immediate". An initialiser that is no literal and no name is not typed by this profile
+  (FTEF-19.17).
+- **FTEF-19.3** A definition is a constant when its first declaration makes it one, `GDF_CONST`:
+  `const`, or at file level and not `var`, initialised, a function or a field (`if (isconstant
+  || (!isvar && !pr_scope && ((isinitialised && !flag_assumevar) || type->type == ev_function ||
+  type->type == ev_field)))`); an enum's value and a `const` local are constants, a `static`
+  local and an `autocvar_` are not. A later declaration does not change it (`//
+  def->constant = isconst;` is commented out) and warns `W0212` "Redeclaration of NAME would
+  change to const." (or "non-const.") when initialised, "Redeclaration of NAME changes const."
+  when not. A name initialising a global or a `static` that is no constant is the error `E0214`
+  "initializer for 'NAME' is not constant" (`QCC_PR_GenerateInitializerType`, `if
+  (!tmp.sym->constant)`); a plain or `const` local's initialiser is not checked. A constant that
+  has no value yet gives the warning `W0219` "initializer for NAME is not initialised yet, NAME
+  will be treated as 0", and the value 0; a field always has its value (fields are "initialised
+  behind the scenes") and a function not yet defined is filled in once it is (`$relocf`), so
+  neither warns.
+- **FTEF-19.4** A body given to a definition already initialised, by a builtin, a body, `extern`
+  or `shared`, is the error `E0216` "redeclaration of function body" (`else if
+  (basedef->initialized == 1 && !(flags & PIF_STRONGER))`), reported before the "incompatible
+  redeclaration" the two different functions then give (`E0206`); a body after a `weak` one, or
+  for an `accumulate` function, is none, and a body after a `wrap` one is. A body replacing the
+  builtin of `anglemod` or `crossproduct` is the warning `W0217` "NAME already declared as a
+  builtin" instead, and the builtin is marked unused. A `wrap` body with nothing initialised to
+  wrap is the error `E0222` "wrapper function does not wrap anything", and one that does not use
+  `prior` the error `E0223` "Wrapper function \"NAME\" does not refer to its prior function". An
+  `accumulate` declaration of a function initialised before without it is the warning `W0218`
+  "NAME redeclared to accumulate after initial declaration".
+- **FTEF-19.5** The "dupe initialisation" comparison of FTE-22.5 and FTEF-17.10 compares the
+  words the two initialisers give: a number literal's value as FTEQCC's lexer reads it, so
+  `0x10` and `16` are equal; a constant's name, the constant's value (`float y = 2; float x = y;
+  float x = 2;` compiles); a vector's components, which `QCC_PR_DummyDef` gives the vector's
+  initialised state and words (`d->initialized = def->initialized;`), so `vector v = '1 2 3';
+  float v_x = 1;` compiles and `float v_x = 2;` is `E0206`; and a `const` or `static` local's, as
+  a global's. `parseentitydata` given another builtin after `#608` or `#613` is accepted with the
+  warning `W0223` "incompatible redeclaration. Please validate builtin numbers. parseentitydata
+  is #613" ("dpextensions is WRONG").
+- **FTEF-19.6** A default value must be a constant (`if (!ref.sym->constant)
+  QCC_PR_ParseError(0, "Default value not a constant\n");`, `E0217`) with a value
+  (`QCC_PR_ParseError(0, "Default value not initialized yet\n");`, `E0218`, but with
+  autoprototyping), cast to the parameter's type (FTEF-19.2). Two function types are the same
+  only if, where both give a default value, the values are equal (`typecmp`, `(a->type ==
+  ev_function && (a->params[i].defltvalue.cast && b->params[i].defltvalue.cast))`), so `void(float
+  a = 1) g;` and `void(float a = 2) g = #6;` are `E0205`; a value given on one only is no
+  difference. A parameter with a default value is not `optional`.
+- **FTEF-19.7** At file level a redeclaration whose type differs (`typecmp`) but agrees under
+  `typecmp_lax`, the return types and the shared parameters agreeing and every parameter one
+  list has beyond the other `optional`, whether either is variadic aside, is the warning `W0209`
+  "Optional arguments differ on redeclaration of NAME. A, should be B", unless the two have the
+  same parameters and only the first is variadic, and the definition takes the type with more
+  parameters. A redeclaration of `droptofloor`, `callfunction` or `trailparticles` with another
+  type is the warning `W0210` "NAME builtin was wrongly redefined as TYPE. ignoring later
+  definition", and in a file named `*extensions.qc` (any case) of a function "NAME builtin was
+  redefined as TYPE. ignoring alternative definition": the first type stays and the
+  declaration goes on. A `noref` global not yet used is replaced by a declaration of another
+  type, with the warning `W0211` "Type redeclaration of TYPE NAME replaces existing variable".
+  A function declared again as `T(...)` with no parameters is no difference ("c89-style dumb
+  redeclarations"). Any other difference is `E0205`, with FTEQCC's text "Type mismatch on
+  redeclaration of NAME. A, should be B".
+- **FTEF-19.8** A redeclaration's array size, where it gives one, is the definition's: `if
+  (def->arraysize != arraysize && arraysize>=0)` is the error `E0220` "Array sizes for
+  redecleration of NAME do not match (A->B)" (in a function body "(A -> B)"), a declaration that
+  is no array giving 0, so `float x[2]; float x;` is the error. `[]` gives no size, and an
+  unsized definition takes the size a later one gives; an unsized array's initialiser sizes it
+  (`QCC_PR_ParseDefArray` counts the elements of `{ ... }`). A size that is no number literal is
+  not compared (FTEF-19.17).
+- **FTEF-19.9** A `typedef` of a name a typedef already names must name the same type, as
+  `QCC_TypeForName` resolves a typedef to its type (`if (t && t->type == ev_typedef) return
+  t->aux_type;`): else the error `E0219` "Cannot redeclare typedef NAME from A to B", so
+  `typedef float t; typedef int t;` is the error and `typedef float t; typedef t t;` is not. A
+  redeclaration compares a typedef's name as the type it names (`typedef float t; t x; vector
+  x;` is `E0205`). A typedef with a storage qualifier is the error `E0224` "bad combination of
+  modifiers with typedef (defining NAME)", `static`, `noref` and `nosave` among them, as no
+  `#pragma` makes them the default here; `typedef;` and `typedef float;` define nothing, with the
+  warning `W0215` "typedef defines no types". A `typedef` in a function body is a definition
+  statement (FTEF-19.1), whose type name this profile reads as any other type name.
+- **FTEF-19.10** An enum's names are constants of the enum's base type, `float` unless `: type`
+  gives another, made with `QCC_PR_DummyDef`. A name's value is the one after its `=`, a number
+  or a numeric constant converted to the base type, or the one before it plus 1; under
+  `enumflags` times 2, starting at 1, and 1 after a 0 (`if (!next_i) next_f = next_i = 1;`). A
+  string or vector after `=` is the error `E0227` "Implicit type mismatch. Needed float, got
+  string." (`QCC_SupplyConversion`), a name that is no constant with a value the error `E0228`
+  "enum - NAME is not a compile-time constant", and a base type that is no number with no value
+  the error `E0229` "values for enums of this type must be initialised". An `enumflags` value
+  that is no whole number is the warning `W0225` "enumflags - VALUE not an integer value", and
+  one with more than one bit set "enumflags - 0xV(V) has multiple bits set". A base type before
+  the `{` with no `:` is the warning `W0224` "legacy enum base type. Use \"enum [class]
+  [name_e]:type\" instead", and so is a named enum declared again, whose name `QCC_PR_ParseType`
+  then reads as that base type. A later declaration of an enum's name compares its initialiser with
+  the name's value (FTEF-19.5). The names of an `enum class` are not referable alone
+  (`QCC_PR_DummyDef(..., !strictenum, ...)`), only as `Name::value`, and are of the enum's own
+  type, which casts to no other: `float x = E::A;` is "Cannot cast from enum E:float to float".
+- **FTEF-19.11** A `shared` definition is initialised by its declaration (`if
+  (!def->initialized && shared) ... def->initialized = true;`), and giving it a value, then or
+  later, is the error `E0221` "shared values may not be assigned an initial value". An `extern`
+  function is initialised by its declaration too (FTEF-19.4); `extern` on what is no function is
+  ignored, with the warning `W0214` "extern keyword may only apply to qc functions.".
+- **FTEF-19.12** A `static` global is visible only in its unit, the compiled file and the files
+  it includes (`if ((def->isstatic||(flags&GDF_STATIC)) && strcmp(def->unitn,
+  scope?scope->unitn:s_unitn))`), so another unit's lookup finds the next definition of the
+  name, or none; `static` on a name another file defined is the error `E0231` "can't redefine
+  non-static as static".
+- **FTEF-19.13** A use of a definition marked `__deprecated` is the warning `W0314` "Variable
+  \"NAME\" is deprecated", followed by ": REASON" when `__deprecated("REASON")` gives one.
+- **FTEF-19.14** `QCC_PR_ParseState` reads a state header's frame before its next function, so
+  the frame sees no name the header declares (`[h, h]` with `h` not declared before is "Unknown
+  value \"h\""). The frame is converted to a float, a string or vector being `E0227` "Implicit
+  type mismatch. Needed float, got string."; a next function that is a literal but 0 is the
+  error `E0309` "Type mismatch: string, should be void()".
+- **FTEF-19.15** `Scope::name` defines a member of the class `Scope`, or, with the warning
+  `W0216` "Scope::name is not part of class Scope", a new one (`WARN_MEMBERNOTDEFINED`); of a
+  struct, the global `Scope::name` an earlier definition made, else the error `E0226`
+  "Scope::name is not part of class Scope" (`ERR_NOTDEFINED`); and a scope that is neither, a
+  typedef or an enum included, is the error `E0225` "Scope is not a class". After either error
+  this profile still defines the global `Scope::name`, for navigation (QCD-1.4).
+- **FTEF-19.16** A name is looked up as a definition first and only then as an intrinsic
+  (FTEF-17.4), `random` among them ("returning a float just in case people declare things in the
+  wrong order"). Outside a member function `this` is the error `E0310` "Cannot use 'this'
+  outside of an OO function" and `super` `E0311` "Cannot use 'super' outside of an OO function";
+  in a member function of a class with no parent `super` is `E0312` "class NAME has no super",
+  where the pinned FTEQCC crashes (signal 11), refusing the program as the profile does. A local
+  named `autocvar_...` is a global, with the warning `W0213` "Autocvar \"NAME\" defined with
+  local scope. promoting to global."; a constant or static one is made neither, with "defined as
+  constant. attempting to correct that for you." or "defined as static. ...". A definition named
+  as an enabled keyword (`var`, `for`, `switch`, `case`, `local`, `default`, `goto`,
+  `continue`, `string`, `float`, `entity`, `vector`, `const`, `asm`, and `break` for what is no
+  function) is the warning `W0221` "\"NAME\" keyword used as variable name - coexisting", the
+  keyword keeping its meaning. `QCC_PR_ParseDefs` warns `W0214` "Conflicting storage classes."
+  for more than one of `extern`, `static`, `shared` and `auto`, "Conflicting constness." for
+  `const` and `var`, and "function modifier on non-function." for `inline`, `wrap`, `weak` or
+  `accumulate` on what is no function, which `accumulate` makes the error `E0230` "accumulate
+  applies only to functions, not NAME".
+- **FTEF-19.17** These parts of the path are not modelled by this profile, each for its reason:
+  the types and values of initialisers, default values, array sizes and enum values that are
+  expressions other than a literal, a name or `_()`, which FTEQCC folds and types as it compiles
+  them, the compiler's work (P2-06, constant folding P2-08), so the profile compares such an
+  initialiser by its text (FTEF-17.10) and checks no type of it; the output target, under which
+  `-Tid` makes an `extern` function the error "extern is not supported with this target format"
+  (`QCC_PR_FinishCompilation`) that a target with extern support (`QCF_FTE`) does not give, a
+  code-generation choice (`#pragma target`, P2-07), the FTEQCC corpus mods that use `extern`
+  targetting FTE; the warnings FTEQCC gives as it writes the program rather than as it defines a
+  name, a definition never referred to ("no references", `WARN_NOTREFERENCED`), a function
+  returning a large type (`WARN_SLOW_LARGERETURN`), a field allocated twice ("Field def already
+  has a value", "Inconsistant field def") and the end_sys checks, which belong to the compiler's
+  output (QC-25); struct and union initialisers (designated members, "member ... was already
+  ininitialised", "inherited structs must use designated initialisers", "initializer-string too
+  long") and a definition of a struct type not yet defined ("redeclared with different storage
+  type"), whose checks need the members' layout, the compiler's (QC-21); FTEQCC's reacc and
+  hexenc syntaxes (`flag_acc`, `var name : type`, a field `alias`), which `-Tid` does not
+  enable; attributes `[[...]]`, which `QCC_PR_ParseDefs` reads only after a qualifier or with
+  `flag_attributes`, as the profile's parser does not, the pinned FTEQCC refusing
+  `[[alias("y")]] float x;` as the profile does; and the lexer flags `#pragma flag` sets (`qccx`,
+  which allows float, string and entity casts, `assumeint` and `assumevar`), which the profile
+  reads as off, their `-Tid` defaults.
+- **FTEF-19.18** The definitions family of `cargo xtask oracles builtins`
+  (`xtask/src/oracles/builtins/declarations.rs`) compiles programs that bind `f` and then make
+  the definitions these statements and QC-11 to QC-13 describe, under both profiles, and the
+  FTEQCC warning programs with `-Werror -Wno-Q208`, for which every warning of the profile is an
+  error, so a warning one compiler gives and the other does not changes the outcome (Q208, "no
+  end_sys_fields defined", is what every program without system definitions gets). Its run of
+  2026-10-21 (macOS arm64) agrees on every case but the vanilla `float k = 7; float y; float x
+  = y;`, which differs as QC-27.8 says.

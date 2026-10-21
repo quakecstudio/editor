@@ -79,6 +79,8 @@ pub enum Code {
     E0205,
     /// "NAME redeclared" (QCD-3.6).
     E0206,
+    /// "wrong immediate type for NAME" (QCD-3.7).
+    E0207,
     /// "Fields and functions must be global" (QCD-3.8).
     E0208,
     /// "Bad builtin immediate" (QCD-3.9).
@@ -89,10 +91,58 @@ pub enum Code {
     E0211,
     /// "Forwards State Cycle with backwards range" (QCD-3.12).
     E0212,
+    /// "Cannot cast from TYPE to TYPE" (QCD-3.13).
+    E0213,
+    /// "initializer for 'NAME' is not constant" (QCD-3.14).
+    E0214,
+    /// "Duplicate definition of NAME." (QCD-3.15).
+    E0215,
+    /// "redeclaration of function body" (QCD-3.16).
+    E0216,
+    /// "Default value not a constant" (QCD-3.17).
+    E0217,
+    /// "Default value not initialized yet" (QCD-3.18).
+    E0218,
+    /// "Cannot redeclare typedef NAME from TYPE to TYPE" (QCD-3.19).
+    E0219,
+    /// "Array sizes for redecleration of NAME do not match (A->B)" (QCD-3.20).
+    E0220,
+    /// "shared values may not be assigned an initial value" (QCD-3.21).
+    E0221,
+    /// "wrapper function does not wrap anything" (QCD-3.22).
+    E0222,
+    /// "Wrapper function \"NAME\" does not refer to its prior function" (QCD-3.23).
+    E0223,
+    /// "bad combination of modifiers with typedef (defining NAME)" (QCD-3.24).
+    E0224,
+    /// "NAME is not a class" (QCD-3.25).
+    E0225,
+    /// "NAME is not part of class CLASS", for a struct (QCD-3.26).
+    E0226,
+    /// "Implicit type mismatch. Needed TYPE, got TYPE." (QCD-3.27).
+    E0227,
+    /// "enum - NAME is not a compile-time constant" (QCD-3.28).
+    E0228,
+    /// "values for enums of this type must be initialised" (QCD-3.29).
+    E0229,
+    /// "accumulate applies only to functions, not NAME" (QCD-3.30).
+    E0230,
+    /// "can't redefine non-static as static" (QCD-3.31).
+    E0231,
+    /// "_() intrinsic accepts only a string immediate" (QCD-3.32).
+    E0232,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
     E0308,
+    /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
+    E0309,
+    /// "Cannot use 'this' outside of an OO function" (QCD-4.10).
+    E0310,
+    /// "Cannot use 'super' outside of an OO function" (QCD-4.11).
+    E0311,
+    /// "class NAME has no super" (QCD-4.12).
+    E0312,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -117,6 +167,8 @@ pub enum Code {
     E0401,
     /// "Error opening PATH: REASON" (QCD-5.2).
     E0402,
+    /// "bad parm order" (QCD-5.4).
+    E0404,
     /// "#includelist without #endlist" (QCD-5.6).
     E0406,
     /// "too many files in the project graph" (QCD-5.7).
@@ -152,19 +204,59 @@ pub enum Code {
     /// "incompatible redeclaration. Ignoring replacement of qc function with builtin."
     /// (QCD-7.23).
     W0206,
+    /// "NAME duplicate definition ignored" (QCD-7.32).
+    W0207,
+    /// "Local \"NAME\" hides global with same name and type" (QCD-7.33).
+    W0208,
+    /// "Optional arguments differ on redeclaration of NAME. TYPE, should be TYPE" (QCD-7.34).
+    W0209,
+    /// "NAME builtin was wrongly redefined as TYPE. ignoring later definition" (QCD-7.35).
+    W0210,
+    /// "Type redeclaration of TYPE NAME replaces existing variable" (QCD-7.36).
+    W0211,
+    /// "Redeclaration of NAME would change to const." and its kin (QCD-7.37).
+    W0212,
+    /// "Autocvar \"NAME\" defined with local scope. promoting to global." and its kin (QCD-7.38).
+    W0213,
+    /// "function modifier on non-function." and the other ignored keywords (QCD-7.39).
+    W0214,
+    /// "typedef defines no types" (QCD-7.40).
+    W0215,
+    /// "NAME is not part of class CLASS", for a class (QCD-7.41).
+    W0216,
+    /// "NAME already declared as a builtin" (QCD-7.42).
+    W0217,
+    /// "NAME redeclared to accumulate after initial declaration" (QCD-7.43).
+    W0218,
+    /// "initializer for NAME is not initialised yet, NAME will be treated as 0" (QCD-7.45).
+    W0219,
+    /// "Implicit cast from TYPE to TYPE" (QCD-7.46).
+    W0220,
+    /// "\"NAME\" keyword used as variable name - coexisting" (QCD-7.47).
+    W0221,
+    /// "Parameter N of NAME is not named" (QCD-7.48).
+    W0222,
+    /// "incompatible redeclaration. Please validate builtin numbers. parseentitydata is #613" (QCD-7.49).
+    W0223,
+    /// "legacy enum base type. Use \"enum [class] [name_e]:type\" instead" (QCD-7.50).
+    W0224,
+    /// "enumflags - VALUE has multiple bits set" and "enumflags - VALUE not an integer value" (QCD-7.51).
+    W0225,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
     W0312,
     /// "Statement does not do anything" (QCD-7.29).
     W0313,
+    /// "Variable \"NAME\" is deprecated" (QCD-7.44).
+    W0314,
     /// "NAME differs in case from the file it opens, STORED" (QCD-7.16).
     W0402,
 }
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 68] = [
+    pub const ALL: [Self; 114] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -193,15 +285,41 @@ impl Code {
         Self::E0204,
         Self::E0205,
         Self::E0206,
+        Self::E0207,
         Self::E0208,
         Self::E0209,
         Self::E0210,
         Self::E0211,
         Self::E0212,
+        Self::E0213,
+        Self::E0214,
+        Self::E0215,
+        Self::E0216,
+        Self::E0217,
+        Self::E0218,
+        Self::E0219,
+        Self::E0220,
+        Self::E0221,
+        Self::E0222,
+        Self::E0223,
+        Self::E0224,
+        Self::E0225,
+        Self::E0226,
+        Self::E0227,
+        Self::E0228,
+        Self::E0229,
+        Self::E0230,
+        Self::E0231,
+        Self::E0232,
         Self::E0301,
         Self::E0308,
+        Self::E0309,
+        Self::E0310,
+        Self::E0311,
+        Self::E0312,
         Self::E0401,
         Self::E0402,
+        Self::E0404,
         Self::E0406,
         Self::E0407,
         Self::E0408,
@@ -229,9 +347,29 @@ impl Code {
         Self::W0204,
         Self::W0205,
         Self::W0206,
+        Self::W0207,
+        Self::W0208,
+        Self::W0209,
+        Self::W0210,
+        Self::W0211,
+        Self::W0212,
+        Self::W0213,
+        Self::W0214,
+        Self::W0215,
+        Self::W0216,
+        Self::W0217,
+        Self::W0218,
+        Self::W0219,
+        Self::W0220,
+        Self::W0221,
+        Self::W0222,
+        Self::W0223,
+        Self::W0224,
+        Self::W0225,
         Self::W0311,
         Self::W0312,
         Self::W0313,
+        Self::W0314,
         Self::W0402,
     ];
 
@@ -272,6 +410,8 @@ impl Code {
             Self::E0210 => "E0210",
             Self::E0211 => "E0211",
             Self::E0212 => "E0212",
+            Self::E0231 => "E0231",
+            Self::E0232 => "E0232",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -303,10 +443,54 @@ impl Code {
             Self::W0204 => "W0204",
             Self::W0205 => "W0205",
             Self::W0206 => "W0206",
+            Self::W0219 => "W0219",
+            Self::W0220 => "W0220",
+            Self::W0221 => "W0221",
+            Self::W0222 => "W0222",
+            Self::W0223 => "W0223",
+            Self::W0224 => "W0224",
+            Self::W0225 => "W0225",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
             Self::W0402 => "W0402",
+            Self::W0314 => "W0314",
+            Self::W0218 => "W0218",
+            Self::W0217 => "W0217",
+            Self::W0216 => "W0216",
+            Self::W0215 => "W0215",
+            Self::W0214 => "W0214",
+            Self::W0213 => "W0213",
+            Self::W0212 => "W0212",
+            Self::W0211 => "W0211",
+            Self::W0210 => "W0210",
+            Self::W0209 => "W0209",
+            Self::W0208 => "W0208",
+            Self::W0207 => "W0207",
+            Self::E0404 => "E0404",
+            Self::E0312 => "E0312",
+            Self::E0311 => "E0311",
+            Self::E0310 => "E0310",
+            Self::E0309 => "E0309",
+            Self::E0230 => "E0230",
+            Self::E0229 => "E0229",
+            Self::E0228 => "E0228",
+            Self::E0227 => "E0227",
+            Self::E0226 => "E0226",
+            Self::E0225 => "E0225",
+            Self::E0224 => "E0224",
+            Self::E0223 => "E0223",
+            Self::E0222 => "E0222",
+            Self::E0221 => "E0221",
+            Self::E0220 => "E0220",
+            Self::E0219 => "E0219",
+            Self::E0218 => "E0218",
+            Self::E0217 => "E0217",
+            Self::E0216 => "E0216",
+            Self::E0215 => "E0215",
+            Self::E0214 => "E0214",
+            Self::E0213 => "E0213",
+            Self::E0207 => "E0207",
         }
     }
 
@@ -328,9 +512,29 @@ impl Code {
             | Self::W0204
             | Self::W0205
             | Self::W0206
+            | Self::W0219
+            | Self::W0220
+            | Self::W0221
+            | Self::W0222
+            | Self::W0223
+            | Self::W0224
+            | Self::W0225
             | Self::W0311
             | Self::W0312
             | Self::W0313
+            | Self::W0207
+            | Self::W0208
+            | Self::W0209
+            | Self::W0210
+            | Self::W0211
+            | Self::W0212
+            | Self::W0213
+            | Self::W0214
+            | Self::W0215
+            | Self::W0216
+            | Self::W0217
+            | Self::W0218
+            | Self::W0314
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -365,6 +569,8 @@ impl Code {
             | Self::E0210
             | Self::E0211
             | Self::E0212
+            | Self::E0231
+            | Self::E0232
             | Self::E0301
             | Self::E0308
             | Self::E0501
@@ -381,6 +587,30 @@ impl Code {
             | Self::E0402
             | Self::E0406
             | Self::E0407
+            | Self::E0207
+            | Self::E0213
+            | Self::E0214
+            | Self::E0215
+            | Self::E0216
+            | Self::E0217
+            | Self::E0218
+            | Self::E0219
+            | Self::E0220
+            | Self::E0221
+            | Self::E0222
+            | Self::E0223
+            | Self::E0224
+            | Self::E0225
+            | Self::E0226
+            | Self::E0227
+            | Self::E0228
+            | Self::E0229
+            | Self::E0230
+            | Self::E0309
+            | Self::E0310
+            | Self::E0311
+            | Self::E0312
+            | Self::E0404
             | Self::E0408 => true,
         }
     }

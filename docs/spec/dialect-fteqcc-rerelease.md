@@ -753,15 +753,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   an empty `N` leaves `#N #5` as `#5`; and `# N`, `#N!` (the word is `N!`), `#M` with no `(`
   and `#U` with no macro `U` are `E0209`. The preprocessor (`qc-preproc`) drops such a `#` and
   expands the macro; the vanilla `#` is punctuation (FTE-23.1) and stays.
-- **FTE-23.11** This profile checks no types, so a `#` before a macro that stands for a number,
-  `#define N 5` and `void() f = #N;`, initialises `f` with `5` and is no error, where FTEQCC
-  reports "Cannot cast from float to void()". A string (`#define N "ex_a"`) FTEQCC casts with
-  the warning "Implicit cast from string to void()" (F314) and makes no builtin function, as
-  this profile makes none. The type of a value initialiser is the compiler's to check (L-01);
-  until then `cargo xtask oracles builtins` counts such a case as differing as this statement
-  says: an FTEQCC case that defines a macro or uses a built-in constant (`#__LINE__` is the
-  line number), refused by FTEQCC and accepted here with no error, whose `f` is initialised
-  with a number or a vector.
+- **FTE-23.11** **Withdrawn** (P2-117, #545): it said this profile checks no types, but it now
+  casts a literal initialiser as FTEQCC does (`dialect-fteqcc.md` FTEF-19.2). Replaced by
+  FTE-23.16.
 - **FTE-23.12** **Withdrawn** (P2-75 to P2-77, #480 to #482): it described the cross product
   before it had the character-constant, macro-word, label and macro-argument cases. Replaced by
   FTE-23.13.
@@ -851,3 +845,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   31 as FTEF-14.47 says, an `#eof` after a file's first byte, where FTEQCC crashes, and `#merge`
   and `#datafile`, whose files FTEQCC opens; 13 as FTE-23.11 says, a macro or `#__LINE__` giving
   `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
+- **FTE-23.16** A `#` before a macro that stands for a number, `#define N 5` and `void() f =
+  #N;`, initialises `f` with `5`, which FTEQCC cannot cast to a function: the error `E0213`
+  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.2), as for `#__LINE__`, the
+  line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
+  cast from string to void()" and makes no builtin function, as this profile makes none; the
+  differential reads that as accepted with no builtin number.

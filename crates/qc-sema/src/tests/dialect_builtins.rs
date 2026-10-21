@@ -126,11 +126,14 @@ fn fte_analysis_errors(source: &str) -> Vec<Code> {
 
 // spec FTE-23.10: read as the compiler reads it, a `#` before a macro is the macro's expansion,
 // and before a name that is no macro E0209
-// spec FTE-23.11: a number a macro gives a function is no error here, as no type is checked
+// spec FTEF-19.2: a number a macro gives a function cannot be cast to it, and a string can
 #[test]
 fn a_hash_before_a_macro_reads_its_expansion() {
+    assert_eq!(
+        fte_analysis_errors("#define N 5\nvoid() f = #N;\n"),
+        [Code::E0213, Code::E0211]
+    );
     for source in [
-        "#define N 5\nvoid() f = #N;\n",
         "#define N \"ex_a\"\nvoid() f = #N;\n",
         "#define N ex_a\nvoid() f = :N;\n",
         "#define M(x) x\nvoid() f = #M(\"ex_a\");\n",

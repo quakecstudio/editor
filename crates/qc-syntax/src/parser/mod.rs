@@ -641,6 +641,12 @@ impl<'a> Parser<'a> {
     fn typedef_decl(&mut self) {
         self.start_node(K::TypedefDecl);
         self.bump_as(K::TypedefKw);
+        // FTEF-19.9: `typedef;` defines no type, which `QCC_PR_ParseDefs` warns of.
+        if self.at(K::Semicolon) {
+            self.bump();
+            self.finish_node();
+            return;
+        }
         let tagged_body = self.nth(1).is_some_and(|t| t.kind == K::LBrace)
             || (self.nth(1).is_some_and(|t| t.kind == K::Name)
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
@@ -661,6 +667,12 @@ impl<'a> Parser<'a> {
             // FTEF-18.27: after a struct that lost its `}`, a declaration line is the next
             // declaration, not the typedef's name.
             self.error(Code::E0201, "not a name");
+            self.finish_node();
+            return;
+        }
+        // FTEF-19.9: `typedef float;` defines no type either.
+        if self.at(K::Semicolon) {
+            self.bump();
             self.finish_node();
             return;
         }
@@ -1342,14 +1354,18 @@ impl<'a> Parser<'a> {
                 "continue" if self.nth(1).is_some_and(|t| t.kind == K::Semicolon) => {
                     self.break_continue_stmt(K::ContinueStmt, K::ContinueKw, "continue");
                 }
+                // FTEF-19.9: `typedef` in a function body names a type there.
+                "typedef" if self.fteqcc() => self.typedef_decl(),
                 // FTEF-16.1: a statement of the full dialect that declares locals.
                 _ if self.fteqcc() && self.fte_looks_like_local() => self.local_decl(false),
                 _ if self.looks_like_declaration(0) => self.local_decl(false),
                 // FTE-21.1: FTEQCC's `QCC_PR_ParseStatement` reads a statement that starts
                 // with a type name as a definition, so a user type followed by a name,
                 // `poseInfo pose = ...`, declares a local.
+                // FTEF-19.1: a qualifier that does not start a definition there is a name.
                 word if self.fteqcc()
                     && !is_reserved_word(word)
+                    && !fte::is_decl_qualifier(word)
                     && self.nth(1).is_some_and(|t| t.kind == K::Name) =>
                 {
                     self.local_decl(false);

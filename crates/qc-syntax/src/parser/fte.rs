@@ -63,6 +63,13 @@ pub(super) fn is_decl_qualifier(word: &str) -> bool {
     }
 }
 
+/// Whether a statement that starts with `word` defines locals (FTEF-19.1): the qualifiers
+/// `QCC_PR_ParseStatement` tests for by name with the keyword enabled, `var`, `noref`, `static`,
+/// `extern` and `const`; `register`, `volatile` and `auto` are disabled keywords by default.
+fn starts_local_statement(word: &str) -> bool {
+    matches!(word, "var" | "noref" | "static" | "extern" | "const")
+}
+
 /// Whether `word` is one of the C scalar type words `QCC_PR_ParseType` combines (FTEF-2.4),
 /// or `float`, which joins them (`long double`, `unsigned float`).
 fn is_c_type_word(word: &str) -> bool {
@@ -195,8 +202,13 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        if is_decl_qualifier(&tok.text) || is_c_type_word(&tok.text) {
+        if starts_local_statement(&tok.text) || is_c_type_word(&tok.text) {
             return true;
+        }
+        if is_decl_qualifier(&tok.text) {
+            // FTEF-19.1: `QCC_PR_ParseStatement` starts a definition at only some of the
+            // qualifiers; `shared`, `nosave`, `inline` and the `__` words are names there.
+            return false;
         }
         if !self.fte_type_name(0) {
             return false;

@@ -101,7 +101,7 @@ impl Type {
 
     /// Whether this is an FTEQCC type whose meaning the semantic model does not follow: a
     /// named type, a pointer, or one holding either or [`Type::Unknown`]. Two types are then
-    /// [`Type::compatible`] whatever they are (FTEF-17.6).
+    /// [`Type::compatible`] whatever they are (FTEF-17.12).
     #[must_use]
     pub fn is_opaque(&self) -> bool {
         match self {
@@ -113,7 +113,7 @@ impl Type {
     }
 
     /// Whether a redeclaration with type `other` declares the same thing (QC-11.5): equal
-    /// types, or, under FTEQCC, types either of which [`Type::is_opaque`] (FTEF-17.6).
+    /// types, or, under FTEQCC, types either of which [`Type::is_opaque`] (FTEF-17.12).
     #[must_use]
     pub fn compatible(&self, other: &Self) -> bool {
         self == other || self.is_opaque() || other.is_opaque()
