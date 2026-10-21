@@ -845,8 +845,8 @@ groups:
     - P3-30
     deliverable:
     - 'docs/adr/00NN-preview-host-later-engine-improvements.md: an ADR that surveys QuakeSpasm, Ironwail and vkQuake for changes beyond id''s engine, sorts them into categories (id bug fixes, raised limits and protocols such as FitzQuake 666, physics independent of frame rate, rendering, performance), and decides per category whether the preview host follows id or the later engine'
-    - Each adopted change becomes a ported fix, a spec statement giving its reason, and an expected difference in the engine differential suite
-    - 'The engine oracle stays id''s engine (ADR-0005, P3-23): each adopted change is a difference from that oracle, and QuakeSpasm, Ironwail and vkQuake are surveyed as sources of improvements, not as oracles'
+    - Each adopted change becomes a fix ported from the engine that made it, which ADR-0018 makes a porting upstream under ADR-0017's clean-port policy, with a spec statement giving its reason and an expected difference in the engine differential suite
+    - 'The engine oracle stays id''s engine (ADR-0005, P3-23): each adopted change is a difference from that oracle, and QuakeSpasm, Ironwail and vkQuake are surveyed and ported as sources of improvements, not as oracles'
     acceptance:
     - The ADR is Accepted with a decision for every category, and each adopted change is filed in plan/ as a port with its spec statement and its expected differential difference
     verify:
