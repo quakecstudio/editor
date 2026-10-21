@@ -729,7 +729,7 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     // `#pragma line` the oracle reads otherwise there is no stale recording
     assert!(check_where(&repo, &oracles, true, ULong::Bits32).is_err());
     assert_eq!(read_fixture(&repo).unwrap(), stale);
-    assert!(check(&repo, &oracles, true).unwrap());
+    assert!(check_where(&repo, &oracles, true, ULong::Bits64).unwrap());
     assert_eq!(read_fixture(&repo).unwrap(), recorded);
     let wide = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
     let mut llp64 = recorded.clone();
@@ -743,7 +743,7 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     extra.insert("fteqcc|gone".to_owned(), Outcome::Rejected);
     let repo = repository("builtins-extra", &extra);
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(!check(&repo, &oracles, false).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
 }
 
 // spec FTE-23.15: an oracle whose outcome the profile does not share fails the check, even
