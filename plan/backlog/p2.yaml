@@ -1666,8 +1666,8 @@ issues:
   - P2-116
   - P2-117
   - P2-118
-  - P2-119
-  - P2-120
+  - P2-125
+  - P2-126
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2365,7 +2365,7 @@ issues:
   verify:
   - cargo test -p qc-sema -p qc-syntax
   - cargo xtask oracles builtins
-- key: P2-119
+- key: P2-125
   title: Pass a module's defines to the semantic model
   labels:
   - L3-semantics
@@ -2386,7 +2386,7 @@ issues:
   - 'A test citing PRJ-5.4: a module whose project file defines `X` resolves the `#ifdef X` side of a conditional, and the same module with no defines the other side'
   verify:
   - cargo test -p qc-sema -p qc-ide
-- key: P2-120
+- key: P2-126
   title: Log the language server's crashes
   labels:
   - apps

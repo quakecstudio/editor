@@ -31,7 +31,8 @@ fn completion_at_file_level() {
     assert_eq!(labels(text, "/*here*/", 0), ["g", "f"]);
 }
 
-// spec QC-16.6: after `.` only fields are offered
+// After `.` only fields are offered, since a field access names a field (QC-16.6; the
+// statement is the compiler's to pin).
 #[test]
 fn completion_after_a_member_access() {
     let text = "entity e;\n.float hp;\n.vector org;\nvoid() f = { e.hp = 1; };\n";

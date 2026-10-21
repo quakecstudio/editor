@@ -192,14 +192,18 @@ fn a_mismatched_redeclaration_names_its_definition() {
 // definition, not a redeclaration of the one it replaces.
 #[test]
 fn a_replacing_declaration_is_no_redeclaration() {
-    let source =
-        "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n";
+    let source = "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n";
     let index = fte_index_of(source);
     let third = nth_offset(source, "anglemod", 2);
-    let (def, location) = index.definition_at(FileId(0), third).expect("the new anglemod");
+    let (def, location) = index
+        .definition_at(FileId(0), third)
+        .expect("the new anglemod");
     assert_eq!(location.span.start, third);
     // The body redeclares the builtin; the third declaration redeclares nothing.
     assert_eq!(index.redeclarations.len(), 1);
     assert_ne!(index.redeclarations[0].def, def);
-    assert_eq!(index.redeclarations[0].location.span.start, nth_offset(source, "anglemod", 1));
+    assert_eq!(
+        index.redeclarations[0].location.span.start,
+        nth_offset(source, "anglemod", 1)
+    );
 }

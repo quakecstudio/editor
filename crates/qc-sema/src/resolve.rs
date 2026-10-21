@@ -565,9 +565,11 @@ impl<'a> Resolver<'a> {
             && optional_beyond(&b.params, params)
     }
 
-    /// Records that the declaration at `location` declares `def` again (QC-11.5).
-    fn redeclared(&mut self, location: Location, def: DefId) {
+    /// Records that the declaration at `location` declares `def` again (QC-11.5); returns
+    /// `def`.
+    fn redeclared(&mut self, location: Location, def: DefId) -> DefId {
         self.index.redeclarations.push(Reference { location, def });
+        def
     }
 
     /// Declares, or redeclares, a global-scope name (QC-11.5), and the components of a
@@ -1028,11 +1030,7 @@ impl<'a> Resolver<'a> {
         let mut aborted = self.fteqcc && self.check_defaults(file, decl);
         let existing = match self.find_existing(decl, location) {
             Ok(existing) => existing,
-            Err(found) => {
-                // QC-11.5: a refused redeclaration still names the definition.
-                self.redeclared(location, found);
-                return pending(found);
-            }
+            Err(found) => return pending(found),
         };
         aborted |= qualifier_fatal;
         // FTEF-19.12: `static` on a name another file defined is "can't redefine non-static
@@ -1168,8 +1166,9 @@ impl<'a> Resolver<'a> {
             params: &decl.params,
             array: decl.array,
         };
+        // QC-11.5: a refused redeclaration still names the definition.
         match self.check_redeclared_type(&redeclaration, false) {
-            TypeCheck::Mismatch => Err(found),
+            TypeCheck::Mismatch => Err(self.redeclared(location, found)),
             TypeCheck::Replaced => {
                 if let Some(defs) = self.globals.get_mut(&decl.name) {
                     defs.retain(|d| *d != found);
@@ -1178,7 +1177,7 @@ impl<'a> Resolver<'a> {
             }
             TypeCheck::Same | TypeCheck::Ignored => {
                 if self.check_array(&redeclaration, false) {
-                    Err(found)
+                    Err(self.redeclared(location, found))
                 } else {
                     Ok(Some(found))
                 }

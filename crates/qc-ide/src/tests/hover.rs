@@ -43,7 +43,7 @@ fn hover_reads_the_comment_after_the_declaration() {
     assert_eq!(docs(&mut host, "c;"), None);
 }
 
-// spec QC-13.2: the hover of a function shows its parameters as declared, and of a local its
+// spec QC-12.1: the hover of a function shows its parameters as declared, and of a local its
 // `local` declaration
 #[test]
 fn hover_of_functions_parameters_and_locals() {

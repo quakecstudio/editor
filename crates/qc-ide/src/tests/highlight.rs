@@ -36,7 +36,7 @@ fn highlights_classify_each_name() {
     assert_eq!(kind("self", 0), None);
 }
 
-// spec QC-11.6: under the vanilla profile an initialised global is a constant
+// Under the vanilla profile an initialised global is highlighted as a constant (QC-11.6).
 #[test]
 fn highlights_mark_vanilla_constants() {
     let text = "float FL_FLY = 1;\nfloat count;\n";
@@ -64,7 +64,7 @@ fn host_fte(text: &str) -> crate::AnalysisHost<qc_project::MemoryLoader> {
     })
 }
 
-// spec QC-13.3: a builtin is marked as the engine's, a function with a body is not
+// A builtin (QC-13.3) is highlighted as the engine's, a function with a body is not.
 #[test]
 fn highlights_mark_builtins() {
     let text = "void(entity e) remove = #15;\nvoid() f = { remove(world); };\nentity world;\n";

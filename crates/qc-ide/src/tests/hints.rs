@@ -39,8 +39,8 @@ fn hints_name_each_argument() {
     );
 }
 
-// spec QC-13.2: a prototype with no names gives none; the defining declaration's names are
-// used
+// A prototype with no names gives none; the names of the declaration that has them are used
+// (QC-13.2 says the defining declaration's names are the ones the body uses).
 #[test]
 fn hints_come_from_the_declaration_that_names_parameters() {
     let text = "void(float, float) g;\nvoid() f = { g(1, 2); };\nvoid(float x, float y) g = { };\n";

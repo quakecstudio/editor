@@ -240,9 +240,20 @@ impl<L: Loader, W: Write> Server<L, W> {
         }
         let changed = match method {
             "initialized" => true,
-            "textDocument/didOpen" => parse(params).is_ok_and(|p| self.did_open(p)),
-            "textDocument/didChange" => parse(params).is_ok_and(|p| self.did_change(p)),
-            "textDocument/didClose" => parse(params).is_ok_and(|p| self.did_close(&p)),
+            // A notification cannot be answered, so one with params of the wrong shape is
+            // dropped.
+            "textDocument/didOpen" => match parse(params) {
+                Ok(p) => self.did_open(p)?,
+                Err(_) => false,
+            },
+            "textDocument/didChange" => match parse(params) {
+                Ok(p) => self.did_change(p)?,
+                Err(_) => false,
+            },
+            "textDocument/didClose" => match parse(params) {
+                Ok(p) => self.did_close(&p)?,
+                Err(_) => false,
+            },
             "textDocument/didSave" => {
                 // A save may change what a `#include` brings in, which the project graph reads
                 // on opening.
@@ -346,10 +357,11 @@ impl<L: Loader, W: Write> Server<L, W> {
 }
 
 impl<L: Loader, W: Write> Server<L, W> {
-    /// `textDocument/didOpen`: the client now owns the document's text.
-    fn did_open(&mut self, params: proto::DidOpenParams) -> bool {
+    /// `textDocument/didOpen`: the client now owns the document's text. Returns whether the
+    /// document is the server's, a `file` URI.
+    fn did_open(&mut self, params: proto::DidOpenParams) -> std::io::Result<bool> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
-            return false;
+            return Ok(false);
         };
         let path = qc_project::normalize(&path);
         self.versions
@@ -357,15 +369,16 @@ impl<L: Loader, W: Write> Server<L, W> {
         let opened = self
             .host
             .set_overlay(&path, params.text_document.text.into_bytes());
-        self.report_project(opened).is_ok()
+        self.report_project(opened)?;
+        Ok(true)
     }
 
     /// `textDocument/didChange`: applies each change in order, as LSP 3.18 asks: "apply the
     /// `TextDocumentContentChangeEvent`s in a single notification in the order you receive
     /// them."
-    fn did_change(&mut self, params: proto::DidChangeParams) -> bool {
+    fn did_change(&mut self, params: proto::DidChangeParams) -> std::io::Result<bool> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
-            return false;
+            return Ok(false);
         };
         let path = qc_project::normalize(&path);
         let mut text = self.host.text(&path).unwrap_or_default();
@@ -386,20 +399,22 @@ impl<L: Loader, W: Write> Server<L, W> {
         self.versions
             .insert(path.clone(), params.text_document.version);
         let changed = self.host.set_overlay(&path, text);
-        self.report_project(changed).is_ok()
+        self.report_project(changed)?;
+        Ok(true)
     }
 
     /// `textDocument/didClose`: the file on disk is the text again. Its diagnostics stay, as
     /// for "a language [that] has a project system" (LSP 3.18, "PublishDiagnostics
     /// Notification").
-    fn did_close(&mut self, params: &proto::DocumentParams) -> bool {
+    fn did_close(&mut self, params: &proto::DocumentParams) -> std::io::Result<bool> {
         let Some(path) = uri::to_path(&params.text_document.uri) else {
-            return false;
+            return Ok(false);
         };
         let path = qc_project::normalize(&path);
         self.versions.remove(&path);
         let closed = self.host.remove_overlay(&path);
-        self.report_project(closed).is_ok()
+        self.report_project(closed)?;
+        Ok(true)
     }
 
     /// Shows a project that does not open as an error message.
