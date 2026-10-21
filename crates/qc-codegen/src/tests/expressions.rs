@@ -5,10 +5,10 @@
 
 use qc_diag::Code;
 use qc_progs::opcode::Opcode::{
-    self, AddF, AddV, Address, And, BitAnd, BitOr, Call0, Call1, Call2, Call3, Call8, DivF, Done,
-    EqE, EqF, EqFnc, EqS, EqV, Ge, Gt, If, IfNot, Le, LoadEnt, LoadF, LoadFnc, Lt, MulF, MulFv,
-    MulV, MulVf, NeE, NeF, NeFnc, NeS, NeV, NotEnt, NotF, NotFnc, NotS, NotV, Or, Return, StoreF,
-    StoreFld, StoreV, StorepF, StorepV, SubF, SubV,
+    self, AddF, AddV, Address, And, BitAnd, BitOr, Call0, Call1, Call2, Call3, Call4, Call5, Call6,
+    Call7, Call8, DivF, Done, EqE, EqF, EqFnc, EqS, EqV, Ge, Gt, If, IfNot, Le, LoadEnt, LoadF,
+    LoadFnc, Lt, MulF, MulFv, MulV, MulVf, NeE, NeF, NeFnc, NeS, NeV, NotEnt, NotF, NotFnc, NotS,
+    NotV, Or, Return, StoreF, StoreFld, StoreV, StorepF, StorepV, SubF, SubV,
 };
 
 use super::{
@@ -355,6 +355,38 @@ fn a_variadic_call_takes_up_to_eight_arguments() {
         first_code("void(...) g = #1;\nvoid() f = { g(1,2,3,4,5,6,7,8,9); };\n"),
         Code::E0307
     );
+}
+
+// spec QC-18.3: a call of `n` arguments is `CALLn`, for each `n` from 0 to 8.
+#[test]
+fn each_argument_count_has_its_call() {
+    let mut source = String::from("void(...) g = #1;\nvoid() f = {\n");
+    for n in 0..=8 {
+        let args: Vec<String> = (0..n).map(|i| i.to_string()).collect();
+        source.push_str(&format!("g({});\n", args.join(", ")));
+    }
+    source.push_str("};\n");
+    let calls: Vec<Opcode> = opcodes(&source)
+        .into_iter()
+        .filter(|op| *op != StoreV)
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            Call0, Call1, Call2, Call3, Call4, Call5, Call6, Call7, Call8
+        ]
+    );
+}
+
+// spec QC-16.7, QCD-4.2: a field access's error is at its `.`.
+#[test]
+fn a_field_access_error_is_at_the_dot() {
+    let source = "float a;\nentity e;\nvoid() f = { a = e.a; };\n";
+    let Err(CompileError::Diagnostics(d)) = compile_source(source) else {
+        panic!("compiled");
+    };
+    let span = d[0].diagnostic.span;
+    assert_eq!(&source[span.start..span.end], ".");
 }
 
 // spec QC-18.8, QCD-4.3, QCD-4.4, QCD-4.5, QCD-4.6: the callee must be a function; a fixed

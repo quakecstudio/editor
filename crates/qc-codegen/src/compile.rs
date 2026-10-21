@@ -277,7 +277,8 @@ impl<'a> Compiler<'a> {
             }
         };
         self.scope = None;
-        self.program.mark_initialized(place).at(span)?;
+        // `PR_ParseDefs` marks the function initialised here, which nothing reads for a
+        // function: no literal is a function (QC-20.2), and no function is saved (QC-21.6).
         let number = operand_index(self.program.functions.len()).at(span)?;
         self.program
             .set_words(def.ofs, &[u32::from_ne_bytes(number.to_ne_bytes())])
@@ -753,10 +754,13 @@ fn unparenthesized(expr: &ast::Expr) -> Option<ast::Expr> {
     }
 }
 
-/// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i`, for the eight slots (QC-18.3).
+/// Parameter slot `i`'s global offset, `OFS_PARM0 + 3 * i` (QC-18.3). A ninth argument's slot
+/// is past the eight, as id's `qcc` writes `def_parms[8]`; its call is refused (QC-18.2).
 fn parm_slot(i: usize) -> Option<u32> {
-    let i = u32::try_from(i).ok().filter(|&i| i < 8)?;
-    i.checked_mul(3)?.checked_add(OFS_PARM0)
+    u32::try_from(i)
+        .ok()?
+        .checked_mul(3)?
+        .checked_add(OFS_PARM0)
 }
 
 /// The relative branch from statement `from` to statement `to` (QC-22.2).

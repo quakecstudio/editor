@@ -333,14 +333,6 @@ impl Program {
         })
     }
 
-    /// Marks the definition at `place` initialised without a value: a function once its body
-    /// or builtin number is read (QC-13.1).
-    pub(crate) fn mark_initialized(&mut self, place: usize) -> Result<(), Internal> {
-        let def = self.defs.get_mut(place).ok_or(Internal::NoDefinition)?;
-        def.initialized = true;
-        Ok(())
-    }
-
     /// `PR_ParseImmediate` (QC-20): the global of `literal`. The first initialised definition
     /// of the literal's type whose words hold an equal value is reused (QC-20.2, QC-20.3);
     /// otherwise a new `IMMEDIATE` definition is made, a string's text copied into the string

@@ -140,6 +140,18 @@ fn a_vector_literal_reuses_an_equal_constant() {
     );
 }
 
+// spec QC-20.2: a vector literal reuses a constant only when all three components are equal.
+#[test]
+fn a_vector_literal_needs_every_component_equal() {
+    let p = progs(
+        "vector V = '1 2 3';\nvector w;\nvoid() f = { w = '1 2 4'; w = '1 5 3'; w = '7 2 3'; };\n",
+    );
+    let v = global(&p, "V");
+    for s in &body(&p, "f")[..3] {
+        assert_ne!(s.a, v);
+    }
+}
+
 // spec QC-20.2: a literal reuses only a constant initialised before it.
 #[test]
 fn a_later_constant_is_not_reused() {
