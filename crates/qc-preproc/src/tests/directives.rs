@@ -57,7 +57,38 @@ fn directives_start_where_new_line_reads() {
         ("a\n\x0b#x", TextStart::Compiled, false),
     ] {
         assert_eq!(
-            starts_line(text.as_bytes(), at(text), start),
+            starts_line(text.as_bytes(), 0, at(text), start),
+            want,
+            "{text:?}"
+        );
+    }
+}
+
+// spec FTEF-14.53: in code a `\` before a line break joins the lines with no `QCC_PR_NewLine`,
+// so a `#` after them and spaces and tabs starts no directive; one in a `//` comment, or a line
+// ending the white-space reader passes after it, leaves the `#` a directive's
+#[test]
+fn a_joined_line_starts_no_directive() {
+    for (text, from, start, want) in [
+        ("a \\\n#x", 1, TextStart::Compiled, false),
+        ("a \\\r\n#x", 1, TextStart::Compiled, false),
+        ("a \\\r#x", 1, TextStart::Included, false),
+        ("a \\\n \t#x", 1, TextStart::Chunk, false),
+        ("a /* c */ \\\n#x", 1, TextStart::Compiled, false),
+        ("a \\\n \\\r\n#x", 1, TextStart::Compiled, false),
+        ("\\\n#x", 0, TextStart::Compiled, false),
+        ("a \\\n\n#x", 1, TextStart::Compiled, true),
+        ("a \\\n\r#x", 1, TextStart::Compiled, true),
+        ("a // c \\\n#x", 1, TextStart::Compiled, true),
+        ("a \\\n// c\n#x", 1, TextStart::Compiled, true),
+        ("a \\ \n#x", 1, TextStart::Compiled, true),
+        // Reading went on at the line break, after a directive whose text held the `\`.
+        ("#pragma p \\\n#x", 11, TextStart::Compiled, true),
+        ("a\n#x", 1, TextStart::Compiled, true),
+    ] {
+        let hash = text.rfind('#').unwrap();
+        assert_eq!(
+            starts_line(text.as_bytes(), from, hash, start),
             want,
             "{text:?}"
         );
@@ -1094,4 +1125,41 @@ fn append_needs_the_same_parameters() {
     assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0102]));
     let (toks, errs) = fte("#define F(a) a\n#append F 2\nF\n");
     assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0102]));
+}
+
+// spec FTEF-14.53: a `#` on a line a `\` joins to a line of code is read as code, in a file and in
+// a macro's expansion; after a `//` comment's `\`, or a line ending after the join, it is a
+// directive
+#[test]
+fn joined_lines_hold_no_directive() {
+    assert_eq!(
+        fte("float g; \\\n#define N 1\nN\n").0,
+        "float g ; # define N 1 N"
+    );
+    assert_eq!(fte("float g; \\\r\n#undef N\n").0, "float g ; # undef N");
+    assert_eq!(fte("#define N 1\nN \\\n  #undef N\nN\n").0, "1 # undef 1 1");
+    assert_eq!(
+        fte("#define M(x) x\nM(5 \\\n#define Y 6\n) Y\n").0,
+        "5 # define Y 6 Y"
+    );
+    assert_eq!(fte("float g; // c \\\n#define N 1\nN\n").0, "float g ; 1");
+    assert_eq!(fte("float g; \\\n\n#define N 1\nN\n").0, "float g ; 1");
+    let files = [("t.qc", "x \\\n#include \"b.qh\"\n"), ("b.qh", "b\n")];
+    assert_eq!(tokens(&compile(&files, "t.qc")), "x # include \"b.qh\"");
+}
+
+// spec PRJ-5.15: under GMQCC neither `FTEQCC` nor `__FTEQCC__` is defined, before the first file
+// or for the second pass, and directives are read as under FTEQCC
+#[test]
+fn gmqcc_defines_no_fteqcc_macros() {
+    let gmqcc = qc_lexer::Dialect::Gmqcc;
+    let files = [(
+        "t.qc",
+        "#ifdef FTEQCC\nx\n#endif\n#ifdef __FTEQCC__\ny\n#endif\n#defined Q z\nQ\n",
+    )];
+    assert_eq!(tokens(&compile_in(&files, "t.qc", gmqcc)), "z");
+    let mut pp = Preprocessor::new(MemoryLoader::new()).with_dialect(gmqcc);
+    assert!(!pp.is_defined("FTEQCC") && !pp.is_defined("__FTEQCC__"));
+    pp.restart();
+    assert!(!pp.is_defined("FTEQCC") && !pp.is_defined("__FTEQCC__"));
 }

@@ -49,25 +49,26 @@ fn tree_code(source: &str) -> Vec<Span> {
         .collect()
 }
 
-/// The spans of the tokens the FTEQCC preprocessor gives for `source`, a file of no macro
-/// use.
-fn preprocessed_code(source: &str) -> Vec<Span> {
+/// The spans of the tokens the FTEQCC preprocessor gives for `source`; `None` when it uses a
+/// macro, whose expansion the tree, which runs no directive, does not write.
+fn preprocessed_code(source: &str) -> Option<Vec<Span>> {
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", source.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     out.tokens
         .iter()
-        .inspect(|t| assert!(t.expansion.is_none(), "{source:?} uses a macro"))
-        .map(|t| t.span.span)
+        .map(|t| t.expansion.is_none().then_some(t.span.span))
         .collect()
 }
 
 /// Checks that the tree reads as code exactly the tokens the preprocessor gives for each of
-/// `sources`.
+/// `sources`, files of no macro use.
 fn assert_same_code(sources: &[&str]) {
     for source in sources {
-        assert_eq!(tree_code(source), preprocessed_code(source), "{source:?}");
+        let preprocessed = preprocessed_code(source);
+        assert!(preprocessed.is_some(), "{source:?} uses a macro");
+        assert_eq!(Some(tree_code(source)), preprocessed, "{source:?}");
     }
 }
 
@@ -106,6 +107,26 @@ fn a_hash_new_line_does_not_reach_is_code() {
     assert_same_code(&cases);
     assert_eq!(fte("#foo\nfloat f;\n"), Vec::<String>::new());
     assert_eq!(vanilla("#foo\nfloat f;\n"), ["#foo"]);
+}
+
+// spec FTEF-14.53: a `#` on a line a `\` joins to the line of code before it starts no
+// directive node; after a `//` comment's `\`, a blank line, or a directive whose text holds the
+// `\`, it does, as the preprocessor reads it
+#[test]
+fn a_joined_line_starts_no_directive_node() {
+    let cases = [
+        "float a; \\\n#define C 3\nfloat c;\n",
+        "float a; \\\r\n  #undef C\nfloat c;\n",
+        "float a; // c \\\n#define C 3\nfloat c;\n",
+        "float a; \\\n\n#define C 3\nfloat c;\n",
+        "#pragma p \\\n#define C 3\nfloat c;\n",
+    ];
+    assert_eq!(fte(cases[0]), Vec::<String>::new());
+    assert_eq!(fte(cases[1]), Vec::<String>::new());
+    assert_eq!(fte(cases[2]), ["#define C 3"]);
+    assert_eq!(fte(cases[3]), ["#define C 3"]);
+    assert_eq!(fte(cases[4]), ["#pragma p \\", "#define C 3"]);
+    assert_same_code(&cases);
 }
 
 // spec FTEF-14.51: a directive's name is matched by its first bytes and a `#` alone on its
@@ -280,7 +301,8 @@ fn text_across_a_directive_end_is_lexed_again() {
     assert_eq!(names, [b"d".to_vec(), b"e".to_vec()]);
 }
 
-/// A line of a file of directives and code with no macro use and no side a conditional skips.
+/// A line of a file of directives and code with no side a conditional skips, and no macro use
+/// but where a `\` line joins a `#define M` line to the code after `M` is defined (FTEF-14.53).
 fn line() -> impl Strategy<Value = &'static str> {
     prop_oneof![
         Just("float y;\n"),
@@ -313,7 +335,11 @@ proptest! {
         lines in proptest::collection::vec(line(), 0..24)
     ) {
         let source = lines.concat();
-        prop_assert_eq!(tree_code(&source), preprocessed_code(&source));
+        // A `\` line before a `#define M 1` line joins it to the code (FTEF-14.53), where a
+        // macro defined before it is used.
+        let preprocessed = preprocessed_code(&source);
+        prop_assume!(preprocessed.is_some());
+        prop_assert_eq!(Some(tree_code(&source)), preprocessed);
     }
 }
 

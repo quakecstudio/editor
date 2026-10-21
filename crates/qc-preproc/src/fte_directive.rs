@@ -82,22 +82,62 @@ pub(crate) enum TextStart {
 }
 
 /// Whether `QCC_PR_NewLine`, or `QCC_PR_Precompiler` at a file's start, reads the `#` at
-/// `hash` (FTEF-14.52): only spaces and tabs stand between it and a line ending before it, or,
-/// as `start` says, the text's start.
-pub(crate) fn starts_line(text: &[u8], hash: usize, start: TextStart) -> bool {
+/// `hash` (FTEF-14.52, FTEF-14.53): only spaces and tabs stand between it and a line ending
+/// before it that the code read from `from` does not pass over with a `\`, or, as `start` says,
+/// the text's start. `from` is where the code before the `#` is read from: the end of the token
+/// before it, or where reading went on after a directive.
+pub(crate) fn starts_line(text: &[u8], from: usize, hash: usize, start: TextStart) -> bool {
     let before = text.get(..hash).unwrap_or_default();
     let line = before
         .iter()
         .rposition(|&b| !blank(b))
         .map(|at| (at, before.get(at).copied()));
     match line {
-        Some((_, Some(b'\n' | b'\r'))) => true,
+        Some((_, Some(b'\n' | b'\r'))) => !joined(text, from, hash),
         Some(_) => false,
         None => match start {
             TextStart::Compiled => true,
             TextStart::Included => hash == 0,
             TextStart::Chunk => false,
         },
+    }
+}
+
+/// Whether the code read from `from` reaches the `#` at `hash` over a `\` and the line break
+/// after it, with no line ending the white-space reader passes after them: in code
+/// `QCC_PR_LexPunctuation` passes over both (`pr_file_p+=2;`, FTEF-13.2) and calls no
+/// `QCC_PR_NewLine`, so the `#` starts no directive (FTEF-14.53). Only white space, comments
+/// and such joins stand between `from` and `hash`.
+fn joined(text: &[u8], from: usize, hash: usize) -> bool {
+    let mut at = from;
+    let mut joined = false;
+    loop {
+        let Gap::Text(stop) = whitespace(text, at) else {
+            return false;
+        };
+        if stop >= hash {
+            return joined && stop == hash;
+        }
+        let Some(after) = join_end(text, stop) else {
+            return false;
+        };
+        joined = true;
+        at = after;
+    }
+}
+
+/// Where `QCC_PR_LexPunctuation` reads on after a `\` at `at` that a line break follows: after a
+/// CR LF (`pr_file_p+=3;`), or after a lone CR or LF (`pr_file_p+=2;`); `None` when no `\` and
+/// line break are at `at` (FTEF-13.2).
+fn join_end(text: &[u8], at: usize) -> Option<usize> {
+    if byte_at(text, at) != Some(b'\\') {
+        return None;
+    }
+    let next = |by: usize| text.get(at.saturating_add(by)).copied();
+    match (next(1), next(2)) {
+        (Some(b'\r'), Some(b'\n')) => Some(at.saturating_add(3)),
+        (Some(b'\r' | b'\n'), _) => Some(at.saturating_add(2)),
+        _ => None,
     }
 }
 
@@ -1243,7 +1283,9 @@ impl<L: Loader> Preprocessor<L> {
     /// `FTEQCC` and `__FTEQCC__` defined with empty bodies (`QCC_PR_DefineName("FTEQCC",
     /// NULL);`), which have no place in a file, so their definition is at no file's byte. Then
     /// `QCC_PR_CommandLinePrecompilerOptions` adds the module's include directories, its `-I`
-    /// options, with `QCC_PR_AddIncludePath` (FTEF-14.49).
+    /// options, with `QCC_PR_AddIncludePath` (FTEF-14.49). Under GMQCC, whose `ftepp_create`
+    /// defines neither, as the C preprocessor Xonotic is read with does not, the two are not
+    /// defined (PRJ-5.15).
     pub(crate) fn fte_default_properties(&mut self) {
         self.fte = FteState {
             ifs: self.fte.ifs,
@@ -1252,7 +1294,11 @@ impl<L: Loader> Preprocessor<L> {
         for dir in &self.command_line_dirs {
             self.fte.add_include_dir(dir);
         }
-        for name in ["FTEQCC", "__FTEQCC__"] {
+        let names: &[&str] = match self.dialect {
+            Dialect::Fteqcc => &["FTEQCC", "__FTEQCC__"],
+            Dialect::Gmqcc | Dialect::Vanilla => &[],
+        };
+        for &name in names {
             let mac = Macro {
                 params: None,
                 variadic: Variadic::No,

@@ -18,7 +18,10 @@ use crate::{FileId, Relexed, merge_errors};
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
 /// `text` ends: the offset the preprocessor reads on from after it, with nothing run. `None`
 /// when the `#` starts no directive: `QCC_PR_NewLine` does not reach it (FTEF-14.52), as when a
-/// `/* */` comment or other text is before it on its line, or its name matches no directive.
+/// `/* */` comment or other text is before it on its line or the code read from `from` passes
+/// over the line break before it with a `\` (FTEF-14.53), or its name matches no directive.
+/// `from` is where the code before the `#` is read from: the end of the token before it, or
+/// where reading went on after a directive.
 ///
 /// The file is read as one being compiled (`QCC_PR_CompileFile`), so a `#` on its first line
 /// after spaces and tabs starts a directive. A directive's line ends where
@@ -26,10 +29,10 @@ use crate::{FileId, Relexed, merge_errors};
 /// `#define`'s body (FTEF-14.24), an `#if` or `#elif` test (FTEF-14.33, FTEF-14.37), and so on.
 /// A `#pragma` ends at its line break (FTEF-14.43), an `#if` with no white space after its name,
 /// as `#iffy`, after its word (FTEF-14.36), and an `#eof`, after which FTEQCC reads nothing, at
-/// its line break. Implements FTEF-14.51.
+/// its line break. Implements FTEF-14.51 and FTEF-14.53.
 #[must_use]
-pub fn fte_directive_end(text: &[u8], hash: usize) -> Option<usize> {
-    if text.get(hash) != Some(&b'#') || !starts_line(text, hash, TextStart::Compiled) {
+pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize> {
+    if text.get(hash) != Some(&b'#') || !starts_line(text, from, hash, TextStart::Compiled) {
         return None;
     }
     let line = |from: usize| skip_to_end_of_line(text, from, Junk::Ignored).at;

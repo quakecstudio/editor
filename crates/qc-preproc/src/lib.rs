@@ -272,6 +272,9 @@ struct TokenStream {
     tokens: Vec<Token>,
     pos: usize,
     diagnostics: Vec<qc_lexer::Diagnostic>,
+    /// Where reading last went on after text read otherwise than as these tokens, a directive's
+    /// or a use's arguments ([`Self::resume_at`]); 0 before it has.
+    read_on: usize,
 }
 
 /// The tokens and lexical errors of the bytes `range` of `text`, their spans from the range's
@@ -343,7 +346,20 @@ impl TokenStream {
             tokens: lexed.tokens,
             pos: 0,
             diagnostics: lexed.diagnostics,
+            read_on: 0,
         }
+    }
+
+    /// Where the code before the token at `hash`, the next to be read, is read from: the end of
+    /// the token before it, or where reading went on after a directive or a use's arguments
+    /// when that is later (FTEF-14.53).
+    fn code_start(&self, hash: usize) -> usize {
+        let token_end = self
+            .pos
+            .checked_sub(1)
+            .and_then(|before| self.tokens.get(before))
+            .map_or(0, |token| token.span.end);
+        token_end.max(self.read_on).min(hash)
     }
 
     /// Reading goes on at the byte `offset` of `text`, the text these tokens were lexed from,
@@ -356,6 +372,7 @@ impl TokenStream {
     /// ([`Relexed`]), so a file of many such uses is not lexed again whole for each.
     /// Returns how many bytes were lexed again.
     fn resume_at(&mut self, text: &[u8], offset: usize, dialect: Dialect) -> usize {
+        self.read_on = offset;
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         // The tokens from `read` on are those not read yet, or read again from here.
         let read = self.pos.min(next);
@@ -727,10 +744,10 @@ impl<L: Loader> Preprocessor<L> {
     /// Starts FTEQCC's second autoprototyping pass, `-Fautoproto` (FTE-22.3, FTE-22.4): every
     /// `#define` is forgotten, as FTEQCC's `QCC_SetDefaultProperties` makes a new macro table
     /// between the passes, and the frame macros of the first pass are kept, since nothing
-    /// between the passes clears them. In an FTEQCC dialect it also defines `FTEQCC` and
-    /// `__FTEQCC__` again, clears the include directories but the module's, the `#pragma once`
-    /// marks and F303's setting (`QCC_PR_CloseProcessor`), keeping the count of open sides
-    /// (FTEF-14.48, FTEF-14.49).
+    /// between the passes clears them. In an FTEQCC dialect it also clears the include
+    /// directories but the module's, the `#pragma once` marks and F303's setting
+    /// (`QCC_PR_CloseProcessor`), keeping the count of open sides, and under FTEQCC, not GMQCC,
+    /// defines `FTEQCC` and `__FTEQCC__` again (FTEF-14.48, FTEF-14.49, PRJ-5.15).
     /// The files are then preprocessed again in order.
     pub fn restart(&mut self) {
         self.macros.clear();
@@ -741,8 +758,8 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Sets the dialect this preprocessor accepts (PRJ-2.8). In an FTEQCC dialect the
     /// FTEQCC `#pragma` directive (FTE-16) is accepted rather than reported as an unknown
-    /// directive (QC-9.9), and `FTEQCC` and `__FTEQCC__` are defined (FTEF-14.48). Vanilla is
-    /// the default.
+    /// directive (QC-9.9), and under FTEQCC, not GMQCC, `FTEQCC` and `__FTEQCC__` are defined
+    /// (FTEF-14.48, PRJ-5.15). Vanilla is the default.
     #[must_use]
     pub fn with_dialect(mut self, dialect: Dialect) -> Self {
         self.dialect = dialect;
@@ -988,15 +1005,18 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Under FTEQCC, the directive `token` starts in the file `file` the top cursor reads, when
-    /// it is a `#` that starts a line there (FTEF-14.52), run; where reading goes on after it.
+    /// it is a `#` that starts a line there (FTEF-14.52, FTEF-14.53), run; where reading goes on
+    /// after it.
     fn fte_file_directive(&mut self, run: &mut Run, file: FileId, token: &Token) -> Option<Resume> {
         if token.kind != TokenKind::Punct(Punct::Hash) {
             return None;
         }
-        let start = run.cursors.last()?.start;
-        let text = Rc::clone(&self.sources.file(file)?.text);
+        let cursor = run.cursors.last()?;
+        let start = cursor.start;
         let hash = token.span.start;
-        if !fte_directive::starts_line(&text, hash, start) {
+        let from = cursor.stream.code_start(hash);
+        let text = Rc::clone(&self.sources.file(file)?.text);
+        if !fte_directive::starts_line(&text, from, hash, start) {
             return None;
         }
         self.fte_directive(run, &Bytes::File(file, text), hash, Position::Line)

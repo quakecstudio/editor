@@ -1133,6 +1133,23 @@ profile the preprocessor reads them as FTEQCC does.
   initialiser (FTE-23.10), the parser's other errors elsewhere. Each directive's operand is read
   from its name's end as its own name's length gives it (`pr_file_p = directive+5;` for
   `undef`), so `#undefine N` undefines `ine`.
+- **FTEF-14.53** In code a `\` directly before a line break joins the lines (FTEF-13.2) with no
+  `QCC_PR_NewLine`: `QCC_PR_LexPunctuation` passes over both (`else if ((unsigned char)*pr_file_p ==
+  (unsigned char)'\\' && (pr_file_p[1] == '\r' || pr_file_p[1] == '\n')) pr_file_p+=2;`, and
+  `pr_file_p+=3;` for a CR LF) and calls `QCC_PR_Lex()`, whose white-space reader meets no line
+  ending before the next line's first byte, so a `#` there, after spaces and tabs too, is no
+  directive (FTEF-14.52) but code: the pinned FTEQCC refuses `float g; \`, a line break and `#define
+  N 1`, `#undef N` or `#include "b.qh"` ("Explicit precompiler usage when not defined define", and
+  `undef` or `include`), and with `#define undef 6;` and `#define N`, `float g = \`, a line break,
+  `#undef N` and `#ifdef N` takes the `#ifdef`'s side. A `\` in a `//` comment joins nothing, as the
+  white-space reader ends the comment at its line break and calls `QCC_PR_NewLine`; nor does a `\`
+  that another line ending follows before the `#`, which the white-space reader passes, nor one in a
+  directive's text, after which reading goes on at or after the line break (FTEF-14.35, FTEF-14.43).
+  The rule holds wherever FTEQCC lexes code: a file the preprocessor reads, a macro's expansion,
+  whose text holds a `\` and a line break only from an argument (FTEF-14.22, FTEF-14.24), so with
+  `#define M(x) x`, `void() f = M(#5 \`, a line break, `#define Y 6` and `);` is refused, and the
+  project graph's code (PRJ-5.13); the syntax tree makes no directive node of such a `#`
+  (FTEF-14.51).
 
 ## FTEF-15 Declarations
 

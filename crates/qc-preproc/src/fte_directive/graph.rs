@@ -240,8 +240,8 @@ impl FteFileReader {
     }
 
     /// Reads the next token of the code as the preprocessor reads it (`Preprocessor::next_item`):
-    /// a `#` that starts a line, as FTEF-14.52 says, starts a directive, which is run; any other
-    /// token is passed over.
+    /// a `#` that starts a line, as FTEF-14.52 and FTEF-14.53 say, starts a directive, which is
+    /// run; any other token is passed over.
     fn code(&mut self, state: &mut ModuleState) -> Option<FteEvent> {
         if let Some(at) = self.resume.take() {
             self.stream.resume_at(&self.text, at, Dialect::Fteqcc);
@@ -252,7 +252,7 @@ impl FteFileReader {
         };
         let (hash, end) = (token.span.start, token.span.end);
         let directive = (token.kind == TokenKind::Punct(Punct::Hash)
-            && starts_line(&self.text, hash, self.start))
+            && starts_line(&self.text, self.stream.code_start(hash), hash, self.start))
         .then(|| read(&self.text, hash))
         .flatten();
         let Some(directive) = directive else {

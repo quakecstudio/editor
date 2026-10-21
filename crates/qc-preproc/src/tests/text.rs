@@ -803,6 +803,7 @@ fn whole_rest(
         tokens,
         pos: 0,
         diagnostics,
+        read_on: offset,
     }
 }
 

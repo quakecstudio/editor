@@ -516,6 +516,24 @@ const INCLUDE_LISTS: &[&str] = &[
     "void() f = #5;\n#includelist\n",
 ];
 
+/// Lines of code a `\` joins to the next, which holds a directive's text, read as code with no
+/// `QCC_PR_NewLine` (FTEF-14.53): refused where the text's name is no macro, taken as code where
+/// it is one, and a directive after a `//` comment's `\` or a line ending after the join.
+const JOINED: &[&str] = &[
+    "float g; \\\n#define N 1\nvoid() f = #5;\n",
+    "float g; \\\n#undef N\nvoid() f = #5;\n",
+    "float g; \\\r\n#define N 1\nvoid() f = #5;\n",
+    "float g; \\\r#undef N\nvoid() f = #5;\n",
+    "float g; \\\n  #undef N\nvoid() f = #5;\n",
+    "#define undef 6;\n#define N\nfloat g = \\\n#undef N\n#ifdef N\nvoid() f = #5;\n#endif\n",
+    "#define undef 6;\n#define N\nfloat g = \\\r\n#undef N\n#ifdef N\nvoid() f = #5;\n#endif\n",
+    "#define define 6; float\nfloat g = \\\n#define N;\n#ifndef N\nvoid() f = #5;\n#endif\n",
+    "#define include 6; string s =\nfloat g = \\\n#include \"b.qh\";\nvoid() f = #5;\n",
+    "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
+    "float g; // c \\\n#define N #5\nvoid() f = N;\n",
+    "float g; \\\n\n#define N #5\nvoid() f = N;\n",
+];
+
 /// The file a nested `#include` reaches and one it would reach beside the including file.
 const NESTED: &str = "#include \"x/b.qh\"\n";
 
@@ -751,6 +769,9 @@ fn include_cases() -> Vec<Case> {
         }
         cases.push(case);
     }
+    // FTEF-14.53: an `#include` a `\` joins to a line of code is code, which FTEQCC refuses.
+    let joined = "float g; \\\n#include \"b.qh\"\n";
+    cases.push(project_case("t.qc", joined, &[("b.qh", BIND.to_owned())]));
     let includer = format!("#include \"b.qh\"\n{BIND}");
     for (snippet, _) in SNIPPETS {
         for indent in ["", "  "] {
@@ -835,6 +856,11 @@ const GRAPH_FORMS: &[&str] = &[
     "#pragma unknown\n@@",
     "#pragma DONT_COMPILE_THIS_FILE\n@@",
     "#pragmas once\n@@",
+    // FTEF-14.53: a `\` that joins a line of code to the next leaves its `#` code.
+    "#define undef 6;\n#define N\nfloat g = \\\n#undef N\n#ifdef N\n@@\n#endif",
+    "#define undef 6;\n#define N\nfloat g = \\\r\n#undef N\n#ifdef N\n@@\n#endif",
+    "#define define 6; float\nfloat g = \\\n#define N;\n#ifndef N\n@@\n#endif",
+    "float g; // c \\\n@@",
     // PRJ-5.13: code passed over a token at a time.
     "string s = \"// \\\" #\";\n@@",
     "string s = R\"x(\n@@\n)x\";",
@@ -892,8 +918,14 @@ const GRAPH_PROJECTS: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// Programs whose `#include` a `\` joins to a line of code before it, which so brings in no
+/// file (FTEF-14.53, PRJ-5.13).
+const JOINED_INCLUDES: &[&str] =
+    &["#define include 6; string s =\nfloat g = \\\n#include \"b.qh\";\n"];
+
 /// The project graph's cases (PRJ-5.13): each graph form with each line, each carried form with
-/// the `#include`, each list, and each project, the file that binds `f` beside them.
+/// the `#include`, each joined `#include`, each list, and each project, the file that binds `f`
+/// beside them.
 pub(super) fn graph_cases() -> Vec<Case> {
     let mut cases = Vec::new();
     for form in GRAPH_FORMS {
@@ -906,6 +938,9 @@ pub(super) fn graph_cases() -> Vec<Case> {
         let (line, name) = GRAPH_LINES[0];
         let source = format!("{}\n", form.replace(HERE, line));
         cases.push(project_case("t.qc", &source, &[(name, BIND.to_owned())]));
+    }
+    for source in JOINED_INCLUDES {
+        cases.push(project_case("t.qc", source, &[("b.qh", BIND.to_owned())]));
     }
     for list in GRAPH_LISTS {
         let files = [("b.qh", BIND.to_owned()), ("l.qc", BIND.to_owned())];
@@ -933,6 +968,7 @@ pub(super) fn cases() -> Vec<Case> {
         line_pragma_cases(),
         pragma_cases(),
         INCLUDE_LISTS.iter().map(|&s| s.to_owned()).collect(),
+        JOINED.iter().map(|&s| s.to_owned()).collect(),
     ];
     let mut cases: Vec<Case> = sources
         .into_iter()

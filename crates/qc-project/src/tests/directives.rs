@@ -690,8 +690,84 @@ fn fteqcc_files_are_read_with_the_directive_reader() {
     ];
     assert_eq!(after_t(&predefined, fte), ["b.qh"]);
     assert!(after_t(&predefined, vanilla).is_empty());
+}
+
+// spec FTEF-14.53: under FTEQCC and GMQCC an `#include` on a line a `\` joins to a line of code
+// brings in no file, and one after a `//` comment's `\` or a blank line does
+#[test]
+fn joined_lines_bring_in_no_file() {
+    for dialect in [qc_lexer::Dialect::Fteqcc, qc_lexer::Dialect::Gmqcc] {
+        for (text, read) in [
+            ("float g; \\\n#include \"b.qh\"\n", false),
+            ("float g; \\\r\n  #include \"b.qh\"\n", false),
+            ("float g; \\\r#include \"b.qh\"\n", false),
+            (
+                "#define N\nfloat g = \\\n#undef N\n#ifdef N\n#include \"b.qh\"\n#endif\n",
+                true,
+            ),
+            ("float g; // c \\\n#include \"b.qh\"\n", true),
+            ("float g; \\\n\n#include \"b.qh\"\n", true),
+        ] {
+            let files = [("t.qc", text), ("b.qh", "")];
+            assert_eq!(after_t(&files, dialect) == ["b.qh"], read, "{text:?}");
+        }
+    }
+}
+
+/// Whether the preprocessor of `dialect` compiling `t.qc` with `files` beside it reads `b.qh`,
+/// to which `files` gives the one name `marker`.
+fn preprocessor_reads_b(files: &[(&str, &str)], dialect: qc_lexer::Dialect) -> bool {
+    let mut pp = qc_preproc::Preprocessor::new(super::loader(files)).with_dialect(dialect);
+    let out = pp.preprocess_file(std::path::Path::new("t.qc")).unwrap();
+    out.tokens
+        .iter()
+        .any(|t| t.kind == qc_lexer::TokenKind::Name("marker".to_owned()))
+}
+
+// spec PRJ-5.15: under GMQCC the graph reads with the preprocessor's directive reader, so a
+// carried line hides an `#include` and names match by their first bytes, but defines neither
+// `FTEQCC` nor `__FTEQCC__`, as GMQCC and the C preprocessor do not; the graph lists `b.qh`
+// exactly when the preprocessor reads it
+#[test]
+fn gmqcc_files_are_read_as_the_preprocessor_reads_them() {
     let gmqcc = qc_lexer::Dialect::Gmqcc;
-    assert!(after_t(&prefixed, gmqcc).is_empty());
+    let fte = qc_lexer::Dialect::Fteqcc;
+    let cases: [(&str, bool); 8] = [
+        ("#ifdef FTEQCC\n#include \"b.qh\"\n#endif\n", false),
+        ("#ifdef __FTEQCC__\n#include \"b.qh\"\n#endif\n", false),
+        ("#ifndef FTEQCC\n#include \"b.qh\"\n#endif\n", true),
+        ("#undef N // c \\\n#include \"b.qh\"\n", false),
+        (
+            "#ifdef FTEQCC\n#else // c \\\n#include \"b.qh\"\n#endif\n",
+            false,
+        ),
+        ("#defined Q 1\n#ifdef Q\n#include \"b.qh\"\n#endif\n", true),
+        ("#ifdef GMQCC\n#include \"b.qh\"\n#endif\n", false),
+        ("#include \"b.qh\"\n", true),
+    ];
+    for (text, read) in cases {
+        let files = [("t.qc", text), ("b.qh", "marker\n")];
+        let listed = after_t(&files, gmqcc) == ["b.qh"];
+        assert_eq!(listed, read, "{text:?}");
+        assert_eq!(preprocessor_reads_b(&files, gmqcc), read, "{text:?}");
+    }
+    // FTEQCC defines its own name; GMQCC's is a module's define.
+    let predefined = [
+        ("t.qc", "#ifdef FTEQCC\n#include \"b.qh\"\n#endif\n"),
+        ("b.qh", "marker\n"),
+    ];
+    assert!(preprocessor_reads_b(&predefined, fte));
+    let graph = build(&GraphSpec {
+        files: &[
+            ("progs.src", "progs.dat\nt.qc\n"),
+            ("t.qc", "#ifdef GMQCC\n#include \"b.qh\"\n#endif\n"),
+            ("b.qh", ""),
+        ],
+        defines: &["GMQCC"],
+        dialect: gmqcc,
+        ..GraphSpec::default()
+    });
+    assert_eq!(names(&graph), ["t.qc", "b.qh"]);
 }
 
 // spec PRJ-5.13: under FTEQCC one count of open sides runs from file to file, so an `#else` in

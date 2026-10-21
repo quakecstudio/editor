@@ -28,9 +28,11 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 `#include` beside the file being compiled and then in the include directories, the module's
 (FTEQCC's `-I`, FTEF-14.49) first; and runs the pragmas that change what is read, `line`, `file`,
 `once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
-(FTEF-14.33 to FTEF-14.47). Under GMQCC an `#include` is tried beside the file that holds it
-first (PRJ-5.12). In the vanilla dialect an `#include` not beside the file that holds it is
-looked for in the module's include directories (QC-9.20). `fte_directive/graph.rs` gives the
+(FTEF-14.33 to FTEF-14.47); a `#` after a `\` that joins a line of code to the next starts
+none (FTEF-14.53). Under GMQCC an `#include` is tried beside the file that holds it first
+(PRJ-5.12), and `FTEQCC` and `__FTEQCC__` are not defined (PRJ-5.15). In the vanilla dialect
+an `#include` not beside the file that holds it is looked for in the module's include
+directories (QC-9.20). `fte_directive/graph.rs` gives the
 project graph the same reader (`FteFileReader`, with `ModuleState` for what a module keeps from
 file to file): it runs the directives of an FTEQCC file as the preprocessor does, reads the
 code between them as the preprocessor does, a token of the lexer at a time, and says which files
@@ -72,7 +74,7 @@ FTEF-14.51).
   PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md). A readiness run attributes only
   these sections to the crate, and every active statement of each is cited by a test here.
 - **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`), and the graph's
-  reader of an FTEQCC file, PRJ-5.13 and PRJ-5.14 (`FteFileReader`), in
+  reader of an FTEQCC or GMQCC file, PRJ-5.13 to PRJ-5.15 (`FteFileReader`), in
   [`project-file.md`](../../docs/spec/project-file.md).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes

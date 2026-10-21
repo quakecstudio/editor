@@ -9,7 +9,7 @@ use crate::{fte_directive_end, relex_from};
 /// The text of the directive at the start of `text`, `None` when there is none.
 fn directive(text: &str) -> Option<&str> {
     let hash = text.find('#')?;
-    let end = fte_directive_end(text.as_bytes(), hash)?;
+    let end = fte_directive_end(text.as_bytes(), 0, hash)?;
     text.get(hash..end)
 }
 
@@ -69,10 +69,22 @@ fn only_a_hash_new_line_reaches_starts_a_directive() {
     for text in ["/* */ #define X", "x #define X", "#foo", "#endlist", "x"] {
         assert_eq!(directive(text), None, "{text:?}");
     }
-    assert_eq!(fte_directive_end(b"x", 0), None);
+    assert_eq!(fte_directive_end(b"x", 0, 0), None);
     assert_eq!(directive(" \t#endif\nz"), Some("#endif"));
     assert_eq!(directive("x\n\t #endif\nz"), Some("#endif"));
     assert_eq!(directive("x\r#endif\nz"), Some("#endif"));
+}
+
+// spec FTEF-14.53: a `#` on a line a `\` joins to the code before it starts no directive node;
+// after a `//` comment's `\`, or from where reading went on after a directive, it does
+#[test]
+fn a_joined_line_starts_no_directive_node() {
+    let text = b"float g; \\\n#define N 1\n";
+    assert_eq!(fte_directive_end(text, 8, 11), None);
+    let text = b"float g; // c \\\n#define N 1\n";
+    assert_eq!(fte_directive_end(text, 8, 16), Some(27));
+    let text = b"#pragma p \\\n#define N 1\n";
+    assert_eq!(fte_directive_end(text, 11, 12), Some(23));
 }
 
 /// The spans of `lexed`'s tokens and the starts of its errors.

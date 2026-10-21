@@ -13,7 +13,8 @@ the pragmas `sourcefile`, `progs_dat`, `includedir` and `once`. Everything else,
 errors in a directive's form, is the preprocessor's work (`qc-preproc`). Under the FTEQCC
 dialect each QuakeC file is read with the preprocessor's directive reader
 (`qc_preproc::FteFileReader`), so the graph meets the directives where FTEQCC meets them
-(PRJ-5.13, PRJ-5.14).
+(PRJ-5.13, PRJ-5.14), and under GMQCC with the same reader, as the preprocessor reads a GMQCC
+file, with no `FTEQCC` defined (PRJ-5.15).
 
 Files open as the host file system opens them, as FTEQCC and id's `qcc` do, and a name whose
 case differs from the file it opened is warning W0402 on every OS, so a project that would
