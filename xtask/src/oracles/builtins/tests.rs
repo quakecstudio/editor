@@ -17,8 +17,9 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, Encoding, FIXTURE, Outcome, Project, Tally, ULong, bound, cases, check, check_where,
-    compare, expected_difference, graph_cases, graph_differences, oracle, profile, read_fixture,
+    Case, Encoding, FIXTURE, Outcome, ProgsSrc, Project, Tally, ULong, bound, cases, check,
+    check_where, compare, expected_difference, graph_cases, graph_differences, oracle, profile,
+    read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
@@ -67,12 +68,55 @@ fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let differ = graph_differences(&recorded, ULong::Bits64);
     assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
-    assert_eq!(cases.len(), 181);
+    assert_eq!(cases.len(), 206);
     let read = cases
         .iter()
         .filter(|case| matches!(recorded[&case.key()], Outcome::Bound { .. }))
         .count();
-    assert!(read > 100 && read < 160, "{read} of {} read", cases.len());
+    assert!(read > 100 && read < 185, "{read} of {} read", cases.len());
+}
+
+// spec PRJ-4.6: the graph cases hold `progs.src` files of both forms in each wide encoding, with
+// NULs and with a UTF-8 byte order mark, each of which the recorded FTEQCC reads `b.qh` from
+#[test]
+fn the_graph_cases_hold_progs_src_files_of_their_own() {
+    let recorded = read_fixture(&root()).unwrap();
+    let own: Vec<Case> = graph_cases()
+        .into_iter()
+        .filter(|case| case.project.as_ref().is_some_and(|p| p.progs.is_some()))
+        .collect();
+    assert_eq!(own.len(), 25);
+    for case in &own {
+        assert_eq!(recorded[&case.key()], bound_as(5, "f"), "{case:?}");
+    }
+    let progs = |case: &Case| case.project.as_ref().unwrap().progs.clone().unwrap();
+    for encoding in [
+        Encoding::Utf16Le,
+        Encoding::Utf16Be,
+        Encoding::Utf32Le,
+        Encoding::Utf32Be,
+    ] {
+        for text in ["#include \"b.qh\"\n", "progs.dat\nb.qh\n"] {
+            let want = ProgsSrc {
+                text: text.to_owned(),
+                encoding,
+            };
+            assert!(own.iter().any(|case| progs(case) == want), "{want:?}");
+        }
+    }
+    let nul = ProgsSrc {
+        text: "progs.dat\nx.qc\0b.qh\n".to_owned(),
+        encoding: Encoding::Utf8,
+    };
+    assert!(own.iter().any(|case| progs(case) == nul));
+    // A case's own `progs.src` is in its key, and the oracle and the graph are given its bytes.
+    let case = own.iter().find(|case| progs(case) == nul).unwrap();
+    assert!(case.key().ends_with("|progs.src=progs.dat\nx.qc\0b.qh\n"));
+    assert_eq!(case.progs_src_bytes(), b"progs.dat\nx.qc\0b.qh\n");
+    assert_eq!(
+        fte("void() f = #5;\n").progs_src_bytes(),
+        b"progs.dat\nt.qc\n"
+    );
 }
 
 // spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle refused
@@ -421,7 +465,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1409);
+    assert_eq!(family.len(), 1429);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -432,6 +476,7 @@ fn the_cross_product_holds_the_directive_family() {
         "#pragma warning disable F303\n#define D \\\n#define Y #5 \\\nY\nvoid() f = D;\n",
         "#pragma line 0x10\nvoid() f = :__LINESTR__;\n",
         "#includelist\n#define N #5\n#endlist\nvoid() f = N;\n",
+        "$framevalue -5\n$frame a\nfloat x = $a;\nvoid() f = #5;\n",
     ] {
         assert!(family.contains(&fte(source)), "{source:?}");
     }
@@ -467,6 +512,7 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
         compiled: "t.qc".to_owned(),
         files: vec![("b.qh".to_owned(), "#datafile \"x\"\n".to_owned())],
         include_dirs: Vec::new(),
+        progs: None,
     });
     let plain = fte("void() f = #5;\n");
     let indented = fte("void() f = #5;\n \t#eofx\n");
@@ -477,6 +523,7 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
         compiled: "t.qc".to_owned(),
         files: vec![("b.qh".to_owned(), "zz\n#eof\n".to_owned())],
         include_dirs: Vec::new(),
+        progs: None,
     });
     for (case, errors, oracle, expected) in [
         (&eof, &[][..], &rejected, Some("FTEF-14.47")),
@@ -824,8 +871,16 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             include_dirs.len().saturating_add(usize::from(fteqcc))
         );
         assert!(fteqcc || include_dirs.is_empty());
-        let list = fs::read_to_string(dir.join("progs.src")).unwrap();
-        let compiled = list.strip_prefix("progs.dat\n").unwrap().trim_end();
+        let (list, list_encoding) = decoded(&fs::read(dir.join("progs.src")).unwrap());
+        let listed = list
+            .strip_prefix("progs.dat\n")
+            .and_then(|rest| rest.strip_suffix('\n'))
+            .filter(|name| !name.contains(['\n', '\0']) && list_encoding == Encoding::Utf8);
+        let progs = listed.is_none().then(|| ProgsSrc {
+            text: list.clone(),
+            encoding: list_encoding,
+        });
+        let compiled = listed.unwrap_or("t.qc");
         assert!(!dir.join("progs.dat").exists());
         let dialect = if fteqcc {
             Dialect::Fteqcc
@@ -841,6 +896,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             compiled: compiled.to_owned(),
             files,
             include_dirs,
+            progs,
         });
         let case = Case {
             dialect,
@@ -1190,4 +1246,63 @@ fn the_tally_prints_each_count() {
         tally.to_string(),
         "3 agree with the profile, 2 differ as QC-27.9 says, 1 differ"
     );
+}
+
+// spec FTEF-18.30: the recorded FTEQCC refuses each frame macro numbered below 0 where it is
+// expanded, a `$framerestore` of one included, and binds `f` after one numbered 0 or more
+#[test]
+fn a_negative_frame_macro_is_refused_by_the_recorded_fteqcc() {
+    let recorded = read_fixture(&root()).unwrap();
+    let outcome = |source: &str| recorded[&fte(source).key()].clone();
+    let value = |v: &str| {
+        outcome(&format!(
+            "$framevalue {v}\n$frame a\nfloat x = $a;\nvoid() f = #5;\n"
+        ))
+    };
+    for refused in [
+        "-1",
+        "-5",
+        "-2147483648",
+        "2147483648",
+        "4294967295",
+        "-99999999999",
+    ] {
+        assert_eq!(value(refused), Outcome::Rejected, "{refused}");
+    }
+    for bound in ["0", "5", "2147483647", "4294967296", "99999999999"] {
+        assert_eq!(value(bound), bound_as(5, "f"), "{bound}");
+    }
+    let restore = "$framevalue -4\n$frame a\n$framevalue 7\n$framerestore a\n$frame d\n";
+    assert_eq!(
+        outcome(&format!("{restore}void() f = #5;\n")),
+        Outcome::Rejected
+    );
+    let counted = "$framevalue -2\n$frame a b c\nfloat x = $c;\nvoid() f = #5;\n";
+    assert_eq!(outcome(counted), bound_as(5, "f"));
+}
+
+// spec FTEF-14.55: where `long` is 32 bits `$framevalue 2147483648` is `INT_MAX`, a frame FTEQCC
+// expands, so an LLP64 oracle may bind `f` where the profile refuses the negative frame macro
+// spec FTEF-18.30: of LP64's -2147483648; a number both read alike is no excuse
+#[test]
+fn a_negative_frame_value_may_differ_only_where_long_is_32_bits() {
+    let frame = |value: &str| {
+        fte(&format!(
+            "$framevalue {value}\n$frame a\nfloat x = $a;\nvoid() f = #5;\n"
+        ))
+    };
+    let (ours, errors) = profile(&frame("2147483648"));
+    assert_eq!(ours, Outcome::Rejected);
+    let windows = bound_as(5, "f");
+    for (value, ulong, expected) in [
+        ("2147483648", ULong::Bits32, Some("FTEF-14.55")),
+        ("2147483648", ULong::Bits64, None),
+        ("-5", ULong::Bits32, None),
+    ] {
+        assert_eq!(
+            expected_difference(&frame(value), &ours, &errors, &windows, ulong),
+            expected,
+            "{value} {ulong:?}"
+        );
+    }
 }

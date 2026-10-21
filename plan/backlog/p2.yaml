@@ -1658,6 +1658,8 @@ issues:
   - P2-110
   - P2-111
   - P2-112
+  - P2-113
+  - P2-114
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2223,3 +2225,43 @@ issues:
   - 'Under an FTEQCC dialect the project graph reads a `progs.src` written as UTF-16 or UTF-32 after its mark, and one with NUL bytes, in the form and with the words the pinned FTEQCC reads, recorded as cases of `cargo xtask oracles builtins` or of the project graph''s differential; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-project
+- key: P2-113
+  title: End a vanilla progs.src at its first NUL byte as id's qcc does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    Under the vanilla dialect the project graph (crates/qc-project/src/graph.rs) reads a list-form `progs.src` past a NUL byte, as white space between two words, where id's qcc ends its text there: `progs.dat`, a NUL, `a.qc` and a line break lists `a.qc` in the graph and no file in id's qcc.
+  environment: |
+    feat/534-fteqcc-loader-followups; found while writing the PRJ-4.6 tests of P2-112 (crates/qc-project/src/tests/forms.rs)
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `progs_text`, `source_form` and the list-form `Cursor`) and docs/spec/language.md QC-23 or docs/spec/project-file.md PRJ-4: id''s qcc reads `progs.src` with `LoadFile` (`qcc/cmdlib.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: `buffer = SafeMalloc (length+1); ((byte *)buffer)[length] = 0;`) and splits it with `COM_Parse`, which stops at a NUL (`if (c == 0) { com_eof = true; return NULL; }`), so its list ends at the first NUL byte. Under the vanilla dialect the project graph reads on past one: while working P2-112, `progs.dat`, a NUL and `a.qc` listed `a.qc`'
+  acceptance:
+  - 'Under the vanilla dialect the project graph tells the form of, and reads the list of, a `progs.src` only to its first NUL byte, as id''s qcc does, recorded as a case of the vanilla graph''s differential or a recorded run of id''s qcc; the FTEQCC dialect keeps PRJ-4.6; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-114
+  title: Pass over a progs.src first line that starts with #! as FTEQCC does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`), crates/qc-preproc (the compiled root of a source-form module) and docs/spec/project-file.md PRJ-4: FTEQCC''s `QCC_main` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) passes over the first line of the module''s source when it starts with `#!` (`if (qccmsrc[0] == ''#'' && qccmsrc[1] == ''!'') qccmsrc = strchr(qccmsrc, ''\n'');`, "ignore the first line if it starts with a #! for unix scripts"), before `QCC_COM_Parse` reads the first word that picks the form. The project graph reads that line''s `#` as the start of the source form and the preprocessor reads it as code'
+  acceptance:
+  - 'Under the FTEQCC dialect a `progs.src` whose first line starts with `#!` is read in the form, and with the files, the pinned FTEQCC reads it in, list form and source form alike, recorded as cases of `cargo xtask oracles builtins`; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+  - cargo test -p qc-preproc

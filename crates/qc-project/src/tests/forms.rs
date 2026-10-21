@@ -3,10 +3,12 @@
 //! The two forms of `progs.src` and the shape of the graph (PRJ-4, PRJ-6, QC-23).
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use qc_lexer::Dialect;
 
 use super::{GraphSpec, build, diags, names, source, vias};
-use crate::{Form, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via};
+use crate::{Form, MemoryLoader, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via, build_graph};
 
 // spec QC-23.1: the first token names the output, each later one a source file
 // spec PRJ-4.3: in list form the output and the files are resolved against the progs.src's directory
@@ -153,6 +155,97 @@ fn form_comes_from_the_first_token() {
             });
             assert_eq!(graph.form, form, "{src}: {text:?}");
         }
+    }
+}
+
+/// The graph of a module whose `progs.src` is `progs`, beside an empty `a.qc` and `b.qc`, in
+/// `dialect`.
+fn loaded_graph(progs: &[u8], dialect: Dialect) -> crate::FileGraph {
+    let mut loader = MemoryLoader::new();
+    loader.insert("progs.src", progs);
+    loader.insert("a.qc", b"".as_slice());
+    loader.insert("b.qc", b"".as_slice());
+    build_graph(&mut loader, Path::new("progs.src"), &[], &[], dialect)
+}
+
+/// `text` as UTF-16LE, UTF-16BE, UTF-32LE and UTF-32BE, each after its byte order mark.
+fn wide(text: &str) -> [Vec<u8>; 4] {
+    let utf16 = || text.encode_utf16();
+    let utf32 = || text.chars().map(u32::from);
+    [
+        [0xff, 0xfe]
+            .into_iter()
+            .chain(utf16().flat_map(u16::to_le_bytes))
+            .collect(),
+        [0xfe, 0xff]
+            .into_iter()
+            .chain(utf16().flat_map(u16::to_be_bytes))
+            .collect(),
+        [0xff, 0xfe, 0, 0]
+            .into_iter()
+            .chain(utf32().flat_map(u32::to_le_bytes))
+            .collect(),
+        [0, 0, 0xfe, 0xff]
+            .into_iter()
+            .chain(utf32().flat_map(u32::to_be_bytes))
+            .collect(),
+    ]
+}
+
+// spec PRJ-4.6: under FTEQCC a `progs.src` written as UTF-16 or UTF-32 after its mark is decoded
+// before its form is told and its words are read
+#[test]
+fn an_fteqcc_progs_src_is_decoded() {
+    for dialect in [Dialect::Fteqcc, Dialect::Gmqcc] {
+        for bytes in wide("#include \"b.qc\"\n") {
+            let graph = loaded_graph(&bytes, dialect);
+            assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+            assert_eq!(names(&graph), ["progs.src", "b.qc"]);
+            assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+        }
+        for bytes in wide("progs.dat\na.qc b.qc\n") {
+            let graph = loaded_graph(&bytes, dialect);
+            assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+            assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+            assert_eq!(names(&graph), ["a.qc", "b.qc"]);
+            assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+        }
+    }
+}
+
+// spec PRJ-4.6: under FTEQCC each NUL byte of a `progs.src` is a space that splits two words, and
+// one UTF-8 byte order mark is skipped
+#[test]
+fn an_fteqcc_progs_src_reads_a_nul_as_a_space() {
+    let fte = |bytes: &[u8]| loaded_graph(bytes, Dialect::Fteqcc);
+    let graph = fte(b"progs.dat\na.qc\0b.qc\n");
+    assert_eq!(names(&graph), ["a.qc", "b.qc"]);
+    assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+    let graph = fte(b"progs.dat\0a.qc\n");
+    assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+    assert_eq!(names(&graph), ["a.qc"]);
+    let graph = fte(b"\0#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    assert_eq!(names(&graph), ["progs.src", "b.qc"]);
+    let graph = fte(b"\xef\xbb\xbfprogs.dat\na.qc\n");
+    assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+    assert_eq!(names(&graph), ["a.qc"]);
+    let graph = fte(b"\xef\xbb\xbf#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    // A second mark is not skipped: the first word is not `#`'s.
+    let graph = fte(b"\xef\xbb\xbf\xef\xbb\xbf#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::List));
+}
+
+// spec PRJ-4.1: the vanilla dialect reads `progs.src` as its bytes past a UTF-8 byte order mark,
+// so a wide one is not decoded and is no source form
+#[test]
+fn a_vanilla_progs_src_is_its_bytes() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    let graph = vanilla(b"\xef\xbb\xbfprogs.dat\na.qc\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    for bytes in wide("#include \"b.qc\"\n") {
+        assert_eq!(vanilla(&bytes).form, Some(Form::List), "{bytes:?}");
     }
 }
 

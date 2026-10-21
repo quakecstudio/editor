@@ -9,7 +9,7 @@
 
 use qc_syntax::Dialect;
 
-use super::{Case, Encoding, Project};
+use super::{Case, Encoding, ProgsSrc, Project};
 
 /// What binds `f` once the directive before it has been read.
 pub(super) const BIND: &str = "void() f = #5;\n";
@@ -248,6 +248,46 @@ const LOADED: &[&str] = &[
     "\u{feff}\u{feff}#define N #5\nvoid() f = N;\n",
     "void() f = #5;\n\u{feff}#define N 1\n",
 ];
+
+/// `$framevalue` numbers about 0 and past an `int`, each read by `atoi` (FTEF-14.55), before a
+/// frame name that a function then uses: one numbered below 0 is unknown (FTEF-18.30).
+const FRAME_VALUES: &[&str] = &[
+    "-1",
+    "-5",
+    "0",
+    "5",
+    "2147483647",
+    "-2147483648",
+    "2147483648",
+    "4294967295",
+    "4294967296",
+    "-99999999999",
+    "99999999999",
+];
+
+/// Frame macro uses about 0 (FTEF-18.30): names counted up past a negative start, a
+/// `$framerestore` of a negative macro, `$modelname`'s own lookup, and a lookup in any case.
+const FRAME_USES: &[&str] = &[
+    "$framevalue -2\n$frame a b c\nfloat x = $c;\n",
+    "$framevalue -2\n$frame a b c\nfloat x = $b;\n",
+    "$framevalue -4\n$frame a\n$framevalue 7\n$framerestore a\n$frame d\n",
+    "$frame a b\n$framerestore b\n$frame d\nfloat x = $d;\n",
+    "$framevalue 4\n$frame a\n$framevalue -7\n$framerestore a\n$frame d\nfloat x = $d;\n",
+    "$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d e f g h\nfloat x = $h;\n",
+    "$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d\nfloat x = $d;\n",
+    "$framevalue -1\n$frame A\nfloat x = $a;\n",
+    "$modelname m\n$frame a\nfloat x = $a;\n",
+];
+
+/// Each [`FRAME_VALUES`] number before `$frame a` and a use of `$a`, and each of
+/// [`FRAME_USES`], then `f`'s binding.
+fn frame_cases() -> Vec<String> {
+    let values = FRAME_VALUES
+        .iter()
+        .map(|value| format!("$framevalue {value}\n$frame a\nfloat x = $a;\n{BIND}"));
+    let uses = FRAME_USES.iter().map(|uses| format!("{uses}{BIND}"));
+    values.chain(uses).collect()
+}
 
 /// Programs written as UTF-16 and as UTF-32 after their byte order marks, which FTEQCC's file
 /// loader decodes (FTEF-14.54).
@@ -789,6 +829,7 @@ fn project_case(compiled: &str, source: &str, files: &[(&str, String)]) -> Case 
             compiled: compiled.to_owned(),
             files,
             include_dirs: Vec::new(),
+            progs: None,
         }),
     }
 }
@@ -1063,7 +1104,56 @@ pub(super) fn graph_cases() -> Vec<Case> {
             });
         }
     }
+    cases.extend(progs_cases());
     cases
+}
+
+/// `progs.src` files of either form that FTEQCC's file loader changes (PRJ-4.6, FTEF-14.54),
+/// written as UTF-8: each NUL byte is a space, and a UTF-8 byte order mark at the start is
+/// skipped, once. Each names `b.qh`, which binds `f`, and `x.qc`, which binds nothing, so that
+/// the words `QCC_COM_Parse` reads decide whether `f` is bound. None is the list of
+/// `progs.dat` and one file, which a case without a `progs.src` of its own writes.
+const LOADED_PROGS: &[&str] = &[
+    "progs.dat\nx.qc\0b.qh\n",
+    "progs.dat\0b.qh\n",
+    "progs.dat\nb.qh\0\n",
+    "progs.dat\n\0b.qh\nx.qc\n",
+    "\0#include \"b.qh\"\n",
+    "\0\0 #include \"x.qc\"\n#include \"b.qh\"\n",
+    "progs.dat\nx.qc\0\0b.qh\n",
+    "\u{feff}#include \"b.qh\"\n",
+    "\u{feff}progs.dat\nb.qh\nx.qc\n",
+];
+
+/// `progs.src` files of either form written in each wide encoding, which FTEQCC's file loader
+/// decodes (PRJ-4.6, FTEF-14.54).
+const WIDE_PROGS: &[&str] = &[
+    "#include \"b.qh\"\n",
+    "progs.dat\nb.qh\n",
+    "progs.dat\nx.qc\0b.qh\n",
+    "// c\n#include \"b.qh\"\n",
+];
+
+/// The graph cases of a `progs.src` of their own (PRJ-4.6): [`LOADED_PROGS`] as UTF-8 and
+/// [`WIDE_PROGS`] in each wide encoding, beside `b.qh` and `x.qc`.
+fn progs_cases() -> Vec<Case> {
+    let utf8 = LOADED_PROGS.iter().map(|&text| (text, Encoding::Utf8));
+    let wide = WIDE_PROGS
+        .iter()
+        .flat_map(|&text| WIDE_ENCODINGS.map(|encoding| (text, encoding)));
+    utf8.chain(wide)
+        .map(|(text, encoding)| {
+            let files = [("b.qh", BIND.to_owned()), ("x.qc", "float y;\n".to_owned())];
+            let mut case = project_case("t.qc", "", &files);
+            if let Some(project) = &mut case.project {
+                project.progs = Some(ProgsSrc {
+                    text: text.to_owned(),
+                    encoding,
+                });
+            }
+            case
+        })
+        .collect()
 }
 
 /// Every case of the directive family.
@@ -1082,6 +1172,7 @@ pub(super) fn cases() -> Vec<Case> {
         INCLUDE_LISTS.iter().map(|&s| s.to_owned()).collect(),
         JOINED.iter().map(|&s| s.to_owned()).collect(),
         LOADED.iter().map(|&s| s.to_owned()).collect(),
+        frame_cases(),
     ];
     let mut cases: Vec<Case> = sources
         .into_iter()
