@@ -25,8 +25,7 @@ mod source;
 mod tests;
 
 pub use fte_directive::{
-    FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_file, qcc_load_in_place,
-    skip_script_line,
+    FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_as, qcc_load_file, qcc_load_in_place,
 };
 pub use fte_line::{fte_directive_end, relex_from};
 pub use source::{
@@ -884,11 +883,7 @@ impl<L: Loader> Preprocessor<L> {
     /// module's source (PRJ-4.8), in the vanilla dialect the bytes (QC-1.1).
     fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>, start: FileStart) -> FileId {
         let (text, origin) = if self.dialect.has_fteqcc_extensions() {
-            let (mut text, origin) = qcc_load_file(bytes);
-            if start == FileStart::Source {
-                skip_script_line(&mut text);
-            }
-            (text, origin)
+            qcc_load_as(bytes, start)
         } else {
             (bytes, TextOrigin::default())
         };

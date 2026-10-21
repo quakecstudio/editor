@@ -42,10 +42,9 @@ the file brings in, by `#include` and `#includelist`, and which pragmas and `#ou
 a UTF-8 one, and with each NUL byte a space; `SourceFile::file_span` maps a span of that text back
 to the file's bytes, and `qcc_load_in_place` gives the syntax tree that text at the file's own
 offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` with
-`qcc_load_file` too (PRJ-4.6). A module's source in source form, read with
-`Preprocessor::preprocess_source` or `FileStart::Source`, and the graph's `progs.src` have a first
-line that starts with `#!` passed over in place (`skip_script_line`, PRJ-4.8), as FTEQCC's
-`QCC_main` passes over it. `#if` and `#elif` use
+`qcc_load_as` too (PRJ-4.6). `qcc_load_as` with `FileStart::Source`, which
+`Preprocessor::preprocess_source` and the graph use for a module's source, also passes over, in
+place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.8). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
 (`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
@@ -85,7 +84,7 @@ FTEF-14.51).
   these sections to the crate, and every active statement of each is cited by a test here.
 - **Spec statements:** the `#if` expressions of PRJ-5.5 and PRJ-5.10 (`cond`), the graph's
   reader of an FTEQCC or GMQCC file, PRJ-5.13 to PRJ-5.15 (`FteFileReader`), and the `#!` first
-  line of a module's source, PRJ-4.8 (`skip_script_line`), in
+  line of a module's source, PRJ-4.8 (`qcc_load_as`), in
   [`project-file.md`](../../docs/spec/project-file.md).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes

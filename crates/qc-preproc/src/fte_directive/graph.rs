@@ -17,8 +17,8 @@ use qc_lexer::{Dialect, Punct, TokenKind};
 
 use super::{
     Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, TextStart, byte_at,
-    condition, elif_defined, lossy, qcc_load_file, read, simple_get_token, skip_script_line,
-    skip_side, skip_to_end_of_line, starts_line, whitespace,
+    condition, elif_defined, lossy, qcc_load_as, read, simple_get_token, skip_side,
+    skip_to_end_of_line, starts_line, whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
 use crate::{FileId, TokenStream, Variadic};
@@ -194,10 +194,7 @@ impl FteFileReader {
     /// past a `#!` first line (PRJ-4.8).
     #[must_use]
     pub fn new(bytes: Vec<u8>, start: FileStart) -> Self {
-        let (mut text, _) = qcc_load_file(bytes);
-        if start == FileStart::Source {
-            skip_script_line(&mut text);
-        }
+        let (text, _) = qcc_load_as(bytes, start);
         Self {
             stream: TokenStream::lex(&text, Dialect::Fteqcc),
             text,

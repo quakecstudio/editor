@@ -9,10 +9,10 @@ use proptest::prelude::*;
 use qc_lexer::{Dialect, Span};
 
 use super::{codes, tokens};
-use crate::fte_directive::{qcc_load_file, qcc_load_in_place};
+use crate::fte_directive::{qcc_load_file, qcc_load_in_place, skip_script_line};
 use crate::{
     Code, FileOutput, FileStart, FteFileReader, MemoryLoader, ModuleState, Preprocessor,
-    TextOrigin, fte_directive_end, skip_script_line,
+    TextOrigin, fte_directive_end, qcc_load_as,
 };
 
 /// `text` as UTF-16LE after its byte order mark.
@@ -439,6 +439,18 @@ fn a_script_line_is_passed_over_in_place() {
     // Only the two bytes at the very start: a blank before them, a lone `#` or `!` is no such line.
     for text in [&b" #!x\n"[..], b"#x!\n", b"!#\n", b"#", b"", b"a\n#!x\n"] {
         assert_eq!(skipped(text), text, "{text:?}");
+    }
+    // Only the module's source is read so, after the loader's text: past a mark, a NUL a space.
+    let bytes = b"\xef\xbb\xbf#!x\0\na\0\n".to_vec();
+    assert_eq!(
+        qcc_load_as(bytes.clone(), FileStart::Source),
+        (b"    \na \n".to_vec(), TextOrigin::Shifted(3))
+    );
+    for start in [FileStart::Compiled, FileStart::Included] {
+        assert_eq!(
+            qcc_load_as(bytes.clone(), start),
+            qcc_load_file(bytes.clone())
+        );
     }
 }
 

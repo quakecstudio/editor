@@ -12,9 +12,7 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect};
-use qc_preproc::{
-    FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_file, skip_script_line,
-};
+use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_as};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -146,6 +144,12 @@ fn dir_of(path: &Path) -> PathBuf {
     path.parent().map(Path::to_path_buf).unwrap_or_default()
 }
 
+/// Whether `byte` is one of the bytes `COM_Parse` makes a token of its own, which ends a word
+/// (QC-23.2).
+const fn single_token(byte: u8) -> bool {
+    matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
+}
+
 /// Splits `line` into tokens as `COM_Parse` does (QC-23.2), skipping `/* */` comments too
 /// (PRJ-4.2). Returns the tokens and whether the line ends inside a `/* */` comment.
 fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
@@ -182,14 +186,14 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
                 words.push(lossy(quoted.split(|b| *b == 0).next()));
                 i = end.saturating_add(1);
             }
-            (b'{' | b'}' | b'(' | b')' | b'\'' | b':', _) => {
+            _ if single_token(byte) => {
                 words.push(char::from(byte).to_string());
                 i = i.saturating_add(1);
             }
             _ => {
                 let start = i;
                 while let Some(&b) = line.get(i) {
-                    if b <= b' ' || matches!(b, b'{' | b'}' | b'(' | b')' | b'\'' | b':') {
+                    if b <= b' ' || single_token(b) {
                         break;
                     }
                     i = i.saturating_add(1);
@@ -844,20 +848,18 @@ impl<L: Loader> Builder<'_, L> {
 /// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.7).
 fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
     if dialect.has_fteqcc_extensions() {
-        let (mut text, _) = qcc_load_file(bytes.to_vec());
-        skip_script_line(&mut text);
-        text
+        qcc_load_as(bytes.to_vec(), FileStart::Source).0
     } else {
         let text = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
         text.get(..com_parse_end(text)).unwrap_or(text).to_vec()
     }
 }
 
-/// Where id's `COM_Parse` ends the text of a list, read token by token as
-/// [`com_parse_words`] reads it: at the first NUL byte it meets between tokens or that ends a
-/// word or a `//` comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A
-/// quoted token runs on past a NUL in it to its closing quote, or here to its line's end. The
-/// end of `text` when it has no such NUL.
+/// Where id's `COM_Parse` ends the text of a list, read token by token as it reads them, with no
+/// `/* */` comments: at the first NUL byte it meets between tokens or that ends a word or a `//`
+/// comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A quoted token runs
+/// on past a NUL in it to its closing quote, or, as [`com_parse_words`] reads a quote, to its
+/// line's end. The end of `text` when it has no such NUL.
 fn com_parse_end(text: &[u8]) -> usize {
     let until = |from: usize, stop: fn(u8) -> bool| {
         let rest = text.get(from..).unwrap_or_default();
@@ -872,10 +874,8 @@ fn com_parse_end(text: &[u8]) -> usize {
             (0, _) => return i,
             (b'/', Some(&b'/')) => until(next, |b| b == 0 || b == b'\n'),
             (b'"', _) => until(next, |b| b == b'"' || b == b'\n').saturating_add(1),
-            _ if byte <= b' ' || matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':') => next,
-            _ => until(next, |b| {
-                b <= b' ' || matches!(b, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
-            }),
+            _ if byte <= b' ' || single_token(byte) => next,
+            _ => until(next, |b| b <= b' ' || single_token(b)),
         };
     }
     text.len()

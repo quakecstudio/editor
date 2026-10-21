@@ -13,6 +13,7 @@
 
 use std::borrow::Cow;
 
+use super::FileStart;
 use crate::source::TextOrigin;
 
 /// The UTF-8 byte order mark, which `QCC_SanitizeCharSet` skips (`mem += 3;`).
@@ -196,6 +197,18 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
     Some((Cow::Owned(text), start))
 }
 
+/// [`qcc_load_file`]'s text for a file of `bytes` that starts as `start` says, and where it
+/// stands in them: for the module's source ([`FileStart::Source`]) past a first line that starts
+/// with `#!`, as `QCC_main` reads it (PRJ-4.8, [`skip_script_line`]), which keeps its offsets.
+#[must_use]
+pub fn qcc_load_as(bytes: Vec<u8>, start: FileStart) -> (Vec<u8>, TextOrigin) {
+    let (mut text, origin) = qcc_load_file(bytes);
+    if start == FileStart::Source {
+        skip_script_line(&mut text);
+    }
+    (text, origin)
+}
+
 /// `QCC_main`'s pass over the first line of a module's source, `text` as [`qcc_load_file`] gives
 /// it, when that line starts with `#!`: "ignore the first line if it starts with a #! for unix
 /// scripts" (`if (qccmsrc[0] == '#' && qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');`).
@@ -205,7 +218,7 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
 /// lines: FTEQCC reads on from the line feed, which ends the line the next one is counted from.
 /// A text with no line feed is all that line, as `QCC_LoadFile` writes one after the text
 /// (`mem[len] = '\n';`), and becomes all spaces.
-pub fn skip_script_line(text: &mut [u8]) {
+pub(crate) fn skip_script_line(text: &mut [u8]) {
     if !text.starts_with(b"#!") {
         return;
     }
