@@ -74,7 +74,9 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
   FTEF-17.12, the C scalar types FTEF-2.8 names, and the definitions of FTEF-19.1 to
-  FTEF-19.16, FTEF-19.19 and FTEF-19.20. The other statements of those
+  FTEF-19.16 and FTEF-19.19 to FTEF-19.28: the warning settings, the command line's flags, the
+  lexer's flags in literals and engine names, case insensitivity and a module's source. The
+  other statements of those
   sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
   expressions, operator checks and code generation. The definitions are ported from id's
   `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
@@ -113,7 +115,8 @@ a parameter given twice is an error, a duplicate local or a local hiding a globa
 redeclarations follow `typecmp` and `typecmp_lax` with FTEQCC's exceptions, array sizes and
 typedefs must agree, enums have their values, `static` globals are their unit's, a type name
 must be a type declared before it, a `for` statement's locals leave scope at its end, and the
-warnings of those functions are reported with FTEQCC's texts. The definitions family of
+warnings of those functions are reported with FTEQCC's texts, as FTEQCC's warning settings stand
+where each is given (`#pragma warning` and the command line, `ModuleInput::command_line`). The definitions family of
 `cargo xtask oracles builtins` checks each against id's `qcc` and the pinned FTEQCC (FTEF-19.18).
 
 ## What it is not, yet

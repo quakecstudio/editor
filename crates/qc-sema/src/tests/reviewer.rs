@@ -363,6 +363,7 @@ fn fte_binding(defines: &str, use_: &str) -> (Vec<qc_diag::Code>, Option<(i32, S
             compiled: vec![FileId(0)],
             autoproto: None,
             include_dirs: Vec::new(),
+            command_line: qc_preproc::CommandLine::default(),
         })
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())

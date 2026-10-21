@@ -44,9 +44,26 @@ use ast::AstNode as _;
 pub struct Parse {
     green: GreenNode,
     diagnostics: Vec<Diagnostic>,
+    /// The compiler flags the tokens were lexed with, each from the byte it holds from
+    /// (FTEF-12.12); empty for the defaults.
+    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
 }
 
 impl Parse {
+    /// The compiler flags the tokens were lexed with (FTEF-12.12): each the byte it holds from
+    /// and the flags, in order, as [`parse_preprocessed_flagged`] was given them; the text before
+    /// the first holds the defaults.
+    #[must_use]
+    pub fn lex_flags(&self) -> &[(usize, qc_lexer::LexFlags)] {
+        &self.lex_flags
+    }
+
+    /// The compiler flags the token at byte `at` was lexed with (FTEF-12.12).
+    #[must_use]
+    pub fn lex_flags_at(&self, at: usize) -> qc_lexer::LexFlags {
+        qc_lexer::LexFlags::at(&self.lex_flags, at)
+    }
+
     /// The root of the tree, a [`SyntaxKind::SourceFile`] node.
     #[must_use]
     pub fn syntax(&self) -> SyntaxNode {
@@ -146,5 +163,9 @@ fn parse_text(
     let mut parser = parser::Parser::new(input, dialect);
     parser.source_file();
     let (green, diagnostics) = parser.finish();
-    Parse { green, diagnostics }
+    Parse {
+        green,
+        diagnostics,
+        lex_flags: flags.to_vec(),
+    }
 }

@@ -20,7 +20,7 @@
 //! Only the first error of each statement or declaration is reported, as `qcc` reports one
 //! before abandoning it (QC-24.2); the rest would be consequences of it.
 
-use qc_lexer::{Code, Diagnostic, Dialect, Span};
+use qc_lexer::{Code, Diagnostic, Dialect, LexFlag, Span};
 
 mod fte;
 
@@ -2008,6 +2008,11 @@ impl<'a> Parser<'a> {
         self.finish_node();
     }
 
+    /// Whether the token at byte `at` was lexed with `flag` on (FTEF-12.12).
+    fn lexed_with(&self, at: usize, flag: LexFlag) -> bool {
+        qc_lexer::LexFlags::at(&self.input.flags, at).has(flag)
+    }
+
     /// `PR_Term`: `!` expression, `( expression )`, a literal, a frame macro reference or a
     /// name (QC-15.7). Anything else is "not a name" (QC-4.5, QC-14.2).
     fn term(&mut self) -> Option<Expr> {
@@ -2049,6 +2054,14 @@ impl<'a> Parser<'a> {
                     tail = Tail::Void;
                 }
                 (K::CastExpr, false)
+            }
+            // FTEF-19.26: under `qccx`, `@e` is `e` read as a string (`QCC_PR_RefTerm`, `if
+            // (flag_qccx && QCC_PR_CheckToken ("@"))`), its operand of `UNARY_PRIORITY`.
+            K::At if self.fteqcc() && self.lexed_with(start, LexFlag::Qccx) => {
+                self.start_node(K::UnaryExpr);
+                self.bump();
+                self.expr(UNARY_PRIORITY);
+                (K::UnaryExpr, true)
             }
             // FTEF-16.7: `++e` and `--e`, `&e` and `*e`.
             K::PlusPlus | K::MinusMinus | K::Amp | K::Star if self.fteqcc() => {

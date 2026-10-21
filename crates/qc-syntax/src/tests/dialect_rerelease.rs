@@ -169,7 +169,7 @@ fn fte_builtin(source: &str) -> (Option<String>, Option<String>) {
     };
     (
         builtin.number().map(|t| t.text_lossless()),
-        builtin.engine_name(),
+        builtin.engine_name(qc_lexer::LexFlags::default()),
     )
 }
 

@@ -1360,10 +1360,13 @@ impl<L: Loader> Preprocessor<L> {
     pub(crate) fn fte_default_properties(&mut self) {
         // `QCC_SetDefaultProperties` sets no compiler flag: `QCC_main` set them once, before the
         // first pass, so a `#pragma flag` holds into the second (FTEF-12.11).
+        // FTEF-14.71: then `QCC_PR_CommandLinePrecompilerOptions` reads the command line again.
+        let defaults = FteState::default();
         self.fte = FteState {
             ifs: self.fte.ifs,
-            flags: self.fte.flags,
-            ..FteState::default()
+            warnings: self.command_line.warnings(defaults.warnings),
+            flags: self.command_line.flags(self.fte.flags),
+            ..defaults
         };
         // FTEF-14.68: FTEQCC prints a `-I` option's warning against no file, "cmdline".
         for dir in &self.command_line_dirs {

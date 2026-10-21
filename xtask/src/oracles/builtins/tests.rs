@@ -989,13 +989,18 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             .iter()
             .filter_map(|arg| arg.strip_prefix("-I").map(str::to_owned))
             .collect();
-        let werror = args.iter().any(|arg| arg == "-Werror");
+        // The case's options are every argument but `-Tid` and the include directories.
+        let options: Vec<String> = args
+            .iter()
+            .filter(|arg| *arg != "-Tid" && !arg.starts_with("-I"))
+            .cloned()
+            .collect();
         assert_eq!(
             args.len(),
             include_dirs
                 .len()
                 .saturating_add(usize::from(fteqcc))
-                .saturating_add(usize::from(werror).saturating_mul(2))
+                .saturating_add(options.len())
         );
         assert!(fteqcc || include_dirs.is_empty());
         let (list, list_encoding) = decoded(&fs::read(dir.join("progs.src")).unwrap());
@@ -1032,7 +1037,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             source,
             encoding,
             project,
-            werror,
+            options,
         };
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
     }

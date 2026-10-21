@@ -1664,6 +1664,7 @@ issues:
   - P2-116
   - P2-117
   - P2-118
+  - P2-119
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2360,4 +2361,25 @@ issues:
   - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
   verify:
   - cargo test -p qc-sema -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-119
+  title: Read FTEQCC's keyword flags in the parser
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-118 (#549). FTEQCC's keywords are flags of `compiler_flag[]` (`keyword_class`, `keyword_for`, `keyword_long` and about 70 more, `qccmain.c`), which `#pragma keyword`, `#pragma flag` and the `-K` and `-F` options turn on and off, and which `-std=` sets as a group. A disabled keyword is a name to `QCC_PR_CheckKeyword` and `QCC_PR_ParseStatement`, and its `__` spelling still a keyword. The preprocessor already tracks them (`qc_preproc::FlagSettings`, FTEF-12.11), but the parser reads FTEQCC's default keywords everywhere (FTEF-2.7, FTEF-19.1, FTEF-12.15), so a program that turns a keyword on or off is read as if it had not.
+  depends:
+  - P2-116
+  deliverable:
+  - 'crates/qc-preproc: the keyword flags marked by token in `FileOutput`, as `lex_flags` are; crates/qc-syntax: the parser reads each keyword with the flags in force at its token (declarations, statements, qualifiers, the C type words of `c_scalar`), ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, with spec statements replacing FTEF-12.15''s keyword clause'
+  acceptance:
+  - 'A statement per keyword group and a citing test; `#pragma keyword enable long` makes `long x;` a definition and `#pragma keyword disable for` makes `for` a name, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases that turn keywords on and off'
+  verify:
+  - cargo test -p qc-preproc -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
