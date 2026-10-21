@@ -122,20 +122,28 @@ impl Loader for FsLoader {
             .parent()
             .filter(|d| !d.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let mut folded: Vec<OsString> = Vec::new();
-        for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
-            let entry = entry.file_name();
-            if entry == name {
-                return Some(entry);
-            }
-            if same_ignoring_case(&entry, name) {
-                folded.push(entry);
-            }
-        }
-        // The directory may list two entries that differ only in case; `read_dir` does not
-        // order them, so take the least to be the same on every run (PRJ-7.2).
-        folded.into_iter().min()
+        let entries = fs::read_dir(dir).ok()?.filter_map(Result::ok);
+        stored_entry(name, entries.map(|entry| entry.file_name()))
     }
+}
+
+/// Of a directory's `entries`, the one named `name`, or else the least of those whose names
+/// differ from it only in case (PRJ-7.2): a directory may list two such entries, in no order,
+/// so the least is the same on every run.
+pub(crate) fn stored_entry(
+    name: &OsStr,
+    entries: impl IntoIterator<Item = OsString>,
+) -> Option<OsString> {
+    let mut folded: Vec<OsString> = Vec::new();
+    for entry in entries {
+        if entry == name {
+            return Some(entry);
+        }
+        if same_ignoring_case(&entry, name) {
+            folded.push(entry);
+        }
+    }
+    folded.into_iter().min()
 }
 
 /// Reads files from memory: for tests, and for editor buffers not yet saved.
