@@ -321,7 +321,7 @@ proptest! {
             let TextOrigin::Decoded(offsets) = origin else {
                 return Err(TestCaseError::fail("not decoded"));
             };
-            prop_assert_eq!(offsets.len(), loaded.len() + 1);
+            prop_assert_eq!(offsets.len(), loaded.len().saturating_add(1));
             prop_assert!(offsets.windows(2).all(|w| w[0] <= w[1]));
             prop_assert_eq!(offsets.last().copied(), Some(bytes.len()));
         }
@@ -335,10 +335,10 @@ proptest! {
         prop_assert!(!loaded.contains(&0));
         match origin {
             TextOrigin::Shifted(skipped) => {
-                prop_assert_eq!(loaded.len() + skipped, bytes.len());
+                prop_assert_eq!(loaded.len().saturating_add(skipped), bytes.len());
             }
             TextOrigin::Decoded(offsets) => {
-                prop_assert_eq!(offsets.len(), loaded.len() + 1);
+                prop_assert_eq!(offsets.len(), loaded.len().saturating_add(1));
                 prop_assert!(offsets.iter().all(|&o| o <= bytes.len()));
             }
         }
