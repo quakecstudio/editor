@@ -1246,41 +1246,39 @@ impl ULong {
     }
 }
 
-/// How the stack protector of the C library an oracle is built against guards a function's
-/// frame, which decides whether FTEQCC stops when a `#pragma` overruns its `char msg[1024]` by
-/// the terminating NUL alone (FTEF-14.66).
+/// Whether the oracle's build stops when a `#pragma` overruns FTEQCC's `char msg[1024]`, which
+/// is undefined behaviour (FTEF-14.66).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Canary {
-    /// A canary any overrun changes, which stops the build at once: macOS's and Windows's, as
-    /// the profile models and [`FIXTURE`] records.
-    Random,
-    /// glibc's, whose first byte is NUL, so a NUL written over it changes nothing and the build
-    /// reads on.
-    NulFirst,
+pub(crate) enum Overrun {
+    /// The build stops at the overrun: on macOS, where [`FIXTURE`] is recorded, and on Windows,
+    /// as the profile models.
+    Caught,
+    /// The build reads on past an overrun of a few bytes and compiles the program: on Linux,
+    /// where the CI build does so for texts of 1024 and 1025 bytes.
+    Unseen,
 }
 
-impl Canary {
+impl Overrun {
     /// The host's, which the oracles are built for.
-    pub(crate) const HOST: Self = if cfg!(all(target_os = "linux", target_env = "gnu")) {
-        Self::NulFirst
+    pub(crate) const HOST: Self = if cfg!(target_os = "linux") {
+        Self::Unseen
     } else {
-        Self::Random
+        Self::Caught
     };
 
     /// Whether an oracle on such a host may compile `case`, which the profile refuses: a
-    /// `#pragma` whose text after its name is exactly 1024 bytes, which FTEQCC's `msg[1024]`
-    /// holds but for the NUL `msg[a] = '\0';` writes past it (FTEF-14.66).
+    /// `#pragma` whose name or text runs past FTEQCC's `msg[1024]` (FTEF-14.66).
     fn reads_otherwise(self, case: &Case) -> bool {
-        self == Self::NulFirst
+        self == Self::Unseen
             && case.dialect.has_fteqcc_extensions()
-            && case.texts().any(|text| text.lines().any(nul_overrun))
+            && case.texts().any(|text| text.lines().any(overruns_msg))
     }
 }
 
 /// Whether `line` is a `#pragma` whose name or text, as `QCC_PR_Precompiler` copies them into
-/// `msg` (the name to the first space, tab or `(`, the text after it with a `(` kept), is
-/// exactly 1024 bytes (FTEF-14.66).
-fn nul_overrun(line: &str) -> bool {
+/// `msg` (the name to the first space, tab or `(`, the text after it with a `(` kept), is 1024
+/// bytes or more, which with the NUL after it runs past `msg[1024]` (FTEF-14.66).
+fn overruns_msg(line: &str) -> bool {
     let Some(rest) = line.trim_start_matches([' ', '\t']).strip_prefix("#pragma") else {
         return false;
     };
@@ -1293,37 +1291,37 @@ fn nul_overrun(line: &str) -> bool {
         }
         None => (rest, ""),
     };
-    name.len() == 1024 || text.len() == 1024
+    name.len() >= 1024 || text.len() >= 1024
 }
 
-/// Where an oracle ran: how wide its `unsigned long` is and how its stack is guarded.
+/// Where an oracle ran: how wide its `unsigned long` is and whether its build stops at an overrun.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Host {
     pub(crate) ulong: ULong,
-    pub(crate) canary: Canary,
+    pub(crate) overrun: Overrun,
 }
 
 impl Host {
     /// The host's.
     pub(crate) const HOST: Self = Self {
         ulong: ULong::HOST,
-        canary: Canary::HOST,
+        overrun: Overrun::HOST,
     };
 
     /// Whether an oracle here may give `case` an outcome other than [`FIXTURE`]'s, which a host
-    /// of 64-bit `unsigned long` and a random canary records (FTEF-14.50, FTEF-14.55,
+    /// of 64-bit `unsigned long` that stops at an overrun records (FTEF-14.50, FTEF-14.55,
     /// FTEF-14.66).
     fn reads_otherwise(self, case: &Case) -> bool {
-        self.ulong.reads_otherwise(case) || self.canary.reads_otherwise(case)
+        self.ulong.reads_otherwise(case) || self.overrun.reads_otherwise(case)
     }
 }
 
 impl From<ULong> for Host {
-    /// A host of `ulong` with a random canary.
+    /// A host of `ulong` whose build stops at an overrun.
     fn from(ulong: ULong) -> Self {
         Self {
             ulong,
-            canary: Canary::Random,
+            overrun: Overrun::Caught,
         }
     }
 }
@@ -1458,7 +1456,7 @@ pub(crate) fn expected_difference(
     oracle: &Outcome,
     host: impl Into<Host>,
 ) -> Option<&'static str> {
-    let Host { ulong, canary } = host.into();
+    let Host { ulong, overrun } = host.into();
     let vanilla = !case.dialect.has_fteqcc_extensions();
     if !vanilla {
         // FTEF-14.50: the profile reads a `#pragma line` number as a 64-bit `strtoul` does, so
@@ -1474,9 +1472,9 @@ pub(crate) fn expected_difference(
         if ulong.atoi_reads_otherwise(case) {
             return Some("FTEF-14.55");
         }
-        // FTEF-14.66: a build whose canary starts with NUL reads on past a pragma's overrun of
-        // `msg[1024]` by its NUL alone, which the profile refuses.
-        if *ours == Outcome::Rejected && canary.reads_otherwise(case) {
+        // FTEF-14.66: a build that reads on past a pragma's overrun of `msg[1024]` compiles what
+        // the profile refuses.
+        if *ours == Outcome::Rejected && overrun.reads_otherwise(case) {
             return Some("FTEF-14.66");
         }
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
@@ -1979,9 +1977,8 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
 }
 
 /// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
-/// is 64 bits (FTEF-14.50). A host whose stack canary starts with NUL records, for each case its
-/// canary may read otherwise, the outcome [`FIXTURE`] holds, which a random canary gives
-/// (FTEF-14.66).
+/// is 64 bits (FTEF-14.50). A host whose build reads on past a pragma's overrun records, for each
+/// case that overrun may change, the outcome [`FIXTURE`] holds, a stopping build's (FTEF-14.66).
 fn check_where(
     root: &Path,
     oracles: &Oracles,
@@ -2017,7 +2014,7 @@ fn check_where(
     }
     let mut ok = true;
     if record {
-        if host.canary != Canary::Random {
+        if host.overrun != Overrun::Caught {
             let held = read_fixture(root).unwrap_or_default();
             for case in cases.iter().chain(&graph_cases) {
                 let key = case.key();

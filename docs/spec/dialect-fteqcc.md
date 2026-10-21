@@ -1460,15 +1460,12 @@ profile the preprocessor reads them as FTEQCC does.
   with FTEQCC's text, and a frame macro word of 1024 bytes is `E0502` with it; 1023 bytes are
   read. A `#pragma`'s name, or its text after the name, of 1024 bytes runs past `char
   msg[1024]`, which `msg[a++] = *pr_file_p;` fills with no bound. That is undefined behaviour,
-  and the pinned builds differ by their C library's stack protector. On macOS and Windows, whose
-  canary is random, the build stops at any overrun (exit -6 on macOS, for `#pragma foo` with 1024
-  bytes of text too, so it is `msg` and no path limit). Built against glibc, whose canary's first
-  byte is NUL, a text of exactly 1024 bytes writes only the terminating NUL (`msg[a] = '\0';`)
-  over it, which changes nothing, and the build reads on and compiles the program. This profile
-  reports `E0121` "#pragma name or text longer than FTEQCC's 1023 bytes" for both, a deliberate
-  divergence. The differential takes the 1024-byte case's other outcome on a glibc host as this
-  statement's (`Canary::NulFirst`), and a recording there keeps the outcome a random canary
-  gives for it; a text of 1025 bytes stops every build. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
+  and the pinned builds differ. On macOS the build stops at the overrun (exit -6, for `#pragma
+  foo` with 1024 bytes of text too, so it is `msg` and no path limit), and on Windows too; the
+  Linux build of CI reads on and compiles the program for texts of 1024 and 1025 bytes. This
+  profile reports `E0121` "#pragma name or text longer than FTEQCC's 1023 bytes" for each, a
+  deliberate divergence. The differential takes such a case's other outcome on Linux as this
+  statement's (`Overrun::Unseen`), and a recording there keeps the stopping build's outcome. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
   (`if (len >= sizeof(qcc_token)-1) ;`), which a pragma's words and a list's files are read
   with. After such an error FTEQCC's compile stops: the preprocessor reads no more of the file
   and the graph no more of it, but the lexer reads on after a frame word, so diagnostics FTEQCC

@@ -17,7 +17,7 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Canary, Case, Encoding, FIXTURE, Host, Outcome, ProgsSrc, Project, Tally, ULong, bound, cases,
+    Case, Encoding, FIXTURE, Host, Outcome, Overrun, ProgsSrc, Project, Tally, ULong, bound, cases,
     check, check_where, compare, expected_difference, graph_cases, graph_differences, oracle,
     profile, read_fixture,
 };
@@ -1412,14 +1412,14 @@ fn a_negative_frame_value_may_differ_only_where_long_is_32_bits() {
     }
 }
 
-// spec FTEF-14.66: on a host whose stack canary starts with NUL, an oracle may compile a pragma
-// whose text after its name is exactly 1024 bytes, which the profile refuses; only that case, and
-// only there, is excused, and such a host records nothing
+// spec FTEF-14.66: on a host whose build reads on past an overrun of `msg[1024]`, an oracle may
+// compile a pragma whose name or text is 1024 bytes or more, which the profile refuses; only that
+// case, and only there, is excused
 #[test]
-fn a_nul_first_canary_excuses_only_the_nul_overrun() {
-    let glibc = Host {
+fn an_unseen_overrun_excuses_only_the_pragma_overrun() {
+    let linux = Host {
         ulong: ULong::Bits64,
-        canary: Canary::NulFirst,
+        overrun: Overrun::Unseen,
     };
     let pragma = |len: usize| {
         fte(&format!(
@@ -1431,29 +1431,31 @@ fn a_nul_first_canary_excuses_only_the_nul_overrun() {
     let excused = |case: &Case, host: Host| {
         expected_difference(case, &Outcome::Rejected, &[Code::E0121], &bound5, host)
     };
-    assert_eq!(excused(&pragma(1024), glibc), Some("FTEF-14.66"));
+    assert_eq!(excused(&pragma(1024), linux), Some("FTEF-14.66"));
+    assert_eq!(excused(&pragma(1025), linux), Some("FTEF-14.66"));
     assert_eq!(excused(&pragma(1024), ULong::Bits64.into()), None);
-    assert_eq!(excused(&pragma(1025), glibc), None);
-    assert_eq!(excused(&pragma(1023), glibc), None);
+    assert_eq!(excused(&pragma(1023), linux), None);
     let named = fte(&format!("#pragma {}\n", "n".repeat(1024)));
-    assert_eq!(excused(&named, glibc), Some("FTEF-14.66"));
+    assert_eq!(excused(&named, linux), Some("FTEF-14.66"));
     let paren = fte(&format!("#pragma line({})\n", "1".repeat(1022)));
-    assert_eq!(excused(&paren, glibc), Some("FTEF-14.66"));
+    assert_eq!(excused(&paren, linux), Some("FTEF-14.66"));
+    let short = fte(&format!("#pragma line({})\n", "1".repeat(1021)));
+    assert_eq!(excused(&short, linux), None);
     // The profile's own outcome must be the refusal.
-    let accepted = expected_difference(&pragma(1024), &bound5, &[], &Outcome::Rejected, glibc);
+    let accepted = expected_difference(&pragma(1024), &bound5, &[], &Outcome::Rejected, linux);
     assert_eq!(accepted, None);
     let vanilla_case = vanilla(&format!("#pragma includedir {}\n", "d".repeat(1024)));
-    assert!(excused(&vanilla_case, glibc) != Some("FTEF-14.66"));
-    assert_eq!(Host::from(ULong::Bits32).canary, Canary::Random);
+    assert!(excused(&vanilla_case, linux) != Some("FTEF-14.66"));
+    assert_eq!(Host::from(ULong::Bits32).overrun, Overrun::Caught);
 }
 
-// spec FTEF-14.66: a host whose canary starts with NUL records the fixture's outcome for the case
-// it reads otherwise, and its own for every other case
+// spec FTEF-14.66: a host whose build reads on past an overrun records the fixture's outcome for
+// the cases it reads otherwise, and its own for every other case
 #[test]
-fn a_nul_first_host_records_the_random_canary_s_outcome() {
+fn an_unseen_overrun_host_records_the_stopping_build_s_outcome() {
     let glibc = Host {
         ulong: ULong::Bits64,
-        canary: Canary::NulFirst,
+        overrun: Overrun::Unseen,
     };
     let recorded = read_fixture(&root()).unwrap();
     let overrun = cases()

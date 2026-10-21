@@ -155,8 +155,7 @@ fn word_bound_cases() -> Vec<String> {
         let dir = "d".repeat(length);
         sources.push(format!("#pragma includedir {dir}\nvoid() f = #5;\n"));
     }
-    // One byte more than overruns `msg[1024]` by its NUL alone, which a build on glibc reads on
-    // past (`Canary::NulFirst`).
+    // A byte more, past `msg[1024]` by two (`Overrun`).
     sources.push(format!(
         "#pragma includedir {}\nvoid() f = #5;\n",
         "d".repeat(1025)
