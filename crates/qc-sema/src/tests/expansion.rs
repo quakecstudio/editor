@@ -229,6 +229,7 @@ fn a_compiled_file_that_cannot_be_read_is_an_error() {
         compiled: vec![FileId(0), FileId(2), FileId(1)],
         autoproto: None,
         include_dirs: Vec::new(),
+        command_line: qc_preproc::CommandLine::default(),
     };
     assert_eq!(
         db.file_path(FileId(1)),
@@ -382,6 +383,7 @@ fn an_unchanged_module_is_served_from_cache() {
         compiled: input.compiled[..2].to_vec(),
         autoproto: None,
         include_dirs: Vec::new(),
+        command_line: qc_preproc::CommandLine::default(),
     };
     db.analyze_module(&fewer);
     let after = db.counts();

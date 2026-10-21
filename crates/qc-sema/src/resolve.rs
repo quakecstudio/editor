@@ -30,11 +30,12 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_preproc::WarningSettings;
 use qc_syntax::Dialect;
 use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::{ConstType, Kind, Source};
-use crate::expand::OriginMap;
+use crate::expand::{OriginMap, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, FileDecls, LiteralValue, MemberBase, MemberKind,
     Qualifier, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse, RawValue, StatePart,
@@ -94,6 +95,12 @@ pub struct ResolveOptions {
     /// FTEQCC's `-Fautoproto` (FTE-22.3): every top-level declaration of the module is
     /// visible to every function body. Only meaningful with an FTEQCC dialect.
     pub autoproto: bool,
+    /// FTEQCC's `-Fcaseinsens` (FTEF-19.25): a name no definition has is looked up again in
+    /// any case. Only meaningful with an FTEQCC dialect.
+    pub case_insensitive: bool,
+    /// Whether `qcfuncs` was off when FTEQCC named its core types, by the command line's
+    /// `-Fno-qcfuncs` (FTEF-19.28): then `string`, `vector` and `entity` are no type names.
+    pub qcfuncs_off: bool,
 }
 
 /// Resolves a module from its files' lowered declarations, in compilation order (QC-23.3).
@@ -114,6 +121,9 @@ pub(crate) struct Sources<'a> {
     pub(crate) maps: &'a [&'a OriginMap],
     /// For each entry, the `#pragma noref` changes in its text (FTEF-12.6).
     pub(crate) noref: &'a [&'a [(usize, bool)]],
+    /// For each entry, under FTEQCC, the warning settings and the offsets they hold from
+    /// (FTEF-19.22).
+    pub(crate) warnings: &'a [&'a [(usize, WarningSettings)]],
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
@@ -140,9 +150,13 @@ pub(crate) fn resolve_mapped(
     let mut r = Resolver {
         index: ModuleIndex::default(),
         maps: sources.maps,
+        warnings: sources.warnings,
+        settings: None,
         extensions: &sources.extensions,
         fteqcc,
         autoproto: fteqcc && options.autoproto,
+        case_insensitive: fteqcc && options.case_insensitive,
+        qcfuncs_off: fteqcc && options.qcfuncs_off,
         unit: FileId(0),
         facts: Vec::new(),
         globals: HashMap::new(),
@@ -175,10 +189,9 @@ pub(crate) fn resolve_mapped(
         let file_id = FileId(index);
         r.unit = file_id;
         for d in &file.diagnostics {
+            r.settle(d.span.start);
             let location = r.at(file_id, d.span);
-            r.index
-                .diagnostics
-                .push(diag(d.code, location, d.message.clone()));
+            r.report(d.code, location, d.message.clone());
         }
         let events = sources.noref.get(index).copied().unwrap_or_default();
         let start = noref_on;
@@ -196,6 +209,7 @@ pub(crate) fn resolve_mapped(
                 .take_while(|(at, _)| *at <= decl.span.start)
                 .last()
                 .map_or(start, |&(_, on)| on);
+            r.settle(decl.span.start);
             let pending = r.declare_top_level(file_id, decl, pragma);
             if (decl.has(&Qualifier::Noref) || pragma)
                 && let Some(def) = r.lookup_global(&decl.name)
@@ -278,12 +292,21 @@ struct Resolver<'a> {
     /// Where the spans of each file's rendered text came from; empty when the files were
     /// parsed as written.
     maps: &'a [&'a OriginMap],
+    /// For each compiled file, the warning settings and the offsets they hold from
+    /// (FTEF-19.22).
+    warnings: &'a [&'a [(usize, WarningSettings)]],
+    /// Under FTEQCC, the warning settings in force where the resolver reads (FTEF-19.22).
+    settings: Option<WarningSettings>,
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
     /// Whether an FTEQCC profile is in force (FTE-22).
     fteqcc: bool,
     /// Whether FTEQCC autoprototypes the module (FTE-22.3).
     autoproto: bool,
+    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.25).
+    case_insensitive: bool,
+    /// Whether FTEQCC named its core types with `qcfuncs` off (FTEF-19.28).
+    qcfuncs_off: bool,
     /// The compiled file, the unit a `static` is visible in (FTEF-19.12).
     unit: FileId,
     /// For each definition, what [`Facts`] holds.
@@ -460,8 +483,25 @@ impl<'a> Resolver<'a> {
             .unwrap_or(Location { file, span })
     }
 
+    /// Reports `code` at `location`, as the warning settings in force have it (FTEF-19.22): a
+    /// warning they ignore is not reported, and one they make an error is `E0125`.
     fn report(&mut self, code: Code, location: Location, message: String) {
+        let code = match self.settings {
+            Some(settings) if self.fteqcc => match settings.reported_code(code) {
+                Some(code) => code,
+                None => return,
+            },
+            Some(_) | None => code,
+        };
         self.index.diagnostics.push(diag(code, location, message));
+    }
+
+    /// FTEF-19.22: takes the warning settings in force at `at` in the compiled file
+    /// `self.unit`, as FTEQCC's `qccwarningaction` stands when it reads there.
+    fn settle(&mut self, at: usize) {
+        if let Some(events) = self.warnings.get(self.unit.0) {
+            self.settings = settings_at(events, at).or(self.settings);
+        }
     }
 
     /// Looks up a global name: the first global definition with that name (QC-12.2). Under
@@ -1489,7 +1529,9 @@ impl<'a> Resolver<'a> {
             Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
                 self.lookup_in_scope(scope, name)
             }
-            Holder::Global => self.lookup_global(name),
+            Holder::Global => self
+                .lookup_global(name)
+                .or_else(|| self.lookup_any_case(None, name)),
         };
         // `Scope::name`: the definition of that name, or for a scope that is no class the
         // plain name, as a named enum's values are (FTEF-19.10).
@@ -2181,6 +2223,7 @@ impl<'a> Resolver<'a> {
             at: 0,
         };
         for d in &body.diagnostics {
+            self.settle(d.span.start);
             let location = self.at(file, d.span);
             self.report(d.code, location, d.message.clone());
         }
@@ -2191,6 +2234,7 @@ impl<'a> Resolver<'a> {
                 .map(|d| d.name.clone())
                 .unwrap_or_default();
             for (number, span) in &body.unnamed_params {
+                self.settle(span.start);
                 let location = self.at(file, *span);
                 self.report(
                     Code::W0222,
@@ -2201,6 +2245,7 @@ impl<'a> Resolver<'a> {
         }
         let mut previous: Option<DefId> = None;
         for param in &body.params {
+            self.settle(param.span.start);
             let location = self.at(file, param.span);
             let def = self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);
             // QC-13.5: `PR_ParseImmediateStatements` stops at a parameter whose global lies
@@ -2226,6 +2271,7 @@ impl<'a> Resolver<'a> {
         // QC-11.10, QC-11.9: locals; a local field or function is an error (QCD-3.8 is the
         // parser's; the semantic check is QC-11.9).
         for local in &body.locals {
+            self.settle(local.span.start);
             let location = self.at(file, local.span);
             if local.bad_field_or_function {
                 self.report(
@@ -2289,15 +2335,24 @@ impl<'a> Resolver<'a> {
     ) -> Option<&'t str> {
         match ty {
             Type::Named(name) => {
+                // FTEF-19.25: under `-Fcaseinsens` `QCC_TypeForName`'s table is searched in
+                // any case.
+                let same = |known: &str| {
+                    known == name.as_ref()
+                        || (self.case_insensitive && known.eq_ignore_ascii_case(name))
+                };
                 let known = name.contains(char::is_whitespace)
                     || ty.fteqcc_scalar().is_some()
-                    || REGISTERED_TYPES.contains(&name.as_ref())
-                    || self.type_names.contains(name.as_ref())
-                    || typedefs
-                        .iter()
-                        .any(|(t, start)| t == name.as_ref() && *start < at);
+                    || REGISTERED_TYPES.iter().any(|t| same(t))
+                    || self.type_names.iter().any(|t| same(t))
+                    || typedefs.iter().any(|(t, start)| same(t) && *start < at);
                 (!known).then_some(name.as_ref())
             }
+            // FTEF-19.28: `type_string = QCC_PR_NewType(flag_qcfuncs?"string":"__string",
+            // ...)`, and so `vector` and `entity`.
+            Type::Simple(
+                simple @ (SimpleType::String | SimpleType::Vector | SimpleType::Entity),
+            ) if self.qcfuncs_off => Some(simple.as_str()),
             Type::Field(inner) | Type::Pointer(inner) => {
                 self.unknown_type_name(inner, typedefs, at)
             }
@@ -2367,6 +2422,7 @@ impl<'a> Resolver<'a> {
     /// resolves to nothing is "Unknown value" (QCD-4.1).
     fn resolve_uses(&mut self, file: FileId, scope: Option<Scope>, uses: &[RawUse]) {
         for use_ in uses {
+            self.settle(use_.span.start);
             let location = self.at(file, use_.span);
             let scope = scope.map(|s| Scope {
                 at: use_.span.start,
@@ -2415,7 +2471,9 @@ impl<'a> Resolver<'a> {
     fn resolve_value(&self, scope: Option<Scope>, name: &str) -> Found {
         let def = match scope {
             Some(scope) => self.lookup_in_scope(scope, name),
-            None => self.lookup_global(name),
+            None => self
+                .lookup_global(name)
+                .or_else(|| self.lookup_any_case(None, name)),
         };
         if let Some(def) = def {
             return Found::Def(def);
@@ -2806,6 +2864,40 @@ impl<'a> Resolver<'a> {
     /// members (FTEF-17.2). A local of another function, declared earlier, is invisible
     /// (QC-12.4).
     fn lookup_in_scope(&self, scope: Scope, name: &str) -> Option<DefId> {
+        self.lookup_in_scope_exactly(scope, name)
+            .or_else(|| self.lookup_any_case(Some(scope), name))
+    }
+
+    /// FTEF-19.25: under `-Fcaseinsens`, a name no definition has as written is the last local
+    /// of the function, then the last global, whose name is it in any ASCII case, as the hash
+    /// table's chain gives the newest first:
+    /// `QCC_PR_GetDef`'s second pass (`ins == 1`), which a lookup that allocates nothing makes
+    /// (`insmax = allocate?1:2;`).
+    fn lookup_any_case(&self, scope: Option<Scope>, name: &str) -> Option<DefId> {
+        if !self.case_insensitive {
+            return None;
+        }
+        let local = scope.and_then(|scope| {
+            self.index
+                .defs
+                .iter()
+                .enumerate()
+                .skip(scope.locals_start)
+                .rev()
+                .find(|(_, d)| d.owner == Some(scope.owner) && d.name.eq_ignore_ascii_case(name))
+                .map(|(index, _)| DefId(index))
+        });
+        local.or_else(|| {
+            self.globals
+                .keys()
+                .filter(|global| global.eq_ignore_ascii_case(name))
+                .filter_map(|global| self.lookup_global(global))
+                .max()
+        })
+    }
+
+    /// [`Resolver::lookup_in_scope`] of the name as written.
+    fn lookup_in_scope_exactly(&self, scope: Scope, name: &str) -> Option<DefId> {
         if self.fteqcc {
             // A class's name is the type, not its constructor member (FTEF-17.2).
             let member = || {

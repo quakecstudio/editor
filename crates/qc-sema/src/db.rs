@@ -29,13 +29,13 @@
 //! (the issue's second acceptance criterion).
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use qc_diag::Diagnostic;
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess};
+use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess, settings_at};
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
     FileDiagnostic, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
@@ -123,6 +123,9 @@ pub struct Db {
     files: HashMap<FileId, InputFile>,
     /// Memoized per-file parses.
     parses: HashMap<FileId, Memo<Parse>>,
+    /// The files that are a module's source in source form, a `progs.src` whose own text
+    /// FTEQCC compiles, parsed past a first `#!` line (PRJ-4.10, FTEF-19.27).
+    module_sources: HashSet<FileId>,
     /// Memoized per-file lowerings.
     lowerings: HashMap<FileId, Memo<FileDecls>>,
     /// The memoized module index over an ordered list of files.
@@ -264,7 +267,11 @@ impl Db {
             return memo.value.clone();
         }
         self.bump_parse();
-        let value = qc_syntax::parse_with(self.file_text(file), self.dialect);
+        let value = if self.module_sources.contains(&file) {
+            qc_syntax::parse_module_source(self.file_text(file), self.dialect)
+        } else {
+            qc_syntax::parse_with(self.file_text(file), self.dialect)
+        };
         self.parses.insert(
             file,
             Memo {
@@ -321,6 +328,8 @@ impl Db {
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: self.autoproto,
+            case_insensitive: false,
+            qcfuncs_off: false,
         };
         let index = resolve_module(&lowered, options);
         self.module = Some(Memo {
@@ -351,6 +360,14 @@ impl Db {
         {
             return memo.value.1.clone();
         }
+        // FTEF-19.27: the prelude's files are the source form's `progs.src`, parsed as a
+        // module's source.
+        for &file in &input.prelude {
+            if self.module_sources.insert(file) {
+                self.parses.remove(&file);
+                self.lowerings.remove(&file);
+            }
+        }
         self.bump_preprocess();
         let preprocessed = {
             let mut files = Files {
@@ -373,7 +390,17 @@ impl Db {
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
             let file = self.expanded_file(id, rendered);
             for d in file.parse.diagnostics() {
-                syntax.push(locate_diagnostic(&rendered.origins, id, d));
+                // FTEF-19.22: a parser warning takes the settings where it stands.
+                let settings = settings_at(&rendered.warnings, d.span.start);
+                let Some(code) = settings.map_or(Some(d.code), |s| s.reported_code(d.code)) else {
+                    continue;
+                };
+                let d = Diagnostic {
+                    code,
+                    message: d.message.clone(),
+                    span: d.span,
+                };
+                syntax.push(locate_diagnostic(&rendered.origins, id, &d));
             }
             decls.push(file.decls);
         }
@@ -395,15 +422,28 @@ impl Db {
             })
             .map(|(&id, _)| id)
             .collect();
+        let warnings: Vec<&[(usize, qc_preproc::WarningSettings)]> = preprocessed
+            .files
+            .iter()
+            .map(|r| r.warnings.as_slice())
+            .collect();
         let sources = Sources {
             maps: &maps,
             noref: &noref,
+            warnings: &warnings,
             extensions,
         };
         self.bump_module_index();
+        let command_line_flags = input
+            .command_line
+            .flags(qc_preproc::FlagSettings::default());
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
+            // FTEF-19.25, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
+            // before the core types are named.
+            case_insensitive: command_line_flags.is_on(qc_preproc::FteFlag::Caseinsensitive),
+            qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
         };
         let analysis = ModuleAnalysis {
             index: resolve_mapped(&decls, &sources, options),

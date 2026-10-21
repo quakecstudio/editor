@@ -235,7 +235,7 @@ fn fte_builtins(source: &str) -> Vec<(Option<String>, Option<i32>)> {
             let binum = builtin
                 .number()
                 .and_then(|t| crate::builtin_binum(&t.text_lossless(), Dialect::Fteqcc));
-            (builtin.engine_name(), binum)
+            (builtin.engine_name(qc_lexer::LexFlags::default()), binum)
         })
         .collect()
 }

@@ -42,7 +42,7 @@ fn binding(init: &str) -> (Option<i32>, Option<String>) {
         builtin
             .number()
             .and_then(|t| builtin_binum(&t.text_lossless(), Dialect::Fteqcc)),
-        builtin.engine_name(),
+        builtin.engine_name(qc_lexer::LexFlags::default()),
     )
 }
 

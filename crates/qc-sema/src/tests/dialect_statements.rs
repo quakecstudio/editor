@@ -55,6 +55,7 @@ fn analyze(files: &[(&str, &str)], listed: Option<bool>) -> ModuleAnalysis {
         compiled: (0..files.len()).map(FileId).collect(),
         autoproto: listed,
         include_dirs: Vec::new(),
+        command_line: qc_preproc::CommandLine::default(),
     };
     db.analyze_module(&input)
 }

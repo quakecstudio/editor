@@ -77,6 +77,9 @@ pub(crate) struct Input<'a> {
     pub(crate) pieces: Vec<Piece>,
     pub(crate) tokens: Vec<Tok>,
     pub(crate) diagnostics: Vec<Diagnostic>,
+    /// The compiler flags the tokens were lexed with, each from the byte it holds from
+    /// (FTEF-12.12).
+    pub(crate) flags: Vec<(usize, LexFlags)>,
 }
 
 fn latin1(bytes: &[u8]) -> String {
@@ -229,6 +232,7 @@ impl<'a> Input<'a> {
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),
             tokens: Vec::with_capacity(lexed.tokens.len()),
             diagnostics: Vec::new(),
+            flags: flags.to_vec(),
         };
         let text_end = lexable.end;
         let fte = dialect.has_fteqcc_extensions();

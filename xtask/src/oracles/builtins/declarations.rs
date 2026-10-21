@@ -11,8 +11,8 @@
 
 use qc_syntax::Dialect;
 
-use super::Case;
 use super::directives::BIND;
+use super::{Case, WERROR_OPTIONS};
 
 /// The vanilla programs (QC-11, QC-12, QC-13, QC-27.8).
 const VANILLA: &[&str] = &[
@@ -426,6 +426,23 @@ const FTEQCC: &[&str] = &[
     "inner_s *p;\nstruct inner_s { float a; };\n",
     "void() g = { typedef float t; };\nvoid() h = { t x; };\n",
     "foo x;\nvoid() g = { x = 1; };\n",
+    // FTEF-19.24: `assumeint` and `assumedouble` type numbers.
+    "#pragma flag enable assumeint\nstring s = 5;\n",
+    "#pragma flag enable assumeint\nfloat x = 5;\nint x;\n",
+    "#pragma flag enable assumeint\nint x = 5;\nint x = 5;\n",
+    "#pragma flag enable assumeint\nvector v = 5;\n",
+    "#pragma flag enable assumeint\nfloat x = 'a';\nint x;\n",
+    "#pragma flag enable assumeint\nfloat x = 5;\n#pragma flag disable assumeint\nfloat y = 5;\nint y;\n",
+    "#pragma flag enable assumedouble\nstring s = 1.5;\n",
+    "#pragma flag enable assumedouble\nfloat x = 1.5;\n__double x;\n",
+    "#pragma flag enable assumedouble\n__double d = 1.5;\n",
+    "#pragma flag enable assumedouble\nstring s = 1;\n",
+    // FTEF-19.26: `@` under `qccx`, `^^` no operator.
+    "#pragma flag enable qccx\nfloat x;\nstring s;\nvoid() g = { s = @x; };\n",
+    "float x;\nstring s;\nvoid() g = { s = @x; };\n",
+    "#pragma flag enable qccx\nfloat x;\nvoid() g = { @x = \"a\"; };\n",
+    "float x;\nvoid() g = { x = x ^^ x; };\n",
+    "float x;\nvoid() g = { x = x ^ x; };\n",
     // FTEF-19.21: after a qualifier the type may be left out, an `int`.
     "const x = 5;\n",
     "static y;\n",
@@ -563,6 +580,129 @@ const WARNINGS: &[&str] = &[
 ];
 
 /// Every case of the family, `f` bound before each program.
+/// Programs with the command-line options they are compiled with (FTEF-14.71, FTEF-19.22): a
+/// definition warning made an error, ignored or left a warning, by name, by `-Wall`, `-Wextra`,
+/// `-Wnone`, `-Wno-mundane` and `-Werror`, in either order, and the flags `-F` and `-K` set.
+const OPTIONS: &[(&[&str], &str)] = &[
+    (
+        &["-Fcaseinsens"],
+        "float Foo = 1;\nstring FOO = \"a\";\nfloat x = foo;\n",
+    ),
+    (
+        &["-Fcaseinsens"],
+        "string FOO = \"a\";\nfloat Foo = 1;\nfloat x = foo;\n",
+    ),
+    (&["-Werror-F306"], "float x = 1;\nvoid(float x) g = {};\n"),
+    (&["-Werror-f306"], "float x = 1;\nvoid(float x) g = {};\n"),
+    (
+        &["-Werror-F306", "-Wno-F306"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Wno-F306", "-Werror", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Werror", "-Wno-F306", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Wnone", "-Werror"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Wno-mundane", "-Werror", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Werror", "-Wno-Q208"],
+        "void() g = { local float x; local float x; };\n",
+    ),
+    (
+        &["-Werror", "-Wno-Q208", "-Wno-Q207"],
+        "void() g = { local float x; local float x; x = 1; };\n",
+    ),
+    (
+        &["-Werror", "-Wno-Q208", "-Wno-mundane"],
+        "void() g = { local float x; local float x; };\n",
+    ),
+    (
+        &["-WERROR", "-Wno-Q208"],
+        "unsigned float x;\nvoid() g = { x = 1; };\n",
+    ),
+    (
+        &["-Werror", "-Wno-Q208", "-Wno-unimplemented"],
+        "unsigned float x;\nvoid() g = { x = 1; };\n",
+    ),
+    (&["-Werror", "-Wno-Q208", "-Wno-F314"], "const k = \"a\";\n"),
+    (&["-Werror", "-Wno-Q208"], "const k = \"a\";\n"),
+    (&["-Fqccx", "-Werror", "-Wno-Q208"], "const k = \"a\";\n"),
+    (&["-Werror-F329"], "float x = 1;\nconst float x;\n"),
+    (&["-Werror-F329"], "const float x = 1;\nfloat x;\n"),
+    (&["-Werror-F327"], "enumflags { A = 3 };\n"),
+    (&["-Werror-F328"], "enum float { A };\n"),
+    (&["-Werror-F320"], "void(float) g = {};\n"),
+    (
+        &["-Werror-F129"],
+        "void() anglemod = #6;\nvoid() anglemod = {};\nfloat(float a) anglemod = #7;\n",
+    ),
+    (
+        &["-Werror-F326"],
+        "__deprecated(\"old\") float x;\nvoid() g = { x = 1; };\n",
+    ),
+    (
+        &["-Wall", "-Werror", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Wextra", "-Werror", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Wno-F306", "-Wall", "-Werror", "-Wno-Q208"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (&["-Fno-qcfuncs"], "string s = \"\\101\";\n"),
+    (&["-Kno-qcfuncs"], "__string s = \"\\8\";\n"),
+    (
+        &["-Fno-qcfuncs"],
+        "__string s = \"\\101\";\n__vector v;\n__entity e;\n",
+    ),
+    (&["-Fno-qcfuncs"], "vector v;\n"),
+    (&["-Fno-qcfuncs"], "entity e;\n"),
+    (&["-Fqccx"], "string s = \"a\":\"b\";\n"),
+    (&["-Fassumeint"], "float x = 5;\nint x;\n"),
+    (&["-Fassumeint"], "int x = 5;\nint x = 5;\n"),
+    (&["-Fcaseinsens"], "float Foo;\nvoid() g = { foo = 1; };\n"),
+    (&["-Fcaseinsens"], "typedef float Foo;\nFOO x;\n"),
+    (
+        &["-Fcaseinsens"],
+        "float Foo;\nfloat foo;\nvoid() g = { FOO = 1; };\n",
+    ),
+    (&["-Fcaseinsens"], "float Foo;\nstring foo;\n"),
+    (&["-Fcaseinsens"], "void() g = { float Foo; foo = 1; };\n"),
+    (
+        &["-Fcaseinsens"],
+        "void() Foo = #6;\nvoid() g = { foo(); };\n",
+    ),
+    (
+        &["-Fno-caseinsens"],
+        "float Foo;\nvoid() g = { foo = 1; };\n",
+    ),
+    (&[], "float Foo;\nvoid() g = { foo = 1; };\n"),
+];
+
+/// Programs whose `f` FTEQCC binds by an engine name written as a string, under compiler flags
+/// that change how a string is read (FTEF-19.23).
+const ENGINE_NAMES: &[&str] = &[
+    "void() f = #\"a\\101\";\n",
+    "#pragma flag disable qcfuncs\nvoid() f = #\"a\\101\";\n",
+    "#pragma flag disable qcfuncs\nvoid() f = #\"a\\60b\";\n",
+    "void() f = #\"a\\u00e9\";\n",
+    "#pragma flag enable utf8\nvoid() f = #\"a\\u00e9\";\n",
+    "#pragma flag disable qcfuncs\nvoid() f = :\"a\\101\";\n",
+];
+
 pub(super) fn cases() -> Vec<Case> {
     let program = |source: &str| format!("{BIND}{source}");
     let mut cases: Vec<Case> = VANILLA
@@ -575,8 +715,21 @@ pub(super) fn cases() -> Vec<Case> {
             .map(|source| Case::new(Dialect::Fteqcc, program(source))),
     );
     cases.extend(WARNINGS.iter().map(|source| Case {
-        werror: true,
+        options: WERROR_OPTIONS.map(str::to_owned).to_vec(),
         ..Case::new(Dialect::Fteqcc, program(source))
     }));
+    // FTEF-14.71: the command line's warning and flag options.
+    for (options, source) in OPTIONS {
+        cases.push(Case {
+            options: options.iter().map(|&o| o.to_owned()).collect(),
+            ..Case::new(Dialect::Fteqcc, program(source))
+        });
+    }
+    // FTEF-19.23: programs that bind `f` by an engine name in a string.
+    cases.extend(
+        ENGINE_NAMES
+            .iter()
+            .map(|source| Case::new(Dialect::Fteqcc, (*source).to_owned())),
+    );
     cases
 }
