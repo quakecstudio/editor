@@ -395,6 +395,7 @@ fn one_expansion_is_bounded_as_it_is_written() {
 // each dialect, its output under a gigabyte
 #[test]
 fn an_expansion_under_the_bound_is_written() {
+    let _one = super::one_bound_test_at_a_time();
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         let out = run(&square(1400), dialect);
         assert_eq!(codes(&out), vec![], "{dialect:?}");
@@ -408,6 +409,7 @@ fn an_expansion_under_the_bound_is_written() {
 // its tokens, writes
 #[test]
 fn fteqcc_bounds_an_expansion_s_bytes() {
+    let _one = super::one_bound_test_at_a_time();
     assert_eq!(
         codes(&run(&square(2000), Dialect::Fteqcc)),
         vec![Code::E0120]
@@ -422,6 +424,7 @@ fn fteqcc_bounds_an_expansion_s_bytes() {
 // distinct macros stopping with E0120 once, its first use left as written
 #[test]
 fn vanilla_expansions_are_bounded() {
+    let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0 x\n");
     for i in 1..24 {
         text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
@@ -651,6 +654,7 @@ fn other_directives_continue_as_fteqcc_s_do() {
 // here, so the tokens stay under theirs; a use past it is E0120 under each dialect
 #[test]
 fn the_expansions_of_a_file_are_bounded() {
+    let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0\n");
     for i in 1..=20 {
         text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
@@ -667,6 +671,7 @@ fn the_expansions_of_a_file_are_bounded() {
 // as under the vanilla dialect (QC-9.18)
 #[test]
 fn an_expansion_exactly_at_the_bound_is_written() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 1_398_102;
     let fte_text = format!("#define D(x) {}\nD(1)\n", vec!["x"; n].join(", "));
     let out = run(&fte_text, Dialect::Fteqcc);

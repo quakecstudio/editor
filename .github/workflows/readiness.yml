@@ -113,18 +113,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-18
           echo "CC=clang-18" >> "$GITHUB_ENV"
-      # A mutant that stops a reader advancing can make a test take the runner's
-      # 16 GB before its timeout ends it, and the runner then loses its agent
-      # (P2-109). The measurement runs in a scope of its own capped at 12 GB with
-      # no swap, so the kernel kills the test binary that grows past it, which
-      # fails that mutant's tests (caught), and the runner keeps the rest.
       - name: Measure the mutation score
+        env:
+          # A mutant that stops a reader advancing can make a test take the
+          # runner's 16 GB before its timeout ends it, and the runner then loses
+          # its agent (P2-109). Each test binary cargo runs gets 4 GiB of data
+          # memory (RLIMIT_DATA), so an allocation past it fails and aborts that
+          # binary, which fails the mutant's tests, and the four jobs together
+          # stay inside the runner. Builds are not limited.
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=4294967296 --
         run: |
           read -ra crates <<< "$CRATES"
-          sudo --preserve-env systemd-run --scope --quiet --uid="$(id -u)" --gid="$(id -g)" \
-            -p MemoryMax=12G -p MemorySwapMax=0 \
-            env PATH="$PATH" HOME="$HOME" \
-            cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
+          cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: measured-mutation
