@@ -10,7 +10,10 @@ The graph reads id's list form of `progs.src` and FTEQCC's source form (a `progs
 itself QuakeC with `#includelist`), and follows only the directives that decide which files
 are read: `#include`, `#includelist`, the conditionals, `#define` and `#undef` for them, and
 the pragmas `sourcefile`, `progs_dat`, `includedir` and `once`. Everything else, and the
-errors in a directive's form, is the preprocessor's work (`qc-preproc`).
+errors in a directive's form, is the preprocessor's work (`qc-preproc`). Under the FTEQCC
+dialect each QuakeC file is read with the preprocessor's directive reader
+(`qc_preproc::FteFileReader`), so the graph meets the directives where FTEQCC meets them
+(PRJ-5.13, PRJ-5.14).
 
 Files open as the host file system opens them, as FTEQCC and id's `qcc` do, and a name whose
 case differs from the file it opened is warning W0402 on every OS, so a project that would
@@ -21,7 +24,7 @@ Written from the spec, not ported. Output paths follow
 project.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer` (diagnostic codes) and `qc-preproc` (the
-  file loader).
+  file loader and the FTEQCC directive reader).
 - **Spec sections:** PRJ-1 to PRJ-7 in [`project-file.md`](../../docs/spec/project-file.md);
   the directive codes QCD-8 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). A readiness run

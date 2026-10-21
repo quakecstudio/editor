@@ -1577,6 +1577,72 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
     tally
 }
 
+/// Whether the project graph of `case`, a graph case of the directive family, lists a file that
+/// binds `f` (PRJ-5.13): the module is the `progs.src` the oracle reads, and under the FTEQCC
+/// dialect.
+fn graph_binds(case: &Case) -> bool {
+    let mut loader = qc_project::MemoryLoader::new();
+    let compiled = case.compiled();
+    loader.insert("progs.src", format!("progs.dat\n{compiled}\n").as_bytes());
+    loader.insert(compiled, case.source.as_bytes());
+    let mut binding = Vec::new();
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        loader.insert(name.as_str(), text.as_bytes());
+        if text == directives::BIND {
+            binding.push(PathBuf::from(name));
+        }
+    }
+    let dirs: Vec<PathBuf> = case.include_dirs().map(PathBuf::from).collect();
+    let graph = qc_project::build_graph(
+        &mut loader,
+        Path::new("progs.src"),
+        &[],
+        &dirs,
+        Dialect::Fteqcc,
+    );
+    graph.files.iter().any(|file| binding.contains(&file.path))
+}
+
+/// The project graph's cases (PRJ-5.13): programs whose one file that binds `f` FTEQCC reads,
+/// binding `f` to `#5`, or does not, accepting the program with no `f`. The preprocessor reads no
+/// `#includelist`, so the profile is not compared on them.
+pub(crate) fn graph_cases() -> Vec<Case> {
+    directives::graph_cases()
+}
+
+/// The graph cases whose project graph lists the file that binds `f` where `outcomes` say the
+/// oracle did not read it, or the other way round, or whose oracle neither bound `f` to `#5` nor
+/// accepted the program, so that the case says nothing of what it read (PRJ-5.13).
+pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>) -> Vec<String> {
+    let mut differ = Vec::new();
+    for case in graph_cases() {
+        let read = match outcomes.get(&case.key()) {
+            Some(Outcome::Bound { number: 5, .. }) => true,
+            Some(Outcome::Accepted) => false,
+            Some(oracle) => {
+                differ.push(format!(
+                    "{}: oracle {oracle}, which reads no file",
+                    show(&case)
+                ));
+                continue;
+            }
+            None => {
+                differ.push(format!("{}: not recorded in {FIXTURE}", show(&case)));
+                continue;
+            }
+        };
+        if graph_binds(&case) != read {
+            let which = if read {
+                "the oracle reads the file, the graph does not"
+            } else {
+                "the oracle does not read the file, the graph does"
+            };
+            differ.push(format!("{}: {which}", show(&case)));
+        }
+    }
+    differ
+}
+
 /// How the cases of [`compare`] came out.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Tally {
@@ -1629,8 +1695,13 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     let cases = cases();
+    let graph_cases = graph_cases();
     let mut outcomes = BTreeMap::new();
-    for case in &cases {
+    for case in cases.iter().chain(&graph_cases) {
+        // A graph case may be a case of the cross product too.
+        if outcomes.contains_key(&case.key()) {
+            continue;
+        }
         match oracle(oracles, &work, case) {
             Ok(outcome) => outcomes.insert(case.key(), outcome),
             Err(problem) => {
@@ -1655,7 +1726,7 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
         let recorded = read_fixture(root)?;
         // A changed cross product is recorded again with `--record` once it is right. Where
         // `unsigned long` is 32 bits a wide `#pragma line` may read otherwise (FTEF-14.50).
-        for case in &cases {
+        for case in cases.iter().chain(&graph_cases) {
             let key = case.key();
             let Some(outcome) = outcomes.get(&key) else {
                 continue;
@@ -1677,7 +1748,16 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    Ok(ok && tally.differ == 0)
+    let graph = graph_differences(&outcomes);
+    for problem in &graph {
+        println!("FAIL  project graph: {problem}");
+    }
+    println!(
+        "oracles: {} project graph cases, {} differ",
+        graph_cases.len(),
+        graph.len()
+    );
+    Ok(ok && tally.differ == 0 && graph.is_empty())
 }
 
 #[cfg(test)]

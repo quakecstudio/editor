@@ -182,6 +182,40 @@ fn an_include_the_database_lacks_is_an_error() {
     assert_eq!(d.diagnostic.span.start, 0);
 }
 
+// spec QC-9.20: under the vanilla dialect an include only an include directory holds is read
+// from there, and one beside the including file is preferred to it.
+#[test]
+fn a_vanilla_include_is_found_in_the_include_directories() {
+    let files = [
+        (
+            "src/main.qc",
+            "#include \"inc.qh\"\nvoid() f = { common = 1; };\n",
+        ),
+        ("lib/inc.qh", "float common;\n"),
+    ];
+    let (mut db, mut input) = module(&files, &["src/main.qc"], Dialect::Vanilla);
+    input.include_dirs = vec![PathBuf::from("lib")];
+    let analysis = db.analyze_module(&input);
+    assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
+    let beside = [
+        files[0],
+        ("src/inc.qh", "float common;\n"),
+        ("lib/inc.qh", "float other;\n"),
+    ];
+    let (mut db, mut input) = module(&beside, &["src/main.qc"], Dialect::Vanilla);
+    input.include_dirs = vec![PathBuf::from("lib")];
+    let analysis = db.analyze_module(&input);
+    assert!(codes(&analysis).is_empty(), "{:?}", codes(&analysis));
+    let common = analysis
+        .index
+        .defs
+        .iter()
+        .find(|d| d.name == "common")
+        .unwrap();
+    assert_eq!(common.location.file, FileId(1));
+    assert!(analysis.index.defs.iter().all(|d| d.name != "other"));
+}
+
 // spec QC-23.5: a compiled file the database has no path for, or whose path does not open,
 // is "Error opening PATH" (QCD-5.2) and the module still resolves the rest.
 #[test]

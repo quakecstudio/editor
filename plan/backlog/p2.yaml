@@ -1650,6 +1650,8 @@ issues:
   - P2-102
   - P2-103
   - P2-104
+  - P2-105
+  - P2-106
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2056,3 +2058,49 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo test -p qc-sema
+- key: P2-105
+  title: The FTEQCC preprocessor reads a directive after a `\` that ends a line of code
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  summary: |
+    In code, FTEQCC's `QCC_PR_LexPunctuation` (engine/qclib/qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) passes over a `\` and the line break after it (`pr_file_p+=2;`) without calling `QCC_PR_NewLine`, so a `#` at the start of the next line is no directive: the pinned FTEQCC refuses `float g; \`, a line break and `#define N 1` with "Explicit precompiler usage when not defined define". The FTEQCC preprocessor (crates/qc-preproc/src/lib.rs, `fte_file_directive` with `fte_directive::starts_line`) takes that `#` to start a line and runs the directive, and so does the project graph, which reads code with the same lexer (PRJ-5.13).
+  environment: |
+    feat/518-graph-fte-directives; found by the self-review of P2-101 against the pinned FTEQCC
+  depends:
+  - P2-101
+  deliverable:
+  - 'crates/qc-preproc (and qc-lexer where its tokens need it): under an FTEQCC dialect a `#` after a `\` and a line break in code starts no directive, for the preprocessor and the graph reader alike; docs/spec/dialect-fteqcc.md states it'
+  acceptance:
+  - 'The builtin differential holds `float g; \` before `#define`, `#undef` and `#include` lines, and the profile and the project graph agree with the recorded FTEQCC on each, with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p xtask
+- key: P2-106
+  title: The GMQCC graph and preprocessor read directives the same way
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: M
+  reqs:
+  - LANG-3
+  - LANG-5
+  summary: |
+    Under the GMQCC dialect the preprocessor reads directives with FTEQCC's reader and defines `FTEQCC` and `__FTEQCC__` (Dialect::has_fteqcc_extensions, FTEF-14.48), but the project graph reads them with its PRJ-5 line reader and defines neither (crates/qc-project/src/graph.rs, which uses the FTEQCC reader only for Dialect::Fteqcc, PRJ-5.13). A GMQCC module with `#ifdef FTEQCC` before an `#include`, or an `#include` on a line a `// c \` comment carries, therefore lists other files in its graph than the preprocessor reads. GMQCC's own `ftepp` reads neither as FTEQCC does, and Xonotic, the GMQCC corpus, builds with the C preprocessor.
+  environment: |
+    feat/518-graph-fte-directives; found by the self-review of P2-101
+  depends:
+  - P2-101
+  deliverable:
+  - 'crates/qc-project/src/graph.rs and crates/qc-preproc: under the GMQCC dialect the graph and the preprocessor follow one reading of the directives, the one PRJ-5.12 and a new statement in docs/spec/project-file.md give, checked against GMQCC''s ftepp or the C preprocessor Xonotic builds with'
+  acceptance:
+  - 'Under GMQCC a module with `#ifdef FTEQCC` and a carried line before an `#include` lists the files the preprocessor reads, with a test citing the statement it pins; Xonotic still opens with the graph `cargo xtask project-corpus` checks'
+  verify:
+  - cargo test -p qc-project
+  - cargo xtask project-corpus

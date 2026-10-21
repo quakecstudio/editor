@@ -553,13 +553,13 @@ fn block_comment_end(text: &[u8], from: usize) -> usize {
 /// A `#define` or `#append` as `QCC_PR_PreProcessor_Define` reads it.
 pub(crate) struct Definition {
     /// The macro's name.
-    name: Range<usize>,
+    pub(crate) name: Range<usize>,
     /// The parameters of a function-like macro, as written.
-    params: Option<Vec<Vec<u8>>>,
+    pub(crate) params: Option<Vec<Vec<u8>>>,
     /// Whether the last parameter is `...`.
-    variadic: Variadic,
+    pub(crate) variadic: Variadic,
     /// The body as stored.
-    value: Text,
+    pub(crate) value: Text,
     /// The first `#` that starts a continued line of the body, "preprocessor directive within
     /// preprocessor macro" (FTEF-14.46).
     evil: Option<usize>,

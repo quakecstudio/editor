@@ -2,15 +2,17 @@
 
 //! A module's ordered file graph (PRJ-4, PRJ-5, PRJ-6).
 //!
-//! The source is read a line at a time. Only the directives that decide which files are read
-//! are followed; everything else is the preprocessor's (QC-9) and the dialect profiles' work.
+//! The source is read a line at a time, and under the FTEQCC dialect each QuakeC file with the
+//! preprocessor's directive reader (PRJ-5.13). Only the directives that decide which files are
+//! read are followed; everything else is the preprocessor's (QC-9) and the dialect profiles'
+//! work.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect};
-use qc_preproc::{Loader, cond};
+use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -369,6 +371,9 @@ struct Cursor {
     conds: Vec<Cond>,
     in_comment: bool,
     pending: VecDeque<(String, u32, Via)>,
+    /// Under the FTEQCC dialect, the reader of a QuakeC file, which reads it in place of the
+    /// lines above (PRJ-5.13).
+    fte: Option<FteFileReader>,
 }
 
 impl Cursor {
@@ -389,7 +394,15 @@ impl Cursor {
             conds: Vec::new(),
             in_comment: false,
             pending: VecDeque::new(),
+            fte: None,
         }
+    }
+
+    /// A QuakeC file of an FTEQCC module, read as FTEQCC reads it from `start` (PRJ-5.13).
+    fn fteqcc(path: PathBuf, text: Vec<u8>, entry: Option<usize>, start: FileStart) -> Self {
+        let mut cursor = Self::new(path, Vec::new(), entry, Base::Code);
+        cursor.fte = Some(FteFileReader::new(text, start));
+        cursor
     }
 
     fn taking(&self) -> bool {
@@ -414,7 +427,8 @@ impl Cursor {
 struct Builder<'l, L> {
     loader: &'l mut L,
     root_dir: PathBuf,
-    macros: HashMap<String, String>,
+    /// The macros, and under FTEQCC its count of open sides (PRJ-5.4, PRJ-5.13).
+    state: ModuleState,
     include_dirs: Vec<PathBuf>,
     once: HashSet<PathBuf>,
     stack: Vec<Cursor>,
@@ -437,6 +451,11 @@ impl<L: Loader> Builder<'_, L> {
         while let Some(cursor) = self.stack.last_mut() {
             if let Some((word, line, via)) = cursor.pending.pop_front() {
                 self.bring_in(&word, line, via);
+                continue;
+            }
+            if let Some(reader) = &mut cursor.fte {
+                let event = reader.next(&mut self.state);
+                self.fte_event(event);
                 continue;
             }
             let Some((mut text, number)) = cursor.next_line() else {
@@ -496,6 +515,36 @@ impl<L: Loader> Builder<'_, L> {
         }
     }
 
+    /// Acts on what the FTEQCC reader of the innermost file met, or ends the file (PRJ-5.13).
+    fn fte_event(&mut self, event: Option<FteEvent>) {
+        let Some(event) = event else {
+            self.stack.pop();
+            return;
+        };
+        match event {
+            FteEvent::Include { name, line } => {
+                self.bring_in(&lossy(Some(&name)), line, Via::Include)
+            }
+            FteEvent::ListEntry { name, line } => {
+                self.bring_in(&lossy(Some(&name)), line, Via::IncludeList);
+            }
+            FteEvent::Output { name, .. } => {
+                if let Some(cursor) = self.stack.last() {
+                    let path = dir_of(&cursor.path).join(lossy(Some(&name)));
+                    self.graph.declared_output = Some(normalize(&path));
+                }
+            }
+            FteEvent::Pragma { name, text, .. } => self.pragma(&lossy(Some(&name)), &text),
+            FteEvent::UnclosedList { line } => {
+                if let Some(cursor) = self.stack.last() {
+                    let file = cursor.path.clone();
+                    let message = "#includelist without #endlist".to_owned();
+                    self.report(Code::E0406, message, &file, line);
+                }
+            }
+        }
+    }
+
     fn directive(&mut self, name: &str, operand: &[u8], line: u32) {
         let Some(cursor) = self.stack.last_mut() else {
             return;
@@ -503,7 +552,7 @@ impl<L: Loader> Builder<'_, L> {
         let parent = cursor.taking();
         match name {
             "ifdef" | "ifndef" => {
-                let defined = first_name(operand).is_some_and(|n| self.macros.contains_key(&n));
+                let defined = first_name(operand).is_some_and(|n| self.state.is_defined(&n));
                 let taking = parent && defined == (name == "ifdef");
                 cursor.conds.push(Cond {
                     taking,
@@ -515,7 +564,7 @@ impl<L: Loader> Builder<'_, L> {
                 let taking = parent
                     && cond::eval(
                         &lossy(Some(operand)),
-                        &|n| self.macros.get(n).cloned(),
+                        &|n| self.state.value(n).map(str::to_owned),
                         self.dialect,
                     );
                 cursor.conds.push(Cond {
@@ -531,12 +580,12 @@ impl<L: Loader> Builder<'_, L> {
                         && match name {
                             "elif" => cond::eval(
                                 &lossy(Some(operand)),
-                                &|n| self.macros.get(n).cloned(),
+                                &|n| self.state.value(n).map(str::to_owned),
                                 self.dialect,
                             ),
                             _ => {
-                                let defined = first_name(operand)
-                                    .is_some_and(|n| self.macros.contains_key(&n));
+                                let defined =
+                                    first_name(operand).is_some_and(|n| self.state.is_defined(&n));
                                 defined == (name == "elifdef")
                             }
                         };
@@ -560,13 +609,13 @@ impl<L: Loader> Builder<'_, L> {
                         .trim_ascii_start()
                         .get(macro_name.len()..)
                         .unwrap_or_default();
-                    self.macros
-                        .insert(macro_name, lossy(Some(body.trim_ascii())));
+                    self.state
+                        .define(macro_name, lossy(Some(body.trim_ascii())));
                 }
             }
             "undef" => {
                 if let Some(macro_name) = first_name(operand) {
-                    self.macros.remove(&macro_name);
+                    self.state.undefine(&macro_name);
                 }
             }
             "include" => {
@@ -581,23 +630,26 @@ impl<L: Loader> Builder<'_, L> {
                     self.graph.declared_output = Some(normalize(&dir_of(&cursor.path).join(path)));
                 }
             }
-            "pragma" => self.pragma(operand),
+            "pragma" => {
+                let operand = operand.trim_ascii_start();
+                let len = operand
+                    .iter()
+                    .take_while(|b| !matches!(b, b' ' | b'\t' | b'('))
+                    .count();
+                let name = lossy(operand.get(..len));
+                self.pragma(&name, operand.get(len..).unwrap_or_default());
+            }
             _ => {}
         }
     }
 
-    /// The pragmas of PRJ-5.6 to PRJ-5.9.
-    fn pragma(&mut self, operand: &[u8]) {
+    /// The pragmas of PRJ-5.6 to PRJ-5.9: the pragma `name`, with the text `args` after it.
+    fn pragma(&mut self, name: &str, args: &[u8]) {
         let Some(cursor) = self.stack.last() else {
             return;
         };
-        let operand = operand.trim_ascii_start();
-        let len = operand
-            .iter()
-            .take_while(|b| !matches!(b, b' ' | b'\t' | b'('))
-            .count();
-        let pragma = lossy(operand.get(..len)).to_ascii_lowercase();
-        let (args, _) = com_parse_words(operand.get(len..).unwrap_or_default(), false);
+        let pragma = name.to_ascii_lowercase();
+        let (args, _) = com_parse_words(args, false);
         // FTEF-14.44: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
         let marked = if self.dialect == Dialect::Fteqcc {
@@ -749,7 +801,16 @@ impl<L: Loader> Builder<'_, L> {
             via,
             parent,
         });
-        let mut cursor = Cursor::new(path, bytes, Some(entry), Base::Code);
+        let mut cursor = if self.dialect == Dialect::Fteqcc {
+            let start = if via == Via::Include {
+                FileStart::Included
+            } else {
+                FileStart::Compiled
+            };
+            Cursor::fteqcc(path, bytes, Some(entry), start)
+        } else {
+            Cursor::new(path, bytes, Some(entry), Base::Code)
+        };
         // `QCC_Include(fullname, newunit)`: only a file read as a new unit is compiled.
         if via == Via::Include {
             cursor.unit = unit;
@@ -789,10 +850,14 @@ pub fn build_graph<L: Loader>(
     let mut builder = Builder {
         loader,
         root_dir: dir_of(&src),
-        macros: defines
-            .iter()
-            .map(|d| (d.name.clone(), d.value.clone()))
-            .collect(),
+        state: {
+            let defines = defines.iter().map(|d| (d.name.clone(), d.value.clone()));
+            if dialect == Dialect::Fteqcc {
+                ModuleState::fteqcc(defines)
+            } else {
+                ModuleState::new(defines)
+            }
+        },
         include_dirs: include_dirs.iter().map(|d| normalize(d)).collect(),
         once: HashSet::new(),
         stack: Vec::new(),
@@ -815,9 +880,12 @@ pub fn build_graph<L: Loader>(
                 via: Via::Root,
                 parent: None,
             });
-            builder
-                .stack
-                .push(Cursor::new(src, text, Some(0), Base::Code));
+            let cursor = if dialect == Dialect::Fteqcc {
+                Cursor::fteqcc(src, text, Some(0), FileStart::Compiled)
+            } else {
+                Cursor::new(src, text, Some(0), Base::Code)
+            };
+            builder.stack.push(cursor);
         }
         Some(false) => {
             builder.graph.form = Some(Form::List);

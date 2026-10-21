@@ -4,7 +4,8 @@
 
 use std::path::PathBuf;
 
-use super::{GraphSpec, brought, build, diags, names, source};
+use super::{GraphSpec, brought, build, diags, names, source, vias};
+use crate::Via;
 
 // spec PRJ-5.1: a directive is a # line, with blanks allowed before and after the #
 #[test]
@@ -649,4 +650,143 @@ fn includedir_without_a_path() {
     });
     assert_eq!(names(&graph), ["progs/main.src"]);
     assert_eq!(diags(&graph), ["E0111 progs/main.src:2"]);
+}
+
+/// The files a list-form module of `dialect` compiling `t.qc` brings in after it, with `files`.
+fn after_t(files: &[(&str, &str)], dialect: qc_lexer::Dialect) -> Vec<String> {
+    let mut all = vec![("progs.src", "progs.dat\nt.qc\n")];
+    all.extend_from_slice(files);
+    let graph = build(&GraphSpec {
+        files: &all,
+        dialect,
+        ..GraphSpec::default()
+    });
+    names(&graph).into_iter().skip(1).collect()
+}
+
+// spec PRJ-5.13: under FTEQCC a directive's line ends where `QCC_PR_SkipToEndOfLine` ends it,
+// names match by their first bytes and `FTEQCC` is defined; the vanilla dialect keeps PRJ-5.1
+#[test]
+fn fteqcc_files_are_read_with_the_directive_reader() {
+    let fte = qc_lexer::Dialect::Fteqcc;
+    let vanilla = qc_lexer::Dialect::Vanilla;
+    let carried = [
+        ("t.qc", "#undef N // c \\\n#include \"b.qh\"\n"),
+        ("b.qh", ""),
+    ];
+    assert!(after_t(&carried, fte).is_empty());
+    let prefixed = [
+        (
+            "t.qc",
+            "#defined Q 1\n#ifdef Q\n#include \"b.qh\"\n#endif\n",
+        ),
+        ("b.qh", ""),
+    ];
+    assert_eq!(after_t(&prefixed, fte), ["b.qh"]);
+    assert!(after_t(&prefixed, vanilla).is_empty());
+    let predefined = [
+        ("t.qc", "#ifdef FTEQCC\n#include \"b.qh\"\n#endif\n"),
+        ("b.qh", ""),
+    ];
+    assert_eq!(after_t(&predefined, fte), ["b.qh"]);
+    assert!(after_t(&predefined, vanilla).is_empty());
+    let gmqcc = qc_lexer::Dialect::Gmqcc;
+    assert!(after_t(&prefixed, gmqcc).is_empty());
+}
+
+// spec PRJ-5.13: under FTEQCC one count of open sides runs from file to file, so an `#else` in
+// the including file ends a side the included file opened; the vanilla dialect closes the side
+// at the end of its file (QC-9.12)
+#[test]
+fn fteqcc_sides_run_from_file_to_file() {
+    let files = [
+        (
+            "t.qc",
+            "#include \"o.qh\"\n#else\n#include \"b.qh\"\n#endif\n",
+        ),
+        ("o.qh", "#if 1\n"),
+        ("b.qh", ""),
+    ];
+    assert_eq!(after_t(&files, qc_lexer::Dialect::Fteqcc), ["o.qh"]);
+    assert_eq!(
+        after_t(&files, qc_lexer::Dialect::Vanilla),
+        ["o.qh", "b.qh"]
+    );
+}
+
+// spec PRJ-5.13: under FTEQCC an included file's first line is a directive's only at its first
+// byte, and a list entry's after spaces and tabs too, as each is included or compiled
+#[test]
+fn fteqcc_file_starts_follow_how_the_file_came_in() {
+    let fte = qc_lexer::Dialect::Fteqcc;
+    let included = [
+        ("t.qc", "#include \"o.qh\"\n"),
+        ("o.qh", "  #include \"b.qh\"\n"),
+        ("b.qh", ""),
+    ];
+    assert_eq!(after_t(&included, fte), ["o.qh"]);
+    let listed = [
+        ("t.qc", "#includelist\no.qc\n#endlist\n"),
+        ("o.qc", "  #include \"b.qh\"\n"),
+        ("b.qh", ""),
+    ];
+    assert_eq!(after_t(&listed, fte), ["o.qc", "b.qh"]);
+    assert_eq!(
+        vias(&listed_graph(&listed)),
+        [
+            ("t.qc".to_owned(), Via::Listed),
+            ("o.qc".to_owned(), Via::IncludeList),
+            ("b.qh".to_owned(), Via::Include),
+        ]
+    );
+}
+
+/// The FTEQCC graph of a list-form module compiling `t.qc`, with `files`.
+fn listed_graph(files: &[(&str, &str)]) -> crate::FileGraph {
+    let mut all = vec![("progs.src", "progs.dat\nt.qc\n")];
+    all.extend_from_slice(files);
+    build(&GraphSpec {
+        files: &all,
+        dialect: qc_lexer::Dialect::Fteqcc,
+        ..GraphSpec::default()
+    })
+}
+
+// spec PRJ-5.13: under FTEQCC `#output`, the pragmas and an unclosed list reach the graph from
+// the reader, and `#eof` ends the file
+#[test]
+fn fteqcc_outputs_pragmas_and_lists_reach_the_graph() {
+    let graph = build(&GraphSpec {
+        files: &[
+            (
+                "src/main.src",
+                "#output \"../a.dat\"\n#pragma includedir inc\n#pragma sourcefile c.src\n\
+                 #include \"x.qh\"\n#includelist\nl.qc\n",
+            ),
+            ("src/inc/x.qh", "#eof\n#include \"gone.qh\"\n"),
+            ("src/l.qc", ""),
+        ],
+        src: "src/main.src",
+        dialect: qc_lexer::Dialect::Fteqcc,
+        ..GraphSpec::default()
+    });
+    assert_eq!(names(&graph), ["src/main.src", "src/inc/x.qh", "src/l.qc"]);
+    assert_eq!(graph.declared_output, Some(PathBuf::from("a.dat")));
+    assert_eq!(graph.sourcefiles, [PathBuf::from("src/c.src")]);
+    assert_eq!(diags(&graph), ["E0406 src/main.src:5"]);
+}
+
+// spec PRJ-5.14: under FTEQCC an `#include` in the text `DONT_COMPILE_THIS_FILE` passes over
+// brings in no file, and an `#includelist` there still compiles its entries
+#[test]
+fn fteqcc_text_that_is_not_compiled_includes_nothing() {
+    let files = [
+        (
+            "t.qc",
+            "#pragma DONT_COMPILE_THIS_FILE\n#include \"b.qh\"\n#includelist\nl.qc\n#endlist\n",
+        ),
+        ("b.qh", ""),
+        ("l.qc", ""),
+    ];
+    assert_eq!(after_t(&files, qc_lexer::Dialect::Fteqcc), ["l.qc"]);
 }

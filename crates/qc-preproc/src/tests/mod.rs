@@ -7,7 +7,7 @@
 )]
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use proptest::prelude::*;
 
@@ -23,6 +23,8 @@ use super::{
 struct ProjectSpec<'a> {
     files: &'a [(&'a str, &'a str)],
     compile: &'a [&'a str],
+    /// The module's include directories (`Preprocessor::with_include_dirs`).
+    include_dirs: &'a [&'a str],
 }
 
 impl Default for ProjectSpec<'_> {
@@ -30,6 +32,7 @@ impl Default for ProjectSpec<'_> {
         Self {
             files: &[],
             compile: &["a.qc"],
+            include_dirs: &[],
         }
     }
 }
@@ -39,7 +42,8 @@ fn project(spec: &ProjectSpec<'_>) -> (Preprocessor<MemoryLoader>, Vec<FileOutpu
     for (path, text) in spec.files {
         loader.insert(*path, text.as_bytes());
     }
-    let mut pp = Preprocessor::new(loader);
+    let dirs: Vec<PathBuf> = spec.include_dirs.iter().map(PathBuf::from).collect();
+    let mut pp = Preprocessor::new(loader).with_include_dirs(&dirs);
     let outputs = spec
         .compile
         .iter()
@@ -169,6 +173,7 @@ fn include_relative_to_includer() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["src/a.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "float y ; float z ; float x ;");
     let paths: Vec<String> = outputs[0]
@@ -179,6 +184,68 @@ fn include_relative_to_includer() {
         .collect();
     assert_eq!(paths[0], "src/inc/b.qc:1");
     assert_eq!(paths[3], "src/c.qc:1");
+}
+
+// spec QC-9.20: under the vanilla dialect an `#include` not beside the including file is found
+// in the include directories, in order
+#[test]
+fn include_found_in_an_include_directory() {
+    let files = [
+        ("src/a.qc", "#include \"b.qh\"\nfloat x;"),
+        ("one/b.qh", "float y;"),
+        ("two/b.qh", "float z;"),
+    ];
+    let (pp, outputs) = project(&ProjectSpec {
+        files: &files,
+        compile: &["src/a.qc"],
+        include_dirs: &["one", "two"],
+    });
+    assert_eq!(tokens(&outputs[0]), "float y ; float x ;");
+    assert!(outputs[0].diagnostics.is_empty());
+    let paths: Vec<String> = outputs[0]
+        .tokens
+        .iter()
+        .map(|t| where_(pp.sources(), t.span))
+        .collect();
+    assert_eq!(paths[0], "one/b.qh:1");
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files[..1],
+        compile: &["src/a.qc"],
+        include_dirs: &["one", "two"],
+    });
+    let codes: Vec<&str> = outputs[0]
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["E0111"]);
+    // The message shows the path as the host writes it.
+    let message = outputs[0].diagnostics[0].message.replace('\\', "/");
+    assert!(message.contains("src/b.qh"), "{message}");
+}
+
+// spec QC-9.20: a file beside the including file is preferred to one in an include directory,
+// and an absolute name is not looked for in them
+#[test]
+fn include_beside_the_includer_is_preferred() {
+    let files = [
+        ("src/a.qc", "#include \"b.qh\"\nfloat x;"),
+        ("src/b.qh", "float w;"),
+        ("one/b.qh", "float y;"),
+    ];
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files,
+        compile: &["src/a.qc"],
+        include_dirs: &["one"],
+    });
+    assert_eq!(tokens(&outputs[0]), "float w ; float x ;");
+    let files = [("a.qc", "#include \"/b.qh\"\n"), ("one/b.qh", "float y;")];
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files,
+        include_dirs: &["one"],
+        ..ProjectSpec::default()
+    });
+    assert_eq!(outputs[0].diagnostics[0].code.as_str(), "E0111");
 }
 
 // spec QC-9.2: diagnostics in included text carry the included file's name and line
@@ -417,6 +484,7 @@ fn macros_span_files() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "0");
     assert_eq!(tokens(&outputs[1]), "1 $f");
@@ -599,6 +667,7 @@ fn blocks_close_per_file() {
     let (_, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(
         tokens(&outputs[1]),
@@ -627,6 +696,7 @@ fn frames_per_source_file() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "1");
     assert_eq!(tokens(&outputs[1]), "0 $a");
@@ -686,6 +756,7 @@ fn fteqcc_frames_carry_between_files() {
     let (_, vanilla) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(codes(&vanilla[1]), [Code::E0106, Code::E0106]);
     // Another file's definition replaces the value; the same file's second one does not.
@@ -977,6 +1048,7 @@ proptest! {
 }
 mod directives;
 mod fteqcc;
+mod graph;
 mod lines;
 mod reviewer;
 mod spacing;

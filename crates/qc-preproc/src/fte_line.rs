@@ -8,10 +8,9 @@
 
 use qc_lexer::{Dialect, Lexed};
 
-use crate::cond::{self, FteIfError};
 use crate::fte_directive::{
-    Directive, IfTest, Junk, TextStart, byte_at, read, simple_get_token, skip_to_end_of_line,
-    starts_line,
+    Directive, IfTest, Junk, TextStart, byte_at, condition, read, simple_get_token,
+    skip_to_end_of_line, starts_line,
 };
 use crate::fte_macro::{Reading, read_define};
 use crate::{FileId, Relexed, merge_errors};
@@ -42,6 +41,7 @@ pub fn fte_directive_end(text: &[u8], hash: usize) -> Option<usize> {
         | Directive::Error { end, .. }
         | Directive::Warning { end, .. }
         | Directive::Build { end }
+        | Directive::Output { end, .. }
         | Directive::Pack { end, .. }
         | Directive::Package { end }
         | Directive::IncludeList { end }
@@ -70,11 +70,7 @@ pub fn fte_directive_end(text: &[u8], hash: usize) -> Option<usize> {
 /// of FTEF-14.12. Where reading stops does not depend on the macros.
 fn condition_end(text: &[u8], from: usize) -> usize {
     let no_macros = |_: &str| None;
-    let (value, read) = cond::fte_if(text.get(from..).unwrap_or_default(), &no_macros);
-    match value {
-        Err(FteIfError::TooDeep) => from,
-        Ok(_) | Err(FteIfError::Reported(_)) => from.saturating_add(read),
-    }
+    condition(text, from, &no_macros).1
 }
 
 /// For an `#elif`, `#elifdef` or `#elifndef` at `hash`, where its test stops reading, as

@@ -12,7 +12,7 @@ use qc_syntax::Dialect;
 use super::{Case, Project};
 
 /// What binds `f` once the directive before it has been read.
-const BIND: &str = "void() f = #5;\n";
+pub(super) const BIND: &str = "void() f = #5;\n";
 
 /// Directives whose line `QCC_PR_SkipToEndOfLine` ends, each with what opens it before and
 /// closes it after (FTEF-14.35): taken sides, so that what follows is read.
@@ -757,6 +757,164 @@ fn include_cases() -> Vec<Case> {
             let header = format!("{indent}{snippet}\n");
             cases.push(project_case("t.qc", &includer, &[("b.qh", header)]));
         }
+    }
+    cases
+}
+
+/// Where a graph form puts the line that brings the file in that binds `f`.
+const HERE: &str = "@@";
+
+/// Directive forms of FTEF-14.33 to FTEF-14.44 before, around or after the line that brings in
+/// the one file that binds `f`, so that FTEQCC binds `f` only by reading that file: the project
+/// graph lists the file the pinned FTEQCC compiles when it lists that file exactly when FTEQCC
+/// binds `f` (PRJ-5.13). A form that FTEQCC refuses reads no file the graph lists.
+const GRAPH_FORMS: &[&str] = &[
+    "@@",
+    // FTEF-14.52: names matched by their first bytes, and where a `#` is a directive's.
+    "#defined N 1\n@@",
+    "#appendix N 1\n@@",
+    "#iffy\n@@",
+    "#undefN\n@@",
+    "  #define N 1\n@@",
+    "\t# define N 1\n@@",
+    "/* c\n#define N 1 */\n@@",
+    "/* c\n@@\n*/",
+    "// c\n@@",
+    // FTEF-14.35: where a directive's line ends.
+    "#define N 1 // c\n@@",
+    "#undef N /* c\n */\n@@",
+    "#ifdef N // c \\\n@@\n#endif",
+    "#ifndef N // c\n@@\n#endif",
+    "#pragma once // c \\\n@@",
+    // FTEF-14.33 and FTEF-14.36: conditionals.
+    "#ifdef Q\n@@\n#endif",
+    "#ifndef Q\n@@\n#endif",
+    "#if 0 && 0 || 1\n@@\n#endif",
+    "#if 1 < 2 == 1\n@@\n#endif",
+    "#if 1||0\n@@\n#endif",
+    "#if defined(Q) || !defined Q\n@@\n#endif",
+    "#define V 3\n#if V == 3\n@@\n#endif",
+    "#ifdefQ\n@@",
+    "#ifdef\n@@\n#endif",
+    "#ifndef\n@@\n#endif",
+    "#ifdef FTEQCC\n@@\n#endif",
+    "#ifdef __FTEQCC__\n@@\n#endif",
+    "#if FTEQCC\n@@\n#endif",
+    "#undef FTEQCC\n#ifdef FTEQCC\n@@\n#endif",
+    // FTEF-14.37: skipped sides, and one count of open sides.
+    "#if 0\n#else\n@@\n#endif",
+    "#if 1\n#else\n@@\n#endif",
+    "#if 1\n#elif 1\n@@\n#endif",
+    "#if 0\n#elif 1\n@@\n#endif",
+    "#if 0\n#elif 0\n#else\n@@\n#endif",
+    "#ifdef Q\n#elifdef Q\n#elifndef Q\n@@\n#endif",
+    "#ifdef Q\n#iffy\n#endif\n#else\n@@\n#endif",
+    "#ifdef Q\n// c \\\n#endif\n#endif\n@@",
+    "#ifdef Q\n\"#endif\n#endif\n@@",
+    "#ifdef Q\nx /* \n#endif */\n#endif\n@@",
+    "#ifdef Q\n  #  endif\n@@",
+    "#ifdef Q\n#else\n#else\n@@\n#endif",
+    "#if 1\n@@",
+    // FTEF-14.38 and FTEF-14.39: the build directives, and those that end the text.
+    "#warning x\n@@",
+    "#message x\n@@",
+    "#copyright x\n@@",
+    "#pack 1 \n@@",
+    "#forcecrc 5\n@@",
+    "#output \"progs.dat\"\n@@",
+    "#append N 1\n@@",
+    "#eof\n@@",
+    "#eofx\n@@",
+    "#package\n@@",
+    // FTEF-14.40 to FTEF-14.44: includes, lists and pragmas.
+    "#include \"\"\n@@",
+    "#includelist\n#endlist\n@@",
+    "#pragma line(10)\n@@",
+    "#pragma once\n@@",
+    "#pragma warning disable F302\n@@",
+    "#pragma unknown\n@@",
+    "#pragma DONT_COMPILE_THIS_FILE\n@@",
+    "#pragmas once\n@@",
+    // PRJ-5.13: code passed over a token at a time.
+    "string s = \"// \\\" #\";\n@@",
+    "string s = R\"x(\n@@\n)x\";",
+    "float c = '\"';\n@@",
+    "float c = '\\'';\n@@",
+    "vector v = '1 2 3';\n@@",
+];
+
+/// Forms whose directive's line `QCC_PR_SkipToEndOfLine` carries on to the next one, which holds
+/// the `#include` (FTEF-14.35): an `#includelist` there would leave its words to be read as code.
+const CARRIED_FORMS: &[&str] = &[
+    "#define N 1 // c \\\n@@",
+    "#undef N // c \\\n@@",
+    "#ifndef N // c \\\n@@\n#endif",
+    "#if 1 // c \\\n@@\n#endif",
+    "#output \"progs.dat\" // c \\\n@@",
+    "#define N 1 // c \\\r\n@@",
+];
+
+/// The lines of a graph form that bring in the file that binds `f`: an `#include`, and an
+/// `#includelist` entry; and that file's name.
+const GRAPH_LINES: [(&str, &str); 2] = [
+    ("#include \"b.qh\"", "b.qh"),
+    ("#includelist\nl.qc\n#endlist", "l.qc"),
+];
+
+/// Lists whose lines hold directives and words of each form (FTEF-14.41), each with the files
+/// it may name; `l.qc` binds `f` and the others do not exist.
+const GRAPH_LISTS: &[&str] = &[
+    "#includelist\n#ifdef Q\nx.qc\n#endif\nl.qc\n#endlist\n",
+    "#includelist\n#ifndef Q\nl.qc\n#endif\n#endlist\n",
+    "#includelist\n// c\nl.qc // x.qc\n#endlist\n",
+    "#includelist\n/* x.qc */ l.qc\n#endlist\n",
+    "#includelist\n#define N 1\nl.qc\n#endlist\n",
+    "#includelist\n  l.qc  #endlist\n",
+    "#includelist // c \\\nx.qc\nl.qc\n#endlist\n",
+    "#pragma DONT_COMPILE_THIS_FILE\n#includelist\nl.qc\n#endlist\n",
+    "#pragma DONT_COMPILE_THIS_FILE\n#include \"b.qh\"\n",
+];
+
+/// Projects of several files for the graph: a side opened in one file and closed in the next
+/// (FTEF-14.37), and a side an included file opens and closes.
+const GRAPH_PROJECTS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "#include \"o.qh\"\n#else\n#include \"b.qh\"\n#endif\n",
+        &[("o.qh", "#if 1\n")],
+    ),
+    (
+        "#include \"o.qh\"\n#include \"b.qh\"\n#endif\n",
+        &[("o.qh", "#if 1\n")],
+    ),
+    (
+        "#include \"o.qh\"\n",
+        &[("o.qh", "#ifdef Q\n#include \"b.qh\"\n#endif\n")],
+    ),
+];
+
+/// The project graph's cases (PRJ-5.13): each graph form with each line, each carried form with
+/// the `#include`, each list, and each project, the file that binds `f` beside them.
+pub(super) fn graph_cases() -> Vec<Case> {
+    let mut cases = Vec::new();
+    for form in GRAPH_FORMS {
+        for (line, name) in GRAPH_LINES {
+            let source = format!("{}\n", form.replace(HERE, line));
+            cases.push(project_case("t.qc", &source, &[(name, BIND.to_owned())]));
+        }
+    }
+    for form in CARRIED_FORMS {
+        let (line, name) = GRAPH_LINES[0];
+        let source = format!("{}\n", form.replace(HERE, line));
+        cases.push(project_case("t.qc", &source, &[(name, BIND.to_owned())]));
+    }
+    for list in GRAPH_LISTS {
+        let files = [("b.qh", BIND.to_owned()), ("l.qc", BIND.to_owned())];
+        cases.push(project_case("t.qc", list, &files));
+    }
+    for &(source, others) in GRAPH_PROJECTS {
+        let mut files = vec![("b.qh", BIND.to_owned())];
+        files.extend(others.iter().map(|&(name, text)| (name, text.to_owned())));
+        cases.push(project_case("t.qc", source, &files));
     }
     cases
 }
