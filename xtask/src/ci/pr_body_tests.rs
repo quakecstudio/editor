@@ -58,37 +58,69 @@ fn the_bodies_that_closed_issues_by_mistake_are_refused() {
     }
 }
 
+const KEYWORDS: [&str; 9] = [
+    "close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved",
+];
+
+const NEGATIONS: [&str; 30] = [
+    "not",
+    "no",
+    "never",
+    "nor",
+    "without",
+    "cannot",
+    "doesn't",
+    "doesn\u{2019}t",
+    "won't",
+    "can't",
+    "isn't",
+    "doesnt",
+    "dont",
+    "didnt",
+    "wont",
+    "isnt",
+    "arent",
+    "wasnt",
+    "cant",
+    "shouldnt",
+    "partly",
+    "partially",
+    "in part",
+    "later",
+    "follow-up",
+    "future",
+    "will",
+    "once",
+    "until",
+    "eventually",
+];
+
 #[test]
-fn every_documented_keyword_is_refused_after_a_negation() {
-    for keyword in [
-        "close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved",
-    ] {
-        assert!(
-            !accepted(&format!("This does not {keyword} #84.")),
-            "{keyword}"
-        );
-        let upper = keyword.to_uppercase();
-        assert!(!accepted(&format!("Not yet: {upper}: #84")), "{upper}");
+fn every_keyword_is_refused_after_every_negation_and_hedge_word() {
+    let mut sentences = Vec::new();
+    for keyword in KEYWORDS {
+        for negation in NEGATIONS {
+            sentences.push(format!("Here {negation} we {keyword} #84."));
+            sentences.push(format!("{} #84 {negation}.", keyword.to_uppercase()));
+        }
+    }
+    // One sentence per paragraph, so one run checks each on its own.
+    let (ok, out) = check(&sentences.join("\n\n"));
+    assert!(!ok);
+    for sentence in &sentences {
+        assert!(out.contains(&format!("  {sentence}\n")), "{sentence}");
     }
 }
 
 #[test]
-fn every_negation_and_hedge_word_is_refused() {
-    for phrase in [
-        "This PR does not close #84",
-        "It doesn't close #84",
-        "It doesn\u{2019}t close #84",
-        "This won't fix #84",
-        "It no longer closes #84",
-        "It never resolves #84",
-        "Neither this nor that fixes #84",
-        "Closes #84 without the docs",
-        "It cannot close #84",
-        "Partly fixes #84",
-        "Fixes #84 partially",
-        "NOT closing it: closes #84",
+fn colons_and_emphasis_between_keyword_and_reference_are_read() {
+    for body in [
+        "Not yet: CLOSES: #84",
+        "**Does not close** #84",
+        "It does not `close` #84",
+        "It does not close: *#84*",
     ] {
-        assert!(!accepted(phrase), "{phrase}");
+        assert!(!accepted(body), "{body}");
     }
 }
 
@@ -108,6 +140,22 @@ fn a_sentence_wrapped_over_lines_is_one_sentence() {
     assert!(!accepted("- This item does not\n  close #3"));
 }
 
+#[test]
+fn a_line_starting_with_the_reference_continues_the_sentence() {
+    for body in [
+        "This PR does not close\n#84.",
+        "This PR does not close\n- #84",
+        "This PR does not close\n> #84",
+        "This PR does not close\n| #84",
+        "This PR does not close\n#84 or fix\n* owner/repo#5",
+    ] {
+        assert!(!accepted(body), "{body}");
+    }
+    // A heading needs its space; a list, quote or table line that starts with text splits.
+    assert!(accepted("Not this.\n# 84 is a heading\nCloses #12"));
+    assert!(accepted("Not this\n- Closes #12"));
+    assert!(accepted("Not this\n> Closes #12"));
+}
 #[test]
 fn the_refusal_prints_the_sentence_and_suggests_refs() {
     let (ok, out) = check("Intro.\n\nThis PR does not close #84.\n\nCloses #12");

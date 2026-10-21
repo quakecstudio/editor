@@ -59,12 +59,20 @@ pr_status() {
 # (check-pr-body.sh). Checked before waiting for CI, to fail fast, and again just before queueing,
 # in case the body was edited while CI ran.
 fail_if_body_closes_wrongly() {
-  local body
+  local body status=0
   body=$(gh pr view "$pr" --json body --jq .body)
-  if ! "$here/check-pr-body.sh" <<<"$body"; then
+  "$here/check-pr-body.sh" <<<"$body" || status=$?
+  case "$status" in
+  0) ;;
+  1)
     echo "#$pr was not queued. Fix its body (gh pr edit $pr --body-file <file>) and run land.sh again."
     exit 1
-  fi
+    ;;
+  *)
+    echo "check-pr-body.sh failed (exit $status), so #$pr was not queued; its body may be fine."
+    exit 1
+    ;;
+  esac
 }
 
 fail_if_conflicting() {
