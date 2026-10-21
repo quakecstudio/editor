@@ -485,7 +485,7 @@ struct Cursor {
     conds: Vec<Cond>,
     skipped: Vec<Span>,
     skip_start: Option<usize>,
-    /// How the file starts, for a directive on its first line (FTEF-14.34).
+    /// How the file starts, for a directive on its first line (FTEF-14.52).
     start: TextStart,
     /// Under FTEQCC, the line a `#pragma line` gave the file's line starting at this offset
     /// (FTEF-14.43).
@@ -828,7 +828,7 @@ impl<L: Loader> Preprocessor<L> {
         // A use `try_expand` refused, a function-like macro's with no or a bad argument list,
         // goes out as it is: tried again, it would report its error again.
         let next = self.try_expand(run, next)?;
-        // FTEF-14.34: a `#` before a word that names no macro is FTEQCC's "Explicit precompiler
+        // FTEF-14.52: a `#` before a word that names no macro is FTEQCC's "Explicit precompiler
         // usage when not defined NAME", which the parser reports where it reads the `#`, as
         // E0209 in a builtin initialiser (FTE-23.10, QC-9.19).
         self.emit(run, item.tok);
@@ -859,7 +859,7 @@ impl<L: Loader> Preprocessor<L> {
     /// The next token after directives and skipped blocks: from the pushed-back tokens first,
     /// then under FTEQCC from the chunk being read, each chunk closed when reading goes past
     /// its last token (FTEF-14.17), then from the file. Under FTEQCC a `#` that starts a line
-    /// of the chunk or the file is a directive there (FTEF-14.34, FTEF-14.46).
+    /// of the chunk or the file is a directive there (FTEF-14.52, FTEF-14.46).
     fn next_item(&mut self, run: &mut Run) -> Option<Item> {
         if let Some(item) = run.pending.pop() {
             return Some(item);
@@ -940,7 +940,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Under FTEQCC, the directive `token` starts in the file `file` the top cursor reads, when
-    /// it is a `#` that starts a line there (FTEF-14.34), run; where reading goes on after it.
+    /// it is a `#` that starts a line there (FTEF-14.52), run; where reading goes on after it.
     fn fte_file_directive(&mut self, run: &mut Run, file: FileId, token: &Token) -> Option<Resume> {
         if token.kind != TokenKind::Punct(Punct::Hash) {
             return None;

@@ -37,7 +37,7 @@ fn end(at: usize, junk: bool) -> LineEnd {
     LineEnd { at, junk }
 }
 
-// spec FTEF-14.34: a `#` is read as a directive after a line ending (a LF, or a CR not before a
+// spec FTEF-14.52: a `#` is read as a directive after a line ending (a LF, or a CR not before a
 // LF) and spaces and tabs, at a compiled file's start after spaces and tabs, at an included
 // file's first byte only, and never at a chunk's start or after another byte on its line
 #[test]
@@ -160,7 +160,7 @@ fn com_parse_reads_tokens() {
     assert_eq!(parse("/* c"), None);
 }
 
-// spec FTEF-14.34: a directive's name is matched by its first bytes, in FTEQCC's order, after
+// spec FTEF-14.52: a directive's name is matched by its first bytes, in FTEQCC's order, after
 // every byte up to a space but a line break; a `#` before a line break hangs; no match is no
 // directive
 #[test]
@@ -538,7 +538,7 @@ fn every_directive_ends_its_line_as_fteqcc_does() {
     assert_eq!(fte("#pragma once // c \\\ny\n"), ("y".to_owned(), vec![]));
 }
 
-// spec FTEF-14.34: `#name` that matches no directive is read as code: a macro's use, or a `#`
+// spec FTEF-14.52: `#name` that matches no directive is read as code: a macro's use, or a `#`
 // and a name the parser reads, first on a line or in the rest of one; `# ` before a line break
 // hangs
 #[test]

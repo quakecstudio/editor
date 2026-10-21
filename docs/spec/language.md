@@ -444,7 +444,7 @@ dialect features (P2-01, P2-03).
   before `/* c */#foo;` on the next line is "Bad builtin immediate" (`E0209`), and
   `void() f =` before `/* c */#5;` is builtin 5. The vanilla profile reports the same. Under
   FTEQCC, whose preprocessor leaves `#foo` when `foo` names no macro (`dialect-fteqcc.md`
-  FTEF-14.34), the pinned FTEQCC refuses the first two ("Explicit precompiler usage when not
+  FTEF-14.52), the pinned FTEQCC refuses the first two ("Explicit precompiler usage when not
   defined foo") and takes the third, and so does the profile, with the parser's errors. The tree
   of a file as written keeps its directive lines (QC-9.1).
 

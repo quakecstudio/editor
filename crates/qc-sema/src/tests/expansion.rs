@@ -722,7 +722,8 @@ const HASH_FIRST_ON_ITS_LINE: [(&str, FirstError, FirstError); 6] = [
     ),
     // Both compile it, with builtin 5.
     ("void() f =\n/* c */#5;\n", None, None),
-    // Later in a file, and after a comment that spans lines.
+    // Later in a file, and after a comment that spans lines. qcc: `"#" is not a type`; FTEQCC:
+    // "Explicit precompiler usage when not defined foo".
     (
         "float x;\n/* c */#foo\n",
         Some((Code::E0203, "#")),
@@ -733,7 +734,9 @@ const HASH_FIRST_ON_ITS_LINE: [(&str, FirstError, FirstError); 6] = [
         Some((Code::E0203, "#")),
         Some((Code::E0203, "#")),
     ),
-    // A `#` a macro's body writes first on a line of the output.
+    // A `#` a macro's body writes first on a line of the output. FTEQCC: "Explicit precompiler
+    // usage when not defined unknown"; id's `qcc` has no macros (QC-9), so the vanilla row is
+    // this project's own rule.
     (
         "#define H #\nH foo\n",
         Some((Code::E0203, "H")),
@@ -745,7 +748,7 @@ const HASH_FIRST_ON_ITS_LINE: [(&str, FirstError, FirstError); 6] = [
 // at the line's start or from a macro's body, is the `#` token the parser reads, never a
 // directive line it drops: both profiles refuse `/* c */#foo` and `void() f =` before
 // `/* c */#foo;`, as id's `qcc` and the pinned FTEQCC do, and take `/* c */#5;`, and the
-// preprocessor reports nothing of its own (FTEF-14.34)
+// preprocessor reports nothing of its own (FTEF-14.52)
 #[test]
 fn a_hash_first_on_its_line_of_the_output_is_code() {
     for (text, vanilla, fteqcc) in HASH_FIRST_ON_ITS_LINE {
@@ -759,4 +762,32 @@ fn a_hash_first_on_its_line_of_the_output_is_code() {
             assert_eq!(first, expected, "{text:?} {dialect:?}: {found:?}");
         }
     }
+}
+
+// spec QC-9.19: under FTEQCC an included file's first line is read with no spaces skipped, so
+// ` #define N 5` there is no directive (FTEF-14.52) and its `#` is code the parser refuses, as
+// the pinned FTEQCC does ("Explicit precompiler usage when not defined define")
+#[test]
+fn an_indented_hash_on_an_included_file_s_first_line_is_code() {
+    let files = [
+        ("a.qc", "#include \"b.qc\"\nfloat x;\n"),
+        ("b.qc", " #define N 5\n"),
+    ];
+    let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    let found: Vec<(Code, FileId, String)> = analysis
+        .diagnostics()
+        .map(|d| {
+            let at = Location {
+                file: d.file,
+                span: d.diagnostic.span,
+            };
+            (d.diagnostic.code, d.file, text_at(&db, at))
+        })
+        .collect();
+    assert_eq!(
+        found.first(),
+        Some(&(Code::E0203, FileId(1), "#".to_owned())),
+        "{found:?}"
+    );
 }

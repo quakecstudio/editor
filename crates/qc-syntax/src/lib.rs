@@ -102,7 +102,7 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
 /// reads it as it reads a `#` anywhere else.
 ///
 /// The preprocessor runs every directive, so a `#` left in its output is code: one after a
-/// comment at a line's start (QC-9.1, FTEF-14.34), or one a macro's expansion wrote.
+/// comment at a line's start (QC-9.1, FTEF-14.52), or one a macro's expansion wrote.
 /// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
