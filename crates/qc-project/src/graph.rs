@@ -2,8 +2,8 @@
 
 //! A module's ordered file graph (PRJ-4, PRJ-5, PRJ-6).
 //!
-//! The source is read a line at a time, and under the FTEQCC dialect each QuakeC file with the
-//! preprocessor's directive reader (PRJ-5.13). Only the directives that decide which files are
+//! The source is read a line at a time, and under the FTEQCC and GMQCC dialects each QuakeC
+//! file with the preprocessor's directive reader (PRJ-5.13, PRJ-5.15). Only the directives that decide which files are
 //! read are followed; everything else is the preprocessor's (QC-9) and the dialect profiles'
 //! work.
 
@@ -371,8 +371,8 @@ struct Cursor {
     conds: Vec<Cond>,
     in_comment: bool,
     pending: VecDeque<(String, u32, Via)>,
-    /// Under the FTEQCC dialect, the reader of a QuakeC file, which reads it in place of the
-    /// lines above (PRJ-5.13).
+    /// Under the FTEQCC and GMQCC dialects, the reader of a QuakeC file, which reads it in place
+    /// of the lines above (PRJ-5.13, PRJ-5.15).
     fte: Option<FteFileReader>,
 }
 
@@ -398,7 +398,8 @@ impl Cursor {
         }
     }
 
-    /// A QuakeC file of an FTEQCC module, read as FTEQCC reads it from `start` (PRJ-5.13).
+    /// A QuakeC file of an FTEQCC or GMQCC module, read as FTEQCC reads it from `start`
+    /// (PRJ-5.13, PRJ-5.15).
     fn fteqcc(path: PathBuf, text: Vec<u8>, entry: Option<usize>, start: FileStart) -> Self {
         let mut cursor = Self::new(path, Vec::new(), entry, Base::Code);
         cursor.fte = Some(FteFileReader::new(text, start));
@@ -427,7 +428,8 @@ impl Cursor {
 struct Builder<'l, L> {
     loader: &'l mut L,
     root_dir: PathBuf,
-    /// The macros, and under FTEQCC its count of open sides (PRJ-5.4, PRJ-5.13).
+    /// The macros, and under FTEQCC and GMQCC its count of open sides (PRJ-5.4, PRJ-5.13,
+    /// PRJ-5.15).
     state: ModuleState,
     include_dirs: Vec<PathBuf>,
     once: HashSet<PathBuf>,
@@ -801,7 +803,7 @@ impl<L: Loader> Builder<'_, L> {
             via,
             parent,
         });
-        let mut cursor = if self.dialect == Dialect::Fteqcc {
+        let mut cursor = if self.dialect.has_fteqcc_extensions() {
             let start = if via == Via::Include {
                 FileStart::Included
             } else {
@@ -880,7 +882,7 @@ pub fn build_graph<L: Loader>(
                 via: Via::Root,
                 parent: None,
             });
-            let cursor = if dialect == Dialect::Fteqcc {
+            let cursor = if dialect.has_fteqcc_extensions() {
                 Cursor::fteqcc(src, text, Some(0), FileStart::Compiled)
             } else {
                 Cursor::new(src, text, Some(0), Base::Code)

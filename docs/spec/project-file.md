@@ -284,6 +284,26 @@ malformed directive without a diagnostic.
   to its end; and an `#includelist` or `DONT_COMPILE_THIS_FILE` met while 64 others are open in
   one file ends that file, as the preprocessor's bound on nested directives does (FTEF-14.47), so
   that no file exhausts the graph's memory.
+- **PRJ-5.15** Under the GMQCC dialect the graph reads each QuakeC file as PRJ-5.13 and PRJ-5.14
+  say, with the preprocessor's directive reader, which the preprocessor reads a GMQCC file with too,
+  so the two meet the same directives and list the same files; PRJ-5.12 still says where an
+  `#include`, an `#includelist` entry, `#pragma includedir` and `#pragma once` are resolved. Neither
+  defines `FTEQCC` or `__FTEQCC__`: GMQCC's `ftepp_create` defines `GMQCC` and, by the standard
+  chosen, `__STD_FTEQCC__`, `__STD_GMQCC__`, `__STD_QCCX__` or `__STD_QCC__`, never `FTEQCC`
+  (`ftepp_add_define(ftepp, nullptr, "GMQCC");`,
+  graphitemaster/gmqcc@b2a319efb41069b9a250e76991dbe505ff8d030d, `ftepp.cpp`), and the C
+  preprocessor Xonotic is read with (`CPP := cc -xc -E`, Xonotic's `qcsrc/Makefile`) defines
+  neither, so `#ifdef FTEQCC` is false and Xonotic's `server/progs.inc` skips its `#pragma target`.
+  A `\` that ends a directive's `//` comment carries the next line, an `#include` too, into the
+  directive (FTEF-14.35), as the C preprocessor does, whose line splicing comes before comments are
+  replaced ("Whenever backslash appears at the end of a line (immediately followed by the newline
+  character), both backslash and newline are deleted", phase 2, before phase 3's "Each comment is
+  replaced by one space character", https://en.cppreference.com/w/c/language/translation_phases,
+  read 2026-10-21). GMQCC's own lexer ends a `//` comment at its line break (`while (ch != EOF && ch
+  != '\n')`, `lex_skipwhite`, `lexer.cpp` at the same commit), so the comment does not carry the
+  next line: a deliberate divergence from `ftepp`, since Xonotic, the GMQCC corpus, is built with
+  the C preprocessor. GMQCC's own macros are a module's `defines` (PRJ-5.4), as Xonotic's
+  `quakec.toml` gives `GMQCC`.
 
 ## PRJ-6 The file graph
 

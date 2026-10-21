@@ -115,6 +115,9 @@ impl<'a> Input<'a> {
                 Some(Line::Fte { .. }) | None => {}
             }
             input.gap(at, span.start);
+            // Where the code before the token is read from: after the token or directive before
+            // it (FTEF-14.53).
+            let from = at;
             at = span.end;
             if line.is_none() && text == Text::Source {
                 if fte {
@@ -123,7 +126,7 @@ impl<'a> Input<'a> {
                         .get(index)
                         .is_some_and(|t| t.kind == TokenKind::Punct(Punct::Hash));
                     let end = hash
-                        .then(|| fte_directive_end(until_nul, span.start))
+                        .then(|| fte_directive_end(until_nul, from, span.start))
                         .flatten();
                     if let Some(end) = end {
                         // The preprocessor reads the directive's text as bytes, so the lexical

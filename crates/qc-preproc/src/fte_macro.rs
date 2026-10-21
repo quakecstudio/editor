@@ -307,12 +307,13 @@ impl ChunkReader {
     }
 
     /// The offset of the next token when it is a `#` that starts a line of the chunk, which
-    /// `QCC_PR_NewLine` reads as a directive (FTEF-14.46).
+    /// `QCC_PR_NewLine` reads as a directive (FTEF-14.46, FTEF-14.53).
     pub(crate) fn directive_at(&self) -> Option<usize> {
         let token = self.stream.tokens.get(self.stream.pos)?;
         let hash = token.span.start;
+        let from = self.stream.code_start(hash);
         (token.kind == TokenKind::Punct(qc_lexer::Punct::Hash)
-            && fte_directive::starts_line(self.text.bytes(), hash, TextStart::Chunk))
+            && fte_directive::starts_line(self.text.bytes(), from, hash, TextStart::Chunk))
         .then_some(hash)
     }
 

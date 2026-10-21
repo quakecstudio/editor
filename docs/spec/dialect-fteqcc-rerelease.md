@@ -822,7 +822,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   12 `#pragma file` names, through two macros and after three pragmas whose text holds a
   comment, a string or a `\` (FTEF-14.32); in both dialects names of 62, 63, 70, 254, 255
   and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7); and under FTEQCC
-  1333 programs of the directive family (`xtask/src/oracles/builtins/directives.rs`), every
+  1351 programs of the directive family (`xtask/src/oracles/builtins/directives.rs`), every
   directive and pragma FTEQCC's `QCC_PR_Precompiler` knows read where FTEQCC reads one: 18
   directives each ending its line under 9 tails, and `#includelist` under them, before a line it
   hides or none (FTEF-14.35); 55 directive names matched by their first bytes, with their
@@ -836,15 +836,17 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   in an `#includelist` (FTEF-14.41), after `DONT_COMPILE_THIS_FILE` and on the first line of an
   included file with and without spaces before it (FTEF-14.52); 10 bodies with directive lines
   under 11 settings of F303 (FTEF-14.46); `#pragma line` in 17 forms, with `__LINE__` and
-  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.44); and 100 projects of several
+  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.44); 12 programs whose code a `\`
+  joins to a line holding a directive's text, as code and as a macro's argument, and after a
+  `//` comment's `\` or a blank line (FTEF-14.53); and 101 projects of several
   files, whose `#include`s are found beside the compiled file and in include directories
   (FTEF-14.40), where a case is the file `progs.src` lists, by a name that may hold a directory,
   with the files beside it. Numbers outside
   -2^31 to 2^31 - 1 are left out, since C leaves their conversion to `int` undefined (QC-13.10).
   Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
   makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
-  which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
-  (macOS arm64) made 12770 cases: 12656 agree; 68 differ as QC-27.9 says, the vanilla profile
+  which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-21
+  (macOS arm64) made 12788 cases: 12674 agree; 68 differ as QC-27.9 says, the vanilla profile
   refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
   31 as FTEF-14.47 says, an `#eof` after a file's first byte, where FTEQCC crashes, and `#merge`
   and `#datafile`, whose files FTEQCC opens; 13 as FTE-23.11 says, a macro or `#__LINE__` giving

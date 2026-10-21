@@ -67,7 +67,7 @@ fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let differ = graph_differences(&recorded);
     assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
-    assert_eq!(cases.len(), 148);
+    assert_eq!(cases.len(), 157);
     let read = cases
         .iter()
         .filter(|case| matches!(recorded[&case.key()], Outcome::Bound { .. }))
@@ -291,7 +291,8 @@ fn the_cross_product_holds_the_macro_text_family() {
 
 // spec FTE-23.15: under FTEQCC the cross product has the directive family: line ends, names,
 // conditionals, each form in each place, F303's settings, `#pragma line`, the other pragmas,
-// lists, and projects of several files whose keys hold every file
+// lists, and projects of several files whose keys hold every file, and
+// spec FTEF-14.53: lines of code a `\` joins to a line holding a directive's text
 #[test]
 fn the_cross_product_holds_the_directive_family() {
     let cases = cases();
@@ -299,8 +300,10 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1338);
+    assert_eq!(family.len(), 1351);
     for source in [
+        "float g; \\\n#define N 1\nvoid() f = #5;\n",
+        "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
         "#define X 1\n#undef X // c \\\nzz zz zz\nvoid() f = #5;\n",
         "#defined N #5\nvoid() f = N;\n",
         "#ifdef Q\n#iffy\n#endif\nzz\n#endif\nvoid() f = #5;\n",
