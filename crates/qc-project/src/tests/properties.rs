@@ -4,7 +4,7 @@
 
 use proptest::prelude::*;
 
-use super::{GraphSpec, build, names};
+use super::{GraphSpec, build, diags, names};
 use crate::{PRJ_MAX_FILES, Via};
 
 const NAMES: [&str; 4] = ["a.qc", "b.qc", "sub/c.qc", "d.qh"];
@@ -76,6 +76,29 @@ proptest! {
                     && graph.form == Some(crate::Form::Source));
             }
         }
+    }
+
+    // spec PRJ-4.7: under the vanilla dialect a list with a NUL outside quotes reads as the text
+    // before that NUL, whatever follows it
+    #[test]
+    fn a_vanilla_list_reads_to_its_nul(
+        before in prop::collection::vec(
+            prop_oneof![
+                Just(" "), Just("\n"), Just("\t"), Just("a.qc"), Just("b.qc"), Just("x"),
+                Just("// c"), Just("("), Just(":"),
+            ],
+            0..12,
+        ),
+        after in "[ -~\n]{0,30}",
+    ) {
+        let before = format!("out.dat\n{}", before.concat());
+        let cut = format!("{before}\0{after}");
+        let read = |text: &str| {
+            let files = [("progs.src", text), ("a.qc", ""), ("b.qc", "")];
+            let graph = build(&GraphSpec { files: &files, ..GraphSpec::default() });
+            (graph.form, graph.declared_output.clone(), names(&graph), diags(&graph))
+        };
+        prop_assert_eq!(read(&cut), read(&before));
     }
 
     // spec QC-23.3: a list of files with no directives is compiled exactly in the order listed

@@ -9,10 +9,10 @@ use proptest::prelude::*;
 use qc_lexer::{Dialect, Span};
 
 use super::{codes, tokens};
-use crate::fte_directive::{qcc_load_file, qcc_load_in_place};
+use crate::fte_directive::{qcc_load_file, qcc_load_in_place, skip_script_line};
 use crate::{
     Code, FileOutput, FileStart, FteFileReader, MemoryLoader, ModuleState, Preprocessor,
-    TextOrigin, fte_directive_end,
+    TextOrigin, fte_directive_end, qcc_load_as,
 };
 
 /// `text` as UTF-16LE after its byte order mark.
@@ -415,4 +415,121 @@ fn a_directive_is_found_in_the_loaded_text_in_place() {
     assert_eq!(end(b"\xef\xbb\xbf\xef\xbb\xbf#undef N\ny"), None);
     // The vanilla reading, the bytes with no mark skipped, finds none after a mark.
     assert_eq!(fte_directive_end(b"\xef\xbb\xbf#undef N\ny", 0, 3), None);
+}
+
+/// `text` after [`skip_script_line`].
+fn skipped(text: &[u8]) -> Vec<u8> {
+    let mut text = text.to_vec();
+    skip_script_line(&mut text);
+    text
+}
+
+// spec PRJ-4.8: a first line that starts with `#!` becomes spaces up to its line feed, which is
+// kept with the rest, so offsets and lines stand; a text of that line alone is all spaces
+#[test]
+fn a_script_line_is_passed_over_in_place() {
+    assert_eq!(
+        skipped(b"#!/usr/bin/fteqcc\na\n"),
+        b"                 \na\n"
+    );
+    assert_eq!(skipped(b"#! x \\\r\n#if 1\n"), b"       \n#if 1\n");
+    assert_eq!(skipped(b"#!"), b"  ");
+    assert_eq!(skipped(b"#!a b"), b"     ");
+    assert_eq!(skipped(b"#!\n"), b"  \n");
+    // Only the two bytes at the very start: a blank before them, a lone `#` or `!` is no such line.
+    for text in [&b" #!x\n"[..], b"#x!\n", b"!#\n", b"#", b"", b"a\n#!x\n"] {
+        assert_eq!(skipped(text), text, "{text:?}");
+    }
+    // Only the module's source is read so, after the loader's text: past a mark, a NUL a space.
+    let bytes = b"\xef\xbb\xbf#!x\0\na\0\n".to_vec();
+    assert_eq!(
+        qcc_load_as(bytes.clone(), FileStart::Source),
+        (b"    \na \n".to_vec(), TextOrigin::Shifted(3))
+    );
+    for start in [FileStart::Compiled, FileStart::Included] {
+        assert_eq!(
+            qcc_load_as(bytes.clone(), start),
+            qcc_load_file(bytes.clone())
+        );
+    }
+}
+
+/// The tokens and codes of the module's source `progs.src` of `bytes`, beside `b.qh`, read with
+/// [`Preprocessor::preprocess_source`] (`source`) or as a listed file.
+fn fte_root(bytes: &[u8], start: FileStart) -> (String, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("progs.src", bytes.to_vec());
+    loader.insert("b.qh", b"float b;\n".to_vec());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    let path = Path::new("progs.src");
+    let out = match start {
+        FileStart::Source => pp.preprocess_source(path),
+        FileStart::Compiled | FileStart::Included => pp.preprocess_file(path),
+    };
+    let out = out.unwrap();
+    (tokens(&out), codes(&out))
+}
+
+// spec PRJ-4.8: the preprocessor reads a module's source past a `#!` first line, so a `\`, `/*`
+// or `"` in it changes nothing after it and the line numbers stand; a listed file and the vanilla
+// dialect read the line
+#[test]
+fn the_preprocessor_passes_over_a_source_script_line() {
+    let source = |bytes: &[u8]| fte_root(bytes, FileStart::Source);
+    let include = "#include \"b.qh\"\nfloat a;\n";
+    for first in ["#!x", "#!x \\", "#!x /*", "#!x \"", "#!"] {
+        let text = format!("{first}\n{include}");
+        assert_eq!(
+            source(text.as_bytes()),
+            ("float b ; float a ;".to_owned(), vec![])
+        );
+        assert_eq!(
+            source(format!("\u{feff}{text}").as_bytes()).0,
+            "float b ; float a ;"
+        );
+        assert_eq!(source(&utf16le(&text)).0, "float b ; float a ;");
+    }
+    assert_eq!(source(b"#!x /* y"), (String::new(), vec![]));
+    // The line keeps its place: `__LINE__` after it is 2.
+    assert_eq!(source(b"#!x\n__LINE__\n").0, "2");
+    // A listed file reads the line: its `\` joins the `#include` to it, which is then no directive.
+    let listed = fte_root(format!("#!x \\\n{include}").as_bytes(), FileStart::Compiled);
+    assert_eq!(listed.0, "# ! x # include \"b.qh\" float a ;");
+    // A blank before it, or a NUL, which the loader makes one, leaves the line to be read: its
+    // `/*` hides the `#include`.
+    for text in [
+        &b" #!x /*\n#include \"b.qh\"\n"[..],
+        b"\0#!x /*\n#include \"b.qh\"\n",
+    ] {
+        assert_eq!(source(text).0, "# ! x", "{text:?}");
+    }
+    let mut loader = MemoryLoader::new();
+    loader.insert("progs.src", b"#!x /*\nfloat a;\n// */\n".to_vec());
+    let mut pp = Preprocessor::new(loader);
+    let vanilla = pp.preprocess_source(Path::new("progs.src")).unwrap();
+    assert_eq!(tokens(&vanilla), "# ! x");
+}
+
+// spec PRJ-4.8: the graph's reader of the module's source passes over a `#!` first line too, and
+// a compiled file's reads it
+#[test]
+fn the_graph_reader_passes_over_a_source_script_line() {
+    let includes = |bytes: &[u8], start| {
+        let mut state = ModuleState::fteqcc([]);
+        let mut reader = FteFileReader::new(bytes.to_vec(), start);
+        let mut names = Vec::new();
+        while let Some(event) = reader.next(&mut state) {
+            if let crate::FteEvent::Include { name, line } = event {
+                names.push(format!("{} @{line}", String::from_utf8_lossy(&name)));
+            }
+        }
+        names
+    };
+    let text = b"#!x \\\n#include \"b.qh\"\n";
+    assert_eq!(includes(text, FileStart::Source), ["b.qh @2"]);
+    assert!(includes(text, FileStart::Compiled).is_empty());
+    assert_eq!(
+        includes(b"#include \"b.qh\"\n", FileStart::Source),
+        ["b.qh @1"]
+    );
 }

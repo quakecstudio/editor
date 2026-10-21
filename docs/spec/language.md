@@ -1080,7 +1080,7 @@ A summary for code generation; the sections cited hold the rules.
 
 ## QC-23 `progs.src`
 
-**Source:** `qcc/qcc.c`, `main`; `qcc/cmdlib.c`, `COM_Parse`
+**Source:** `qcc/qcc.c`, `main`; `qcc/cmdlib.c`, `COM_Parse` and `LoadFile`
 (id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`).
 
 ### Behaviour
@@ -1101,6 +1101,16 @@ A summary for code generation; the sections cited hold the rules.
   (with two spaces). A source file that cannot be opened is fatal.
 - **QC-23.6** Files that are in the source directory but not in `progs.src` are not part of
   the program (id 1.01 ships `amtest.qc`, `jctest.qc`, `models.qc` and `sprites.qc` this way).
+- **QC-23.7** The list ends at its first NUL byte outside a quoted token. `LoadFile` writes a
+  NUL after the file's bytes (`buffer = SafeMalloc (length+1); ((byte *)buffer)[length] = 0;`),
+  and `COM_Parse` takes any NUL for that end: one it meets between tokens (`if (c == 0) {
+  com_eof = true; return NULL; }`), one that ends a word (`while (c>32)`) or a `//` comment
+  (`while (*data && *data != '\n')`), each then met between tokens. So `progs.dat`, a NUL and
+  `a.qc` list no file, and a word after the NUL is never read. A quoted token's loop tests only
+  for the closing quote (`if (c=='\"')`), so it reads on past a NUL in it; the token is then a C
+  string, and the name `main` opens is its text up to that NUL: `"a.qc` NUL `x" b.qc` lists
+  `a.qc` and `b.qc`. The vanilla graph cases of `cargo xtask oracles builtins` hold these
+  (`project-file.md` PRJ-4.7).
 
 ## QC-24 Errors and recovery
 

@@ -287,6 +287,33 @@ fn the_prelude_defines_macros_and_is_not_compiled() {
     assert_eq!(names, ["seen"]);
 }
 
+// spec PRJ-4.8: under FTEQCC the prelude, the module's source, is read past a `#!` first line, so
+// the `\` that ends it joins nothing to the `#define` after it; a compiled file reads the line
+#[test]
+fn the_prelude_passes_over_a_script_line() {
+    let seen = |root: &str, prelude: bool| {
+        let files = [
+            ("progs.src", root),
+            ("a.qc", "#ifdef FLAG\nfloat seen;\n#endif\n"),
+        ];
+        let compiled: &[&str] = if prelude {
+            &["a.qc"]
+        } else {
+            &["progs.src", "a.qc"]
+        };
+        let (mut db, mut input) = module(&files, compiled, Dialect::Fteqcc);
+        if prelude {
+            input.prelude.push(FileId(0));
+        }
+        let analysis = db.analyze_module(&input);
+        analysis.index.defs.iter().any(|d| d.name == "seen")
+    };
+    let root = "#!/usr/bin/fteqcc \\\n#define FLAG\n";
+    assert!(seen(root, true));
+    assert!(!seen(root, false));
+    assert!(seen("#define FLAG\n", false));
+}
+
 // spec FTE-22.4: with autoprototyping the module is preprocessed twice, so a frame macro a
 // later file defines is known to an earlier one.
 #[test]

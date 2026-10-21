@@ -21,7 +21,9 @@ mod graph;
 mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
-pub use load::{qcc_load_file, qcc_load_in_place};
+#[cfg(test)]
+pub(crate) use load::skip_script_line;
+pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place};
 
 use std::ops::Range;
 use std::path::PathBuf;
@@ -1695,7 +1697,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, at);
             return;
         }
-        let included = self.add_source(path.clone(), text);
+        let included = self.add_source(path.clone(), text, FileStart::Included);
         let cursor = self.cursor(included, path, full, TextStart::Included);
         run.cursors.push(cursor);
     }
