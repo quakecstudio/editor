@@ -8,8 +8,7 @@
 use std::borrow::Cow;
 
 use qc_lexer::{
-    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_flagged,
-    lex_with,
+    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_with,
 };
 use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from, skip_script_line};
 
@@ -179,45 +178,18 @@ impl<'a> Lexable<'a> {
     }
 }
 
-/// The tokens and lexical errors of `text`, each part from a byte `flags` names lexed under the
-/// flags it gives there (FTEF-12.12), `macroinstrings` aside, the text before the first under the
-/// default flags.
+/// The tokens and lexical errors of `text`, lexed in one pass under the flags `flags` marks from
+/// each byte (FTEF-12.12), `macroinstrings` aside, the text before the first under the default
+/// flags.
 fn lex_marked(text: &[u8], dialect: Dialect, flags: &[(usize, LexFlags)]) -> qc_lexer::Lexed {
     if flags.is_empty() {
         return lex_with(text, dialect);
     }
-    let mut out = qc_lexer::Lexed::default();
-    let mut start = 0_usize;
-    let mut current = LexFlags::default();
-    let end = (text.len(), LexFlags::default());
-    for &(at, next) in flags.iter().chain(std::iter::once(&end)) {
-        let at = at.clamp(start, text.len());
-        let part = text.get(start..at).unwrap_or_default();
-        let lexed = lex_flagged(
-            part,
-            dialect,
-            current.with(LexFlag::MacroInStrings, false),
-            &|_| None,
-        );
-        let shift = |span: Span| {
-            Span::new(
-                span.start.saturating_add(start),
-                span.end.saturating_add(start),
-            )
-        };
-        out.tokens.extend(lexed.tokens.into_iter().map(|mut token| {
-            token.span = shift(token.span);
-            token
-        }));
-        out.diagnostics
-            .extend(lexed.diagnostics.into_iter().map(|mut d| {
-                d.span = shift(d.span);
-                d
-            }));
-        start = at;
-        current = next;
-    }
-    out
+    let marks: Vec<(usize, LexFlags)> = flags
+        .iter()
+        .map(|&(at, flags)| (at, flags.with(LexFlag::MacroInStrings, false)))
+        .collect();
+    qc_lexer::lex_marked(text, dialect, &marks, &|_| None)
 }
 
 /// Ends at `len`, the file's end, the tokens and lexical errors that reach past it: the loader's

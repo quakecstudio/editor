@@ -263,18 +263,33 @@ pub(crate) struct ChunkReader {
     detached: bool,
 }
 
+/// The text a string token lexed under `macroinstrings` is written as, when its source bytes
+/// hold a `#` (FTEF-12.12): its bytes, quoted, so that a reader that lexes the written text
+/// again, with no macros to look up, reads the text a `#NAME` in it wrote.
+pub(crate) fn macro_string_spelling(
+    kind: &TokenKind,
+    source: &[u8],
+    macro_strings: bool,
+) -> Option<String> {
+    match kind {
+        TokenKind::String(bytes) if macro_strings && source.contains(&b'#') => {
+            Some(quote_bytes(bytes))
+        }
+        _ => None,
+    }
+}
+
 impl ChunkReader {
     /// The next token of the chunk, written against the one before it when nothing stands
     /// between them in the chunk's text (QC-9.16).
-    pub(crate) fn next_item(&mut self) -> Option<Item> {
+    pub(crate) fn next_item(&mut self, macro_strings: bool) -> Option<Item> {
         let index = self.stream.pos;
         let token = self.stream.tokens.get(index)?.clone();
         self.stream.pos = index.saturating_add(1);
         let (span, verbatim) = self.place(token.span.range());
-        let spelling = (!verbatim).then(|| {
-            let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
-            made_spelling(&token.kind, bytes)
-        });
+        let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
+        let spelling = macro_string_spelling(&token.kind, bytes, macro_strings)
+            .or_else(|| (!verbatim).then(|| made_spelling(&token.kind, bytes)));
         let detached = std::mem::take(&mut self.detached);
         let follows = index
             .checked_sub(1)
@@ -553,14 +568,6 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     })
 }
 
-/// The offset after the `*/` that ends a `/* */` comment whose text starts at `from`, or the
-/// end of the text when none does.
-fn block_comment_end(text: &[u8], from: usize) -> usize {
-    text.get(from..)
-        .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"))
-        .map_or(text.len(), |at| from.saturating_add(at).saturating_add(2))
-}
-
 /// A `#define` or `#append` as `QCC_PR_PreProcessor_Define` reads it.
 pub(crate) struct Definition {
     /// The macro's name.
@@ -798,14 +805,17 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
         }
         if !quote && rest.starts_with(b"/*") {
             let body = at.saturating_add(2);
-            let closed = text
+            let close = text
                 .get(body..)
-                .is_some_and(|rest| rest.windows(2).any(|pair| pair == b"*/"));
-            // "EOF inside quote in define %s" (FTEF-14.58).
-            if !closed {
-                unclosed.get_or_insert(at);
-            }
-            at = block_comment_end(text, body);
+                .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"));
+            at = match close {
+                Some(len) => body.saturating_add(len).saturating_add(2),
+                // "EOF inside quote in define %s" (FTEF-14.58).
+                None => {
+                    unclosed.get_or_insert(at);
+                    text.len()
+                }
+            };
             continue;
         }
         if byte == b'"' {

@@ -158,13 +158,14 @@ fn quoted_name(quoted: &[u8]) -> String {
     lossy(quoted.split(|b| *b == 0).next())
 }
 
-/// Splits `line` into tokens as `COM_Parse` does (QC-23.2), skipping `/* */` comments too
-/// (PRJ-4.2), `quote` the bytes of a quoted word the lines before left open, which runs on to
-/// its closing quote whatever lines it takes (QC-23.9). Returns the tokens, whether the line ends
-/// inside a `/* */` comment, and the bytes of a quoted word it leaves open, its line break among
-/// them.
+/// Splits `line`, which ends with the bytes `ending`, into tokens as `COM_Parse` does (QC-23.2),
+/// skipping `/* */` comments too (PRJ-4.2), `quote` the bytes of a quoted word the lines before
+/// left open, which runs on to its closing quote whatever lines it takes (QC-23.9). Returns the
+/// tokens, whether the line ends inside a `/* */` comment, and the bytes of a quoted word it
+/// leaves open, its line's ending among them.
 fn com_parse_words(
     line: &[u8],
+    ending: &[u8],
     mut in_comment: bool,
     quote: Option<Vec<u8>>,
 ) -> (Vec<String>, bool, Option<Vec<u8>>) {
@@ -172,7 +173,7 @@ fn com_parse_words(
     let mut i = 0_usize;
     let open = |mut bytes: Vec<u8>, from: &[u8]| {
         bytes.extend_from_slice(from);
-        bytes.push(b'\n');
+        bytes.extend_from_slice(ending);
         bytes
     };
     if let Some(mut bytes) = quote {
@@ -410,6 +411,8 @@ struct Cursor {
     /// In a list, the bytes of a quoted word open at the end of the line read last, and the line
     /// it opened on (QC-23.9).
     quote: Option<(Vec<u8>, u32)>,
+    /// The bytes that ended the line read last: `\r\n`, `\n`, or none at the end of the text.
+    ending: &'static [u8],
     pending: VecDeque<(String, u32, Via)>,
     /// Under the FTEQCC and GMQCC dialects, the reader of a QuakeC file, which reads it in place
     /// of the lines above (PRJ-5.13, PRJ-5.15).
@@ -434,6 +437,7 @@ impl Cursor {
             conds: Vec::new(),
             in_comment: false,
             quote: None,
+            ending: b"",
             pending: VecDeque::new(),
             fte: None,
         }
@@ -483,6 +487,12 @@ impl Cursor {
         let rest = self.text.get(self.pos..).filter(|r| !r.is_empty())?;
         let len = rest.iter().position(|b| *b == b'\n');
         let line = rest.get(..len.unwrap_or(rest.len()))?;
+        let crlf = len.is_some() && line.ends_with(b"\r");
+        self.ending = match (len, crlf) {
+            (Some(_), true) => b"\r\n",
+            (Some(_), false) => b"\n",
+            (None, _) => b"",
+        };
         let line = line.strip_suffix(b"\r").unwrap_or(line).to_vec();
         self.pos = match len {
             Some(len) => self.pos.saturating_add(len).saturating_add(1),
@@ -576,7 +586,9 @@ impl<L: Loader> Builder<'_, L> {
                 }
                 (None, Base::Progs { .. }) => {
                     let (bytes, opened) = cursor.quote.take().unzip();
-                    let (words, c, still) = com_parse_words(&text, cursor.in_comment, bytes);
+                    let ending = cursor.ending;
+                    let (words, c, still) =
+                        com_parse_words(&text, ending, cursor.in_comment, bytes);
                     cursor.quote = still.map(|bytes| (bytes, opened.unwrap_or(number)));
                     (words, c, Via::Listed)
                 }
@@ -742,7 +754,7 @@ impl<L: Loader> Builder<'_, L> {
             return;
         };
         let pragma = name.to_ascii_lowercase();
-        let (args, _, _) = com_parse_words(args, false, None);
+        let (args, _, _) = com_parse_words(args, b"", false, None);
         // FTEF-14.70: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
         let marked = if self.dialect == Dialect::Fteqcc {
@@ -931,8 +943,8 @@ fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
 /// Where id's `COM_Parse` ends the text of a list, read token by token as it reads them, with no
 /// `/* */` comments: at the first NUL byte it meets between tokens or that ends a word or a `//`
 /// comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A quoted token runs
-/// on past a NUL in it to its closing quote, or, as [`com_parse_words`] reads a quote, to its
-/// line's end. The end of `text` when it has no such NUL.
+/// on past a NUL in it, and across lines, to its closing quote (QC-23.9). The end of `text` when
+/// it has no such NUL.
 fn com_parse_end(text: &[u8]) -> usize {
     let until = |from: usize, stop: fn(u8) -> bool| {
         let rest = text.get(from..).unwrap_or_default();
@@ -964,7 +976,7 @@ fn source_form(text: &[u8], dialect: Dialect) -> Option<bool> {
     let mut in_comment = false;
     let mut quote = None;
     for line in text.split(|b| *b == b'\n') {
-        let (words, still, open) = com_parse_words(line, in_comment, quote);
+        let (words, still, open) = com_parse_words(line, b"\n", in_comment, quote);
         in_comment = still;
         quote = open;
         if let Some(first) = words.first() {

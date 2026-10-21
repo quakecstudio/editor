@@ -21,6 +21,7 @@ pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
         pos: 0,
         dialect: Dialect::Fteqcc,
         flags: crate::LexFlags::default(),
+        marks: &[],
         macros: &|_| None,
         out: Lexed::default(),
         joined: 0,
@@ -255,8 +256,6 @@ impl Lexer<'_> {
         }
     }
 
-    /// A byte of a string that starts no escape, and the UTF-8 sequence it starts when the
-    /// input is UTF-8 (FTEF-13.8, FTEF-13.10).
     /// `#NAME` in a string under `macroinstrings`, at its `#` (FTEF-12.12): the name runs to
     /// white space or one of FTEQCC's stop bytes, and is looked up as
     /// `QCC_PR_CheckCompConstString` does, a macro's text looked up again as a name for as long as
@@ -310,6 +309,8 @@ impl Lexer<'_> {
         self.pos = name_end;
     }
 
+    /// A byte of a string that starts no escape, and the UTF-8 sequence it starts when the
+    /// input is UTF-8 (FTEF-13.8, FTEF-13.10).
     fn character_in_string(&mut self, contents: &mut Vec<u8>, b: u8, bronze: u32, output: Output) {
         let sequence = match output {
             Output::Quake => None,

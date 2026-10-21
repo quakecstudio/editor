@@ -1473,7 +1473,7 @@
   "fteqcc|#pragma flag enable qccx\nfloat x = 'a';\nvoid() f = #5;\n": "rejected",
   "fteqcc|#pragma flag enable qccx\nstring s = \"a\":\"b\";\nvoid() f = #5;\n": "bound 5 f",
   "fteqcc|#pragma flag enable ssp\n#pragma warning error F321\nfloat x = 2**3;\nvoid() f = #5;\n": "rejected",
-  "fteqcc|#pragma flag enable utf8\nstring s = \"aÃ©b\";\nvoid() f = #5;\n|latin-1": "bound 5 f",
+  "fteqcc|#pragma flag enable utf8\nstring s = \"aéb\";\nvoid() f = #5;\n": "bound 5 f",
   "fteqcc|#pragma flag enable utf8\nstring s = \"aÿb\";\nvoid() f = #5;\n|latin-1": "rejected",
   "fteqcc|#pragma flag enable xyz\nvoid() f = #5;\n": "bound 5 f",
   "fteqcc|#pragma flag xyz\nvoid() f = #5;\n": "bound 5 f",

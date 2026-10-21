@@ -371,3 +371,22 @@ fn fteqcc_punctuation_table() {
         assert_eq!(puncts(text.as_bytes()), [punct], "{text}");
     }
 }
+
+// spec FTEF-12.12: flags that change at a byte hold from the first token at or after it, the text
+// lexed in one pass, so a string part read after the change joins the one before it
+#[test]
+fn marked_flags_change_in_one_pass() {
+    let source = b"\"a\"\n:\"b\" 'a'";
+    let qccx = with(LexFlag::Qccx);
+    let lexed = crate::lex_marked(source, Dialect::Fteqcc, &[(4, qccx)], &|_| None);
+    let kinds: Vec<TokenKind> = lexed.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(kinds[..3], [string(b"a"), string(b"\0"), string(b"b")]);
+    assert_eq!(kinds[3], TokenKind::Float(f32::from_bits(97)));
+    // Before the mark the defaults hold, and a mark past the text changes nothing.
+    let lexed = crate::lex_marked(source, Dialect::Fteqcc, &[(100, qccx)], &|_| None);
+    assert_eq!(lexed.tokens[1].kind, TokenKind::Punct(Punct::Colon));
+    assert_eq!(lexed.tokens[3].kind, TokenKind::Float(97.0));
+    // A token that starts mid-line after a mark is no line start.
+    let lexed = crate::lex_marked(b"a b", Dialect::Fteqcc, &[(2, qccx)], &|_| None);
+    assert!(!lexed.tokens[1].line_start);
+}

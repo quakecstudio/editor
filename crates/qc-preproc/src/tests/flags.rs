@@ -83,6 +83,15 @@ fn macro_names_in_strings_read_the_macros_of_the_moment() {
         "\"#FOO\"\n",
     ));
     assert_eq!(tokens(&out), r##""#FOO" "bar" "#FOO" "baz""##);
+    // A string a `#NAME` wrote to is spelled as its bytes, for a reader that lexes the text
+    // again with no macros; the others keep their source text.
+    let spellings: Vec<Option<&str>> = out.tokens.iter().map(|t| t.spelling.as_deref()).collect();
+    assert_eq!(
+        spellings,
+        [None, Some("\"bar\""), Some("\"#FOO\""), Some("\"baz\"")]
+    );
+    let (_, out) = one_fte("#pragma flag enable macroinstrings\n#define M \"a#M\"\nM\n");
+    assert_eq!(out.tokens[0].spelling.as_deref(), Some("\"a\\\"a#M\\\"\""));
 }
 
 // spec FTEF-12.13: under `hashonly` a name is a macro's or a built-in constant's only after a `#`

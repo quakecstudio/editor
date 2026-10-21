@@ -69,7 +69,7 @@ fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let differ = graph_differences(&recorded, ULong::Bits64);
     assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
-    assert_eq!(cases.len(), 231);
+    assert_eq!(cases.len(), 247);
     let read = cases
         .iter()
         .filter(|case| matches!(recorded[&case.key()], Outcome::Bound { .. }))
@@ -98,6 +98,7 @@ fn the_graph_cases_hold_progs_src_files_of_their_own() {
     let own: Vec<Case> = own_progs_cases()
         .into_iter()
         .filter(|case| case.dialect == Dialect::Fteqcc && !progs_text(case).contains("#!"))
+        .filter(|case| !super::directives::FTE_LIST_PROGS.contains(&progs_text(case)))
         .collect();
     assert_eq!(own.len(), 25);
     for case in &own {
@@ -163,6 +164,8 @@ fn the_graph_cases_hold_script_lines() {
 
 // spec PRJ-4.11: the graph cases hold vanilla `progs.src` lists with a NUL, which the recorded id
 // qcc reads to that NUL: it binds `f` exactly when `b.qh` comes before it or in a quoted word
+// spec QC-23.8: and lists with a byte of 0x80 or more, which ends a word
+// spec QC-23.9: and a quoted word across lines and one never closed, which id's qcc rejects
 #[test]
 fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
     let recorded = read_fixture(&root()).unwrap();
@@ -172,10 +175,12 @@ fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
         .collect();
     assert_eq!(own.len(), super::directives::VANILLA_PROGS.len());
     let mut read = Vec::new();
+    let mut rejected = Vec::new();
     for case in &own {
         assert!(case.key().starts_with("vanilla|"), "{}", case.key());
         match &recorded[&case.key()] {
             Outcome::Accepted => {}
+            Outcome::Rejected => rejected.push(progs_text(case)),
             outcome => {
                 assert_eq!(*outcome, bound_as(5, "f"), "{case:?}");
                 read.push(progs_text(case));
@@ -188,6 +193,15 @@ fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
             "progs.dat\nb.qh\0x.qc\n",
             "progs.dat\nb.qh\n\0x.qc\n",
             "progs.dat\n\"x.qc\0junk\" b.qh\n",
+            "progs.dat\nx.qc\u{e9}b.qh\n",
+            "progs.dat\n\u{e9}b.qh\u{e9}\n",
+        ]
+    );
+    assert_eq!(
+        rejected,
+        [
+            "progs.dat\n\"b.qh\nx.qc\" b.qh\n",
+            "progs.dat\nb.qh \"x.qc\n"
         ]
     );
 }
@@ -547,7 +561,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1429);
+    assert_eq!(family.len(), 1444);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -957,7 +971,9 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let listed = list
             .strip_prefix("progs.dat\n")
             .and_then(|rest| rest.strip_suffix('\n'))
-            .filter(|name| !name.contains(['\n', '\0']) && list_encoding == Encoding::Utf8);
+            .filter(|name| !name.contains(['\n', '\0']) && list_encoding == Encoding::Utf8)
+            // A case's own list of that shape names no file the case wrote, or one that binds.
+            .filter(|name| dir.join(name).is_file() && name.ends_with(".qc"));
         let progs = listed.is_none().then(|| ProgsSrc {
             text: list.clone(),
             encoding: list_encoding,

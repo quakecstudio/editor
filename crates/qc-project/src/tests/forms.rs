@@ -388,6 +388,14 @@ fn a_vanilla_quoted_word_runs_across_lines() {
         .collect();
     assert_eq!(missing.len(), 1);
     assert!(missing[0].contains("a.qc\nb.qc"), "{missing:?}");
+    // A CRLF line keeps its CR in the name.
+    let graph = vanilla(b"progs.dat\r\n\"a.qc\r\nb.qc\" a.qc\r\n");
+    let missing: Vec<&str> = graph
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(missing[0].contains("a.qc\r\nb.qc"), "{missing:?}");
     // A `#` line inside the quote is part of the name, no directive.
     let graph = vanilla(b"progs.dat\n\"a.qc\n#include \"b.qc\"\n");
     assert!(names(&graph).is_empty());

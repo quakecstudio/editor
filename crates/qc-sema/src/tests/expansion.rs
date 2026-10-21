@@ -874,3 +874,17 @@ fn an_expansion_is_parsed_with_the_lexer_s_flags() {
     );
     assert!(db.analyze_module(&input).syntax.is_empty());
 }
+
+// spec FTEF-12.12: a flag change holds from the token after the pragma, with built-in constants'
+// values among the tokens before it
+#[test]
+fn lexer_flags_hold_from_the_right_token() {
+    let source = concat!(
+        "float x = __LINE__;\nstring f = __FILE__;\n",
+        "#pragma flag enable qccx\n",
+        "string s = \"a\":\"b\";\n",
+    );
+    let (mut db, input) = module(&[("t.qc", source)], &["t.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    assert!(analysis.syntax.is_empty(), "{:?}", analysis.syntax);
+}

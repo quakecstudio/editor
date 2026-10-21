@@ -60,6 +60,18 @@ pub(crate) fn is_known(name: &[u8]) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlagSettings {
     on: [bool; FLAGS.len()],
+    /// What the preprocessor reads for every token, kept as the flags change so the table is
+    /// not searched for it each time: the lexer's flags, `hashonly` and `nofileline`.
+    read: Read,
+}
+
+/// The flags of [`FlagSettings`] the preprocessor reads for every token (FTEF-12.12,
+/// FTEF-12.13).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Read {
+    lex: LexFlags,
+    hash_only: bool,
+    no_file_line: bool,
 }
 
 impl Default for FlagSettings {
@@ -68,6 +80,7 @@ impl Default for FlagSettings {
     fn default() -> Self {
         let mut settings = Self {
             on: [false; FLAGS.len()],
+            read: Read::default(),
         };
         for row in FLAGS {
             settings.set(row.flag, row.default);
@@ -90,7 +103,23 @@ impl FlagSettings {
 
     /// The flags among these that the lexer reads (FTEF-12.12).
     #[must_use]
-    pub fn lex_flags(&self) -> LexFlags {
+    pub const fn lex_flags(&self) -> LexFlags {
+        self.read.lex
+    }
+
+    /// Whether `hashonly` is on, under which only a name after a `#` is a macro's (FTEF-12.13).
+    pub(crate) const fn hash_only(&self) -> bool {
+        self.read.hash_only
+    }
+
+    /// Whether `nofileline` is on, under which `#pragma file` and `line` change nothing
+    /// (FTEF-12.13).
+    pub(crate) const fn no_file_line(&self) -> bool {
+        self.read.no_file_line
+    }
+
+    /// [`Self::lex_flags`] from the table.
+    fn read_lex_flags(&self) -> LexFlags {
         [
             (FteFlag::Qcfuncs, LexFlag::QcFuncs),
             (FteFlag::Qccx, LexFlag::Qccx),
@@ -113,6 +142,11 @@ impl FlagSettings {
                 *slot = on;
             }
         }
+        self.read = Read {
+            lex: self.read_lex_flags(),
+            hash_only: self.is_on(FteFlag::Hashonly),
+            no_file_line: self.is_on(FteFlag::Nopragmafileline),
+        };
     }
 
     /// `#pragma flag STATE NAME ...` (or `keyword`) with the text `message`: STATE `enable` or

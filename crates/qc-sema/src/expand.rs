@@ -125,6 +125,9 @@ pub(crate) struct Rendered {
     pub(crate) text: Vec<u8>,
     /// Where each token came from.
     pub(crate) origins: OriginMap,
+    /// The rendered offset each token starts at, every token's, in order: the preprocessor
+    /// marks pragmas by token index, and a token with no source location has no origin.
+    pub(crate) starts: Vec<usize>,
     /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
     /// setting (FTEF-12.6).
     pub(crate) noref: Vec<(usize, bool)>,
@@ -286,10 +289,10 @@ fn run<L: Loader>(
         let mut rendered = render(pp, files, &output.tokens);
         let offset_of = |rendered: &Rendered, token: usize| {
             rendered
-                .origins
-                .origins
+                .starts
                 .get(token)
-                .map_or(rendered.text.len(), |(start, _)| *start)
+                .copied()
+                .unwrap_or(rendered.text.len())
         };
         rendered.noref = output
             .noref
@@ -348,6 +351,7 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
         last_line = line;
         last = Some(token);
+        out.starts.push(out.text.len());
         if let Some(location) = source_location(pp, files, origin) {
             out.origins.origins.push((out.text.len(), location));
         }

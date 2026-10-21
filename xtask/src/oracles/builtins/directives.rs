@@ -140,7 +140,6 @@ const NAME_FORMS: &[&str] = &[
 /// Macro names about FTEQCC's limit of 63 bytes (FTEF-14.42).
 const NAME_LENGTHS: [usize; 5] = [1, 62, 63, 64, 65];
 
-/// `#define` and `#append` of names of each length, used.
 /// Words and strings about the 1023 bytes FTEQCC's word readers take, and `#pragma` text about
 /// its `char msg[1024]` (FTEF-14.66): at 1024 each stops the compile, at 1023 none does, though
 /// a 1023-byte frame name fails for its length. A comment the text ends in, before an
@@ -168,6 +167,7 @@ fn word_bound_cases() -> Vec<String> {
     sources
 }
 
+/// `#define` and `#append` of names of each length, used.
 fn name_length_cases() -> Vec<String> {
     let mut sources = Vec::new();
     for length in NAME_LENGTHS {
@@ -1204,7 +1204,7 @@ pub(super) const VANILLA_PROGS: &[&str] = &[
 /// FTEQCC list-form `progs.src` files, read as `QCC_main` and `QCC_ContinueCompile` read them
 /// (PRJ-4.9): `,` a word of its own and `;` none, a word that a `"` ends, comments, directives at
 /// the lines' starts, a list with no word, and a comment the list ends in.
-const FTE_LIST_PROGS: &[&str] = &[
+pub(super) const FTE_LIST_PROGS: &[&str] = &[
     "progs.dat,b.qh\n",
     ",b.qh\n",
     "progs.dat\nb.qh,x.qc\n",

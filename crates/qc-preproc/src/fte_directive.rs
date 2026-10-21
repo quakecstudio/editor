@@ -33,8 +33,8 @@ use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text};
 use crate::{
-    Body, ChunkReader, FileId, FileSpan, FlagSettings, FteFlag, Loader, Macro, Preprocessor, Run,
-    Variadic, WarningSettings, fte_pragma, normalize,
+    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
+    WarningSettings, fte_pragma, normalize,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -315,10 +315,6 @@ pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, junk_is: Junk) -> 
     }
 }
 
-/// `QCC_PR_SimpleGetToken`: the word from `at` after white space on the line, up to white
-/// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
-/// before a comment, or when no byte is taken. Also where reading stopped: a `//` comment is
-/// read to its line break.
 /// FTEQCC's error for a word or string past [`FTEQCC_MAX_WORD`] bytes, which
 /// `QCC_PR_SimpleGetToken` and `QCC_PR_SimpleGetString` give with `QCC_Error` (FTEF-14.66).
 pub(crate) const WORD_TOO_LONG: &str = "token exceeds 1023 chars";
@@ -336,6 +332,10 @@ pub(crate) fn too_long(word: Option<&Range<usize>>) -> bool {
     word.is_some_and(|word| word.len() > FTEQCC_MAX_WORD)
 }
 
+/// `QCC_PR_SimpleGetToken`: the word from `at` after white space on the line, up to white
+/// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
+/// before a comment, or when no byte is taken. Also where reading stopped: a `//` comment is
+/// read to its line break.
 pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usize>>, usize) {
     loop {
         let Some(byte) = byte_at(text, at) else {
@@ -1843,7 +1843,7 @@ impl<L: Loader> Preprocessor<L> {
         if pragma.is("once") {
             let marked = self.pragma_base(run, bytes);
             self.fte.once.push(marked);
-        } else if pragma.is("file") && !self.fte.flags.is_on(FteFlag::Nopragmafileline) {
+        } else if pragma.is("file") && !self.fte.flags.no_file_line() {
             let name = pragma.file_name();
             match bytes {
                 Bytes::File(file, _) => {
@@ -1857,7 +1857,7 @@ impl<L: Loader> Preprocessor<L> {
                     }
                 }
             }
-        } else if pragma.is("line") && !self.fte.flags.is_on(FteFlag::Nopragmafileline) {
+        } else if pragma.is("line") && !self.fte.flags.no_file_line() {
             let line = pragma.line();
             let from = end.saturating_add(1);
             match bytes {

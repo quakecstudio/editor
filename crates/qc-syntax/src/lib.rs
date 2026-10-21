@@ -122,8 +122,8 @@ pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
 /// [`parse_preprocessed`] of text whose tokens FTEQCC lexed under the compiler flags `flags`
 /// gives (FTEF-12.12): each the byte the flags hold from and the flags, in order, as
 /// `qc_preproc::FileOutput::lex_flags` marks them by token. The text before the first holds the
-/// default flags. `macroinstrings` is not read: the preprocessor's string token already holds the
-/// text a `#NAME` in it wrote, and this text has no macros to look up.
+/// default flags. `macroinstrings` is not read: this text has no macros to look up, and the
+/// preprocessor writes a string a `#NAME` wrote to as its bytes (`PpToken::spelling`).
 #[must_use]
 pub fn parse_preprocessed_flagged(
     source: &[u8],

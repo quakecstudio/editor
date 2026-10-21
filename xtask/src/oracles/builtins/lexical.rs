@@ -84,14 +84,12 @@ const FLAG_LINES: &[&str] = &[
     "#pragma flag enable ssp\n#pragma warning error F321\nfloat x = 2**3;\n",
     "#define F f\n#pragma flag enable hashonly\nfloat F;\n",
     "#define F f\nfloat F;\n",
+    "#pragma flag enable utf8\nstring s = \"a\u{e9}b\";\n",
 ];
 
 /// Byte sequences under a flag that no `&str` holds, as [`BYTE_LINES`] are written: `utf8`'s
 /// plain strings, read as UTF-8 (FTEF-12.12).
-const FLAG_BYTE_LINES: &[&[u8]] = &[
-    b"#pragma flag enable utf8\nstring s = \"a\xffb\";\n",
-    b"#pragma flag enable utf8\nstring s = \"a\xc3\xa9b\";\n",
-];
+const FLAG_BYTE_LINES: &[&[u8]] = &[b"#pragma flag enable utf8\nstring s = \"a\xffb\";\n"];
 
 /// Builtin numbers past 64 bits, which FTEQCC's `long long` wraps (FTEF-13.19).
 const NUMBERS: &[&str] = &[

@@ -472,7 +472,23 @@ impl TokenStream {
         if key == self.key {
             return;
         }
+        // A change of the macros alone matters only to a string with a `#` in it.
+        let macros_only = key.flags == self.key.flags;
         self.key = key;
+        let hashed = |t: &Token| {
+            matches!(t.kind, TokenKind::String(_))
+                && text.get(t.span.range()).is_some_and(|b| b.contains(&b'#'))
+        };
+        if macros_only
+            && !self
+                .tokens
+                .get(self.pos..)
+                .unwrap_or_default()
+                .iter()
+                .any(hashed)
+        {
+            return;
+        }
         let offset = self.read_offset().min(text.len());
         let next = self.tokens.partition_point(|t| t.span.start < offset);
         let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
@@ -1062,8 +1078,7 @@ impl<L: Loader> Preprocessor<L> {
             };
             // FTEF-12.13: `if (flag_hashonly || !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`, so
             // under `hashonly` only a name after a `#` is a macro's or a built-in constant's.
-            let hash_only = self.dialect.has_fteqcc_extensions()
-                && self.fte.flags.is_on(fte_tables::FteFlag::Hashonly);
+            let hash_only = self.dialect.has_fteqcc_extensions() && self.fte.flags.hash_only();
             if hash_only && matches!(item.tok.kind, TokenKind::Name(_)) {
                 self.emit(&mut run, item.tok);
                 continue;
@@ -1194,7 +1209,7 @@ impl<L: Loader> Preprocessor<L> {
                     continue;
                 }
             }
-            if let Some(item) = chunk.next_item() {
+            if let Some(item) = chunk.next_item(self.macro_strings()) {
                 run.chunks.push(chunk);
                 return Some(item);
             }
@@ -1220,7 +1235,7 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 let cursor = run.cursors.last_mut()?;
                 cursor.stream.pos = cursor.stream.pos.saturating_add(1);
-                return Some(Self::file_item(file, token));
+                return Some(self.fte_file_item(file, token));
             }
             if let Some(end) = self.directive_end(cursor) {
                 let stream = &mut cursor.stream;
@@ -1239,6 +1254,25 @@ impl<L: Loader> Preprocessor<L> {
             }
             return Some(Self::file_item(file, token));
         }
+    }
+
+    /// Whether strings are lexed under `macroinstrings` from here (FTEF-12.12).
+    fn macro_strings(&self) -> bool {
+        self.lexing().flags.has(LexFlag::MacroInStrings)
+    }
+
+    /// [`Self::file_item`] under FTEQCC, with the spelling of a string a `#NAME` in it wrote
+    /// to under `macroinstrings` (FTEF-12.12).
+    fn fte_file_item(&self, file: FileId, token: Token) -> Item {
+        let source = self
+            .sources
+            .file(file)
+            .and_then(|f| f.text.get(token.span.range()))
+            .unwrap_or_default();
+        let spelling = fte_macro::macro_string_spelling(&token.kind, source, self.macro_strings());
+        let mut item = Self::file_item(file, token);
+        item.tok.spelling = spelling;
+        item
     }
 
     /// The token `token` of the file `file`, as the file's text has it.

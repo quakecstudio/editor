@@ -254,45 +254,6 @@ impl Punct {
         Self::Or,
     ];
 
-    /// The FTEQCC punctuation tokens (FTE-5 to FTE-8, FTE-19.1), tried before the vanilla
-    /// tokens so that the longer FTEQCC operators win the longest match (QC-7.1): `++`, `--`,
-    /// `+=`, `-=`, `*=` and `/=` before `+`, `-`, `*` and `/`; `(+)` and `(-)` before `(`;
-    /// `&~=` and `&=` before `&`; `|=` before `|`; `->` before `-`; and `<<=`, `<<`, `>>=`
-    /// and `>>` before `<` and `>`. FTEQCC's own table (`pr_punctuation` in `qcc_pr_lex.c`)
-    /// keeps the same rule: "longer symbols must be before a shorter partial match". The
-    /// entirely new `%`, `?`, `:`, `^` and `~` bytes are vanilla "Unknown punctuation"
-    /// (QC-7.2), so their order among themselves is immaterial. These are not ported from
-    /// FTEQCC; they are this project's rules for the FTEQCC subset the rerelease uses
-    /// (`docs/spec/dialect-fteqcc-rerelease.md`).
-    pub const FTEQCC: [Self; 25] = [
-        Self::PlusPlus,
-        Self::MinusMinus,
-        Self::PlusEq,
-        Self::MinusEq,
-        Self::StarEq,
-        Self::SlashEq,
-        Self::SetBits,
-        Self::ClearBits,
-        Self::OrEq,
-        Self::AndNotEq,
-        Self::AndEq,
-        Self::Arrow,
-        Self::CaretEq,
-        Self::Caret,
-        Self::ShlEq,
-        Self::Shl,
-        Self::ShrEq,
-        Self::Shr,
-        Self::Tilde,
-        Self::Percent,
-        Self::Question,
-        Self::ColonColon,
-        Self::Colon,
-        // FTEQCC's `pr_punctuation` lists `"...", "..", "."`, longest first.
-        Self::Ellipsis,
-        Self::DotDot,
-    ];
-
     /// FTEQCC's `pr_punctuation[]`, every punctuation token in the order `QCC_PR_LexPunctuation`
     /// tries them, the first that matches the input winning (FTEF-13.24): "longer symbols must
     /// be before a shorter partial match". `->`, `(+)` and `(-)` are read as `.`, `|=` and `&~=`
@@ -503,7 +464,7 @@ pub fn lex(source: &[u8]) -> Lexed {
 ///
 /// With [`Dialect::Vanilla`] the output is byte for byte what [`lex`] produces. A dialect
 /// with FTEQCC extensions ([`Dialect::has_fteqcc_extensions`]) also lexes the FTEQCC
-/// punctuation of [`Punct::FTEQCC`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
+/// punctuation of [`Punct::FTEQCC_TABLE`] (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-5 to
 /// FTE-8, FTE-19.1), a number that starts with `.` or ends with an `f` suffix (FTE-20.1,
 /// FTE-20.2), and the further string escapes of FTE-20.4; and the full dialect's tokens of
 /// `docs/spec/dialect-fteqcc.md`: `::`, line continuations, character constants and
@@ -524,6 +485,21 @@ pub fn lex_flagged(
     flags: LexFlags,
     macros: &dyn Fn(&[u8]) -> Option<Vec<u8>>,
 ) -> Lexed {
+    lex_marked(source, dialect, &[(0, flags)], macros)
+}
+
+/// [`lex_flagged`] of a text whose flags change: each mark is the byte the flags hold from and
+/// the flags, in order, the text before the first under the default flags (FTEF-12.12). The
+/// text is lexed in one pass, so a string joined across a mark (QC-13) and whether a token starts
+/// a line are as they are with no mark there; the flags change before the first token at or
+/// after a mark's byte.
+#[must_use]
+pub fn lex_marked(
+    source: &[u8],
+    dialect: Dialect,
+    marks: &[(usize, LexFlags)],
+    macros: &dyn Fn(&[u8]) -> Option<Vec<u8>>,
+) -> Lexed {
     let text = source
         .iter()
         .position(|&b| b == 0)
@@ -533,7 +509,8 @@ pub fn lex_flagged(
         text,
         pos: 0,
         dialect,
-        flags,
+        flags: LexFlags::default(),
+        marks,
         macros,
         out: Lexed::default(),
         joined: 0,
@@ -666,6 +643,8 @@ struct Lexer<'a> {
     dialect: Dialect,
     /// FTEQCC's compiler flags the lexer reads (FTEF-12.12).
     flags: LexFlags,
+    /// The flag changes not yet reached: each the byte the flags hold from, and the flags.
+    marks: &'a [(usize, LexFlags)],
     /// The text of the macro a name names, for `macroinstrings` (FTEF-12.12).
     macros: &'a dyn Fn(&[u8]) -> Option<Vec<u8>>,
     out: Lexed,
@@ -744,7 +723,9 @@ impl Lexer<'_> {
 
     fn run(&mut self) {
         loop {
+            self.apply_marks();
             self.skip_trivia();
+            self.apply_marks();
             let Some(c) = self.peek(0) else { return };
             let start = self.pos;
             // FTEF-13.7: an `L` prefix is read only after another part of a string, which a
@@ -1099,6 +1080,8 @@ impl Lexer<'_> {
         };
         let digits = self.pos;
         let mut num: u64 = 0;
+        // Whether a type suffix ended the number, which sets `pr_immediate_type`.
+        let mut suffixed = false;
         while let Some(c) = self.peek(0) {
             let digit = match c {
                 b'0'..=b'9' => Some(c.wrapping_sub(b'0')),
@@ -1144,6 +1127,10 @@ impl Lexer<'_> {
             } else {
                 signed
             };
+            suffixed = matches!(
+                c,
+                b'f' | b'F' | b'd' | b'D' | b'i' | b'I' | b'u' | b'U' | b'l' | b'L'
+            );
             match c {
                 b'f' | b'F' => {
                     self.bump(1);
@@ -1182,10 +1169,6 @@ impl Lexer<'_> {
         } else {
             signed
         };
-        let suffixed = self
-            .bytes(Span::new(digits, self.pos))
-            .last()
-            .is_some_and(|b| !b.is_ascii_hexdigit());
         // FTEF-12.12: with `assumeint` a number with no suffix is an integer, whose value this
         // profile keeps as a float (FTEF-13.5), with no float's warning; with `qccx` a hex one
         // is `goto qccxhex;`, an `int` whose bits are the float.
@@ -1381,6 +1364,17 @@ impl Lexer<'_> {
         let value = code.to_string().parse::<f32>().unwrap_or(f32::MAX);
         self.push(TokenKind::Float(value), start);
         true
+    }
+
+    /// Takes the flags of each mark at or before where reading stands (FTEF-12.12).
+    fn apply_marks(&mut self) {
+        while let Some((&(at, flags), rest)) = self.marks.split_first() {
+            if at > self.pos {
+                break;
+            }
+            self.flags = flags;
+            self.marks = rest;
+        }
     }
 
     /// Whether FTEQCC's `qccx` flag is on, in an FTEQCC dialect (FTEF-12.12), and reads a character
@@ -1701,9 +1695,9 @@ impl Lexer<'_> {
 
     /// Punctuation (QC-7.1), or an unknown byte (QC-7.2), which is skipped.
     ///
-    /// In an FTEQCC dialect the FTEQCC punctuators ([`Punct::FTEQCC`]) are tried before the
-    /// vanilla ones, so `++`, `+=` and the rest win the longest match over `+`, `-`, `*` and
-    /// `/` (FTE-5 to FTE-8).
+    /// In an FTEQCC dialect the punctuation is FTEQCC's table in its order
+    /// ([`Punct::FTEQCC_TABLE`], FTEF-13.24), so `++`, `+=` and the rest win the longest match
+    /// over `+`, `-`, `*` and `/` (FTE-5 to FTE-8).
     fn punctuation(&mut self) {
         let start = self.pos;
         let rest = self.text.get(start..).unwrap_or_default();
