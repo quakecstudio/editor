@@ -19,8 +19,12 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, Token, TokenKind, lex_with};
+use qc_lexer::{Code, Span, TokenKind, lex_with};
 
+use crate::fte_directive::{
+    self, Bytes, FTE_MAX_MACRO_NAME, Resume, TextStart, WarningAction, byte_at, line_ending,
+    simple_get_token,
+};
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
     Item, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
@@ -174,18 +178,29 @@ impl Text {
     }
 }
 
-/// Where the text a macro's name was read from is: a file, or an expansion's chunk.
+/// Where a text FTEQCC reads is: a file, or an expansion's chunk, with the use that wrote it,
+/// where a byte of no place stands.
 #[derive(Clone, Copy)]
-enum Reading<'a> {
+pub(crate) enum Reading<'a> {
     File(FileId, &'a [u8]),
-    Chunk(&'a Text),
+    Chunk(&'a Text, FileSpan),
 }
 
 impl Reading<'_> {
-    fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         match self {
             Self::File(_, bytes) => bytes,
-            Self::Chunk(text) => text.bytes(),
+            Self::Chunk(text, _) => text.bytes(),
+        }
+    }
+
+    /// Where the byte at `at` came from.
+    fn origin(&self, at: usize) -> Origin {
+        match self {
+            Self::File(file, _) => Origin::Copied { file: *file, at },
+            Self::Chunk(text, use_) => text
+                .origin(at)
+                .map_or(Origin::Made(*use_), |(origin, _)| origin),
         }
     }
 
@@ -200,19 +215,20 @@ impl Reading<'_> {
                 };
                 out.push(bytes.get(range).unwrap_or_default(), origin);
             }
-            Self::Chunk(text) => out.push_from(text, range),
+            Self::Chunk(text, _) => out.push_from(text, range),
         }
         out
     }
 
-    /// Where the byte at `at` stands in the source.
-    fn place(&self, at: usize) -> Option<FileSpan> {
+    /// Where the bytes `range` stand in the source: their span in a file, or in a chunk where
+    /// [`Text::place`] puts them, or else the use that wrote the chunk.
+    pub(crate) fn place(&self, range: Range<usize>) -> FileSpan {
         match self {
-            Self::File(file, _) => Some(FileSpan {
+            Self::File(file, _) => FileSpan {
                 file: *file,
-                span: Span::new(at, at.saturating_add(1)),
-            }),
-            Self::Chunk(text) => text.place(at..at.saturating_add(1)).map(|(span, _)| span),
+                span: Span::new(range.start, range.end),
+            },
+            Self::Chunk(text, use_) => text.place(range).map_or(*use_, |(span, _)| span),
         }
     }
 }
@@ -223,7 +239,13 @@ pub(crate) struct ChunkReader {
     text: Rc<Text>,
     /// The line a built-in constant read in this chunk has: `currentchunk->currentlinenumber`,
     /// the line FTEQCC was reading when it included the chunk (FTEF-14.27).
-    line: u32,
+    line: i32,
+    /// The name a `#pragma file` read in the chunk gave, `s_filen` until the chunk ends
+    /// (FTEF-14.32, FTEF-14.46).
+    file_name: Option<Vec<u8>>,
+    /// The line a `#pragma line` read in the chunk gave the chunk's line starting at this
+    /// offset (FTEF-14.43).
+    line_base: Option<(usize, i32)>,
     id: ExpansionId,
     /// The use the chunk is the expansion of, where a token of no place stands.
     at: FileSpan,
@@ -283,6 +305,69 @@ impl ChunkReader {
     pub(crate) fn detach(&mut self) {
         self.detached = true;
     }
+
+    /// The offset of the next token when it is a `#` that starts a line of the chunk, which
+    /// `QCC_PR_NewLine` reads as a directive (FTEF-14.46).
+    pub(crate) fn directive_at(&self) -> Option<usize> {
+        let token = self.stream.tokens.get(self.stream.pos)?;
+        let hash = token.span.start;
+        (token.kind == TokenKind::Punct(qc_lexer::Punct::Hash)
+            && fte_directive::starts_line(self.text.bytes(), hash, TextStart::Chunk))
+        .then_some(hash)
+    }
+
+    /// The chunk's text as a directive reads it.
+    pub(crate) fn bytes(&self) -> Bytes {
+        Bytes::Chunk(Rc::clone(&self.text), self.at)
+    }
+
+    /// Reading of the chunk goes on at `resume`, after the directive at `hash`, whose text is
+    /// read as no code.
+    pub(crate) fn resume(&mut self, hash: usize, resume: Resume, dialect: qc_lexer::Dialect) {
+        let end = match resume {
+            Resume::At(end) => {
+                self.stream.resume_at(&self.text.bytes, end, dialect);
+                end
+            }
+            Resume::End => {
+                self.stream.pos = self.stream.tokens.len();
+                self.text.bytes.len()
+            }
+        };
+        self.consumed.push(Span::new(hash, end));
+    }
+
+    /// Gives the chunk the name `name` from here on, as `#pragma file` does (FTEF-14.32).
+    pub(crate) fn rename(&mut self, name: Vec<u8>) {
+        self.file_name = Some(name);
+    }
+
+    /// The name `#pragma file` gave the chunk, if any.
+    pub(crate) fn file_name(&self) -> Option<&[u8]> {
+        self.file_name.as_deref()
+    }
+
+    /// Numbers the chunk's line starting at `from` as `line`, as `#pragma line` does
+    /// (FTEF-14.43).
+    pub(crate) fn renumber(&mut self, from: usize, line: i32) {
+        self.line_base = Some((from, line));
+    }
+
+    /// FTEQCC's `pr_source_line` at the offset `at` of the chunk: 1 at its start and one more
+    /// for each line break before `at`, or as the last `#pragma line` before it numbers it
+    /// (FTEF-14.27, FTEF-14.43).
+    fn line_at(&self, at: usize) -> i32 {
+        let count = |at: usize| {
+            let breaks = self.breaks.partition_point(|&b| b < at);
+            u32::try_from(breaks).unwrap_or(u32::MAX)
+        };
+        match self.line_base {
+            Some((from, line)) if at >= from => {
+                line.wrapping_add_unsigned(count(at).saturating_sub(count(from)))
+            }
+            _ => 1_i32.wrapping_add_unsigned(count(at)),
+        }
+    }
 }
 
 /// The spelling of a token of the kind `kind` whose text `bytes` an expansion made (QC-9.16):
@@ -309,7 +394,7 @@ const FTE_BUILTIN_TEXT: usize = 256;
 /// the file named `file`; `None` when `name` is none. `__FILE__` is `"%s"` of the name, kept to
 /// 255 bytes and ended at its first `:` (`erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"';
 /// erk[1] = 0; }`), nothing in it escaped.
-pub(crate) fn builtin_text(name: &[u8], line: u32, file: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn builtin_text(name: &[u8], line: i32, file: &[u8]) -> Option<Vec<u8>> {
     Some(match name {
         b"__NULL__" => b"0i".to_vec(),
         b"__FILE__" => {
@@ -332,68 +417,24 @@ pub(crate) fn builtin_text(name: &[u8], line: u32, file: &[u8]) -> Option<Vec<u8
     })
 }
 
-/// `QCC_JoinPaths`: `name` after the last `/` or `\` of `base`, or `name` itself when it starts
-/// with one, the name FTEQCC gives an `#include`d file joined to `compilingfile`
-/// (FTEF-14.32).
-pub(crate) fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
-    if name.first().is_some_and(|&b| b == b'/' || b == b'\\') {
-        return name.to_vec();
-    }
-    let dir = base
-        .iter()
-        .rposition(|&b| b == b'/' || b == b'\\')
-        .map_or(0, |last| last.saturating_add(1));
-    let mut joined = base.get(..dir).unwrap_or_default().to_vec();
-    joined.extend_from_slice(name);
-    joined
-}
-
-/// The name a `#pragma file` whose `file` ends at `at` in `text` gives, as `QCC_PR_Precompiler`
-/// reads a pragma's text (FTEF-14.32): after a space or tab, or from a `(`, to the end of the
-/// line, its trailing white space dropped, and within the `(` and the first `)` after it when it
-/// starts with one; `None` when another byte follows `file`, which FTEQCC reads as part of the
-/// pragma's name.
-pub(crate) fn pragma_text(text: &[u8], at: usize) -> Option<Vec<u8>> {
-    let rest = text.get(at..).unwrap_or_default();
-    let line = rest
-        .iter()
-        .position(|&b| b == b'\n' || b == 0)
-        .and_then(|end| rest.get(..end))
-        .unwrap_or(rest);
-    let mut message = match line.first() {
-        None => &[][..],
-        Some(b' ' | b'\t') => line.get(1..).unwrap_or_default(),
-        Some(b'(') => line,
-        Some(_) => return None,
-    };
-    while let Some((&last, before)) = message.split_last()
-        && cond::fte_white(last)
-    {
-        message = before;
-    }
-    if let Some(inside) = message.strip_prefix(b"(") {
-        message = inside
+/// The name `#pragma file` gives with the text `message` (FTEF-14.32): the text, or within the
+/// `(` it starts with and the first `)` after it.
+pub(crate) fn pragma_file_name(message: &[u8]) -> Vec<u8> {
+    match message.strip_prefix(b"(") {
+        Some(inside) => inside
             .iter()
             .position(|&b| b == b')')
             .and_then(|close| inside.get(..close))
-            .unwrap_or(inside);
+            .unwrap_or(inside)
+            .to_vec(),
+        None => message.to_vec(),
     }
-    Some(message.to_vec())
 }
 
-/// The byte at `at` of a text FTEQCC reads, `None` at its end, which a NUL is.
-fn byte_at(text: &[u8], at: usize) -> Option<u8> {
-    text.get(at).copied().filter(|&b| b != 0)
-}
-
-/// `qcc_islineending`: a LF, or a CR not before a LF.
-fn line_ending(byte: u8, next: Option<u8>) -> bool {
-    byte == b'\n' || (byte == b'\r' && next != Some(b'\n'))
-}
-
-/// `QCC_PR_LexWhitespace`: the offset after the white space (`qcc_iswhite`), `//` comments to
-/// their line break and `/* */` comments from `at`. A `/* */` comment that does not end runs to
-/// the end of the text, where FTEQCC reports "EOF inside comment".
+/// `QCC_PR_LexWhitespace(true)`, which runs no directive, over a macro's body: the offset after
+/// the white space (`qcc_iswhite`), `//` comments to their line break and `/* */` comments from
+/// `at`. A `/* */` comment that does not end runs to the end of the text, where FTEQCC reports
+/// "EOF inside comment".
 fn lex_whitespace(text: &[u8], mut at: usize) -> usize {
     loop {
         while byte_at(text, at).is_some_and(cond::fte_white) {
@@ -555,82 +596,12 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     })
 }
 
-/// `QCC_PR_SimpleGetToken`: the word from `at` after white space on the line, up to white
-/// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
-/// before a comment (FTEF-14.23).
-fn simple_get_token(text: &[u8], mut at: usize) -> Option<Range<usize>> {
-    loop {
-        let byte = byte_at(text, at)?;
-        if !cond::fte_white(byte) {
-            break;
-        }
-        if byte == b'\n' {
-            return None;
-        }
-        at = at.saturating_add(1);
-    }
-    let comment = |at: usize| {
-        byte_at(text, at) == Some(b'/') && text.get(at.saturating_add(1)) == Some(&b'/')
-    };
-    if comment(at) || text.get(at..at.saturating_add(2)) == Some(b"/*") {
-        return None;
-    }
-    let start = at;
-    while let Some(byte) = byte_at(text, at) {
-        if cond::fte_white(byte) || b",;()]".contains(&byte) || comment(at) {
-            break;
-        }
-        at = at.saturating_add(1);
-    }
-    (at > start).then_some(start..at)
-}
-
 /// The offset after the `*/` that ends a `/* */` comment whose text starts at `from`, or the
 /// end of the text when none does.
 fn block_comment_end(text: &[u8], from: usize) -> usize {
     text.get(from..)
         .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"))
         .map_or(text.len(), |at| from.saturating_add(at).saturating_add(2))
-}
-
-/// `QCC_PR_SkipToEndOfLine`: where the line a directive ended on ends, from `at`: `/* */`
-/// comments are passed over, a line break after `\` goes on to the next line (in a `//`
-/// comment too), and a string is passed over unless a `//` comment came before it
-/// (FTEF-14.24). The offset is that of the line break, or the end of the text.
-fn skip_to_end_of_line(text: &[u8], mut at: usize) -> usize {
-    let mut comments = true;
-    loop {
-        let Some(byte) = byte_at(text, at).filter(|&b| b != b'\n') else {
-            return at.min(text.len());
-        };
-        let rest = text.get(at..).unwrap_or_default();
-        if comments && rest.starts_with(b"/*") {
-            at = block_comment_end(text, at.saturating_add(2));
-        } else if comments && rest.starts_with(b"//") {
-            comments = false;
-            at = at.saturating_add(2);
-        } else if rest.starts_with(b"\\\r\n") {
-            at = at.saturating_add(3);
-        } else if comments && byte == b'"' {
-            at = at.saturating_add(1);
-            while let Some(b) = byte_at(text, at) {
-                let next = text.get(at.saturating_add(1)).copied();
-                match (b, next) {
-                    (b'\n', _) => break,
-                    (b'"', _) => {
-                        at = at.saturating_add(1);
-                        break;
-                    }
-                    (b'\\', Some(b'"' | b'\\')) => at = at.saturating_add(2),
-                    _ => at = at.saturating_add(1),
-                }
-            }
-        } else if rest.starts_with(b"\\\n") {
-            at = at.saturating_add(2);
-        } else {
-            at = at.saturating_add(1);
-        }
-    }
 }
 
 /// A `#define` or `#append` as `QCC_PR_PreProcessor_Define` reads it.
@@ -643,12 +614,18 @@ pub(crate) struct Definition {
     variadic: Variadic,
     /// The body as stored.
     value: Text,
+    /// The first `#` that starts a continued line of the body, "preprocessor directive within
+    /// preprocessor macro" (FTEF-14.46).
+    evil: Option<usize>,
 }
 
 /// Why a `#define` defines nothing.
 pub(crate) enum DefineError {
     /// "No name defined for compiler constant".
     NoName,
+    /// A name of 64 bytes or more, "Compiler constant name length is too long or short"
+    /// (FTEF-14.42).
+    NameTooLong,
     /// A parameter list FTEQCC refuses (FTEF-14.23), of the macro named by these bytes.
     BadParams(Range<usize>),
 }
@@ -709,16 +686,24 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usiz
     }
 }
 
-/// `QCC_PR_PreProcessor_Define`: the `#define` whose name starts after `at` in the file `file`,
-/// and the offset where its line ends ([`skip_to_end_of_line`]). The body runs from after the
-/// spaces and tabs that follow the name or the `)` to a line break, to the end of the text, or
-/// to a `//` outside a quote (the quote flag flipping at every `"`, an escaped one included);
-/// each `/* */` comment outside a quote and each `\` before a line break is dropped, the line
-/// break with it, and the spaces and tabs at its end are dropped (FTEF-14.24).
-fn read_define(text: &[u8], file: FileId, at: usize) -> (Result<Definition, DefineError>, usize) {
-    let Some(name) = simple_get_token(text, at) else {
-        return (Err(DefineError::NoName), skip_to_end_of_line(text, at));
+/// `QCC_PR_PreProcessor_Define`: the `#define` whose name starts after `at` in `reading`, and
+/// the offset where it stopped reading, from which `QCC_PR_SkipToEndOfLine` reads to the end
+/// of its line. The name is a word `QCC_PR_SimpleGetToken` reads, of at most 63 bytes
+/// (`QCC_PR_DefineName`, FTEF-14.42). The body runs from after the spaces and tabs that follow
+/// the name or the `)` to a line break, to the end of the text, or to a `//` outside a quote
+/// (the quote flag flipping at every `"`, an escaped one included); each `/* */` comment outside
+/// a quote and each `\` before a line break is dropped, the line break with it, and the spaces
+/// and tabs at its end are dropped (FTEF-14.24).
+fn read_define(reading: &Reading<'_>, at: usize) -> (Result<Definition, DefineError>, usize) {
+    let text = reading.bytes();
+    let (name, stop) = simple_get_token(text, at);
+    let Some(name) = name else {
+        return (Err(DefineError::NoName), stop);
     };
+    if name.len() > FTE_MAX_MACRO_NAME {
+        let end = name.end;
+        return (Err(DefineError::NameTooLong), end);
+    }
     let mut at = name.end;
     let mut params = None;
     let mut variadic = Variadic::No;
@@ -729,35 +714,34 @@ fn read_define(text: &[u8], file: FileId, at: usize) -> (Result<Definition, Defi
                 variadic = dots;
                 at = after;
             }
-            Err(stop) => {
-                return (
-                    Err(DefineError::BadParams(name)),
-                    skip_to_end_of_line(text, stop),
-                );
-            }
+            Err(stop) => return (Err(DefineError::BadParams(name)), stop),
         }
     }
-    let (value, end) = read_body(text, file, at);
+    let (value, end, evil) = read_body(reading, at);
     let definition = Definition {
         name,
         params,
         variadic,
         value,
+        evil,
     };
-    (Ok(definition), skip_to_end_of_line(text, end))
+    (Ok(definition), end)
 }
 
-/// The body of a `#define` from `at`, as `QCC_PR_PreProcessor_Define` stores it, and where it
-/// stopped reading (FTEF-14.24). After a `\` and a line break, a line that starts with `#`
-/// (after spaces and tabs) keeps the line break, and so does the next continued line: "#define
-/// hacks however, require that it becomes foo\nbar\nmoo".
-fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
+/// The body of a `#define` from `at`, as `QCC_PR_PreProcessor_Define` stores it, where it
+/// stopped reading, and the first `#` that starts a continued line (FTEF-14.24, FTEF-14.46).
+/// After a `\` and a line break, a line that starts with `#` (after spaces and tabs) keeps the
+/// line break, and so does the next continued line: "#define hacks however, require that it
+/// becomes foo\nbar\nmoo".
+fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize>) {
+    let text = reading.bytes();
     while matches!(text.get(at), Some(b' ' | b'\t')) {
         at = at.saturating_add(1);
     }
     let mut value = Text::default();
     let mut quote = false;
     let mut directive_lines = false;
+    let mut evil = None;
     loop {
         let next = text.get(at.saturating_add(1)).copied();
         match byte_at(text, at) {
@@ -774,16 +758,13 @@ fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
                 }
                 let kept = if text.get(first) == Some(&b'#') {
                     directive_lines = true;
+                    evil.get_or_insert(first);
                     true
                 } else {
                     std::mem::take(&mut directive_lines)
                 };
                 if kept {
-                    let origin = Origin::Copied {
-                        file,
-                        at: line_break,
-                    };
-                    value.push(b"\n", origin);
+                    value.push(b"\n", reading.origin(line_break));
                 }
             }
             None | Some(b'\r' | b'\n') => break,
@@ -804,11 +785,11 @@ fn read_body(text: &[u8], file: FileId, mut at: usize) -> (Text, usize) {
         if byte == b'"' {
             quote = !quote;
         }
-        value.push(&[byte], Origin::Copied { file, at });
+        value.push(&[byte], reading.origin(at));
         at = at.saturating_add(1);
     }
     value.trim_end();
-    (value, at)
+    (value, at, evil)
 }
 
 /// A use's arguments as `QCC_PR_ExpandPreProcessorMacro` finds them in the text after its `(`
@@ -824,56 +805,6 @@ struct Scanned {
     too_many: bool,
     /// The offset of the `)`.
     close: usize,
-}
-
-/// The arguments of a use of a macro with `named` named parameters, `variadic` or not, whose
-/// `(` is at `open` in `text` (FTEF-14.22): a `"` string is passed over as [`string_end`]
-/// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every other
-/// byte (a character constant's, a comment's) being part of it. `None` when the text ends
-/// first, "EOF on macro call".
-fn scan_arguments(
-    text: &[u8],
-    open: usize,
-    (named, variadic): (usize, Variadic),
-) -> Option<Scanned> {
-    let mut at = lex_whitespace(text, open.saturating_add(1));
-    let mut start = at;
-    let mut args = Vec::new();
-    let mut extra = 0_usize;
-    let mut too_many = false;
-    let mut level = 0_usize;
-    loop {
-        let mut byte = byte_at(text, at)?;
-        if byte == b'"' {
-            at = string_end(text, at);
-            byte = byte_at(text, at)?;
-        }
-        match byte {
-            b'(' => level = level.saturating_add(1),
-            b',' | b')' if level == 0 => {
-                if byte == b',' && variadic == Variadic::Yes && args.len() >= named {
-                    extra = extra.saturating_add(1);
-                } else {
-                    args.push(start..at);
-                    if byte == b')' {
-                        return Some(Scanned {
-                            args,
-                            extra,
-                            too_many,
-                            close: at,
-                        });
-                    }
-                    at = lex_whitespace(text, at.saturating_add(1));
-                    start = at;
-                    too_many |= args.len() == FTE_MAX_PARAMS || args.len() > named;
-                    continue;
-                }
-            }
-            b')' => level = level.saturating_sub(1),
-            _ => {}
-        }
-        at = at.saturating_add(1);
-    }
 }
 
 /// A function-like macro's use, read from the text its name stands in.
@@ -896,9 +827,9 @@ struct Use {
     span: FileSpan,
     /// The line a built-in constant an argument copies has: the chunk the use stands in's own,
     /// or for a use in a file the line its `)` is on.
-    argument_line: u32,
+    argument_line: i32,
     /// The line of the expansion's chunk: where reading was when the use ended.
-    chunk_line: u32,
+    chunk_line: i32,
 }
 
 /// Why a use of a function-like macro is not expanded.
@@ -1096,48 +1027,57 @@ fn markup(bytes: &[u8]) -> Vec<u8> {
 }
 
 impl<L: Loader> Preprocessor<L> {
-    /// `#define` and `#append` under FTEQCC (FTEF-14.23, FTEF-14.24, FTEF-14.8), as
-    /// `QCC_PR_PreProcessor_Define` reads them from the bytes after the directive's name
-    /// `keyword` in `line`: the macro is stored with its body's text, and reading goes on where
-    /// the directive's line ends, its text never lexed as code. An `#append` whose parameters
-    /// differ from the macro's defines it again with the warning W0102.
-    pub(crate) fn fte_define(&mut self, run: &mut Run, file: FileId, line: &[Token]) {
-        let (Some(hash), Some(keyword)) = (line.first(), line.get(1)) else {
-            return;
-        };
-        let append = matches!(&keyword.kind, TokenKind::Name(n) if n == "append");
-        let Some(text) = self.sources.file(file).map(|f| f.text.as_slice()) else {
-            return;
-        };
-        let (read, end) = read_define(text, file, keyword.span.end);
-        let whole = FileSpan {
-            file,
-            span: Span::new(hash.span.start, end),
-        };
-        if let Some(cursor) = run.cursors.last_mut() {
-            cursor.stream.resume_at(text, end, self.dialect);
-            cursor.skipped.push(whole.span);
-        }
+    /// `#define` and `#append` under FTEQCC (FTEF-14.23, FTEF-14.24, FTEF-14.39, FTEF-14.42), as
+    /// `QCC_PR_PreProcessor_Define` reads them in `bytes` from after `word_end`, the end of the
+    /// word the directive's `#` at `hash` starts: the macro is stored with its body's text, and
+    /// the offset where reading stopped is returned, from which the directive's line is read to
+    /// its end, as `Err` when FTEQCC refuses the definition and stops; the text is never lexed
+    /// as code. An `#append` whose parameters differ from the macro's defines it again with the
+    /// warning W0102. A body with a continued line that starts with `#` is reported as
+    /// `#pragma warning` sets F303 (FTEF-14.46).
+    pub(crate) fn fte_define(
+        &mut self,
+        run: &mut Run,
+        bytes: &Bytes,
+        (hash, word_end): (usize, usize),
+        append: bool,
+    ) -> Result<usize, usize> {
+        let reading = bytes.reading();
+        let text = reading.bytes();
+        let (read, end) = read_define(&reading, word_end);
+        let whole = reading.place(hash..end);
         let definition = match read {
             Ok(definition) => definition,
             Err(DefineError::NoName) => {
                 run.report(Code::E0114, "#define expects a macro name", whole);
-                return;
+                return Err(end);
+            }
+            Err(DefineError::NameTooLong) => {
+                let message = "Compiler constant name length is too long or short";
+                run.report(Code::E0121, message, whole);
+                return Err(end);
             }
             Err(DefineError::BadParams(name)) => {
                 let name = String::from_utf8_lossy(text.get(name).unwrap_or_default());
                 let message = format!("bad parameter list for macro {name}");
                 run.report(Code::E0115, message, whole);
-                return;
+                return Err(end);
             }
         };
         let name_bytes = text.get(definition.name.clone()).unwrap_or_default();
         let name = String::from_utf8_lossy(name_bytes).into_owned();
-        let name_span = Span::new(definition.name.start, definition.name.end);
-        let at_name = FileSpan {
-            file,
-            span: name_span,
-        };
+        let at_name = reading.place(definition.name.clone());
+        if let Some(evil) = definition.evil {
+            // `QCC_PR_ParseWarning(WARN_EVILPREPROCESSOR, "preprocessor directive within
+            // preprocessor macro %s", cnst->name);`, an error unless a pragma says otherwise.
+            let message = format!("preprocessor directive within preprocessor macro {name}");
+            let at = reading.place(evil..evil.saturating_add(1));
+            match self.fte.evil {
+                WarningAction::Ignore => {}
+                WarningAction::Warn => run.report(Code::W0109, message, at),
+                WarningAction::Error => run.report(Code::E0122, message, at),
+            }
+        }
         let params = definition.params;
         let variadic = definition.variadic;
         let mut value = definition.value;
@@ -1163,10 +1103,11 @@ impl<L: Loader> Preprocessor<L> {
             params,
             variadic,
             body: Body::Text(Rc::new(value)),
-            file,
-            name_span,
+            file: at_name.file,
+            name_span: at_name.span,
         };
-        self.macros.insert(name, std::rc::Rc::new(mac));
+        self.macros.insert(name, Rc::new(mac));
+        Ok(end)
     }
 
     /// Expands `item` under FTEQCC if it is the name of a macro `QCC_PR_CheckCompConst`
@@ -1219,11 +1160,7 @@ impl<L: Loader> Preprocessor<L> {
         let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
         let written = match (&use_.call, &mac.params) {
             (Some(call), Some(params)) => {
-                let file = run
-                    .cursors
-                    .last()
-                    .map(|c| c.name.clone())
-                    .unwrap_or_default();
+                let file = Self::fte_file_name(run).to_vec();
                 let line = use_.argument_line;
                 let builtin = move |word: &[u8]| builtin_text(word, line, &file);
                 let writer = Writer {
@@ -1273,6 +1210,8 @@ impl<L: Loader> Preprocessor<L> {
         run.chunks.push(ChunkReader {
             text,
             line: use_.chunk_line,
+            file_name: None,
+            line_base: None,
             id,
             at: use_.span,
             name,
@@ -1296,12 +1235,12 @@ impl<L: Loader> Preprocessor<L> {
             return false;
         }
         let line = match item.place {
-            Place::Chunk(_) => run.chunks.last().map(|chunk| chunk.line),
-            Place::File | Place::Builtin => self.sources.line(item.tok.span),
+            Place::Chunk(_) => run.chunks.last().map_or(0, |chunk| chunk.line),
+            Place::File | Place::Builtin => {
+                self.fte_line(run, item.tok.span.file, item.tok.span.span.start)
+            }
         };
-        let file = run.cursors.last().map(|c| c.name.as_slice());
-        let Some(text) = builtin_text(name.as_bytes(), line.unwrap_or(0), file.unwrap_or_default())
-        else {
+        let Some(text) = builtin_text(name.as_bytes(), line, Self::fte_file_name(run)) else {
             return false;
         };
         if let Some(chunk) = run
@@ -1338,18 +1277,16 @@ impl<L: Loader> Preprocessor<L> {
         true
     }
 
-    /// The text the name `item` stands in: the innermost chunk for a name read from a chunk,
-    /// which is the chunk being read, and otherwise the file being read.
-    fn reading<'a>(&'a self, run: &'a Run, item: &Item) -> Option<(Reading<'a>, usize)> {
+    /// The text the name `item` stands in and the offset after the name: the innermost chunk
+    /// for a name read from a chunk, which is the chunk being read, and otherwise the file the
+    /// name is in.
+    fn use_text(&self, run: &Run, item: &Item) -> Option<(Bytes, usize)> {
         match item.place {
-            Place::Chunk(end) => {
-                let chunk = run.chunks.last()?;
-                Some((Reading::Chunk(&chunk.text), end))
-            }
+            Place::Chunk(end) => Some((run.chunks.last()?.bytes(), end)),
             Place::File => {
                 let file = item.tok.span.file;
-                let text = self.sources.file(file)?;
-                Some((Reading::File(file, &text.text), item.tok.span.span.end))
+                let text = Rc::clone(&self.sources.file(file)?.text);
+                Some((Bytes::File(file, text), item.tok.span.span.end))
             }
             Place::Builtin => None,
         }
@@ -1357,24 +1294,26 @@ impl<L: Loader> Preprocessor<L> {
 
     /// The use of the macro `mac` whose name is `item`: for a function-like macro its `(`,
     /// found after spaces and tabs (`while(*pr_file_p == ' ' || *pr_file_p == '\t')`), and its
-    /// arguments ([`scan_arguments`]), with the lines FTEQCC gives a built-in constant
+    /// arguments ([`Self::fte_scan_arguments`]), with the lines FTEQCC gives a built-in constant
     /// (FTEF-14.27).
-    fn read_use(&self, run: &Run, item: &Item, mac: &Macro) -> Result<Use, CallError> {
-        let (reading, name_end) = self.reading(run, item).ok_or(CallError::NoCall)?;
-        let bytes = reading.bytes();
+    fn read_use(&mut self, run: &mut Run, item: &Item, mac: &Macro) -> Result<Use, CallError> {
+        let (bytes, name_end) = self.use_text(run, item).ok_or(CallError::NoCall)?;
+        let text = bytes.bytes();
         let mut call = None;
         let mut end = name_end;
         if let Some(params) = &mac.params {
             let mut open = name_end;
-            while matches!(bytes.get(open), Some(b' ' | b'\t')) {
+            while matches!(text.get(open), Some(b' ' | b'\t')) {
                 open = open.saturating_add(1);
             }
-            if bytes.get(open) != Some(&b'(') {
+            if text.get(open) != Some(&b'(') {
                 return Err(CallError::NoCall);
             }
-            let scanned = scan_arguments(bytes, open, (params.len(), mac.variadic))
+            let scanned = self
+                .fte_scan_arguments(run, &bytes, open, (params.len(), mac.variadic))
                 .ok_or(CallError::Unterminated)?;
             end = scanned.close.saturating_add(1);
+            let reading = bytes.reading();
             call = Some(Call {
                 args: scanned
                     .args
@@ -1386,29 +1325,26 @@ impl<L: Loader> Preprocessor<L> {
                 after: end,
             });
         }
+        let reading = bytes.reading();
         let mut span = item.tok.span;
-        if let Some(close) = end.checked_sub(1).and_then(|at| reading.place(at))
+        if let Some(close) = end
+            .checked_sub(1)
+            .map(|at| reading.place(at..at.saturating_add(1)))
             && close.file == span.file
             && close.span.end >= span.span.start
         {
             span.span.end = close.span.end;
         }
-        let (argument_line, chunk_line) = match reading {
-            Reading::File(file, _) => {
+        let (argument_line, chunk_line) = match &bytes {
+            Bytes::File(file, _) => {
                 let close = end.saturating_sub(1).max(item.tok.span.span.start);
-                let line = self.sources.line(FileSpan {
-                    file,
-                    span: Span::new(close, close),
-                });
-                let line = line.unwrap_or(0);
+                let line = self.fte_line(run, *file, close);
                 (line, line)
             }
-            Reading::Chunk(_) => {
-                let chunk = run.chunks.last();
-                let breaks = chunk.map_or(0, |chunk| chunk.breaks.partition_point(|&at| at < end));
-                let line = u32::try_from(breaks).unwrap_or(u32::MAX).saturating_add(1);
-                (chunk.map_or(0, |chunk| chunk.line), line)
-            }
+            Bytes::Chunk(..) => run
+                .chunks
+                .last()
+                .map_or((0, 1), |chunk| (chunk.line, chunk.line_at(end))),
         };
         Ok(Use {
             call,
@@ -1416,6 +1352,61 @@ impl<L: Loader> Preprocessor<L> {
             argument_line,
             chunk_line,
         })
+    }
+
+    /// The arguments of a use of a macro with `named` named parameters, `variadic` or not, whose
+    /// `(` is at `open` in `bytes` (FTEF-14.22): a `"` string is passed over as [`string_end`]
+    /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every
+    /// other byte (a character constant's, a comment's) being part of it. The white space after
+    /// the `(` and each `,` is read as `QCC_PR_LexWhitespace(false)` reads it, which runs the
+    /// directives at the starts of its lines (FTEF-14.45). `None` when the text ends first, "EOF
+    /// on macro call", or a directive ends it.
+    fn fte_scan_arguments(
+        &mut self,
+        run: &mut Run,
+        bytes: &Bytes,
+        open: usize,
+        (named, variadic): (usize, Variadic),
+    ) -> Option<Scanned> {
+        let text = bytes.bytes();
+        let mut at = self.fte_whitespace(run, bytes, open.saturating_add(1))?;
+        let mut start = at;
+        let mut args = Vec::new();
+        let mut extra = 0_usize;
+        let mut too_many = false;
+        let mut level = 0_usize;
+        loop {
+            let mut byte = byte_at(text, at)?;
+            if byte == b'"' {
+                at = string_end(text, at);
+                byte = byte_at(text, at)?;
+            }
+            match byte {
+                b'(' => level = level.saturating_add(1),
+                b',' | b')' if level == 0 => {
+                    if byte == b',' && variadic == Variadic::Yes && args.len() >= named {
+                        extra = extra.saturating_add(1);
+                    } else {
+                        args.push(start..at);
+                        if byte == b')' {
+                            return Some(Scanned {
+                                args,
+                                extra,
+                                too_many,
+                                close: at,
+                            });
+                        }
+                        at = self.fte_whitespace(run, bytes, at.saturating_add(1))?;
+                        start = at;
+                        too_many |= args.len() == FTE_MAX_PARAMS || args.len() > named;
+                        continue;
+                    }
+                }
+                b')' => level = level.saturating_sub(1),
+                _ => {}
+            }
+            at = at.saturating_add(1);
+        }
     }
 
     /// Reading of the text the name `item` stood in goes on at `after`, the byte after its use's

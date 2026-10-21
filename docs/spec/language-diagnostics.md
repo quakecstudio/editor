@@ -219,7 +219,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.19** `W0204` "Hanging ';'": under an FTEQCC profile, a `;` alone as a statement,
   FTEQCC's warning of the same text (`dialect-fteqcc-rerelease.md`, FTE-21.5).
 - **QCD-7.20** `W0103` "#warning: TEXT": under an FTEQCC profile, a `#warning` on a taken
-  side, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-14.3).
+  side, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-14.38).
 - **QCD-7.21** `W0205` "missing comma in state definition": under an FTEQCC profile, a state
   header with no `,` between its frame and its next function, at the token where the `,`
   belongs, FTEQCC's warning of the same text (`dialect-fteqcc.md`, FTEF-18.3).
@@ -250,6 +250,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.30** `W0312` "Duplicate label NAME": under an FTEQCC profile, a label read since the
   end of the last function, at its name, FTEQCC's warning of the same text
   (`dialect-fteqcc.md`, FTEF-18.23).
+- **QCD-7.31** `W0109` "preprocessor directive within preprocessor macro NAME": under an FTEQCC
+  profile, a `#define` or `#append` whose body has a continued line that starts with `#`, at
+  that `#`, when `#pragma warning enable F303` (or `on` or `toggle`) has made FTEQCC's F303 a
+  warning (`dialect-fteqcc.md`, FTEF-14.46).
 
 ## QCD-8 Preprocessor errors
 
@@ -275,9 +279,20 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   with the wrong argument count (QC-9.10).
 - **QCD-8.10** `E0117` "unterminated argument list for macro NAME" (QC-9.10).
 - **QCD-8.11** `E0118` "#Error: TEXT": under an FTEQCC profile, an `#error` on a taken side,
-  FTEQCC's error of the same text (`dialect-fteqcc.md`, FTEF-14.3).
+  FTEQCC's error of the same text (`dialect-fteqcc.md`, FTEF-14.38).
 - **QCD-8.12** **Withdrawn** (P2-83, #494): it said `E0120` is reported under an FTEQCC profile
   only; the vanilla dialect has the bound too. Replaced by QCD-8.13.
 - **QCD-8.13** `E0120` "macro expansion too large": the first macro use past the preprocessor's
   bound on the expansions of one file, under either dialect (`language.md` QC-9.18,
   `dialect-fteqcc.md` FTEF-14.28).
+- **QCD-8.14** `E0121` "TEXT": under an FTEQCC profile, an error FTEQCC's preprocessor reports,
+  with FTEQCC's text, at the directive: "unexpected tokens at end of line" (FTEF-14.35),
+  "Hanging # with no directive" (FTEF-14.34), "unclosed bracket condition", "unclosed defined
+  condition" and "unexpected end-of-line" (FTEF-14.33), "malformed #elif" (FTEF-14.37), "No
+  more than 5 packs are allowed" (FTEF-14.39) and "Compiler constant name length is too long or
+  short" (FTEF-14.42); and this profile's own "#include where this profile does not follow it"
+  and "directives nested too deeply" (FTEF-14.47).
+- **QCD-8.15** `E0122` "preprocessor directive within preprocessor macro NAME": under an FTEQCC
+  profile, a `#define` or `#append` whose body has a continued line that starts with `#`, at
+  that `#`, while FTEQCC's F303 is an error, as it is unless a `#pragma warning` says otherwise
+  (`dialect-fteqcc.md`, FTEF-14.46).

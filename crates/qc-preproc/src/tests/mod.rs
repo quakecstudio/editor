@@ -971,6 +971,7 @@ proptest! {
         }
     }
 }
+mod directives;
 mod fteqcc;
 mod reviewer;
 mod spacing;

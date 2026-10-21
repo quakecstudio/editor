@@ -11,11 +11,12 @@
 //! id's `qcc` has no preprocessor, so for vanilla code (where no line starts with `#` and a
 //! name, QC-9.1) the only change is frame macro resolution. The directive set is this
 //! project's own definition; FTEQCC's pragmas come with the dialect profiles. In an FTEQCC
-//! dialect the preprocessor also reads FTEQCC's directives and macros
-//! (`docs/spec/dialect-fteqcc.md`, FTEF-14): `#if` and `#elif`, continued lines, `#warning` and
-//! `#error`, `#includelist`, variadic macros, `#` and `##`, and the built-in constants.
+//! dialect the preprocessor reads FTEQCC's directives as FTEQCC's `QCC_PR_Precompiler` does,
+//! as bytes, wherever FTEQCC meets one (`docs/spec/dialect-fteqcc.md`, FTEF-14.33 to FTEF-14.47,
+//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.32, `fte_macro`).
 
 pub mod cond;
+mod fte_directive;
 mod fte_macro;
 mod source;
 
@@ -24,6 +25,7 @@ mod tests;
 
 pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
 
+use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
 use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -155,7 +157,7 @@ enum Body {
     /// The vanilla dialect's: the body's tokens, each with the file it is in.
     Tokens(Vec<(FileId, Token)>),
     /// FTEQCC's: the text `QCC_PR_PreProcessor_Define` stored, an `#append`ed part included
-    /// (FTEF-14.8, FTEF-14.24).
+    /// (FTEF-14.39, FTEF-14.24).
     Text(std::rc::Rc<Text>),
 }
 
@@ -258,9 +260,6 @@ struct Cond {
     value: bool,
     parent: bool,
     opened: Span,
-    /// Whether a side of the block was taken, so a later `#elif` or `#else` is not
-    /// (FTEF-14.1).
-    taken: bool,
 }
 
 /// The tokens lexed from one text, a file's or an FTEQCC expansion's, and where reading
@@ -437,7 +436,7 @@ impl TokenStream {
     /// the whole text from `offset` would reach that token as the first lexing did, so the
     /// tokens from it on stand: the new tokens end before it with only white space after them,
     /// none is a string (which may join the next, QC-13) or a `#` that may start a directive
-    /// (whose `#warning` text is read raw, FTEF-14.3), nor is the kept token a string. A
+    /// (whose `#warning` text is read raw, FTEF-14.38), nor is the kept token a string. A
     /// lexical error then needs no check of its own: one in a token ends with the token, and
     /// one outside any token (an unclosed comment, a stray byte) is no white space after the
     /// last token, so none runs on into the kept token.
@@ -479,11 +478,15 @@ struct Cursor {
     /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
     name: Vec<u8>,
     stream: TokenStream,
+    /// Under the vanilla dialect, the conditionals open (QC-9.6); FTEQCC skips a side at once.
     conds: Vec<Cond>,
     skipped: Vec<Span>,
     skip_start: Option<usize>,
-    /// The end of an `#includelist` line whose `#endlist` has not been reached (FTEF-14.4).
-    list_start: Option<usize>,
+    /// How the file starts, for a directive on its first line (FTEF-14.34).
+    start: TextStart,
+    /// Under FTEQCC, the line a `#pragma line` gave the file's line starting at this offset
+    /// (FTEF-14.43).
+    line_base: Option<(usize, i32)>,
 }
 
 impl Cursor {
@@ -514,6 +517,8 @@ struct Run {
     open_names: HashMap<String, usize>,
     /// The macro expansions this file has made (FTEF-14.28, QC-9.18).
     expanded: Expanded,
+    /// Under FTEQCC, how many directives are being run inside another reading (FTEF-14.47).
+    nested_directives: usize,
     out: FileOutput,
 }
 
@@ -621,6 +626,8 @@ pub struct Preprocessor<L> {
     model_name: String,
     /// Whether FTEQCC's frame macro table is full (FTEF-18.17), so the error is given once.
     frames_full: bool,
+    /// In an FTEQCC dialect, what FTEQCC's directives keep from file to file.
+    fte: FteState,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -659,6 +666,7 @@ impl<L: Loader> Preprocessor<L> {
             carried_frames: HashMap::new(),
             model_name: String::new(),
             frames_full: false,
+            fte: FteState::default(),
         }
     }
 
@@ -735,7 +743,7 @@ impl<L: Loader> Preprocessor<L> {
             unit: name.clone(),
             ..Run::default()
         };
-        let cursor = self.cursor(file, path, name);
+        let cursor = self.cursor(file, path, name, TextStart::Compiled);
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
             let Some(item) = self.explicit_use(&mut run, item) else {
@@ -783,16 +791,39 @@ impl<L: Loader> Preprocessor<L> {
         // A use `try_expand` refused, a function-like macro's with no or a bad argument list,
         // goes out as it is: tried again, it would report its error again.
         let next = self.try_expand(run, next)?;
+        // FTEF-14.34: a `#` first on its line before a word that names no macro is FTEQCC's
+        // "Explicit precompiler usage when not defined NAME". The parser reports such a `#` in
+        // the rest of a line as E0209 (FTE-23.10); one that starts a line it would read as a
+        // directive's, which a profile's text no longer holds, and drop.
+        if let TokenKind::Name(name) = &next.tok.kind
+            && !self.macros.contains_key(name)
+            && self.starts_output_line(run, &item.tok)
+        {
+            let message = format!("Explicit precompiler usage when not defined {name}");
+            run.report(Code::E0121, message, item.tok.span);
+        }
         self.emit(run, item.tok);
         self.emit(run, next.tok);
         None
     }
 
-    fn cursor(&self, file: FileId, path: PathBuf, name: Vec<u8>) -> Cursor {
-        let text = self
-            .sources
-            .file(file)
-            .map_or(&[][..], |f| f.text.as_slice());
+    /// Whether `token`, a token of no expansion, stands first on its line of the output: no
+    /// token was written before it, or the last one written stands on another line or file.
+    fn starts_output_line(&self, run: &Run, token: &PpToken) -> bool {
+        if token.expansion.is_some() {
+            return false;
+        }
+        let Some(last) = run.out.tokens.last() else {
+            return true;
+        };
+        let last = self.origin(last);
+        last.file != token.span.file
+            || self.line(last.file, last.span.start)
+                != self.line(token.span.file, token.span.span.start)
+    }
+
+    fn cursor(&self, file: FileId, path: PathBuf, name: Vec<u8>, start: TextStart) -> Cursor {
+        let text = self.sources.file(file).map_or(&[][..], |f| &f.text[..]);
         Cursor {
             file,
             path,
@@ -801,7 +832,8 @@ impl<L: Loader> Preprocessor<L> {
             conds: Vec::new(),
             skipped: Vec::new(),
             skip_start: None,
-            list_start: None,
+            start,
+            line_base: None,
         }
     }
 
@@ -811,12 +843,25 @@ impl<L: Loader> Preprocessor<L> {
 
     /// The next token after directives and skipped blocks: from the pushed-back tokens first,
     /// then under FTEQCC from the chunk being read, each chunk closed when reading goes past
-    /// its last token (FTEF-14.17), then from the file.
+    /// its last token (FTEF-14.17), then from the file. Under FTEQCC a `#` that starts a line
+    /// of the chunk or the file is a directive there (FTEF-14.34, FTEF-14.46).
     fn next_item(&mut self, run: &mut Run) -> Option<Item> {
         if let Some(item) = run.pending.pop() {
             return Some(item);
         }
+        let fte = self.dialect.has_fteqcc_extensions();
         while let Some(mut chunk) = run.chunks.pop() {
+            if fte && let Some(hash) = chunk.directive_at() {
+                let bytes = chunk.bytes();
+                run.chunks.push(chunk);
+                let resume = self.fte_directive(run, &bytes, hash, Position::Line);
+                chunk = run.chunks.pop()?;
+                if let Some(resume) = resume {
+                    chunk.resume(hash, resume, self.dialect);
+                    run.chunks.push(chunk);
+                    continue;
+                }
+            }
             if let Some(item) = chunk.next_item() {
                 run.chunks.push(chunk);
                 return Some(item);
@@ -830,21 +875,17 @@ impl<L: Loader> Preprocessor<L> {
                 continue;
             };
             let file = cursor.file;
-            if let Some(start) = cursor.list_start {
-                // FTEF-14.4: the lines of an `#includelist` produce no tokens, up to `#endlist`.
-                let end = self.directive_end(cursor);
-                let stream = &mut cursor.stream;
-                let name = stream.tokens.get(stream.pos.saturating_add(1));
-                let ends = end.is_some()
-                    && name.is_some_and(|n| n.kind == TokenKind::Name("endlist".to_owned()));
-                if ends && let Some(end) = end {
-                    cursor.skipped.push(Span::new(start, token.span.start));
-                    cursor.list_start = None;
-                    stream.pos = end;
-                } else {
-                    stream.pos = stream.pos.saturating_add(1);
+            if fte {
+                // An `#include` reads the file it names next, in a cursor of its own above
+                // this one, so this one is found by its place.
+                let index = run.cursors.len().saturating_sub(1);
+                if let Some(resume) = self.fte_file_directive(run, file, &token) {
+                    self.resume_cursor(run, index, token.span.start, resume);
+                    continue;
                 }
-                continue;
+                let cursor = run.cursors.last_mut()?;
+                cursor.stream.pos = cursor.stream.pos.saturating_add(1);
+                return Some(Self::file_item(file, token));
             }
             if let Some(end) = self.directive_end(cursor) {
                 let stream = &mut cursor.stream;
@@ -861,25 +902,67 @@ impl<L: Loader> Preprocessor<L> {
             if !cursor.taking() {
                 continue;
             }
-            let span = FileSpan {
-                file,
-                span: token.span,
-            };
-            return Some(Item {
-                tok: PpToken {
-                    kind: token.kind,
-                    span,
-                    expansion: None,
-                    spelling: None,
-                    follows: None,
-                },
-                hide: None,
-                place: Place::File,
-            });
+            return Some(Self::file_item(file, token));
         }
     }
 
-    /// If the cursor is at a directive (QC-9.1), the index one past its last token.
+    /// The token `token` of the file `file`, as the file's text has it.
+    fn file_item(file: FileId, token: Token) -> Item {
+        Item {
+            tok: PpToken {
+                kind: token.kind,
+                span: FileSpan {
+                    file,
+                    span: token.span,
+                },
+                expansion: None,
+                spelling: None,
+                follows: None,
+            },
+            hide: None,
+            place: Place::File,
+        }
+    }
+
+    /// Under FTEQCC, the directive `token` starts in the file `file` the top cursor reads, when
+    /// it is a `#` that starts a line there (FTEF-14.34), run; where reading goes on after it.
+    fn fte_file_directive(&mut self, run: &mut Run, file: FileId, token: &Token) -> Option<Resume> {
+        if token.kind != TokenKind::Punct(Punct::Hash) {
+            return None;
+        }
+        let start = run.cursors.last()?.start;
+        let text = Rc::clone(&self.sources.file(file)?.text);
+        let hash = token.span.start;
+        if !fte_directive::starts_line(&text, hash, start) {
+            return None;
+        }
+        self.fte_directive(run, &Bytes::File(file, text), hash, Position::Line)
+    }
+
+    /// Reading of the file of the cursor `index` goes on at `resume`, after the directive whose
+    /// `#` is at `hash`; the directive's text is read as no code.
+    fn resume_cursor(&self, run: &mut Run, index: usize, hash: usize, resume: Resume) {
+        let Some(cursor) = run.cursors.get_mut(index) else {
+            return;
+        };
+        let Some(text) = self.sources.file(cursor.file).map(|f| Rc::clone(&f.text)) else {
+            return;
+        };
+        let end = match resume {
+            Resume::At(end) => {
+                cursor.stream.resume_at(&text, end, self.dialect);
+                end
+            }
+            Resume::End => {
+                cursor.stream.pos = cursor.stream.tokens.len();
+                text.len()
+            }
+        };
+        cursor.skipped.push(Span::new(hash, end));
+    }
+
+    /// If the cursor is at a directive (QC-9.1), the index one past its last token: the
+    /// vanilla dialect's directives end with their line.
     fn directive_end(&self, cursor: &Cursor) -> Option<usize> {
         let stream = &cursor.stream;
         let hash = stream.tokens.get(stream.pos)?;
@@ -893,27 +976,12 @@ impl<L: Loader> Preprocessor<L> {
         {
             return None;
         }
-        let rest = stream.tokens.get(stream.pos..)?;
-        let mut len = 1_usize;
-        if self.dialect.has_fteqcc_extensions() {
-            // FTEF-14.30: a line that ends in `\` before its break goes on.
-            let text = self
-                .sources
-                .file(cursor.file)
-                .map_or(&[][..], |f| f.text.as_slice());
-            for pair in rest.windows(2) {
-                let [a, b] = pair else { break };
-                if !continues(text, a.span.end, b.span.start) {
-                    break;
-                }
-                len = len.saturating_add(1);
-            }
-        } else {
-            len = rest
-                .iter()
-                .take_while(|t| self.line(cursor.file, t.span.start) == line)
-                .count();
-        }
+        let len = stream
+            .tokens
+            .get(stream.pos..)?
+            .iter()
+            .take_while(|t| self.line(cursor.file, t.span.start) == line)
+            .count();
         stream.pos.checked_add(len)
     }
 
@@ -925,9 +993,6 @@ impl<L: Loader> Preprocessor<L> {
         };
         let len = self.sources.file(cursor.file).map_or(0, |f| f.text.len());
         if let Some(start) = cursor.skip_start.take() {
-            cursor.skipped.push(Span::new(start, len));
-        }
-        if let Some(start) = cursor.list_start.take() {
             cursor.skipped.push(Span::new(start, len));
         }
         for d in cursor.stream.diagnostics {
@@ -946,14 +1011,7 @@ impl<L: Loader> Preprocessor<L> {
                 );
             }
         }
-        let fte = self.dialect.has_fteqcc_extensions();
         for cond in cursor.conds {
-            // FTEF-14.10: FTEQCC reports a block left open only while it skips a side of it
-            // ("#if with no endif" in `QCC_PR_FalsePreProcessorIf`); a taken side open at the
-            // end of the file is closed without a word.
-            if fte && cond.value && cond.parent {
-                continue;
-            }
             let span = FileSpan {
                 file: cursor.file,
                 span: cond.opened,
@@ -992,7 +1050,6 @@ impl<L: Loader> Preprocessor<L> {
             }) => Some(n.as_str()),
             _ => None,
         };
-        let fte = self.dialect.has_fteqcc_extensions();
         match name.as_str() {
             "ifdef" | "ifndef" => {
                 let value =
@@ -1001,7 +1058,6 @@ impl<L: Loader> Preprocessor<L> {
                     value,
                     parent: was_taking,
                     opened: whole,
-                    taken: value,
                 });
                 if was_taking && operand.is_none() {
                     run.report(
@@ -1011,24 +1067,12 @@ impl<L: Loader> Preprocessor<L> {
                     );
                 }
             }
-            "if" | "elif" | "elifdef" | "elifndef" if fte => {
-                self.fteqcc_conditional(run, file, name, line, was_taking);
-            }
             "else" | "endif" => {
                 let closed = if name == "else" {
                     cursor
                         .conds
                         .last_mut()
-                        .map(|c| {
-                            // FTEF-14.1: after an `#elif` the `#else` is taken only when no side
-                            // was; in vanilla it flips the block (QC-9.6).
-                            if fte {
-                                c.value = !c.taken;
-                                c.taken = true;
-                            } else {
-                                c.value = !c.value;
-                            }
-                        })
+                        .map(|c| c.value = !c.value)
                         .is_some()
                 } else {
                     cursor.conds.pop().is_some()
@@ -1042,7 +1086,6 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             _ if !was_taking => {}
-            "define" | "append" if fte => self.fte_define(run, file, line),
             "define" => self.define(run, file, line),
             "undef" => {
                 if let Some(n) = operand {
@@ -1052,63 +1095,7 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             "include" => self.include(run, line, whole),
-            // FTEQCC `#pragma` (FTE-16): a compiler directive that produces no tokens and no
-            // progs output (FTE-16.3). In an FTEQCC dialect it is accepted and ignored,
-            // including the rerelease's `#pragma warning disable/enable F317` (FTE-16.1); in
-            // the vanilla dialect it stays an unknown directive (QC-9.9).
-            "pragma" if fte => {
-                // FTEF-14.32: FTEQCC reads a pragma's text as bytes to the end of its line
-                // (`msg[a++] = *pr_file_p;`), never as code, and reading goes on at its line's
-                // break (`*pr_file_p != '\n' && *pr_file_p != '\0'`) whatever a comment or a
-                // string in the text would have run across.
-                if let Some(text) = self.sources.file(file).map(|f| f.text.as_slice()) {
-                    let from = name_span.end;
-                    let line_end = text
-                        .get(from..)
-                        .and_then(|rest| rest.iter().position(|&b| b == b'\n'))
-                        .map_or(text.len(), |at| from.saturating_add(at));
-                    cursor.stream.resume_at(text, line_end, self.dialect);
-                    cursor.skipped.push(Span::new(whole.start, line_end));
-                }
-                // FTEQCC compares a pragma's name with `QC_strcasecmp`.
-                let pragma = |word: &str| operand.is_some_and(|o| o.eq_ignore_ascii_case(word));
-                // FTEF-12.6: `#pragma noref N` sets whether the definitions after it are
-                // `noref`.
-                if pragma("noref")
-                    && let Some(Token {
-                        kind: TokenKind::Float(value),
-                        ..
-                    }) = line.get(3)
-                {
-                    let at = run.out.tokens.len();
-                    run.out.noref.push((at, *value != 0.0));
-                }
-                // FTEF-12.10: `#pragma autoproto [N]` asks for autoprototyping, or not for a 0:
-                // `autoprototype = *msg?!!atoi(msg):true;`.
-                if pragma("autoproto") {
-                    let on = match line.get(3) {
-                        None => true,
-                        Some(token) => cond::atoi(&self.token_text(file, token)) != 0,
-                    };
-                    let index = run.out.tokens.len();
-                    run.out.autoproto.push((index, on, at(whole)));
-                }
-                // FTEF-14.32: `#pragma file(NAME)` gives the file the name NAME.
-                let name_end = line.get(2).map_or(0, |token| token.span.end);
-                if pragma("file")
-                    && let Some(name) = self
-                        .sources
-                        .file(file)
-                        .and_then(|f| fte_macro::pragma_text(&f.text, name_end))
-                {
-                    cursor.name = name;
-                }
-            }
-            _ => {
-                if !(fte && self.fteqcc_directive(run, file, name, line, whole)) {
-                    run.report(Code::E0108, format!("unknown directive #{name}"), at(whole));
-                }
-            }
+            _ => run.report(Code::E0108, format!("unknown directive #{name}"), at(whole)),
         }
         let Some(cursor) = run.cursors.iter_mut().rev().find(|c| c.file == file) else {
             return;
@@ -1122,105 +1109,6 @@ impl<L: Loader> Preprocessor<L> {
             }
             (true, true) | (false, false) => {}
         }
-    }
-
-    /// FTEQCC's `#if expr`, `#elif expr`, `#elifdef NAME` and `#elifndef NAME` (FTEF-14.1):
-    /// a new block, or the next side of the open one, taken only when no earlier side was.
-    fn fteqcc_conditional(
-        &self,
-        run: &mut Run,
-        file: FileId,
-        name: &str,
-        line: &[Token],
-        was_taking: bool,
-    ) {
-        let whole = directive_span(line);
-        let operand = match line.get(2) {
-            Some(Token {
-                kind: TokenKind::Name(n),
-                ..
-            }) => Some(n.as_str()),
-            _ => None,
-        };
-        let expr = line.get(2..).unwrap_or_default();
-        if name == "if" {
-            let value = was_taking && self.condition(file, expr);
-            if let Some(cursor) = run.cursors.last_mut() {
-                cursor.conds.push(Cond {
-                    value,
-                    parent: was_taking,
-                    opened: whole,
-                    taken: value,
-                });
-            }
-            return;
-        }
-        let taken = run
-            .cursors
-            .last()
-            .and_then(|c| c.conds.last())
-            .map(|c| c.taken);
-        let value = match taken {
-            None => {
-                run.report(
-                    Code::E0109,
-                    format!("#{name} without #ifdef or #ifndef"),
-                    FileSpan { file, span: whole },
-                );
-                return;
-            }
-            Some(true) => false,
-            Some(false) if name == "elif" => self.condition(file, expr),
-            Some(false) => {
-                operand.is_some_and(|n| self.macros.contains_key(n) == (name == "elifdef"))
-            }
-        };
-        if let Some(c) = run.cursors.last_mut().and_then(|c| c.conds.last_mut()) {
-            c.value = value;
-            c.taken |= value;
-        }
-    }
-
-    /// FTEQCC's other directives on a taken side (FTEF-14.3, FTEF-14.4, FTEF-14.8); false
-    /// for a name that is none of them.
-    fn fteqcc_directive(
-        &mut self,
-        run: &mut Run,
-        file: FileId,
-        name: &str,
-        line: &[Token],
-        whole: Span,
-    ) -> bool {
-        let at = |span: Span| FileSpan { file, span };
-        match name {
-            // FTEF-14.3: `#warning`, `#error` and `#message`, with the rest of the line.
-            "warning" | "error" | "message" => {
-                let text = self.line_text(file, line.get(2..).unwrap_or_default());
-                if name == "warning" {
-                    run.report(Code::W0103, format!("#warning: {text}"), at(whole));
-                } else if name == "error" {
-                    run.report(Code::E0118, format!("#Error: {text}"), at(whole));
-                }
-            }
-            // FTEF-14.4: the list's files are the module graph's to compile.
-            "includelist" => {
-                if let Some(cursor) = run.cursors.last_mut() {
-                    cursor.list_start = Some(whole.end);
-                }
-            }
-            // FTEF-14.8: `#eof` ends the file, and the build directives produce no tokens;
-            // `directive` gives `#append` to `fte_define`.
-            "eof" => {
-                if let Some(cursor) = run.cursors.last_mut() {
-                    cursor.skip_start.get_or_insert(whole.end);
-                    cursor.stream.pos = cursor.stream.tokens.len();
-                }
-            }
-            "endlist" | "output" | "forcecrc" | "copyright" | "pack" | "package" | "merge"
-            | "datafile" => {}
-            _ => return false,
-        }
-        true
     }
 
     /// `#define` in the vanilla dialect (QC-9.3), with the operand errors of QC-9.9; under
@@ -1288,60 +1176,8 @@ impl<L: Loader> Preprocessor<L> {
         self.macros.insert(name.clone(), Rc::new(mac));
     }
 
-    /// The value of an `#if` or `#elif` expression (FTEF-14.1), evaluated as the project graph
-    /// evaluates it in this dialect (PRJ-5.5, FTEF-14.11), a macro's value being its body's
-    /// text: its tokens' text, or under FTEQCC the text it stored (`c->value`). The expression
-    /// is its tokens' text; under an FTEQCC profile it is the bytes as written, since FTEQCC
-    /// reads words up to whitespace (FTEF-14.11).
-    fn condition(&self, file: FileId, tokens: &[Token]) -> bool {
-        let expr = if self.dialect.has_fteqcc_extensions() {
-            self.source_text(file, tokens)
-        } else {
-            self.line_text(file, tokens)
-        };
-        let value = |name: &str| {
-            self.macros.get(name).map(|m| match &m.body {
-                Body::Text(text) => String::from_utf8_lossy(text.bytes()).into_owned(),
-                Body::Tokens(tokens) => {
-                    let parts: Vec<String> =
-                        tokens.iter().map(|(f, t)| self.token_text(*f, t)).collect();
-                    parts.join(" ")
-                }
-            })
-        };
-        cond::eval(&expr, &value, self.dialect)
-    }
-
-    /// The bytes of `file` from the first of `tokens` to the end of the last, a line
-    /// continuation (FTEF-14.30) read as a space.
-    fn source_text(&self, file: FileId, tokens: &[Token]) -> String {
-        let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
-            return String::new();
-        };
-        let span = FileSpan {
-            file,
-            span: Span::new(first.span.start, last.span.end),
-        };
-        let text = String::from_utf8_lossy(self.sources.text(span).unwrap_or_default());
-        text.replace("\\\r\n", " ").replace("\\\n", " ")
-    }
-
-    /// The text of directive tokens of `file`, each token's bytes, joined by a space.
-    fn line_text(&self, file: FileId, tokens: &[Token]) -> String {
-        let parts: Vec<String> = tokens.iter().map(|t| self.token_text(file, t)).collect();
-        parts.join(" ")
-    }
-
-    /// One token's bytes in `file`, as text.
-    fn token_text(&self, file: FileId, token: &Token) -> String {
-        let span = FileSpan {
-            file,
-            span: token.span,
-        };
-        String::from_utf8_lossy(self.sources.text(span).unwrap_or_default()).into_owned()
-    }
-
-    /// `#include` (QC-9.2), with the errors of QC-9.9 and QC-9.11.
+    /// `#include` in the vanilla dialect (QC-9.2), with the errors of QC-9.9 and QC-9.11; under
+    /// FTEQCC `fte_directive` reads it (FTEF-14.40).
     fn include(&mut self, run: &mut Run, line: &[Token], whole: Span) {
         let Some(current) = run.cursors.last() else {
             return;
@@ -1349,7 +1185,6 @@ impl<L: Loader> Preprocessor<L> {
         let file = current.file;
         let Some(Token {
             kind: TokenKind::String(bytes),
-            span: name_span,
             ..
         }) = line.get(2)
         else {
@@ -1360,19 +1195,6 @@ impl<L: Loader> Preprocessor<L> {
             );
             return;
         };
-        // FTEF-14.32: FTEQCC names the file by the bytes between the quotes, joined to the
-        // name of the file being compiled.
-        let written = self
-            .sources
-            .file(file)
-            .and_then(|f| f.text.get(name_span.start.saturating_add(1)..))
-            .unwrap_or_default();
-        let written = written
-            .iter()
-            .position(|&b| b == b'"' || b == b'\n')
-            .and_then(|end| written.get(..end))
-            .unwrap_or(written);
-        let name = fte_macro::join_paths(written, &run.unit);
         let relative = PathBuf::from(String::from_utf8_lossy(bytes).into_owned());
         let base = current
             .path
@@ -1388,7 +1210,8 @@ impl<L: Loader> Preprocessor<L> {
         match self.loader.load(&path) {
             Ok(bytes) => {
                 let included = self.sources.add(path.clone(), bytes);
-                let cursor = self.cursor(included, path, name);
+                let name = path.as_os_str().as_encoded_bytes().to_vec();
+                let cursor = self.cursor(included, path, name, TextStart::Included);
                 run.cursors.push(cursor);
             }
             Err(err) => {
@@ -1845,49 +1668,6 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<Vec<u8>>, usize)> {
             | TokenKind::Frames(_)
             | TokenKind::FrameCommand(_) => return None,
         }
-    }
-}
-
-/// Whether a directive goes on from the token ending at `from` to the one starting at `to`
-/// (FTEF-14.30): on the same line, or every line break between them is right after a `\` or
-/// inside a `/* */` comment. A `//` comment ends the line.
-fn continues(text: &[u8], from: usize, to: usize) -> bool {
-    let gap = text.get(from..to).unwrap_or_default();
-    let mut i = 0_usize;
-    let mut in_block = false;
-    while let Some(&b) = gap.get(i) {
-        let next = gap.get(i.saturating_add(1)).copied();
-        if in_block {
-            if b == b'*' && next == Some(b'/') {
-                in_block = false;
-                i = i.saturating_add(1);
-            }
-        } else if b == b'/' && next == Some(b'*') {
-            in_block = true;
-            i = i.saturating_add(1);
-        } else if b == b'/' {
-            // Between two tokens only white space and comments stand, so a `/` that starts
-            // no `/* */` comment starts a `//` one.
-            return !gap.get(i..).unwrap_or_default().contains(&b'\n');
-        } else if b == b'\n' {
-            let before = i.checked_sub(1).and_then(|j| gap.get(j)).copied();
-            let before2 = i.checked_sub(2).and_then(|j| gap.get(j)).copied();
-            let escaped =
-                before == Some(b'\\') || (before == Some(b'\r') && before2 == Some(b'\\'));
-            if !escaped {
-                return false;
-            }
-        }
-        i = i.saturating_add(1);
-    }
-    true
-}
-
-/// The span of a directive line, from its `#` to its last token.
-fn directive_span(line: &[Token]) -> Span {
-    match (line.first(), line.last()) {
-        (Some(first), Some(last)) => Span::new(first.span.start, last.span.end),
-        _ => Span::new(0, 0),
     }
 }
 

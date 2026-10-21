@@ -594,16 +594,11 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.2** **Withdrawn** (P2-81, #492): it said a `//` comment ends a directive, which
   holds for the directive's text but not for the line `QCC_PR_SkipToEndOfLine` skips after it.
   Replaced by FTEF-14.30 and FTEF-14.24.
-- **FTEF-14.3** `#warning text` is the warning `W0103` "#warning: text"
-  (`QCC_PR_ParseWarning(WARN_PRECOMPILERMESSAGE, "#warning: %s", msg);`) and `#error text` the
-  error `E0118` "#Error: text" (`QCC_PR_ParseError(ERR_HASHERROR, "#Error: %s", msg);`), each on
-  the side of a conditional that is taken. `#message text` prints the text and reports nothing.
-  The text is the rest of the line as written (`msg[a] = pr_file_p[a];` up to the line break),
-  not tokens, so a `'` in it (`#warning Toggle doesn't work`) opens no vector.
-- **FTEF-14.4** `#includelist` to `#endlist` lists files that are compiled in order where the
-  list stands (`QCC_FindBestInclude(pr_token, compilingfile, true);` for each word). The module
-  graph reads the list and compiles each file (PRJ-5.3), so the preprocessor produces no token
-  for the lines of the list. A `#endlist` with no list open is accepted.
+- **FTEF-14.3** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said a `#warning` or `#error`
+  text is the rest of the line, where `#error`'s stops at a tab too and both start right after
+  the directive's name. Replaced by FTEF-14.38.
+- **FTEF-14.4** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said a `#endlist` with no list
+  open is accepted, where FTEQCC reads it as no directive. Replaced by FTEF-14.41.
 - **FTEF-14.5** A macro parameter list whose last parameter is `...` makes the macro variadic:
   `if (nl == 3 && s[0] == '.' && s[1] == '.' && s[2] == '.') { cnst->varg = true;`. The arguments
   after the named ones, with the commas between them, replace `__VA_ARGS__` in the body
@@ -620,11 +615,9 @@ profile the preprocessor reads them as FTEQCC does.
   string. The preprocessor does not know the function a use is in, so this profile expands
   `__FUNC__` to an empty string; the value is a compile-time string and does not change
   resolution.
-- **FTEF-14.8** `#append NAME text` adds `text` to the body of macro `NAME`, or defines it when it
-  is not defined (`append with no previous define is treated as just a regular define`); `#eof`
-  ends the file (`pr_file_p = NULL;`). `#output`, `#forcecrc`, `#copyright`, `#pack`,
-  `#package`, `#merge` and `#datafile` are accepted and produce no token: their effects are on
-  the build, not on the token stream.
+- **FTEF-14.8** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said the build directives
+  produce no token and read only their line, where `#package` ends the text and `#pack` and
+  `#forcecrc` may read into the next line. Replaced by FTEF-14.39.
 
 - **FTEF-14.9** A use of a function-like macro may give one argument more than its
   parameters, which is unused: `QCC_PR_ExpandPreProcessorMacro` checks the count only at a
@@ -633,25 +626,13 @@ profile the preprocessor reads them as FTEQCC does.
   so the last argument is never counted against the parameters. Two or more extra arguments are
   "macro NAME expects N arguments, found M" (QCD-8.9). The corpus relies on it
   (`EVALUATE_FIELD(mins, 0, PLAYER_SIZE)` for a two-parameter macro, `shared/game/Player.qc`).
-- **FTEF-14.10** A conditional block still open at the end of the file is reported (QCD-8.3) only
-  when a side of it is being skipped, as FTEQCC's "#if with no endif" comes from
-  `QCC_PR_FalsePreProcessorIf`, which skips; a taken side left open is closed at the end of the
-  file without a word. The corpus leaves one open (`menu-fn/m_customgame.qc`, line 18).
-- **FTEF-14.11** Under this profile an `#if` or `#elif` expression is read as
-  `ParsePrecompilerIf` reads it, not with the C precedence of PRJ-5.5, by the preprocessor and by
-  the graph of a module of this dialect. `||` and `&&` share one level and group to the right,
-  the right side read first: `eval = ParsePrecompilerIf(level)||eval;` and
-  `eval = ParsePrecompilerIf(level)&&eval;` under `case PPI_LOGICAL:`, so `0 && 0 || 1` is
-  `0 && (0 || 1)`, 0, where C makes it 1. The comparisons `<=`, `>=`, `<`, `>`, `!=` and `==`
-  share the level below in the same way (`eval = eval <= ParsePrecompilerIf(level);` under
-  `case PPI_COMPARISON:`), so `1 < 2 == 1` is `1 < (2 == 1)`, 0. A value (`PPI_VALUE`) is a
-  parenthesised expression, `!` and a value, `defined` and a name with or without parentheses,
-  or a word as `QCC_PR_SimpleGetToken` reads it, up to whitespace, `,`, `;`, `(`, `)`, `]` or
-  `//`, whose macro's text, or else the word itself, is read with `atoi`: `1||0` is one word,
-  1. The text after a whole expression is not read. The expression is the directive's bytes as
-  written, a line continuation (FTEF-14.30) a space. Where FTEQCC reports an error ("unclosed
-  bracket condition", "unclosed defined condition", "unexpected end-of-line") this profile
-  takes the expression as false.
+- **FTEF-14.10** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said a taken side left open is
+  closed at the end of its file, where FTEQCC's count of open sides runs on into the next file.
+  Replaced by FTEF-14.37.
+- **FTEF-14.11** **Withdrawn** (P2-94 to P2-99, #507 to #512): it said a line continuation in an
+  `#if` expression reads as a space and that an expression FTEQCC reports as an error is only
+  false, where FTEQCC stops at the `\` and the preprocessor reports the error. Replaced by
+  FTEF-14.33.
 - **FTEF-14.12** A deliberate divergence: this profile's `#if` reader nests at most 64 levels
   (`MAX_DEPTH` in `qc-preproc`'s `cond.rs`), each parenthesis, each `!` and each right side of
   an operator one level deeper (`ParsePrecompilerIf` calls itself for each), and an expression
@@ -778,7 +759,7 @@ profile the preprocessor reads them as FTEQCC does.
   where an expansion writes it. A function-like macro's name and a `(` that only dropped comments
   and continuations stand between in a body are apart only by the spaces and tabs around them, so
   `#define K M /**/ (#5)`, `#define K M/**/ (#5)` and `#define K M \`, a line break and `(#5)`
-  call `M` (FTEF-14.29). `#append NAME ...` (FTEF-14.8) is read the same way and adds a space and
+  call `M` (FTEF-14.29). `#append NAME ...` (FTEF-14.39) is read the same way and adds a space and
   its body to the macro's stored body when the parameters are the macro's; with others
   ("different number of macro arguments in macro append", "arguments differ in macro append") it
   defines the macro again, with the warning `W0102`.
@@ -841,15 +822,9 @@ profile the preprocessor reads them as FTEQCC does.
   profile reports that as "unterminated argument list for macro NAME" (`E0117`): with `#define
   L(x) x:` and `#define LL L(lbl`, `LL) goto lbl;` is `E0117`, as is the end of the file inside a
   use's arguments.
-- **FTEF-14.30** A directive continues on the next line when its line ends in `\` directly
-  before the break: `QCC_PR_SkipToEndOfLine` reads `else if (*pr_file_p == '\\' && pr_file_p[1] ==
-  '\n') { /*linux endings*/ pr_file_p+=2;`, and `QCC_PR_PreProcessor_Define` "read[s] over a
-  newline if necessary" after a `\`. A `/* */` comment that spans lines does not end the directive
-  ("multi-line c style comments become part of the define itself"); a `//` comment ends its text.
-  `QCC_PR_SkipToEndOfLine` goes on past a `\` and line break in that comment too, which this
-  profile follows for `#define` and `#append` (FTEF-14.24) and, a known difference, not yet for
-  the other directives, whose line it ends at the comment's line break (P2-94): the pinned FTEQCC
-  passes over `zz zz zz` after `#undef X // c \` and after `#ifdef X // c \`.
+- **FTEF-14.30** **Withdrawn** (P2-94, #507): it said only `#define` and `#append` read on past a
+  `\` and line break in a `//` comment, a known difference for the other directives. Every
+  directive now ends its line where `QCC_PR_SkipToEndOfLine` ends it. Replaced by FTEF-14.35.
 - **FTEF-14.31** In a function-like macro's body `#param`, `param` a named parameter, is a string
   of the argument's text as written, from after the white space and comments that follow its `(`
   or `,` (`QCC_PR_LexWhitespace(false)`) to its `,` or `)`: `QCC_PR_ExpandStrCatMarkup` copies
@@ -889,6 +864,208 @@ profile the preprocessor reads them as FTEQCC does.
   pinned FTEQCC names them `src/a.qc`, `src/x/b.qh` and `src/c.qh`. The semantic model gives the
   preprocessor each file's path as its input names it, the `progs.src` entry only where the
   caller makes it so (P2-95).
+- **FTEF-14.33** An `#if` or `#elif` expression is read as `ParsePrecompilerIf` reads it, not
+  with the C precedence of PRJ-5.5, by the preprocessor and by the graph of a module of this
+  dialect. `||` and `&&` share one level and group to the right, the right side read first:
+  `eval = ParsePrecompilerIf(level)||eval;` and `eval = ParsePrecompilerIf(level)&&eval;` under
+  `case PPI_LOGICAL:`, so `0 && 0 || 1` is `0 && (0 || 1)`, 0, where C makes it 1. The
+  comparisons `<=`, `>=`, `<`, `>`, `!=` and `==` share the level below in the same way (`eval =
+  eval <= ParsePrecompilerIf(level);` under `case PPI_COMPARISON:`), so `1 < 2 == 1` is `1 < (2
+  == 1)`, 0. A value (`PPI_VALUE`) is a parenthesised expression, `!` and a value, `defined` and a
+  name with or without parentheses, or a word as `QCC_PR_SimpleGetToken` reads it, up to white
+  space, `,`, `;`, `(`, `)`, `]` or `//`, whose macro's text, or else the word itself, is read
+  with `atoi`: `1||0` is one word, 1. The reader starts after `#if`'s name (`pr_file_p =
+  directive+2`) or `#elif`'s, reads within the line, as its white space is all but a line break
+  (`qcc_iswhite(*pr_file_p) && *pr_file_p != '\n'`), and stops after the whole expression; a `\`
+  is a byte like any other, so `#if 0 \`, a line break and `|| 1` is 0, and the line's end is then
+  read as FTEF-14.35 says, which makes the `\` there "unexpected tokens at end of line". Where
+  FTEQCC reports an error, "unclosed bracket condition", "unclosed defined condition" or
+  "unexpected end-of-line" (`#if` with nothing after it), the preprocessor reports it (`E0121`)
+  and takes the expression as false; the graph takes it as false.
+- **FTEF-14.34** `QCC_PR_Precompiler` reads a directive at a `#` that `QCC_PR_NewLine` reaches:
+  the first byte after a line ending (LF, or a CR not before a LF, `qcc_islineending`) that the
+  white-space reader passes, a `//` comment's included, and the spaces and tabs after it (`while
+  (*pr_file_p==' ' || *pr_file_p == '\t') pr_file_p++;`), or the start of a file being compiled
+  after its spaces and tabs (`QCC_PR_CompileFile` calls `QCC_PR_NewLine` first). An `#include`d
+  file is read with `QCC_PR_Precompiler()` at its first byte and no spaces skipped, so `  #define
+  N 5` on its first line is no directive. A `#` after a `/* */` comment on its line, or after one
+  that spans lines, or in the middle of a line, is none. After the `#` every byte up to `' '` but
+  a line break is passed over (`for (directive = pr_file_p+1; *directive; directive++)`, `if
+  (*directive > ' ') break;`, a byte of 0x80 or more too, as FTEQCC's `char` is signed), so `#
+  define` and `#` and a tab or a vertical tab before `define` are directives; a line break first
+  is "Hanging # with no directive" (`E0121`). The name is matched by its first bytes (`if
+  (!strncmp(directive, "define", 6))`), in FTEQCC's order: `define`, `append`, `undef`, `if`,
+  `else` and `elif`, `endif`, `eof`, `error`, `warning`, `message`, `copyright`, `package`,
+  `pack`, `forcecrc`, `merge`, `includelist`, `include`, `datafile`, `output` and `pragma`. So
+  `#defined`, `#iffy`, `#elsewhere`, `#endiff`, `#eofx`, `#errors`, `#includes` and `#pragmas`
+  are those directives. A name that matches none, `#endlist` and `#foo` among them, leaves the
+  `#` to be read as code (FTE-23.10), `#NAME` a macro's use, and FTEQCC's "Explicit precompiler
+  usage when not defined NAME" when `NAME` is no macro: the preprocessor reports that as `E0121`
+  for a `#` that stands first on its line of the output, as after a comment at a line's start,
+  where the semantic model would read the line as a directive's and drop it, and the parser
+  reports the rest as `E0209` (FTE-23.10). Each directive's operand is read
+  from its name's end as its own name's length gives it (`pr_file_p = directive+5;` for
+  `undef`), so `#undefine N` undefines `ine`.
+- **FTEF-14.35** After a directive's operand `QCC_PR_SkipToEndOfLine` reads to its line's break,
+  passing over `/* */` comments, which may span lines, strings before any `//`, and each `\`
+  and line break (LF or CR LF), in a `//` comment too, so after `#undef X // c \` or `#ifdef X
+  // c \` the next line is part of the directive, never read as code. For `#define`, `#append`,
+  `#undef`, `#if`, `#ifdef`, `#ifndef`, `#else`, `#endif`, `#package`, `#pack`, `#forcecrc`,
+  `#merge`, `#includelist`, `#include`, `#output`, an `#elif` that is taken (FTEF-14.37) and
+  `#endlist` (FTEF-14.41) it is called with `errorifnonwhite`, so a byte outside a comment and
+  before any `//` that is no white space, a string's `"` included, is the error "unexpected
+  tokens at end of line" (`E0121`; `QCC_PR_ParseWarning(ERR_UNKNOWNPUCTUATION, ...)` reports an
+  error code as an error): `#ifdef X Y`, `#endif X`, `#else X` and `#include "b.qh" X` are
+  refused. A `#pragma`'s line ends at its break (FTEF-14.43). Reading goes on at the break, which
+  ends the line, so the next line may start a directive.
+- **FTEF-14.36** `#undef` reads a name with `QCC_PR_SimpleGetToken` after the spaces and tabs
+  after its name, and removes the macro, a name of no macro reporting only FTEQCC's warning
+  "Precompiler constant %s was not defined", which this profile does not report. `#ifdef` and
+  `#ifndef` read a name in the same way, after a white-space byte that must follow their name; a
+  missing name is no macro's, so `#ifdef` alone is false and `#ifndef` alone true. `#if`,
+  `#ifdef` or `#ifndef` with a byte that is no white space right after the name (`if
+  (!qcc_iswhite(*pr_file_p))`), as in `#ifdefX`, `#iffy` and `#if(1)`, is FTEQCC's warning
+  "Unknown pragma", which this profile does not report, and opens no block: reading goes on as
+  code after the word `QCC_PR_SimpleGetToken` reads from the name, so `#if(1)` leaves `(1)`.
+- **FTEF-14.37** FTEQCC counts the sides that are open and taken in one `static int ifs`, kept
+  from file to file of a module, included files and the second autoprototyping pass included: a
+  true `#if`, `#ifdef` or `#ifndef` adds one; a false one is skipped by
+  `QCC_PR_FalsePreProcessorIf(false, ...)`, which adds one if it stops at a side it takes. That
+  function reads a line at a time: after spaces and tabs a `#` and spaces and tabs before a word
+  starting `endif` closes a level and one starting `if` opens one (`if (!strncmp(pr_file_p, "if",
+  2)) level++;`); at the block's own level, while no side was taken, a word starting `else`
+  takes the next side, its line read with `errorifnonwhite`, and one starting `elif`, `elifdef`
+  or `elifndef` is tested, which needs a space or a tab after `elif`, `elifdef` or `elifndef`
+  ("malformed #elif", `E0121`), and is taken when true, its line read with `errorifnonwhite`
+  after the test; every line ends where `QCC_PR_SkipToEndOfLine` ends it, so a `//` comment
+  ending in `\` hides the next line's `#endif`, and the end of the text is "#if with no endif"
+  (`E0110`) at the conditional. On a taken side `#else` and `#elif` (and `#elsewhere`) take one
+  from the count, read their line (`#else`'s with `errorifnonwhite`) and skip to the block's end
+  with `QCC_PR_FalsePreProcessorIf(true, ...)`, which takes no side, so a second `#else` there is
+  skipped too; `#endif` takes one. Either with nothing open is "#else outside of #if" or
+  "unmatched #endif" (`E0109`). A taken side left open at the end of a file is closed by an
+  `#endif` in a file read after it, and is not reported.
+- **FTEF-14.38** `#error` is the error `E0118` "#Error: TEXT" (`QCC_PR_ParseError(ERR_HASHERROR,
+  "#Error: %s", msg);`), `#warning` the warning `W0103` "#warning: TEXT" and `#message` reports
+  nothing. TEXT is the bytes from right after the directive's name, a space before the text
+  included, to the first NUL or line break, at most 1023, and for `#error` to a tab too
+  (`pr_file_p[a] != '\t' && pr_file_p[a] != '\n'`), for `#warning` and `#message` to a CR too;
+  the line is then read without `errorifnonwhite`. So `#warning Toggle doesn't work` is
+  "#warning:  Toggle doesn't work", and no `'` in it opens a vector.
+- **FTEF-14.39** The build directives change the build, not the text read, but each reads its
+  line as FTEQCC does: `#copyright` and `#message` read it without `errorifnonwhite`; `#forcecrc`
+  reads a number with `QCC_PR_LexInteger`, which takes the byte after the name whatever it is
+  and then digits, `.` and `a` to `f`, so `#forcecrc` at a line's end takes the line break and
+  reads the next line as its own; `#pack id` passes over `id` and one byte more, and `#pack N`
+  reads `N` with `QCC_PR_LexInteger` and one byte more, a number above 5 being "No more than 5
+  packs are allowed" (`E0121`); `#output` and `#merge` read a string with
+  `QCC_PR_SimpleGetString`; and each then reads its line with `errorifnonwhite`. `#package`
+  reads its line so and then ends the text (`pr_file_p += strlen(pr_file_p);`), as `#eof` ends it
+  (`pr_file_p = NULL;`). `#datafile` reads a string, one byte more, and the bytes to the next
+  line break. `#append NAME text` adds `text` to the body of macro `NAME`, or defines it when it
+  is not defined (`append with no previous define is treated as just a regular define`).
+- **FTEF-14.40** `#include` takes the bytes between `"` and `"`, or `<` and `>`, after the spaces
+  and tabs after its name ("Not a string literal (on a #include)" for another byte, "#include
+  continued over line boundry" for a line break first, each `E0113`), reads its line with
+  `errorifnonwhite`, and `QCC_FindBestInclude(msg, compilingfile, false)` finds the file: the
+  bytes joined with `QCC_JoinPaths` to the name of the file being compiled, then to each include
+  directory in order, the first that names a file being read (`if (FileSize(fullname) == -1) {
+  includepath++; continue; }`), none being "Couldn't open file" (`E0111`). The file being
+  compiled is the one `progs.src` or an `#includelist` lists, never an included one, so a file
+  an included file includes is found beside the compiled file: with `progs.src` listing
+  `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the pinned FTEQCC reads `src/c.qh`
+  and refuses the program when only `src/x/c.qh` exists. An empty name includes nothing, and a
+  name `#pragma once` marked is not read again (FTEF-14.44). The file is read next, as text of
+  its own, after the directive's line. The vanilla dialect keeps QC-9.2.
+- **FTEF-14.41** `#includelist` reads its line with `errorifnonwhite`, then words: before each,
+  white space and comments are read as `QCC_PR_LexWhitespace(false)` reads them, which runs the
+  directives at the starts of their lines (FTEF-14.45); a word is what `QCC_PR_SimpleGetToken`
+  reads, a byte it stops at with no word is passed over, and the word `#endlist`, wherever it
+  stands, ends the list, its line read with `errorifnonwhite`. Every other word names a file the
+  graph compiles (PRJ-5.3); the preprocessor produces no token for the list. The end of the text
+  before `#endlist`, reached or made by a directive in the list (`#eof`, `#package`,
+  `DONT_COMPILE_THIS_FILE`), is FTEQCC's "eof in includelist", which the preprocessor reports as
+  `E0406` "#includelist without #endlist" at the `#includelist`. `#endlist` outside a list is no
+  directive (FTEF-14.34).
+- **FTEF-14.42** `QCC_PR_DefineName` refuses a macro name of 64 bytes or more (`if (strlen(name)
+  >= MAXCONSTANTNAMELENGTH || !*name) QCC_PR_ParseError(ERR_NAMETOOLONG, "Compiler constant name
+  length is too long or short");`, `#define MAXCONSTANTNAMELENGTH 64` in `qcc.h`), for `#define`
+  and `#append`: this profile reports it (`E0121`) and defines nothing. A name of 63 bytes is
+  defined. `QCC_PR_PreProcessor_Define` reads the directive's own word first with
+  `QCC_PR_SimpleGetToken` and the name after it, so `#defined N 5` defines `N`, `#defineN 5`
+  defines `5` and `#define/**/N 5` defines `5`, and a refused definition's line is read with no
+  error of its own, as FTEQCC's compile stops at the first.
+- **FTEF-14.43** `#pragma`'s name is the bytes after its spaces and tabs up to the first space,
+  tab or `(` met while the name read so far is empty, and its text the bytes after (from the
+  `(`, or after the space or tab) to the line's break, its white space at the end dropped; a
+  pragma's name is matched in any case (`QC_strcasecmp`). `#pragma line(N)` and `#pragma line N`
+  number the line after the pragma `N`: `pr_source_line = strtoul(m, &m, 0)-1;`, `m` the text
+  after a `(` it starts with, and the pragma's line break adds one. `strtoul` reads a sign, `0x`
+  and hex digits, `0` and octal digits, or decimal digits, nothing being 0, a value too large
+  `ULONG_MAX` and a `-` negating it, on a 64-bit `unsigned long`, and FTEQCC's `int` keeps its
+  low 32 bits: so `#pragma line 0x10` numbers the next line 16, `#pragma line 010` 8, `#pragma
+  line -1` -1 and `#pragma line 4294967297` 1. The lines after it count on from there to the end
+  of the file or chunk the pragma is in, which `__LINE__` and `__LINESTR__` write (FTEF-14.27),
+  and an `#include`d file's numbering ends with it (`QCC_PR_UnInclude` restores `pr_source_line`).
+  FTEQCC's diagnostics report the line too; this profile's diagnostics keep the place of their
+  text, a deliberate divergence, as a span in the file says more than a line FTEQCC was told.
+- **FTEF-14.44** Of the other pragmas, these change what the preprocessor reads:
+  `DONT_COMPILE_THIS_FILE` passes over the rest of the text a byte at a time after white space
+  read as `QCC_PR_LexWhitespace(false)` reads it, so the directives at the starts of its lines
+  still run, an `#error` refusing the program; `once` marks the file being compiled
+  (`strcpy(onced->name, compilingfile);`), not the file it is in, so a header's `#pragma once`
+  keeps nothing from being read twice; `includedir` adds the directory its first token
+  (`QCC_COM_Parse`) names, a `/` after it unless it ends in one, joined to the file being
+  compiled, after the others, at most 8 (`MAXINCLUDEDIRS`); `noref` and `autoproto` take their
+  text with `atoi` (FTEF-12.6, FTEF-12.10), so `#pragma noref(1)` is 0; and `warning STATE NAME
+  ...` sets FTEQCC's setting of each warning named, of which this profile keeps F303's
+  (FTEF-14.46): `enable` and `on` warn, `disable`, `off` and `ignore` ignore, `error` errs, and
+  `toggle` sets `!!` of the setting, a warning for an error. The rest, `COPYRIGHT`, `compress`,
+  `forcecrc`, `framerate`, `file` (FTEF-14.32), `line` (FTEF-14.43), `nosave`, `defaultstatic`,
+  `wrasm`, `optimise` and `optimize`, `sourcefile`, `TARGET`, `PROGS_SRC`, `PROGS_DAT`, `opcode`,
+  `keyword` and `flag`, change the build, and an unknown one is FTEQCC's warning "Unknown pragma",
+  which this profile does not report.
+- **FTEF-14.45** `QCC_PR_LexWhitespace(false)`, which reads the white space and comments after a
+  function-like macro use's `(` and after each `,` of its arguments (FTEF-14.22), and before
+  each word of an `#includelist` and each byte `DONT_COMPILE_THIS_FILE` passes over, calls
+  `QCC_PR_NewLine(false)` at each line ending, which runs a directive at the next line's start
+  (FTEF-14.34): so with `#define M(x) x`, `M(`, a line break, `#define Y #5`, a line break and
+  `Y)` defines `Y` and expands to `#5`, and `M(`, a line break, `#ifdef Q`, `zz`, `#endif` and
+  `#5)` is `#5`. The directive's line is no part of the argument, which starts after the white
+  space. A line break in the middle of an argument is part of it (FTEF-14.22), so a directive on
+  the next line is the argument's text, run where the expansion holds it (FTEF-14.46). A
+  directive that ends the text, `#eof` or `#package`, ends the arguments, which is "EOF on macro
+  call" (`E0117`), and the pinned FTEQCC crashes on `#eof` there.
+- **FTEF-14.46** A macro's expansion is read as a chunk of text (FTEF-14.17), and a `#` that
+  starts a line of it, after a line break in it and spaces and tabs, is a directive there,
+  where its text's line breaks are those `QCC_PR_PreProcessor_Define` kept in the body before a
+  continued line starting with `#` (FTEF-14.24) or an argument held; a `#` at the chunk's start
+  is none. Such a body is FTEQCC's warning F303 "preprocessor directive within preprocessor
+  macro NAME" at the first such `#`, once for the definition (`if (!cnst->evil)`), an error by
+  default (`qccwarningaction[WARN_EVILPREPROCESSOR] = WA_ERROR;`, `E0122`), a warning after
+  `#pragma warning enable F303` (`W0109`) and nothing after `#pragma warning disable F303`. With
+  F303 off, `#define D \`, a line break, `#define Y #5 \`, a line break and `Y` makes `D` define
+  `Y` and expand to `#5`. In the chunk a `#pragma file` names, and a `#pragma line` numbers, the
+  rest of that chunk only, and `#eof` and `#package` end it; the pinned FTEQCC crashes on `#eof`
+  in a chunk, where this profile ends the chunk.
+- **FTEF-14.47** Deliberate divergences of this profile's directives: an `#include` met among a
+  use's arguments, in a macro's expansion, in an `#includelist` or in the text
+  `DONT_COMPILE_THIS_FILE` passes over is refused, as "#include where this profile does not
+  follow it" (`E0121`), where FTEQCC reads the file as the text it goes on reading there, which
+  ends the arguments or list it is in; an `#eof` run anywhere but at the start of a file, in a
+  chunk too, ends the text it is in, where the pinned FTEQCC crashes, as
+  `QCC_PR_LexComment` and `QCC_PR_LexWhitespace` read on from the null `pr_file_p` it leaves
+  (`cargo xtask oracles builtins` counts those cases as differing as this statement says: an
+  FTEQCC case that holds `#eof` after its first byte, refused by FTEQCC and accepted here with
+  no error); an `#include` of a file already being read is "recursive
+  #include of PATH" (`E0112`), where FTEQCC reads it again until it runs out of memory; a macro
+  name in an `#includelist` is read as a file's name, where FTEQCC expands it
+  (`QCC_PR_CheckCompConst()`), as the graph reads the list (PRJ-5.3); `#merge` and `#datafile`
+  open no file, where FTEQCC refuses a missing one, as the files are the build's; and a
+  directive met while 64 others are being run inside the readings they started, an
+  `#includelist` or `DONT_COMPILE_THIS_FILE` inside another, is "directives nested too deeply"
+  (`E0121`) and ends the reading, where FTEQCC's recursion has no bound, so that no input can
+  exhaust the stack.
 
 ## FTEF-15 Declarations
 

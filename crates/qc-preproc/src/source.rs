@@ -7,6 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_lexer::{LineIndex, Span};
 
@@ -28,8 +29,8 @@ pub struct FileSpan {
 pub struct SourceFile {
     /// Its path, as resolved (QC-9.2).
     pub path: PathBuf,
-    /// Its bytes.
-    pub text: Vec<u8>,
+    /// Its bytes, shared with the preprocessor's readers of it.
+    pub text: Rc<[u8]>,
     /// Its line starts (QC-1.2).
     pub lines: LineIndex,
 }
@@ -46,6 +47,7 @@ impl SourceMap {
     pub fn add(&mut self, path: PathBuf, text: Vec<u8>) -> FileId {
         let id = FileId(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
         let lines = LineIndex::new(&text);
+        let text = Rc::from(text);
         self.files.push(SourceFile { path, text, lines });
         id
     }
