@@ -78,7 +78,7 @@ proptest! {
         }
     }
 
-    // spec PRJ-4.7: under the vanilla dialect a list with a NUL outside quotes reads as the text
+    // spec PRJ-4.11: under the vanilla dialect a list with a NUL outside quotes reads as the text
     // before that NUL, whatever follows it
     #[test]
     fn a_vanilla_list_reads_to_its_nul(

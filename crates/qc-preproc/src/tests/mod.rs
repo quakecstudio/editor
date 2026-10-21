@@ -1061,6 +1061,7 @@ proptest! {
     }
 }
 mod directives;
+mod flags;
 mod fteqcc;
 mod graph;
 mod lines;
@@ -1068,3 +1069,5 @@ mod load;
 mod reviewer;
 mod spacing;
 mod text;
+mod warnings;
+mod words;

@@ -866,3 +866,20 @@ fn fteqcc_text_that_is_not_compiled_includes_nothing() {
     ];
     assert_eq!(after_t(&files, qc_lexer::Dialect::Fteqcc), ["l.qc"]);
 }
+
+// spec FTEF-14.62: a module define that gives `FTEQCC` another body is FTEQCC's Q207, printed
+// against the command line, which the graph does not report; the define holds
+#[test]
+fn a_define_of_fteqcc_s_own_macro_warns_nowhere() {
+    let graph = build(&GraphSpec {
+        files: &[
+            ("progs.src", "#if FTEQCC == 1\n#include \"a.qc\"\n#endif\n"),
+            ("a.qc", ""),
+        ],
+        defines: &["FTEQCC=1", "FTEQCC=1"],
+        dialect: qc_lexer::Dialect::Fteqcc,
+        ..GraphSpec::default()
+    });
+    assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+    assert_eq!(names(&graph), ["progs.src", "a.qc"]);
+}

@@ -8,10 +8,12 @@ use std::path::{Path, PathBuf};
 use super::{codes, one_fte, tokens};
 use crate::fte_directive::{
     Definer, Directive, Earlier, ElifTest, FteState, Gap, IfTest, Junk, LineEnd, Pragma, Side,
-    TextStart, WarningAction, com_parse, false_side, false_side_after, include_candidates,
-    join_paths, read, simple_get_token, skip_to_end_of_line, starts_line, whitespace,
+    TextStart, com_parse, false_side, false_side_after, include_candidates, join_paths, read,
+    simple_get_token, skip_to_end_of_line, starts_line, whitespace,
 };
-use crate::{Code, FileOutput, MemoryLoader, Preprocessor};
+use crate::{
+    Code, FileOutput, FteWarning, MemoryLoader, Preprocessor, WarningAction, WarningSettings,
+};
 
 fn fte(text: &str) -> (String, Vec<Code>) {
     let (_, out) = one_fte(text);
@@ -112,7 +114,8 @@ fn white_space_stops_at_a_directive() {
     assert_eq!(gap("/* \n */#x"), Gap::Text(7));
     assert_eq!(gap("\n x"), Gap::Text(2));
     assert_eq!(gap("// c"), Gap::Text(4));
-    assert_eq!(gap("/* c"), Gap::Text(4));
+    // FTEF-14.67: FTEQCC reports "EOF inside comment" there.
+    assert_eq!(gap("/* c"), Gap::Unclosed(0));
     assert_eq!(gap(""), Gap::Text(0));
     assert_eq!(gap("/x"), Gap::Text(0));
     assert_eq!(gap("\n\n#"), Gap::LineStart(2));
@@ -146,7 +149,7 @@ fn lines_end_where_skip_to_end_of_line_ends_them() {
     assert_eq!(skip("a\0b\n", true), end(1, true));
 }
 
-// spec FTEF-14.36: `QCC_PR_SimpleGetToken` reads a word after white space on the line, up to
+// spec FTEF-14.57: `QCC_PR_SimpleGetToken` reads a word after white space on the line, up to
 // white space, `,`, `;`, `(`, `)`, `]` or `//`, and none at a line break, a comment or the end
 #[test]
 fn simple_tokens() {
@@ -170,7 +173,7 @@ fn simple_tokens() {
     assert_eq!(token("  "), (None, 2));
 }
 
-// spec FTEF-14.44: `QCC_COM_Parse` reads a string with its escapes, a punctuation byte or a word,
+// spec FTEF-14.70: `QCC_COM_Parse` reads a string with its escapes, a punctuation byte or a word,
 // after white space and comments
 #[test]
 fn com_parse_reads_tokens() {
@@ -222,7 +225,7 @@ fn directive_names_match_by_their_first_bytes() {
     ));
     assert!(matches!(
         directive("#iffy"),
-        Some(Directive::NotIf { word_end: 5 })
+        Some(Directive::NotIf { word }) if word == (1..5)
     ));
     assert!(matches!(
         directive("#elsewhere"),
@@ -293,7 +296,7 @@ fn directive_names_match_by_their_first_bytes() {
     }
 }
 
-// spec FTEF-14.36: `#undef`, `#ifdef` and `#ifndef` read a name after their own; a byte that is
+// spec FTEF-14.57: `#undef`, `#ifdef` and `#ifndef` read a name after their own; a byte that is
 // no white space after an `#if`'s name makes it no conditional
 #[test]
 fn operands_of_undef_and_ifdef() {
@@ -335,9 +338,9 @@ fn operands_of_undef_and_ifdef() {
             ..
         }
     ));
-    assert_eq!(directive("#if(1)"), Directive::NotIf { word_end: 3 });
-    assert_eq!(directive("#ifdefX"), Directive::NotIf { word_end: 7 });
-    assert_eq!(directive("#if"), Directive::NotIf { word_end: 3 });
+    assert_eq!(directive("#if(1)"), Directive::NotIf { word: 1..3 });
+    assert_eq!(directive("#ifdefX"), Directive::NotIf { word: 1..7 });
+    assert_eq!(directive("#if"), Directive::NotIf { word: 1..3 });
 }
 
 // spec FTEF-14.37: `QCC_PR_FalsePreProcessorIf` nests on `if` and `endif` prefixes, takes an
@@ -444,7 +447,7 @@ fn includes_are_found_beside_the_compiled_file() {
     );
 }
 
-// spec FTEF-14.44: `#pragma includedir` adds its first token with a `/`, joined to the compiled
+// spec FTEF-14.70: `#pragma includedir` adds its first token with a `/`, joined to the compiled
 // file, at most 8, each once, an empty one as `.`
 #[test]
 fn include_directories() {
@@ -517,11 +520,22 @@ fn pragma_line_reads_strtoul() {
     }
 }
 
-// spec FTEF-14.44: `#pragma warning STATE NAME...` sets F303 as each state says, `toggle` a
+// spec FTEF-14.70: `#pragma warning STATE NAME...` sets F303 as each state says, `toggle` a
 // warning for an error, and leaves it for another name or state
+// spec FTEF-14.63: the names are matched in any case, and each changes the setting of its own
+// warning
 #[test]
 fn pragma_warning_sets_f303() {
-    let after = |from: WarningAction, text: &str| from.after_pragma(text.as_bytes(), "F303");
+    let after = |from: WarningAction, text: &str| {
+        let state = match from {
+            WarningAction::Ignore => "disable F303",
+            WarningAction::Warn => "enable F303",
+            WarningAction::Error => "error F303",
+        };
+        let (settings, _) = WarningSettings::default().after_pragma(state.as_bytes());
+        let (settings, _) = settings.after_pragma(text.as_bytes());
+        settings.action(FteWarning::EvilPreprocessor)
+    };
     use WarningAction::{Error, Ignore, Warn};
     for (from, text, want) in [
         (Error, "disable F303", Ignore),
@@ -564,7 +578,7 @@ fn every_directive_ends_its_line_as_fteqcc_does() {
     let (toks, errs) = fte("#define X\n#ifdef X Y\ny\n#endif X\n#endif // c \\\nzz\n");
     let errors = vec![Code::E0121, Code::E0121, Code::E0109];
     assert_eq!((toks.as_str(), errs), ("y", errors));
-    let (_, out) = one_fte("#undef X Y\n");
+    let (_, out) = one_fte("#define X\n#undef X Y\n");
     assert_eq!(
         out.diagnostics[0].message,
         "unexpected tokens at end of line"
@@ -602,21 +616,28 @@ fn hashes_that_start_no_directive() {
     );
 }
 
-// spec FTEF-14.36: `#undefine N` undefines `ine`; `#ifdef` alone is false and `#ifndef` alone true;
+// spec FTEF-14.57: `#undefine N` undefines `ine`; `#ifdef` alone is false and `#ifndef` alone true;
 // `#if(1)`, `#ifdefX` and `#iffy` open no block and leave the rest of the line as code
 #[test]
 fn undef_and_ifdef_read_their_operands() {
     assert_eq!(fte("#define ine 1\n#undefine\nine\n").0, "ine");
+    // FTEF-14.57: `ine` is no macro: "Precompiler constant ine was not defined".
     assert_eq!(
         fte("#define N 1\n#undefine N\nN\n"),
-        ("1".to_owned(), vec![Code::E0121])
+        ("1".to_owned(), vec![Code::W0114, Code::E0121])
     );
     assert_eq!(fte("#define N 1\n#undefN\nN\n").0, "N");
     assert_eq!(fte("#ifdef\nx\n#endif\ny\n").0, "y");
     assert_eq!(fte("#ifndef\nx\n#endif\n").0, "x");
     assert_eq!(fte("#if(1)\n").0, "( 1 )");
     assert_eq!(fte("#ifdefX y\n").0, "y");
-    assert_eq!(fte("#iffy\n#endif\n"), (String::new(), vec![Code::E0109]));
+    // FTEF-14.57: "Unknown pragma", Q120, for the `#if` form.
+    assert_eq!(
+        fte("#iffy\n#endif\n"),
+        (String::new(), vec![Code::W0113, Code::E0109])
+    );
+    let (_, out) = one_fte("#iffy\n");
+    assert_eq!(out.diagnostics[0].message, "Unknown pragma 'iffy'");
 }
 
 // spec FTEF-14.37: one count of open sides runs on from file to file; skipped sides nest by
@@ -791,7 +812,7 @@ fn includes_follow_find_best_include() {
     assert_eq!(codes(&out), vec![Code::E0112]);
 }
 
-// spec FTEF-14.44: `#pragma once` marks the compiled file, not the file it is in
+// spec FTEF-14.70: `#pragma once` marks the compiled file, not the file it is in
 #[test]
 fn pragma_once_marks_the_compiled_file() {
     let out = compile(&[("a.qc", "#pragma once\n#include \"a.qc\"\nx\n")], "a.qc");
@@ -862,7 +883,7 @@ fn pragma_line_numbers_the_lines() {
     assert_eq!(fte("#pragma line 9").0, "");
 }
 
-// spec FTEF-14.44: `DONT_COMPILE_THIS_FILE` passes over the rest of the text, the directives
+// spec FTEF-14.70: `DONT_COMPILE_THIS_FILE` passes over the rest of the text, the directives
 // at its lines' starts still run; `includedir` and the other pragmas change the build
 #[test]
 fn dont_compile_this_file_runs_only_directives() {
@@ -891,9 +912,12 @@ fn dont_compile_this_file_runs_only_directives() {
         "",
         "(5) x",
     ] {
-        assert_eq!(
-            fte(&format!("#pragma {pragma}\ny\n")),
-            ("y".to_owned(), vec![])
+        // FTEF-12.11: some give FTEQCC's Q120 warnings, none an error.
+        let (toks, errs) = fte(&format!("#pragma {pragma}\ny\n"));
+        assert_eq!(toks, "y", "{pragma}");
+        assert!(
+            errs.iter().all(|code| *code == Code::W0113),
+            "{pragma}: {errs:?}"
         );
     }
 }
@@ -1107,11 +1131,14 @@ fn fteqcc_is_defined_and_the_second_pass_starts_afresh() {
     pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(pp.fte.include_dirs, [b"d/".to_vec()]);
     assert_eq!(pp.fte.once, [b"a.qc".to_vec()]);
-    assert_eq!(pp.fte.evil, WarningAction::Ignore);
+    assert_eq!(
+        pp.fte.warnings.action(FteWarning::EvilPreprocessor),
+        WarningAction::Ignore
+    );
     assert!(!pp.is_defined("FTEQCC"));
     pp.restart();
     assert!(pp.fte.include_dirs.is_empty() && pp.fte.once.is_empty());
-    assert_eq!(pp.fte.evil, WarningAction::Error);
+    assert_eq!(pp.fte.warnings, WarningSettings::default());
     assert!(pp.is_defined("FTEQCC") && pp.is_defined("__FTEQCC__"));
     // The first pass's `#if 1` is still open, and the second pass's `#endif` closes it.
     let out = pp.preprocess_file(Path::new("b.qc")).unwrap();
@@ -1123,13 +1150,27 @@ fn fteqcc_is_defined_and_the_second_pass_starts_afresh() {
 }
 
 // spec FTEF-14.39: `#append` adds to a body only with the same parameters
+// spec FTEF-14.58: another list is F315's "arguments differ in macro append" or "different
+// number of macro arguments in macro append", and then the macro's other body F315's "Alternate
+// precompiler definition"
 #[test]
 fn append_needs_the_same_parameters() {
     assert_eq!(fte("#define F(a) a\n#append F(a) 2\nF(1)\n").0, "1 2");
     let (toks, errs) = fte("#define F(a) a\n#append F(b) 2\nF(1)\n");
-    assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0102]));
+    assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0115, Code::W0115]));
     let (toks, errs) = fte("#define F(a) a\n#append F 2\nF\n");
-    assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0102]));
+    assert_eq!((toks.as_str(), errs), ("2", vec![Code::W0115, Code::W0115]));
+    let (_, out) = one_fte("#define F(a) a\n#append F(b) 2\n#append F 3\n");
+    let messages: Vec<&str> = out.diagnostics.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        [
+            "arguments differ in macro append",
+            "Alternate precompiler definition of F (a -> 2)",
+            "different number of macro arguments in macro append",
+            "Alternate precompiler definition of F (2 -> 3)",
+        ]
+    );
 }
 
 // spec FTEF-14.53: a `#` on a line a `\` joins to a line of code is read as code, in a file and in

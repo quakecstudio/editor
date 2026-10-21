@@ -13,7 +13,7 @@ use crate::fte_directive::{
     skip_to_end_of_line, starts_line,
 };
 use crate::fte_macro::{Reading, read_define};
-use crate::{FileId, Relexed, merge_errors};
+use crate::{FileId, Lexing, Relexed, merge_errors};
 
 /// Under an FTEQCC dialect, where the text of the directive whose `#` is at `hash` in a file's
 /// `text` ends: the offset the preprocessor reads on from after it, with nothing run. `None`
@@ -28,7 +28,7 @@ use crate::{FileId, Relexed, merge_errors};
 /// `QCC_PR_SkipToEndOfLine` ends it (FTEF-14.35), after the operand the directive reads: a
 /// `#define`'s body (FTEF-14.24), an `#if` or `#elif` test (FTEF-14.33, FTEF-14.37), and so on.
 /// A `#pragma` ends at its line break (FTEF-14.43), an `#if` with no white space after its name,
-/// as `#iffy`, after its word (FTEF-14.36), and an `#eof`, after which FTEQCC reads nothing, at
+/// as `#iffy`, after its word (FTEF-14.57), and an `#eof`, after which FTEQCC reads nothing, at
 /// its line break. Implements FTEF-14.51 and FTEF-14.53.
 #[must_use]
 pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize> {
@@ -54,7 +54,7 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
             ..
         } => line(condition_end(text, from)),
         Directive::If { end, .. } => end.at,
-        Directive::NotIf { word_end } => word_end,
+        Directive::NotIf { word } => word.end,
         Directive::Define { word_end, .. } => {
             let reading = Reading::File(FileId(0), text);
             line(read_define(&reading, word_end).1)
@@ -64,6 +64,8 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
             .and_then(|rest| rest.iter().position(|&b| b == b'\n' || b == 0))
             .map_or(text.len(), |len| hash.saturating_add(len)),
         Directive::Pragma { end, .. } => end,
+        // FTEF-14.66: the compile stops there, so the preprocessor reads no more of the text.
+        Directive::Fatal { .. } => text.len(),
     };
     Some(end)
 }
@@ -107,7 +109,7 @@ fn elif_test_end(text: &[u8], hash: usize) -> Option<usize> {
 /// the lexical errors between are the new lexing's. A token lexed again starts a line only where
 /// only white space comes before it on its line.
 pub fn relex_from(lexed: &mut Lexed, text: &[u8], offset: usize, dialect: Dialect) {
-    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, dialect) else {
+    let Some(relexed) = Relexed::from(&lexed.tokens, text, offset, Lexing::plain(dialect)) else {
         return;
     };
     let first = lexed.tokens.partition_point(|t| t.span.end <= offset);

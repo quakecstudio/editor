@@ -11,8 +11,10 @@ use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
-use qc_lexer::{Code, Dialect};
-use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_as};
+use qc_lexer::{Code, Dialect, is_whitespace};
+use qc_preproc::{
+    FileStart, FteEvent, FteFileReader, Loader, ModuleState, com_parse, cond, qcc_load_as,
+};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -32,7 +34,7 @@ const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 /// How a module's source is read (PRJ-4.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
-    /// id's list: the output, then the source files (QC-23, PRJ-4.3).
+    /// id's list: the output, then the source files (QC-23, PRJ-4.12).
     List,
     /// FTEQCC's source form: the file is QuakeC and is compiled first (PRJ-4.4).
     Source,
@@ -82,7 +84,7 @@ pub struct FileGraph {
     pub form: Option<Form>,
     /// The files compiled, in compilation order.
     pub files: Vec<GraphFile>,
-    /// The output the source declares (PRJ-4.3, PRJ-5.6).
+    /// The output the source declares (PRJ-4.12, PRJ-5.6).
     pub declared_output: Option<PathBuf>,
     /// The other programs' sources it registers with `#pragma sourcefile` (PRJ-5.7).
     pub sourcefiles: Vec<PathBuf>,
@@ -150,11 +152,38 @@ const fn single_token(byte: u8) -> bool {
     matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
 }
 
-/// Splits `line` into tokens as `COM_Parse` does (QC-23.2), skipping `/* */` comments too
-/// (PRJ-4.2). Returns the tokens and whether the line ends inside a `/* */` comment.
-fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
+/// The name a quoted word of `quoted` bytes opens: its text up to a NUL in it, as the token is
+/// a C string (QC-23.7).
+fn quoted_name(quoted: &[u8]) -> String {
+    lossy(quoted.split(|b| *b == 0).next())
+}
+
+/// Splits `line`, which ends with the bytes `ending`, into tokens as `COM_Parse` does (QC-23.2),
+/// skipping `/* */` comments too (PRJ-4.2), `quote` the bytes of a quoted word the lines before
+/// left open, which runs on to its closing quote whatever lines it takes (QC-23.9). Returns the
+/// tokens, whether the line ends inside a `/* */` comment, and the bytes of a quoted word it
+/// leaves open, its line's ending among them.
+fn com_parse_words(
+    line: &[u8],
+    ending: &[u8],
+    mut in_comment: bool,
+    quote: Option<Vec<u8>>,
+) -> (Vec<String>, bool, Option<Vec<u8>>) {
     let mut words = Vec::new();
     let mut i = 0_usize;
+    let open = |mut bytes: Vec<u8>, from: &[u8]| {
+        bytes.extend_from_slice(from);
+        bytes.extend_from_slice(ending);
+        bytes
+    };
+    if let Some(mut bytes) = quote {
+        let Some(close) = line.iter().position(|b| *b == b'"') else {
+            return (words, in_comment, Some(open(bytes, line)));
+        };
+        bytes.extend_from_slice(line.get(..close).unwrap_or_default());
+        words.push(quoted_name(&bytes));
+        i = close.saturating_add(1);
+    }
     loop {
         if in_comment {
             match find(line, i, b"*/") {
@@ -162,7 +191,7 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
                     in_comment = false;
                     i = end.saturating_add(2);
                 }
-                None => return (words, true),
+                None => return (words, true, None),
             }
             continue;
         }
@@ -174,16 +203,16 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
                 in_comment = true;
                 i = i.saturating_add(2);
             }
-            _ if byte <= b' ' => i = i.saturating_add(1),
+            // QC-23.8: `while ( (c = *data) <= ' ')` with a signed `char`.
+            _ if is_whitespace(byte) => i = i.saturating_add(1),
             (b'"', _) => {
                 let start = i.saturating_add(1);
-                let end = line
-                    .get(start..)
-                    .and_then(|rest| rest.iter().position(|b| *b == b'"'))
-                    .map_or(line.len(), |len| start.saturating_add(len));
-                // QC-23.7: the token is a C string, so a NUL in the quotes ends its name.
-                let quoted = line.get(start..end).unwrap_or_default();
-                words.push(lossy(quoted.split(|b| *b == 0).next()));
+                let rest = line.get(start..).unwrap_or_default();
+                let Some(len) = rest.iter().position(|b| *b == b'"') else {
+                    return (words, in_comment, Some(open(Vec::new(), rest)));
+                };
+                let end = start.saturating_add(len);
+                words.push(quoted_name(line.get(start..end).unwrap_or_default()));
                 i = end.saturating_add(1);
             }
             _ if single_token(byte) => {
@@ -193,7 +222,8 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
             _ => {
                 let start = i;
                 while let Some(&b) = line.get(i) {
-                    if b <= b' ' || single_token(b) {
+                    // QC-23.8: `} while (c>32);` ends the word at a byte of 0x80 or more too.
+                    if is_whitespace(b) || single_token(b) {
                         break;
                     }
                     i = i.saturating_add(1);
@@ -202,7 +232,7 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
             }
         }
     }
-    (words, in_comment)
+    (words, in_comment, None)
 }
 
 /// Splits an `#includelist` line into words (PRJ-5.3). Returns the words and whether the line
@@ -378,6 +408,11 @@ struct Cursor {
     include_list: Option<u32>,
     conds: Vec<Cond>,
     in_comment: bool,
+    /// In a list, the bytes of a quoted word open at the end of the line read last, and the line
+    /// it opened on (QC-23.9).
+    quote: Option<(Vec<u8>, u32)>,
+    /// The bytes that ended the line read last: `\r\n`, `\n`, or none at the end of the text.
+    ending: &'static [u8],
     pending: VecDeque<(String, u32, Via)>,
     /// Under the FTEQCC and GMQCC dialects, the reader of a QuakeC file, which reads it in place
     /// of the lines above (PRJ-5.13, PRJ-5.15).
@@ -401,6 +436,8 @@ impl Cursor {
             include_list: None,
             conds: Vec::new(),
             in_comment: false,
+            quote: None,
+            ending: b"",
             pending: VecDeque::new(),
             fte: None,
         }
@@ -414,6 +451,23 @@ impl Cursor {
             pos: 0,
             ..Self::new(path, Vec::new(), None, base)
         }
+    }
+
+    /// A QuakeC file of a vanilla module, of `bytes`: its text ends at its first NUL byte, as
+    /// id's `LoadFile` and the lexer end it (QC-1.1, PRJ-5.1).
+    fn vanilla(path: PathBuf, mut bytes: Vec<u8>, entry: Option<usize>) -> Self {
+        if let Some(nul) = bytes.iter().position(|&b| b == 0) {
+            bytes.truncate(nul);
+        }
+        Self::new(path, bytes, entry, Base::Code)
+    }
+
+    /// A list-form `progs.src` of an FTEQCC or GMQCC module, of `bytes`, read as FTEQCC reads it
+    /// (PRJ-4.9).
+    fn fteqcc_list(path: PathBuf, bytes: Vec<u8>) -> Self {
+        let mut cursor = Self::new(path, Vec::new(), None, Base::Progs { output_seen: true });
+        cursor.fte = Some(FteFileReader::progs(bytes));
+        cursor
     }
 
     /// A QuakeC file of an FTEQCC or GMQCC module, read as FTEQCC reads it from `start`
@@ -433,6 +487,12 @@ impl Cursor {
         let rest = self.text.get(self.pos..).filter(|r| !r.is_empty())?;
         let len = rest.iter().position(|b| *b == b'\n');
         let line = rest.get(..len.unwrap_or(rest.len()))?;
+        let crlf = len.is_some() && line.ends_with(b"\r");
+        self.ending = match (len, crlf) {
+            (Some(_), true) => b"\r\n",
+            (Some(_), false) => b"\n",
+            (None, _) => b"",
+        };
         let line = line.strip_suffix(b"\r").unwrap_or(line).to_vec();
         self.pos = match len {
             Some(len) => self.pos.saturating_add(len).saturating_add(1),
@@ -479,14 +539,23 @@ impl<L: Loader> Builder<'_, L> {
                 continue;
             }
             let Some((mut text, number)) = cursor.next_line() else {
-                let opened = cursor.include_list;
-                if let (Some(opened), Some(done)) = (opened, self.stack.pop()) {
+                let Some(done) = self.stack.pop() else {
+                    continue;
+                };
+                // QC-23.9: id's `COM_Parse` reads on past the end of the text for the closing
+                // quote; this profile ends the list with an error.
+                if let Some((_, opened)) = done.quote {
+                    let message = "EOF inside quote".to_owned();
+                    self.report(Code::E0101, message, &done.path, opened);
+                }
+                if let Some(opened) = done.include_list {
                     let message = "#includelist without #endlist".to_owned();
                     self.report(Code::E0406, message, &done.path, opened);
                 }
                 continue;
             };
-            let is_directive = !cursor.in_comment && directive(&text).is_some();
+            let in_quote = cursor.quote.is_some();
+            let is_directive = !cursor.in_comment && !in_quote && directive(&text).is_some();
             if !cursor.taking() && !is_directive {
                 continue;
             }
@@ -516,7 +585,11 @@ impl<L: Loader> Builder<'_, L> {
                     (words, c, Via::IncludeList)
                 }
                 (None, Base::Progs { .. }) => {
-                    let (words, c) = com_parse_words(&text, cursor.in_comment);
+                    let (bytes, opened) = cursor.quote.take().unzip();
+                    let ending = cursor.ending;
+                    let (words, c, still) =
+                        com_parse_words(&text, ending, cursor.in_comment, bytes);
+                    cursor.quote = still.map(|bytes| (bytes, opened.unwrap_or(number)));
                     (words, c, Via::Listed)
                 }
                 (None, Base::Code) => (Vec::new(), code_line(&text, cursor.in_comment), Via::Root),
@@ -552,6 +625,18 @@ impl<L: Loader> Builder<'_, L> {
                 if let Some(cursor) = self.stack.last() {
                     let path = dir_of(&cursor.path).join(lossy(Some(&name)));
                     self.graph.declared_output = Some(normalize(&path));
+                }
+            }
+            FteEvent::Listed { name, line } => {
+                self.bring_in(&lossy(Some(&name)), line, Via::Listed)
+            }
+            FteEvent::Error {
+                code,
+                message,
+                line,
+            } => {
+                if let Some(file) = self.stack.last().map(|cursor| cursor.path.clone()) {
+                    self.report(code, message.to_owned(), &file, line);
                 }
             }
             FteEvent::Pragma { name, text, .. } => self.pragma(&lossy(Some(&name)), &text),
@@ -669,8 +754,8 @@ impl<L: Loader> Builder<'_, L> {
             return;
         };
         let pragma = name.to_ascii_lowercase();
-        let (args, _) = com_parse_words(args, false);
-        // FTEF-14.44: FTEQCC joins an include directory to the file being compiled and marks
+        let (args, _, _) = com_parse_words(args, b"", false, None);
+        // FTEF-14.70: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
         let marked = if self.dialect == Dialect::Fteqcc {
             &cursor.unit
@@ -832,7 +917,7 @@ impl<L: Loader> Builder<'_, L> {
             };
             Cursor::fteqcc(path, bytes, Some(entry), start)
         } else {
-            Cursor::new(path, bytes, Some(entry), Base::Code)
+            Cursor::vanilla(path, bytes, Some(entry))
         };
         // `QCC_Include(fullname, newunit)`: only a file read as a new unit is compiled.
         if via == Via::Include {
@@ -843,9 +928,9 @@ impl<L: Loader> Builder<'_, L> {
 }
 
 /// The text of a module's source that its form is told from and a list is read from: under
-/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54)
-/// past a `#!` first line (PRJ-4.8), under the vanilla dialect its bytes past a UTF-8 byte order
-/// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.7).
+/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.64)
+/// past a `#!` first line (PRJ-4.10), under the vanilla dialect its bytes past a UTF-8 byte order
+/// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.11).
 fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
     if dialect.has_fteqcc_extensions() {
         qcc_load_as(bytes.to_vec(), FileStart::Source).0
@@ -858,8 +943,8 @@ fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
 /// Where id's `COM_Parse` ends the text of a list, read token by token as it reads them, with no
 /// `/* */` comments: at the first NUL byte it meets between tokens or that ends a word or a `//`
 /// comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A quoted token runs
-/// on past a NUL in it to its closing quote, or, as [`com_parse_words`] reads a quote, to its
-/// line's end. The end of `text` when it has no such NUL.
+/// on past a NUL in it, and across lines, to its closing quote (QC-23.9). The end of `text` when
+/// it has no such NUL.
 fn com_parse_end(text: &[u8]) -> usize {
     let until = |from: usize, stop: fn(u8) -> bool| {
         let rest = text.get(from..).unwrap_or_default();
@@ -873,21 +958,27 @@ fn com_parse_end(text: &[u8]) -> usize {
         i = match (byte, text.get(next)) {
             (0, _) => return i,
             (b'/', Some(&b'/')) => until(next, |b| b == 0 || b == b'\n'),
-            (b'"', _) => until(next, |b| b == b'"' || b == b'\n').saturating_add(1),
-            _ if byte <= b' ' || single_token(byte) => next,
-            _ => until(next, |b| b <= b' ' || single_token(b)),
+            (b'"', _) => until(next, |b| b == b'"').saturating_add(1),
+            _ if is_whitespace(byte) || single_token(byte) => next,
+            _ => until(next, |b| is_whitespace(b) || single_token(b)),
         };
     }
     text.len()
 }
 
 /// Whether the first token of `text`, split as `COM_Parse` splits (QC-23.2) with `/* */`
-/// comments skipped, starts with `#` (PRJ-4.1). `None` when there is no token.
-fn source_form(text: &[u8]) -> Option<bool> {
+/// comments skipped, starts with `#` (PRJ-4.1); under the FTEQCC and GMQCC dialects the first
+/// word `QCC_COM_Parse` reads (PRJ-4.9). `None` when there is no token.
+fn source_form(text: &[u8], dialect: Dialect) -> Option<bool> {
+    if dialect.has_fteqcc_extensions() {
+        return com_parse(text, 0).map(|(word, _)| word.first() == Some(&b'#'));
+    }
     let mut in_comment = false;
+    let mut quote = None;
     for line in text.split(|b| *b == b'\n') {
-        let (words, still) = com_parse_words(line, in_comment);
+        let (words, still, open) = com_parse_words(line, b"\n", in_comment, quote);
         in_comment = still;
+        quote = open;
         if let Some(first) = words.first() {
             return Some(first.starts_with('#'));
         }
@@ -934,7 +1025,8 @@ pub fn build_graph<L: Loader>(
         }
     };
     let listed = progs_text(&text, dialect);
-    match source_form(&listed) {
+    let fteqcc = dialect.has_fteqcc_extensions();
+    match source_form(&listed, dialect) {
         Some(true) => {
             builder.graph.form = Some(Form::Source);
             builder.graph.files.push(GraphFile {
@@ -942,12 +1034,18 @@ pub fn build_graph<L: Loader>(
                 via: Via::Root,
                 parent: None,
             });
-            let cursor = if dialect.has_fteqcc_extensions() {
+            let cursor = if fteqcc {
                 Cursor::fteqcc(src, text, Some(0), FileStart::Source)
             } else {
-                Cursor::new(src, text, Some(0), Base::Code)
+                Cursor::vanilla(src, text, Some(0))
             };
             builder.stack.push(cursor);
+        }
+        // PRJ-4.9: FTEQCC reads a list with no word, an empty output name and no file, as it
+        // reads any other list.
+        Some(false) | None if fteqcc => {
+            builder.graph.form = Some(Form::List);
+            builder.stack.push(Cursor::fteqcc_list(src, text));
         }
         Some(false) => {
             builder.graph.form = Some(Form::List);

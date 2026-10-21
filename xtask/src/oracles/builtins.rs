@@ -40,7 +40,9 @@ use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
+mod declarations;
 mod directives;
+mod lexical;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -103,10 +105,13 @@ pub(crate) struct Case {
     pub(crate) encoding: Encoding,
     /// The files around it, or `None` for `t.qc` alone.
     pub(crate) project: Option<Project>,
+    /// Whether FTEQCC is given `-Werror` and the profile's warnings count as errors, so the
+    /// case compares the two compilers' warnings (FTEF-19).
+    pub(crate) werror: bool,
 }
 
 /// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
-/// encoding FTEQCC's file loader decodes (FTEF-14.54).
+/// encoding FTEQCC's file loader decodes (FTEF-14.64).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Encoding {
     Utf8,
@@ -114,6 +119,9 @@ pub(crate) enum Encoding {
     Utf16Be,
     Utf32Le,
     Utf32Be,
+    /// Each char of the text, all below U+0100, as the one byte of its code: for bytes no UTF-8
+    /// text holds (FTEF-13.16, FTEF-13.21).
+    Latin1,
 }
 
 impl Encoding {
@@ -123,6 +131,10 @@ impl Encoding {
         let utf32 = || text.chars().map(u32::from);
         match self {
             Self::Utf8 => text.as_bytes().to_vec(),
+            Self::Latin1 => text
+                .chars()
+                .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+                .collect(),
             Self::Utf16Le => [0xff, 0xfe]
                 .into_iter()
                 .chain(utf16().flat_map(u16::to_le_bytes))
@@ -150,6 +162,7 @@ impl Encoding {
             Self::Utf16Be => Some("utf-16be"),
             Self::Utf32Le => Some("utf-32le"),
             Self::Utf32Be => Some("utf-32be"),
+            Self::Latin1 => Some("latin-1"),
         }
     }
 }
@@ -168,7 +181,7 @@ pub(crate) struct Project {
     pub(crate) progs: Option<ProgsSrc>,
 }
 
-/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.54): its
+/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.64): its
 /// text and how that is written as bytes. Its compiled file is `t.qc`, which it need not list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProgsSrc {
@@ -187,6 +200,7 @@ impl Case {
             source,
             encoding: Encoding::Utf8,
             project: None,
+            werror: false,
         }
     }
 
@@ -226,6 +240,9 @@ impl Case {
             if let Some(name) = progs.encoding.name() {
                 key.push_str(&format!("|progs.src {name}"));
             }
+        }
+        if self.werror {
+            key.push_str("|-Werror");
         }
         key
     }
@@ -1178,6 +1195,8 @@ pub(crate) fn cases() -> Vec<Case> {
         }
     }
     cases.extend(directives::cases());
+    cases.extend(lexical::cases());
+    cases.extend(declarations::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1233,6 +1252,86 @@ impl ULong {
                     .flat_map(numbers)
                     .any(|number| fte_atoi(number.as_bytes()) != llp64_atoi(number))
             })
+    }
+}
+
+/// Whether the oracle's build stops when a `#pragma` overruns FTEQCC's `char msg[1024]`, which
+/// is undefined behaviour (FTEF-14.66).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Overrun {
+    /// The build stops at the overrun: on macOS, where [`FIXTURE`] is recorded, and on Windows,
+    /// as the profile models.
+    Caught,
+    /// The build reads on past an overrun of a few bytes and compiles the program: on Linux,
+    /// where the CI build does so for texts of 1024 and 1025 bytes.
+    Unseen,
+}
+
+impl Overrun {
+    /// The host's, which the oracles are built for.
+    pub(crate) const HOST: Self = if cfg!(target_os = "linux") {
+        Self::Unseen
+    } else {
+        Self::Caught
+    };
+
+    /// Whether an oracle on such a host may compile `case`, which the profile refuses: a
+    /// `#pragma` whose name or text runs past FTEQCC's `msg[1024]` (FTEF-14.66).
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Unseen
+            && case.dialect.has_fteqcc_extensions()
+            && case.texts().any(|text| text.lines().any(overruns_msg))
+    }
+}
+
+/// Whether `line` is a `#pragma` whose name or text, as `QCC_PR_Precompiler` copies them into
+/// `msg` (the name to the first space, tab or `(`, the text after it with a `(` kept), is 1024
+/// bytes or more, which with the NUL after it runs past `msg[1024]` (FTEF-14.66).
+fn overruns_msg(line: &str) -> bool {
+    let Some(rest) = line.trim_start_matches([' ', '\t']).strip_prefix("#pragma") else {
+        return false;
+    };
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let (name, text) = match rest.find([' ', '\t', '(']) {
+        Some(at) => {
+            let (name, text) = rest.split_at(at);
+            let text = text.strip_prefix([' ', '\t']).unwrap_or(text);
+            (name, text)
+        }
+        None => (rest, ""),
+    };
+    name.len() >= 1024 || text.len() >= 1024
+}
+
+/// Where an oracle ran: how wide its `unsigned long` is and whether its build stops at an overrun.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Host {
+    pub(crate) ulong: ULong,
+    pub(crate) overrun: Overrun,
+}
+
+impl Host {
+    /// The host's.
+    pub(crate) const HOST: Self = Self {
+        ulong: ULong::HOST,
+        overrun: Overrun::HOST,
+    };
+
+    /// Whether an oracle here may give `case` an outcome other than [`FIXTURE`]'s, which a host
+    /// of 64-bit `unsigned long` that stops at an overrun records (FTEF-14.50, FTEF-14.55,
+    /// FTEF-14.66).
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self.ulong.reads_otherwise(case) || self.overrun.reads_otherwise(case)
+    }
+}
+
+impl From<ULong> for Host {
+    /// A host of `ulong` whose build stops at an overrun.
+    fn from(ulong: ULong) -> Self {
+        Self {
+            ulong,
+            overrun: Overrun::Caught,
+        }
     }
 }
 
@@ -1364,8 +1463,9 @@ pub(crate) fn expected_difference(
     ours: &Outcome,
     errors: &[Code],
     oracle: &Outcome,
-    ulong: ULong,
+    host: impl Into<Host>,
 ) -> Option<&'static str> {
+    let Host { ulong, overrun } = host.into();
     let vanilla = !case.dialect.has_fteqcc_extensions();
     if !vanilla {
         // FTEF-14.50: the profile reads a `#pragma line` number as a 64-bit `strtoul` does, so
@@ -1381,6 +1481,11 @@ pub(crate) fn expected_difference(
         if ulong.atoi_reads_otherwise(case) {
             return Some("FTEF-14.55");
         }
+        // FTEF-14.66: a build that reads on past a pragma's overrun of `msg[1024]` compiles what
+        // the profile refuses.
+        if *ours == Outcome::Rejected && overrun.reads_otherwise(case) {
+            return Some("FTEF-14.66");
+        }
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
@@ -1393,34 +1498,31 @@ pub(crate) fn expected_difference(
         let opened_a_file = case
             .texts()
             .any(|t| t.contains("#merge") || t.contains("#datafile"));
-        if refused_here_only && (crashed_at_eof || opened_a_file) {
-            return Some("FTEF-14.47");
-        }
-        // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
-        // cannot cast to a function and this profile, which checks no types, accepts.
-        let uncast = *oracle == Outcome::Rejected
-            && *ours == Outcome::Accepted
-            && errors.is_empty()
-            && value_initialiser(case);
-        return uncast.then_some("FTE-23.11");
+        return (refused_here_only && (crashed_at_eof || opened_a_file)).then_some("FTEF-14.47");
     }
     // QC-27.9: the vanilla profile makes `#0` and negative numbers errors, which id's qcc
-    // accepts with no builtin number (QC-13.4). Only that error may differ: without it the
-    // profile's outcome must be the oracle's.
-    if !errors.contains(&Code::E0507) {
-        return None;
-    }
+    // accepts with no builtin number (QC-13.4); QC-27.8: and an initialiser that is no
+    // literal, which id's qcc reads as the last literal it lexed (QC-11.4). Only those errors
+    // may differ: without them the profile's outcome must be the oracle's.
+    let divergences = [(Code::E0506, "QC-27.8"), (Code::E0507, "QC-27.9")];
+    let statement = divergences
+        .iter()
+        .find(|(code, _)| errors.contains(code))
+        .map(|(_, statement)| *statement)?;
     let rest: Vec<Code> = errors
         .iter()
         .copied()
-        .filter(|code| *code != Code::E0507)
+        .filter(|code| divergences.iter().all(|(divergence, _)| divergence != code))
         .collect();
-    let without = if rest.is_empty() {
+    let without = if !rest.is_empty() {
+        refusal(case, &rest)
+    } else if errors.contains(&Code::E0507) {
         Outcome::Accepted
     } else {
-        refusal(case, &rest)
+        let (mut db, _) = analysed(case);
+        binding(&mut db, case).unwrap_or(Outcome::Accepted)
     };
-    (without == *oracle).then_some("QC-27.9")
+    (without == *oracle).then_some(statement)
 }
 
 /// The profile's outcome for `case`, and the codes of its errors in the order of their place.
@@ -1457,7 +1559,7 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     });
     let errors = analysis
         .diagnostics()
-        .filter(|d| d.diagnostic.code.is_error())
+        .filter(|d| case.werror || d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
     (db, errors)
@@ -1545,19 +1647,6 @@ fn eof_past_first_line(text: &str) -> bool {
         .any(|line| line.trim_start_matches([' ', '\t']).starts_with("#eof"))
 }
 
-/// Whether the FTEQCC `case`, which uses a macro or a built-in constant (FTEF-14.7), initialises
-/// its function with a number or a vector once preprocessed, such as the number a macro after
-/// `#` stands for (FTE-23.11).
-fn value_initialiser(case: &Case) -> bool {
-    let uses_macros = case.source.contains("#define") || case.source.contains("#__");
-    let (db, _) = analysed(case);
-    uses_macros
-        && matches!(
-            expanded_literal(&db, function_name(case)),
-            Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
-        )
-}
-
 /// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
 /// source text with Rust's own float parser, not the profile's: id's qcc skips the spaces
 /// after `#` and reads digits, a `-` and dots (`PR_LexNumber`).
@@ -1606,6 +1695,11 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let mut command = if fteqcc {
         let mut command = Command::new(&oracles.fteqcc);
         command.arg("-Tid");
+        if case.werror {
+            // Q208, "no end_sys_fields defined", is what every program without system
+            // definitions gets.
+            command.args(["-Werror", "-Wno-Q208"]);
+        }
         command.args(case.include_dirs().map(|dir| format!("-I{dir}")));
         command
     } else {
@@ -1635,7 +1729,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
             Outcome::Rejected
         });
     }
-    // FTE-23.11: FTEQCC writes no progs when it has made nothing to write, as for a function
+    // FTE-23.16: FTEQCC writes no progs when it has made nothing to write, as for a function
     // initialised with 0 a macro gave.
     if fteqcc && !progs.exists() && text.contains("nothing to write") {
         return Ok(Outcome::Accepted);
@@ -1687,8 +1781,8 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
         1
     };
     let Some(function) = progs.functions().get(index) else {
-        // FTE-23.11: FTEQCC makes no function for `f` initialised with a string a macro gave,
-        // which it casts with a warning. PRJ-4.7: id's qcc makes none when its own `progs.src`
+        // FTE-23.16: FTEQCC makes no function for `f` initialised with a string a macro gave,
+        // which it casts with a warning. PRJ-4.11: id's qcc makes none when its own `progs.src`
         // does not list the file that binds `f`.
         let fteqcc = case.dialect.has_fteqcc_extensions();
         let own_progs = case.project.as_ref().is_some_and(|p| p.progs.is_some());
@@ -1725,10 +1819,14 @@ pub(crate) fn read_fixture(root: &Path) -> Result<BTreeMap<String, Outcome>, Str
         .collect()
 }
 
-/// Compares the profile with `recorded`, the outcomes of oracles that ran where `unsigned long`
-/// is `ulong` wide; prints each disagreement and returns how many cases agree and how many do
-/// not.
-pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulong: ULong) -> Tally {
+/// Compares the profile with `recorded`, the outcomes of oracles that ran on `host`; prints each
+/// disagreement and returns how many cases agree and how many do not.
+pub(crate) fn compare(
+    cases: &[Case],
+    recorded: &BTreeMap<String, Outcome>,
+    host: impl Into<Host>,
+) -> Tally {
+    let host = host.into();
     let mut tally = Tally::default();
     for case in cases {
         let Some(oracle) = recorded.get(&case.key()) else {
@@ -1739,7 +1837,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
         let (ours, errors) = profile(case);
         if ours == *oracle {
             tally.agree = tally.agree.saturating_add(1);
-        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle, ulong) {
+        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle, host) {
             let count = tally.expected.entry(statement).or_default();
             *count = count.saturating_add(1);
         } else {
@@ -1750,10 +1848,10 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
     tally
 }
 
-/// Whether the project graph of `case`, a graph case of the directive family, lists a file that
-/// binds `f` (PRJ-5.13): the module is the `progs.src` the oracle reads, under the case's
-/// dialect (PRJ-4.7).
-fn graph_binds(case: &Case) -> bool {
+/// What the project graph of `case`, a graph case of the directive family, makes of the
+/// `progs.src` the oracle reads, under the case's dialect (PRJ-4.11, PRJ-5.13): whether it lists a
+/// file that binds `f`, and whether it reports an error.
+fn graph_reads(case: &Case) -> (bool, bool) {
     let mut loader = qc_project::MemoryLoader::new();
     let compiled = case.compiled();
     loader.insert("progs.src", case.progs_src_bytes());
@@ -1773,7 +1871,9 @@ fn graph_binds(case: &Case) -> bool {
         &dirs,
         case.dialect,
     );
-    graph.files.iter().any(|file| binding.contains(&file.path))
+    let binds = graph.files.iter().any(|file| binding.contains(&file.path));
+    let errs = graph.diagnostics.iter().any(|d| d.code.is_error());
+    (binds, errs)
 }
 
 /// The project graph's cases (PRJ-5.13): programs whose one file that binds `f` FTEQCC reads,
@@ -1785,15 +1885,24 @@ pub(crate) fn graph_cases() -> Vec<Case> {
 
 /// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
 /// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
-/// round, or whose oracle neither bound `f` to `#5` nor accepted the program, so that the case
-/// says nothing of what it read (PRJ-5.13). Where `long` is 32 bits a case whose directive holds
-/// a number `atoi` reads otherwise may read the other file (FTEF-14.55).
+/// round; whose oracle rejected the program where the graph reports no error, as each compiler
+/// stops at the error the graph reports (PRJ-6.6); or whose oracle neither bound `f` to `#5`, nor
+/// accepted nor rejected the program, so that the case says nothing of what it read (PRJ-5.13).
+/// Where `long` is 32 bits a case whose directive holds a number `atoi` reads otherwise may read
+/// the other file (FTEF-14.55).
 pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
     let mut differ = Vec::new();
     for case in graph_cases() {
         let read = match outcomes.get(&case.key()) {
             Some(Outcome::Bound { number: 5, .. }) => true,
             Some(Outcome::Accepted) => false,
+            Some(Outcome::Rejected) => {
+                if !graph_reads(&case).1 {
+                    let why = "oracle rejected, the graph reports no error";
+                    differ.push(format!("{}: {why}", show(&case)));
+                }
+                continue;
+            }
             Some(oracle) => {
                 differ.push(format!(
                     "{}: oracle {oracle}, which reads no file",
@@ -1806,7 +1915,7 @@ pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULo
                 continue;
             }
         };
-        if graph_binds(&case) != read && !ulong.atoi_reads_otherwise(&case) {
+        if graph_reads(&case).0 != read && !ulong.atoi_reads_otherwise(&case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {
@@ -1862,12 +1971,20 @@ fn show(case: &Case) -> String {
 /// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,
 /// writes it) and the profile against them.
 pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
-    check_where(root, oracles, record, ULong::HOST)
+    check_where(root, oracles, record, Host::HOST)
 }
 
-/// [`check`] with oracles that run where `unsigned long` is `ulong` wide, which records
-/// nothing unless it is 64 bits (FTEF-14.50).
-fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Result<bool, String> {
+/// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
+/// is 64 bits (FTEF-14.50). A host whose build reads on past a pragma's overrun records, for each
+/// case that overrun may change, the outcome [`FIXTURE`] holds, a stopping build's (FTEF-14.66).
+fn check_where(
+    root: &Path,
+    oracles: &Oracles,
+    record: bool,
+    host: impl Into<Host>,
+) -> Result<bool, String> {
+    let host = host.into();
+    let ulong = host.ulong;
     if record && ulong != ULong::Bits64 {
         return Err(format!(
             "{FIXTURE} records the outcomes where `unsigned long` is 64 bits (FTEF-14.50); \
@@ -1895,6 +2012,15 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
     }
     let mut ok = true;
     if record {
+        if host.overrun != Overrun::Caught {
+            let held = read_fixture(root).unwrap_or_default();
+            for case in cases.iter().chain(&graph_cases) {
+                let key = case.key();
+                if let Some(outcome) = held.get(&key).filter(|_| host.reads_otherwise(case)) {
+                    outcomes.insert(key, outcome.clone());
+                }
+            }
+        }
         let raw: BTreeMap<&String, String> =
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
         let text = serde_json::to_string_pretty(&raw).map_err(|e| e.to_string())?;
@@ -1914,7 +2040,7 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
             let Some(outcome) = outcomes.get(&key) else {
                 continue;
             };
-            if recorded.get(&key) != Some(outcome) && !ulong.reads_otherwise(case) {
+            if recorded.get(&key) != Some(outcome) && !host.reads_otherwise(case) {
                 ok = false;
                 println!(
                     "FAIL  {key:?}: the oracle gives {outcome}, not as {FIXTURE} records (--record)"
@@ -1926,7 +2052,7 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
             println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
-    let tally = compare(&cases, &outcomes, ulong);
+    let tally = compare(&cases, &outcomes, host);
     println!(
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()

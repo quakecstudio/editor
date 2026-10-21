@@ -557,6 +557,21 @@ functions to be prototyped before their definition."
   and QC-11.3. A local initialiser is stored once in the progs' global area, like a global
   constant; it is not executed on each call, and later literals of the same value reuse the
   local (QC-20.2).
+- **QC-11.11** A vector's initialiser does not initialise its components: `PR_ParseDefs` sets
+  `def->initialized = 1;` on the vector's definition only, and `PR_GetDef` made the components
+  as definitions of their own. So `vector v = '1 2 3'; float v_x = 2;` compiles, and writes 2
+  over the vector's first word.
+- **QC-11.12** A `.vector` field's components are made with `qcc`'s own `type_floatfield`
+  (`PR_GetDef (&type_floatfield, element, scope, true);`), a type `PR_FindType` never returns,
+  since `pr.types` holds only `type_function` and the types it interned (`InitData`: `pr.types
+  = &type_function;`). So a component and a `.float` written in the source are of different
+  types, in either order: `.vector fv; .float fv_x;` and `.float fv_x; .vector fv;` are "Type
+  mismatch on redeclaration of fv_x". A `float` or a `void()` is the same type however made:
+  `type_float` and `type_function` are the ones the parser gives.
+- **QC-11.13** A local's initialiser initialises the definition the local is, and that
+  definition may be initialised once (QC-11.5): `local float y = 1; local float y = 2;` is "y
+  redeclared", and so is a local initialised where its name is an initialised global, or a
+  global an earlier function's local initialised (QC-12.3).
 
 ### Test vectors
 
@@ -573,6 +588,10 @@ functions to be prototyped before their definition."
 | `void() f;` | `function f was not defined`, then fatal `compilation errors` | QC-11.8 |
 | `void() f = { local .float g; };` | `Fields and functions must be global` | QC-11.9 |
 | `float a;\nvoid() f = { local float l = 5; a = 5; };` | `STORE_F l, a`: the literal 5 is the local `l` | QC-11.10 |
+| `vector v = '1 2 3';\nfloat v_x = 2;` | compiles | QC-11.11 |
+| `.vector fv;\n.float fv_x;` | `Type mismatch on redeclaration of fv_x` | QC-11.12 |
+| `float x = 1;\nvoid() g = { local float x = 2; };` | `x redeclared` | QC-11.13 |
+| `float x;\nvoid() g = { local float x = 2; };\nvoid() h = { local float x = 3; };` | `x redeclared` | QC-11.13 |
 
 ## QC-12 Scopes and name lookup
 
@@ -1110,7 +1129,20 @@ A summary for code generation; the sections cited hold the rules.
   for the closing quote (`if (c=='\"')`), so it reads on past a NUL in it; the token is then a C
   string, and the name `main` opens is its text up to that NUL: `"a.qc` NUL `x" b.qc` lists
   `a.qc` and `b.qc`. The vanilla graph cases of `cargo xtask oracles builtins` hold these
-  (`project-file.md` PRJ-4.7).
+  (`project-file.md` PRJ-4.11).
+- **QC-23.8** `COM_Parse` reads its text through `char *data` into `int c` and tests
+  `while ( (c = *data) <= ' ')` and `} while (c>32);`, so on the x86 build, where `char` is
+  signed, a byte of 0x80 to 0xFF is below the space, as QC-1.3 says of the lexer: it is white
+  space between words and ends a word, and is kept only in a quoted word. So `progs.dat`, a line
+  break and `b.qh` 0xE9 `x.qc` list `b.qh` and `x.qc`, and a UTF-8 `café.qc` is the word `caf`
+  and then `.qc`. The vanilla graph cases of `cargo xtask oracles builtins` (`VANILLA_PROGS`)
+  hold one, and the pinned id `qcc` compiles both files.
+- **QC-23.9** A quoted word's loop stops only at its closing quote (`if (c=='\"')`), so the word
+  runs across line breaks, which it keeps: `"a.qc`, a line break and `b.qc"` is one name, which
+  id's `qcc` fails to open. A quote the text ends in has no end: the loop reads on past
+  `LoadFile`'s NUL and past the buffer, and the pinned build crashes (exit -10). This profile
+  ends the list there with error `E0101` "EOF inside quote" at the line the quote opens on, a
+  deliberate divergence. The vanilla graph cases (`VANILLA_PROGS`) hold both.
 
 ## QC-24 Errors and recovery
 

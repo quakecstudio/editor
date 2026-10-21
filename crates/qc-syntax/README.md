@@ -20,7 +20,10 @@ the text after a UTF-8 byte order mark (`qc_preproc::qcc_load_in_place`, FTEF-14
 
 `parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
 `parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
-lines, so a `#` first on its line is a token (QC-9.19).
+lines, so a `#` first on its line is a token (QC-9.19), and `parse_preprocessed_flagged` such
+text lexed with the FTEQCC compiler flags the preprocessor marked (FTEF-12.12);
+`parse_module_source` parses a module's source in source form, past a `#!` first line under an
+FTEQCC dialect (PRJ-4.10). FTEQCC's `*^`, `><` and `<=>` parse as binary operators (FTEF-13.24).
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
 `break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:` at the
@@ -57,7 +60,11 @@ the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
-the syntactic ones.
+the syntactic ones. The one exception is `src/c_scalar.rs`, ported from FTEQCC's
+`QCC_PR_ParseType` and `QCC_PR_CheckKeyword` (FTEF-2.7 to FTEF-2.11): which C type words the
+default keywords enable, the loop that reads them and the type they make, with the
+"ignoring unsupported" warnings `W0226` (QCD-7.52). The parser reads a type's C words with it,
+and `qc-sema` names the type with it.
 
 - **Layer:** L2 syntax. It depends on `qc-lexer` and `qc-preproc`, whose FTEQCC directive reader
   ends a directive line.

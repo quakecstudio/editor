@@ -15,10 +15,13 @@
 //! `$frame` lines (QC-8.2) are kept as
 //! trivia; frame macro references are [`SyntaxKind::FrameRef`] literals, resolved later.
 //!
-//! This crate is written from the spec, not ported.
+//! This crate is written from the spec, not ported, but for [`c_scalar`], the loop over C
+//! type words of FTEQCC's `QCC_PR_ParseType`, which is ported so the parser and the semantic
+//! model read those words as FTEQCC does.
 
 pub mod ast;
 mod binum;
+pub mod c_scalar;
 mod input;
 mod kind;
 mod parser;
@@ -95,7 +98,16 @@ pub fn parse(source: &[u8]) -> Parse {
 /// tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Source)
+    parse_text(source, dialect, input::Text::Source, &[])
+}
+
+/// Parses a module's source in source form (`docs/spec/project-file.md` PRJ-4.4), in `dialect`:
+/// as [`parse_with`], except that under an FTEQCC dialect a first line that starts with `#!` is
+/// passed over, as FTEQCC's `QCC_main` passes over it before it reads the source (PRJ-4.10), its
+/// bytes trivia the lexer skipped. Never fails, and the tree's text is `source`, byte for byte.
+#[must_use]
+pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
+    parse_text(source, dialect, input::Text::ModuleSource, &[])
 }
 
 /// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
@@ -107,11 +119,31 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
 /// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Preprocessed)
+    parse_text(source, dialect, input::Text::Preprocessed, &[])
 }
 
-fn parse_text(source: &[u8], dialect: Dialect, text: input::Text) -> Parse {
-    let mut parser = parser::Parser::new(input::Input::new(source, dialect, text), dialect);
+/// [`parse_preprocessed`] of text whose tokens FTEQCC lexed under the compiler flags `flags`
+/// gives (FTEF-12.12): each the byte the flags hold from and the flags, in order, as
+/// `qc_preproc::FileOutput::lex_flags` marks them by token. The text before the first holds the
+/// default flags. `macroinstrings` is not read: this text has no macros to look up, and the
+/// preprocessor writes a string a `#NAME` wrote to as its bytes (`PpToken::spelling`).
+#[must_use]
+pub fn parse_preprocessed_flagged(
+    source: &[u8],
+    dialect: Dialect,
+    flags: &[(usize, qc_lexer::LexFlags)],
+) -> Parse {
+    parse_text(source, dialect, input::Text::Preprocessed, flags)
+}
+
+fn parse_text(
+    source: &[u8],
+    dialect: Dialect,
+    text: input::Text,
+    flags: &[(usize, qc_lexer::LexFlags)],
+) -> Parse {
+    let input = input::Input::new(source, dialect, text, flags);
+    let mut parser = parser::Parser::new(input, dialect);
     parser.source_file();
     let (green, diagnostics) = parser.finish();
     Parse { green, diagnostics }

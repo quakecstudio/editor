@@ -5,6 +5,8 @@
 //! read, and which class a member access is resolved in when two classes have a member of the
 //! same name.
 
+use qc_diag::Code;
+
 use super::fte_index_of;
 use crate::resolve::ModuleIndex;
 use crate::symbol::{DefId, DefKind};
@@ -247,7 +249,22 @@ fn a_scoped_definition_adds_a_member_or_a_global() {
                   void A::Extra(void);\nvoid A::Extra(void) { extra = 1; };\n\
                   float Other::g = 1;\nvoid() f = { local float n = Other::g; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), Vec::<String>::new());
+    // FTEF-19.15: a member the class does not declare is a warning, and a scope that is no
+    // class an error, after which the global is still recorded.
+    assert_eq!(messages(&index), ["Other is not a class"]);
+    let warnings: Vec<&str> = index
+        .diagnostics
+        .iter()
+        .filter(|d| d.diagnostic.code == Code::W0216)
+        .map(|d| d.diagnostic.message.as_str())
+        .collect();
+    assert_eq!(
+        warnings,
+        [
+            "A::extra is not part of class A",
+            "A::Extra is not part of class A"
+        ]
+    );
     let extra = member(&index, "A", "extra");
     assert_eq!(index.defs[extra.0].kind, DefKind::Field);
     assert!(!index.defs[extra.0].initialized);

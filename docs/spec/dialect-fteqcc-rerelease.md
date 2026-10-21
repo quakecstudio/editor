@@ -753,15 +753,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   an empty `N` leaves `#N #5` as `#5`; and `# N`, `#N!` (the word is `N!`), `#M` with no `(`
   and `#U` with no macro `U` are `E0209`. The preprocessor (`qc-preproc`) drops such a `#` and
   expands the macro; the vanilla `#` is punctuation (FTE-23.1) and stays.
-- **FTE-23.11** This profile checks no types, so a `#` before a macro that stands for a number,
-  `#define N 5` and `void() f = #N;`, initialises `f` with `5` and is no error, where FTEQCC
-  reports "Cannot cast from float to void()". A string (`#define N "ex_a"`) FTEQCC casts with
-  the warning "Implicit cast from string to void()" (F314) and makes no builtin function, as
-  this profile makes none. The type of a value initialiser is the compiler's to check (L-01);
-  until then `cargo xtask oracles builtins` counts such a case as differing as this statement
-  says: an FTEQCC case that defines a macro or uses a built-in constant (`#__LINE__` is the
-  line number), refused by FTEQCC and accepted here with no error, whose `f` is initialised
-  with a number or a vector.
+- **FTE-23.11** **Withdrawn** (P2-117, #545): it said this profile checks no types, but it now
+  casts a literal initialiser as FTEQCC does (`dialect-fteqcc.md` FTEF-19.2). Replaced by
+  FTE-23.16.
 - **FTE-23.12** **Withdrawn** (P2-75 to P2-77, #480 to #482): it described the cross product
   before it had the character-constant, macro-word, label and macro-argument cases. Replaced by
   FTE-23.13.
@@ -826,7 +820,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   directive and pragma FTEQCC's `QCC_PR_Precompiler` knows read where FTEQCC reads one: 18
   directives each ending its line under 9 tails, and `#includelist` under them, before a line it
   hides or none (FTEF-14.35); 55 directive names matched by their first bytes, with their
-  operands, and macro names of 1, 62, 63, 64 and 65 bytes (FTEF-14.52, FTEF-14.36, FTEF-14.38,
+  operands, and macro names of 1, 62, 63, 64 and 65 bytes (FTEF-14.52, FTEF-14.57, FTEF-14.38,
   FTEF-14.39, FTEF-14.42); 48 conditionals whose skipped sides nest by prefix, end their lines,
   and take an `#elif` or `#else`, `#if` expressions FTEQCC refuses and its predefined macros
   (FTEF-14.33, FTEF-14.37, FTEF-14.48); 37 directive and pragma forms each at a line's start,
@@ -836,7 +830,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   in an `#includelist` (FTEF-14.41), after `DONT_COMPILE_THIS_FILE` and on the first line of an
   included file with and without spaces before it (FTEF-14.52); 10 bodies with directive lines
   under 11 settings of F303 (FTEF-14.46); `#pragma line` in 17 forms, with `__LINE__` and
-  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.44); 12 programs whose code a `\`
+  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.70); 12 programs whose code a `\`
   joins to a line holding a directive's text, as code and as a macro's argument, and after a
   `//` comment's `\` or a blank line (FTEF-14.53); and 101 projects of several
   files, whose `#include`s are found beside the compiled file and in include directories
@@ -851,3 +845,9 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   31 as FTEF-14.47 says, an `#eof` after a file's first byte, where FTEQCC crashes, and `#merge`
   and `#datafile`, whose files FTEQCC opens; 13 as FTE-23.11 says, a macro or `#__LINE__` giving
   `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
+- **FTE-23.16** A `#` before a macro that stands for a number, `#define N 5` and `void() f =
+  #N;`, initialises `f` with `5`, which FTEQCC cannot cast to a function: the error `E0213`
+  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.2), as for `#__LINE__`, the
+  line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
+  cast from string to void()" and makes no builtin function, as this profile makes none; the
+  differential reads that as accepted with no builtin number.

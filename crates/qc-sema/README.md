@@ -62,18 +62,24 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
 - **Spec statements:** of [`language.md`](../../docs/spec/language.md), the semantic parts of
   types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.6 and QC-10.7; of declarations, QC-11.1,
-  QC-11.5, QC-11.7, QC-11.8 and QC-11.9; the state-header name, QC-13.6; and the spacing of
-  an expansion as the parser reads it, QC-9.16. Of
+  QC-11.3, QC-11.5, QC-11.7, QC-11.8, QC-11.9 and QC-11.11 to QC-11.13; the parameter order of
+  QC-13.5; the state-header name, QC-13.6; and the spacing of an expansion as the parser reads
+  it, QC-9.16. Of
   [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md), the builtin
-  functions of FTE-23.7. Of
+  functions of FTE-23.7 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
-  QCD-3.5, QCD-3.6, QCD-3.8, QCD-3.11, QCD-4.1, QCD-7.3, QCD-7.23 and QCD-7.28. Of
+  QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.33, QCD-4.1, QCD-4.9 to QCD-4.12, QCD-5.4,
+  QCD-7.3, QCD-7.23, QCD-7.28 and QCD-7.32 to QCD-7.51. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
-  members FTEF-10.2 and FTEF-10.3, and the scoped names of FTEF-16.4. The other
-  statements of those sections are the parser's (`qc-syntax`) or the compiler's (L4): the
-  initialiser and storage rules, the type rules, operator checks and code generation. Written
-  from the spec, not ported.
+  members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
+  FTEF-17.12, the C scalar types FTEF-2.8 names, and the definitions of FTEF-19.1 to
+  FTEF-19.16, FTEF-19.19 and FTEF-19.20. The other statements of those
+  sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
+  expressions, operator checks and code generation. The definitions are ported from id's
+  `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
+  cited in the headers of `src/resolve.rs` and `src/cast.rs`
+  ([`inventory-l3.md`](../../docs/spec/inventory-l3.md)).
 - **Shipped:** yes.
 
 Under the FTEQCC profile the full dialect of `docs/spec/dialect-fteqcc.md` resolves by FTEF-17:
@@ -84,7 +90,7 @@ before the globals, and after `.` or `->` through the class of what the access i
 intrinsics are no names to define; equal initialisers, builtins of one number and engine name
 that FTEQCC would bind to one function (FTE-23.7), enums declared again and `noref`
 definitions are no redeclaration (FTEF-17.10, FTEF-17.8); a redeclaration
-involving a type name or a pointer is no type mismatch (FTEF-17.6); `wrap`, `weak` and
+involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.12); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
 variable (FTEF-15.5); a function with no body is reported unless it is `noref` and not
 referred to (FTEF-17.11); and a builtin given for a function with a body is a warning, the body kept
@@ -93,6 +99,22 @@ referred to (FTEF-17.11); and a builtin given for a function with a body is a wa
 `progs.src`, reads the module with autoprototyping (FTEF-12.10), and a later one is the
 warning `W0108` (QCD-7.28). FreeCS, Rad-Therapy, Nuclide's
 `menu-fn`, Copper and Arcane Dimensions resolve with no error (`cargo xtask fteqcc-profile`).
+
+The definitions themselves follow id's `PR_ParseDefs` and `PR_GetDef` and FTEQCC's
+`QCC_PR_ParseDefs` and `QCC_PR_GetDef`, ported function by function as
+[`docs/spec/inventory-l3.md`](../../docs/spec/inventory-l3.md) lists (P2-117). Under the vanilla
+profile a literal initialiser has the definition's type (QC-11.3), parameters keep their order
+in the global area (QC-13.5), a vector's components are not initialised with it (QC-11.11), a
+field's components are of a type of their own (QC-11.12) and a local is initialised once
+(QC-11.13). Under FTEQCC (FTEF-19, in `src/cast.rs` and `src/resolve.rs`) an initialiser or a
+default value is cast to its definition's type as `QCC_TryEvaluateCast` casts it, a name that
+initialises a global must be a constant, whose value the redeclaration comparison then reads,
+a parameter given twice is an error, a duplicate local or a local hiding a global a warning,
+redeclarations follow `typecmp` and `typecmp_lax` with FTEQCC's exceptions, array sizes and
+typedefs must agree, enums have their values, `static` globals are their unit's, a type name
+must be a type declared before it, a `for` statement's locals leave scope at its end, and the
+warnings of those functions are reported with FTEQCC's texts. The definitions family of
+`cargo xtask oracles builtins` checks each against id's `qcc` and the pinned FTEQCC (FTEF-19.18).
 
 ## What it is not, yet
 

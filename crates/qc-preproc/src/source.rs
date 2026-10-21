@@ -38,21 +38,20 @@ pub struct SourceFile {
 }
 
 /// Where the text of a [`SourceFile`], which the preprocessor reads, stands in the file's bytes:
-/// under an FTEQCC dialect FTEQCC's file loader may skip or decode some (FTEF-14.54).
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// under an FTEQCC dialect FTEQCC's file loader may skip or decode some, and writes a line feed
+/// after them (FTEF-14.64).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum TextOrigin {
-    /// The file's bytes from this offset on, one byte of the text for each: past the UTF-8 byte
-    /// order mark FTEQCC skips, or from the start.
+    /// The file's bytes, one byte of the text for each: the vanilla dialect's text (QC-1.1).
+    #[default]
+    Bytes,
+    /// The file's bytes from this offset on, past the UTF-8 byte order mark FTEQCC skips or from
+    /// the start, one byte of the text for each, and then the line feed FTEQCC's loader writes
+    /// after them, which stands at the file's end.
     Shifted(usize),
-    /// Decoded from UTF-16 or UTF-32: for each byte of the text, and then for its end, the offset
-    /// in the file of the code unit it came from.
+    /// Decoded from UTF-16 or UTF-32: for each byte of the text, the loader's line feed at its
+    /// end included, and then for its end, the offset in the file of the code unit it came from.
     Decoded(Vec<usize>),
-}
-
-impl Default for TextOrigin {
-    fn default() -> Self {
-        Self::Shifted(0)
-    }
 }
 
 impl SourceFile {
@@ -66,7 +65,12 @@ impl SourceFile {
     /// offset after the last code unit read.
     fn file_offset(&self, offset: usize) -> usize {
         match &self.origin {
-            TextOrigin::Shifted(skipped) => offset.saturating_add(*skipped),
+            TextOrigin::Bytes => offset,
+            // The loader's line feed, the text's last byte, and the text's end stand at the
+            // file's end.
+            TextOrigin::Shifted(skipped) => offset
+                .min(self.text.len().saturating_sub(1))
+                .saturating_add(*skipped),
             TextOrigin::Decoded(offsets) => offsets
                 .get(offset)
                 .or_else(|| offsets.last())

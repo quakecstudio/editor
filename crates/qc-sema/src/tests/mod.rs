@@ -16,6 +16,7 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod definitions;
 mod dialect;
 mod dialect_builtins;
 mod dialect_full;

@@ -35,9 +35,11 @@ use std::path::{Path, PathBuf};
 use qc_diag::Diagnostic;
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
+use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess};
 use crate::lower::{FileDecls, lower_file};
-use crate::resolve::{FileDiagnostic, ModuleIndex, ResolveOptions, resolve_mapped, resolve_module};
+use crate::resolve::{
+    FileDiagnostic, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
+};
 use crate::symbol::{FileId, Location};
 
 /// How many times each memoized query actually ran, as opposed to being served from cache.
@@ -74,10 +76,13 @@ impl ModuleAnalysis {
 }
 
 /// The parse and lowering of one compiled file's expansion, kept while the expansion's text
-/// is the same.
+/// and the lexer's flags in it are the same.
 #[derive(Clone, Debug)]
 struct ExpandedFile {
     text: Vec<u8>,
+    /// The compiler flags FTEQCC's lexer read in the text, from each rendered offset
+    /// (FTEF-12.12).
+    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -366,7 +371,7 @@ impl Db {
         let mut syntax = preprocessed.diagnostics;
         let mut decls = Vec::with_capacity(input.compiled.len());
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
-            let file = self.expanded_file(id, &rendered.text);
+            let file = self.expanded_file(id, rendered);
             for d in file.parse.diagnostics() {
                 syntax.push(locate_diagnostic(&rendered.origins, id, d));
             }
@@ -378,13 +383,30 @@ impl Db {
             .iter()
             .map(|r| r.noref.as_slice())
             .collect();
+        // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
+        // `*extensions.qc`.
+        let extensions = self
+            .paths
+            .iter()
+            .filter(|(_, path)| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.to_ascii_lowercase().ends_with("extensions.qc"))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        let sources = Sources {
+            maps: &maps,
+            noref: &noref,
+            extensions,
+        };
         self.bump_module_index();
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
         };
         let analysis = ModuleAnalysis {
-            index: resolve_mapped(&decls, &maps, &noref, options),
+            index: resolve_mapped(&decls, &sources, options),
             syntax,
         };
         self.analysis = Some(Memo {
@@ -402,20 +424,24 @@ impl Db {
         self.expanded.get(&file).map(|expanded| &expanded.decls)
     }
 
-    /// The parse and lowering of compiled file `file` whose expansion is `text`: the cached
-    /// ones when the expansion is unchanged, otherwise parsed and lowered again.
-    fn expanded_file(&mut self, file: FileId, text: &[u8]) -> ExpandedFile {
+    /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
+    /// ones when the expansion and the lexer's flags in it are unchanged, otherwise parsed and
+    /// lowered again.
+    fn expanded_file(&mut self, file: FileId, rendered: &Rendered) -> ExpandedFile {
+        let text = rendered.text.as_slice();
         if let Some(cached) = self.expanded.get(&file)
             && cached.text == text
+            && cached.lex_flags == rendered.lex_flags
         {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_preprocessed(text, self.dialect);
+        let parse = qc_syntax::parse_preprocessed_flagged(text, self.dialect, &rendered.lex_flags);
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
+            lex_flags: rendered.lex_flags.clone(),
             parse,
             decls,
         };
