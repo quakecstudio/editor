@@ -164,7 +164,7 @@ FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`)
 - **PRJ-4.5** A module's source that cannot be read is error `E0402` (QCD-5.2) and the
   module has no files.
 - **PRJ-4.6** Under the FTEQCC and GMQCC dialects a module's source is read as the text FTEQCC's
-  `QCC_LoadFile` gives it (`dialect-fteqcc.md` FTEF-14.54): FTEQCC's `QCC_main` loads it with
+  `QCC_LoadFile` gives it (`dialect-fteqcc.md` FTEF-14.64): FTEQCC's `QCC_main` loads it with
   `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)` before `pr_file_p =
   QCC_COM_Parse(qccmsrc);` reads its first word and `if (*qcc_token == '#')` picks the source
   form (`qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`). So a source
@@ -305,7 +305,7 @@ malformed directive without a diagnostic.
   (FTEF-14.37), whose one count of open sides runs from file to file, so a side an included file
   leaves open is closed, or ended by an `#else`, in the file that included it, and QC-9.12 does
   not hold; `#eof` and `#package` end the file, and `#pragma DONT_COMPILE_THIS_FILE` passes over
-  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.44); an
+  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.65); an
   `#includelist`'s words, and the directives on its lines, are read as FTEF-14.41 says, so a
   word in quotes names a file with the quotes in its name; and `FTEQCC` and `__FTEQCC__` are
   defined before the module's `defines` (FTEF-14.48). Between directives the code is read as the
@@ -315,7 +315,7 @@ malformed directive without a diagnostic.
   `progs.src` is still read as PRJ-5.1 and QC-23 say, in the text PRJ-4.6 gives.
   So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
   an `#include` or an `#includelist`, after or around each directive form of FTEF-14.35 to
-  FTEF-14.44 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
+  FTEF-14.65 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
   one file that binds `f` FTEQCC binds it from exactly when the graph lists it.
 - **PRJ-5.14** Deliberate divergences of PRJ-5.13, as the graph expands no macro: a directive a
   macro's body or arguments hold is run where it stands in the file's text, not where the

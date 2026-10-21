@@ -278,7 +278,7 @@ fn appended_text_stays_apart_from_the_body() {
 }
 
 // spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands, and the
-// text goes on after it, which FTEQCC's file loader made a space (FTEF-14.54)
+// text goes on after it, which FTEQCC's file loader made a space (FTEF-14.64)
 #[test]
 fn a_nul_after_a_name_ends_the_word() {
     assert_eq!(

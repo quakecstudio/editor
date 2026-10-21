@@ -19,6 +19,9 @@ pub mod cond;
 mod fte_directive;
 mod fte_line;
 mod fte_macro;
+mod fte_pragma;
+pub(crate) mod fte_tables;
+mod fte_warning;
 mod source;
 
 #[cfg(test)]
@@ -28,11 +31,14 @@ pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_as, qcc_load_file, qcc_load_in_place,
 };
 pub use fte_line::{fte_directive_end, relex_from};
+pub use fte_pragma::FlagSettings;
+pub use fte_tables::FteFlag;
+pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
 pub use source::{
     FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
 };
 
-use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
+use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -137,6 +143,11 @@ pub struct FileOutput {
     /// token after it, whether it asks for autoprototyping, and the directive's span
     /// (FTEF-12.10).
     pub autoproto: Vec<(usize, bool, FileSpan)>,
+    /// In an FTEQCC dialect, FTEQCC's warning settings where the file starts, at token 0, and
+    /// after each `#pragma warning` that changes them: the index of the first token after it and
+    /// the settings from there on (FTEF-14.63), for the warnings the parser and the semantic
+    /// model report.
+    pub warnings: Vec<(usize, WarningSettings)>,
 }
 
 #[derive(Debug)]
@@ -148,6 +159,9 @@ struct Macro {
     body: Body,
     file: FileId,
     name_span: Span,
+    /// Under FTEQCC, `cnst->evil`: the body holds a directive (FTEF-14.46), so FTEQCC gives no
+    /// "is not a macro parameter" warning for it (FTEF-14.61).
+    evil: bool,
 }
 
 /// Whether a macro's parameter list ends in `...`, taking the arguments after the named ones
@@ -294,7 +308,7 @@ fn lex_from(text: &[u8], range: Range<usize>, dialect: Dialect) -> qc_lexer::Lex
         .iter()
         .rev()
         .take_while(|&&b| b != b'\n')
-        .all(|&b| qc_lexer::is_whitespace(b));
+        .all(|&b| dialect.is_whitespace(b));
     if line_start {
         return lex_with(part, dialect);
     }
@@ -352,6 +366,17 @@ impl TokenStream {
             diagnostics: lexed.diagnostics,
             read_on: 0,
         }
+    }
+
+    /// Where reading stands: after the last token read, or where reading went on after a
+    /// directive or a use's arguments when that is later.
+    fn read_offset(&self) -> usize {
+        let token_end = self
+            .pos
+            .checked_sub(1)
+            .and_then(|before| self.tokens.get(before))
+            .map_or(0, |token| token.span.end);
+        token_end.max(self.read_on)
     }
 
     /// Where the code before the token at `hash`, the next to be read, is read from: the end of
@@ -438,10 +463,14 @@ impl Relexed {
         let next = tokens.partition_point(|t| t.span.start < offset);
         let before = next.checked_sub(1).and_then(|last| tokens.get(last));
         let gap_start = before.map_or(0, |t| t.span.end);
+        // FTEF-13.18: under FTEQCC a line ending in the gap was read by `QCC_PR_LexComment`,
+        // which reading on reads otherwise, so the text after it is lexed again.
         let clean = gap_start <= offset
-            && text
-                .get(gap_start..offset)
-                .is_some_and(|gap| gap.iter().all(|&b| qc_lexer::is_whitespace(b)));
+            && text.get(gap_start..offset).is_some_and(|gap| {
+                gap.iter().all(|&b| dialect.is_whitespace(b))
+                    && !(dialect.has_fteqcc_extensions()
+                        && gap.iter().any(|&b| b == b'\n' || b == b'\r'))
+            });
         if clean {
             return None;
         }
@@ -500,7 +529,7 @@ impl Relexed {
             !matches!(last.kind, TokenKind::String(_)) && last.span.end < window.len()
         }) && window
             .get(last_end..)
-            .is_some_and(|after| after.iter().all(|&b| qc_lexer::is_whitespace(b)))
+            .is_some_and(|after| after.iter().all(|&b| dialect.is_whitespace(b)))
             && !lexed
                 .tokens
                 .iter()
@@ -551,6 +580,10 @@ struct Cursor {
     /// Under FTEQCC, the line a `#pragma line` gave the file's line starting at this offset
     /// (FTEF-14.43).
     line_base: Option<(usize, i32)>,
+    /// Under FTEQCC, the warning settings from each offset of the file on, the first at 0, so
+    /// its lexical warnings are reported as the settings where FTEQCC read them say
+    /// (FTEF-14.63).
+    warnings: Vec<(usize, WarningSettings)>,
 }
 
 impl Cursor {
@@ -586,6 +619,9 @@ struct Run {
     /// Under FTEQCC, how many directives have been run inside another reading, so that a
     /// macro use's scan knows whether its arguments ran any (FTEF-14.45).
     directives_run: usize,
+    /// Under FTEQCC, its warning settings now, which every warning reported goes through
+    /// (FTEF-14.63); `None` under the vanilla dialect.
+    warnings: Option<WarningSettings>,
     out: FileOutput,
 }
 
@@ -616,7 +652,23 @@ impl Expanded {
 }
 
 impl Run {
+    /// Reports a diagnostic, under FTEQCC as its warning settings now say (FTEF-14.63).
     fn report(&mut self, code: Code, message: impl Into<String>, span: FileSpan) {
+        let settings = self.warnings;
+        self.report_under(settings.as_ref(), code, message, span);
+    }
+
+    /// Reports a diagnostic as the warning settings `settings` say, if any (FTEF-14.63).
+    fn report_under(
+        &mut self,
+        settings: Option<&WarningSettings>,
+        code: Code,
+        message: impl Into<String>,
+        span: FileSpan,
+    ) {
+        let Some(code) = settings.map_or(Some(code), |s| s.reported_code(code)) else {
+            return;
+        };
         self.out.diagnostics.push(Diagnostic {
             code,
             message: message.into(),
@@ -786,8 +838,9 @@ impl<L: Loader> Preprocessor<L> {
             .map(|dir| dir.as_os_str().as_encoded_bytes().to_vec())
             .collect();
         if self.dialect.has_fteqcc_extensions() {
+            // FTEF-14.59: FTEQCC prints a `-I` option's warning against no file, "cmdline".
             for dir in &self.command_line_dirs {
-                self.fte.add_include_dir(dir);
+                let _ = self.fte.add_include_dir(dir);
             }
         }
         self
@@ -860,11 +913,17 @@ impl<L: Loader> Preprocessor<L> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
-        let file = self.add_source(path.clone(), bytes, start);
+        let warnings = self
+            .dialect
+            .has_fteqcc_extensions()
+            .then_some(self.fte.warnings);
         let mut run = Run {
             unit: name.clone(),
+            warnings,
             ..Run::default()
         };
+        run.out.warnings.extend(warnings.map(|w| (0, w)));
+        let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
@@ -879,15 +938,36 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Adds the file at `path`, of `bytes`, to the files read: in an FTEQCC dialect the text
-    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.54), past a `#!` first line in a
+    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.64), past a `#!` first line in a
     /// module's source (PRJ-4.8), in the vanilla dialect the bytes (QC-1.1).
-    fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>, start: FileStart) -> FileId {
-        let (text, origin) = if self.dialect.has_fteqcc_extensions() {
+    fn add_source(
+        &mut self,
+        run: &mut Run,
+        path: PathBuf,
+        bytes: Vec<u8>,
+        start: FileStart,
+    ) -> FileId {
+        let fteqcc = self.dialect.has_fteqcc_extensions();
+        let nul = fteqcc.then(|| first_nul(&bytes)).flatten();
+        let (text, origin) = if fteqcc {
             qcc_load_as(bytes, start)
         } else {
-            (bytes, TextOrigin::default())
+            (bytes, TextOrigin::Bytes)
         };
-        self.sources.add(path, text, origin)
+        let file = self.sources.add(path, text, origin);
+        // FTEF-14.64: "file contains null bytes %u/%zu", once a file.
+        if let Some((at, len)) = nul {
+            let span = FileSpan {
+                file,
+                span: Span::new(at, at.saturating_add(1)),
+            };
+            run.report(
+                Code::W0117,
+                format!("file contains null bytes {at}/{len}"),
+                span,
+            );
+        }
+        file
     }
 
     /// In an FTEQCC dialect, a `#` right before the name of a macro it may expand is that
@@ -946,6 +1026,7 @@ impl<L: Loader> Preprocessor<L> {
             skip_start: None,
             start,
             line_base: None,
+            warnings: vec![(0, self.fte.warnings)],
         }
     }
 
@@ -1116,7 +1197,17 @@ impl<L: Loader> Preprocessor<L> {
                 .iter()
                 .any(|s| s.start <= d.span.start && d.span.start < s.end);
             if !skipped {
-                run.report(
+                // FTEF-14.63: as the settings where FTEQCC read the bytes say.
+                let settings = run.warnings.and_then(|_| {
+                    cursor
+                        .warnings
+                        .iter()
+                        .rev()
+                        .find(|(from, _)| *from <= d.span.start)
+                        .map(|&(_, settings)| settings)
+                });
+                run.report_under(
+                    settings.as_ref(),
                     d.code,
                     d.message,
                     FileSpan {
@@ -1287,6 +1378,7 @@ impl<L: Loader> Preprocessor<L> {
             body: Body::Tokens(body),
             file,
             name_span: *name_span,
+            evil: false,
         };
         self.macros.insert(name.clone(), Rc::new(mac));
     }
@@ -1348,7 +1440,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, FileSpan { file, span: whole });
             return;
         }
-        let included = self.add_source(path.clone(), bytes, FileStart::Included);
+        let included = self.add_source(run, path.clone(), bytes, FileStart::Included);
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let cursor = self.cursor(included, path, name, TextStart::Included);
         run.cursors.push(cursor);

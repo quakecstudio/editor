@@ -28,7 +28,7 @@ use crate::{FileId, Relexed, merge_errors};
 /// `QCC_PR_SkipToEndOfLine` ends it (FTEF-14.35), after the operand the directive reads: a
 /// `#define`'s body (FTEF-14.24), an `#if` or `#elif` test (FTEF-14.33, FTEF-14.37), and so on.
 /// A `#pragma` ends at its line break (FTEF-14.43), an `#if` with no white space after its name,
-/// as `#iffy`, after its word (FTEF-14.36), and an `#eof`, after which FTEQCC reads nothing, at
+/// as `#iffy`, after its word (FTEF-14.57), and an `#eof`, after which FTEQCC reads nothing, at
 /// its line break. Implements FTEF-14.51 and FTEF-14.53.
 #[must_use]
 pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize> {
@@ -54,7 +54,7 @@ pub fn fte_directive_end(text: &[u8], from: usize, hash: usize) -> Option<usize>
             ..
         } => line(condition_end(text, from)),
         Directive::If { end, .. } => end.at,
-        Directive::NotIf { word_end } => word_end,
+        Directive::NotIf { word } => word.end,
         Directive::Define { word_end, .. } => {
             let reading = Reading::File(FileId(0), text);
             line(read_define(&reading, word_end).1)

@@ -5,7 +5,7 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_LoadFile, QCC_SanitizeCharSet, decodeUTF
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qccmain.c, QCC_main
 
-//! The text FTEQCC's file loader hands its lexer (`docs/spec/dialect-fteqcc.md` FTEF-14.54):
+//! The text FTEQCC's file loader hands its lexer (`docs/spec/dialect-fteqcc.md` FTEF-14.64):
 //! `QCC_LoadFile` reads the file's bytes, `QCC_SanitizeCharSet` decodes a file that starts with a
 //! UTF-32 or UTF-16 byte order mark to UTF-8 and skips a UTF-8 one, and every NUL byte left is a
 //! space. In a module's source `QCC_main` then passes over a first line that starts with `#!`
@@ -142,16 +142,49 @@ fn encode(code: u32, text: &mut Vec<u8>) -> usize {
 }
 
 /// The text `QCC_LoadFile` hands FTEQCC's lexer for a file of `bytes`, and where it stands in
-/// them. Implements FTEF-14.54.
+/// them. Implements FTEF-14.64.
 ///
 /// `QCC_SanitizeCharSet` decodes a file that starts with the byte order mark of UTF-32LE,
 /// UTF-32BE, UTF-16LE or UTF-16BE, tested in that order, to UTF-8 (`decodeUTF`), skips a UTF-8
 /// one, and leaves any other file as it is; then `QCC_LoadFile` makes every NUL byte of the text
-/// a space (`else if (!mem[check])`, `mem[check] = ' ';`). It also writes a line break after the
-/// text (`mem[len] = '\n';`), which this function does not add: the readers take the end of the
-/// text for the end of its last line (FTEF-14.54).
+/// a space (`else if (!mem[check])`, `mem[check] = ' ';`), and writes a line feed after the
+/// text (`mem[len] = '\n';`), so every reader meets a line's end before the text's (FTEF-14.64).
 pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
-    let (mut text, origin) = if let Some(wide) = Wide::of(&bytes) {
+    let (mut text, origin) = sanitize(bytes);
+    for byte in &mut text {
+        if *byte == 0 {
+            *byte = b' ';
+        }
+    }
+    text.push(b'\n');
+    let origin = match origin {
+        // The line feed stands at the end of the last code unit read.
+        TextOrigin::Decoded(mut offsets) => {
+            let end = offsets.last().copied().unwrap_or_default();
+            offsets.push(end);
+            TextOrigin::Decoded(offsets)
+        }
+        other => other,
+    };
+    (text, origin)
+}
+
+/// The first NUL byte of the text `QCC_SanitizeCharSet` makes of `bytes` and the text's length,
+/// which FTEQCC's warning "file contains null bytes %u/%zu" names (FTEF-14.64); `None` when it
+/// holds none.
+pub(crate) fn first_nul(bytes: &[u8]) -> Option<(usize, usize)> {
+    if !bytes.contains(&0) {
+        return None;
+    }
+    let (text, _) = sanitize(bytes.to_vec());
+    let at = text.iter().position(|&b| b == 0)?;
+    Some((at, text.len()))
+}
+
+/// `QCC_SanitizeCharSet`'s text of `bytes`: decoded from UTF-16 or UTF-32 after a byte order
+/// mark, past a UTF-8 one, or the bytes.
+fn sanitize(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
+    if let Some(wide) = Wide::of(&bytes) {
         let from = wide.mark().len();
         let (text, offsets) = decode_utf(wide, bytes.get(from..).unwrap_or_default(), from);
         (text, TextOrigin::Decoded(offsets))
@@ -161,22 +194,16 @@ pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
         (text, TextOrigin::Shifted(UTF8_BOM.len()))
     } else {
         (bytes, TextOrigin::Shifted(0))
-    };
-    for byte in &mut text {
-        if *byte == 0 {
-            *byte = b' ';
-        }
     }
-    (text, origin)
 }
 
 /// [`qcc_load_file`]'s text for a file of `bytes`, kept at the file's own offsets for a reader
 /// of the file as written, the syntax tree, and where that text starts. Implements FTEF-14.56.
 ///
 /// The bytes of a UTF-8 byte order mark `QCC_SanitizeCharSet` skips stay in front, so the text
-/// starts after them, and each NUL byte is a space; a file with no NUL is borrowed as it is.
-/// `None` for a file the loader decodes from UTF-16 or UTF-32, whose text is at other offsets
-/// than its bytes.
+/// starts after them, each NUL byte is a space, and the loader's line feed follows the file's
+/// bytes, one past its end (FTEF-14.64). `None` for a file the loader decodes from UTF-16 or
+/// UTF-32, whose text is at other offsets than its bytes.
 #[must_use]
 pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
     if Wide::of(bytes).is_some() {
@@ -187,13 +214,11 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
     } else {
         0
     };
-    if !bytes.contains(&0) {
-        return Some((Cow::Borrowed(bytes), start));
-    }
-    let text = bytes
+    let mut text: Vec<u8> = bytes
         .iter()
         .map(|&byte| if byte == 0 { b' ' } else { byte })
         .collect();
+    text.push(b'\n');
     Some((Cow::Owned(text), start))
 }
 

@@ -57,6 +57,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-2.8** `E0119` "Name for frame macro NAME is too long": under an FTEQCC profile, a new
   frame name of 64 bytes or more, at the name, FTEQCC's error of the same text
   (`dialect-fteqcc.md`, FTEF-18.29).
+- **QCD-2.9** `E0123` "Invalid UTF-8 code sequence before WORD. Lead byte was 0xNN", or "Invalid
+  UTF-8 code sequence at end of line. Lead byte was 0xNN": under an FTEQCC profile, a byte that
+  starts no UTF-8 sequence in a name, at the name, FTEQCC's error of the same text
+  (`dialect-fteqcc.md`, FTEF-13.16).
+- **QCD-2.10** `E0124` "bad suffix on number TEXT": under an FTEQCC profile, a letter, a digit, `_`
+  or a byte of 0x80 or more right after a number, at the number, FTEQCC's error of the same text
+  (`dialect-fteqcc.md`, FTEF-13.17).
 
 ## QCD-3 Declaration and type errors
 
@@ -254,6 +261,42 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   profile, a `#define` or `#append` whose body has a continued line that starts with `#`, at
   that `#`, when `#pragma warning enable F303` (or `on` or `toggle`) has made FTEQCC's F303 a
   warning (`dialect-fteqcc.md`, FTEF-14.46).
+- **QCD-7.32** `W0110` "A leading 0 is interpreted as base-8.": under an FTEQCC profile, a number
+  that starts with `0` and then a digit, at the `0`, FTEQCC's warning `octal` of the same text
+  (`dialect-fteqcc.md`, FTEF-13.19).
+- **QCD-7.33** `W0111` "numerical overflow", or "numerical overflow N will be rounded to F": under
+  an FTEQCC profile, a number whose stored value is not the number, at the number, FTEQCC's warning
+  F312 of the same text (`dialect-fteqcc.md`, FTEF-13.19).
+- **QCD-7.34** `W0112` "\"/*\" inside comment": under an FTEQCC profile, a `/*` inside a `/* */`
+  comment, at the `/*`, FTEQCC's warning F325 of the same text (`dialect-fteqcc.md`, FTEF-13.18).
+- **QCD-7.35** `W0113` "TEXT": under an FTEQCC profile, a `#pragma` or `#if` form FTEQCC's warning
+  Q120 (`WARN_BADPRAGMA`) is about, at the directive, with FTEQCC's text (`dialect-fteqcc.md`,
+  FTEF-12.11).
+- **QCD-7.36** `W0114` "Precompiler constant NAME was not defined": under an FTEQCC profile, an
+  `#undef` of no macro, at the directive, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
+  FTEF-14.57).
+- **QCD-7.37** `W0115` "TEXT": under an FTEQCC profile, a `#define` or `#append` FTEQCC's warning
+  F315 (`WARN_DUPLICATEPRECOMPILER`) is about, at the directive, with FTEQCC's text: "Alternate
+  precompiler definition of NAME (OLD -> NEW)", "different number of macro arguments in macro
+  append", "arguments differ in macro append" and "EOF inside quote in define NAME"
+  (`dialect-fteqcc.md`, FTEF-14.58). Under the vanilla profile a changed macro is `W0102`.
+- **QCD-7.38** `W0116` "Identical precompiler definition of NAME": under an FTEQCC profile, a
+  `#define` that gives a macro the body it has, at the directive, while `#pragma warning` has made
+  FTEQCC's F316 a warning (`dialect-fteqcc.md`, FTEF-14.58).
+- **QCD-7.39** `W0117` "TEXT": under an FTEQCC profile, a warning FTEQCC gives no name, which no
+  `#pragma warning` sets, at the construct, with FTEQCC's text: "Include path too long.", "Too many
+  include dirs. Ignoring and hoping the stars align." (FTEF-14.59), "file contains null bytes N/LEN"
+  (FTEF-14.64), "Unknown target 'NAME'. Ignored." with its list and "target revision N is unknown,
+  assuming revision M" (FTEF-12.11), and "'#NAME' is not a macro parameter in MACRO" (FTEF-14.61)
+  (`dialect-fteqcc.md`).
+- **QCD-7.40** `W0118` "** is unsafe around pointers, use *^ instead.": under an FTEQCC profile
+  with FTEQCC's `ssp` flag on, a `**`, FTEQCC's warning F321 of the same text (`dialect-fteqcc.md`,
+  FTEF-12.12).
+- **QCD-7.41** `W0119` "TEXT": under an FTEQCC profile, a string FTEQCC's warning F301
+  (`WARN_NOTUTF8`) is about, while `#pragma warning` has made it a warning, with FTEQCC's text
+  (`dialect-fteqcc.md`, FTEF-13.22).
+- **QCD-7.42** `W0120` "2d vector": under an FTEQCC profile, a vector of two components, while
+  `#pragma warning` has made FTEQCC's F311 a warning (`dialect-fteqcc.md`, FTEF-13.22).
 
 ## QCD-8 Preprocessor errors
 
@@ -300,3 +343,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   place of those of QCD-8.2, QCD-8.3 and QCD-8.6: "#else outside of #if", for an `#else` or
   `#elif`, and "unmatched #endif" (FTEF-14.37); "#if with no endif" (FTEF-14.37); and "Not a
   string literal (on a #include)" and "#include continued over line boundry" (FTEF-14.40).
+- **QCD-8.17** `E0125` "TEXT": under an FTEQCC profile, a warning `#pragma warning error` (or the
+  default) makes FTEQCC report as an error, FTEQCC's "werror", at the warning's place, with the
+  warning's text (`dialect-fteqcc.md`, FTEF-14.63). FTEQCC's F303 is `E0122` (QCD-8.15).
+- **QCD-8.18** Under an FTEQCC profile `E0103`, `E0105`, `E0501` and `E0502` have FTEQCC's texts:
+  "Unknown escape char C", "Input string is not valid utf-8" and "Unable to mask non-ascii chars.
+  Attempting to mask bytes" (FTEF-13.21); "Unknown punctuation: '\xNN'" (FTEF-13.15); "EOF inside
+  comment" (FTEF-13.18); and "String length exceeds 8191" (FTEF-13.20).

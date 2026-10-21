@@ -41,6 +41,7 @@ use qc_syntax::{Code, Dialect, ast};
 use super::Oracles;
 
 mod directives;
+mod lexical;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -106,7 +107,7 @@ pub(crate) struct Case {
 }
 
 /// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
-/// encoding FTEQCC's file loader decodes (FTEF-14.54).
+/// encoding FTEQCC's file loader decodes (FTEF-14.64).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Encoding {
     Utf8,
@@ -114,6 +115,9 @@ pub(crate) enum Encoding {
     Utf16Be,
     Utf32Le,
     Utf32Be,
+    /// Each char of the text, all below U+0100, as the one byte of its code: for bytes no UTF-8
+    /// text holds (FTEF-13.16, FTEF-13.21).
+    Latin1,
 }
 
 impl Encoding {
@@ -123,6 +127,10 @@ impl Encoding {
         let utf32 = || text.chars().map(u32::from);
         match self {
             Self::Utf8 => text.as_bytes().to_vec(),
+            Self::Latin1 => text
+                .chars()
+                .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+                .collect(),
             Self::Utf16Le => [0xff, 0xfe]
                 .into_iter()
                 .chain(utf16().flat_map(u16::to_le_bytes))
@@ -150,6 +158,7 @@ impl Encoding {
             Self::Utf16Be => Some("utf-16be"),
             Self::Utf32Le => Some("utf-32le"),
             Self::Utf32Be => Some("utf-32be"),
+            Self::Latin1 => Some("latin-1"),
         }
     }
 }
@@ -168,7 +177,7 @@ pub(crate) struct Project {
     pub(crate) progs: Option<ProgsSrc>,
 }
 
-/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.54): its
+/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.64): its
 /// text and how that is written as bytes. Its compiled file is `t.qc`, which it need not list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProgsSrc {
@@ -1178,6 +1187,7 @@ pub(crate) fn cases() -> Vec<Case> {
         }
     }
     cases.extend(directives::cases());
+    cases.extend(lexical::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));

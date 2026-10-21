@@ -323,7 +323,7 @@ fn open_blocks_at_the_end_of_a_file() {
 
 // spec FTEF-12.6: `#pragma noref N` is recorded at the token it precedes, so the definitions
 // after it are `noref` or not
-// spec FTEF-14.44: its text is read with `atoi`, so one with no number, or a `(`, is 0
+// spec FTEF-14.65: its text is read with `atoi`, so one with no number, or a `(`, is 0
 #[test]
 fn noref_pragmas_are_recorded() {
     let (_, out) = one_fte(
@@ -440,15 +440,18 @@ fn frame_macros_limit_is_the_program() {
     assert_eq!(fte(&full).1, vec![Code::E0504]);
 }
 
-// spec FTEF-12.2, FTEF-12.3, FTEF-12.4, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are
-// accepted and produce no tokens.
+// spec FTEF-12.2, FTEF-12.3, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are accepted and
+// produce no tokens
+// spec FTEF-12.11: an unknown one is the Q120 warning "Unknown pragma 'NAME'"
 #[test]
 fn other_pragmas_are_accepted() {
     let pragmas = "#pragma TARGET FTE\n#pragma PROGS_DAT \"../progs.dat\"\n\
                    #pragma progs_dat \"x\"\n#pragma sourcefile client/progs.src\n\
                    #pragma flag enable assumeint\n#pragma forcecrc 54730\n#pragma once\n\
                    #pragma optimise 2\n#pragma unknown thing\nz\n";
-    assert_eq!(fte(pragmas), ("z".to_owned(), vec![]));
+    assert_eq!(fte(pragmas), ("z".to_owned(), vec![Code::W0113]));
+    let (_, out) = one_fte("#pragma unknown thing\n");
+    assert_eq!(out.diagnostics[0].message, "Unknown pragma 'unknown'");
 }
 
 // spec FTEF-18.29: a frame macro another reading of a file defined (an earlier file, an
@@ -552,16 +555,23 @@ fn a_long_model_name_is_cut() {
     assert!(!Code::W0107.is_error());
 }
 
-// spec QCD-7.2: a redefinition that differs only in its parameter list warns
-// spec FTEF-14.5: and so does one that differs only in being variadic
+// spec FTEF-14.58: a redefinition with the same body is F316's "Identical precompiler
+// definition", ignored unless a pragma says otherwise, whatever its parameters, variadic or not
+// spec FTEF-14.5: a variadic list is a parameter list as any other there
 #[test]
 fn a_redefinition_with_other_parameters_warns() {
-    assert_eq!(fte("#define A 1\n#define A() 1\n").1, vec![Code::W0102]);
+    assert_eq!(fte("#define A 1\n#define A() 1\n").1, vec![]);
+    assert_eq!(fte("#define V(a, ...) x\n#define V(a) x\n").1, vec![]);
     assert_eq!(
-        fte("#define V(a, ...) x\n#define V(a) x\n").1,
-        vec![Code::W0102]
+        fte("#define V(a, ...) x\n#define V(a, ...) y\n").1,
+        vec![Code::W0115]
     );
-    assert_eq!(fte("#define V(a, ...) x\n#define V(a, ...) x\n").1, vec![]);
+    let (_, out) = one_fte("#pragma warning enable F316\n#define V(a, ...) x\n#define V(a) x\n");
+    assert_eq!(codes(&out), vec![Code::W0116]);
+    assert_eq!(
+        out.diagnostics[0].message,
+        "Identical precompiler definition of V"
+    );
 }
 
 // spec FTEF-14.14: a pasted text that lexes as one token is that token, a number or an
@@ -712,7 +722,8 @@ fn pragma_file_names_the_file() {
         fte_in("t.qc", "#pragma file(e\\\\x)\n__FILE__\n"),
         (vec![string(b"e\\x")], vec![])
     );
-    assert_eq!(fte_in("t.qc", "#pragma warning 'x\n").1, vec![]);
+    // FTEF-14.63: the text is no lexical error, but `'` is no warning state FTEQCC knows.
+    assert_eq!(fte_in("t.qc", "#pragma warning 'x\n").1, vec![Code::W0113]);
     assert_eq!(
         names("#pragma file(n)\n#define F __FILE__\nF\n"),
         [string(b"n")]
@@ -729,8 +740,13 @@ fn a_pragma_s_text_ends_at_its_line_s_break() {
         "#pragma message x \\\n",
         "#pragma message x /* y */ z\n",
     ] {
+        // `message` is no pragma FTEQCC knows (FTEF-12.11).
         let source = format!("{pragma}float f;\n");
-        assert_eq!(fte(&source), ("float f ;".to_owned(), vec![]), "{source:?}");
+        assert_eq!(
+            fte(&source),
+            ("float f ;".to_owned(), vec![Code::W0113]),
+            "{source:?}"
+        );
     }
     assert_eq!(fte("#pragma x /* a\nb */ float f;\n").0, "b * / float f ;");
     assert_eq!(fte("float g;\n#pragma x").0, "float g ;");

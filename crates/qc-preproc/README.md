@@ -38,7 +38,7 @@ file to file): it runs the directives of an FTEQCC file as the preprocessor does
 code between them as the preprocessor does, a token of the lexer at a time, and says which files
 the file brings in, by `#include` and `#includelist`, and which pragmas and `#output` it holds
 (PRJ-5.13, PRJ-5.14). Both read a file as the text FTEQCC's `QCC_LoadFile` hands its lexer
-(`fte_directive/load.rs`, FTEF-14.54): decoded from UTF-16 or UTF-32 after a byte order mark, past
+(`fte_directive/load.rs`, FTEF-14.64): decoded from UTF-16 or UTF-32 after a byte order mark, past
 a UTF-8 one, and with each NUL byte a space; `SourceFile::file_span` maps a span of that text back
 to the file's bytes, and `qcc_load_in_place` gives the syntax tree that text at the file's own
 offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` with

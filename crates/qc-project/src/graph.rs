@@ -670,7 +670,7 @@ impl<L: Loader> Builder<'_, L> {
         };
         let pragma = name.to_ascii_lowercase();
         let (args, _) = com_parse_words(args, false);
-        // FTEF-14.44: FTEQCC joins an include directory to the file being compiled and marks
+        // FTEF-14.65: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
         let marked = if self.dialect == Dialect::Fteqcc {
             &cursor.unit
@@ -843,7 +843,7 @@ impl<L: Loader> Builder<'_, L> {
 }
 
 /// The text of a module's source that its form is told from and a list is read from: under
-/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54)
+/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.64)
 /// past a `#!` first line (PRJ-4.8), under the vanilla dialect its bytes past a UTF-8 byte order
 /// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.7).
 fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {

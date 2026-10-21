@@ -21,7 +21,7 @@ mod lines;
 mod tests;
 
 pub use atof::atof;
-pub use fte_string::fteqcc_string_bytes;
+pub use fte_string::{FTEQCC_MAX_STRING, STRING_TOO_LONG, fteqcc_string_bytes};
 pub use lines::LineIndex;
 // The diagnostic vocabulary lives in `qc-diag`; re-exported here so code written against
 // `qc_lexer::{Code, Diagnostic, Span}` keeps compiling.
@@ -32,6 +32,13 @@ pub use qc_diag::{Code, Diagnostic, Severity, Span};
 /// `QC_MAX_TOKEN` in QC-3, from `pr_token[2048]` in `qcc/pr_lex.c`. A token of more than
 /// `QC_MAX_TOKEN - 1` bytes is an error (QC-27.4).
 pub const QC_MAX_TOKEN: usize = 2048;
+
+/// Longest token FTEQCC holds, including its terminating NUL.
+///
+/// `FTEQCC_MAX_TOKEN` in FTEF-13, from `char pr_token[8192];` in `qcc_pr_lex.c`: a string of
+/// more than `FTEQCC_MAX_TOKEN - 1` bytes is FTEQCC's "String length exceeds 8191", and a name
+/// or number that long runs past FTEQCC's buffer (FTEF-13.20).
+pub const FTEQCC_MAX_TOKEN: usize = 8192;
 
 /// Longest frame name id's `qcc` can store, without its NUL.
 ///
@@ -67,6 +74,26 @@ impl Dialect {
     pub const fn has_fteqcc_extensions(self) -> bool {
         matches!(self, Self::Fteqcc | Self::Gmqcc)
     }
+
+    /// Whether this dialect's lexer reads `b` as white space between tokens: under the vanilla
+    /// dialect every byte `<= ' '` as a signed `char` ([`is_whitespace`], QC-1.3, QC-2.1);
+    /// under an FTEQCC dialect only FTEQCC's `qcc_iswhite` bytes, a space, CR, LF, tab or VT
+    /// (FTEF-13.15), so another control byte is "Unknown punctuation" and a byte of 0x80 or
+    /// more starts a name (FTEF-13.16).
+    #[must_use]
+    pub const fn is_whitespace(self, b: u8) -> bool {
+        if self.has_fteqcc_extensions() {
+            is_fteqcc_whitespace(b)
+        } else {
+            is_whitespace(b)
+        }
+    }
+}
+
+/// FTEQCC's `qcc_iswhite`: a space, CR, LF, tab or vertical tab (FTEF-13.15).
+#[must_use]
+pub const fn is_fteqcc_whitespace(b: u8) -> bool {
+    matches!(b, b' ' | b'\r' | b'\n' | b'\t' | 0x0b)
 }
 
 /// A punctuation token, in the order the lexer tries them (QC-7.1).
@@ -410,6 +437,7 @@ pub fn lex_with(source: &[u8], dialect: Dialect) -> Lexed {
         pos: 0,
         dialect,
         out: Lexed::default(),
+        joined: 0,
     };
     lexer.run();
     lexer.out
@@ -445,6 +473,47 @@ fn hex_float(whole: &[u8], fraction: &[u8]) -> f32 {
     value
 }
 
+/// C's `(float)` of a `long long`: the nearest float (FTEF-13.19).
+fn i64_to_f32(value: i64) -> f32 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "spec FTEF-13.19: `(float)(num*sign)` rounds to the nearest float"
+    )]
+    let value = value as f32;
+    value
+}
+
+/// C's `(double)` of a `long long`: the nearest double (FTEF-13.19).
+fn i64_to_f64(value: i64) -> f64 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "spec FTEF-13.19: `pr_immediate._double = num*sign` rounds to the nearest double"
+    )]
+    let value = value as f64;
+    value
+}
+
+/// C's `(longlong)` of a float that holds a whole number: exact inside `long long`; outside it
+/// C's conversion is undefined, and this saturates (FTEF-13.19).
+fn f32_to_i64(value: f32) -> i64 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec FTEF-13.19: `(longlong)pr_immediate._float`, saturating outside `long long`"
+    )]
+    let value = value as i64;
+    value
+}
+
+/// C's `(longlong)` of a double that holds a whole number, as [`f32_to_i64`] (FTEF-13.19).
+fn f64_to_i64(value: f64) -> i64 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "spec FTEF-13.19: `(longlong)pr_immediate._double`, saturating outside `long long`"
+    )]
+    let value = value as i64;
+    value
+}
+
 const fn is_name_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
@@ -461,6 +530,9 @@ struct Lexer<'a> {
     pos: usize,
     dialect: Dialect,
     out: Lexed,
+    /// Under FTEQCC, the bytes of the string parts read together so far, which
+    /// `QCC_PR_LexString` joins into one token (FTEF-13.20).
+    joined: usize,
 }
 
 impl Lexer<'_> {
@@ -484,10 +556,22 @@ impl Lexer<'_> {
         });
     }
 
+    /// A token of `len` bytes at `span` longer than the dialect's token buffer holds: id's
+    /// `pr_token[2048]` (QC-27.4), FTEQCC's `pr_token[8192]` (FTEF-13.20).
     fn check_length(&mut self, len: usize, span: Span) {
-        if len > QC_MAX_TOKEN.saturating_sub(1) {
+        let max = if self.dialect.has_fteqcc_extensions() {
+            FTEQCC_MAX_TOKEN
+        } else {
+            QC_MAX_TOKEN
+        };
+        if len > max.saturating_sub(1) {
             self.error(Code::E0502, "token too long", span);
         }
+    }
+
+    /// Whether the dialect reads `b` as white space (QC-2.1, FTEF-13.15).
+    const fn white(&self, b: u8) -> bool {
+        self.dialect.is_whitespace(b)
     }
 
     fn push(&mut self, kind: TokenKind, start: usize) {
@@ -499,7 +583,7 @@ impl Lexer<'_> {
             .iter()
             .rev()
             .take_while(|&&b| b != b'\n')
-            .all(|&b| is_whitespace(b));
+            .all(|&b| self.white(b));
         self.out.tokens.push(Token {
             kind,
             span,
@@ -516,7 +600,7 @@ impl Lexer<'_> {
             .rposition(|&b| b == b'\n')
             .and_then(|nl| before.get(nl.saturating_add(1)..))
             .unwrap_or(before);
-        line.iter().find(|&&b| !is_whitespace(b)) == Some(&b'#')
+        line.iter().find(|&&b| !self.white(b)) == Some(&b'#')
     }
 
     fn run(&mut self) {
@@ -537,7 +621,7 @@ impl Lexer<'_> {
                 .then(|| self.fte_string_prefix(joins))
                 .flatten();
             if let Some(prefix) = fte_string {
-                self.fte_string(prefix);
+                self.fte_string(prefix, joins);
             } else if c == b'"' {
                 self.string();
             } else if c == b'\'' {
@@ -555,6 +639,8 @@ impl Lexer<'_> {
                     self.number()
                 };
                 self.push(TokenKind::Float(value), start);
+            } else if self.dialect.has_fteqcc_extensions() && (is_name_start(c) || c >= 0x80) {
+                self.fte_name();
             } else if is_name_start(c) {
                 self.name();
             } else if c == b'$' {
@@ -565,8 +651,12 @@ impl Lexer<'_> {
         }
     }
 
-    /// Skips whitespace and comments (QC-2).
+    /// Skips whitespace and comments (QC-2), as FTEQCC does in an FTEQCC dialect (FTEF-13.18).
     fn skip_trivia(&mut self) {
+        if self.dialect.has_fteqcc_extensions() {
+            self.fte_skip_trivia();
+            return;
+        }
         loop {
             while self.peek(0).is_some_and(is_whitespace) {
                 self.bump(1);
@@ -578,12 +668,136 @@ impl Lexer<'_> {
                     }
                 }
                 (Some(b'/'), Some(b'*')) => self.block_comment(),
-                // FTEF-13.2: in FTEQCC a `\` before a line break joins the lines. FTEQCC skips
-                // the LF of a CR LF with them; here it is whitespace, skipped by the next turn.
-                (Some(b'\\'), Some(b'\n' | b'\r')) if self.dialect.has_fteqcc_extensions() => {
-                    self.bump(2);
+                _ => return,
+            }
+        }
+    }
+
+    /// The white space and comments before a token, as FTEQCC's `QCC_PR_Lex` reads them
+    /// (FTEF-13.18): first `QCC_PR_LexComment`, which reads white space up to and including the
+    /// first line ending, a `//` comment up to its LF, the `//` comments of the lines right
+    /// after it, and the first `/* */` comment; then `QCC_PR_LexWhitespace`, which reads the
+    /// rest, a `//` comment ending at a LF or at a CR not before a LF (`qcc_islineending`). A
+    /// `\` before a line break joins the lines and the reading starts again after it, as
+    /// `QCC_PR_LexPunctuation` passes over them and calls `QCC_PR_Lex()` (FTEF-13.2).
+    fn fte_skip_trivia(&mut self) {
+        loop {
+            self.fte_lex_comment();
+            self.fte_lex_whitespace();
+            match (self.peek(0), self.peek(1), self.peek(2)) {
+                (Some(b'\\'), Some(b'\r'), Some(b'\n')) => self.bump(3),
+                (Some(b'\\'), Some(b'\n' | b'\r'), _) => self.bump(2),
+                _ => return,
+            }
+        }
+    }
+
+    /// FTEQCC's `qcc_islineending` at the current byte: a LF, or a CR not before a LF.
+    fn at_line_ending(&self) -> bool {
+        match self.peek(0) {
+            Some(b'\n') => true,
+            Some(b'\r') => self.peek(1) != Some(b'\n'),
+            _ => false,
+        }
+    }
+
+    /// `QCC_PR_LexComment`'s reading, up to where it calls `QCC_PR_LexWhitespace`.
+    fn fte_lex_comment(&mut self) {
+        let mut nl = false;
+        let mut first_block = true;
+        loop {
+            while self.peek(0).is_some_and(is_fteqcc_whitespace) {
+                if self.at_line_ending() {
+                    if nl {
+                        self.bump(1);
+                        return;
+                    }
+                    nl = true;
+                } else {
+                    self.bump(1);
+                    nl = false;
+                }
+            }
+            if nl {
+                return;
+            }
+            match (self.peek(0), self.peek(1)) {
+                (Some(b'/'), Some(b'/')) => {
+                    while self.peek(0).is_some_and(|b| b != b'\n') {
+                        self.bump(1);
+                    }
+                    // `pr_file_p++; QCC_PR_NewLine(false);`, which passes over the next line's
+                    // spaces and tabs, so only other white space there, a VT, reads its `//` as
+                    // this one's next line.
+                    if self.peek(0) == Some(b'\n') {
+                        self.bump(1);
+                        while matches!(self.peek(0), Some(b' ' | b'\t')) {
+                            self.bump(1);
+                        }
+                    }
+                    first_block = false;
+                    nl = true;
+                }
+                (Some(b'/'), Some(b'*')) if first_block => {
+                    self.fte_block_comment();
+                    return;
                 }
                 _ => return,
+            }
+        }
+    }
+
+    /// `QCC_PR_LexWhitespace`'s reading.
+    fn fte_lex_whitespace(&mut self) {
+        loop {
+            while self.peek(0).is_some_and(is_fteqcc_whitespace) {
+                self.bump(1);
+            }
+            match (self.peek(0), self.peek(1)) {
+                (Some(b'/'), Some(b'/')) => {
+                    while self.peek(0).is_some() && !self.at_line_ending() {
+                        self.bump(1);
+                    }
+                    self.bump(1);
+                }
+                (Some(b'/'), Some(b'*')) => self.fte_block_comment(),
+                _ => return,
+            }
+        }
+    }
+
+    /// An FTEQCC `/* */` comment at its `/` (FTEF-13.18): its `*/` is looked for from the byte
+    /// after the `*` (`pr_file_p+=1; do { pr_file_p++; ... } while (pr_file_p[0] != '*' ||
+    /// pr_file_p[1] != '/');`), so `/*/` opens a comment that runs on; a `/*` inside it is the
+    /// warning "\"/*\" inside comment" (`WARN_NESTEDCOMMENT`, F325); and with no `*/` it is
+    /// "EOF inside comment", at the `/*`.
+    fn fte_block_comment(&mut self) {
+        let start = self.pos;
+        let body = self.pos.saturating_add(2);
+        let rest = self.text.get(body..).unwrap_or_default();
+        let close = rest.windows(2).position(|w| w == b"*/");
+        // A `/*` that starts at a byte the loop checks: from the one after the opening `*`, so
+        // its `*` may be the closing `*/`'s.
+        let checked = rest
+            .get(..close.map_or(rest.len(), |at| at.saturating_add(1)))
+            .unwrap_or_default();
+        for (at, _) in checked.windows(2).enumerate().filter(|(_, w)| *w == b"/*") {
+            let at = body.saturating_add(at);
+            self.error(
+                Code::W0112,
+                "\"/*\" inside comment",
+                Span::new(at, at.saturating_add(2)),
+            );
+        }
+        match close {
+            Some(at) => self.pos = body.saturating_add(at).saturating_add(2),
+            None => {
+                self.pos = self.text.len();
+                self.error(
+                    Code::E0501,
+                    "EOF inside comment",
+                    Span::new(start, start.saturating_add(2)),
+                );
             }
         }
     }
@@ -717,6 +931,15 @@ impl Lexer<'_> {
             }
             (Some(b'0'), _) => {
                 self.bump(1);
+                // FTEF-13.19: `if (*pr_file_p >= '0' && *pr_file_p <= '9')`.
+                if self.peek(0).is_some_and(|b| b.is_ascii_digit()) {
+                    let zero = self.pos.saturating_sub(1);
+                    self.error(
+                        Code::W0110,
+                        "A leading 0 is interpreted as base-8.",
+                        Span::new(zero, self.pos),
+                    );
+                }
                 8
             }
             _ => 10,
@@ -751,28 +974,110 @@ impl Lexer<'_> {
                 } else {
                     atof(self.bytes(Span::new(start, self.pos)))
                 };
+                // `pr_file_p++; break;` passes over an `f` or `d` that is not put in `pr_token`.
+                let text_end = self.pos;
                 if matches!(self.peek(0), Some(b'f' | b'F' | b'd' | b'D')) {
                     self.bump(1);
                 }
                 self.check_length(self.pos.saturating_sub(start), Span::new(start, self.pos));
+                self.check_suffix(start, text_end);
                 return value;
             }
+            // `longlong num`: the digits accumulate in a signed 64-bit integer, which wraps on the
+            // two's complement builds FTEQCC runs on (FTEF-13.19).
+            let signed = i64::from_le_bytes(num.to_le_bytes());
+            let signed = if negative {
+                signed.wrapping_neg()
+            } else {
+                signed
+            };
             match c {
-                b'f' | b'F' | b'd' | b'D' => self.bump(1),
-                b'i' | b'I' | b'u' | b'U' | b'l' | b'L' => self.integer_suffix(c),
+                b'f' | b'F' => {
+                    self.bump(1);
+                    let value = i64_to_f32(signed);
+                    // `if ((longlong)pr_immediate._float != (longlong)num)`.
+                    if f32_to_i64(value) != signed {
+                        self.overflow(start, "numerical overflow".to_owned());
+                    }
+                }
+                b'd' | b'D' => {
+                    self.bump(1);
+                    if f64_to_i64(i64_to_f64(signed)) != signed {
+                        self.overflow(start, "numerical overflow".to_owned());
+                    }
+                }
+                b'i' | b'I' | b'u' | b'U' | b'l' | b'L' => {
+                    let long = self.integer_suffix(c);
+                    // `pr_immediate._int = num;`, then the warning unless `_int` is negative.
+                    let [a, b, c, d, ..] = signed.to_le_bytes();
+                    let int = i32::from_le_bytes([a, b, c, d]);
+                    if !long && i64::from(int) != signed && int >= 0 {
+                        self.overflow(start, "numerical overflow".to_owned());
+                    }
+                }
                 _ => {}
             }
             break;
         }
         self.check_length(self.pos.saturating_sub(start), Span::new(start, self.pos));
+        self.check_suffix(start, self.pos);
+        let signed = i64::from_le_bytes(num.to_le_bytes());
+        let signed = if negative {
+            signed.wrapping_neg()
+        } else {
+            signed
+        };
         // `(float)(num*sign)`: the whole number rounded to the nearest float.
-        let value = num.to_string().parse::<f32>().unwrap_or(f32::MAX);
-        if negative { -value } else { value }
+        let value = i64_to_f32(signed);
+        let suffixed = self
+            .bytes(Span::new(digits, self.pos))
+            .last()
+            .is_some_and(|b| !b.is_ascii_hexdigit());
+        // `if ((longlong)pr_immediate._float != (longlong)num && base == 16)` for a number with
+        // no suffix: "numerical overflow %lld will be rounded to %f".
+        if base == 16 && !suffixed && f32_to_i64(value) != signed {
+            let message = format!(
+                "numerical overflow {signed} will be rounded to {:.6}",
+                f64::from(value)
+            );
+            self.overflow(start, message);
+        }
+        value
+    }
+
+    /// FTEQCC's warning "numerical overflow" (`WARN_OVERFLOW`, F312) at the number from
+    /// `start` (FTEF-13.19).
+    fn overflow(&mut self, start: usize, message: String) {
+        self.error(Code::W0111, message, Span::new(start, self.pos));
+    }
+
+    /// FTEQCC's "bad suffix on number" after the number from `start`, whose `pr_token` is its
+    /// text to `text_end` (FTEF-13.17): `QCC_PR_ParseWarning(ERR_NOTANUMBER, ...)`, an error as
+    /// its code is an `ERR_` one, when a letter, a digit, `_` or a byte of 0x80 or more follows.
+    fn check_suffix(&mut self, start: usize, text_end: usize) {
+        let junk = self
+            .peek(0)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_' || b >= 0x80);
+        if !junk {
+            return;
+        }
+        // `pr_token[tokenlen++] = 'x';` writes a lowercase `x` for `0X` too.
+        let mut token = self.word_text(Span::new(start, text_end));
+        if let Some(at) = token.find("0X") {
+            token.replace_range(at..at.saturating_add(2), "0x");
+        }
+        self.error(
+            Code::E0124,
+            format!("bad suffix on number {token}"),
+            Span::new(start, self.pos),
+        );
     }
 
     /// The integer suffix of an FTEQCC number, whose first byte `c` is next: `i` or `u`, then
     /// an optional `l` or `ll`; or `l` or `ll`, then an optional `i` or `u` (FTEF-3.1).
-    fn integer_suffix(&mut self, c: u8) {
+    /// Returns whether it has an `l`, which makes the literal 64 bits wide
+    /// (`islong >= (flag_ILP32?2:1)`, FTEF-13.19).
+    fn integer_suffix(&mut self, c: u8) -> bool {
         self.bump(1);
         if matches!(c, b'l' | b'L') {
             if self.peek(0) == Some(c) {
@@ -781,11 +1086,15 @@ impl Lexer<'_> {
             if matches!(self.peek(0), Some(b'i' | b'I' | b'u' | b'U')) {
                 self.bump(1);
             }
+            true
         } else if let Some(l @ (b'l' | b'L')) = self.peek(0) {
             self.bump(1);
             if self.peek(0) == Some(l) {
                 self.bump(1);
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -802,14 +1111,29 @@ impl Lexer<'_> {
         self.bump(1);
         let mut value = [0.0_f32; 3];
         let fteqcc = self.dialect.has_fteqcc_extensions();
+        // FTEF-13.23: `QCC_PR_LexWhitespace (false);` before the first component, and after each,
+        // not `QCC_PR_LexComment`.
+        if fteqcc {
+            self.fte_lex_whitespace();
+        }
         for (index, component) in value.iter_mut().enumerate() {
             if fteqcc && index == 2 && self.peek(0) == Some(b'\'') {
+                // FTEF-13.22: `QCC_PR_ParseWarning (WARN_FTE_SPECIFIC, "2d vector");`.
+                self.error(
+                    Code::W0120,
+                    "2d vector",
+                    Span::new(start, self.pos.saturating_add(1)),
+                );
                 break;
             }
             if self.peek(0).is_some() {
                 *component = self.number();
             }
-            self.skip_trivia();
+            if fteqcc {
+                self.fte_lex_whitespace();
+            } else {
+                self.skip_trivia();
+            }
         }
         if self.peek(0) == Some(b'\'') {
             self.bump(1);
@@ -877,6 +1201,12 @@ impl Lexer<'_> {
         while self.peek(0).is_some_and(is_name_char) {
             self.bump(1);
         }
+        self.push_name(start);
+    }
+
+    /// Pushes the name from `start` to the current byte, and after the name of an FTEQCC
+    /// `#warning`, `#error` or `#message` its raw text (FTEF-14.38).
+    fn push_name(&mut self, start: usize) {
         let span = Span::new(start, self.pos);
         self.check_length(span.end.saturating_sub(start), span);
         let name: String = self.bytes(span).iter().copied().map(char::from).collect();
@@ -891,6 +1221,65 @@ impl Lexer<'_> {
         if message {
             self.message_text();
         }
+    }
+
+    /// A name in an FTEQCC dialect, as `QCC_PR_LexName` reads it (FTEF-13.16): from a letter,
+    /// `_` or a byte of 0x80 or more, each character a UTF-8 sequence `utf8_check` reads, while
+    /// the next byte is a letter, a digit, `_` or a byte of 0x80 or more. A byte that starts no
+    /// sequence is "Invalid UTF-8 code sequence before WORD. Lead byte was 0xNN", WORD the bytes
+    /// up to white space after the next byte that starts one, or "... at end of line" when only
+    /// white space stands between that byte and the line's end; no token is made, and reading
+    /// goes on at that byte, as FTEQCC leaves `pr_file_p` there.
+    fn fte_name(&mut self) {
+        let start = self.pos;
+        loop {
+            let rest = self.text.get(self.pos..).unwrap_or_default();
+            let Some((_, len)) = fte_string::utf8_check(rest) else {
+                self.invalid_utf8(start);
+                return;
+            };
+            self.bump(len);
+            let more = self.peek(0).is_some_and(|b| is_name_char(b) || b >= 0x80);
+            if !more {
+                break;
+            }
+        }
+        self.push_name(start);
+    }
+
+    /// The error of a byte that starts no UTF-8 sequence in an FTEQCC name begun at `start`
+    /// (FTEF-13.16), the byte current.
+    fn invalid_utf8(&mut self, start: usize) {
+        let lead = self.peek(0).unwrap_or(0);
+        self.bump(1);
+        while self.peek(0).is_some()
+            && fte_string::utf8_check(self.text.get(self.pos..).unwrap_or_default()).is_none()
+        {
+            self.bump(1);
+        }
+        let resume = self.pos;
+        let mut at = resume;
+        while self
+            .text
+            .get(at)
+            .is_some_and(|&b| is_fteqcc_whitespace(b) && b != b'\n')
+        {
+            at = at.saturating_add(1);
+        }
+        let message = if self.text.get(at).is_none_or(|&b| b == b'\n') {
+            format!("Invalid UTF-8 code sequence at end of line. Lead byte was {lead:#x}")
+        } else {
+            let end = self
+                .text
+                .get(at..)
+                .unwrap_or_default()
+                .iter()
+                .position(|&b| is_fteqcc_whitespace(b))
+                .map_or(self.text.len(), |len| at.saturating_add(len));
+            let word = self.word_text(Span::new(at, end));
+            format!("Invalid UTF-8 code sequence before {word}. Lead byte was {lead:#x}")
+        };
+        self.error(Code::E0123, message, Span::new(start, resume));
     }
 
     /// The rest of a `#warning`, `#error` or `#message` line, read raw as FTEQCC reads it
@@ -917,7 +1306,7 @@ impl Lexer<'_> {
             if b == b'\n' {
                 return None;
             }
-            if !is_whitespace(b) {
+            if !self.white(b) {
                 break;
             }
             self.bump(1);
@@ -926,7 +1315,7 @@ impl Lexer<'_> {
         let start = self.pos;
         while self
             .peek(0)
-            .is_some_and(|b| !is_whitespace(b) && b != b',' && b != b';')
+            .is_some_and(|b| !self.white(b) && b != b',' && b != b';')
         {
             self.bump(1);
         }
@@ -1097,11 +1486,15 @@ impl Lexer<'_> {
             self.push(TokenKind::Punct(punct), start);
         } else {
             self.bump(1);
-            self.error(
-                Code::E0105,
-                "Unknown punctuation",
-                Span::new(start, self.pos),
-            );
+            // FTEF-13.15: `QCC_PR_ParseWarning (ERR_UNKNOWNPUCTUATION, "Unknown punctuation:
+            // '\\x%x'", *pr_file_p);`.
+            let message = if fteqcc {
+                let byte = rest.first().copied().unwrap_or(0);
+                format!("Unknown punctuation: '\\x{byte:x}'")
+            } else {
+                "Unknown punctuation".to_owned()
+            };
+            self.error(Code::E0105, message, Span::new(start, self.pos));
         }
     }
 }

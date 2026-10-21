@@ -400,7 +400,7 @@ fn a_wide_if_value_may_read_another_file_where_long_is_32_bits() {
     }
 }
 
-// spec FTEF-14.54: a wide case is written after its byte order mark, read back as written, and
+// spec FTEF-14.64: a wide case is written after its byte order mark, read back as written, and
 // keyed apart from its UTF-8 case
 #[test]
 fn a_wide_case_is_written_after_its_mark() {
@@ -981,7 +981,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
     }
 }
 
-/// The text of a case's file of `bytes` and the encoding it was written in (FTEF-14.54).
+/// The text of a case's file of `bytes` and the encoding it was written in (FTEF-14.64).
 fn decoded(bytes: &[u8]) -> (String, Encoding) {
     let wide = [
         Encoding::Utf32Le,
@@ -1024,13 +1024,20 @@ fn decoded(bytes: &[u8]) -> (String, Encoding) {
                 )
                 .map(Result::unwrap)
                 .collect(),
-                Encoding::Utf8 => String::from_utf8(rest.to_vec()).unwrap(),
+                Encoding::Utf8 | Encoding::Latin1 => String::from_utf8(rest.to_vec()).unwrap(),
             };
             assert_eq!(encoding.bytes(&text), bytes);
             return (text, encoding);
         }
     }
-    (String::from_utf8(bytes.to_vec()).unwrap(), Encoding::Utf8)
+    // A case written as Latin-1 holds a byte no UTF-8 text does.
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(text) => (text, Encoding::Utf8),
+        Err(_) => (
+            bytes.iter().copied().map(char::from).collect(),
+            Encoding::Latin1,
+        ),
+    }
 }
 
 /// Each file under `dir`, by its name from `root` with `/` between its parts, and its text.
@@ -1047,7 +1054,7 @@ fn written(root: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
-        // The compiled file may be wide (FTEF-14.54); the caller reads it with `decoded`.
+        // The compiled file may be wide (FTEF-14.64); the caller reads it with `decoded`.
         let text = String::from_utf8_lossy(&fs::read(&path).unwrap()).into_owned();
         files.push((parts.join("/"), text));
     }

@@ -359,7 +359,7 @@ fn a_directive_ends_after_its_operand() {
 }
 
 // spec FTEF-14.51: a `#pragma` ends at its line break (FTEF-14.43), an `#if` with no white
-// space after its name after its word (FTEF-14.36), and an `#eof` at its line break
+// space after its name after its word (FTEF-14.57), and an `#eof` at its line break
 #[test]
 fn pragmas_words_and_eof_end_early() {
     let cases = ["#pragma p // c \\\nfloat y;\n", "#if(1)\nfloat z;\n"];

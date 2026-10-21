@@ -21,6 +21,7 @@ pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
         pos: 0,
         dialect: Dialect::Fteqcc,
         out: Lexed::default(),
+        joined: 0,
     };
     let prefix = lexer.fte_string_prefix(true)?;
     let bytes = lexer.fte_string_contents(prefix);
@@ -48,6 +49,14 @@ pub(crate) struct Prefix {
     output: Output,
     raw: bool,
 }
+
+/// The most bytes an FTEQCC string holds, its parts joined: `pr_token[8192]` less its NUL
+/// (FTEF-13.20).
+pub const FTEQCC_MAX_STRING: usize = crate::FTEQCC_MAX_TOKEN - 1;
+
+/// FTEQCC's error for a longer one: `QCC_Error(ERR_INVALIDSTRINGIMMEDIATE, "String length
+/// exceeds %u", (unsigned)sizeof(pr_token)-1);` (FTEF-13.20).
+pub const STRING_TOO_LONG: &str = "String length exceeds 8191";
 
 /// `Bronze` toggled by `\s` and `\b`: `QCC_PR_LexString`'s `texttype ^= 0xe080` (FTEF-13.10).
 const BRONZE: u32 = 0xe080;
@@ -77,10 +86,18 @@ impl Lexer<'_> {
     /// One part of an FTEQCC string literal at its prefix (FTEF-13.7 to FTEF-13.11), pushed as
     /// a string token of the bytes FTEQCC writes for it. Adjacent parts are joined by the
     /// parser (FTEF-16.8).
-    pub(crate) fn fte_string(&mut self, prefix: Prefix) {
+    ///
+    /// `joins` says the part follows another, which FTEQCC reads into the same token, so the
+    /// bytes of both count towards its 8191 (FTEF-13.20): the error is at the first part that
+    /// takes the total past them.
+    pub(crate) fn fte_string(&mut self, prefix: Prefix, joins: bool) {
         let start = self.pos;
         let contents = self.fte_string_contents(prefix);
-        self.check_length(contents.len(), Span::new(start, self.pos));
+        let before = if joins { self.joined } else { 0 };
+        self.joined = before.saturating_add(contents.len());
+        if self.joined > FTEQCC_MAX_STRING && before <= FTEQCC_MAX_STRING {
+            self.error(Code::E0502, STRING_TOO_LONG, Span::new(start, self.pos));
+        }
         self.push(TokenKind::String(contents), start);
     }
 
@@ -88,6 +105,15 @@ impl Lexer<'_> {
     /// FTEF-13.11), read up to its end.
     fn fte_string_contents(&mut self, prefix: Prefix) -> Vec<u8> {
         let start = self.pos;
+        // FTEF-13.22: `QCC_PR_ParseWarning(WARN_NOTUTF8, "char32_t/char16_t/wchar_t strings are
+        // not supported, treating as u8 prefix (as utf-8)");` for `U`, `u` and `L`.
+        if prefix.output == Output::Utf8 && prefix.len == 1 {
+            self.error(
+                Code::W0119,
+                "char32_t/char16_t/wchar_t strings are not supported, treating as u8 prefix (as utf-8)",
+                Span::new(start, start.saturating_add(1)),
+            );
+        }
         self.bump(prefix.len.saturating_add(1));
         if prefix.raw {
             self.raw_string(start)
@@ -182,13 +208,13 @@ impl Lexer<'_> {
                         }
                         Some(b'.') => {
                             self.bump(1);
-                            write(&mut contents, 0xe01c | bronze, output);
+                            self.write_code(&mut contents, 0xe01c | bronze, output, escape);
                         }
                         // `\u` is "a utf-8 code regardless of output encoding", `\x` "an
                         // explicit byte regardless of encoding".
                         Some(b'u' | b'U') => {
                             let code = self.fte_escape(start, escape);
-                            utf8(&mut contents, code);
+                            self.utf8_code(&mut contents, code, escape);
                         }
                         Some(b'x' | b'X') => {
                             let code = self.fte_escape(start, escape);
@@ -196,7 +222,7 @@ impl Lexer<'_> {
                         }
                         Some(_) => {
                             let code = self.fte_escape(start, escape);
-                            write(&mut contents, code, output);
+                            self.write_code(&mut contents, code, output, escape);
                         }
                         None => {
                             self.error(Code::E0101, "EOF inside quote", Span::new(start, self.pos));
@@ -219,21 +245,39 @@ impl Lexer<'_> {
             }
         };
         let Some((code, len)) = sequence else {
+            // FTEF-13.21: `if (stringtype) QCC_PR_ParseWarning(ERR_BADCHARACTERCODE, "Input
+            // string is not valid utf-8");`, an error, as the code is an `ERR_` one.
+            if output != Output::Quake {
+                let at = self.pos;
+                self.error(
+                    Code::E0103,
+                    "Input string is not valid utf-8",
+                    Span::new(at, at.saturating_add(1)),
+                );
+            }
             // `if (c >= ' ') c |= texttype;`, then the byte as it is (`forcebyte`).
             self.bump(1);
             contents.push(if b >= b' ' { b | low_byte(bronze) } else { b });
             return;
         };
+        let at = self.pos;
         if bronze == 0 || code < u32::from(b' ') {
             self.bump(len);
-            write(contents, code, output);
+            self.write_code(contents, code, output, at);
         } else if code < 0x80 {
             self.bump(len);
             // `cp|0xe080`: below 0x80 the code shares no bit with it, so the sum is the same.
-            write(contents, BRONZE.wrapping_add(code), output);
+            self.write_code(contents, BRONZE.wrapping_add(code), output, at);
         } else {
-            // "Unable to mask non-ascii chars. Attempting to mask bytes": the first byte goes
-            // as it is, and the rest of the sequence is read again, one byte at a time.
+            // "Unable to mask non-ascii chars. Attempting to mask bytes", an error (FTEF-13.21):
+            // the first byte goes as it is, and the rest of the sequence is read again, one
+            // byte at a time.
+            let at = self.pos;
+            self.error(
+                Code::E0103,
+                "Unable to mask non-ascii chars. Attempting to mask bytes",
+                Span::new(at, at.saturating_add(len)),
+            );
             self.bump(1);
             contents.push(b);
         }
@@ -298,9 +342,10 @@ impl Lexer<'_> {
                 }
             },
             _ => {
+                // `QCC_PR_ParseError (ERR_INVALIDSTRINGIMMEDIATE, "Unknown escape char %c", c);`
                 self.error(
                     Code::E0103,
-                    "Unknown escape char",
+                    format!("Unknown escape char {}", char::from(c)),
                     Span::new(escape, self.pos),
                 );
                 u32::from(c)
@@ -359,6 +404,38 @@ impl Lexer<'_> {
             );
         }
         code
+    }
+
+    /// Writes `code`, read at `at`, as `output` says ([`write`]), with FTEQCC's F301 warnings
+    /// (FTEF-13.22): "Cannot convert codepoint %#x to quake's charset" for a Quake output's code
+    /// above 0x7F outside 0xE000 to 0xE0FF, and for a UTF-8 one [`Self::utf8_code`]'s.
+    fn write_code(&mut self, contents: &mut Vec<u8>, code: u32, output: Output, at: usize) {
+        match output {
+            Output::Utf8 => self.utf8_code(contents, code, at),
+            Output::Quake | Output::QuakeFromUtf8 => {
+                if code >= 0x80 && !(0xe000..=0xe0ff).contains(&code) {
+                    self.error(
+                        Code::W0119,
+                        format!("Cannot convert codepoint {code:#x} to quake's charset"),
+                        Span::new(at, self.pos.max(at.saturating_add(1))),
+                    );
+                }
+                write(contents, code, output);
+            }
+        }
+    }
+
+    /// Writes `code`, read at `at`, as UTF-8 ([`utf8`]), with FTEQCC's F301 warning "Bad unicode
+    /// character code - codepoint is above 0x10FFFFu" past U+10FFFF (FTEF-13.22).
+    fn utf8_code(&mut self, contents: &mut Vec<u8>, code: u32, at: usize) {
+        if code > 0x10_ffff {
+            self.error(
+                Code::W0119,
+                "Bad unicode character code - codepoint is above 0x10FFFFu",
+                Span::new(at, self.pos.max(at.saturating_add(1))),
+            );
+        }
+        utf8(contents, code);
     }
 
     /// FTEQCC's "Bad character code" (`ERR_BADCHARACTERCODE`), reported as an unknown escape

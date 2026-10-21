@@ -78,7 +78,7 @@ fn line_end_cases() -> Vec<String> {
 }
 
 /// Directive names matched by their first bytes, and the operands each reads (FTEF-14.52,
-/// FTEF-14.36, FTEF-14.38, FTEF-14.39, FTEF-14.42).
+/// FTEF-14.57, FTEF-14.38, FTEF-14.39, FTEF-14.42).
 const NAME_FORMS: &[&str] = &[
     "#defined N #5\nvoid() f = N;\n",
     "#define/**/N #5\nvoid() f = #5;\n",
@@ -230,7 +230,7 @@ const CONDITIONALS: &[&str] = &[
     "#pack 4294967302 \nvoid() f = #5;\n",
 ];
 
-/// Programs whose bytes FTEQCC's file loader changes (FTEF-14.54): each NUL byte is a space, and
+/// Programs whose bytes FTEQCC's file loader changes (FTEF-14.64): each NUL byte is a space, and
 /// a UTF-8 byte order mark at the start is skipped.
 const LOADED: &[&str] = &[
     "void() f = #5;\n\0zz zz zz\n",
@@ -290,7 +290,7 @@ fn frame_cases() -> Vec<String> {
 }
 
 /// Programs written as UTF-16 and as UTF-32 after their byte order marks, which FTEQCC's file
-/// loader decodes (FTEF-14.54).
+/// loader decodes (FTEF-14.64).
 const WIDE: &[&str] = &[
     "void() f = #5;\n",
     "#define N #5\nvoid() f = N;\n",
@@ -491,7 +491,7 @@ fn continued(snippet: &str) -> String {
 /// `//` comment's line, after a `/* */` comment and in the middle of a line (FTEF-14.52); in a
 /// skipped side (FTEF-14.37); after a use's `(` or `,` and in the middle of an argument
 /// (FTEF-14.45); in a macro's body (FTEF-14.46); in an `#includelist` (FTEF-14.41); after
-/// `#pragma DONT_COMPILE_THIS_FILE` (FTEF-14.44).
+/// `#pragma DONT_COMPILE_THIS_FILE` (FTEF-14.65).
 fn snippet_cases() -> Vec<String> {
     let mut sources = Vec::new();
     for &(snippet, words) in SNIPPETS {
@@ -567,7 +567,7 @@ fn line_pragma_cases() -> Vec<String> {
 }
 
 /// The other pragmas FTEQCC knows, each of which this profile accepts and reads to its line's
-/// break (FTEF-14.44).
+/// break (FTEF-14.65).
 const PRAGMAS: &[&str] = &[
     "#pragma DONT_COMPILE_THIS_FILE\nzz zz zz\n",
     "#pragma dont_compile_this_file\nzz zz zz\n",
@@ -795,7 +795,7 @@ const INCLUDE_PROJECTS: &[IncludeProject] = &[
         "#pragma warning disable F303\n#define D \\\n#include \"b.qh\" \\\n\nvoid() f = D;\n",
         &[("b.qh", "#5\n")],
     ),
-    // FTEF-14.54: an included file's text as FTEQCC's file loader gives it, whose first byte
+    // FTEF-14.64: an included file's text as FTEQCC's file loader gives it, whose first byte
     // `QCC_PR_Precompiler` reads.
     (
         "t.qc",
@@ -919,7 +919,7 @@ fn include_cases() -> Vec<Case> {
 /// Where a graph form puts the line that brings the file in that binds `f`.
 const HERE: &str = "@@";
 
-/// Directive forms of FTEF-14.33 to FTEF-14.44 before, around or after the line that brings in
+/// Directive forms of FTEF-14.33 to FTEF-14.65 before, around or after the line that brings in
 /// the one file that binds `f`, so that FTEQCC binds `f` only by reading that file: the project
 /// graph lists the file the pinned FTEQCC compiles when it lists that file exactly when FTEQCC
 /// binds `f` (PRJ-5.13). A form that FTEQCC refuses reads no file the graph lists.
@@ -941,7 +941,7 @@ const GRAPH_FORMS: &[&str] = &[
     "#ifdef N // c \\\n@@\n#endif",
     "#ifndef N // c\n@@\n#endif",
     "#pragma once // c \\\n@@",
-    // FTEF-14.33 and FTEF-14.36: conditionals.
+    // FTEF-14.33 and FTEF-14.57: conditionals.
     "#ifdef Q\n@@\n#endif",
     "#ifndef Q\n@@\n#endif",
     "#if 0 && 0 || 1\n@@\n#endif",
@@ -981,7 +981,7 @@ const GRAPH_FORMS: &[&str] = &[
     "#eof\n@@",
     "#eofx\n@@",
     "#package\n@@",
-    // FTEF-14.40 to FTEF-14.44: includes, lists and pragmas.
+    // FTEF-14.40 to FTEF-14.65: includes, lists and pragmas.
     "#include \"\"\n@@",
     "#includelist\n#endlist\n@@",
     "#pragma line(10)\n@@",
@@ -990,7 +990,7 @@ const GRAPH_FORMS: &[&str] = &[
     "#pragma unknown\n@@",
     "#pragma DONT_COMPILE_THIS_FILE\n@@",
     "#pragmas once\n@@",
-    // FTEF-14.54: the text FTEQCC's file loader gives.
+    // FTEF-14.64: the text FTEQCC's file loader gives.
     "\u{feff}@@",
     "\u{feff}  @@",
     "// c\0\n@@",
@@ -1094,7 +1094,7 @@ pub(super) fn graph_cases() -> Vec<Case> {
         files.extend(others.iter().map(|&(name, text)| (name, text.to_owned())));
         cases.push(project_case("t.qc", source, &files));
     }
-    // FTEF-14.54: a file of UTF-16 or UTF-32 is read decoded.
+    // FTEF-14.64: a file of UTF-16 or UTF-32 is read decoded.
     for encoding in WIDE_ENCODINGS {
         for (line, name) in GRAPH_LINES {
             let source = format!("// c\n{line}\n");
@@ -1108,7 +1108,7 @@ pub(super) fn graph_cases() -> Vec<Case> {
     cases
 }
 
-/// `progs.src` files of either form that FTEQCC's file loader changes (PRJ-4.6, FTEF-14.54),
+/// `progs.src` files of either form that FTEQCC's file loader changes (PRJ-4.6, FTEF-14.64),
 /// written as UTF-8: each NUL byte is a space, and a UTF-8 byte order mark at the start is
 /// skipped, once. Each names `b.qh`, which binds `f`, and `x.qc`, which binds nothing, so that
 /// the words `QCC_COM_Parse` reads decide whether `f` is bound. None is the list of
@@ -1145,7 +1145,7 @@ pub(super) const SCRIPT_PROGS: &[&str] = &[
 ];
 
 /// `progs.src` files of either form written in each wide encoding, which FTEQCC's file loader
-/// decodes (PRJ-4.6, FTEF-14.54), with a `#!` first line too (PRJ-4.8).
+/// decodes (PRJ-4.6, FTEF-14.64), with a `#!` first line too (PRJ-4.8).
 const WIDE_PROGS: &[&str] = &[
     "#include \"b.qh\"\n",
     "progs.dat\nb.qh\n",

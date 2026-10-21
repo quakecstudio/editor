@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! FTEQCC's file loader (FTEF-14.54): the text `QCC_LoadFile` hands the lexer, and the
+//! FTEQCC's file loader (FTEF-14.64): the text `QCC_LoadFile` hands the lexer, and the
 //! preprocessor and the project graph reading it.
 
 use std::path::Path;
@@ -39,29 +39,31 @@ fn fte(bytes: &[u8]) -> (String, Vec<Code>) {
     (tokens(&out), codes(&out))
 }
 
-/// The text the loader makes of `bytes`.
+/// The text the loader makes of `bytes`, without the line feed it writes after it.
 fn loaded(bytes: &[u8]) -> Vec<u8> {
-    qcc_load_file(bytes.to_vec()).0
+    let mut text = qcc_load_file(bytes.to_vec()).0;
+    assert_eq!(text.pop(), Some(b'\n'));
+    text
 }
 
-// spec FTEF-14.54: a file with no byte order mark is its bytes, each NUL a space
+// spec FTEF-14.64: a file with no byte order mark is its bytes, each NUL a space
 #[test]
 fn a_plain_file_is_its_bytes_with_each_nul_a_space() {
     assert_eq!(
         qcc_load_file(b"a\0b\0".to_vec()),
-        (b"a b ".to_vec(), TextOrigin::Shifted(0))
+        (b"a b \n".to_vec(), TextOrigin::Shifted(0))
     );
     assert_eq!(loaded(b""), b"");
     assert_eq!(loaded(b"\xe9\xff"), b"\xe9\xff");
 }
 
-// spec FTEF-14.54: a UTF-8 byte order mark is skipped, the text standing 3 bytes into the file,
+// spec FTEF-14.64: a UTF-8 byte order mark is skipped, the text standing 3 bytes into the file,
 // and only a whole one
 #[test]
 fn a_utf8_byte_order_mark_is_skipped() {
     assert_eq!(
         qcc_load_file(b"\xef\xbb\xbfx\0".to_vec()),
-        (b"x ".to_vec(), TextOrigin::Shifted(3))
+        (b"x \n".to_vec(), TextOrigin::Shifted(3))
     );
     assert_eq!(loaded(b"\xef\xbb\xbf"), b"");
     assert_eq!(loaded(b"\xef\xbbx"), b"\xef\xbbx");
@@ -69,7 +71,7 @@ fn a_utf8_byte_order_mark_is_skipped() {
     assert_eq!(loaded(b"\xef\xbb\xbf\xef\xbb\xbfx"), b"\xef\xbb\xbfx");
 }
 
-// spec FTEF-14.54: UTF-16 and UTF-32 after their byte order marks are decoded to UTF-8, a NUL
+// spec FTEF-14.64: UTF-16 and UTF-32 after their byte order marks are decoded to UTF-8, a NUL
 // among them a space, and a UTF-32LE mark, which starts as UTF-16LE's does, is UTF-32LE's
 #[test]
 fn wide_files_are_decoded_to_utf8() {
@@ -95,7 +97,7 @@ fn wide_files_are_decoded_to_utf8() {
     assert_eq!(loaded(b"\xfe\xff"), b"");
 }
 
-// spec FTEF-14.54: `decodeUTF` reads whole units only, joins a high surrogate to a low one after
+// spec FTEF-14.64: `decodeUTF` reads whole units only, joins a high surrogate to a low one after
 // it, encodes any other surrogate in three bytes, and makes a UTF-32 value past U+10FFFF U+FFFD
 #[test]
 fn decode_utf_keeps_its_edges() {
@@ -125,7 +127,7 @@ fn decode_utf_keeps_its_edges() {
     );
 }
 
-// spec FTEF-14.54: `decodeUTF`'s ranges at their edges: the surrogates are 0xd800 to 0xdbff
+// spec FTEF-14.64: `decodeUTF`'s ranges at their edges: the surrogates are 0xd800 to 0xdbff
 // before 0xdc00 to 0xdfff, and UTF-8 takes one byte to U+007F, two to U+07FF, three to U+FFFF
 #[test]
 fn decode_utf_ranges_end_where_they_should() {
@@ -151,26 +153,30 @@ fn decode_utf_ranges_end_where_they_should() {
     );
 }
 
-// spec FTEF-14.54: a span of a decoded text maps to the code units of the file it came from,
+// spec FTEF-14.64: a span of a decoded text maps to the code units of the file it came from,
 // and one past the text to the end of the units read
 #[test]
 fn a_decoded_span_maps_to_the_file() {
     let (pp, out) = compile(&[("a.qc", &utf16le("\u{e9} zz\n"))], Dialect::Fteqcc);
     let file = pp.sources().file(out.tokens[0].span.file).unwrap();
-    assert_eq!(file.text.as_ref(), "\u{e9} zz\n".as_bytes());
+    assert_eq!(file.text.as_ref(), "\u{e9} zz\n\n".as_bytes());
     // `zz` is at bytes 3 to 5 of the text and code units 2 to 4 of the file, after the mark.
     assert_eq!(file.file_span(Span::new(3, 5)), Span::new(6, 10));
     assert_eq!(file.file_span(Span::new(0, 2)), Span::new(2, 4));
     assert_eq!(file.file_span(Span::new(1, 99)), Span::new(2, 12));
+    // FTEF-14.64: the loader's line feed stands at the file's end.
+    assert_eq!(file.file_span(Span::new(6, 7)), Span::new(12, 12));
     let (pp, out) = compile(&[("a.qc", b"\xef\xbb\xbfzz")], Dialect::Fteqcc);
     let file = pp.sources().file(out.tokens[0].span.file).unwrap();
     assert_eq!(file.file_span(out.tokens[0].span.span), Span::new(3, 5));
+    assert_eq!(file.file_span(Span::new(2, 3)), Span::new(5, 5));
+    assert_eq!(file.file_span(Span::new(0, 99)), Span::new(3, 5));
     let (pp, out) = compile(&[("a.qc", b"zz")], Dialect::Vanilla);
     let file = pp.sources().file(out.tokens[0].span.file).unwrap();
     assert_eq!(file.file_span(out.tokens[0].span.span), Span::new(0, 2));
 }
 
-// spec FTEF-14.54: under FTEQCC a NUL is a space, so the text goes on past it, in a line of
+// spec FTEF-14.64: under FTEQCC a NUL is a space, so the text goes on past it, in a line of
 // code, a directive's body and a skipped side
 #[test]
 fn the_preprocessor_reads_past_a_nul() {
@@ -182,13 +188,22 @@ fn the_preprocessor_reads_past_a_nul() {
         fte(b"#define N #5\0zz\nvoid() f = N;\n").0,
         "void ( ) f = # 5 zz ;"
     );
+    // FTEF-14.64: and FTEQCC warns once, "file contains null bytes N/LEN", at the first.
     assert_eq!(
         fte(b"#ifdef Q\nzz\0\n#endif\nvoid() f = #5;\n"),
-        ("void ( ) f = # 5 ;".to_owned(), vec![])
+        ("void ( ) f = # 5 ;".to_owned(), vec![Code::W0117])
     );
+    let (_, out) = compile(&[("a.qc", b"a\0b\0")], Dialect::Fteqcc);
+    let messages: Vec<&str> = out.diagnostics.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(messages, ["file contains null bytes 1/4"]);
+    assert_eq!(out.diagnostics[0].span.span, Span::new(1, 2));
+    let (_, out) = compile(&[("a.qc", b"\xef\xbb\xbfa\0")], Dialect::Fteqcc);
+    assert_eq!(out.diagnostics[0].message, "file contains null bytes 1/2");
+    let (_, out) = compile(&[("a.qc", b"a\0")], Dialect::Vanilla);
+    assert!(out.diagnostics.is_empty());
 }
 
-// spec FTEF-14.54: a NUL first in a compiled file is a space `QCC_PR_NewLine` passes over, and
+// spec FTEF-14.64: a NUL first in a compiled file is a space `QCC_PR_NewLine` passes over, and
 // first in an included file a byte before the `#`, so no directive starts there
 #[test]
 fn a_leading_nul_is_a_space() {
@@ -201,7 +216,7 @@ fn a_leading_nul_is_a_space() {
     assert_eq!(tokens(&out), "# define N 5 N");
 }
 
-// spec FTEF-14.54: after a UTF-8 byte order mark a directive starts the compiled file, after
+// spec FTEF-14.64: after a UTF-8 byte order mark a directive starts the compiled file, after
 // spaces too, and an included one at its first byte
 #[test]
 fn a_directive_follows_a_utf8_byte_order_mark() {
@@ -218,7 +233,7 @@ fn a_directive_follows_a_utf8_byte_order_mark() {
     assert_eq!(tokens(&out), "5");
 }
 
-// spec FTEF-14.54: a UTF-16 file is read as its decoded text, its directives run
+// spec FTEF-14.64: a UTF-16 file is read as its decoded text, its directives run
 #[test]
 fn a_utf16_file_is_preprocessed() {
     assert_eq!(
@@ -236,7 +251,7 @@ fn the_vanilla_dialect_reads_the_bytes() {
     let (pp, out) = compile(&[("a.qc", &utf16le("a"))], Dialect::Vanilla);
     let file = pp.sources().files().first().unwrap();
     assert_eq!(file.text.as_ref(), b"\xff\xfea\x00");
-    assert_eq!(file.origin, TextOrigin::Shifted(0));
+    assert_eq!(file.origin, TextOrigin::Bytes);
     assert_eq!(tokens(&out), "a");
 }
 
@@ -253,7 +268,7 @@ fn graph_includes(bytes: &[u8]) -> Vec<String> {
     names
 }
 
-// spec FTEF-14.54: the project graph reads past a NUL, after a UTF-8 byte order mark and a UTF-16
+// spec FTEF-14.64: the project graph reads past a NUL, after a UTF-8 byte order mark and a UTF-16
 // file's decoded text, as the preprocessor does (PRJ-5.13)
 #[test]
 fn the_graph_reads_the_loaded_text() {
@@ -300,7 +315,7 @@ fn wide(mark: &[u8], text: &str, utf32: bool, little: bool) -> Vec<u8> {
 }
 
 proptest! {
-    // spec FTEF-14.54: any text written in UTF-16 or UTF-32 after its mark decodes to its UTF-8,
+    // spec FTEF-14.64: any text written in UTF-16 or UTF-32 after its mark decodes to its UTF-8,
     // each NUL a space, each byte mapped in order to a code unit of the file
     #[test]
     fn wide_text_decodes_to_its_utf8(text in "\\PC*") {
@@ -317,8 +332,10 @@ proptest! {
                 continue;
             }
             let bytes = wide(mark, &text, utf32, little);
-            let (loaded, origin) = qcc_load_file(bytes.clone());
+            let (mut loaded, origin) = qcc_load_file(bytes.clone());
+            prop_assert_eq!(loaded.pop(), Some(b'\n'));
             prop_assert_eq!(&loaded, &want);
+            loaded.push(b'\n');
             let TextOrigin::Decoded(offsets) = origin else {
                 return Err(TestCaseError::fail("not decoded"));
             };
@@ -328,16 +345,19 @@ proptest! {
         }
     }
 
-    // spec FTEF-14.54: any bytes load, with no NUL left and a file offset for every byte of
+    // spec FTEF-14.64: any bytes load, with no NUL left and a file offset for every byte of
     // the text
     #[test]
     fn any_bytes_load(bytes in proptest::collection::vec(any::<u8>(), 0..64)) {
         let (loaded, origin) = qcc_load_file(bytes.clone());
         prop_assert!(!loaded.contains(&0));
+        // FTEF-14.64: the loader's line feed ends the text.
+        prop_assert_eq!(loaded.last(), Some(&b'\n'));
         match origin {
             TextOrigin::Shifted(skipped) => {
-                prop_assert_eq!(loaded.len().saturating_add(skipped), bytes.len());
+                prop_assert_eq!(loaded.len().saturating_add(skipped), bytes.len().saturating_add(1));
             }
+            TextOrigin::Bytes => prop_assert!(false, "the loader shifts or decodes"),
             TextOrigin::Decoded(offsets) => {
                 prop_assert_eq!(offsets.len(), loaded.len().saturating_add(1));
                 prop_assert!(offsets.iter().all(|&o| o <= bytes.len()));
@@ -352,25 +372,19 @@ proptest! {
 fn the_loaded_text_in_place_keeps_the_file_s_offsets() {
     let in_place =
         |bytes: &[u8]| qcc_load_in_place(bytes).map(|(text, start)| (text.to_vec(), start));
-    assert_eq!(in_place(b"a\0#b\0"), Some((b"a #b ".to_vec(), 0)));
+    assert_eq!(in_place(b"a\0#b\0"), Some((b"a #b \n".to_vec(), 0)));
     assert_eq!(
         in_place(b"\xef\xbb\xbf#x\0"),
-        Some((b"\xef\xbb\xbf#x ".to_vec(), 3))
+        Some((b"\xef\xbb\xbf#x \n".to_vec(), 3))
     );
     assert_eq!(
         in_place(b"\xef\xbb\xbf\xef\xbb\xbf#"),
-        Some((b"\xef\xbb\xbf\xef\xbb\xbf#".to_vec(), 3))
+        Some((b"\xef\xbb\xbf\xef\xbb\xbf#\n".to_vec(), 3))
     );
-    assert_eq!(in_place(b""), Some((Vec::new(), 0)));
+    assert_eq!(in_place(b""), Some((b"\n".to_vec(), 0)));
     assert_eq!(in_place(&utf16le("#define N 1\n")), None);
     assert_eq!(in_place(b"\x00\x00\xfe\xff"), None);
     assert_eq!(in_place(b"\xfe\xff"), None);
-    // A file with no NUL is borrowed, not copied.
-    let plain = b"#define N 1\n";
-    assert!(matches!(
-        qcc_load_in_place(plain),
-        Some((std::borrow::Cow::Borrowed(_), 0))
-    ));
 }
 
 proptest! {
@@ -387,7 +401,8 @@ proptest! {
         match (qcc_load_in_place(&bytes), origin) {
             (Some((text, start)), TextOrigin::Shifted(shift)) => {
                 prop_assert_eq!(start, shift);
-                prop_assert_eq!(text.len(), bytes.len());
+                // FTEF-14.64: and the loader's line feed after it.
+                prop_assert_eq!(text.len(), bytes.len().saturating_add(1));
                 prop_assert_eq!(&text[..start], &bytes[..start]);
                 prop_assert_eq!(&text[start..], loaded.as_slice());
             }
@@ -444,7 +459,7 @@ fn a_script_line_is_passed_over_in_place() {
     let bytes = b"\xef\xbb\xbf#!x\0\na\0\n".to_vec();
     assert_eq!(
         qcc_load_as(bytes.clone(), FileStart::Source),
-        (b"    \na \n".to_vec(), TextOrigin::Shifted(3))
+        (b"    \na \n\n".to_vec(), TextOrigin::Shifted(3))
     );
     for start in [FileStart::Compiled, FileStart::Included] {
         assert_eq!(

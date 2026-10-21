@@ -1000,8 +1000,9 @@ fn line_continuations_are_trivia() {
 fn character_constants_and_short_vectors() {
     let one = |source: &[u8]| {
         let lexed = lex_with(source, Dialect::Fteqcc);
+        // FTEF-13.22's "2d vector" is a warning, which FTEQCC ignores unless told otherwise.
         assert!(
-            lexed.diagnostics.is_empty(),
+            lexed.diagnostics.iter().all(|d| d.code == Code::W0120),
             "{source:?}: {:?}",
             lexed.diagnostics
         );
@@ -1029,7 +1030,11 @@ fn character_constants_and_short_vectors() {
 fn full_fteqcc_numbers() {
     let value = |source: &str| {
         let lexed = lex_with(source.as_bytes(), Dialect::Fteqcc);
-        assert!(lexed.diagnostics.is_empty(), "{source}");
+        // FTEF-13.19's warning for a leading 0 before a digit is no error.
+        assert!(
+            lexed.diagnostics.iter().all(|d| d.code == Code::W0110),
+            "{source}"
+        );
         assert_eq!(lexed.tokens.len(), 1, "{source}");
         match lexed.tokens[0].kind {
             TokenKind::Float(v) => v,
@@ -1710,7 +1715,11 @@ fn prefixed_strings_are_strings() {
         b"u8\"ab\"",
     ] {
         let lexed = lex_with(source, Dialect::Fteqcc);
-        assert!(lexed.diagnostics.is_empty(), "{source:?}");
+        // FTEF-13.22's warning for `u` and `U`, which FTEQCC ignores unless told otherwise.
+        assert!(
+            lexed.diagnostics.iter().all(|d| d.code == Code::W0119),
+            "{source:?}"
+        );
         assert_eq!(fte_kinds(source), [string(b"ab")], "{source:?}");
         assert_eq!(
             lexed.tokens[0].span,
@@ -1899,4 +1908,438 @@ fn string_escapes_as_fteqcc_reads_them() {
     );
     assert_eq!(fte_string(b"\"a\\"), (b"a".to_vec(), vec![Code::E0101]));
     assert_eq!(fte_string(b"\"a\nb\"").1, [Code::E0102, Code::E0101]);
+}
+
+/// The codes and messages of the lexical diagnostics of `source` under FTEQCC.
+fn fte_diagnostics(source: &[u8]) -> Vec<(Code, String)> {
+    lex_with(source, Dialect::Fteqcc)
+        .diagnostics
+        .into_iter()
+        .map(|d| (d.code, d.message))
+        .collect()
+}
+
+// spec FTEF-13.15: under FTEQCC only a space, CR, LF, tab and VT are white space; another
+// control byte or DEL is "Unknown punctuation" with FTEQCC's text, and reading goes on after it
+// spec QCD-8.18: E0105 has FTEQCC's text under an FTEQCC profile
+#[test]
+fn fteqcc_white_space_is_qcc_iswhite() {
+    assert_eq!(
+        kinds_in(b"a \r\n\t\x0bb", Dialect::Fteqcc),
+        vec![name("a"), name("b")]
+    );
+    for (byte, text) in [(0x0c_u8, "c"), (0x01, "1"), (0x7f, "7f"), (0x1f, "1f")] {
+        let source = [b'a', byte, b'b'];
+        let lexed = lex_with(&source, Dialect::Fteqcc);
+        assert_eq!(
+            lexed
+                .tokens
+                .iter()
+                .map(|t| t.kind.clone())
+                .collect::<Vec<_>>(),
+            vec![name("a"), name("b")],
+            "{byte:#x}"
+        );
+        assert_eq!(
+            fte_diagnostics(&source),
+            vec![(Code::E0105, format!("Unknown punctuation: '\\x{text}'"))]
+        );
+        assert_eq!(lexed.diagnostics[0].span, Span::new(1, 2));
+    }
+    // The vanilla dialect keeps QC-2.1.
+    assert_eq!(kinds(b"a\x0cb"), vec![name("a"), name("b")]);
+    assert!(codes(b"a\x0c\x01b").is_empty());
+    assert!(Dialect::Fteqcc.is_whitespace(0x0b) && !Dialect::Fteqcc.is_whitespace(0x0c));
+    assert!(Dialect::Vanilla.is_whitespace(0x0c) && Dialect::Vanilla.is_whitespace(0xa0));
+}
+
+// spec FTEF-13.16: under FTEQCC a byte of 0x80 or more starts and continues a name, read as
+// UTF-8; a byte that starts no sequence is "Invalid UTF-8 code sequence", no token is made and
+// reading goes on at the next byte that starts one
+// spec QCD-2.9: E0123 is FTEQCC's error for it, at the name
+#[test]
+fn fteqcc_names_are_utf8() {
+    assert_eq!(
+        kinds_in("é xéy _9é".as_bytes(), Dialect::Fteqcc),
+        vec![
+            name("\u{c3}\u{a9}"),
+            name("x\u{c3}\u{a9}y"),
+            name("_9\u{c3}\u{a9}")
+        ]
+    );
+    assert!(fte_diagnostics("é".as_bytes()).is_empty());
+    assert_eq!(
+        fte_diagnostics(b"x\xc3;"),
+        vec![(
+            Code::E0123,
+            "Invalid UTF-8 code sequence before ;. Lead byte was 0xc3".to_owned()
+        )]
+    );
+    let lexed = lex_with(b"x\xc3;", Dialect::Fteqcc);
+    assert_eq!(lexed.diagnostics[0].span, Span::new(0, 2));
+    assert_eq!(lexed.tokens.len(), 1);
+    assert_eq!(lexed.tokens[0].kind, punct(Punct::Semicolon));
+    // The bytes that start no sequence are passed over together; white space before the word.
+    assert_eq!(
+        fte_diagnostics(b"\xa0\x80\x80 \t x;"),
+        vec![(
+            Code::E0123,
+            "Invalid UTF-8 code sequence before x;. Lead byte was 0xa0".to_owned()
+        )]
+    );
+    for source in [&b"a\xff \r\nb"[..], b"a\xff", b"a\xff\t\n"] {
+        assert_eq!(
+            fte_diagnostics(source),
+            vec![(
+                Code::E0123,
+                "Invalid UTF-8 code sequence at end of line. Lead byte was 0xff".to_owned()
+            )],
+            "{}",
+            source.escape_ascii()
+        );
+    }
+    // A sequence cut short, an overlong one and one past U+10FFFF.
+    for source in [&b"\xe2\x82"[..], b"\xc1\x81", b"\xf4\x90\x80\x80"] {
+        assert_eq!(fte_diagnostics(source)[0].0, Code::E0123);
+    }
+    // The vanilla dialect keeps QC-1.3.
+    assert_eq!(kinds(b"a\xc3\xa9b"), vec![name("a"), name("b")]);
+}
+
+// spec FTEF-13.17: a letter, digit, `_` or high byte right after an FTEQCC number is "bad suffix
+// on number" with the number's `pr_token`, and the bytes after it are read on
+// spec QCD-2.10: E0124 is that error, at the number
+#[test]
+fn fteqcc_bad_number_suffix() {
+    for (source, token) in [
+        ("5abc", "5"),
+        ("5fx", "5f"),
+        ("1.5e3", "1.5"),
+        ("1.5fx", "1.5"),
+        ("0X10g", "0x10"),
+        ("-5_", "-5"),
+        ("16iz", "16i"),
+        ("5\u{e9}", "5"),
+    ] {
+        let lexed = lex_with(source.as_bytes(), Dialect::Fteqcc);
+        let errors: Vec<(Code, String)> = lexed
+            .diagnostics
+            .iter()
+            .map(|d| (d.code, d.message.clone()))
+            .collect();
+        assert_eq!(
+            errors,
+            vec![(Code::E0124, format!("bad suffix on number {token}"))],
+            "{source}"
+        );
+        assert_eq!(lexed.diagnostics[0].span.start, 0, "{source}");
+        assert!(lexed.tokens.len() >= 2, "{source}");
+    }
+    let octal = fte_diagnostics(b"08");
+    assert_eq!(
+        octal.iter().map(|(c, _)| *c).collect::<Vec<_>>(),
+        vec![Code::W0110, Code::E0124]
+    );
+    assert_eq!(octal[1].1, "bad suffix on number 0");
+    for clean in [
+        &b"5 a"[..],
+        b"5;",
+        b"5f",
+        b"1.5d",
+        b"16ull",
+        b"0x1f",
+        b"'1x 2 3'",
+    ] {
+        assert!(
+            fte_diagnostics(clean)
+                .iter()
+                .all(|(code, _)| *code != Code::E0124),
+            "{}",
+            clean.escape_ascii()
+        );
+    }
+    // A vanilla number has no such check (QC-4.4).
+    assert!(codes(b"5abc").is_empty());
+}
+
+// spec FTEF-13.18: `//` reads to the LF in `QCC_PR_LexComment` and to any line ending in
+// `QCC_PR_LexWhitespace`, so a lone CR ends a comment only after a line ending since the token
+// before it
+#[test]
+fn fteqcc_comments_end_as_its_readers_end_them() {
+    // After a token on its line, the comment reads past the CR to the LF.
+    assert_eq!(
+        kinds_in(b"a // c\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("d")]
+    );
+    // After a line ending, the CR ends it.
+    assert_eq!(
+        kinds_in(b"a\n// c\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("b"), name("d")]
+    );
+    // The next line's comment is `QCC_PR_LexWhitespace`'s, as `QCC_PR_NewLine` passed over its
+    // spaces and tabs and no other white space reset `nl`; after a VT it is read to its LF too.
+    assert_eq!(
+        kinds_in(b"a // c\n  // e\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("b"), name("d")]
+    );
+    assert_eq!(
+        kinds_in(b"a // c\n// e\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("b"), name("d")]
+    );
+    assert_eq!(
+        kinds_in(b"a // c\n \x0b// e\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("d")]
+    );
+    // A blank line ends that reading.
+    assert_eq!(
+        kinds_in(b"a // c\n\n\x0b// e\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("b"), name("d")]
+    );
+    // A CR LF is no lone CR.
+    assert_eq!(
+        kinds_in(b"a\n// c\r\nb", Dialect::Fteqcc),
+        vec![name("a"), name("b")]
+    );
+    // A `\` and a line break start the reading again: a CR then ends no comment.
+    assert_eq!(
+        kinds_in(b"a\\\r\n// c\rb\nd", Dialect::Fteqcc),
+        vec![name("a"), name("d")]
+    );
+    // The vanilla dialect ends a `//` comment at its LF (QC-2.2).
+    assert_eq!(kinds(b"a\n// c\rb\nd"), vec![name("a"), name("d")]);
+}
+
+// spec FTEF-13.18: an FTEQCC `/* */` comment's `*/` is looked for from the byte after its `*`,
+// a `/*` inside it is a warning and one with no end is "EOF inside comment"
+// spec QCD-7.34: W0112 is FTEQCC's F325, at the `/*`
+// spec QCD-8.18: E0501 has FTEQCC's text under an FTEQCC profile
+#[test]
+fn fteqcc_block_comments() {
+    assert_eq!(kinds_in(b"/*/ a */b", Dialect::Fteqcc), vec![name("b")]);
+    assert_eq!(kinds_in(b"/**/b", Dialect::Fteqcc), vec![name("b")]);
+    assert_eq!(kinds(b"/*/ a */b").len(), 4);
+    assert_eq!(
+        fte_diagnostics(b"/* a /* b */"),
+        vec![(Code::W0112, "\"/*\" inside comment".to_owned())]
+    );
+    let lexed = lex_with(b"/* a /* b */", Dialect::Fteqcc);
+    assert_eq!(lexed.diagnostics[0].span, Span::new(5, 7));
+    // `/*/*` warns at its second `/*`; `/***/` holds none.
+    assert_eq!(fte_diagnostics(b"/*/**/").len(), 1);
+    assert!(fte_diagnostics(b"/***/").is_empty());
+    assert_eq!(
+        fte_diagnostics(b"a /* b"),
+        vec![(Code::E0501, "EOF inside comment".to_owned())]
+    );
+    assert_eq!(
+        lex_with(b"a /* b", Dialect::Fteqcc).diagnostics[0].span,
+        Span::new(2, 4)
+    );
+    // A second comment after a token's first, and one in a later line's white space.
+    assert_eq!(
+        fte_diagnostics(b"a /* */ /* /* */\n/* /* */"),
+        vec![
+            (Code::W0112, "\"/*\" inside comment".to_owned()),
+            (Code::W0112, "\"/*\" inside comment".to_owned())
+        ]
+    );
+}
+
+// spec FTEF-13.19: an FTEQCC number accumulates in a wrapping `long long`; a leading 0 before a
+// digit warns; and an `f`, `d` or `i` suffix, or base 16 with none, warns where the value stored
+// is not the number
+// spec QCD-7.32: W0110 is FTEQCC's warning `octal`, at the `0`
+// spec QCD-7.33: W0111 is FTEQCC's F312
+#[test]
+fn fteqcc_number_values_and_warnings() {
+    let one = |source: &str| {
+        let lexed = lex_with(source.as_bytes(), Dialect::Fteqcc);
+        let TokenKind::Float(value) = lexed.tokens[0].kind else {
+            panic!("{source}")
+        };
+        (value, lexed.diagnostics)
+    };
+    assert_eq!(one("18446744073709551621").0, 5.0);
+    assert_eq!(one("0xffffffffffffffff").0, -1.0);
+    assert_eq!(one("-18446744073709551621").0, -5.0);
+    assert_eq!(one("9223372036854775813").0, -(2.0_f32.powi(63)));
+    let (_, octal) = one("017");
+    assert_eq!(octal.len(), 1);
+    assert_eq!(octal[0].code, Code::W0110);
+    assert_eq!(octal[0].message, "A leading 0 is interpreted as base-8.");
+    assert_eq!(octal[0].span, Span::new(0, 1));
+    assert!(one("0").1.is_empty() && one("0x10").1.is_empty() && one("0.5").1.is_empty());
+    let warned = |source: &str| -> Vec<String> {
+        one(source)
+            .1
+            .into_iter()
+            .filter(|d| d.code == Code::W0111)
+            .map(|d| d.message)
+            .collect()
+    };
+    assert_eq!(
+        warned("0x100000001"),
+        vec!["numerical overflow 4294967297 will be rounded to 4294967296.000000"]
+    );
+    assert_eq!(
+        warned("-0x1000001"),
+        vec!["numerical overflow -16777217 will be rounded to -16777216.000000"]
+    );
+    // `2147483648u` keeps the negative `_int` -2147483648, which FTEQCC does not warn about.
+    for silent in [
+        "16777217",
+        "0x1000000",
+        "4294967295i",
+        "0xffffffffi",
+        "2147483648u",
+        "5l",
+        "16777216f",
+    ] {
+        assert!(warned(silent).is_empty(), "{silent}");
+    }
+    for overflow in [
+        "16777217f",
+        "9007199254740993d",
+        "4294967313i",
+        "4294967296u",
+    ] {
+        assert_eq!(warned(overflow), vec!["numerical overflow"], "{overflow}");
+    }
+    // The vanilla dialect has none of it (QC-4).
+    assert!(codes(b"017 0x100000001").is_empty());
+}
+
+// spec FTEF-13.20: an FTEQCC string of more than 8191 bytes is "String length exceeds 8191", and
+// a name or number of more than 8191 bytes is "token too long"; shorter ones, past id's 2047, are
+// tokens
+// spec QCD-8.18: E0502 has FTEQCC's text for a string
+#[test]
+fn fteqcc_token_limits() {
+    let string = |len: usize| format!("\"{}\"", "s".repeat(len));
+    assert!(fte_diagnostics(string(8191).as_bytes()).is_empty());
+    assert_eq!(
+        fte_diagnostics(string(8192).as_bytes()),
+        vec![(Code::E0502, "String length exceeds 8191".to_owned())]
+    );
+    // Parts read together count together, the error at the part that passes 8191.
+    let joined = |a: usize, b: usize| format!("{} /* c */\n{}", string(a), string(b));
+    assert!(fte_diagnostics(joined(4000, 4191).as_bytes()).is_empty());
+    let over = lex_with(joined(4000, 4192).as_bytes(), Dialect::Fteqcc);
+    assert_eq!(over.diagnostics.len(), 1);
+    assert_eq!(over.diagnostics[0].message, "String length exceeds 8191");
+    assert_eq!(over.diagnostics[0].span.start, 4011);
+    assert_eq!(
+        fte_diagnostics(format!("{} x {}", string(4000), string(4192)).as_bytes()),
+        Vec::new()
+    );
+    assert!(fte_diagnostics("n".repeat(8191).as_bytes()).is_empty());
+    assert_eq!(
+        fte_diagnostics("n".repeat(8192).as_bytes()),
+        vec![(Code::E0502, "token too long".to_owned())]
+    );
+    assert!(fte_diagnostics("1".repeat(3000).as_bytes()).is_empty());
+    assert_eq!(
+        codes("n".repeat(QC_MAX_TOKEN).as_bytes()),
+        vec![Code::E0502]
+    );
+}
+
+// spec FTEF-13.21: a UTF-8 string's byte that starts no sequence, and one bronze cannot mask,
+// are errors; an unknown escape names its byte
+// spec QCD-8.18: E0103 has FTEQCC's texts under an FTEQCC profile
+#[test]
+fn fteqcc_string_input_errors() {
+    for source in [&b"u8\"a\xffb\""[..], b"Q\"\xc3\"", b"u8\"\x80\""] {
+        assert_eq!(
+            fte_diagnostics(source),
+            vec![(Code::E0103, "Input string is not valid utf-8".to_owned())],
+            "{}",
+            source.escape_ascii()
+        );
+    }
+    assert!(fte_diagnostics(b"\"a\xffb\"").is_empty());
+    assert_eq!(
+        fte_diagnostics("Q\"\\b\u{e9}\"".as_bytes()),
+        // The sequence's other bytes are read again, one at a time, and start none.
+        vec![
+            (
+                Code::E0103,
+                "Unable to mask non-ascii chars. Attempting to mask bytes".to_owned()
+            ),
+            (Code::E0103, "Input string is not valid utf-8".to_owned())
+        ]
+    );
+    assert_eq!(
+        fte_diagnostics(br#""a\qb""#),
+        vec![(Code::E0103, "Unknown escape char q".to_owned())]
+    );
+}
+
+// spec FTEF-13.22: FTEQCC's F301 and F311 warnings, which its settings ignore unless a pragma
+// turns them on, are the lexer's to give
+// spec QCD-7.41: W0119 is F301 with its text
+// spec QCD-7.42: W0120 is F311's "2d vector"
+#[test]
+fn fteqcc_off_by_default_string_and_vector_warnings() {
+    let prefix =
+        "char32_t/char16_t/wchar_t strings are not supported, treating as u8 prefix (as utf-8)";
+    for source in [&b"u\"a\""[..], b"U\"a\"", b"\"a\" L\"b\""] {
+        assert_eq!(
+            fte_diagnostics(source),
+            vec![(Code::W0119, prefix.to_owned())],
+            "{}",
+            source.escape_ascii()
+        );
+    }
+    assert!(fte_diagnostics(b"u8\"a\" Q\"b\" R\"(c)\"").is_empty());
+    assert_eq!(
+        fte_diagnostics("Q\"\u{100}\"".as_bytes()),
+        vec![(
+            Code::W0119,
+            "Cannot convert codepoint 0x100 to quake's charset".to_owned()
+        )]
+    );
+    // A plain string's bytes are written as they are, an escape's code converted.
+    assert!(fte_diagnostics("\"\u{100}\"".as_bytes()).is_empty());
+    assert_eq!(fte_diagnostics(br#""\{256}""#).len(), 1);
+    assert!(
+        fte_diagnostics("\"\\[\u{e9}\"".as_bytes())
+            .iter()
+            .all(|(c, _)| *c == Code::W0119)
+    );
+    assert!(
+        fte_diagnostics(br#""\["#)
+            .iter()
+            .all(|(c, _)| *c != Code::W0119)
+    );
+    assert_eq!(
+        fte_diagnostics(br#"u8"\U1100000""#),
+        vec![(
+            Code::W0119,
+            "Bad unicode character code - codepoint is above 0x10FFFFu".to_owned()
+        )]
+    );
+    assert_eq!(
+        fte_diagnostics(b"'1 2'"),
+        vec![(Code::W0120, "2d vector".to_owned())]
+    );
+    assert!(fte_diagnostics(b"'1 2 3'").is_empty());
+}
+
+// spec FTEF-13.23: an FTEQCC vector's components are read with `QCC_PR_LexWhitespace` before
+// the first and after each
+#[test]
+fn fteqcc_vector_white_space_is_lex_whitespace_s() {
+    assert_eq!(
+        kinds_in(b"'/*c*/1 2 3'", Dialect::Fteqcc),
+        vec![TokenKind::Vector([1.0, 2.0, 3.0])]
+    );
+    assert_eq!(
+        kinds_in(b"'1 // c\r2 3'", Dialect::Fteqcc),
+        vec![TokenKind::Vector([1.0, 2.0, 3.0])]
+    );
+    assert!(fte_diagnostics(b"'1 // c\r2 3'").is_empty());
+    // id's reader takes the `/` as the first component's first byte (QC-5.1).
+    assert!(codes(b"'/*c*/1 2 3'").contains(&Code::E0104));
 }

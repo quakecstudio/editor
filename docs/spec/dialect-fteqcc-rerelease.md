@@ -826,7 +826,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   directive and pragma FTEQCC's `QCC_PR_Precompiler` knows read where FTEQCC reads one: 18
   directives each ending its line under 9 tails, and `#includelist` under them, before a line it
   hides or none (FTEF-14.35); 55 directive names matched by their first bytes, with their
-  operands, and macro names of 1, 62, 63, 64 and 65 bytes (FTEF-14.52, FTEF-14.36, FTEF-14.38,
+  operands, and macro names of 1, 62, 63, 64 and 65 bytes (FTEF-14.52, FTEF-14.57, FTEF-14.38,
   FTEF-14.39, FTEF-14.42); 48 conditionals whose skipped sides nest by prefix, end their lines,
   and take an `#elif` or `#else`, `#if` expressions FTEQCC refuses and its predefined macros
   (FTEF-14.33, FTEF-14.37, FTEF-14.48); 37 directive and pragma forms each at a line's start,
@@ -836,7 +836,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   in an `#includelist` (FTEF-14.41), after `DONT_COMPILE_THIS_FILE` and on the first line of an
   included file with and without spaces before it (FTEF-14.52); 10 bodies with directive lines
   under 11 settings of F303 (FTEF-14.46); `#pragma line` in 17 forms, with `__LINE__` and
-  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.44); 12 programs whose code a `\`
+  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.65); 12 programs whose code a `\`
   joins to a line holding a directive's text, as code and as a macro's argument, and after a
   `//` comment's `\` or a blank line (FTEF-14.53); and 101 projects of several
   files, whose `#include`s are found beside the compiled file and in include directories

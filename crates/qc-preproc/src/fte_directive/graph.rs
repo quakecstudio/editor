@@ -125,7 +125,7 @@ pub enum FteEvent {
     /// `#output` and the bytes of the string after it (PRJ-5.6).
     Output { name: Vec<u8>, line: u32 },
     /// A `#pragma`, its name and its text (FTEF-14.43), but `DONT_COMPILE_THIS_FILE`, which the
-    /// reader runs itself (FTEF-14.44).
+    /// reader runs itself (FTEF-14.65).
     Pragma {
         name: Vec<u8>,
         text: Vec<u8>,
@@ -190,7 +190,7 @@ pub struct FteFileReader {
 impl FteFileReader {
     /// A reader of the file of `bytes`, which starts as `start` says, read as the text FTEQCC's
     /// `QCC_LoadFile` hands its lexer: decoded from UTF-16 or UTF-32, past a UTF-8 byte order
-    /// mark, and with each NUL byte a space (FTEF-14.54, PRJ-5.1), and in the module's source
+    /// mark, and with each NUL byte a space (FTEF-14.64, PRJ-5.1), and in the module's source
     /// past a `#!` first line (PRJ-4.8).
     #[must_use]
     pub fn new(bytes: Vec<u8>, start: FileStart) -> Self {
@@ -287,7 +287,7 @@ impl FteFileReader {
     /// code outside any reading is [`Self::code`]'s.
     fn word(&mut self, at: usize) -> Option<FteEvent> {
         match self.modes.last() {
-            // FTEF-14.44: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
+            // FTEF-14.65: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
             None | Some(Mode::DontCompile) => self.at = at.saturating_add(1),
             // FTEF-14.41: a word `QCC_PR_SimpleGetToken` reads, `#endlist` ending the list.
             Some(Mode::List { .. }) => {
@@ -326,7 +326,7 @@ impl FteFileReader {
     }
 
     /// Runs `directive`, read at the `#` at `hash`, as `QCC_PR_Precompiler` does for the graph
-    /// (FTEF-14.35 to FTEF-14.44, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
+    /// (FTEF-14.35 to FTEF-14.65, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
     fn run(
         &mut self,
         state: &mut ModuleState,
@@ -392,7 +392,7 @@ impl FteFileReader {
                     self.skip(state, end, Earlier::NoSideTaken);
                 }
             }
-            Directive::NotIf { word_end } => self.at = word_end,
+            Directive::NotIf { word } => self.at = word.end,
             Directive::Else { end } => {
                 if state.ifs == 0 {
                     self.at = end.at;

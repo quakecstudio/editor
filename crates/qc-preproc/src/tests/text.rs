@@ -225,8 +225,12 @@ fn a_body_ends_where_fteqcc_s_quote_flag_says() {
     // An unclosed string in a body is no error until the body is expanded.
     assert_eq!(fte("#define N \"ab\nx\n"), ("x".to_owned(), vec![]));
     assert_eq!(fte("#define N \"ab\nN\n").1, vec![Code::E0101]);
-    // A comment that does not end runs to the end of the file.
-    assert_eq!(fte("#define N 1 /* c\nN\n"), (String::new(), vec![]));
+    // A comment that does not end runs to the end of the file, F315's "EOF inside quote in
+    // define N" (FTEF-14.58).
+    assert_eq!(
+        fte("#define N 1 /* c\nN\n"),
+        (String::new(), vec![Code::W0115])
+    );
 }
 
 // spec FTEF-14.24: a `\` and line break before a line starting with `#` keeps the line break, and
@@ -249,7 +253,7 @@ fn a_continued_directive_line_keeps_its_line_break() {
 }
 
 // spec FTEF-14.24: `#append` adds a space and its body to the stored body when its parameters are
-// the macro's, and with others defines it again with the warning W0102
+// the macro's, and with others defines it again with F315's warnings (FTEF-14.58)
 #[test]
 fn append_needs_the_macro_s_parameters() {
     assert_eq!(
@@ -258,11 +262,11 @@ fn append_needs_the_macro_s_parameters() {
     );
     assert_eq!(
         fte("#define A(x) x\n#append A 2\nA\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115, Code::W0115])
     );
     assert_eq!(
         fte("#define A(x) x\n#append A(y) 2\nA(1)\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115, Code::W0115])
     );
     assert_eq!(fte("#define A 1\n#append A\nA\n"), ("1".to_owned(), vec![]));
 }
@@ -287,7 +291,8 @@ fn body_tokens_are_parse2_s() {
         out.tokens.get(1).map(|t| t.kind.clone()),
         Some(TokenKind::Name("a".to_owned()))
     );
-    assert_eq!(codes(&out), vec![Code::E0101]);
+    // `a"b`, the string's token, names no parameter (FTEF-14.61).
+    assert_eq!(codes(&out), vec![Code::W0117, Code::E0101]);
     assert_eq!(fte("#define P(a) a##\"5\"x:ex_a\nP(#)\n").0, "#5:ex_a");
     let long = "n".repeat(1100);
     let (_, out) = one_fte(&format!("#define E(a) {long}\nE()\n"));
@@ -537,7 +542,7 @@ fn a_paste_before_no_variadic_argument_keeps_other_text() {
 fn a_body_stored_again_otherwise_warns() {
     assert_eq!(
         fte("#define A 1\n#define A 2\nA\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115])
     );
     assert_eq!(
         fte("#define A 1\n#define A 1 /* c */\nA\n"),
@@ -887,7 +892,7 @@ fn reading_on_lexes_again_only_as_far_as_it_must() {
     // An error the first lexing found at the offset, after a comment, is found once: lexed
     // again from there, or kept with the token it is in.
     assert_eq!(relexed("/**//*", 4), (2, 0, 1));
-    let long = format!("/**/{}", "n".repeat(3000));
+    let long = format!("/**/{}", "n".repeat(9000));
     assert_eq!(relexed(&long, 4), (0, 1, 1));
 }
 
