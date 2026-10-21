@@ -249,6 +249,126 @@ fn a_vanilla_progs_src_is_its_bytes() {
     }
 }
 
+// spec QC-23.7: id's qcc ends the list at the first NUL between words or that ends a word or a
+// `//` comment, and reads on past one in quotes, the name ending at it
+// spec PRJ-4.7: under the vanilla dialect the graph tells the form of, and reads the list of, a
+// `progs.src` only to that NUL
+#[test]
+fn a_vanilla_progs_src_ends_at_a_nul() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    for (bytes, files) in [
+        (&b"progs.dat\0a.qc\n"[..], &[][..]),
+        (b"progs.dat\na.qc\0b.qc\n", &["a.qc"]),
+        (b"progs.dat\na.qc\n\0b.qc\n", &["a.qc"]),
+        (b"progs.dat\na.qc \0 b.qc\n", &["a.qc"]),
+        (b"progs.dat\n// c\0\nb.qc\n", &[]),
+        (b"progs.dat\n// \"\0\nb.qc\n", &[]),
+        (b"progs.dat\n\"a.qc\0x\" b.qc\n", &["a.qc", "b.qc"]),
+        (b"progs.dat\n\"a.qc\0\nb.qc\0a.qc\n", &["a.qc", "b.qc"]),
+        (b"\xef\xbb\xbfprogs.dat\na.qc\0b.qc\n", &["a.qc"]),
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+        assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+        assert_eq!(names(&graph), files, "{bytes:?}");
+        assert!(graph.diagnostics.is_empty(), "{bytes:?}");
+    }
+    // A word that ends at a `(` or holds a `"` is followed by the NUL that ends the list: each
+    // names one file more, which is missing.
+    for (bytes, missing) in [
+        (&b"progs.dat\na.qc(\0b.qc\n"[..], "("),
+        (b"progs.dat\na.qc a\"b\0\" b.qc\n", "a\"b"),
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(names(&graph), ["a.qc"], "{bytes:?}");
+        let messages: Vec<&str> = graph
+            .diagnostics
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(messages.len(), 1, "{bytes:?}");
+        assert!(messages[0].contains(missing), "{messages:?}");
+    }
+    // A source that starts with a NUL is a list with no token, `#include` after it unread.
+    for bytes in [
+        &b"\0progs.dat\na.qc\n"[..],
+        b"\0#include \"b.qc\"\n",
+        b"  \0",
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+        assert_eq!(diags(&graph), ["E0401 progs.src:0"], "{bytes:?}");
+    }
+    // The source form is told from the text before the NUL, and then read as its bytes.
+    let graph = vanilla(b"#include \"a.qc\"\0\n#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    // Under FTEQCC the NUL is a space (PRJ-4.6).
+    assert_eq!(
+        names(&loaded_graph(b"progs.dat\0a.qc\n", Dialect::Fteqcc)),
+        ["a.qc"]
+    );
+}
+
+// spec PRJ-4.8: under FTEQCC and GMQCC a `#!` first line of a `progs.src` is passed over before
+// its form is told, in either form, after a UTF-8 mark and in a wide encoding, with whatever it
+// holds; a blank or a NUL before it, or the vanilla dialect, leaves it to be read
+#[test]
+fn an_fteqcc_progs_src_passes_over_a_script_line() {
+    for dialect in [Dialect::Fteqcc, Dialect::Gmqcc] {
+        let fte = |bytes: &[u8]| loaded_graph(bytes, dialect);
+        for first in [
+            "#!/usr/bin/fteqcc",
+            "#!x \\",
+            "#!x /*",
+            "#!x \"",
+            "#!",
+            "#!b.qc",
+        ] {
+            let list = format!("{first}\nprogs.dat\na.qc\n");
+            let source = format!("{first}\n#include \"b.qc\"\n");
+            let lists = [
+                list.as_bytes().to_vec(),
+                format!("\u{feff}{list}").into_bytes(),
+                list.replace('\n', "\r\n").into_bytes(),
+            ];
+            for bytes in lists.into_iter().chain(wide(&list)) {
+                let graph = fte(&bytes);
+                assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+                assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+                assert_eq!(names(&graph), ["a.qc"], "{bytes:?}");
+            }
+            let sources = [
+                source.as_bytes().to_vec(),
+                format!("\u{feff}{source}").into_bytes(),
+            ];
+            for bytes in sources.into_iter().chain(wide(&source)) {
+                let graph = fte(&bytes);
+                assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+                assert_eq!(names(&graph), ["progs.src", "b.qc"], "{bytes:?}");
+            }
+        }
+        // The `#include` keeps its line, the second.
+        let graph = fte(b"#!x\n#include \"missing.qc\"\n");
+        assert_eq!(graph.diagnostics.first().map(|d| d.line), Some(2));
+        // A source of that line alone is a list with no token.
+        for bytes in [&b"#!progs.dat a.qc"[..], b"#!x\n", b"#!x\n\n// c\n"] {
+            let graph = fte(bytes);
+            assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+            assert_eq!(diags(&graph), ["E0401 progs.src:0"], "{bytes:?}");
+        }
+        // Only at the very start: after a blank or a NUL the line's `#` makes the source form.
+        for bytes in [&b" #!x\nprogs.dat\na.qc\n"[..], b"\0#!x\nprogs.dat\na.qc\n"] {
+            let graph = fte(bytes);
+            assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+            assert_eq!(names(&graph), ["progs.src"], "{bytes:?}");
+        }
+    }
+    // PRJ-4.1: the vanilla dialect reads the line, whose first token starts with `#`.
+    let graph = loaded_graph(b"#!x\nprogs.dat\na.qc\n", Dialect::Vanilla);
+    assert_eq!(graph.form, Some(Form::Source));
+    assert_eq!(names(&graph), ["progs.src"]);
+}
+
 // spec PRJ-4.2: in list form, /* */ comments are skipped and # lines are directives
 #[test]
 fn list_form_comments_and_directives() {

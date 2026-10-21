@@ -1125,26 +1125,72 @@ const LOADED_PROGS: &[&str] = &[
     "\u{feff}progs.dat\nb.qh\nx.qc\n",
 ];
 
+/// `progs.src` files whose first line starts with `#!`, which FTEQCC's `QCC_main` passes over
+/// (PRJ-4.8), written as UTF-8: before a list and before a source form, holding a `\`, a `/*`
+/// or a `"`, after a UTF-8 byte order mark and with CRLF line ends. All but the one whose line
+/// names `b.qh` bind `f`.
+pub(super) const SCRIPT_PROGS: &[&str] = &[
+    "#!/usr/bin/fteqcc\nprogs.dat\nb.qh\n",
+    "#!/usr/bin/fteqcc\n#include \"b.qh\"\n",
+    "#!\nprogs.dat\nb.qh\n",
+    "#!x \\\n#include \"b.qh\"\n",
+    "#!x \\\nprogs.dat\nb.qh\n",
+    "#!x /*\n#include \"b.qh\"\n// */\n",
+    "#!x /*\nprogs.dat\nb.qh\n",
+    "#!x \"\n#include \"b.qh\"\n",
+    "\u{feff}#!x\nprogs.dat\nb.qh\n",
+    "\u{feff}#!x\n#include \"b.qh\"\n",
+    "#!x\r\nprogs.dat\r\nb.qh\r\n",
+    "#!b.qh\nprogs.dat\nx.qc\n",
+];
+
 /// `progs.src` files of either form written in each wide encoding, which FTEQCC's file loader
-/// decodes (PRJ-4.6, FTEF-14.54).
+/// decodes (PRJ-4.6, FTEF-14.54), with a `#!` first line too (PRJ-4.8).
 const WIDE_PROGS: &[&str] = &[
     "#include \"b.qh\"\n",
     "progs.dat\nb.qh\n",
     "progs.dat\nx.qc\0b.qh\n",
     "// c\n#include \"b.qh\"\n",
+    "#!x\nprogs.dat\nb.qh\n",
 ];
 
-/// The graph cases of a `progs.src` of their own (PRJ-4.6): [`LOADED_PROGS`] as UTF-8 and
-/// [`WIDE_PROGS`] in each wide encoding, beside `b.qh` and `x.qc`.
+/// Vanilla `progs.src` lists with a NUL byte, where id's qcc ends the list (QC-23.7, PRJ-4.7):
+/// between words, in and after a word, in a `//` comment, at a line's start, and in a quoted
+/// word, which reads on past it. Those that list `b.qh` before the NUL, or after it in the
+/// quoted word's case, bind `f`.
+pub(super) const VANILLA_PROGS: &[&str] = &[
+    "progs.dat\0b.qh\n",
+    "progs.dat\nx.qc\0b.qh\n",
+    "progs.dat\nb.qh\0x.qc\n",
+    "progs.dat\nx.qc\n\0b.qh\n",
+    "progs.dat\nx.qc \0 b.qh\n",
+    "progs.dat\nb.qh\n\0x.qc\n",
+    "progs.dat\n// c\0\nb.qh\n",
+    "progs.dat\n// \"\0\nb.qh\n",
+    "progs.dat\n\"x.qc\0junk\" b.qh\n",
+];
+
+/// The graph cases of a `progs.src` of their own (PRJ-4.6, PRJ-4.7, PRJ-4.8): [`LOADED_PROGS`]
+/// and [`SCRIPT_PROGS`] as UTF-8 and [`WIDE_PROGS`] in each wide encoding under the FTEQCC
+/// dialect, and [`VANILLA_PROGS`] under the vanilla dialect, beside `b.qh` and `x.qc`.
 fn progs_cases() -> Vec<Case> {
-    let utf8 = LOADED_PROGS.iter().map(|&text| (text, Encoding::Utf8));
+    let fteqcc = |text| (Dialect::Fteqcc, text, Encoding::Utf8);
+    let utf8 = LOADED_PROGS
+        .iter()
+        .chain(SCRIPT_PROGS)
+        .map(|&text| fteqcc(text));
     let wide = WIDE_PROGS
         .iter()
-        .flat_map(|&text| WIDE_ENCODINGS.map(|encoding| (text, encoding)));
+        .flat_map(|&text| WIDE_ENCODINGS.map(|encoding| (Dialect::Fteqcc, text, encoding)));
+    let vanilla = VANILLA_PROGS
+        .iter()
+        .map(|&text| (Dialect::Vanilla, text, Encoding::Utf8));
     utf8.chain(wide)
-        .map(|(text, encoding)| {
+        .chain(vanilla)
+        .map(|(dialect, text, encoding)| {
             let files = [("b.qh", BIND.to_owned()), ("x.qc", "float y;\n".to_owned())];
             let mut case = project_case("t.qc", "", &files);
+            case.dialect = dialect;
             if let Some(project) = &mut case.project {
                 project.progs = Some(ProgsSrc {
                     text: text.to_owned(),
