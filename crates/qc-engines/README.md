@@ -62,6 +62,9 @@ cargo test -p qc-engines
   `builtin` and `extensions`.
 - `Builtin` and `BuiltinKey`: a table entry, keyed by number (`#N`) or engine name (`#0:NAME`).
 - `SOURCES` and `Source`: the pinned fact sources and their checksums.
+- `declared_builtins` and `BuiltinRef` (`check`): the builtin each global name of a module is
+  declared as, by number or engine name, and its entry in an engine's table (`BuiltinRef::lookup`),
+  which the language server's hover reads.
 - `missing_builtins` and `FileDiagnostic` (`check`): the `W0311` warnings for a module of a
   kind checked against a target engine, for builtins declared `#N` and, under FTEQCC,
   `#0:NAME`, `#"NAME"` and `:NAME` (ENGT-4.14), in the dialect the module was parsed in: a

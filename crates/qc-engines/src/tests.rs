@@ -17,7 +17,10 @@ use qc_sema::{FileId, ModuleIndex, ResolveOptions, resolve_module};
 use qc_syntax::{Dialect, Parse};
 
 use crate::check::builtin_number;
-use crate::{BuiltinKey, Engine, FileDiagnostic, SOURCES, missing_builtins, tables};
+use crate::{
+    BuiltinKey, BuiltinRef, Engine, FileDiagnostic, SOURCES, declared_builtins, missing_builtins,
+    tables,
+};
 
 /// A module made of `files`, in compilation order and in `dialect`: its parses and its
 /// resolved index.
@@ -1378,5 +1381,37 @@ fn reviewer_the_first_file_keys_a_builtin_given_in_two() {
     assert_eq!(
         fte_messages(Engine::Vanilla, &[first, second]),
         ["f is builtin #9000, which Vanilla does not have"]
+    );
+}
+
+// spec ENGT-4.17: each name's builtin is its first #N number, else its first #0:NAME engine
+// name, and the engine tables are looked up by that key
+#[test]
+fn declared_builtins_key_each_name() {
+    let (parses, _) = module(
+        Dialect::Fteqcc,
+        &[
+            "void() a = #0:ex_bprint;\nvoid() a = #23;\n",
+            "void() b = #0:ex_centerprint;\nvoid() c;\n",
+        ],
+    );
+    let keys = declared_builtins(&parses, Dialect::Fteqcc);
+    assert_eq!(keys.get("a"), Some(&BuiltinRef::Number(23)));
+    assert_eq!(
+        keys.get("b"),
+        Some(&BuiltinRef::Name("ex_centerprint".to_owned()))
+    );
+    assert_eq!(keys.get("c"), None);
+    let bprint = BuiltinRef::Number(23).lookup(Engine::Vanilla, ModuleKind::Ssqc);
+    assert_eq!(bprint.map(|b| b.name), Some("bprint"));
+    assert_eq!(
+        BuiltinRef::Name("ex_centerprint".to_owned())
+            .lookup(Engine::Kex, ModuleKind::Ssqc)
+            .map(|b| b.key),
+        Some(BuiltinKey::Name("ex_centerprint"))
+    );
+    assert_eq!(
+        BuiltinRef::Name("ex_centerprint".to_owned()).lookup(Engine::Vanilla, ModuleKind::Ssqc),
+        None
     );
 }

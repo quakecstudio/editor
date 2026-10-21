@@ -20,16 +20,20 @@ use qc_syntax::ast::{self, AstNode as _};
 
 use crate::{Builtin, BuiltinKey, Engine};
 
-/// How a module's source names a builtin: its number, or the engine name of `#0:NAME`.
+/// How a module's source names a builtin (ENGT-4.12, ENGT-4.17): its number, or the engine
+/// name of `#0:NAME`, `#"NAME"` or `:NAME`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Key {
+pub enum BuiltinRef {
+    /// `= #N`, `N` at least 1, as the dialect's compiler binds it.
     Number(u32),
+    /// The engine name the declaration gives.
     Name(String),
 }
 
-impl Key {
-    /// The engine's entry for this key in its table for `kind`, if it has one.
-    fn lookup(&self, engine: Engine, kind: ModuleKind) -> Option<Builtin> {
+impl BuiltinRef {
+    /// The engine's entry for this builtin in its table for `kind`, if it has one (ENGT-4.1).
+    #[must_use]
+    pub fn lookup(&self, engine: Engine, kind: ModuleKind) -> Option<Builtin> {
         match self {
             Self::Number(number) => engine.builtin(kind, BuiltinKey::Number(*number)),
             Self::Name(name) => engine
@@ -67,7 +71,7 @@ pub fn missing_builtins(
     if !engine.has_table(kind) {
         return Vec::new();
     }
-    let keys = builtin_keys(parses, dialect);
+    let keys = declared_builtins(parses, dialect);
     let callees = callee_names(parses);
     let mut out = Vec::new();
     for reference in &index.refs {
@@ -103,10 +107,10 @@ pub fn missing_builtins(
 /// `NAME is builtin #N, which ENGINE does not have` (ENGT-4.1), or `#0:ENGINE_NAME` for a
 /// builtin looked up by name (ENGT-4.17), with the extensions of the first engine whose table
 /// for `kind` lists the key with some (ENGT-4.8).
-fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
+fn message(name: &str, key: &BuiltinRef, engine: Engine, kind: ModuleKind) -> String {
     let shown = match key {
-        Key::Number(number) => number.to_string(),
-        Key::Name(engine_name) => format!("0:{engine_name}"),
+        BuiltinRef::Number(number) => number.to_string(),
+        BuiltinRef::Name(engine_name) => format!("0:{engine_name}"),
     };
     let mut message = format!(
         "{name} is builtin #{shown}, which {} does not have",
@@ -125,10 +129,12 @@ fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
     message
 }
 
-/// Each global name's builtin key: the number of its first `#N` initialiser in compilation
-/// order (ENGT-4.12), or for a name with none, the engine name of its first `#0:NAME`,
-/// `#"NAME"` or `:NAME` initialiser (ENGT-4.17, ENGT-4.14).
-fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
+/// Each global name's builtin, from a module's files in compilation order parsed in
+/// `dialect`: the number of its first `#N` initialiser (ENGT-4.12), or for a name with none,
+/// the engine name of its first `#0:NAME`, `#"NAME"` or `:NAME` initialiser (ENGT-4.17,
+/// ENGT-4.14).
+#[must_use]
+pub fn declared_builtins(parses: &[Parse], dialect: Dialect) -> HashMap<String, BuiltinRef> {
     let mut numbers: HashMap<String, u32> = HashMap::new();
     let mut names: HashMap<String, String> = HashMap::new();
     for parse in parses {
@@ -152,12 +158,12 @@ fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
             }
         }
     }
-    let mut keys: HashMap<String, Key> = names
+    let mut keys: HashMap<String, BuiltinRef> = names
         .into_iter()
-        .map(|(name, engine_name)| (name, Key::Name(engine_name)))
+        .map(|(name, engine_name)| (name, BuiltinRef::Name(engine_name)))
         .collect();
     for (name, number) in numbers {
-        keys.insert(name, Key::Number(number));
+        keys.insert(name, BuiltinRef::Number(number));
     }
     keys
 }
