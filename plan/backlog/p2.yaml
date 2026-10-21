@@ -1645,6 +1645,7 @@ issues:
   - P2-97
   - P2-98
   - P2-99
+  - P2-100
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1949,3 +1950,23 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo xtask oracles builtins
+- key: P2-100
+  title: Refuse to land a PR whose body names an issue after a closing verb in a negated sentence
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-10
+  - CONV-13
+  depends: []
+  deliverable:
+  - '.claude/skills/work-issue/scripts/check-pr-body.sh, run by .claude/skills/work-issue/scripts/land.sh on the PR body before it waits for CI and again before it queues the PR: GitHub closes an issue named after a closing keyword (close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved; "Linking a pull request to an issue", docs.github.com) whatever the sentence says, so the bodies of PRs 477 and 514, which said they left issues 84 and 444 open, closed them on merge. The script refuses a sentence holding a keyword reference and a negation or hedge word, prints it and suggests "Refs #N"'
+  - 'Its tests in xtask/src/ci/pr_body_tests.rs; the rule (write "Refs #N", never a closing verb next to an issue reference) in the Pull requests section of .claude/rules/commits-and-issues.md and in .kiro/steering/rules.md'
+  acceptance:
+  - 'A test shows each keyword, in any case and with a colon, refused after each negation and hedge word, in a sentence wrapped over lines, for a same-repository, other-repository and URL reference; the refusal prints the sentence and a "Refs" suggestion; ordinary bodies, "Closes #N" among them, are accepted'
+  - 'The bodies of PRs 477 and 514 are refused, recorded in the PR; shellcheck and shfmt -i 2 -d pass on the scripts; cargo xtask ci passes'
+  verify:
+  - cargo test -p xtask pr_body
+  - shellcheck .claude/skills/work-issue/scripts/*.sh
