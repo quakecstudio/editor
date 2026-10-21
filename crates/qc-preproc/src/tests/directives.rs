@@ -85,6 +85,9 @@ fn a_joined_line_starts_no_directive() {
         // Reading went on at the line break, after a directive whose text held the `\`.
         ("#pragma p \\\n#x", 11, TextStart::Compiled, true),
         ("a\n#x", 1, TextStart::Compiled, true),
+        // Reading went on after the line break, so no `\` before the `#` is read.
+        ("a\n#x", 2, TextStart::Compiled, true),
+        ("a\n \t#x", 3, TextStart::Compiled, true),
     ] {
         let hash = text.rfind('#').unwrap();
         assert_eq!(

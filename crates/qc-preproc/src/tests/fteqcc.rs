@@ -253,6 +253,13 @@ fn append_eof_and_build_directives() {
         ("y".to_owned(), vec![Code::E0121])
     );
     assert_eq!(fte("#forcecrc\n5\ny\n"), ("y".to_owned(), vec![]));
+    // Its number takes a `.` but one before another `.` (`c == '.'&&pr_file_p[1]!='.'`), so
+    // `1.5` is all number and `1..` leaves `..` on the line.
+    assert_eq!(fte("#forcecrc 1.5\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc 1..\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
     assert_eq!(fte("#pack\nzz\ny\n"), ("y".to_owned(), vec![Code::E0121]));
     assert_eq!(fte("#packid\ny\n"), (String::new(), vec![Code::E0121]));
     assert_eq!(fte("#pack id\ny\n"), ("y".to_owned(), vec![Code::E0121]));

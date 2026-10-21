@@ -1320,11 +1320,12 @@ impl<L: Loader> Preprocessor<L> {
             .rev()
             .find(|c| c.file == file)
             .and_then(|c| c.line_base);
+        // A file's base is set as its reading passes the pragma, and no offset before it is
+        // asked for after that: tokens are read in order, and a use whose scan ran a directive
+        // is refused with reading going on after its arguments, none read again (FTEF-14.45).
         match base {
-            Some((from, value)) if at >= from => {
-                value.wrapping_add_unsigned(line(at).saturating_sub(line(from)))
-            }
-            _ => i32::try_from(line(at)).unwrap_or(i32::MAX),
+            Some((from, value)) => value.wrapping_add_unsigned(line(at).saturating_sub(line(from))),
+            None => i32::try_from(line(at)).unwrap_or(i32::MAX),
         }
     }
 
