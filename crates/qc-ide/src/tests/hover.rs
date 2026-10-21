@@ -102,7 +102,6 @@ fn hover_of_a_builtin_names_its_engines() {
 fn hover_of_a_client_builtin_reads_the_client_tables() {
     let client = "void(entity e, vector o) setorigin = #2;\n";
     let mut host = host(&ProjectSpec {
-        files: &[("a.qc", "")],
         extra: &[
             ("client.qc", client),
             ("csprogs.src", "../csprogs.dat\nclient.qc\n"),

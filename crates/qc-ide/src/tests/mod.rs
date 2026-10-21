@@ -10,7 +10,9 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap, expect or index is a failed test"
+    clippy::string_slice,
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, expect, index or overflow is a failed test"
 )]
 
 mod completion;
