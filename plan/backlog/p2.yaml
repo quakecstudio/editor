@@ -2247,7 +2247,7 @@ issues:
   verify:
   - cargo test -p qc-project
 - key: P2-114
-  title: Pass over a progs.src first line that starts with #! as FTEQCC does
+  title: 'Pass over a progs.src first line that starts with #! as FTEQCC does'
   labels:
   - L2-syntax
   - area:language
