@@ -311,9 +311,13 @@ impl ChunkReader {
     pub(crate) fn directive_at(&self) -> Option<usize> {
         let token = self.stream.tokens.get(self.stream.pos)?;
         let hash = token.span.start;
-        let from = self.stream.code_start(hash);
         (token.kind == TokenKind::Punct(qc_lexer::Punct::Hash)
-            && fte_directive::starts_line(self.text.bytes(), from, hash, TextStart::Chunk))
+            && fte_directive::starts_line(
+                self.text.bytes(),
+                self.stream.code_start(hash),
+                hash,
+                TextStart::Chunk,
+            ))
         .then_some(hash)
     }
 

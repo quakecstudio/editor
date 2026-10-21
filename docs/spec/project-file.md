@@ -302,8 +302,13 @@ malformed directive without a diagnostic.
   read 2026-10-21). GMQCC's own lexer ends a `//` comment at its line break (`while (ch != EOF && ch
   != '\n')`, `lex_skipwhite`, `lexer.cpp` at the same commit), so the comment does not carry the
   next line: a deliberate divergence from `ftepp`, since Xonotic, the GMQCC corpus, is built with
-  the C preprocessor. GMQCC's own macros are a module's `defines` (PRJ-5.4), as Xonotic's
-  `quakec.toml` gives `GMQCC`.
+  the C preprocessor. The rest of the reading is FTEQCC's too, where `ftepp` and the C
+  preprocessor read otherwise: a `//` comment of code that ends in a `\` carries nothing, so an
+  `#include` on the next line is read (FTEF-14.52), where the C preprocessor's splicing hides it;
+  directive names match by their first bytes (`#defined Q 1` defines `Q`); and an `#include`d
+  file's first line is a directive's only at its first byte. The GMQCC dialect's own reading
+  waits for its dialect profile. GMQCC's own macros are a module's `defines` (PRJ-5.4), as
+  Xonotic's `quakec.toml` gives `GMQCC`.
 
 ## PRJ-6 The file graph
 

@@ -301,7 +301,8 @@ fn text_across_a_directive_end_is_lexed_again() {
     assert_eq!(names, [b"d".to_vec(), b"e".to_vec()]);
 }
 
-/// A line of a file of directives and code with no macro use and no side a conditional skips.
+/// A line of a file of directives and code with no side a conditional skips, and no macro use
+/// but where a `\` line joins a `#define M` line to the code after `M` is defined (FTEF-14.53).
 fn line() -> impl Strategy<Value = &'static str> {
     prop_oneof![
         Just("float y;\n"),

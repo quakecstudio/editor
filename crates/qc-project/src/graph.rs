@@ -3,9 +3,9 @@
 //! A module's ordered file graph (PRJ-4, PRJ-5, PRJ-6).
 //!
 //! The source is read a line at a time, and under the FTEQCC and GMQCC dialects each QuakeC
-//! file with the preprocessor's directive reader (PRJ-5.13, PRJ-5.15). Only the directives that decide which files are
-//! read are followed; everything else is the preprocessor's (QC-9) and the dialect profiles'
-//! work.
+//! file with the preprocessor's directive reader (PRJ-5.13, PRJ-5.15). Only the directives
+//! that decide which files are read are followed; everything else is the preprocessor's (QC-9)
+//! and the dialect profiles' work.
 
 use std::collections::{HashSet, VecDeque};
 use std::io;

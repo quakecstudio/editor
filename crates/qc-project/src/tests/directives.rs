@@ -700,10 +700,7 @@ fn joined_lines_bring_in_no_file() {
         for (text, read) in [
             ("float g; \\\n#include \"b.qh\"\n", false),
             ("float g; \\\r\n  #include \"b.qh\"\n", false),
-            (
-                "#define undef\nfloat g = \\\n#undef N\n#include \"b.qh\"\n",
-                true,
-            ),
+            ("float g; \\\r#include \"b.qh\"\n", false),
             (
                 "#define N\nfloat g = \\\n#undef N\n#ifdef N\n#include \"b.qh\"\n#endif\n",
                 true,
@@ -718,11 +715,9 @@ fn joined_lines_bring_in_no_file() {
 }
 
 /// Whether the preprocessor of `dialect` compiling `t.qc` with `files` beside it reads `b.qh`,
-/// which holds the one name `marker`.
+/// to which `files` gives the one name `marker`.
 fn preprocessor_reads_b(files: &[(&str, &str)], dialect: qc_lexer::Dialect) -> bool {
-    let mut loader = super::loader(files);
-    loader.insert("b.qh", b"marker\n");
-    let mut pp = qc_preproc::Preprocessor::new(loader).with_dialect(dialect);
+    let mut pp = qc_preproc::Preprocessor::new(super::loader(files)).with_dialect(dialect);
     let out = pp.preprocess_file(std::path::Path::new("t.qc")).unwrap();
     out.tokens
         .iter()
@@ -757,7 +752,10 @@ fn gmqcc_files_are_read_as_the_preprocessor_reads_them() {
         assert_eq!(preprocessor_reads_b(&files, gmqcc), read, "{text:?}");
     }
     // FTEQCC defines its own name; GMQCC's is a module's define.
-    let predefined = [("t.qc", "#ifdef FTEQCC\n#include \"b.qh\"\n#endif\n")];
+    let predefined = [
+        ("t.qc", "#ifdef FTEQCC\n#include \"b.qh\"\n#endif\n"),
+        ("b.qh", "marker\n"),
+    ];
     assert!(preprocessor_reads_b(&predefined, fte));
     let graph = build(&GraphSpec {
         files: &[
