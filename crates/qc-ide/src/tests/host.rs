@@ -77,3 +77,17 @@ fn opening_a_directory() {
             .is_err()
     );
 }
+
+// spec QC-12.5: reading the project again keeps a module whose files are unchanged, and reads
+// again only the files that changed on disk
+#[test]
+fn reloading_keeps_unchanged_modules() {
+    let mut host = one("float a;\nvoid() f = { a = 1; };\n");
+    let before = host.diagnostics(&path("a.qc"));
+    assert!(before.is_empty());
+    let parses = host.modules[0].db.counts().parse;
+    host.reload().unwrap();
+    assert!(host.diagnostics(&path("a.qc")).is_empty());
+    // The kept database parsed nothing again.
+    assert_eq!(host.modules[0].db.counts().parse, parses);
+}

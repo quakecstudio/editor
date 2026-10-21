@@ -81,7 +81,10 @@ fn incremental_changes_apply_in_order() {
             request(
                 1,
                 "textDocument/definition",
-                json!({ "textDocument": { "uri": uri("a.qc") }, "position": { "line": 1, "character": 13 } }),
+                json!({
+                    "textDocument": { "uri": uri("a.qc") },
+                    "position": { "line": 1, "character": 13 },
+                }),
             ),
         ],
     );
@@ -135,4 +138,32 @@ fn an_open_file_outside_the_project() {
     assert_eq!(published.len(), 1);
     assert_eq!(published[0]["uri"], json!(uri("scratch.qc")));
     assert_eq!(published[0]["version"], json!(3));
+}
+
+// LSP 3.18, "ShowMessage Notification": the server asks the client "to display a particular
+// message in the user interface", so a project file that does not open while it is typed is
+// shown once, not at every keystroke.
+#[test]
+fn a_broken_project_file_is_reported_once() {
+    let change = |version: i32, text: &str| {
+        notification(
+            "textDocument/didChange",
+            json!({
+                "textDocument": { "uri": uri("quakec.toml"), "version": version },
+                "contentChanges": [{ "text": text }],
+            }),
+        )
+    };
+    let s = started(
+        project(&[("a.qc", "float a;\n")]),
+        &[
+            open("quakec.toml", "[project\n", 1),
+            change(2, "[project]\nname = \"x"),
+            change(3, "[project]\nname = \"x"),
+            change(4, "[project]\nname = \"x\""),
+        ],
+    );
+    // Three different errors; the same text twice is shown once.
+    let shown = s.notifications("window/showMessage");
+    assert_eq!(shown.len(), 3, "{shown:?}");
 }

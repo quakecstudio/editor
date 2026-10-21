@@ -9,6 +9,12 @@
 //! to `w_x` too. A place whose text is not the name, the use of a macro that expanded to it
 //! (QC-9.7), cannot be edited without changing the macro, so the rename is refused there.
 //!
+//! A name the engine binds is refused: a system global or field, whose place before
+//! `end_sys_globals` or `end_sys_fields` the header CRC checks (EDICT-2.2, EDICT-3.2), and a
+//! field the engine reads by name (EDICT-3.4). A function or field that map data may name, as an
+//! entity's `classname` (EDICT-8.6) or a key (EDICT-8.2), is renamed with a [`Caution`], since
+//! no source in the project says which maps name it.
+//!
 //! The new name must be a QuakeC name (QC-3.1). Whether it changes what the program means
 //! (a local that would then hide a global, a name already taken, a word the dialect reads as a
 //! keyword) is not guessed from rules: as IntelliJ's rename checks for conflicts, every module
@@ -22,7 +28,7 @@ use std::path::{Path, PathBuf};
 
 use qc_diag::Span;
 use qc_project::Loader;
-use qc_sema::{Db, DefId, FileId, Location, ModuleAnalysis};
+use qc_sema::{Db, DefId, DefKind, FileId, Location, ModuleAnalysis, ModuleIndex};
 
 use crate::FileRange;
 use crate::host::AnalysisHost;
@@ -31,6 +37,67 @@ use crate::syntax::{name_at, name_token_near};
 
 /// The `_x`, `_y` and `_z` suffixes of a vector's component names (QC-11.7).
 const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
+
+/// The fields id's engine reads by name (EDICT-3.4): `gravity` and `items2`, and the
+/// mission-pack ammo fields `Host_Give_f` sets (`GetEdictFieldValue(sv_player, "ammo_shells1")`
+/// and so on in WinQuake/host_cmd.c, id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d).
+const ENGINE_FIELDS: [&str; 9] = [
+    "gravity",
+    "items2",
+    "ammo_shells1",
+    "ammo_nails1",
+    "ammo_lava_nails",
+    "ammo_rockets1",
+    "ammo_multi_rockets",
+    "ammo_cells1",
+    "ammo_plasma",
+];
+
+/// How the engine binds a name, so that renaming it breaks the progs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineBinding {
+    /// A global declared before `end_sys_globals` (EDICT-2.2).
+    SystemGlobal,
+    /// A field declared before `end_sys_fields` (EDICT-3.2).
+    SystemField,
+    /// A field the engine reads by name (EDICT-3.4).
+    FieldByName,
+}
+
+/// What a rename that is made cannot check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Caution {
+    /// A function, which a map may name as an entity's `classname` or a key's value
+    /// (EDICT-8.6, EDICT-8.2).
+    MapFunction(String),
+    /// A field, which a map may name as a key (EDICT-8.2).
+    MapField(String),
+}
+
+impl fmt::Display for Caution {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MapFunction(name) => write!(
+                f,
+                "a map that names the function {name} as a classname or a key's value still \
+                 names the old name"
+            ),
+            Self::MapField(name) => write!(
+                f,
+                "a map whose entities set the field {name} as a key still names the old name"
+            ),
+        }
+    }
+}
+
+/// A rename: its edits, and what it cannot check.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rename {
+    /// The edits of each file, by path.
+    pub edits: Vec<FileEdit>,
+    /// What the edits cannot have changed, if anything.
+    pub caution: Option<Caution>,
+}
 
 /// Why a rename cannot be made.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,6 +108,15 @@ pub enum RenameError {
     InvalidName(String),
     /// The compiler made the definition, so no source names it (FTEF-9.5).
     Generated(String),
+    /// The name is a vector's component (QC-11.7), renamed with the vector.
+    Component {
+        /// The component's name.
+        component: String,
+        /// The vector's.
+        vector: String,
+    },
+    /// The engine binds the name (EDICT-2.2, EDICT-3.2, EDICT-3.4).
+    EngineName(String, EngineBinding),
     /// The name is written at this place through a macro (QC-9.7).
     InMacro(FileRange),
     /// With the new name, the place in the edited text means something else.
@@ -57,6 +133,23 @@ impl fmt::Display for RenameError {
                  letters, digits and _"
             ),
             Self::Generated(name) => write!(f, "{name} is made by the compiler"),
+            Self::Component { component, vector } => write!(
+                f,
+                "{component} is a component of the vector {vector}: rename {vector}"
+            ),
+            Self::EngineName(name, EngineBinding::SystemGlobal) => write!(
+                f,
+                "{name} is a system global, which the engine finds by its place before \
+                 end_sys_globals"
+            ),
+            Self::EngineName(name, EngineBinding::SystemField) => write!(
+                f,
+                "{name} is a system field, which the engine finds by its place before \
+                 end_sys_fields"
+            ),
+            Self::EngineName(name, EngineBinding::FieldByName) => {
+                write!(f, "the engine reads the field {name} by its name")
+            }
             Self::InMacro(at) => write!(
                 f,
                 "the name is used through a macro in {} at byte {}",
@@ -104,6 +197,22 @@ impl<L: Loader> AnalysisHost<L> {
         if def.generated {
             return Err(RenameError::Generated(def.name.clone()));
         }
+        let index = &data.analysis.index;
+        if let Some(binding) = engine_binding(index, target.def) {
+            return Err(RenameError::EngineName(def.name.clone(), binding));
+        }
+        // A component is declared at its vector's name (QC-11.7).
+        let written = state.db.file_text(def.location.file);
+        if let Some(vector) = COMPONENTS
+            .iter()
+            .find_map(|suffix| def.name.strip_suffix(suffix))
+            .filter(|vector| name_at(written, def.location.span, vector))
+        {
+            return Err(RenameError::Component {
+                component: def.name.clone(),
+                vector: vector.to_owned(),
+            });
+        }
         let path = qc_project::normalize(path);
         let file = state.file_id(&path).ok_or(RenameError::NoName)?;
         let token = data
@@ -119,30 +228,47 @@ impl<L: Loader> AnalysisHost<L> {
     }
 
     /// The edits that rename the definition of the name at byte `offset` of `path` to
-    /// `new_name`, by file in path order; none when the name is already `new_name`.
+    /// `new_name`, by file in path order, none when the name is already `new_name`, with what
+    /// they cannot check.
     ///
     /// # Errors
     ///
-    /// [`RenameError`] when there is no name there, `new_name` is no QuakeC name, a place the
-    /// name is written is a macro's use, or the edited program would mean something else.
+    /// [`RenameError`] when there is no name there, it is the engine's or a component's,
+    /// `new_name` is no QuakeC name, a place the name is written is a macro's use, or the edited
+    /// program would mean something else.
     pub fn rename(
         &mut self,
         path: &Path,
         offset: usize,
         new_name: &str,
-    ) -> Result<Vec<FileEdit>, RenameError> {
+    ) -> Result<Rename, RenameError> {
         self.prepare_rename(path, offset)?;
         if !is_name(new_name) {
             return Err(RenameError::InvalidName(new_name.to_owned()));
         }
         let target = self.def_at(path, offset).ok_or(RenameError::NoName)?;
-        let old_name = self
+        let (old_name, kind, builtin) = self
             .module(target.module)
-            .and_then(|(_, data)| data.analysis.index.def(target.def))
-            .map(|d| d.name.clone())
+            .and_then(|(_, data)| {
+                let def = data.analysis.index.def(target.def)?;
+                Some((
+                    def.name.clone(),
+                    def.kind,
+                    data.builtins.contains_key(&def.name),
+                ))
+            })
             .ok_or(RenameError::NoName)?;
+        // A builtin is bound by its number or engine name (QC-13.3), and no map spawns one.
+        let caution = match kind {
+            DefKind::Function if !builtin => Some(Caution::MapFunction(old_name.clone())),
+            DefKind::Field => Some(Caution::MapField(old_name.clone())),
+            DefKind::Function | DefKind::Global | DefKind::Param | DefKind::Local => None,
+        };
         if old_name == new_name {
-            return Ok(Vec::new());
+            return Ok(Rename {
+                edits: Vec::new(),
+                caution: None,
+            });
         }
         let same = self.same_defs(target);
         let mut edits: BTreeMap<PathBuf, Vec<(Span, String)>> = BTreeMap::new();
@@ -162,7 +288,10 @@ impl<L: Loader> AnalysisHost<L> {
             out.push(FileEdit { path, edits: list });
         }
         self.check_meaning(&out, &renamed, &old_name, new_name)?;
-        Ok(out)
+        Ok(Rename {
+            edits: out,
+            caution,
+        })
     }
 
     /// The definitions a rename of `at` renames, each with the suffix its name has after the
@@ -216,7 +345,8 @@ impl<L: Loader> AnalysisHost<L> {
                     .or_default()
                     .push((location.span, replacement.clone()));
             } else if suffix.is_empty() || !name_at(text, location.span, old) {
-                // A component declared at its vector's name is renamed with the vector.
+                // A component declared at its vector's name is renamed with the vector; any
+                // other place that does not hold the name is a macro's use.
                 return Err(RenameError::InMacro(FileRange {
                     path: path.to_path_buf(),
                     span: location.span,
@@ -237,6 +367,8 @@ impl<L: Loader> AnalysisHost<L> {
     ) -> Result<(), RenameError> {
         let by_path: BTreeMap<&Path, &FileEdit> =
             edits.iter().map(|e| (e.path.as_path(), e)).collect();
+        // A module that compiles an edited file but not the definition's has not been read.
+        self.ensure_all();
         for (index, state) in self.modules.iter().enumerate() {
             if !state
                 .files
@@ -279,6 +411,28 @@ impl<L: Loader> AnalysisHost<L> {
         }
         Ok(())
     }
+}
+
+/// How the engine binds definition `def`, if it does: a global or field declared before
+/// `end_sys_globals` or `end_sys_fields` (EDICT-2.2, EDICT-3.2), or a field it reads by name
+/// (EDICT-3.4). Definitions are in declaration order (QC-12.2), so "before" is a smaller id.
+fn engine_binding(index: &ModuleIndex, def: DefId) -> Option<EngineBinding> {
+    let definition = index.def(def)?;
+    let before = |marker: &str, kinds: &[DefKind]| {
+        index
+            .defs
+            .iter()
+            .position(|d| d.name == marker && d.owner.is_none())
+            .is_some_and(|end| def.0 < end && kinds.contains(&definition.kind))
+    };
+    if before("end_sys_globals", &[DefKind::Global, DefKind::Function]) {
+        return Some(EngineBinding::SystemGlobal);
+    }
+    if before("end_sys_fields", &[DefKind::Field]) {
+        return Some(EngineBinding::SystemField);
+    }
+    (definition.kind == DefKind::Field && ENGINE_FIELDS.contains(&definition.name.as_str()))
+        .then_some(EngineBinding::FieldByName)
 }
 
 /// Whether `name` is a QuakeC name (QC-3.1): an ASCII letter or `_`, then ASCII letters,

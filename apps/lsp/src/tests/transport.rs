@@ -19,8 +19,11 @@ fn a_message_and_its_headers() {
         Some(b"{}".to_vec())
     );
     assert_eq!(
-        first(b"content-length: 2\r\nContent-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}")
-            .unwrap(),
+        first(
+            b"content-length: 2\r\n\
+              Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}"
+        )
+        .unwrap(),
         Some(b"{}".to_vec())
     );
     let mut two: &[u8] = b"Content-Length: 1\r\n\r\naContent-Length: 1\r\n\r\nb";

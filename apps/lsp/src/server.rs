@@ -22,6 +22,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use crate::lines::{Encoding, LineIndex, Position};
+use crate::render::Markup;
 use crate::transport::write_message;
 use crate::uri;
 use crate::{proto, render};
@@ -110,14 +111,16 @@ pub struct Server<L, W> {
     host: AnalysisHost<L>,
     /// What a position's character offset counts.
     encoding: Encoding,
-    /// Whether hovers are Markdown.
-    markdown: bool,
+    /// How hovers are written.
+    markup: Markup,
     /// The version of each open document.
     versions: HashMap<PathBuf, i32>,
     /// What was last published for each document.
     published: HashMap<PathBuf, Vec<Diagnostic>>,
     /// Notifications to send after the answer being computed.
     queued: Vec<(String, Value)>,
+    /// The project error last shown, if the project does not open.
+    project_error: Option<String>,
 }
 
 impl<L: Loader, W: Write> Server<L, W> {
@@ -128,10 +131,11 @@ impl<L: Loader, W: Write> Server<L, W> {
             phase: Phase::Uninitialized,
             host: AnalysisHost::new(loader, Config::default()),
             encoding: Encoding::Utf16,
-            markdown: false,
+            markup: Markup::PlainText,
             versions: HashMap::new(),
             published: HashMap::new(),
             queued: Vec::new(),
+            project_error: None,
         }
     }
 
@@ -292,12 +296,19 @@ impl<L: Loader, W: Write> Server<L, W> {
             .text_document
             .clone()
             .unwrap_or_default();
-        self.markdown = document
+        // LSP 3.18, `HoverClientCapabilities.contentFormat`: "The order describes the preferred
+        // format of the client."
+        let markdown = document
             .hover
             .as_ref()
             .and_then(|h| h.content_format.as_ref())
             .and_then(|formats| formats.first())
-            .is_some_and(|f| f == "markdown");
+            .is_some_and(|f| f == Markup::Markdown.kind());
+        self.markup = if markdown {
+            Markup::Markdown
+        } else {
+            Markup::PlainText
+        };
         let prepare = document
             .rename
             .and_then(|r| r.prepare_support)
@@ -324,9 +335,11 @@ impl<L: Loader, W: Write> Server<L, W> {
         // client until it has responded with an `InitializeResult`", so the message waits for
         // the answer.
         if let Err(err) = opened {
+            let message = format!("QuakeC project: {err}");
+            self.project_error = Some(message.clone());
             self.queued.push((
                 "window/showMessage".to_owned(),
-                json!({ "type": 1, "message": format!("QuakeC project: {err}") }),
+                json!({ "type": 1, "message": message }),
             ));
         }
         // LSP 3.18, `renameProvider`: "`RenameOptions` may only be specified if the client
@@ -418,17 +431,25 @@ impl<L: Loader, W: Write> Server<L, W> {
     }
 
     /// Shows a project that does not open as an error message.
+    ///
+    /// A project file being typed fails to open at many keystrokes in a row, so an error is
+    /// shown once, until the project opens or fails another way.
     fn report_project(
         &mut self,
         result: Result<(), qc_project::ProjectError>,
     ) -> std::io::Result<()> {
-        if let Err(err) = result {
-            self.notify(
-                "window/showMessage",
-                &json!({ "type": 1, "message": format!("QuakeC project: {err}") }),
-            )?;
+        let message = result.err().map(|err| format!("QuakeC project: {err}"));
+        if message == self.project_error {
+            return Ok(());
         }
-        Ok(())
+        self.project_error.clone_from(&message);
+        match message {
+            Some(message) => self.notify(
+                "window/showMessage",
+                &json!({ "type": 1, "message": message }),
+            ),
+            None => Ok(()),
+        }
     }
 
     /// Publishes the diagnostics of every file whose list changed since the last publication,
@@ -496,6 +517,31 @@ impl<L: Loader, W: Write> Server<L, W> {
         }
     }
 
+    /// The protocol locations of `ranges`, in order, each file's lines read once.
+    fn locations(&mut self, ranges: &[FileRange]) -> Vec<proto::Location> {
+        let mut texts: HashMap<PathBuf, Vec<u8>> = HashMap::new();
+        for range in ranges {
+            if !texts.contains_key(&range.path) {
+                let text = self.host.text(&range.path).unwrap_or_default();
+                texts.insert(range.path.clone(), text);
+            }
+        }
+        let lines: HashMap<&PathBuf, LineIndex<'_>> = texts
+            .iter()
+            .map(|(path, text)| (path, LineIndex::new(text, self.encoding)))
+            .collect();
+        ranges
+            .iter()
+            .filter_map(|range| {
+                let lines = lines.get(&range.path)?;
+                Some(proto::Location {
+                    uri: uri::from_path(&range.path),
+                    range: lines.range(range.span.start, range.span.end),
+                })
+            })
+            .collect()
+    }
+
     /// `textDocument/definition`: a `Location`, or `null`.
     fn definition(&mut self, params: proto::PositionParams) -> Result<Value, ResponseError> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
@@ -515,8 +561,7 @@ impl<L: Loader, W: Write> Server<L, W> {
         let ranges = self
             .host
             .references(&path, offset, params.context.include_declaration);
-        let locations: Vec<proto::Location> = ranges.iter().map(|r| self.location(r)).collect();
-        to_value(&locations)
+        to_value(&self.locations(&ranges))
     }
 
     /// `textDocument/prepareRename`: the `Range` to rename, `null` where no name is, and an
@@ -539,12 +584,18 @@ impl<L: Loader, W: Write> Server<L, W> {
         let Some((path, offset)) = self.locate(&params.text_document, params.position) else {
             return Err(rename_error(&RenameError::NoName));
         };
-        let edits = self
+        let rename = self
             .host
             .rename(&path, offset, &params.new_name)
             .map_err(|err| rename_error(&err))?;
+        if let Some(caution) = rename.caution {
+            self.queued.push((
+                "window/showMessage".to_owned(),
+                json!({ "type": 2, "message": format!("Renamed: {caution}.") }),
+            ));
+        }
         let mut changes = BTreeMap::new();
-        for file in edits {
+        for file in rename.edits {
             let text = self.host.text(&file.path).unwrap_or_default();
             let lines = LineIndex::new(&text, self.encoding);
             let edits = file
@@ -570,12 +621,8 @@ impl<L: Loader, W: Write> Server<L, W> {
         };
         let range = self.location(&hover.range).range;
         let contents = proto::MarkupContent {
-            kind: if self.markdown {
-                "markdown"
-            } else {
-                "plaintext"
-            },
-            value: render::hover(&hover, self.markdown),
+            kind: self.markup.kind(),
+            value: render::hover(&hover, self.markup),
         };
         to_value(&proto::Hover { contents, range })
     }

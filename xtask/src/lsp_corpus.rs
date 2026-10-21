@@ -9,7 +9,7 @@
 //! `-Fautoproto`), and for each probe, a name at a place in a file, asks for its definition,
 //! its references, its hover, whether it can be renamed and the rename; then completion at two
 //! places, the inlay hints of a file, the semantic tokens of every file, and it collects every
-//! published diagnostic. The answers, rendered one per line with every position as
+//! message shown and every published diagnostic. The answers, rendered one per line with every position as
 //! `file:line:column` (1-based, UTF-16 columns), are compared with the golden file
 //! `docs/spec/vectors/lsp/<dir name>.txt`; `--write` rewrites it instead.
 //!
@@ -42,9 +42,9 @@ struct Probe {
 }
 
 /// The probes of the rerelease: a function used in another file, a function at its definition,
-/// a local, a parameter, a field, a global, a constant, and two builtins, by number and by
-/// engine name.
-const PROBES: [Probe; 9] = [
+/// a local, a parameter, a system field and a system global (which rename refuses), a field and
+/// a global of the mod's own, a constant, and two builtins, by number and by engine name.
+const PROBES: [Probe; 11] = [
     Probe {
         file: "weapons.qc",
         at: "T_Damage (trace_ent",
@@ -80,6 +80,18 @@ const PROBES: [Probe; 9] = [
         at: "coop &&",
         occurrence: 0,
         name: "coop",
+    },
+    Probe {
+        file: "doors.qc",
+        at: "wait >= 0",
+        occurrence: 0,
+        name: "wait",
+    },
+    Probe {
+        file: "combat.qc",
+        at: "damage_attacker = attacker",
+        occurrence: 0,
+        name: "damage_attacker",
     },
     Probe {
         file: "defs.qc",
@@ -417,6 +429,15 @@ fn render(dir: &Path, script: &Script, messages: &[Value]) -> Result<String, Str
             ask_name(*ask),
             summary(dir, *ask, result)
         ));
+    }
+    for message in messages {
+        if message.get("method") == Some(&json!("window/showMessage")) {
+            out.push_str(&format!(
+                "message type {}: {}\n",
+                at(message, "/params/type"),
+                at(message, "/params/message").as_str().unwrap_or_default()
+            ));
+        }
     }
     out.push_str(&diagnostics(dir, messages));
     Ok(out)

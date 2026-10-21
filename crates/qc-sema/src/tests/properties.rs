@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Property tests (TEST-4) for the invariants the crate README states: every definition,
-//! reference, redeclaration and diagnostic is at a span of its source file, under both profiles and through
-//! the preprocessor or not; and re-resolving after an edit gives what resolving the edited
-//! files from scratch gives.
+//! reference, redeclaration and diagnostic is at a span of its source file, under both
+//! profiles and through the preprocessor or not; and re-resolving after an edit gives what
+//! resolving the edited files from scratch gives.
 
 use std::path::PathBuf;
 

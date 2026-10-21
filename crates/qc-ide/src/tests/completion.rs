@@ -18,10 +18,11 @@ fn labels(text: &str, needle: &str, n: usize) -> Vec<String> {
 // are visible, not another function's locals or a later local
 #[test]
 fn completion_offers_what_is_in_scope() {
-    let text = "float g;\n.float hp;\nvoid(float p) f = { local float early; /*here*/ local float late; };\n\
+    let text = "float g;\n.float hp;\n\
+                void(float p) f = { local float early; /*here*/ local float late; };\n\
                 void() h = { local float other; };\n";
     let got = labels(text, "/*here*/", 0);
-    assert_eq!(got, ["g", "hp", "f", "p", "early", "h"]);
+    assert_eq!(got, ["g", "hp", "f", "p", "early"]);
 }
 
 // spec QC-12.1: at file level only the globals are visible
@@ -53,4 +54,29 @@ fn completion_items_have_kind_and_type() {
     assert_eq!(items[0].kind, DefKind::Function);
     assert_eq!(items[0].detail, "float(entity)");
     assert!(host.completions(&path("missing.qc"), 0).is_empty());
+}
+
+// spec QC-12.5: a global declared after the cursor, in the same file or a later one, does not
+// resolve there, so it is not offered
+#[test]
+fn completion_leaves_out_later_globals() {
+    let first = "float early;\nvoid() f = { /*here*/ };\nfloat late;\n";
+    let second = "float later_file;\n";
+    let mut host = super::host(&super::ProjectSpec {
+        files: &[("a.qc", first), ("b.qc", second)],
+        ..super::ProjectSpec::default()
+    });
+    let labels: Vec<String> = host
+        .completions(&path("a.qc"), nth(first, "/*here*/", 0))
+        .into_iter()
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(labels, ["early", "f"]);
+    // At the start of the second file, everything of the first is declared.
+    let at_start: Vec<String> = host
+        .completions(&path("b.qc"), 0)
+        .into_iter()
+        .map(|c| c.label)
+        .collect();
+    assert_eq!(at_start, ["early", "f", "late"]);
 }

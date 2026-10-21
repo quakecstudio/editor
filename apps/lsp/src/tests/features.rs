@@ -90,6 +90,8 @@ fn rename() {
     renamed["newName"] = json!("hp");
     let mut invalid = renamed.clone();
     invalid["newName"] = json!("2hp");
+    let mut function = at("code.qc", CODE, "heal", 0);
+    function["newName"] = json!("mend");
     let s = started(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[
@@ -101,6 +103,7 @@ fn rename() {
             request(2, "textDocument/prepareRename", at("code.qc", CODE, "{", 0)),
             request(3, "textDocument/rename", renamed),
             request(4, "textDocument/rename", invalid),
+            request(5, "textDocument/rename", function),
         ],
     );
     assert_eq!(s.result(1), &range(CODE, "health", 1));
@@ -116,6 +119,19 @@ fn rename() {
     assert_eq!(s.error_code(4), -32803);
     let message = s.response(4)["error"]["message"].as_str().unwrap();
     assert!(message.contains("not a QuakeC name"), "{message}");
+    // LSP 3.18, "ShowMessage Notification": a function a map may name is renamed with a warning
+    // (`MessageType.Warning`, 2) the client shows, after the answer.
+    assert_eq!(
+        s.result(5)["changes"][uri("code.qc")]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let shown = s.notifications("window/showMessage");
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!(shown[0]["type"], json!(2));
+    assert!(shown[0]["message"].as_str().unwrap().contains("heal"));
 }
 
 // LSP 3.18, "Hover Request": a `Hover` whose contents are `MarkupContent` in a format the client
@@ -212,75 +228,72 @@ fn semantic_tokens() {
 // computed", answered with `InlayHint[]` of `InlayHintKind` 2, a parameter.
 #[test]
 fn inlay_hints() {
+    let whole = json!({ "start": place(0, 0), "end": place(9, 0) });
     let s = started(
         project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
         &[request(
             1,
             "textDocument/inlayHint",
-            json!({
-                "textDocument": { "uri": uri("code.qc") },
-                "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 9, "character": 0 } },
-            }),
+            json!({ "textDocument": { "uri": uri("code.qc") }, "range": whole }),
         )],
     );
+    let hint = |at: Value, label: &str| {
+        let parameter = 2;
+        json!({ "position": at, "label": label, "kind": parameter, "paddingRight": true })
+    };
     assert_eq!(
         s.result(1),
         &json!([
-            { "position": position(CODE, "self,", 0), "label": "e:", "kind": 2, "paddingRight": true },
-            { "position": position(CODE, "'0 0 0'", 0), "label": "o:", "kind": 2, "paddingRight": true },
+            hint(position(CODE, "self,", 0), "e:"),
+            hint(position(CODE, "'0 0 0'", 0), "o:"),
         ])
     );
+}
+
+/// A position.
+fn place(line: u32, character: u32) -> Value {
+    json!({ "line": line, "character": character })
 }
 
 // LSP 3.18, "Text Documents": a position whose character is "greater than the line length it
 // defaults back to the line length", and a URI that is not a file names nothing.
 #[test]
 fn requests_outside_any_file() {
+    let nowhere = json!({ "uri": "untitled:1" });
+    let at_start = json!({ "textDocument": nowhere, "position": place(0, 0) });
+    let with = |key: &str, value: Value| {
+        let mut params = at_start.clone();
+        params
+            .as_object_mut()
+            .unwrap()
+            .insert(key.to_owned(), value);
+        params
+    };
+    let past_the_line = json!({ "textDocument": { "uri": uri("a.qc") }, "position": place(0, 99) });
+    let empty = json!({ "start": place(0, 0), "end": place(0, 0) });
     let s = started(
         project(&[("a.qc", "float a;\n")]),
         &[
-            request(
-                1,
-                "textDocument/definition",
-                json!({ "textDocument": { "uri": "untitled:1" }, "position": { "line": 0, "character": 0 } }),
-            ),
+            request(1, "textDocument/definition", at_start.clone()),
             request(
                 2,
                 "textDocument/references",
-                json!({ "textDocument": { "uri": "untitled:1" }, "position": { "line": 0, "character": 0 },
-                        "context": { "includeDeclaration": true } }),
+                with("context", json!({ "includeDeclaration": true })),
             ),
-            request(
-                3,
-                "textDocument/hover",
-                json!({ "textDocument": { "uri": uri("a.qc") }, "position": { "line": 0, "character": 99 } }),
-            ),
+            request(3, "textDocument/hover", past_the_line),
             request(
                 4,
                 "textDocument/semanticTokens/full",
-                json!({ "textDocument": { "uri": "untitled:1" } }),
+                json!({ "textDocument": nowhere }),
             ),
-            request(
-                5,
-                "textDocument/completion",
-                json!({ "textDocument": { "uri": "untitled:1" }, "position": { "line": 0, "character": 0 } }),
-            ),
+            request(5, "textDocument/completion", at_start.clone()),
             request(
                 6,
                 "textDocument/inlayHint",
-                json!({ "textDocument": { "uri": "untitled:1" },
-                        "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } } }),
+                json!({ "textDocument": nowhere, "range": empty }),
             ),
-            request(
-                7,
-                "textDocument/rename",
-                json!({ "textDocument": { "uri": "untitled:1" }, "position": { "line": 0, "character": 0 }, "newName": "x" }),
-            ),
-            request(
-                8,
-                "textDocument/prepareRename",
-                json!({ "textDocument": { "uri": "untitled:1" }, "position": { "line": 0, "character": 0 } }),
-            ),
+            request(7, "textDocument/rename", with("newName", json!("x"))),
+            request(8, "textDocument/prepareRename", at_start.clone()),
         ],
     );
     assert_eq!(s.result(1), &json!(null));

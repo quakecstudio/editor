@@ -4,10 +4,10 @@
 //!
 //! These read a resolved [`ModuleIndex`] (`crate::resolve`). Go-to-definition maps a byte
 //! position in a file to the definition whose name, use or later declaration covers it;
-//! find-references lists every use of a definition, and optionally its declarations. The answers follow `qcc`'s
-//! resolution exactly (QC-12), so a name that reuses a global (QC-12.3) navigates to that
-//! global, and a local of one function is never confused with a same-named local of
-//! another (QC-12.4).
+//! find-references lists every use of a definition, and optionally its declarations. The
+//! answers follow `qcc`'s resolution exactly (QC-12), so a name that reuses a global (QC-12.3)
+//! navigates to that global, and a local of one function is never confused with a same-named
+//! local of another (QC-12.4).
 
 use crate::resolve::ModuleIndex;
 use crate::symbol::{DefId, FileId, Location};

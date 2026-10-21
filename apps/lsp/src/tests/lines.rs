@@ -80,3 +80,16 @@ fn bytes_that_are_not_utf8() {
     let range = lines.range(2, 4);
     assert_eq!((range.start, range.end), (at(0, 2), at(0, 4)));
 }
+
+// LSP 3.18, `PositionEncodingKind.UTF8`: "Character offsets count UTF-8 code units (i.e. bytes)"
+// of the text the client has, in which a sequence that is not UTF-8 is a three-byte U+FFFD.
+#[test]
+fn bytes_that_are_not_utf8_in_utf8_positions() {
+    let text = b"\x8dx";
+    let lines = LineIndex::new(text, Encoding::Utf8);
+    assert_eq!(lines.position(1), at(0, 3));
+    assert_eq!(lines.position(2), at(0, 4));
+    assert_eq!(lines.offset(at(0, 3)), 1);
+    assert_eq!(lines.offset(at(0, 2)), 0);
+    assert_eq!(lines.offset(at(0, 4)), 2);
+}

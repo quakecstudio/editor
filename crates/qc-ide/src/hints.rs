@@ -8,6 +8,7 @@
 //! the function the callee resolves to; an argument that is already a name equal to the
 //! parameter's gets none.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use qc_diag::Span;
@@ -43,6 +44,8 @@ impl<L: Loader> AnalysisHost<L> {
         };
         let index = &data.analysis.index;
         let mut out = Vec::new();
+        // A function's parameter names, read once however often it is called.
+        let mut known: HashMap<DefId, Vec<Option<String>>> = HashMap::new();
         for node in parse.syntax().descendants() {
             let Some(call) = ast::CallExpr::cast(node) else {
                 continue;
@@ -60,7 +63,10 @@ impl<L: Loader> AnalysisHost<L> {
             let Some((def, _)) = index.definition_at(file, name.span().start) else {
                 continue;
             };
-            let names = function_parameters(state, data, index, def);
+            let names = known
+                .entry(def)
+                .or_insert_with(|| function_parameters(state, data, index, def))
+                .clone();
             let Some(args) = call.args() else {
                 continue;
             };

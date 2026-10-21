@@ -22,13 +22,23 @@ rename damage combat.qc:160:44: 7 edits (combat.qc x7)
 definition takedamage combat.qc:123:7: defs.qc:163:9
 references takedamage combat.qc:123:7: 44 (buttons.qc x3, client.qc x3, combat.qc x4, defs.qc x1, doors.qc x6, misc.qc x2, monsters.qc x3, monsters/chthon.qc x1, monsters/fiend.qc x1, monsters/ogre.qc x1, monsters/rottweiler.qc x1, monsters/shub.qc x2, monsters/spawn.qc x2, monsters/zombie.qc x1, player.qc x1, triggers.qc x4, weapons.qc x8)
 hover takedamage combat.qc:123:7: ```quakec\n.float takedamage\n```
-prepare-rename takedamage combat.qc:123:7: 123:7
-rename takedamage combat.qc:123:7: 44 edits (buttons.qc x3, client.qc x3, combat.qc x4, defs.qc x1, doors.qc x6, misc.qc x2, monsters.qc x3, monsters/chthon.qc x1, monsters/fiend.qc x1, monsters/ogre.qc x1, monsters/rottweiler.qc x1, monsters/shub.qc x2, monsters/spawn.qc x2, monsters/zombie.qc x1, player.qc x1, triggers.qc x4, weapons.qc x8)
+prepare-rename takedamage combat.qc:123:7: error takedamage is a system field, which the engine finds by its place before end_sys_fields
+rename takedamage combat.qc:123:7: error takedamage is a system field, which the engine finds by its place before end_sys_fields
 definition coop combat.qc:153:7: defs.qc:48:8
 references coop combat.qc:153:7: 14 (ai.qc x1, client.qc x6, combat.qc x1, defs.qc x1, items.qc x2, monsters/shub.qc x1, player.qc x1, weapons.qc x1)
 hover coop combat.qc:153:7: ```quakec\nfloat coop\n```
-prepare-rename coop combat.qc:153:7: 153:7
-rename coop combat.qc:153:7: 14 edits (ai.qc x1, client.qc x6, combat.qc x1, defs.qc x1, items.qc x2, monsters/shub.qc x1, player.qc x1, weapons.qc x1)
+prepare-rename coop combat.qc:153:7: error coop is a system global, which the engine finds by its place before end_sys_globals
+rename coop combat.qc:153:7: error coop is a system global, which the engine finds by its place before end_sys_globals
+definition wait doors.qc:54:11: defs.qc:590:9
+references wait doors.qc:54:11: 30 (buttons.qc x3, defs.qc x1, doors.qc x9, misc.qc x4, plats.qc x6, triggers.qc x7)
+hover wait doors.qc:54:11: ```quakec\n.float wait\n```\n\n---\n\ntime from firing to restarting
+prepare-rename wait doors.qc:54:11: 54:11
+rename wait doors.qc:54:11: 30 edits (buttons.qc x3, defs.qc x1, doors.qc x9, misc.qc x4, plats.qc x6, triggers.qc x7)
+definition damage_attacker combat.qc:164:2: defs.qc:473:8
+references damage_attacker combat.qc:164:2: 7 (buttons.qc x1, combat.qc x1, defs.qc x1, player.qc x3, triggers.qc x1)
+hover damage_attacker combat.qc:164:2: ```quakec\nentity damage_attacker\n```\n\n---\n\nset by T_Damage
+prepare-rename damage_attacker combat.qc:164:2: 164:2
+rename damage_attacker combat.qc:164:2: 7 edits (buttons.qc x1, combat.qc x1, defs.qc x1, player.qc x3, triggers.qc x1)
 definition FL_FLY defs.qc:248:7: defs.qc:248:7
 references FL_FLY defs.qc:248:7: 5 (defs.qc x1, monsters.qc x3, triggers.qc x1)
 hover FL_FLY defs.qc:248:7: ```quakec\nfloat FL_FLY\n```\n\n---\n\nedict.flags
@@ -44,8 +54,8 @@ references bprint client.qc:405:3: 42 (client.qc x41, defs.qc x1)
 hover bprint client.qc:405:3: ```quakec\nvoid(string s, ...) bprint\n```\n\n---\n\nBuiltin `#0:ex_bprint`.  \nKEX has it as `void(string s, ...) bprint`.  \nEngines with it: QuakeSpasm, Ironwail, vkQuake, KEX.  \nEngines without it: Vanilla, FTEQW, DarkPlaces.
 prepare-rename bprint client.qc:405:3: 405:3
 rename bprint client.qc:405:3: 42 edits (client.qc x41, defs.qc x1)
-completion at combat.qc:171:2: 2658 items, first self other world time frametime, last Bot_PostThink Bot_PreThink monster_oldone
-completion at combat.qc:123:7: 223 items, first modelindex absmin absmin_x absmin_y absmin_z, last inpain dmgtime healtype
+completion at combat.qc:171:2: 657 items, first self other world time frametime, last take save oldself
+completion at combat.qc:123:7: 219 items, first modelindex absmin absmin_x absmin_y absmin_z, last spawn_deferred killstring volume
 inlay-hints combat.qc: 58 hints, first 41:13 v1:, 41:31 v2:, 41:66 nomonsters:, 41:72 forent:, 51:12 v1:
 semantic-tokens defs.qc: 484 tokens
 semantic-tokens subs.qc: 323 tokens
@@ -80,6 +90,9 @@ semantic-tokens monsters/vore.qc: 402 tokens
 semantic-tokens monsters/enforcer.qc: 548 tokens
 semantic-tokens monsters/shub.qc: 442 tokens
 semantic-tokens bots/bot.qc: 2 tokens
+message type 2: Renamed: a map that names the function T_Damage as a classname or a key's value still names the old name.
+message type 2: Renamed: a map that names the function SUB_Remove as a classname or a key's value still names the old name.
+message type 2: Renamed: a map whose entities set the field wait as a key still names the old name.
 diagnostics: none
 # the same, target quake
 diagnostics ai.qc: W0311 x3

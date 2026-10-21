@@ -14,7 +14,8 @@ fn find<'a>(all: &'a [Highlight], text: &str, needle: &str, n: usize) -> Option<
 // spec QC-12.1: each name is highlighted as what it names, its declarations marked
 #[test]
 fn highlights_classify_each_name() {
-    let text = "float g;\n.float hp;\nvoid(float p) f = { local float l; l = p + g; self.hp = l; f(); };\n";
+    let text = "float g;\n.float hp;\n\
+                void(float p) f = { local float l; l = p + g; self.hp = l; f(); };\n";
     let mut host = one(text);
     let all = host.highlights(&path("a.qc"));
     let kind = |needle: &str, n: usize| find(&all, text, needle, n).map(|h| h.kind);

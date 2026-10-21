@@ -28,8 +28,9 @@ incremental `qc_sema::Db` per module, since each module compiles its own files i
 (QC-23.3). A file several modules compile, such as a shared `defs.qc`, is in each of their
 databases, and a definition in it is the same definition in each: its references and its rename
 span every such module. The text of a file the editor has open (`set_overlay`) replaces its text
-on disk in every module; editing a `quakec.toml` or a `.src` file opens the project again, and a
-file no module compiles is analysed as a module of its own while it is open. A module's analysis,
+on disk in every module; editing a `quakec.toml` or a `.src` file opens the project again, keeping
+the database of each module whose files are unchanged, and a file no module compiles is analysed
+as a module of its own while it is open. A module's analysis,
 its files' trees as written, its declared builtins and its `W0311` warnings are derived once per
 edit.
 
@@ -37,9 +38,9 @@ edit.
 | --- | --- | --- |
 | Go-to-definition | `definition` | `ModuleIndex::definition_at`, a later declaration going to the first (QC-11.5) |
 | Find-references | `references` | `ModuleIndex::references`, across every module that compiles the definition's file |
-| Rename | `prepare_rename`, `rename` | Every declaration and use, a vector's components with it (QC-11.7); refused through a macro (QC-9.7), and unless the edited modules resolve to the same definitions, uses and diagnostics |
+| Rename | `prepare_rename`, `rename` | Every declaration and use, a vector's components with it (QC-11.7); refused for a name the engine binds (EDICT-2.2, EDICT-3.2, EDICT-3.4), through a macro (QC-9.7), and unless the edited modules resolve to the same definitions, uses and diagnostics; a function or field a map may name comes with a caution (EDICT-8.2, EDICT-8.6) |
 | Hover | `hover` | The declaration as written, its comment, and for a builtin the target engine's entry and every engine's (ENGT-3.9, ENGT-3.11) |
-| Completion | `completions` | The globals, and the enclosing function's parameters and earlier locals (QC-12.1); only fields after `.` or `->` (QC-16.6) |
+| Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); only fields after `.` or `->` (QC-16.6) |
 | Highlighting | `highlights` | Each resolved name by what it names, with declaration, constant (QC-11.6, vanilla) and builtin modifiers |
 | Inlay hints | `parameter_hints` | The parameter name of each argument (QC-13.5), from the declaration that names them (QC-13.2) |
 | Diagnostics | `diagnostics`, `all_diagnostics` | The project graph's, the preprocessor's and parser's, the semantic model's, and `W0311` for the target engine |

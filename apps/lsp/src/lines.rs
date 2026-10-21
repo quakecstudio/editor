@@ -11,8 +11,8 @@
 //! QuakeC source is bytes, not always UTF-8: id's character set puts graphics at 0x80 to 0xFF.
 //! A file the editor has open is the UTF-8 text the client sent; a file read from disk is
 //! counted as the client decodes it as UTF-8, each sequence of bytes that is not UTF-8 being
-//! one U+FFFD, one code unit in either encoding, as `String::from_utf8_lossy` and a WHATWG
-//! decoder replace it.
+//! one U+FFFD, as `String::from_utf8_lossy` and a WHATWG decoder replace it: one UTF-16 code
+//! unit, three UTF-8 ones.
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,16 @@ impl Encoding {
         }
     }
 
-    /// The code units `text` is in this encoding.
+    /// The code units of character `c` in this encoding.
+    const fn width(self, c: char) -> usize {
+        match self {
+            Self::Utf16 => c.len_utf16(),
+            Self::Utf8 => c.len_utf8(),
+        }
+    }
+
+    /// The code units `text` is in this encoding, each sequence that is not UTF-8 counted as
+    /// the U+FFFD a client decodes it to: one UTF-16 unit, three UTF-8 ones.
     fn units(self, text: &[u8]) -> usize {
         let mut out = 0_usize;
         for chunk in text.utf8_chunks() {
@@ -44,8 +53,10 @@ impl Encoding {
                 Self::Utf16 => chunk.valid().encode_utf16().count(),
                 Self::Utf8 => chunk.valid().len(),
             };
-            let replacement = usize::from(!chunk.invalid().is_empty());
-            out = out.saturating_add(valid).saturating_add(replacement);
+            out = out.saturating_add(valid);
+            if !chunk.invalid().is_empty() {
+                out = out.saturating_add(self.width(char::REPLACEMENT_CHARACTER));
+            }
         }
         out
     }
@@ -155,23 +166,16 @@ impl<'a> LineIndex<'a> {
         let mut units = 0_usize;
         let mut at = 0_usize;
         for chunk in bytes.utf8_chunks() {
-            for c in chunk.valid().chars() {
-                let width = match self.encoding {
-                    Encoding::Utf16 => c.len_utf16(),
-                    Encoding::Utf8 => c.len_utf8(),
-                };
+            let invalid = (!chunk.invalid().is_empty())
+                .then_some((char::REPLACEMENT_CHARACTER, chunk.invalid().len()));
+            let characters = chunk.valid().chars().map(|c| (c, c.len_utf8()));
+            for (c, bytes) in characters.chain(invalid) {
+                let width = self.encoding.width(c);
                 if units.saturating_add(width) > wanted {
                     return start.saturating_add(at);
                 }
                 units = units.saturating_add(width);
-                at = at.saturating_add(c.len_utf8());
-            }
-            if !chunk.invalid().is_empty() {
-                if units >= wanted {
-                    return start.saturating_add(at);
-                }
-                units = units.saturating_add(1);
-                at = at.saturating_add(chunk.invalid().len());
+                at = at.saturating_add(bytes);
             }
         }
         start.saturating_add(at)

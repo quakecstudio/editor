@@ -49,14 +49,23 @@ pub(crate) struct ModuleState {
     input: ModuleInput,
     /// Whether it resolves with FTEQCC's autoprototyping (FTE-22.3).
     autoproto: bool,
-    /// Whether the module is one file no module of the project compiles.
-    orphan: bool,
+    /// Where the module comes from.
+    origin: Origin,
     /// Its incremental database.
     pub(crate) db: Db,
     /// What was derived from the files' current text, `None` after an edit.
     data: Option<ModuleData>,
     /// The project graph's diagnostics for the module (PRJ-6.5).
     pub(crate) graph_diagnostics: Vec<qc_project::Diagnostic>,
+}
+
+/// Where a module comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Origin {
+    /// A module of the project.
+    Project,
+    /// An open file no module of the project compiles, analysed on its own.
+    Unlisted,
 }
 
 /// What the features read of one module, derived once per edit.
@@ -205,8 +214,11 @@ impl<L: Loader> AnalysisHost<L> {
     /// # Errors
     ///
     /// As [`AnalysisHost::open`].
+    ///
+    /// A module whose files and settings are unchanged keeps its database, with the text of each
+    /// file that is not open read again, so only what changed on disk is analysed again.
     pub fn reload(&mut self) -> Result<(), ProjectError> {
-        self.modules.clear();
+        let mut old = std::mem::take(&mut self.modules);
         let opened = match self.root.clone() {
             Some(root) => {
                 let mut loader = OverlayLoader {
@@ -223,7 +235,7 @@ impl<L: Loader> AnalysisHost<L> {
         };
         let result = match opened {
             Ok(Some(project)) => {
-                self.add_project(&project);
+                self.add_project(&project, &mut old);
                 Ok(())
             }
             Ok(None) => Ok(()),
@@ -241,8 +253,9 @@ impl<L: Loader> AnalysisHost<L> {
         result
     }
 
-    /// Adds a module for each of `project`'s modules.
-    fn add_project(&mut self, project: &Project) {
+    /// Adds a module for each of `project`'s modules, taking from `old` the state of a module
+    /// that is the same.
+    fn add_project(&mut self, project: &Project, old: &mut Vec<ModuleState>) {
         for module in &project.modules {
             let dialect = self.config.dialect.unwrap_or(module.dialect);
             let target = self.config.target.unwrap_or(module.target);
@@ -252,14 +265,27 @@ impl<L: Loader> AnalysisHost<L> {
                 .iter()
                 .map(|f| normalize(&f.path))
                 .collect();
-            let mut state = self.module_state(
-                module.kind,
-                dialect,
-                target,
-                files,
-                ModuleInput::from_module(module),
-                false,
-            );
+            let input = ModuleInput::from_module(module);
+            let engine = Engine::from_target(target);
+            let same = old.iter().position(|m| {
+                m.origin == Origin::Project
+                    && m.kind == module.kind
+                    && m.engine == engine
+                    && m.dialect == qc_syntax::Dialect::from(dialect)
+                    && m.autoproto == self.config.autoproto
+                    && m.files == files
+                    && m.input == input
+            });
+            let mut state = match same {
+                Some(at) => {
+                    let mut state = old.swap_remove(at);
+                    self.refresh(&mut state);
+                    state
+                }
+                None => {
+                    self.module_state(module.kind, dialect, target, files, input, Origin::Project)
+                }
+            };
             state
                 .graph_diagnostics
                 .clone_from(&module.graph.diagnostics);
@@ -275,8 +301,33 @@ impl<L: Loader> AnalysisHost<L> {
             compiled: vec![FileId(0)],
             ..ModuleInput::default()
         };
-        let state = self.module_state(ModuleKind::Ssqc, dialect, target, vec![path], input, true);
+        let state = self.module_state(
+            ModuleKind::Ssqc,
+            dialect,
+            target,
+            vec![path],
+            input,
+            Origin::Unlisted,
+        );
         self.modules.push(state);
+    }
+
+    /// Reads again the text of each of a kept module's files that is not open, setting only
+    /// what changed.
+    fn refresh(&mut self, state: &mut ModuleState) {
+        for index in 0..state.files.len() {
+            let file = FileId(index);
+            let Some(path) = state.path(file).map(Path::to_path_buf) else {
+                continue;
+            };
+            let text = match self.overlays.get(&path) {
+                Some(text) => text.clone(),
+                None => self.loader.load(&path).unwrap_or_default(),
+            };
+            if state.db.file_text(file) != text.as_slice() {
+                state.set_text(file, text);
+            }
+        }
     }
 
     /// A module's state with every file's text set, from an overlay or the loader.
@@ -287,7 +338,7 @@ impl<L: Loader> AnalysisHost<L> {
         target: Target,
         files: Vec<PathBuf>,
         input: ModuleInput,
-        orphan: bool,
+        origin: Origin,
     ) -> ModuleState {
         let mut db = Db::new();
         db.set_dialect(dialect.into());
@@ -308,7 +359,7 @@ impl<L: Loader> AnalysisHost<L> {
             files,
             input,
             autoproto: self.config.autoproto,
-            orphan,
+            origin,
             db,
             data: None,
             graph_diagnostics: Vec::new(),
@@ -319,7 +370,7 @@ impl<L: Loader> AnalysisHost<L> {
     fn is_compiled(&self, path: &Path) -> bool {
         self.modules
             .iter()
-            .any(|m| !m.orphan && m.file_id(path).is_some())
+            .any(|m| m.origin == Origin::Project && m.file_id(path).is_some())
     }
 
     /// Sets the text of the open file `path`, which replaces its text on disk. Editing a
@@ -361,7 +412,7 @@ impl<L: Loader> AnalysisHost<L> {
             return Ok(());
         }
         self.modules
-            .retain(|m| !(m.orphan && m.files.first() == Some(&path)));
+            .retain(|m| !(m.origin == Origin::Unlisted && m.files.first() == Some(&path)));
         if is_project_file(&path) {
             return self.reload();
         }

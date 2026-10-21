@@ -5,7 +5,7 @@
 use qc_diag::Span;
 
 use super::{ProjectSpec, host, nth, one, path};
-use crate::{FileEdit, FileRange, RenameError};
+use crate::{Caution, EngineBinding, FileEdit, FileRange, RenameError};
 
 /// The text of `text` with the edits of `edits` for one file applied.
 fn applied(text: &str, edits: &FileEdit) -> String {
@@ -31,7 +31,8 @@ fn rename_edits_every_declaration_and_use() {
     });
     let edits = host
         .rename(&path("code.qc"), nth(code, "health", 1), "hp")
-        .expect("the rename is allowed");
+        .expect("the rename is allowed")
+        .edits;
     assert_eq!(edits.len(), 2);
     assert_eq!(edits[0].path, path("code.qc"));
     assert_eq!(
@@ -41,7 +42,8 @@ fn rename_edits_every_declaration_and_use() {
     assert_eq!(applied(defs, &edits[1]), "void() think;\nfloat hp;\n");
     let functions = host
         .rename(&path("defs.qc"), nth(defs, "think", 0), "run")
-        .unwrap();
+        .unwrap()
+        .edits;
     assert_eq!(
         applied(code, &functions[0]),
         "void() run = { health = health - 1; };\n"
@@ -56,7 +58,8 @@ fn rename_a_vector_with_its_components() {
     let mut host = one(text);
     let edits = host
         .rename(&path("a.qc"), nth(text, "org", 0), "pos")
-        .unwrap();
+        .unwrap()
+        .edits;
     assert_eq!(
         applied(text, &edits[0]),
         "vector pos;\nvoid() f = { pos_x = 1; pos = pos; };\n"
@@ -74,7 +77,10 @@ fn rename_checks_the_new_name() {
             Err(RenameError::InvalidName(bad.to_owned()))
         );
     }
-    assert_eq!(host.rename(&path("a.qc"), 6, "a"), Ok(Vec::new()));
+    assert_eq!(
+        host.rename(&path("a.qc"), 6, "a").map(|r| r.edits),
+        Ok(Vec::new())
+    );
     assert!(host.rename(&path("a.qc"), 6, "_b9").is_ok());
 }
 
@@ -173,7 +179,8 @@ fn rename_across_modules() {
     });
     let edits = host
         .rename(&path("defs.qc"), nth(defs, "shared", 0), "common")
-        .unwrap();
+        .unwrap()
+        .edits;
     let paths: Vec<_> = edits.iter().map(|e| e.path.clone()).collect();
     assert_eq!(
         paths,
@@ -204,10 +211,156 @@ fn rename_errors_have_messages() {
     );
     assert_eq!(
         RenameError::InMacro(at.clone()).to_string(),
-        "the name is used through a macro in /p/a.qc at byte 3"
+        format!(
+            "the name is used through a macro in {} at byte 3",
+            path("a.qc").display()
+        )
     );
     assert_eq!(
         RenameError::Conflict(at).to_string(),
-        "the new name changes what the code means in /p/a.qc at byte 3"
+        format!(
+            "the new name changes what the code means in {} at byte 3",
+            path("a.qc").display()
+        )
+    );
+}
+
+// spec EDICT-2.2: a global declared before `end_sys_globals` is the engine's, found by its place
+// and checked by the header CRC, so it is not renamed
+// spec EDICT-3.2: so is a field declared before `end_sys_fields`
+// spec EDICT-3.4: and a field the engine reads by name
+#[test]
+fn rename_refuses_the_engines_names() {
+    let text = "entity self;\nvoid() main;\nvoid end_sys_globals;\n.float health;\n\
+                void end_sys_fields;\n.float gravity;\nfloat mine;\n.float wait;\n";
+    let mut host = one(text);
+    let refused = |host: &mut crate::AnalysisHost<_>, needle: &str| {
+        host.rename(&path("a.qc"), nth(text, needle, 0), "renamed")
+            .err()
+    };
+    assert_eq!(
+        refused(&mut host, "self"),
+        Some(RenameError::EngineName(
+            "self".to_owned(),
+            EngineBinding::SystemGlobal
+        ))
+    );
+    assert_eq!(
+        refused(&mut host, "main"),
+        Some(RenameError::EngineName(
+            "main".to_owned(),
+            EngineBinding::SystemGlobal
+        ))
+    );
+    assert_eq!(
+        refused(&mut host, "health"),
+        Some(RenameError::EngineName(
+            "health".to_owned(),
+            EngineBinding::SystemField
+        ))
+    );
+    assert_eq!(
+        refused(&mut host, "gravity"),
+        Some(RenameError::EngineName(
+            "gravity".to_owned(),
+            EngineBinding::FieldByName
+        ))
+    );
+    assert_eq!(refused(&mut host, "mine"), None);
+    assert_eq!(refused(&mut host, "wait"), None);
+    assert!(
+        RenameError::EngineName("self".to_owned(), EngineBinding::SystemGlobal)
+            .to_string()
+            .contains("before end_sys_globals")
+    );
+    assert!(
+        RenameError::EngineName("health".to_owned(), EngineBinding::SystemField)
+            .to_string()
+            .contains("before end_sys_fields")
+    );
+    assert_eq!(
+        RenameError::EngineName("gravity".to_owned(), EngineBinding::FieldByName).to_string(),
+        "the engine reads the field gravity by its name"
+    );
+}
+
+// spec EDICT-8.6: a function a map may name as a classname, and a field it may set as a key
+// (EDICT-8.2), are renamed with a caution; a global is not
+#[test]
+fn rename_cautions_about_names_maps_use() {
+    let text =
+        ".float wait;\nvoid() monster_ogre = { };\nfloat count;\nvoid(entity e) remove = #15;\n";
+    let mut host = one(text);
+    let caution = |host: &mut crate::AnalysisHost<_>, needle: &str| {
+        host.rename(&path("a.qc"), nth(text, needle, 0), "renamed")
+            .unwrap()
+            .caution
+    };
+    assert_eq!(
+        caution(&mut host, "monster_ogre"),
+        Some(Caution::MapFunction("monster_ogre".to_owned()))
+    );
+    assert_eq!(
+        caution(&mut host, "wait"),
+        Some(Caution::MapField("wait".to_owned()))
+    );
+    assert_eq!(caution(&mut host, "count"), None);
+    // A builtin is bound by its number, which a rename keeps.
+    assert_eq!(caution(&mut host, "remove"), None);
+    assert!(
+        Caution::MapFunction("f".to_owned())
+            .to_string()
+            .contains("classname")
+    );
+    assert!(
+        Caution::MapField("w".to_owned())
+            .to_string()
+            .contains("as a key")
+    );
+}
+
+// spec QC-11.7: a vector's component is renamed with its vector, not from one of its uses
+#[test]
+fn rename_refuses_a_component() {
+    let text = "vector org;\nvoid() f = { org_x = 1; };\n";
+    let mut host = one(text);
+    let refused = RenameError::Component {
+        component: "org_x".to_owned(),
+        vector: "org".to_owned(),
+    };
+    assert_eq!(
+        host.prepare_rename(&path("a.qc"), nth(text, "org_x", 0)),
+        Err(refused.clone())
+    );
+    assert_eq!(
+        host.rename(&path("a.qc"), nth(text, "org_x", 0), "pos_x"),
+        Err(refused.clone())
+    );
+    assert_eq!(
+        refused.to_string(),
+        "org_x is a component of the vector org: rename org"
+    );
+}
+
+// spec QC-23.3: a module that compiles a shared file but not the definition's file is checked
+// too, though nothing asked about it before the rename
+#[test]
+fn rename_checks_a_module_it_has_not_read() {
+    let defs = "float shared;\n";
+    let common = "void() use_it = { shared = 1; };\n";
+    let mut host = host(&ProjectSpec {
+        files: &[("defs.qc", defs), ("common.qc", common)],
+        extra: &[
+            ("client_defs.qc", "float other;\n"),
+            ("csprogs.src", "../csprogs.dat\nclient_defs.qc\ncommon.qc\n"),
+        ],
+        ..ProjectSpec::default()
+    });
+    // In the client module `shared` names nothing; renaming it to `other` there makes the use
+    // name the client's `other`.
+    let refused = host.rename(&path("defs.qc"), nth(defs, "shared", 0), "other");
+    assert!(
+        matches!(refused, Err(RenameError::Conflict(_))),
+        "{refused:?}"
     );
 }
