@@ -139,6 +139,9 @@ fn includelists_produce_no_tokens() {
     assert_eq!((toks.as_str(), errs), ("a d", vec![]));
     let (toks, errs) = fte("#includelist\n#define N 5\nb.qc, (c.qc)\n#endlist\nN\n");
     assert_eq!((toks.as_str(), errs), ("5", vec![]));
+    // The line break after a word is white space, so the `#` after it starts a directive.
+    let (toks, errs) = fte("#includelist\nb.qc\n#define N 5\n#endlist\nN\n");
+    assert_eq!((toks.as_str(), errs), ("5", vec![]));
     // The words on the line are junk; the list starts after it.
     assert_eq!(
         fte("#includelist b.qc #endlist\nx\n"),
@@ -258,6 +261,13 @@ fn append_eof_and_build_directives() {
     assert_eq!(fte("#forcecrc 1.5\ny\n"), ("y".to_owned(), vec![]));
     assert_eq!(
         fte("#forcecrc 1..\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    // A `0x` where the number starts is taken whole, and only there: `#forcecrc0x1f` is all
+    // number, and the `x` of `#forcecrc1x5` ends it.
+    assert_eq!(fte("#forcecrc0x1f\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc1x5\ny\n"),
         ("y".to_owned(), vec![Code::E0121])
     );
     assert_eq!(fte("#pack\nzz\ny\n"), ("y".to_owned(), vec![Code::E0121]));

@@ -138,6 +138,7 @@ fn lines_end_where_skip_to_end_of_line_ends_them() {
     assert_eq!(skip(" \"s\n", false), end(3, false));
     assert_eq!(skip(" \"s", false), end(3, false));
     assert_eq!(skip(" zz\n", true), end(3, true));
+    assert_eq!(skip(" \"s\"\n", true), end(4, true));
     assert_eq!(skip(" zz\n", false), end(3, false));
     assert_eq!(skip(" \t\r\x0b\n", true), end(4, false));
     assert_eq!(skip(" // \"s\" zz\n", true), end(10, false));

@@ -113,6 +113,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-18
           echo "CC=clang-18" >> "$GITHUB_ENV"
+      # The runner pipes core files to systemd-coredump with no size limit, so a
+      # test binary that aborts with gigabytes of memory takes the runner's
+      # memory and disk while it is dumped. A plain core pattern lets the
+      # runner's RLIMIT_CORE of 0 below write none.
+      - name: Write no core files
+        run: sudo sysctl -w kernel.core_pattern=core
       - name: Measure the mutation score
         env:
           # A mutant that stops a reader advancing can make a test take the
@@ -124,7 +130,6 @@ jobs:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --
         run: |
           read -ra crates <<< "$CRATES"
-          echo "DIAG core_pattern $(cat /proc/sys/kernel/core_pattern)"
           (while sleep 10; do echo "DIAG $(free -m | awk '/Mem:/ {print "used " $3 " of " $2}') $(df -m / | awk 'NR==2 {print "disk free " $4}') $(ps -eo rss=,stat=,comm= --sort=-rss | head -8 | tr '\n' ' ')"; done) &
           cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

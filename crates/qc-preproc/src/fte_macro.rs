@@ -366,11 +366,11 @@ impl ChunkReader {
             let breaks = self.breaks.partition_point(|&b| b < at);
             u32::try_from(breaks).unwrap_or(u32::MAX)
         };
+        // As in a file (`Preprocessor::fte_line`), the base is set as the chunk's reading passes
+        // the pragma, and no offset before it is asked for after that.
         match self.line_base {
-            Some((from, line)) if at >= from => {
-                line.wrapping_add_unsigned(count(at).saturating_sub(count(from)))
-            }
-            _ => 1_i32.wrapping_add_unsigned(count(at)),
+            Some((from, line)) => line.wrapping_add_unsigned(count(at).saturating_sub(count(from))),
+            None => 1_i32.wrapping_add_unsigned(count(at)),
         }
     }
 }

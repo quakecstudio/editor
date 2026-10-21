@@ -20,8 +20,10 @@ use super::{
 };
 
 /// Held by each test that writes macro expansions near a file's bound (FTEF-14.28, QC-9.18),
-/// which takes from 150 MB to 2 GB, so that they run one at a time and the suite needs the
-/// memory of the largest, under the Readiness mutation job's cap on each test binary (P2-109).
+/// which takes from 150 MB to 2 GB, so that they run one at a time and the suite needs about
+/// the memory of the largest, under the Readiness mutation job's cap on each test binary
+/// (P2-109). A test of 300 MB or less that runs for long is left out, so that the suite's time,
+/// and with it each mutant's timeout, stays short.
 static BOUND_TESTS: Mutex<()> = Mutex::new(());
 
 /// Waits until no other bound test runs; a failed one still lets the rest run.

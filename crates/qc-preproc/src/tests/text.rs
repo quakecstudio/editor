@@ -337,6 +337,11 @@ fn built_in_constants_have_fteqcc_s_lines() {
     assert_eq!(fte("#define E(n) n\nE(#//\n__LINE__)\n").0, "#3");
     assert_eq!(fte("#define E(n) n\nE(#\n__LINE__)\n").0, "#3");
     assert_eq!(fte("#define E(n) n\nE(#__LINE__\n)\n").0, "#3");
+    // A use in a chunk is at the chunk line of its `)`, not of the line break after it.
+    assert_eq!(
+        fte("#define I(x) __LINE__ x\n#define O(y) y\nO(I(\n1)\n2)\n").0,
+        "2 1 2"
+    );
     assert_eq!(fte("#define E(n) n\nE(:__LINESTR__)\n").0, ":\"2\"");
     // A built-in constant read in a chunk is a chunk of its own, apart from the `:`.
     assert_eq!(

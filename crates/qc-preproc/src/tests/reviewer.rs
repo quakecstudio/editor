@@ -32,7 +32,6 @@ const DIALECTS: [qc_lexer::Dialect; 2] = [qc_lexer::Dialect::Vanilla, qc_lexer::
 // argument, expands to its end under both dialects with no diagnostic
 #[test]
 fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
-    let _one = super::one_bound_test_at_a_time();
     let n = 100_000_usize;
     let mut text = "#define F0(x) x\n".to_owned();
     for (before, i) in (1..n).enumerate() {
