@@ -1979,7 +1979,9 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
 }
 
 /// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
-/// is 64 bits (FTEF-14.50) and its stack canary random (FTEF-14.66).
+/// is 64 bits (FTEF-14.50). A host whose stack canary starts with NUL records, for each case its
+/// canary may read otherwise, the outcome [`FIXTURE`] holds, which a random canary gives
+/// (FTEF-14.66).
 fn check_where(
     root: &Path,
     oracles: &Oracles,
@@ -1988,10 +1990,10 @@ fn check_where(
 ) -> Result<bool, String> {
     let host = host.into();
     let ulong = host.ulong;
-    if record && (ulong != ULong::Bits64 || host.canary != Canary::Random) {
+    if record && ulong != ULong::Bits64 {
         return Err(format!(
-            "{FIXTURE} records the outcomes where `unsigned long` is 64 bits (FTEF-14.50) and \
-             the stack canary is random (FTEF-14.66); record it on macOS"
+            "{FIXTURE} records the outcomes where `unsigned long` is 64 bits (FTEF-14.50); \
+             record it on Linux or macOS"
         ));
     }
     let work = oracles.work.join("builtins");
@@ -2015,6 +2017,15 @@ fn check_where(
     }
     let mut ok = true;
     if record {
+        if host.canary != Canary::Random {
+            let held = read_fixture(root).unwrap_or_default();
+            for case in cases.iter().chain(&graph_cases) {
+                let key = case.key();
+                if let Some(outcome) = held.get(&key).filter(|_| host.reads_otherwise(case)) {
+                    outcomes.insert(key, outcome.clone());
+                }
+            }
+        }
         let raw: BTreeMap<&String, String> =
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
         let text = serde_json::to_string_pretty(&raw).map_err(|e| e.to_string())?;

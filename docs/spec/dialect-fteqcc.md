@@ -1466,9 +1466,9 @@ profile the preprocessor reads them as FTEQCC does.
   byte is NUL, a text of exactly 1024 bytes writes only the terminating NUL (`msg[a] = '\0';`)
   over it, which changes nothing, and the build reads on and compiles the program. This profile
   reports `E0121` "#pragma name or text longer than FTEQCC's 1023 bytes" for both, a deliberate
-  divergence. The differential records the outcomes on macOS, and on a glibc host takes the
-  1024-byte case's other outcome as this statement's (`Canary::NulFirst`); a text of 1025 bytes
-  stops every build. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
+  divergence. The differential takes the 1024-byte case's other outcome on a glibc host as this
+  statement's (`Canary::NulFirst`), and a recording there keeps the outcome a random canary
+  gives for it; a text of 1025 bytes stops every build. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
   (`if (len >= sizeof(qcc_token)-1) ;`), which a pragma's words and a list's files are read
   with. After such an error FTEQCC's compile stops: the preprocessor reads no more of the file
   and the graph no more of it, but the lexer reads on after a frame word, so diagnostics FTEQCC

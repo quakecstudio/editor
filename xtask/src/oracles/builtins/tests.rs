@@ -1444,9 +1444,34 @@ fn a_nul_first_canary_excuses_only_the_nul_overrun() {
     assert_eq!(accepted, None);
     let vanilla_case = vanilla(&format!("#pragma includedir {}\n", "d".repeat(1024)));
     assert!(excused(&vanilla_case, glibc) != Some("FTEF-14.66"));
-    let repo = fresh_dir("canary-record");
-    let fake = Fake::new(|_: &std::process::Command| Reply::exit(0));
-    let oracles = fake_oracles(&repo, &fake);
-    assert!(check_where(&repo, &oracles, true, glibc).is_err());
     assert_eq!(Host::from(ULong::Bits32).canary, Canary::Random);
+}
+
+// spec FTEF-14.66: a host whose canary starts with NUL records the fixture's outcome for the case
+// it reads otherwise, and its own for every other case
+#[test]
+fn a_nul_first_host_records_the_random_canary_s_outcome() {
+    let glibc = Host {
+        ulong: ULong::Bits64,
+        canary: Canary::NulFirst,
+    };
+    let recorded = read_fixture(&root()).unwrap();
+    let overrun = cases()
+        .into_iter()
+        .find(|case| {
+            case.source
+                .starts_with(&format!("#pragma includedir {}\n", "d".repeat(1024)))
+        })
+        .unwrap()
+        .key();
+    assert_eq!(recorded[&overrun], Outcome::Rejected);
+    let mut on_glibc = recorded.clone();
+    on_glibc.insert(overrun.clone(), bound_as(5, "f"));
+    let repo = repository("builtins-glibc", &recorded);
+    let fake = Fake::new(answering(on_glibc));
+    let oracles = fake_oracles(&repo.join("work"), &fake);
+    assert!(check_where(&repo, &oracles, false, glibc).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
+    assert!(check_where(&repo, &oracles, true, glibc).unwrap());
+    assert_eq!(read_fixture(&repo).unwrap(), recorded);
 }
