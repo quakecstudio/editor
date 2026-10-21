@@ -228,6 +228,9 @@ fn verdict(failed: usize, total: usize) -> String {
 #[cfg(all(test, unix))]
 mod changes_tests;
 
+#[cfg(all(test, unix))]
+mod pr_body_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
