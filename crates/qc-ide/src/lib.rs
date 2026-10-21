@@ -48,6 +48,7 @@ pub use hints::ParameterHint;
 pub use host::{AnalysisHost, Config};
 pub use hover::{BuiltinInfo, Hover};
 pub use qc_diag::{Code, Diagnostic, Severity, Span};
+pub use qc_engines::{Builtin, BuiltinRef, Engine};
 pub use qc_sema::DefKind;
 pub use rename::{FileEdit, RenameError};
 

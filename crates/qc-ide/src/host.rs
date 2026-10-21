@@ -180,6 +180,12 @@ impl<L: Loader> AnalysisHost<L> {
         }
     }
 
+    /// Replaces what the editor says over the project; it takes effect when the project is
+    /// next opened or read again.
+    pub fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+
     /// Opens the project in directory `root` (PRJ-1.1, PRJ-1.2): its `quakec.toml`, or a bare
     /// `progs.src` and `csprogs.src`. A directory that holds neither is no error: the host then
     /// analyses each open file on its own.

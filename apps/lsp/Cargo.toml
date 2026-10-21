@@ -1,0 +1,26 @@
+[package]
+name = "quakec-lsp"
+description = "The QuakeC language server: QuakeC Studio's editor features over the Language Server Protocol, for VS Code, Zed, Neovim and other editors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "quakec_lsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "quakec-lsp"
+path = "src/main.rs"
+
+[dependencies]
+qc-ide = { workspace = true }
+qc-project = { workspace = true }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true
