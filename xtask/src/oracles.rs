@@ -31,6 +31,7 @@
 //! is part of the shipped app.
 
 mod builtins;
+mod codegen;
 mod compile;
 mod extract;
 mod fuzz;
@@ -145,12 +146,15 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
             let builtins = builtins::check(root, &oracles, false)?;
-            Ok([vectors, numbers, probes, scenarios, builtins]
+            let codegen = codegen::check(root, &oracles, false)?;
+            Ok([vectors, numbers, probes, scenarios, builtins, codegen]
                 .iter()
                 .all(|passed| *passed))
         }
         ["builtins"] => builtins::check(root, &build()?, false),
         ["builtins", "--record"] => builtins::check(root, &build()?, true),
+        ["codegen"] => codegen::check(root, &build()?, false),
+        ["codegen", "--record"] => codegen::check(root, &build()?, true),
         ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
         ["scenarios", names @ ..] => {
             let oracles = build()?;
@@ -179,7 +183,7 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
         }
         _ => Err(
             "usage: cargo xtask oracles [build | scenarios [<name>...] | fuzz <target> [--time <s>] \
-             | builtins [--record] | id101 <codebase directory> \
+             | builtins [--record] | codegen [--record] | id101 <codebase directory> \
              | rerelease <directory of codebases> | json <trace>]"
                 .to_owned(),
         ),
