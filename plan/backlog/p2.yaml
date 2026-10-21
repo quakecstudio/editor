@@ -1660,6 +1660,8 @@ issues:
   - P2-112
   - P2-113
   - P2-114
+  - P2-115
+  - P2-116
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2265,3 +2267,45 @@ issues:
   verify:
   - cargo test -p qc-project
   - cargo test -p qc-preproc
+- key: P2-115
+  title: Port every function on FTEQCC's and id qcc's path from progs.src to tokens
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'docs/spec/inventory-l2.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/`: qcc.c, cmdlib.c, pr_lex.c) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/`: qccmain.c, qcc_cmdlib.c, qcc_pr_lex.c and what they call) runs from opening `progs.src` or a compiled file to handing a token to the parser, including the C library calls whose behaviour matters (atoi, strtol, strtoul, strtod, isspace and similar). It is built from the lineage. The doc first records, quoted from the sources, whether FTEQCC''s compiler descends from id''s qcc: fteqw''s first commit of engine/qclib (7c00f2b1, Spoike, 2004-08-23, "Initial Checkin") has `QCC_PR_LexName` and `QCC_PR_LexPunctuation` with bodies identical to id''s `PR_LexName` and `PR_LexPunctuation` but for white space, and qcc_cmdlib.c''s `DefaultExtension`, `DefaultPath`, `StripFilename`, `StripExtension`, `ExtractFilePath`, `ExtractFileBase`, `ExtractFileExtension` and `ParseNum` match id''s cmdlib.c line for line, so it does. GMQCC (graphitemaster/gmqcc, MIT, first commit 48a95ec by Dale Weiler, 2012-04-09) uses none of id''s function names or globals (`COM_Parse`, `PR_Lex`, `pr_file_p`, `LoadFile`), so it was written independently; the doc records that too, with the evidence. Then: (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_LexString` with `QCC_PR_LexString`, `COM_Parse` with `QCC_COM_Parse`, `LoadFile` with `QCC_LoadFile`), whose content is the behavioural difference between the two bodies, which is what the FTEQCC profile adds on top of our id qcc port; (2) the FTEQCC-only functions on the path (`QCC_PR_ConditionCompilation`, `QCC_PR_LexOctal`, `QCC_PR_IncludeChunk` and the rest), all of whose behaviour is new; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-lexer, crates/qc-preproc, crates/qc-syntax and crates/qc-project, with spec statements in docs/spec/, citing tests and cases of `cargo xtask oracles builtins` (or the graph''s differential), in one PR. Rows that #533 (P2-109) and #541 (P2-113, P2-114) cover count once they merge'
+  acceptance:
+  - 'docs/spec/inventory-l2.md records the lineage evidence, quoted, for FTEQCC and GMQCC, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc -p qc-syntax -p qc-project
+  - cargo xtask oracles builtins
+- key: P2-116
+  title: Port every function on FTEQCC's and id qcc's path from tokens to definitions
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-26
+  deliverable:
+  - 'docs/spec/inventory-l3.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/pr_comp.c` and the pr_lex.c parsing helpers it calls: `PR_ParseName`, `PR_FindType`, `PR_ParseType`, `PR_Expect`, `PR_Check`, `PR_ParseError`) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/qcc_pr_comp.c` and what it calls) runs from a token to a definition and a diagnostic, as far as qc-sema models them today: declarations, types, resolution, initialisers and the diagnostics the profiles report. Codegen (P2-06 onward) is out of scope. It is built from the lineage, as P2-115''s inventory-l2.md records it (FTEQCC''s qcc_pr_comp.c descends from id''s pr_comp.c: fteqw 7c00f2b1 has `QCC_PR_ParseImmediate`, `QCC_PrecacheSound` and `QCC_PrecacheFile` grown from id''s bodies; GMQCC was written independently): (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_ParseDefs` with `QCC_PR_ParseDefs`, `PR_GetDef` with `QCC_PR_GetDef`), whose content is the behavioural difference between the two bodies; (2) the FTEQCC-only functions on the path; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-sema (and crates/qc-engines where a row reaches it), with spec statements in docs/spec/, citing tests and differential cases, in one PR'
+  acceptance:
+  - 'docs/spec/inventory-l3.md maps the path from the lineage, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-sema -p qc-engines
+  - cargo xtask oracles builtins
