@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use super::{ConstType, Literal, Source, refused, type_name};
+use super::{ConstType, Literal, Source};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
@@ -75,9 +75,9 @@ fn constant(ty: ConstType) -> Source<'static> {
 // is null
 #[test]
 fn a_float_casts_to_numbers_and_vectors() {
-    assert!(!refused(literal("1"), &simple(SimpleType::Float)));
-    assert!(!refused(literal("1"), &simple(SimpleType::Vector)));
-    assert!(!refused(literal("1"), &named("int")));
+    assert!(!literal("1").refused(&simple(SimpleType::Float)));
+    assert!(!literal("1").refused(&simple(SimpleType::Vector)));
+    assert!(!literal("1").refused(&named("int")));
     for to in [
         simple(SimpleType::String),
         simple(SimpleType::Entity),
@@ -89,8 +89,8 @@ fn a_float_casts_to_numbers_and_vectors() {
             variadic: false,
         })),
     ] {
-        assert!(refused(literal("1"), &to), "{to:?}");
-        assert!(!refused(literal("0"), &to), "{to:?}");
+        assert!(literal("1").refused(&to), "{to:?}");
+        assert!(!literal("0").refused(&to), "{to:?}");
     }
 }
 
@@ -104,43 +104,34 @@ fn integers_cast_where_cast_tries_them() {
         simple(SimpleType::Vector),
         simple(SimpleType::Float),
     ] {
-        assert!(!refused(literal("1i"), &to), "{to:?}");
+        assert!(!literal("1i").refused(&to), "{to:?}");
     }
-    assert!(refused(
-        literal("1i"),
-        &Type::Field(Rc::new(simple(SimpleType::Float)))
-    ));
-    assert!(refused(literal("1d"), &simple(SimpleType::String)));
-    assert!(refused(literal("1d"), &simple(SimpleType::Vector)));
-    assert!(refused(literal("0d"), &simple(SimpleType::Entity)));
-    assert!(refused(literal("5l"), &simple(SimpleType::String)));
-    assert!(refused(literal("5u"), &simple(SimpleType::Vector)));
-    assert!(!refused(literal("5u"), &simple(SimpleType::String)));
+    assert!(literal("1i").refused(&Type::Field(Rc::new(simple(SimpleType::Float)))));
+    assert!(literal("1d").refused(&simple(SimpleType::String)));
+    assert!(literal("1d").refused(&simple(SimpleType::Vector)));
+    assert!(literal("0d").refused(&simple(SimpleType::Entity)));
+    assert!(literal("5l").refused(&simple(SimpleType::String)));
+    assert!(literal("5u").refused(&simple(SimpleType::Vector)));
+    assert!(!literal("5u").refused(&simple(SimpleType::String)));
 }
 
 // spec FTEF-19.2: a vector casts only to a vector, a string to the integers, strings and
 // functions, and a type a program names is not checked
 #[test]
 fn vectors_strings_and_named_types() {
-    assert!(!refused(
-        constant(ConstType::Vector),
-        &simple(SimpleType::Vector)
-    ));
+    assert!(!constant(ConstType::Vector).refused(&simple(SimpleType::Vector)));
     for to in [
         simple(SimpleType::Float),
         simple(SimpleType::String),
         simple(SimpleType::Entity),
         named("int"),
     ] {
-        assert!(refused(constant(ConstType::Vector), &to), "{to:?}");
+        assert!(constant(ConstType::Vector).refused(&to), "{to:?}");
     }
-    assert!(!refused(constant(ConstType::String), &named("int")));
-    assert!(refused(
-        constant(ConstType::String),
-        &simple(SimpleType::Entity)
-    ));
-    assert!(!refused(constant(ConstType::String), &named("Player")));
-    assert!(!refused(constant(ConstType::Vector), &Type::Unknown));
+    assert!(!constant(ConstType::String).refused(&named("int")));
+    assert!(constant(ConstType::String).refused(&simple(SimpleType::Entity)));
+    assert!(!constant(ConstType::String).refused(&named("Player")));
+    assert!(!constant(ConstType::Vector).refused(&Type::Unknown));
 }
 
 // spec FTEF-19.2: a named definition casts as its type does, a field to another field type
@@ -149,20 +140,20 @@ fn vectors_strings_and_named_types() {
 fn named_definitions_cast_by_their_type() {
     let field = Type::Field(Rc::new(simple(SimpleType::Float)));
     let other = Type::Field(Rc::new(simple(SimpleType::Vector)));
-    assert!(!refused(Source::Typed(&field), &field));
-    assert!(refused(Source::Typed(&field), &other));
-    assert!(refused(Source::Typed(&field), &simple(SimpleType::Float)));
+    assert!(!Source::Typed(&field).refused(&field));
+    assert!(Source::Typed(&field).refused(&other));
+    assert!(Source::Typed(&field).refused(&simple(SimpleType::Float)));
     let entity = simple(SimpleType::Entity);
-    assert!(refused(Source::Typed(&entity), &simple(SimpleType::Float)));
-    assert!(!refused(Source::Typed(&entity), &named("int")));
+    assert!(Source::Typed(&entity).refused(&simple(SimpleType::Float)));
+    assert!(!Source::Typed(&entity).refused(&named("int")));
 }
 
 // spec FTEF-19.2: the message spells a type as FTEQCC's `TypeName` does
 #[test]
 fn type_names_are_fteqcc_spellings() {
-    assert_eq!(type_name(&named("int")), "__int32");
+    assert_eq!(named("int").fteqcc_name(), "__int32");
     assert_eq!(
-        type_name(&Type::Field(Rc::new(simple(SimpleType::Float)))),
+        Type::Field(Rc::new(simple(SimpleType::Float))).fteqcc_name(),
         ".float"
     );
     let func = Type::Function(Rc::new(FunctionType {
@@ -170,9 +161,9 @@ fn type_names_are_fteqcc_spellings() {
         params: vec![simple(SimpleType::Float)],
         variadic: true,
     }));
-    assert_eq!(type_name(&func), "void(float, ...)");
+    assert_eq!(func.fteqcc_name(), "void(float, ...)");
     assert_eq!(
-        type_name(&Type::Pointer(Rc::new(simple(SimpleType::Entity)))),
+        Type::Pointer(Rc::new(simple(SimpleType::Entity))).fteqcc_name(),
         "entity*"
     );
 }

@@ -32,7 +32,7 @@ use std::rc::Rc;
 use qc_diag::{Code, Diagnostic, Span};
 use qc_syntax::Dialect;
 
-use crate::cast::{self, ConstType, Source};
+use crate::cast::{ConstType, Source};
 use crate::expand::OriginMap;
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, FileDecls, LiteralValue, MemberBase, MemberKind,
@@ -710,8 +710,8 @@ impl<'a> Resolver<'a> {
                     format!(
                         "Optional arguments differ on redeclaration of {}. {}, should be {}",
                         r.name,
-                        cast::type_name(&ty),
-                        cast::type_name(&old)
+                        ty.fteqcc_name(),
+                        old.fteqcc_name()
                     ),
                 );
             }
@@ -734,7 +734,7 @@ impl<'a> Resolver<'a> {
                 format!(
                     "{} builtin was wrongly redefined as {}. ignoring later definition",
                     r.name,
-                    cast::type_name(&ty)
+                    ty.fteqcc_name()
                 ),
             );
             return TypeCheck::Ignored;
@@ -746,7 +746,7 @@ impl<'a> Resolver<'a> {
                 format!(
                     "{} builtin was redefined as {}. ignoring alternative definition",
                     r.name,
-                    cast::type_name(&ty)
+                    ty.fteqcc_name()
                 ),
             );
             return TypeCheck::Ignored;
@@ -757,7 +757,7 @@ impl<'a> Resolver<'a> {
                 r.location,
                 format!(
                     "Type redeclaration of {} {} replaces existing variable",
-                    cast::type_name(&ty),
+                    ty.fteqcc_name(),
                     r.name
                 ),
             );
@@ -779,8 +779,8 @@ impl<'a> Resolver<'a> {
         let message = if self.fteqcc {
             format!(
                 "Type mismatch on redeclaration of {name}. {}, should be {}",
-                cast::type_name(ty),
-                cast::type_name(old)
+                ty.fteqcc_name(),
+                old.fteqcc_name()
             )
         } else {
             format!("Type mismatch on redeclaration of {name}")
@@ -1492,8 +1492,8 @@ impl<'a> Resolver<'a> {
         {
             let message = format!(
                 "Cannot cast from enum {strict}:{} to {}",
-                cast::type_name(base),
-                cast::type_name(ty)
+                base.fteqcc_name(),
+                ty.fteqcc_name()
             );
             self.report(Code::E0213, location, message);
             return Err(Fatal);
@@ -1551,9 +1551,9 @@ impl<'a> Resolver<'a> {
     /// FTEQCC's implicit cast of `source` to `to` (FTEF-19.2): "Cannot cast", an error, or
     /// "Implicit cast", a warning, or neither. Returns whether the cast is refused.
     fn cast_value(&mut self, source: Source<'_>, to: &Type, location: Location) -> bool {
-        let (code, verb) = if cast::refused(source, to) {
+        let (code, verb) = if source.refused(to) {
             (Code::E0213, "Cannot cast")
-        } else if cast::warns(source, to) {
+        } else if source.warns(to) {
             (Code::W0220, "Implicit cast")
         } else {
             return false;
@@ -1561,11 +1561,7 @@ impl<'a> Resolver<'a> {
         self.report(
             code,
             location,
-            format!(
-                "{verb} from {} to {}",
-                cast::source_name(source),
-                cast::type_name(to)
-            ),
+            format!("{verb} from {} to {}", source.name(), to.fteqcc_name()),
         );
         code == Code::E0213
     }
@@ -1646,8 +1642,8 @@ impl<'a> Resolver<'a> {
                         let message = format!(
                             "Cannot redeclare typedef {} from {} to {}",
                             decl.name,
-                            cast::type_name(old),
-                            cast::type_name(&ty)
+                            old.fteqcc_name(),
+                            ty.fteqcc_name()
                         );
                         self.report(Code::E0219, location, message);
                     }
@@ -1677,7 +1673,7 @@ impl<'a> Resolver<'a> {
     /// `typecmp`, structural, with a C type word compared by the kind it names and any other
     /// type a program names not compared.
     fn same_typedef(old: &Type, ty: &Type) -> bool {
-        match (cast::kind_name(old), cast::kind_name(ty)) {
+        match (old.fteqcc_kind(), ty.fteqcc_kind()) {
             (Some(a), Some(b)) if a != b => false,
             (Some(_), Some(_)) => {
                 old == ty || matches!(old, Type::Named(_)) || matches!(ty, Type::Named(_))
@@ -1707,13 +1703,13 @@ impl<'a> Resolver<'a> {
         }
         let base = self.resolved(&item.base);
         let numeric = matches!(
-            cast::kind_name(&base),
+            base.fteqcc_kind(),
             Some("float" | "__int32" | "__uint32" | "__int64" | "__uint64" | "__double")
         );
         let next = self.enum_next.unwrap_or(if item.flags { 1.0 } else { 0.0 });
         let value: Option<f64> = match item.value.as_ref() {
             None => {
-                if !numeric && cast::kind_name(&base).is_some() {
+                if !numeric && base.fteqcc_kind().is_some() {
                     self.report(
                         Code::E0229,
                         location,
@@ -1800,7 +1796,7 @@ impl<'a> Resolver<'a> {
             clippy::float_cmp,
             reason = "spec FTEF-19.10: `(double)i != next_f` compares the integer back exactly"
         )]
-        let fraction = cast::kind_name(base) != Some("__int32") && whole as f64 != value;
+        let fraction = base.fteqcc_kind() != Some("__int32") && whole as f64 != value;
         let message = if fraction {
             format!("enumflags - {value:.6} not an integer value")
         } else if whole.count_ones() > 1 {
@@ -1823,10 +1819,10 @@ impl<'a> Resolver<'a> {
         base: &Type,
     ) -> Option<f64> {
         let location = self.at(file, value.span);
-        let wanted = cast::kind_name(base).unwrap_or("float");
+        let wanted = base.fteqcc_kind().unwrap_or("float");
         match &value.kind {
             ValueKind::Literal(literal) => {
-                let got = cast::const_type_name(literal.ty);
+                let got = literal.ty.name();
                 let numeric = !matches!(literal.ty, ConstType::String | ConstType::Vector);
                 let numeric_base = wanted != "string" && wanted != "vector";
                 if numeric != numeric_base || (!numeric && got != wanted) {
@@ -2181,7 +2177,7 @@ impl<'a> Resolver<'a> {
                             location,
                             format!(
                                 "Implicit type mismatch. Needed float, got {}.",
-                                cast::const_type_name(literal.ty)
+                                literal.ty.name()
                             ),
                         );
                     }
@@ -2191,10 +2187,7 @@ impl<'a> Resolver<'a> {
                         self.report(
                             Code::E0309,
                             location,
-                            format!(
-                                "Type mismatch: {}, should be void()",
-                                cast::const_type_name(literal.ty)
-                            ),
+                            format!("Type mismatch: {}, should be void()", literal.ty.name()),
                         );
                     }
                 }
@@ -2579,7 +2572,7 @@ impl<'a> Resolver<'a> {
             && !facts.component
             && let Some(global) = self.lookup_global(name)
             && self.index.def(global).is_some_and(|g| {
-                cast::kind_name(&g.ty) == cast::kind_name(ty) && cast::kind_name(ty).is_some()
+                g.ty.fteqcc_kind() == ty.fteqcc_kind() && ty.fteqcc_kind().is_some()
             })
         {
             // FTEF-19.1: WARN_SAMENAMEASGLOBAL, for a global of the same kind of type only.

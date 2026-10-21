@@ -211,146 +211,154 @@ pub enum Source<'a> {
     Typed(&'a Type),
 }
 
-/// Whether FTEQCC's implicit cast of `source` to `to` fails: "Cannot cast from A to B"
-/// (FTEF-19.2). `false` when it succeeds, or when either type is one the model does not follow.
-#[must_use]
-pub fn refused(source: Source<'_>, to: &Type) -> bool {
-    let to_kind = Kind::of(to);
-    let (from_kind, null) = match source {
-        Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null),
-        Source::Typed(ty) => {
-            // `typecmp`: a type casts to itself. A redeclaration compares types structurally
-            // (QC-10.6), and so does this.
-            if ty == to {
-                return false;
+impl Source<'_> {
+    /// Whether FTEQCC's implicit cast of this value to `to` fails: "Cannot cast from A to B"
+    /// (FTEF-19.2). `false` when it succeeds, or when either type is one the model does not
+    /// follow.
+    #[must_use]
+    pub fn refused(self, to: &Type) -> bool {
+        let to_kind = Kind::of(to);
+        let (from_kind, null) = match self {
+            Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null),
+            Source::Typed(ty) => {
+                // `typecmp`: a type casts to itself. A redeclaration compares types structurally
+                // (QC-10.6), and so does this.
+                if ty == to {
+                    return false;
+                }
+                (Kind::of(ty), false)
             }
-            (Kind::of(ty), false)
+        };
+        if from_kind == Kind::Opaque || to_kind == Kind::Opaque {
+            return false;
         }
-    };
-    if from_kind == Kind::Opaque || to_kind == Kind::Opaque {
-        return false;
+        if from_kind == to_kind && !matches!(from_kind, Kind::Field) {
+            return false;
+        }
+        // A null casts to any type but a struct or union, which are opaque here.
+        if null {
+            return false;
+        }
+        !from_kind.casts_to(to_kind)
     }
-    if from_kind == to_kind && !matches!(from_kind, Kind::Field) {
-        return false;
-    }
-    // A null casts to any type but a struct or union, which are opaque here.
-    if null {
-        return false;
-    }
-    !from_kind.casts_to(to_kind)
-}
 
-/// Whether FTEQCC makes the implicit cast of `source` to `to` with its warning "Implicit cast
-/// from A to B" (`WARN_LAXCAST`, FTEF-19.2): a float or an integer to a vector, and the casts
-/// "acceptable but probably an error" among pointers, strings, integers and functions and
-/// between integers and entities, a null excepted. `false` for a cast refused or made with no
-/// warning, and for a type the model does not follow.
-#[must_use]
-pub fn warns(source: Source<'_>, to: &Type) -> bool {
-    use Kind::{Entity, Function, Integer, Pointer, String, Uint, Vector};
-    let to_kind = Kind::of(to);
-    let (from_kind, null, same) = match source {
-        Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null, false),
-        Source::Typed(ty) => (Kind::of(ty), false, ty == to),
-    };
-    if same || null || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
-        return false;
+    /// Whether FTEQCC makes the implicit cast of this value to `to` with its warning
+    /// "Implicit cast from A to B" (`WARN_LAXCAST`, FTEF-19.2): a float or an integer to a
+    /// vector, and the casts "acceptable but probably an error" among pointers, strings,
+    /// integers and functions and between integers and entities, a null excepted. `false` for
+    /// a cast refused or made with no warning, and for a type the model does not follow.
+    #[must_use]
+    pub fn warns(self, to: &Type) -> bool {
+        use Kind::{Entity, Function, Integer, Pointer, String, Uint, Vector};
+        let to_kind = Kind::of(to);
+        let (from_kind, null, same) = match self {
+            Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null, false),
+            Source::Typed(ty) => (Kind::of(ty), false, ty == to),
+        };
+        if same || null || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
+            return false;
+        }
+        // A literal of the type's own kind is the type; two functions differ in their signatures.
+        if from_kind == to_kind && from_kind != Function {
+            return false;
+        }
+        if self.refused(to) {
+            return false;
+        }
+        let wordish = |k: Kind| matches!(k, Pointer | String | Integer | Uint | Function);
+        let integer = |k: Kind| matches!(k, Integer | Uint);
+        (to_kind == Vector && matches!(from_kind, Kind::Float | Integer))
+            || (wordish(from_kind) && wordish(to_kind) && !(integer(from_kind) && integer(to_kind)))
+            || (to_kind == Entity && from_kind == Integer)
+            || (to_kind == Integer && from_kind == Entity)
     }
-    // A literal of the type's own kind is the type; two functions differ in their signatures.
-    if from_kind == to_kind && from_kind != Function {
-        return false;
-    }
-    if refused(source, to) {
-        return false;
-    }
-    let wordish = |k: Kind| matches!(k, Pointer | String | Integer | Uint | Function);
-    let integer = |k: Kind| matches!(k, Integer | Uint);
-    (to_kind == Vector && matches!(from_kind, Kind::Float | Integer))
-        || (wordish(from_kind) && wordish(to_kind) && !(integer(from_kind) && integer(to_kind)))
-        || (to_kind == Entity && from_kind == Integer)
-        || (to_kind == Integer && from_kind == Entity)
-}
 
-/// The name FTEQCC's `TypeName` gives a constant's type.
-#[must_use]
-pub fn const_type_name(ty: ConstType) -> &'static str {
-    match ty {
-        ConstType::Float => "float",
-        ConstType::Integer => "__int32",
-        ConstType::Uint => "__uint32",
-        ConstType::Int64 => "__int64",
-        ConstType::Uint64 => "__uint64",
-        ConstType::Double => "__double",
-        ConstType::Vector => "vector",
-        ConstType::String => "string",
-    }
-}
-
-/// A type as FTEQCC's `TypeName` writes it in a message, without parameter names, which the
-/// model's types do not keep (QC-10.3): `.float`, `void(float, vector)`, `entity*`.
-#[must_use]
-pub fn type_name(ty: &Type) -> String {
-    match ty {
-        Type::Unknown => "__variant".to_owned(),
-        Type::Simple(simple) => simple.as_str().to_owned(),
-        Type::Field(inner) => format!(".{}", type_name(inner)),
-        Type::Pointer(inner) => format!("{}*", type_name(inner)),
-        Type::Named(name) => match Kind::of(ty) {
-            Kind::Integer => "__int32".to_owned(),
-            Kind::Uint => "__uint32".to_owned(),
-            Kind::Int64 => "__int64".to_owned(),
-            Kind::Uint64 => "__uint64".to_owned(),
-            Kind::Double => "__double".to_owned(),
-            Kind::Void
-            | Kind::String
-            | Kind::Float
-            | Kind::Vector
-            | Kind::Entity
-            | Kind::Field
-            | Kind::Function
-            | Kind::Pointer
-            | Kind::Opaque => name.to_string(),
-        },
-        Type::Function(func) => {
-            let mut params: Vec<String> = func.params.iter().map(type_name).collect();
-            if func.variadic {
-                params.push("...".to_owned());
-            }
-            format!("{}({})", type_name(&func.ret), params.join(", "))
+    /// The name of this value's type in a message.
+    #[must_use]
+    pub fn name(self) -> String {
+        match self {
+            Source::Literal(literal) => literal.ty.name().to_owned(),
+            Source::Typed(ty) => ty.fteqcc_name(),
         }
     }
 }
 
-/// The kind of a type, FTEQCC's `etype_t`, by name: `float`, `.`-less `field`, `__int32`;
-/// `None` for a type the model does not follow. Two types of one kind are what
-/// `WARN_SAMENAMEASGLOBAL` compares (FTEF-19.1), and an enum's base is numeric by it
-/// (FTEF-19.10).
-#[must_use]
-pub fn kind_name(ty: &Type) -> Option<&'static str> {
-    Some(match Kind::of(ty) {
-        Kind::Void => "void",
-        Kind::String => "string",
-        Kind::Float => "float",
-        Kind::Vector => "vector",
-        Kind::Entity => "entity",
-        Kind::Field => "field",
-        Kind::Function => "function",
-        Kind::Pointer => "pointer",
-        Kind::Integer => "__int32",
-        Kind::Uint => "__uint32",
-        Kind::Int64 => "__int64",
-        Kind::Uint64 => "__uint64",
-        Kind::Double => "__double",
-        Kind::Opaque => return None,
-    })
+impl ConstType {
+    /// The name FTEQCC's `TypeName` gives this type.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            ConstType::Float => "float",
+            ConstType::Integer => "__int32",
+            ConstType::Uint => "__uint32",
+            ConstType::Int64 => "__int64",
+            ConstType::Uint64 => "__uint64",
+            ConstType::Double => "__double",
+            ConstType::Vector => "vector",
+            ConstType::String => "string",
+        }
+    }
 }
 
-/// The name of a source's type in a message.
-#[must_use]
-pub fn source_name(source: Source<'_>) -> String {
-    match source {
-        Source::Literal(literal) => const_type_name(literal.ty).to_owned(),
-        Source::Typed(ty) => type_name(ty),
+impl Type {
+    /// This type as FTEQCC's `TypeName` writes it in a message, without parameter names, which
+    /// the model's types do not keep (QC-10.3): `.float`, `void(float, vector)`, `entity*`.
+    #[must_use]
+    pub fn fteqcc_name(&self) -> String {
+        let ty = self;
+        match ty {
+            Type::Unknown => "__variant".to_owned(),
+            Type::Simple(simple) => simple.as_str().to_owned(),
+            Type::Field(inner) => format!(".{}", inner.fteqcc_name()),
+            Type::Pointer(inner) => format!("{}*", inner.fteqcc_name()),
+            Type::Named(name) => match Kind::of(ty) {
+                Kind::Integer => "__int32".to_owned(),
+                Kind::Uint => "__uint32".to_owned(),
+                Kind::Int64 => "__int64".to_owned(),
+                Kind::Uint64 => "__uint64".to_owned(),
+                Kind::Double => "__double".to_owned(),
+                Kind::Void
+                | Kind::String
+                | Kind::Float
+                | Kind::Vector
+                | Kind::Entity
+                | Kind::Field
+                | Kind::Function
+                | Kind::Pointer
+                | Kind::Opaque => name.to_string(),
+            },
+            Type::Function(func) => {
+                let mut params: Vec<String> = func.params.iter().map(Type::fteqcc_name).collect();
+                if func.variadic {
+                    params.push("...".to_owned());
+                }
+                format!("{}({})", func.ret.fteqcc_name(), params.join(", "))
+            }
+        }
+    }
+
+    /// The kind of this type, FTEQCC's `etype_t`, by name: `float`, `.`-less `field`,
+    /// `__int32`; `None` for a type the model does not follow. Two types of one kind are what
+    /// `WARN_SAMENAMEASGLOBAL` compares (FTEF-19.1), and an enum's base is numeric by it
+    /// (FTEF-19.10).
+    #[must_use]
+    pub fn fteqcc_kind(&self) -> Option<&'static str> {
+        Some(match Kind::of(self) {
+            Kind::Void => "void",
+            Kind::String => "string",
+            Kind::Float => "float",
+            Kind::Vector => "vector",
+            Kind::Entity => "entity",
+            Kind::Field => "field",
+            Kind::Function => "function",
+            Kind::Pointer => "pointer",
+            Kind::Integer => "__int32",
+            Kind::Uint => "__uint32",
+            Kind::Int64 => "__int64",
+            Kind::Uint64 => "__uint64",
+            Kind::Double => "__double",
+            Kind::Opaque => return None,
+        })
     }
 }
 
