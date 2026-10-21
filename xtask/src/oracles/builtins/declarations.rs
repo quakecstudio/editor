@@ -427,6 +427,10 @@ const FTEQCC: &[&str] = &[
     "void() g = { typedef float t; };\nvoid() h = { t x; };\n",
     "foo x;\nvoid() g = { x = 1; };\n",
     // FTEF-19.24: `assumeint` and `assumedouble` type numbers.
+    "#pragma flag enable assumeint\nstring s = 5f;\n",
+    "#pragma flag enable assumedouble\nstring s = 1.5f;\n",
+    "#pragma flag enable ILP32\nstring s = 5l;\n",
+    "string s = 5l;\n",
     "#pragma flag enable assumeint\nstring s = 5;\n",
     "#pragma flag enable assumeint\nfloat x = 5;\nint x;\n",
     "#pragma flag enable assumeint\nint x = 5;\nint x = 5;\n",
@@ -584,6 +588,16 @@ const WARNINGS: &[&str] = &[
 /// definition warning made an error, ignored or left a warning, by name, by `-Wall`, `-Wextra`,
 /// `-Wnone`, `-Wno-mundane` and `-Werror`, in either order, and the flags `-F` and `-K` set.
 const OPTIONS: &[(&[&str], &str)] = &[
+    (&["-fQCCX", "-Werror", "-Wno-Q208"], "const k = \"a\";\n"),
+    (
+        &["-o", "-Wno-F306"],
+        "float x = 1;\nvoid(float x) g = {};\n",
+    ),
+    (
+        &["-Fcaseinsens"],
+        "void() g = { for (float I = 0; I < 3; I = I + 1) {} i = 1; };\n",
+    ),
+    (&["-Fno-qcfuncs"], "typedef __string string;\nstring s;\n"),
     (
         &["-Fcaseinsens"],
         "float Foo = 1;\nstring FOO = \"a\";\nfloat x = foo;\n",

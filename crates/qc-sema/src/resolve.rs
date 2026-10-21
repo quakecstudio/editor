@@ -1529,9 +1529,7 @@ impl<'a> Resolver<'a> {
             Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
                 self.lookup_in_scope(scope, name)
             }
-            Holder::Global => self
-                .lookup_global(name)
-                .or_else(|| self.lookup_any_case(None, name)),
+            Holder::Global => self.lookup_used_global(name),
         };
         // `Scope::name`: the definition of that name, or for a scope that is no class the
         // plain name, as a named enum's values are (FTEF-19.10).
@@ -2323,6 +2321,24 @@ impl<'a> Resolver<'a> {
         true
     }
 
+    /// Whether `name` is a name FTEQCC registers, a type declared before, or one of a body's
+    /// `typedefs` before `at` (FTEF-19.20); under `-Fcaseinsens` in any case, `QCC_TypeForName`'s
+    /// table searched so (FTEF-19.25).
+    fn is_type_name(&self, name: &str, typedefs: &[(String, usize)], at: usize) -> bool {
+        let exact = REGISTERED_TYPES.contains(&name)
+            || self.type_names.contains(name)
+            || typedefs.iter().any(|(t, start)| t == name && *start < at);
+        exact
+            || (self.case_insensitive
+                && (REGISTERED_TYPES
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(name))
+                    || self.type_names.iter().any(|t| t.eq_ignore_ascii_case(name))
+                    || typedefs
+                        .iter()
+                        .any(|(t, start)| t.eq_ignore_ascii_case(name) && *start < at)))
+    }
+
     /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
     /// name FTEQCC registers, a type declared before, or one of `typedefs` before `at`. A name
     /// of more than one word that is no run of C words (`struct tag`, an inline enum or
@@ -2335,24 +2351,18 @@ impl<'a> Resolver<'a> {
     ) -> Option<&'t str> {
         match ty {
             Type::Named(name) => {
-                // FTEF-19.25: under `-Fcaseinsens` `QCC_TypeForName`'s table is searched in
-                // any case.
-                let same = |known: &str| {
-                    known == name.as_ref()
-                        || (self.case_insensitive && known.eq_ignore_ascii_case(name))
-                };
                 let known = name.contains(char::is_whitespace)
                     || ty.fteqcc_scalar().is_some()
-                    || REGISTERED_TYPES.iter().any(|t| same(t))
-                    || self.type_names.iter().any(|t| same(t))
-                    || typedefs.iter().any(|(t, start)| same(t) && *start < at);
+                    || self.is_type_name(name, typedefs, at);
                 (!known).then_some(name.as_ref())
             }
             // FTEF-19.28: `type_string = QCC_PR_NewType(flag_qcfuncs?"string":"__string",
             // ...)`, and so `vector` and `entity`.
             Type::Simple(
                 simple @ (SimpleType::String | SimpleType::Vector | SimpleType::Entity),
-            ) if self.qcfuncs_off => Some(simple.as_str()),
+            ) if self.qcfuncs_off && !self.is_type_name(simple.as_str(), typedefs, at) => {
+                Some(simple.as_str())
+            }
             Type::Field(inner) | Type::Pointer(inner) => {
                 self.unknown_type_name(inner, typedefs, at)
             }
@@ -2471,9 +2481,7 @@ impl<'a> Resolver<'a> {
     fn resolve_value(&self, scope: Option<Scope>, name: &str) -> Found {
         let def = match scope {
             Some(scope) => self.lookup_in_scope(scope, name),
-            None => self
-                .lookup_global(name)
-                .or_else(|| self.lookup_any_case(None, name)),
+            None => self.lookup_used_global(name),
         };
         if let Some(def) = def {
             return Found::Def(def);
@@ -2551,7 +2559,7 @@ impl<'a> Resolver<'a> {
         }
         let def = match scope {
             Some(scope) => self.lookup_in_scope(scope, name),
-            None => self.lookup_global(name),
+            None => self.lookup_used_global(name),
         };
         let field = def.filter(|d| self.index.def(*d).is_some_and(|d| d.ty.is_field()));
         if let Some(field) = field {
@@ -2577,7 +2585,7 @@ impl<'a> Resolver<'a> {
             MemberBase::Name(name) => {
                 let def = match scope {
                     Some(scope) => self.lookup_in_scope(scope, name),
-                    None => self.lookup_global(name),
+                    None => self.lookup_used_global(name),
                 }?;
                 self.class_of(&self.index.def(def)?.ty)
             }
@@ -2585,7 +2593,7 @@ impl<'a> Resolver<'a> {
             MemberBase::Call(name) => {
                 let def = match scope {
                     Some(scope) => self.lookup_in_scope(scope, name),
-                    None => self.lookup_global(name),
+                    None => self.lookup_used_global(name),
                 }?;
                 match &self.index.def(def)?.ty {
                     Type::Function(func) => self.class_of(&func.ret),
@@ -2846,15 +2854,25 @@ impl<'a> Resolver<'a> {
             .enumerate()
             .skip(scope.locals_start)
             .find(|(index, d)| {
-                d.owner == Some(scope.owner)
-                    && d.name == name
-                    && self
-                        .facts
-                        .get(*index)
-                        .and_then(|f| f.scope_end)
-                        .is_none_or(|end| scope.at < end)
+                d.owner == Some(scope.owner) && d.name == name && self.in_scope_at(*index, scope.at)
             })
             .map(|(index, _)| DefId(index))
+    }
+
+    /// Whether the definition at `index` is in scope at byte `at`: not a `for` statement's
+    /// local whose statement ended before it (FTEF-19.19).
+    fn in_scope_at(&self, index: usize, at: usize) -> bool {
+        self.facts
+            .get(index)
+            .and_then(|f| f.scope_end)
+            .is_none_or(|end| at < end)
+    }
+
+    /// A global name as a use finds it (QC-12.2): as written, then under `-Fcaseinsens` in any
+    /// case (FTEF-19.25).
+    fn lookup_used_global(&self, name: &str) -> Option<DefId> {
+        self.lookup_global(name)
+            .or_else(|| self.lookup_any_case(None, name))
     }
 
     /// Looks up a name in a function's scope (QC-12.2). In vanilla the first definition in
@@ -2884,7 +2902,11 @@ impl<'a> Resolver<'a> {
                 .enumerate()
                 .skip(scope.locals_start)
                 .rev()
-                .find(|(_, d)| d.owner == Some(scope.owner) && d.name.eq_ignore_ascii_case(name))
+                .find(|(index, d)| {
+                    d.owner == Some(scope.owner)
+                        && d.name.eq_ignore_ascii_case(name)
+                        && self.in_scope_at(*index, scope.at)
+                })
                 .map(|(index, _)| DefId(index))
         });
         local.or_else(|| {

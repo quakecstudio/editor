@@ -126,7 +126,38 @@ fn arithmetic_exceptions(arg: &[u8]) -> Option<bool> {
         .then_some(on)
 }
 
+/// The options that take the next argument as their value (`if (++i == myargc)`, `i++;`): it
+/// is a file or a number, not an option.
+const TAKES_VALUE: [&[u8]; 12] = [
+    b"-srcfile",
+    b"-src",
+    b"-o",
+    b"-max_regs",
+    b"-max_strings",
+    b"-max_globals",
+    b"-max_fields",
+    b"-max_statements",
+    b"-max_functions",
+    b"-max_types",
+    b"-max_temps",
+    b"-max_macros",
+];
+
 impl CommandLine {
+    /// The arguments read as options, in order: each but the value an option before it takes,
+    /// and a bare `-I`'s directory (`if (!*name && i+1<myargc) name = myargv[++i];`).
+    fn options(&self) -> impl Iterator<Item = &[u8]> {
+        let mut value_next = false;
+        self.args.iter().filter_map(move |arg| {
+            if value_next {
+                value_next = false;
+                return None;
+            }
+            value_next = TAKES_VALUE.contains(&arg.as_slice()) || arg.as_slice() == b"-I";
+            Some(arg.as_slice())
+        })
+    }
+
     /// The command line of the arguments `args`, in order. Arguments that are no `-W`, `-F`
     /// or `-K` option are kept and change nothing here.
     #[must_use]
@@ -142,12 +173,13 @@ impl CommandLine {
     #[must_use]
     pub fn warnings(&self, defaults: WarningSettings) -> WarningSettings {
         let mut settings = defaults;
-        if self.args.iter().any(|a| a.as_slice() == b"-Fqccx") {
+        // `QCC_CheckParm` compares with `QC_strcasecmp`.
+        if self.options().any(|a| a.eq_ignore_ascii_case(b"-Fqccx")) {
             settings.set(FteWarning::Denormal, WarningAction::Ignore);
             settings.set(FteWarning::LaxCast, WarningAction::Ignore);
         }
         let mut werror = false;
-        for arg in &self.args {
+        for arg in self.options() {
             // `-Farithmetic-exceptions`, a compatibility flag no row of `compiler_flag[]` names:
             // `qccwarningaction[WARN_DIVISIONBY0] = state?WA_ERROR:WA_IGNORE;`.
             if let Some(on) = arithmetic_exceptions(arg) {
@@ -204,7 +236,7 @@ impl CommandLine {
     /// abbreviation is NAME in any case, whether or not it may change mid-compile.
     #[must_use]
     pub fn flags(&self, mut flags: FlagSettings) -> FlagSettings {
-        for arg in &self.args {
+        for arg in self.options() {
             let Some(rest) = after(arg, b"-F").or_else(|| after(arg, b"-K")) else {
                 continue;
             };
@@ -261,6 +293,18 @@ mod tests {
         assert_eq!(action(&["-Wbogus"], W::SameNameAsGlobal), A::Warn);
         assert_eq!(action(&["-Fqccx"], W::LaxCast), A::Ignore);
         assert_eq!(action(&["-Fqccx"], W::Denormal), A::Ignore);
+        assert_eq!(action(&["-fQCCX"], W::LaxCast), A::Ignore);
+        // The value an option takes is no option.
+        assert_eq!(action(&["-o", "-Wno-F306"], W::SameNameAsGlobal), A::Warn);
+        assert_eq!(action(&["-I", "-Wno-F306"], W::SameNameAsGlobal), A::Warn);
+        assert_eq!(
+            action(&["-max_temps", "-Wno-F306"], W::SameNameAsGlobal),
+            A::Warn
+        );
+        assert_eq!(
+            action(&["-Isrc", "-Wno-F306"], W::SameNameAsGlobal),
+            A::Ignore
+        );
         assert_eq!(
             action(&["-Farithmetic-exceptions"], W::DivisionBy0),
             A::Error

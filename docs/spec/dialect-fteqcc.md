@@ -1555,7 +1555,9 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.71** FTEQCC's command line sets the warnings and compiler flags each time
   `QCC_SetDefaultProperties` resets them, before the first pass and the second autoprototyping
   pass, as it ends by calling `QCC_PR_CommandLinePrecompilerOptions`, which reads every
-  argument in order. First `QCC_CheckParm ("-Fqccx")` ignores F313 and F314. An argument that
+  argument in order, but the value `-srcfile`, `-src`, `-o`, the nine `-max_` options and a bare
+  `-I` take, the next argument (`if (++i == myargc)`, `i++;`). First `QCC_CheckParm ("-Fqccx")`,
+  in any case (`QC_strcasecmp`), ignores F313 and F314. An argument that
   starts with `-W` in any case (`strnicmp(myargv[i], "-W", 2)`) is a warning option, its text
   after `-W` compared in any case: `all` makes each ignored warning a warning but F208, F209,
   F311, F330 and F332 ("these warnings require -Wextra to enable"), and F319, Q205, F312, F307,
@@ -2332,9 +2334,13 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   (FTEF-12.12). Under `assumeint` a number with no suffix and no `.` is an integer by its
   magnitude (`if (num > UINT64_C(0x7fffffffffffffff)) pr_immediate_type = type_uint64; else if
   (num > 0xffffffffu) ... type_int64; else if (num > 0x7fffffffu) ... type_uint; else ...
-  type_integer;`), and a character constant is an `__int32` (`QCC_PR_LexVector`, `if
+  type_integer;`), a number with an `f` suffix staying a float (its branch sets `type_float` first),
+  and a character constant is an `__int32` (`QCC_PR_LexVector`, `if
   (flag_assume_integer) { pr_immediate_type = type_integer; ...`); under `assumedouble` a number
-  with a `.` is a `__double` (`pr_immediate_type = flag_assume_double?type_double:type_float;`).
+  with a `.` is a `__double` (`pr_immediate_type = flag_assume_double?type_double:type_float;`),
+  but after an `f` suffix (`else if (c == 'f' || c == 'F') { pr_immediate_type = type_float;`). A
+  single `l` suffix is 64 bits, and under `ILP32` only two are (`if (islong >=
+  (flag_ILP32?2:1))`).
   The literal's type is then cast as FTEF-19.2 says: `string s = 5;` under `assumeint` is
   "Implicit cast from __int32 to string", and `string s = 1.5;` under `assumedouble` "Cannot
   cast from __double to string". The value is kept as the lexer keeps it, a float's bits
@@ -2366,5 +2372,5 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   command line set: `type_string = QCC_PR_NewType(flag_qcfuncs?"string":"__string", ev_string,
   true);`, and so `vector` and `entity`, then `__string`, `__vector` and `__entity` whatever the
   flag. So under `-Fno-qcfuncs` or `-Kno-qcfuncs` the words `string`, `vector` and `entity` are
-  no type, "\"WORD\" is not a type" (`E0203`, FTEF-19.20), while a `#pragma flag disable
-  qcfuncs`, read after the types are named, keeps them.
+  no type, "\"WORD\" is not a type" (`E0203`, FTEF-19.20), unless a typedef names the word
+  again, while a `#pragma flag disable qcfuncs`, read after the types are named, keeps them.

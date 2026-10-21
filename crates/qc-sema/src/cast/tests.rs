@@ -310,4 +310,33 @@ fn assumed_number_types() {
         Literal::of_fteqcc_number("5i", double).ty,
         ConstType::Integer
     );
+    // An `f` suffix is a float under either.
+    assert_eq!(Literal::of_fteqcc_number("5f", int).ty, ConstType::Float);
+    assert_eq!(Literal::of_fteqcc_number("5F", int).ty, ConstType::Float);
+    assert_eq!(
+        Literal::of_fteqcc_number("1.5f", double).ty,
+        ConstType::Float
+    );
+    assert_eq!(
+        Literal::of_fteqcc_number("1.5d", LexFlags::default()).ty,
+        ConstType::Double
+    );
+}
+
+// spec FTEF-19.24: one `l` is 64 bits, or two under `ILP32` (FTEF-12.12)
+#[test]
+fn long_suffixes_and_ilp32() {
+    let ilp32 = LexFlags::default().with(LexFlag::Ilp32, true);
+    let plain = LexFlags::default();
+    assert_eq!(Literal::of_fteqcc_number("5l", plain).ty, ConstType::Int64);
+    assert_eq!(
+        Literal::of_fteqcc_number("5l", ilp32).ty,
+        ConstType::Integer
+    );
+    assert_eq!(Literal::of_fteqcc_number("5ul", ilp32).ty, ConstType::Uint);
+    assert_eq!(Literal::of_fteqcc_number("5ll", ilp32).ty, ConstType::Int64);
+    assert_eq!(
+        Literal::of_fteqcc_number("5llu", ilp32).ty,
+        ConstType::Uint64
+    );
 }

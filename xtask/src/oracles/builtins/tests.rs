@@ -989,9 +989,10 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             .iter()
             .filter_map(|arg| arg.strip_prefix("-I").map(str::to_owned))
             .collect();
+        // The case's options are every argument but `-Tid` and the include directories.
         let options: Vec<String> = args
             .iter()
-            .filter(|arg| ["-W", "-F", "-K"].iter().any(|p| arg.starts_with(p)))
+            .filter(|arg| *arg != "-Tid" && !arg.starts_with("-I"))
             .cloned()
             .collect();
         assert_eq!(

@@ -235,6 +235,17 @@ fn case_insensitive_names() {
         []
     );
     assert_eq!(codes("typedef float Foo;\nFOO x;\n", &["-Fcaseinsens"]), []);
+    // A `for` statement's local is gone after it in any case too (FTEF-19.19).
+    let after_loop = "void() g = { for (float I = 0; I < 3; I = I + 1) {} i = 1; };\n";
+    assert_eq!(codes(after_loop, &["-Fcaseinsens"]), [Code::E0301]);
+    // A global's initialiser and a member access outside a function find names in any case.
+    assert_eq!(
+        codes(
+            "entity E;\n.float fld;\nvoid() g = { e.fld = 1; };\n",
+            &["-Fcaseinsens"]
+        ),
+        []
+    );
     assert_eq!(codes("typedef float Foo;\nFOO x;\n", &[]), [Code::E0203]);
 }
 
@@ -259,6 +270,12 @@ fn a_module_source_is_parsed_past_its_hash_bang() {
     assert!(after.diagnostics().is_empty(), "{:?}", after.diagnostics());
     assert_ne!(before.diagnostics().len(), 0);
     assert_eq!(db.parse(FileId(1)).diagnostics().len(), 0);
+    // A file the prelude no longer names is a plain file again.
+    db.analyze_module(&ModuleInput {
+        compiled: vec![FileId(1)],
+        ..ModuleInput::default()
+    });
+    assert_ne!(db.parse(FileId(0)).diagnostics().len(), 0);
 }
 
 // spec FTEF-19.28: with `qcfuncs` off on the command line, `string`, `vector` and `entity` are no

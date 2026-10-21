@@ -361,12 +361,15 @@ impl Db {
             return memo.value.1.clone();
         }
         // FTEF-19.27: the prelude's files are the source form's `progs.src`, parsed as a
-        // module's source.
-        for &file in &input.prelude {
-            if self.module_sources.insert(file) {
-                self.parses.remove(&file);
-                self.lowerings.remove(&file);
+        // module's source; a file that is one no longer, or newly, is parsed again.
+        let sources: HashSet<FileId> = input.prelude.iter().copied().collect();
+        if sources != self.module_sources {
+            for file in sources.symmetric_difference(&self.module_sources) {
+                self.parses.remove(file);
+                self.lowerings.remove(file);
             }
+            self.module = None;
+            self.module_sources = sources;
         }
         self.bump_preprocess();
         let preprocessed = {

@@ -107,12 +107,12 @@ impl Literal {
                 .all(|c| c == '0');
             // `-0.0` is a float whose word is not 0 (its sign bit), so it is no null.
             zero &= !text.starts_with('-');
-            // FTEF-19.24: `pr_immediate_type = flag_assume_double?type_double:type_float;`.
-            if flags.has(LexFlag::AssumeDouble)
-                || fraction
-                    .trim_start_matches(|c: char| c.is_ascii_digit())
-                    .starts_with(['d', 'D'])
-            {
+            // FTEF-19.24: `pr_immediate_type = flag_assume_double?type_double:type_float;`, then
+            // an `f` suffix makes it a float and a `d` a double.
+            let suffix = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
+            if suffix.starts_with(['f', 'F']) {
+                ConstType::Float
+            } else if suffix.starts_with(['d', 'D']) || flags.has(LexFlag::AssumeDouble) {
                 ConstType::Double
             } else {
                 ConstType::Float
@@ -120,8 +120,13 @@ impl Literal {
         } else {
             match rest.chars().next() {
                 Some('d' | 'D') => ConstType::Double,
+                // FTEF-19.24: an `f` suffix is a float before `assumeint` is read.
+                Some('f' | 'F') => ConstType::Float,
                 Some('i' | 'I' | 'u' | 'U' | 'l' | 'L') => {
-                    let long = rest.contains(['l', 'L']);
+                    // `if (islong >= (flag_ILP32?2:1))`: one `l` is 64 bits, or two under
+                    // `ILP32` (FTEF-12.12).
+                    let longs = rest.chars().filter(|c| matches!(c, 'l' | 'L')).count();
+                    let long = longs >= if flags.has(LexFlag::Ilp32) { 2 } else { 1 };
                     let unsigned = rest.contains(['u', 'U']);
                     match (long, unsigned) {
                         (true, true) => ConstType::Uint64,
