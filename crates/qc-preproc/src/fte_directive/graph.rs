@@ -17,8 +17,8 @@ use qc_lexer::{Dialect, Punct, TokenKind};
 
 use super::{
     Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, TextStart, byte_at,
-    condition, elif_defined, lossy, qcc_load_file, read, simple_get_token, skip_side,
-    skip_to_end_of_line, starts_line, whitespace,
+    condition, elif_defined, lossy, qcc_load_file, read, simple_get_token, skip_script_line,
+    skip_side, skip_to_end_of_line, starts_line, whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
 use crate::{FileId, TokenStream, Variadic};
@@ -89,15 +89,28 @@ impl ModuleState {
     }
 }
 
-/// How a file the graph reads starts, which decides whether a `#` on its first line is a
-/// directive (FTEF-14.52).
+/// How a file the graph or the preprocessor reads starts, which decides whether a `#` on its
+/// first line is a directive (FTEF-14.52) and whether a `#!` first line is read (PRJ-4.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStart {
-    /// A compiled file, the module's source or an entry of a list: `QCC_PR_CompileFile` calls
-    /// `QCC_PR_NewLine` at its start, which skips spaces and tabs.
+    /// The module's source in source form (PRJ-4.4), compiled as [`Self::Compiled`] after
+    /// `QCC_main` passes over a first line that starts with `#!` (PRJ-4.8).
+    Source,
+    /// A compiled file, an entry of a list: `QCC_PR_CompileFile` calls `QCC_PR_NewLine` at its
+    /// start, which skips spaces and tabs.
     Compiled,
     /// An `#include`d file: `QCC_PR_Precompiler` is called at its first byte.
     Included,
+}
+
+impl FileStart {
+    /// How the text of a file that starts so starts, for the directive reader.
+    pub(crate) const fn text_start(self) -> TextStart {
+        match self {
+            Self::Source | Self::Compiled => TextStart::Compiled,
+            Self::Included => TextStart::Included,
+        }
+    }
 }
 
 /// What the reader met that the graph acts on (PRJ-5.13), each with the 1-based line it is on.
@@ -177,19 +190,20 @@ pub struct FteFileReader {
 impl FteFileReader {
     /// A reader of the file of `bytes`, which starts as `start` says, read as the text FTEQCC's
     /// `QCC_LoadFile` hands its lexer: decoded from UTF-16 or UTF-32, past a UTF-8 byte order
-    /// mark, and with each NUL byte a space (FTEF-14.54, PRJ-5.1).
+    /// mark, and with each NUL byte a space (FTEF-14.54, PRJ-5.1), and in the module's source
+    /// past a `#!` first line (PRJ-4.8).
     #[must_use]
     pub fn new(bytes: Vec<u8>, start: FileStart) -> Self {
-        let (text, _) = qcc_load_file(bytes);
+        let (mut text, _) = qcc_load_file(bytes);
+        if start == FileStart::Source {
+            skip_script_line(&mut text);
+        }
         Self {
             stream: TokenStream::lex(&text, Dialect::Fteqcc),
             text,
             at: 0,
             resume: None,
-            start: match start {
-                FileStart::Compiled => TextStart::Compiled,
-                FileStart::Included => TextStart::Included,
-            },
+            start: start.text_start(),
             modes: Vec::new(),
             ended: false,
             lines: Lines::default(),

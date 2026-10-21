@@ -12,7 +12,9 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect};
-use qc_preproc::{FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_file};
+use qc_preproc::{
+    FileStart, FteEvent, FteFileReader, Loader, ModuleState, cond, qcc_load_file, skip_script_line,
+};
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
 ///
@@ -175,7 +177,9 @@ fn com_parse_words(line: &[u8], mut in_comment: bool) -> (Vec<String>, bool) {
                     .get(start..)
                     .and_then(|rest| rest.iter().position(|b| *b == b'"'))
                     .map_or(line.len(), |len| start.saturating_add(len));
-                words.push(lossy(line.get(start..end)));
+                // QC-23.7: the token is a C string, so a NUL in the quotes ends its name.
+                let quoted = line.get(start..end).unwrap_or_default();
+                words.push(lossy(quoted.split(|b| *b == 0).next()));
                 i = end.saturating_add(1);
             }
             (b'{' | b'}' | b'(' | b')' | b'\'' | b':', _) => {
@@ -835,14 +839,46 @@ impl<L: Loader> Builder<'_, L> {
 }
 
 /// The text of a module's source that its form is told from and a list is read from: under
-/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54),
-/// under the vanilla dialect its bytes past a UTF-8 byte order mark (PRJ-5.1).
+/// the FTEQCC and GMQCC dialects the text FTEQCC's `QCC_LoadFile` gives (PRJ-4.6, FTEF-14.54)
+/// past a `#!` first line (PRJ-4.8), under the vanilla dialect its bytes past a UTF-8 byte order
+/// mark (PRJ-5.1) up to the NUL byte id's `COM_Parse` ends it at (PRJ-4.7).
 fn progs_text(bytes: &[u8], dialect: Dialect) -> Vec<u8> {
     if dialect.has_fteqcc_extensions() {
-        qcc_load_file(bytes.to_vec()).0
+        let (mut text, _) = qcc_load_file(bytes.to_vec());
+        skip_script_line(&mut text);
+        text
     } else {
-        bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes).to_vec()
+        let text = bytes.strip_prefix(UTF8_BOM).unwrap_or(bytes);
+        text.get(..com_parse_end(text)).unwrap_or(text).to_vec()
     }
+}
+
+/// Where id's `COM_Parse` ends the text of a list, read token by token as
+/// [`com_parse_words`] reads it: at the first NUL byte it meets between tokens or that ends a
+/// word or a `//` comment, as at the NUL `LoadFile` writes after the file's bytes (QC-23.7). A
+/// quoted token runs on past a NUL in it to its closing quote, or here to its line's end. The
+/// end of `text` when it has no such NUL.
+fn com_parse_end(text: &[u8]) -> usize {
+    let until = |from: usize, stop: fn(u8) -> bool| {
+        let rest = text.get(from..).unwrap_or_default();
+        rest.iter()
+            .position(|&b| stop(b))
+            .map_or(text.len(), |len| from.saturating_add(len))
+    };
+    let mut i = 0_usize;
+    while let Some(&byte) = text.get(i) {
+        let next = i.saturating_add(1);
+        i = match (byte, text.get(next)) {
+            (0, _) => return i,
+            (b'/', Some(&b'/')) => until(next, |b| b == 0 || b == b'\n'),
+            (b'"', _) => until(next, |b| b == b'"' || b == b'\n').saturating_add(1),
+            _ if byte <= b' ' || matches!(byte, b'{' | b'}' | b'(' | b')' | b'\'' | b':') => next,
+            _ => until(next, |b| {
+                b <= b' ' || matches!(b, b'{' | b'}' | b'(' | b')' | b'\'' | b':')
+            }),
+        };
+    }
+    text.len()
 }
 
 /// Whether the first token of `text`, split as `COM_Parse` splits (QC-23.2) with `/* */`
@@ -907,7 +943,7 @@ pub fn build_graph<L: Loader>(
                 parent: None,
             });
             let cursor = if dialect.has_fteqcc_extensions() {
-                Cursor::fteqcc(src, text, Some(0), FileStart::Compiled)
+                Cursor::fteqcc(src, text, Some(0), FileStart::Source)
             } else {
                 Cursor::new(src, text, Some(0), Base::Code)
             };

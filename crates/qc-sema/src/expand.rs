@@ -218,9 +218,15 @@ fn run<L: Loader>(
         .chain(input.compiled.iter().map(|id| (id, true)));
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
-            Some(path) => pp
-                .preprocess_file(path)
-                .map_err(|err| format!("{}: {err}", path.display())),
+            Some(path) => {
+                // PRJ-4.8: the prelude is the module's source, read as `QCC_main` reads it.
+                let output = if compiled {
+                    pp.preprocess_file(path)
+                } else {
+                    pp.preprocess_source(path)
+                };
+                output.map_err(|err| format!("{}: {err}", path.display()))
+            }
             None => Err(format!("file {} has no path", id.0)),
         };
         let output = match read {

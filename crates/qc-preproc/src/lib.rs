@@ -26,6 +26,7 @@ mod tests;
 
 pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, qcc_load_file, qcc_load_in_place,
+    skip_script_line,
 };
 pub use fte_line::{fte_directive_end, relex_from};
 pub use source::{
@@ -841,15 +842,31 @@ impl<L: Loader> Preprocessor<L> {
     /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
+        self.preprocess(path, FileStart::Compiled)
+    }
+
+    /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
+    /// (PRJ-4.4), as [`Self::preprocess_file`] does, but in an FTEQCC dialect with a first line
+    /// that starts with `#!` passed over, as FTEQCC's `QCC_main` passes over it (PRJ-4.8).
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_source(&mut self, path: &Path) -> io::Result<FileOutput> {
+        self.preprocess(path, FileStart::Source)
+    }
+
+    /// [`Self::preprocess_file`] of a file that starts as `start` says.
+    fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
-        let file = self.add_source(path.clone(), bytes);
+        let file = self.add_source(path.clone(), bytes, start);
         let mut run = Run {
             unit: name.clone(),
             ..Run::default()
         };
-        let cursor = self.cursor(file, path, name, TextStart::Compiled);
+        let cursor = self.cursor(file, path, name, start.text_start());
         run.cursors.push(cursor);
         while let Some(item) = self.next_item(&mut run) {
             let Some(item) = self.explicit_use(&mut run, item) else {
@@ -863,11 +880,15 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Adds the file at `path`, of `bytes`, to the files read: in an FTEQCC dialect the text
-    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.54), in the vanilla dialect the bytes
-    /// (QC-1.1).
-    fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>) -> FileId {
+    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.54), past a `#!` first line in a
+    /// module's source (PRJ-4.8), in the vanilla dialect the bytes (QC-1.1).
+    fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>, start: FileStart) -> FileId {
         let (text, origin) = if self.dialect.has_fteqcc_extensions() {
-            qcc_load_file(bytes)
+            let (mut text, origin) = qcc_load_file(bytes);
+            if start == FileStart::Source {
+                skip_script_line(&mut text);
+            }
+            (text, origin)
         } else {
             (bytes, TextOrigin::default())
         };
@@ -1332,7 +1353,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, FileSpan { file, span: whole });
             return;
         }
-        let included = self.add_source(path.clone(), bytes);
+        let included = self.add_source(path.clone(), bytes, FileStart::Included);
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let cursor = self.cursor(included, path, name, TextStart::Included);
         run.cursors.push(cursor);

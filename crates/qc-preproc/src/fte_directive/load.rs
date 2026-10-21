@@ -3,11 +3,13 @@
 // Copyright (C) 2026 QuakeC Studio contributors
 //
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_LoadFile, QCC_SanitizeCharSet, decodeUTF
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qccmain.c, QCC_main
 
 //! The text FTEQCC's file loader hands its lexer (`docs/spec/dialect-fteqcc.md` FTEF-14.54):
 //! `QCC_LoadFile` reads the file's bytes, `QCC_SanitizeCharSet` decodes a file that starts with a
 //! UTF-32 or UTF-16 byte order mark to UTF-8 and skips a UTF-8 one, and every NUL byte left is a
-//! space.
+//! space. In a module's source `QCC_main` then passes over a first line that starts with `#!`
+//! (`docs/spec/project-file.md` PRJ-4.8).
 
 use std::borrow::Cow;
 
@@ -192,4 +194,22 @@ pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
         .map(|&byte| if byte == 0 { b' ' } else { byte })
         .collect();
     Some((Cow::Owned(text), start))
+}
+
+/// `QCC_main`'s pass over the first line of a module's source, `text` as [`qcc_load_file`] gives
+/// it, when that line starts with `#!`: "ignore the first line if it starts with a #! for unix
+/// scripts" (`if (qccmsrc[0] == '#' && qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');`).
+/// Implements PRJ-4.8.
+///
+/// The line's bytes before its line feed become spaces, so the text keeps its offsets and its
+/// lines: FTEQCC reads on from the line feed, which ends the line the next one is counted from.
+/// A text with no line feed is all that line, as `QCC_LoadFile` writes one after the text
+/// (`mem[len] = '\n';`), and becomes all spaces.
+pub fn skip_script_line(text: &mut [u8]) {
+    if !text.starts_with(b"#!") {
+        return;
+    }
+    for byte in text.iter_mut().take_while(|byte| **byte != b'\n') {
+        *byte = b' ';
+    }
 }
