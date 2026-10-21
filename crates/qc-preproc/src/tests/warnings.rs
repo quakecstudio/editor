@@ -358,3 +358,36 @@ fn warning_settings_hold_from_the_pragma_on() {
     let (_, out) = super::one("#pragma warning error octal\n");
     assert!(out.warnings.is_empty());
 }
+
+// spec FTEF-14.63: each warning code of this profile is reported as the setting of the FTEQCC
+// warning it stands for
+#[test]
+fn each_warning_code_stands_for_its_fteqcc_warning() {
+    for (code, warning) in [
+        (Code::W0103, FteWarning::PrecompilerMessage),
+        (Code::W0104, FteWarning::CaseInsensitiveFrameMacro),
+        (Code::W0105, FteWarning::StaleMacro),
+        (Code::W0106, FteWarning::DuplicateMacro),
+        (Code::W0107, FteWarning::StringTooLong),
+        (Code::W0117, FteWarning::StringTooLong),
+        (Code::W0108, FteWarning::BadPragma),
+        (Code::W0113, FteWarning::BadPragma),
+        (Code::W0109, FteWarning::EvilPreprocessor),
+        (Code::W0110, FteWarning::Octal),
+        (Code::W0111, FteWarning::Overflow),
+        (Code::W0112, FteWarning::NestedComment),
+        (Code::W0114, FteWarning::UndefNotDefined),
+        (Code::W0115, FteWarning::DuplicatePrecompiler),
+        (Code::W0116, FteWarning::IdenticalPrecompiler),
+        (Code::W0118, FteWarning::GmqccSpecific),
+        (Code::W0119, FteWarning::NotUtf8),
+        (Code::W0120, FteWarning::FteSpecific),
+        (Code::W0121, FteWarning::Denormal),
+        (Code::W0122, FteWarning::MacroInString),
+        (Code::W0123, FteWarning::HangingSlashR),
+    ] {
+        assert_eq!(FteWarning::of_code(code), Some(warning), "{code:?}");
+    }
+    assert_eq!(FteWarning::of_code(Code::W0101), None);
+    assert_eq!(FteWarning::of_code(Code::E0125), None);
+}

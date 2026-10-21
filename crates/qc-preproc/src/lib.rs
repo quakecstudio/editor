@@ -490,11 +490,11 @@ impl TokenStream {
             return;
         }
         let offset = self.read_offset().min(text.len());
-        let next = self.tokens.partition_point(|t| t.span.start < offset);
         let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
-        self.tokens.truncate(next);
+        // The tokens not read yet are those from `pos`, which start at or after where reading
+        // stands, so they are the ones lexed again.
+        self.tokens.truncate(self.pos);
         self.tokens.extend(rest.tokens);
-        self.pos = next;
         self.diagnostics.retain(|d| d.span.start < offset);
         self.diagnostics.extend(rest.diagnostics);
     }

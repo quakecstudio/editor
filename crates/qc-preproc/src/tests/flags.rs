@@ -3,10 +3,17 @@
 //! FTEQCC's compiler flags as the preprocessor reads them (FTEF-12.12, FTEF-12.13): each case was
 //! compiled with the pinned FTEQCC (`fteqcc -Tid`), which read the same tokens.
 
-use qc_lexer::{LexFlag, LexFlags};
+#![expect(
+    clippy::unwrap_used,
+    reason = "test code: a failed unwrap is a failed test"
+)]
+
+use std::path::Path;
+
+use qc_lexer::{Dialect, LexFlag, LexFlags};
 
 use super::{codes, one_fte, tokens};
-use crate::Code;
+use crate::{Code, MemoryLoader, Preprocessor};
 
 // spec FTEF-12.12: a `#pragma flag` changes how the tokens after it are lexed, and a later one
 // changes them back
@@ -20,6 +27,38 @@ fn a_flag_pragma_lexes_the_rest_again() {
         "\"a\":\"b\";\n",
     ));
     assert_eq!(tokens(&out), r#""a" : "b" ; "a" "\x00" "b" ; "a" : "b" ;"#);
+    // The lexical errors before the pragma stay, once each, and those after are the new
+    // lexing's.
+    let (_, out) = one_fte("\"a\n#pragma flag enable qccx\n\"b\n");
+    assert_eq!(codes(&out), [Code::E0102, Code::E0102]);
+    let (_, out) = one_fte("\"a\n#pragma flag enable qccx\nb\n");
+    assert_eq!(codes(&out), [Code::E0102]);
+    // A pragma in an expansion (FTEF-14.46) lexes again from the end of the use, where an error
+    // of the string that touches it is the new lexing's alone.
+    let (_, out) = one_fte(concat!(
+        "#pragma warning disable F303\n",
+        "#define D \\\n#pragma flag enable qccx \\\nx\n",
+        "D\"a\n",
+    ));
+    assert_eq!(codes(&out), [Code::E0102]);
+}
+
+// spec FTEF-12.11: `QCC_main` sets the flags once, before the first pass, so a `#pragma flag`
+// holds into the second autoprototyping pass
+#[test]
+fn a_flag_holds_into_the_second_pass() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"#pragma flag enable qccx\n\"a\":\"b\";\n");
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(tokens(&out), r#""a" "\x00" "b" ;"#);
+    assert!(
+        out.lex_flags
+            .iter()
+            .all(|(_, flags)| flags.has(LexFlag::Qccx))
+    );
 }
 
 // spec FTEF-12.12: the preprocessor marks each change of the lexer's flags by token, starting

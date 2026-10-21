@@ -53,6 +53,12 @@ fn flags_set_and_clear() {
     assert!(flags.has(LexFlag::Qccx) && !flags.has(LexFlag::QcFuncs));
     assert!(!flags.with(LexFlag::Qccx, false).has(LexFlag::Qccx));
     assert!(LexFlags::default().has(LexFlag::QcFuncs));
+    // Turning on a flag that is on leaves it on.
+    assert!(
+        LexFlags::default()
+            .with(LexFlag::QcFuncs, true)
+            .has(LexFlag::QcFuncs)
+    );
     for flag in [
         LexFlag::QcFuncs,
         LexFlag::Qccx,
@@ -153,6 +159,16 @@ fn qccx_percent_immediates() {
     assert_eq!(float_bits(b"%-3", qccx), (-3_i32).cast_unsigned());
     // `do ... while`: the byte after `0x` is taken whatever it is.
     assert_eq!(kinds(b"%0xz;", qccx).len(), 2);
+    // `0x` is passed over only where the number starts, and a `.` is taken but one before
+    // another `.`.
+    assert_eq!(
+        kinds(b"%5x1", qccx),
+        [
+            TokenKind::Float(f32::from_bits(5)),
+            TokenKind::Name("x1".to_owned())
+        ]
+    );
+    assert_eq!(kinds(b"%1.5;", qccx).len(), 2);
     assert_eq!(kinds(b"5 % 2", qccx)[1], TokenKind::Punct(Punct::Percent));
     assert_eq!(
         kinds(b"%5", LexFlags::default()),

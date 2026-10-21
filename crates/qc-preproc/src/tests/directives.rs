@@ -197,6 +197,13 @@ fn com_parse_reads_tokens() {
     assert_eq!(parse("ab"), Some(("ab".to_owned(), 2)));
     assert_eq!(parse("  "), None);
     assert_eq!(parse("/* c"), None);
+    // `char qcc_token[1024]` keeps a string's or a word's first 1023 bytes
+    // (`if (len >= sizeof(qcc_token)-1) ;`), and reading goes on past the rest.
+    let long = "a".repeat(1100);
+    for text in [format!("\"{long}\""), long.clone()] {
+        let (token, at) = com_parse(text.as_bytes(), 0).unwrap();
+        assert_eq!((token.len(), at), (1023, text.len()), "{}", text.len());
+    }
 }
 
 // spec FTEF-14.52: a directive's name is matched by its first bytes, in FTEQCC's order, after
