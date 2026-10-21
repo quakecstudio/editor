@@ -1512,7 +1512,7 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect == Dialect::Gmqcc
             && let Some(cursor) = run.cursors.iter().rev().find(|c| c.file == at.file)
         {
-            let here = join_paths(name, cursor.path.as_os_str().as_encoded_bytes());
+            let here = join_paths(name, &cursor.read_as);
             let path = normalize(&PathBuf::from(lossy(&here)));
             let known = names
                 .iter()
@@ -1634,10 +1634,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             Bytes::File(..) | Bytes::Chunk(..) => None,
         };
-        holding.map_or_else(
-            || run.unit.clone(),
-            |cursor| cursor.path.as_os_str().as_encoded_bytes().to_vec(),
-        )
+        holding.map_or_else(|| run.unit.clone(), |cursor| cursor.read_as.clone())
     }
 }
 

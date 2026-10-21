@@ -477,6 +477,9 @@ struct Cursor {
     /// Under FTEQCC, the file's name as FTEQCC has it, `s_filen`, which `__FILE__` writes
     /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
     name: Vec<u8>,
+    /// The file's name as it was read, which no `#pragma file` changes: what a GMQCC
+    /// `#include` and `#pragma` in it are joined to (PRJ-5.12).
+    read_as: Vec<u8>,
     stream: TokenStream,
     /// Under the vanilla dialect, the conditionals open (QC-9.6); FTEQCC skips a side at once.
     conds: Vec<Cond>,
@@ -861,6 +864,7 @@ impl<L: Loader> Preprocessor<L> {
         Cursor {
             file,
             path,
+            read_as: name.clone(),
             name,
             stream: TokenStream::lex(text, self.dialect),
             conds: Vec::new(),
