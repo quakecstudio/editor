@@ -3,7 +3,7 @@
 //! FTEQCC's directives as `QCC_PR_Precompiler` reads them (FTEF-14.33 to FTEF-14.47): the reading
 //! in `fte_directive` and the preprocessor that runs it, wherever FTEQCC meets a directive.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{codes, one_fte, tokens};
 use crate::fte_directive::{
@@ -20,11 +20,16 @@ fn fte(text: &str) -> (String, Vec<Code>) {
 
 /// Compiles `compiled` under FTEQCC with `files` beside it.
 fn compile(files: &[(&str, &str)], compiled: &str) -> FileOutput {
+    compile_in(files, compiled, qc_lexer::Dialect::Fteqcc)
+}
+
+/// Compiles `compiled` under `dialect` with `files` beside it.
+fn compile_in(files: &[(&str, &str)], compiled: &str, dialect: qc_lexer::Dialect) -> FileOutput {
     let mut loader = MemoryLoader::new();
     for (path, text) in files {
         loader.insert(*path, text.as_bytes());
     }
-    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let mut pp = Preprocessor::new(loader).with_dialect(dialect);
     pp.preprocess_file(Path::new(compiled)).unwrap()
 }
 
@@ -646,6 +651,41 @@ fn message_lines_end_as_fteqcc_ends_them() {
     assert_eq!(tokens(&out), "y");
 }
 
+// spec PRJ-5.12: under GMQCC a nested `#include` is found beside the file that holds it, then
+// beside the compiled file; a missing one names the first
+#[test]
+fn gmqcc_includes_are_found_beside_the_including_file_first() {
+    let gmqcc = qc_lexer::Dialect::Gmqcc;
+    let files = [
+        ("src/a.qc", "#include \"x/b.qh\"\n"),
+        ("src/x/b.qh", "#include \"c.qh\"\n"),
+        ("src/x/c.qh", "beside\n"),
+        ("src/c.qh", "compiled\n"),
+    ];
+    let out = compile_in(&files, "src/a.qc", gmqcc);
+    assert_eq!((tokens(&out), codes(&out)), ("beside".to_owned(), vec![]));
+    let out = compile_in(&[files[0], files[1], files[3]], "src/a.qc", gmqcc);
+    assert_eq!((tokens(&out), codes(&out)), ("compiled".to_owned(), vec![]));
+    let out = compile_in(&files[..2], "src/a.qc", gmqcc);
+    assert_eq!(codes(&out), vec![Code::E0111]);
+    assert!(
+        out.diagnostics[0]
+            .message
+            .starts_with("cannot include src/x/c.qh")
+    );
+    // `#pragma once` marks, and `#pragma includedir` is joined to, the file holding it.
+    let once = [
+        (
+            "src/a.qc",
+            "#include \"x/b.qh\"\n#include \"x/b.qh\"\n#include \"d.qh\"\n",
+        ),
+        ("src/x/b.qh", "#pragma once\n#pragma includedir y\nb\n"),
+        ("src/x/y/d.qh", "d\n"),
+    ];
+    let out = compile_in(&once, "src/a.qc", gmqcc);
+    assert_eq!((tokens(&out), codes(&out)), ("b d".to_owned(), vec![]));
+}
+
 // spec FTEF-14.40: a nested `#include` is found beside the compiled file, then in the include
 // directories; `<>` names a file too; a missing one is E0111 and a malformed one E0113; an
 // included file's directive must start its first byte
@@ -954,6 +994,52 @@ fn if_expression_errors() {
     }
     // A `\` is a word like another, `atoi` 0, so the line below is the false side.
     assert_eq!(fte("#if \\\n1\nx\n#endif\ny\n"), ("y".to_owned(), vec![]));
+}
+
+// spec FTEF-14.49: the module's include directories, FTEQCC's `-I`, are tried after the compiled
+// file, before a `#pragma includedir` one, each with a `/` after it, and are there again for the
+// second pass; the vanilla dialect keeps none
+#[test]
+fn command_line_include_dirs_come_first_and_stay() {
+    let files = [
+        ("src/a.qc", "#include \"x/b.qh\"\n"),
+        ("src/x/b.qh", "#include \"c.qh\"\n"),
+        ("src/x/c.qh", "found\n"),
+    ];
+    let with = |dirs: &[&str], files: &[(&str, &str)]| {
+        let mut loader = MemoryLoader::new();
+        for (path, text) in files {
+            loader.insert(*path, text.as_bytes());
+        }
+        let dirs: Vec<PathBuf> = dirs.iter().map(PathBuf::from).collect();
+        Preprocessor::new(loader)
+            .with_dialect(qc_lexer::Dialect::Fteqcc)
+            .with_include_dirs(&dirs)
+    };
+    let mut pp = with(&["src/x"], &files);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    assert_eq!((tokens(&out), codes(&out)), ("found".to_owned(), vec![]));
+    let mut pp = with(&[], &files);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    assert_eq!(codes(&out), vec![Code::E0111]);
+    let ordered = [
+        ("src/a.qc", "#pragma includedir y\n#include \"c.qh\"\n"),
+        ("inc/c.qh", "inc\n"),
+        ("src/y/c.qh", "pragma\n"),
+    ];
+    let mut pp = with(&["inc"], &ordered);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    assert_eq!(tokens(&out), "inc");
+    assert_eq!(pp.fte.include_dirs, [b"inc/".to_vec(), b"src/y/".to_vec()]);
+    pp.restart();
+    assert_eq!(pp.fte.include_dirs, [b"inc/".to_vec()]);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    assert_eq!(tokens(&out), "inc");
+    let mut pp = with(&["inc/"], &ordered);
+    pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    assert_eq!(pp.fte.include_dirs[0], b"inc/".to_vec());
+    let vanilla = Preprocessor::new(MemoryLoader::new()).with_include_dirs(&[PathBuf::from("inc")]);
+    assert!(vanilla.fte.include_dirs.is_empty());
 }
 
 // spec FTEF-14.48: `FTEQCC` and `__FTEQCC__` are defined, empty, before the first file and again

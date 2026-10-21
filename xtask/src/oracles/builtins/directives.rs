@@ -677,9 +677,55 @@ fn project_case(compiled: &str, source: &str, files: &[(&str, String)]) -> Case 
         project: Some(Project {
             compiled: compiled.to_owned(),
             files,
+            include_dirs: Vec::new(),
         }),
     }
 }
+
+/// Include projects compiled with include directories, FTEQCC's `-I` (FTEF-14.49): the name
+/// `progs.src` lists, its text, the other files and the directories.
+type DirProject = (
+    &'static str,
+    &'static str,
+    &'static [(&'static str, &'static str)],
+    &'static [&'static str],
+);
+
+/// The include projects with include directories: a nested `#include` found only in one,
+/// as Rad-Therapy's `shared/defs.h` is found with `-I../shared`; one before a `#pragma
+/// includedir` one; one with the second autoprototyping pass.
+const DIR_PROJECTS: &[DirProject] = &[
+    (
+        "src/a.qc",
+        NESTED,
+        &[("src/x/b.qh", "#include \"c.qh\"\n"), ("src/x/c.qh", BIND)],
+        &["src/x"],
+    ),
+    (
+        "src/a.qc",
+        NESTED,
+        &[("src/x/b.qh", "#include \"c.qh\"\n"), ("src/x/c.qh", BIND)],
+        &["src/x/"],
+    ),
+    (
+        "src/a.qc",
+        "#pragma includedir y\n#include \"c.qh\"\n",
+        &[("inc/c.qh", BIND), ("src/y/c.qh", WRONG)],
+        &["inc"],
+    ),
+    (
+        "src/a.qc",
+        "#pragma includedir y\n#include \"c.qh\"\n",
+        &[("inc/c.qh", WRONG), ("src/y/c.qh", BIND)],
+        &["nowhere"],
+    ),
+    (
+        "t.qc",
+        "#pragma autoproto\n#include \"c.qh\"\n",
+        &[("inc/c.qh", BIND)],
+        &["inc"],
+    ),
+];
 
 /// The include projects, and each snippet on the first line of an included file, where
 /// `QCC_PR_Precompiler` reads it with no spaces passed over (FTEF-14.34).
@@ -694,6 +740,17 @@ fn include_cases() -> Vec<Case> {
             project_case(compiled, source, &files)
         })
         .collect();
+    for &(compiled, source, files, dirs) in DIR_PROJECTS {
+        let files: Vec<(&str, String)> = files
+            .iter()
+            .map(|&(name, text)| (name, text.to_owned()))
+            .collect();
+        let mut case = project_case(compiled, source, &files);
+        if let Some(project) = &mut case.project {
+            project.include_dirs = dirs.iter().map(|&dir| dir.to_owned()).collect();
+        }
+        cases.push(case);
+    }
     let includer = format!("#include \"b.qh\"\n{BIND}");
     for (snippet, _) in SNIPPETS {
         for indent in ["", "  "] {

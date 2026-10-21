@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use qc_diag::{Code, Diagnostic, Span};
 use qc_lexer::TokenKind;
 use qc_preproc::{FileSpan, Loader, PpToken, Preprocessor};
-use qc_project::{FileGraph, Form, Via};
+use qc_project::{FileGraph, Form, Module, Via};
 
 use crate::resolve::FileDiagnostic;
 use crate::symbol::{FileId, Location};
@@ -39,6 +39,8 @@ pub struct ModuleInput {
     /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.10), which the
     /// graph reads, since that file is not preprocessed here.
     pub autoproto: Option<bool>,
+    /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
+    pub include_dirs: Vec<PathBuf>,
 }
 
 impl ModuleInput {
@@ -61,6 +63,16 @@ impl ModuleInput {
             }
         }
         input
+    }
+
+    /// The input for `module`: its file graph's ([`Self::from_graph`]) with its include
+    /// directories.
+    #[must_use]
+    pub fn from_module(module: &Module) -> Self {
+        Self {
+            include_dirs: module.include_dirs.clone(),
+            ..Self::from_graph(&module.graph)
+        }
     }
 }
 
@@ -171,7 +183,9 @@ pub(crate) fn preprocess(
     let loader = DbLoader {
         texts: &files.texts,
     };
-    let mut pp = Preprocessor::new(loader).with_dialect(dialect);
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(dialect)
+        .with_include_dirs(&input.include_dirs);
     let (mut first, pragma, late) = run(&mut pp, files, input);
     if !pragma.or(input.autoproto).unwrap_or(autoproto) {
         first.diagnostics.extend(late);

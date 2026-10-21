@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The project file `cargo xtask corpus fetch freehl` (and `freecs-tree`) writes into
+# Rad-Therapy's src/ (the freehl codebase's `project` in corpus/manifest.toml), which the
+# freecs-tree tree lays out as valve/src. Each module is one FTEQCC command of Rad-Therapy's
+# Makefiles, run from the module's directory, with its `-I` directory: client/Makefile and
+# server/Makefile pass `-I../shared`, hud/Makefile `-I../../../src/client/`, menu/Makefile
+# `-I../../../src/platform/` and rules/Makefile `-I../../../src/server` for each of
+# deathmatch.src, singleplayer.src and invasion.src. Here the directories are relative to
+# valve/src; the ../../src ones are the Nuclide tree's, so they exist only in freecs-tree.
+# FTEQCC finds a nested #include beside the file being compiled and then in the include
+# directories (FTEF-14.40), so shared/defs.h's `#include "Weapon.h"` needs `-I../shared`.
+
+[project]
+name = "Rad-Therapy"
+mod = "valve"
+dialect = "fteqcc"
+target = "fte"
+
+[[module]]
+kind = "csqc"
+name = "client"
+src = "client/progs.src"
+output = "build/csprogs.dat"
+include_dirs = ["shared"]
+
+[[module]]
+kind = "ssqc"
+name = "server"
+src = "server/progs.src"
+output = "build/progs.dat"
+include_dirs = ["shared"]
+
+[[module]]
+kind = "csqc"
+name = "hud"
+src = "hud/progs.src"
+output = "build/hud.dat"
+include_dirs = ["../../src/client"]
+
+[[module]]
+kind = "menuqc"
+name = "menu"
+src = "menu/progs.src"
+output = "build/menu.dat"
+include_dirs = ["../../src/platform"]
+
+[[module]]
+kind = "ssqc"
+name = "deathmatch"
+src = "rules/deathmatch.src"
+output = "build/progs/deathmatch.dat"
+include_dirs = ["../../src/server"]
+
+[[module]]
+kind = "ssqc"
+name = "singleplayer"
+src = "rules/singleplayer.src"
+output = "build/progs/singleplayer.dat"
+include_dirs = ["../../src/server"]
+
+[[module]]
+kind = "ssqc"
+name = "invasion"
+src = "rules/invasion.src"
+output = "build/progs/invasion.dat"
+include_dirs = ["../../src/server"]

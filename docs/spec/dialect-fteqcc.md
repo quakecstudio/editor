@@ -1084,10 +1084,28 @@ profile the preprocessor reads them as FTEQCC does.
 - **FTEF-14.48** Before the first file FTEQCC's `QCC_SetDefaultProperties` defines `FTEQCC` and
   `__FTEQCC__` with empty bodies (`QCC_PR_DefineName("FTEQCC", NULL);
   QCC_PR_DefineName("__FTEQCC__", NULL);`), so `#ifdef FTEQCC` is true and `#if FTEQCC` 0, and
-  `#undef` removes them. It runs again before the second autoprototyping pass (FTE-22.3), which
-  so starts with those two macros only, no include directory and no `#pragma once` mark
-  (`QCC_PR_CloseProcessor`), and F303 an error again; the count of open sides (FTEF-14.37) is
-  kept, being `QCC_PR_Precompiler`'s own.
+  `#undef` removes them. It runs again before the second autoprototyping pass (FTE-22.3), which so
+  starts with those two macros only, no include directory but the module's (FTEF-14.49), no `#pragma
+  once` mark (`QCC_PR_CloseProcessor`), and F303 an error again; the count of open sides
+  (FTEF-14.37) is kept, being `QCC_PR_Precompiler`'s own.
+- **FTEF-14.49** A module's include directories (PRJ-5.2) are FTEQCC's `-I` options:
+  `QCC_PR_CommandLinePrecompilerOptions` gives each to `QCC_PR_AddIncludePath(name)` (`else if (
+  !strncmp(myargv[i], "-I", 2) )`), which keeps it as `#pragma includedir` does (FTEF-14.44): a `/`
+  after it unless it ends in one, at most 8. `QCC_SetDefaultProperties` calls it after
+  `QCC_PR_CloseProcessor`, so they are the first include directories, before any `#pragma
+  includedir` adds one, and they are there again for the second autoprototyping pass (FTEF-14.48).
+  `QCC_FindBestInclude` tries them after the file being compiled (FTEF-14.40), so with `progs.src`
+  listing `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, and only `src/x/c.qh` there,
+  `-Isrc/x` reads it, as Rad-Therapy's `client/Makefile` gives `-I../shared` for `shared/defs.h`'s
+  `#include "Weapon.h"`.
+- **FTEF-14.50** FTEF-14.43's `strtoul` is the host C library's, and the pinned FTEQCC reads a
+  `#pragma line` number otherwise where `unsigned long` is 32 bits (LLP64, 64-bit Windows): there a
+  value of 2^32 or more is `ULONG_MAX` = 4294967295, so `#pragma line 4294967297` numbers the next
+  line -1, where an LP64 host (64-bit Linux and macOS) numbers it 1. This profile reads the number
+  as an LP64 build does on every host, a deliberate divergence from the LLP64 build, so that a
+  project reads the same wherever it is opened; the builtin differential records the LP64 outcomes
+  and lists the cases a 32-bit `strtoul` reads otherwise as expected where the oracle ran on an
+  LLP64 host.
 
 ## FTEF-15 Declarations
 

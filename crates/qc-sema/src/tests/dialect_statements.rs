@@ -54,6 +54,7 @@ fn analyze(files: &[(&str, &str)], listed: Option<bool>) -> ModuleAnalysis {
         prelude: Vec::new(),
         compiled: (0..files.len()).map(FileId).collect(),
         autoproto: listed,
+        include_dirs: Vec::new(),
     };
     db.analyze_module(&input)
 }

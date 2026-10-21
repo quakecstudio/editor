@@ -21,7 +21,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span};
+use qc_lexer::{Code, Dialect, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text};
@@ -1127,12 +1127,17 @@ impl<L: Loader> Preprocessor<L> {
     /// no `#pragma once` mark and F303 an error (`QCC_PR_CloseProcessor`,
     /// `qccwarningaction[WARN_EVILPREPROCESSOR] = WA_ERROR;`), the count of open sides kept, and
     /// `FTEQCC` and `__FTEQCC__` defined with empty bodies (`QCC_PR_DefineName("FTEQCC",
-    /// NULL);`), which have no place in a file, so their definition is at no file's byte.
+    /// NULL);`), which have no place in a file, so their definition is at no file's byte. Then
+    /// `QCC_PR_CommandLinePrecompilerOptions` adds the module's include directories, its `-I`
+    /// options, with `QCC_PR_AddIncludePath` (FTEF-14.49).
     pub(crate) fn fte_default_properties(&mut self) {
         self.fte = FteState {
             ifs: self.fte.ifs,
             ..FteState::default()
         };
+        for dir in &self.command_line_dirs {
+            self.fte.add_include_dir(dir);
+        }
         for name in ["FTEQCC", "__FTEQCC__"] {
             let mac = Macro {
                 params: None,
@@ -1499,9 +1504,23 @@ impl<L: Loader> Preprocessor<L> {
     /// `#include` of `name`, at `at` (FTEF-14.40): `QCC_FindBestInclude(msg, compilingfile,
     /// false)` names the first file that loads of the name joined to the file being compiled and
     /// then to each include directory, and the file is read next, unless a `#pragma once`
-    /// marked that name. `name` is not empty.
+    /// marked that name. `name` is not empty. Under GMQCC the name is joined first to the file
+    /// the directive is in, as `ftepp_include_find` tries `ftepp->includename` before
+    /// `ftepp->itemname` (PRJ-5.12).
     fn fte_include(&mut self, run: &mut Run, name: &[u8], at: FileSpan) {
-        let names = include_candidates(name, &run.unit, &self.fte.include_dirs);
+        let mut names = include_candidates(name, &run.unit, &self.fte.include_dirs);
+        if self.dialect == Dialect::Gmqcc
+            && let Some(cursor) = run.cursors.iter().rev().find(|c| c.file == at.file)
+        {
+            let here = join_paths(name, cursor.path.as_os_str().as_encoded_bytes());
+            let path = normalize(&PathBuf::from(lossy(&here)));
+            let known = names
+                .iter()
+                .any(|name| normalize(&PathBuf::from(lossy(name))) == path);
+            if !known {
+                names.insert(0, here);
+            }
+        }
         let mut first_error = None;
         let mut found = None;
         for candidate in &names {
@@ -1551,7 +1570,8 @@ impl<L: Loader> Preprocessor<L> {
             return self.fte_dont_compile(run, bytes, end);
         }
         if pragma.is("once") {
-            self.fte.once.push(run.unit.clone());
+            let marked = self.pragma_base(run, bytes);
+            self.fte.once.push(marked);
         } else if pragma.is("file") {
             let name = pragma.file_name();
             match bytes {
@@ -1582,7 +1602,8 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
         } else if pragma.is("includedir") {
-            let dir = pragma.include_dir(&run.unit);
+            let base = self.pragma_base(run, bytes);
+            let dir = pragma.include_dir(&base);
             self.fte.add_include_dir(&dir);
         } else if pragma.is("noref") {
             // FTEF-12.6: `defaultnoref = !!atoi(msg);`
@@ -1600,6 +1621,23 @@ impl<L: Loader> Preprocessor<L> {
             self.fte.evil = self.fte.evil.after_pragma(message, "F303");
         }
         Resume::At(end)
+    }
+}
+
+impl<L: Loader> Preprocessor<L> {
+    /// The name `#pragma once` marks and `#pragma includedir` joins its directory to: the file
+    /// being compiled (FTEF-14.44), or under GMQCC the file holding the pragma (PRJ-5.12).
+    fn pragma_base(&self, run: &Run, bytes: &Bytes) -> Vec<u8> {
+        let holding = match bytes {
+            Bytes::File(file, _) if self.dialect == Dialect::Gmqcc => {
+                run.cursors.iter().rev().find(|c| c.file == *file)
+            }
+            Bytes::File(..) | Bytes::Chunk(..) => None,
+        };
+        holding.map_or_else(
+            || run.unit.clone(),
+            |cursor| cursor.path.as_os_str().as_encoded_bytes().to_vec(),
+        )
     }
 }
 

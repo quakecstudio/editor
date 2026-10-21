@@ -18,10 +18,12 @@
 //! coverage check (`fteqcc_coverage`); this check adds that they parse and resolve clean. The
 //! FTEQCC corpus mods of the full dialect (`docs/spec/dialect-fteqcc.md`, FTEF-1.1) are checked
 //! in the tree `cargo xtask corpus fetch freecs-tree` lays out: FreeCS (`cstrike/src`),
-//! Rad-Therapy (`valve/src`, whose menu module builds Nuclide's `menu-vgui`) and Nuclide's own
-//! `src/menu-fn`. Copper and Arcane Dimensions (`cargo xtask corpus fetch copper
-//! arcane-dimensions`) are checked too (P2-38): FTEQCC builds them from list-form `progs.src`
-//! files, Copper's with `#pragma autoproto` (FTEF-12.10).
+//! Rad-Therapy (`valve/src`, whose menu module builds Nuclide's `menu-vgui`, opened through the
+//! project file `corpus/projects/freehl/quakec.toml`, whose include directories are its
+//! Makefiles' `-I` options, FTEF-14.49) and Nuclide's own `src/menu-fn`. Copper and Arcane
+//! Dimensions (`cargo xtask corpus fetch copper arcane-dimensions`) are checked too (P2-38):
+//! FTEQCC builds them from list-form `progs.src` files, Copper's with `#pragma autoproto`
+//! (FTEF-12.10).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -110,7 +112,7 @@ fn analyze(module: &Module, autoproto: bool) -> Result<bool, String> {
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
         db.set_file(FileId(index), file.path.clone(), text);
     }
-    let analysis = db.analyze_module(&ModuleInput::from_graph(&module.graph));
+    let analysis = db.analyze_module(&ModuleInput::from_module(module));
     let mut ok = true;
     for d in analysis.diagnostics() {
         let at = Location {

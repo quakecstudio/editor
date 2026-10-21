@@ -223,15 +223,28 @@ malformed directive without a diagnostic.
   most `MAX_DEPTH` = 64 levels (`qc-preproc`'s `cond.rs`), the value itself one, so no input
   can exhaust its stack. `&&`, `||` and the comparisons chain without nesting. Under an
   FTEQCC profile the limit is FTEF-14.12's.
-- **PRJ-5.11** Under an FTEQCC profile the file being compiled, FTEQCC's `compilingfile`, stands
-  where PRJ-5.2, PRJ-5.3, PRJ-5.8 and PRJ-5.9 say the file holding the directive: an `#include`
-  and an `#includelist` entry are resolved against its directory
-  (`QCC_FindBestInclude(msg, compilingfile, ...)`, `dialect-fteqcc.md` FTEF-14.40), a
-  `#pragma includedir` path is joined to it, and `#pragma once` marks it. The file being
-  compiled is the source of the source form, an entry of a list-form `progs.src` or of an
-  `#includelist`, never an `#include`d file, which is read for the file that includes it. So
-  with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the graph
-  reads `src/c.qh`, as the pinned FTEQCC does.
+- **PRJ-5.11** Under the FTEQCC dialect (GMQCC's is PRJ-5.12) the file being compiled, FTEQCC's
+  `compilingfile`, stands where PRJ-5.2, PRJ-5.3, PRJ-5.8 and PRJ-5.9 say the file holding the
+  directive: an `#include` and an `#includelist` entry are resolved against its directory
+  (`QCC_FindBestInclude(msg, compilingfile, ...)`, `dialect-fteqcc.md` FTEF-14.40), a `#pragma
+  includedir` path is joined to it, and `#pragma once` marks it. The file being compiled is the
+  source of the source form, an entry of a list-form `progs.src` or of an `#includelist`, never an
+  `#include`d file, which is read for the file that includes it. So with `progs.src` listing
+  `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the graph reads `src/c.qh`, as the
+  pinned FTEQCC does.
+- **PRJ-5.12** Under the GMQCC dialect an `#include` is found beside the file holding it, then
+  beside the file being compiled, then in the module's include directories (PRJ-5.2), which GMQCC
+  itself has none of: its `ftepp_include_find` tries `ftepp_include_find_path(file,
+  ftepp->includename)` and then `ftepp_include_find_path(file, ftepp->itemname)`, and
+  `ftepp_directive_include` sets `ftepp->includename = filename;` to the included file while it
+  reads it (graphitemaster/gmqcc@b2a319efb41069b9a250e76991dbe505ff8d030d, `ftepp.cpp`). GMQCC's
+  preprocessor has no `#includelist` and passes `#pragma` lines to its compiler (`ftepp_out(ftepp,
+  "#", false);`), so it is silent on them; this dialect keeps PRJ-5.3, PRJ-5.8 and PRJ-5.9 for an
+  `#includelist` entry, `#pragma includedir` and `#pragma once`, the file holding the directive, as
+  the C preprocessor Xonotic is read with marks the header that holds `#pragma once`, and the
+  preprocessor does the same. So with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which
+  includes `c.qh`, the graph reads `src/x/c.qh`, and `src/c.qh` when that is missing. Xonotic, which
+  the C preprocessor reads before GMQCC compiles it, relies on the first of these.
 
 ## PRJ-6 The file graph
 

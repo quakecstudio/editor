@@ -519,6 +519,86 @@ fn fteqcc_includes_are_found_beside_the_compiled_file() {
     assert_eq!(diags(&graph), ["E0111 src/x/b.qh:1"]);
 }
 
+// spec PRJ-5.12: under GMQCC a nested `#include` is found beside the file that holds it, then
+// beside the file being compiled; a missing one names the first
+#[test]
+fn gmqcc_includes_are_found_beside_the_including_file_first() {
+    let gmqcc = qc_lexer::Dialect::Gmqcc;
+    let files = [
+        ("src/a.qc", "#include \"x/b.qh\"\n"),
+        ("src/x/b.qh", "#include \"c.qh\"\n"),
+        ("src/c.qh", ""),
+        ("src/x/c.qh", ""),
+    ];
+    let graph = listed(&files, gmqcc);
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/x/c.qh"]);
+    let graph = listed(&files[..3], gmqcc);
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/c.qh"]);
+    let graph = listed(&files[..2], gmqcc);
+    assert_eq!(diags(&graph), ["E0111 src/x/b.qh:1"]);
+    assert!(
+        graph.diagnostics[0]
+            .message
+            .starts_with("cannot include src/x/c.qh")
+    );
+}
+
+// spec PRJ-5.12: under GMQCC an `#includelist` entry, an include directory and `#pragma once`
+// are the file holding them's, as the C preprocessor Xonotic is read with marks a header
+#[test]
+fn gmqcc_lists_dirs_and_once_use_the_holding_file() {
+    let gmqcc = qc_lexer::Dialect::Gmqcc;
+    let graph = listed(
+        &[
+            ("src/a.qc", "#include \"x/b.qh\"\n"),
+            ("src/x/b.qh", "#includelist\nl.qc\n#endlist\n"),
+            ("src/l.qc", ""),
+            ("src/x/l.qc", ""),
+        ],
+        gmqcc,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/x/l.qc"]);
+    let graph = listed(
+        &[
+            ("src/a.qc", "#include \"x/b.qh\"\n#include \"c.qh\"\n"),
+            ("src/x/b.qh", "#pragma includedir y\n"),
+            ("src/y/c.qh", ""),
+            ("src/x/y/c.qh", ""),
+        ],
+        gmqcc,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/x/y/c.qh"]);
+    let graph = listed(
+        &[
+            ("src/a.qc", "#include \"b.qh\"\n#include \"b.qh\"\n"),
+            ("src/b.qh", "#pragma once\n"),
+        ],
+        gmqcc,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/b.qh"]);
+}
+
+// spec PRJ-5.12: Xonotic's layout opens under GMQCC: `server/progs.inc` includes
+// `../lib/_all.inc`, which includes `compiler.qh` beside itself, in `lib/`
+#[test]
+fn gmqcc_opens_xonotics_layout() {
+    let graph = build(&GraphSpec {
+        files: &[
+            ("server/progs.inc", "#include \"../lib/_all.inc\"\n"),
+            ("lib/_all.inc", "#include \"compiler.qh\"\n"),
+            ("lib/compiler.qh", ""),
+        ],
+        src: "server/progs.inc",
+        dialect: qc_lexer::Dialect::Gmqcc,
+        ..GraphSpec::default()
+    });
+    assert_eq!(
+        names(&graph),
+        ["server/progs.inc", "lib/_all.inc", "lib/compiler.qh"]
+    );
+    assert!(diags(&graph).is_empty(), "{:?}", diags(&graph));
+}
+
 // spec PRJ-5.11: under FTEQCC an `#includelist` entry in an included file, an include directory
 // and `#pragma once` are the file being compiled's too
 #[test]

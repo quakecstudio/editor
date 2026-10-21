@@ -25,9 +25,11 @@ at a line of a file or of a macro's expansion, after a use's `(` and `,`, in an 
 and after `#pragma DONT_COMPILE_THIS_FILE`; matches its name by its first bytes; ends its line
 where `QCC_PR_SkipToEndOfLine` ends it, reporting the rest as "unexpected tokens at end of line";
 skips a false side as FTEQCC does, with one count of open sides from file to file; finds an
-`#include` beside the file being compiled and then in the include directories; and runs the
-pragmas that change what is read, `line`, `file`, `once`, `includedir`, `noref`, `autoproto`,
-`warning` (F303) and `DONT_COMPILE_THIS_FILE` (FTEF-14.33 to FTEF-14.47). `#if` and `#elif` use
+`#include` beside the file being compiled and then in the include directories, the module's
+(FTEQCC's `-I`, FTEF-14.49) first; and runs the pragmas that change what is read, `line`, `file`,
+`once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
+(FTEF-14.33 to FTEF-14.47). Under GMQCC an `#include` is tried beside the file that holds it
+first (PRJ-5.12). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10). `#pragma noref` and `#pragma autoproto` are recorded for the
 semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands

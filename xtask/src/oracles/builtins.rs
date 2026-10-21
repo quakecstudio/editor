@@ -109,6 +109,9 @@ pub(crate) struct Project {
     pub(crate) compiled: String,
     /// The other files, each by its name from `progs.src`'s directory, in order.
     pub(crate) files: Vec<(String, String)>,
+    /// The include directories FTEQCC is given, `-I`, each by its name from `progs.src`'s
+    /// directory (FTEF-14.49).
+    pub(crate) include_dirs: Vec<String>,
 }
 
 /// The name a case's source has when it has no [`Project`].
@@ -135,6 +138,9 @@ impl Case {
         for (name, text) in self.project.iter().flat_map(|p| &p.files) {
             key.push_str(&format!("|{name}={text}"));
         }
+        for dir in self.include_dirs() {
+            key.push_str(&format!("|-I{dir}"));
+        }
         key
     }
 
@@ -142,6 +148,11 @@ impl Case {
     fn texts(&self) -> impl Iterator<Item = &str> {
         let others = self.project.iter().flat_map(|p| &p.files);
         std::iter::once(self.source.as_str()).chain(others.map(|(_, text)| text.as_str()))
+    }
+
+    /// The include directories FTEQCC is given (FTEF-14.49).
+    fn include_dirs(&self) -> impl Iterator<Item = &String> {
+        self.project.iter().flat_map(|p| &p.include_dirs)
     }
 
     /// The name `progs.src` lists the source by.
@@ -1087,16 +1098,119 @@ pub(crate) fn cases() -> Vec<Case> {
     cases
 }
 
+/// How wide C's `unsigned long` is where an oracle ran, which decides where FTEQCC's `strtoul`
+/// saturates (FTEF-14.50).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ULong {
+    /// 32 bits: an LLP64 host, 64-bit Windows.
+    Bits32,
+    /// 64 bits: an LP64 host, 64-bit Linux and macOS, as the profile models and [`FIXTURE`]
+    /// records.
+    Bits64,
+}
+
+impl ULong {
+    /// The host's, which the oracles are compiled for.
+    pub(crate) const HOST: Self = if size_of::<std::ffi::c_ulong>() == size_of::<u32>() {
+        Self::Bits32
+    } else {
+        Self::Bits64
+    };
+
+    /// Whether an oracle on a host of this width may read `case` otherwise than the profile
+    /// does (FTEF-14.50): a `#pragma line` number whose low 32 bits a 32-bit `strtoul` reads
+    /// otherwise than a 64-bit one.
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Bits32
+            && case.texts().any(|text| {
+                text.lines().filter_map(line_pragma_text).any(|number| {
+                    low_32_bits(c_strtoul(number, u64::MAX))
+                        != low_32_bits(c_strtoul(number, u64::from(u32::MAX)))
+                })
+            })
+    }
+}
+
+/// The text a `#pragma line` on `line` gives `strtoul` (FTEF-14.43): after the name, matched in
+/// any case and ending at a space, tab or `(`, and after a `(` the text starts with.
+fn line_pragma_text(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('#')?;
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let pragma = rest
+        .get(..6)
+        .is_some_and(|name| name.eq_ignore_ascii_case("pragma"));
+    let rest = rest.get(6..).filter(|_| pragma)?;
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let end = rest.find([' ', '\t', '(']).unwrap_or(rest.len());
+    let (name, text) = rest.split_at(end);
+    let text = text.trim_start_matches([' ', '\t']);
+    name.eq_ignore_ascii_case("line")
+        .then(|| text.strip_prefix('(').unwrap_or(text))
+}
+
+/// C's `strtoul(text, &end, 0)` where `unsigned long` holds at most `max`: white space, a sign,
+/// then `0x` and hex digits, `0` and octal digits, or decimal digits; a value past `max` is
+/// `max`, and a `-` negates the value modulo `max + 1`.
+fn c_strtoul(text: &str, max: u64) -> u64 {
+    let text = text.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let (negative, text) = match text.as_bytes().first() {
+        Some(b'-') => (true, text.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, text.get(1..).unwrap_or_default()),
+        _ => (false, text),
+    };
+    let bytes = text.as_bytes();
+    let hex = matches!(bytes, [b'0', b'x' | b'X', digit, ..] if digit.is_ascii_hexdigit());
+    let (radix, digits) = if hex {
+        (16, text.get(2..).unwrap_or_default())
+    } else if bytes.first() == Some(&b'0') {
+        (8, text)
+    } else {
+        (10, text)
+    };
+    let mut value = 0_u64;
+    for digit in digits.chars().map_while(|c| c.to_digit(radix)) {
+        match value
+            .checked_mul(u64::from(radix))
+            .and_then(|v| v.checked_add(u64::from(digit)))
+            .filter(|&v| v <= max)
+        {
+            Some(next) => value = next,
+            None => return max,
+        }
+    }
+    if negative {
+        value.wrapping_neg() & max
+    } else {
+        value
+    }
+}
+
+/// The low 32 bits of `value`, which FTEQCC's `int` keeps (FTEF-14.43).
+fn low_32_bits(value: u64) -> u64 {
+    value & u64::from(u32::MAX)
+}
+
 /// The spec statement that says why the profile's outcome `ours` for `case`, with the error
-/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.15).
+/// codes `errors`, may differ from `oracle`'s, an oracle that ran where `unsigned long` is
+/// `ulong` wide, if one does (FTE-23.15).
 pub(crate) fn expected_difference(
     case: &Case,
     ours: &Outcome,
     errors: &[Code],
     oracle: &Outcome,
+    ulong: ULong,
 ) -> Option<&'static str> {
     let vanilla = !case.dialect.has_fteqcc_extensions();
     if !vanilla {
+        // FTEF-14.50: the profile reads a `#pragma line` number as a 64-bit `strtoul` does, so
+        // only the line `__LINESTR__` names may differ.
+        let same_number = matches!(
+            (ours, oracle),
+            (Outcome::Bound { number: a, .. }, Outcome::Bound { number: b, .. }) if a == b
+        );
+        if same_number && ulong.reads_otherwise(case) {
+            return Some("FTEF-14.50");
+        }
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
@@ -1169,6 +1283,7 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
         prelude: Vec::new(),
         compiled: vec![FileId(0)],
         autoproto: None,
+        include_dirs: case.include_dirs().map(PathBuf::from).collect(),
     });
     let errors = analysis
         .diagnostics()
@@ -1321,6 +1436,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let mut command = if fteqcc {
         let mut command = Command::new(&oracles.fteqcc);
         command.arg("-Tid");
+        command.args(case.include_dirs().map(|dir| format!("-I{dir}")));
         command
     } else {
         Command::new(&oracles.qcc)
@@ -1436,9 +1552,10 @@ pub(crate) fn read_fixture(root: &Path) -> Result<BTreeMap<String, Outcome>, Str
         .collect()
 }
 
-/// Compares the profile with `recorded`, the oracles' outcomes; prints each disagreement and
-/// returns how many cases agree and how many do not.
-pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> Tally {
+/// Compares the profile with `recorded`, the outcomes of oracles that ran where `unsigned long`
+/// is `ulong` wide; prints each disagreement and returns how many cases agree and how many do
+/// not.
+pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulong: ULong) -> Tally {
     let mut tally = Tally::default();
     for case in cases {
         let Some(oracle) = recorded.get(&case.key()) else {
@@ -1449,7 +1566,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> T
         let (ours, errors) = profile(case);
         if ours == *oracle {
             tally.agree = tally.agree.saturating_add(1);
-        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle) {
+        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle, ulong) {
             let count = tally.expected.entry(statement).or_default();
             *count = count.saturating_add(1);
         } else {
@@ -1497,6 +1614,18 @@ fn show(case: &Case) -> String {
 /// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,
 /// writes it) and the profile against them.
 pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
+    check_where(root, oracles, record, ULong::HOST)
+}
+
+/// [`check`] with oracles that run where `unsigned long` is `ulong` wide, which records
+/// nothing unless it is 64 bits (FTEF-14.50).
+fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Result<bool, String> {
+    if record && ulong != ULong::Bits64 {
+        return Err(format!(
+            "{FIXTURE} records the outcomes where `unsigned long` is 64 bits (FTEF-14.50); \
+             record it on Linux or macOS"
+        ));
+    }
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     let cases = cases();
@@ -1524,9 +1653,14 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
         );
     } else {
         let recorded = read_fixture(root)?;
-        // A changed cross product is recorded again with `--record` once it is right.
-        for (key, outcome) in &outcomes {
-            if recorded.get(key) != Some(outcome) {
+        // A changed cross product is recorded again with `--record` once it is right. Where
+        // `unsigned long` is 32 bits a wide `#pragma line` may read otherwise (FTEF-14.50).
+        for case in &cases {
+            let key = case.key();
+            let Some(outcome) = outcomes.get(&key) else {
+                continue;
+            };
+            if recorded.get(&key) != Some(outcome) && !ulong.reads_otherwise(case) {
                 ok = false;
                 println!(
                     "FAIL  {key:?}: the oracle gives {outcome}, not as {FIXTURE} records (--record)"
@@ -1538,7 +1672,7 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
             println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
-    let tally = compare(&cases, &outcomes);
+    let tally = compare(&cases, &outcomes, ulong);
     println!(
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()

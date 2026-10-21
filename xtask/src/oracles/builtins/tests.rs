@@ -17,8 +17,8 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, FIXTURE, Outcome, Project, Tally, bound, cases, check, compare, expected_difference,
-    oracle, profile, read_fixture,
+    Case, FIXTURE, Outcome, Project, Tally, ULong, bound, cases, check, check_where, compare,
+    expected_difference, oracle, profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
@@ -47,13 +47,88 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     let keys: Vec<String> = cases.iter().map(Case::key).collect();
     assert_eq!(keys.len(), recorded.len());
     assert!(keys.iter().all(|key| recorded.contains_key(key)));
-    let tally = compare(&cases, &recorded);
+    let tally = compare(&cases, &recorded, ULong::Bits64);
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
         ["FTE-23.11", "FTEF-13.8", "FTEF-14.47", "QC-27.9"]
     );
     assert!(tally.agree > 6000, "{tally}");
+}
+
+// spec FTEF-14.50: an oracle where `unsigned long` is 32 bits may read a `#pragma line` number
+// of 2^32 or more and below 2^64 otherwise than the profile, and only that; the host's width is
+// C's
+#[test]
+fn a_wide_line_pragma_differs_only_where_unsigned_long_is_32_bits() {
+    let ours = bound_as(0, "1");
+    let oracle = bound_as(0, "-1");
+    for (source, ulong, expected) in [
+        (
+            "#pragma line 4294967297\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma line 4294967297\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits64,
+            None,
+        ),
+        (
+            "#pragma LINE(4294967296)\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "  #  pragma line 18446744073709551614\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        ("#pragma line 18446744073709551615\n", ULong::Bits32, None),
+        ("#pragma line 8589934591\n", ULong::Bits32, None),
+        (
+            "#pragma line 0x100000001\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma\tline\t4294967297\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma line -4294967298\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        ("#pragma line 037777777777\n", ULong::Bits32, None),
+        ("#pragma line -1\n", ULong::Bits32, None),
+        (
+            "#pragma line 4294967295\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            None,
+        ),
+        ("#pragma line 18446744073709551616\n", ULong::Bits32, None),
+        ("#pragma line 99999999999999999999\n", ULong::Bits32, None),
+        ("#pragma linex 4294967297\n", ULong::Bits32, None),
+        ("#pragma lin\n", ULong::Bits32, None),
+        ("x #pragma line 4294967297\n", ULong::Bits32, None),
+        ("void() f = #5; // 4294967297\n", ULong::Bits32, None),
+    ] {
+        assert_eq!(
+            expected_difference(&fte(source), &ours, &[], &oracle, ulong),
+            expected,
+            "{source:?} {ulong:?}"
+        );
+    }
+    // Only the line `__LINESTR__` names may differ: another builtin number is a failure.
+    let case = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
+    let other = bound_as(5, "-1");
+    let difference = expected_difference(&case, &ours, &[], &other, ULong::Bits32);
+    assert_eq!(difference, None);
+    let rejected = Outcome::Rejected;
+    let difference = expected_difference(&case, &ours, &[], &rejected, ULong::Bits32);
+    assert_eq!(difference, None);
 }
 
 // spec FTE-23.15: the cross product has both dialects, every prefix, value, suffix and
@@ -168,7 +243,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1333);
+    assert_eq!(family.len(), 1338);
     for source in [
         "#define X 1\n#undef X // c \\\nzz zz zz\nvoid() f = #5;\n",
         "#defined N #5\nvoid() f = N;\n",
@@ -211,6 +286,7 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
     datafile.project = Some(Project {
         compiled: "t.qc".to_owned(),
         files: vec![("b.qh".to_owned(), "#datafile \"x\"\n".to_owned())],
+        include_dirs: Vec::new(),
     });
     let plain = fte("void() f = #5;\n");
     let indented = fte("void() f = #5;\n \t#eofx\n");
@@ -220,6 +296,7 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
     included.project = Some(Project {
         compiled: "t.qc".to_owned(),
         files: vec![("b.qh".to_owned(), "zz\n#eof\n".to_owned())],
+        include_dirs: Vec::new(),
     });
     for (case, errors, oracle, expected) in [
         (&eof, &[][..], &rejected, Some("FTEF-14.47")),
@@ -235,7 +312,7 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
         (&plain, &[], &rejected, None),
     ] {
         assert_eq!(
-            expected_difference(case, &bound, errors, oracle),
+            expected_difference(case, &bound, errors, oracle, ULong::Bits64),
             expected,
             "{case:?} {errors:?} {oracle}"
         );
@@ -305,7 +382,7 @@ fn only_a_vanilla_number_not_above_zero_may_differ() {
         ),
     ] {
         assert_eq!(
-            expected_difference(case, &Outcome::Rejected, errors, &oracle),
+            expected_difference(case, &Outcome::Rejected, errors, &oracle, ULong::Bits64),
             expected,
             "{case:?} {errors:?} {oracle}"
         );
@@ -342,7 +419,7 @@ fn fteqcc_differs_only_where_it_casts_or_hangs() {
         (&plain, &accepted, &[], &Outcome::Hangs, None),
     ] {
         assert_eq!(
-            expected_difference(case, ours, errors, oracle),
+            expected_difference(case, ours, errors, oracle, ULong::Bits64),
             expected,
             "{case:?} {ours} {errors:?} {oracle}"
         );
@@ -554,7 +631,19 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
     move |command: &Command| {
         let dir = command.get_current_dir().unwrap().to_path_buf();
         let fteqcc = command.get_program() == "fteqcc";
-        assert_eq!(command.get_args().count(), usize::from(fteqcc));
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let include_dirs: Vec<String> = args
+            .iter()
+            .filter_map(|arg| arg.strip_prefix("-I").map(str::to_owned))
+            .collect();
+        assert_eq!(
+            args.len(),
+            include_dirs.len().saturating_add(usize::from(fteqcc))
+        );
+        assert!(fteqcc || include_dirs.is_empty());
         let list = fs::read_to_string(dir.join("progs.src")).unwrap();
         let compiled = list.strip_prefix("progs.dat\n").unwrap().trim_end();
         assert!(!dir.join("progs.dat").exists());
@@ -571,6 +660,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let project = (dir.ends_with("project")).then(|| Project {
             compiled: compiled.to_owned(),
             files,
+            include_dirs,
         });
         let case = Case {
             dialect,
@@ -635,8 +725,19 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(!check(&repo, &oracles, false).unwrap());
+    // spec FTEF-14.50: where `unsigned long` is 32 bits nothing is recorded, and a wide
+    // `#pragma line` the oracle reads otherwise there is no stale recording
+    assert!(check_where(&repo, &oracles, true, ULong::Bits32).is_err());
+    assert_eq!(read_fixture(&repo).unwrap(), stale);
     assert!(check(&repo, &oracles, true).unwrap());
     assert_eq!(read_fixture(&repo).unwrap(), recorded);
+    let wide = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
+    let mut llp64 = recorded.clone();
+    llp64.insert(wide.key(), bound_as(0, "-1"));
+    let fake32 = Fake::new(answering(llp64));
+    let oracles32 = fake_oracles(&repo.join("work"), &fake32);
+    assert!(check_where(&repo, &oracles32, false, ULong::Bits32).unwrap());
+    assert!(!check_where(&repo, &oracles32, false, ULong::Bits64).unwrap());
     // A recording of a case the cross product no longer makes is stale too.
     let mut extra = recorded.clone();
     extra.insert("fteqcc|gone".to_owned(), Outcome::Rejected);
@@ -655,11 +756,11 @@ fn check_fails_when_the_profile_differs() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(!check(&repo, &oracles, false).unwrap());
-    let tally = compare(&cases(), &recorded);
+    let tally = compare(&cases(), &recorded, ULong::Bits64);
     assert_eq!(tally.differ, 1);
     let mut missing = recorded;
     missing.remove(&fte("void() f = #5;\n").key());
-    assert_eq!(compare(&cases(), &missing).differ, 2);
+    assert_eq!(compare(&cases(), &missing, ULong::Bits64).differ, 2);
 }
 
 // spec FTE-23.15: a compiler that cannot run, a progs it does not write, and an FTEQCC progs

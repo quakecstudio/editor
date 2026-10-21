@@ -631,6 +631,8 @@ pub struct Preprocessor<L> {
     frames_full: bool,
     /// In an FTEQCC dialect, what FTEQCC's directives keep from file to file.
     fte: FteState,
+    /// The module's include directories, FTEQCC's `-I` options (FTEF-14.49).
+    command_line_dirs: Vec<Vec<u8>>,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -670,6 +672,7 @@ impl<L: Loader> Preprocessor<L> {
             model_name: String::new(),
             frames_full: false,
             fte: FteState::default(),
+            command_line_dirs: Vec::new(),
         }
     }
 
@@ -677,8 +680,9 @@ impl<L: Loader> Preprocessor<L> {
     /// `#define` is forgotten, as FTEQCC's `QCC_SetDefaultProperties` makes a new macro table
     /// between the passes, and the frame macros of the first pass are kept, since nothing
     /// between the passes clears them. In an FTEQCC dialect it also defines `FTEQCC` and
-    /// `__FTEQCC__` again and clears the include directories, the `#pragma once` marks and
-    /// F303's setting (`QCC_PR_CloseProcessor`), keeping the count of open sides (FTEF-14.48).
+    /// `__FTEQCC__` again, clears the include directories but the module's, the `#pragma once`
+    /// marks and F303's setting (`QCC_PR_CloseProcessor`), keeping the count of open sides
+    /// (FTEF-14.48, FTEF-14.49).
     /// The files are then preprocessed again in order.
     pub fn restart(&mut self) {
         self.macros.clear();
@@ -696,6 +700,23 @@ impl<L: Loader> Preprocessor<L> {
         self.dialect = dialect;
         if dialect.has_fteqcc_extensions() {
             self.fte_default_properties();
+        }
+        self
+    }
+
+    /// Gives the module's include directories, FTEQCC's `-I` options (PRJ-5.2). In an FTEQCC
+    /// dialect they are the first include directories, before any `#pragma includedir` one,
+    /// and are given again before the second autoprototyping pass (FTEF-14.49).
+    #[must_use]
+    pub fn with_include_dirs(mut self, dirs: &[PathBuf]) -> Self {
+        self.command_line_dirs = dirs
+            .iter()
+            .map(|dir| dir.as_os_str().as_encoded_bytes().to_vec())
+            .collect();
+        if self.dialect.has_fteqcc_extensions() {
+            for dir in &self.command_line_dirs {
+                self.fte.add_include_dir(dir);
+            }
         }
         self
     }
