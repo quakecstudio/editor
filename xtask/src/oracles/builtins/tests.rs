@@ -17,9 +17,9 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, Encoding, FIXTURE, Outcome, ProgsSrc, Project, Tally, ULong, bound, cases, check,
-    check_where, compare, expected_difference, graph_cases, graph_differences, oracle, profile,
-    read_fixture,
+    Canary, Case, Encoding, FIXTURE, Host, Outcome, ProgsSrc, Project, Tally, ULong, bound, cases,
+    check, check_where, compare, expected_difference, graph_cases, graph_differences, oracle,
+    profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
@@ -561,7 +561,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1444);
+    assert_eq!(family.len(), 1445);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -1410,4 +1410,43 @@ fn a_negative_frame_value_may_differ_only_where_long_is_32_bits() {
             "{value} {ulong:?}"
         );
     }
+}
+
+// spec FTEF-14.66: on a host whose stack canary starts with NUL, an oracle may compile a pragma
+// whose text after its name is exactly 1024 bytes, which the profile refuses; only that case, and
+// only there, is excused, and such a host records nothing
+#[test]
+fn a_nul_first_canary_excuses_only_the_nul_overrun() {
+    let glibc = Host {
+        ulong: ULong::Bits64,
+        canary: Canary::NulFirst,
+    };
+    let pragma = |len: usize| {
+        fte(&format!(
+            "#pragma includedir {}\nvoid() f = #5;\n",
+            "d".repeat(len)
+        ))
+    };
+    let bound5 = bound_as(5, "f");
+    let excused = |case: &Case, host: Host| {
+        expected_difference(case, &Outcome::Rejected, &[Code::E0121], &bound5, host)
+    };
+    assert_eq!(excused(&pragma(1024), glibc), Some("FTEF-14.66"));
+    assert_eq!(excused(&pragma(1024), ULong::Bits64.into()), None);
+    assert_eq!(excused(&pragma(1025), glibc), None);
+    assert_eq!(excused(&pragma(1023), glibc), None);
+    let named = fte(&format!("#pragma {}\n", "n".repeat(1024)));
+    assert_eq!(excused(&named, glibc), Some("FTEF-14.66"));
+    let paren = fte(&format!("#pragma line({})\n", "1".repeat(1022)));
+    assert_eq!(excused(&paren, glibc), Some("FTEF-14.66"));
+    // The profile's own outcome must be the refusal.
+    let accepted = expected_difference(&pragma(1024), &bound5, &[], &Outcome::Rejected, glibc);
+    assert_eq!(accepted, None);
+    let vanilla_case = vanilla(&format!("#pragma includedir {}\n", "d".repeat(1024)));
+    assert!(excused(&vanilla_case, glibc) != Some("FTEF-14.66"));
+    let repo = fresh_dir("canary-record");
+    let fake = Fake::new(|_: &std::process::Command| Reply::exit(0));
+    let oracles = fake_oracles(&repo, &fake);
+    assert!(check_where(&repo, &oracles, true, glibc).is_err());
+    assert_eq!(Host::from(ULong::Bits32).canary, Canary::Random);
 }

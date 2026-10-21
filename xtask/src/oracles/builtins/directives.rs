@@ -155,6 +155,12 @@ fn word_bound_cases() -> Vec<String> {
         let dir = "d".repeat(length);
         sources.push(format!("#pragma includedir {dir}\nvoid() f = #5;\n"));
     }
+    // One byte more than overruns `msg[1024]` by its NUL alone, which a build on glibc reads on
+    // past (`Canary::NulFirst`).
+    sources.push(format!(
+        "#pragma includedir {}\nvoid() f = #5;\n",
+        "d".repeat(1025)
+    ));
     // An `#includelist` word and a `#merge` name of 1023 bytes name a file no file system holds,
     // and `#merge` fails at any name the build has no progs of (`QCC_ImportProgs`, not modelled),
     // so only their own errors are cases.
