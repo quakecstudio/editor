@@ -210,8 +210,15 @@ fn preprocessed_text_has_no_directive_lines() {
         );
         assert!(!super::kinds(&parsed).contains(&SyntaxKind::Directive));
         assert_eq!(parsed.syntax().text(), source);
-        assert_eq!(super::errors(&parse_with(source, dialect)), vec![]);
     }
+    // In a source file the vanilla dialect's `#foo` is a directive line (QC-9.1), and FTEQCC's
+    // names no directive, so it is code there too (FTEF-14.51).
+    let source = b"#foo\nfloat a;\n";
+    assert_eq!(super::errors(&parse_with(source, Dialect::Vanilla)), vec![]);
+    assert_eq!(
+        super::errors(&parse_with(source, Dialect::Fteqcc)),
+        super::errors(&crate::parse_preprocessed(source, Dialect::Fteqcc))
+    );
 }
 
 #[test]

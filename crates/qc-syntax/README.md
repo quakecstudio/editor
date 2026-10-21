@@ -11,7 +11,10 @@ encoding), and `ast` gives a typed view of it.
 
 The tree is of the file as written: macros are not expanded and both sides of a conditional
 are parsed. Directive lines and `$frame` lines are trivia to the parser; frame macro
-references are literals, resolved later.
+references are literals, resolved later. Under the vanilla dialect a directive line runs from a
+`#` first on its line to the line break (QC-9.1); under an FTEQCC dialect it is the text the
+preprocessor reads as one directive, found with `qc_preproc::fte_directive_end`, and the text
+after it is lexed again as the preprocessor lexes it (`qc_preproc::relex_from`, FTEF-14.51).
 
 `parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
 `parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
@@ -54,7 +57,8 @@ Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported;
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 the syntactic ones.
 
-- **Layer:** L2 syntax. It depends on `qc-lexer`.
+- **Layer:** L2 syntax. It depends on `qc-lexer` and `qc-preproc`, whose FTEQCC directive reader
+  ends a directive line.
 - **Spec sections:** the syntax-error codes QCD-6 and the recovery rule QCD-1 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). These are the sections
   the parser owns in full, so a readiness run attributes only them to it and every active

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The parser's input: the lexer's tokens, with every byte between them classified as
-//! trivia, and directive lines grouped so the parser can step over them.
+//! trivia, and directive lines grouped so the parser can step over them: under the vanilla
+//! dialect to the first line break after the `#` (QC-9.1), under an FTEQCC dialect where the
+//! preprocessor ends them (FTEF-14.51).
 
 use qc_lexer::{Diagnostic, Dialect, Punct, Span, TokenKind, is_whitespace, lex_with};
+use qc_preproc::{fte_directive_end, relex_from};
 
 use crate::kind::SyntaxKind;
 
@@ -63,42 +66,88 @@ fn latin1(bytes: &[u8]) -> String {
     bytes.iter().copied().map(char::from).collect()
 }
 
+/// The directive line being read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Line {
+    /// The vanilla dialect's, whose `#` is at this offset: it ends at the first line break
+    /// after it (QC-9.1).
+    Vanilla { hash: usize },
+    /// An FTEQCC dialect's, which ends at this offset, where the preprocessor reads on
+    /// (FTEF-14.51).
+    Fte { end: usize },
+}
+
 impl<'a> Input<'a> {
     /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
+    /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
+    /// under an FTEQCC dialect.
     pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
-        let lexed = lex_with(source, dialect);
+        let mut lexed = lex_with(source, dialect);
         let mut input = Self {
             source,
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),
             tokens: Vec::with_capacity(lexed.tokens.len()),
-            diagnostics: lexed.diagnostics,
+            diagnostics: Vec::new(),
         };
         let text_end = source.iter().position(|&b| b == 0).unwrap_or(source.len());
+        let until_nul = source.get(..text_end).unwrap_or_default();
+        let fte = dialect.has_fteqcc_extensions();
         let mut at = 0_usize;
-        // The offset of the `#` of the directive line being read.
-        let mut directive_line: Option<usize> = None;
-        let lexed_tokens = lexed.tokens;
-        for (index, token) in lexed_tokens.iter().enumerate() {
-            let line_break = directive_line.is_some_and(|hash| {
-                source
-                    .get(hash..token.span.start)
-                    .is_some_and(|text| text.contains(&b'\n'))
-            });
-            if line_break {
-                input.pieces.push(Piece::CloseDirective);
-                directive_line = None;
+        let mut line: Option<Line> = None;
+        let mut index = 0_usize;
+        while let Some(span) = lexed.tokens.get(index).map(|t| t.span) {
+            match line {
+                Some(Line::Vanilla { hash }) => {
+                    let line_break = source
+                        .get(hash..span.start)
+                        .is_some_and(|text| text.contains(&b'\n'));
+                    if line_break {
+                        input.pieces.push(Piece::CloseDirective);
+                        line = None;
+                    }
+                }
+                Some(Line::Fte { end }) if span.start >= end => {
+                    input.gap(at, end);
+                    input.pieces.push(Piece::CloseDirective);
+                    at = at.max(end);
+                    line = None;
+                }
+                Some(Line::Fte { .. }) | None => {}
             }
-            input.gap(at, token.span.start);
-            at = token.span.end;
-            if text == Text::Source
-                && directive_line.is_none()
-                && starts_directive(source, &lexed_tokens, index)
-            {
-                input.pieces.push(Piece::OpenDirective);
-                directive_line = Some(token.span.start);
+            input.gap(at, span.start);
+            at = span.end;
+            if line.is_none() && text == Text::Source {
+                if fte {
+                    let hash = lexed
+                        .tokens
+                        .get(index)
+                        .is_some_and(|t| t.kind == TokenKind::Punct(Punct::Hash));
+                    let end = hash
+                        .then(|| fte_directive_end(until_nul, span.start))
+                        .flatten();
+                    if let Some(end) = end {
+                        // The preprocessor reads the directive's text as bytes, so the lexical
+                        // errors in it are none (FTEF-14.51).
+                        let directive = span.start..end;
+                        lexed
+                            .diagnostics
+                            .retain(|d| !directive.contains(&d.span.start));
+                        // The `#` ends by `end`, so it stays at `index`.
+                        relex_from(&mut lexed, source, end, dialect);
+                        input.pieces.push(Piece::OpenDirective);
+                        line = Some(Line::Fte { end });
+                    }
+                } else if starts_directive(source, &lexed.tokens, index) {
+                    input.pieces.push(Piece::OpenDirective);
+                    line = Some(Line::Vanilla { hash: span.start });
+                }
             }
+            let Some(token) = lexed.tokens.get(index) else {
+                break;
+            };
+            index = index.saturating_add(1);
             let kind = token_kind(&token.kind);
-            if directive_line.is_some() || kind.is_trivia() {
+            if line.is_some() || kind.is_trivia() {
                 input.pieces.push(Piece::Leaf(kind, token.span));
                 continue;
             }
@@ -133,17 +182,28 @@ impl<'a> Input<'a> {
                 value,
             });
         }
-        let line_break = source
-            .get(at..text_end)
-            .is_some_and(|gap| gap.contains(&b'\n'));
-        if line_break && directive_line.is_some() {
-            input.pieces.push(Piece::CloseDirective);
-            directive_line = None;
+        match line {
+            Some(Line::Vanilla { .. }) => {
+                let line_break = source
+                    .get(at..text_end)
+                    .is_some_and(|gap| gap.contains(&b'\n'));
+                if line_break {
+                    input.pieces.push(Piece::CloseDirective);
+                    input.gap(at, text_end);
+                } else {
+                    input.gap(at, text_end);
+                    input.pieces.push(Piece::CloseDirective);
+                }
+            }
+            Some(Line::Fte { end }) => {
+                let end = end.clamp(at, text_end);
+                input.gap(at, end);
+                input.pieces.push(Piece::CloseDirective);
+                input.gap(end, text_end);
+            }
+            None => input.gap(at, text_end),
         }
-        input.gap(at, text_end);
-        if directive_line.is_some() {
-            input.pieces.push(Piece::CloseDirective);
-        }
+        input.diagnostics = lexed.diagnostics;
         if text_end < source.len() {
             input.pieces.push(Piece::Leaf(
                 SyntaxKind::Skipped,

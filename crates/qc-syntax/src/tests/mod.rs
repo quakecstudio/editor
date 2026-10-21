@@ -21,6 +21,7 @@ mod dialect_full;
 mod dialect_rerelease;
 mod dialect_statements;
 mod expressions;
+mod fte_directives;
 mod lossless;
 mod nesting;
 mod recovery;
