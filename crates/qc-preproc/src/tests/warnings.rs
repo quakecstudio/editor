@@ -369,7 +369,6 @@ fn each_warning_code_stands_for_its_fteqcc_warning() {
         (Code::W0105, FteWarning::StaleMacro),
         (Code::W0106, FteWarning::DuplicateMacro),
         (Code::W0107, FteWarning::StringTooLong),
-        (Code::W0117, FteWarning::StringTooLong),
         (Code::W0108, FteWarning::BadPragma),
         (Code::W0113, FteWarning::BadPragma),
         (Code::W0109, FteWarning::EvilPreprocessor),

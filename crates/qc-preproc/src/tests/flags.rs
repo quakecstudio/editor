@@ -3,11 +3,6 @@
 //! FTEQCC's compiler flags as the preprocessor reads them (FTEF-12.12, FTEF-12.13): each case was
 //! compiled with the pinned FTEQCC (`fteqcc -Tid`), which read the same tokens.
 
-#![expect(
-    clippy::unwrap_used,
-    reason = "test code: a failed unwrap is a failed test"
-)]
-
 use std::path::Path;
 
 use qc_lexer::{Dialect, LexFlag, LexFlags};

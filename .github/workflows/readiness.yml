@@ -145,11 +145,14 @@ jobs:
           # its agent (P2-109). Each test binary cargo runs gets 3 GiB of data
           # memory (RLIMIT_DATA), so an allocation past it fails and aborts that
           # binary, which fails the mutant's tests, and the four jobs together
-          # stay inside the runner. Builds are not limited.
+          # stay inside the runner. xtask is run as built, not by `cargo run`,
+          # which would run it under the limit too, and with it every build.
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --
           CRATE: ${{ matrix.crate }}
           INDEX: ${{ strategy.job-index }}
-        run: cargo xtask readiness mutation --os linux --out "measured/mutation-$INDEX.json" "$CRATE"
+        run: |
+          cargo build --locked --quiet --package xtask
+          target/debug/xtask readiness mutation --os linux --out "measured/mutation-$INDEX.json" "$CRATE"
       # Named by the matrix index: a crate named by its directory has a `/`.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
