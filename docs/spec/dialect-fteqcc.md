@@ -568,10 +568,13 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_Precompiler`, `QCC_PR_FalsePreProcessorIf`,
 `ParsePrecompilerIf`, `QCC_PR_SkipToEndOfLine`, `QCC_PR_PreProcessor_Define`,
-`QCC_PR_SimpleGetToken`, `QCC_PR_LexWhitespace`, `QCC_PR_ExpandPreProcessorMacro`,
+`QCC_PR_DefineName`, `QCC_PR_UndefineName`, `QCC_PR_SimpleGetToken`, `QCC_PR_SimpleGetString`,
+`QCC_PR_LexInteger`, `QCC_PR_NewLine`, `QCC_PR_LexWhitespace`, `QCC_FindBestInclude`,
+`QCC_JoinPaths`, `QCC_PR_AddIncludePath`, `QCC_PR_ExpandPreProcessorMacro`,
 `QCC_PR_ExpandStrCatMarkup`, `QCC_PR_IncludeChunkEx`, `QCC_PR_CheckCompConst` and
-`QCC_PR_CheckBuiltinCompConst`; `qcc_cmdlib.c`, `QCC_COM_Parse2`,
-fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Vanilla preprocessor:
+`QCC_PR_CheckBuiltinCompConst`; `qcc_cmdlib.c`, `QCC_COM_Parse` and `QCC_COM_Parse2`;
+`qccmain.c`, `QCC_SetDefaultProperties`; `qcc_pr_comp.c`, `QCC_Include` and
+`QCC_PR_CompileFile`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Vanilla preprocessor:
 [`language.md`](language.md) QC-9; the project graph's reading of the same directives:
 [`project-file.md`](project-file.md) PRJ-5.
 
@@ -1066,6 +1069,13 @@ profile the preprocessor reads them as FTEQCC does.
   `#includelist` or `DONT_COMPILE_THIS_FILE` inside another, is "directives nested too deeply"
   (`E0121`) and ends the reading, where FTEQCC's recursion has no bound, so that no input can
   exhaust the stack.
+- **FTEF-14.48** Before the first file FTEQCC's `QCC_SetDefaultProperties` defines `FTEQCC` and
+  `__FTEQCC__` with empty bodies (`QCC_PR_DefineName("FTEQCC", NULL);
+  QCC_PR_DefineName("__FTEQCC__", NULL);`), so `#ifdef FTEQCC` is true and `#if FTEQCC` 0, and
+  `#undef` removes them. It runs again before the second autoprototyping pass (FTE-22.3), which
+  so starts with those two macros only, no include directory and no `#pragma once` mark
+  (`QCC_PR_CloseProcessor`), and F303 an error again; the count of open sides (FTEF-14.37) is
+  kept, being `QCC_PR_Precompiler`'s own.
 
 ## FTEF-15 Declarations
 

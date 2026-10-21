@@ -2,8 +2,9 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_Precompiler, QCC_PR_SkipToEndOfLine, QCC_PR_FalsePreProcessorIf, QCC_FindBestInclude, QCC_JoinPaths, QCC_PR_NewLine, QCC_PR_LexWhitespace, QCC_PR_SimpleGetToken, QCC_PR_SimpleGetString, QCC_PR_LexInteger, QCC_PR_DefineName, QCC_PR_UndefineName
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_Precompiler, QCC_PR_SkipToEndOfLine, QCC_PR_FalsePreProcessorIf, QCC_FindBestInclude, QCC_JoinPaths, QCC_PR_AddIncludePath, QCC_PR_CloseProcessor, QCC_PR_NewLine, QCC_PR_LexWhitespace, QCC_PR_SimpleGetToken, QCC_PR_SimpleGetString, QCC_PR_LexInteger, QCC_PR_DefineName, QCC_PR_UndefineName
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_COM_Parse
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qccmain.c, QCC_SetDefaultProperties, QCC_WarningForName
 
 //! FTEQCC's directives (`docs/spec/dialect-fteqcc.md` FTEF-14.33 to FTEF-14.47), ported from
 //! FTEQCC's behaviour under ADR-0017's clean-port policy. FTEQCC reads a directive as bytes:
@@ -20,11 +21,13 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use qc_lexer::Code;
+use qc_lexer::{Code, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text, pragma_file_name};
-use crate::{ChunkReader, FileId, FileSpan, Loader, Preprocessor, Run, normalize};
+use crate::{
+    Body, ChunkReader, FileId, FileSpan, Loader, Macro, Preprocessor, Run, Variadic, normalize,
+};
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
 /// `#define MAXCONSTANTNAMELENGTH 64`, and `if (strlen(name) >= MAXCONSTANTNAMELENGTH ||
@@ -1038,6 +1041,28 @@ const FTE_MAX_NESTED_DIRECTIVES: usize = 64;
 const JUNK: &str = "unexpected tokens at end of line";
 
 impl<L: Loader> Preprocessor<L> {
+    /// `QCC_SetDefaultProperties`'s part in the directives (FTEF-14.48): no include directory,
+    /// no `#pragma once` mark and F303 an error (`QCC_PR_CloseProcessor`,
+    /// `qccwarningaction[WARN_EVILPREPROCESSOR] = WA_ERROR;`), the count of open sides kept, and
+    /// `FTEQCC` and `__FTEQCC__` defined with empty bodies (`QCC_PR_DefineName("FTEQCC",
+    /// NULL);`), which have no place in a file, so their definition is at no file's byte.
+    pub(crate) fn fte_default_properties(&mut self) {
+        self.fte = FteState {
+            ifs: self.fte.ifs,
+            ..FteState::default()
+        };
+        for name in ["FTEQCC", "__FTEQCC__"] {
+            let mac = Macro {
+                params: None,
+                variadic: Variadic::No,
+                body: Body::Text(Rc::default()),
+                file: FileId(u32::MAX),
+                name_span: Span::new(0, 0),
+            };
+            self.macros.insert(name.to_owned(), Rc::new(mac));
+        }
+    }
+
     /// FTEQCC's `pr_source_line` at `at` in the file `file` (FTEF-14.43): the line it is on, or
     /// as the last `#pragma line` before it in the file numbers it.
     pub(crate) fn fte_line(&self, run: &Run, file: FileId, at: usize) -> i32 {

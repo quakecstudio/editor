@@ -673,17 +673,27 @@ impl<L: Loader> Preprocessor<L> {
     /// Starts FTEQCC's second autoprototyping pass, `-Fautoproto` (FTE-22.3, FTE-22.4): every
     /// `#define` is forgotten, as FTEQCC's `QCC_SetDefaultProperties` makes a new macro table
     /// between the passes, and the frame macros of the first pass are kept, since nothing
-    /// between the passes clears them. The files are then preprocessed again in order.
+    /// between the passes clears them. In an FTEQCC dialect it also defines `FTEQCC` and
+    /// `__FTEQCC__` again and clears the include directories, the `#pragma once` marks and
+    /// F303's setting (`QCC_PR_CloseProcessor`), keeping the count of open sides (FTEF-14.48).
+    /// The files are then preprocessed again in order.
     pub fn restart(&mut self) {
         self.macros.clear();
+        if self.dialect.has_fteqcc_extensions() {
+            self.fte_default_properties();
+        }
     }
 
     /// Sets the dialect this preprocessor accepts (PRJ-2.8). In an FTEQCC dialect the
     /// FTEQCC `#pragma` directive (FTE-16) is accepted rather than reported as an unknown
-    /// directive (QC-9.9). Vanilla is the default.
+    /// directive (QC-9.9), and `FTEQCC` and `__FTEQCC__` are defined (FTEF-14.48). Vanilla is
+    /// the default.
     #[must_use]
     pub fn with_dialect(mut self, dialect: Dialect) -> Self {
         self.dialect = dialect;
+        if dialect.has_fteqcc_extensions() {
+            self.fte_default_properties();
+        }
         self
     }
 

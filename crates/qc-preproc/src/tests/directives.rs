@@ -878,6 +878,44 @@ fn if_expression_errors() {
     assert_eq!(fte("#if \\\n1\nx\n#endif\ny\n"), ("y".to_owned(), vec![]));
 }
 
+// spec FTEF-14.48: `FTEQCC` and `__FTEQCC__` are defined, empty, before the first file and again
+// for the second pass, which also forgets the include directories, the `once` marks and F303's
+// setting, and keeps the count of open sides; the vanilla dialect defines neither
+#[test]
+fn fteqcc_is_defined_and_the_second_pass_starts_afresh() {
+    assert_eq!(
+        fte("#ifdef FTEQCC\nx\n#endif\n#ifdef __FTEQCC__\ny\n#endif\n").0,
+        "x y"
+    );
+    assert_eq!(fte("FTEQCC __FTEQCC__ z\n#if FTEQCC\nw\n#endif\n").0, "z");
+    assert_eq!(fte("#undef FTEQCC\n#ifdef FTEQCC\nx\n#endif\n").0, "");
+    let (_, out) = super::one("#ifdef FTEQCC\nx\n#endif\n");
+    assert_eq!(tokens(&out), "");
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        "#if 1\n#pragma includedir d\n#pragma once\n#pragma warning off F303\n#undef FTEQCC\n",
+    );
+    loader.insert("b.qc", "#endif\n");
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(pp.fte.include_dirs, [b"d/".to_vec()]);
+    assert_eq!(pp.fte.once, [b"a.qc".to_vec()]);
+    assert_eq!(pp.fte.evil, WarningAction::Ignore);
+    assert!(!pp.is_defined("FTEQCC"));
+    pp.restart();
+    assert!(pp.fte.include_dirs.is_empty() && pp.fte.once.is_empty());
+    assert_eq!(pp.fte.evil, WarningAction::Error);
+    assert!(pp.is_defined("FTEQCC") && pp.is_defined("__FTEQCC__"));
+    // The first pass's `#if 1` is still open, and the second pass's `#endif` closes it.
+    let out = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    assert_eq!(codes(&out), vec![]);
+    // The vanilla dialect's restart defines nothing.
+    let mut vanilla = Preprocessor::new(MemoryLoader::new());
+    vanilla.restart();
+    assert!(!vanilla.is_defined("FTEQCC"));
+}
+
 // spec FTEF-14.39: `#append` adds to a body only with the same parameters
 #[test]
 fn append_needs_the_same_parameters() {
