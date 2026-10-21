@@ -378,6 +378,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "qc-ide"
+version = "2026.10.0"
+dependencies = [
+ "qc-diag",
+ "qc-engines",
+ "qc-project",
+ "qc-sema",
+ "qc-syntax",
+]
+
+[[package]]
 name = "qc-lexer"
 version = "2026.10.0"
 dependencies = [
