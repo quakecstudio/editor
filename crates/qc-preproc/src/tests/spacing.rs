@@ -277,13 +277,13 @@ fn appended_text_stays_apart_from_the_body() {
     assert_eq!(touching_in(&files), "a :");
 }
 
-// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands; the
-// text ends there (QC-1.1)
+// spec FTEF-14.13: a NUL byte after a macro's name ends the word, so the name expands, and the
+// text goes on after it, which FTEQCC's file loader made a space (FTEF-14.54)
 #[test]
 fn a_nul_after_a_name_ends_the_word() {
     assert_eq!(
         touching("#define N 5\nx = N\0;\n", Dialect::Fteqcc),
-        "x = 5"
+        "x = 5 ;"
     );
 }
 

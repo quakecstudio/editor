@@ -686,7 +686,10 @@ impl<L: Loader> Builder<'_, L> {
             // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
             // `progs.src` with its preprocessor, so the pragma there holds for the module.
             "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
-                self.graph.autoproto = Some(args.first().is_none_or(|n| cond::atoi(n) != 0));
+                let on = args
+                    .first()
+                    .is_none_or(|n| cond::fte_atoi(n.as_bytes()) != 0);
+                self.graph.autoproto = Some(on);
             }
             _ => {}
         }

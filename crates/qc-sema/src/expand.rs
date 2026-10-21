@@ -292,17 +292,18 @@ fn run<L: Loader>(
     (out, pragma, late)
 }
 
-/// The database location of a preprocessor span: the database file with the same path.
+/// The database location of a preprocessor span: the database file with the same path, and the
+/// bytes of it the span's text came from (FTEF-14.54).
 fn source_location<L: Loader>(
     pp: &Preprocessor<L>,
     files: &Files<'_>,
     span: FileSpan,
 ) -> Option<Location> {
-    let path = &pp.sources().file(span.file)?.path;
-    let file = *files.ids.get(path)?;
+    let source = pp.sources().file(span.file)?;
+    let file = *files.ids.get(&source.path)?;
     Some(Location {
         file,
-        span: span.span,
+        span: source.file_span(span.span),
     })
 }
 

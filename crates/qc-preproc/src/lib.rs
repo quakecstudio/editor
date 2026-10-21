@@ -26,9 +26,11 @@ mod tests;
 
 pub use fte_directive::{FileStart, FteEvent, FteFileReader, ModuleState};
 pub use fte_line::{fte_directive_end, relex_from};
-pub use source::{FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap};
+pub use source::{
+    FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
+};
 
-use fte_directive::{Bytes, FteState, Position, Resume, TextStart};
+use fte_directive::{Bytes, FteState, Position, Resume, TextStart, qcc_load_file};
 use fte_macro::{ChunkReader, Text, ends_word};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -840,7 +842,7 @@ impl<L: Loader> Preprocessor<L> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
-        let file = self.sources.add(path.clone(), bytes);
+        let file = self.add_source(path.clone(), bytes);
         let mut run = Run {
             unit: name.clone(),
             ..Run::default()
@@ -856,6 +858,18 @@ impl<L: Loader> Preprocessor<L> {
             }
         }
         Ok(run.out)
+    }
+
+    /// Adds the file at `path`, of `bytes`, to the files read: in an FTEQCC dialect the text
+    /// FTEQCC's `QCC_LoadFile` hands its lexer (FTEF-14.54), in the vanilla dialect the bytes
+    /// (QC-1.1).
+    fn add_source(&mut self, path: PathBuf, bytes: Vec<u8>) -> FileId {
+        let (text, origin) = if self.dialect.has_fteqcc_extensions() {
+            qcc_load_file(bytes)
+        } else {
+            (bytes, TextOrigin::default())
+        };
+        self.sources.add(path, text, origin)
     }
 
     /// In an FTEQCC dialect, a `#` right before the name of a macro it may expand is that
@@ -1316,7 +1330,7 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, FileSpan { file, span: whole });
             return;
         }
-        let included = self.sources.add(path.clone(), bytes);
+        let included = self.add_source(path.clone(), bytes);
         let name = path.as_os_str().as_encoded_bytes().to_vec();
         let cursor = self.cursor(included, path, name, TextStart::Included);
         run.cursors.push(cursor);
@@ -1636,9 +1650,8 @@ impl<L: Loader> Preprocessor<L> {
                 run.frame_value = 0;
             }
             FrameCommand::Value(word) => {
-                // A number past an `int` is held at the nearest one.
-                let value = cond::atoi(word).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
-                run.frame_value = i32::try_from(value).unwrap_or_default();
+                // FTEF-14.55: `pr_macrovalue = atoi(pr_token);`, FTEQCC's `int`.
+                run.frame_value = cond::fte_atoi(word.as_bytes());
             }
             FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
                 Some(value) => run.frame_value = value,

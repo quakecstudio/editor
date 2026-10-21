@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use qc_preproc::cond::fte_atoi;
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_syntax::{Code, Dialect, ast};
@@ -98,8 +99,59 @@ pub(crate) struct Case {
     pub(crate) dialect: Dialect,
     /// The text of the file `progs.src` lists.
     pub(crate) source: String,
+    /// How that file's text is written as bytes.
+    pub(crate) encoding: Encoding,
     /// The files around it, or `None` for `t.qc` alone.
     pub(crate) project: Option<Project>,
+}
+
+/// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
+/// encoding FTEQCC's file loader decodes (FTEF-14.54).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Encoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Utf32Le,
+    Utf32Be,
+}
+
+impl Encoding {
+    /// `text` written in this encoding, after its byte order mark for a wide one.
+    fn bytes(self, text: &str) -> Vec<u8> {
+        let utf16 = || text.encode_utf16();
+        let utf32 = || text.chars().map(u32::from);
+        match self {
+            Self::Utf8 => text.as_bytes().to_vec(),
+            Self::Utf16Le => [0xff, 0xfe]
+                .into_iter()
+                .chain(utf16().flat_map(u16::to_le_bytes))
+                .collect(),
+            Self::Utf16Be => [0xfe, 0xff]
+                .into_iter()
+                .chain(utf16().flat_map(u16::to_be_bytes))
+                .collect(),
+            Self::Utf32Le => [0xff, 0xfe, 0, 0]
+                .into_iter()
+                .chain(utf32().flat_map(u32::to_le_bytes))
+                .collect(),
+            Self::Utf32Be => [0, 0, 0xfe, 0xff]
+                .into_iter()
+                .chain(utf32().flat_map(u32::to_be_bytes))
+                .collect(),
+        }
+    }
+
+    /// The name a case's key gives a wide encoding; none for UTF-8.
+    fn name(self) -> Option<&'static str> {
+        match self {
+            Self::Utf8 => None,
+            Self::Utf16Le => Some("utf-16le"),
+            Self::Utf16Be => Some("utf-16be"),
+            Self::Utf32Le => Some("utf-32le"),
+            Self::Utf32Be => Some("utf-32be"),
+        }
+    }
 }
 
 /// A program of more than one file: the file `progs.src` lists and the others.
@@ -123,8 +175,14 @@ impl Case {
         Self {
             dialect,
             source,
+            encoding: Encoding::Utf8,
             project: None,
         }
+    }
+
+    /// The bytes of the file `progs.src` lists.
+    fn source_bytes(&self) -> Vec<u8> {
+        self.encoding.bytes(&self.source)
     }
 
     /// The case's key in [`FIXTURE`].
@@ -140,6 +198,9 @@ impl Case {
         }
         for dir in self.include_dirs() {
             key.push_str(&format!("|-I{dir}"));
+        }
+        if let Some(name) = self.encoding.name() {
+            key.push_str(&format!("|{name}"));
         }
         key
     }
@@ -1098,8 +1159,8 @@ pub(crate) fn cases() -> Vec<Case> {
     cases
 }
 
-/// How wide C's `unsigned long` is where an oracle ran, which decides where FTEQCC's `strtoul`
-/// saturates (FTEF-14.50).
+/// How wide C's `long` and `unsigned long` are where an oracle ran, which decides where FTEQCC's
+/// `strtoul` (FTEF-14.50) and its `atoi`'s `strtol` (FTEF-14.55) saturate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ULong {
     /// 32 bits: an LLP64 host, 64-bit Windows.
@@ -1118,9 +1179,15 @@ impl ULong {
     };
 
     /// Whether an oracle on a host of this width may read `case` otherwise than the profile
-    /// does (FTEF-14.50): a `#pragma line` number whose low 32 bits a 32-bit `strtoul` reads
-    /// otherwise than a 64-bit one.
+    /// does: a `#pragma line` number (FTEF-14.50) or a number of a directive's line `atoi`
+    /// may read (FTEF-14.55) whose 32-bit reading differs from the 64-bit one.
     fn reads_otherwise(self, case: &Case) -> bool {
+        self.line_reads_otherwise(case) || self.atoi_reads_otherwise(case)
+    }
+
+    /// Whether `case` has a `#pragma line` number whose low 32 bits a 32-bit `strtoul` reads
+    /// otherwise than a 64-bit one, on a host of this width (FTEF-14.50).
+    fn line_reads_otherwise(self, case: &Case) -> bool {
         self == Self::Bits32
             && case.texts().any(|text| {
                 text.lines().filter_map(line_pragma_text).any(|number| {
@@ -1129,6 +1196,80 @@ impl ULong {
                 })
             })
     }
+
+    /// Whether `case` has, on the line of a directive that reads a number with `atoi`, a number
+    /// that `atoi` reads otherwise where `long` is 32 bits than where it is 64, on a host of this
+    /// width (FTEF-14.55).
+    fn atoi_reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Bits32
+            && case.texts().any(|text| {
+                text.lines()
+                    .filter(|line| atoi_directive(line))
+                    .flat_map(numbers)
+                    .any(|number| fte_atoi(number.as_bytes()) != llp64_atoi(number))
+            })
+    }
+}
+
+/// Whether `line` is a directive whose number FTEQCC reads with `atoi`, or a `#define` whose
+/// body an `#if` may read (FTEF-14.55): `#if`, `#elif`, `#define` or `#pack`, matched by their
+/// first bytes as FTEQCC matches a directive's name (FTEF-14.52), or a `$framevalue`. The
+/// `noref` and `autoproto` pragmas read one too, but change no outcome.
+fn atoi_directive(line: &str) -> bool {
+    let line = line.trim_start_matches([' ', '\t']);
+    if line.starts_with("$framevalue") {
+        return true;
+    }
+    let Some(rest) = line.strip_prefix('#') else {
+        return false;
+    };
+    let name = rest.trim_start_matches([' ', '\t']);
+    ["if", "elif", "define", "pack"]
+        .iter()
+        .any(|directive| name.starts_with(directive))
+}
+
+/// Each place of `line` a number starts a word, a sign before its digits included, and the rest
+/// of the line from there.
+fn numbers(line: &str) -> impl Iterator<Item = &str> {
+    let bytes = line.as_bytes();
+    (0..bytes.len()).filter_map(move |at| {
+        let in_word = at
+            .checked_sub(1)
+            .and_then(|before| bytes.get(before))
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+'));
+        let digits = match bytes.get(at) {
+            Some(b'-' | b'+') => at.saturating_add(1),
+            _ => at,
+        };
+        let starts = !in_word && bytes.get(digits).is_some_and(u8::is_ascii_digit);
+        starts.then(|| line.get(at..)).flatten()
+    })
+}
+
+/// C's `atoi` where `long` is 32 bits (LLP64): `(int)strtol(text, NULL, 10)`, which passes over
+/// the C locale's white space, reads a sign and decimal digits, and holds a value past an `int`
+/// at `INT_MAX` or `INT_MIN`.
+fn llp64_atoi(text: &str) -> i32 {
+    let text = text.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let (negative, digits) = match text.as_bytes().first() {
+        Some(b'-') => (true, text.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, text.get(1..).unwrap_or_default()),
+        _ => (false, text),
+    };
+    let mut value = 0_i64;
+    for digit in digits.chars().map_while(|c| c.to_digit(10)) {
+        value = value
+            .saturating_mul(10)
+            .saturating_add(i64::from(digit))
+            .min(i64::from(i32::MAX).saturating_add(1));
+    }
+    let value = if negative {
+        value.saturating_neg()
+    } else {
+        value
+    };
+    i32::try_from(value.clamp(i64::from(i32::MIN), i64::from(i32::MAX))).unwrap_or_default()
 }
 
 /// The text a `#pragma line` on `line` gives `strtoul` (FTEF-14.43): after the name, matched in
@@ -1208,8 +1349,12 @@ pub(crate) fn expected_difference(
             (ours, oracle),
             (Outcome::Bound { number: a, .. }, Outcome::Bound { number: b, .. }) if a == b
         );
-        if same_number && ulong.reads_otherwise(case) {
+        if same_number && ulong.line_reads_otherwise(case) {
             return Some("FTEF-14.50");
+        }
+        // FTEF-14.55: the profile reads a directive's number as an LP64 `atoi` does.
+        if ulong.atoi_reads_otherwise(case) {
+            return Some("FTEF-14.55");
         }
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
@@ -1272,7 +1417,7 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     db.set_file(
         FileId(0),
         PathBuf::from(case.compiled()),
-        case.source.as_bytes().to_vec(),
+        case.source_bytes(),
     );
     // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
     for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
@@ -1424,7 +1569,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     };
     let compiled = case.compiled();
     write("progs.src", format!("progs.dat\n{compiled}\n").as_bytes())?;
-    write(compiled, case.source.as_bytes())?;
+    write(compiled, &case.source_bytes())?;
     for (name, text) in case.project.iter().flat_map(|p| &p.files) {
         write(name, text.as_bytes())?;
     }
@@ -1584,7 +1729,7 @@ fn graph_binds(case: &Case) -> bool {
     let mut loader = qc_project::MemoryLoader::new();
     let compiled = case.compiled();
     loader.insert("progs.src", format!("progs.dat\n{compiled}\n").as_bytes());
-    loader.insert(compiled, case.source.as_bytes());
+    loader.insert(compiled, case.source_bytes());
     let mut binding = Vec::new();
     for (name, text) in case.project.iter().flat_map(|p| &p.files) {
         loader.insert(name.as_str(), text.as_bytes());
@@ -1610,10 +1755,12 @@ pub(crate) fn graph_cases() -> Vec<Case> {
     directives::graph_cases()
 }
 
-/// The graph cases whose project graph lists the file that binds `f` where `outcomes` say the
-/// oracle did not read it, or the other way round, or whose oracle neither bound `f` to `#5` nor
-/// accepted the program, so that the case says nothing of what it read (PRJ-5.13).
-pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>) -> Vec<String> {
+/// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
+/// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
+/// round, or whose oracle neither bound `f` to `#5` nor accepted the program, so that the case
+/// says nothing of what it read (PRJ-5.13). Where `long` is 32 bits a case whose directive holds
+/// a number `atoi` reads otherwise may read the other file (FTEF-14.55).
+pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
     let mut differ = Vec::new();
     for case in graph_cases() {
         let read = match outcomes.get(&case.key()) {
@@ -1631,7 +1778,7 @@ pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>) -> Vec<Str
                 continue;
             }
         };
-        if graph_binds(&case) != read {
+        if graph_binds(&case) != read && !ulong.atoi_reads_otherwise(&case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {
@@ -1665,14 +1812,15 @@ impl fmt::Display for Tally {
 }
 
 fn show(case: &Case) -> String {
+    let dialect = match case.encoding.name() {
+        Some(encoding) => format!("{} {encoding}", dialect_name(case.dialect)),
+        None => dialect_name(case.dialect).to_owned(),
+    };
     match &case.project {
-        None => format!("{} {:?}", dialect_name(case.dialect), case.source),
+        None => format!("{dialect} {:?}", case.source),
         Some(project) => format!(
-            "{} {}: {:?}, with {:?}",
-            dialect_name(case.dialect),
-            project.compiled,
-            case.source,
-            project.files
+            "{dialect} {}: {:?}, with {:?}",
+            project.compiled, case.source, project.files
         ),
     }
 }
@@ -1725,7 +1873,8 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
     } else {
         let recorded = read_fixture(root)?;
         // A changed cross product is recorded again with `--record` once it is right. Where
-        // `unsigned long` is 32 bits a wide `#pragma line` may read otherwise (FTEF-14.50).
+        // `long` is 32 bits a wide `#pragma line` or `#if` number may read otherwise
+        // (FTEF-14.50, FTEF-14.55).
         for case in cases.iter().chain(&graph_cases) {
             let key = case.key();
             let Some(outcome) = outcomes.get(&key) else {
@@ -1748,7 +1897,7 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    let graph = graph_differences(&outcomes);
+    let graph = graph_differences(&outcomes, ulong);
     for problem in &graph {
         println!("FAIL  project graph: {problem}");
     }

@@ -744,16 +744,21 @@ fn a_name_in_a_built_in_constant_reads_on_in_its_text() {
     assert_eq!(text, "\"x\" M \"\" ( 7 ) ;");
 }
 
-// spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
+// spec FTEF-18.16: `$framevalue N` numbers from `atoi`'s `int`, the low 32 bits of a 64-bit
+// `strtol` (FTEF-14.55), as the pinned FTEQCC gives `x` 5, 1215752192 and 2147483648
 #[test]
-fn a_frame_value_past_an_int_is_held() {
+fn a_frame_value_past_an_int_keeps_its_low_32_bits() {
     assert_eq!(
-        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
-        ("x = 2147483600 ;".to_owned(), vec![])
+        fte("$framevalue 4294967301\n$frame a\nx = $a;"),
+        ("x = 5 ;".to_owned(), vec![])
     );
     assert_eq!(
-        fte("$framevalue -99999999999\n$frame a\nx = $a;"),
-        ("x = -2147483600 ;".to_owned(), vec![])
+        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
+        ("x = 1215752200 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$framevalue -2147483649\n$frame a\nx = $a;"),
+        ("x = 2147483600 ;".to_owned(), vec![])
     );
     assert_eq!(
         fte("$framevalue -2\n$frame a b c\nx = $c;"),
