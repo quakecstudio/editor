@@ -1172,7 +1172,10 @@ profile the preprocessor reads them as FTEQCC does.
   mark. A diagnostic's place in the file is the bytes its text came from: 3 bytes on after a UTF-8
   mark, and in a decoded file the code unit each byte came from (`qc_preproc::SourceFile::file_span`).
   FTEQCC also warns "file contains null bytes" (`WARN_UNEXPECTEDPUNCT`) once for a file with a NUL,
-  which this profile does not, as the warning changes nothing that is compiled. The vanilla dialect
+  which this profile does not, as the warning changes nothing that is compiled. `QCC_LoadFile` then
+  writes a line break after the text (`mem[len] = '\n';`), which this profile does not add: its
+  readers take the end of the text for the end of its last line, as the directive family's cases of
+  each directive at the end of a file with no line break show. The vanilla dialect
   keeps QC-1.1: a file's bytes, its text ending at the first NUL.
 - **FTEF-14.55** FTEQCC's `atoi` is the host C library's, and this profile reads it as an LP64 host
   (64-bit Linux and macOS) does, on every host: `(int)strtol(s, NULL, 10)` (glibc `stdlib/atoi.c`,

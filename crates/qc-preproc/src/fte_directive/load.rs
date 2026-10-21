@@ -12,7 +12,7 @@
 use crate::source::TextOrigin;
 
 /// The UTF-8 byte order mark, which `QCC_SanitizeCharSet` skips (`mem += 3;`).
-pub(crate) const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
+const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
 
 /// The replacement character `decodeUTF` writes for a code point past U+10FFFF.
 const REPLACEMENT: u32 = 0xfffd;
@@ -110,32 +110,30 @@ fn decode_utf(wide: Wide, bytes: &[u8], from: usize) -> (Vec<u8>, Vec<usize>) {
         if code > 0x10_ffff {
             code = REPLACEMENT;
         }
-        let encoded = encode(code);
-        offsets.extend(std::iter::repeat_n(at, encoded.len()));
-        text.extend_from_slice(&encoded);
+        let written = encode(code, &mut text);
+        offsets.extend(std::iter::repeat_n(at, written));
     }
     offsets.push(from.saturating_add(index.saturating_mul(width)));
     (text, offsets)
 }
 
 /// `decodeUTF`'s encoding of the code point `code`, at most U+10FFFF, in UTF-8's one to four
-/// bytes; a surrogate's in three, as any other value of U+0800 to U+FFFF.
-fn encode(code: u32) -> Vec<u8> {
+/// bytes, a surrogate's in three as any other value of U+0800 to U+FFFF, written to `text`;
+/// how many bytes it wrote.
+fn encode(code: u32, text: &mut Vec<u8>) -> usize {
     let tail = |shift: u32| low_byte(((code >> shift) & 0x3f) | 0x80);
+    let before = text.len();
     if code <= 0x7f {
-        vec![low_byte(code)]
+        text.push(low_byte(code));
     } else if code <= 0x7ff {
-        vec![low_byte(((code >> 6) & 0x1f) | 0xc0), tail(0)]
+        text.extend_from_slice(&[low_byte(((code >> 6) & 0x1f) | 0xc0), tail(0)]);
     } else if code <= 0xffff {
-        vec![low_byte(((code >> 12) & 0xf) | 0xe0), tail(6), tail(0)]
+        text.extend_from_slice(&[low_byte(((code >> 12) & 0xf) | 0xe0), tail(6), tail(0)]);
     } else {
-        vec![
-            low_byte(((code >> 18) & 0x07) | 0xf0),
-            tail(12),
-            tail(6),
-            tail(0),
-        ]
+        let lead = low_byte(((code >> 18) & 0x07) | 0xf0);
+        text.extend_from_slice(&[lead, tail(12), tail(6), tail(0)]);
     }
+    text.len().saturating_sub(before)
 }
 
 /// The text `QCC_LoadFile` hands FTEQCC's lexer for a file of `bytes`, and where it stands in
@@ -144,14 +142,18 @@ fn encode(code: u32) -> Vec<u8> {
 /// `QCC_SanitizeCharSet` decodes a file that starts with the byte order mark of UTF-32LE,
 /// UTF-32BE, UTF-16LE or UTF-16BE, tested in that order, to UTF-8 (`decodeUTF`), skips a UTF-8
 /// one, and leaves any other file as it is; then `QCC_LoadFile` makes every NUL byte of the text
-/// a space (`else if (!mem[check])`, `mem[check] = ' ';`).
+/// a space (`else if (!mem[check])`, `mem[check] = ' ';`). It also writes a line break after the
+/// text (`mem[len] = '\n';`), which this function does not add: the readers take the end of the
+/// text for the end of its last line (FTEF-14.54).
 pub(crate) fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
     let (mut text, origin) = if let Some(wide) = Wide::of(&bytes) {
         let from = wide.mark().len();
         let (text, offsets) = decode_utf(wide, bytes.get(from..).unwrap_or_default(), from);
         (text, TextOrigin::Decoded(offsets))
-    } else if let Some(rest) = bytes.strip_prefix(UTF8_BOM) {
-        (rest.to_vec(), TextOrigin::Shifted(UTF8_BOM.len()))
+    } else if bytes.starts_with(UTF8_BOM) {
+        let mut text = bytes;
+        text.drain(..UTF8_BOM.len());
+        (text, TextOrigin::Shifted(UTF8_BOM.len()))
     } else {
         (bytes, TextOrigin::Shifted(0))
     };

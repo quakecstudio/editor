@@ -1213,9 +1213,14 @@ impl ULong {
 
 /// Whether `line` is a directive whose number FTEQCC reads with `atoi`, or a `#define` whose
 /// body an `#if` may read (FTEF-14.55): `#if`, `#elif`, `#define` or `#pack`, matched by their
-/// first bytes as FTEQCC matches a directive's name (FTEF-14.52).
+/// first bytes as FTEQCC matches a directive's name (FTEF-14.52), or a `$framevalue`. The
+/// `noref` and `autoproto` pragmas read one too, but change no outcome.
 fn atoi_directive(line: &str) -> bool {
-    let Some(rest) = line.trim_start_matches([' ', '\t']).strip_prefix('#') else {
+    let line = line.trim_start_matches([' ', '\t']);
+    if line.starts_with("$framevalue") {
+        return true;
+    }
+    let Some(rest) = line.strip_prefix('#') else {
         return false;
     };
     let name = rest.trim_start_matches([' ', '\t']);

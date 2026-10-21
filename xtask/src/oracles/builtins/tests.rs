@@ -230,6 +230,21 @@ fn a_wide_if_value_differs_only_where_long_is_32_bits() {
             None,
         ),
         ("void() f = #4294967296;\n", ULong::Bits32, None),
+        (
+            "$framevalue 4294967301\n$frame a\nvoid() f = #5;\n",
+            ULong::Bits32,
+            Some("FTEF-14.55"),
+        ),
+        (
+            "#pack 4294967296 \nvoid() f = #5;\n",
+            ULong::Bits32,
+            Some("FTEF-14.55"),
+        ),
+        (
+            "#pragma noref 4294967296\nvoid() f = #5;\n",
+            ULong::Bits32,
+            None,
+        ),
         ("#if 1\nvoid() f = #5;\n#endif\n", ULong::Bits32, None),
     ] {
         assert_eq!(
