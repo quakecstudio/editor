@@ -70,6 +70,8 @@
 //! - `engines`: fetches the fact sources of the engine-target database pinned in
 //!   `crates/qc-engines/sources.toml` by checksum and writes `crates/qc-engines/src/tables.rs`
 //!   from them (P2-04); `engines --check` fails when the checked-in tables differ.
+//! - `commands`: writes the command reference, `docs/commands.md`, from the
+//!   `qs-commands` registry (P2-12); `commands --check` fails when it differs.
 //!
 //! `readiness` and `ratchet` run in the on-demand `Readiness` workflow, not in
 //! `ci` (ADR-0009).
@@ -84,6 +86,7 @@ mod adr;
 mod attribution;
 mod bench;
 mod ci;
+mod commands;
 mod contrast;
 mod conventions;
 mod corpus;
@@ -119,7 +122,8 @@ const USAGE: &str = "usage: cargo xtask <ci | adr | conventions | clippy-fixture
                      deny-fixtures | layers | licenses | attribution | contrast | bench | \
                      readiness | ratchet | fuzz | corpus | assets | lex-corpus | oracles | \
                      map-corpus | parse-corpus | project-corpus | sema-corpus | differential | \
-                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines>";
+                     fteqcc-coverage | fteqcc-full-coverage | fteqcc-profile | engines | \
+                     commands>";
 
 /// A command that takes arguments and says itself whether it passed.
 type Command = fn(&Path, &[String]) -> Result<bool, String>;
@@ -174,6 +178,7 @@ fn command(name: &str) -> Option<Command> {
     match name {
         "assets" => Some(corpus::assets_main),
         "bench" => Some(bench::main),
+        "commands" => Some(commands::main),
         "corpus" => Some(corpus::main),
         "differential" => Some(differential::main),
         "engines" => Some(engines::main),

@@ -17,6 +17,7 @@ absolute-paths-allowed-crates = [
     "junction",
     "miniz_oxide",
     "proptest",
+    "schemars",
     "serde",
     "serde_json",
     "toml",

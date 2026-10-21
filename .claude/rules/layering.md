@@ -13,7 +13,7 @@ including why crates in one layer may build on each other.
 | L2 syntax | Preprocessor, lossless CST, `progs.src` project graph | `qc-lexer`, `qc-preproc`, `qc-syntax`, `qc-project` |
 | L3 semantics | Resolution, types, dialects, engine-target database, LSP, map entity definitions | `qc-sema`, `qc-engines` |
 | L4 bridges | Our QuakeC and map compilers; the engine bridge | |
-| L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP | |
+| L5 commands | Command engine, session, undo: one registry for the UI, CLI, agent and MCP | `qs-commands` |
 | L6 agent | Agent loop, model providers, checkpoints, MCP and ACP | |
 | L7 UI | The app on the chosen framework (ADR-0003) | |
 | apps | Desktop app, CLI, LSP server binaries | `apps/*` |
