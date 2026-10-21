@@ -200,6 +200,10 @@ const CONDITIONALS: &[&str] = &[
     "#define X 2\n#if X == 2\nvoid() f = #5;\n#endif\n",
     "#ifdef X /* c\n */ void() g = #4;\n#endif\nvoid() f = #5;\n",
     "#if 1 /* c\n */ void() g = #4;\n#endif\nvoid() f = #5;\n",
+    "#ifdef FTEQCC\nvoid() f = #5;\n#endif\n",
+    "#ifdef __FTEQCC__\nvoid() f = #5;\n#endif\n",
+    "#if FTEQCC\nzz zz zz\n#endif\nvoid() f = #5;\n",
+    "#undef FTEQCC\n#ifdef FTEQCC\nzz zz zz\n#endif\nvoid() f = #5;\n",
 ];
 
 /// Directives on a line of their own after a use's `(` or `,`, or in the text of an argument

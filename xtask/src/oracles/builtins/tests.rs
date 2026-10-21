@@ -168,7 +168,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1329);
+    assert_eq!(family.len(), 1333);
     for source in [
         "#define X 1\n#undef X // c \\\nzz zz zz\nvoid() f = #5;\n",
         "#defined N #5\nvoid() f = N;\n",
