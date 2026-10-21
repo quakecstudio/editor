@@ -490,6 +490,71 @@ fn output_without_a_path() {
     assert_eq!(graph.declared_output, Some(PathBuf::from("a.dat")));
 }
 
+/// The graph of a list-form module of `dialect` that compiles `src/a.qc` among `files`.
+fn listed(files: &[(&str, &str)], dialect: qc_lexer::Dialect) -> crate::FileGraph {
+    let mut all = vec![("progs.src", "progs.dat\nsrc/a.qc\n")];
+    all.extend_from_slice(files);
+    build(&GraphSpec {
+        files: &all,
+        dialect,
+        ..GraphSpec::default()
+    })
+}
+
+// spec PRJ-5.11: under FTEQCC a nested `#include` is found beside the file being compiled, not
+// the file that holds it; the vanilla dialect keeps PRJ-5.2
+#[test]
+fn fteqcc_includes_are_found_beside_the_compiled_file() {
+    let files = [
+        ("src/a.qc", "#include \"x/b.qh\"\n"),
+        ("src/x/b.qh", "#include \"c.qh\"\n"),
+        ("src/c.qh", ""),
+        ("src/x/c.qh", ""),
+    ];
+    let graph = listed(&files, qc_lexer::Dialect::Fteqcc);
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/c.qh"]);
+    let graph = listed(&files, qc_lexer::Dialect::Vanilla);
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/x/c.qh"]);
+    let graph = listed(&files[..2], qc_lexer::Dialect::Fteqcc);
+    assert_eq!(diags(&graph), ["E0111 src/x/b.qh:1"]);
+}
+
+// spec PRJ-5.11: under FTEQCC an `#includelist` entry in an included file, an include directory
+// and `#pragma once` are the file being compiled's too
+#[test]
+fn fteqcc_lists_dirs_and_once_use_the_compiled_file() {
+    let fte = qc_lexer::Dialect::Fteqcc;
+    let graph = listed(
+        &[
+            ("src/a.qc", "#include \"x/b.qh\"\n"),
+            ("src/x/b.qh", "#includelist\nl.qc\n#endlist\n"),
+            ("src/l.qc", ""),
+        ],
+        fte,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/l.qc"]);
+    let graph = listed(
+        &[
+            ("src/a.qc", "#include \"x/b.qh\"\n#include \"c.qh\"\n"),
+            ("src/x/b.qh", "#pragma includedir y\n"),
+            ("src/y/c.qh", ""),
+        ],
+        fte,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/x/b.qh", "src/y/c.qh"]);
+    let graph = listed(
+        &[
+            (
+                "src/a.qc",
+                "#include \"b.qh\"\n#include \"b.qh\"\n#include \"a.qc\"\n",
+            ),
+            ("src/b.qh", "#pragma once\n"),
+        ],
+        fte,
+    );
+    assert_eq!(names(&graph), ["src/a.qc", "src/b.qh", "src/b.qh"]);
+}
+
 // spec PRJ-5.8: `#pragma includedir` with no path adds no directory
 #[test]
 fn includedir_without_a_path() {

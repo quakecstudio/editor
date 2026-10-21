@@ -223,6 +223,15 @@ malformed directive without a diagnostic.
   most `MAX_DEPTH` = 64 levels (`qc-preproc`'s `cond.rs`), the value itself one, so no input
   can exhaust its stack. `&&`, `||` and the comparisons chain without nesting. Under an
   FTEQCC profile the limit is FTEF-14.12's.
+- **PRJ-5.11** Under an FTEQCC profile the file being compiled, FTEQCC's `compilingfile`, stands
+  where PRJ-5.2, PRJ-5.3, PRJ-5.8 and PRJ-5.9 say the file holding the directive: an `#include`
+  and an `#includelist` entry are resolved against its directory
+  (`QCC_FindBestInclude(msg, compilingfile, ...)`, `dialect-fteqcc.md` FTEF-14.40), a
+  `#pragma includedir` path is joined to it, and `#pragma once` marks it. The file being
+  compiled is the source of the source form, an entry of a list-form `progs.src` or of an
+  `#includelist`, never an `#include`d file, which is read for the file that includes it. So
+  with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the graph
+  reads `src/c.qh`, as the pinned FTEQCC does.
 
 ## PRJ-6 The file graph
 
