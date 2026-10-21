@@ -39,6 +39,8 @@ use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
+mod directives;
+
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
 
@@ -94,13 +96,59 @@ impl Outcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Case {
     pub(crate) dialect: Dialect,
+    /// The text of the file `progs.src` lists.
     pub(crate) source: String,
+    /// The files around it, or `None` for `t.qc` alone.
+    pub(crate) project: Option<Project>,
 }
 
+/// A program of more than one file: the file `progs.src` lists and the others.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Project {
+    /// The name `progs.src` lists the source by, which may name a directory.
+    pub(crate) compiled: String,
+    /// The other files, each by its name from `progs.src`'s directory, in order.
+    pub(crate) files: Vec<(String, String)>,
+}
+
+/// The name a case's source has when it has no [`Project`].
+const SOURCE_NAME: &str = "t.qc";
+
 impl Case {
+    /// The case of `source` alone, as `t.qc`.
+    pub(crate) fn new(dialect: Dialect, source: String) -> Self {
+        Self {
+            dialect,
+            source,
+            project: None,
+        }
+    }
+
     /// The case's key in [`FIXTURE`].
     fn key(&self) -> String {
-        format!("{}|{}", dialect_name(self.dialect), self.source)
+        let mut key = format!("{}|", dialect_name(self.dialect));
+        if let Some(project) = &self.project {
+            key.push_str(&project.compiled);
+            key.push('|');
+        }
+        key.push_str(&self.source);
+        for (name, text) in self.project.iter().flat_map(|p| &p.files) {
+            key.push_str(&format!("|{name}={text}"));
+        }
+        key
+    }
+
+    /// The text of every file of the case, the source's first.
+    fn texts(&self) -> impl Iterator<Item = &str> {
+        let others = self.project.iter().flat_map(|p| &p.files);
+        std::iter::once(self.source.as_str()).chain(others.map(|(_, text)| text.as_str()))
+    }
+
+    /// The name `progs.src` lists the source by.
+    fn compiled(&self) -> &str {
+        self.project
+            .as_ref()
+            .map_or(SOURCE_NAME, |project| project.compiled.as_str())
     }
 }
 
@@ -955,10 +1003,7 @@ pub(crate) fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for source in &sources {
-            cases.push(Case {
-                dialect,
-                source: source.clone(),
-            });
+            cases.push(Case::new(dialect, source.clone()));
         }
         let paired: Vec<&str> = PAIRED
             .iter()
@@ -973,16 +1018,13 @@ pub(crate) fn cases() -> Vec<Case> {
                         source.push_str(&format!("void() g = {first};\n"));
                     }
                     source.push_str(&format!("void() f = {first};\nvoid() f = {second};\n"));
-                    cases.push(Case { dialect, source });
+                    cases.push(Case::new(dialect, source));
                 }
             }
         }
     }
     // FTE-23.10: id's qcc has no preprocessor, so the macro cases are FTEQCC's only.
-    let fte = |source: String| Case {
-        dialect: Dialect::Fteqcc,
-        source,
-    };
+    let fte = |source: String| Case::new(Dialect::Fteqcc, source);
     for body in MACRO_BODIES {
         for use_ in MACRO_USES {
             cases.push(fte(format!("#define N {body}\nvoid() f = {use_};\n")));
@@ -1034,10 +1076,11 @@ pub(crate) fn cases() -> Vec<Case> {
                 format!("void() f = #5:{name};\n"),
                 format!("void() {name} = #5;\n"),
             ] {
-                cases.push(Case { dialect, source });
+                cases.push(Case::new(dialect, source));
             }
         }
     }
+    cases.extend(directives::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1057,6 +1100,17 @@ pub(crate) fn expected_difference(
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
+        }
+        // FTEF-14.47: an `#eof` that is not a file's first line ends the text here, where the
+        // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`
+        // open no file here, where FTEQCC refuses a missing one.
+        let refused_here_only = *oracle == Outcome::Rejected && errors.is_empty();
+        let crashed_at_eof = case.source.contains("#eof") && !case.source.starts_with("#eof");
+        let opened_a_file = case
+            .texts()
+            .any(|t| t.contains("#merge") || t.contains("#datafile"));
+        if refused_here_only && (crashed_at_eof || opened_a_file) {
+            return Some("FTEF-14.47");
         }
         // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
         // cannot cast to a function and this profile, which checks no types, accepts.
@@ -1103,9 +1157,14 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     db.set_dialect(case.dialect);
     db.set_file(
         FileId(0),
-        PathBuf::from("t.qc"),
+        PathBuf::from(case.compiled()),
         case.source.as_bytes().to_vec(),
     );
+    // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
+    for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
+        let id = FileId(index.saturating_add(1));
+        db.set_file(id, PathBuf::from(name), text.as_bytes().to_vec());
+    }
     let analysis = db.analyze_module(&ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0)],
@@ -1219,14 +1278,31 @@ fn vanilla_zero(case: &Case) -> bool {
     number.parse::<f64>().is_ok_and(|value| value == 0.0)
 }
 
-/// The oracle's outcome for `case`, compiled in `dir`.
+/// The oracle's outcome for `case`, compiled in `dir`, or for a case of a [`Project`] in a
+/// directory of its own in `dir`, made afresh, so that no file of another case is there.
 fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String> {
+    let fresh = dir.join("project");
+    let dir = if case.project.is_some() {
+        if fresh.exists() {
+            fs::remove_dir_all(&fresh).map_err(|e| format!("{}: {e}", fresh.display()))?;
+        }
+        fresh.as_path()
+    } else {
+        dir
+    };
     let write = |name: &str, text: &[u8]| {
         let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
         fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
     };
-    write("progs.src", b"progs.dat\nt.qc\n")?;
-    write("t.qc", case.source.as_bytes())?;
+    let compiled = case.compiled();
+    write("progs.src", format!("progs.dat\n{compiled}\n").as_bytes())?;
+    write(compiled, case.source.as_bytes())?;
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        write(name, text.as_bytes())?;
+    }
     let progs = dir.join("progs.dat");
     if progs.exists() {
         fs::remove_file(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
@@ -1396,7 +1472,16 @@ impl fmt::Display for Tally {
 }
 
 fn show(case: &Case) -> String {
-    format!("{} {:?}", dialect_name(case.dialect), case.source)
+    match &case.project {
+        None => format!("{} {:?}", dialect_name(case.dialect), case.source),
+        Some(project) => format!(
+            "{} {}: {:?}, with {:?}",
+            dialect_name(case.dialect),
+            project.compiled,
+            case.source,
+            project.files
+        ),
+    }
 }
 
 /// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,

@@ -17,23 +17,17 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, FIXTURE, Outcome, Tally, bound, cases, check, compare, expected_difference, oracle,
-    profile, read_fixture,
+    Case, FIXTURE, Outcome, Project, Tally, bound, cases, check, compare, expected_difference,
+    oracle, profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
 fn fte(source: &str) -> Case {
-    Case {
-        dialect: Dialect::Fteqcc,
-        source: source.to_owned(),
-    }
+    Case::new(Dialect::Fteqcc, source.to_owned())
 }
 
 fn vanilla(source: &str) -> Case {
-    Case {
-        dialect: Dialect::Vanilla,
-        source: source.to_owned(),
-    }
+    Case::new(Dialect::Vanilla, source.to_owned())
 }
 
 fn bound_as(number: i32, name: &str) -> Outcome {
@@ -476,20 +470,47 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let dir = command.get_current_dir().unwrap().to_path_buf();
         let fteqcc = command.get_program() == "fteqcc";
         assert_eq!(command.get_args().count(), usize::from(fteqcc));
-        assert_eq!(
-            fs::read(dir.join("progs.src")).unwrap(),
-            b"progs.dat\nt.qc\n"
-        );
+        let list = fs::read_to_string(dir.join("progs.src")).unwrap();
+        let compiled = list.strip_prefix("progs.dat\n").unwrap().trim_end();
         assert!(!dir.join("progs.dat").exists());
+        let dialect = if fteqcc {
+            Dialect::Fteqcc
+        } else {
+            Dialect::Vanilla
+        };
+        let source = fs::read_to_string(dir.join(compiled)).unwrap();
+        let mut files = Vec::new();
+        written(&dir, &dir, &mut files);
+        files.retain(|(name, _)| name != "progs.src" && name != compiled);
+        files.sort();
+        let project = (dir.ends_with("project")).then(|| Project {
+            compiled: compiled.to_owned(),
+            files,
+        });
         let case = Case {
-            dialect: if fteqcc {
-                Dialect::Fteqcc
-            } else {
-                Dialect::Vanilla
-            },
-            source: fs::read_to_string(dir.join("t.qc")).unwrap(),
+            dialect,
+            source,
+            project,
         };
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
+    }
+}
+
+/// Each file under `dir`, by its name from `root` with `/` between its parts, and its text.
+fn written(root: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            written(root, &path, files);
+            continue;
+        }
+        let parts: Vec<String> = path
+            .strip_prefix(root)
+            .unwrap()
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        files.push((parts.join("/"), fs::read_to_string(&path).unwrap()));
     }
 }
 
@@ -700,14 +721,12 @@ fn oracle_reads_the_first_error() {
             stderr: stdout.to_owned(),
             ..Reply::default()
         });
-        let case = Case {
-            dialect: if fteqcc {
-                Dialect::Fteqcc
-            } else {
-                Dialect::Vanilla
-            },
-            source: "void() f = #5;\n".to_owned(),
+        let dialect = if fteqcc {
+            Dialect::Fteqcc
+        } else {
+            Dialect::Vanilla
         };
+        let case = Case::new(dialect, "void() f = #5;\n".to_owned());
         assert_eq!(
             oracle(&fake_oracles(&dir, &fake), &dir, &case).unwrap(),
             outcome,
