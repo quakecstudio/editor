@@ -332,8 +332,9 @@ dialect features (P2-01, P2-03).
   and a name, because a vanilla `#` is always followed by a number (QC-13.3), so the
   preprocessor changes nothing for vanilla code.
 - **QC-9.2** `#include "path"` replaces the directive with the contents of the named file,
-  resolved relative to the directory of the file containing the directive. Diagnostics and
-  statements in the included text carry the included file's name and lines.
+  resolved relative to the directory of the file containing the directive, or, when no file is
+  there, as QC-9.19 says. Diagnostics and statements in the included text carry the included
+  file's name and lines.
 - **QC-9.3** `#define NAME` and `#define NAME text` define an object-like macro whose body is
   the rest of the line, trimmed. `#define NAME(a, b) text`, with the `(` directly after the
   name, defines a function-like macro. A later identical `#define` of the same name is
@@ -436,6 +437,14 @@ dialect features (P2-01, P2-03).
   either bound is "macro expansion too large" (`E0120`, QCD-8.13), reported once, and it and later
   uses are left as written. id's `qcc` has no macros (QC-9), so the bound is this project's own,
   that no file exhausts the memory of the semantic model, which preprocesses on every edit.
+- **QC-9.19** An `#include` whose path names no readable file beside the file containing it is
+  looked for in the module's include directories (`include_dirs`, PRJ-5.2), in order, as the
+  project graph finds it, and the first that names a readable file is read; a path that is not
+  relative is looked for only where it names. When none is readable it is QC-9.11's error, which
+  names the path beside the including file. So a module whose `quakec.toml` gives
+  `include_dirs = ["lib"]` reads `lib/inc.qh` for `#include "inc.qh"` in `src/main.qc`, and
+  `src/inc.qh` when that exists. id's `qcc` has no `#include` (QC-9), and FTEQCC's own search is
+  `dialect-fteqcc.md` FTEF-14.40 and FTEF-14.49.
 
 ## QC-10 Types
 

@@ -709,7 +709,9 @@ impl<L: Loader> Preprocessor<L> {
 
     /// Gives the module's include directories, FTEQCC's `-I` options (PRJ-5.2). In an FTEQCC
     /// dialect they are the first include directories, before any `#pragma includedir` one,
-    /// and are given again before the second autoprototyping pass (FTEF-14.49).
+    /// and are given again before the second autoprototyping pass (FTEF-14.49); in the vanilla
+    /// dialect an `#include` not found beside the file holding it is looked for in them, in
+    /// order (QC-9.19).
     #[must_use]
     pub fn with_include_dirs(mut self, dirs: &[PathBuf]) -> Self {
         self.command_line_dirs = dirs
@@ -1214,8 +1216,8 @@ impl<L: Loader> Preprocessor<L> {
         self.macros.insert(name.clone(), Rc::new(mac));
     }
 
-    /// `#include` in the vanilla dialect (QC-9.2), with the errors of QC-9.9 and QC-9.11; under
-    /// FTEQCC `fte_directive` reads it (FTEF-14.40).
+    /// `#include` in the vanilla dialect (QC-9.2, QC-9.19), with the errors of QC-9.9 and
+    /// QC-9.11; under FTEQCC `fte_directive` reads it (FTEF-14.40).
     fn include(&mut self, run: &mut Run, line: &[Token], whole: Span) {
         let Some(current) = run.cursors.last() else {
             return;
@@ -1234,29 +1236,48 @@ impl<L: Loader> Preprocessor<L> {
             return;
         };
         let relative = PathBuf::from(String::from_utf8_lossy(bytes).into_owned());
-        let base = current
+        let beside = current
             .path
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let path = normalize(&base.join(relative));
+        // QC-9.19: beside the including file, then in each include directory in order.
+        let mut candidates = vec![normalize(&beside.join(&relative))];
+        if relative.is_relative() {
+            for dir in &self.command_line_dirs {
+                let dir = PathBuf::from(String::from_utf8_lossy(dir).into_owned());
+                candidates.push(normalize(&dir.join(&relative)));
+            }
+        }
+        let mut first_error = None;
+        let mut found = None;
+        for candidate in &candidates {
+            match self.loader.load(candidate) {
+                Ok(bytes) => {
+                    found = Some((candidate.clone(), bytes));
+                    break;
+                }
+                Err(err) => {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        let Some((path, bytes)) = found else {
+            let shown = candidates.first().cloned().unwrap_or_default();
+            let reason = first_error.map(|e| e.to_string()).unwrap_or_default();
+            let message = format!("cannot include {}: {reason}", shown.display());
+            run.report(Code::E0111, message, FileSpan { file, span: whole });
+            return;
+        };
         if run.cursors.iter().any(|c| c.path == path) {
             let message = format!("recursive #include of {}", path.display());
             run.report(Code::E0112, message, FileSpan { file, span: whole });
             return;
         }
-        match self.loader.load(&path) {
-            Ok(bytes) => {
-                let included = self.sources.add(path.clone(), bytes);
-                let name = path.as_os_str().as_encoded_bytes().to_vec();
-                let cursor = self.cursor(included, path, name, TextStart::Included);
-                run.cursors.push(cursor);
-            }
-            Err(err) => {
-                let message = format!("cannot include {}: {err}", path.display());
-                run.report(Code::E0111, message, FileSpan { file, span: whole });
-            }
-        }
+        let included = self.sources.add(path.clone(), bytes);
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        let cursor = self.cursor(included, path, name, TextStart::Included);
+        run.cursors.push(cursor);
     }
 
     /// Expands `item` if it names a macro it may expand to (QC-9.4, QC-9.10), or in an FTEQCC
