@@ -635,8 +635,12 @@ pub struct Preprocessor<L> {
     frames_full: bool,
     /// In an FTEQCC dialect, what FTEQCC's directives keep from file to file.
     fte: FteState,
-    /// The module's include directories, FTEQCC's `-I` options (FTEF-14.49).
+    /// The module's include directories, FTEQCC's `-I` options (FTEF-14.49), as FTEQCC keeps
+    /// them, as bytes.
     command_line_dirs: Vec<Vec<u8>>,
+    /// The same directories as given, where the vanilla dialect looks for an `#include`
+    /// (QC-9.19).
+    include_dirs: Vec<PathBuf>,
 }
 
 /// The path with `.` removed and `..` folded into the component before it, so one file has
@@ -677,6 +681,7 @@ impl<L: Loader> Preprocessor<L> {
             frames_full: false,
             fte: FteState::default(),
             command_line_dirs: Vec::new(),
+            include_dirs: Vec::new(),
         }
     }
 
@@ -715,6 +720,7 @@ impl<L: Loader> Preprocessor<L> {
     /// order (QC-9.19).
     #[must_use]
     pub fn with_include_dirs(mut self, dirs: &[PathBuf]) -> Self {
+        self.include_dirs = dirs.to_vec();
         self.command_line_dirs = dirs
             .iter()
             .map(|dir| dir.as_os_str().as_encoded_bytes().to_vec())
@@ -1245,8 +1251,7 @@ impl<L: Loader> Preprocessor<L> {
         // QC-9.19: beside the including file, then in each include directory in order.
         let mut candidates = vec![normalize(&beside.join(&relative))];
         if relative.is_relative() {
-            for dir in &self.command_line_dirs {
-                let dir = PathBuf::from(String::from_utf8_lossy(dir).into_owned());
+            for dir in &self.include_dirs {
                 candidates.push(normalize(&dir.join(&relative)));
             }
         }

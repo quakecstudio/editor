@@ -2,23 +2,25 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_Precompiler, QCC_PR_NewLine, QCC_PR_LexWhitespace, QCC_PR_Lex, QCC_PR_LexString, QCC_PR_LexVector, QCC_PR_LexPunctuation
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_Precompiler, QCC_PR_NewLine, QCC_PR_LexWhitespace
 
 //! The project graph's reading of a file of an FTEQCC module (`docs/spec/project-file.md`
 //! PRJ-5.13, PRJ-5.14): the directives that decide which files are read, run by the reader the
-//! preprocessor runs them with (FTEF-14.33 to FTEF-14.47), and the code between them passed over
-//! a token at a time, as `QCC_PR_Lex` reads it, so that a directive is met where FTEQCC meets
-//! one. The graph opens the files; [`FteFileReader::next`] says what it met.
+//! preprocessor runs them with (FTEF-14.33 to FTEF-14.47), and the code between them read as the
+//! preprocessor reads it, a token of the lexer at a time, so that a directive is met where the
+//! preprocessor meets one. The graph opens the files; [`FteFileReader::next`] says what it met.
 
 use std::collections::HashMap;
 
+use qc_lexer::{Dialect, Punct, TokenKind};
+
 use super::{
-    Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, byte_at, condition,
-    elif_defined, lossy, read, simple_get_token, skip_blanks, skip_side, skip_to_end_of_line,
-    whitespace,
+    Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, TextStart, byte_at,
+    condition, elif_defined, lossy, read, simple_get_token, skip_side, skip_to_end_of_line,
+    starts_line, whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
-use crate::{FileId, Variadic};
+use crate::{FileId, TokenStream, Variadic};
 
 /// The UTF-8 byte order mark, which FTEQCC's `QCC_LoadFile` skips (PRJ-5.1).
 const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
@@ -139,11 +141,10 @@ struct Lines {
 }
 
 impl Lines {
-    /// The 1-based line of `offset` in `text`: one more than the line feeds before it.
+    /// The 1-based line of `offset` in `text`: one more than the line feeds before it. The
+    /// reader asks for the lines of its directives and words in the order it meets them, so
+    /// `offset` is never before the one asked for last.
     fn line(&mut self, text: &[u8], offset: usize) -> u32 {
-        if offset < self.at {
-            *self = Self::default();
-        }
         let between = text.get(self.at..offset).unwrap_or_default();
         let feeds = between.iter().filter(|&&b| b == b'\n').count();
         self.line = self
@@ -155,13 +156,19 @@ impl Lines {
 }
 
 /// One file of an FTEQCC module, read as FTEQCC reads it for the project graph (PRJ-5.13).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct FteFileReader {
     text: Vec<u8>,
+    /// The file's tokens, as the preprocessor lexes them, which the code is read by.
+    stream: TokenStream,
     /// Where reading goes on.
     at: usize,
-    /// How the file starts, until its start is read.
-    start: Option<FileStart>,
+    /// Where the code is read from again, as the preprocessor reads on after a directive, when
+    /// reading moved by other than a token: the tokens are lexed again from there.
+    resume: Option<usize>,
+    /// How the file starts, which decides whether a `#` before its first line break is a
+    /// directive's (FTEF-14.34).
+    start: TextStart,
     /// The readings directives started that are open, innermost last.
     modes: Vec<Mode>,
     /// Whether the text has ended: at its end, or at a directive that ends it.
@@ -179,9 +186,14 @@ impl FteFileReader {
             None => text,
         };
         Self {
+            stream: TokenStream::lex(&text, Dialect::Fteqcc),
             text,
             at: 0,
-            start: Some(start),
+            resume: None,
+            start: match start {
+                FileStart::Compiled => TextStart::Compiled,
+                FileStart::Included => TextStart::Included,
+            },
             modes: Vec::new(),
             ended: false,
             lines: Lines::default(),
@@ -197,23 +209,13 @@ impl FteFileReader {
             if self.ended {
                 return self.close_innermost_list();
             }
-            let found = match self.start.take() {
-                // FTEF-14.34: a compiled file's start is a line's after its spaces and tabs; an
-                // included file's first byte is read as a directive's `#` with none skipped.
-                Some(start) => {
-                    let first = match start {
-                        FileStart::Compiled => skip_blanks(&self.text, 0),
-                        FileStart::Included => 0,
-                    };
-                    if byte_at(&self.text, first) == Some(b'#') {
-                        Gap::LineStart(first)
-                    } else {
-                        whitespace(&self.text, 0)
-                    }
+            if self.modes.is_empty() {
+                if let Some(event) = self.code(state) {
+                    return Some(event);
                 }
-                None => whitespace(&self.text, self.at),
-            };
-            let word = match found {
+                continue;
+            }
+            let word = match whitespace(&self.text, self.at) {
                 Gap::Text(at) => at,
                 Gap::LineStart(hash) => match read(&self.text, hash) {
                     Some(directive) => {
@@ -236,6 +238,32 @@ impl FteFileReader {
         }
     }
 
+    /// Reads the next token of the code as the preprocessor reads it (`Preprocessor::next_item`):
+    /// a `#` that starts a line, as FTEF-14.34 says, starts a directive, which is run; any other
+    /// token is passed over.
+    fn code(&mut self, state: &mut ModuleState) -> Option<FteEvent> {
+        if let Some(at) = self.resume.take() {
+            self.stream.resume_at(&self.text, at, Dialect::Fteqcc);
+        }
+        let Some(token) = self.stream.tokens.get(self.stream.pos) else {
+            self.ended = true;
+            return None;
+        };
+        let (hash, end) = (token.span.start, token.span.end);
+        let directive = (token.kind == TokenKind::Punct(Punct::Hash)
+            && starts_line(&self.text, hash, self.start))
+        .then(|| read(&self.text, hash))
+        .flatten();
+        let Some(directive) = directive else {
+            self.stream.pos = self.stream.pos.saturating_add(1);
+            self.at = end;
+            return None;
+        };
+        let event = self.run(state, hash, directive);
+        self.resume = Some(self.at);
+        event
+    }
+
     /// At the end of the text, drops the innermost open `#includelist` and the readings inside
     /// it: "eof in includelist" (FTEF-14.41); `None` when no list is open.
     fn close_innermost_list(&mut self) -> Option<FteEvent> {
@@ -248,12 +276,12 @@ impl FteFileReader {
         None
     }
 
-    /// Reads the word at `at`, which is in the text, as the innermost reading reads it.
+    /// Reads the word at `at`, which is in the text, as the innermost reading reads it; the
+    /// code outside any reading is [`Self::code`]'s.
     fn word(&mut self, at: usize) -> Option<FteEvent> {
         match self.modes.last() {
-            None => self.at = skip_token(&self.text, at),
             // FTEF-14.44: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
-            Some(Mode::DontCompile) => self.at = at.saturating_add(1),
+            None | Some(Mode::DontCompile) => self.at = at.saturating_add(1),
             // FTEF-14.41: a word `QCC_PR_SimpleGetToken` reads, `#endlist` ending the list.
             Some(Mode::List { .. }) => {
                 let (word, stop) = simple_get_token(&self.text, at);
@@ -265,6 +293,7 @@ impl FteFileReader {
                 if name == b"#endlist" {
                     self.modes.pop();
                     self.at = skip_to_end_of_line(&self.text, stop, Junk::Checked).at;
+                    self.resume = Some(self.at);
                     return None;
                 }
                 self.at = stop;
@@ -372,15 +401,14 @@ impl FteFileReader {
             Directive::Eof | Directive::Package { .. } => self.ended = true,
             Directive::Output { name, end } => {
                 self.at = end.at;
-                let name = text.get(name?)?.to_vec();
-                return Some(FteEvent::Output { name, line });
+                return Some(FteEvent::Output { name: name?, line });
             }
             Directive::IncludeList { end } => self.open(Mode::List { line }, end.at),
             Directive::Include { name, end } => {
                 self.at = end.at;
                 // `if (!*newfile) return;`: an empty name includes nothing; in the text
                 // `DONT_COMPILE_THIS_FILE` passes over, the file compiles nothing (PRJ-5.14).
-                if self.modes.last() == Some(&Mode::DontCompile) {
+                if self.modes.contains(&Mode::DontCompile) {
                     return None;
                 }
                 let name = name.ok().filter(|name| !name.is_empty())?;
@@ -426,114 +454,5 @@ impl FteFileReader {
             Skipped::Endif(end) => self.at = end,
             Skipped::Eof => self.ended = true,
         }
-    }
-}
-
-/// Whether `QCC_PR_LexName` reads `byte` as part of a name: a letter, a digit, `_`, or a byte
-/// of 0x80 or more.
-const fn name_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_' || byte >= 0x80
-}
-
-/// The offset after the token `QCC_PR_Lex` reads at `at`, a byte that is in the text and is no
-/// white space and starts no comment (PRJ-5.13): a string, read as `QCC_PR_LexString` reads
-/// it; a character constant; a name; a number; a `\` and a line break, which
-/// `QCC_PR_LexPunctuation` passes over with no `QCC_PR_NewLine`; or one byte. A vector's `'` is
-/// one byte, as `QCC_PR_LexVector` reads its numbers after white space the directives in it run
-/// in.
-fn skip_token(text: &[u8], at: usize) -> usize {
-    let rest = text.get(at..).unwrap_or_default();
-    let next = at.saturating_add(1);
-    match rest {
-        [b'R', b'"', ..] => raw_string_end(text, at.saturating_add(2)),
-        [b'"', ..] => string_end(text, next),
-        [b'Q' | b'u' | b'U', b'"', ..] => string_end(text, at.saturating_add(2)),
-        [b'u', b'8', b'"', ..] => string_end(text, at.saturating_add(3)),
-        [b'\'', b'\\', ..] => quote_end(text, at.saturating_add(3)),
-        [b'\'', _, b'\'', ..] => at.saturating_add(3),
-        // `pr_file_p+=b+1;` after the UTF-8 code point `utf8_check` reads.
-        [b'\'', lead @ 0x80..=0xff, ..] => at.saturating_add(utf8_len(*lead)).saturating_add(2),
-        [b'\\', b'\r', b'\n', ..] => at.saturating_add(3),
-        [b'\\', b'\r' | b'\n', ..] => at.saturating_add(2),
-        [first, ..]
-            if first.is_ascii_digit()
-                || (*first == b'.' && rest.get(1).is_some_and(u8::is_ascii_digit)) =>
-        {
-            let len = rest
-                .iter()
-                .skip(1)
-                .take_while(|&&b| name_byte(b) || b == b'.')
-                .count();
-            next.saturating_add(len)
-        }
-        [first, ..] if name_byte(*first) => {
-            let len = rest.iter().take_while(|&&b| name_byte(b)).count();
-            at.saturating_add(len)
-        }
-        _ => next,
-    }
-}
-
-/// The offset after the `"` that closes a string whose text starts at `at`: a `\` escapes the
-/// byte after it, and a line break ends the string where `QCC_PR_LexString` reports "newline
-/// inside quote", reading going on at the break.
-fn string_end(text: &[u8], mut at: usize) -> usize {
-    while let Some(byte) = byte_at(text, at) {
-        match byte {
-            b'"' => return at.saturating_add(1),
-            b'\n' => return at,
-            b'\\' => at = at.saturating_add(2),
-            _ => at = at.saturating_add(1),
-        }
-    }
-    at.min(text.len())
-}
-
-/// The offset after a raw string `R"delim(...)delim"` whose delimiter starts at `at`, which
-/// may span lines; the end of the text when it does not close.
-fn raw_string_end(text: &[u8], at: usize) -> usize {
-    let rest = text.get(at..).unwrap_or_default();
-    let Some(open) = rest.iter().position(|&b| b == b'(' || b == 0) else {
-        return text.len();
-    };
-    if rest.get(open) != Some(&b'(') {
-        return text.len();
-    }
-    let mut close = vec![b')'];
-    close.extend_from_slice(rest.get(..open).unwrap_or_default());
-    close.push(b'"');
-    let body = open.saturating_add(1);
-    rest.get(body..)
-        .and_then(|tail| {
-            tail.windows(close.len())
-                .position(|w| w == close.as_slice())
-        })
-        .map_or(text.len(), |found| {
-            at.saturating_add(body)
-                .saturating_add(found)
-                .saturating_add(close.len())
-        })
-}
-
-/// The offset after the `'` that closes an escaped character constant, from `at`, on its line.
-fn quote_end(text: &[u8], at: usize) -> usize {
-    let mut at = at;
-    while let Some(byte) = byte_at(text, at) {
-        match byte {
-            b'\'' => return at.saturating_add(1),
-            b'\n' => return at,
-            _ => at = at.saturating_add(1),
-        }
-    }
-    at.min(text.len())
-}
-
-/// The bytes of the UTF-8 sequence `lead` starts, 1 for a byte that starts none.
-const fn utf8_len(lead: u8) -> usize {
-    match lead {
-        0xc0..=0xdf => 2,
-        0xe0..=0xef => 3,
-        0xf0..=0xf7 => 4,
-        _ => 1,
     }
 }

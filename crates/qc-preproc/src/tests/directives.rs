@@ -226,8 +226,8 @@ fn directive_names_match_by_their_first_bytes() {
         );
     }
     assert!(matches!(
-        directive("#output  \"p.dat\""),
-        Some(Directive::Output { name: Some(name), .. }) if name == (10..15)
+        directive("#output \x0b\"p\\\\\\n.dat\""),
+        Some(Directive::Output { name: Some(name), .. }) if name == b"p\\\n.dat"
     ));
     assert!(matches!(
         directive("#output"),

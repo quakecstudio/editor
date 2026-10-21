@@ -324,13 +324,14 @@ fn the_text_ends_where_fteqcc_ends_it() {
     );
 }
 
-// spec PRJ-5.14: an `#include` in the text `DONT_COMPILE_THIS_FILE` passes over brings in no file
+// spec PRJ-5.14: an `#include` in the text `DONT_COMPILE_THIS_FILE` passes over brings in no file,
+// in an `#includelist` there too, whose entries are still compiled
 #[test]
 fn an_include_that_is_not_compiled_brings_nothing_in() {
     assert!(brought("#pragma DONT_COMPILE_THIS_FILE\n#include \"a\"\n").is_empty());
     assert_eq!(
-        brought("#pragma DONT_COMPILE_THIS_FILE\n#includelist\n#include \"a\"\n#endlist\n"),
-        ["a"]
+        brought("#pragma DONT_COMPILE_THIS_FILE\n#includelist\n#include \"a\"\nb\n#endlist\n"),
+        ["b"]
     );
 }
 
@@ -342,6 +343,10 @@ fn list_words_are_fteqccs() {
         (
             "#includelist\n#ifdef Q\nx.qc\n#endif\nl.qc\n#endlist\n",
             &["l.qc"][..],
+        ),
+        (
+            "#includelist\na.qc\n#ifdef Q\nb.qc\n#endif\n#endlist\n",
+            &["a.qc"],
         ),
         ("#includelist\n// c\nl.qc // x.qc\n#endlist\n", &["l.qc"]),
         ("#includelist\n/* x.qc */ l.qc\n#endlist\n", &["l.qc"]),
@@ -378,11 +383,10 @@ fn nested_lists_are_bounded() {
     assert_eq!(events(&text)[0], "entry a.qc @65");
 }
 
-// spec PRJ-5.13: code is passed over a token at a time, as `QCC_PR_Lex` reads it, so no
-// string, character constant or comment starts a directive or a comment, and a `\` before a line
-// break hides the next line's directive
+// spec PRJ-5.13: code is read a token at a time, as the preprocessor's lexer reads it, so no
+// string, character constant or comment starts a directive or a comment
 #[test]
-fn code_is_passed_over_as_qcc_pr_lex_reads_it() {
+fn code_is_read_as_the_preprocessor_lexes_it() {
     for (code, read) in [
         ("string s = \"// \\\" #\";\n", true),
         ("string s = \"/*\";\n", true),
@@ -395,8 +399,6 @@ fn code_is_passed_over_as_qcc_pr_lex_reads_it() {
         ("float c = '\\\"';\n", true),
         ("float c = '\u{e9}';\n", true),
         ("vector v = '1 2 3';\n", true),
-        ("float g; \\\n", false),
-        ("float g; \\\r\n", false),
         ("float g = 1.5e3;\n", true),
         ("float g = .5;\n", true),
         ("string s = \"a\n", true),

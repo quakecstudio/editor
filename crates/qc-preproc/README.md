@@ -32,10 +32,10 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 first (PRJ-5.12). In the vanilla dialect an `#include` not beside the file that holds it is
 looked for in the module's include directories (QC-9.19). `fte_directive/graph.rs` gives the
 project graph the same reader (`FteFileReader`, with `ModuleState` for what a module keeps from
-file to file): it runs the directives of an FTEQCC file as the preprocessor does, passes over
-the code between them a token at a time as `QCC_PR_Lex` reads it, and says which files the file
-brings in, by `#include` and `#includelist`, and which pragmas and `#output` it holds (PRJ-5.13,
-PRJ-5.14). `#if` and `#elif` use
+file to file): it runs the directives of an FTEQCC file as the preprocessor does, reads the
+code between them as the preprocessor does, a token of the lexer at a time, and says which files
+the file brings in, by `#include` and `#includelist`, and which pragmas and `#output` it holds
+(PRJ-5.13, PRJ-5.14). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10). `#pragma noref` and `#pragma autoproto` are recorded for the
 semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands

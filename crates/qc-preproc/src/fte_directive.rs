@@ -294,36 +294,49 @@ pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usiz
 }
 
 /// `QCC_PR_SimpleGetString`: after white space on the line, the `"` string from there, read to
-/// its closing quote, and where reading stopped, after the quote; nothing is read, and reading
-/// stays, at a line break, a comment or a byte that opens no string. The string's text is not
-/// kept: the directives that read one name files this profile does not open (FTEF-14.39).
-fn simple_get_string(text: &[u8], mut at: usize) -> usize {
+/// its closing quote, `pr_token`'s text (`\n`, `\r` and `\t` the bytes they name, and `\` before
+/// any other byte that byte), and where reading stopped, after the quote; nothing is read, and
+/// reading stays, at a line break, a comment, a byte that opens no string, or a string with a
+/// line break in it (FTEQCC's "new line inside string", which stops the compile).
+fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
     loop {
         let Some(byte) = byte_at(text, at) else {
-            return at.min(text.len());
+            return (None, at.min(text.len()));
         };
         if !fte_white(byte) {
             break;
         }
         if byte == b'\n' {
-            return at;
+            return (None, at);
         }
         at = at.saturating_add(1);
     }
     if byte_at(text, at) != Some(b'"') {
-        return at;
+        return (None, at);
     }
+    let mut token = Vec::new();
     let mut end = at.saturating_add(1);
     while let Some(byte) = byte_at(text, end) {
+        end = end.saturating_add(1);
         match byte {
-            // "new line inside string": FTEQCC stops the compile.
-            b'\n' => return at,
-            b'"' => return end.saturating_add(1),
-            b'\\' => end = end.saturating_add(2),
-            _ => end = end.saturating_add(1),
+            b'\n' => return (None, at),
+            b'"' => return (Some(token), end),
+            b'\\' => {
+                let Some(escaped) = byte_at(text, end) else {
+                    break;
+                };
+                end = end.saturating_add(1);
+                token.push(match escaped {
+                    b'n' => b'\n',
+                    b'r' => b'\r',
+                    b't' => b'\t',
+                    other => other,
+                });
+            }
+            other => token.push(other),
         }
     }
-    at
+    (None, at)
 }
 
 /// `QCC_PR_LexInteger`: the offset after the number at `at`, which takes the byte there
@@ -506,12 +519,9 @@ pub(crate) enum Directive {
     /// A directive that changes only the build: `#message`, `#copyright`, `#forcecrc`,
     /// `#merge` and `#datafile` (FTEF-14.39).
     Build { end: LineEnd },
-    /// `#output` and the bytes of the string after it, which names the module's output for the
+    /// `#output` and the text of the string after it, which names the module's output for the
     /// project graph (PRJ-5.6); `None` when no string follows (FTEF-14.39).
-    Output {
-        name: Option<Range<usize>>,
-        end: LineEnd,
-    },
+    Output { name: Option<Vec<u8>>, end: LineEnd },
     /// `#pack`, too many of them or not (FTEF-14.39).
     Pack { end: LineEnd, too_many: bool },
     /// `#package`, which ends the text being read once its line is read.
@@ -614,7 +624,7 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"merge") {
-        let end = simple_get_string(text, skip_blanks(text, after(5)));
+        let (_, end) = simple_get_string(text, skip_blanks(text, after(5)));
         Directive::Build {
             end: line(end, Junk::Checked),
         }
@@ -626,7 +636,8 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         read_include(text, skip_blanks(text, after(7)))
     } else if rest.starts_with(b"datafile") {
         // `pr_file_p++;` after the string, then on to the line break as bytes.
-        let end = simple_get_string(text, skip_blanks(text, after(8))).saturating_add(1);
+        let (_, end) = simple_get_string(text, skip_blanks(text, after(8)));
+        let end = end.saturating_add(1);
         let end = text
             .get(end..)
             .and_then(|rest| rest.iter().position(|&b| b == b'\n' || b == 0))
@@ -638,10 +649,9 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             },
         }
     } else if rest.starts_with(b"output") {
-        let open = skip_blanks(text, after(6));
-        let end = simple_get_string(text, open);
+        let (name, end) = simple_get_string(text, skip_blanks(text, after(6)));
         Directive::Output {
-            name: (end > open).then(|| open.saturating_add(1)..end.saturating_sub(1)),
+            name,
             end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"pragma") {

@@ -52,7 +52,8 @@ proptest! {
             qc_lexer::Dialect::Fteqcc,
             qc_lexer::Dialect::Gmqcc,
         ];
-        for (src_text, dialect) in [&root, &bytes].into_iter().flat_map(|t| dialects.map(|d| (t, d))) {
+        let inputs = [&root, &bytes].into_iter().flat_map(|t| dialects.map(|d| (t, d)));
+        for (src_text, dialect) in inputs {
             let files = [
                 ("main.src", src_text.as_str()),
                 ("a.qc", a.as_str()),
