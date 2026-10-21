@@ -1641,6 +1641,15 @@ impl<L: Loader> Preprocessor<L> {
         Some(frame.value)
     }
 
+    /// The number the FTEQCC frame macro `name` expands to, as `QCC_PR_ExpandMacro` takes it
+    /// for a reference or a `$framerestore`: [`Self::find_frame`]'s value, with its warnings,
+    /// when it is 0 or more, and none otherwise, as for a name with no macro (`if (i < 0)
+    /// QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame macro $%s", pr_token);`,
+    /// FTEF-18.30).
+    fn expand_frame(&self, run: &mut Run, name: &str, at: Here) -> Option<i32> {
+        self.find_frame(run, name, at).filter(|value| *value >= 0)
+    }
+
     /// Applies an FTEQCC `$` command to the frame numbering (FTEF-18.16).
     fn frame_command(&mut self, run: &mut Run, command: &FrameCommand, at: Here) {
         match command {
@@ -1653,7 +1662,7 @@ impl<L: Loader> Preprocessor<L> {
                 // FTEF-14.55: `pr_macrovalue = atoi(pr_token);`, FTEQCC's `int`.
                 run.frame_value = cond::fte_atoi(word.as_bytes());
             }
-            FrameCommand::Restore(name) => match self.find_frame(run, name, at) {
+            FrameCommand::Restore(name) => match self.expand_frame(run, name, at) {
                 Some(value) => run.frame_value = value,
                 None => run.report(Code::E0106, format!("Unknown frame macro ${name}"), at.0),
             },
@@ -1722,7 +1731,7 @@ impl<L: Loader> Preprocessor<L> {
             }
             TokenKind::FrameRef(word) => {
                 let value = if carry {
-                    self.find_frame(run, word, (tok.span, FrameFile::of(&tok)))
+                    self.expand_frame(run, word, (tok.span, FrameFile::of(&tok)))
                 } else {
                     let index = run.frames.iter().position(|f| f == word);
                     index.map(|i| i32::try_from(i).unwrap_or(i32::MAX))
