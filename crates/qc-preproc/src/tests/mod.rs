@@ -219,7 +219,9 @@ fn include_found_in_an_include_directory() {
         .map(|d| d.code.as_str())
         .collect();
     assert_eq!(codes, ["E0111"]);
-    assert!(outputs[0].diagnostics[0].message.contains("src/b.qh"));
+    // The message shows the path as the host writes it.
+    let message = outputs[0].diagnostics[0].message.replace('\\', "/");
+    assert!(message.contains("src/b.qh"), "{message}");
 }
 
 // spec QC-9.19: a file beside the including file is preferred to one in an include directory,
