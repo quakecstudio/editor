@@ -19,8 +19,8 @@ itself.
 `Db::analyze_module` reads a module as the compiler reads it. Each file of the module is put
 in the `Db` with its path and its text as written (`Db::set_file`); the module is preprocessed
 in compilation order through `qc-preproc` (macros expanded, the untaken side of each
-conditional dropped, includes inlined, QC-9), and each file's expansion is parsed, lowered and
-resolved. Every token of an expansion keeps its origin, its own span or the outermost macro use
+conditional dropped, includes inlined, QC-9), and each file's expansion is parsed as text with
+no directive lines (QC-9.19), lowered and resolved. Every token of an expansion keeps its origin, its own span or the outermost macro use
 (QC-9.7), so every definition, reference and diagnostic of the result is at a span of a
 source file, an included file's own where it came from one (QC-9.2). The per-file parse and
 lowering are memoized on the expanded text, so editing a macro's definition re-parses the files

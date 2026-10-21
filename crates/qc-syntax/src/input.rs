@@ -40,6 +40,16 @@ pub(crate) struct Tok {
     pub(crate) value: Option<f32>,
 }
 
+/// What a parser's input text is, which decides whether it has directive lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Text {
+    /// A source file as written: a `#` and a name first on a line open a directive line
+    /// (QC-9.1).
+    Source,
+    /// Text a preprocessor wrote, which holds no directive lines: every `#` is a token.
+    Preprocessed,
+}
+
 /// The tokens and trivia of one file.
 #[derive(Debug)]
 pub(crate) struct Input<'a> {
@@ -54,8 +64,8 @@ fn latin1(bytes: &[u8]) -> String {
 }
 
 impl<'a> Input<'a> {
-    /// Lexes `source` in `dialect` and classifies everything between the tokens.
-    pub(crate) fn new(source: &'a [u8], dialect: Dialect) -> Self {
+    /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
+    pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
         let lexed = lex_with(source, dialect);
         let mut input = Self {
             source,
@@ -80,7 +90,10 @@ impl<'a> Input<'a> {
             }
             input.gap(at, token.span.start);
             at = token.span.end;
-            if directive_line.is_none() && starts_directive(source, &lexed_tokens, index) {
+            if text == Text::Source
+                && directive_line.is_none()
+                && starts_directive(source, &lexed_tokens, index)
+            {
                 input.pieces.push(Piece::OpenDirective);
                 directive_line = Some(token.span.start);
             }

@@ -828,35 +828,12 @@ impl<L: Loader> Preprocessor<L> {
         // A use `try_expand` refused, a function-like macro's with no or a bad argument list,
         // goes out as it is: tried again, it would report its error again.
         let next = self.try_expand(run, next)?;
-        // FTEF-14.34: a `#` first on its line before a word that names no macro is FTEQCC's
-        // "Explicit precompiler usage when not defined NAME". The parser reports such a `#` in
-        // the rest of a line as E0209 (FTE-23.10); one that starts a line it would read as a
-        // directive's, which a profile's text no longer holds, and drop.
-        if let TokenKind::Name(name) = &next.tok.kind
-            && !self.macros.contains_key(name)
-            && self.starts_output_line(run, &item.tok)
-        {
-            let message = format!("Explicit precompiler usage when not defined {name}");
-            run.report(Code::E0121, message, item.tok.span);
-        }
+        // FTEF-14.34: a `#` before a word that names no macro is FTEQCC's "Explicit precompiler
+        // usage when not defined NAME", which the parser reports where it reads the `#`, as
+        // E0209 in a builtin initialiser (FTE-23.10, QC-9.19).
         self.emit(run, item.tok);
         self.emit(run, next.tok);
         None
-    }
-
-    /// Whether `token`, a token of no expansion, stands first on its line of the output: no
-    /// token was written before it, or the last one written stands on another line or file.
-    fn starts_output_line(&self, run: &Run, token: &PpToken) -> bool {
-        if token.expansion.is_some() {
-            return false;
-        }
-        let Some(last) = run.out.tokens.last() else {
-            return true;
-        };
-        let last = self.origin(last);
-        last.file != token.span.file
-            || self.line(last.file, last.span.start)
-                != self.line(token.span.file, token.span.span.start)
     }
 
     fn cursor(&self, file: FileId, path: PathBuf, name: Vec<u8>, start: TextStart) -> Cursor {

@@ -411,7 +411,7 @@ impl Db {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_with(text, self.dialect);
+        let parse = qc_syntax::parse_preprocessed(text, self.dialect);
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {

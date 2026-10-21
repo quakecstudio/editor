@@ -903,10 +903,9 @@ profile the preprocessor reads them as FTEQCC does.
   `#defined`, `#iffy`, `#elsewhere`, `#endiff`, `#eofx`, `#errors`, `#includes` and `#pragmas`
   are those directives. A name that matches none, `#endlist` and `#foo` among them, leaves the
   `#` to be read as code (FTE-23.10), `#NAME` a macro's use, and FTEQCC's "Explicit precompiler
-  usage when not defined NAME" when `NAME` is no macro: the preprocessor reports that as `E0121`
-  for a `#` that stands first on its line of the output, as after a comment at a line's start,
-  where the semantic model would read the line as a directive's and drop it, and the parser
-  reports the rest as `E0209` (FTE-23.10). Each directive's operand is read
+  usage when not defined NAME" when `NAME` is no macro, which this profile refuses where the
+  parser reads the `#`, first on its line of the output too (QC-9.19): `E0209` in a builtin
+  initialiser (FTE-23.10), the parser's other errors elsewhere. Each directive's operand is read
   from its name's end as its own name's length gives it (`pr_file_p = directive+5;` for
   `undef`), so `#undefine N` undefines `ine`.
 - **FTEF-14.35** After a directive's operand `QCC_PR_SkipToEndOfLine` reads to its line's break,
