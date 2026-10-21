@@ -3,10 +3,23 @@
 //! Incremental model tests: an edit re-runs only the dependent queries (GOAL-1).
 //!
 //! These assert the second acceptance criterion of the issue directly, through the query
-//! counters [`crate::db::QueryCounts`].
+//! counters [`crate::db::QueryCounts`]. No test here cites a spec statement: incremental
+//! recomputation is a requirement on this compiler (GOAL-1 in `plan/requirements.yaml`), not a
+//! behaviour of id's `qcc` or the engine that `docs/spec/` describes.
 
-use crate::db::Db;
+use crate::db::{Db, QueryCounts};
 use crate::symbol::{DefId, FileId};
+
+/// The parses, lowerings and module resolutions run between `before` and `after`. The
+/// counters only grow, so a smaller `after` is a failed test.
+fn reruns(before: QueryCounts, after: QueryCounts) -> (u64, u64, u64) {
+    let ran = |b: u64, a: u64| a.checked_sub(b).expect("a query counter went down");
+    (
+        ran(before.parse, after.parse),
+        ran(before.lower, after.lower),
+        ran(before.module_index, after.module_index),
+    )
+}
 
 /// A two-file module in a fresh database, resolved once so every query is cached.
 fn seeded() -> (Db, Vec<FileId>) {
@@ -54,11 +67,9 @@ fn editing_one_file_relowers_only_that_file() {
     );
     db.module_index(&files);
     let after = db.counts();
-    // Exactly one file re-parsed and re-lowered: the edited one.
-    assert_eq!(after.parse - before.parse, 1);
-    assert_eq!(after.lower - before.lower, 1);
-    // The module was re-resolved once, since one of its files changed.
-    assert_eq!(after.module_index - before.module_index, 1);
+    // Exactly one file re-parsed and re-lowered, the edited one, and the module re-resolved
+    // once, since one of its files changed.
+    assert_eq!(reruns(before, after), (1, 1, 1));
 }
 
 #[test]
@@ -68,9 +79,7 @@ fn editing_the_other_file_relowers_only_it() {
     db.set_file_text(FileId(0), b"float shared;\nvoid() helper = { };".to_vec());
     db.module_index(&files);
     let after = db.counts();
-    assert_eq!(after.parse - before.parse, 1);
-    assert_eq!(after.lower - before.lower, 1);
-    assert_eq!(after.module_index - before.module_index, 1);
+    assert_eq!(reruns(before, after), (1, 1, 1));
 }
 
 #[test]
@@ -129,6 +138,5 @@ fn setting_identical_text_still_advances_but_recomputes_once() {
     );
     db.module_index(&files);
     let after = db.counts();
-    assert_eq!(after.parse - before.parse, 1);
-    assert_eq!(after.lower - before.lower, 1);
+    assert_eq!(reruns(before, after), (1, 1, 1));
 }

@@ -29,7 +29,7 @@ use serde_json::Value;
 
 use crate::exec::{Exec, System};
 use crate::oracles::{COVERAGE_ENV, vm_oracle};
-use crate::test_code::{TestCode, test_code};
+use crate::test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
 /// The date-pinned nightly that measures branch coverage, the only check that
 /// needs nightly. The `Readiness` workflow installs the same toolchain, and a
@@ -1033,34 +1033,41 @@ fn cited_in_tests(root: &Path) -> Result<BTreeSet<String>, String> {
     let mut files = Vec::new();
     for tree in CITING_TREES {
         for file in rust_files(&root.join(tree))? {
+            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
+            // The fixture repositories cite their own statements, as the ratchet skips them.
+            if relative.starts_with(FIXTURES) {
+                continue;
+            }
             let text = fs::read_to_string(&file)
                 .map_err(|error| format!("{}: {error}", file.display()))?;
-            let relative = file.strip_prefix(root).unwrap_or(&file).to_path_buf();
             files.push((relative, text));
         }
     }
     let mut cited = BTreeSet::new();
-    for ((_, text), code) in files.iter().zip(test_code(&files)) {
-        cited.extend(citations(text, &code));
+    for ((path, text), code) in files.iter().zip(test_code(&files)) {
+        cited.extend(citations(path, text, &code)?);
     }
     Ok(cited)
 }
 
 /// Statement IDs cited by lines of `code` whose first text is
-/// `// spec <ID>, <ID>: ...`; a `// spec` line outside test code cites nothing.
-pub(crate) fn citations(text: &str, code: &TestCode) -> Vec<String> {
+/// `// spec <ID>, <ID>: ...`. A `// spec` line outside test code cites
+/// nothing, so it is an error naming `path` and the line, as the
+/// spec-citation ratchet in `qs-tests` reports it (`docs/spec/README.md`).
+pub(crate) fn citations(path: &Path, text: &str, code: &TestCode) -> Result<Vec<String>, String> {
     let mut ids = Vec::new();
     for (line, number) in text.lines().zip(1_u32..) {
         let Some(rest) = line.trim_start().strip_prefix("// spec ") else {
             continue;
         };
         if !code.contains(number) {
-            continue;
+            let file = path.to_string_lossy().replace('\\', "/");
+            return Err(shipped_citation(&file, number, rest));
         }
         let list = rest.split_once(':').map_or(rest, |(list, _)| list);
         ids.extend(list.split(',').map(|id| id.trim().to_owned()));
     }
-    ids
+    Ok(ids)
 }
 
 /// What a crate README claims: whole sections, single statements, and the

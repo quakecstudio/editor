@@ -1380,14 +1380,8 @@ FTEF-18.5.
   (".."))` as two field levels ("so we don't end up with the user specifying '. .vector
   blah'"), and a number ends before `..`: `QCC_PR_LexNumber` takes a fraction only
   `else if (c == '.' && pr_file_p[1]!='.')`, so `1..5` is `1`, `..` and `5`.
-- **FTEF-18.19** A frame cycle (FTEF-18.4's form), `[++ first .. last]` or `[-- first .. last]`
-  (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`), has `first` and `last`
-  as expressions separated by `QCC_PR_Expect("..")`; `(w)` or `(W)` after the `++` or `--`
-  cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). Two constant frames against the
-  direction, `if (first->_float > last->_float)` after `++` or `<` after `--`, are the error
-  `E0212` "Forwards State Cycle with backwards range": FTEQCC's `QCC_PR_ParseWarning` with
-  `ERR_STATETYPEMISMATCH`, an error code, prints an error. This profile compares two frames
-  written as single numbers.
+- **FTEF-18.19** **Withdrawn** 2026-10-20 (P2-93): it named its form after the withdrawn
+  FTEF-18.4; replaced by FTEF-18.28.
 - **FTEF-18.20** The sequences of FTEF-18.5 are read wherever FTEQCC reads an expression with
   no `EXPR_DISALLOW_COMMA` at `TOP_PRIORITY`: a returned value and `return =`
   (`e = QCC_PR_Expression (TOP_PRIORITY, 0);`), the conditions of `if`, `while`, `until`, `do`
@@ -1499,6 +1493,14 @@ FTEF-18.5.
   resolves under this profile writes one.
 
   Under the vanilla profile none of this is reported.
+- **FTEF-18.28** A frame cycle, `[++ first .. last]` or `[-- first .. last]`
+  (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`), has `first` and `last`
+  as expressions separated by `QCC_PR_Expect("..")`; `(w)` or `(W)` after the `++` or `--`
+  cycles `weaponframe` instead of `frame` (`OP_CWSTATE`). Two constant frames against the
+  direction, `if (first->_float > last->_float)` after `++` or `<` after `--`, are the error
+  `E0212` "Forwards State Cycle with backwards range": FTEQCC's `QCC_PR_ParseWarning` with
+  `ERR_STATETYPEMISMATCH`, an error code, prints an error. This profile compares two frames
+  written as single numbers.
 
 ### Test vectors
 

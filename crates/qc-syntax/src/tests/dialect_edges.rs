@@ -499,7 +499,7 @@ fn cast_shapes() {
     assert!(!cast("a = (Thing(Other o {)) b;"));
 }
 
-// spec FTEF-18.19: a cycle whose two constant frames are equal runs either way
+// spec FTEF-18.28: a cycle whose two constant frames are equal runs either way
 // spec QCD-3.12: E0212 only for a range against the cycle's direction
 #[test]
 fn equal_frame_cycles_are_no_error() {

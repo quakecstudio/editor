@@ -497,8 +497,8 @@ fn free_again_moves_freetime_and_restarts_the_delay() {
     store.free(2, 4.0); // freetime 4
     store.free(2, 4.4); // freed again: freetime 4.4, delay restarts
     assert_eq!(store.freetime(2), Some(4.4));
-    // At 4.6 only 0.2 seconds have passed since 4.4: edict 2 is not reused, so edict 3's
-    // slot... edict 3 is in use, so allocation takes num_edicts (4).
+    // At 4.6 only 0.2 seconds have passed since 4.4, so edict 2 is not reused, and edict 3 is
+    // in use, so allocation takes num_edicts (4).
     assert_eq!(store.alloc(4.6), Ok(4));
     // At 5.0, 0.6 seconds since 4.4: edict 2 is reused.
     assert_eq!(store.alloc(5.0), Ok(2));
@@ -517,23 +517,6 @@ fn clear_edict_zeroes_fields_and_clears_free() {
     store.clear_edict(2);
     assert_eq!(store.is_free(2), Some(false));
     assert!(store.fields(2).unwrap().iter().all(|s| *s == Slot(0)));
-}
-
-// ---- EDICT-3.5 is cited by xtask; here only the boundary the store enforces ----
-
-// spec EDICT-3.3: the field-count floor; the ceiling is EDICT_MAX_FIELDS (EDICT-3.5, cited by
-// the oracle scenarios). The store refuses a count above the ceiling.
-#[test]
-fn too_many_fields_is_refused() {
-    assert_eq!(EDICT_MAX_FIELDS, 894_760);
-    let err = EdictLayout::new(EDICT_MAX_FIELDS + 1, GLOBALS_128).unwrap_err();
-    assert_eq!(
-        err,
-        LayoutError::FieldsTooMany {
-            fields: EDICT_MAX_FIELDS + 1
-        }
-    );
-    assert!(EdictLayout::new(EDICT_MAX_FIELDS, GLOBALS_128).is_ok());
 }
 
 // ---- store housekeeping ----
@@ -610,10 +593,11 @@ fn edict_error_messages() {
     );
 }
 
-// spec EDICT-3.5: a field count above EDICT_MAX_FIELDS is refused with FieldsTooMany, the
-// guard that keeps the edict size inside an i32 entity value.
+// spec EDICT-3.5: a field count above EDICT_MAX_FIELDS (894760) is refused with FieldsTooMany,
+// the guard that keeps the edict size inside an i32 entity value; the limit itself is allowed.
 #[test]
 fn too_many_fields_at_the_limit() {
+    assert_eq!(EDICT_MAX_FIELDS, 894_760);
     assert!(EdictLayout::new(EDICT_MAX_FIELDS, GLOBALS_128).is_ok());
     let err = EdictLayout::new(EDICT_MAX_FIELDS + 1, GLOBALS_128).unwrap_err();
     assert_eq!(

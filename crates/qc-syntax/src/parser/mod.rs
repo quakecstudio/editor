@@ -277,7 +277,7 @@ impl<'a> Parser<'a> {
         let Some(tok) = self.nth(n) else {
             return false;
         };
-        // `..T`, a field of a field, is one token under FTEQCC (FTEF-18.4).
+        // `..T`, a field of a field, is one token under FTEQCC (FTEF-18.18).
         if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
         }
@@ -1104,7 +1104,7 @@ impl<'a> Parser<'a> {
     }
 
     /// `[frame, next]` (QC-13.6), or under FTEQCC its expressions and frame cycles
-    /// (FTEF-18.3, FTEF-18.4).
+    /// (FTEF-18.3, FTEF-18.28).
     fn state(&mut self) {
         if self.fteqcc() {
             self.fte_state();

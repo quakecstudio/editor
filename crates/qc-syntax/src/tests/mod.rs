@@ -174,6 +174,9 @@ fn kinds(parsed: &Parse) -> Vec<SyntaxKind> {
     parsed.syntax().descendants().map(|n| n.kind()).collect()
 }
 
+// No spec statement: a lossless tree with no errors for the sample is LANG-2's requirement
+// (plan/requirements.yaml), not an engine behaviour; the grammar is pinned by the tests
+// citing QC-10 to QC-15.
 #[test]
 fn sample_parses_without_errors() {
     let parsed = parse(SAMPLE.as_bytes());
@@ -182,6 +185,8 @@ fn sample_parses_without_errors() {
     assert!(parsed.tree().is_some());
 }
 
+// No spec statement: as above, LANG-2's lossless tree, for the FTEQCC sample; the FTEQCC
+// grammar is pinned by the tests citing FTE and FTEF statements.
 #[test]
 fn fteqcc_sample_parses_without_errors() {
     let parsed = crate::parse_with(SAMPLE_FTEQCC.as_bytes(), crate::Dialect::Fteqcc);

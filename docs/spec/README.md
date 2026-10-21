@@ -61,9 +61,10 @@ statement to be cited (TEST-3 in [`../testing.md`](../testing.md)).
   `#[cfg(test)] mod name;` (a test vector module such as `crates/qc-lno/src/vectors.rs`) and
   the files under its directory; and xtask's oracle scenarios in
   `xtask/src/oracles/scenarios/`, which are differential tests. A `// spec` line anywhere
-  else cites nothing: shipped code names the statement it follows in a plain comment
-  (`// VM-12.3: ...`) or its rustdoc. `xtask/src/test_code.rs` decides, for this ratchet and
-  for the spec check of `cargo xtask readiness` alike.
+  else cites nothing and is an error, so it cannot pass for coverage: shipped code names the
+  statement it follows in a plain comment (`// VM-12.3: ...`) or its rustdoc.
+  `xtask/src/test_code.rs` decides, for this ratchet and for the spec check of
+  `cargo xtask readiness` alike, and skips xtask's fixture repositories in `xtask/fixtures/`.
 - Every citation names a statement that exists and is not withdrawn. A citation names
   statements (`PREFIX-n.m`), never just a section.
 - No statement in the baseline is cited: once a test cites it, it leaves the baseline in the

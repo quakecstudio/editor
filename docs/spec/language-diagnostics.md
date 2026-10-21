@@ -87,7 +87,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   global function never defined (QC-11.8, QC-24.6).
 - **QCD-3.12** `E0212` "Forwards State Cycle with backwards range": under an FTEQCC profile, a
   frame cycle whose two constant frames run against its `++` or `--`, FTEQCC's error of the
-  same text (`dialect-fteqcc.md`, FTEF-18.19), over the two frames.
+  same text (`dialect-fteqcc.md`, FTEF-18.28), over the two frames.
 
 ## QCD-4 Expression and statement errors
 

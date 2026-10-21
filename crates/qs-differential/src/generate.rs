@@ -21,7 +21,7 @@
 //! comparison, boolean and store opcodes, plus forward-only `IF`, `IFNOT` and `GOTO`, ending
 //! at `DONE`. It emits no `CALL`, `STATE`, `ADDRESS` or store-through-pointer, so the
 //! generated program never leaves its own globals, never runs away and always reaches `DONE`,
-//! and no `BITAND` or `BITOR`, the only opcodes whose float-to-int conversion (VM-17) is
+//! and no `BITAND` or `BITOR`, the only opcodes whose float-to-int conversion (VM-9.2) is
 //! host-dependent (DIFF-10.1), so a program built here does not depend on the oracle's host.
 //! The operand *values* the globals start with are arbitrary, so the two VMs' arithmetic and
 //! NaN handling (VM-4.3) are exercised and compared (DIFF-9).
@@ -78,7 +78,8 @@ const FRAMES: u32 = 4;
 pub struct Generated {
     /// The progs.dat bytes, a version 6 file both VMs accept (PROGS-2 to PROGS-13).
     pub progs: Vec<u8>,
-    /// The scenario that runs it: one server frame calling `StartFrame` (DIFF-2, DIFF-5).
+    /// The scenario that runs it: [`FRAMES`] server frames, each calling `StartFrame`
+    /// (DIFF-2, DIFF-5).
     pub scenario: Scenario,
 }
 
@@ -88,7 +89,7 @@ pub struct Generated {
 /// `NE_S` or `NOT_S` (these read the string table at the operand's value, which an arbitrary
 /// value does not index, id's VM-7.3 undefined read), no `RETURN` or `DONE` (added by the
 /// generator to end the body), and no `BITAND` or `BITOR`. `BITAND` and `BITOR` are the only
-/// vanilla opcodes that convert a float to an integer (VM-17), and that conversion is
+/// vanilla opcodes that convert a float to an integer (VM-9.2), and that conversion is
 /// host-dependent for a NaN, an infinity or an out-of-range float: id's x86 oracle gives
 /// `0x80000000` where an arm64 oracle saturates, the one divergence DIFF-10.1 expects and only
 /// on a non-x86 oracle host. Leaving them out keeps every generated program one both VMs
@@ -201,12 +202,12 @@ pub fn generate(data: &[u8]) -> Generated {
     let mut scratch = [0_u32; SCRATCH_GLOBALS as usize];
 
     // The body: a run of safe opcodes, ended by DONE. Each operand is a scratch global, so the
-    // program never reads or writes outside its own globals (VM-6.1, VM-7.3).
+    // program never reads or writes outside its own globals (VM-1.4).
     let mut body = Vec::new();
     while bytes.more() && body.len() < MAX_BODY {
         let choice = bytes.byte();
         // One in eight statements is a forward branch or goto, so control flow is exercised
-        // without ever jumping backward (no runaway, VM-11.4). `& 7` is `% 8` for a byte,
+        // without ever jumping backward (no runaway, VM-3.1). `& 7` is `% 8` for a byte,
         // without the modulo the conventions forbid on an untrusted value.
         let remaining = MAX_BODY.saturating_sub(body.len());
         match choice & 7 {
@@ -440,7 +441,7 @@ fn encode_insn(insn: Insn, here: usize, body_end: usize) -> Vec<u8> {
 }
 
 /// The signed relative jump a forward `skip` becomes: `IF`, `IFNOT` and `GOTO` add the operand
-/// to the current statement index (VM-11.1, VM-13.1), so the operand is `+skip` clamped so the
+/// to the current statement index (VM-13.1, VM-13.2), so the operand is `+skip` clamped so the
 /// target never passes the body's trailing `DONE` (it lands on a body statement or the `DONE`).
 fn jump_target(here: usize, skip: i16, body_end: usize) -> i16 {
     let want = here.saturating_add(usize::try_from(skip).unwrap_or(0));

@@ -248,7 +248,7 @@ impl MockBuiltins<MockEngine> {
     }
 
     fn b_traceon(&mut self, _context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        // spec BUILTIN-16.4, DIFF-6.7: the trace flag change is not observable in the trace.
+        // BUILTIN-16.4, DIFF-6.7: the trace flag change is not observable in the trace.
         Ok(())
     }
 

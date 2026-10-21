@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The typed view names the parts of each node.
+//!
+//! The view is this crate's API over the tree, not an engine behaviour, so a test here cites
+//! a statement only when it pins one of the grammar's rules directly; the rest of the
+//! grammar is pinned by the parser tests citing QC-10 to QC-15.
 
 use super::{SAMPLE, body, sexpr, statements};
 use crate::ast::{self, AstNode as _};
@@ -29,6 +33,7 @@ fn cast_checks_the_kind() {
     assert!(!ast::Type::can_cast(SyntaxKind::Literal));
 }
 
+// spec QC-10.1: the simple types are void, float, vector, string and entity
 #[test]
 fn simple_types() {
     let kinds: Vec<_> = ["void", "float", "vector", "string", "entity"]
@@ -91,6 +96,8 @@ fn function_parts() {
     assert_eq!(lit.kind(), Some(ast::LiteralKind::String));
 }
 
+// spec QC-10.2, QC-10.3: a function type has its return type and named parameters, and a
+// parameter may have a field type
 #[test]
 fn function_type_parts() {
     let parsed = parse(b"entity(entity start, .string fld) find;");

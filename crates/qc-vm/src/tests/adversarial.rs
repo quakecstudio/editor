@@ -166,20 +166,49 @@ fn stack_overflow_keeps_the_local_stack() {
 }
 
 // spec VM-1.1, VM-19.6: the machine persists between runs, and an aborted run leaves the local
-// stack dirty (VM-19.6). A fresh PR_ExecuteProgram on the same machine must still start from
-// call depth 0 and run correctly, so the dirty local stack of the earlier abort does not leak
-// into the new run's result. The vectors run one program per machine; this pins reuse.
+// stack dirty (VM-19.6). A new PR_ExecuteProgram on the same machine still starts from call
+// depth 0 and runs correctly, its function saving its locals above the slots the aborted run
+// left, and restoring them, so the dirty local stack does not leak into the new run's result.
 #[test]
 fn machine_reused_after_an_aborted_run_still_runs_cleanly() {
-    // First program: a bad opcode aborts function 1 immediately.
-    let bad = harness::ProgsBuilder::default()
-        .statements(&[Stmt::raw(66, 0, 0, 0)])
+    // f1 (one local) calls f2 (one local), which hits a bad opcode; f3 (one local) stores 3.125.
+    let bytes = harness::ProgsBuilder::default()
+        .numglobals(256)
+        .functions(vec![
+            Func {
+                first_statement: 1,
+                parm_start: 200,
+                locals: 1,
+                ..Func::default()
+            },
+            Func {
+                first_statement: 3,
+                parm_start: 201,
+                locals: 1,
+                ..Func::default()
+            },
+            Func {
+                first_statement: 4,
+                parm_start: 202,
+                locals: 1,
+                ..Func::default()
+            },
+        ])
+        .statements(&[
+            Stmt::op("CALL0", 100, 0, 0),     // 1: f1 calls f2
+            Stmt::op("DONE", 0, 0, 0),        // 2
+            Stmt::raw(66, 0, 0, 0),           // 3: f2: Bad opcode 66
+            Stmt::op("STORE_F", 102, 202, 0), // 4: f3: its local = 3.125
+            Stmt::op("STORE_F", 202, 103, 0), // 5: slot 103 = its local
+            Stmt::op("DONE", 0, 0, 0),        // 6
+        ])
+        .globals_init(&[(100, 2), (102, 0x4048_0000), (202, 0x4100_0000)]) // 3.125; 8.0
         .build();
-    let progs_bad = read(&bad);
-    let mut machine = Machine::new(&progs_bad, 0).unwrap();
+    let progs = read(&bytes);
+    let mut machine = Machine::new(&progs, 0).unwrap();
     let error = machine
         .execute_program(
-            &progs_bad,
+            &progs,
             ServerState::Active,
             &mut NoBuiltins,
             &mut NoObserver,
@@ -188,31 +217,31 @@ fn machine_reused_after_an_aborted_run_still_runs_cleanly() {
         .unwrap_err();
     assert_eq!(error.message(), "Bad opcode 66");
     assert_eq!(machine.depth(), 0);
+    assert_eq!(machine.localstack_used(), 2, "two aborted frames' locals");
 
-    // Second program on a fresh machine from a clean progs: a plain store then DONE. Depth
-    // starts at 0 and the store lands, proving a run is self-contained (VM-1.1).
-    let good = harness::ProgsBuilder::default()
-        .statements(&[Stmt::op("STORE_F", 100, 101, 0), Stmt::op("DONE", 0, 0, 0)])
-        .globals_init(&[(100, 0x4048_0000)]) // 3.125
-        .build();
-    let progs_good = read(&good);
-    let mut machine2 = Machine::new(&progs_good, 0).unwrap();
-    assert_eq!(
-        machine2.depth(),
-        0,
-        "a fresh run starts at depth 0 (VM-1.1)"
-    );
-    machine2
+    // The same machine runs f3: it starts at depth 0, saves slot 202 (8.0) above the two dirty
+    // slots, overwrites it, and on return restores it and the stack height.
+    machine
         .execute_program(
-            &progs_good,
+            &progs,
             ServerState::Active,
             &mut NoBuiltins,
             &mut NoObserver,
-            1,
+            3,
         )
         .unwrap();
-    assert_eq!(machine2.globals()[101].as_f32(), 3.125);
-    assert_eq!(machine2.depth(), 0);
+    assert_eq!(machine.globals()[103].as_f32(), 3.125);
+    assert_eq!(
+        machine.globals()[202].as_f32(),
+        8.0,
+        "f3's local is restored"
+    );
+    assert_eq!(machine.depth(), 0);
+    assert_eq!(
+        machine.localstack_used(),
+        2,
+        "the dirty slots are still in use"
+    );
 }
 
 // spec VM-16.4, VM-3.5: a run ends when a return brings the call depth back to the exit depth,

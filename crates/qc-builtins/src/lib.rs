@@ -20,7 +20,7 @@
 //! A caller using [`NoEngine`] has no world builtins and gets a typed
 //! [`BuiltinError::EngineOnly`].
 //!
-//! Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-17) and the mock engine of
+//! Implements `docs/spec/builtins.md` (BUILTIN-1 to BUILTIN-16) and the mock engine of
 //! `docs/spec/differential.md` (DIFF-6, DIFF-7). The builtin numbers, value encodings and the
 //! VM call are in [`qc_progs`], [`qc_types`] and [`qc_vm`]; the edicts are [`qc_edict`].
 //!

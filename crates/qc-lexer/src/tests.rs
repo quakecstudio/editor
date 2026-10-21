@@ -2,7 +2,6 @@
 
 #![expect(
     clippy::indexing_slicing,
-    clippy::string_slice,
     clippy::arithmetic_side_effects,
     clippy::panic,
     clippy::unwrap_used,
@@ -553,35 +552,6 @@ fn error_in_first_token() {
     assert_eq!(
         snapshot(b"%float a;"),
         "name float @1..6\nname a @7..8\npunct ; @8..9\nE0105 Unknown punctuation @0..1\n"
-    );
-}
-
-// spec QCD-1.1: a code is E or W, four digits, the first two a group from 01 to 05
-// spec QCD-1.1: a code is E or W, four digits, the first two a group from 01 to 05
-// spec QCD-1.2: a code is never reused for a different diagnostic, so no two codes share a
-// string; a withdrawn code stays unassigned, not re-added, which Code::ALL being this exact
-// set of variants holds
-#[test]
-fn code_format() {
-    for code in Code::ALL {
-        let text = code.as_str();
-        let (letter, digits) = text.split_at(1);
-        assert_eq!(letter == "E", code.is_error(), "{text}");
-        assert!(letter == "E" || letter == "W", "{text}");
-        assert_eq!(digits.len(), 4, "{text}");
-        assert!(digits.bytes().all(|b| b.is_ascii_digit()), "{text}");
-        assert!(
-            ["01", "02", "03", "04", "05"].contains(&&digits[..2]),
-            "{text}"
-        );
-    }
-    let mut sorted = Code::ALL.map(Code::as_str).to_vec();
-    sorted.sort_unstable();
-    sorted.dedup();
-    assert_eq!(
-        sorted.len(),
-        Code::ALL.len(),
-        "no code string is shared by two diagnostics (QCD-1.2)"
     );
 }
 

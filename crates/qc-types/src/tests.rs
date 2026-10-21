@@ -209,6 +209,7 @@ fn eight_parameters_at_most() {
     assert_eq!(ofs_parm(u16::MAX), None);
 }
 
+// spec PROGS-16.2: ev_void takes one slot of id's type_size table; it has no value to write.
 #[test]
 fn void_occupies_one_slot_and_writes_nothing() {
     let mut slots = [Slot(0xdead_beef)];
@@ -217,6 +218,8 @@ fn void_occupies_one_slot_and_writes_nothing() {
     assert_eq!(Value::read(Etype::Void, &slots).unwrap(), Value::Void);
 }
 
+// spec PROGS-16.2: a value of each type takes its type_size slots, so fewer is an error and
+// nothing is written.
 #[test]
 fn too_few_slots_is_an_error() {
     for etype in Etype::ALL {
@@ -236,6 +239,8 @@ fn too_few_slots_is_an_error() {
     assert!(Value::Float(1.0).write(&mut []).is_err());
 }
 
+// spec PROGS-16.2: a value takes only its type_size slots; the slots after them are not read
+// or written.
 #[test]
 fn extra_slots_are_ignored_and_untouched() {
     let mut slots = [Slot(9); 4];

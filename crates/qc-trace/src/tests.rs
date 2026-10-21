@@ -1016,6 +1016,8 @@ fn string_values() {
     assert_eq!(trace.string_value(99, 0xffff_ffff), StringValue::Unknown);
 }
 
+// No spec statement: TRACE-5.7 says what a reader rejects, not how the error reads; this
+// pins that each error's text is distinct and carries its offset, tag or line.
 #[test]
 fn errors_display() {
     let errors = [
