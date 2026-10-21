@@ -148,7 +148,7 @@ fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, 
         decls,
         ResolveOptions {
             dialect: Dialect::Vanilla,
-            autoproto: false,
+            ..ResolveOptions::default()
         },
     );
     let mut errors: Vec<FileDiagnostic> = Vec::new();
