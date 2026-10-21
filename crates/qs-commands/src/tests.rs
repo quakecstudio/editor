@@ -420,8 +420,6 @@ fn arguments_that_do_not_match_the_schema_are_an_error_and_change_nothing() {
         json!({}),
         json!({ "text": 3 }),
         json!({ "text": "x", "extra": 1 }),
-        json!(null),
-        json!("x"),
     ] {
         let error = session.execute("doc.append", params).unwrap_err();
         assert!(
@@ -430,6 +428,32 @@ fn arguments_that_do_not_match_the_schema_are_an_error_and_change_nothing() {
         );
         assert!(std::error::Error::source(&error).is_some());
     }
+    // A derived struct deserialiser takes an array too, binding items to fields in order; the
+    // session refuses anything that is not an object first.
+    for params in [
+        json!(["x"]),
+        json!([]),
+        json!(null),
+        json!("x"),
+        json!(1),
+        json!(true),
+    ] {
+        for id in ["doc.append", "doc.len"].into_iter().chain(BUILTIN_IDS) {
+            let error = session.execute(id, params.clone()).unwrap_err();
+            assert!(
+                matches!(&error, CommandError::ParamsNotObject { command } if command.as_str() == id),
+                "{id} {params}: {error:?}"
+            );
+            assert!(std::error::Error::source(&error).is_none());
+        }
+    }
+    assert_eq!(
+        session
+            .execute("doc.append", json!(["x"]))
+            .unwrap_err()
+            .to_string(),
+        "the arguments to doc.append are not a JSON object"
+    );
     for builtin in BUILTIN_IDS {
         let error = session.execute(builtin, json!({ "x": 1 })).unwrap_err();
         assert!(
@@ -829,6 +853,112 @@ fn the_reference_lists_every_command_with_its_schema() {
     let first = markdown.find("## `commands.list`").unwrap();
     let last = markdown.find("## `edit.undo`").unwrap();
     assert!(table < first && first < last);
+}
+
+/// Registers a command named `$id` with summary `$summary` that does nothing.
+macro_rules! register_noop {
+    ($registry:expr, $name:ident, $id:literal, $summary:literal) => {{
+        struct $name;
+        impl Command<Doc> for $name {
+            const ID: &'static str = $id;
+            const SUMMARY: &'static str = $summary;
+            type Params = NoParams;
+            type Output = ();
+            type Error = TestError;
+            fn run(&self, _: &mut Doc, _: NoParams) -> Result<Outcome<(), Doc>, TestError> {
+                Ok(Outcome::unchanged(()))
+            }
+        }
+        $registry.register($name).unwrap();
+    }};
+}
+
+#[test]
+fn the_reference_links_each_row_to_its_own_heading() {
+    let mut registry = Registry::<Doc>::new();
+    register_noop!(registry, AbC, "ab.c", "First.");
+    register_noop!(registry, ABc, "a.bc", "Second.");
+    register_noop!(registry, Commands, "commands", "Named like the page.");
+
+    let markdown = registry.markdown();
+
+    // GitHub gives `## `ab.c`` and `## `a.bc`` the same text, so the later one gets `-1`, and
+    // `# Commands` already took `commands`.
+    for row in [
+        "| [`a.bc`](#abc) | Second. |\n",
+        "| [`ab.c`](#abc-1) | First. |\n",
+        "| [`commands`](#commands-1) | Named like the page. |\n",
+        "| [`commands.list`](#commandslist) |",
+    ] {
+        assert!(markdown.contains(row), "{row}");
+    }
+}
+
+#[test]
+fn a_summary_cannot_break_the_reference_table() {
+    let mut registry = Registry::<Doc>::new();
+    register_noop!(
+        registry,
+        Piped,
+        "map.run",
+        "Runs the BSP | LIT pair,\nthen stops."
+    );
+
+    let markdown = registry.markdown();
+
+    assert!(
+        markdown.contains("| [`map.run`](#maprun) | Runs the BSP \\| LIT pair, then stops. |\n")
+    );
+    assert!(markdown.contains("\n## `map.run`\n\nRuns the BSP | LIT pair,\nthen stops.\n"));
+}
+
+#[test]
+fn a_step_that_panics_when_dropped_does_not_end_the_session() {
+    struct DropBomb;
+    impl UndoStep<Doc> for DropBomb {
+        fn undo(&mut self, _: &mut Doc) -> Result<(), BoxError> {
+            Ok(())
+        }
+        fn redo(&mut self, _: &mut Doc) -> Result<(), BoxError> {
+            Ok(())
+        }
+    }
+    impl Drop for DropBomb {
+        fn drop(&mut self) {
+            panic!("a step's Drop exploded");
+        }
+    }
+    struct Arm;
+    impl Command<Doc> for Arm {
+        const ID: &'static str = "doc.arm";
+        const SUMMARY: &'static str = "Changes nothing, with a step that panics when dropped.";
+        type Params = NoParams;
+        type Output = ();
+        type Error = TestError;
+        fn run(&self, _: &mut Doc, _: NoParams) -> Result<Outcome<(), Doc>, TestError> {
+            Ok(Outcome::undoable((), DropBomb))
+        }
+    }
+    let mut registry = Registry::new();
+    registry.register(Arm).unwrap();
+    registry.register(Append).unwrap();
+    registry.register(Boom).unwrap();
+    let mut session = Session::new(Doc::default(), registry);
+    session.execute("doc.arm", json!({})).unwrap();
+    session.undo().unwrap();
+
+    // A new change drops the redo history, the bomb with it.
+    session
+        .execute("doc.append", json!({ "text": "a" }))
+        .unwrap();
+    assert_eq!((session.undo_depth(), session.redo_depth()), (1, 0));
+
+    session.execute("doc.arm", json!({})).unwrap();
+    // A panic drops the whole history.
+    let error = session.execute("doc.boom", json!({})).unwrap_err();
+    assert!(matches!(error, CommandError::Panicked { .. }), "{error:?}");
+    assert_eq!((session.undo_depth(), session.redo_depth()), (0, 0));
+    assert_eq!(append(&mut session, "b"), json!(9));
 }
 
 // Command ids.

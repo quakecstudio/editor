@@ -212,6 +212,7 @@ pub(crate) fn in_process_check(command: &str) -> Option<Check> {
         "licenses" => Some(licenses::run),
         "attribution" => Some(attribution::run),
         "contrast" => Some(contrast::check),
+        "commands" => Some(commands::check),
         _ => None,
     }
 }

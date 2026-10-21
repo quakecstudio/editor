@@ -64,21 +64,20 @@ pub(crate) const STEPS: [Step; 18] = [
     ]),
     Step::Cargo(&["test", "--locked", "--workspace", "--all-features"]),
     // P2-12: the command guard catches a panic in a release build, whose profile sets
-    // `panic = "unwind"` (CONV-6), so the command engine's tests run under it too.
-    Step::Program(
-        "guard-release",
-        "cargo",
-        &[
-            "test",
-            "--locked",
-            "-p",
-            "qs-commands",
-            "--profile",
-            "release",
-        ],
-    ),
+    // `panic = "unwind"` (CONV-6). Test targets ignore the profile's `panic` setting, so a
+    // release binary is what proves it.
+    Step::Cargo(&[
+        "run",
+        "--locked",
+        "-p",
+        "qs-commands",
+        "--profile",
+        "release",
+        "--example",
+        "release_guard",
+    ]),
     // P2-12: docs/commands.md is the registry's reference, regenerated, not edited.
-    Step::Program("commands", "cargo", &["xtask", "commands", "--check"]),
+    Step::Xtask("commands"),
     Step::Xtask("clippy-fixtures"),
     Step::Cargo(&[
         "deny",
@@ -258,8 +257,8 @@ mod tests {
             "cargo fmt --all --check",
             "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
             "cargo test --locked --workspace --all-features",
-            "cargo test --locked -p qs-commands --profile release",
-            "cargo xtask commands --check",
+            "cargo run --locked -p qs-commands --profile release --example release_guard",
+            "cargo xtask commands",
             "cargo xtask conventions",
             "cargo xtask adr",
             "cargo xtask clippy-fixtures",
@@ -378,7 +377,7 @@ mod tests {
                 "licenses",
                 "attribution",
                 "contrast",
-                "guard-release",
+                "run",
                 "commands",
                 "clippy-fixtures",
                 "deny-fixtures",

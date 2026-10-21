@@ -2,6 +2,7 @@
 
 //! The session: a context, the registry that works on it, the undo history and the guard.
 
+use std::mem;
 use std::panic::{self, AssertUnwindSafe};
 
 use serde_json::Value;
@@ -96,6 +97,11 @@ impl<C: 'static> Session<C> {
             return Err(CommandError::Unknown { id: id.to_owned() });
         };
         let command = entry.info.id().clone();
+        // A derived `Deserialize` for a struct also accepts a JSON array, binding its items to
+        // the fields in order, so the object the schema promises is checked here.
+        if !params.is_object() {
+            return Err(CommandError::ParamsNotObject { command });
+        }
         let builtin = match &entry.handler {
             Handler::Builtin(builtin) => *builtin,
             Handler::Command(handler) => {
@@ -175,8 +181,9 @@ impl<C: 'static> Session<C> {
                 })
             }
             Err(message) => {
-                from.clear();
-                to.clear();
+                discard(change);
+                discard(mem::take(from));
+                discard(mem::take(to));
                 Err(panicked(command, message))
             }
         }
@@ -193,7 +200,7 @@ impl<C: 'static> Session<C> {
                 match effect {
                     Effect::Unchanged => {}
                     Effect::Undoable(step) => {
-                        self.redo.clear();
+                        discard(mem::take(&mut self.redo));
                         self.undo.push(Change {
                             command: command.clone(),
                             step,
@@ -204,8 +211,8 @@ impl<C: 'static> Session<C> {
             }
             Ok(Err(error)) => Err(error),
             Err(message) => {
-                self.undo.clear();
-                self.redo.clear();
+                discard(mem::take(&mut self.undo));
+                discard(mem::take(&mut self.redo));
                 Err(panicked(command, message))
             }
         }
@@ -227,10 +234,20 @@ fn panicked(command: CommandId, message: String) -> CommandError {
 /// hold part of a change.
 fn guard<T>(f: impl FnOnce() -> T) -> Result<T, String> {
     panic::catch_unwind(AssertUnwindSafe(f)).map_err(|payload| {
-        payload
+        let message = payload
             .downcast_ref::<&str>()
             .map(|message| (*message).to_owned())
             .or_else(|| payload.downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "a panic with no message".to_owned())
+            .unwrap_or_else(|| "a panic with no message".to_owned());
+        discard(payload);
+        message
     })
+}
+
+/// Drops `value`, catching a panic from its `Drop`: undo steps and panic payloads run code of
+/// their own when dropped, and a panic there must not escape the guard either.
+fn discard<T>(value: T) {
+    if panic::catch_unwind(AssertUnwindSafe(move || drop(value))).is_err() {
+        tracing::error!("dropping an undo step or a panic payload panicked; the guard caught it");
+    }
 }

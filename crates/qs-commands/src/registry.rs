@@ -196,12 +196,14 @@ impl<C: 'static> Registry<C> {
              `edit.undo`.\n\n\
              | Command | Summary |\n| --- | --- |\n",
         );
+        // The heading `# Commands` already has the anchor `commands`.
+        let mut anchors = Anchors::new(["commands"]);
         for info in self.commands() {
+            let cell = info.summary.replace('|', "\\|").replace('\n', " ");
             out.push_str(&format!(
-                "| [`{}`](#{}) | {} |\n",
+                "| [`{}`](#{}) | {cell} |\n",
                 info.id,
-                anchor(&info.id),
-                info.summary
+                anchors.next(info.id.as_str())
             ));
         }
         for info in self.commands() {
@@ -227,7 +229,34 @@ pub(crate) fn schema_of<T: schemars::JsonSchema>() -> Value {
     schemars::schema_for!(T).to_value()
 }
 
-/// The anchor GitHub gives the heading `` ## `id` ``: the text, lowercased, with `.` dropped.
-fn anchor(id: &CommandId) -> String {
-    id.as_str().chars().filter(|&c| c != '.').collect()
+/// The anchors GitHub gives a document's headings, in order: the heading text lowercased with
+/// punctuation other than `-` and `_` dropped (an id is lowercase already, so only its `.`
+/// goes), and `-1`, `-2` and so on after a text an earlier heading already had.
+struct Anchors {
+    seen: BTreeMap<String, usize>,
+}
+
+impl Anchors {
+    /// Anchors for the headings after those with the texts `earlier`.
+    fn new<const N: usize>(earlier: [&str; N]) -> Self {
+        let mut anchors = Self {
+            seen: BTreeMap::new(),
+        };
+        for text in earlier {
+            anchors.next(text);
+        }
+        anchors
+    }
+
+    /// The anchor of the next heading, `` ## `id` ``.
+    fn next(&mut self, id: &str) -> String {
+        let base: String = id.chars().filter(|&c| c != '.').collect();
+        let count = self.seen.entry(base.clone()).or_insert(0);
+        let anchor = match *count {
+            0 => base,
+            n => format!("{base}-{n}"),
+        };
+        *count = count.saturating_add(1);
+        anchor
+    }
 }

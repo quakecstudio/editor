@@ -55,6 +55,11 @@ pub enum CommandError {
         /// The id as the caller sent it.
         id: String,
     },
+    /// The arguments are not a JSON object, which every command's parameters are.
+    ParamsNotObject {
+        /// The command.
+        command: CommandId,
+    },
     /// The arguments do not match the command's parameter schema.
     InvalidParams {
         /// The command.
@@ -112,6 +117,9 @@ impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown { id } => write!(f, "no command has the id {id:?}"),
+            Self::ParamsNotObject { command } => {
+                write!(f, "the arguments to {command} are not a JSON object")
+            }
             Self::InvalidParams { command, error } => {
                 write!(f, "invalid arguments to {command}: {error}")
             }
@@ -142,6 +150,7 @@ impl Error for CommandError {
             | Self::UndoFailed { error, .. }
             | Self::RedoFailed { error, .. } => Some(error.as_ref()),
             Self::Unknown { .. }
+            | Self::ParamsNotObject { .. }
             | Self::Panicked { .. }
             | Self::NothingToUndo
             | Self::NothingToRedo => None,

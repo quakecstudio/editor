@@ -23,7 +23,12 @@ pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 /// caller's arguments are checked against it by deserialising them before [`Command::run`]
 /// sees them. They must be a JSON object, as MCP requires of a tool's `inputSchema`; a command
 /// with no parameters uses [`NoParams`].
-pub trait Command<C>: 'static {
+///
+/// A command is `Send + Sync` so a session can move to, or be shared with, the thread the
+/// agent, MCP or ACP server runs on. It keeps no mutable state of its own: everything a run
+/// changes is in the context, where the undo history and the guard can see it. A panic resets
+/// the history, not a command's private state.
+pub trait Command<C>: Send + Sync + 'static {
     /// The stable id, a [`crate::CommandId`]: callers and saved keybindings name the command
     /// by it, so it never changes once shipped.
     const ID: &'static str;
@@ -104,7 +109,9 @@ pub(crate) enum Effect<C> {
 ///
 /// The session calls [`UndoStep::undo`] and [`UndoStep::redo`] alternately, starting with
 /// `undo`, each on the context as the other left it.
-pub trait UndoStep<C>: 'static {
+///
+/// A step is `Send` so the session holding it can move between threads.
+pub trait UndoStep<C>: Send + 'static {
     /// Takes the change back.
     ///
     /// # Errors

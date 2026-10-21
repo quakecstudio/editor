@@ -35,7 +35,32 @@ same registry also serves MCP.
 ## Writing a command
 
 ```rust
+use std::convert::Infallible;
+
 use qs_commands::{BoxError, Command, Outcome, UndoStep};
+
+/// The context: whatever state the session owns.
+struct Doc {
+    text: String,
+}
+
+/// Undoes an append by cutting the text off again, and redoes it by appending it again.
+struct Truncate {
+    text: String,
+}
+
+impl UndoStep<Doc> for Truncate {
+    fn undo(&mut self, doc: &mut Doc) -> Result<(), BoxError> {
+        let keep = doc.text.len().saturating_sub(self.text.len());
+        doc.text.truncate(keep);
+        Ok(())
+    }
+
+    fn redo(&mut self, doc: &mut Doc) -> Result<(), BoxError> {
+        doc.text.push_str(&self.text);
+        Ok(())
+    }
+}
 
 /// The parameters of `doc.append`.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -52,14 +77,17 @@ impl Command<Doc> for Append {
     const SUMMARY: &'static str = "Appends text to the document.";
     type Params = AppendParams;
     type Output = usize;
-    type Error = DocError;
+    type Error = Infallible;
 
-    fn run(&self, doc: &mut Doc, params: AppendParams) -> Result<Outcome<usize, Doc>, DocError> {
+    fn run(&self, doc: &mut Doc, params: AppendParams) -> Result<Outcome<usize, Doc>, Infallible> {
         doc.text.push_str(&params.text);
-        Ok(Outcome::undoable(doc.text.len(), Truncate::new(&params.text)))
+        let len = doc.text.len();
+        Ok(Outcome::undoable(len, Truncate { text: params.text }))
     }
 }
 ```
+
+The tests in `src/tests.rs` have more: failing commands and steps, and the guard's cases.
 
 - **Ids** are dotted lowercase segments (`edit.undo`, `vm.run`, `compile`), at most 128
   bytes. Every such id is a valid MCP tool name: "The following SHOULD be the only allowed
@@ -79,6 +107,11 @@ impl Command<Doc> for Append {
 - **Context.** `Registry<C>` and `Session<C>` are generic over the state `C` commands work
   on, so the app, the CLI and tests each bring their own; a command needing only part of a
   context is generic over a trait, `impl<C: HasDoc> Command<C> for Append`.
+- **Threads.** `Command` is `Send + Sync` and `UndoStep` is `Send`, so a `Session<C>` is
+  `Send` when `C` is, and can move to the thread an agent, MCP or ACP server runs on.
+- **No state in a command.** Everything a run changes lives in the context, where the undo
+  history and the guard see it. A panic clears the history; it cannot reset a command's own
+  fields, so a command keeps none that change.
 
 ## The session and the guard
 
@@ -89,6 +122,7 @@ command goes on the undo history and empties the redo history.
 | What happens | Result | History |
 | --- | --- | --- |
 | Unknown id | `CommandError::Unknown` | unchanged |
+| Arguments are not a JSON object (an array, `null`, a scalar) | `CommandError::ParamsNotObject` | unchanged |
 | Arguments do not match the schema | `CommandError::InvalidParams` | unchanged |
 | The command returns `Err` | `CommandError::Failed` | unchanged |
 | The output is not JSON | `CommandError::Output` | the change is recorded and can be undone |
@@ -98,8 +132,16 @@ command goes on the undo history and empties the redo history.
 The guard needs `panic = "unwind"`, which the workspace sets in every profile, release
 included (`docs/conventions.md`, CONV-6); the crate fails to compile under
 `panic = "abort"`. Panics stay denied by lint in shipped code: the guard is the last line of
-defence (PRIN-7). `cargo xtask ci` runs this crate's tests under `--profile release` as well
-as the test profile, so the release build is proven to catch a panic.
+defence (PRIN-7).
+
+The release build is proven by a binary, not a test: "Tests, benchmarks, build scripts, and
+proc macros ignore the `panic` setting" (Cargo Book, Profiles, `panic`), so a test target is
+built with unwind whatever the profile says. `cargo xtask ci` runs
+`cargo run --profile release --example release_guard`, which exits with success only when a
+panicking command was caught and the session then ran another command.
+
+Dropping undo steps, when the history is cleared or a new change empties the redo history,
+and dropping a panic's payload also happen inside the guard, since a `Drop` can panic too.
 
 A caught panic still runs the process's panic hook first: with `qs-log` installed it writes a
 crash record, and the default hook prints the message to standard error. The guard's own log
