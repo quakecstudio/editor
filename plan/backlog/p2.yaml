@@ -1649,6 +1649,7 @@ issues:
   - P2-101
   - P2-102
   - P2-103
+  - P2-104
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2032,4 +2033,26 @@ issues:
   acceptance:
   - 'Through Db::analyze_module the vanilla profile refuses `/* c */#foo` and `void() f = #5;` as id''s qcc does, and the FTEQCC profile as the pinned FTEQCC does, with a test citing the statement it pins; a regression test fails before the fix'
   verify:
+  - cargo test -p qc-sema
+- key: P2-104
+  title: The vanilla preprocessor finds an include in the module's include directories
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    The project graph finds an `#include` beside the file that holds it and then in the module's include directories (PRJ-5.2), and the FTEQCC and GMQCC preprocessors are given those directories (qc_preproc::Preprocessor::with_include_dirs, FTEF-14.49), but the vanilla preprocessor's `#include` (crates/qc-preproc/src/lib.rs, `include`) looks only beside the file (QC-9.2). A vanilla module whose quakec.toml gives include_dirs therefore opens in the graph and fails in Db::analyze_module with E0111 for each file only an include directory holds.
+  environment: |
+    feat/507-fteqcc-directives; found while giving FTEQCC's -I to the preprocessor for Rad-Therapy (P2-96)
+  depends:
+  - P2-96
+  deliverable:
+  - 'crates/qc-preproc (lib.rs, `include`): under the vanilla dialect an `#include` not found beside the file holding it is looked for in the include directories with_include_dirs gives, in order, as PRJ-5.2 says; docs/spec/language.md QC-9.2 says so, or names the statement that does'
+  acceptance:
+  - 'A vanilla module whose included file is only in an include directory preprocesses with no E0111 through Db::analyze_module, and one beside the including file is still preferred, each with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-preproc
   - cargo test -p qc-sema
