@@ -49,7 +49,7 @@ and a failed `Classify the change` job are all full. Renames count both paths.
 | --- | --- |
 | `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution` and `contrast` (`docs/design/tokens.toml`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
 | `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci`, and by xtask's ratchet tests (`plan/backlog/readiness.yaml`) |
-| `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test |
+| `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test, and by xtask's tests of `.claude/skills/work-issue/scripts/check-pr-body.sh` |
 | `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
 
 Never light, whatever directory they are in:

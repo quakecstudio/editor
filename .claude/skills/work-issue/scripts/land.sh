@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Wait for CI on a pull request, add it to the merge queue, and wait until it merges.
 # Usage: land.sh <pr-number> [timeout-minutes]
-# Exit 0 when merged; 1 on a CI failure, a conflict, a removal from the queue, a close, or the
-# timeout (the reason is printed).
+# Exit 0 when merged; 1 on a CI failure, a conflict, a removal from the queue, a close, the
+# timeout, or a body that puts a closing keyword in a negated sentence (check-pr-body.sh); the
+# reason is printed.
 #
 # Waits use gh's watch commands: `gh pr checks --watch` for the PR's checks and `gh run watch`
 # for the merge queue's runs. A short poll covers only the gaps no watch exists for: checks not
@@ -17,6 +18,7 @@ timeout_min="${2:-90}"
 deadline=$(($(date +%s) + timeout_min * 60))
 poll_seconds=10
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+here=$(dirname "${BASH_SOURCE[0]}")
 
 timed_out() {
   echo "#$pr has not merged after ${timeout_min} minutes ($1): check it with gh pr view $pr --web."
@@ -53,12 +55,26 @@ pr_status() {
          (if .autoMergeRequest then "on" else "off" end)] | @tsv'
 }
 
+# A closing keyword in a negated sentence ("does not close #84") still closes the issue on merge
+# (check-pr-body.sh). Checked before waiting for CI, to fail fast, and again just before queueing,
+# in case the body was edited while CI ran.
+fail_if_body_closes_wrongly() {
+  local body
+  body=$(gh pr view "$pr" --json body --jq .body)
+  if ! "$here/check-pr-body.sh" <<<"$body"; then
+    echo "#$pr was not queued. Fix its body (gh pr edit $pr --body-file <file>) and run land.sh again."
+    exit 1
+  fi
+}
+
 fail_if_conflicting() {
   if [ "$1" = DIRTY ]; then
     echo "#$pr conflicts with main. Merge origin/main into the branch, push and run land.sh again."
     exit 1
   fi
 }
+
+fail_if_body_closes_wrongly
 
 # 1. The PR's own checks. A PR that conflicts with main gets no checks, so check for that while
 # waiting for them to be reported.
@@ -80,6 +96,7 @@ while :; do
 done
 
 # 2. With a merge queue, --auto adds the PR to the queue once required checks pass.
+fail_if_body_closes_wrongly
 gh pr merge "$pr" --auto || gh pr merge "$pr"
 
 # 3. The queue's runs, then the merge.
