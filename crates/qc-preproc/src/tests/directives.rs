@@ -455,6 +455,7 @@ fn pragma_warning_sets_f303() {
 
 // spec FTEF-14.35: every directive's line ends where `QCC_PR_SkipToEndOfLine` ends it, past a `\`
 // and line break in a `//` comment, and its junk is E0121
+// spec QCD-8.14: E0121 is FTEQCC's preprocessor error with FTEQCC's text
 #[test]
 fn every_directive_ends_its_line_as_fteqcc_does() {
     for directive in [
@@ -796,6 +797,7 @@ fn directives_run_among_arguments() {
 
 // spec FTEF-14.46: a `#` that starts a line of an expansion is a directive there; a body with
 // such a line is F303, an error unless `#pragma warning` makes it a warning or nothing
+// spec QCD-8.15, QCD-7.31: F303 is E0122 as an error and W0109 as a warning, at the `#`
 #[test]
 fn directives_run_in_expansions() {
     let body = "#define D \\\n#define Y 5 \\\nY\nD Y\n";
@@ -806,6 +808,7 @@ fn directives_run_in_expansions() {
         out.diagnostics[0].message,
         "preprocessor directive within preprocessor macro D"
     );
+    assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(12, 13));
     let (toks, errs) = fte(&format!("#pragma warning enable F303\n{body}"));
     assert_eq!((toks.as_str(), errs), ("5 5", vec![Code::W0109]));
     let (toks, errs) = fte(&format!("#pragma warning disable F303\n{body}"));
