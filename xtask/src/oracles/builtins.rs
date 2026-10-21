@@ -1105,7 +1105,7 @@ pub(crate) fn expected_difference(
         // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`
         // open no file here, where FTEQCC refuses a missing one.
         let refused_here_only = *oracle == Outcome::Rejected && errors.is_empty();
-        let crashed_at_eof = case.source.contains("#eof") && !case.source.starts_with("#eof");
+        let crashed_at_eof = case.texts().any(eof_past_first_line);
         let opened_a_file = case
             .texts()
             .any(|t| t.contains("#merge") || t.contains("#datafile"));
@@ -1248,6 +1248,16 @@ fn function_name(case: &Case) -> &str {
         .and_then(|rest| rest.split([' ', '=', ';']).next())
         .filter(|name| name.len() > 1 && name.bytes().all(|b| b == b'n'))
         .unwrap_or("f")
+}
+
+/// Whether `text` has an `#eof` that FTEQCC would run past its first line: one that starts a
+/// line after spaces and tabs (FTEF-14.34, FTEF-14.47). A line of a skipped side matches too, as
+/// the text alone does not say which sides FTEQCC skips; FTEQCC accepts those, and only a
+/// refusal is matched.
+fn eof_past_first_line(text: &str) -> bool {
+    text.split(['\n', '\r'])
+        .skip(1)
+        .any(|line| line.trim_start_matches([' ', '\t']).starts_with("#eof"))
 }
 
 /// Whether the FTEQCC `case`, which uses a macro or a built-in constant (FTEF-14.7), initialises

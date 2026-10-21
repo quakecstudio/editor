@@ -213,11 +213,23 @@ fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
         files: vec![("b.qh".to_owned(), "#datafile \"x\"\n".to_owned())],
     });
     let plain = fte("void() f = #5;\n");
+    let indented = fte("void() f = #5;\n \t#eofx\n");
+    let commented = fte("void() f = #5; // #eof\n/* #eof */\n");
+    let quoted = fte("void() f = #5;\nstring s = \"#eof\";\n");
+    let mut included = fte("#include \"b.qh\"\nvoid() f = #5;\n");
+    included.project = Some(Project {
+        compiled: "t.qc".to_owned(),
+        files: vec![("b.qh".to_owned(), "zz\n#eof\n".to_owned())],
+    });
     for (case, errors, oracle, expected) in [
         (&eof, &[][..], &rejected, Some("FTEF-14.47")),
         (&eof, &[Code::E0121], &rejected, None),
         (&eof, &[], &Outcome::Accepted, None),
         (&first, &[], &rejected, None),
+        (&indented, &[], &rejected, Some("FTEF-14.47")),
+        (&commented, &[], &rejected, None),
+        (&quoted, &[], &rejected, None),
+        (&included, &[], &rejected, Some("FTEF-14.47")),
         (&merge, &[], &rejected, Some("FTEF-14.47")),
         (&datafile, &[], &rejected, Some("FTEF-14.47")),
         (&plain, &[], &rejected, None),
