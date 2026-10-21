@@ -121,7 +121,7 @@ jobs:
           # memory (RLIMIT_DATA), so an allocation past it fails and aborts that
           # binary, which fails the mutant's tests, and the four jobs together
           # stay inside the runner. Builds are not limited.
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --
         run: |
           read -ra crates <<< "$CRATES"
           (while sleep 10; do echo "DIAG $(free -m | awk '/Mem:/ {print "used " $3 " of " $2}') $(df -m / | awk 'NR==2 {print "disk free " $4}') $(ps -eo rss=,comm= --sort=-rss | head -3 | tr '\n' ' ')"; done) &
