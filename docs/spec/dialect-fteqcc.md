@@ -1197,7 +1197,8 @@ profile the preprocessor reads them as FTEQCC does.
   `INT_MIN`, so there `#if 4294967296` is true: a deliberate divergence from that build, as
   FTEF-14.50's, so that a project reads the same wherever it is opened, and the builtin
   differential lists a case whose directive holds a number the two read otherwise as expected where
-  the oracle ran on an LLP64 host. The vanilla dialect's expressions keep PRJ-5.5.
+  the oracle ran on an LLP64 host, a project graph case among them (PRJ-5.13). The vanilla
+  dialect's expressions keep PRJ-5.5.
 
 ## FTEF-15 Declarations
 

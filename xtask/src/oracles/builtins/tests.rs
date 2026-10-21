@@ -64,7 +64,7 @@ fn the_profile_agrees_with_the_recorded_oracles() {
 #[test]
 fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let recorded = read_fixture(&root()).unwrap();
-    let differ = graph_differences(&recorded);
+    let differ = graph_differences(&recorded, ULong::Bits64);
     assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
     assert_eq!(cases.len(), 181);
@@ -93,7 +93,7 @@ fn graph_differences_are_found() {
     ] {
         let mut changed = recorded.clone();
         changed.insert(first.clone(), outcome);
-        let differ = graph_differences(&changed);
+        let differ = graph_differences(&changed, ULong::Bits64);
         assert_eq!(differ.len(), 1, "{differ:?}");
         assert!(differ[0].ends_with(expected), "{differ:?}");
     }
@@ -104,11 +104,11 @@ fn graph_differences_are_found() {
         .key();
     let mut changed = recorded.clone();
     changed.insert(unread, bound_as(5, "f"));
-    let differ = graph_differences(&changed);
+    let differ = graph_differences(&changed, ULong::Bits64);
     assert!(differ[0].ends_with("the oracle reads the file, the graph does not"));
     let mut missing = recorded;
     missing.remove(&first);
-    let differ = graph_differences(&missing);
+    let differ = graph_differences(&missing, ULong::Bits64);
     assert!(differ[0].ends_with("not recorded in xtask/fixtures/oracles/builtin-outcomes.json"));
 }
 
@@ -252,6 +252,34 @@ fn a_wide_if_value_differs_only_where_long_is_32_bits() {
             expected,
             "{source:?} {ulong:?}"
         );
+    }
+}
+
+// spec FTEF-14.55: where `long` is 32 bits a graph case whose `#if` value `atoi` reads otherwise
+// may read the other side's file, and only such a case
+#[test]
+fn a_wide_if_value_may_read_another_file_where_long_is_32_bits() {
+    let recorded = read_fixture(&root()).unwrap();
+    let cases = graph_cases();
+    let wide = cases
+        .iter()
+        .find(|case| case.source.starts_with("#if 4294967296\n"))
+        .unwrap();
+    let plain = cases
+        .iter()
+        .find(|case| case.source.starts_with("#ifdef Q\n#include"))
+        .unwrap();
+    for case in [wide, plain] {
+        let mut flipped = recorded.clone();
+        let other = match &recorded[&case.key()] {
+            Outcome::Accepted => bound_as(5, "f"),
+            _ => Outcome::Accepted,
+        };
+        flipped.insert(case.key(), other);
+        let bits64 = graph_differences(&flipped, ULong::Bits64);
+        let bits32 = graph_differences(&flipped, ULong::Bits32);
+        assert_eq!(bits64.len(), 1, "{bits64:?}");
+        assert_eq!(bits32.len(), usize::from(case == plain), "{bits32:?}");
     }
 }
 

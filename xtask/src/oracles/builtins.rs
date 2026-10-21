@@ -1755,10 +1755,12 @@ pub(crate) fn graph_cases() -> Vec<Case> {
     directives::graph_cases()
 }
 
-/// The graph cases whose project graph lists the file that binds `f` where `outcomes` say the
-/// oracle did not read it, or the other way round, or whose oracle neither bound `f` to `#5` nor
-/// accepted the program, so that the case says nothing of what it read (PRJ-5.13).
-pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>) -> Vec<String> {
+/// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
+/// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
+/// round, or whose oracle neither bound `f` to `#5` nor accepted the program, so that the case
+/// says nothing of what it read (PRJ-5.13). Where `long` is 32 bits a case whose directive holds
+/// a number `atoi` reads otherwise may read the other file (FTEF-14.55).
+pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
     let mut differ = Vec::new();
     for case in graph_cases() {
         let read = match outcomes.get(&case.key()) {
@@ -1776,7 +1778,7 @@ pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>) -> Vec<Str
                 continue;
             }
         };
-        if graph_binds(&case) != read {
+        if graph_binds(&case) != read && !ulong.atoi_reads_otherwise(&case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {
@@ -1895,7 +1897,7 @@ fn check_where(root: &Path, oracles: &Oracles, record: bool, ulong: ULong) -> Re
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    let graph = graph_differences(&outcomes);
+    let graph = graph_differences(&outcomes, ulong);
     for problem in &graph {
         println!("FAIL  project graph: {problem}");
     }
