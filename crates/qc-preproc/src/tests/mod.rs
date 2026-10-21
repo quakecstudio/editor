@@ -674,7 +674,7 @@ fn fteqcc_frames_carry_between_files() {
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], false);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
     assert_eq!(tokens(&outputs[1]), "x = 0 ; y = 1 ; x = 1 ; y = 0 ;");
-    // FTEF-18.22: the uses before b.qc's own `$frame` are stale, and its second `b` is a
+    // FTEF-18.29: the uses before b.qc's own `$frame` are stale, and its second `b` is a
     // duplicate.
     assert_eq!(
         diagnostics(&pp, &outputs[1]),
@@ -709,7 +709,7 @@ fn autoprototyping_keeps_frames_and_forgets_macros() {
     ];
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], true);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
-    // FTEF-18.22: the frame is the first pass's reading of b.qc, so the use is stale.
+    // FTEF-18.29: the frame is the first pass's reading of b.qc, so the use is stale.
     assert_eq!(
         diagnostics(&pp, &outputs[0]),
         "W0105 Stale macro used (CORPSEFRAME, defined in b.qc) @a.qc:1\n"
@@ -879,29 +879,33 @@ fn memory_loader_case_rules() {
 // is the least of them, so the warning is the same whatever order the file system lists them
 #[test]
 fn fs_loader_picks_the_least_case_variant() {
+    use std::ffi::{OsStr, OsString};
+
     use super::Loader as _;
+    use super::source::stored_entry;
+    // A case-sensitive directory's listing, in both orders: `D` (0x44) is less than `d`
+    // (0x64), so the least is `Defs.qc`, and an entry named exactly wins.
+    let listing =
+        |names: &[&str]| -> Vec<OsString> { names.iter().map(|&n| OsString::from(n)).collect() };
+    let stored = |name: &str, names: &[&str]| {
+        stored_entry(OsStr::new(name), listing(names)).map(|n| n.to_string_lossy().into_owned())
+    };
+    for names in [["defs.qc", "Defs.qc"], ["Defs.qc", "defs.qc"]] {
+        assert_eq!(stored("DEFS.qc", &names).as_deref(), Some("Defs.qc"));
+        assert_eq!(stored("defs.qc", &names).as_deref(), Some("defs.qc"));
+    }
+    assert_eq!(stored("x.qc", &["defs.qc"]), None);
+    // `FsLoader` reads the directory's listing, on any host.
     let dir = std::env::temp_dir().join(format!("qc-preproc-least-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // Two entries that differ only in case. On a case-insensitive host only one can exist,
-    // so skip there: the tie-break is only reachable where both coexist.
     std::fs::write(dir.join("Defs.qc"), "").unwrap();
-    let both = std::fs::write(dir.join("defs.qc"), "").is_ok()
-        && std::fs::read(dir.join("Defs.qc")).is_ok()
-        && std::fs::read(dir.join("defs.qc")).is_ok()
-        && std::fs::metadata(dir.join("Defs.qc")).unwrap().len() == 0;
-    let stored = super::FsLoader
+    let found = super::FsLoader
         .stored_name(&dir.join("DEFS.qc"))
         .map(|n| n.to_string_lossy().into_owned());
-    let listed: std::collections::BTreeSet<String> = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let missing = super::FsLoader.stored_name(&dir.join("other.qc"));
     std::fs::remove_dir_all(&dir).unwrap();
-    if both && listed.contains("Defs.qc") && listed.contains("defs.qc") {
-        // `D` (0x44) is less than `d` (0x64), so the least is `Defs.qc`.
-        assert_eq!(stored.as_deref(), Some("Defs.qc"));
-    }
+    assert_eq!(found.as_deref(), Some("Defs.qc"));
+    assert_eq!(missing, None);
 }
 
 // spec PRJ-7.2: when a memory loader holds two keys whose first components differ only in
@@ -971,6 +975,7 @@ proptest! {
         }
     }
 }
+mod directives;
 mod fteqcc;
 mod reviewer;
 mod spacing;

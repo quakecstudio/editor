@@ -411,7 +411,8 @@ path = "src"
 license = "ISC"
 use = "vendor"
 evidence = ["COPYING", "README.md"]
-notes = "The valve game FreeCS builds against (its progs.src files list files under valve/src). COPYING and the README's Source Code section: ISC. Only src/ is corpus; the repository's game data and compiled progs are not."
+project = "projects/freehl/quakec.toml"
+notes = "The valve game FreeCS builds against (its progs.src files list files under valve/src). COPYING and the README's Source Code section: ISC. Only src/ is corpus; the repository's game data and compiled progs are not. Its Makefiles give FTEQCC include directories, so its modules are opened through the quakec.toml in project, whose ../../src directories are the Nuclide tree's in freecs-tree."
 
 [[codebase]]
 id = "nzp"

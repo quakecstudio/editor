@@ -7,6 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_lexer::{LineIndex, Span};
 
@@ -28,8 +29,8 @@ pub struct FileSpan {
 pub struct SourceFile {
     /// Its path, as resolved (QC-9.2).
     pub path: PathBuf,
-    /// Its bytes.
-    pub text: Vec<u8>,
+    /// Its bytes, shared with the preprocessor's readers of it.
+    pub text: Rc<[u8]>,
     /// Its line starts (QC-1.2).
     pub lines: LineIndex,
 }
@@ -46,6 +47,7 @@ impl SourceMap {
     pub fn add(&mut self, path: PathBuf, text: Vec<u8>) -> FileId {
         let id = FileId(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
         let lines = LineIndex::new(&text);
+        let text = Rc::from(text);
         self.files.push(SourceFile { path, text, lines });
         id
     }
@@ -120,20 +122,28 @@ impl Loader for FsLoader {
             .parent()
             .filter(|d| !d.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let mut folded: Vec<OsString> = Vec::new();
-        for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
-            let entry = entry.file_name();
-            if entry == name {
-                return Some(entry);
-            }
-            if same_ignoring_case(&entry, name) {
-                folded.push(entry);
-            }
-        }
-        // The directory may list two entries that differ only in case; `read_dir` does not
-        // order them, so take the least to be the same on every run (PRJ-7.2).
-        folded.into_iter().min()
+        let entries = fs::read_dir(dir).ok()?.filter_map(Result::ok);
+        stored_entry(name, entries.map(|entry| entry.file_name()))
     }
+}
+
+/// Of a directory's `entries`, the one named `name`, or else the least of those whose names
+/// differ from it only in case (PRJ-7.2): a directory may list two such entries, in no order,
+/// so the least is the same on every run.
+pub(crate) fn stored_entry(
+    name: &OsStr,
+    entries: impl IntoIterator<Item = OsString>,
+) -> Option<OsString> {
+    let mut folded: Vec<OsString> = Vec::new();
+    for entry in entries {
+        if entry == name {
+            return Some(entry);
+        }
+        if same_ignoring_case(&entry, name) {
+            folded.push(entry);
+        }
+    }
+    folded.into_iter().min()
 }
 
 /// Reads files from memory: for tests, and for editor buffers not yet saved.

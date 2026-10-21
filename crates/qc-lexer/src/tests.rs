@@ -1359,7 +1359,7 @@ fn fte_strings(source: &[u8]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-// spec FTEF-14.3: the text of `#warning`, `#error` and `#message` is the rest of the line as
+// spec FTEF-14.38: the text of `#warning`, `#error` and `#message` is the rest of the line as
 // written, blanks before it skipped, so a `'` in it opens no vector
 #[test]
 fn message_directive_text_is_the_raw_line() {
@@ -1386,7 +1386,7 @@ fn message_directive_text_is_the_raw_line() {
     assert_eq!(fte_strings(b"# warning a"), vec![b"a".to_vec()]);
 }
 
-// spec FTEF-14.3: only a `#warning`, `#error` or `#message` directive reads its line raw:
+// spec FTEF-14.38: only a `#warning`, `#error` or `#message` directive reads its line raw:
 // another word, a `#` not starting its line, a `#` on an earlier line or the vanilla profile
 // lex the line as tokens
 #[test]

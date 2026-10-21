@@ -266,7 +266,7 @@ fn a_paren_in_an_included_file_opens_no_call() {
     assert_eq!(touching_in(&files), "M (1)");
 }
 
-// spec FTEF-14.8: `#append` writes a space before the text it adds, so the added text
+// spec FTEF-14.39: `#append` writes a space before the text it adds, so the added text
 // touches nothing of the body before it, in another file too
 #[test]
 fn appended_text_stays_apart_from_the_body() {

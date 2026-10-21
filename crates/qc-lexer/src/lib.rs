@@ -894,7 +894,7 @@ impl Lexer<'_> {
     }
 
     /// The rest of a `#warning`, `#error` or `#message` line, read raw as FTEQCC reads it
-    /// (FTEF-14.3): a string token of its bytes, blanks before it skipped, up to the line
+    /// (FTEF-14.38): a string token of its bytes, blanks before it skipped, up to the line
     /// break. Nothing when the line ends at once.
     fn message_text(&mut self) {
         while self.peek(0).is_some_and(|b| b == b' ' || b == b'\t') {

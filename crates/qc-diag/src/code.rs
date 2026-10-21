@@ -63,6 +63,10 @@ pub enum Code {
     E0119,
     /// "macro expansion too large" (QCD-8.13).
     E0120,
+    /// An error FTEQCC's preprocessor reports, with FTEQCC's text (QCD-8.14).
+    E0121,
+    /// "preprocessor directive within preprocessor macro NAME", as an error (QCD-8.15).
+    E0122,
     /// "not a name" (QCD-3.1).
     E0201,
     /// "name too long" (QCD-3.2).
@@ -135,6 +139,8 @@ pub enum Code {
     W0107,
     /// "#pragma autoproto must appear before any definitions" (QCD-7.28).
     W0108,
+    /// "preprocessor directive within preprocessor macro NAME", as a warning (QCD-7.31).
+    W0109,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -158,7 +164,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 65] = [
+    pub const ALL: [Self; 68] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -179,6 +185,8 @@ impl Code {
         Self::E0118,
         Self::E0119,
         Self::E0120,
+        Self::E0121,
+        Self::E0122,
         Self::E0201,
         Self::E0202,
         Self::E0203,
@@ -215,6 +223,7 @@ impl Code {
         Self::W0106,
         Self::W0107,
         Self::W0108,
+        Self::W0109,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -250,6 +259,8 @@ impl Code {
             Self::E0118 => "E0118",
             Self::E0119 => "E0119",
             Self::E0120 => "E0120",
+            Self::E0121 => "E0121",
+            Self::E0122 => "E0122",
             Self::E0201 => "E0201",
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
@@ -286,6 +297,7 @@ impl Code {
             Self::W0106 => "W0106",
             Self::W0107 => "W0107",
             Self::W0108 => "W0108",
+            Self::W0109 => "W0109",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -310,6 +322,7 @@ impl Code {
             | Self::W0106
             | Self::W0107
             | Self::W0108
+            | Self::W0109
             | Self::W0201
             | Self::W0203
             | Self::W0204
@@ -339,6 +352,8 @@ impl Code {
             | Self::E0118
             | Self::E0119
             | Self::E0120
+            | Self::E0121
+            | Self::E0122
             | Self::E0201
             | Self::E0202
             | Self::E0203

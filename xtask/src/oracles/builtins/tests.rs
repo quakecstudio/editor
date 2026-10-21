@@ -17,23 +17,17 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, FIXTURE, Outcome, Tally, bound, cases, check, compare, expected_difference, oracle,
-    profile, read_fixture,
+    Case, FIXTURE, Outcome, Project, Tally, ULong, bound, cases, check, check_where, compare,
+    expected_difference, oracle, profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
 fn fte(source: &str) -> Case {
-    Case {
-        dialect: Dialect::Fteqcc,
-        source: source.to_owned(),
-    }
+    Case::new(Dialect::Fteqcc, source.to_owned())
 }
 
 fn vanilla(source: &str) -> Case {
-    Case {
-        dialect: Dialect::Vanilla,
-        source: source.to_owned(),
-    }
+    Case::new(Dialect::Vanilla, source.to_owned())
 }
 
 fn bound_as(number: i32, name: &str) -> Outcome {
@@ -43,8 +37,9 @@ fn bound_as(number: i32, name: &str) -> Outcome {
     }
 }
 
-// spec FTE-23.14: every case of the cross product is recorded, and the profile's outcome is the
-// pinned FTEQCC's or id's qcc's, or differs only as QC-27.9, FTE-23.11 and FTEF-13.8 say
+// spec FTE-23.15: every case of the cross product is recorded, and the profile's outcome is the
+// pinned FTEQCC's or id's qcc's, or differs only as QC-27.9, FTE-23.11, FTEF-13.8 and
+// FTEF-14.47 say
 #[test]
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();
@@ -52,16 +47,91 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     let keys: Vec<String> = cases.iter().map(Case::key).collect();
     assert_eq!(keys.len(), recorded.len());
     assert!(keys.iter().all(|key| recorded.contains_key(key)));
-    let tally = compare(&cases, &recorded);
+    let tally = compare(&cases, &recorded, ULong::Bits64);
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
-        ["FTE-23.11", "FTEF-13.8", "QC-27.9"]
+        ["FTE-23.11", "FTEF-13.8", "FTEF-14.47", "QC-27.9"]
     );
     assert!(tally.agree > 6000, "{tally}");
 }
 
-// spec FTE-23.14: the cross product has both dialects, every prefix, value, suffix and
+// spec FTEF-14.50: an oracle where `unsigned long` is 32 bits may read a `#pragma line` number
+// of 2^32 or more and below 2^64 otherwise than the profile, and only that; the host's width is
+// C's
+#[test]
+fn a_wide_line_pragma_differs_only_where_unsigned_long_is_32_bits() {
+    let ours = bound_as(0, "1");
+    let oracle = bound_as(0, "-1");
+    for (source, ulong, expected) in [
+        (
+            "#pragma line 4294967297\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma line 4294967297\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits64,
+            None,
+        ),
+        (
+            "#pragma LINE(4294967296)\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "  #  pragma line 18446744073709551614\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        ("#pragma line 18446744073709551615\n", ULong::Bits32, None),
+        ("#pragma line 8589934591\n", ULong::Bits32, None),
+        (
+            "#pragma line 0x100000001\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma\tline\t4294967297\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        (
+            "#pragma line -4294967298\n",
+            ULong::Bits32,
+            Some("FTEF-14.50"),
+        ),
+        ("#pragma line 037777777777\n", ULong::Bits32, None),
+        ("#pragma line -1\n", ULong::Bits32, None),
+        (
+            "#pragma line 4294967295\nvoid() f = :__LINESTR__;\n",
+            ULong::Bits32,
+            None,
+        ),
+        ("#pragma line 18446744073709551616\n", ULong::Bits32, None),
+        ("#pragma line 99999999999999999999\n", ULong::Bits32, None),
+        ("#pragma linex 4294967297\n", ULong::Bits32, None),
+        ("#pragma lin\n", ULong::Bits32, None),
+        ("x #pragma line 4294967297\n", ULong::Bits32, None),
+        ("void() f = #5; // 4294967297\n", ULong::Bits32, None),
+    ] {
+        assert_eq!(
+            expected_difference(&fte(source), &ours, &[], &oracle, ulong),
+            expected,
+            "{source:?} {ulong:?}"
+        );
+    }
+    // Only the line `__LINESTR__` names may differ: another builtin number is a failure.
+    let case = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
+    let other = bound_as(5, "-1");
+    let difference = expected_difference(&case, &ours, &[], &other, ULong::Bits32);
+    assert_eq!(difference, None);
+    let rejected = Outcome::Rejected;
+    let difference = expected_difference(&case, &ours, &[], &rejected, ULong::Bits32);
+    assert_eq!(difference, None);
+}
+
+// spec FTE-23.15: the cross product has both dialects, every prefix, value, suffix and
 // declarator, and each pair with and without `g` first, each case once
 #[test]
 fn the_cross_product_holds_every_form_once() {
@@ -90,7 +160,7 @@ fn the_cross_product_holds_every_form_once() {
     assert!(cases.contains(&vanilla(&format!("void() f = :{};\n", "n".repeat(300)))));
 }
 
-// spec FTE-23.14: under FTEQCC the cross product has every character-constant escape, a macro
+// spec FTE-23.15: under FTEQCC the cross product has every character-constant escape, a macro
 // name before every ASCII byte that is no part of a name and before UTF-8 characters, in the
 // source, a body and an argument, and labels and builtins a macro's argument meets
 #[test]
@@ -121,7 +191,7 @@ fn the_cross_product_holds_the_macro_and_escape_families() {
     assert!(cases.contains(&fte("#define E(n) #5:n\nvoid() f = E(ex_a);\n")));
 }
 
-// spec FTE-23.14: under FTEQCC the cross product has every macro-expansion initialiser and
+// spec FTE-23.15: under FTEQCC the cross product has every macro-expansion initialiser and
 // statement: pastes, strings, empty arguments, recursion and argument lists past a chunk
 #[test]
 fn the_cross_product_holds_the_expansion_families() {
@@ -140,7 +210,7 @@ fn the_cross_product_holds_the_expansion_families() {
     assert_eq!(super::EXPANSION_STATEMENTS.len(), 18);
 }
 
-// spec FTE-23.14: under FTEQCC the cross product has the macro-text family: separators in an
+// spec FTE-23.15: under FTEQCC the cross product has the macro-text family: separators in an
 // argument's character constant, comment or string, stored bodies, parameter lists, variadic
 // macros, built-in constants' lines and `__FILE__`, and functions with no body
 #[test]
@@ -163,7 +233,93 @@ fn the_cross_product_holds_the_macro_text_family() {
     }
 }
 
-// spec FTE-23.14: an outcome is written and read back in one form; any other text is refused
+// spec FTE-23.15: under FTEQCC the cross product has the directive family: line ends, names,
+// conditionals, each form in each place, F303's settings, `#pragma line`, the other pragmas,
+// lists, and projects of several files whose keys hold every file
+#[test]
+fn the_cross_product_holds_the_directive_family() {
+    let cases = cases();
+    let family = super::directives::cases();
+    for case in &family {
+        assert!(cases.contains(case), "{case:?}");
+    }
+    assert_eq!(family.len(), 1338);
+    for source in [
+        "#define X 1\n#undef X // c \\\nzz zz zz\nvoid() f = #5;\n",
+        "#defined N #5\nvoid() f = N;\n",
+        "#ifdef Q\n#iffy\n#endif\nzz\n#endif\nvoid() f = #5;\n",
+        "#define M(x, y) y\nvoid() f = M(1,\n#pragma line(40)\n#5);\n",
+        "#pragma warning disable F303\n#define D \\\n#define Y #5 \\\nY\nvoid() f = D;\n",
+        "#pragma line 0x10\nvoid() f = :__LINESTR__;\n",
+        "#includelist\n#define N #5\n#endlist\nvoid() f = N;\n",
+    ] {
+        assert!(family.contains(&fte(source)), "{source:?}");
+    }
+    let nested = family
+        .iter()
+        .find(|case| {
+            case.project
+                .as_ref()
+                .is_some_and(|p| p.compiled == "src/a.qc")
+        })
+        .unwrap();
+    let project = nested.project.as_ref().unwrap();
+    assert_eq!(nested.compiled(), "src/a.qc");
+    assert!(nested.key().starts_with("fteqcc|src/a.qc|#include"));
+    for (name, text) in &project.files {
+        assert!(nested.key().contains(&format!("|{name}={text}")));
+    }
+    assert_eq!(fte("x").compiled(), "t.qc");
+    assert_eq!(fte("x").key(), "fteqcc|x");
+}
+
+// spec FTEF-14.47: an `#eof` past a file's first byte, where FTEQCC crashes, and `#merge` and
+// `#datafile`, whose missing files FTEQCC refuses, may differ only when the profile has no error
+#[test]
+fn fteqcc_may_differ_where_it_crashes_or_opens_a_file() {
+    let rejected = Outcome::Rejected;
+    let bound = bound_as(5, "f");
+    let eof = fte("void() f = #5;\n#eof\nzz\n");
+    let first = fte("#eof\nzz\n");
+    let merge = fte("#merge \"x.dat\"\nvoid() f = #5;\n");
+    let mut datafile = fte("#include \"b.qh\"\nvoid() f = #5;\n");
+    datafile.project = Some(Project {
+        compiled: "t.qc".to_owned(),
+        files: vec![("b.qh".to_owned(), "#datafile \"x\"\n".to_owned())],
+        include_dirs: Vec::new(),
+    });
+    let plain = fte("void() f = #5;\n");
+    let indented = fte("void() f = #5;\n \t#eofx\n");
+    let commented = fte("void() f = #5; // #eof\n/* #eof */\n");
+    let quoted = fte("void() f = #5;\nstring s = \"#eof\";\n");
+    let mut included = fte("#include \"b.qh\"\nvoid() f = #5;\n");
+    included.project = Some(Project {
+        compiled: "t.qc".to_owned(),
+        files: vec![("b.qh".to_owned(), "zz\n#eof\n".to_owned())],
+        include_dirs: Vec::new(),
+    });
+    for (case, errors, oracle, expected) in [
+        (&eof, &[][..], &rejected, Some("FTEF-14.47")),
+        (&eof, &[Code::E0121], &rejected, None),
+        (&eof, &[], &Outcome::Accepted, None),
+        (&first, &[], &rejected, None),
+        (&indented, &[], &rejected, Some("FTEF-14.47")),
+        (&commented, &[], &rejected, None),
+        (&quoted, &[], &rejected, None),
+        (&included, &[], &rejected, Some("FTEF-14.47")),
+        (&merge, &[], &rejected, Some("FTEF-14.47")),
+        (&datafile, &[], &rejected, Some("FTEF-14.47")),
+        (&plain, &[], &rejected, None),
+    ] {
+        assert_eq!(
+            expected_difference(case, &bound, errors, oracle, ULong::Bits64),
+            expected,
+            "{case:?} {errors:?} {oracle}"
+        );
+    }
+}
+
+// spec FTE-23.15: an outcome is written and read back in one form; any other text is refused
 #[test]
 fn outcomes_round_trip() {
     for outcome in [
@@ -226,7 +382,7 @@ fn only_a_vanilla_number_not_above_zero_may_differ() {
         ),
     ] {
         assert_eq!(
-            expected_difference(case, &Outcome::Rejected, errors, &oracle),
+            expected_difference(case, &Outcome::Rejected, errors, &oracle, ULong::Bits64),
             expected,
             "{case:?} {errors:?} {oracle}"
         );
@@ -263,7 +419,7 @@ fn fteqcc_differs_only_where_it_casts_or_hangs() {
         (&plain, &accepted, &[], &Outcome::Hangs, None),
     ] {
         assert_eq!(
-            expected_difference(case, ours, errors, oracle),
+            expected_difference(case, ours, errors, oracle, ULong::Bits64),
             expected,
             "{case:?} {ours} {errors:?} {oracle}"
         );
@@ -388,7 +544,7 @@ fn read(bytes: &[u8]) -> qc_progs::Progs<'_> {
     qc_progs::Progs::read_with(bytes, &options).unwrap()
 }
 
-// spec FTE-23.14: `f`'s function is the first, or the second after `g`'s; FTEQCC writes every
+// spec FTE-23.15: `f`'s function is the first, or the second after `g`'s; FTEQCC writes every
 // builtin's number as `-first_statement`, id's qcc only a nonzero one's (QC-13.4)
 #[test]
 fn bound_reads_f_s_function_by_its_place() {
@@ -475,21 +631,61 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
     move |command: &Command| {
         let dir = command.get_current_dir().unwrap().to_path_buf();
         let fteqcc = command.get_program() == "fteqcc";
-        assert_eq!(command.get_args().count(), usize::from(fteqcc));
+        let args: Vec<String> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let include_dirs: Vec<String> = args
+            .iter()
+            .filter_map(|arg| arg.strip_prefix("-I").map(str::to_owned))
+            .collect();
         assert_eq!(
-            fs::read(dir.join("progs.src")).unwrap(),
-            b"progs.dat\nt.qc\n"
+            args.len(),
+            include_dirs.len().saturating_add(usize::from(fteqcc))
         );
+        assert!(fteqcc || include_dirs.is_empty());
+        let list = fs::read_to_string(dir.join("progs.src")).unwrap();
+        let compiled = list.strip_prefix("progs.dat\n").unwrap().trim_end();
         assert!(!dir.join("progs.dat").exists());
+        let dialect = if fteqcc {
+            Dialect::Fteqcc
+        } else {
+            Dialect::Vanilla
+        };
+        let source = fs::read_to_string(dir.join(compiled)).unwrap();
+        let mut files = Vec::new();
+        written(&dir, &dir, &mut files);
+        files.retain(|(name, _)| name != "progs.src" && name != compiled);
+        files.sort();
+        let project = (dir.ends_with("project")).then(|| Project {
+            compiled: compiled.to_owned(),
+            files,
+            include_dirs,
+        });
         let case = Case {
-            dialect: if fteqcc {
-                Dialect::Fteqcc
-            } else {
-                Dialect::Vanilla
-            },
-            source: fs::read_to_string(dir.join("t.qc")).unwrap(),
+            dialect,
+            source,
+            project,
         };
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
+    }
+}
+
+/// Each file under `dir`, by its name from `root` with `/` between its parts, and its text.
+fn written(root: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            written(root, &path, files);
+            continue;
+        }
+        let parts: Vec<String> = path
+            .strip_prefix(root)
+            .unwrap()
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        files.push((parts.join("/"), fs::read_to_string(&path).unwrap()));
     }
 }
 
@@ -503,7 +699,7 @@ fn repository(name: &str, fixture: &BTreeMap<String, Outcome>) -> PathBuf {
     dir
 }
 
-// spec FTE-23.14: the check runs every case through the oracle of its dialect and passes when
+// spec FTE-23.15: the check runs every case through the oracle of its dialect and passes when
 // the oracles give what the fixture records and the profile agrees
 #[test]
 fn check_passes_when_the_oracles_give_the_recording() {
@@ -517,7 +713,7 @@ fn check_passes_when_the_oracles_give_the_recording() {
     assert!(fake.seen.borrow().iter().any(|line| line == "qcc"));
 }
 
-// spec FTE-23.14: an oracle that gives another outcome than the fixture fails the check, and
+// spec FTE-23.15: an oracle that gives another outcome than the fixture fails the check, and
 // `--record` writes what the oracles gave
 #[test]
 fn check_fails_on_a_stale_recording_and_records_anew() {
@@ -529,17 +725,28 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(!check(&repo, &oracles, false).unwrap());
-    assert!(check(&repo, &oracles, true).unwrap());
+    // spec FTEF-14.50: where `unsigned long` is 32 bits nothing is recorded, and a wide
+    // `#pragma line` the oracle reads otherwise there is no stale recording
+    assert!(check_where(&repo, &oracles, true, ULong::Bits32).is_err());
+    assert_eq!(read_fixture(&repo).unwrap(), stale);
+    assert!(check_where(&repo, &oracles, true, ULong::Bits64).unwrap());
     assert_eq!(read_fixture(&repo).unwrap(), recorded);
+    let wide = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
+    let mut llp64 = recorded.clone();
+    llp64.insert(wide.key(), bound_as(0, "-1"));
+    let fake32 = Fake::new(answering(llp64));
+    let oracles32 = fake_oracles(&repo.join("work"), &fake32);
+    assert!(check_where(&repo, &oracles32, false, ULong::Bits32).unwrap());
+    assert!(!check_where(&repo, &oracles32, false, ULong::Bits64).unwrap());
     // A recording of a case the cross product no longer makes is stale too.
     let mut extra = recorded.clone();
     extra.insert("fteqcc|gone".to_owned(), Outcome::Rejected);
     let repo = repository("builtins-extra", &extra);
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(!check(&repo, &oracles, false).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
 }
 
-// spec FTE-23.14: an oracle whose outcome the profile does not share fails the check, even
+// spec FTE-23.15: an oracle whose outcome the profile does not share fails the check, even
 // when the recording has it
 #[test]
 fn check_fails_when_the_profile_differs() {
@@ -549,14 +756,14 @@ fn check_fails_when_the_profile_differs() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(!check(&repo, &oracles, false).unwrap());
-    let tally = compare(&cases(), &recorded);
+    let tally = compare(&cases(), &recorded, ULong::Bits64);
     assert_eq!(tally.differ, 1);
     let mut missing = recorded;
     missing.remove(&fte("void() f = #5;\n").key());
-    assert_eq!(compare(&cases(), &missing).differ, 2);
+    assert_eq!(compare(&cases(), &missing, ULong::Bits64).differ, 2);
 }
 
-// spec FTE-23.14: a compiler that cannot run, a progs it does not write, and an FTEQCC progs
+// spec FTE-23.15: a compiler that cannot run, a progs it does not write, and an FTEQCC progs
 // qc-progs refuses are errors of the check, not outcomes
 #[test]
 fn oracle_failures_are_errors() {
@@ -623,7 +830,7 @@ fn oracle_failures_are_errors() {
     assert!(err.contains("no function f"), "{err}");
 }
 
-// spec FTE-23.14: an oracle killed at its time limit hangs, an FTEQCC with nothing to write
+// spec FTE-23.15: an oracle killed at its time limit hangs, an FTEQCC with nothing to write
 // accepts, and one that writes no progs for another reason is an error of the check
 #[test]
 fn oracles_that_hang_or_write_nothing() {
@@ -669,7 +876,7 @@ fn oracles_that_hang_or_write_nothing() {
     );
 }
 
-// spec FTE-23.14: a refusal is a redeclaration only when the first error the compiler reports at
+// spec FTE-23.15: a refusal is a redeclaration only when the first error the compiler reports at
 // a line of the file is its redeclaration error; warnings and "defined here" notes are skipped
 #[test]
 fn oracle_reads_the_first_error() {
@@ -700,14 +907,12 @@ fn oracle_reads_the_first_error() {
             stderr: stdout.to_owned(),
             ..Reply::default()
         });
-        let case = Case {
-            dialect: if fteqcc {
-                Dialect::Fteqcc
-            } else {
-                Dialect::Vanilla
-            },
-            source: "void() f = #5;\n".to_owned(),
+        let dialect = if fteqcc {
+            Dialect::Fteqcc
+        } else {
+            Dialect::Vanilla
         };
+        let case = Case::new(dialect, "void() f = #5;\n".to_owned());
         assert_eq!(
             oracle(&fake_oracles(&dir, &fake), &dir, &case).unwrap(),
             outcome,
@@ -716,7 +921,7 @@ fn oracle_reads_the_first_error() {
     }
 }
 
-// spec FTE-23.14: a fixture that is not JSON, or holds an outcome in no known form, is refused
+// spec FTE-23.15: a fixture that is not JSON, or holds an outcome in no known form, is refused
 #[test]
 fn a_bad_fixture_is_refused() {
     let dir = fresh_dir("builtins-bad-fixture");
@@ -737,7 +942,7 @@ fn a_bad_fixture_is_refused() {
     );
 }
 
-// spec FTE-23.14: the tally names each statement an expected difference is recorded under
+// spec FTE-23.15: the tally names each statement an expected difference is recorded under
 #[test]
 fn the_tally_prints_each_count() {
     let mut tally = Tally {

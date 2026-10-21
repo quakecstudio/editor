@@ -628,8 +628,8 @@ fn text_read_again_is_the_text_read_whole() {
     );
 }
 
-// spec FTEF-14.30: a directive other than `#define` goes on past a line break after `\` (LF or CR
-// LF) and inside a `/* */` comment, a `*` or `/` in it no end, and a `//` comment ends it
+// spec FTEF-14.35: a directive other than `#define` goes on past a line break after `\` (LF or CR
+// LF) and inside a `/* */` comment, a `*` or `/` in it no end, and a `//` comment ends its text
 #[test]
 fn other_directives_continue_as_fteqcc_s_do() {
     for (text, want) in [

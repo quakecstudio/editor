@@ -581,6 +581,8 @@ jobs:
       # P2-26 (FTEF-1.1): the FTEQCC corpus mods parse and resolve with zero errors under the
       # FTEQCC profile: FreeCS, Rad-Therapy (whose menu module builds Nuclide's menu-vgui) and
       # Nuclide's own menu-fn. They need the case-insensitive file system FreeCS does.
+      # Rad-Therapy opens through its project file (corpus/projects/freehl), which gives each
+      # module the include directories its Makefiles give FTEQCC (FTEF-14.49).
       # P2-38: so do Copper and Arcane Dimensions, which FTEQCC builds from list-form
       # progs.src files.
       - name: Parse and resolve the FTEQCC corpus mods under the FTEQCC profile

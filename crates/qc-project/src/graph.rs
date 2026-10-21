@@ -357,6 +357,9 @@ enum Base {
 #[derive(Debug)]
 struct Cursor {
     path: PathBuf,
+    /// The file being compiled while this one is read, FTEQCC's `compilingfile`: the file
+    /// itself, or for an `#include`d one the file that included it is read for.
+    unit: PathBuf,
     text: Vec<u8>,
     pos: usize,
     line: u32,
@@ -371,6 +374,7 @@ struct Cursor {
 impl Cursor {
     fn new(path: PathBuf, text: Vec<u8>, entry: Option<usize>, base: Base) -> Self {
         Self {
+            unit: path.clone(),
             path,
             pos: if text.starts_with(UTF8_BOM) {
                 UTF8_BOM.len()
@@ -415,7 +419,7 @@ struct Builder<'l, L> {
     once: HashSet<PathBuf>,
     stack: Vec<Cursor>,
     graph: FileGraph,
-    /// The module's dialect, which decides how an `#if` reads (PRJ-5.5, FTEF-14.11).
+    /// The module's dialect, which decides how an `#if` reads (PRJ-5.5, FTEF-14.33).
     dialect: Dialect,
 }
 
@@ -594,7 +598,14 @@ impl<L: Loader> Builder<'_, L> {
             .count();
         let pragma = lossy(operand.get(..len)).to_ascii_lowercase();
         let (args, _) = com_parse_words(operand.get(len..).unwrap_or_default(), false);
-        let here = dir_of(&cursor.path);
+        // FTEF-14.44: FTEQCC joins an include directory to the file being compiled and marks
+        // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
+        let marked = if self.dialect == Dialect::Fteqcc {
+            &cursor.unit
+        } else {
+            &cursor.path
+        };
+        let here = dir_of(marked);
         match pragma.as_str() {
             "progs_dat" => {
                 if let Some(path) = args.first() {
@@ -615,7 +626,7 @@ impl<L: Loader> Builder<'_, L> {
                 }
             }
             "once" => {
-                let path = cursor.path.clone();
+                let path = marked.clone();
                 self.once.insert(path);
             }
             // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
@@ -653,15 +664,32 @@ impl<L: Loader> Builder<'_, L> {
         differs.then(|| stored.join("/"))
     }
 
-    /// Finds `word` (PRJ-5.2) and starts reading it.
+    /// Finds `word` (PRJ-5.2) and starts reading it. Under FTEQCC an `#include` or an
+    /// `#includelist` entry is found beside the file being compiled, not the file it is in
+    /// (PRJ-5.11, FTEF-14.40); under GMQCC an `#include` is found beside the file it is in and
+    /// then beside the file being compiled (PRJ-5.12).
     fn bring_in(&mut self, word: &str, line: u32, via: Via) {
         let Some(cursor) = self.stack.last() else {
             return;
         };
         let from = cursor.path.clone();
+        let unit = cursor.unit.clone();
+        let beside: Vec<&Path> = match (self.dialect, via) {
+            (Dialect::Gmqcc, Via::Include) => vec![&from, &unit],
+            (Dialect::Fteqcc, Via::Include | Via::IncludeList) => vec![&unit],
+            (Dialect::Vanilla, _)
+            | (Dialect::Fteqcc, Via::Root | Via::Listed)
+            | (Dialect::Gmqcc, Via::Root | Via::Listed | Via::IncludeList) => vec![&from],
+        };
         let parent = cursor.entry;
         let relative = Path::new(word);
-        let mut candidates = vec![normalize(&dir_of(&from).join(relative))];
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        for base in beside {
+            let candidate = normalize(&dir_of(base).join(relative));
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
         if relative.is_relative() {
             for dir in &self.include_dirs {
                 candidates.push(normalize(&dir.join(relative)));
@@ -721,8 +749,12 @@ impl<L: Loader> Builder<'_, L> {
             via,
             parent,
         });
-        self.stack
-            .push(Cursor::new(path, bytes, Some(entry), Base::Code));
+        let mut cursor = Cursor::new(path, bytes, Some(entry), Base::Code);
+        // `QCC_Include(fullname, newunit)`: only a file read as a new unit is compiled.
+        if via == Via::Include {
+            cursor.unit = unit;
+        }
+        self.stack.push(cursor);
     }
 }
 
@@ -745,7 +777,7 @@ fn source_form(text: &[u8]) -> Option<bool> {
 ///
 /// `defines` are defined before the first file (PRJ-5.4) and `include_dirs` are searched
 /// after the including file's directory (PRJ-5.2); an `#if` is read as `dialect` reads it
-/// (PRJ-5.5, FTEF-14.11). Implements PRJ-4, PRJ-5 and PRJ-6; the list form follows QC-23.
+/// (PRJ-5.5, FTEF-14.33). Implements PRJ-4, PRJ-5 and PRJ-6; the list form follows QC-23.
 pub fn build_graph<L: Loader>(
     loader: &mut L,
     src: &Path,

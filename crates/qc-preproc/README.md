@@ -15,16 +15,27 @@ FTE-16), including the rerelease's `#pragma warning disable/enable`; in the vani
 stays an unknown directive (QC-9.9). In an FTEQCC dialect frame macros also carry from one
 source file to the next, and `Preprocessor::restart` begins FTEQCC's second autoprototyping
 pass, forgetting the `#define`s and keeping the frames (FTE-22.3, FTE-22.4). An FTEQCC dialect
-also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-14): `#if`,
-`#elif`, `#elifdef` and `#elifndef` (with the project graph's evaluator, now in `cond`, so both
-take the same sides; it reads an expression with FTEQCC's precedence under an FTEQCC dialect,
-FTEF-14.11, nesting at most 64 levels, FTEF-14.12 and PRJ-5.10), `#pragma noref` and `#pragma autoproto` recorded for the semantic model (FTEF-12.6,
-FTEF-12.10), FTEQCC's frame numbering and its further `$` commands (FTEF-18.16, FTEF-18.17),
-its frame macro diagnostics, "Stale macro used", "Duplicate macro defined", "Name for frame
-macro NAME is too long" and "$modelname name too long" (FTEF-18.22; QCD-2.8, QCD-7.25 to
-QCD-7.27),
-directives continued after a `\`, `#warning`, `#error` and `#message`,
-`#includelist` blocks (the graph's to compile), `#append`, `#eof` and the build directives,
+also reads the full dialect's directives and macros (`dialect-fteqcc.md`, FTEF-14).
+`fte_directive.rs` ports FTEQCC's directive reader from `fte-team/fteqw`'s `qcc_pr_lex.c`
+(`QCC_PR_Precompiler` and the functions it calls: `QCC_PR_SkipToEndOfLine`,
+`QCC_PR_FalsePreProcessorIf`, `QCC_FindBestInclude`, `QCC_PR_NewLine`, `QCC_PR_LexWhitespace`,
+`QCC_PR_SimpleGetToken`, `QCC_PR_SimpleGetString`, `QCC_PR_LexInteger`) and `qcc_cmdlib.c`
+(`QCC_COM_Parse`) under the same policy: it reads a directive as bytes wherever FTEQCC meets one,
+at a line of a file or of a macro's expansion, after a use's `(` and `,`, in an `#includelist`
+and after `#pragma DONT_COMPILE_THIS_FILE`; matches its name by its first bytes; ends its line
+where `QCC_PR_SkipToEndOfLine` ends it, reporting the rest as "unexpected tokens at end of line";
+skips a false side as FTEQCC does, with one count of open sides from file to file; finds an
+`#include` beside the file being compiled and then in the include directories, the module's
+(FTEQCC's `-I`, FTEF-14.49) first; and runs the pragmas that change what is read, `line`, `file`,
+`once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
+(FTEF-14.33 to FTEF-14.47). Under GMQCC an `#include` is tried beside the file that holds it
+first (PRJ-5.12). `#if` and `#elif` use
+the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
+64 levels, FTEF-14.12 and PRJ-5.10). `#pragma noref` and `#pragma autoproto` are recorded for the
+semantic model (FTEF-12.6, FTEF-12.10). FTEQCC's frame numbering and its further `$` commands
+(FTEF-18.16, FTEF-18.17), its frame macro diagnostics, "Stale macro used", "Duplicate macro
+defined", "Name for frame macro NAME is too long" and "$modelname name too long" (FTEF-18.29;
+QCD-2.8, QCD-7.25 to QCD-7.27),
 variadic macros and `__VA_ARGS__`, `#` and `##` in macro bodies, one unused extra macro
 argument, and the built-in constants such as `__NULL__`. A `#` right before the name of a
 macro or built-in constant is that expansion with no `#`, as FTEQCC's lexer reads it
@@ -55,8 +66,9 @@ expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
 - **Also cited here, in sections another crate completes:** QC-27.5 (the `,`/`;` and
   frame-count divergence), QCD-2.6 and QCD-6.4 (the unknown-frame and frame-limit codes
   `qc-lexer` defines), QCD-2.8 and QCD-7.25 to QCD-7.27 (FTEQCC's frame macro diagnostics,
-  FTEF-18.22), and QCD-7.2 (the W0102 "macro redefined" warning). QCD-7 is otherwise
-  the semantic model's resolution warnings, so it is not declared above.
+  FTEF-18.29), QCD-7.31 (the W0109 form of F303, FTEF-14.46), and QCD-7.2 (the W0102 "macro
+  redefined" warning). QCD-7 is otherwise the semantic model's resolution warnings, so it is
+  not declared above.
 - **Mutation:** two survivors on the case-fold comparison are equivalent to the original on
   every realisable input and recorded under `[crates.qc-preproc].equivalent_mutants` in
   `ratchets.toml`: the trait's default `stored_name` (its body already returns `None`), and the

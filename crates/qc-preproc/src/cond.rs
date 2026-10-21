@@ -6,9 +6,11 @@
 //! directives that decide which files a module reads (`qc-project`), and the preprocessor in an
 //! FTEQCC dialect (FTEF-14.1), so the two always take the same side. Under the vanilla profile
 //! the expression has C's precedence (PRJ-5.5); under an FTEQCC profile it is read as FTEQCC's
-//! `ParsePrecompilerIf` reads it (FTEF-14.11).
+//! `ParsePrecompilerIf` reads it (FTEF-14.33).
 
 use qc_lexer::Dialect;
+
+use crate::fte_directive::simple_get_token;
 
 /// Deepest nesting of `!` and parentheses an expression may have; a deeper one is false, so
 /// no input exhausts the stack.
@@ -210,17 +212,14 @@ impl Parser<'_> {
 /// defined macro and `None` for a name that is not one.
 ///
 /// Under the vanilla profile the expression has C's precedence and one that does not parse is
-/// false (PRJ-5.5); under an FTEQCC profile it is read as FTEQCC reads it (FTEF-14.11).
+/// false (PRJ-5.5); under an FTEQCC profile it is read as FTEQCC reads it (FTEF-14.33), and one
+/// FTEQCC reports as an error, or one nested too deeply (FTEF-14.12), is false.
 #[must_use]
 pub fn eval(expr: &str, macros: &dyn Fn(&str) -> Option<String>, dialect: Dialect) -> bool {
     if dialect.has_fteqcc_extensions() {
-        let mut reader = FteIf {
-            text: expr.as_bytes(),
-            pos: 0,
-            depth: 0,
-            macros,
-        };
-        return reader.level(FTE_TOPLEVEL).is_some_and(|value| value != 0);
+        return fte_if(expr.as_bytes(), macros)
+            .0
+            .is_ok_and(|value| value != 0);
     }
     let Some(toks) = tokens(expr) else {
         return false;
@@ -236,6 +235,33 @@ pub fn eval(expr: &str, macros: &dyn Fn(&str) -> Option<String>, dialect: Dialec
     }
 }
 
+/// Why FTEQCC's `#if` reader gave no value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FteIfError {
+    /// An error FTEQCC reports, with its text: "unclosed bracket condition", "unclosed defined
+    /// condition" or "unexpected end-of-line" (FTEF-14.33).
+    Reported(&'static str),
+    /// Nested deeper than this profile reads (FTEF-14.12).
+    TooDeep,
+}
+
+/// `ParsePrecompilerIf(PPI_TOPLEVEL)` over `text` (FTEF-14.33): the expression's value or why
+/// it has none, and the offset where reading stopped, from which `QCC_PR_SkipToEndOfLine`
+/// reads the rest of the directive's line.
+pub(crate) fn fte_if(
+    text: &[u8],
+    macros: &dyn Fn(&str) -> Option<String>,
+) -> (Result<i64, FteIfError>, usize) {
+    let mut reader = FteIf {
+        text,
+        pos: 0,
+        depth: 0,
+        macros,
+    };
+    let value = reader.level(FTE_TOPLEVEL);
+    (value, reader.pos)
+}
+
 /// `PPI_NOT` in FTEQCC's `ParsePrecompilerIf`: the operand of `!`.
 const FTE_NOT: u8 = 1;
 /// `PPI_COMPARISON`: `<=`, `>=`, `<`, `>`, `!=` and `==`, one level, to the right.
@@ -248,7 +274,7 @@ const FTE_TOPLEVEL: u8 = 5;
 /// The comparison operators of `PPI_COMPARISON`, in the order FTEQCC tries them.
 const FTE_COMPARISONS: [&[u8]; 6] = [b"<=", b">=", b"<", b">", b"!=", b"=="];
 
-/// FTEQCC's `#if` reader (FTEF-14.11): `ParsePrecompilerIf` over the expression's bytes.
+/// FTEQCC's `#if` reader (FTEF-14.33): `ParsePrecompilerIf` over the expression's bytes.
 struct FteIf<'a> {
     text: &'a [u8],
     pos: usize,
@@ -290,47 +316,30 @@ impl FteIf<'_> {
         }
     }
 
-    /// `QCC_PR_SimpleGetToken`: whitespace skipped, then the bytes up to whitespace, `,`, `;`,
-    /// `(`, `)`, `]` or `//`. `None` at the end of the line, at a comment, or when no byte is
-    /// taken.
+    /// `QCC_PR_SimpleGetToken` from where reading stands ([`simple_get_token`]): the word, and
+    /// reading goes on after it.
     fn word(&mut self) -> Option<String> {
-        while let Some(b) = self.peek(0) {
-            if !fte_white(b) {
-                break;
-            }
-            if b == b'\n' {
-                return None;
-            }
-            self.advance(1);
-        }
-        if self.peek(0) == Some(b'/') && matches!(self.peek(1), Some(b'/' | b'*')) {
-            return None;
-        }
-        let start = self.pos;
-        while let Some(b) = self.peek(0) {
-            let stop = fte_white(b)
-                || matches!(b, b',' | b';' | b')' | b'(' | b']')
-                || (b == b'/' && self.peek(1) == Some(b'/'));
-            if stop {
-                break;
-            }
-            self.advance(1);
-        }
-        let word = self.text.get(start..self.pos)?;
-        (!word.is_empty()).then(|| String::from_utf8_lossy(word).into_owned())
+        let (word, stop) = simple_get_token(self.text, self.pos);
+        self.pos = stop;
+        let word = self.text.get(word?)?;
+        Some(String::from_utf8_lossy(word).into_owned())
     }
 
     /// `ParsePrecompilerIf(level)` one nesting deeper, for a parenthesis, a `!` or an
-    /// operator's right side: `None` past the nesting limit.
-    fn nested(&mut self, level: u8) -> Option<i64> {
-        self.depth = self.depth.checked_add(1).filter(|d| *d <= MAX_DEPTH)?;
+    /// operator's right side: [`FteIfError::TooDeep`] past the nesting limit.
+    fn nested(&mut self, level: u8) -> Result<i64, FteIfError> {
+        self.depth = self
+            .depth
+            .checked_add(1)
+            .filter(|d| *d <= MAX_DEPTH)
+            .ok_or(FteIfError::TooDeep)?;
         let value = self.level(level);
         self.depth = self.depth.saturating_sub(1);
         value
     }
 
-    /// `ParsePrecompilerIf(level)`: `None` where FTEQCC reports an error.
-    fn level(&mut self, level: u8) -> Option<i64> {
+    /// `ParsePrecompilerIf(level)`: an error where FTEQCC reports one.
+    fn level(&mut self, level: u8) -> Result<i64, FteIfError> {
         let Some(below) = level.checked_sub(1) else {
             return self.value();
         };
@@ -342,16 +351,16 @@ impl FteIf<'_> {
             FTE_LOGICAL if self.starts_with(b"||") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
-                Some(i64::from(rhs != 0 || value != 0))
+                Ok(i64::from(rhs != 0 || value != 0))
             }
             FTE_LOGICAL if self.starts_with(b"&&") => {
                 self.advance(2);
                 let rhs = self.nested(level)?;
-                Some(i64::from(rhs != 0 && value != 0))
+                Ok(i64::from(rhs != 0 && value != 0))
             }
             FTE_COMPARISON => {
                 let Some(op) = FTE_COMPARISONS.into_iter().find(|op| self.starts_with(op)) else {
-                    return Some(value);
+                    return Ok(value);
                 };
                 self.advance(op.len());
                 let rhs = self.nested(level)?;
@@ -363,30 +372,29 @@ impl FteIf<'_> {
                     b"!=" => value != rhs,
                     _ => value == rhs,
                 };
-                Some(i64::from(result))
+                Ok(i64::from(result))
             }
-            _ => Some(value),
+            _ => Ok(value),
         }
     }
 
     /// The `PPI_VALUE` case: `(expr)`, `!value`, `defined NAME` or `defined(NAME)`, or a word,
     /// a macro's text or the word itself read with `atoi`.
-    fn value(&mut self) -> Option<i64> {
+    fn value(&mut self) -> Result<i64, FteIfError> {
         self.skip_white();
         if self.peek(0) == Some(b'(') {
             self.advance(1);
             let value = self.nested(FTE_TOPLEVEL)?;
             self.skip_blanks();
-            // "unclosed bracket condition"
             if self.peek(0) != Some(b')') {
-                return None;
+                return Err(FteIfError::Reported("unclosed bracket condition"));
             }
             self.advance(1);
-            return Some(value);
+            return Ok(value);
         }
         if self.peek(0) == Some(b'!') {
             self.advance(1);
-            return Some(i64::from(self.nested(FTE_NOT)? == 0));
+            return Ok(i64::from(self.nested(FTE_NOT)? == 0));
         }
         if self.starts_with(b"defined") {
             self.advance(7);
@@ -399,17 +407,17 @@ impl FteIf<'_> {
             let defined = (self.macros)(&name).is_some();
             if brackets {
                 self.skip_blanks();
-                // "unclosed defined condition"
                 if self.peek(0) != Some(b')') {
-                    return None;
+                    return Err(FteIfError::Reported("unclosed defined condition"));
                 }
                 self.advance(1);
             }
-            return Some(i64::from(defined));
+            return Ok(i64::from(defined));
         }
-        // "unexpected end-of-line"
-        let word = self.word()?;
-        Some((self.macros)(&word).map_or_else(|| atoi(&word), |body| atoi(&body)))
+        let word = self
+            .word()
+            .ok_or(FteIfError::Reported("unexpected end-of-line"))?;
+        Ok((self.macros)(&word).map_or_else(|| atoi(&word), |body| atoi(&body)))
     }
 }
 
@@ -540,7 +548,7 @@ mod tests {
     }
 
     // spec PRJ-5.5: under the vanilla profile `&&` binds tighter than `||`, as in C
-    // spec FTEF-14.11: under the FTEQCC profile `||` and `&&` share one level and group to the right
+    // spec FTEF-14.33: under the FTEQCC profile `||` and `&&` share one level and group to the right
     #[test]
     fn logical_precedence_by_profile() {
         let m = macros();
@@ -561,7 +569,7 @@ mod tests {
         assert!(!fte_eval("(1 || 1) && 0", &m));
     }
 
-    // spec FTEF-14.11: the comparisons share one level and group to the right, below `||` and `&&`
+    // spec FTEF-14.33: the comparisons share one level and group to the right, below `||` and `&&`
     #[test]
     fn fteqcc_comparisons() {
         let m = macros();
@@ -585,7 +593,7 @@ mod tests {
         }
     }
 
-    // spec FTEF-14.11: a value is a whitespace-delimited word read with atoi, defined takes a name with or without parentheses, and ! negates a value
+    // spec FTEF-14.33: a value is a whitespace-delimited word read with atoi, defined takes a name with or without parentheses, and ! negates a value
     #[test]
     fn fteqcc_values() {
         let m = macros();
@@ -615,7 +623,7 @@ mod tests {
         }
     }
 
-    // spec FTEF-14.11: an expression FTEQCC reports as an error is false
+    // spec FTEF-14.33: an expression FTEQCC reports as an error is false
     #[test]
     fn fteqcc_errors_are_false() {
         let m = macros();
@@ -693,7 +701,7 @@ mod tests {
         assert!(!eval("1 > 2", &m));
     }
 
-    // spec FTEF-14.11: each comparison compares as its operator says, at the boundary too
+    // spec FTEF-14.33: each comparison compares as its operator says, at the boundary too
     #[test]
     fn fteqcc_comparison_operators() {
         let m = macros();
@@ -713,7 +721,7 @@ mod tests {
         }
     }
 
-    // spec FTEF-14.11: a word ends at `//` but not at a lone `/` or `*`, and a comment can
+    // spec FTEF-14.33: a word ends at `//` but not at a lone `/` or `*`, and a comment can
     // start only a word
     #[test]
     fn fteqcc_words_and_slashes() {

@@ -194,6 +194,7 @@ fn a_compiled_file_that_cannot_be_read_is_an_error() {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(2), FileId(1)],
         autoproto: None,
+        include_dirs: Vec::new(),
     };
     assert_eq!(
         db.file_path(FileId(1)),
@@ -265,7 +266,7 @@ fn autoprototyping_preprocesses_twice() {
     assert!(codes(&without).contains(&Code::E0106));
     db.set_autoproto(true);
     let with = db.analyze_module(&input);
-    // FTEF-18.22: the frame is the first pass's, so the use is stale, a warning.
+    // FTEF-18.29: the frame is the first pass's, so the use is stale, a warning.
     assert_eq!(codes(&with), [Code::W0105]);
 }
 
@@ -319,6 +320,7 @@ fn an_unchanged_module_is_served_from_cache() {
         prelude: Vec::new(),
         compiled: input.compiled[..2].to_vec(),
         autoproto: None,
+        include_dirs: Vec::new(),
     };
     db.analyze_module(&fewer);
     let after = db.counts();

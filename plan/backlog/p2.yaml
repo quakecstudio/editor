@@ -1646,6 +1646,10 @@ issues:
   - P2-98
   - P2-99
   - P2-100
+  - P2-101
+  - P2-102
+  - P2-103
+  - P2-104
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1970,3 +1974,85 @@ issues:
   verify:
   - cargo test -p xtask pr_body
   - shellcheck .claude/skills/work-issue/scripts/*.sh
+- key: P2-101
+  title: Read an FTEQCC module's graph directives with the preprocessor's directive reader
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-94
+  - P2-96
+  deliverable:
+  - 'crates/qc-project/src/graph.rs, through a public reader in crates/qc-preproc (fte_directive): under the FTEQCC profile the graph reads the directives that decide which files are read as `QCC_PR_Precompiler` does (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), with the reader the preprocessor uses (FTEF-14.33 to FTEF-14.47): names matched by their first bytes (`#defined`, `#includes`), lines ended where `QCC_PR_SkipToEndOfLine` ends them (a `//` comment ending in `\` carries the next line), false sides skipped by `QCC_PR_FalsePreProcessorIf` with one count of open sides from file to file, `#pragma DONT_COMPILE_THIS_FILE` and `#eof` ending the reading, and directives on the lines of an `#includelist`. The graph reads them with its own line reader (PRJ-5.1), so an FTEQCC module whose `#include` stands after such a line lists other files than FTEQCC compiles. Found by the self-review of P2-94 to P2-99'
+  acceptance:
+  - 'Under the FTEQCC profile the graph lists the files the pinned FTEQCC compiles for programs whose `#include` and `#includelist` lines follow each directive form of FTEF-14.34 to FTEF-14.44, recorded against it; the vanilla dialect keeps PRJ-5; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+  - cargo xtask project-corpus
+- key: P2-102
+  title: Group an FTEQCC directive's line in the syntax tree where FTEQCC ends it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-94
+  deliverable:
+  - 'crates/qc-syntax/src/input.rs: under the FTEQCC profile a directive piece of the lossless tree starts where `QCC_PR_NewLine` reads a `#` (FTEF-14.34: after a line ending and spaces and tabs, never after a `/* */` comment on its line) and ends where `QCC_PR_SkipToEndOfLine` ends its line (FTEF-14.35: on past a `\` and line break in a `//` comment, and over a `/* */` comment that spans lines), with the end the preprocessor uses, so the editor shows as directive the text FTEQCC reads as one. The tree closes a directive at the first line break after its `#`, as the vanilla dialect does. Found by the self-review of P2-94 to P2-99'
+  acceptance:
+  - 'Under the FTEQCC profile the directive pieces of a file match the directive ends of the preprocessor for each case of FTEF-14.34 and FTEF-14.35; the vanilla dialect keeps its pieces; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-103
+  title: The semantic model drops a `#` the preprocessor leaves at the start of a line
+  labels:
+  - L3-semantics
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  summary: |
+    qc-sema renders a compiled file's tokens a source line to a rendered line (crates/qc-sema/src/expand.rs) and parses the rendering with qc_syntax::parse_with, whose input groups a `#` and a name at a line's start as a directive line and skips it (crates/qc-syntax/src/input.rs). A `#` the preprocessor leaves as code first on its line, such as `/* c */#foo` under the vanilla dialect, is then dropped without a word: the vanilla profile reports nothing for `/* c */#foo` and `void() f = #5;`, where id's qcc reports '"#" is not a type'. Under FTEQCC the preprocessor reports such a `#` itself (FTEF-14.34), which the vanilla dialect does not.
+  environment: |
+    feat/507-fteqcc-directives; found while checking the directive family of P2-94 to P2-99 against id's qcc, by a test of Db::analyze_module
+  depends:
+  - P2-94
+  deliverable:
+  - 'crates/qc-sema (expand.rs, and qc-syntax where its parse of a rendering needs it): a rendered file holds no directive lines, so a `#` the preprocessor leaves is parsed as the token it is under both dialects, and the FTEQCC preprocessor''s own report of a first-on-its-line `#NAME` (FTEF-14.34) is no longer needed and is removed'
+  acceptance:
+  - 'Through Db::analyze_module the vanilla profile refuses `/* c */#foo` and `void() f = #5;` as id''s qcc does, and the FTEQCC profile as the pinned FTEQCC does, with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-sema
+- key: P2-104
+  title: The vanilla preprocessor finds an include in the module's include directories
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    The project graph finds an `#include` beside the file that holds it and then in the module's include directories (PRJ-5.2), and the FTEQCC and GMQCC preprocessors are given those directories (qc_preproc::Preprocessor::with_include_dirs, FTEF-14.49), but the vanilla preprocessor's `#include` (crates/qc-preproc/src/lib.rs, `include`) looks only beside the file (QC-9.2). A vanilla module whose quakec.toml gives include_dirs therefore opens in the graph and fails in Db::analyze_module with E0111 for each file only an include directory holds.
+  environment: |
+    feat/507-fteqcc-directives; found while giving FTEQCC's -I to the preprocessor for Rad-Therapy (P2-96)
+  depends:
+  - P2-96
+  deliverable:
+  - 'crates/qc-preproc (lib.rs, `include`): under the vanilla dialect an `#include` not found beside the file holding it is looked for in the include directories with_include_dirs gives, in order, as PRJ-5.2 says; docs/spec/language.md QC-9.2 says so, or names the statement that does'
+  acceptance:
+  - 'A vanilla module whose included file is only in an include directory preprocesses with no E0111 through Db::analyze_module, and one beside the including file is still preferred, each with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-sema

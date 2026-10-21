@@ -157,7 +157,7 @@ fn analyze(
         let text = fs::read(&file.path).map_err(|e| format!("{}: {e}", file.path.display()))?;
         db.set_file(FileId(index), file.path.clone(), text);
     }
-    let analysis = db.analyze_module(&ModuleInput::from_graph(&module.graph));
+    let analysis = db.analyze_module(&ModuleInput::from_module(module));
     Ok((db, analysis))
 }
 

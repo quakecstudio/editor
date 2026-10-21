@@ -234,7 +234,13 @@ fn every_command_of_cargo_xtask_oracles_runs() {
     assert!(!run(&dir, &words("scenarios defaults"), &fake, &files).unwrap());
     // The fake compilers write no progs.dat, so the builtin differential fails too.
     assert!(!run(&dir, &words("builtins"), &fake, &files).unwrap());
-    assert!(!run(&dir, &words("builtins --record"), &fake, &files).unwrap());
+    // spec FTEF-14.50: where `unsigned long` is 32 bits the fixture is not recorded at all.
+    let recording = run(&dir, &words("builtins --record"), &fake, &files);
+    if super::builtins::ULong::HOST == super::builtins::ULong::Bits64 {
+        assert!(!recording.unwrap());
+    } else {
+        assert!(recording.is_err());
+    }
     assert!(run(&dir, &words("builtins again"), &fake, &files).is_err());
     assert!(run(&dir, &words("id101 nowhere"), &fake, &files).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
