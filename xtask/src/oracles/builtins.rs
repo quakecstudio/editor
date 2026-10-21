@@ -1366,7 +1366,7 @@ fn function_name(case: &Case) -> &str {
 }
 
 /// Whether `text` has an `#eof` that FTEQCC would run past its first line: one that starts a
-/// line after spaces and tabs (FTEF-14.34, FTEF-14.47). A line of a skipped side matches too, as
+/// line after spaces and tabs (FTEF-14.52, FTEF-14.47). A line of a skipped side matches too, as
 /// the text alone does not say which sides FTEQCC skips; FTEQCC accepts those, and only a
 /// refusal is matched.
 fn eof_past_first_line(text: &str) -> bool {

@@ -333,7 +333,7 @@ dialect features (P2-01, P2-03).
   preprocessor changes nothing for vanilla code.
 - **QC-9.2** `#include "path"` replaces the directive with the contents of the named file,
   resolved relative to the directory of the file containing the directive, or, when no file is
-  there, as QC-9.19 says. Diagnostics and statements in the included text carry the included
+  there, as QC-9.20 says. Diagnostics and statements in the included text carry the included
   file's name and lines.
 - **QC-9.3** `#define NAME` and `#define NAME text` define an object-like macro whose body is
   the rest of the line, trimmed. `#define NAME(a, b) text`, with the `(` directly after the
@@ -437,7 +437,18 @@ dialect features (P2-01, P2-03).
   either bound is "macro expansion too large" (`E0120`, QCD-8.13), reported once, and it and later
   uses are left as written. id's `qcc` has no macros (QC-9), so the bound is this project's own,
   that no file exhausts the memory of the semantic model, which preprocesses on every edit.
-- **QC-9.19** An `#include` whose path names no readable file beside the file containing it is
+- **QC-9.19** The semantic model parses the preprocessor's output as text with no directive lines
+  (`qc_syntax::parse_preprocessed`): every directive has run, so a `#` left in the output is the
+  `#` token in both dialects, first on its line too, as one after a `/* */` comment at a line's
+  start (QC-9.1) or one a macro's body writes. id's `qcc`, which has no preprocessor, reads such a
+  `#` as any other: `/* c */#foo` at the top level is `"#" is not a type` (`E0203`), `void() f =`
+  before `/* c */#foo;` on the next line is "Bad builtin immediate" (`E0209`), and
+  `void() f =` before `/* c */#5;` is builtin 5. The vanilla profile reports the same. Under
+  FTEQCC, whose preprocessor leaves `#foo` when `foo` names no macro (`dialect-fteqcc.md`
+  FTEF-14.52), the pinned FTEQCC refuses the first two ("Explicit precompiler usage when not
+  defined foo") and takes the third, and so does the profile, with the parser's errors. The tree
+  of a file as written keeps its directive lines (QC-9.1).
+- **QC-9.20** An `#include` whose path names no readable file beside the file containing it is
   looked for in the module's include directories (`include_dirs`, PRJ-5.2), in order, as the
   project graph finds it, and the first that names a readable file is read; a path that is not
   relative is looked for only where it names. When none is readable it is QC-9.11's error, which

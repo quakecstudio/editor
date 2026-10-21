@@ -37,7 +37,7 @@ fn end(at: usize, junk: bool) -> LineEnd {
     LineEnd { at, junk }
 }
 
-// spec FTEF-14.34: a `#` is read as a directive after a line ending (a LF, or a CR not before a
+// spec FTEF-14.52: a `#` is read as a directive after a line ending (a LF, or a CR not before a
 // LF) and spaces and tabs, at a compiled file's start after spaces and tabs, at an included
 // file's first byte only, and never at a chunk's start or after another byte on its line
 #[test]
@@ -160,7 +160,7 @@ fn com_parse_reads_tokens() {
     assert_eq!(parse("/* c"), None);
 }
 
-// spec FTEF-14.34: a directive's name is matched by its first bytes, in FTEQCC's order, after
+// spec FTEF-14.52: a directive's name is matched by its first bytes, in FTEQCC's order, after
 // every byte up to a space but a line break; a `#` before a line break hangs; no match is no
 // directive
 #[test]
@@ -545,18 +545,14 @@ fn every_directive_ends_its_line_as_fteqcc_does() {
     assert_eq!(fte("#pragma once // c \\\ny\n"), ("y".to_owned(), vec![]));
 }
 
-// spec FTEF-14.34: `#name` that matches no directive is read as code: a macro's use, or E0121
-// for a `#` first on its line before a word that names no macro; `# ` before a line break hangs
+// spec FTEF-14.52: `#name` that matches no directive is read as code: a macro's use, or a `#`
+// and a name the parser reads, first on a line or in the rest of one; `# ` before a line break
+// hangs
 #[test]
 fn hashes_that_start_no_directive() {
     assert_eq!(fte("#define N 5\n#N\n"), ("5".to_owned(), vec![]));
-    assert_eq!(fte("#foo\nx\n"), ("# foo x".to_owned(), vec![Code::E0121]));
-    let (_, out) = one_fte("/* c */#undef N\n");
-    assert_eq!(
-        out.diagnostics[0].message,
-        "Explicit precompiler usage when not defined undef"
-    );
-    // In the rest of a line it is the parser's.
+    assert_eq!(fte("#foo\nx\n"), ("# foo x".to_owned(), vec![]));
+    assert_eq!(fte("/* c */#undef N\n"), ("# undef N".to_owned(), vec![]));
     assert_eq!(fte("x #foo\n"), ("x # foo".to_owned(), vec![]));
     assert_eq!(fte("#5\n").1, vec![]);
     assert_eq!(fte("# \nx\n"), ("x".to_owned(), vec![Code::E0121]));
@@ -564,7 +560,10 @@ fn hashes_that_start_no_directive() {
     assert_eq!(out.diagnostics[0].message, "Hanging # with no directive");
     // `#  define` is a directive, a vertical tab too; after a `/* */` it is code.
     assert_eq!(fte("#  define N 5\n#\x0bdefine M 6\nN M\n").0, "5 6");
-    assert_eq!(fte("/* */#define N 5\n").1, vec![Code::E0121]);
+    assert_eq!(
+        fte("/* */#define N 5\n"),
+        ("# define N 5".to_owned(), vec![])
+    );
 }
 
 // spec FTEF-14.36: `#undefine N` undefines `ine`; `#ifdef` alone is false and `#ifndef` alone true;

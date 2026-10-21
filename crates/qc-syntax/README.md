@@ -13,7 +13,9 @@ The tree is of the file as written: macros are not expanded and both sides of a 
 are parsed. Directive lines and `$frame` lines are trivia to the parser; frame macro
 references are literals, resolved later.
 
-`parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`.
+`parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
+`parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
+lines, so a `#` first on its line is a token (QC-9.19).
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
 (`docs/spec/dialect-fteqcc-rerelease.md`, FTE-2 to FTE-16): `for`, `switch`/`case`/`default`,
 `break`/`continue`, postfix `++`/`--`, the compound assignments, `%`, the ternary `?:` at the

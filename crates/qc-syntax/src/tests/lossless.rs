@@ -6,7 +6,7 @@ use proptest::prelude::*;
 
 use super::{SAMPLE, SAMPLE_FTEQCC};
 use crate::ast::AstNode as _;
-use crate::{Dialect, SyntaxKind, parse, parse_with};
+use crate::{Code, Dialect, SyntaxKind, parse, parse_with};
 
 /// Checks that the tokens of `root` tile `source` exactly and give it back.
 fn assert_lossless(source: &[u8]) {
@@ -194,6 +194,24 @@ fn hash_number_is_not_a_directive() {
     assert_eq!(super::errors(&parsed), vec![]);
     assert!(!super::kinds(&parsed).contains(&SyntaxKind::Directive));
     assert!(super::kinds(&parsed).contains(&SyntaxKind::Builtin));
+}
+
+// spec QC-9.19: text a preprocessor wrote has no directive lines, so a `#` and a name first on
+// a line are the tokens the parser reads, and the tree still gives the text back
+#[test]
+fn preprocessed_text_has_no_directive_lines() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        let source = b"#foo\nfloat a;\n";
+        let parsed = crate::parse_preprocessed(source, dialect);
+        assert_eq!(
+            super::errors(&parsed),
+            vec![(Code::E0203, "\"#\" is not a type".to_owned())],
+            "{dialect:?}"
+        );
+        assert!(!super::kinds(&parsed).contains(&SyntaxKind::Directive));
+        assert_eq!(parsed.syntax().text(), source);
+        assert_eq!(super::errors(&parse_with(source, dialect)), vec![]);
+    }
 }
 
 #[test]

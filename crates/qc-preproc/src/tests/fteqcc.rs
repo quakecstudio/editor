@@ -152,10 +152,7 @@ fn includelists_produce_no_tokens() {
         fte("#includelist\nb.qc #endlist x\ny\n"),
         ("y".to_owned(), vec![Code::E0121])
     );
-    assert_eq!(
-        fte("#endlist\nx\n"),
-        ("# endlist x".to_owned(), vec![Code::E0121])
-    );
+    assert_eq!(fte("#endlist\nx\n"), ("# endlist x".to_owned(), vec![]));
     assert_eq!(
         fte("#includelist\nb.qc\n"),
         (String::new(), vec![Code::E0406])
@@ -355,7 +352,7 @@ fn autoproto_pragmas_are_recorded() {
     // A directive's name is matched as written, so `#PRAGMA` is none, and its words are code.
     let (_, out) = one_fte("#PRAGMA noref 1\n#pragma NOREF 1\nx");
     assert_eq!(out.noref, vec![(4, true)]);
-    assert_eq!(codes(&out), vec![Code::E0121]);
+    assert_eq!(codes(&out), vec![]);
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#pragma autoproto\n".as_bytes());
     let mut pp = Preprocessor::new(loader);

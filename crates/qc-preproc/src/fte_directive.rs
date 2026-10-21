@@ -68,7 +68,7 @@ pub(crate) fn skip_blanks(text: &[u8], mut at: usize) -> usize {
     at
 }
 
-/// How a text starts, for a `#` at its start (FTEF-14.34).
+/// How a text starts, for a `#` at its start (FTEF-14.52).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TextStart {
     /// A compiled file: `QCC_PR_CompileFile` calls `QCC_PR_NewLine` at its start, which skips
@@ -82,7 +82,7 @@ pub(crate) enum TextStart {
 }
 
 /// Whether `QCC_PR_NewLine`, or `QCC_PR_Precompiler` at a file's start, reads the `#` at
-/// `hash` (FTEF-14.34): only spaces and tabs stand between it and a line ending before it, or,
+/// `hash` (FTEF-14.52): only spaces and tabs stand between it and a line ending before it, or,
 /// as `start` says, the text's start.
 pub(crate) fn starts_line(text: &[u8], hash: usize, start: TextStart) -> bool {
     let before = text.get(..hash).unwrap_or_default();
@@ -537,7 +537,7 @@ pub(crate) enum Directive {
     Pragma { pragma: Pragma, end: usize },
 }
 
-/// The directive at the `#` at `hash` (FTEF-14.34), as `QCC_PR_Precompiler` reads it: after the
+/// The directive at the `#` at `hash` (FTEF-14.52), as `QCC_PR_Precompiler` reads it: after the
 /// `#` every byte up to `' '` but a line break is passed over, and the name is matched by its
 /// first bytes, in FTEQCC's order: `define`, `append`, `undef`, `if`, `else` and `elif`,
 /// `endif`, `eof`, `error`, `warning`, `message`, `copyright`, `package`, `pack`, `forcecrc`,
@@ -1324,7 +1324,7 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// `QCC_PR_Precompiler` at the `#` at `hash` in `bytes`, met at `position` (FTEF-14.34 to
+    /// `QCC_PR_Precompiler` at the `#` at `hash` in `bytes`, met at `position` (FTEF-14.52 to
     /// FTEF-14.47): runs the directive and says where reading goes on, or `None` when the `#`
     /// starts no directive and is read as code.
     pub(crate) fn fte_directive(

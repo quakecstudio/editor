@@ -186,7 +186,7 @@ fn include_relative_to_includer() {
     assert_eq!(paths[3], "src/c.qc:1");
 }
 
-// spec QC-9.19: under the vanilla dialect an `#include` not beside the including file is found
+// spec QC-9.20: under the vanilla dialect an `#include` not beside the including file is found
 // in the include directories, in order
 #[test]
 fn include_found_in_an_include_directory() {
@@ -224,7 +224,7 @@ fn include_found_in_an_include_directory() {
     assert!(message.contains("src/b.qh"), "{message}");
 }
 
-// spec QC-9.19: a file beside the including file is preferred to one in an include directory,
+// spec QC-9.20: a file beside the including file is preferred to one in an include directory,
 // and an absolute name is not looked for in them
 #[test]
 fn include_beside_the_includer_is_preferred() {

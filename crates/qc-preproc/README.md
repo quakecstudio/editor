@@ -30,7 +30,7 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 `once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
 (FTEF-14.33 to FTEF-14.47). Under GMQCC an `#include` is tried beside the file that holds it
 first (PRJ-5.12). In the vanilla dialect an `#include` not beside the file that holds it is
-looked for in the module's include directories (QC-9.19). `fte_directive/graph.rs` gives the
+looked for in the module's include directories (QC-9.20). `fte_directive/graph.rs` gives the
 project graph the same reader (`FteFileReader`, with `ModuleState` for what a module keeps from
 file to file): it runs the directives of an FTEQCC file as the preprocessor does, reads the
 code between them as the preprocessor does, a token of the lexer at a time, and says which files

@@ -287,7 +287,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   `dialect-fteqcc.md` FTEF-14.28).
 - **QCD-8.14** `E0121` "TEXT": under an FTEQCC profile, an error FTEQCC's preprocessor reports,
   with FTEQCC's text, at the directive: "unexpected tokens at end of line" (FTEF-14.35),
-  "Hanging # with no directive" (FTEF-14.34), "unclosed bracket condition", "unclosed defined
+  "Hanging # with no directive" (FTEF-14.52), "unclosed bracket condition", "unclosed defined
   condition" and "unexpected end-of-line" (FTEF-14.33), "malformed #elif" (FTEF-14.37), "No
   more than 5 packs are allowed" (FTEF-14.39) and "Compiler constant name length is too long or
   short" (FTEF-14.42); and this profile's own "#include where this profile does not follow it"

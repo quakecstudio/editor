@@ -182,7 +182,7 @@ fn an_include_the_database_lacks_is_an_error() {
     assert_eq!(d.diagnostic.span.start, 0);
 }
 
-// spec QC-9.19: under the vanilla dialect an include only an include directory holds is read
+// spec QC-9.20: under the vanilla dialect an include only an include directory holds is read
 // from there, and one beside the including file is preferred to it.
 #[test]
 fn a_vanilla_include_is_found_in_the_include_directories() {
@@ -591,7 +591,7 @@ fn the_expansion_s_declarations_are_kept() {
 fn rules_on_touching_tokens_read_a_macro_s_tokens_as_written() {
     let binding = |text: &str| {
         let rendered = rendered(text, Dialect::Fteqcc);
-        let parse = qc_syntax::parse_with(rendered.as_bytes(), Dialect::Fteqcc);
+        let parse = qc_syntax::parse_preprocessed(rendered.as_bytes(), Dialect::Fteqcc);
         let errors: Vec<Code> = parse.errors().map(|d| d.code).collect();
         let function = lower_file(&parse, Dialect::Fteqcc)
             .decls
@@ -711,4 +711,117 @@ fn a_pasted_name_resolves() {
         .map(|d| d.name.as_str())
         .collect();
     assert!(names.contains(&"health_net"), "{names:?}");
+}
+
+/// The code, message and source text of every diagnostic of `text` compiled alone in
+/// `dialect`.
+fn diagnostics_of(text: &str, dialect: Dialect) -> Vec<(Code, String, String)> {
+    let files = [("a.qc", text)];
+    let (mut db, input) = module(&files, &["a.qc"], dialect);
+    let analysis = db.analyze_module(&input);
+    analysis
+        .diagnostics()
+        .map(|d| {
+            let at = Location {
+                file: d.file,
+                span: d.diagnostic.span,
+            };
+            (
+                d.diagnostic.code,
+                d.diagnostic.message.clone(),
+                text_at(&db, at),
+            )
+        })
+        .collect()
+}
+
+/// A program's first diagnostic, its code and the source text it covers; `None` for none.
+type FirstError = Option<(Code, &'static str)>;
+
+/// A `#` first on its line of the preprocessor's output, each program's first diagnostic in
+/// the vanilla and FTEQCC profiles (code and source text), and what id's `qcc` and the pinned
+/// FTEQCC report for it (the oracles `cargo xtask oracles build` makes, run on 2026-10-20).
+const HASH_FIRST_ON_ITS_LINE: [(&str, FirstError, FirstError); 6] = [
+    // qcc: `"#" is not a type`; FTEQCC: "Explicit precompiler usage when not defined foo".
+    (
+        "/* c */#foo\nvoid() f = #5;\n",
+        Some((Code::E0203, "#")),
+        Some((Code::E0203, "#")),
+    ),
+    // qcc: "Bad builtin immediate"; FTEQCC: "Explicit precompiler usage when not defined foo".
+    (
+        "void() f =\n/* c */#foo;\n",
+        Some((Code::E0209, "foo")),
+        Some((Code::E0209, "foo")),
+    ),
+    // Both compile it, with builtin 5.
+    ("void() f =\n/* c */#5;\n", None, None),
+    // Later in a file, and after a comment that spans lines. qcc: `"#" is not a type`; FTEQCC:
+    // "Explicit precompiler usage when not defined foo".
+    (
+        "float x;\n/* c */#foo\n",
+        Some((Code::E0203, "#")),
+        Some((Code::E0203, "#")),
+    ),
+    (
+        "/* a\nb */ #foo\n",
+        Some((Code::E0203, "#")),
+        Some((Code::E0203, "#")),
+    ),
+    // A `#` a macro's body writes first on a line of the output. FTEQCC: "Explicit precompiler
+    // usage when not defined unknown"; id's `qcc` has no macros (QC-9), so the vanilla row is
+    // this project's own rule.
+    (
+        "#define H #\nH foo\n",
+        Some((Code::E0203, "H")),
+        Some((Code::E0203, "H")),
+    ),
+];
+
+// spec QC-9.19: a `#` the preprocessor leaves first on its line of the output, after a comment
+// at the line's start or from a macro's body, is the `#` token the parser reads, never a
+// directive line it drops: both profiles refuse `/* c */#foo` and `void() f =` before
+// `/* c */#foo;`, as id's `qcc` and the pinned FTEQCC do, and take `/* c */#5;`, and the
+// preprocessor reports nothing of its own (FTEF-14.52)
+#[test]
+fn a_hash_first_on_its_line_of_the_output_is_code() {
+    for (text, vanilla, fteqcc) in HASH_FIRST_ON_ITS_LINE {
+        for (dialect, expected) in [(Dialect::Vanilla, vanilla), (Dialect::Fteqcc, fteqcc)] {
+            let found = diagnostics_of(text, dialect);
+            assert!(
+                found.iter().all(|(code, _, _)| *code != Code::E0121),
+                "{text:?} {dialect:?}: {found:?}"
+            );
+            let first = found.first().map(|(code, _, at)| (*code, at.as_str()));
+            assert_eq!(first, expected, "{text:?} {dialect:?}: {found:?}");
+        }
+    }
+}
+
+// spec QC-9.19: under FTEQCC an included file's first line is read with no spaces skipped, so
+// ` #define N 5` there is no directive (FTEF-14.52) and its `#` is code the parser refuses, as
+// the pinned FTEQCC does ("Explicit precompiler usage when not defined define")
+#[test]
+fn an_indented_hash_on_an_included_file_s_first_line_is_code() {
+    let files = [
+        ("a.qc", "#include \"b.qc\"\nfloat x;\n"),
+        ("b.qc", " #define N 5\n"),
+    ];
+    let (mut db, input) = module(&files, &["a.qc"], Dialect::Fteqcc);
+    let analysis = db.analyze_module(&input);
+    let found: Vec<(Code, FileId, String)> = analysis
+        .diagnostics()
+        .map(|d| {
+            let at = Location {
+                file: d.file,
+                span: d.diagnostic.span,
+            };
+            (d.diagnostic.code, d.file, text_at(&db, at))
+        })
+        .collect();
+    assert_eq!(
+        found.first(),
+        Some(&(Code::E0203, FileId(1), "#".to_owned())),
+        "{found:?}"
+    );
 }

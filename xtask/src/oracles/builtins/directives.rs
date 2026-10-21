@@ -77,7 +77,7 @@ fn line_end_cases() -> Vec<String> {
     sources
 }
 
-/// Directive names matched by their first bytes, and the operands each reads (FTEF-14.34,
+/// Directive names matched by their first bytes, and the operands each reads (FTEF-14.52,
 /// FTEF-14.36, FTEF-14.38, FTEF-14.39, FTEF-14.42).
 const NAME_FORMS: &[&str] = &[
     "#defined N #5\nvoid() f = N;\n",
@@ -300,7 +300,7 @@ fn evil_cases() -> Vec<String> {
 
 /// Where a `#` is met: at a line's start after spaces and tabs, after a `//` comment's line,
 /// after a `/* */` comment on its line or over lines, and in the middle of a line
-/// (FTEF-14.34).
+/// (FTEF-14.52).
 const PLACES: &[&str] = &[
     "", "  ", "\t", " \t ", "// c\n", "/* c */", "/* c\n*/", "x; ",
 ];
@@ -373,7 +373,7 @@ fn continued(snippet: &str) -> String {
 }
 
 /// Every snippet where FTEQCC meets a `#`: at a line's start, after spaces and tabs, after a
-/// `//` comment's line, after a `/* */` comment and in the middle of a line (FTEF-14.34); in a
+/// `//` comment's line, after a `/* */` comment and in the middle of a line (FTEF-14.52); in a
 /// skipped side (FTEF-14.37); after a use's `(` or `,` and in the middle of an argument
 /// (FTEF-14.45); in a macro's body (FTEF-14.46); in an `#includelist` (FTEF-14.41); after
 /// `#pragma DONT_COMPILE_THIS_FILE` (FTEF-14.44).
@@ -728,7 +728,7 @@ const DIR_PROJECTS: &[DirProject] = &[
 ];
 
 /// The include projects, and each snippet on the first line of an included file, where
-/// `QCC_PR_Precompiler` reads it with no spaces passed over (FTEF-14.34).
+/// `QCC_PR_Precompiler` reads it with no spaces passed over (FTEF-14.52).
 fn include_cases() -> Vec<Case> {
     let mut cases: Vec<Case> = INCLUDE_PROJECTS
         .iter()
