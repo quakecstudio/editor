@@ -776,14 +776,28 @@ struct Use {
     argument_line: i32,
     /// The line of the expansion's chunk: where reading was when the use ended.
     chunk_line: i32,
+    /// Where reading goes on if the use is refused.
+    refused: Refused,
 }
 
 /// Why a use of a function-like macro is not expanded.
 enum CallError {
     /// No `(` follows the name after spaces and tabs (FTEF-14.29).
     NoCall,
-    /// The text ends before the `)`, "EOF on macro call" (FTEF-14.29).
-    Unterminated,
+    /// The text ends before the `)`, "EOF on macro call" (FTEF-14.29); `refused` is where
+    /// reading goes on.
+    Unterminated { refused: Refused },
+}
+
+/// Where reading goes on after a use of a function-like macro that is refused, an error where
+/// FTEQCC's compile stops (FTEF-14.45).
+#[derive(Clone, Copy)]
+enum Refused {
+    /// After the name: the use is read again as it is written.
+    AsWritten,
+    /// At this offset, the end of the text its arguments were scanned in, as directives ran
+    /// there, and none may run twice.
+    After(usize),
 }
 
 /// The text of an expansion as `QCC_PR_ExpandPreProcessorMacro` writes it.
@@ -1085,10 +1099,10 @@ impl<L: Loader> Preprocessor<L> {
         let use_ = match self.read_use(run, &item, &mac) {
             Ok(use_) => use_,
             Err(CallError::NoCall) => return Some(item),
-            Err(CallError::Unterminated) => {
+            Err(CallError::Unterminated { refused }) => {
                 let message = format!("unterminated argument list for macro {name}");
                 run.report(Code::E0117, message, item.tok.span);
-                return Some(item);
+                return self.refuse(run, item, refused);
             }
         };
         let named = mac.params.as_ref().map_or(0, Vec::len);
@@ -1098,11 +1112,11 @@ impl<L: Loader> Preprocessor<L> {
             let found = call.args.len();
             let message = format!("macro {name} expects {named} arguments, found {found}");
             run.report(Code::E0116, message, use_.span);
-            return Some(item);
+            return self.refuse(run, item, use_.refused);
         }
         if run.expanded.over_bound() {
             run.expanded.report(use_.span, &mut run.out.diagnostics);
-            return Some(item);
+            return self.refuse(run, item, use_.refused);
         }
         let limit = FTE_MAX_EXPANDED_TOKENS.saturating_sub(run.expanded.tokens);
         let written = match (&use_.call, &mac.params) {
@@ -1127,7 +1141,7 @@ impl<L: Loader> Preprocessor<L> {
         let Some(text) = written else {
             run.expanded.tokens = FTE_MAX_EXPANDED_TOKENS;
             run.expanded.report(use_.span, &mut run.out.diagnostics);
-            return Some(item);
+            return self.refuse(run, item, use_.refused);
         };
         run.expanded.expansions = run.expanded.expansions.saturating_add(1);
         if let Some(call) = &use_.call {
@@ -1248,6 +1262,7 @@ impl<L: Loader> Preprocessor<L> {
         let text = bytes.bytes();
         let mut call = None;
         let mut end = name_end;
+        let mut refused = Refused::AsWritten;
         if let Some(params) = &mac.params {
             let mut open = name_end;
             while matches!(text.get(open), Some(b' ' | b'\t')) {
@@ -1256,10 +1271,21 @@ impl<L: Loader> Preprocessor<L> {
             if text.get(open) != Some(&b'(') {
                 return Err(CallError::NoCall);
             }
-            let scanned = self
-                .fte_scan_arguments(run, &bytes, open, (params.len(), mac.variadic))
-                .ok_or(CallError::Unterminated)?;
+            let before = run.directives_run;
+            let scanned = self.fte_scan_arguments(run, &bytes, open, (params.len(), mac.variadic));
+            let ran = run.directives_run != before;
+            let Some(scanned) = scanned else {
+                let refused = if ran {
+                    Refused::After(text.len())
+                } else {
+                    Refused::AsWritten
+                };
+                return Err(CallError::Unterminated { refused });
+            };
             end = scanned.close.saturating_add(1);
+            if ran {
+                refused = Refused::After(end);
+            }
             let reading = bytes.reading();
             call = Some(Call {
                 args: scanned
@@ -1298,6 +1324,7 @@ impl<L: Loader> Preprocessor<L> {
             span,
             argument_line,
             chunk_line,
+            refused,
         })
     }
 
@@ -1354,6 +1381,14 @@ impl<L: Loader> Preprocessor<L> {
             }
             at = at.saturating_add(1);
         }
+    }
+
+    /// The name `item` of a refused use, read as itself, reading going on where `refused` says.
+    fn refuse(&self, run: &mut Run, item: Item, refused: Refused) -> Option<Item> {
+        if let Refused::After(at) = refused {
+            self.resume_after(run, &item, at);
+        }
+        Some(item)
     }
 
     /// Reading of the text the name `item` stood in goes on at `after`, the byte after its use's

@@ -7,8 +7,8 @@ use std::path::Path;
 
 use super::{codes, one_fte, tokens};
 use crate::fte_directive::{
-    Definer, Directive, Earlier, ElifTest, ElseWord, FteState, Gap, IfTest, Junk, LineEnd, Pragma,
-    Side, TextStart, WarningAction, com_parse, false_side, false_side_after, include_candidates,
+    Definer, Directive, Earlier, ElifTest, FteState, Gap, IfTest, Junk, LineEnd, Pragma, Side,
+    TextStart, WarningAction, com_parse, false_side, false_side_after, include_candidates,
     join_paths, read, simple_get_token, skip_to_end_of_line, starts_line, whitespace,
 };
 use crate::{Code, FileOutput, MemoryLoader, Preprocessor};
@@ -186,15 +186,13 @@ fn directive_names_match_by_their_first_bytes() {
     assert!(matches!(
         directive("#elsewhere"),
         Some(Directive::Else {
-            word: ElseWord::Else,
-            ..
+            end: LineEnd { junk: true, .. }
         })
     ));
     assert!(matches!(
         directive("#elif 1"),
         Some(Directive::Else {
-            word: ElseWord::Elif,
-            ..
+            end: LineEnd { junk: false, .. }
         })
     ));
     assert!(matches!(
@@ -577,6 +575,7 @@ fn undef_and_ifdef_read_their_operands() {
 // spec FTEF-14.37: one count of open sides runs on from file to file; skipped sides nest by
 // prefix, end their lines as `QCC_PR_SkipToEndOfLine` does, and take the first true `#elif` or
 // the `#else`; a taken side's `#else` skips to the block's end
+// spec QCD-8.16: E0109 and E0110 have FTEQCC's texts under FTEQCC
 #[test]
 fn conditionals_count_and_skip_as_fteqcc_does() {
     assert_eq!(fte("#ifdef Q\n#iffy\n#endif\nzz\n#endif\ny\n").0, "y");
@@ -616,9 +615,16 @@ fn conditionals_count_and_skip_as_fteqcc_does() {
         fte("#if 1\ny\n#elif 1\n"),
         ("y".to_owned(), vec![Code::E0110])
     );
-    assert_eq!(fte("#if 0\nzz\n").1, vec![Code::E0110]);
-    let (_, out) = one_fte("#endif\n");
-    assert_eq!(codes(&out), vec![Code::E0109]);
+    for (text, code, message) in [
+        ("#if 0\nzz\n", Code::E0110, "#if with no endif"),
+        ("#endif\n", Code::E0109, "unmatched #endif"),
+        ("#else\n", Code::E0109, "#else outside of #if"),
+        ("#elif 1\n", Code::E0109, "#else outside of #if"),
+    ] {
+        let (_, out) = one_fte(text);
+        assert_eq!(codes(&out), vec![code], "{text:?}");
+        assert_eq!(out.diagnostics[0].message, message, "{text:?}");
+    }
     let out = compile(
         &[
             ("a.qc", "#if 1\n#include \"b.qh\"\ny\n"),
@@ -643,6 +649,7 @@ fn message_lines_end_as_fteqcc_ends_them() {
 // spec FTEF-14.40: a nested `#include` is found beside the compiled file, then in the include
 // directories; `<>` names a file too; a missing one is E0111 and a malformed one E0113; an
 // included file's directive must start its first byte
+// spec QCD-8.16: E0113 has FTEQCC's texts under FTEQCC
 #[test]
 fn includes_follow_find_best_include() {
     let files = [
@@ -672,6 +679,14 @@ fn includes_follow_find_best_include() {
     assert_eq!(
         (tokens(&out), codes(&out)),
         ("x".to_owned(), vec![Code::E0113, Code::E0113])
+    );
+    assert_eq!(
+        out.diagnostics[0].message,
+        "Not a string literal (on a #include)"
+    );
+    assert_eq!(
+        out.diagnostics[1].message,
+        "#include continued over line boundry"
     );
     let out = compile(
         &[
@@ -824,6 +839,22 @@ fn directives_run_among_arguments() {
     );
     // A `#` that starts no directive starts the argument.
     assert_eq!(fte("#define M(x) x\nM(\n#5)\n").0, "# 5");
+    // A refused use whose arguments ran a directive goes on after them, so none runs twice.
+    let refused = "#define A 1\n#define M(x) x\nM(\n#append A 2\n";
+    assert_eq!(
+        fte(&format!("{refused}A\n")),
+        ("M".to_owned(), vec![Code::E0117])
+    );
+    assert_eq!(
+        fte(&format!("{refused}1, 2, 3) A\n")),
+        ("M 1 2".to_owned(), vec![Code::E0116])
+    );
+    assert_eq!(
+        fte("#define M(x) x\nM(\n#error boom\n").1,
+        vec![Code::E0118, Code::E0117]
+    );
+    let (toks, errs) = fte("#define M(x) x\n#define L M(\nL\n#ifdef Q\n#endif\n");
+    assert_eq!((toks.as_str(), errs), ("M (", vec![Code::E0117]));
     // An `#include` there is not followed.
     let out = compile(
         &[
@@ -907,14 +938,18 @@ fn nested_directive_readings_are_bounded() {
 // skipped; one nested too deep is only false
 #[test]
 fn if_expression_errors() {
+    // FTEQCC's compile stops at the error, so the rest of the line is no second error.
     for (cond, message) in [
         ("(1", "unclosed bracket condition"),
+        ("(1 x", "unclosed bracket condition"),
         ("defined(X", "unclosed defined condition"),
+        ("defined(X x", "unclosed defined condition"),
         ("", "unexpected end-of-line"),
         ("1 ||", "unexpected end-of-line"),
     ] {
         let (_, out) = one_fte(&format!("#if {cond}\nx\n#endif\ny\n"));
         assert_eq!(tokens(&out), "y", "{cond:?}");
+        assert_eq!(codes(&out), vec![Code::E0121], "{cond:?}");
         assert_eq!(out.diagnostics[0].message, message, "{cond:?}");
     }
     // A `\` is a word like another, `atoi` 0, so the line below is the false side.

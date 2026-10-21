@@ -174,11 +174,16 @@ impl LineEnd {
     /// Reading goes on at this end of the line of the directive whose `#` is at `hash` in
     /// `reading`; its junk is "unexpected tokens at end of line" (FTEF-14.35).
     fn resume(self, run: &mut Run, reading: &Reading<'_>, hash: usize) -> Resume {
+        self.report_junk(run, reading, hash);
+        Resume::At(self.at)
+    }
+
+    /// Reports this line's junk, for a directive whose reading goes on elsewhere than its end.
+    fn report_junk(self, run: &mut Run, reading: &Reading<'_>, hash: usize) {
         if self.junk {
             let at = reading.place(hash..self.at.max(hash.saturating_add(1)));
             run.report(Code::E0121, JUNK, at);
         }
-        Resume::At(self.at)
     }
 }
 
@@ -464,15 +469,6 @@ pub(crate) enum Definer {
     Append,
 }
 
-/// Which of `#else` and `#elif` leaves a taken side (FTEF-14.37).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ElseWord {
-    /// `#else`, whose line is read with [`Junk::Checked`].
-    Else,
-    /// `#elif`, whose line is read with no check.
-    Elif,
-}
-
 /// A directive as `QCC_PR_Precompiler` reads it, before it is run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Directive {
@@ -492,8 +488,9 @@ pub(crate) enum Directive {
     /// `#if` and a byte that is no white space after its name: "Unknown pragma", and reading
     /// goes on after the word, as code (FTEF-14.36).
     NotIf { word_end: usize },
-    /// `#else` or `#elif` on a side that is taken (FTEF-14.37).
-    Else { word: ElseWord, end: LineEnd },
+    /// `#else` or `#elif` on a side that is taken (FTEF-14.37), whose line `#else` reads with
+    /// [`Junk::Checked`] and `#elif` with no check.
+    Else { end: LineEnd },
     /// `#endif`.
     Endif { end: LineEnd },
     /// `#eof`, which ends the text being read.
@@ -563,13 +560,12 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     } else if rest.starts_with(b"if") {
         read_if(text, at)
     } else if rest.starts_with(b"else") || rest.starts_with(b"elif") {
-        let (word, junk) = if rest.starts_with(b"elif") {
-            (ElseWord::Elif, Junk::Ignored)
+        let junk = if rest.starts_with(b"elif") {
+            Junk::Ignored
         } else {
-            (ElseWord::Else, Junk::Checked)
+            Junk::Checked
         };
         Directive::Else {
-            word,
             end: line(after(4), junk),
         }
     } else if rest.starts_with(b"endif") {
@@ -1223,6 +1219,7 @@ impl<L: Loader> Preprocessor<L> {
         if position == Position::Line {
             return Some(self.fte_run(run, bytes, hash, directive, position));
         }
+        run.directives_run = run.directives_run.wrapping_add(1);
         if run.nested_directives >= FTE_MAX_NESTED_DIRECTIVES {
             let at = bytes.reading().place(hash..hash.saturating_add(1));
             run.report(Code::E0121, "directives nested too deeply", at);
@@ -1269,8 +1266,8 @@ impl<L: Loader> Preprocessor<L> {
             Directive::If { test, name, end } => {
                 let (value, end) = match test {
                     IfTest::Expression(from) => {
-                        let (value, stop) = self.fte_condition(run, &reading, hash, from);
-                        (value, skip_to_end_of_line(text, stop, Junk::Checked))
+                        let (value, stop, junk) = self.fte_condition(run, &reading, hash, from);
+                        (value, skip_to_end_of_line(text, stop, junk))
                     }
                     IfTest::Defined | IfTest::NotDefined => {
                         let name = lossy(text.get(name).unwrap_or_default());
@@ -1286,26 +1283,20 @@ impl<L: Loader> Preprocessor<L> {
                 self.fte_false_side(run, bytes, hash, end.at, Earlier::NoSideTaken)
             }
             Directive::NotIf { word_end } => Resume::At(word_end),
-            Directive::Else { word, end } => {
+            Directive::Else { end } => {
                 if self.fte.ifs == 0 {
-                    // "#else outside of #if", where FTEQCC's compile stops.
-                    let name = match word {
-                        ElseWord::Else => "else",
-                        ElseWord::Elif => "elif",
-                    };
-                    let message = format!("#{name} without #ifdef or #ifndef");
-                    run.report(Code::E0109, message, at(end.at));
+                    // FTEQCC's compile stops at the error, so the line's rest is no error too.
+                    run.report(Code::E0109, "#else outside of #if", at(end.at));
                     return Resume::At(end.at);
                 }
                 self.fte.ifs = self.fte.ifs.saturating_sub(1);
-                end.resume(run, &reading, hash);
+                end.report_junk(run, &reading, hash);
                 self.fte_false_side(run, bytes, hash, end.at, Earlier::SideTaken)
             }
             Directive::Endif { end } => {
                 let resume = end.resume(run, &reading, hash);
                 if self.fte.ifs == 0 {
-                    let message = "#endif without #ifdef or #ifndef";
-                    run.report(Code::E0109, message, at(end.at));
+                    run.report(Code::E0109, "unmatched #endif", at(end.at));
                 }
                 self.fte.ifs = self.fte.ifs.saturating_sub(1);
                 resume
@@ -1330,18 +1321,17 @@ impl<L: Loader> Preprocessor<L> {
                 end.resume(run, &reading, hash)
             }
             Directive::Package { end } => {
-                end.resume(run, &reading, hash);
+                end.report_junk(run, &reading, hash);
                 Resume::End
             }
             Directive::IncludeList { end } => {
-                end.resume(run, &reading, hash);
+                end.report_junk(run, &reading, hash);
                 self.fte_include_list(run, bytes, hash, end.at)
             }
             Directive::Include { name, end } => {
                 let name = match name {
                     Ok(name) => name,
-                    Err(_) => {
-                        let message = "#include expects a file name in quotes";
+                    Err(message) => {
                         run.report(Code::E0113, message, at(end.at));
                         return Resume::At(end.at);
                     }
@@ -1364,27 +1354,28 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// An `#if` or `#elif` expression from `from` in `reading`, whose directive's `#` is at
-    /// `hash` (FTEF-14.33): its value, an error FTEQCC reports being reported and false, and
-    /// where reading it stopped.
+    /// `hash` (FTEF-14.33): its value, an error FTEQCC reports being reported and false, where
+    /// reading it stopped, and whether the rest of its line is checked for junk, which it is not
+    /// after an error, where FTEQCC's compile stops.
     fn fte_condition(
         &self,
         run: &mut Run,
         reading: &Reading<'_>,
         hash: usize,
         from: usize,
-    ) -> (bool, usize) {
+    ) -> (bool, usize, Junk) {
         let text = reading.bytes();
         let macros = |name: &str| self.fte_macro_value(name);
         let (value, read) = cond::fte_if(text.get(from..).unwrap_or_default(), &macros);
         let stop = from.saturating_add(read);
         match value {
-            Ok(value) => (value != 0, stop),
+            Ok(value) => (value != 0, stop, Junk::Checked),
             Err(FteIfError::Reported(message)) => {
                 run.report(Code::E0121, message, reading.place(hash..stop));
-                (false, stop)
+                (false, stop, Junk::Ignored)
             }
             // FTEF-14.12: FTEQCC would read on, so what is left of the line is no junk.
-            Err(FteIfError::TooDeep) => (false, skip_to_end_of_line(text, from, Junk::Ignored).at),
+            Err(FteIfError::TooDeep) => (false, from, Junk::Ignored),
         }
     }
 
@@ -1420,18 +1411,18 @@ impl<L: Loader> Preprocessor<L> {
                         let span = reading.place(other..at.max(other.saturating_add(1)));
                         run.report(Code::E0121, "malformed #elif", span);
                     }
-                    let (value, stop) = match test {
+                    let (value, stop, junk) = match test {
                         ElifTest::Expression => self.fte_condition(run, &reading, other, at),
                         ElifTest::Defined | ElifTest::NotDefined => {
                             let (name, stop) = simple_get_token(text, at);
                             let name = lossy(name.and_then(|n| text.get(n)).unwrap_or_default());
                             let defined = self.macros.contains_key(&name);
-                            (defined == (test == ElifTest::Defined), stop)
+                            (defined == (test == ElifTest::Defined), stop, Junk::Checked)
                         }
                     };
                     if value {
                         self.fte.ifs = self.fte.ifs.saturating_add(1);
-                        let end = skip_to_end_of_line(text, stop, Junk::Checked);
+                        let end = skip_to_end_of_line(text, stop, junk);
                         return end.resume(run, &reading, other);
                     }
                     side = false_side_after(text, stop, earlier, &mut level);
@@ -1439,7 +1430,7 @@ impl<L: Loader> Preprocessor<L> {
                 Side::Endif(end) => return Resume::At(end),
                 Side::Eof => {
                     let at = reading.place(hash..from.max(hash.saturating_add(1)));
-                    run.report(Code::E0110, "#ifdef or #ifndef without #endif", at);
+                    run.report(Code::E0110, "#if with no endif", at);
                     return Resume::End;
                 }
             }

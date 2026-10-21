@@ -1008,7 +1008,8 @@ profile the preprocessor reads them as FTEQCC does.
   `ULONG_MAX` and a `-` negating it, on a 64-bit `unsigned long`, and FTEQCC's `int` keeps its
   low 32 bits: so `#pragma line 0x10` numbers the next line 16, `#pragma line 010` 8, `#pragma
   line -1` -1 and `#pragma line 4294967297` 1. The lines after it count on from there to the end
-  of the file or chunk the pragma is in, which `__LINE__` and `__LINESTR__` write (FTEF-14.27),
+  of the file or chunk the pragma is in, which `__LINE__` and `__LINESTR__` write (FTEF-14.27)
+  outside a macro's expansion (in one, FTEF-14.46),
   and an `#include`d file's numbering ends with it (`QCC_PR_UnInclude` restores `pr_source_line`).
   FTEQCC's diagnostics report the line too; this profile's diagnostics keep the place of their
   text, a deliberate divergence, as a span in the file says more than a line FTEQCC was told.
@@ -1038,7 +1039,13 @@ profile the preprocessor reads them as FTEQCC does.
   space. A line break in the middle of an argument is part of it (FTEF-14.22), so a directive on
   the next line is the argument's text, run where the expansion holds it (FTEF-14.46). A
   directive that ends the text, `#eof` or `#package`, ends the arguments, which is "EOF on macro
-  call" (`E0117`), and the pinned FTEQCC crashes on `#eof` there.
+  call" (`E0117`), and the pinned FTEQCC crashes on `#eof` there. A use refused with its
+  arguments read, for "EOF on macro call", too many parameters (`E0116`) or the bound of
+  FTEF-14.28, is an error where FTEQCC's compile stops; this profile then reads the use again
+  as it is written, unless a directive ran among its arguments, when reading goes on after the
+  text the arguments took (after the `)`, or at the end of the text), so that no directive
+  runs twice: with `#define M(x) x`, `M(`, a line break, `#append A 2`, a line break and `1, 2,
+  3) A` appends to `A` once.
 - **FTEF-14.46** A macro's expansion is read as a chunk of text (FTEF-14.17), and a `#` that
   starts a line of it, after a line break in it and spaces and tabs, is a directive there,
   where its text's line breaks are those `QCC_PR_PreProcessor_Define` kept in the body before a
@@ -1050,7 +1057,12 @@ profile the preprocessor reads them as FTEQCC does.
   F303 off, `#define D \`, a line break, `#define Y #5 \`, a line break and `Y` makes `D` define
   `Y` and expand to `#5`. In the chunk a `#pragma file` names, and a `#pragma line` numbers, the
   rest of that chunk only, and `#eof` and `#package` end it; the pinned FTEQCC crashes on `#eof`
-  in a chunk, where this profile ends the chunk.
+  in a chunk, where this profile ends the chunk. The chunk's own `__LINE__` and `__LINESTR__`
+  still write the line of its use (`if (currentchunk && currentchunk->cnst) line =
+  currentchunk->currentlinenumber;`), so the lines a `#pragma line` numbers there are those of
+  the uses after it in the chunk, whose expansions write them: with F303 off, `#define L
+  __LINE__`, a `D` whose body is `#pragma line(30)` and `L __LINE__` on lines of their own, and
+  `D __LINE__` on line 6, are `30 6 6`.
 - **FTEF-14.47** Deliberate divergences of this profile's directives: an `#include` met among a
   use's arguments, in a macro's expansion, in an `#includelist` or in the text
   `DONT_COMPILE_THIS_FILE` passes over is refused, as "#include where this profile does not

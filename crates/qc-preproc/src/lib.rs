@@ -519,6 +519,9 @@ struct Run {
     expanded: Expanded,
     /// Under FTEQCC, how many directives are being run inside another reading (FTEF-14.47).
     nested_directives: usize,
+    /// Under FTEQCC, how many directives have been run inside another reading, so that a
+    /// macro use's scan knows whether its arguments ran any (FTEF-14.45).
+    directives_run: usize,
     out: FileOutput,
 }
 

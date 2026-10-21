@@ -296,3 +296,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   profile, a `#define` or `#append` whose body has a continued line that starts with `#`, at
   that `#`, while FTEQCC's F303 is an error, as it is unless a `#pragma warning` says otherwise
   (`dialect-fteqcc.md`, FTEF-14.46).
+- **QCD-8.16** Under an FTEQCC profile `E0109`, `E0110` and `E0113` have FTEQCC's texts in
+  place of those of QCD-8.2, QCD-8.3 and QCD-8.6: "#else outside of #if", for an `#else` or
+  `#elif`, and "unmatched #endif" (FTEF-14.37); "#if with no endif" (FTEF-14.37); and "Not a
+  string literal (on a #include)" and "#include continued over line boundry" (FTEF-14.40).
