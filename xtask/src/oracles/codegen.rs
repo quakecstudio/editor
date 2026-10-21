@@ -84,7 +84,10 @@ fn describe(db: &Db, error: &CompileError) -> String {
             })
             .collect::<Vec<_>>()
             .join("\n"),
-        CompileError::Dialect(_) | CompileError::NotAnalysed(_) | CompileError::Internal { .. } => {
+        CompileError::Dialect(_)
+        | CompileError::NotAnalysed(_)
+        | CompileError::Write(_)
+        | CompileError::Internal { .. } => {
             format!("{error:?}")
         }
     }
@@ -168,8 +171,27 @@ pub(crate) struct Case {
     pub(crate) files: &'static [(&'static str, &'static str)],
     /// The text of `t.qc`.
     pub(crate) source: Cow<'static, str>,
-    /// The QC-27 statement under which `qc-codegen` does otherwise than id's `qcc`.
-    pub(crate) divergence: Option<&'static str>,
+    /// What `qc-codegen` does otherwise than id's `qcc`, as a QC-27 statement says.
+    pub(crate) divergence: Option<Divergence>,
+}
+
+/// A case `qc-codegen` compiles otherwise than id's `qcc` on purpose.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Divergence {
+    /// The QC-27 statement that says so.
+    pub(crate) statement: &'static str,
+    /// What `qc-codegen` does instead: compile it, or refuse it with this message.
+    pub(crate) ours: Option<&'static str>,
+}
+
+impl Divergence {
+    /// Whether `ours` is what the statement says.
+    fn holds(&self, ours: &Ours) -> bool {
+        match self.ours {
+            None => matches!(ours.outcome, Outcome::Progs(_)),
+            Some(message) => ours.messages.iter().any(|m| m == message),
+        }
+    }
 }
 
 impl Case {
@@ -231,9 +253,18 @@ impl Outcome {
     }
 }
 
-/// What `qc-codegen` did with `case`: its progs's digest, or its first error and every error
-/// message it reported.
-pub(crate) fn ours(case: &Case) -> Result<(Outcome, Vec<String>), String> {
+/// What `qc-codegen` did with a case.
+pub(crate) struct Ours {
+    /// Its outcome: an internal error is an error whose message says so.
+    pub(crate) outcome: Outcome,
+    /// Every error message it reported.
+    pub(crate) messages: Vec<String>,
+    /// The progs it wrote.
+    pub(crate) bytes: Option<Vec<u8>>,
+}
+
+/// Compiles `case` with `qc-codegen`.
+pub(crate) fn ours(case: &Case) -> Ours {
     let files = case.all_files();
     let mut db = Db::new();
     let mut input = ModuleInput::default();
@@ -241,45 +272,40 @@ pub(crate) fn ours(case: &Case) -> Result<(Outcome, Vec<String>), String> {
         db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
         input.compiled.push(FileId(index));
     }
-    match compile_module(&mut db, &input, |id| {
+    let result = compile_module(&mut db, &input, |id| {
         files
             .get(id.0)
             .map(|(n, _)| (*n).to_owned())
             .unwrap_or_default()
-    }) {
-        Ok(compiled) => {
-            let bytes = bytes(&compiled)?;
-            Ok((Outcome::Progs(sha256::hex_digest(&bytes)), Vec::new()))
-        }
+    });
+    let refused = |message: String| Ours {
+        outcome: Outcome::Error(message.clone()),
+        messages: vec![message],
+        bytes: None,
+    };
+    match result {
+        Ok(compiled) => match bytes(&compiled) {
+            Ok(bytes) => Ours {
+                outcome: Outcome::Progs(sha256::hex_digest(&bytes)),
+                messages: Vec::new(),
+                bytes: Some(bytes),
+            },
+            Err(e) => refused(e),
+        },
         Err(CompileError::Diagnostics(diagnostics)) => {
             let messages: Vec<String> = diagnostics
                 .into_iter()
                 .map(|d| d.diagnostic.message)
                 .collect();
             let first = messages.first().cloned().unwrap_or_default();
-            Ok((Outcome::Error(first), messages))
+            Ours {
+                outcome: Outcome::Error(first),
+                messages,
+                bytes: None,
+            }
         }
-        Err(other) => Err(format!("{}: {other:?}", case.name)),
+        Err(other) => refused(format!("internal: {other:?}")),
     }
-}
-
-/// Our progs for `case`, which must compile.
-fn our_bytes(case: &Case) -> Result<Vec<u8>, String> {
-    let files = case.all_files();
-    let mut db = Db::new();
-    let mut input = ModuleInput::default();
-    for (index, (name, text)) in files.iter().enumerate() {
-        db.set_file(FileId(index), PathBuf::from(name), text.as_bytes().to_vec());
-        input.compiled.push(FileId(index));
-    }
-    let compiled = compile_module(&mut db, &input, |id| {
-        files
-            .get(id.0)
-            .map(|(n, _)| (*n).to_owned())
-            .unwrap_or_default()
-    })
-    .map_err(|e| format!("{}: {e:?}", case.name))?;
-    bytes(&compiled)
 }
 
 /// Runs id's `qcc` on `case` in a directory of its own.
@@ -382,28 +408,35 @@ pub(crate) fn compare(
             ok = false;
             continue;
         };
-        let (outcome, messages) = ours(case)?;
-        let same = agree(&outcome, &messages, theirs);
+        let ours = ours(case);
+        let outcome = &ours.outcome;
+        let same = agree(outcome, &ours.messages, theirs);
         match (same, case.divergence) {
             (true, None) => agreed = agreed.saturating_add(1),
-            (false, Some(_)) => {}
+            (false, Some(divergence)) if divergence.holds(&ours) => {}
+            (false, Some(divergence)) => {
+                ok = false;
+                println!(
+                    "FAIL  codegen {}: ours {outcome}, not as {} says",
+                    case.name, divergence.statement
+                );
+            }
             (false, None) => {
                 ok = false;
                 println!("FAIL  codegen {}: ours {outcome}, qcc {theirs}", case.name);
-                if let (Some(work), Outcome::Progs(_), Outcome::Progs(_)) = (work, &outcome, theirs)
-                {
+                if let (Some(work), Some(bytes), Outcome::Progs(_)) = (work, &ours.bytes, theirs) {
                     let path = work.join(case.name.as_ref()).join("progs.dat");
                     let theirs = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                    for difference in differences(&our_bytes(case)?, &theirs)? {
+                    for difference in differences(bytes, &theirs)? {
                         println!("      {difference}");
                     }
                 }
             }
-            (true, Some(statement)) => {
+            (true, Some(divergence)) => {
                 ok = false;
                 println!(
-                    "FAIL  codegen {}: listed as diverging ({statement}) but agrees",
-                    case.name
+                    "FAIL  codegen {}: listed as diverging ({}) but agrees",
+                    case.name, divergence.statement
                 );
             }
         }

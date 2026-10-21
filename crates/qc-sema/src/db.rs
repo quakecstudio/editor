@@ -379,12 +379,6 @@ impl Db {
             }
             decls.push(file.decls);
         }
-        self.origins = input
-            .compiled
-            .iter()
-            .zip(&preprocessed.files)
-            .map(|(&id, rendered)| (id, rendered.origins.clone()))
-            .collect();
         let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
         let noref: Vec<&[(usize, bool)]> = preprocessed
             .files
@@ -417,6 +411,12 @@ impl Db {
             index: resolve_mapped(&decls, &sources, options),
             syntax,
         };
+        self.origins = input
+            .compiled
+            .iter()
+            .zip(preprocessed.files)
+            .map(|(&id, rendered)| (id, rendered.origins))
+            .collect();
         self.analysis = Some(Memo {
             value: (input.clone(), analysis.clone()),
             computed_at: max_revision,

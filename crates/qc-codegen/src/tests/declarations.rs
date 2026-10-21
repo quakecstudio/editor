@@ -222,6 +222,24 @@ fn a_function_record() {
     assert_eq!(function(&p, "g").numparms, -1);
 }
 
+// spec QC-11.2, QC-13.5: functions one declaration defines with one parameter list each have
+// their own parameters, made when their bodies start.
+#[test]
+fn functions_of_one_declaration_have_their_own_parameters() {
+    let p = progs("float(float x) a = { return x; }, b = { return x + 2; };\n");
+    let (a, b) = (function(&p, "a"), function(&p, "b"));
+    assert_ne!(a.parm_start, b.parm_start);
+    let xs: Vec<u32> = defs_named(&p, "x").iter().map(|(_, ofs)| *ofs).collect();
+    assert_eq!(
+        xs,
+        [
+            u32::try_from(a.parm_start).unwrap(),
+            u32::try_from(b.parm_start).unwrap()
+        ]
+    );
+    assert_eq!(body(&p, "b")[0].a, b.parm_start);
+}
+
 // spec QC-13.5, QC-12.3: a parameter that is an earlier global reuses it; one below the
 // previous parameter is "bad parm order".
 #[test]

@@ -101,15 +101,6 @@ impl ValueType {
     }
 }
 
-/// What a definition of the list is: one the semantic model has, or a literal's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Origin {
-    /// A definition of the semantic model.
-    Named(DefId),
-    /// A literal's global, named `IMMEDIATE` (QC-20.4).
-    Immediate,
-}
-
 /// One entry of `qcc`'s definition list, `def_t` (QC-12.2, QC-25.3).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Def {
@@ -125,8 +116,6 @@ pub(crate) struct Def {
     /// Whether it has been initialised so far (QC-11.5): set where the initialiser is met, so a
     /// literal only reuses a constant initialised before it (QC-20.2).
     pub(crate) initialized: bool,
-    /// What it is.
-    pub(crate) origin: Origin,
 }
 
 /// A literal's value as `qcc`'s lexer reads it (QC-4 to QC-6).
@@ -281,7 +270,6 @@ impl Program {
             ofs,
             scope: definition.owner,
             initialized: false,
-            origin: Origin::Named(id),
         });
         self.places.insert(id, place);
         if ty.etype() == Etype::Vector {
@@ -354,7 +342,6 @@ impl Program {
             ofs,
             scope: None,
             initialized: true,
-            origin: Origin::Immediate,
         });
         let words = self.literal_words(literal)?;
         self.set_words(ofs, &words)?;

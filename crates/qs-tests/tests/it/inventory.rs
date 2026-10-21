@@ -28,6 +28,8 @@ struct Known {
     statements: BTreeMap<String, String>,
     sections: BTreeSet<String>,
     differential: String,
+    /// The case names a differential records, for the L4 inventory.
+    cases: BTreeSet<String>,
 }
 
 impl Known {
@@ -49,6 +51,14 @@ impl Known {
         known
             .differential
             .push_str(&fs::read_to_string(oracles.join("id101.rs")).expect("id101.rs"));
+        // The case names are the keys of the outcomes the differential records.
+        let fixture = root.join("xtask/fixtures/oracles/codegen-outcomes.json");
+        let fixture = fs::read_to_string(fixture).expect("codegen-outcomes.json");
+        for line in fixture.lines() {
+            if let Some((key, _)) = line.trim().split_once("\": ") {
+                known.cases.insert(key.trim_start_matches('"').to_owned());
+            }
+        }
         known
     }
 
@@ -83,6 +93,7 @@ impl Known {
             statements,
             sections,
             differential,
+            cases: BTreeSet::new(),
         }
     }
 
@@ -96,18 +107,16 @@ impl Known {
         }
     }
 
-    /// Whether `name` is a `fn` or `const` of the differential, or a case it names.
+    /// Whether `name` is a `fn` or `const` of the differential, or a case it records.
     fn is_family(&self, name: &str) -> bool {
         [
             format!("fn {name}("),
             format!("const {name}:"),
             format!("fn {name}<"),
-            format!("(\n        \"{name}\","),
-            format!("(\"{name}\","),
-            format!("Cow::Borrowed(\"{name}\")"),
         ]
         .iter()
         .any(|form| self.differential.contains(form.as_str()))
+            || self.cases.contains(name)
     }
 }
 

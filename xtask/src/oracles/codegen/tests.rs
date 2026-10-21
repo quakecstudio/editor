@@ -176,8 +176,7 @@ fn a_case_that_crashes_qcc_is_a_crash() {
 fn a_listed_divergence_that_agrees_fails() {
     let mut recorded = BTreeMap::new();
     for case in &all_cases() {
-        let (outcome, _) = super::ours(case).unwrap();
-        recorded.insert(case.name.to_string(), outcome);
+        recorded.insert(case.name.to_string(), super::ours(case).outcome);
     }
     assert!(
         !compare(&recorded, None).unwrap(),

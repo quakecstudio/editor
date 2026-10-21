@@ -163,7 +163,7 @@ impl<'a> Compiler<'a> {
     /// The definition the name token `token` is (QC-12).
     fn def_of(&self, token: &SyntaxToken) -> Lowered<DefId> {
         self.names
-            .def(self.file, token.span())
+            .def(self.file, token.span(), self.scope)
             .ok_or(Abort::Internal(Internal::Unresolved, token.span()))
     }
 
@@ -195,7 +195,7 @@ impl<'a> Compiler<'a> {
     fn declaration(&mut self, declaration: &ast::Declaration) -> Lowered<()> {
         for declarator in declaration.declarators() {
             let name = declarator.name().at(declaration.syntax().span())?;
-            let id = match self.names.def(self.file, name.span()) {
+            let id = match self.names.def(self.file, name.span(), None) {
                 Some(id) => id,
                 None => self
                     .names
@@ -609,16 +609,26 @@ impl<'a> Compiler<'a> {
         let Some(inner) = field_type.field_inner() else {
             return Self::mismatch(Operator::Dot, op_span);
         };
-        let Some(row) = ops::select(Operator::Dot, a, b, Some(inner.etype())) else {
+        // QC-16.7: `type_c == ev_void` turns the result's check off, so a field of `void`
+        // takes the first row, `LOAD_F`.
+        let c = Some(inner.etype()).filter(|&c| c != Etype::Void);
+        let Some(row) = ops::select(Operator::Dot, a, b, c) else {
             return Self::mismatch(Operator::Dot, op_span);
         };
         let ofs = self
             .program
             .emit_result(row.opcode, base.ofs, selector.ofs, row.c)
             .at(span)?;
+        // `if (type_c != ev_void) e->type = e2->type->aux_type;`: a `void` field's value keeps
+        // the row's type.
+        let ty = if c.is_some() {
+            inner
+        } else {
+            ValueType::simple(row.c)
+        };
         Ok(Value {
             ofs,
-            kind: ValueKind::Temp(inner),
+            kind: ValueKind::Temp(ty),
         })
     }
 

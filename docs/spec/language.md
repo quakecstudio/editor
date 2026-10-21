@@ -849,8 +849,10 @@ equal the operands' types exactly; if none does, it is an error, "type mismatch 
   type_b != op->type_b->type->type || (type_c != ev_void && type_c != op->type_c->type->type))`.
   So two functions of different types compare with `EQ_FNC` and `NE_FNC`: `r = g == h;` with
   `void() g` and `float(float x) h` is `EQ_FNC g, h, t`. A field access's row must also have the
-  basic type of what the field holds (`type_c`), which a `LOAD_*` row has for every type but
-  `void`; `e.a` with a `float a` is "type mismatch for .", as is `a.fl` with a `float a`.
+  basic type of what the field holds (`type_c`), but for a field of `void`, where `type_c` is
+  `ev_void` and turns that test off: `e.vf` with `.void vf` takes the first row, `LOAD_F`, and
+  keeps its float type (`if (type_c != ev_void) e->type = e2->type->aux_type;`). `e.a` with a
+  `float a` is "type mismatch for .", as is `a.fl` with a `float a`.
 
 ### Test vectors
 

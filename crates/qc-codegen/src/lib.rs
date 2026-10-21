@@ -44,8 +44,8 @@ mod write;
 mod tests;
 
 use qc_diag::{Severity, Span};
-use qc_progs::ProgsFile;
-use qc_sema::lower::lower_file;
+use qc_progs::{ProgsFile, WriteError};
+use qc_sema::lower::{FileDecls, lower_file};
 use qc_sema::{Db, FileDiagnostic, FileId, ModuleInput, ResolveOptions, resolve_module};
 use qc_syntax::{Dialect, Parse};
 
@@ -90,6 +90,9 @@ pub enum CompileError {
     Dialect(Dialect),
     /// A compiled file of the input that [`Db::analyze_module`] did not read.
     NotAnalysed(FileId),
+    /// The progs does not fit the version 6 format: more globals, statements or strings than
+    /// its integers hold (PROGS-22.4).
+    Write(WriteError),
     /// The compiler met a construct the semantic model should have refused, or a table grew
     /// past what an offset can hold.
     Internal {
@@ -132,12 +135,17 @@ pub enum Internal {
 /// [`CompileError::Diagnostics`] when the module has errors, [`CompileError::Internal`] when a
 /// construct cannot be lowered.
 pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
-    let decls: Vec<_> = units
+    let decls: Vec<FileDecls> = units
         .iter()
         .map(|u| lower_file(u.parse, Dialect::Vanilla))
         .collect();
+    compile_lowered(units, &decls)
+}
+
+/// [`compile`] of units whose parses are lowered already, `decls[i]` from `units[i]`.
+fn compile_lowered(units: &[Unit<'_>], decls: &[FileDecls]) -> Result<Compiled, CompileError> {
     let index = resolve_module(
-        &decls,
+        decls,
         ResolveOptions {
             dialect: Dialect::Vanilla,
             autoproto: false,
@@ -178,6 +186,9 @@ pub fn compile(units: &[Unit<'_>]) -> Result<Compiled, CompileError> {
         span: Span::new(0, 0),
         internal,
     })?;
+    // PROGS-22.4: a table or operand past the version 6 format's integers is refused here,
+    // not when the caller writes the file.
+    qc_progs::write(&progs).map_err(CompileError::Write)?;
     Ok(Compiled {
         progs,
         progdefs,
@@ -216,11 +227,14 @@ pub fn compile_module(
     }
     let names: Vec<String> = input.compiled.iter().map(|&id| name_of(id)).collect();
     let mut units = Vec::with_capacity(input.compiled.len());
+    let mut decls = Vec::with_capacity(input.compiled.len());
     for (&id, name) in input.compiled.iter().zip(&names) {
         let parse = db.expanded_parse(id).ok_or(CompileError::NotAnalysed(id))?;
+        let lowered = db.expanded_decls(id).ok_or(CompileError::NotAnalysed(id))?;
         units.push(Unit { name, parse });
+        decls.push(lowered.clone());
     }
-    let mut compiled = compile(&units).map_err(|error| locate(db, input, error))?;
+    let mut compiled = compile_lowered(&units, &decls).map_err(|error| locate(db, input, error))?;
     // The analysis's warnings are at their source spans.
     compiled.warnings = warnings;
     Ok(compiled)
@@ -258,6 +272,6 @@ fn locate(db: &Db, input: &ModuleInput, error: CompileError) -> CompileError {
                 internal,
             }
         }
-        CompileError::Dialect(_) | CompileError::NotAnalysed(_) => error,
+        CompileError::Dialect(_) | CompileError::NotAnalysed(_) | CompileError::Write(_) => error,
     }
 }

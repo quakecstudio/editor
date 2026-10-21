@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use super::Case;
+use super::{Case, Divergence};
 
 /// A case of one file, `t.qc`.
 const fn one(name: &'static str, source: &'static str) -> Case {
@@ -18,13 +18,28 @@ const fn one(name: &'static str, source: &'static str) -> Case {
     }
 }
 
-/// A case `qc-codegen` compiles otherwise than id's `qcc`, as spec statement `statement` says.
+/// A case `qc-codegen` compiles where id's `qcc` does otherwise, as spec statement `statement`
+/// says.
 const fn diverges(name: &'static str, source: &'static str, statement: &'static str) -> Case {
+    refused_by_us(name, source, statement, None)
+}
+
+/// A case `qc-codegen` compiles otherwise than id's `qcc`, as `statement` says: refusing it with
+/// `message`, or with `None` compiling it.
+const fn refused_by_us(
+    name: &'static str,
+    source: &'static str,
+    statement: &'static str,
+    message: Option<&'static str>,
+) -> Case {
     Case {
         name: Cow::Borrowed(name),
         files: &[],
         source: Cow::Borrowed(source),
-        divergence: Some(statement),
+        divergence: Some(Divergence {
+            statement,
+            ours: message,
+        }),
     }
 }
 
@@ -184,10 +199,11 @@ pub(crate) const CASES: &[Case] = &[
         "type-mismatch-store-field",
         ".vector fv;\nentity e;\nvoid() f = { e.fv = 1; };\n",
     ),
-    diverges(
+    refused_by_us(
         "assign-to-literal",
         "float a;\nvoid() f = { 5 = a; };\n",
         "QC-27.10",
+        Some("cannot assign to this expression"),
     ),
     diverges(
         "earlier-load-rewritten",
@@ -305,6 +321,15 @@ pub(crate) const CASES: &[Case] = &[
     one(
         "void-and-field-of-field",
         "void x;\n..float ff;\n.float g;\n",
+    ),
+    one(
+        "field-of-void",
+        ".void vf;\nentity e;\nfloat r;\nvoid() f = { r = e.vf; };\n",
+    ),
+    one(
+        "two-functions-one-type",
+        "float(float x) a = { return x; }, b = { return x + 2; };\n\
+         float(float y) c = { return 1; }, d = { return 2; };\nvoid() f = { a(1); d(5); };\n",
     ),
     // QC-25: program output.
     one(

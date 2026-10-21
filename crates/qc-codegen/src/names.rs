@@ -19,30 +19,48 @@ use qc_sema::{DefId, FileId, Location, ModuleIndex};
 /// The definition at each name token's span.
 #[derive(Debug, Default)]
 pub(crate) struct Names {
-    at: HashMap<Location, DefId>,
+    /// The definitions made at each span, in the order made, each with its function.
+    defs: HashMap<Location, Vec<(DefId, Option<DefId>)>>,
+    /// The first reference at each span.
+    refs: HashMap<Location, DefId>,
     globals: HashMap<String, DefId>,
 }
 
 impl Names {
     /// The names of `index`, a module resolved from its files' expansions.
     pub(crate) fn new(index: &ModuleIndex) -> Self {
-        let mut at = HashMap::new();
+        let mut defs: HashMap<Location, Vec<(DefId, Option<DefId>)>> = HashMap::new();
+        let mut refs = HashMap::new();
         let mut globals = HashMap::new();
         for (id, def) in index.defs.iter().enumerate() {
-            at.entry(def.location).or_insert(DefId(id));
+            defs.entry(def.location)
+                .or_default()
+                .push((DefId(id), def.owner));
             if def.kind.is_global() && def.owner.is_none() && def.member_of.is_none() {
                 globals.entry(def.name.clone()).or_insert(DefId(id));
             }
         }
         for reference in &index.refs {
-            at.entry(reference.location).or_insert(reference.def);
+            refs.entry(reference.location).or_insert(reference.def);
         }
-        Self { at, globals }
+        Self {
+            defs,
+            refs,
+            globals,
+        }
     }
 
-    /// The definition the name at `span` of compiled file `file` is.
-    pub(crate) fn def(&self, file: FileId, span: Span) -> Option<DefId> {
-        self.at.get(&Location { file, span }).copied()
+    /// The definition the name at `span` of compiled file `file` is, read in function `scope`
+    /// (`None` at file level). One parameter list may define the parameters of several
+    /// functions, `float(float x) a = {...}, b = {...};` (QC-11.2), each made at the same name:
+    /// the one of `scope` is taken, else the first made there.
+    pub(crate) fn def(&self, file: FileId, span: Span, scope: Option<DefId>) -> Option<DefId> {
+        let location = Location { file, span };
+        if let Some(made) = self.defs.get(&location) {
+            let own = made.iter().find(|(_, owner)| *owner == scope);
+            return own.or_else(|| made.first()).map(|(id, _)| *id);
+        }
+        self.refs.get(&location).copied()
     }
 
     /// The first global definition named `name` (QC-12.2): what a file-level declaration of a
