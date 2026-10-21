@@ -438,11 +438,8 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
 - **FTEF-12.3** `#pragma sourcefile path` registers an additional source file to compile
   (`QCC_PR_Precompiler`, the `sourcefile` case, calling `QCC_RegisterSourceFile` for each
   parsed name). The corpus uses it 9 times.
-- **FTEF-12.4** `#pragma flag name on|off` (the alias `keyword`) enables or disables a compiler
-  flag or keyword mid-compile (`QCC_PR_Precompiler`, the `keyword`/`flag` case, over the
-  `compiler_flag[]` table, honouring `FLAG_MIDCOMPILE`); it warns "compiler flag state not
-  recognised", "keyword/flag %s not recognised", or "Cannot enable/disable keyword/flag via a
-  pragma". The corpus uses it 11 times.
+- **FTEF-12.4** **Withdrawn** (P2-116, #544): it gave the form as `#pragma flag name on|off`, but
+  `QCC_PR_Precompiler` reads the state first and then the names. Replaced by FTEF-12.11.
 - **FTEF-12.5** `#pragma forcecrc n` forces the progs definitions CRC
   ([`progs.md`](progs.md) PROGS-5) to `n` (`QCC_PR_Precompiler`, both the `#pragma forcecrc`
   sub-case and the top-level `#forcecrc` directive, setting `ForcedCRC`). The corpus uses it 4
@@ -472,9 +469,91 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   appear before any definitions" (`WARN_BADPRAGMA`, on by default) at the directive, once: the
   check stands inside `if (!autoprototyped)`, so the second autoprototyping pass skips the
   pragma without a word.
-- **FTEF-12.8** A `#pragma` affects the build and diagnostics, not the token stream; it emits
-  no progs output of its own (as FTE-16.3). Codegen (later): any effect a pragma has on the
-  output (the target format, the CRC, the flags) is realised by L-01.
+- **FTEF-12.8** **Withdrawn** (P2-116, #544): it said a `#pragma` does not affect the token
+  stream, but `#pragma flag` turns on and off flags `QCC_PR_Lex` reads. Replaced by FTEF-12.12.
+- **FTEF-12.11** The build pragmas are read as `QCC_PR_Precompiler` reads them, against FTEQCC's
+  tables (`qc_preproc`'s `fte_tables.rs`, written out of `qccmain.c` and `qcc_pr_comp.c`), each
+  warning FTEQCC gives being its Q120 (`WARN_BADPRAGMA`, `W0113`) unless said otherwise.
+  `#pragma flag STATE NAME ...`, and `keyword`, reads its text with `QCC_COM_Parse`: STATE
+  `enable` or `on` turns each NAME on and `disable` or `off` off, in any case; any other STATE is
+  "compiler flag state not recognised" and sets nothing. Each NAME is the first row of
+  `compiler_flag[]` whose `abbrev` it is in any case (`QC_strcasecmp`), "keyword/flag NAME not
+  recognised" when none is, and "Cannot enable/disable keyword/flag via a pragma" when the row
+  lacks `FLAG_MIDCOMPILE` (`acc`, `parms`, `autoproto`, `wasm`, `caseinsens`, `int`,
+  `integer`). The flags start as `QCC_main` sets them, `FLAG_ASDEFAULT` on, and `QCC_SetDefaultProperties`
+  does not set them again, so a pragma's setting holds into the second autoprototyping pass
+  (`qc_preproc::FlagSettings`). `#pragma optimise` (or `optimize`) with a level `0` to `3`, or a
+  text starting `addon` or `mutator` in any case, sets the optimisations; any other text, after
+  an optional `no-`, is matched in any case against `optimisations[]`' `abbrev` and `fullname`,
+  "pragma NAME: TEXT unsupported" when it matches none (NAME the pragma's name as written).
+  `#pragma opcode STATE NAME ...` takes `enable`, `on`, `disable` or `off` ("opcode state not
+  recognised" for any other) and names `pr_opcodes[]`' `opname`s in any case, "opcode NAME is
+  internal" for one past `OP_NUMREALOPS` and "opcode NAME not recognised" for none. `#pragma
+  TARGET NAME` takes its first token, a `targets[]` name in any case with an optional `_` and
+  revision (`fte_5768`): an unknown one is "Unknown target 'NAME'. Ignored." and a line "Valid
+  targets are: ID, HEXEN2, FTE, FTEH2, KK7, DP(patched)", and a revision past the format's highest
+  "target revision N is unknown, assuming revision M", both warnings with no name (`W0117`).
+  Any pragma name `QCC_PR_Precompiler` does not know is "Unknown pragma 'NAME'". The pinned FTEQCC
+  (`fteqcc -Tid`) gives each of these warnings with this text for `#pragma foo`, `#pragma flag
+  enable foo`, `#pragma flag maybe hashonly`, `#pragma flag enable acc`, `#pragma
+  optimise foo`, `#pragma opcode foo`, `#pragma opcode on STORE_F foo`, `#pragma TARGET XYZ` and
+  `#pragma TARGET fte_99999`. Two warnings depend on what the compiler has made so far, which the
+  preprocessor does not know, and are not modelled: `optimise` inside a function ("unable to
+  change optimisation options mid-function") and a `TARGET` that switches to or from Hexen II
+  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.14).
+- **FTEF-12.12** Seven of the flags `#pragma flag` sets (FTEF-12.11) change how FTEQCC lexes,
+  and hold from the token after the directive: `QCC_PR_Lex` reads each token as the parser asks
+  for it, with the flags of that moment (`qc_lexer::LexFlags`, `qc_lexer::lex_flagged`). The
+  pinned FTEQCC (`fteqcc -Tid`) gives each result below.
+  `qcfuncs` (`flag_qcfuncs`, on by default): with it off, `\0` to `\7` in a string are C's octal
+  escape, the digit and up to two more octal digits (`if (flag_qcfuncs) c = 0xe012 + c - '0';
+  ... else //C compat`), and `\8` or `\9` is the error "Bad character code \8" (`E0103`).
+  `qccx` (`flag_qccx`): a `:` after a string part, comments before it passed over, writes a NUL
+  into the string and reading goes on (`if (flag_qccx && *pr_file_p == ':') { pr_file_p++;
+  pr_token[len++] = 0; continue; }`), so `"a":"b"` is the string `a`, NUL, `b`; a character
+  constant is a float whose bits are its code, with "char constant: denormal" (F313,
+  `WARN_DENORMAL`, an error by default, `W0121`); `%` before a digit or `-` is "denormalized
+  immediate" (F313) and a float whose bits are the `int` `QCC_PR_LexInteger` reads after it,
+  `atoi` of `0x` and the digits, `a` to `f` and `.` that follow, so a hex `%0x5` is 0; and a hex
+  number with no suffix goes to `qccxhex`: a float whose bits are the number's low 32 bits, with
+  "numerical overflow" (`W0111`) where those bits are not the number and are no negative `int`.
+  `utf8` (`flag_utf8strings`): a plain string is read and written as `u8"..."` is
+  (`stringtype = flag_utf8strings?2:0;`), so a byte that starts no UTF-8 sequence is "Input
+  string is not valid utf-8". `ILP32` (`flag_ILP32`): a number needs `ll` to be 64 bits
+  (`islong >= (flag_ILP32?2:1)`), so `0x100000000l` is an `int` with "numerical overflow".
+  `ssp` (`flag_dblstarexp`): `**` is the token `*^`, with "** is unsafe around pointers, use *^
+  instead." (F321, `WARN_GMQCC_SPECIFIC`, `W0118`). `assumeint` (`flag_assume_integer`): a number
+  with no suffix and no `.` is an integer, with no float's "numerical overflow ... will be
+  rounded", and a character constant is an integer, `qccx` aside; its value stays a float
+  (FTEF-13.5), and "Numerical truncation" when such an integer becomes a float is the
+  compiler's. `macroinstrings` (`flag_macroinstrings`): a `#` in a string starts a name that runs
+  to white space or one of `)(+-*/\|&=^~[]"{};:,.#`; `QCC_PR_CheckCompConstString` looks it up and
+  then looks up each macro's text as a name again for as long as it names a macro, and the text
+  it ends on is written into the string as it is, trailing spaces and tabs dropped, with "Macro
+  NAME expansion in string" (`WARN_MACROINSTRING`, `W0122`); a name of no macro writes the `#` as
+  a byte and is "Unable to expand string macro NAME" unless empty, and a string the text would
+  take to 8191 bytes or more is "String length exceeds 8191" (`E0502`). So with `#define FOO
+  bar` and two spaces and `#define BAR FOO`, `"a#BAR.c"` is `abar.c`. A deliberate divergence:
+  the lookup stops after 64 macros, as FTEQCC's recursion has no bound and never returns for a
+  macro whose text names itself. The preprocessor lexes the rest of a text again when the flags
+  change, or under `macroinstrings` when a macro is defined or undefined, and marks each change
+  by token in `FileOutput::lex_flags`, which `qc_syntax::parse_preprocessed_flagged` reads to
+  lex the preprocessed text again as FTEQCC lexed it.
+- **FTEF-12.13** Two flags change the preprocessor's reading. `hashonly` (`flag_hashonly`): a name
+  is a macro's or a built-in constant's only after a `#` (`if (flag_hashonly ||
+  !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`), so with `#define FOO 5`, `FOO` is the name
+  `FOO` and `#FOO` is `5`. `nofileline` (`flag_nopragmafileline`): `#pragma file` and `#pragma
+  line` change nothing (`if (!flag_nopragmafileline)`).
+- **FTEF-12.14** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
+  parse, the compiler or its console output rather than to the tokens: `acc` (its `|` in a string
+  as a line feed, and reacc's type names) has no `FLAG_MIDCOMPILE`, so only the command line's
+  `-Facc` sets it, and this profile reads no command line; `caseinsensitive` (names and keywords
+  compared in any case, `QCC_PR_CheckName`, `QCC_PR_CheckKeyword`), `assumedouble` (a number with
+  a `.` is a `double`, a type this profile's tokens do not carry, FTEF-13.5) and the keyword
+  flags are the parser's and the type checker's (L3); `cpriority` reorders `pr_opcodes` for the
+  parser; `msvcstyle` and `debugmacros` change only what FTEQCC prints. A pragma emits no progs
+  output of its own (as FTE-16.3); its effects on the output (the target format, the CRC, the
+  flags) are realised by codegen (L-01).
 
 ## FTEF-13 Further tokens
 
@@ -601,6 +680,104 @@ constants and two-component vectors (`'8 8'` in `fteextensions.qc`), and uses `\
   A9) and `'éx` bind 233, `'\xed\xa0\x80'` 55296, `'\xc0\x80'` 0 and `'\xf0\x90\x80\x80'` 65536;
   `'\xff;` binds 65533; `'\xff'`, `'\xe9'` and `'\xc1\x81'` are "Bad vector" at the `'` after
   the byte. The bytes are written here as `\x` escapes.
+- **FTEF-13.15** White space between tokens is only what FTEQCC's `qcc_iswhite` takes, `#define
+  qcc_iswhite(c) ((c) == ' ' || (c) == '\r' || (c) == '\n' || (c) == '\t' || (c) == '\v')`
+  (`cmdlib.h`), where id's lexer takes every byte up to the space as a signed `char` (QC-2.1). So
+  under this profile any other control byte, a form feed or 0x01, and DEL, starts no token and is
+  "Unknown punctuation: '\x%x'" (`QCC_PR_LexPunctuation`, `QCC_PR_ParseWarning
+  (ERR_UNKNOWNPUCTUATION, "Unknown punctuation: '\\x%x'", *pr_file_p);`), `E0105` with FTEQCC's
+  text, the byte in lowercase hex: the pinned FTEQCC refuses `float` and a form feed before `x;`
+  ("Unknown punctuation: '\xc'"), and accepts two vertical tabs between definitions. Reading goes on
+  after the byte, as FTEQCC's `pr_file_p++; QCC_PR_Lex();` does. A byte of 0x80 or more is a
+  name's (FTEF-13.16), never white space.
+- **FTEF-13.16** A name starts at an ASCII letter, `_` or a byte of 0x80 or more (`QCC_PR_Lex`,
+  `if ( (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c & 0x80))`) and
+  `QCC_PR_LexName` reads it a character at a time, each a UTF-8 sequence `utf8_check` reads
+  (FTEF-13.8, ASCII bytes one each), while the byte after is a letter, a digit, `_` or of 0x80 or
+  more. So `float é;` and `float xéy;` define the names, written as UTF-8. A byte that starts no
+  sequence (`if (!b)`) is the error "Invalid UTF-8 code sequence before WORD. Lead byte was 0xNN"
+  (`ERR_NOTANAME`, `E0123`): NN the byte in lowercase hex, WORD the bytes up to white space from
+  the first byte after it that starts a sequence, or, when only white space but a line feed stands
+  between that byte and the line's end, "Invalid UTF-8 code sequence at end of line. Lead byte was
+  0xNN". The pinned FTEQCC refuses `float x` 0xC3 `;` ("... before ;. Lead byte was 0xc3") and
+  `float` 0xA0 `x;`, the non-breaking space of Latin-1. FTEQCC stops at the error; this profile
+  makes no token of the name and reads on at that byte, where FTEQCC leaves `pr_file_p`. The
+  vanilla dialect keeps QC-1.3: such bytes are white space.
+- **FTEF-13.17** After a number `QCC_PR_LexNumber` reports "bad suffix on number TEXT" when a
+  letter, a digit, `_` or a byte of 0x80 or more follows it (`checkjunk:`, `if ( (c >= 'a' && c
+  <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (c >= '0' && c <= '9') || (c & 0x80))
+  QCC_PR_ParseWarning(ERR_NOTANUMBER, "bad suffix on number %s", pr_token);`), an error as its code
+  is an `ERR_` one, `E0124`. TEXT is `pr_token`: the number's bytes, a `-` first included, `0X`
+  written `0x`, and a type suffix included except an `f` or `d` after a fraction, which is passed
+  over unwritten: `5abc` is "bad suffix on number 5", `5fx` "... 5f", `1.5e3` "... 1.5" and `08`
+  "... 0" (after FTEF-13.19's warning). The letters after it are then read as a name of their own,
+  as FTEQCC reads on. A vector's components, which `QCC_PR_LexFloat` reads, and the numbers of
+  directives (`QCC_PR_LexInteger`) are not checked.
+- **FTEF-13.18** White space and comments before a token are read as `QCC_PR_Lex` reads them:
+  `QCC_PR_LexComment` first, which reads white space up to and including the first line ending
+  (`qcc_islineending`: a LF, or a CR not before a LF), or a `//` comment up to and including its
+  LF (`while (*pr_file_p && *pr_file_p != '\n')`), after which `QCC_PR_NewLine` passes over the
+  next line's spaces and tabs and only a `//` after other white space there, a VT, is read in the
+  same way, or the first `/* */` comment; then `QCC_PR_LexWhitespace`, whose `//` comment ends at
+  any line ending (`while (*pr_file_p && !qcc_islineending(pr_file_p[0], pr_file_p[1]))`). So a
+  lone CR ends a `//` comment only after a line ending since the token before it: the pinned
+  FTEQCC refuses `// c`, a CR and `float y = ;` on the line after a definition, and `float x; //
+  c`, a LF, `// e`, a CR and `float y = ;`, and accepts `float x; // c`, a CR and `float y = ;`,
+  which is all comment, and the same with a VT before `// e`. A `/* */` comment's `*/` is looked for from the byte after
+  the `*` (`pr_file_p+=1; do { pr_file_p++; ... } while (pr_file_p[0] != '*' || pr_file_p[1] !=
+  '/');`), so `/*/` opens a comment that runs on, where id's closes it (QC-2.3): FTEQCC accepts
+  `/*/ float x; */`. A `/*` inside one is the warning "\"/*\" inside comment" (`WARN_NESTEDCOMMENT`,
+  F325, `W0112`, at the `/*`), and a comment with no `*/` is "EOF inside comment" (`E0501` with
+  FTEQCC's text). A `\` before a line break, `\` CR LF taken whole, joins the lines and the reading
+  starts again after it (FTEF-13.2).
+- **FTEF-13.19** `QCC_PR_LexNumber` accumulates the digits in a `long long num` (`num*=base; num
+  += c-'0';`), which wraps on the two's complement builds FTEQCC runs on, and writes `(float)(num*
+  sign)`: the pinned FTEQCC binds `#18446744073709551621` to builtin 5. It warns "A leading 0 is
+  interpreted as base-8." (`WARN_OCTAL_IMMEDIATE`, named `octal`, `W0110`, at the `0`) for a `0`
+  and then a digit, and "numerical overflow" (`WARN_OVERFLOW`, F312, `W0111`, at the number) where
+  the value it stores is not the number: after an `f` or `d` suffix when `(longlong)` of the float
+  or double differs from `num`; after an `i` or `u` suffix with no `l`, when the low 32 bits it
+  keeps (`pr_immediate._int = num`) differ from `num` and are not negative, so `4294967313i` warns
+  and `0xffffffffi` does not; and with no suffix in base 16 only, "numerical overflow %lld will be
+  rounded to %f", `0x100000001` giving "numerical overflow 4294967297 will be rounded to
+  4294967296.000000". A float past `long long`'s range converts with C's undefined behaviour; this
+  profile saturates, as arm64 does.
+- **FTEF-13.20** FTEQCC's token buffer is `char pr_token[8192];` (`FTEQCC_MAX_TOKEN`): a string,
+  its parts joined (FTEF-16.8), of more than 8191 bytes is "String length exceeds 8191"
+  (`QCC_Error(ERR_INVALIDSTRINGIMMEDIATE, "String length exceeds %u", ...)`, which ends the
+  compile; `E0502` with FTEQCC's text), and a name or number that long runs past the buffer, which
+  FTEQCC does not check, and is `E0502` "token too long" here, a deliberate divergence from that
+  undefined behaviour. A name of 256 bytes or more is the parser's "name too long" (FTEF-15.7).
+  So a string of 3000 bytes, which id's `qcc` cannot hold (QC-27.4), is accepted.
+- **FTEF-13.21** In a string whose input is UTF-8 (`Q"`, `u8"`, `u"`, `U"`, `L"` and, with
+  `-Futf8`, `"`, FTEF-13.8) a byte that starts no sequence `utf8_check` reads is the error "Input
+  string is not valid utf-8", and a byte of 0x80 or more starting a sequence inside bronze text
+  (FTEF-13.10) "Unable to mask non-ascii chars. Attempting to mask bytes", each
+  `QCC_PR_ParseWarning(ERR_BADCHARACTERCODE, ...)` and so an error, `E0103` with FTEQCC's text;
+  FTEQCC reads on, writing the byte as FTEF-13.8 says. An unknown escape is "Unknown escape char
+  %c" with the byte after the `\`.
+- **FTEF-13.22** FTEQCC's F301 (`WARN_NOTUTF8`) and F311 (`WARN_FTE_SPECIFIC`), off by default
+  (FTEF-14.63), are reported once a `#pragma warning` turns them on: F301 for a `u"`, `U"` or `L"`
+  string, "char32_t/char16_t/wchar_t strings are not supported, treating as u8 prefix (as utf-8)",
+  for a code a Quake string cannot hold, "Cannot convert codepoint %#x to quake's charset", and
+  for a UTF-8 one past U+10FFFF, "Bad unicode character code - codepoint is above 0x10FFFFu"
+  (`W0119`); F311 for a vector of two components, "2d vector" (`W0120`).
+- **FTEF-13.23** A vector's components are read with `QCC_PR_LexWhitespace` before the first and
+  after each (`QCC_PR_LexVector`), not with `QCC_PR_LexComment`, so a comment before the first
+  component is passed over and a `//` comment between components ends at a lone CR: the pinned
+  FTEQCC accepts `'/*c*/1 2 3'` and `'1 // c`, a CR and `2 3'`.
+- **FTEF-13.24** Under FTEQCC the punctuation is `pr_punctuation[]`, tried in its order, the first
+  that matches the input winning ("longer symbols must be before a shorter partial match"),
+  which has, besides the vanilla tokens and those of FTE-19.1, `<=>`, `*^`, `><`, `@` and `^^`
+  (`qc_lexer::Punct::FTEQCC_TABLE`); a byte it does not list is FTEF-13.15's "Unknown
+  punctuation". So `a<=>b` is `a`, `<=>`, `b` and `a><b` is `a`, `><`, `b`.
+  `QCC_PrioritiseOpcodes` gives `*^` (`POW_F`) and `><` (`CROSS_V`) the priority of `*` (`PC_MULDIV`) and `<=>` (`SPACESHIP_F`) that
+  of `==` (`PC_EQUALITY`), as this parser does. `@` (a `qccx` unary in `QCC_PR_Term`) and `^^`
+  (which no opcode has) are tokens the parser of this profile reads as no operator.
+- **FTEF-13.25** In a string, `\` before a CR is the byte after the CR (`c = *pr_file_p++;` in
+  `QCC_PR_LexEscapedCodepoint`), and when that byte is no LF FTEQCC warns `"Hanging \\\\\r"`
+  (`WARN_HANGINGSLASHR`, `W0123`), the text `Hanging \\` and a CR: the pinned FTEQCC gives it for
+  `"a`, `\`, a CR and `b"`. A `\` before a CR and an LF is the LF, with no warning.
 
 ## FTEF-14 Preprocessor directives and macros
 
@@ -940,15 +1117,9 @@ profile the preprocessor reads them as FTEQCC does.
   error code as an error): `#ifdef X Y`, `#endif X`, `#else X` and `#include "b.qh" X` are
   refused. A `#pragma`'s line ends at its break (FTEF-14.43). Reading goes on at the break, which
   ends the line, so the next line may start a directive.
-- **FTEF-14.36** `#undef` reads a name with `QCC_PR_SimpleGetToken` after the spaces and tabs
-  after its name, and removes the macro, a name of no macro reporting only FTEQCC's warning
-  "Precompiler constant %s was not defined", which this profile does not report. `#ifdef` and
-  `#ifndef` read a name in the same way, after a white-space byte that must follow their name; a
-  missing name is no macro's, so `#ifdef` alone is false and `#ifndef` alone true. `#if`,
-  `#ifdef` or `#ifndef` with a byte that is no white space right after the name (`if
-  (!qcc_iswhite(*pr_file_p))`), as in `#ifdefX`, `#iffy` and `#if(1)`, is FTEQCC's warning
-  "Unknown pragma", which this profile does not report, and opens no block: reading goes on as
-  code after the word `QCC_PR_SimpleGetToken` reads from the name, so `#if(1)` leaves `(1)`.
+- **FTEF-14.36** **Withdrawn** (P2-116, #544): it said this profile does not report FTEQCC's
+  warnings for `#undef` of no macro and for an `#if` form with no white space after its name,
+  which are on by default. Replaced by FTEF-14.57.
 - **FTEF-14.37** FTEQCC counts the sides that are open and taken in one `static int ifs`, kept
   from file to file of a module, included files and the second autoprototyping pass included: a
   true `#if`, `#ifdef` or `#ifndef` adds one; a false one is skipped by
@@ -997,7 +1168,7 @@ profile the preprocessor reads them as FTEQCC does.
   an included file includes is found beside the compiled file: with `progs.src` listing
   `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the pinned FTEQCC reads `src/c.qh`
   and refuses the program when only `src/x/c.qh` exists. An empty name includes nothing, and a
-  name `#pragma once` marked is not read again (FTEF-14.44). The file is read next, as text of
+  name `#pragma once` marked is not read again (FTEF-14.70). The file is read next, as text of
   its own, after the directive's line. The vanilla dialect keeps QC-9.2.
 - **FTEF-14.41** `#includelist` reads its line with `errorifnonwhite`, then words: before each,
   white space and comments are read as `QCC_PR_LexWhitespace(false)` reads them, which runs the
@@ -1032,22 +1203,8 @@ profile the preprocessor reads them as FTEQCC does.
   and an `#include`d file's numbering ends with it (`QCC_PR_UnInclude` restores `pr_source_line`).
   FTEQCC's diagnostics report the line too; this profile's diagnostics keep the place of their
   text, a deliberate divergence, as a span in the file says more than a line FTEQCC was told.
-- **FTEF-14.44** Of the other pragmas, these change what the preprocessor reads:
-  `DONT_COMPILE_THIS_FILE` passes over the rest of the text a byte at a time after white space
-  read as `QCC_PR_LexWhitespace(false)` reads it, so the directives at the starts of its lines
-  still run, an `#error` refusing the program; `once` marks the file being compiled
-  (`strcpy(onced->name, compilingfile);`), not the file it is in, so a header's `#pragma once`
-  keeps nothing from being read twice; `includedir` adds the directory its first token
-  (`QCC_COM_Parse`) names, a `/` after it unless it ends in one, joined to the file being
-  compiled, after the others, at most 8 (`MAXINCLUDEDIRS`); `noref` and `autoproto` take their
-  text with `atoi` (FTEF-12.6, FTEF-12.10), so `#pragma noref(1)` is 0; and `warning STATE NAME
-  ...` sets FTEQCC's setting of each warning named, of which this profile keeps F303's
-  (FTEF-14.46): `enable` and `on` warn, `disable`, `off` and `ignore` ignore, `error` errs, and
-  `toggle` sets `!!` of the setting, a warning for an error. The rest, `COPYRIGHT`, `compress`,
-  `forcecrc`, `framerate`, `file` (FTEF-14.32), `line` (FTEF-14.43), `nosave`, `defaultstatic`,
-  `wrasm`, `optimise` and `optimize`, `sourcefile`, `TARGET`, `PROGS_SRC`, `PROGS_DAT`, `opcode`,
-  `keyword` and `flag`, change the build, and an unknown one is FTEQCC's warning "Unknown pragma",
-  which this profile does not report.
+- **FTEF-14.44** **Withdrawn** (P2-116, #544): it said this profile keeps only F303's warning
+  setting and does not report "Unknown pragma". Replaced by FTEF-14.70.
 - **FTEF-14.45** `QCC_PR_LexWhitespace(false)`, which reads the white space and comments after a
   function-like macro use's `(` and after each `,` of its arguments (FTEF-14.22), and before
   each word of an `#includelist` and each byte `DONT_COMPILE_THIS_FILE` passes over, calls
@@ -1109,7 +1266,7 @@ profile the preprocessor reads them as FTEQCC does.
   (FTEF-14.37) is kept, being `QCC_PR_Precompiler`'s own.
 - **FTEF-14.49** A module's include directories (PRJ-5.2) are FTEQCC's `-I` options:
   `QCC_PR_CommandLinePrecompilerOptions` gives each to `QCC_PR_AddIncludePath(name)` (`else if (
-  !strncmp(myargv[i], "-I", 2) )`), which keeps it as `#pragma includedir` does (FTEF-14.44): a `/`
+  !strncmp(myargv[i], "-I", 2) )`), which keeps it as `#pragma includedir` does (FTEF-14.70): a `/`
   after it unless it ends in one, at most 8. `QCC_SetDefaultProperties` calls it after
   `QCC_PR_CloseProcessor`, so they are the first include directories, before any `#pragma
   includedir` adds one, and they are there again for the second autoprototyping pass (FTEF-14.48).
@@ -1136,7 +1293,7 @@ profile the preprocessor reads them as FTEQCC does.
   its test, as `QCC_PR_FalsePreProcessorIf` reads one after the side before it was skipped
   (FTEF-14.37), so `#elif (1/*)` ends at its `)`; at a `#pragma`'s line break (FTEF-14.43);
   after the word of an `#if`, `#ifdef` or `#ifndef` with no white space after its name
-  (`#if(1)`, FTEF-14.36); and at an `#eof`'s line break, as FTEQCC reads nothing after it. So
+  (`#if(1)`, FTEF-14.57); and at an `#eof`'s line break, as FTEQCC reads nothing after it. So
   `#undef X // c \`, a line break and `float y;` is one node of two lines, and `#pragma p // c
   \` ends at its line break. A `#` after a `/* */` comment on its line or in the middle of a
   line, and a `#` whose name matches no directive (`#foo`), are read as code (FTE-23.10).
@@ -1189,32 +1346,10 @@ profile the preprocessor reads them as FTEQCC does.
   `#define M(x) x`, `void() f = M(#5 \`, a line break, `#define Y 6` and `);` is refused, and the
   project graph's code (PRJ-5.13); the syntax tree makes no directive node of such a `#`
   (FTEF-14.51).
-- **FTEF-14.54** A source file is read as the text FTEQCC's `QCC_LoadFile` (`qcc_cmdlib.c`) hands
-  its lexer, by the preprocessor and by the project graph (PRJ-5.13), a compiled file and an
-  `#include`d one alike. `QCC_SanitizeCharSet` decodes a file that starts with the byte order mark
-  of UTF-32LE (`ff fe 00 00`), UTF-32BE (`00 00 fe ff`), UTF-16LE (`ff fe`) or UTF-16BE (`fe ff`),
-  tested in that order, to UTF-8 with `decodeUTF`, skips a UTF-8 one (`mem += 3;`), and leaves any
-  other file as it is. `decodeUTF` reads whole code units only (`chars = inbytes / w;`), joins a
-  high surrogate to a low one after it (`if (inc >= 0xd800u && inc < 0xdc00u && i+1 < chars)`),
-  writes any other surrogate in three bytes as any value of U+0800 to U+FFFF, and makes a value
-  past U+10FFFF U+FFFD (`if (inc > 0x10FFFF) inc = 0xFFFD;`). Then every NUL byte of the text is a
-  space (`else if (!mem[check])`, `mem[check] = ' ';`), so the text goes on past a NUL where QC-1.1
-  ends it: the pinned FTEQCC refuses `void() f = #5;`, a line break, a NUL and `zz zz zz` ("\"zz\"
-  is not a type"), refuses `#define N #5`, a NUL, `zz`, a line break and `void() f = N;`, and binds
-  `f` to builtin 5 after `#ifdef Q`, a line break, `zz`, a NUL, a line break and `#endif`. A NUL
-  first in a compiled file is a space `QCC_PR_NewLine` passes over, and first in an included file a
-  byte before its `#`, so no directive starts there (FTEF-14.52). After a UTF-8 byte order mark a
-  directive starts a compiled file's first line, after spaces and tabs too, and an included file's
-  first byte; FTEQCC binds `f` to builtin 5 from `#define N #5` and `void() f = N;` after one, with
-  and without two spaces before the `#`, and from `void() f = #5;` written as UTF-16LE after its
-  mark. A diagnostic's place in the file is the bytes its text came from: 3 bytes on after a UTF-8
-  mark, and in a decoded file the code unit each byte came from (`qc_preproc::SourceFile::file_span`).
-  FTEQCC also warns "file contains null bytes" (`WARN_UNEXPECTEDPUNCT`) once for a file with a NUL,
-  which this profile does not, as the warning changes nothing that is compiled. `QCC_LoadFile` then
-  writes a line break after the text (`mem[len] = '\n';`), which this profile does not add: its
-  readers take the end of the text for the end of its last line, as the directive family's cases of
-  each directive at the end of a file with no line break show. The vanilla dialect
-  keeps QC-1.1: a file's bytes, its text ending at the first NUL.
+- **FTEF-14.54** **Withdrawn** (P2-116, #544): it said this profile does not add the line feed
+  `QCC_LoadFile` writes after a file's text, and the end of `#if`, `#ifdef` and `#` alone at a
+  file's end showed that its readers do not take the text's end for a line's. Replaced by
+  FTEF-14.64.
 - **FTEF-14.55** FTEQCC's `atoi` is the host C library's, and this profile reads it as an LP64 host
   (64-bit Linux and macOS) does, on every host: `(int)strtol(s, NULL, 10)` (glibc `stdlib/atoi.c`,
   `return (int) strtol (nptr, (char **) NULL, 10);`; Apple Libc `stdlib/FreeBSD/atoi.c`, `return
@@ -1238,7 +1373,7 @@ profile the preprocessor reads them as FTEQCC does.
   the oracle ran on an LLP64 host, a project graph case among them (PRJ-5.13). The vanilla
   dialect's expressions keep PRJ-5.5.
 - **FTEF-14.56** Under this profile the syntax tree reads its directive nodes (FTEF-14.51) in the
-  text `QCC_LoadFile` gives (FTEF-14.54), at the file's own offsets
+  text `QCC_LoadFile` gives (FTEF-14.64), at the file's own offsets
   (`qc_preproc::qcc_load_in_place`), so that it makes a node of
   each directive the preprocessor runs and stays the file's bytes: each NUL byte is read as a
   space, so the text goes on past it and a directive on a later line is a node, and a directive's
@@ -1250,9 +1385,172 @@ profile the preprocessor reads them as FTEQCC does.
   preprocessor wrote (`qc_syntax::parse_preprocessed`) is no file the loader read and still ends
   at its first NUL. A file that starts with a UTF-16 or UTF-32 byte order mark is
   read by the tree as its bytes to the first NUL, as under the vanilla dialect (QC-1.1): the
-  preprocessor reads its decoded text (FTEF-14.54), whose offsets are not the file's, so how such
+  preprocessor reads its decoded text (FTEF-14.64), whose offsets are not the file's, so how such
   a file is shown is the semantic model's choice, not the tree's. The vanilla dialect keeps
   QC-1.1.
+
+- **FTEF-14.57** `#undef` reads a name with `QCC_PR_SimpleGetToken` after the spaces and tabs
+  after its name and removes the macro; a name of no macro, the empty one included, is FTEQCC's
+  warning "Precompiler constant NAME was not defined" (`WARN_UNDEFNOTDEFINED`, with no name,
+  `W0114`), on by default, which comes before any "unexpected tokens at end of line" of its line.
+  `#ifdef` and `#ifndef` read a name in the same way, after a white-space byte that must follow
+  their name; a missing name is no macro's, so `#ifdef` alone is false and `#ifndef` alone true.
+  `#if`, `#ifdef` or `#ifndef` with a byte that is no white space right after the name (`if
+  (!qcc_iswhite(*pr_file_p))`), as in `#ifdefX`, `#iffy` and `#if(1)`, is the Q120 warning
+  "Unknown pragma" (`W0113`) and opens no block: reading goes on as code after the word
+  `QCC_PR_SimpleGetToken` reads from the name, so `#if(1)` leaves `(1)`. FTEQCC's warning names
+  `qcc_token`, the last word any `QCC_COM_Parse` or `QCC_COM_Parse2` read, a macro's expansion
+  or a `progs.src` entry included (the pinned FTEQCC prints "Unknown pragma 't.qc'" for `#iffy`
+  in `t.qc`); this profile names the word, `'iffy'`, a deliberate divergence, as the word FTEQCC
+  prints stands for nothing in the directive. At the end of a file `#if`, `#ifdef` and `#ifndef`
+  read FTEQCC's line feed after the text (FTEF-14.64).
+- **FTEF-14.58** `QCC_PR_PreProcessor_Define`'s errors have FTEQCC's texts: "No name defined for
+  compiler constant" (`E0114`), and for a parameter list it refuses (FTEF-14.23) "May not have more
+  than 32 parameters to a macro", "parameter name is too long (max 32)", "varadic argument must be
+  last", "duplicate macro paramter name 'NAME'" and "missing ) in macro parameter list"
+  (`E0115`). Its warnings are F315's (`WARN_DUPLICATEPRECOMPILER`, `W0115`) and F316's
+  (`WARN_IDENTICALPRECOMPILER`, `W0116`, off by default), at the macro's name: an `#append` of a
+  macro whose parameter count or `...` differs is "different number of macro arguments in macro
+  append", and one whose names differ "arguments differ in macro append", each then defining the
+  macro anew; a definition of a macro that already has one, an `#append` defining anew included, is
+  "Alternate precompiler definition of NAME (OLD -> NEW)", OLD and NEW the stored bodies, when they
+  differ, and "Identical precompiler definition of NAME" when they do not, the parameters not
+  compared (`if (strcmp(oldcnst->value, cnst->value))`); and a body's `/*` with no `*/` before the
+  text's end is "EOF inside quote in define NAME". So `#define A 1` then `#define A() 1` is
+  F316's, and `#define F(a) a` then `#append F(b) 2` gives "arguments differ in macro append" and
+  "Alternate precompiler definition of F (a -> 2)", as the pinned FTEQCC prints them.
+- **FTEF-14.59** **Withdrawn** (P2-116, #544): it gave "Include path too long." for a `#pragma
+  includedir` of 2048 bytes, which FTEQCC's `char msg[1024]` cannot hold (FTEF-14.66). Replaced
+  by FTEF-14.68.
+- **FTEF-14.61** In a function-like macro's body a `#` before a token that names no parameter, read
+  with `QCC_COM_Parse2`, is written as `#` and the token, and is FTEQCC's warning "'#TOKEN' is not
+  a macro parameter in NAME" (`QCC_PR_ParseWarning(0, ...)`, the warning of code 0, with no name,
+  `W0117`), at the `#`, for each expansion, unless the body holds a directive (`if (!c->evil)`,
+  FTEF-14.46). So `#define E(x) #5:x` used as `E(ex_a)` warns "'#5' is not a macro parameter in
+  E", as the pinned FTEQCC does.
+- **FTEF-14.62** FTEQCC's `QCC_PR_DefineName` warns "Duplicate definition for Precompiler constant
+  NAME" (Q207) when a `-D` option gives a macro defined before, `FTEQCC` and `__FTEQCC__` included,
+  another body; it prints it against no file, "cmdline", and this profile, which defines a module's
+  `defines` as FTEQCC's `-D` options (FTEF-14.48), does not report it. `#define` removes the macro
+  before it defines it, so it never gives this warning.
+- **FTEF-14.63** FTEQCC's warnings are reported as its `qccwarningaction` sets each, `WA_IGNORE`
+  not at all, `WA_WARN` as the warning and `WA_ERROR` as an error, which FTEQCC prints as "werror"
+  (`QCC_PR_PrintWarning`, `else if (qccwarningaction[type] == 2)`): `E0125` with the warning's
+  text, F303's `E0122` (FTEF-14.46). The settings start as `QCC_SetDefaultProperties` makes them,
+  every warning `WA_WARN` but F208, F209, F300, F311, F330, F322, F301, F302, F331, `localptr` and
+  F316 `WA_IGNORE` and F303 and F313 `WA_ERROR` (`qccwarningaction[WARN_FTE_SPECIFIC] =
+  WA_IGNORE;` and the rest), and again before the second autoprototyping pass (FTEF-14.48). `#pragma
+  warning STATE NAME ...` reads its text with `QCC_COM_Parse`: STATE `enable` or `on` warns,
+  `disable`, `off` or `ignore` ignores, `error` errs and `toggle` sets `!!` of the setting, so a
+  warning stays one and an error becomes one (`qccwarningaction[wn] = !!qccwarningaction[wn];`), in
+  any case (`stricmp`); any other STATE is the Q120 warning "warning state not recognised"
+  (`W0113`) and changes nothing. Each NAME is looked up in `warningnames[]` in any case
+  (`QCC_WarningForName`, `stricmp(name, warningnames[i].name+1)`): `Q100` to `Q302`, `F129`,
+  `F207` to `F211`, `F300` to `F335`, `field-redeclared`, `deprecated`, `bounds`, `octal`,
+  `unimplemented`, `localptr` and `largereturn`; one it does not know is "warning id not
+  recognised" (`W0113`, as the settings stand when FTEQCC reads it). A setting holds for the rest of
+  the module, the files read after it included, and a warning is reported as the settings stand
+  where FTEQCC reads its bytes: so `#pragma warning disable F325` before a `/* /* */` comment
+  drops `W0112`, and `#pragma warning error octal` makes `float y = 017;` after it `E0125`, which
+  the pinned FTEQCC refuses ("werror octal: A leading 0 is interpreted as base-8."). Warnings
+  FTEQCC gives no name are always reported. The settings in force from each token on are in the
+  preprocessor's output (`qc_preproc::FileOutput::warnings`), for the warnings the parser and the
+  semantic model report.
+- **FTEF-14.64** A source file is read as the text FTEQCC's `QCC_LoadFile` (`qcc_cmdlib.c`) hands
+  its lexer, by the preprocessor and by the project graph (PRJ-5.13), a compiled file and an
+  `#include`d one alike. `QCC_SanitizeCharSet` decodes a file that starts with the byte order mark
+  of UTF-32LE (`ff fe 00 00`), UTF-32BE (`00 00 fe ff`), UTF-16LE (`ff fe`) or UTF-16BE (`fe ff`),
+  tested in that order, to UTF-8 with `decodeUTF`, skips a UTF-8 one (`mem += 3;`), and leaves any
+  other file as it is. `decodeUTF` reads whole code units only (`chars = inbytes / w;`), joins a
+  high surrogate to a low one after it (`if (inc >= 0xd800u && inc < 0xdc00u && i+1 < chars)`),
+  writes any other surrogate in three bytes as any value of U+0800 to U+FFFF, and makes a value
+  past U+10FFFF U+FFFD (`if (inc > 0x10FFFF) inc = 0xFFFD;`). Then every NUL byte of the text is a
+  space (`else if (!mem[check])`, `mem[check] = ' ';`), so the text goes on past a NUL where QC-1.1
+  ends it: the pinned FTEQCC refuses `void() f = #5;`, a line break, a NUL and `zz zz zz` ("\"zz\"
+  is not a type"), refuses `#define N #5`, a NUL, `zz`, a line break and `void() f = N;`, and binds
+  `f` to builtin 5 after `#ifdef Q`, a line break, `zz`, a NUL, a line break and `#endif`. A NUL
+  first in a compiled file is a space `QCC_PR_NewLine` passes over, and first in an included file a
+  byte before its `#`, so no directive starts there (FTEF-14.52). After a UTF-8 byte order mark a
+  directive starts a compiled file's first line, after spaces and tabs too, and an included file's
+  first byte; FTEQCC binds `f` to builtin 5 from `#define N #5` and `void() f = N;` after one, with
+  and without two spaces before the `#`, and from `void() f = #5;` written as UTF-16LE after its
+  mark. FTEQCC warns "file contains null bytes N/LEN" once for a file with a NUL, N the first NUL's
+  offset in the text and LEN the text's length (`QCC_PR_Warning(WARN_UNEXPECTEDPUNCT, filename,
+  line, "file contains null bytes %u/%"pPRIuSIZE, check, len)`), a warning with no name, `W0117`.
+  `QCC_LoadFile` then writes a line feed after the text (`mem[len] = '\n';`), and this profile's
+  readers read it too, so every directive and token at a file's end meets a line's end before the
+  text's: the pinned FTEQCC refuses a file that ends in `#if` ("unexpected end-of-line"), in
+  `#ifdef` ("#if with no endif") or in `#` ("Hanging # with no directive"), and calls a string that
+  the file's end leaves open "newline inside quote" (`E0102`), as this profile does. A diagnostic's
+  place in the file is the bytes its text came from: 3 bytes on after a UTF-8 mark, in a decoded file
+  the code unit each byte came from, and the file's end for the line feed
+  (`qc_preproc::SourceFile::file_span`). The vanilla dialect keeps QC-1.1: a file's bytes, its text
+  ending at the first NUL.
+- **FTEF-14.65** **Withdrawn** (P2-116, #544): it left a `#pragma` line of 1024 bytes or more
+  unmodelled, which this profile now reports as an error (FTEF-14.66). Replaced by FTEF-14.70.
+- **FTEF-14.66** `QCC_PR_SimpleGetToken`, `QCC_PR_SimpleGetString` and `QCC_PR_LexMacroName`
+  read into `pr_token` and stop the compile with `QCC_Error (ERR_INTERNAL, "token exceeds %i
+  chars", i)` at a 1024th byte (`if (i == sizeof(qcc_token)-1)`), and `QCC_PR_SimpleGetString`
+  with "new line inside string" at a line break in its string. So a name of 1024 bytes after
+  `#define`, `#undef`, `#ifdef`, `#ifndef`, `#elifdef` or `#elifndef`, a word of an `#if` or
+  `#elif` expression, an `#includelist` word or a list's output (PRJ-4.9), and a string of 1024
+  bytes or with a line break after `#output`, `#merge` or `#datafile`, are each an error, `E0121`
+  with FTEQCC's text, and a frame macro word of 1024 bytes is `E0502` with it; 1023 bytes are
+  read. A `#pragma`'s name, or its text after the name, of 1024 bytes runs past `char
+  msg[1024]`, which `msg[a++] = *pr_file_p;` fills with no bound. That is undefined behaviour,
+  and the pinned builds differ. On macOS the build stops at the overrun (exit -6, for `#pragma
+  foo` with 1024 bytes of text too, so it is `msg` and no path limit), and on Windows too; the
+  Linux build of CI reads on and compiles the program for texts of 1024 and 1025 bytes. This
+  profile reports `E0121` "#pragma name or text longer than FTEQCC's 1023 bytes" for each, a
+  deliberate divergence. The differential takes such a case's other outcome on Linux as this
+  statement's (`Overrun::Unseen`), and a recording there keeps the stopping build's outcome. `QCC_COM_Parse` keeps 1023 bytes of a longer word and drops the rest
+  (`if (len >= sizeof(qcc_token)-1) ;`), which a pragma's words and a list's files are read
+  with. After such an error FTEQCC's compile stops: the preprocessor reads no more of the file
+  and the graph no more of it, but the lexer reads on after a frame word, so diagnostics FTEQCC
+  would not reach may follow it. The pinned FTEQCC (`fteqcc -Tid`) gives each error at 1024 bytes
+  and none at 1023.
+- **FTEF-14.67** `QCC_PR_LexWhitespace` reports a `/* */` comment the text ends in with
+  `QCC_PR_ParseError(0, "EOF inside comment\n");` where it reads white space outside the lexer's
+  tokens: after a use's `(` and each `,` (FTEF-14.22), before each `#includelist` word
+  (FTEF-14.41) and before each word of a list-form `progs.src` (PRJ-4.9). This profile reports it
+  as `E0501` "EOF inside comment" at the comment's `/*`, and the reading ends at the end of the
+  text; the pinned FTEQCC gives it for a list `progs.dat`, `t.qc /* open`.
+- **FTEF-14.68** `QCC_PR_AddIncludePath`'s warnings have no name (`WARN_STRINGTOOLONG`, `W0117`):
+  "Too many include dirs. Ignoring and hoping the stars align." for a ninth directory a `#pragma
+  includedir` adds, and "Include path too long." for a directory that with its `/` has 2048 bytes
+  or more, as the copy is bounded by the whole table (`sizeof(qccincludedir)`, `char
+  qccincludedir[MAXINCLUDEDIRS][256]`), the directory then not kept. A `#pragma includedir` cannot
+  name one so long: its text past 1023 bytes runs past FTEQCC's `msg` (FTEF-14.66), and
+  `QCC_COM_Parse` and `char newinc[1024]` hold 1023 bytes of it. Only a module's `-I` option
+  (FTEF-14.49) can, and FTEQCC prints its warnings against no file (`s_filen` "cmdline"), which
+  this profile does not report. A name of 256 to 1023 bytes runs on into the next slots of
+  FTEQCC's table, which this profile does not model: it keeps the name whole, as a later directory
+  FTEQCC adds overwrites the bytes.
+- **FTEF-14.69** `#copyright` copies into `msg` only the bytes after its name that are white
+  space (`for (a = 0; a < sizeof(msg)-1 && qcc_iswhite(pr_file_p[a]) && pr_file_p[a] != '\0';
+  a++)`), at most 1023, so its test `if (strlen(msg) >= sizeof(QCC_copyright))` against `char
+  QCC_copyright[1024]` never holds and "Copyright message is too long" is never given; this
+  profile gives no diagnostic for a `#copyright` of any length. The pinned FTEQCC gives none for
+  2000 bytes of text or of spaces.
+- **FTEF-14.70** Of the other pragmas, these change what the preprocessor reads:
+  `DONT_COMPILE_THIS_FILE` passes over the rest of the text a byte at a time after white space
+  read as `QCC_PR_LexWhitespace(false)` reads it, so the directives at the starts of its lines
+  still run, an `#error` refusing the program; `once` marks the file being compiled
+  (`strcpy(onced->name, compilingfile);`), not the file it is in, so a header's `#pragma once`
+  keeps nothing from being read twice; `includedir` adds the directory its first token
+  (`QCC_COM_Parse`) names, a `/` after it unless it ends in one, joined to the file being
+  compiled, after the others, at most 8 (`MAXINCLUDEDIRS`, FTEF-14.68); `noref` and `autoproto`
+  take their text with `atoi` (FTEF-12.6, FTEF-12.10), so `#pragma noref(1)` is 0; `warning STATE
+  NAME ...` sets FTEQCC's warning settings (FTEF-14.63); and `flag` and `keyword` set the compiler
+  flags (FTEF-12.11). The rest, `COPYRIGHT`, `compress`, `forcecrc`, `framerate`, `file`
+  (FTEF-14.32), `line` (FTEF-14.43), `nosave`, `defaultstatic`, `wrasm`, `optimise` and
+  `optimize`, `sourcefile`, `TARGET`, `PROGS_SRC`, `PROGS_DAT` and `opcode`, change the build,
+  with the warnings of FTEF-12.11, and an unknown one is the Q120 warning "Unknown pragma 'NAME'"
+  (`W0113`). `#pragma COPYRIGHT`'s warning "Copyright message is too long" needs a text of 1024
+  bytes or more, which overruns FTEQCC's `char msg[1024]` first, as `#copyright`'s, which copies
+  only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
+  of 1024 bytes or more is that undefined behaviour, which this profile reports as an error
+  (FTEF-14.66).
 
 ## FTEF-15 Declarations
 

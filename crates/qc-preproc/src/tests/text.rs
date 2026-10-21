@@ -225,8 +225,12 @@ fn a_body_ends_where_fteqcc_s_quote_flag_says() {
     // An unclosed string in a body is no error until the body is expanded.
     assert_eq!(fte("#define N \"ab\nx\n"), ("x".to_owned(), vec![]));
     assert_eq!(fte("#define N \"ab\nN\n").1, vec![Code::E0101]);
-    // A comment that does not end runs to the end of the file.
-    assert_eq!(fte("#define N 1 /* c\nN\n"), (String::new(), vec![]));
+    // A comment that does not end runs to the end of the file, F315's "EOF inside quote in
+    // define N" (FTEF-14.58).
+    assert_eq!(
+        fte("#define N 1 /* c\nN\n"),
+        (String::new(), vec![Code::W0115])
+    );
 }
 
 // spec FTEF-14.24: a `\` and line break before a line starting with `#` keeps the line break, and
@@ -249,7 +253,7 @@ fn a_continued_directive_line_keeps_its_line_break() {
 }
 
 // spec FTEF-14.24: `#append` adds a space and its body to the stored body when its parameters are
-// the macro's, and with others defines it again with the warning W0102
+// the macro's, and with others defines it again with F315's warnings (FTEF-14.58)
 #[test]
 fn append_needs_the_macro_s_parameters() {
     assert_eq!(
@@ -258,11 +262,11 @@ fn append_needs_the_macro_s_parameters() {
     );
     assert_eq!(
         fte("#define A(x) x\n#append A 2\nA\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115, Code::W0115])
     );
     assert_eq!(
         fte("#define A(x) x\n#append A(y) 2\nA(1)\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115, Code::W0115])
     );
     assert_eq!(fte("#define A 1\n#append A\nA\n"), ("1".to_owned(), vec![]));
 }
@@ -287,7 +291,8 @@ fn body_tokens_are_parse2_s() {
         out.tokens.get(1).map(|t| t.kind.clone()),
         Some(TokenKind::Name("a".to_owned()))
     );
-    assert_eq!(codes(&out), vec![Code::E0101]);
+    // `a"b`, the string's token, names no parameter (FTEF-14.61).
+    assert_eq!(codes(&out), vec![Code::W0117, Code::E0101]);
     assert_eq!(fte("#define P(a) a##\"5\"x:ex_a\nP(#)\n").0, "#5:ex_a");
     let long = "n".repeat(1100);
     let (_, out) = one_fte(&format!("#define E(a) {long}\nE()\n"));
@@ -442,8 +447,9 @@ fn vanilla_expansions_are_bounded() {
 }
 
 // spec FTEF-14.22: the white space and comments skipped before an argument end a `//` comment at
-// a line feed or a carriage return not before one, and one the text ends in, or a `/* */` comment
-// it ends in, runs the arguments to the end
+// a line feed or a carriage return not before one, and one the text ends in runs the arguments to
+// the end
+// spec FTEF-14.67: a `/* */` comment the text ends in there is "EOF inside comment" instead
 #[test]
 fn comments_before_an_argument_end_where_fteqcc_s_do() {
     assert_eq!(
@@ -455,7 +461,8 @@ fn comments_before_an_argument_end_where_fteqcc_s_do() {
         ("#5".to_owned(), vec![])
     );
     assert!(fte("#define M(x) x\nM(// c").1.contains(&Code::E0117));
-    assert!(fte("#define M(x) x\nM(/* c").1.contains(&Code::E0117));
+    let unclosed = fte("#define M(x) x\nM(/* c").1;
+    assert!(unclosed.contains(&Code::E0501) && !unclosed.contains(&Code::E0117));
     assert!(fte("#define M(x) x\nM(/* c */").1.contains(&Code::E0117));
 }
 
@@ -537,7 +544,7 @@ fn a_paste_before_no_variadic_argument_keeps_other_text() {
 fn a_body_stored_again_otherwise_warns() {
     assert_eq!(
         fte("#define A 1\n#define A 2\nA\n"),
-        ("2".to_owned(), vec![Code::W0102])
+        ("2".to_owned(), vec![Code::W0115])
     );
     assert_eq!(
         fte("#define A 1\n#define A 1 /* c */\nA\n"),
@@ -776,7 +783,7 @@ fn whole_rest(
     offset: usize,
     dialect: Dialect,
 ) -> crate::TokenStream {
-    let rest = crate::lex_from(text, offset..text.len(), dialect);
+    let rest = crate::lex_from(text, offset..text.len(), crate::Lexing::plain(dialect));
     let shift = |s: qc_lexer::Span| {
         qc_lexer::Span::new(s.start.saturating_add(offset), s.end.saturating_add(offset))
     };
@@ -804,6 +811,7 @@ fn whole_rest(
         pos: 0,
         diagnostics,
         read_on: offset,
+        key: crate::Lexing::plain(dialect).key(),
     }
 }
 
@@ -828,7 +836,7 @@ fn in_directive_line(text: &[u8], offset: usize) -> bool {
 /// first difference, if any.
 fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<String> {
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
-        let stream = crate::TokenStream::lex(text, dialect);
+        let stream = crate::TokenStream::lex(text, crate::Lexing::plain(dialect));
         if in_directive_line(text, offset) {
             continue;
         }
@@ -838,9 +846,9 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
         // Reading stood at the start, which leaves the new tokens room before the kept ones,
         // or right at `offset`, which leaves none.
         for start in [0, before] {
-            let mut read = crate::TokenStream::lex(text, dialect);
+            let mut read = crate::TokenStream::lex(text, crate::Lexing::plain(dialect));
             read.pos = start;
-            read.resume_at(text, offset, dialect);
+            read.resume_at(text, offset, crate::Lexing::plain(dialect));
             if read_on(&read) != read_on(&whole) {
                 return Some(format!("{shown:?} at {offset} from {start}, {dialect:?}"));
             }
@@ -850,7 +858,7 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
                 continue;
             }
             let again = whole_rest(&read, text, second, dialect);
-            read.resume_at(text, second, dialect);
+            read.resume_at(text, second, crate::Lexing::plain(dialect));
             if read_on(&read) != read_on(&again) {
                 return Some(format!(
                     "{shown:?} at {offset} then {second} from {start}, {dialect:?}"
@@ -864,8 +872,13 @@ fn reading_on_differs(text: &[u8], offset: usize, second: usize) -> Option<Strin
 /// Reading `text`, lexed under FTEQCC, on at `offset`: the bytes lexed again, the tokens the
 /// stream then holds and its lexical errors.
 fn relexed(text: &str, offset: usize) -> (usize, usize, usize) {
-    let mut stream = crate::TokenStream::lex(text.as_bytes(), Dialect::Fteqcc);
-    let bytes = stream.resume_at(text.as_bytes(), offset, Dialect::Fteqcc);
+    let mut stream =
+        crate::TokenStream::lex(text.as_bytes(), crate::Lexing::plain(Dialect::Fteqcc));
+    let bytes = stream.resume_at(
+        text.as_bytes(),
+        offset,
+        crate::Lexing::plain(Dialect::Fteqcc),
+    );
     (bytes, stream.tokens.len(), stream.diagnostics.len())
 }
 
@@ -887,7 +900,7 @@ fn reading_on_lexes_again_only_as_far_as_it_must() {
     // An error the first lexing found at the offset, after a comment, is found once: lexed
     // again from there, or kept with the token it is in.
     assert_eq!(relexed("/**//*", 4), (2, 0, 1));
-    let long = format!("/**/{}", "n".repeat(3000));
+    let long = format!("/**/{}", "n".repeat(9000));
     assert_eq!(relexed(&long, 4), (0, 1, 1));
 }
 

@@ -125,9 +125,15 @@ pub(crate) struct Rendered {
     pub(crate) text: Vec<u8>,
     /// Where each token came from.
     pub(crate) origins: OriginMap,
+    /// The rendered offset each token starts at, every token's, in order: the preprocessor
+    /// marks pragmas by token index, and a token with no source location has no origin.
+    pub(crate) starts: Vec<usize>,
     /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
     /// setting (FTEF-12.6).
     pub(crate) noref: Vec<(usize, bool)>,
+    /// The compiler flags FTEQCC's lexer read: the rendered offset from which each holds, and the
+    /// flags (FTEF-12.12).
+    pub(crate) lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
 }
 
 /// The preprocessed module: each compiled file rendered, and the preprocessor's diagnostics
@@ -219,7 +225,7 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
-                // PRJ-4.8: the prelude is the module's source, read as `QCC_main` reads it.
+                // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
                 let output = if compiled {
                     pp.preprocess_file(path)
                 } else {
@@ -281,17 +287,22 @@ fn run<L: Loader>(
             });
         }
         let mut rendered = render(pp, files, &output.tokens);
+        let offset_of = |rendered: &Rendered, token: usize| {
+            rendered
+                .starts
+                .get(token)
+                .copied()
+                .unwrap_or(rendered.text.len())
+        };
         rendered.noref = output
             .noref
             .iter()
-            .map(|&(token, on)| {
-                let offset = rendered
-                    .origins
-                    .origins
-                    .get(token)
-                    .map_or(rendered.text.len(), |(start, _)| *start);
-                (offset, on)
-            })
+            .map(|&(token, on)| (offset_of(&rendered, token), on))
+            .collect();
+        rendered.lex_flags = output
+            .lex_flags
+            .iter()
+            .map(|&(token, flags)| (offset_of(&rendered, token), flags))
             .collect();
         out.files.push(rendered);
     }
@@ -299,7 +310,7 @@ fn run<L: Loader>(
 }
 
 /// The database location of a preprocessor span: the database file with the same path, and the
-/// bytes of it the span's text came from (FTEF-14.54).
+/// bytes of it the span's text came from (FTEF-14.64).
 fn source_location<L: Loader>(
     pp: &Preprocessor<L>,
     files: &Files<'_>,
@@ -340,6 +351,7 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
         last_line = line;
         last = Some(token);
+        out.starts.push(out.text.len());
         if let Some(location) = source_location(pp, files, origin) {
             out.origins.origins.push((out.text.len(), location));
         }

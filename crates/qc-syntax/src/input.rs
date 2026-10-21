@@ -7,8 +7,10 @@
 
 use std::borrow::Cow;
 
-use qc_lexer::{Diagnostic, Dialect, Punct, Span, TokenKind, is_whitespace, lex_with};
-use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from};
+use qc_lexer::{
+    Diagnostic, Dialect, LexFlag, LexFlags, Punct, Span, TokenKind, is_whitespace, lex_with,
+};
+use qc_preproc::{fte_directive_end, qcc_load_in_place, relex_from, skip_script_line};
 
 use crate::kind::SyntaxKind;
 
@@ -51,8 +53,21 @@ pub(crate) enum Text {
     /// A source file as written: a `#` and a name first on a line open a directive line
     /// (QC-9.1).
     Source,
+    /// A module's source in source form (PRJ-4.4), read as [`Self::Source`] but that, under an
+    /// FTEQCC dialect, a first line that starts with `#!` is passed over (PRJ-4.10).
+    ModuleSource,
     /// Text a preprocessor wrote, which holds no directive lines: every `#` is a token.
     Preprocessed,
+}
+
+impl Text {
+    /// Whether the text is a source file as written, with directive lines.
+    const fn is_source(self) -> bool {
+        match self {
+            Self::Source | Self::ModuleSource => true,
+            Self::Preprocessed => false,
+        }
+    }
 }
 
 /// The tokens and trivia of one file.
@@ -97,10 +112,44 @@ impl<'a> Lexable<'a> {
     /// dialect, a UTF-16 or UTF-32 file, whose decoded text is at other offsets, and a
     /// preprocessor's text, which no loader read, its bytes to the first NUL (QC-1.1).
     fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
-        let loaded = (dialect.has_fteqcc_extensions() && text == Text::Source)
+        let mut lexable = Self::loaded(source, dialect, text);
+        // PRJ-4.10: `QCC_main` passes over the line, which the tree keeps as bytes the lexer
+        // skipped.
+        let script = dialect.has_fteqcc_extensions()
+            && text == Text::ModuleSource
+            && lexable
+                .text
+                .get(lexable.start..)
+                .is_some_and(|rest| rest.starts_with(b"#!"));
+        if script {
+            let mut owned = lexable.text.into_owned();
+            if let Some(rest) = owned.get_mut(lexable.start..) {
+                skip_script_line(rest);
+            }
+            lexable.text = Cow::Owned(owned);
+        }
+        lexable
+    }
+
+    /// [`Self::new`] before a module source's `#!` line is passed over.
+    fn loaded(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+        let loaded = (dialect.has_fteqcc_extensions() && text.is_source())
             .then(|| qcc_load_in_place(source))
             .flatten();
         match loaded {
+            // The mark the loader skips is no text the lexer reads: under FTEQCC its bytes would
+            // start a name (FTEF-13.16), so they are read as the spaces they stand for.
+            Some((text, start)) if start > 0 => {
+                let mut text = text.into_owned();
+                for byte in text.iter_mut().take(start) {
+                    *byte = b' ';
+                }
+                Self {
+                    text: Cow::Owned(text),
+                    start,
+                    end: source.len(),
+                }
+            }
             Some((text, start)) => Self {
                 text,
                 start,
@@ -114,9 +163,10 @@ impl<'a> Lexable<'a> {
         }
     }
 
-    /// The text a directive is read in, from [`Self::start`] to [`Self::end`].
+    /// The text a directive is read in: from [`Self::start`], the loader's line feed after the
+    /// file's bytes included (FTEF-14.64).
     fn directive_text(&self) -> &[u8] {
-        self.text.get(self.start..self.end).unwrap_or_default()
+        self.text.get(self.start..).unwrap_or_default()
     }
 
     /// Where the preprocessor ends the directive whose `#` is at `hash`, the code before it
@@ -124,7 +174,40 @@ impl<'a> Lexable<'a> {
     fn directive_end(&self, from: usize, hash: usize) -> Option<usize> {
         let at = |offset: usize| offset.saturating_sub(self.start);
         let end = fte_directive_end(self.directive_text(), at(from), at(hash))?;
-        Some(end.saturating_add(self.start))
+        Some(end.saturating_add(self.start).min(self.end))
+    }
+}
+
+/// The tokens and lexical errors of `text`, lexed in one pass under the flags `flags` marks from
+/// each byte (FTEF-12.12), `macroinstrings` aside, the text before the first under the default
+/// flags.
+fn lex_marked(text: &[u8], dialect: Dialect, flags: &[(usize, LexFlags)]) -> qc_lexer::Lexed {
+    if flags.is_empty() {
+        return lex_with(text, dialect);
+    }
+    let marks: Vec<(usize, LexFlags)> = flags
+        .iter()
+        .map(|&(at, flags)| (at, flags.with(LexFlag::MacroInStrings, false)))
+        .collect();
+    qc_lexer::lex_marked(text, dialect, &marks, &|_| None)
+}
+
+/// Ends at `len`, the file's end, the tokens and lexical errors that reach past it: the loader's
+/// line feed after the file's bytes is read, and is no byte of the tree (FTEF-14.64). Only the
+/// last of either, which stand in order, can reach it.
+fn clamp_to(lexed: &mut qc_lexer::Lexed, len: usize) {
+    let clamp = |span: &mut Span| {
+        span.start = span.start.min(len);
+        span.end = span.end.min(len);
+    };
+    for token in lexed.tokens.iter_mut().rev() {
+        if token.span.end <= len {
+            break;
+        }
+        clamp(&mut token.span);
+    }
+    for d in &mut lexed.diagnostics {
+        clamp(&mut d.span);
     }
 }
 
@@ -132,9 +215,15 @@ impl<'a> Input<'a> {
     /// Lexes `source`, a `text`, in `dialect` and classifies everything between the tokens.
     /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
     /// under an FTEQCC dialect, read in the text FTEQCC's file loader gives (FTEF-14.56).
-    pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+    pub(crate) fn new(
+        source: &'a [u8],
+        dialect: Dialect,
+        text: Text,
+        flags: &[(usize, LexFlags)],
+    ) -> Self {
         let lexable = Lexable::new(source, dialect, text);
-        let mut lexed = lex_with(&lexable.text, dialect);
+        let mut lexed = lex_marked(&lexable.text, dialect, flags);
+        clamp_to(&mut lexed, source.len());
         let mut input = Self {
             source,
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),
@@ -170,7 +259,7 @@ impl<'a> Input<'a> {
             // it (FTEF-14.53).
             let from = at;
             at = span.end;
-            if line.is_none() && text == Text::Source {
+            if line.is_none() && text.is_source() {
                 if fte {
                     let hash = lexed
                         .tokens
@@ -188,6 +277,7 @@ impl<'a> Input<'a> {
                             .retain(|d| !directive.contains(&d.span.start));
                         // The `#` ends by `end`, so it stays at `index`.
                         relex_from(&mut lexed, &lexable.text, end, dialect);
+                        clamp_to(&mut lexed, source.len());
                         input.pieces.push(Piece::OpenDirective);
                         line = Some(Line::Fte { end });
                     }
@@ -257,7 +347,12 @@ impl<'a> Input<'a> {
             }
             None => input.gap(at, text_end),
         }
-        input.diagnostics = lexed.diagnostics;
+        // A preprocessor's text is the tokens the preprocessor lexed from the files and their
+        // expansions, which reported their lexical errors and warnings there, so lexing it again
+        // reports none (QC-9.21).
+        if text.is_source() {
+            input.diagnostics = lexed.diagnostics;
+        }
         if text_end < source.len() {
             input.pieces.push(Piece::Leaf(
                 SyntaxKind::Skipped,

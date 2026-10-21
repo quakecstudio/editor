@@ -17,9 +17,9 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, Encoding, FIXTURE, Outcome, ProgsSrc, Project, Tally, ULong, bound, cases, check,
-    check_where, compare, expected_difference, graph_cases, graph_differences, oracle, profile,
-    read_fixture,
+    Case, Encoding, FIXTURE, Host, Outcome, Overrun, ProgsSrc, Project, Tally, ULong, bound, cases,
+    check, check_where, compare, expected_difference, graph_cases, graph_differences, oracle,
+    profile, read_fixture,
 };
 use crate::exec::{Fake, Reply};
 
@@ -63,14 +63,14 @@ fn the_profile_agrees_with_the_recorded_oracles() {
 // spec PRJ-5.13: for every graph case the project graph lists the file that binds `f` exactly
 // when the recorded FTEQCC binds `f` from it, and FTEQCC either binds `f` or accepts the
 // program without it, so that each case says what it read; the vanilla cases are id qcc's
-// (PRJ-4.7)
+// (PRJ-4.11)
 #[test]
 fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let recorded = read_fixture(&root()).unwrap();
     let differ = graph_differences(&recorded, ULong::Bits64);
     assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
-    assert_eq!(cases.len(), 231);
+    assert_eq!(cases.len(), 247);
     let read = cases
         .iter()
         .filter(|case| matches!(recorded[&case.key()], Outcome::Bound { .. }))
@@ -99,6 +99,7 @@ fn the_graph_cases_hold_progs_src_files_of_their_own() {
     let own: Vec<Case> = own_progs_cases()
         .into_iter()
         .filter(|case| case.dialect == Dialect::Fteqcc && !progs_text(case).contains("#!"))
+        .filter(|case| !super::directives::FTE_LIST_PROGS.contains(&progs_text(case)))
         .collect();
     assert_eq!(own.len(), 25);
     for case in &own {
@@ -134,7 +135,7 @@ fn the_graph_cases_hold_progs_src_files_of_their_own() {
     );
 }
 
-// spec PRJ-4.8: the graph cases hold FTEQCC `progs.src` files with a `#!` first line, of both
+// spec PRJ-4.10: the graph cases hold FTEQCC `progs.src` files with a `#!` first line, of both
 // forms, as UTF-8 and in each wide encoding, each of which the recorded FTEQCC reads `b.qh` from
 // but the one whose first line names it
 #[test]
@@ -162,8 +163,10 @@ fn the_graph_cases_hold_script_lines() {
     assert_eq!(widened.count(), 4);
 }
 
-// spec PRJ-4.7: the graph cases hold vanilla `progs.src` lists with a NUL, which the recorded id
+// spec PRJ-4.11: the graph cases hold vanilla `progs.src` lists with a NUL, which the recorded id
 // qcc reads to that NUL: it binds `f` exactly when `b.qh` comes before it or in a quoted word
+// spec QC-23.8: and lists with a byte of 0x80 or more, which ends a word
+// spec QC-23.9: and a quoted word across lines and one never closed, which id's qcc rejects
 #[test]
 fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
     let recorded = read_fixture(&root()).unwrap();
@@ -173,10 +176,12 @@ fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
         .collect();
     assert_eq!(own.len(), super::directives::VANILLA_PROGS.len());
     let mut read = Vec::new();
+    let mut rejected = Vec::new();
     for case in &own {
         assert!(case.key().starts_with("vanilla|"), "{}", case.key());
         match &recorded[&case.key()] {
             Outcome::Accepted => {}
+            Outcome::Rejected => rejected.push(progs_text(case)),
             outcome => {
                 assert_eq!(*outcome, bound_as(5, "f"), "{case:?}");
                 read.push(progs_text(case));
@@ -189,12 +194,23 @@ fn the_graph_cases_hold_vanilla_lists_with_a_nul() {
             "progs.dat\nb.qh\0x.qc\n",
             "progs.dat\nb.qh\n\0x.qc\n",
             "progs.dat\n\"x.qc\0junk\" b.qh\n",
+            "progs.dat\nx.qc\u{e9}b.qh\n",
+            "progs.dat\n\u{e9}b.qh\u{e9}\n",
+        ]
+    );
+    assert_eq!(
+        rejected,
+        [
+            "progs.dat\n\"b.qh\nx.qc\" b.qh\n",
+            "progs.dat\nb.qh \"x.qc\n"
         ]
     );
 }
 
-// spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle refused
-// the program, or which is not recorded, is a difference
+// spec PRJ-5.13: a graph case whose graph reads otherwise than the oracle, whose oracle neither
+// bound `f` nor accepted nor rejected the program, or which is not recorded, is a difference
+// spec PRJ-6.6: one whose oracle rejected the program is a difference unless the graph reports an
+// error
 #[test]
 fn graph_differences_are_found() {
     let recorded = read_fixture(&root()).unwrap();
@@ -206,8 +222,15 @@ fn graph_differences_are_found() {
             Outcome::Accepted,
             "the oracle does not read the file, the graph does",
         ),
-        (Outcome::Rejected, "oracle rejected, which reads no file"),
+        (
+            Outcome::Rejected,
+            "oracle rejected, the graph reports no error",
+        ),
         (bound_as(6, "f"), "oracle bound 6 f, which reads no file"),
+        (
+            Outcome::Redeclared,
+            "oracle redeclared, which reads no file",
+        ),
     ] {
         let mut changed = recorded.clone();
         changed.insert(first.clone(), outcome);
@@ -401,7 +424,7 @@ fn a_wide_if_value_may_read_another_file_where_long_is_32_bits() {
     }
 }
 
-// spec FTEF-14.54: a wide case is written after its byte order mark, read back as written, and
+// spec FTEF-14.64: a wide case is written after its byte order mark, read back as written, and
 // keyed apart from its UTF-8 case
 #[test]
 fn a_wide_case_is_written_after_its_mark() {
@@ -539,7 +562,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1429);
+    assert_eq!(family.len(), 1445);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -979,7 +1002,9 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let listed = list
             .strip_prefix("progs.dat\n")
             .and_then(|rest| rest.strip_suffix('\n'))
-            .filter(|name| !name.contains(['\n', '\0']) && list_encoding == Encoding::Utf8);
+            .filter(|name| !name.contains(['\n', '\0']) && list_encoding == Encoding::Utf8)
+            // A case's own list of that shape names no file the case wrote, or one that binds.
+            .filter(|name| dir.join(name).is_file() && name.ends_with(".qc"));
         let progs = listed.is_none().then(|| ProgsSrc {
             text: list.clone(),
             encoding: list_encoding,
@@ -1013,7 +1038,7 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
     }
 }
 
-/// The text of a case's file of `bytes` and the encoding it was written in (FTEF-14.54).
+/// The text of a case's file of `bytes` and the encoding it was written in (FTEF-14.64).
 fn decoded(bytes: &[u8]) -> (String, Encoding) {
     let wide = [
         Encoding::Utf32Le,
@@ -1056,13 +1081,20 @@ fn decoded(bytes: &[u8]) -> (String, Encoding) {
                 )
                 .map(Result::unwrap)
                 .collect(),
-                Encoding::Utf8 => String::from_utf8(rest.to_vec()).unwrap(),
+                Encoding::Utf8 | Encoding::Latin1 => String::from_utf8(rest.to_vec()).unwrap(),
             };
             assert_eq!(encoding.bytes(&text), bytes);
             return (text, encoding);
         }
     }
-    (String::from_utf8(bytes.to_vec()).unwrap(), Encoding::Utf8)
+    // A case written as Latin-1 holds a byte no UTF-8 text does.
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(text) => (text, Encoding::Utf8),
+        Err(_) => (
+            bytes.iter().copied().map(char::from).collect(),
+            Encoding::Latin1,
+        ),
+    }
 }
 
 /// Each file under `dir`, by its name from `root` with `/` between its parts, and its text.
@@ -1079,7 +1111,7 @@ fn written(root: &Path, dir: &Path, files: &mut Vec<(String, String)>) {
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
             .collect();
-        // The compiled file may be wide (FTEF-14.54); the caller reads it with `decoded`.
+        // The compiled file may be wide (FTEF-14.64); the caller reads it with `decoded`.
         let text = String::from_utf8_lossy(&fs::read(&path).unwrap()).into_owned();
         files.push((parts.join("/"), text));
     }
@@ -1410,4 +1442,70 @@ fn a_negative_frame_value_may_differ_only_where_long_is_32_bits() {
             "{value} {ulong:?}"
         );
     }
+}
+
+// spec FTEF-14.66: on a host whose build reads on past an overrun of `msg[1024]`, an oracle may
+// compile a pragma whose name or text is 1024 bytes or more, which the profile refuses; only that
+// case, and only there, is excused
+#[test]
+fn an_unseen_overrun_excuses_only_the_pragma_overrun() {
+    let linux = Host {
+        ulong: ULong::Bits64,
+        overrun: Overrun::Unseen,
+    };
+    let pragma = |len: usize| {
+        fte(&format!(
+            "#pragma includedir {}\nvoid() f = #5;\n",
+            "d".repeat(len)
+        ))
+    };
+    let bound5 = bound_as(5, "f");
+    let excused = |case: &Case, host: Host| {
+        expected_difference(case, &Outcome::Rejected, &[Code::E0121], &bound5, host)
+    };
+    assert_eq!(excused(&pragma(1024), linux), Some("FTEF-14.66"));
+    assert_eq!(excused(&pragma(1025), linux), Some("FTEF-14.66"));
+    assert_eq!(excused(&pragma(1024), ULong::Bits64.into()), None);
+    assert_eq!(excused(&pragma(1023), linux), None);
+    let named = fte(&format!("#pragma {}\n", "n".repeat(1024)));
+    assert_eq!(excused(&named, linux), Some("FTEF-14.66"));
+    let paren = fte(&format!("#pragma line({})\n", "1".repeat(1022)));
+    assert_eq!(excused(&paren, linux), Some("FTEF-14.66"));
+    let short = fte(&format!("#pragma line({})\n", "1".repeat(1021)));
+    assert_eq!(excused(&short, linux), None);
+    // The profile's own outcome must be the refusal.
+    let accepted = expected_difference(&pragma(1024), &bound5, &[], &Outcome::Rejected, linux);
+    assert_eq!(accepted, None);
+    let vanilla_case = vanilla(&format!("#pragma includedir {}\n", "d".repeat(1024)));
+    assert!(excused(&vanilla_case, linux) != Some("FTEF-14.66"));
+    assert_eq!(Host::from(ULong::Bits32).overrun, Overrun::Caught);
+}
+
+// spec FTEF-14.66: a host whose build reads on past an overrun records the fixture's outcome for
+// the cases it reads otherwise, and its own for every other case
+#[test]
+fn an_unseen_overrun_host_records_the_stopping_build_s_outcome() {
+    let glibc = Host {
+        ulong: ULong::Bits64,
+        overrun: Overrun::Unseen,
+    };
+    let recorded = read_fixture(&root()).unwrap();
+    let overrun = cases()
+        .into_iter()
+        .find(|case| {
+            case.source
+                .starts_with(&format!("#pragma includedir {}\n", "d".repeat(1024)))
+        })
+        .unwrap()
+        .key();
+    assert_eq!(recorded[&overrun], Outcome::Rejected);
+    let mut on_glibc = recorded.clone();
+    on_glibc.insert(overrun.clone(), bound_as(5, "f"));
+    let repo = repository("builtins-glibc", &recorded);
+    let fake = Fake::new(answering(on_glibc));
+    let oracles = fake_oracles(&repo.join("work"), &fake);
+    assert!(check_where(&repo, &oracles, false, glibc).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
+    assert!(check_where(&repo, &oracles, true, glibc).unwrap());
+    assert_eq!(read_fixture(&repo).unwrap(), recorded);
 }

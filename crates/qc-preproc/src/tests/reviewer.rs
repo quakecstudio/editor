@@ -118,11 +118,11 @@ fn reviewer_a_continued_line_in_a_body_still_opens_the_arguments() {
 fn reviewer_pastes_join_an_argument_to_itself_and_inside_an_argument() {
     assert_eq!(
         fte("#define E(n) #5:n##n\nE(ex)"),
-        ("# 5 : exex".to_owned(), vec![])
+        ("# 5 : exex".to_owned(), vec![Code::W0117])
     );
     assert_eq!(
         fte("#define E(x) #5:x\n#define F(x) E(x##_a)\nF(ex)"),
-        ("# 5 : ex_a".to_owned(), vec![])
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
     );
 }
 
@@ -158,7 +158,7 @@ fn reviewer_trailing_empty_arguments_count_as_fteqcc_counts_them() {
     assert_eq!(fte("#define E(n) n\nE(#5:ex_a,,)").1, vec![Code::E0116]);
     assert_eq!(
         fte("#define E(a,...) #5:a\nE(ex_a, , ,)"),
-        ("# 5 : ex_a".to_owned(), vec![])
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
     );
 }
 
@@ -169,30 +169,34 @@ fn reviewer_trailing_empty_arguments_count_as_fteqcc_counts_them() {
 fn reviewer_a_macro_in_an_argument_expands_where_it_is_read() {
     assert_eq!(
         fte("#define E(x) #5:x\n#define ex_a ex_b\nE(ex_a)"),
-        ("# 5 : ex_b".to_owned(), vec![])
+        ("# 5 : ex_b".to_owned(), vec![Code::W0117])
     );
     assert_eq!(
         fte("#define E(x) x\n#define G(x) #5:x\nE(G(ex_a))"),
-        ("# 5 : ex_a".to_owned(), vec![])
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
     );
 }
 
 // Fifth P2-R2 review: each case below was compiled with the pinned FTEQCC first
 // (`cargo xtask oracles builtins` with the case added), and the profile agreed.
 
-// spec FTEF-14.36: `#undef` and `#ifndef` with no name before a `//` comment read the comment
+// spec FTEF-14.57: `#undef` and `#ifndef` with no name before a `//` comment read the comment
 // with `QCC_PR_SimpleGetToken`, which stops at its line break, so a `\` at the comment's end
 // carries nothing to the next line
 #[test]
 fn reviewer_a_comment_in_place_of_a_name_ends_at_its_line_break() {
-    assert_eq!(fte("#undef // c \\\nzz\n"), ("zz".to_owned(), vec![]));
+    // FTEF-14.57: and with no name removes none, "Precompiler constant  was not defined".
+    assert_eq!(
+        fte("#undef // c \\\nzz\n"),
+        ("zz".to_owned(), vec![Code::W0114])
+    );
     assert_eq!(
         fte("#ifndef // c \\\nyes\n#endif\n"),
         ("yes".to_owned(), vec![])
     );
 }
 
-// spec FTEF-14.36: `QCC_PR_SimpleGetToken` stops at no `/*`, so `#ifdef X/**/` asks for the
+// spec FTEF-14.57: `QCC_PR_SimpleGetToken` stops at no `/*`, so `#ifdef X/**/` asks for the
 // macro `X/**/` and `#undef X/**/` removes no macro
 #[test]
 fn reviewer_a_comment_joined_to_a_name_is_part_of_the_word() {
@@ -202,7 +206,7 @@ fn reviewer_a_comment_joined_to_a_name_is_part_of_the_word() {
     );
     assert_eq!(
         fte("#define X 1\n#undef X/**/\nX\n"),
-        ("1".to_owned(), vec![])
+        ("1".to_owned(), vec![Code::W0114])
     );
 }
 
@@ -211,7 +215,7 @@ fn reviewer_a_comment_joined_to_a_name_is_part_of_the_word() {
 #[test]
 fn reviewer_a_comment_before_undef_s_name_is_an_error() {
     let (toks, errs) = fte("#define X 1\n#undef /**/ X\nX\n");
-    assert_eq!((toks.as_str(), errs), ("1", vec![Code::E0121]));
+    assert_eq!((toks.as_str(), errs), ("1", vec![Code::W0114, Code::E0121]));
 }
 
 // spec FTEF-14.37: a skipped line is read as `QCC_PR_SkipToEndOfLine` reads it, which knows no
@@ -244,7 +248,7 @@ fn reviewer_a_pragma_s_name_ends_at_a_tab_and_not_after_a_leading_paren() {
     );
     assert_eq!(
         fte("#pragma (line 40)\n__LINE__\n"),
-        ("2".to_owned(), vec![])
+        ("2".to_owned(), vec![Code::W0113])
     );
 }
 

@@ -59,6 +59,12 @@ fn show(event: &FteEvent) -> String {
             format!("pragma {} {} @{line}", text(name), text(t))
         }
         FteEvent::UnclosedList { line } => format!("unclosed @{line}"),
+        FteEvent::Listed { name, line } => format!("listed {} @{line}", text(name)),
+        FteEvent::Error {
+            code,
+            message,
+            line,
+        } => format!("error {code:?} {message} @{line}"),
     }
 }
 

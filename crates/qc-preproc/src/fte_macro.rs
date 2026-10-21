@@ -19,15 +19,15 @@
 use std::ops::Range;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Span, TokenKind, lex_with};
+use qc_lexer::{Code, Span, TokenKind};
 
 use crate::fte_directive::{
-    self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WarningAction, byte_at,
-    simple_get_token, whitespace,
+    self, Bytes, Definer, FTE_MAX_MACRO_NAME, Gap, Resume, TextStart, WORD_TOO_LONG, WhiteStop,
+    byte_at, simple_get_token, too_long, whitespace,
 };
 use crate::{
     Body, Expansion, ExpansionId, FTE_MAX_EXPANDED_TOKENS, FTE_MAX_OPEN_CHUNKS, FileId, FileSpan,
-    Item, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
+    Item, Lexing, Loader, Macro, Place, PpToken, Preprocessor, Run, TokenStream, Variadic, cond,
     moved_frames, quote_bytes,
 };
 
@@ -263,18 +263,33 @@ pub(crate) struct ChunkReader {
     detached: bool,
 }
 
+/// The text a string token lexed under `macroinstrings` is written as, when its source bytes
+/// hold a `#` (FTEF-12.12): its bytes, quoted, so that a reader that lexes the written text
+/// again, with no macros to look up, reads the text a `#NAME` in it wrote.
+pub(crate) fn macro_string_spelling(
+    kind: &TokenKind,
+    source: &[u8],
+    macro_strings: bool,
+) -> Option<String> {
+    match kind {
+        TokenKind::String(bytes) if macro_strings && source.contains(&b'#') => {
+            Some(quote_bytes(bytes))
+        }
+        _ => None,
+    }
+}
+
 impl ChunkReader {
     /// The next token of the chunk, written against the one before it when nothing stands
     /// between them in the chunk's text (QC-9.16).
-    pub(crate) fn next_item(&mut self) -> Option<Item> {
+    pub(crate) fn next_item(&mut self, macro_strings: bool) -> Option<Item> {
         let index = self.stream.pos;
         let token = self.stream.tokens.get(index)?.clone();
         self.stream.pos = index.saturating_add(1);
         let (span, verbatim) = self.place(token.span.range());
-        let spelling = (!verbatim).then(|| {
-            let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
-            made_spelling(&token.kind, bytes)
-        });
+        let bytes = self.text.bytes.get(token.span.range()).unwrap_or_default();
+        let spelling = macro_string_spelling(&token.kind, bytes, macro_strings)
+            .or_else(|| (!verbatim).then(|| made_spelling(&token.kind, bytes)));
         let detached = std::mem::take(&mut self.detached);
         let follows = index
             .checked_sub(1)
@@ -321,6 +336,12 @@ impl ChunkReader {
         .then_some(hash)
     }
 
+    /// The chunk's text from where reading stands, lexed again when it was lexed otherwise than
+    /// `lexing` lexes it (FTEF-12.12).
+    pub(crate) fn refresh(&mut self, lexing: Lexing<'_>) {
+        self.stream.refresh(&self.text.bytes, lexing);
+    }
+
     /// The chunk's text as a directive reads it.
     pub(crate) fn bytes(&self) -> Bytes {
         Bytes::Chunk(Rc::clone(&self.text), self.at)
@@ -328,10 +349,10 @@ impl ChunkReader {
 
     /// Reading of the chunk goes on at `resume`, after the directive at `hash`, whose text is
     /// read as no code.
-    pub(crate) fn resume(&mut self, hash: usize, resume: Resume, dialect: qc_lexer::Dialect) {
+    pub(crate) fn resume(&mut self, hash: usize, resume: Resume, lexing: Lexing<'_>) {
         let end = match resume {
             Resume::At(end) => {
-                self.stream.resume_at(&self.text.bytes, end, dialect);
+                self.stream.resume_at(&self.text.bytes, end, lexing);
                 end
             }
             Resume::End => {
@@ -547,14 +568,6 @@ fn parse2(text: &[u8], mut at: usize) -> Option<Word> {
     })
 }
 
-/// The offset after the `*/` that ends a `/* */` comment whose text starts at `from`, or the
-/// end of the text when none does.
-fn block_comment_end(text: &[u8], from: usize) -> usize {
-    text.get(from..)
-        .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"))
-        .map_or(text.len(), |at| from.saturating_add(at).saturating_add(2))
-}
-
 /// A `#define` or `#append` as `QCC_PR_PreProcessor_Define` reads it.
 pub(crate) struct Definition {
     /// The macro's name.
@@ -568,6 +581,8 @@ pub(crate) struct Definition {
     /// The first `#` that starts a continued line of the body, "preprocessor directive within
     /// preprocessor macro" (FTEF-14.46).
     evil: Option<usize>,
+    /// The first `/*` of the body with no `*/`, "EOF inside quote in define" (FTEF-14.58).
+    unclosed: Option<usize>,
 }
 
 /// Why a `#define` defines nothing.
@@ -577,8 +592,55 @@ pub(crate) enum DefineError {
     /// A name of 64 bytes or more, "Compiler constant name length is too long or short"
     /// (FTEF-14.42).
     NameTooLong,
-    /// A parameter list FTEQCC refuses (FTEF-14.23), of the macro named by these bytes.
-    BadParams(Range<usize>),
+    /// A name past the 1023 bytes `QCC_PR_SimpleGetToken` reads, "token exceeds 1023 chars"
+    /// (FTEF-14.66).
+    WordTooLong,
+    /// A parameter list FTEQCC refuses (FTEF-14.23), and FTEQCC's error for it.
+    BadParams(ParamError),
+}
+
+/// A parameter list `QCC_PR_PreProcessor_Define` takes (FTEF-14.23).
+struct ParamList {
+    /// The parameters' names, `...` not among them.
+    params: Vec<Vec<u8>>,
+    /// Whether the last is `...`.
+    variadic: Variadic,
+    /// The offset after the `)`.
+    after: usize,
+}
+
+/// Why `QCC_PR_PreProcessor_Define` refuses a parameter list (FTEF-14.23), each with FTEQCC's
+/// text (FTEF-14.58).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ParamError {
+    /// "May not have more than 32 parameters to a macro".
+    TooMany,
+    /// "parameter name is too long (max 32)".
+    NameTooLong,
+    /// "varadic argument must be last".
+    VariadicNotLast,
+    /// "duplicate macro paramter name 'NAME'".
+    Duplicate(Vec<u8>),
+    /// "missing ) in macro parameter list".
+    MissingParen,
+}
+
+impl ParamError {
+    /// FTEQCC's text for the error.
+    pub(crate) fn message(&self) -> String {
+        match self {
+            Self::TooMany => {
+                format!("May not have more than {FTE_MAX_PARAMS} parameters to a macro")
+            }
+            Self::NameTooLong => format!("parameter name is too long (max {FTE_MAX_PARAM_LENGTH})"),
+            Self::VariadicNotLast => "varadic argument must be last".to_owned(),
+            Self::Duplicate(name) => format!(
+                "duplicate macro paramter name '{}'",
+                String::from_utf8_lossy(name)
+            ),
+            Self::MissingParen => "missing ) in macro parameter list".to_owned(),
+        }
+    }
 }
 
 /// The parameter list of a `#define` whose `(` is at `open`, as `QCC_PR_PreProcessor_Define`
@@ -587,7 +649,7 @@ pub(crate) enum DefineError {
 /// every parameter after the first is passed over before a delimiter is looked for. The
 /// parameters, whether the last is `...`, and the offset after the `)`; `Err` with where reading
 /// stopped for a list FTEQCC refuses.
-fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usize), usize> {
+fn read_params(text: &[u8], open: usize) -> Result<ParamList, (ParamError, usize)> {
     let same_line = |b: u8| b == b' ' || b == b'\t';
     let skip = |mut at: usize| {
         while byte_at(text, at).is_some_and(same_line) {
@@ -606,32 +668,36 @@ fn read_params(text: &[u8], open: usize) -> Result<(Vec<Vec<u8>>, Variadic, usiz
             while param.last().copied().is_some_and(same_line) {
                 param.pop();
             }
-            // "May not have more than %i parameters to a macro", "parameter name is too long".
-            if params.len() >= FTE_MAX_PARAMS || param.len() >= FTE_MAX_PARAM_LENGTH {
-                return Err(at);
+            if params.len() >= FTE_MAX_PARAMS {
+                return Err((ParamError::TooMany, at));
+            }
+            if param.len() >= FTE_MAX_PARAM_LENGTH {
+                return Err((ParamError::NameTooLong, at));
             }
             if param == b"..." {
-                // "varadic argument must be last"
                 if delimiter != b')' {
-                    return Err(at);
+                    return Err((ParamError::VariadicNotLast, at));
                 }
                 variadic = Variadic::Yes;
             } else if params.contains(&param) {
-                // "duplicate macro paramter name '%s'"
-                return Err(at);
+                return Err((ParamError::Duplicate(param), at));
             } else {
                 params.push(param);
             }
             at = at.saturating_add(1);
             if delimiter == b')' {
-                return Ok((params, variadic, at));
+                return Ok(ParamList {
+                    params,
+                    variadic,
+                    after: at,
+                });
             }
             at = skip(at);
             start = at;
         }
         // `if(!*pr_file_p++)`: "missing ) in macro parameter list".
         if byte_at(text, at).is_none() {
-            return Err(at);
+            return Err((ParamError::MissingParen, at));
         }
         at = at.saturating_add(1);
     }
@@ -654,6 +720,9 @@ pub(crate) fn read_define(
     let Some(name) = name else {
         return (Err(DefineError::NoName), stop);
     };
+    if too_long(Some(&name)) {
+        return (Err(DefineError::WordTooLong), stop);
+    }
     if name.len() > FTE_MAX_MACRO_NAME {
         let end = name.end;
         return (Err(DefineError::NameTooLong), end);
@@ -663,21 +732,22 @@ pub(crate) fn read_define(
     let mut variadic = Variadic::No;
     if text.get(at) == Some(&b'(') {
         match read_params(text, at) {
-            Ok((list, dots, after)) => {
-                params = Some(list);
-                variadic = dots;
-                at = after;
+            Ok(list) => {
+                params = Some(list.params);
+                variadic = list.variadic;
+                at = list.after;
             }
-            Err(stop) => return (Err(DefineError::BadParams(name)), stop),
+            Err((error, stop)) => return (Err(DefineError::BadParams(error)), stop),
         }
     }
-    let (value, end, evil) = read_body(reading, at);
+    let (value, end, evil, unclosed) = read_body(reading, at);
     let definition = Definition {
         name,
         params,
         variadic,
         value,
         evil,
+        unclosed,
     };
     (Ok(definition), end)
 }
@@ -687,7 +757,7 @@ pub(crate) fn read_define(
 /// After a `\` and a line break, a line that starts with `#` (after spaces and tabs) keeps the
 /// line break, and so does the next continued line: "#define hacks however, require that it
 /// becomes foo\nbar\nmoo".
-fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize>) {
+fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize>, Option<usize>) {
     let text = reading.bytes();
     while matches!(text.get(at), Some(b' ' | b'\t')) {
         at = at.saturating_add(1);
@@ -696,6 +766,7 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
     let mut quote = false;
     let mut directive_lines = false;
     let mut evil = None;
+    let mut unclosed = None;
     loop {
         let next = text.get(at.saturating_add(1)).copied();
         match byte_at(text, at) {
@@ -733,7 +804,18 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
             break;
         }
         if !quote && rest.starts_with(b"/*") {
-            at = block_comment_end(text, at.saturating_add(2));
+            let body = at.saturating_add(2);
+            let close = text
+                .get(body..)
+                .and_then(|rest| rest.windows(2).position(|pair| pair == b"*/"));
+            at = match close {
+                Some(len) => body.saturating_add(len).saturating_add(2),
+                // "EOF inside quote in define %s" (FTEF-14.58).
+                None => {
+                    unclosed.get_or_insert(at);
+                    text.len()
+                }
+            };
             continue;
         }
         if byte == b'"' {
@@ -743,7 +825,7 @@ fn read_body(reading: &Reading<'_>, mut at: usize) -> (Text, usize, Option<usize
         at = at.saturating_add(1);
     }
     value.trim_end();
-    (value, at, evil)
+    (value, at, evil, unclosed)
 }
 
 /// A use's arguments as `QCC_PR_ExpandPreProcessorMacro` finds them in the text after its `(`
@@ -795,6 +877,19 @@ enum CallError {
     /// The text ends before the `)`, "EOF on macro call" (FTEF-14.29); `refused` is where
     /// reading goes on.
     Unterminated { refused: Refused },
+    /// The text ends in a `/* */` comment in the arguments, whose "EOF inside comment" is the
+    /// compile's error (FTEF-14.67): the use is read again as written, and the lexer reports the
+    /// comment there.
+    Unclosed { refused: Refused },
+}
+
+/// Why [`Preprocessor::fte_scan_arguments`] found no `)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScanEnd {
+    /// The text ended, or a directive ended it: "EOF on macro call".
+    Eof,
+    /// The text ends in a `/* */` comment after the `(` or a `,` (FTEF-14.67).
+    Unclosed,
 }
 
 /// Where reading goes on after a use of a function-like macro that is refused, an error where
@@ -820,6 +915,8 @@ struct Writer<'a> {
     limit: usize,
     /// The use, where text that stands nowhere else stands.
     at: FileSpan,
+    /// Each word after a `#` that names no parameter, and where it is (FTEF-14.61).
+    strays: std::cell::RefCell<Vec<(Vec<u8>, FileSpan)>>,
 }
 
 impl Writer<'_> {
@@ -850,7 +947,10 @@ impl Writer<'_> {
         loop {
             let whitestart = out.bytes.len();
             // `QCC_PR_LexWhitespace(true)` runs no directive, so it stops at a line's `#` too.
-            let (Gap::Text(white_end) | Gap::LineStart(white_end)) = whitespace(bytes, at);
+            let white_end = match whitespace(bytes, at) {
+                Gap::Text(end) | Gap::LineStart(end) => end,
+                Gap::Unclosed(_) => bytes.len(),
+            };
             out.push_from(self.body, at..white_end);
             at = white_end;
             // Everything written so far, the pieces before this one included.
@@ -882,6 +982,8 @@ impl Writer<'_> {
                             out.push(&markup(arg.bytes()), Origin::Made(span));
                         }
                         None => {
+                            let span = self.place(self.body, hash..word.next);
+                            self.strays.borrow_mut().push((word.token.clone(), span));
                             out.push_from(self.body, hash..hash.saturating_add(1));
                             self.copy_token(&word, &mut out);
                         }
@@ -1018,7 +1120,7 @@ impl<L: Loader> Preprocessor<L> {
         let definition = match read {
             Ok(definition) => definition,
             Err(DefineError::NoName) => {
-                run.report(Code::E0114, "#define expects a macro name", whole);
+                run.report(Code::E0114, "No name defined for compiler constant", whole);
                 return Err(end);
             }
             Err(DefineError::NameTooLong) => {
@@ -1026,10 +1128,12 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0121, message, whole);
                 return Err(end);
             }
-            Err(DefineError::BadParams(name)) => {
-                let name = String::from_utf8_lossy(text.get(name).unwrap_or_default());
-                let message = format!("bad parameter list for macro {name}");
-                run.report(Code::E0115, message, whole);
+            Err(DefineError::WordTooLong) => {
+                run.report(Code::E0121, WORD_TOO_LONG, whole);
+                return Err(end);
+            }
+            Err(DefineError::BadParams(error)) => {
+                run.report(Code::E0115, error.message(), whole);
                 return Err(end);
             }
         };
@@ -1041,32 +1145,63 @@ impl<L: Loader> Preprocessor<L> {
             // preprocessor macro %s", cnst->name);`, an error unless a pragma says otherwise.
             let message = format!("preprocessor directive within preprocessor macro {name}");
             let at = reading.place(evil..evil.saturating_add(1));
-            match self.fte.evil {
-                WarningAction::Ignore => {}
-                WarningAction::Warn => run.report(Code::W0109, message, at),
-                WarningAction::Error => run.report(Code::E0122, message, at),
-            }
+            // F303 is an error unless a `#pragma warning` made it otherwise (FTEF-14.63).
+            run.report(Code::W0109, message, at);
+        }
+        if let Some(open) = definition.unclosed {
+            let message = format!("EOF inside quote in define {name}");
+            run.report(
+                Code::W0115,
+                message,
+                reading.place(open..open.saturating_add(2)),
+            );
         }
         let params = definition.params;
         let variadic = definition.variadic;
         let mut value = definition.value;
         let old = self.macros.get(&name).cloned();
-        let same_params = old
-            .as_ref()
-            .is_some_and(|old| old.params == params && old.variadic == variadic);
-        match old.as_deref().and_then(Macro::text) {
+        // FTEF-14.58: `#append` keeps the old body only when the counts and the names of the
+        // parameters are the same, else it warns and defines the macro anew.
+        let append = match old.as_deref() {
+            Some(old) if definer == Definer::Append => {
+                let count = |params: &Option<Vec<Vec<u8>>>| params.as_ref().map(Vec::len);
+                if count(&old.params) != count(&params) || old.variadic != variadic {
+                    let message = "different number of macro arguments in macro append";
+                    run.report(Code::W0115, message, at_name);
+                    false
+                } else if old.params != params {
+                    run.report(Code::W0115, "arguments differ in macro append", at_name);
+                    false
+                } else {
+                    true
+                }
+            }
             // "append with no previous define is treated as just a regular define".
-            Some(old_value) if definer == Definer::Append && same_params => {
+            Some(_) | None => false,
+        };
+        match old.as_deref().and_then(Macro::text) {
+            Some(old_value) if append => {
                 let mut joined = Text::clone(old_value);
                 joined.push(b" ", Origin::Made(at_name));
                 joined.push_from(&value, 0..value.bytes.len());
                 joined.trim_end();
                 value = joined;
             }
-            Some(old_value) if !same_params || old_value.bytes() != value.bytes() => {
-                run.report(Code::W0102, format!("macro {name} redefined"), at_name);
+            // "we always warn if it was already defined": F315 for another body, F316, ignored
+            // unless a pragma says otherwise, for the same one; the parameters are not compared.
+            Some(old_value) if old_value.bytes() != value.bytes() => {
+                let message = format!(
+                    "Alternate precompiler definition of {name} ({} -> {})",
+                    String::from_utf8_lossy(old_value.bytes()),
+                    String::from_utf8_lossy(value.bytes())
+                );
+                run.report(Code::W0115, message, at_name);
             }
-            Some(_) | None => {}
+            Some(_) => {
+                let message = format!("Identical precompiler definition of {name}");
+                run.report(Code::W0116, message, at_name);
+            }
+            None => {}
         }
         let mac = Macro {
             params,
@@ -1074,8 +1209,10 @@ impl<L: Loader> Preprocessor<L> {
             body: Body::Text(Rc::new(value)),
             file: at_name.file,
             name_span: at_name.span,
+            evil: definition.evil.is_some(),
         };
         self.macros.insert(name, Rc::new(mac));
+        self.macros_changed();
         Ok(end)
     }
 
@@ -1112,6 +1249,7 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0117, message, item.tok.span);
                 return self.refuse(run, item, refused);
             }
+            Err(CallError::Unclosed { refused }) => return self.refuse(run, item, refused),
         };
         let named = mac.params.as_ref().map_or(0, Vec::len);
         if let Some(call) = &use_.call
@@ -1140,8 +1278,19 @@ impl<L: Loader> Preprocessor<L> {
                     builtin: &builtin,
                     limit,
                     at: use_.span,
+                    strays: std::cell::RefCell::default(),
                 };
-                writer.write().map(Rc::new)
+                let written = writer.write().map(Rc::new);
+                // FTEF-14.61: `if (!c->evil) QCC_PR_ParseWarning(0, "'#%s' is not a macro
+                // parameter in %s", qcc_token, c->name);`
+                if !mac.evil {
+                    for (token, at) in writer.strays.take() {
+                        let token = String::from_utf8_lossy(&token);
+                        let message = format!("'#{token}' is not a macro parameter in {name}");
+                        run.report(Code::W0117, message, at);
+                    }
+                }
+                written
             }
             // An object-like macro's chunk is its stored text, shared, not copied.
             _ => (body.bytes.len() <= limit).then(|| stored.map_or_else(Rc::default, Rc::clone)),
@@ -1169,7 +1318,7 @@ impl<L: Loader> Preprocessor<L> {
         if text.bytes.is_empty() {
             return None;
         }
-        let stream = TokenStream::lex(text.bytes(), self.dialect);
+        let stream = TokenStream::lex(text.bytes(), self.lexing());
         let breaks = (0..text.bytes.len())
             .filter(|&at| text.bytes.get(at) == Some(&b'\n'))
             .collect();
@@ -1219,7 +1368,7 @@ impl<L: Loader> Preprocessor<L> {
         {
             chunk.detach();
         }
-        let lexed = lex_with(&text, self.dialect);
+        let lexed = self.lexing().lex(&text);
         for d in lexed.diagnostics {
             run.report(d.code, d.message, item.tok.span);
         }
@@ -1282,13 +1431,19 @@ impl<L: Loader> Preprocessor<L> {
             let before = run.directives_run;
             let scanned = self.fte_scan_arguments(run, &bytes, open, (params.len(), mac.variadic));
             let ran = run.directives_run != before;
-            let Some(scanned) = scanned else {
-                let refused = if ran {
-                    Refused::After(text.len())
-                } else {
-                    Refused::AsWritten
-                };
-                return Err(CallError::Unterminated { refused });
+            let scanned = match scanned {
+                Ok(scanned) => scanned,
+                Err(end) => {
+                    let refused = if ran {
+                        Refused::After(text.len())
+                    } else {
+                        Refused::AsWritten
+                    };
+                    return Err(match end {
+                        ScanEnd::Eof => CallError::Unterminated { refused },
+                        ScanEnd::Unclosed => CallError::Unclosed { refused },
+                    });
+                }
             };
             end = scanned.close.saturating_add(1);
             if ran {
@@ -1341,27 +1496,34 @@ impl<L: Loader> Preprocessor<L> {
     /// passes over it, `(` and `)` nest, and a `,` or `)` outside them ends an argument, every
     /// other byte (a character constant's, a comment's) being part of it. The white space after
     /// the `(` and each `,` is read as `QCC_PR_LexWhitespace(false)` reads it, which runs the
-    /// directives at the starts of its lines (FTEF-14.45). `None` when the text ends first, "EOF
-    /// on macro call", or a directive ends it.
+    /// directives at the starts of its lines (FTEF-14.45). [`ScanEnd::Eof`] when the text ends
+    /// first, "EOF on macro call", or a directive ends it; [`ScanEnd::Unclosed`] when it ends in a
+    /// comment there (FTEF-14.67).
     fn fte_scan_arguments(
         &mut self,
         run: &mut Run,
         bytes: &Bytes,
         open: usize,
         (named, variadic): (usize, Variadic),
-    ) -> Option<Scanned> {
+    ) -> Result<Scanned, ScanEnd> {
         let text = bytes.bytes();
-        let mut at = self.fte_whitespace(run, bytes, open.saturating_add(1))?;
+        let white = |stop: WhiteStop| match stop {
+            WhiteStop::Ended => ScanEnd::Eof,
+            WhiteStop::Unclosed(_) => ScanEnd::Unclosed,
+        };
+        let mut at = self
+            .fte_whitespace(run, bytes, open.saturating_add(1))
+            .map_err(white)?;
         let mut start = at;
         let mut args = Vec::new();
         let mut extra = 0_usize;
         let mut too_many = false;
         let mut level = 0_usize;
         loop {
-            let mut byte = byte_at(text, at)?;
+            let mut byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
             if byte == b'"' {
                 at = string_end(text, at);
-                byte = byte_at(text, at)?;
+                byte = byte_at(text, at).ok_or(ScanEnd::Eof)?;
             }
             match byte {
                 b'(' => level = level.saturating_add(1),
@@ -1371,14 +1533,16 @@ impl<L: Loader> Preprocessor<L> {
                     } else {
                         args.push(start..at);
                         if byte == b')' {
-                            return Some(Scanned {
+                            return Ok(Scanned {
                                 args,
                                 extra,
                                 too_many,
                                 close: at,
                             });
                         }
-                        at = self.fte_whitespace(run, bytes, at.saturating_add(1))?;
+                        at = self
+                            .fte_whitespace(run, bytes, at.saturating_add(1))
+                            .map_err(white)?;
                         start = at;
                         too_many |= args.len() == FTE_MAX_PARAMS || args.len() > named;
                         continue;
@@ -1408,7 +1572,7 @@ impl<L: Loader> Preprocessor<L> {
                 if let Some(chunk) = run.chunks.last_mut() {
                     chunk
                         .stream
-                        .resume_at(&chunk.text.bytes, after, self.dialect);
+                        .resume_at(&chunk.text.bytes, after, self.lexing());
                     chunk.consumed.push(Span::new(end, after));
                 }
             }
@@ -1416,7 +1580,7 @@ impl<L: Loader> Preprocessor<L> {
             Place::File => {
                 let file = self.sources.file(item.tok.span.file);
                 if let (Some(cursor), Some(file)) = (run.cursors.last_mut(), file) {
-                    cursor.stream.resume_at(&file.text, after, self.dialect);
+                    cursor.stream.resume_at(&file.text, after, self.lexing());
                     let consumed = Span::new(item.tok.span.span.end, after);
                     cursor.skipped.push(consumed);
                 }

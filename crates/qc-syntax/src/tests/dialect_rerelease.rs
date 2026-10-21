@@ -522,3 +522,58 @@ fn fteqcc_constructs_are_lossless() {
     assert_eq!(fte(source).syntax().text(), source.as_bytes());
     assert_eq!(fte_errors(source), Vec::<Code>::new());
 }
+
+// spec FTEF-13.24: `*^` and `><` have the priority of `*`, and `<=>` that of `==`
+#[test]
+fn fteqcc_power_cross_and_spaceship_operators() {
+    assert_eq!(fte_op("a *^ b;"), Some(BinaryOp::Pow));
+    assert_eq!(fte_op("a >< b;"), Some(BinaryOp::Cross));
+    assert_eq!(fte_op("a <=> b;"), Some(BinaryOp::Spaceship));
+    assert_eq!(fte_expr("a + b *^ c;"), "(+ a (*^ b c))");
+    assert_eq!(fte_expr("a >< b - c;"), "(- (>< a b) c)");
+    assert_eq!(fte_expr("a <=> b + c;"), "(<=> a (+ b c))");
+    assert!(!fte_errors(&in_body("a ^^ b;")).is_empty());
+    assert!(!fte_errors(&in_body("@a;")).is_empty());
+}
+
+// spec FTEF-12.12: preprocessed text is lexed again with the flags FTEQCC's lexer read in each
+// part of it, `macroinstrings` aside
+#[test]
+fn preprocessed_text_is_lexed_with_its_flags() {
+    use qc_lexer::{LexFlag, LexFlags};
+    let source = b"string s = \"a\":\"b\";\nstring t = \"a\":\"b\";\n";
+    let errors = |flags: &[(usize, LexFlags)]| -> Vec<Code> {
+        crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, flags)
+            .errors()
+            .map(|d| d.code)
+            .collect()
+    };
+    assert!(!errors(&[]).is_empty());
+    let qccx = LexFlags::default().with(LexFlag::Qccx, true);
+    assert!(errors(&[(0, qccx)]).is_empty());
+    // The flags hold from their byte: the `:` before it is the punctuation.
+    let second_line = source.iter().position(|&b| b == b'\n').unwrap() + 1;
+    assert!(!errors(&[(0, LexFlags::default()), (second_line, qccx)]).is_empty());
+    assert!(!errors(&[(0, qccx), (second_line, LexFlags::default())]).is_empty());
+    assert!(errors(&[(0, qccx), (second_line, qccx)]).is_empty());
+    let parsed = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)]);
+    assert_eq!(parsed.syntax().text(), source);
+    let ssp = LexFlags::default().with(LexFlag::Ssp, true);
+    let powers = |flags: &[(usize, LexFlags)]| {
+        crate::parse_preprocessed_flagged(b"float x = 2 ** 3;\n", Dialect::Fteqcc, flags)
+            .syntax()
+            .tokens()
+            .filter(|t| t.kind() == SyntaxKind::StarCaret)
+            .count()
+    };
+    assert_eq!(powers(&[(0, ssp)]), 1);
+    assert_eq!(powers(&[]), 0);
+    // `macroinstrings` is not read: the text has no macros to look up.
+    let strings = LexFlags::default().with(LexFlag::MacroInStrings, true);
+    let parsed = crate::parse_preprocessed_flagged(
+        b"string s = \"#X\";\n",
+        Dialect::Fteqcc,
+        &[(0, strings)],
+    );
+    assert!(parsed.diagnostics().is_empty());
+}

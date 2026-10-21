@@ -67,6 +67,12 @@ pub enum Code {
     E0121,
     /// "preprocessor directive within preprocessor macro NAME", as an error (QCD-8.15).
     E0122,
+    /// "Invalid UTF-8 code sequence ...": a byte that starts no UTF-8 sequence in an FTEQCC name (QCD-2.9).
+    E0123,
+    /// "bad suffix on number TEXT": a letter, digit, `_` or high byte right after an FTEQCC number (QCD-2.10).
+    E0124,
+    /// An FTEQCC warning `#pragma warning error` made an error, with FTEQCC's text (QCD-8.17).
+    E0125,
     /// "not a name" (QCD-3.1).
     E0201,
     /// "name too long" (QCD-3.2).
@@ -195,6 +201,36 @@ pub enum Code {
     W0108,
     /// "preprocessor directive within preprocessor macro NAME", as a warning (QCD-7.31).
     W0109,
+    /// "A leading 0 is interpreted as base-8." (QCD-7.53).
+    W0110,
+    /// "numerical overflow", FTEQCC's F312 (QCD-7.54).
+    W0111,
+    /// "\"/*\" inside comment", FTEQCC's F325 (QCD-7.55).
+    W0112,
+    /// A `#pragma` FTEQCC warns about, its Q120, with FTEQCC's text (QCD-7.56).
+    W0113,
+    /// "Precompiler constant NAME was not defined" (QCD-7.57).
+    W0114,
+    /// A macro definition FTEQCC warns about, its F315, with FTEQCC's text (QCD-7.58).
+    W0115,
+    /// "Identical precompiler definition of NAME", FTEQCC's F316 (QCD-7.59).
+    W0116,
+    /// A warning FTEQCC gives no name, with FTEQCC's text (QCD-7.60).
+    W0117,
+    /// "** is unsafe around pointers, use *^ instead.", FTEQCC's F321 (QCD-7.61).
+    W0118,
+    /// A string FTEQCC warns about, its F301, with FTEQCC's text (QCD-7.62).
+    W0119,
+    /// "2d vector", FTEQCC's F311 (QCD-7.63).
+    W0120,
+    /// A float FTEQCC writes as an `int`'s bits, FTEQCC's F313, with its text (QCD-7.64).
+    W0121,
+    /// A `#NAME` in a string under FTEQCC's `macroinstrings` flag, its warning with no name
+    /// (QCD-7.65).
+    W0122,
+    /// "Hanging \\" and a CR: a `\` and a lone CR in an FTEQCC string, its warning with no name
+    /// (QCD-7.66).
+    W0123,
     /// "local NAME is the global NAME" (QCD-7.3).
     W0201,
     /// "Missing semicolon at end of definition" (QCD-7.18).
@@ -261,7 +297,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 116] = [
+    pub const ALL: [Self; 133] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -284,6 +320,9 @@ impl Code {
         Self::E0120,
         Self::E0121,
         Self::E0122,
+        Self::E0123,
+        Self::E0124,
+        Self::E0125,
         Self::E0201,
         Self::E0202,
         Self::E0203,
@@ -348,6 +387,20 @@ impl Code {
         Self::W0107,
         Self::W0108,
         Self::W0109,
+        Self::W0110,
+        Self::W0111,
+        Self::W0112,
+        Self::W0113,
+        Self::W0114,
+        Self::W0115,
+        Self::W0116,
+        Self::W0117,
+        Self::W0118,
+        Self::W0119,
+        Self::W0120,
+        Self::W0121,
+        Self::W0122,
+        Self::W0123,
         Self::W0201,
         Self::W0203,
         Self::W0204,
@@ -406,6 +459,9 @@ impl Code {
             Self::E0120 => "E0120",
             Self::E0121 => "E0121",
             Self::E0122 => "E0122",
+            Self::E0123 => "E0123",
+            Self::E0124 => "E0124",
+            Self::E0125 => "E0125",
             Self::E0201 => "E0201",
             Self::E0202 => "E0202",
             Self::E0203 => "E0203",
@@ -446,6 +502,20 @@ impl Code {
             Self::W0107 => "W0107",
             Self::W0108 => "W0108",
             Self::W0109 => "W0109",
+            Self::W0110 => "W0110",
+            Self::W0111 => "W0111",
+            Self::W0112 => "W0112",
+            Self::W0113 => "W0113",
+            Self::W0114 => "W0114",
+            Self::W0115 => "W0115",
+            Self::W0116 => "W0116",
+            Self::W0117 => "W0117",
+            Self::W0118 => "W0118",
+            Self::W0119 => "W0119",
+            Self::W0120 => "W0120",
+            Self::W0121 => "W0121",
+            Self::W0122 => "W0122",
+            Self::W0123 => "W0123",
             Self::W0201 => "W0201",
             Self::W0203 => "W0203",
             Self::W0204 => "W0204",
@@ -516,6 +586,20 @@ impl Code {
             | Self::W0107
             | Self::W0108
             | Self::W0109
+            | Self::W0110
+            | Self::W0111
+            | Self::W0112
+            | Self::W0113
+            | Self::W0114
+            | Self::W0115
+            | Self::W0116
+            | Self::W0117
+            | Self::W0118
+            | Self::W0119
+            | Self::W0120
+            | Self::W0121
+            | Self::W0122
+            | Self::W0123
             | Self::W0201
             | Self::W0203
             | Self::W0204
@@ -568,6 +652,9 @@ impl Code {
             | Self::E0120
             | Self::E0121
             | Self::E0122
+            | Self::E0123
+            | Self::E0124
+            | Self::E0125
             | Self::E0201
             | Self::E0202
             | Self::E0203

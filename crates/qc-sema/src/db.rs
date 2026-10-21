@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use qc_diag::Diagnostic;
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
+use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess};
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
     FileDiagnostic, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
@@ -76,10 +76,13 @@ impl ModuleAnalysis {
 }
 
 /// The parse and lowering of one compiled file's expansion, kept while the expansion's text
-/// is the same.
+/// and the lexer's flags in it are the same.
 #[derive(Clone, Debug)]
 struct ExpandedFile {
     text: Vec<u8>,
+    /// The compiler flags FTEQCC's lexer read in the text, from each rendered offset
+    /// (FTEF-12.12).
+    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -368,7 +371,7 @@ impl Db {
         let mut syntax = preprocessed.diagnostics;
         let mut decls = Vec::with_capacity(input.compiled.len());
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
-            let file = self.expanded_file(id, &rendered.text);
+            let file = self.expanded_file(id, rendered);
             for d in file.parse.diagnostics() {
                 syntax.push(locate_diagnostic(&rendered.origins, id, d));
             }
@@ -421,20 +424,24 @@ impl Db {
         self.expanded.get(&file).map(|expanded| &expanded.decls)
     }
 
-    /// The parse and lowering of compiled file `file` whose expansion is `text`: the cached
-    /// ones when the expansion is unchanged, otherwise parsed and lowered again.
-    fn expanded_file(&mut self, file: FileId, text: &[u8]) -> ExpandedFile {
+    /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
+    /// ones when the expansion and the lexer's flags in it are unchanged, otherwise parsed and
+    /// lowered again.
+    fn expanded_file(&mut self, file: FileId, rendered: &Rendered) -> ExpandedFile {
+        let text = rendered.text.as_slice();
         if let Some(cached) = self.expanded.get(&file)
             && cached.text == text
+            && cached.lex_flags == rendered.lex_flags
         {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_preprocessed(text, self.dialect);
+        let parse = qc_syntax::parse_preprocessed_flagged(text, self.dialect, &rendered.lex_flags);
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
+            lex_flags: rendered.lex_flags.clone(),
             parse,
             decls,
         };

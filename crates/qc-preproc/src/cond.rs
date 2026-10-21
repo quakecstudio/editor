@@ -10,7 +10,7 @@
 
 use qc_lexer::Dialect;
 
-use crate::fte_directive::simple_get_token;
+use crate::fte_directive::{WORD_TOO_LONG, simple_get_token, too_long};
 
 /// Deepest nesting of `!` and parentheses an expression may have; a deeper one is false, so
 /// no input exhausts the stack.
@@ -355,11 +355,15 @@ impl FteIf<'_> {
 
     /// `QCC_PR_SimpleGetToken` from where reading stands ([`simple_get_token`]): the word, and
     /// reading goes on after it.
-    fn word(&mut self) -> Option<String> {
+    /// A word past FTEQCC's 1023 bytes is its "token exceeds 1023 chars" (FTEF-14.66).
+    fn word(&mut self) -> Result<Option<String>, FteIfError> {
         let (word, stop) = simple_get_token(self.text, self.pos);
         self.pos = stop;
-        let word = self.text.get(word?)?;
-        Some(String::from_utf8_lossy(word).into_owned())
+        if too_long(word.as_ref()) {
+            return Err(FteIfError::Reported(WORD_TOO_LONG));
+        }
+        let word = word.and_then(|word| self.text.get(word));
+        Ok(word.map(|word| String::from_utf8_lossy(word).into_owned()))
     }
 
     /// `ParsePrecompilerIf(level)` one nesting deeper, for a parenthesis, a `!` or an
@@ -441,7 +445,7 @@ impl FteIf<'_> {
             if brackets {
                 self.advance(1);
             }
-            let name = self.word().unwrap_or_default();
+            let name = self.word()?.unwrap_or_default();
             let defined = (self.macros)(&name).is_some();
             if brackets {
                 self.skip_blanks();
@@ -453,7 +457,7 @@ impl FteIf<'_> {
             return Ok(i32::from(defined));
         }
         let word = self
-            .word()
+            .word()?
             .ok_or(FteIfError::Reported("unexpected end-of-line"))?;
         let text = (self.macros)(&word).unwrap_or(word);
         Ok(fte_atoi(text.as_bytes()))

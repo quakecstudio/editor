@@ -13,15 +13,15 @@
 
 use std::collections::HashMap;
 
-use qc_lexer::{Dialect, Punct, TokenKind};
+use qc_lexer::{Code, Dialect, Punct, TokenKind};
 
 use super::{
-    Definer, Directive, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, TextStart, byte_at,
-    condition, elif_defined, lossy, qcc_load_as, read, simple_get_token, skip_side,
-    skip_to_end_of_line, starts_line, whitespace,
+    Definer, Directive, EOF_IN_COMMENT, Earlier, ElifTest, Gap, IfTest, Junk, Skipped, TextStart,
+    WORD_TOO_LONG, byte_at, com_parse, condition, elif_defined, lossy, qcc_load_as, read,
+    simple_get_token, skip_side, skip_to_end_of_line, starts_line, too_long, whitespace,
 };
 use crate::fte_macro::{Reading, read_define};
-use crate::{FileId, TokenStream, Variadic};
+use crate::{FileId, Lexing, TokenStream, Variadic};
 
 /// The most `#includelist`s and `#pragma DONT_COMPILE_THIS_FILE`s one inside another's reading
 /// the graph reads, as the preprocessor's bound on nested directives (FTEF-14.47, PRJ-5.14).
@@ -90,11 +90,11 @@ impl ModuleState {
 }
 
 /// How a file the graph or the preprocessor reads starts, which decides whether a `#` on its
-/// first line is a directive (FTEF-14.52) and whether a `#!` first line is read (PRJ-4.8).
+/// first line is a directive (FTEF-14.52) and whether a `#!` first line is read (PRJ-4.10).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStart {
     /// The module's source in source form (PRJ-4.4), compiled as [`Self::Compiled`] after
-    /// `QCC_main` passes over a first line that starts with `#!` (PRJ-4.8).
+    /// `QCC_main` passes over a first line that starts with `#!` (PRJ-4.10).
     Source,
     /// A compiled file, an entry of a list: `QCC_PR_CompileFile` calls `QCC_PR_NewLine` at its
     /// start, which skips spaces and tabs.
@@ -125,7 +125,7 @@ pub enum FteEvent {
     /// `#output` and the bytes of the string after it (PRJ-5.6).
     Output { name: Vec<u8>, line: u32 },
     /// A `#pragma`, its name and its text (FTEF-14.43), but `DONT_COMPILE_THIS_FILE`, which the
-    /// reader runs itself (FTEF-14.44).
+    /// reader runs itself (FTEF-14.70).
     Pragma {
         name: Vec<u8>,
         text: Vec<u8>,
@@ -133,6 +133,17 @@ pub enum FteEvent {
     },
     /// The text ended inside the `#includelist` on this line: "eof in includelist" (FTEF-14.41).
     UnclosedList { line: u32 },
+    /// A word of a list-form `progs.src`, a file compiled before the rest of the list is read
+    /// (PRJ-4.9).
+    Listed { name: Vec<u8>, line: u32 },
+    /// An error FTEQCC reports in a list-form `progs.src`, after which the graph reads no more
+    /// of it: a word past 1023 bytes (FTEF-14.66) or a comment the text ends in (FTEF-14.67),
+    /// with this profile's code and FTEQCC's text (PRJ-4.9).
+    Error {
+        code: Code,
+        message: &'static str,
+        line: u32,
+    },
 }
 
 /// What the words of the text are, inside the reading a directive started.
@@ -142,6 +153,8 @@ enum Mode {
     List { line: u32 },
     /// The text `#pragma DONT_COMPILE_THIS_FILE` passes over, a byte at a time.
     DontCompile,
+    /// A list-form `progs.src`, its output read or not yet (PRJ-4.9).
+    Progs { output_read: bool },
 }
 
 /// The 1-based line of an offset of a text, counted on from the last one asked for.
@@ -190,13 +203,13 @@ pub struct FteFileReader {
 impl FteFileReader {
     /// A reader of the file of `bytes`, which starts as `start` says, read as the text FTEQCC's
     /// `QCC_LoadFile` hands its lexer: decoded from UTF-16 or UTF-32, past a UTF-8 byte order
-    /// mark, and with each NUL byte a space (FTEF-14.54, PRJ-5.1), and in the module's source
-    /// past a `#!` first line (PRJ-4.8).
+    /// mark, and with each NUL byte a space (FTEF-14.64, PRJ-5.1), and in the module's source
+    /// past a `#!` first line (PRJ-4.10).
     #[must_use]
     pub fn new(bytes: Vec<u8>, start: FileStart) -> Self {
         let (text, _) = qcc_load_as(bytes, start);
         Self {
-            stream: TokenStream::lex(&text, Dialect::Fteqcc),
+            stream: TokenStream::lex(&text, Lexing::plain(Dialect::Fteqcc)),
             text,
             at: 0,
             resume: None,
@@ -205,6 +218,18 @@ impl FteFileReader {
             ended: false,
             lines: Lines::default(),
         }
+    }
+
+    /// A reader of a list-form `progs.src` of `bytes`, read as FTEQCC's `QCC_main` and
+    /// `QCC_ContinueCompile` read it (PRJ-4.9): the text `QCC_LoadFile` gives, past a `#!` first
+    /// line (PRJ-4.6, PRJ-4.10); then white space read as `QCC_PR_LexWhitespace(false)` reads it,
+    /// which runs the directives at the starts of its lines, before the output, a word
+    /// `QCC_PR_SimpleGetToken` reads, and before each later word, which `QCC_COM_Parse` reads.
+    #[must_use]
+    pub fn progs(bytes: Vec<u8>) -> Self {
+        let mut reader = Self::new(bytes, FileStart::Source);
+        reader.modes.push(Mode::Progs { output_read: false });
+        reader
     }
 
     /// Reads on to the next thing the graph acts on, with the module's `state`, which the
@@ -224,6 +249,24 @@ impl FteFileReader {
             }
             let word = match whitespace(&self.text, self.at) {
                 Gap::Text(at) => at,
+                Gap::Unclosed(open) => {
+                    self.ended = true;
+                    // FTEF-14.67: the comment's error is the compile's, so no list is left open;
+                    // only the list-form `progs.src` is the graph's to report, the preprocessor
+                    // reporting a QuakeC file's.
+                    let progs = matches!(self.modes.first(), Some(Mode::Progs { .. }));
+                    self.modes.clear();
+                    if progs {
+                        let line = self.lines.line(&self.text, open);
+                        let (code, message) = (Code::E0501, EOF_IN_COMMENT);
+                        return Some(FteEvent::Error {
+                            code,
+                            message,
+                            line,
+                        });
+                    }
+                    continue;
+                }
                 Gap::LineStart(hash) => match read(&self.text, hash) {
                     Some(directive) => {
                         if let Some(event) = self.run(state, hash, directive) {
@@ -250,7 +293,8 @@ impl FteFileReader {
     /// run; any other token is passed over.
     fn code(&mut self, state: &mut ModuleState) -> Option<FteEvent> {
         if let Some(at) = self.resume.take() {
-            self.stream.resume_at(&self.text, at, Dialect::Fteqcc);
+            self.stream
+                .resume_at(&self.text, at, Lexing::plain(Dialect::Fteqcc));
         }
         let Some(token) = self.stream.tokens.get(self.stream.pos) else {
             self.ended = true;
@@ -277,7 +321,7 @@ impl FteFileReader {
         while let Some(mode) = self.modes.pop() {
             match mode {
                 Mode::List { line } => return Some(FteEvent::UnclosedList { line }),
-                Mode::DontCompile => {}
+                Mode::DontCompile | Mode::Progs { .. } => {}
             }
         }
         None
@@ -287,11 +331,17 @@ impl FteFileReader {
     /// code outside any reading is [`Self::code`]'s.
     fn word(&mut self, at: usize) -> Option<FteEvent> {
         match self.modes.last() {
-            // FTEF-14.44: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
+            // FTEF-14.70: `if (!qcc_iswhite(*pr_file_p)) pr_file_p++;`.
             None | Some(Mode::DontCompile) => self.at = at.saturating_add(1),
             // FTEF-14.41: a word `QCC_PR_SimpleGetToken` reads, `#endlist` ending the list.
             Some(Mode::List { .. }) => {
                 let (word, stop) = simple_get_token(&self.text, at);
+                // FTEF-14.66: `QCC_Error` stops the compile, inside the list or not.
+                if too_long(word.as_ref()) {
+                    self.modes.clear();
+                    self.ended = true;
+                    return None;
+                }
                 let Some(word) = word else {
                     self.at = stop.saturating_add(1);
                     return None;
@@ -310,8 +360,43 @@ impl FteFileReader {
                 let line = self.lines.line(&self.text, word.start);
                 return Some(FteEvent::ListEntry { name, line });
             }
+            Some(Mode::Progs { output_read }) => return self.progs_word(*output_read, at),
         }
         None
+    }
+
+    /// Reads the word of a list-form `progs.src` at `at` (PRJ-4.9): before the output is read,
+    /// the output, `QCC_PR_SimpleGetToken`'s word, which may be empty and then names no output
+    /// (`QCC_GenerateRelativePath(destfile, sizeof(destfile), qccmprogsdat, qcc_token);`), a word
+    /// past 1023 bytes stopping the compile (FTEF-14.66); after it, a file, `QCC_COM_Parse`'s
+    /// word, the list ending where it reads none.
+    fn progs_word(&mut self, output_read: bool, at: usize) -> Option<FteEvent> {
+        let line = self.lines.line(&self.text, at);
+        if !output_read {
+            if let Some(mode) = self.modes.last_mut() {
+                *mode = Mode::Progs { output_read: true };
+            }
+            let (word, stop) = simple_get_token(&self.text, at);
+            self.at = stop;
+            if too_long(word.as_ref()) {
+                self.modes.clear();
+                self.ended = true;
+                let (code, message) = (Code::E0121, WORD_TOO_LONG);
+                return Some(FteEvent::Error {
+                    code,
+                    message,
+                    line,
+                });
+            }
+            let name = self.text.get(word?).unwrap_or_default().to_vec();
+            return Some(FteEvent::Output { name, line });
+        }
+        let Some((name, next)) = com_parse(&self.text, at) else {
+            self.ended = true;
+            return None;
+        };
+        self.at = next;
+        Some(FteEvent::Listed { name, line })
     }
 
     /// Opens the reading `mode` starts, at `at`; past the bound on nested readings the text
@@ -326,7 +411,7 @@ impl FteFileReader {
     }
 
     /// Runs `directive`, read at the `#` at `hash`, as `QCC_PR_Precompiler` does for the graph
-    /// (FTEF-14.35 to FTEF-14.44, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
+    /// (FTEF-14.35 to FTEF-14.70, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
     fn run(
         &mut self,
         state: &mut ModuleState,
@@ -392,7 +477,7 @@ impl FteFileReader {
                     self.skip(state, end, Earlier::NoSideTaken);
                 }
             }
-            Directive::NotIf { word_end } => self.at = word_end,
+            Directive::NotIf { word } => self.at = word.end,
             Directive::Else { end } => {
                 if state.ifs == 0 {
                     self.at = end.at;
@@ -406,6 +491,12 @@ impl FteFileReader {
                 self.at = end.at;
             }
             Directive::Eof | Directive::Package { .. } => self.ended = true,
+            // FTEF-14.66: `QCC_Error` stops the compile, so the graph reads no more of the file
+            // and no list is left open; the preprocessor reports the error.
+            Directive::Fatal { .. } => {
+                self.modes.clear();
+                self.ended = true;
+            }
             Directive::Output { name, end } => {
                 self.at = end.at;
                 return Some(FteEvent::Output { name: name?, line });
@@ -450,7 +541,7 @@ impl FteFileReader {
             ElifTest::Defined | ElifTest::NotDefined => {
                 let (value, stop) =
                     elif_defined(text, elif.at, elif.test, |name| state.is_defined(name));
-                (value, stop, Junk::Checked)
+                (value.unwrap_or(false), stop, Junk::Checked)
             }
         });
         match skipped {

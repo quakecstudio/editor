@@ -1068,6 +1068,12 @@ pub enum BinaryOp {
     ShrAssign,
     /// `,` (FTEQCC, FTEF-18.5): both sides evaluated, the right one kept.
     Comma,
+    /// `*^`, or `**` under FTEQCC's `ssp` flag (FTEQCC, FTEF-13.24): a power.
+    Pow,
+    /// `><` (FTEQCC, FTEF-13.24): a vector cross product.
+    Cross,
+    /// `<=>` (FTEQCC, FTEF-13.24): a three-way comparison.
+    Spaceship,
 }
 
 impl BinaryOp {
@@ -1103,6 +1109,9 @@ impl BinaryOp {
             K::ShlEq => Self::ShlAssign,
             K::ShrEq => Self::ShrAssign,
             K::Comma => Self::Comma,
+            K::StarCaret => Self::Pow,
+            K::Cross => Self::Cross,
+            K::Spaceship => Self::Spaceship,
             _ => return None,
         })
     }

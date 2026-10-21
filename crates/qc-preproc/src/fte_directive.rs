@@ -21,20 +21,20 @@ mod graph;
 mod load;
 
 pub use graph::{FileStart, FteEvent, FteFileReader, ModuleState};
-#[cfg(test)]
-pub(crate) use load::skip_script_line;
-pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place};
+pub(crate) use load::first_nul;
+pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use qc_lexer::{Code, Dialect, Span};
+use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_macro::{Reading, Text};
 use crate::{
-    Body, ChunkReader, FileId, FileSpan, Loader, Macro, Preprocessor, Run, Variadic, normalize,
+    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
+    WarningSettings, fte_pragma, normalize,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -116,7 +116,7 @@ fn joined(text: &[u8], from: usize, hash: usize) -> bool {
     let mut at = from;
     let mut joined = false;
     loop {
-        let Gap::Text(stop) = whitespace(text, at) else {
+        let (Gap::Text(stop) | Gap::Unclosed(stop)) = whitespace(text, at) else {
             return false;
         };
         if stop >= hash {
@@ -153,12 +153,28 @@ pub(crate) enum Gap {
     /// At this `#`, the first byte after a line ending and the spaces and tabs after it, where
     /// `QCC_PR_NewLine` calls `QCC_PR_Precompiler`.
     LineStart(usize),
+    /// At the end of the text, inside the `/* */` comment that starts at this offset: FTEQCC's
+    /// "EOF inside comment" (FTEF-14.67).
+    Unclosed(usize),
+}
+
+/// FTEQCC's error for a `/* */` comment the text ends in (FTEF-14.67).
+pub(crate) const EOF_IN_COMMENT: &str = "EOF inside comment";
+
+/// Why [`Preprocessor::fte_whitespace`] read no further than the white space.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WhiteStop {
+    /// A directive it ran ended the text (`#eof`, `#package`).
+    Ended,
+    /// The text ends in the `/* */` comment that starts at this offset, FTEQCC's "EOF inside
+    /// comment" (FTEF-14.67).
+    Unclosed(usize),
 }
 
 /// `QCC_PR_LexWhitespace(false)` from `at`: past white space (`qcc_iswhite`), `//` comments to
 /// their line break and `/* */` comments, up to the first other byte or a `#` at a line's
 /// start ([`Gap`]). A `/* */` comment that does not end runs to the end of the text, where
-/// FTEQCC reports "EOF inside comment".
+/// FTEQCC reports "EOF inside comment" ([`Gap::Unclosed`]).
 pub(crate) fn whitespace(text: &[u8], mut at: usize) -> Gap {
     let new_line = |at: usize| {
         let at = skip_blanks(text, at);
@@ -191,11 +207,12 @@ pub(crate) fn whitespace(text: &[u8], mut at: usize) -> Gap {
                 }
             }
             (Some(b'/'), Some(b'*')) => {
+                let open = at;
                 at = at.saturating_add(1);
                 loop {
                     at = at.saturating_add(1);
                     if byte_at(text, at.saturating_add(1)).is_none() {
-                        return Gap::Text(at.saturating_add(1).min(text.len()));
+                        return Gap::Unclosed(open);
                     }
                     if text.get(at..at.saturating_add(2)) == Some(b"*/") {
                         break;
@@ -298,6 +315,23 @@ pub(crate) fn skip_to_end_of_line(text: &[u8], mut at: usize, junk_is: Junk) -> 
     }
 }
 
+/// FTEQCC's error for a word or string past [`FTEQCC_MAX_WORD`] bytes, which
+/// `QCC_PR_SimpleGetToken` and `QCC_PR_SimpleGetString` give with `QCC_Error` (FTEF-14.66).
+pub(crate) const WORD_TOO_LONG: &str = "token exceeds 1023 chars";
+
+/// This profile's error for a `#pragma` whose name or text FTEQCC's `char msg[1024]` cannot
+/// hold, which the pinned build aborts at (FTEF-14.66).
+const PRAGMA_TOO_LONG: &str = "#pragma name or text longer than FTEQCC's 1023 bytes";
+
+/// FTEQCC's error for a line break in a string `QCC_PR_SimpleGetString` reads (FTEF-14.66).
+const NEW_LINE_IN_STRING: &str = "new line inside string";
+
+/// Whether `word`, read by [`simple_get_token`], is longer than FTEQCC's readers take
+/// (FTEF-14.66).
+pub(crate) fn too_long(word: Option<&Range<usize>>) -> bool {
+    word.is_some_and(|word| word.len() > FTEQCC_MAX_WORD)
+}
+
 /// `QCC_PR_SimpleGetToken`: the word from `at` after white space on the line, up to white
 /// space, `,`, `;`, `(`, `)`, `]` or `//`; `None` at a line break, at the end of the text, or
 /// before a comment, or when no byte is taken. Also where reading stopped: a `//` comment is
@@ -340,31 +374,37 @@ pub(crate) fn simple_get_token(text: &[u8], mut at: usize) -> (Option<Range<usiz
 /// `QCC_PR_SimpleGetString`: after white space on the line, the `"` string from there, read to
 /// its closing quote, `pr_token`'s text (`\n`, `\r` and `\t` the bytes they name, and `\` before
 /// any other byte that byte), and where reading stopped, after the quote; nothing is read, and
-/// reading stays, at a line break, a comment, a byte that opens no string, or a string with a
-/// line break in it (FTEQCC's "new line inside string", which stops the compile).
-fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
+/// reading stays, at a line break, a comment, a byte that opens no string, or the end of the text
+/// in the string. A line break in the string, and a 1024th byte, stop FTEQCC's compile: the
+/// error, "new line inside string" or "token exceeds 1023 chars" (FTEF-14.66).
+fn simple_get_string(text: &[u8], mut at: usize) -> Result<(Option<Vec<u8>>, usize), &'static str> {
     loop {
         let Some(byte) = byte_at(text, at) else {
-            return (None, at.min(text.len()));
+            return Ok((None, at.min(text.len())));
         };
         if !fte_white(byte) {
             break;
         }
         if byte == b'\n' {
-            return (None, at);
+            return Ok((None, at));
         }
         at = at.saturating_add(1);
     }
     if byte_at(text, at) != Some(b'"') {
-        return (None, at);
+        return Ok((None, at));
     }
     let mut token = Vec::new();
     let mut end = at.saturating_add(1);
     while let Some(byte) = byte_at(text, end) {
         end = end.saturating_add(1);
+        if byte == b'\n' {
+            return Err(NEW_LINE_IN_STRING);
+        }
+        if byte != b'"' && token.len() >= FTEQCC_MAX_WORD {
+            return Err(WORD_TOO_LONG);
+        }
         match byte {
-            b'\n' => return (None, at),
-            b'"' => return (Some(token), end),
+            b'"' => return Ok((Some(token), end)),
             b'\\' => {
                 let Some(escaped) = byte_at(text, end) else {
                     break;
@@ -380,7 +420,7 @@ fn simple_get_string(text: &[u8], mut at: usize) -> (Option<Vec<u8>>, usize) {
             other => token.push(other),
         }
     }
-    (None, at)
+    Ok((None, at))
 }
 
 /// `QCC_PR_LexInteger`: the offset after the number at `at`, which takes the byte there
@@ -407,8 +447,11 @@ fn lex_integer(text: &[u8], at: usize) -> (usize, i32) {
 
 /// `QCC_COM_Parse`: after white space and comments from `at`, a `"` string with its escapes
 /// read, one of `{`, `}`, `)`, `(`, `'`, `:` and `,`, or a word up to white space or one of
-/// those or `"`; the token and where reading goes on, `None` at the end of the text.
-pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
+/// those or `"`; the token and where reading goes on, `None` at the end of the text. The token
+/// holds at most the 1023 bytes `qcc_token` does, the bytes past them dropped (`if (len >=
+/// sizeof(qcc_token)-1) ; else ...`, FTEF-14.66). Implements PRJ-4.9.
+#[must_use]
+pub fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> {
     loop {
         while byte_at(text, at).is_some_and(fte_white) {
             at = at.saturating_add(1);
@@ -463,7 +506,9 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
                 (b'\n' | b'\r', _) if token.last() == Some(&b'"') => return Some((token, at)),
                 (byte, _) => byte,
             };
-            token.push(byte);
+            if token.len() < FTEQCC_MAX_WORD {
+                token.push(byte);
+            }
         }
     }
     let single = |b: u8| matches!(b, b'{' | b'}' | b')' | b'(' | b'\'' | b':' | b',');
@@ -471,7 +516,9 @@ pub(crate) fn com_parse(text: &[u8], mut at: usize) -> Option<(Vec<u8>, usize)> 
         return Some((vec![first], at.saturating_add(1)));
     }
     while let Some(byte) = byte_at(text, at) {
-        token.push(byte);
+        if token.len() < FTEQCC_MAX_WORD {
+            token.push(byte);
+        }
         at = at.saturating_add(1);
         match byte_at(text, at) {
             Some(b) if single(b) || b == b'"' || fte_white(b) => break,
@@ -493,7 +540,7 @@ pub(crate) enum ElifTest {
     Expression,
 }
 
-/// The test of an `#if`, `#ifdef` or `#ifndef` (FTEF-14.36).
+/// The test of an `#if`, `#ifdef` or `#ifndef` (FTEF-14.57).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IfTest {
     /// `#ifdef NAME`: true when NAME is a macro.
@@ -504,7 +551,7 @@ pub(crate) enum IfTest {
     Expression(usize),
 }
 
-/// A pragma as `QCC_PR_Precompiler` reads it (FTEF-14.43, FTEF-14.44): its name, and the text
+/// A pragma as `QCC_PR_Precompiler` reads it (FTEF-14.43, FTEF-14.70): its name, and the text
 /// after it, from after a space or tab or from a `(`, to the end of the line, its trailing white
 /// space dropped.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -537,7 +584,7 @@ pub(crate) enum Directive {
     /// `#define` or `#append`, whose name `QCC_PR_PreProcessor_Define` reads after the word
     /// that ends at `word_end`, the directive's own (FTEF-14.24).
     Define { definer: Definer, word_end: usize },
-    /// `#undef` and the name after it, possibly empty (FTEF-14.36).
+    /// `#undef` and the name after it, possibly empty (FTEF-14.57).
     Undef { name: Range<usize>, end: LineEnd },
     /// `#if`, `#ifdef` or `#ifndef`; for a name, the name and the line's end.
     If {
@@ -546,8 +593,8 @@ pub(crate) enum Directive {
         end: LineEnd,
     },
     /// `#if` and a byte that is no white space after its name: "Unknown pragma", and reading
-    /// goes on after the word, as code (FTEF-14.36).
-    NotIf { word_end: usize },
+    /// goes on after the word, as code (FTEF-14.57); the word starts after the `#`'s blanks.
+    NotIf { word: Range<usize> },
     /// `#else` or `#elif` on a side that is taken (FTEF-14.37), whose line `#else` reads with
     /// [`Junk::Checked`] and `#elif` with no check.
     Else { end: LineEnd },
@@ -576,8 +623,11 @@ pub(crate) enum Directive {
         name: Result<Vec<u8>, &'static str>,
         end: LineEnd,
     },
-    /// `#pragma` (FTEF-14.43, FTEF-14.44); its line ends at the break.
+    /// `#pragma` (FTEF-14.43, FTEF-14.70); its line ends at the break.
     Pragma { pragma: Pragma, end: usize },
+    /// A word or string of the directive that stops FTEQCC's compile (`QCC_Error`), FTEQCC's
+    /// error and where reading stopped (FTEF-14.66).
+    Fatal { message: &'static str, at: usize },
 }
 
 /// The directive at the `#` at `hash` (FTEF-14.52), as `QCC_PR_Precompiler` reads it: after the
@@ -607,7 +657,13 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
     let after = |len: usize| at.saturating_add(len);
     let line = |from: usize, junk: Junk| skip_to_end_of_line(text, from, junk);
     let directive = if rest.starts_with(b"define") || rest.starts_with(b"append") {
-        let (_, word_end) = simple_get_token(text, at);
+        let (word, word_end) = simple_get_token(text, at);
+        if too_long(word.as_ref()) {
+            return Some(Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: word_end,
+            });
+        }
         let definer = if rest.starts_with(b"append") {
             Definer::Append
         } else {
@@ -616,6 +672,12 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         Directive::Define { definer, word_end }
     } else if rest.starts_with(b"undef") {
         let (name, stop) = simple_get_token(text, skip_blanks(text, after(5)));
+        if too_long(name.as_ref()) {
+            return Some(Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: stop,
+            });
+        }
         Directive::Undef {
             name: name.unwrap_or(stop..stop),
             end: line(stop, Junk::Checked),
@@ -667,9 +729,11 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             end: line(end, Junk::Checked),
         }
     } else if rest.starts_with(b"merge") {
-        let (_, end) = simple_get_string(text, skip_blanks(text, after(5)));
-        Directive::Build {
-            end: line(end, Junk::Checked),
+        match simple_get_string(text, skip_blanks(text, after(5))) {
+            Ok((_, end)) => Directive::Build {
+                end: line(end, Junk::Checked),
+            },
+            Err(message) => Directive::Fatal { message, at },
         }
     } else if rest.starts_with(b"includelist") {
         Directive::IncludeList {
@@ -679,7 +743,10 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
         read_include(text, skip_blanks(text, after(7)))
     } else if rest.starts_with(b"datafile") {
         // `pr_file_p++;` after the string, then on to the line break as bytes.
-        let (_, end) = simple_get_string(text, skip_blanks(text, after(8)));
+        let end = match simple_get_string(text, skip_blanks(text, after(8))) {
+            Ok((_, end)) => end,
+            Err(message) => return Some(Directive::Fatal { message, at }),
+        };
         let end = end.saturating_add(1);
         let end = text
             .get(end..)
@@ -692,10 +759,12 @@ pub(crate) fn read(text: &[u8], hash: usize) -> Option<Directive> {
             },
         }
     } else if rest.starts_with(b"output") {
-        let (name, end) = simple_get_string(text, skip_blanks(text, after(6)));
-        Directive::Output {
-            name,
-            end: line(end, Junk::Checked),
+        match simple_get_string(text, skip_blanks(text, after(6))) {
+            Ok((name, end)) => Directive::Output {
+                name,
+                end: line(end, Junk::Checked),
+            },
+            Err(message) => Directive::Fatal { message, at },
         }
     } else if rest.starts_with(b"pragma") {
         read_pragma(text, skip_blanks(text, after(6)))
@@ -717,7 +786,7 @@ fn message(text: &[u8], at: usize, stop: impl Fn(u8) -> bool) -> Vec<u8> {
         .collect()
 }
 
-/// `#if`, `#ifdef` or `#ifndef` whose name starts at `at` (FTEF-14.36).
+/// `#if`, `#ifdef` or `#ifndef` whose name starts at `at` (FTEF-14.57).
 fn read_if(text: &[u8], at: usize) -> Directive {
     let rest = text.get(at..).unwrap_or_default();
     let (test, from) = if rest.starts_with(b"ifdef") {
@@ -729,8 +798,16 @@ fn read_if(text: &[u8], at: usize) -> Directive {
         (IfTest::Expression(from), from)
     };
     if !byte_at(text, from).is_some_and(fte_white) {
-        let (_, word_end) = simple_get_token(text, at);
-        return Directive::NotIf { word_end };
+        let (word, word_end) = simple_get_token(text, at);
+        if too_long(word.as_ref()) {
+            return Directive::Fatal {
+                message: WORD_TOO_LONG,
+                at: word_end,
+            };
+        }
+        return Directive::NotIf {
+            word: word.unwrap_or(word_end..word_end),
+        };
     }
     if matches!(test, IfTest::Expression(_)) {
         return Directive::If {
@@ -743,6 +820,12 @@ fn read_if(text: &[u8], at: usize) -> Directive {
         };
     }
     let (name, stop) = simple_get_token(text, from);
+    if too_long(name.as_ref()) {
+        return Directive::Fatal {
+            message: WORD_TOO_LONG,
+            at: stop,
+        };
+    }
     Directive::If {
         test,
         name: name.unwrap_or(stop..stop),
@@ -818,6 +901,14 @@ fn read_pragma(text: &[u8], at: usize) -> Directive {
             if byte != b'(' {
                 continue;
             }
+        }
+        // FTEF-14.66: `msg[a++] = *pr_file_p;` into `char msg[1024]` with no bound, and
+        // `msg[a] = '\0';` after: a name or text of 1024 bytes runs past it.
+        if message.len() >= FTEQCC_MAX_WORD {
+            return Directive::Fatal {
+                message: PRAGMA_TOO_LONG,
+                at: at.saturating_add(len),
+            };
         }
         message.push(byte);
     }
@@ -1022,10 +1113,13 @@ pub(crate) fn elif_defined(
     at: usize,
     test: ElifTest,
     is_defined: impl Fn(&str) -> bool,
-) -> (bool, usize) {
+) -> (Result<bool, &'static str>, usize) {
     let (name, stop) = simple_get_token(text, at);
+    if too_long(name.as_ref()) {
+        return (Err(WORD_TOO_LONG), stop);
+    }
     let name = lossy(name.and_then(|n| text.get(n)).unwrap_or_default());
-    (is_defined(&name) == (test == ElifTest::Defined), stop)
+    (Ok(is_defined(&name) == (test == ElifTest::Defined)), stop)
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
@@ -1052,30 +1146,46 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
 }
 
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
-/// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.44).
+/// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.70).
 const FTE_MAX_INCLUDE_DIRS: usize = 8;
+
+/// `sizeof(qccincludedir)`, the size `QCC_PR_AddIncludePath` copies a name into: the whole
+/// table, `char qccincludedir[MAXINCLUDEDIRS][256]` (FTEF-14.68).
+const FTE_INCLUDE_TABLE_BYTES: usize = 2048;
 
 impl FteState {
     /// `QCC_PR_AddIncludePath(new)`: `new` added after the include directories, `.` for an empty
     /// one and a `/` after it unless it ends in `/` or `\`, unless it is there already or there
-    /// are 8 (FTEF-14.44).
-    pub(crate) fn add_include_dir(&mut self, new: &[u8]) {
+    /// are 8 (FTEF-14.70).
+    ///
+    /// Returns FTEQCC's warning, if any (FTEF-14.68): "Too many include dirs. Ignoring and hoping
+    /// the stars align." for a ninth, and "Include path too long." for a name that with its `/`
+    /// does not fit `sizeof(qccincludedir)`, which is the whole table's 2048 bytes; the name is
+    /// then not kept.
+    pub(crate) fn add_include_dir(&mut self, new: &[u8]) -> Option<&'static str> {
         let dirs = &mut self.include_dirs;
         let given: &[u8] = if new.is_empty() { b"." } else { new };
-        if dirs.iter().any(|dir| dir.as_slice() == given) || dirs.len() >= FTE_MAX_INCLUDE_DIRS {
-            return;
+        if dirs.iter().any(|dir| dir.as_slice() == given) {
+            return None;
+        }
+        if dirs.len() >= FTE_MAX_INCLUDE_DIRS {
+            return Some("Too many include dirs. Ignoring and hoping the stars align.");
         }
         let mut dir = given.to_vec();
         if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
             dir.push(b'/');
         }
+        if dir.len() >= FTE_INCLUDE_TABLE_BYTES {
+            return Some("Include path too long.");
+        }
         dirs.push(dir);
+        None
     }
 }
 
 impl Pragma {
     /// The include directory `#pragma includedir` adds, in a file being compiled as `compiling`
-    /// (FTEF-14.44): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
+    /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
         let mut dir = com_parse(&self.message, 0)
@@ -1170,50 +1280,6 @@ fn strtoul(text: &[u8]) -> u64 {
     }
 }
 
-/// What `#pragma warning` does to a warning (FTEF-14.44): `qccwarningaction`'s settings.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum WarningAction {
-    /// `WA_IGNORE`: not reported.
-    Ignore,
-    /// `WA_WARN`: a warning.
-    Warn,
-    /// `WA_ERROR`: an error, F303's setting by default (`qccwarningaction[WARN_EVILPREPROCESSOR]
-    /// = WA_ERROR;`).
-    #[default]
-    Error,
-}
-
-impl WarningAction {
-    /// The setting `#pragma warning STATE NAME...` with the text `message` gives the warning
-    /// `code` (such as `F303`), which is now `self`: `enable` and `on` warn, `disable`, `off`
-    /// and `ignore` ignore, `error` errs and `toggle` sets `!!` of the setting, a warning for
-    /// anything but an ignored one; other names and states leave it.
-    pub(crate) fn after_pragma(self, message: &[u8], code: &str) -> Self {
-        let Some((state, mut at)) = com_parse(message, 0) else {
-            return self;
-        };
-        let state = String::from_utf8_lossy(&state).to_ascii_lowercase();
-        let set = match state.as_str() {
-            "enable" | "on" => Some(Self::Warn),
-            "disable" | "off" | "ignore" => Some(Self::Ignore),
-            "error" => Some(Self::Error),
-            "toggle" => None,
-            _ => return self,
-        };
-        let mut action = self;
-        while let Some((name, next)) = com_parse(message, at) {
-            at = next;
-            if name.eq_ignore_ascii_case(code.as_bytes()) {
-                action = set.unwrap_or(match action {
-                    Self::Ignore => Self::Ignore,
-                    Self::Warn | Self::Error => Self::Warn,
-                });
-            }
-        }
-        action
-    }
-}
-
 /// The text a directive is read in: a file's, or a chunk's with the use that wrote it.
 #[derive(Clone)]
 pub(crate) enum Bytes {
@@ -1258,7 +1324,7 @@ pub(crate) enum Position {
 }
 
 /// What FTEQCC keeps from file to file while it compiles a module (FTEF-14.37, FTEF-14.40,
-/// FTEF-14.44): its `static int ifs`, `qccincludedir`, `qccincludeonced` and
+/// FTEF-14.70): its `static int ifs`, `qccincludedir`, `qccincludeonced` and
 /// `qccwarningaction[WARN_EVILPREPROCESSOR]`.
 #[derive(Debug, Default)]
 pub(crate) struct FteState {
@@ -1268,8 +1334,10 @@ pub(crate) struct FteState {
     pub(crate) include_dirs: Vec<Vec<u8>>,
     /// The names of the compiled files `#pragma once` marked.
     pub(crate) once: Vec<Vec<u8>>,
-    /// What F303 is.
-    pub(crate) evil: WarningAction,
+    /// `qccwarningaction`, the warning settings (FTEF-14.63).
+    pub(crate) warnings: WarningSettings,
+    /// The compiler flags and keywords on (FTEF-12.11).
+    pub(crate) flags: FlagSettings,
 }
 
 /// The most directives one inside another's reading this profile runs: a deliberate divergence,
@@ -1290,12 +1358,16 @@ impl<L: Loader> Preprocessor<L> {
     /// defines neither, as the C preprocessor Xonotic is read with does not, the two are not
     /// defined (PRJ-5.15).
     pub(crate) fn fte_default_properties(&mut self) {
+        // `QCC_SetDefaultProperties` sets no compiler flag: `QCC_main` set them once, before the
+        // first pass, so a `#pragma flag` holds into the second (FTEF-12.11).
         self.fte = FteState {
             ifs: self.fte.ifs,
+            flags: self.fte.flags,
             ..FteState::default()
         };
+        // FTEF-14.68: FTEQCC prints a `-I` option's warning against no file, "cmdline".
         for dir in &self.command_line_dirs {
-            self.fte.add_include_dir(dir);
+            let _ = self.fte.add_include_dir(dir);
         }
         let names: &[&str] = match self.dialect {
             Dialect::Fteqcc => &["FTEQCC", "__FTEQCC__"],
@@ -1308,8 +1380,10 @@ impl<L: Loader> Preprocessor<L> {
                 body: Body::Text(Rc::default()),
                 file: FileId(u32::MAX),
                 name_span: Span::new(0, 0),
+                evil: false,
             };
             self.macros.insert(name.to_owned(), Rc::new(mac));
+            self.macros_changed();
         }
     }
 
@@ -1352,21 +1426,23 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `QCC_PR_LexWhitespace(false)` from `at` in `bytes` (FTEF-14.45): the offset of the first
     /// byte that is no white space and in no comment, running each directive at a line's start
-    /// on the way; `None` when one ends the text.
+    /// on the way; [`WhiteStop`] when one ends the text or the text ends in a comment
+    /// (FTEF-14.67), which the caller reports.
     pub(crate) fn fte_whitespace(
         &mut self,
         run: &mut Run,
         bytes: &Bytes,
         mut at: usize,
-    ) -> Option<usize> {
+    ) -> Result<usize, WhiteStop> {
         loop {
             match whitespace(bytes.bytes(), at) {
-                Gap::Text(at) => return Some(at),
+                Gap::Text(at) => return Ok(at),
+                Gap::Unclosed(open) => return Err(WhiteStop::Unclosed(open)),
                 Gap::LineStart(hash) => {
                     match self.fte_directive(run, bytes, hash, Position::Nested) {
                         Some(Resume::At(end)) => at = end,
-                        Some(Resume::End) => return None,
-                        None => return Some(hash),
+                        Some(Resume::End) => return Err(WhiteStop::Ended),
+                        None => return Ok(hash),
                     }
                 }
             }
@@ -1416,6 +1492,11 @@ impl<L: Loader> Preprocessor<L> {
                 run.report(Code::E0121, "Hanging # with no directive", at(end.at));
                 Resume::At(end.at)
             }
+            // FTEF-14.66: `QCC_Error` stops the compile, so nothing more of the text is read.
+            Directive::Fatal { message, at: stop } => {
+                run.report(Code::E0121, message, at(stop));
+                Resume::End
+            }
             Directive::Define { definer, word_end } => {
                 match self.fte_define(run, bytes, (hash, word_end), definer) {
                     Ok(stop) => {
@@ -1427,8 +1508,15 @@ impl<L: Loader> Preprocessor<L> {
                 }
             }
             Directive::Undef { name, end } => {
-                self.macros
-                    .remove(&lossy(text.get(name).unwrap_or_default()));
+                let name = lossy(text.get(name).unwrap_or_default());
+                // FTEF-14.57: `QCC_PR_ParseWarning(WARN_UNDEFNOTDEFINED, "Precompiler constant %s
+                // was not defined", name);`
+                if self.macros.remove(&name).is_some() {
+                    self.macros_changed();
+                } else {
+                    let message = format!("Precompiler constant {name} was not defined");
+                    run.report(Code::W0114, message, at(end.at));
+                }
                 end.resume(run, &reading, hash)
             }
             Directive::If { test, name, end } => {
@@ -1450,7 +1538,16 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 self.fte_false_side(run, bytes, hash, end.at, Earlier::NoSideTaken)
             }
-            Directive::NotIf { word_end } => Resume::At(word_end),
+            Directive::NotIf { word } => {
+                // FTEF-14.57: FTEQCC names its last `QCC_COM_Parse` word; this profile the word.
+                let name = lossy(text.get(word.clone()).unwrap_or_default());
+                run.report(
+                    Code::W0113,
+                    format!("Unknown pragma '{name}'"),
+                    at(word.end),
+                );
+                Resume::At(word.end)
+            }
             Directive::Else { end } => {
                 if self.fte.ifs == 0 {
                     // FTEQCC's compile stops at the error, so the line's rest is no error too.
@@ -1571,8 +1668,13 @@ impl<L: Loader> Preprocessor<L> {
                 ElifTest::Expression => self.fte_condition(run, &reading, elif.hash, elif.at),
                 ElifTest::Defined | ElifTest::NotDefined => {
                     let defined = |name: &str| self.macros.contains_key(name);
-                    let (value, stop) = elif_defined(text, elif.at, elif.test, defined);
-                    (value, stop, Junk::Checked)
+                    match elif_defined(text, elif.at, elif.test, defined) {
+                        (Ok(value), stop) => (value, stop, Junk::Checked),
+                        (Err(message), stop) => {
+                            run.report(Code::E0121, message, reading.place(elif.hash..stop));
+                            (false, stop, Junk::Ignored)
+                        }
+                    }
                 }
             }
         });
@@ -1607,12 +1709,26 @@ impl<L: Loader> Preprocessor<L> {
         let reading = bytes.reading();
         let mut at = from;
         loop {
-            let next = self.fte_whitespace(run, bytes, at);
+            let next = match self.fte_whitespace(run, bytes, at) {
+                Ok(next) => Some(next),
+                Err(WhiteStop::Ended) => None,
+                // FTEF-14.67: the compile's error is the comment's, and the list ends with it.
+                Err(WhiteStop::Unclosed(open)) => {
+                    let span = reading.place(open..open.saturating_add(2));
+                    run.report(Code::E0501, EOF_IN_COMMENT, span);
+                    return Resume::End;
+                }
+            };
             let word = next.map(|next| (next, simple_get_token(text, next)));
             match word {
                 Some((next, (Some(word), stop))) if text.get(word.clone()) == Some(b"#endlist") => {
                     let end = skip_to_end_of_line(text, stop, Junk::Checked);
                     return end.resume(run, &reading, next);
+                }
+                Some((next, (Some(word), stop))) if too_long(Some(&word)) => {
+                    let span = reading.place(next..stop);
+                    run.report(Code::E0121, WORD_TOO_LONG, span);
+                    return Resume::End;
                 }
                 Some((_, (Some(_), stop))) => {
                     at = stop;
@@ -1635,12 +1751,19 @@ impl<L: Loader> Preprocessor<L> {
 
     /// The rest of the text from `from`, which `#pragma DONT_COMPILE_THIS_FILE` passes over a
     /// byte at a time after white space read as `QCC_PR_LexWhitespace(false)` reads it, which
-    /// runs the directives at the starts of its lines (FTEF-14.44).
+    /// runs the directives at the starts of its lines (FTEF-14.70).
     fn fte_dont_compile(&mut self, run: &mut Run, bytes: &Bytes, from: usize) -> Resume {
         let mut at = from;
         loop {
-            let Some(next) = self.fte_whitespace(run, bytes, at) else {
-                return Resume::End;
+            let next = match self.fte_whitespace(run, bytes, at) {
+                Ok(next) => next,
+                Err(WhiteStop::Ended) => return Resume::End,
+                // FTEF-14.67.
+                Err(WhiteStop::Unclosed(open)) => {
+                    let span = bytes.reading().place(open..open.saturating_add(2));
+                    run.report(Code::E0501, EOF_IN_COMMENT, span);
+                    return Resume::End;
+                }
             };
             if byte_at(bytes.bytes(), next).is_none() {
                 return Resume::End;
@@ -1697,12 +1820,12 @@ impl<L: Loader> Preprocessor<L> {
             run.report(Code::E0112, message, at);
             return;
         }
-        let included = self.add_source(path.clone(), text, FileStart::Included);
+        let included = self.add_source(run, path.clone(), text, FileStart::Included);
         let cursor = self.cursor(included, path, full, TextStart::Included);
         run.cursors.push(cursor);
     }
 
-    /// `#pragma` (FTEF-14.43, FTEF-14.44), whose `#` is at `hash` and whose line ends at `end`
+    /// `#pragma` (FTEF-14.43, FTEF-14.70), whose `#` is at `hash` and whose line ends at `end`
     /// in `bytes`: `DONT_COMPILE_THIS_FILE`, `once`, `file`, `line`, `includedir`, `noref`,
     /// `autoproto` and `warning` change what is read; the others change only the build.
     fn fte_pragma(
@@ -1720,7 +1843,7 @@ impl<L: Loader> Preprocessor<L> {
         if pragma.is("once") {
             let marked = self.pragma_base(run, bytes);
             self.fte.once.push(marked);
-        } else if pragma.is("file") {
+        } else if pragma.is("file") && !self.fte.flags.no_file_line() {
             let name = pragma.file_name();
             match bytes {
                 Bytes::File(file, _) => {
@@ -1734,7 +1857,7 @@ impl<L: Loader> Preprocessor<L> {
                     }
                 }
             }
-        } else if pragma.is("line") {
+        } else if pragma.is("line") && !self.fte.flags.no_file_line() {
             let line = pragma.line();
             let from = end.saturating_add(1);
             match bytes {
@@ -1752,7 +1875,10 @@ impl<L: Loader> Preprocessor<L> {
         } else if pragma.is("includedir") {
             let base = self.pragma_base(run, bytes);
             let dir = pragma.include_dir(&base);
-            self.fte.add_include_dir(&dir);
+            if let Some(warning) = self.fte.add_include_dir(&dir) {
+                let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+                run.report(Code::W0117, warning, at);
+            }
         } else if pragma.is("noref") {
             // FTEF-12.6: `defaultnoref = !!atoi(msg);`
             let index = run.out.tokens.len();
@@ -1763,16 +1889,79 @@ impl<L: Loader> Preprocessor<L> {
             let index = run.out.tokens.len();
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
             run.out.autoproto.push((index, on, at));
+        } else if pragma.is("keyword") || pragma.is("flag") {
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            let lexed_with = self.fte.flags.lex_flags();
+            for warning in self.fte.flags.apply_pragma(message) {
+                run.report(Code::W0113, warning, at);
+            }
+            let flags = self.fte.flags.lex_flags();
+            if flags != lexed_with {
+                run.out.lex_flags.push((run.out.tokens.len(), flags));
+            }
+        } else if pragma.is("optimise") || pragma.is("optimize") {
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            for warning in fte_pragma::optimise_warnings(&pragma.name, message) {
+                run.report(Code::W0113, warning, at);
+            }
+        } else if pragma.is("opcode") {
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            for warning in fte_pragma::opcode_warnings(message) {
+                run.report(Code::W0113, warning, at);
+            }
+        } else if pragma.is("TARGET") {
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            for warning in fte_pragma::target_warnings(message) {
+                run.report(Code::W0117, warning, at);
+            }
+        } else if !fte_pragma::is_known(&pragma.name) {
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            let name = lossy(&pragma.name);
+            run.report(Code::W0113, format!("Unknown pragma '{name}'"), at);
         } else if pragma.is("warning") {
-            self.fte.evil = self.fte.evil.after_pragma(message, "F303");
+            let (settings, warnings) = self.fte.warnings.after_pragma(message);
+            let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
+            for (text, now) in warnings {
+                run.report_under(Some(&now), Code::W0113, text, at);
+            }
+            self.set_warnings(run, bytes, end, settings);
         }
         Resume::At(end)
+    }
+
+    /// Makes `settings` FTEQCC's warning settings from the end `end` of a `#pragma warning` in
+    /// `bytes` on (FTEF-14.63): for the rest of the module, for the warnings of the files being
+    /// read from where each reads on, and for the tokens the parser reads after it.
+    fn set_warnings(
+        &mut self,
+        run: &mut Run,
+        bytes: &Bytes,
+        end: usize,
+        settings: WarningSettings,
+    ) {
+        self.fte.warnings = settings;
+        run.warnings = Some(settings);
+        let index = run.out.tokens.len();
+        run.out.warnings.push((index, settings));
+        let holding = match bytes {
+            Bytes::File(file, _) => Some(*file),
+            Bytes::Chunk(..) => None,
+        };
+        let innermost = run.cursors.len().saturating_sub(1);
+        for (at, cursor) in run.cursors.iter_mut().enumerate() {
+            let from = if at == innermost && holding == Some(cursor.file) {
+                end
+            } else {
+                cursor.stream.read_offset()
+            };
+            cursor.warnings.push((from, settings));
+        }
     }
 }
 
 impl<L: Loader> Preprocessor<L> {
     /// The name `#pragma once` marks and `#pragma includedir` joins its directory to: the file
-    /// being compiled (FTEF-14.44), or under GMQCC the file holding the pragma (PRJ-5.12).
+    /// being compiled (FTEF-14.70), or under GMQCC the file holding the pragma (PRJ-5.12).
     fn pragma_base(&self, run: &Run, bytes: &Bytes) -> Vec<u8> {
         let holding = match bytes {
             Bytes::File(file, _) if self.dialect == Dialect::Gmqcc => {
