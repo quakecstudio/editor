@@ -82,7 +82,7 @@ fn vanilla_has_no_if() {
     assert_eq!(tokens(&out), "b");
 }
 
-// spec FTEF-14.30: a directive goes on past a break after `\`, or one inside a `/* */`
+// spec FTEF-14.35: a directive goes on past a break after `\`, or one inside a `/* */`
 // comment, and a `//` comment ends its text
 // spec FTEF-14.24: and the line a `#define` ends on goes on past a `\` and line break in that
 // `//` comment, as `QCC_PR_SkipToEndOfLine` reads it, so the next line is not read
@@ -454,7 +454,7 @@ fn other_pragmas_are_accepted() {
     assert_eq!(fte(pragmas), ("z".to_owned(), vec![]));
 }
 
-// spec FTEF-18.22: a frame macro another reading of a file defined (an earlier file, an
+// spec FTEF-18.29: a frame macro another reading of a file defined (an earlier file, an
 // `#include`d one, the file that includes this one, or a macro's expansion) is "Stale macro
 // used"; one this reading defined is not.
 // spec QCD-7.25: W0105 "Stale macro used (NAME, defined in FILE)"
@@ -487,7 +487,7 @@ fn a_frame_macro_from_another_reading_is_stale() {
     assert_eq!(codes(&outputs[1]), [Code::W0104, Code::W0105]);
 }
 
-// spec FTEF-18.22: a frame name the same reading of a file defined before is "Duplicate macro
+// spec FTEF-18.29: a frame name the same reading of a file defined before is "Duplicate macro
 // defined" and keeps its first number; another reading's definition is replaced silently, and
 // so is the model name `$modelname` defines.
 // spec QCD-7.26: W0106 "Duplicate macro defined (NAME). Rename it."
@@ -513,7 +513,7 @@ fn a_frame_name_defined_twice_in_one_reading_is_a_duplicate() {
     );
 }
 
-// spec FTEF-18.22: a new frame name of 64 bytes or more is "Name for frame macro NAME is too
+// spec FTEF-18.29: a new frame name of 64 bytes or more is "Name for frame macro NAME is too
 // long", an error, and is not defined; 63 bytes are kept.
 // spec QCD-2.8: E0119 "Name for frame macro NAME is too long"
 #[test]
@@ -539,7 +539,7 @@ fn a_frame_name_of_64_bytes_is_too_long() {
     assert_eq!(errors, [Code::E0119, Code::E0106]);
 }
 
-// spec FTEF-18.22: a `$modelname` of 64 bytes or more is cut to 63 with the warning
+// spec FTEF-18.29: a `$modelname` of 64 bytes or more is cut to 63 with the warning
 // "$modelname name too long"; one of 63 is kept whole.
 // spec QCD-7.27: W0107 "$modelname name too long"
 #[test]
@@ -764,7 +764,7 @@ fn a_frame_value_past_an_int_is_held() {
     );
 }
 
-// spec FTEF-14.30: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
+// spec FTEF-14.35: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
 // the comment not ending it
 #[test]
 fn a_comment_with_stars_and_slashes_continues_a_directive() {
@@ -777,7 +777,7 @@ fn a_comment_with_stars_and_slashes_continues_a_directive() {
 }
 
 // spec FTEF-14.1: an `#elif` with no block is reported at the whole directive
-// spec FTEF-14.10: and a block left open while a side is skipped at its `#if` line
+// spec FTEF-14.37: and a block left open while a side is skipped at its `#if` line
 #[test]
 fn conditional_errors_span_the_directive() {
     let (_, out) = one_fte("x\n#elif 1\n");
@@ -788,7 +788,7 @@ fn conditional_errors_span_the_directive() {
     assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(2, 7));
 }
 
-// spec FTEF-14.11: (P2-R2 review) `||` and `&&` group to the right, so a chain of either is
+// spec FTEF-14.33: (P2-R2 review) `||` and `&&` group to the right, so a chain of either is
 // read to its end with its value, and a chain or a run of `!` far longer than any real
 // condition still takes one side, without exhausting the stack
 #[test]
@@ -807,7 +807,7 @@ fn reviewer_long_logical_chains() {
     }
 }
 
-// spec FTEF-14.10: of three blocks left open at the end of a file, the FTEQCC profile reports
+// spec FTEF-14.37: of three blocks left open at the end of a file, the FTEQCC profile reports
 // only the one whose side is being skipped, where the vanilla profile reports each (QC-9.12)
 #[test]
 fn reviewer_open_blocks_at_the_end_of_a_file() {

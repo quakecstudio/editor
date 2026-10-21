@@ -56,7 +56,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-2.7** `E0107` "hanging $": `$` with no word after it on its line (QC-8.1).
 - **QCD-2.8** `E0119` "Name for frame macro NAME is too long": under an FTEQCC profile, a new
   frame name of 64 bytes or more, at the name, FTEQCC's error of the same text
-  (`dialect-fteqcc.md`, FTEF-18.22).
+  (`dialect-fteqcc.md`, FTEF-18.29).
 
 ## QCD-3 Declaration and type errors
 
@@ -234,13 +234,13 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   same text (`dialect-fteqcc.md`, FTEF-18.21).
 - **QCD-7.25** `W0105` "Stale macro used (NAME, defined in FILE)": under an FTEQCC profile, a
   frame macro another reading of a file defined, at the use, FTEQCC's warning of the same text
-  (`dialect-fteqcc.md`, FTEF-18.22).
+  (`dialect-fteqcc.md`, FTEF-18.29).
 - **QCD-7.26** `W0106` "Duplicate macro defined (NAME). Rename it.": under an FTEQCC profile, a
   frame name the same reading of a file already defined, at the name, FTEQCC's warning of the
-  same text (`dialect-fteqcc.md`, FTEF-18.22).
+  same text (`dialect-fteqcc.md`, FTEF-18.29).
 - **QCD-7.27** `W0107` "$modelname name too long": under an FTEQCC profile, a `$modelname` of
   64 bytes or more, at the command, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
-  FTEF-18.22).
+  FTEF-18.29).
 - **QCD-7.28** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
   profile, a `#pragma autoproto` after the first definition, at the directive, FTEQCC's warning
   of the same text (`dialect-fteqcc.md`, FTEF-12.10).

@@ -560,7 +560,7 @@ impl Run {
 
 /// The longest frame macro name FTEQCC keeps: its `pr_framemacro[].name` is `char name[64]`,
 /// and `QCC_PR_MacroFrame` reports a name `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))`
-/// (FTEF-18.22).
+/// (FTEF-18.29).
 const FTE_MAX_FRAME_NAME: usize = 63;
 
 /// The most chunks of one macro FTEQCC has open at once, `if (c->inside >= 8)` in
@@ -581,7 +581,7 @@ const FTE_MAX_EXPANDED_TOKENS: usize = 1 << 22;
 
 /// What FTEQCC's `s_filen` is while a frame macro is defined or used: one reading of a source
 /// file, a new one for each compiled file and each `#include` of a file, or one macro
-/// expansion, which `QCC_PR_IncludeChunkEx` gives a name of its own (FTEF-18.22).
+/// expansion, which `QCC_PR_IncludeChunkEx` gives a name of its own (FTEF-18.29).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FrameFile {
     file: FileId,
@@ -1442,8 +1442,8 @@ impl<L: Loader> Preprocessor<L> {
     /// Records an FTEQCC frame macro (FTE-22.4), as `QCC_PR_MacroFrame` does: a name another
     /// reading of a file defined takes the new value, and a name this one already defined
     /// keeps its first value (QC-8.7) with the warning "Duplicate macro defined (NAME). Rename
-    /// it." unless `force`d (FTEF-18.22). A new name of more than 63 bytes is the error "Name
-    /// for frame macro NAME is too long" and is not defined (FTEF-18.22); a new name past
+    /// it." unless `force`d (FTEF-18.29). A new name of more than 63 bytes is the error "Name
+    /// for frame macro NAME is too long" and is not defined (FTEF-18.29); a new name past
     /// `FTE_MAX_FRAMES` is an error (FTEF-18.17).
     fn carry_frame(&mut self, run: &mut Run, name: &str, value: i32, force: bool, at: Here) {
         let (at, here) = at;
@@ -1491,7 +1491,7 @@ impl<L: Loader> Preprocessor<L> {
     /// of that name, or else the last one defined whose name differs only in case, with the
     /// warning "Case insensitive frame macro (using NAME)" at `at` (FTEF-18.21). A macro
     /// another reading of a file defined is the warning "Stale macro used (NAME, defined in
-    /// FILE)" (FTEF-18.22).
+    /// FILE)" (FTEF-18.29).
     fn find_frame(&self, run: &mut Run, name: &str, at: Here) -> Option<i32> {
         let (at, here) = at;
         let frame = if let Some(frame) = self.carried_frames.get(name) {
@@ -1550,7 +1550,7 @@ impl<L: Loader> Preprocessor<L> {
                 }
                 // `if (!QC_strlcpy(pr_framemodelname, pr_token, sizeof(pr_framemodelname)))
                 // QCC_PR_ParseWarning (WARN_STRINGTOOLONG, "$modelname name too long");`: the
-                // name is cut to the 63 bytes `char pr_framemodelname[64]` holds (FTEF-18.22).
+                // name is cut to the 63 bytes `char pr_framemodelname[64]` holds (FTEF-18.29).
                 let kept = name.floor_char_boundary(FTE_MAX_FRAME_NAME);
                 if kept < name.len() {
                     run.report(Code::W0107, "$modelname name too long", at.0);

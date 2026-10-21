@@ -1396,36 +1396,9 @@ FTEF-18.5.
   insensitive frame macro (using %s)" (`WARN_CASEINSENSITIVEFRAMEMACRO`), so the macro defined
   last of those that match is used. The lookups of a reference, `$framerestore` and
   `$modelname` (FTEF-18.16) are all `QCC_PR_FindMacro`'s.
-- **FTEF-18.22** FTEQCC tells the readings of source apart by `s_filen`, a string it makes anew
-  (`qccHunkAlloc`) for each compiled file (`QCC_PR_CompileFile`), each `#include` of a file,
-  and each macro expansion (`QCC_PR_IncludeChunkEx`, given a `CompilerConstant_t`), and it
-  compares the pointers, so each of these is a reading of its own; the file that includes
-  another is the same reading again after the include. A frame macro keeps the reading that
-  defined it (`pr_framemacro[].file`), and:
-  - a use of a frame macro that another reading defined is the warning `W0105` "Stale macro
-    used (NAME, defined in FILE)" (`WARN_STALEMACRO`, on by default), where FILE is the
-    defining file's path: `QCC_PR_FindMacro` checks
-    `if (pr_framemacro[i].file != s_filen)` after each of its two lookups (FTEF-18.21), for a
-    reference, `$framerestore` and `$modelname` alike;
-  - a frame name the same reading already defined keeps its first number with the warning
-    `W0106` "Duplicate macro defined (NAME). Rename it." (`WARN_DUPLICATEMACRO`): in
-    `QCC_PR_MacroFrame`, `if (pr_framemacro[i].file == s_filen && !force)`; a name another
-    reading defined takes the new number and this reading silently ("old file, override it"),
-    and so does the model name `$modelname` defines, with `force` set (FTEF-18.16). This is
-    what "the same file" of FTEF-18.17 and FTE-22.4 means;
-  - a new frame name of 64 bytes or more is the error `E0119` "Name for frame macro NAME is
-    too long" and is not defined: `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))
-    QCC_PR_ParseWarning(ERR_TOOMANYFRAMEMACROS, ...)`, with `char name[64];`, an error code,
-    which `QCC_PR_PrintWarning` prints as an error (FTEF-18.4). The frame number still goes up
-    by one for it;
-  - a `$modelname` of 64 bytes or more is cut to its first 63 with the warning `W0107`
-    "$modelname name too long": `if (!QC_strlcpy(pr_framemodelname, pr_token,
-    sizeof(pr_framemodelname))) QCC_PR_ParseWarning (WARN_STRINGTOOLONG, ...)`, with
-    `char pr_framemodelname[64];`.
-
-  The include goes on with the frame numbering of the file that includes it, which only a
-  compiled file restarts (FTEF-18.17). This profile reports a frame macro used inside a macro
-  expansion at the macro body's token.
+- **FTEF-18.22** **Withdrawn** (P2-94 to P2-99, #507 to #512): it cited the withdrawn FTEF-18.4
+  for an error code `QCC_PR_PrintWarning` prints as an error. Replaced by FTEF-18.29, which
+  cites FTEF-18.28.
 - **FTEF-18.23** A statement may be a label, written `name:` (the C style, taken `if
   (pr_token_type == tt_name && pr_file_p[0] == ':' && pr_file_p[1] != ':')`) or `:name` (the
   FrikQCC style, `if (QCC_PR_CheckToken(":"))`), and `goto name;` jumps to one (`goto` is a
@@ -1501,6 +1474,36 @@ FTEF-18.5.
   `E0212` "Forwards State Cycle with backwards range": FTEQCC's `QCC_PR_ParseWarning` with
   `ERR_STATETYPEMISMATCH`, an error code, prints an error. This profile compares two frames
   written as single numbers.
+- **FTEF-18.29** FTEQCC tells the readings of source apart by `s_filen`, a string it makes anew
+  (`qccHunkAlloc`) for each compiled file (`QCC_PR_CompileFile`), each `#include` of a file,
+  and each macro expansion (`QCC_PR_IncludeChunkEx`, given a `CompilerConstant_t`), and it
+  compares the pointers, so each of these is a reading of its own; the file that includes
+  another is the same reading again after the include. A frame macro keeps the reading that
+  defined it (`pr_framemacro[].file`), and:
+  - a use of a frame macro that another reading defined is the warning `W0105` "Stale macro
+    used (NAME, defined in FILE)" (`WARN_STALEMACRO`, on by default), where FILE is the
+    defining file's path: `QCC_PR_FindMacro` checks
+    `if (pr_framemacro[i].file != s_filen)` after each of its two lookups (FTEF-18.21), for a
+    reference, `$framerestore` and `$modelname` alike;
+  - a frame name the same reading already defined keeps its first number with the warning
+    `W0106` "Duplicate macro defined (NAME). Rename it." (`WARN_DUPLICATEMACRO`): in
+    `QCC_PR_MacroFrame`, `if (pr_framemacro[i].file == s_filen && !force)`; a name another
+    reading defined takes the new number and this reading silently ("old file, override it"),
+    and so does the model name `$modelname` defines, with `force` set (FTEF-18.16). This is
+    what "the same file" of FTEF-18.17 and FTE-22.4 means;
+  - a new frame name of 64 bytes or more is the error `E0119` "Name for frame macro NAME is
+    too long" and is not defined: `if (strlen(name)+1 > sizeof(pr_framemacro[0].name))
+    QCC_PR_ParseWarning(ERR_TOOMANYFRAMEMACROS, ...)`, with `char name[64];`, an error code,
+    which `QCC_PR_PrintWarning` prints as an error (FTEF-18.28). The frame number still goes
+    up by one for it;
+  - a `$modelname` of 64 bytes or more is cut to its first 63 with the warning `W0107`
+    "$modelname name too long": `if (!QC_strlcpy(pr_framemodelname, pr_token,
+    sizeof(pr_framemodelname))) QCC_PR_ParseWarning (WARN_STRINGTOOLONG, ...)`, with
+    `char pr_framemodelname[64];`.
+
+  The include goes on with the frame numbering of the file that includes it, which only a
+  compiled file restarts (FTEF-18.17). This profile reports a frame macro used inside a macro
+  expansion at the macro body's token.
 
 ### Test vectors
 

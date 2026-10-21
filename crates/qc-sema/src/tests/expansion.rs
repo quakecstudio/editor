@@ -265,7 +265,7 @@ fn autoprototyping_preprocesses_twice() {
     assert!(codes(&without).contains(&Code::E0106));
     db.set_autoproto(true);
     let with = db.analyze_module(&input);
-    // FTEF-18.22: the frame is the first pass's, so the use is stale, a warning.
+    // FTEF-18.29: the frame is the first pass's, so the use is stale, a warning.
     assert_eq!(codes(&with), [Code::W0105]);
 }
 
