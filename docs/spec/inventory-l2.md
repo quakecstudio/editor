@@ -117,6 +117,12 @@ rest of each command line is not modelled (PRJ-3.4).
 
 ## FTEQCC's functions with no id counterpart
 
+P2-116 names `QCC_PR_ConditionCompilation` and `QCC_PR_LexOctal` among these. At the pinned
+commit neither is on the path: the first is only a commented-out call in `QCC_PR_Precompiler`'s
+`#undef` case (`//		QCC_PR_ConditionCompilation();`), and `engine/qclib` holds no function
+of the second name; C's octal escapes are `QCC_PR_LexEscapedCodepoint`'s, without `qcfuncs`
+(FTEF-12.12).
+
 | Function | File | Behaviour | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | `QCC_SanitizeCharSet`, `decodeUTF`, `utf8_check` | `qcc_cmdlib.c` | Byte order marks and wide encodings; UTF-8 sequences | `qc_preproc` `decode_utf`, `qc_lexer` `utf8_check` | FTEF-14.64, FTEF-13.8, FTEF-13.14 | `wide_cases`, `WIDE_PROGS` | ported |
@@ -151,6 +157,10 @@ rest of each command line is not modelled (PRJ-3.4).
 | `CheckParm` | `QCC_CheckParm` and `QCC_ReadParm` (PRJ-3.4) | not modelled |
 
 ## C library calls
+
+`isspace`, `strtol` and `strtod`, which P2-116 names, are called on neither path: both compilers
+test white space with their own comparisons (`<= ' '`, `qcc_iswhite`), and `atoi`, which C
+defines as `(int)strtol(s, NULL, 10)`, is the row for `strtol`. id's `cmdlib.c` calls `toupper` only in `strupr`, which nothing on the path calls.
 
 | Call | Where | Behaviour that matters | Rust | Statements | Differential | Status |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -8,8 +8,7 @@
 
 #![expect(
     clippy::expect_used,
-    clippy::panic,
-    reason = "test code: a failed expect or panic is a failed test with a message"
+    reason = "test code: a failed expect is a failed test with a message"
 )]
 
 use std::collections::{BTreeMap, BTreeSet};

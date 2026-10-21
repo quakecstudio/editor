@@ -1901,7 +1901,11 @@ fn string_escapes_as_fteqcc_reads_them() {
     );
     assert_eq!(fte_string(b"\"a\\\nb\""), (b"a\nb".to_vec(), vec![]));
     assert_eq!(fte_string(b"\"a\\\r\nb\""), (b"a\nb".to_vec(), vec![]));
-    assert_eq!(fte_string(b"\"a\\\rb\""), (b"ab".to_vec(), vec![]));
+    // FTEF-13.25: with FTEQCC's "Hanging \\" warning.
+    assert_eq!(
+        fte_string(b"\"a\\\rb\""),
+        (b"ab".to_vec(), vec![Code::W0123])
+    );
     assert_eq!(
         fte_string(b"\"a\\\r"),
         (b"a\x00".to_vec(), vec![Code::E0101, Code::E0101])
