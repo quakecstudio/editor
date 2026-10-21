@@ -164,6 +164,16 @@ pub(crate) struct Project {
     /// The include directories FTEQCC is given, `-I`, each by its name from `progs.src`'s
     /// directory (FTEF-14.49).
     pub(crate) include_dirs: Vec<String>,
+    /// `progs.src` itself, or `None` for the list of `progs.dat` and [`Self::compiled`].
+    pub(crate) progs: Option<ProgsSrc>,
+}
+
+/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.54): its
+/// text and how that is written as bytes. Its compiled file is `t.qc`, which it need not list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProgsSrc {
+    pub(crate) text: String,
+    pub(crate) encoding: Encoding,
 }
 
 /// The name a case's source has when it has no [`Project`].
@@ -185,6 +195,15 @@ impl Case {
         self.encoding.bytes(&self.source)
     }
 
+    /// The bytes of `progs.src`: the case's own, or the list of `progs.dat` and the compiled
+    /// file.
+    fn progs_src_bytes(&self) -> Vec<u8> {
+        match self.project.as_ref().and_then(|p| p.progs.as_ref()) {
+            Some(progs) => progs.encoding.bytes(&progs.text),
+            None => format!("progs.dat\n{}\n", self.compiled()).into_bytes(),
+        }
+    }
+
     /// The case's key in [`FIXTURE`].
     fn key(&self) -> String {
         let mut key = format!("{}|", dialect_name(self.dialect));
@@ -201,6 +220,12 @@ impl Case {
         }
         if let Some(name) = self.encoding.name() {
             key.push_str(&format!("|{name}"));
+        }
+        if let Some(progs) = self.project.as_ref().and_then(|p| p.progs.as_ref()) {
+            key.push_str(&format!("|progs.src={}", progs.text));
+            if let Some(name) = progs.encoding.name() {
+                key.push_str(&format!("|progs.src {name}"));
+            }
         }
         key
     }
@@ -1568,7 +1593,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
         fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
     };
     let compiled = case.compiled();
-    write("progs.src", format!("progs.dat\n{compiled}\n").as_bytes())?;
+    write("progs.src", &case.progs_src_bytes())?;
     write(compiled, &case.source_bytes())?;
     for (name, text) in case.project.iter().flat_map(|p| &p.files) {
         write(name, text.as_bytes())?;
@@ -1728,7 +1753,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>, ulon
 fn graph_binds(case: &Case) -> bool {
     let mut loader = qc_project::MemoryLoader::new();
     let compiled = case.compiled();
-    loader.insert("progs.src", format!("progs.dat\n{compiled}\n").as_bytes());
+    loader.insert("progs.src", case.progs_src_bytes());
     loader.insert(compiled, case.source_bytes());
     let mut binding = Vec::new();
     for (name, text) in case.project.iter().flat_map(|p| &p.files) {
@@ -1818,10 +1843,16 @@ fn show(case: &Case) -> String {
     };
     match &case.project {
         None => format!("{dialect} {:?}", case.source),
-        Some(project) => format!(
-            "{dialect} {}: {:?}, with {:?}",
-            project.compiled, case.source, project.files
-        ),
+        Some(project) => {
+            let progs = project.progs.as_ref().map_or_else(String::new, |progs| {
+                let encoding = progs.encoding.name().unwrap_or("utf-8");
+                format!(", progs.src {encoding} {:?}", progs.text)
+            });
+            format!(
+                "{dialect} {}: {:?}, with {:?}{progs}",
+                project.compiled, case.source, project.files
+            )
+        }
     }
 }
 
