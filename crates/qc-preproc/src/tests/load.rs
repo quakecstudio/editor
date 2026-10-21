@@ -350,18 +350,51 @@ proptest! {
 // byte order mark kept in front with the text starting after it, and none for a wide file
 #[test]
 fn the_loaded_text_in_place_keeps_the_file_s_offsets() {
-    assert_eq!(qcc_load_in_place(b"a\0#b\0"), Some((b"a #b ".to_vec(), 0)));
+    let in_place =
+        |bytes: &[u8]| qcc_load_in_place(bytes).map(|(text, start)| (text.to_vec(), start));
+    assert_eq!(in_place(b"a\0#b\0"), Some((b"a #b ".to_vec(), 0)));
     assert_eq!(
-        qcc_load_in_place(b"\xef\xbb\xbf#x\0"),
+        in_place(b"\xef\xbb\xbf#x\0"),
         Some((b"\xef\xbb\xbf#x ".to_vec(), 3))
     );
     assert_eq!(
-        qcc_load_in_place(b"\xef\xbb\xbf\xef\xbb\xbf#"),
+        in_place(b"\xef\xbb\xbf\xef\xbb\xbf#"),
         Some((b"\xef\xbb\xbf\xef\xbb\xbf#".to_vec(), 3))
     );
-    assert_eq!(qcc_load_in_place(b""), Some((Vec::new(), 0)));
-    assert_eq!(qcc_load_in_place(&utf16le("#define N 1\n")), None);
-    assert_eq!(qcc_load_in_place(b"\x00\x00\xfe\xff"), None);
+    assert_eq!(in_place(b""), Some((Vec::new(), 0)));
+    assert_eq!(in_place(&utf16le("#define N 1\n")), None);
+    assert_eq!(in_place(b"\x00\x00\xfe\xff"), None);
+    assert_eq!(in_place(b"\xfe\xff"), None);
+    // A file with no NUL is borrowed, not copied.
+    let plain = b"#define N 1\n";
+    assert!(matches!(
+        qcc_load_in_place(plain),
+        Some((std::borrow::Cow::Borrowed(_), 0))
+    ));
+}
+
+proptest! {
+    // spec FTEF-14.56: the text in place is `qcc_load_file`'s text after its start, the file's
+    // own bytes before it, and as long as the file
+    #[test]
+    fn the_text_in_place_is_the_loader_s_text_at_the_file_s_offsets(
+        bom in any::<bool>(),
+        body in proptest::collection::vec(any::<u8>(), 0..64),
+    ) {
+        let mut bytes = if bom { b"\xef\xbb\xbf".to_vec() } else { Vec::new() };
+        bytes.extend(body);
+        let (loaded, origin) = qcc_load_file(bytes.clone());
+        match (qcc_load_in_place(&bytes), origin) {
+            (Some((text, start)), TextOrigin::Shifted(shift)) => {
+                prop_assert_eq!(start, shift);
+                prop_assert_eq!(text.len(), bytes.len());
+                prop_assert_eq!(&text[..start], &bytes[..start]);
+                prop_assert_eq!(&text[start..], loaded.as_slice());
+            }
+            (None, TextOrigin::Decoded(_)) => {}
+            (place, origin) => prop_assert!(false, "{:?} {:?}", place, origin),
+        }
+    }
 }
 
 // spec FTEF-14.56: read in that text from where it starts, a directive after a NUL or a UTF-8
@@ -370,6 +403,7 @@ fn the_loaded_text_in_place_keeps_the_file_s_offsets() {
 fn a_directive_is_found_in_the_loaded_text_in_place() {
     let end = |bytes: &[u8]| {
         let (text, start) = qcc_load_in_place(bytes).unwrap();
+        let text = text.to_vec();
         let hash = text.iter().position(|&b| b == b'#').unwrap();
         let rest = &text[start..];
         fte_directive_end(rest, 0, hash - start).map(|end| end + start)

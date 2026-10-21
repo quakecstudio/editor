@@ -92,18 +92,17 @@ struct Lexable<'a> {
 }
 
 impl<'a> Lexable<'a> {
-    /// `source` as `dialect` reads it: under an FTEQCC dialect the loader's text in place
-    /// (`qc_preproc::qcc_load_in_place`, FTEF-14.56); under the vanilla dialect, and for a
-    /// UTF-16 or UTF-32 file, whose decoded text is at other offsets, its bytes to the first NUL
-    /// (QC-1.1).
-    fn new(source: &'a [u8], dialect: Dialect) -> Self {
-        let loaded = dialect
-            .has_fteqcc_extensions()
+    /// `source`, a `text`, as `dialect` reads it: a source file under an FTEQCC dialect in the
+    /// loader's text in place (`qc_preproc::qcc_load_in_place`, FTEF-14.56); under the vanilla
+    /// dialect, a UTF-16 or UTF-32 file, whose decoded text is at other offsets, and a
+    /// preprocessor's text, which no loader read, its bytes to the first NUL (QC-1.1).
+    fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
+        let loaded = (dialect.has_fteqcc_extensions() && text == Text::Source)
             .then(|| qcc_load_in_place(source))
             .flatten();
         match loaded {
             Some((text, start)) => Self {
-                text: Cow::Owned(text),
+                text,
                 start,
                 end: source.len(),
             },
@@ -134,7 +133,7 @@ impl<'a> Input<'a> {
     /// A source file's directive lines are QC-9.1's under the vanilla dialect and FTEF-14.51's
     /// under an FTEQCC dialect, read in the text FTEQCC's file loader gives (FTEF-14.56).
     pub(crate) fn new(source: &'a [u8], dialect: Dialect, text: Text) -> Self {
-        let lexable = Lexable::new(source, dialect);
+        let lexable = Lexable::new(source, dialect, text);
         let mut lexed = lex_with(&lexable.text, dialect);
         let mut input = Self {
             source,
@@ -214,7 +213,7 @@ impl<'a> Input<'a> {
                 TokenKind::Name(name) => (name.clone(), None),
                 TokenKind::String(bytes) => (latin1(bytes), None),
                 TokenKind::Float(value) => (
-                    latin1(source.get(token.span.range()).unwrap_or_default()),
+                    latin1(lexable.text.get(token.span.range()).unwrap_or_default()),
                     Some(*value),
                 ),
                 TokenKind::Punct(punct) => (punct.as_str().to_owned(), None),
@@ -222,7 +221,7 @@ impl<'a> Input<'a> {
                 | TokenKind::FrameRef(_)
                 | TokenKind::Frames(_)
                 | TokenKind::FrameCommand(_) => (
-                    latin1(source.get(token.span.range()).unwrap_or_default()),
+                    latin1(lexable.text.get(token.span.range()).unwrap_or_default()),
                     None,
                 ),
             };

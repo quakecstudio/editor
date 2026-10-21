@@ -1207,7 +1207,10 @@ profile the preprocessor reads them as FTEQCC does.
   start is found in the text after a UTF-8 byte order mark at the file's start, so `#define N 1`
   on the first line after one is a node, after spaces and tabs too. Only that first mark is
   skipped: after a second one the `#` starts no line, as FTEQCC reads it. The NUL and the mark
-  stay in the tree as white space. A file that starts with a UTF-16 or UTF-32 byte order mark is
+  stay in the tree as white space, and a value read from a token's text, an engine name's string
+  among them (`ast::Builtin::engine_name`, FTE-17.5), reads a NUL as that space. Text a
+  preprocessor wrote (`qc_syntax::parse_preprocessed`) is no file the loader read and still ends
+  at its first NUL. A file that starts with a UTF-16 or UTF-32 byte order mark is
   read by the tree as its bytes to the first NUL, as under the vanilla dialect (QC-1.1): the
   preprocessor reads its decoded text (FTEF-14.54), whose offsets are not the file's, so how such
   a file is shown is the semantic model's choice, not the tree's. The vanilla dialect keeps

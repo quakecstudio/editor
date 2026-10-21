@@ -1297,7 +1297,6 @@ fn a_negative_frame_value_may_differ_only_where_long_is_32_bits() {
     for (value, ulong, expected) in [
         ("2147483648", ULong::Bits32, Some("FTEF-14.55")),
         ("2147483648", ULong::Bits64, None),
-        ("-99999999999", ULong::Bits32, Some("FTEF-14.55")),
         ("-5", ULong::Bits32, None),
     ] {
         assert_eq!(

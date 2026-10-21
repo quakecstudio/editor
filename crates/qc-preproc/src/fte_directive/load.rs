@@ -9,6 +9,8 @@
 //! UTF-32 or UTF-16 byte order mark to UTF-8 and skips a UTF-8 one, and every NUL byte left is a
 //! space.
 
+use std::borrow::Cow;
+
 use crate::source::TextOrigin;
 
 /// The UTF-8 byte order mark, which `QCC_SanitizeCharSet` skips (`mem += 3;`).
@@ -169,15 +171,25 @@ pub fn qcc_load_file(bytes: Vec<u8>) -> (Vec<u8>, TextOrigin) {
 /// of the file as written, the syntax tree, and where that text starts. Implements FTEF-14.56.
 ///
 /// The bytes of a UTF-8 byte order mark `QCC_SanitizeCharSet` skips stay in front, so the text
-/// starts after them, and each NUL byte is a space. `None` for a file the loader decodes from
-/// UTF-16 or UTF-32, whose text is at other offsets than its bytes.
+/// starts after them, and each NUL byte is a space; a file with no NUL is borrowed as it is.
+/// `None` for a file the loader decodes from UTF-16 or UTF-32, whose text is at other offsets
+/// than its bytes.
 #[must_use]
-pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Vec<u8>, usize)> {
-    let (text, origin) = qcc_load_file(bytes.to_vec());
-    let TextOrigin::Shifted(start) = origin else {
+pub fn qcc_load_in_place(bytes: &[u8]) -> Option<(Cow<'_, [u8]>, usize)> {
+    if Wide::of(bytes).is_some() {
         return None;
+    }
+    let start = if bytes.starts_with(UTF8_BOM) {
+        UTF8_BOM.len()
+    } else {
+        0
     };
-    let mut kept = bytes.get(..start)?.to_vec();
-    kept.extend(text);
-    Some((kept, start))
+    if !bytes.contains(&0) {
+        return Some((Cow::Borrowed(bytes), start));
+    }
+    let text = bytes
+        .iter()
+        .map(|&byte| if byte == 0 { b' ' } else { byte })
+        .collect();
+    Some((Cow::Owned(text), start))
 }

@@ -400,9 +400,12 @@ impl Cursor {
 
     /// A list-form `progs.src` whose text is `text`, as [`progs_text`] gives it.
     fn list(path: PathBuf, text: Vec<u8>) -> Self {
-        let mut cursor = Self::new(path, Vec::new(), None, Base::Progs { output_seen: false });
-        cursor.text = text;
-        cursor
+        let base = Base::Progs { output_seen: false };
+        Self {
+            text,
+            pos: 0,
+            ..Self::new(path, Vec::new(), None, base)
+        }
     }
 
     /// A QuakeC file of an FTEQCC or GMQCC module, read as FTEQCC reads it from `start`

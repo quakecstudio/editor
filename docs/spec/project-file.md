@@ -174,7 +174,9 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
   directive family of `cargo xtask oracles builtins` with a `progs.src` of their own (`progs_cases`
   in `xtask/src/oracles/builtins/directives.rs`) hold each form in each wide encoding and with
   NULs and marks, and the graph lists the file that binds `f` exactly when the pinned FTEQCC binds
-  it. Under the vanilla dialect the source is its bytes past a UTF-8 byte order mark (PRJ-5.1),
+  it. The GMQCC dialect reads its source so too, as it reads every file with FTEQCC's reader
+  (PRJ-5.15): GMQCC's own reading is not quoted here and waits for its dialect profile, as
+  PRJ-5.15 says. Under the vanilla dialect the source is its bytes past a UTF-8 byte order mark (PRJ-5.1),
   as PRJ-4.1 says.
 
 ## PRJ-5 Directives the graph follows

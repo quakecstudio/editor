@@ -227,6 +227,22 @@ fn a_wide_file_is_read_as_its_bytes() {
     assert_eq!(parsed.syntax().debug_tree(), vanilla.syntax().debug_tree());
 }
 
+// spec FTEF-14.56: a preprocessor's text is no file the loader read, so it still ends at its
+// first NUL under FTEQCC, the rest skipped (QC-1.1)
+#[test]
+fn preprocessed_text_ends_at_a_nul() {
+    let source = b"float a;\0float b;\n";
+    let parsed = parse_preprocessed(source, Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source);
+    let skipped: Vec<Span> = parsed
+        .syntax()
+        .tokens()
+        .filter(|t| t.kind() == SyntaxKind::Skipped)
+        .map(|t| t.span())
+        .collect();
+    assert_eq!(skipped, [Span::new(8, source.len())]);
+}
+
 // spec QC-1.1: under the vanilla dialect the tree's text still ends at the first NUL, the rest
 // of the file skipped
 #[test]
