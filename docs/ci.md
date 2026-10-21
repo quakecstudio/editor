@@ -191,7 +191,7 @@ reviewer runs it and links the run in the report ([testing.md](testing.md#measur
 | Check | Runs on | What it does |
 | --- | --- | --- |
 | `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
-| `Readiness mutation` | Linux | `cargo xtask readiness mutation` (a full cargo-mutants run per crate) |
+| `Readiness mutation (<crate>)` | Linux | `cargo xtask readiness mutation` (a full cargo-mutants run of one crate, one job per crate, each test binary limited to 3 GiB of data memory) |
 | `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
 | `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement, `ratchets.toml` and its history; uploads the `readiness` artifact |
 

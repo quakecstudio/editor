@@ -86,12 +86,31 @@ jobs:
           path: measured/
           if-no-files-found: error
 
+  # The crates as a JSON list, for the mutation job's matrix.
+  crates:
+    name: Readiness crates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - id: list
+        run: echo "list=$(jq -cn --arg crates "$CRATES" '$crates | split(" ") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+
+  # One runner per crate, so a run takes the slowest crate's time rather than
+  # the sum of them all.
   mutation:
-    name: Readiness mutation
+    name: Readiness mutation (${{ matrix.crate }})
+    needs: crates
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: ${{ fromJSON(needs.crates.outputs.list) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -108,7 +127,7 @@ jobs:
       # xtask's tests of `cargo xtask oracles fuzz` go past its check for clang
       # only when the C compiler is clang, so that its mutants are tested.
       - name: Set up clang for xtask
-        if: ${{ contains(format(' {0} ', inputs.crates), ' xtask ') }}
+        if: ${{ matrix.crate == 'xtask' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-18
@@ -128,13 +147,13 @@ jobs:
           # binary, which fails the mutant's tests, and the four jobs together
           # stay inside the runner. Builds are not limited.
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --
-        run: |
-          read -ra crates <<< "$CRATES"
-          (while sleep 10; do echo "DIAG $(free -m | awk '/Mem:/ {print "used " $3 " of " $2}') $(df -m / | awk 'NR==2 {print "disk free " $4}') $(ps -eo rss=,stat=,comm= --sort=-rss | head -8 | tr '\n' ' ')"; done) &
-          cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
+          CRATE: ${{ matrix.crate }}
+          INDEX: ${{ strategy.job-index }}
+        run: cargo xtask readiness mutation --os linux --out "measured/mutation-$INDEX.json" "$CRATE"
+      # Named by the matrix index: a crate named by its directory has a `/`.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: measured-mutation
+          name: measured-mutation-${{ strategy.job-index }}
           path: measured/
           if-no-files-found: error
 
