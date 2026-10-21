@@ -6,9 +6,10 @@
 
 //! The project graph's reading of a file of an FTEQCC module (`docs/spec/project-file.md`
 //! PRJ-5.13, PRJ-5.14): the directives that decide which files are read, run by the reader the
-//! preprocessor runs them with (FTEF-14.33 to FTEF-14.47), and the code between them read as the
-//! preprocessor reads it, a token of the lexer at a time, so that a directive is met where the
-//! preprocessor meets one. The graph opens the files; [`FteFileReader::next`] says what it met.
+//! preprocessor runs them with (FTEF-14.33 to FTEF-14.47, FTEF-14.52), and the code between
+//! them read as the preprocessor reads it, a token of the lexer at a time, so that a directive is
+//! met where the preprocessor meets one. The graph opens the files; [`FteFileReader::next`] says
+//! what it met.
 
 use std::collections::HashMap;
 
@@ -92,7 +93,7 @@ impl ModuleState {
 }
 
 /// How a file the graph reads starts, which decides whether a `#` on its first line is a
-/// directive (FTEF-14.34).
+/// directive (FTEF-14.52).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileStart {
     /// A compiled file, the module's source or an entry of a list: `QCC_PR_CompileFile` calls
@@ -167,7 +168,7 @@ pub struct FteFileReader {
     /// reading moved by other than a token: the tokens are lexed again from there.
     resume: Option<usize>,
     /// How the file starts, which decides whether a `#` before its first line break is a
-    /// directive's (FTEF-14.34).
+    /// directive's (FTEF-14.52).
     start: TextStart,
     /// The readings directives started that are open, innermost last.
     modes: Vec<Mode>,
@@ -239,7 +240,7 @@ impl FteFileReader {
     }
 
     /// Reads the next token of the code as the preprocessor reads it (`Preprocessor::next_item`):
-    /// a `#` that starts a line, as FTEF-14.34 says, starts a directive, which is run; any other
+    /// a `#` that starts a line, as FTEF-14.52 says, starts a directive, which is run; any other
     /// token is passed over.
     fn code(&mut self, state: &mut ModuleState) -> Option<FteEvent> {
         if let Some(at) = self.resume.take() {
@@ -319,7 +320,7 @@ impl FteFileReader {
     }
 
     /// Runs `directive`, read at the `#` at `hash`, as `QCC_PR_Precompiler` does for the graph
-    /// (FTEF-14.34 to FTEF-14.44): sets where reading goes on and gives what the graph acts on.
+    /// (FTEF-14.35 to FTEF-14.44, FTEF-14.52): sets where reading goes on and gives what the graph acts on.
     fn run(
         &mut self,
         state: &mut ModuleState,

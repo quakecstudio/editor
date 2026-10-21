@@ -770,7 +770,7 @@ const HERE: &str = "@@";
 /// binds `f` (PRJ-5.13). A form that FTEQCC refuses reads no file the graph lists.
 const GRAPH_FORMS: &[&str] = &[
     "@@",
-    // FTEF-14.34: names matched by their first bytes, and where a `#` is a directive's.
+    // FTEF-14.52: names matched by their first bytes, and where a `#` is a directive's.
     "#defined N 1\n@@",
     "#appendix N 1\n@@",
     "#iffy\n@@",

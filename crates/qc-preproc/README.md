@@ -60,6 +60,10 @@ that text as a chunk of its own, read until reading goes past its last token: `#
 strings, `__VA_COUNT__`, built-in constants with FTEQCC's lines and `__FILE__` names, the
 chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.32). Under both dialects the
 expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
+`fte_directive_end` gives, for a reader that runs no directive, where an FTEQCC directive's text
+ends, as the preprocessor reads on after it, and `relex_from` lexes the text from there again as
+the preprocessor does; the syntax tree groups its directive lines with them (`fte_line.rs`,
+FTEF-14.51).
 
 - **Layer:** L2 syntax. It depends on `qc-lexer`.
 - **Spec sections:** QC-8 and QC-9 in [`language.md`](../../docs/spec/language.md); FTEF-14 in

@@ -438,6 +438,7 @@ version = "2026.10.0"
 dependencies = [
  "proptest",
  "qc-lexer",
+ "qc-preproc",
 ]
 
 [[package]]

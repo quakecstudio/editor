@@ -250,9 +250,9 @@ malformed directive without a diagnostic.
   preprocessor's directive reader (`qc_preproc::FteFileReader`) in place of the lines of PRJ-5.1
   and the reading of PRJ-5.3 to PRJ-5.5, as FTEQCC's `QCC_PR_Precompiler` reads it
   (`engine/qclib/qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`;
-  `dialect-fteqcc.md` FTEF-14.33 to FTEF-14.48). A directive is at a `#` that `QCC_PR_NewLine`
-  reaches, at a compiled file's start after spaces and tabs and at an included file's first byte
-  (FTEF-14.34), its name matched by its first bytes, so `#defined N 1` defines `N` and `#iffy`
+  `dialect-fteqcc.md` FTEF-14.33 to FTEF-14.48, FTEF-14.52). A directive is at a `#` that
+  `QCC_PR_NewLine` reaches, at a compiled file's start after spaces and tabs and at an included file's first byte
+  (FTEF-14.52), its name matched by its first bytes, so `#defined N 1` defines `N` and `#iffy`
   opens no block; its line ends where `QCC_PR_SkipToEndOfLine` ends it (FTEF-14.35), so after
   `#undef N // c \` the next line, an `#include` too, is the directive's; `#if` and `#elif` read
   as FTEF-14.33 says; a side that is not taken is skipped by `QCC_PR_FalsePreProcessorIf`
@@ -264,12 +264,12 @@ malformed directive without a diagnostic.
   word in quotes names a file with the quotes in its name; and `FTEQCC` and `__FTEQCC__` are
   defined before the module's `defines` (FTEF-14.48). Between directives the code is read as the
   preprocessor reads it, a token of its lexer at a time, a `#` token that starts a line as
-  FTEF-14.34 says being a directive's, so no string, raw string `R"d(...)d"`, character constant
+  FTEF-14.52 says being a directive's, so no string, raw string `R"d(...)d"`, character constant
   or comment starts one, and the graph meets a directive where the preprocessor does. A list-form
   `progs.src` is still read as PRJ-5.1 and QC-23 say.
   So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
-  an `#include` or an `#includelist`, after or around each directive form of FTEF-14.34 to
-  FTEF-14.44: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
+  an `#include` or an `#includelist`, after or around each directive form of FTEF-14.35 to
+  FTEF-14.44 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
   one file that binds `f` FTEQCC binds it from exactly when the graph lists it.
 - **PRJ-5.14** Deliberate divergences of PRJ-5.13, as the graph expands no macro: a directive a
   macro's body or arguments hold is run where it stands in the file's text, not where the
