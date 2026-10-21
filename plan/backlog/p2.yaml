@@ -1652,6 +1652,9 @@ issues:
   - P2-104
   - P2-105
   - P2-106
+  - P2-107
+  - P2-108
+  - P2-109
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2104,3 +2107,62 @@ issues:
   verify:
   - cargo test -p qc-project
   - cargo xtask project-corpus
+- key: P2-107
+  title: Read an FTEQCC source file's bytes as FTEQCC's file loader gives them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (the FTEQCC file reader in `fte_directive.rs`, `byte_at`, and the graph reader in `fte_directive/graph.rs`), qc-lexer where its tokens need it, and a new statement in docs/spec/dialect-fteqcc.md beside FTEF-14.52: under an FTEQCC dialect a source file is the text FTEQCC''s `QCC_LoadFile` (qcc_cmdlib.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) hands the lexer. `QCC_SanitizeCharSet` decodes a file that starts with a UTF-32LE, UTF-32BE, UTF-16LE or UTF-16BE byte order mark to UTF-8 and skips a UTF-8 one (`mem += 3;`), and every NUL byte left is a space (`else if (!mem[check])`, the warning "file contains null bytes", then `mem[check] = '' '';`). The profile reads a NUL as the end of the text (`byte_at`: "`None` at its end, which a NUL is", the vanilla rule of QC-1.1) and does not skip a UTF-8 byte order mark before the first directive, though the project graph does (PRJ-5.1). The fifth P2-R2 review compared the profile at commit 6f12aef with the pinned FTEQCC (`-Tid`, as cases of `cargo xtask oracles builtins`): FTEQCC refuses `void() f = #5;`, a line break, a NUL and `zz zz zz` ("\"zz\" is not a type"), which the profile binds as builtin 5; refuses `#define N #5`, a NUL, `zz`, a line break and `void() f = N;`, which the profile accepts; binds `#ifdef Q`, a line break, `zz`, a NUL, a line break, `#endif` and `void() f = #5;` as builtin 5, which the profile refuses; binds `#define N #5` and `void() f = N;` after a UTF-8 byte order mark, with and without two spaces before the `#`, as builtin 5, which the profile refuses; and compiles `void() f = #5;` written as UTF-16LE after its byte order mark, binding builtin 5'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, the cases added to the directive family of `cargo xtask oracles builtins` (the UTF-16 and UTF-32 ones as files written as bytes) with 0 unexplained differences; the project graph lists the files FTEQCC reads past a NUL and after a byte order mark; the vanilla dialect keeps QC-1.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-project
+  - cargo xtask oracles builtins
+- key: P2-108
+  title: Read an FTEQCC `#if` value as FTEQCC's `int` from C's `atoi`
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (`cond::atoi` as the FTEQCC `#if` reader uses it) and docs/spec/dialect-fteqcc.md FTEF-14.33 (or a new statement beside FTEF-14.50): `ParsePrecompilerIf` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) keeps each value in `int eval` from `eval = atoi(pr_token);` or `eval = atoi(c->value);`, and compares and negates those `int`s. C''s `atoi` is the host''s: on an LP64 host (64-bit Linux and macOS) it is `(int)strtol(s, NULL, 10)`, which saturates at `LONG_MAX` and `LONG_MIN` (2^63 - 1 and -2^63) before the low 32 bits are kept, and it passes over only the bytes the C locale''s `isspace` takes (space, tab, LF, VT, FF, CR). The profile''s `cond::atoi` returns an `i64` that saturates at `i64::MAX` and `-i64::MAX` and passes over Unicode white space (`str::trim_start`). The fifth P2-R2 review compared the profile at commit 6f12aef with the pinned FTEQCC on macOS arm64 (`-Tid`, as cases of `cargo xtask oracles builtins`, each `#if` before or around `void() f = #5;`): FTEQCC takes `#if 4294967296`, `#if -99999999999999999999`, `#define X 4294967296` then `#if X`, and `#if` or a `#define X` body of U+00A0, U+3000 or U+0085 before `1` as false, which the profile takes as true; and takes `#if 4294967297 == 1`, `#if 2147483648 < 0`, `#if -2147483649 > 0` and `#if 99999999999999999999 == -1` as true, which the profile takes as false. Where `long` is 32 bits (LLP64, 64-bit Windows) `strtol` saturates at 2^31 - 1, so the statement names the host the profile follows, as FTEF-14.50 does for `strtoul`'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above is read as the pinned FTEQCC reads it on an LP64 host, the cases added to the directive family of `cargo xtask oracles builtins` with 0 unexplained differences and any case an LLP64 `strtol` reads otherwise listed as expected there; the vanilla dialect''s PRJ-5.5 expressions are unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-109
+  title: Measure qc-preproc's mutation score in the Readiness workflow after the FTEQCC directive port
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-5
+  - TEST-2
+  - TEST-10
+  depends:
+  - P2-86
+  deliverable:
+  - 'crates/qc-preproc (its tests, or the code a mutant turns into an unbounded loop) and, if the cause is the measurement, xtask/src/readiness.rs: the L2 Readiness run 39561186189 on main at 6f12aef measured qc-lexer''s mutation score (325 of 325) and then lost its runner during qc-preproc''s, twice: attempt 1 at 07:57:13 UTC, 31 min 25 s after qc-lexer''s score was printed, and attempt 2, rerun with `gh run rerun --failed`, at 08:57:39 UTC, 32 min 3 s after it ("The runner has received a shutdown signal", exit code 143), so neither qc-preproc, qc-syntax nor qc-project has a mutation score and `cargo xtask ratchet` failed. qc-preproc has 1087 mutants at 6f12aef (`cargo mutants --list`), 357 of them in src/fte_directive.rs and src/fte_directive/graph.rs, which #516 to #527 added; its last measured run, 39455878689 at 2a48d73, had 556 and finished. The same point in both attempts, under `--no-shuffle`, points at one mutant that makes a test take the runner''s memory or disk before the mutant''s timeout ends it, such as a reader loop that stops advancing while it pushes to a `Vec`. Find the mutant from cargo-mutants'' `mutants.out` log of a run that reaches it, and make it caught without ending the runner: a test that fails fast on the input that loop reads, a bound in the code that keeps the loop finite, or a per-test memory limit in the mutation job, which would be a measurement change for its own review'
+  acceptance:
+  - 'A Readiness run on main for qc-lexer, qc-preproc, qc-syntax and qc-project finishes its mutation job, and every crate meets the bar and its ratchets.toml minimum with no unlisted survivor and no lowered ratchet; the run is linked in the PR'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask readiness mutation qc-preproc

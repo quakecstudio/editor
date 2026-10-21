@@ -176,3 +176,82 @@ fn reviewer_a_macro_in_an_argument_expands_where_it_is_read() {
         ("# 5 : ex_a".to_owned(), vec![])
     );
 }
+
+// Fifth P2-R2 review: each case below was compiled with the pinned FTEQCC first
+// (`cargo xtask oracles builtins` with the case added), and the profile agreed.
+
+// spec FTEF-14.36: `#undef` and `#ifndef` with no name before a `//` comment read the comment
+// with `QCC_PR_SimpleGetToken`, which stops at its line break, so a `\` at the comment's end
+// carries nothing to the next line
+#[test]
+fn reviewer_a_comment_in_place_of_a_name_ends_at_its_line_break() {
+    assert_eq!(fte("#undef // c \\\nzz\n"), ("zz".to_owned(), vec![]));
+    assert_eq!(
+        fte("#ifndef // c \\\nyes\n#endif\n"),
+        ("yes".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.36: `QCC_PR_SimpleGetToken` stops at no `/*`, so `#ifdef X/**/` asks for the
+// macro `X/**/` and `#undef X/**/` removes no macro
+#[test]
+fn reviewer_a_comment_joined_to_a_name_is_part_of_the_word() {
+    assert_eq!(
+        fte("#define X 1\n#ifdef X/**/\nyes\n#endif\nno\n"),
+        ("no".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define X 1\n#undef X/**/\nX\n"),
+        ("1".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.35: a comment before `#undef`'s name leaves the name to `QCC_PR_SkipToEndOfLine`,
+// whose `errorifnonwhite` makes it "unexpected tokens at end of line"
+#[test]
+fn reviewer_a_comment_before_undef_s_name_is_an_error() {
+    let (toks, errs) = fte("#define X 1\n#undef /**/ X\nX\n");
+    assert_eq!((toks.as_str(), errs), ("1", vec![Code::E0121]));
+}
+
+// spec FTEF-14.37: a skipped line is read as `QCC_PR_SkipToEndOfLine` reads it, which knows no
+// character constant, so the `/*` in `'/*'` opens a comment that hides the next `#endif`
+#[test]
+fn reviewer_a_comment_opened_in_a_character_constant_hides_a_skipped_endif() {
+    assert_eq!(
+        fte("#ifdef Q\nx = '/*';\n#endif\nzz\n*/\n#endif\nb\n"),
+        ("b".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.37: `QCC_PR_FalsePreProcessorIf` passes over only spaces and tabs after a `#`, so
+// `#`, a vertical tab and `endif` closes no skipped side
+#[test]
+fn reviewer_a_vertical_tab_after_a_skipped_hash_hides_the_endif() {
+    assert_eq!(
+        fte("#ifdef Q\n#\x0bendif\nzz\n#endif\nb\n"),
+        ("b".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.43: a pragma's name ends at a tab as at a space, and a `(` that comes first ends
+// an empty name, so `#pragma (line 40)` numbers no line
+#[test]
+fn reviewer_a_pragma_s_name_ends_at_a_tab_and_not_after_a_leading_paren() {
+    assert_eq!(
+        fte("#pragma\tline\t40\n__LINE__\n"),
+        ("40".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#pragma (line 40)\n__LINE__\n"),
+        ("2".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.33: a value read with `QCC_PR_SimpleGetToken` stops at a `/*`, so `#if /* c */ 1`
+// has no value, "unexpected end-of-line", and is false
+#[test]
+fn reviewer_a_comment_before_an_if_value_leaves_no_value() {
+    let (toks, errs) = fte("#if /* c */ 1\nyes\n#endif\nb\n");
+    assert_eq!((toks.as_str(), errs), ("b", vec![Code::E0121]));
+}
