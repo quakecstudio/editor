@@ -1666,6 +1666,7 @@ issues:
   - P2-118
   - P2-119
   - P2-121
+  - P2-122
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2405,4 +2406,26 @@ issues:
   - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of both blocks'
   verify:
   - cargo test -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-122
+  title: Read FTEQCC's cast flags in the semantic model's casts
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-121 (#556), whose inventory of the places FTEQCC changes its flags mid-file (`docs/spec/inventory-l2.md`, "Where the flags change") lists the flags only the semantic model's casts read, off the L2 path. `#pragma flag` and the `-F` options set `lax`, `typeexplicit` and `qccx`, and `#pragma TARGET` sets `flag_undefwordsize` through `QCC_OPCodeSetTarget`, and each changes the implicit casts of `QCC_TryEvaluateCast`, `QCC_EvaluateCast` and `QCC_SupplyConversion`: `lax` makes a refused cast the warning `WARN_LAXCAST`, `typeexplicit` refuses implicit conversions, `qccx` allows float to entity and string casts and back, and `flag_undefwordsize` refuses pointer and string casts. The semantic model's initialiser casts (FTEF-19.2) read none of them (FTEF-21.15, FTEF-19.30).
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-sema (and crates/qc-preproc, whose `CompilerFlags` keeps the flags the semantic model reads): the casts of FTEF-19.2 read `lax`, `typeexplicit`, `qccx` and the target''s `flag_undefwordsize` where the initialiser stands, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`, `QCC_OPCodeSetTarget`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l2.md: the rows of the four flags made `ported`'
+  acceptance:
+  - 'A statement and a citing test for each flag, its casts as the pinned FTEQCC makes them where `#pragma flag` or the command line turns it on and off'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of each flag'
+  verify:
+  - cargo test -p qc-sema
   - cargo xtask oracles builtins
