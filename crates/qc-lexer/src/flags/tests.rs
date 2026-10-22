@@ -74,6 +74,7 @@ fn flags_set_and_clear() {
         LexFlag::Ssp,
         LexFlag::AssumeInt,
         LexFlag::MacroInStrings,
+        LexFlag::AssumeDouble,
     ] {
         let alone = LexFlags::NONE.with(flag, true);
         assert!(alone.has(flag));

@@ -195,14 +195,12 @@ impl FlagEdit {
     /// `now`'s when `set` names `cpriority`; a flag [`CompilerFlags`] does not keep sets none.
     #[must_use]
     pub fn of_flags(set: &[FteFlag], now: CompilerFlags) -> Self {
-        let mask = set.iter().fold(0_u32, |mask, &flag| {
-            let priorities = if flag == FteFlag::Cpriority {
-                C_PRIORITIES
-            } else {
-                0
-            };
-            mask | CompilerFlags::bit(flag) | priorities
-        });
+        let priorities = set.contains(&FteFlag::Cpriority).then_some(C_PRIORITIES);
+        let mask = set
+            .iter()
+            .map(|&flag| CompilerFlags::bit(flag))
+            .chain(priorities)
+            .fold(0_u32, std::ops::BitOr::bitor);
         Self {
             mask,
             bits: now.bits & mask,
@@ -228,8 +226,9 @@ impl FlagEdit {
     /// `flags` after this edit.
     #[must_use]
     pub const fn apply(self, flags: CompilerFlags) -> CompilerFlags {
+        // The bits under the mask that differ from the edit's are flipped, the rest kept.
         CompilerFlags {
-            bits: (flags.bits & !self.mask) | (self.bits & self.mask),
+            bits: flags.bits ^ ((flags.bits ^ self.bits) & self.mask),
         }
     }
 }

@@ -404,6 +404,8 @@ fn each_warning_code_stands_for_its_fteqcc_warning() {
         (Code::W0121, FteWarning::Denormal),
         (Code::W0122, FteWarning::MacroInString),
         (Code::W0123, FteWarning::HangingSlashR),
+        (Code::W0227, FteWarning::UnaryNotScope),
+        (Code::W0228, FteWarning::GmqccSpecific),
     ] {
         assert_eq!(FteWarning::of_code(code), Some(warning), "{code:?}");
     }
