@@ -2101,6 +2101,8 @@ fn fteqcc_comments_end_as_its_readers_end_them() {
         kinds_in(b"a\n// c\rb\nd", Dialect::Fteqcc),
         vec![name("a"), name("b"), name("d")]
     );
+    // Or the end of the text.
+    assert_eq!(kinds_in(b"a\n// c", Dialect::Fteqcc), vec![name("a")]);
     // The next line's comment is `QCC_PR_LexWhitespace`'s, as `QCC_PR_NewLine` passed over its
     // spaces and tabs and no other white space reset `nl`; after a VT it is read to its LF too.
     assert_eq!(
@@ -2253,6 +2255,14 @@ fn fteqcc_token_limits() {
     assert_eq!(over.diagnostics.len(), 1);
     assert_eq!(over.diagnostics[0].message, "String length exceeds 8191");
     assert_eq!(over.diagnostics[0].span.start, 4011);
+    // Only the part that passes 8191 is the error, not the parts after it.
+    let three = format!("{} {} {}", string(8000), string(500), string(5));
+    assert_eq!(
+        lex_with(three.as_bytes(), Dialect::Fteqcc)
+            .diagnostics
+            .len(),
+        1
+    );
     assert_eq!(
         fte_diagnostics(format!("{} x {}", string(4000), string(4192)).as_bytes()),
         Vec::new()

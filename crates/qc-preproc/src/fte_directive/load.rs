@@ -68,15 +68,19 @@ impl Wide {
 
     /// The code unit `unit`, of [`Self::width`] bytes.
     fn value(self, unit: &[u8]) -> u32 {
-        let mut value = 0_u32;
-        let little = matches!(self, Self::Utf32Le | Self::Utf16Le);
-        let mut push = |byte: &u8| value = (value << 8) | u32::from(*byte);
-        if little {
-            unit.iter().rev().for_each(&mut push);
+        // The unit's bytes, at most 4, at the low end of a 4-byte word.
+        let mut word = [0_u8; 4];
+        if matches!(self, Self::Utf32Le | Self::Utf16Le) {
+            for (place, &byte) in word.iter_mut().zip(unit) {
+                *place = byte;
+            }
+            u32::from_le_bytes(word)
         } else {
-            unit.iter().for_each(&mut push);
+            for (place, &byte) in word.iter_mut().rev().zip(unit.iter().rev()) {
+                *place = byte;
+            }
+            u32::from_be_bytes(word)
         }
-        value
     }
 }
 

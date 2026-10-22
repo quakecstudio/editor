@@ -295,6 +295,19 @@ fn warning_settings_hold_from_the_pragma_on() {
     ] {
         assert_eq!(defaults.action(warning), action, "{warning:?}");
     }
+    // A pragma in an expansion (FTEF-14.46) sets the file's warnings from where the file is
+    // read on, after the use, not from its offset in the expansion's text.
+    assert_eq!(
+        codes(
+            &one_fte(concat!(
+                "#pragma warning disable F303\n",
+                "#define D \\\n#pragma warning disable F325\n",
+                "\n/* /* */\nD\n/* /* */\n",
+            ))
+            .1
+        ),
+        vec![Code::W0112]
+    );
     assert_eq!(
         codes(&one_fte("/* /* */\n#pragma warning disable F325\n/* /* */\n").1),
         vec![Code::W0112]

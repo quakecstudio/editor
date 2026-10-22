@@ -189,6 +189,9 @@ fn qccx_and_assumeint_hex_numbers() {
         messages(&lexed(b"0x100000001", qccx)),
         [(Code::W0111, "numerical overflow")]
     );
+    // Low bits that are a negative `int` are no overflow.
+    assert_eq!(float_bits(b"0x1ffffffff", qccx), u32::MAX);
+    assert!(lexed(b"0x1ffffffff", qccx).diagnostics.is_empty());
     assert_eq!(float_bits(b"0xffffffffffffffff", qccx), u32::MAX);
     assert!(lexed(b"0xffffffffffffffff", qccx).diagnostics.is_empty());
     // A decimal number is the float of its value.
@@ -251,6 +254,14 @@ fn ilp32_needs_two_ls() {
 #[test]
 fn ssp_double_star() {
     let ssp = with(LexFlag::Ssp);
+    assert_eq!(
+        kinds(b"2*3", ssp),
+        [
+            TokenKind::Float(2.0),
+            TokenKind::Punct(Punct::Star),
+            TokenKind::Float(3.0)
+        ]
+    );
     assert_eq!(
         kinds(b"2**3", ssp),
         [
