@@ -32,7 +32,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use qc_diag::Diagnostic;
+use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
 
 use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess, settings_at};
@@ -80,9 +80,8 @@ impl ModuleAnalysis {
 #[derive(Clone, Debug)]
 struct ExpandedFile {
     text: Vec<u8>,
-    /// The compiler flags FTEQCC's lexer read in the text, from each rendered offset
-    /// (FTEF-12.12).
-    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// The pragmas' changes to the compiler flags, from each rendered offset (FTEF-21.1).
+    flags: Vec<(usize, qc_preproc::FlagEdit)>,
     /// The pragmas' changes to the keywords, from each rendered offset (FTEF-20.1).
     keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
     parse: Parse,
@@ -393,9 +392,19 @@ impl Db {
         let mut syntax = preprocessed.diagnostics;
         let mut decls = Vec::with_capacity(input.compiled.len());
         let mut keywords = Vec::with_capacity(input.compiled.len());
+        let mut relexed = Vec::new();
+        let preprocessor_count = syntax.len();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
             let file = self.expanded_file(id, rendered);
             keywords.push(file.parse.keywords().to_vec());
+            // FTEF-21.2: the tokens an `extern` block lexed with other flags have the parser's
+            // lexical errors and warnings, not the preprocessor's.
+            relexed.extend(
+                file.parse
+                    .relexed()
+                    .iter()
+                    .filter_map(|&span| rendered.origins.locate(span)),
+            );
             for d in file.parse.diagnostics() {
                 // FTEF-19.22: a parser warning takes the settings where it stands.
                 let settings = settings_at(&rendered.warnings, d.span.start);
@@ -411,12 +420,21 @@ impl Db {
             }
             decls.push(file.decls);
         }
+        if !relexed.is_empty() {
+            let mut index = 0_usize;
+            syntax.retain(|d| {
+                let from_preprocessor = index < preprocessor_count;
+                index = index.saturating_add(1);
+                let lexical = lexer_code(d.diagnostic.code);
+                let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
+                !(from_preprocessor
+                    && lexical
+                    && relexed
+                        .iter()
+                        .any(|l| l.file == d.file && l.span.contains(at)))
+            });
+        }
         let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
-        let noref: Vec<&[(usize, bool)]> = preprocessed
-            .files
-            .iter()
-            .map(|r| r.noref.as_slice())
-            .collect();
         // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
         // `*extensions.qc`.
         let extensions = self
@@ -438,7 +456,6 @@ impl Db {
             keywords.iter().map(Vec::as_slice).collect();
         let sources = Sources {
             maps: &maps,
-            noref: &noref,
             warnings: &warnings,
             keywords: &keywords,
             extensions,
@@ -481,7 +498,7 @@ impl Db {
         let text = rendered.text.as_slice();
         if let Some(cached) = self.expanded.get(&file)
             && cached.text == text
-            && cached.lex_flags == rendered.lex_flags
+            && cached.flags == rendered.flags
             && cached.keywords == rendered.keywords
         {
             return cached.clone();
@@ -490,14 +507,14 @@ impl Db {
         let parse = qc_syntax::parse_preprocessed_flagged(
             text,
             self.dialect,
-            &rendered.lex_flags,
+            &rendered.flags,
             &rendered.keywords,
         );
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
-            lex_flags: rendered.lex_flags.clone(),
+            flags: rendered.flags.clone(),
             keywords: rendered.keywords.clone(),
             parse,
             decls,
@@ -505,6 +522,30 @@ impl Db {
         self.expanded.insert(file, value.clone());
         value
     }
+}
+
+/// Whether the lexer gives `code` as it lexes a token's text, which lexing the token again with
+/// other flags gives again or not (QCD-2, FTEF-12.12, FTEF-21.2): the lexical errors and the
+/// lexer's own warnings, not the preprocessor's, such as a stale macro or a macro in a string.
+const fn lexer_code(code: Code) -> bool {
+    matches!(
+        code,
+        Code::E0101
+            | Code::E0102
+            | Code::E0103
+            | Code::E0104
+            | Code::E0105
+            | Code::E0123
+            | Code::E0124
+            | Code::W0110
+            | Code::W0111
+            | Code::W0112
+            | Code::W0118
+            | Code::W0119
+            | Code::W0120
+            | Code::W0121
+            | Code::W0123
+    )
 }
 
 /// A parser diagnostic of a file's expansion, at the source span it came from (QC-9.7).

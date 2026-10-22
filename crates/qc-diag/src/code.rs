@@ -139,6 +139,10 @@ pub enum Code {
     E0232,
     /// "initializer-string too long" (QCD-3.33).
     E0233,
+    /// "NAME not yet defined, cannot create NAME as an alias" (QCD-3.34).
+    E0234,
+    /// "alias NAME may not be initialised" (QCD-3.35).
+    E0235,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -287,6 +291,11 @@ pub enum Code {
     /// "ignoring unsupported unsigned keyword, type will be signed", "long doubles are not
     /// supported, using double" and "ignoring unsupported const keyword" (QCD-7.52).
     W0226,
+    /// "suggest parenthesis for unary operator that applies to multiple terms" (QCD-7.68).
+    W0227,
+    /// "Unknown attribute \"NAME\"" and "accumulating an accumulating accumulation"
+    /// (QCD-7.69).
+    W0228,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -301,7 +310,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 135] = [
+    pub const ALL: [Self; 139] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -360,6 +369,8 @@ impl Code {
         Self::E0231,
         Self::E0232,
         Self::E0233,
+        Self::E0234,
+        Self::E0235,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -432,6 +443,8 @@ impl Code {
         Self::W0224,
         Self::W0225,
         Self::W0226,
+        Self::W0227,
+        Self::W0228,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -482,6 +495,8 @@ impl Code {
             Self::E0231 => "E0231",
             Self::E0232 => "E0232",
             Self::E0233 => "E0233",
+            Self::E0234 => "E0234",
+            Self::E0235 => "E0235",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -535,6 +550,8 @@ impl Code {
             Self::W0224 => "W0224",
             Self::W0225 => "W0225",
             Self::W0226 => "W0226",
+            Self::W0227 => "W0227",
+            Self::W0228 => "W0228",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -621,6 +638,8 @@ impl Code {
             | Self::W0224
             | Self::W0225
             | Self::W0226
+            | Self::W0227
+            | Self::W0228
             | Self::W0311
             | Self::W0312
             | Self::W0313
@@ -677,6 +696,8 @@ impl Code {
             | Self::E0231
             | Self::E0232
             | Self::E0233
+            | Self::E0234
+            | Self::E0235
             | Self::E0301
             | Self::E0308
             | Self::E0501

@@ -21,6 +21,7 @@ mod dialect_full;
 mod dialect_rerelease;
 mod dialect_statements;
 mod expressions;
+mod flags;
 mod fte_directives;
 mod keywords;
 mod lossless;
@@ -31,6 +32,18 @@ mod statements;
 mod tree_api;
 
 use std::fmt::Write as _;
+
+use qc_preproc::{CompilerFlags, FlagEdit, FteFlag};
+
+/// The edit a file's first mark makes: FTEQCC's default flags with `set` set (FTEF-21.1).
+fn whole(set: &[(FteFlag, bool)]) -> FlagEdit {
+    let flags = set
+        .iter()
+        .fold(CompilerFlags::default(), |flags, &(flag, on)| {
+            flags.with(flag, on)
+        });
+    FlagEdit::whole(flags)
+}
 
 use crate::ast;
 use crate::{Code, Parse, SyntaxKind, parse};

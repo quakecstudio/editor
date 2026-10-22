@@ -5,12 +5,26 @@
 
 use std::path::Path;
 
-use qc_lexer::{Dialect, LexFlag, LexFlags};
+use qc_lexer::Dialect;
 
 use super::{codes, one_fte, tokens};
 use crate::{
-    Code, CommandLine, FileOutput, Keyword, KeywordEdit, Keywords, MemoryLoader, Preprocessor,
+    Code, CommandLine, CompilerFlags, FileOutput, FteFlag, Keyword, KeywordEdit, Keywords,
+    MemoryLoader, Preprocessor, Priorities,
 };
+
+/// The compiler flags in force after each of `out`'s flag marks, each at the token it holds
+/// from.
+fn flag_states(out: &FileOutput) -> Vec<(usize, CompilerFlags)> {
+    let mut now = CompilerFlags::default();
+    out.flags
+        .iter()
+        .map(|&(at, edit)| {
+            now = edit.apply(now);
+            (at, now)
+        })
+        .collect()
+}
 
 /// The keywords in force after each of `out`'s keyword marks, each at the token it holds from.
 fn keyword_states(out: &FileOutput) -> Vec<(usize, Keywords)> {
@@ -157,9 +171,9 @@ fn a_flag_holds_into_the_second_pass() {
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!(tokens(&out), r#""a" "\x00" "b" ;"#);
     assert!(
-        out.lex_flags
+        flag_states(&out)
             .iter()
-            .all(|(_, flags)| flags.has(LexFlag::Qccx))
+            .all(|(_, flags)| flags.has(FteFlag::Qccx))
     );
 }
 
@@ -181,7 +195,9 @@ fn the_command_line_holds_into_the_second_pass() {
 }
 
 // spec FTEF-12.12: the preprocessor marks each change of the lexer's flags by token, starting
-// with the defaults at token 0; a pragma that changes no lexer flag adds no mark
+// with the defaults at token 0
+// spec FTEF-21.1: a pragma that names no flag the lexer, the parser or the semantic model reads
+// adds no mark, and one that does marks only what it names
 #[test]
 fn lexer_flag_changes_are_marked() {
     let (_, out) = one_fte(concat!(
@@ -191,10 +207,14 @@ fn lexer_flag_changes_are_marked() {
         "#pragma flag enable ssp utf8\n",
         "c\n",
     ));
-    let both = LexFlags::default()
-        .with(LexFlag::Ssp, true)
-        .with(LexFlag::Utf8Strings, true);
-    assert_eq!(out.lex_flags, [(0, LexFlags::default()), (2, both)]);
+    let both = CompilerFlags::default()
+        .with(FteFlag::Dblstarexp, true)
+        .with(FteFlag::Utf8strings, true);
+    assert_eq!(
+        flag_states(&out),
+        [(0, CompilerFlags::default()), (2, both)]
+    );
+    assert_eq!(out.flags.len(), 2);
 }
 
 // spec FTEF-12.12: a flag's lexical warning is reported with the warning settings, F313 an error
@@ -278,9 +298,11 @@ fn nofileline_ignores_file_and_line_pragmas() {
     assert_eq!(tokens(&out), r#"101 "x.qc""#);
 }
 
-// spec FTEF-12.16: the flags that belong to the parse, the compiler or its output change no
-// token, and `acc`, which a pragma cannot set, leaves a `|` in a string as it is
+// spec FTEF-12.17: the flags that belong to the compiler or its output change no token, and
+// `acc`, which a pragma cannot set, leaves a `|` in a string as it is
 // spec FTEF-19.24: `assumedouble` changes no token, and is marked for the semantic model
+// spec FTEF-21.4: `cpriority` changes no token, and is marked for the parser with the priorities
+// it sets
 #[test]
 fn other_flags_change_no_token() {
     let text = "x = 1.5 \"a|b\" 'a';\n";
@@ -289,11 +311,21 @@ fn other_flags_change_no_token() {
         "#pragma flag enable cpriority msvcstyle debugmacros\n{text}"
     ));
     assert_eq!(tokens(&out), tokens(&plain));
-    assert_eq!(out.lex_flags, [(0, LexFlags::default())]);
+    let c = CompilerFlags::default()
+        .with(FteFlag::Cpriority, true)
+        .with_priorities(Priorities::C);
+    assert_eq!(flag_states(&out), [(0, CompilerFlags::default()), (0, c)]);
+    let (_, out) = one_fte(&format!(
+        "#pragma flag enable msvcstyle debugmacros\n{text}"
+    ));
+    assert_eq!(flag_states(&out), [(0, CompilerFlags::default())]);
     let (_, out) = one_fte(&format!("#pragma flag enable assumedouble\n{text}"));
     assert_eq!(tokens(&out), tokens(&plain));
-    let double = LexFlags::default().with(qc_lexer::LexFlag::AssumeDouble, true);
-    assert_eq!(out.lex_flags, [(0, LexFlags::default()), (0, double)]);
+    let double = CompilerFlags::default().with(FteFlag::AssumeDouble, true);
+    assert_eq!(
+        flag_states(&out),
+        [(0, CompilerFlags::default()), (0, double)]
+    );
     assert!(codes(&out).is_empty());
     let (_, out) = one_fte(&format!("#pragma flag enable acc caseinsens\n{text}"));
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);

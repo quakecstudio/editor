@@ -459,6 +459,8 @@ impl FteWarning {
             Code::W0222 => Self::ParamWithNoName,
             Code::W0224 => Self::DeprecatedSyntax,
             Code::W0225 => Self::EnumflagsNotInteger,
+            Code::W0227 => Self::UnaryNotScope,
+            Code::W0228 => Self::GmqccSpecific,
             Code::W0312 => Self::DuplicateLabel,
             Code::W0314 => Self::DeprecatedVariable,
             _ => return None,

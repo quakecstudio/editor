@@ -68,14 +68,18 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   [`dialect-fteqcc-rerelease.md`](../../docs/spec/dialect-fteqcc-rerelease.md), the builtin
   functions of FTE-23.7 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
-  QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.33, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
+  QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.35, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
   QCD-7.3, QCD-7.23, QCD-7.28, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
   FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
-  and FTEF-19.19 to FTEF-19.29: the warning settings, the command line's flags, the lexer's
-  flags in literals and engine names, case insensitivity and a module's source; and the
+  and FTEF-19.19 to FTEF-19.30: the warning settings, the command line's flags, the lexer's
+  flags in literals and engine names, case insensitivity and a module's source; the flags
+  that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
+  `qcfuncs` off, the attributes and the definitions `alias` makes (QCD-3.34, QCD-3.35),
+  `assumevar`, `subscope`, `assumeint`'s enums and the defaults of `#pragma noref`, `nosave` and
+  `defaultstatic`; and the
   keywords' parts that are the semantic model's, FTEF-20.4 (the warning for a definition named
   as a keyword), FTEF-20.5 (the names of `using`, `thinktime` and `state`), FTEF-20.9 (the
   registered type C type words name) and FTEF-20.11 (`this` and `super`). The

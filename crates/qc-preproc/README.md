@@ -54,10 +54,13 @@ offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` wit
 place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.10). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
-(`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
-semantic model (FTEF-12.6, FTEF-12.10). `#pragma flag` sets FTEQCC's compiler flags
-(`FlagSettings`, FTEF-12.11): the text from there on is lexed again with the flags the lexer
-reads (`Lexing`, FTEF-12.12), each change marked in `FileOutput::lex_flags`, and `hashonly` and
+(`cond::fte_atoi`, FTEF-14.55). `#pragma autoproto` is recorded for the semantic model
+(FTEF-12.10). `#pragma flag` sets FTEQCC's compiler flags (`FlagSettings`, FTEF-12.11): the text
+from there on is lexed again with the flags the lexer reads (`Lexing`, FTEF-12.12), and each
+change to the flags the lexer, the parser and the semantic model read, the operator priorities
+a pragma that names `cpriority` sets among them (`Priorities`, FTEF-21.4), and to the defaults
+`#pragma noref`, `nosave` and `defaultstatic` set (FTEF-21.14) is marked in `FileOutput::flags`
+as a `FlagEdit` of `CompilerFlags` that sets only what it names (FTEF-21.1), and `hashonly` and
 `nofileline` change the preprocessor's own reading (FTEF-12.13). A word or string of a directive
 past FTEQCC's 1023 bytes, a pragma past its `msg[1024]` and a comment the text ends in are FTEQCC's
 errors (FTEF-14.66, FTEF-14.67). The graph's reader also reads a list-form `progs.src`

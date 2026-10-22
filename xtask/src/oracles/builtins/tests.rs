@@ -42,6 +42,7 @@ fn bound_as(number: i32, name: &str) -> Outcome {
 // pinned FTEQCC's or id's qcc's, or differs only as QC-27.8, QC-27.9, FTEF-13.8 and
 // FTEF-14.47 say
 // spec FTEF-19.18: the definitions family is recorded and agrees but for QC-27.8
+// spec FTEF-21.16: the flag family is recorded and agrees on every case
 #[test]
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();

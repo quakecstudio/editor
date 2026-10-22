@@ -131,12 +131,10 @@ pub(crate) struct Rendered {
     /// The rendered offset each token starts at, every token's, in order: the preprocessor
     /// marks pragmas by token index, and a token with no source location has no origin.
     pub(crate) starts: Vec<usize>,
-    /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
-    /// setting (FTEF-12.6).
-    pub(crate) noref: Vec<(usize, bool)>,
-    /// The compiler flags FTEQCC's lexer read: the rendered offset from which each holds, and the
-    /// flags (FTEF-12.12).
-    pub(crate) lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// Under FTEQCC, the changes to the compiler flags the pragmas make: the rendered offset
+    /// from which each holds, and the change (FTEF-12.12, FTEF-21.1); empty under the vanilla
+    /// dialect.
+    pub(crate) flags: Vec<(usize, qc_preproc::FlagEdit)>,
     /// Under FTEQCC, the warning settings: the rendered offset from which each holds, and the
     /// settings (FTEF-14.63, FTEF-19.22); empty under the vanilla dialect.
     pub(crate) warnings: Vec<(usize, WarningSettings)>,
@@ -318,13 +316,8 @@ fn run<L: Loader>(
                 .copied()
                 .unwrap_or(rendered.text.len())
         };
-        rendered.noref = output
-            .noref
-            .iter()
-            .map(|&(token, on)| (offset_of(&rendered, token), on))
-            .collect();
-        rendered.lex_flags = output
-            .lex_flags
+        rendered.flags = output
+            .flags
             .iter()
             .map(|&(token, flags)| (offset_of(&rendered, token), flags))
             .collect();
