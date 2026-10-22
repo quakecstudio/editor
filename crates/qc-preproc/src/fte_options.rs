@@ -129,6 +129,9 @@ const CORE_TYPE_WORDS: &[FteFlag] = &[
     F::StringKeyword,
 ];
 
+/// Groups of flags, each set on or off, in order.
+type Groups = &'static [(&'static [FteFlag], bool)];
+
 /// `-std=c` and the other C dialects: "set up for greatest C compatibility".
 const STD_C: &[(&[FteFlag], bool)] = &[
     (&[F::AsmKeyword], false),
@@ -210,87 +213,8 @@ const STD_C: &[(&[FteFlag], bool)] = &[
     (&[F::Iffloat], true),
 ];
 
-/// `-std=c++`: the C dialects', then `keyword_class = keyword_inline = true;`.
-const STD_CPP: &[(&[FteFlag], bool)] = &[
-    (&[F::AsmKeyword], false),
-    (
-        &[
-            F::BreakKeyword,
-            F::ContinueKeyword,
-            F::ForKeyword,
-            F::GotoKeyword,
-            F::ConstKeyword,
-            F::ExternKeyword,
-            F::StaticKeyword,
-            F::AutoKeyword,
-            F::SwitchKeyword,
-            F::CaseKeyword,
-            F::DefaultKeyword,
-        ],
-        true,
-    ),
-    (
-        &[
-            F::AccessorKeyword,
-            F::ClassKeyword,
-            F::VarKeyword,
-            F::InoutKeyword,
-            F::OptionalKeyword,
-            F::StateKeyword,
-            F::InlineKeyword,
-            F::NosaveKeyword,
-            F::SharedKeyword,
-            F::NorefKeyword,
-            F::UnusedKeyword,
-            F::UsedKeyword,
-            F::LocalKeyword,
-            F::NonstaticKeyword,
-            F::IgnoreKeyword,
-            F::StripKeyword,
-        ],
-        false,
-    ),
-    (CORE_TYPE_WORDS, false),
-    (&[F::IntegerKeyword, F::EnumflagsKeyword], false),
-    (
-        &[
-            F::FloatKeyword,
-            F::IntKeyword,
-            F::TypedefKeyword,
-            F::StructKeyword,
-            F::UnionKeyword,
-            F::EnumKeyword,
-            F::DoubleKeyword,
-            F::LongKeyword,
-            F::ShortKeyword,
-            F::CharKeyword,
-            F::SignedKeyword,
-            F::UnsignedKeyword,
-            F::RegisterKeyword,
-            F::VolatileKeyword,
-        ],
-        true,
-    ),
-    (
-        &[F::ThinktimeKeyword, F::UntilKeyword, F::LoopKeyword],
-        false,
-    ),
-    (
-        &[
-            F::Ilp32,
-            F::LogicopsOpt,
-            F::Assumevar,
-            F::PrSubscopedlocals,
-            F::Cpriority,
-            F::AssumeInteger,
-            F::AssumeDouble,
-        ],
-        true,
-    ),
-    (&[F::Qcfuncs, F::Macroinstrings, F::Boundchecks], false),
-    (&[F::Iffloat], true),
-    (&[F::ClassKeyword, F::InlineKeyword], true),
-];
+/// What `-std=c++` sets after the C dialects': `keyword_class = keyword_inline = true;`.
+const CPP_AFTER_C: &[(&[FteFlag], bool)] = &[(&[F::ClassKeyword, F::InlineKeyword], true)];
 
 /// `keyword_int = keyword_integer = keyword_typedef = keyword_struct = keyword_union =
 /// keyword_enum = keyword_enumflags = false;`, of `qcc` and `hcc`.
@@ -530,23 +454,33 @@ impl Std {
     /// The flags and keywords it sets, in FTEQCC's order, after every flag was set to its
     /// default (`*compiler_flag[p].enabled = !!(compiler_flag[p].flags & FLAG_ASDEFAULT)`).
     fn flags(self) -> impl Iterator<Item = (FteFlag, bool)> {
-        let groups: &[(&[FteFlag], bool)] = match self {
-            Self::C => STD_C,
-            Self::Cpp => STD_CPP,
-            Self::Qccx => &[(&[FteFlag::Qccx], true)],
-            Self::Preqcc => &[(&[FteFlag::Hashonly, FteFlag::Macroinstrings], true)],
-            Self::Reacc => &[(&[FteFlag::Acc], true), (&[FteFlag::Macroinstrings], false)],
-            Self::Frikqcc => &[
-                (&[FteFlag::StateKeyword], true),
-                (&[FteFlag::Macroinstrings], false),
-            ],
-            Self::Qcc => STD_QCC,
-            Self::Hcc => STD_HCC,
-            Self::Gmqcc => STD_GMQCC,
-            Self::Fteqcc | Self::Unknown => &[],
+        let (groups, after): (Groups, Groups) = match self {
+            Self::C => (STD_C, &[]),
+            Self::Cpp => (STD_C, CPP_AFTER_C),
+            Self::Qccx => (&[(&[FteFlag::Qccx], true)], &[]),
+            Self::Preqcc => (
+                &[(&[FteFlag::Hashonly, FteFlag::Macroinstrings], true)],
+                &[],
+            ),
+            Self::Reacc => (
+                &[(&[FteFlag::Acc], true), (&[FteFlag::Macroinstrings], false)],
+                &[],
+            ),
+            Self::Frikqcc => (
+                &[
+                    (&[FteFlag::StateKeyword], true),
+                    (&[FteFlag::Macroinstrings], false),
+                ],
+                &[],
+            ),
+            Self::Qcc => (STD_QCC, &[]),
+            Self::Hcc => (STD_HCC, &[]),
+            Self::Gmqcc => (STD_GMQCC, &[]),
+            Self::Fteqcc | Self::Unknown => (&[], &[]),
         };
         groups
             .iter()
+            .chain(after)
             .flat_map(|&(flags, on)| flags.iter().map(move |&flag| (flag, on)))
     }
 

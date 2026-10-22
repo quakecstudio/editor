@@ -144,8 +144,12 @@ fn definitions_named_as_keywords() {
         Vec::<String>::new()
     );
     assert_eq!(keyword_warnings("float float;\n", &[]).len(), 1);
-    // A redeclaration makes no new definition.
+    // A redeclaration makes no new definition, nor a class's member.
     assert_eq!(keyword_warnings("float for;\nfloat for;\n", &[]).len(), 1);
+    assert_eq!(
+        keyword_warnings("class C { float vector; };\n", &[]),
+        Vec::<String>::new()
+    );
     // `kce` off: the keyword is a name after the definition.
     let lone = "#pragma flag disable kce\nfloat for;\nvoid() g = { for = 1; };\n";
     assert_eq!(errors(lone, &[]), []);
@@ -193,6 +197,10 @@ fn keyword_statements_resolve_their_names() {
         []
     );
     assert_eq!(
+        errors("float x;\nvoid() g = { y = 1; __using x = y; };\n", &[]),
+        [Code::E0301]
+    );
+    assert_eq!(
         analysed("void() g = { __using (q) { } };\n", &[]),
         [(Code::E0313, "q is not defined".to_owned())]
     );
@@ -211,6 +219,14 @@ fn keyword_statements_resolve_their_names() {
         []
     );
     assert_eq!(errors("void() g = { __loop { break; } };\n", &[]), []);
+    // A Hexen II target has `OP_THINKTIME`, and needs neither.
+    assert_eq!(
+        errors(
+            "entity self;\nvoid() g = { thinktime self : 0.1; };\n",
+            &["-Thexen2"]
+        ),
+        []
+    );
     assert_eq!(
         errors("void() g = { asm { local float x; DONE; } };\n", &[]),
         []
@@ -248,6 +264,18 @@ fn c_type_words_name_registered_types() {
         errors("#pragma flag enable ILP32\n__long l;\n__int64 l;\n", &[]),
         []
     );
+}
+
+// spec FTEF-20.11: a class's member words are read in any case and after `__`
+#[test]
+fn class_member_words_lower_as_the_parser_read_them() {
+    let class = "class C { virtual: __STATIC void() m; float x; };\nvoid() C::m = { x = 1; };\n";
+    assert_eq!(errors(class, &[]), []);
+    let label = "class C { __VIRTUAL: void() m; };\nvoid() C::m = {};\n";
+    assert_eq!(errors(label, &[]), []);
+    let accessor =
+        "accessor A : float { SET float(float v) = { }; GET float() = { return 0; } };\n";
+    assert_eq!(errors(accessor, &["-Fcaseinsens"]), []);
 }
 
 // spec FTEF-20.11: `this` and `super` are intrinsics only with `keyword_class` on

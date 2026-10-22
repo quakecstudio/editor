@@ -368,7 +368,10 @@ impl<'a> Parser<'a> {
             let after = self.keywords.after_definition(keyword);
             if after != self.keywords {
                 self.keywords = after;
-                self.keyword_marks.push((self.last_end, after));
+                // At the current token, after any pragma's mark there, so the marks stay in
+                // order.
+                let at = self.current_span().start;
+                self.keyword_marks.push((at, after));
             }
         }
     }
@@ -766,6 +769,8 @@ impl<'a> Parser<'a> {
     /// A vanilla type (QC-10) or, in an FTEQCC dialect, the full dialect's types, a
     /// user-defined type name among them (FTE-14.2; FTEF-2, FTEF-4, FTEF-7).
     fn type_or_user_type(&mut self) -> Option<TypeShape> {
+        // FTEF-20.4: a declaration's body defines only the parameters of its own type.
+        self.params.clear();
         if self.fteqcc() {
             self.fte_type()
         } else {
@@ -1005,10 +1010,11 @@ impl<'a> Parser<'a> {
         self.leave(levels);
         let mut name = self.found();
         self.name();
-        // FTEF-9.4: `Class::member` names a member a class declares.
+        // FTEF-9.4: `Class::member` names a member a class declares, whose definition is named
+        // `Class::member` (FTEF-20.4).
         while self.fteqcc() && self.at(K::ColonColon) {
             self.bump();
-            name = self.found();
+            name = format!("{name}::{}", self.found());
             self.name();
         }
         let mut ty = ty;
@@ -1576,18 +1582,7 @@ impl<'a> Parser<'a> {
         } else if self.at_c_label() {
             // FTEF-18.23: `name:`, the C label, its `:` right after the name.
             self.label_stmt();
-        } else if self.looks_like_declaration(0)
-            || (!self.reserved(0)
-                && !self.decl_qualifier(0)
-                && !self.c_type_word(0)
-                && !self.at_volatile(0)
-                && self.nth(1).is_some_and(|t| t.kind == K::Name))
-        {
-            // FTE-21.1: FTEQCC's `QCC_PR_ParseStatement` reads a statement that starts with a
-            // type name as a definition, so a user type followed by a name, `poseInfo pose =
-            // ...`, declares a local. FTEF-19.1: a qualifier that does not start a definition
-            // there is a name, and FTEF-2.10: so is a C type word `fte_looks_like_local` did
-            // not take.
+        } else if self.looks_like_declaration(0) {
             self.local_decl(false);
         } else {
             self.expr_stmt();

@@ -290,6 +290,9 @@ struct Facts {
     /// For a local a `for` statement defines, the byte offset where the statement ends and
     /// the local leaves `localstable` (FTEF-19.19).
     scope_end: Option<usize>,
+    /// For a `using` alias, the byte offset of its name, before which it is not found
+    /// (FTEF-20.5).
+    scope_start: Option<usize>,
 }
 
 struct Resolver<'a> {
@@ -517,7 +520,9 @@ impl<'a> Resolver<'a> {
     fn push_def(&mut self, def: Definition) -> DefId {
         // FTEF-20.4: `QCC_PR_DummyDef` warns of a definition named as a keyword that is on,
         // which keeps its meaning beside it with `kce` on and is turned off with it off.
+        // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so.
         if self.fteqcc
+            && def.member_of.is_none()
             && self
                 .keywords
                 .named_definition(&def.name, def.ty.is_function())
@@ -2350,6 +2355,7 @@ impl<'a> Resolver<'a> {
         });
         if let Some(f) = self.fact_mut(id) {
             f.referenced = true;
+            f.scope_start = Some(span.start);
             f.scope_end = alias.scope_end;
         }
     }
@@ -2917,10 +2923,11 @@ impl<'a> Resolver<'a> {
     /// Whether the definition at `index` is in scope at byte `at`: not a `for` statement's
     /// local whose statement ended before it (FTEF-19.19).
     fn in_scope_at(&self, index: usize, at: usize) -> bool {
-        self.facts
-            .get(index)
-            .and_then(|f| f.scope_end)
-            .is_none_or(|end| at < end)
+        let facts = self.facts.get(index);
+        facts.and_then(|f| f.scope_end).is_none_or(|end| at < end)
+            && facts
+                .and_then(|f| f.scope_start)
+                .is_none_or(|start| at >= start)
     }
 
     /// A global name as a use finds it (QC-12.2): as written, then under `-Fcaseinsens` in any

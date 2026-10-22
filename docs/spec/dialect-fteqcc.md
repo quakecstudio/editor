@@ -2490,13 +2490,15 @@ and compares the outcome with the pinned FTEQCC's.
   a function with a body as `QCC_PR_ParseImmediateStatements` reads it (a prototype's and a
   builtin's make none), an enum's names, a state header's or `state` statement's next think
   function when it is new, and a `using` alias; a typedef's name, a struct's members and a
-  class's members are none. So with `kce` off `float for;` makes `for (;;) {}` a call of the
+  class's members are none, and `Class::member` is named so, no keyword. So with `kce` off `float for;` makes `for (;;) {}` a call of the
   float `for`, the error "not a function", and `for = 1;` an assignment. Two deliberate
   divergences, both only with `kce` off, as the parser turns the keyword off and the semantic
   model makes the definitions: a definition named as a keyword turns it off even when it is a
   redeclaration, which `QCC_PR_GetDef` finds with no new definition; and the keyword is off to
   the end of the file the definition is in, and on again in the next file and the second
-  autoprototyping pass unless a definition there turns it off, as each file is parsed on its own.
+  autoprototyping pass unless a definition there turns it off, as each file is parsed on its own;
+  and a body whose function type a typedef names defines no parameter, as the parser knows no
+  typedef's parameters.
 - **FTEF-20.5** A statement of `QCC_PR_ParseStatement` is read by its first token, the keywords
   tried in its order: `{`; `return`; `exit` (`keyword_exit` is `flag_acc`, reacc's, FTEF-20.13,
   so only `__exit`), `OP_DONE` and a `;`; `loop` and a statement, run again until a `break`;
@@ -2511,14 +2513,16 @@ and compares the outcome with the pinned FTEQCC's.
   `for` on `for = 1;` is "expected (, found =". `using (a, b = c) s` finds each name as a value is
   found (`QCC_PR_GetDef (NULL, name, pr_scope, false, 0, 0)`), "NAME is not defined"
   (`E0313`) when none is, and makes an alias of its type named as it is or, after `=`, as the
-  name after it, until the statement `s` ends; `using a, b = c;` makes them to the end of the
-  function. `asm` takes an instruction, or several in `{ }`: `local` and a definition, or a
+  name after it, from its name until the statement `s` ends; `using a, b = c;` makes them to
+  the end of the function. `asm` takes an instruction, or several in `{ }`: `local` and a definition, or a
   token that is an `opname` of `pr_opcodes[]` exactly and its operands up to a `;`, which are
   code generation's (FTEF-19.17); any other token is `E0511` "Bad op code name NAME"
-  (`ERR_BADOPCODE`). `thinktime e : t;` looks up `nextthink` and `time` by name on the standard
-  target, which has no `OP_THINKTIME` (`QCC_PR_GetSRef(NULL, "nextthink", ...)`), "Unknown value
-  \"nextthink\"" when there is none; that `e` must be an entity and `t` a float ("thinktime
-  type mismatch") is the type checker's (FTEF-19.17). By default `loop`, `until`, `state`,
+  (`ERR_BADOPCODE`). `thinktime e : t;` looks up `nextthink` and `time` by name when the target
+  has no `OP_THINKTIME` (`QCC_PR_GetSRef(NULL, "nextthink", ...)`), "Unknown value
+  \"nextthink\"" when there is none: on the standard target, and on every target but
+  `QCF_HEXEN2` and `QCF_UHEXEN2` in this profile, which takes the other targets' opcode sets for
+  code generation's (L-01); that `e` must be an entity and `t` a float ("thinktime type
+  mismatch") is the type checker's (FTEF-19.17). By default `loop`, `until`, `state`,
   `thinktime` and `using` are off, so only their `__` spellings start these statements.
 - **FTEF-20.6** In a body a statement defines locals when its first token is a name
   `QCC_TypeForName` finds, not followed by `::`, or is exactly one of the words

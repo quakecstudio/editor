@@ -1048,22 +1048,50 @@ impl AccessorDecl {
 }
 
 impl AccessorMember {
+    /// The words before the type, `inline` and `get` or `set`, as the parser took them, in
+    /// any case and in a class with a `__` (FTEF-20.11), and the names after them.
+    fn words(&self) -> (Vec<SyntaxToken>, Vec<SyntaxToken>) {
+        let names: Vec<SyntaxToken> = self
+            .0
+            .child_tokens()
+            .filter(|t| t.kind() == K::Name)
+            .collect();
+        let is = |token: &SyntaxToken, word: &str| {
+            let text = token.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case(word)
+        };
+        let mut lead = 0_usize;
+        if names.first().is_some_and(|t| is(t, "inline")) {
+            lead = 1;
+        }
+        if names
+            .get(lead)
+            .is_some_and(|t| is(t, "get") || is(t, "set"))
+        {
+            lead = lead.saturating_add(1);
+        }
+        let (words, rest) = names.split_at(lead.min(names.len()));
+        (words.to_vec(), rest.to_vec())
+    }
+
     /// The member's name, if it has one: the name after `inline`, `get` or `set` and the
     /// type.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        self.0
-            .child_tokens()
-            .filter(|t| t.kind() == K::Name)
-            .find(|t| !matches!(t.text_lossless().as_str(), "inline" | "get" | "set"))
+        self.words().1.into_iter().next()
     }
 
     /// Whether it is a `set` member.
     #[must_use]
     pub fn is_set(&self) -> bool {
-        self.0
-            .child_tokens()
-            .any(|t| t.kind() == K::Name && t.text_lossless() == "set")
+        self.words().0.last().is_some_and(|t| {
+            let text = t.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case("set")
+        })
     }
 
     /// The index parameter's name in `[Type name]`, if any.

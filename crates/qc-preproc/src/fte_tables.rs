@@ -897,13 +897,6 @@ pub(crate) const OPTIMISATIONS: [(&str, &str); 20] = [
 
 /// The `opname` of each row of `pr_opcodes[]`, in its order, which `#pragma opcode` matches in any
 /// case.
-/// Whether `name` is the `opname` of a row of `pr_opcodes[]`, compared exactly (`STRCMP`), as
-/// `QCC_PR_ParseAsm` reads an `asm` instruction's first token (FTEF-20.5).
-#[must_use]
-pub fn is_opcode_name(name: &str) -> bool {
-    OPCODES.contains(&name)
-}
-
 pub(crate) const OPCODES: [&str; 413] = [
     "DONE",
     "MUL_F",
@@ -1319,6 +1312,13 @@ pub(crate) const OPCODES: [&str; 413] = [
     "GT_D",
     "WSTATE",
 ];
+
+/// Whether `name` is the `opname` of a row of `pr_opcodes[]`, compared exactly (`STRCMP`), as
+/// `QCC_PR_ParseAsm` reads an `asm` instruction's first token (FTEF-20.5).
+#[must_use]
+pub fn is_opcode_name(name: &str) -> bool {
+    OPCODES.contains(&name)
+}
 
 /// `OP_NUMREALOPS`: the rows of [`OPCODES`] from here on are internal.
 pub(crate) const REAL_OPCODES: usize = 282;

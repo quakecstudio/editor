@@ -1166,7 +1166,8 @@ fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecls) {
     for node in class.syntax().children() {
         match node.kind() {
             SyntaxKind::AccessLabel => {
-                let word = first_word(&node);
+                // FTEF-20.11: the label's word, `__` and any case as the parser took it.
+                let word = first_word(&node).to_ascii_lowercase();
                 if word.ends_with("nonvirtual") {
                     assume_virtual = false;
                 } else if word.ends_with("virtual") {
@@ -1218,7 +1219,12 @@ fn lower_member(
     out: &mut Vec<RawMember>,
 ) {
     let words = qualifiers(decl);
-    let has = |word: &str| words.iter().any(|w| w.trim_start_matches('_') == word);
+    // FTEF-20.11: a member's words are `__` and any case as the parser took them.
+    let has = |word: &str| {
+        words
+            .iter()
+            .any(|w| w.trim_start_matches('_').eq_ignore_ascii_case(word))
+    };
     let virtual_ = has("virtual") || (assume_virtual && !has("nonvirtual") && !has("static"));
     let base = decl.ty().map_or(Type::Unknown, |t| cx.ty(&t));
     let mut declared = false;
@@ -1671,8 +1677,9 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 lower_stmt(&inner, cx, body);
             }
         }
-        // FTEF-20.5: `thinktime e : t;` uses its operands and, as the standard target has no
-        // `OP_THINKTIME`, `nextthink` and `time`, which `QCC_PR_GetSRef` looks up by name.
+        // FTEF-20.5: `thinktime e : t;` uses its operands and, unless the target is Hexen II's,
+        // which has `OP_THINKTIME`, `nextthink` and `time`, which `QCC_PR_GetSRef` looks up by
+        // name.
         ast::Stmt::Thinktime(thinktime) => {
             for operand in thinktime.operands() {
                 lower_expr(&operand, cx, &mut body.uses);
@@ -1681,9 +1688,11 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 .syntax()
                 .token_of(SyntaxKind::ThinktimeKw)
                 .map_or_else(|| thinktime.syntax().span(), |t| t.span());
-            for name in ["nextthink", "time"] {
-                body.uses
-                    .push(RawUse::new(name.to_owned(), span, UseKind::Value));
+            if !cx.keywords_at(span.start).hexen2_target() {
+                for name in ["nextthink", "time"] {
+                    body.uses
+                        .push(RawUse::new(name.to_owned(), span, UseKind::Value));
+                }
             }
         }
         // FTEF-20.5: `state [frame, next];` reads a state header as a function's: its values,

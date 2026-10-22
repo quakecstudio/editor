@@ -140,6 +140,19 @@ fn definitions_turn_keywords_off_without_kce() {
     assert!(!after("float break;\n", lone).has(Keyword::Break));
     assert!(!after("float float;\n", lone).has(Keyword::Float));
     assert!(after("float float;\n", lone.with_hexen2_target(true)).has(Keyword::Float));
+    // A body defines only its own type's parameters, and `Class::member` names no keyword.
+    let stale = "void(float for) h;\nvoid() g = { for (;;) {} };\n";
+    assert!(holds(stale, lone, K::ForStmt));
+    assert!(after("void() C::for = {};\n", lone).has(Keyword::For));
+    // A definition's mark follows a pragma's at the same token.
+    let marks = [
+        (0, KeywordEdit::whole(lone)),
+        (9, KeywordEdit::whole(lone.with(Keyword::For, true))),
+    ];
+    let parsed =
+        parse_preprocessed_flagged(b"float for\n;\nfloat y;\n", Dialect::Fteqcc, &[], &marks);
+    assert!(parsed.keywords().windows(2).all(|w| w[0].0 <= w[1].0));
+    assert!(!parsed.keywords_at(12).has(Keyword::For));
     // The keyword is a name from the token after the definition.
     let source = "float for;\nvoid() g = { for (;;) {} };\n";
     assert!(!holds(source, lone, K::ForStmt));
@@ -350,6 +363,13 @@ fn type_keywords_follow_their_flags() {
 fn c_type_words_follow_their_flags() {
     // With its keyword off a C word is a type's name, and the word after it the declarator's.
     assert_eq!(errors("long int l;\n", with(Keyword::Long, true)), []);
+    let parsed = fte_with("long int l;\n", with(Keyword::Long, true));
+    let ty = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == K::SimpleType)
+        .unwrap();
+    assert_eq!(ty.text(), b"long int");
     assert_ne!(errors("long int l;\n", Keywords::default()), []);
     assert_ne!(
         errors("unsigned int u;\n", with(Keyword::Unsigned, false)),

@@ -49,6 +49,10 @@ fn defaults_are_compiler_flag_s() {
         );
     }
     assert_eq!(Keyword::of_flag(FteFlag::Qccx), None);
+    // Each keyword's bit is its place in `ALL`.
+    for (at, keyword) in (0_u32..).zip(Keyword::ALL) {
+        assert_eq!(keyword.bit(), 1_u64 << at, "{keyword:?}");
+    }
 }
 
 // spec FTEF-20.2: `__WORD` is the keyword in any case whether or not it is on; a bare word only
@@ -159,6 +163,9 @@ fn edits_set_only_what_they_name() {
     assert!(!after.has(Keyword::Switch));
     assert!(after.has(Keyword::Case));
     assert!(KeywordEdit::of_flags(&[FteFlag::Qccx], settings.keywords()).is_empty());
+    // A flag named twice is set once.
+    let twice = KeywordEdit::of_flags(&[FteFlag::ForKeyword, FteFlag::ForKeyword], Keywords::NONE);
+    assert!(!twice.apply(Keywords::default()).has(Keyword::For));
     let any_case = KeywordEdit::of_flags(&[FteFlag::Caseinsensitive], Keywords::NONE);
     assert!(!any_case.is_empty());
     assert!(
