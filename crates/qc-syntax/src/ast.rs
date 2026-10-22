@@ -668,7 +668,7 @@ fn head_stars(node: &SyntaxNode) -> usize {
 fn prefix_lists(node: &SyntaxNode, name: Option<&SyntaxToken>) -> Vec<ParamList> {
     let end = name.map_or(0, |t| t.span().start);
     node.children()
-        .filter(|n| n.span().start < end)
+        .filter(|n| n.span().end <= end)
         .filter_map(ParamList::cast)
         .collect()
 }

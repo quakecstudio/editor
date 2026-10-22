@@ -235,22 +235,39 @@ fn parse_text(
         let mut parser = parser::Parser::new(input, dialect, keywords, &marks);
         parser.source_file();
         pass = pass.saturating_add(1);
-        if parser.blocks() == blocks.as_slice() || pass >= PASSES {
-            let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
-                parser.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
-            } else {
-                Vec::new()
-            };
-            let (green, diagnostics, keywords) = parser.finish();
-            return Parse {
-                green,
-                diagnostics,
-                flags: marks,
-                lex,
-                keywords,
-                relexed,
-            };
+        // Done when this pass read the blocks it was lexed with, or when the passes are spent.
+        let settled = parser.blocks() == blocks.as_slice();
+        if settled {
+            return finish(parser, text, edits, &blocks, marks, lex);
+        }
+        if pass == PASSES {
+            return finish(parser, text, edits, &blocks, marks, lex);
         }
         blocks = parser.blocks().to_vec();
+    }
+}
+
+/// The parse of a text's last pass, which read it with the `extern` blocks `blocks`.
+fn finish(
+    mut parser: parser::Parser<'_>,
+    text: input::Text,
+    edits: &[(usize, FlagEdit)],
+    blocks: &[flags::Block],
+    marks: Vec<(usize, CompilerFlags)>,
+    lex: Vec<(usize, qc_lexer::LexFlags)>,
+) -> Parse {
+    let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
+        parser.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
+    } else {
+        Vec::new()
+    };
+    let (green, diagnostics, keywords) = parser.finish();
+    Parse {
+        green,
+        diagnostics,
+        flags: marks,
+        lex,
+        keywords,
+        relexed,
     }
 }

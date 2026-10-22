@@ -360,6 +360,7 @@ fn arguments_stay_in_the_chunk_of_the_name() {
 // spec FTEF-14.28: an expansion that grows past the bound stops there
 #[test]
 fn an_expansion_past_the_bound_is_reported_once() {
+    let _one = super::one_bound_test_at_a_time();
     let mut text = String::from("#define A0 x\n");
     for i in 1..24 {
         text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));
@@ -476,6 +477,7 @@ fn a_call_written_in_a_body_expands() {
 // spec FTEF-14.28: the bound on tokens holds even when the expansions stay under theirs
 #[test]
 fn an_expansion_writing_too_many_tokens_is_reported() {
+    let _one = super::one_bound_test_at_a_time();
     let mut text = format!("#define A0 {}\n", "x ".repeat(100));
     for i in 1..17 {
         text.push_str(&format!("#define A{i} A{p} A{p}\n", p = i - 1));

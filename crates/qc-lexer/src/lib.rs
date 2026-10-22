@@ -838,7 +838,6 @@ impl Lexer<'_> {
     /// `QCC_PR_LexComment`'s reading, up to where it calls `QCC_PR_LexWhitespace`.
     fn fte_lex_comment(&mut self) {
         let mut nl = false;
-        let mut first_block = true;
         loop {
             while self.peek(0).is_some_and(is_fteqcc_whitespace) {
                 if self.at_line_ending() {
@@ -869,13 +868,10 @@ impl Lexer<'_> {
                             self.bump(1);
                         }
                     }
-                    first_block = false;
                     nl = true;
                 }
-                (Some(b'/'), Some(b'*')) if first_block => {
-                    self.fte_block_comment();
-                    return;
-                }
+                // A `/* */` comment, which `QCC_PR_LexComment` reads only before any `//` one
+                // and then stops, is left to `QCC_PR_LexWhitespace`, which reads it the same.
                 _ => return,
             }
         }

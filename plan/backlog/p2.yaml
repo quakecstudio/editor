@@ -1667,6 +1667,7 @@ issues:
   - P2-119
   - P2-121
   - P2-122
+  - P2-123
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2429,3 +2430,23 @@ issues:
   verify:
   - cargo test -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-123
+  title: Apply the mutation measurement's memory limit in xtask on every host
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - TEST-10
+  summary: |
+    Found while working P2-109 (#531). The Readiness mutation job limits each test binary to 3 GiB of data memory and writes no core files, so a mutant that stops a reader advancing aborts its test instead of ending the runner. The limit is set in .github/workflows/readiness.yml as `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --`, so a local `cargo xtask readiness mutation` or an arm64 Linux runner gets none, and the limit also reaches the cargo, rustc, clang and linker processes that xtask's own tests start when xtask is the crate measured.
+  depends:
+  - P2-109
+  deliverable:
+  - 'xtask/src/readiness.rs `mutation()`: the per-test-binary data limit and the core-file setting, for the host''s target triple, on every host that enforces them, with a test, and the workflow''s copy removed; xtask''s own tests'' builds outside the limit; docs/testing.md to match'
+  acceptance:
+  - 'A test of `mutation()` shows the runner it sets for the host triple; a Readiness run of xtask finishes its mutation job with no build refused by the limit'
+  verify:
+  - cargo test -p xtask readiness

@@ -145,8 +145,9 @@ impl<'a> Lexable<'a> {
             .flatten();
         match loaded {
             // The mark the loader skips is no text the lexer reads: under FTEQCC its bytes would
-            // start a name (FTEF-13.16), so they are read as the spaces they stand for.
-            Some((text, start)) if start > 0 => {
+            // start a name (FTEF-13.16), so they are read as the spaces they stand for. The
+            // loader's text is its own copy, so this writes no further one.
+            Some((text, start)) => {
                 let mut text = text.into_owned();
                 for byte in text.iter_mut().take(start) {
                     *byte = b' ';
@@ -157,11 +158,6 @@ impl<'a> Lexable<'a> {
                     end: source.len(),
                 }
             }
-            Some((text, start)) => Self {
-                text,
-                start,
-                end: source.len(),
-            },
             None => Self {
                 text: Cow::Borrowed(source),
                 start: 0,

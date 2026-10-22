@@ -94,6 +94,9 @@ fn build_pragmas_warn_against_fteqcc_s_tables() {
     );
     // `OP_NUMREALOPS` and the rows after it are internal.
     let internal = OPCODES[REAL_OPCODES];
+    // An `asm` instruction's name is a row's `opname`, compared exactly (FTEF-20.5).
+    assert!(crate::is_opcode_name("STORE_F"));
+    assert!(!crate::is_opcode_name("store_f"));
     assert_eq!(
         warned(&format!("#pragma opcode off {internal}\n")),
         one(Code::W0113, &format!("opcode {internal} is internal"))
@@ -302,6 +305,19 @@ fn warning_settings_hold_from_the_pragma_on() {
     ] {
         assert_eq!(defaults.action(warning), action, "{warning:?}");
     }
+    // A pragma in an expansion (FTEF-14.46) sets the file's warnings from where the file is
+    // read on, after the use, not from its offset in the expansion's text.
+    assert_eq!(
+        codes(
+            &one_fte(concat!(
+                "#pragma warning disable F303\n",
+                "#define D \\\n#pragma warning disable F325\n",
+                "\n/* /* */\nD\n/* /* */\n",
+            ))
+            .1
+        ),
+        vec![Code::W0112]
+    );
     assert_eq!(
         codes(&one_fte("/* /* */\n#pragma warning disable F325\n/* /* */\n").1),
         vec![Code::W0112]
@@ -364,4 +380,65 @@ fn warning_settings_hold_from_the_pragma_on() {
     // The vanilla dialect has no settings.
     let (_, out) = super::one("#pragma warning error octal\n");
     assert!(out.warnings.is_empty());
+}
+
+// spec FTEF-14.63: each warning code of this profile is reported as the setting of the FTEQCC
+// warning it stands for
+#[test]
+fn each_warning_code_stands_for_its_fteqcc_warning() {
+    for (code, warning) in [
+        (Code::W0103, FteWarning::PrecompilerMessage),
+        (Code::W0104, FteWarning::CaseInsensitiveFrameMacro),
+        (Code::W0105, FteWarning::StaleMacro),
+        (Code::W0106, FteWarning::DuplicateMacro),
+        (Code::W0107, FteWarning::StringTooLong),
+        (Code::W0108, FteWarning::BadPragma),
+        (Code::W0113, FteWarning::BadPragma),
+        (Code::W0109, FteWarning::EvilPreprocessor),
+        (Code::W0110, FteWarning::Octal),
+        (Code::W0111, FteWarning::Overflow),
+        (Code::W0112, FteWarning::NestedComment),
+        (Code::W0114, FteWarning::UndefNotDefined),
+        (Code::W0115, FteWarning::DuplicatePrecompiler),
+        (Code::W0116, FteWarning::IdenticalPrecompiler),
+        (Code::W0118, FteWarning::GmqccSpecific),
+        (Code::W0119, FteWarning::NotUtf8),
+        (Code::W0120, FteWarning::FteSpecific),
+        (Code::W0121, FteWarning::Denormal),
+        (Code::W0122, FteWarning::MacroInString),
+        (Code::W0123, FteWarning::HangingSlashR),
+        (Code::W0203, FteWarning::UndesirableConvention),
+        (Code::W0204, FteWarning::PointlessStatement),
+        (Code::W0313, FteWarning::PointlessStatement),
+        (Code::W0205, FteWarning::UnexpectedPunct),
+        (Code::W0215, FteWarning::UnexpectedPunct),
+        (Code::W0206, FteWarning::CompatibilityHack),
+        (Code::W0210, FteWarning::CompatibilityHack),
+        (Code::W0211, FteWarning::CompatibilityHack),
+        (Code::W0223, FteWarning::CompatibilityHack),
+        (Code::W0207, FteWarning::DuplicateDefinition),
+        (Code::W0208, FteWarning::SameNameAsGlobal),
+        (Code::W0209, FteWarning::TypeMismatchRedecOptional),
+        (Code::W0212, FteWarning::RedeclarationMismatch),
+        (Code::W0213, FteWarning::MisusedAutocvar),
+        (Code::W0214, FteWarning::IgnoredKeyword),
+        (Code::W0226, FteWarning::IgnoredKeyword),
+        (Code::W0216, FteWarning::MemberNotDefined),
+        (Code::W0217, FteWarning::NotStandardBehaviour),
+        (Code::W0218, FteWarning::GmqccSpecific),
+        (Code::W0219, FteWarning::NotConstant),
+        (Code::W0220, FteWarning::LaxCast),
+        (Code::W0221, FteWarning::KeywordDisabled),
+        (Code::W0222, FteWarning::ParamWithNoName),
+        (Code::W0224, FteWarning::DeprecatedSyntax),
+        (Code::W0225, FteWarning::EnumflagsNotInteger),
+        (Code::W0227, FteWarning::UnaryNotScope),
+        (Code::W0228, FteWarning::GmqccSpecific),
+        (Code::W0312, FteWarning::DuplicateLabel),
+        (Code::W0314, FteWarning::DeprecatedVariable),
+    ] {
+        assert_eq!(FteWarning::of_code(code), Some(warning), "{code:?}");
+    }
+    assert_eq!(FteWarning::of_code(Code::W0101), None);
+    assert_eq!(FteWarning::of_code(Code::E0125), None);
 }

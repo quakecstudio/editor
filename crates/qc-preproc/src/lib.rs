@@ -249,7 +249,7 @@ fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
     let Some(mut node) = hide.as_deref() else {
         return false;
     };
-    let Some(count) = live.get(name).filter(|count| count.get() > 0) else {
+    let Some(count) = live.get(name).filter(|count| count.get() != 0) else {
         return false;
     };
     loop {
@@ -485,9 +485,9 @@ impl TokenStream {
         // A change of the macros alone matters only to a string with a `#` in it.
         let macros_only = key.flags == self.key.flags;
         self.key = key;
-        let hashed = |t: &Token| {
-            matches!(t.kind, TokenKind::String(_))
-                && text.get(t.span.range()).is_some_and(|b| b.contains(&b'#'))
+        let hashed = |t: &Token| match t.kind {
+            TokenKind::String(_) => text.get(t.span.range()).is_some_and(|b| b.contains(&b'#')),
+            _ => false,
         };
         if macros_only
             && !self
@@ -500,11 +500,11 @@ impl TokenStream {
             return;
         }
         let offset = self.read_offset().min(text.len());
-        let next = self.tokens.partition_point(|t| t.span.start < offset);
         let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
-        self.tokens.truncate(next);
+        // The tokens not read yet are those from `pos`, which start at or after where reading
+        // stands, so they are the ones lexed again.
+        self.tokens.truncate(self.pos);
         self.tokens.extend(rest.tokens);
-        self.pos = next;
         self.diagnostics.retain(|d| d.span.start < offset);
         self.diagnostics.extend(rest.diagnostics);
     }
