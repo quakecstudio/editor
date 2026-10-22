@@ -6,6 +6,7 @@
 // Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_comp.c, PR_GetDef, PR_ParseDefs, PR_ParseImmediateStatements, PR_ParseState, PR_ParseValue
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_GetDef, QCC_PR_ParseDefs, QCC_PR_GenerateInitializerType, QCC_PR_ParseInitializerType_Internal, QCC_PR_ParseDefaultInitialiser, QCC_PR_ParseEnum, QCC_PR_ParseImmediateStatements, QCC_PR_ParseState, QCC_PR_ParseRefValue
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, typecmp, typecmp_lax, QCC_TypeForName
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qccmain.c, QCC_PR_FinishCompilation
 
 //! Module resolution: one symbol table per module (QC-12).
 //!
@@ -30,11 +31,11 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
-use qc_preproc::{FteFlag, WarningSettings};
+use qc_preproc::{CompilerFlags, FteFlag, TargetFormat, WarningSettings};
 use qc_syntax::c_scalar::CScalar;
 use qc_syntax::{Dialect, Keyword, Keywords};
 
-use crate::cast::{ConstType, Kind, Source};
+use crate::cast::{Cast, ConstType, Kind, Source, Supply};
 use crate::expand::{OriginMap, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
@@ -101,6 +102,10 @@ pub struct ResolveOptions {
     /// Whether `qcfuncs` was off when FTEQCC named its core types, by the command line's
     /// `-Fno-qcfuncs` (FTEF-19.28): then `string`, `vector` and `entity` are no type names.
     pub qcfuncs_off: bool,
+    /// FTEQCC's output format once every file is read, which `QCC_PR_FinishCompilation` reads
+    /// for `extern` functions (FTEF-22.5); `None` when the module was not preprocessed, which
+    /// checks none.
+    pub target: Option<TargetFormat>,
 }
 
 /// Resolves a module from its files' lowered declarations, in compilation order (QC-23.3).
@@ -160,6 +165,8 @@ pub(crate) fn resolve_mapped(
         autoproto: fteqcc && options.autoproto,
         case_insensitive: fteqcc && options.case_insensitive,
         qcfuncs_off: fteqcc && options.qcfuncs_off,
+        target: options.target.filter(|_| fteqcc),
+        externs: Vec::new(),
         unit: FileId(0),
         facts: Vec::new(),
         globals: HashMap::new(),
@@ -307,6 +314,10 @@ struct Resolver<'a> {
     case_insensitive: bool,
     /// Whether FTEQCC named its core types with `qcfuncs` off (FTEF-19.28).
     qcfuncs_off: bool,
+    /// Under FTEQCC, the output format `QCC_PR_FinishCompilation` reads (FTEF-22.5).
+    target: Option<TargetFormat>,
+    /// The functions an `extern` at file level made, `def->isextern`, in order (FTEF-22.5).
+    externs: Vec<DefId>,
     /// The compiled file, the unit a `static` is visible in (FTEF-19.12).
     unit: FileId,
     /// For each definition, what [`Facts`] holds.
@@ -1124,7 +1135,7 @@ impl<'a> Resolver<'a> {
         // elsewhere.
         let replaces =
             decl.redefinable() || existing.is_some_and(|d| self.redefinable.contains(&d));
-        let external = self.is_extern(decl) && decl.ty.is_function();
+        let external = self.is_extern(decl) && self.resolved(&decl.ty).is_function();
         let shared = decl.has(&Qualifier::Shared);
         let initialized = decl.initialized || external || (self.fteqcc && shared);
         let marks_only = (external || shared) && !decl.initialized;
@@ -1161,6 +1172,12 @@ impl<'a> Resolver<'a> {
             deprecated: decl.deprecated(),
         };
         let def = self.declare_global_with(&decl.name, &decl.ty, kind, location, init, &facts);
+        // FTEF-22.5: `if (externfnc && !pr_scope) { ... def->isextern = true; }`.
+        // `QCC_PR_FinishCompilation` checks the constant ones, every function but a `var` one.
+        let constant = !decl.has(&Qualifier::Var) && !decl.pointer_var;
+        if self.fteqcc && external && constant && !aborted && !self.externs.contains(&def) {
+            self.externs.push(def);
+        }
         if let Some(f) = self.fact_mut(def) {
             f.shared |= shared;
             f.builtin |= decl.builtin && !aborted;
@@ -1486,7 +1503,7 @@ impl<'a> Resolver<'a> {
         false
     }
 
-    /// FTEF-19.2, FTEF-19.3, QC-11.3: the checks of a value initialiser of a definition of
+    /// FTEF-19.31, FTEF-19.3, QC-11.3: the checks of a value initialiser of a definition of
     /// type `ty` named `name`, held as `holder` says, and the value it gives when it names a
     /// constant (FTEF-19.5). Under the vanilla profile a literal of another type than the
     /// definition's is "wrong immediate type" (QCD-3.7); under FTEQCC a value its type
@@ -1534,13 +1551,13 @@ impl<'a> Resolver<'a> {
         match &value.kind {
             ValueKind::Literal(literal) => {
                 let source = Source::Literal(*literal);
-                if self.cast_value(source, &ty, location) {
+                if self.cast_value(source, &ty, location, value.cast_flags) {
                     return Err(Fatal);
                 }
                 Ok(None)
             }
             ValueKind::Translate(string) => {
-                // FTEF-19.2: `_()` initialising a string takes one string literal.
+                // FTEF-19.31: `_()` initialising a string takes one string literal.
                 if !*string && ty == Type::Simple(SimpleType::String) {
                     self.report(
                         Code::E0232,
@@ -1552,7 +1569,7 @@ impl<'a> Resolver<'a> {
                 Ok(None)
             }
             ValueKind::Name(source_name) => {
-                self.check_named_value(name, &ty, source_name, holder, location)
+                self.check_named_value(name, &ty, source_name, holder, (location, value.cast_flags))
             }
             ValueKind::Other => Ok(None),
         }
@@ -1565,7 +1582,7 @@ impl<'a> Resolver<'a> {
         ty: &Type,
         source_name: &str,
         holder: Holder,
-        location: Location,
+        (location, flags): (Location, CompilerFlags),
     ) -> Result<Option<LiteralValue>, Fatal> {
         let lookup = |name: &str| match holder {
             Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
@@ -1587,7 +1604,7 @@ impl<'a> Resolver<'a> {
         let Some(source_ty) = self.index.def(source).map(|d| d.ty.clone()) else {
             return Ok(None);
         };
-        // FTEF-19.2: in a member function a field's name is `this.field`, of the field's type
+        // FTEF-19.31: in a member function a field's name is `this.field`, of the field's type
         // (`QCC_PR_ParseRefValue`, `expandmemberfields`).
         let in_class = match holder {
             Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
@@ -1605,20 +1622,27 @@ impl<'a> Resolver<'a> {
             | Type::Pointer(_) => source_ty,
         };
         let source_ty = self.resolved(&source_ty);
-        // FTEF-19.10: a strict enum's value casts to no other type.
+        // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
+        // (FTEF-22.1).
         if let Type::Named(strict) = &source_ty
             && let Some(base) = self.strict_enums.get(strict.as_ref())
             && source_ty != *ty
         {
+            let (code, verb) = if flags.has(FteFlag::Laxcasts) {
+                (Code::W0229, "Implicit lax cast")
+            } else {
+                (Code::E0213, "Cannot cast")
+            };
             let message = format!(
-                "Cannot cast from enum {strict}:{} to {}",
+                "{verb} from enum {strict}:{} to {}",
                 base.fteqcc_name(),
                 ty.fteqcc_name()
             );
-            self.report(Code::E0213, location, message);
-            return Err(Fatal);
-        }
-        if self.cast_value(Source::Typed(&source_ty), ty, location) {
+            self.report(code, location, message);
+            if code == Code::E0213 {
+                return Err(Fatal);
+            }
+        } else if self.cast_value(Source::Typed(&source_ty), ty, location, flags) {
             return Err(Fatal);
         }
         if matches!(holder, Holder::Local(_)) {
@@ -1709,15 +1733,30 @@ impl<'a> Resolver<'a> {
         true
     }
 
-    /// FTEQCC's implicit cast of `source` to `to` (FTEF-19.2): "Cannot cast", an error, or
-    /// "Implicit cast", a warning, or neither. Returns whether the cast is refused.
-    fn cast_value(&mut self, source: Source<'_>, to: &Type, location: Location) -> bool {
-        let (code, verb) = if source.refused(to) {
-            (Code::E0213, "Cannot cast")
-        } else if source.warns(to) {
-            (Code::W0220, "Implicit cast")
-        } else {
-            return false;
+    /// FTEQCC's implicit cast of `source` to `to` with the flags `flags` where it stands
+    /// (FTEF-19.31, FTEF-22): "Cannot cast", an error, "Implicit cast" or "Implicit lax cast",
+    /// warnings, "pointer<->string casts were disabled.", a non-fatal error, or none. Returns
+    /// whether the cast is refused.
+    fn cast_value(
+        &mut self,
+        source: Source<'_>,
+        to: &Type,
+        location: Location,
+        flags: CompilerFlags,
+    ) -> bool {
+        let (code, verb) = match source.cast(to, flags) {
+            Cast::Silent => return false,
+            Cast::Implicit => (Code::W0220, "Implicit cast"),
+            Cast::Lax => (Code::W0229, "Implicit lax cast"),
+            Cast::Refused => (Code::E0213, "Cannot cast"),
+            Cast::StringPointerDisabled => {
+                self.report(
+                    Code::E0237,
+                    location,
+                    "pointer<->string casts were disabled.".to_owned(),
+                );
+                return false;
+            }
         };
         self.report(
             code,
@@ -1740,7 +1779,7 @@ impl<'a> Resolver<'a> {
                 ValueKind::Literal(literal) => {
                     let source = Source::Literal(*literal);
                     let ty = self.resolved(&param.ty);
-                    if self.cast_value(source, &ty, location) {
+                    if self.cast_value(source, &ty, location, value.cast_flags) {
                         return true;
                     }
                 }
@@ -1773,7 +1812,8 @@ impl<'a> Resolver<'a> {
                         .def(source)
                         .map_or(Type::Unknown, |d| d.ty.clone());
                     let ty = self.resolved(&param.ty);
-                    if self.cast_value(Source::Typed(&source_ty), &ty, location) {
+                    let source = Source::Typed(&source_ty);
+                    if self.cast_value(source, &ty, location, value.cast_flags) {
                         return true;
                     }
                 }
@@ -1872,7 +1912,7 @@ impl<'a> Resolver<'a> {
                     next
                 }
             }
-            Some(value) => self.enum_value(file, value, item.number, &base),
+            Some(value) => self.enum_value(file, value, (item.number, next), &base),
         };
         if item.flags
             && let Some(v) = value
@@ -1961,40 +2001,40 @@ impl<'a> Resolver<'a> {
         self.report(Code::W0225, location, message);
     }
 
-    /// The value after an enum name's `=` (FTEF-19.10): a number literal's, or a numeric
-    /// constant's; a string or vector is "Implicit type mismatch" and a name that is no
-    /// constant "is not a compile-time constant".
+    /// The value after an enum name's `=` (FTEF-19.10): converted to the base type by
+    /// `QCC_SupplyConversion` (FTEF-22.3), then a number literal's value or a numeric
+    /// constant's, and a name that is no constant "is not a compile-time constant". A value
+    /// `lax` let through unconverted leaves the name the value it would have had with none,
+    /// `next`, as no branch of `QCC_PR_ParseEnum` reads its type.
     fn enum_value(
         &mut self,
         file: FileId,
         value: &RawValue,
-        number: Option<u32>,
+        (number, next): (Option<u32>, Option<f64>),
         base: &Type,
     ) -> Option<f64> {
         let location = self.at(file, value.span);
         let kind = base.fteqcc_kind();
         let wanted = if kind == Kind::Opaque {
-            Kind::Float.name()
+            Kind::Float
         } else {
-            kind.name()
+            kind
         };
         match &value.kind {
             ValueKind::Literal(literal) => {
-                let got = literal.ty.name();
-                let numeric = !matches!(literal.ty, ConstType::String | ConstType::Vector);
-                let numeric_base = kind.is_numeric() || kind == Kind::Opaque;
-                if numeric != numeric_base || (!numeric && got != wanted) {
-                    self.report(
-                        Code::E0227,
-                        location,
-                        format!("Implicit type mismatch. Needed {wanted}, got {got}."),
-                    );
-                    return None;
+                match self.supply_value(Source::Literal(*literal), wanted, value, location) {
+                    Supply::Converted => number.map(|bits| f64::from(f32::from_bits(bits))),
+                    Supply::Lax => next,
+                    Supply::Explicit | Supply::Mismatch => None,
                 }
-                number.map(|bits| f64::from(f32::from_bits(bits)))
             }
             ValueKind::Name(name) => {
                 let def = self.lookup_global(name)?;
+                let ty = self.index.def(def).map(|d| d.ty.clone())?;
+                let supply = self.supply_value(Source::Typed(&ty), wanted, value, location);
+                if matches!(supply, Supply::Explicit | Supply::Mismatch) {
+                    return None;
+                }
                 let constant = self.facts.get(def.0).is_some_and(|f| f.constant)
                     && self.index.def(def).is_some_and(|d| d.initialized);
                 if !constant {
@@ -2005,6 +2045,9 @@ impl<'a> Resolver<'a> {
                     );
                     return None;
                 }
+                if supply == Supply::Lax {
+                    return next;
+                }
                 match self.literals.get(&def) {
                     Some(LiteralValue::Float(bits)) => Some(f64::from(f32::from_bits(*bits))),
                     Some(_) | None => None,
@@ -2012,6 +2055,33 @@ impl<'a> Resolver<'a> {
             }
             ValueKind::Translate(_) | ValueKind::Other => None,
         }
+    }
+
+    /// `QCC_SupplyConversion` of `source`, the value `value`, to a `wanted` (FTEF-22.3), with
+    /// the flags at the token after it, and its diagnostic: "Automatic type conversions
+    /// disabled." under `typeexplicit`, and "Implicit type mismatch." when nothing converts it,
+    /// a warning under `lax`; each names the two kinds by `basictypenames`.
+    fn supply_value(
+        &mut self,
+        source: Source<'_>,
+        wanted: Kind,
+        value: &RawValue,
+        location: Location,
+    ) -> Supply {
+        let supply = source.supply(wanted, value.cast_flags);
+        let (code, text) = match supply {
+            Supply::Converted => return supply,
+            Supply::Explicit => (Code::E0236, "Automatic type conversions disabled."),
+            Supply::Lax => (Code::W0230, "Implicit type mismatch."),
+            Supply::Mismatch => (Code::E0227, "Implicit type mismatch."),
+        };
+        let message = format!(
+            "{text} Needed {}, got {}.",
+            wanted.basic_name(),
+            source.kind().basic_name()
+        );
+        self.report(code, location, message);
+        supply
     }
 
     /// Records an FTEQCC class and declares its members (FTEF-17.1, FTEF-17.2). A member is a
@@ -2495,7 +2565,7 @@ impl<'a> Resolver<'a> {
     /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
     /// name FTEQCC registers, a type declared before, or one of `typedefs` before `at`. A name
     /// of more than one word that is no run of C words (`struct tag`, an inline enum or
-    /// struct) is not checked (FTEF-19.30).
+    /// struct) is not checked (FTEF-19.32).
     fn unknown_type_name<'t>(
         &self,
         ty: &'t Type,
@@ -2528,9 +2598,10 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// FTEF-19.14: FTEQCC converts a state header's frame to a float, "Implicit type
-    /// mismatch" for a string or vector, and requires its next function to be a `void()`,
-    /// "Type mismatch" for a literal but 0.
+    /// FTEF-19.14: FTEQCC converts a state header's frame to a float with
+    /// `QCC_SupplyConversion` (FTEF-22.3), and requires its next function to be a `void()`,
+    /// "Type mismatch" for a literal but 0. A cycle's frame that `lax` let through unconverted
+    /// is "state type mismatch".
     fn check_state_literals(&mut self, file: FileId, body: &RawBody) {
         for (part, value) in &body.state_literals {
             let ValueKind::Literal(literal) = &value.kind else {
@@ -2538,16 +2609,11 @@ impl<'a> Resolver<'a> {
             };
             let location = self.at(file, value.span);
             match part {
-                StatePart::Frame => {
-                    if matches!(literal.ty, ConstType::String | ConstType::Vector) {
-                        self.report(
-                            Code::E0227,
-                            location,
-                            format!(
-                                "Implicit type mismatch. Needed float, got {}.",
-                                literal.ty.name()
-                            ),
-                        );
+                StatePart::Frame | StatePart::CycleFrame => {
+                    let source = Source::Literal(*literal);
+                    let supply = self.supply_value(source, Kind::Float, value, location);
+                    if supply == Supply::Lax && *part == StatePart::CycleFrame {
+                        self.report(Code::E0238, location, "state type mismatch".to_owned());
                     }
                 }
                 StatePart::Next => {
@@ -3164,6 +3230,21 @@ impl<'a> Resolver<'a> {
                     def.location,
                     format!("function {} was not defined", def.name),
                 ));
+            }
+        }
+        // FTEF-22.5: an `extern` function on a target that has none is an error.
+        if self.target.is_some_and(|target| !target.supports_extern()) {
+            for &id in &self.externs {
+                let Some(def) = self.index.def(id) else {
+                    continue;
+                };
+                if self.resolved(&def.ty).is_function() {
+                    undefined.push(diag(
+                        Code::E0239,
+                        def.location,
+                        "extern is not supported with this target format".to_owned(),
+                    ));
+                }
             }
         }
         self.index.diagnostics.extend(undefined);

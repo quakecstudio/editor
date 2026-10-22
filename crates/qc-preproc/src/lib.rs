@@ -39,7 +39,7 @@ pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
-pub use fte_tables::{FteFlag, is_opcode_name};
+pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
 pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
 pub use source::{
     FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
@@ -967,6 +967,14 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte_default_properties();
         }
+    }
+
+    /// `qcc_targetformat` as the files read so far leave it: the command line's, then each
+    /// `#pragma TARGET`'s (FTEF-20.4), which `QCC_PR_FinishCompilation` reads once every file is
+    /// compiled (FTEF-22.5).
+    #[must_use]
+    pub const fn target(&self) -> TargetFormat {
+        self.fte.target
     }
 
     /// Sets the dialect this preprocessor accepts (PRJ-2.8). In an FTEQCC dialect the

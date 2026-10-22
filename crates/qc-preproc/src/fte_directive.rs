@@ -34,7 +34,7 @@ use crate::compiler_flags::{FlagEdit, PragmaDefault};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
-use crate::fte_tables::TargetFormat;
+use crate::fte_tables::{FteFlag, TargetFormat};
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
     WarningSettings, fte_pragma, normalize,
@@ -1381,6 +1381,9 @@ impl<L: Loader> Preprocessor<L> {
         let priorities = self.fte.flags.priorities();
         // FTEF-21.14: `defaultstatic = 0;`, while `defaultnoref` and `defaultnosave` hold.
         self.fte.flags.set_default(PragmaDefault::Static, false);
+        // FTEF-22.4: its `QCC_OPCodeSetTarget` of the standard target clears
+        // `flag_undefwordsize` before the command line is read.
+        self.fte.flags.set(FteFlag::Undefwordsize, false);
         self.fte = FteState {
             ifs: self.fte.ifs,
             warnings: self.command_line.warnings(defaults.warnings),
@@ -1968,6 +1971,14 @@ impl<L: Loader> Preprocessor<L> {
                     let edit = KeywordEdit::hexen2_target(target.keeps_float());
                     run.out.keywords.push((run.out.tokens.len(), edit));
                 }
+                // FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` by the format,
+                // which the casts read.
+                self.fte
+                    .flags
+                    .set(FteFlag::Undefwordsize, target.undefined_word_size());
+                let edit =
+                    FlagEdit::of_flags(&[FteFlag::Undefwordsize], self.fte.flags.compiler_flags());
+                run.out.flags.push((run.out.tokens.len(), edit));
             }
         } else if !fte_pragma::is_known(&pragma.name) {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));

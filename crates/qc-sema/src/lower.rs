@@ -57,7 +57,7 @@ pub struct RawDecl {
     pub type_kind: Option<TypeKind>,
     /// The qualifiers written before the type (FTEF-15.1), in order.
     pub qualifiers: Vec<Qualifier>,
-    /// A value initialiser, as the checks of QC-11.3 and FTEF-19.2 read it.
+    /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
     pub value: Option<RawValue>,
     /// The first array dimension, when the declarator has one (FTEF-5, FTEF-19.8).
     pub array: Option<ArrayDim>,
@@ -178,9 +178,12 @@ pub struct RawValue {
     /// For a string literal, its bytes as FTEQCC reads them, `pr_immediate_strlen`
     /// (FTEF-19.8); `None` for any other value.
     pub string_len: Option<u32>,
+    /// The compiler flags at the token after it, where FTEQCC casts or converts it once it has
+    /// read it (FTEF-22.1).
+    pub cast_flags: CompilerFlags,
 }
 
-/// The shape of a value initialiser (QC-11.3, FTEF-19.2).
+/// The shape of a value initialiser (QC-11.3, FTEF-19.31).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValueKind {
     /// A literal, with the type the dialect gives it.
@@ -188,9 +191,9 @@ pub enum ValueKind {
     /// A name by itself.
     Name(String),
     /// FTEQCC's `_(...)` translation intrinsic, and whether its argument is one string
-    /// literal (FTEF-19.2).
+    /// literal (FTEF-19.31).
     Translate(bool),
-    /// Any other expression, whose type the model does not compute (FTEF-19.30).
+    /// Any other expression, whose type the model does not compute (FTEF-19.32).
     Other,
 }
 
@@ -203,7 +206,7 @@ pub enum ArrayDim {
     /// `[]` with nothing to size it, which FTEQCC's `QCC_PR_GetDef` compares with no other
     /// size.
     Unsized,
-    /// A size given by an expression the model does not evaluate (FTEF-19.30).
+    /// A size given by an expression the model does not evaluate (FTEF-19.32).
     Unknown,
 }
 
@@ -338,7 +341,7 @@ pub enum TypeKind {
     Accessor,
 }
 
-/// The value initialiser `expr` is, in the dialect `fte` says (QC-11.3, FTEF-19.2): a literal
+/// The value initialiser `expr` is, in the dialect `fte` says (QC-11.3, FTEF-19.31): a literal
 /// with its type, which FTEQCC gives a number by its digits and suffix (FTEF-3.1) and vanilla
 /// always `float` (QC-4); a plain name; or another expression.
 fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
@@ -405,10 +408,11 @@ fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         kind,
         first,
         string_len,
+        cast_flags: cx.next_flags(span.end),
     }
 }
 
-/// Whether `call` calls FTEQCC's `_` translation intrinsic (FTEF-19.2).
+/// Whether `call` calls FTEQCC's `_` translation intrinsic (FTEF-19.31).
 fn is_translate(call: &ast::CallExpr) -> bool {
     matches!(
         call.callee(),
@@ -799,6 +803,9 @@ pub struct RawAlias {
 pub enum StatePart {
     /// The frame.
     Frame,
+    /// The first or last frame of a cycle `[++ first .. last]` (FTEF-18.28), which must be a
+    /// float once converted (FTEF-22.3).
+    CycleFrame,
     /// The next think function.
     Next,
 }
@@ -829,7 +836,7 @@ pub struct RawLocal {
     pub bad_field_or_function: bool,
     /// The qualifiers written before its type (FTEF-15.1).
     pub qualifiers: Vec<Qualifier>,
-    /// A value initialiser, as the checks of QC-11.3 and FTEF-19.2 read it.
+    /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
     pub value: Option<RawValue>,
     /// The initialiser's value when it is a literal (FTE-22.5).
     pub literal: Option<LiteralValue>,
@@ -1774,7 +1781,9 @@ fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) -> RawBody 
         let cycle = state.is_cycle();
         for (index, expr) in state.exprs().enumerate() {
             lower_expr(&expr, cx, &mut body.state_uses);
-            let part = if index == 0 || cycle {
+            let part = if cycle {
+                StatePart::CycleFrame
+            } else if index == 0 {
                 StatePart::Frame
             } else {
                 StatePart::Next
@@ -1974,7 +1983,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
         | ast::Stmt::Goto(_)
         | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
-        // code generation's (FTEF-19.30).
+        // code generation's (FTEF-19.32).
         ast::Stmt::Asm(asm) => {
             for local in asm.locals() {
                 lower_local(&local, cx, body);
