@@ -1668,6 +1668,7 @@ issues:
   - P2-121
   - P2-122
   - P2-123
+  - P2-124
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2450,3 +2451,23 @@ issues:
   - 'A test of `mutation()` shows the runner it sets for the host triple; a Readiness run of xtask finishes its mutation job with no build refused by the limit'
   verify:
   - cargo test -p xtask readiness
+- key: P2-124
+  title: The qc-sema fuzz target no longer builds after ResolveOptions grew fields
+  labels:
+  - repo
+  - area:process
+  - type:bug
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The nightly Fuzz workflow on main (run 39751193549, at 5026fa25) fails to build: `error[E0063]: missing fields case_insensitive and qcfuncs_off in initializer of ResolveOptions` in fuzz/fuzz_targets/qc_sema.rs, then "could not compile qs-fuzz (bin qc-sema)". PR #552 (860fa54) added the two fields; the target builds `ResolveOptions` with every field named, and pull-request CI does not build the fuzz crate, so nothing caught it before the nightly run.
+  environment: |
+    main at 5026fa25; the nightly Fuzz workflow, run 39751193549
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/qc_sema.rs: `ResolveOptions` built from its `Default`, naming only the fields the target varies, so a new field does not break the build'
+  acceptance:
+  - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR; a dispatched Fuzz workflow run on main after the merge passes'
+  verify:
+  - cargo xtask fuzz --time 30
