@@ -87,6 +87,10 @@ fn a_joined_line_starts_no_directive() {
         // Reading went on at the line break, after a directive whose text held the `\`.
         ("#pragma p \\\n#x", 11, TextStart::Compiled, true),
         ("a\n#x", 1, TextStart::Compiled, true),
+        // Reading went on after the line break before the `#`, so nothing read joins them.
+        ("a\n#x", 2, TextStart::Compiled, true),
+        ("a\n \t#x", 3, TextStart::Compiled, true),
+        ("a \\\n#x", 4, TextStart::Compiled, true),
     ] {
         let hash = text.rfind('#').unwrap();
         assert_eq!(
@@ -137,6 +141,7 @@ fn lines_end_where_skip_to_end_of_line_ends_them() {
     assert_eq!(skip(" \"s\n", false), end(3, false));
     assert_eq!(skip(" \"s", false), end(3, false));
     assert_eq!(skip(" zz\n", true), end(3, true));
+    assert_eq!(skip(" \"s\"\n", true), end(4, true));
     assert_eq!(skip(" zz\n", false), end(3, false));
     assert_eq!(skip(" \t\r\x0b\n", true), end(4, false));
     assert_eq!(skip(" // \"s\" zz\n", true), end(10, false));
@@ -192,6 +197,13 @@ fn com_parse_reads_tokens() {
     assert_eq!(parse("ab"), Some(("ab".to_owned(), 2)));
     assert_eq!(parse("  "), None);
     assert_eq!(parse("/* c"), None);
+    // `char qcc_token[1024]` keeps a string's or a word's first 1023 bytes
+    // (`if (len >= sizeof(qcc_token)-1) ;`), and reading goes on past the rest.
+    let long = "a".repeat(1100);
+    for text in [format!("\"{long}\""), long.clone()] {
+        let (token, at) = com_parse(text.as_bytes(), 0).unwrap();
+        assert_eq!((token.len(), at), (1023, text.len()), "{}", text.len());
+    }
 }
 
 // spec FTEF-14.52: a directive's name is matched by its first bytes, in FTEQCC's order, after

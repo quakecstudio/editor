@@ -377,6 +377,21 @@ fn list_words_are_fteqccs() {
     }
 }
 
+// spec PRJ-4.9: a list-form `progs.src` names its output first and its files after
+#[test]
+fn a_progs_list_names_its_output_then_its_files() {
+    let mut state = ModuleState::fteqcc(std::iter::empty());
+    let mut reader = FteFileReader::progs(b"p.dat\na.qc\nb.qc\n".to_vec());
+    let mut found = Vec::new();
+    while let Some(event) = reader.next(&mut state) {
+        found.push(show(&event));
+    }
+    assert_eq!(
+        found,
+        ["output p.dat @1", "listed a.qc @2", "listed b.qc @3"]
+    );
+}
+
 // spec PRJ-5.14: an `#includelist` met while 64 others are open ends the file
 #[test]
 fn nested_lists_are_bounded() {

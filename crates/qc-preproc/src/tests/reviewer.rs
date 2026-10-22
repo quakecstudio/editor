@@ -50,6 +50,7 @@ fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
 // leaves each inner one, which its hide set names, as written, with no diagnostic
 #[test]
 fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 100_000_usize;
     let mut text = "#define F(x) x\n".to_owned();
     text.push_str(&"F(".repeat(n));
@@ -73,6 +74,7 @@ fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
 // so the expansion outgrows the bound, which is reported once
 #[test]
 fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 10_000_usize;
     let head = n.saturating_sub(1);
     let mut text = "#define M0 1\n".to_owned();
