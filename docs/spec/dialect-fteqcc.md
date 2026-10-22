@@ -2614,7 +2614,10 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.15's.
   A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
   after what it read, is the flag at that token: `subscope` at a block's end is read at the token
-  after its `}`.
+  after its `}`. The token after an `extern` block is lexed with the block's flags and read with
+  them restored, the pragmas before it applied first and the restore after them, so a pragma
+  there that names one of the six saved flags is undone for the reading and holds for the
+  lexing.
 - **FTEF-21.2** `QCC_PR_ParseDefs` reads `extern` as its first qualifier, with its keyword, then a
   string (`if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`),
   as a block: a `{`, definitions up to a `}` (`QCC_PR_ParseDefs(NULL, false)` each), or with no
@@ -2627,7 +2630,9 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   same. The flags hold from the token after the string, which `QCC_PR_Lex()` lexes once they are
   set, to the token after the block's last, which `QCC_PR_CheckToken("}")` or the definition's
   end lexes before they are restored: so in `extern "C" { float y; } string s = "\9";` the word
-  `string` is lexed with `qcfuncs` off and `"\9"` with it on. A file that ends in the block is
+  `string` is lexed with `qcfuncs` off and `"\9"` with it on, and the definition `string` starts
+  is read with the flags restored (FTEF-21.1), so `extern "C" int a; enum { A };` names a
+  `float` enum. A file that ends in the block is
   "expected }" (`if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; }`). After another
   qualifier the string is no block (`const extern "C" {` is "\"C\" - not a name" after the
   warning of FTEF-21.10). In a body `QCC_PR_ParseStatement` reads `extern` exactly, or `local`
@@ -2688,7 +2693,9 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   (!flag_qcfuncs) ftype->vargs = true; //'void name()' is vargs/undefined in C89`), so `void h();`
   is `void(...)`; a first parameter that is no type, as an `int` named by the word (`if
   (!flag_qcfuncs) t = type_integer; //c89 assumes int.`), so `void h(x);` is `void(__int32 x)`,
-  where a later one is "\"y\" is not a type"; and an array parameter `[N]` as a pointer ("just
+  where a later one is "\"y\" is not a type", the parser reading a lone name there as such a
+  name, as it cannot tell one a typedef names, which FTEQCC reads as an unnamed parameter of that
+  type, a deliberate divergence; and an array parameter `[N]` as a pointer ("just
   turn it into a pointer and ditch the top-level size. C style."), as `[]` is whatever the flag
   ("length omitted. just treat it as a pointer"), where with it on `float a[2]` is a `float`.
 - **FTEF-21.9** `QCC_PR_ParseDefs` reads `[[` among the qualifiers after one of them, `typedef`
@@ -2711,7 +2718,8 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   (`if (externfnc && !pr_scope && basetype->type != ev_function) { if (flag_qcfuncs)
   QCC_PR_ParseWarning(WARN_IGNOREDKEYWORD, "extern keyword may only apply to qc functions.");
   externfnc=false; }`): on a type that is no function's, a C-style declarator's `void
-  h(float x)` and a left out type's included, the `extern` is dropped, so the function is no
+  h(float x)`, a left out type's and a typedef's of what is no function included, the `extern`
+  is dropped, so the function is no
   external one and needs a body ("function NAME has no body"), with the warning only when
   `qcfuncs` is on. With `qcfuncs` off a C function declared in a body is a global constant
   whose body is elsewhere (`if (!flag_qcfuncs && pr_scope) isconstant = externfnc = true; //in C,

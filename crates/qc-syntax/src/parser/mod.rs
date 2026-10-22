@@ -394,7 +394,7 @@ impl<'a> Parser<'a> {
             .iter()
             .map(|t| t.span)
             .filter(|span| {
-                CompilerFlags::at(&self.flags, span.start).lex()
+                qc_lexer::LexFlags::at(&self.input.flags, span.start)
                     != CompilerFlags::at(preprocessor, span.start).lex()
             })
             .collect();
@@ -938,12 +938,15 @@ impl<'a> Parser<'a> {
                 self.block_item(site);
             }
         }
-        // The token after the block's last is lexed before the flags are restored.
+        // The token after the block's last is lexed before the flags are restored, and read
+        // after.
+        let lookahead = self.current_span().start;
         let end = self
             .nth(1)
             .map_or(self.input.source.len(), |t| t.span.start);
         self.blocks.push(Block {
             start,
+            lookahead,
             end,
             linkage,
         });
@@ -1879,8 +1882,11 @@ impl<'a> Parser<'a> {
             self.extern_block(Site::Body);
         } else if self.kw(0, Keyword::Local, "local") {
             self.local_decl(true);
-        } else if self.strcmp_kw(0, Keyword::Typedef, "typedef") {
-            // FTEF-19.9: `typedef` in a function body names a type there.
+        } else if self.strcmp_kw(0, Keyword::Typedef, "typedef")
+            || (self.fte_looks_like_local() && self.at_typedef())
+        {
+            // FTEF-19.9: `typedef` in a function body names a type there; FTEF-21.14: after the
+            // qualifiers a statement of definitions starts with.
             self.typedef_decl();
         } else if self.strcmp_kw(0, Keyword::Extern, "extern") && self.at_extern_block() {
             // FTEF-21.2: `QCC_PR_ParseStatement` tests `extern` exactly, then

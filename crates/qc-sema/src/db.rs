@@ -32,7 +32,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use qc_diag::Diagnostic;
+use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
 
 use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess, settings_at};
@@ -425,8 +425,7 @@ impl Db {
             syntax.retain(|d| {
                 let from_preprocessor = index < preprocessor_count;
                 index = index.saturating_add(1);
-                // A lexical diagnostic is of group 01 (QCD-1.1, QCD-2).
-                let lexical = d.diagnostic.code.as_str().get(1..3) == Some("01");
+                let lexical = lexer_code(d.diagnostic.code);
                 let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
                 !(from_preprocessor
                     && lexical
@@ -523,6 +522,30 @@ impl Db {
         self.expanded.insert(file, value.clone());
         value
     }
+}
+
+/// Whether the lexer gives `code` as it lexes a token's text, which lexing the token again with
+/// other flags gives again or not (QCD-2, FTEF-12.12, FTEF-21.2): the lexical errors and the
+/// lexer's own warnings, not the preprocessor's, such as a stale macro or a macro in a string.
+const fn lexer_code(code: Code) -> bool {
+    matches!(
+        code,
+        Code::E0101
+            | Code::E0102
+            | Code::E0103
+            | Code::E0104
+            | Code::E0105
+            | Code::E0123
+            | Code::E0124
+            | Code::W0110
+            | Code::W0111
+            | Code::W0112
+            | Code::W0118
+            | Code::W0119
+            | Code::W0120
+            | Code::W0121
+            | Code::W0123
+    )
 }
 
 /// A parser diagnostic of a file's expansion, at the source span it came from (QC-9.7).

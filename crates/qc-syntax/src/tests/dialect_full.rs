@@ -764,6 +764,9 @@ fn at_under_qccx_and_caret_caret() {
         0
     );
     // The parse keeps the flags it was given.
-    assert!(flagged.lex_flags_at(5).has(qc_lexer::LexFlag::Qccx));
+    assert_eq!(
+        flagged.lex_flags_at(5),
+        qc_lexer::LexFlags::default().with(qc_lexer::LexFlag::Qccx, true)
+    );
     assert_eq!(plain.lex_flags_at(5), qc_lexer::LexFlags::default());
 }

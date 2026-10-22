@@ -37,9 +37,9 @@ use qc_syntax::{Dialect, Keyword, Keywords};
 use crate::cast::{ConstType, Kind, Source};
 use crate::expand::{OriginMap, settings_at};
 use crate::lower::{
-    ArrayDim, BuiltinFunction, EnumItem, FileDecls, LiteralValue, MemberBase, MemberKind,
-    Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse, RawValue,
-    StatePart, TypeKind, UseKind, ValueKind, top_level_kind,
+    ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
+    MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse,
+    RawValue, StatePart, TypeKind, UseKind, ValueKind, top_level_kind,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
@@ -1124,7 +1124,7 @@ impl<'a> Resolver<'a> {
         // elsewhere.
         let replaces =
             decl.redefinable() || existing.is_some_and(|d| self.redefinable.contains(&d));
-        let external = decl.has(&Qualifier::Extern) && decl.ty.is_function();
+        let external = self.is_extern(decl) && decl.ty.is_function();
         let shared = decl.has(&Qualifier::Shared);
         let initialized = decl.initialized || external || (self.fteqcc && shared);
         let marks_only = (external || shared) && !decl.initialized;
@@ -1404,14 +1404,37 @@ impl<'a> Resolver<'a> {
         self.report(Code::W0212, location, message);
     }
 
+    /// Whether `QCC_PR_ParseDefs` keeps the `extern` of a declaration whose base type is `base`
+    /// (FTEF-21.10): when the type, its typedefs read, is a function's, or one the model does not
+    /// know.
+    fn extern_kept(&self, base: &ExternBase) -> bool {
+        let ty = self.resolved(&base.ty);
+        ty.is_function() || ty == Type::Unknown
+    }
+
+    /// Whether `decl` is `extern` once `QCC_PR_ParseDefs` has tested it against its base type
+    /// (FTEF-21.10).
+    fn is_extern(&self, decl: &RawDecl) -> bool {
+        decl.has(&Qualifier::Extern)
+            && decl
+                .extern_base
+                .as_ref()
+                .is_none_or(|base| self.extern_kept(base))
+    }
+
     /// FTEF-19.13 and the warnings of `QCC_PR_ParseDefs` about qualifiers it ignores
     /// (FTEF-19.16): `extern` on what is no function, conflicting storage classes or
     /// constness, a function modifier on what is no function, and `accumulate` on what is no
     /// function, an error.
     fn warn_qualifiers(&mut self, decl: &RawDecl, location: Location) -> bool {
         let function = decl.ty.is_function();
-        // FTEF-21.10: the warning of an `extern` lowering dropped, given with `qcfuncs` on.
-        if decl.extern_warning {
+        // FTEF-21.10: an `extern` on a base type that is no function's is dropped, with its
+        // warning when `qcfuncs` is on.
+        if decl
+            .extern_base
+            .as_ref()
+            .is_some_and(|base| base.qcfuncs && !self.extern_kept(base))
+        {
             self.report(
                 Code::W0214,
                 location,
@@ -1420,10 +1443,11 @@ impl<'a> Resolver<'a> {
         }
         // `istypedef+externfnc+isauto+isstatic+shared+(aliasof!=NULL)>1`, `isstatic` with its
         // `#pragma defaultstatic` default (FTEF-21.14).
-        let storage = [Qualifier::Extern, Qualifier::Auto, Qualifier::Shared]
+        let storage = [Qualifier::Auto, Qualifier::Shared]
             .iter()
             .filter(|q| decl.has(q))
             .count()
+            .saturating_add(usize::from(self.is_extern(decl)))
             .saturating_add(usize::from(decl.is_static()))
             .saturating_add(usize::from(decl.alias().is_some()));
         if storage > 1 {

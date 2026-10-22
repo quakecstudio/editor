@@ -440,3 +440,29 @@ fn typedef_qualifiers() {
         .unwrap();
     assert!(td.syntax().children().find_map(ast::Type::cast).is_none());
 }
+
+// spec FTEF-21.14: in a body, `typedef` after the qualifiers a definition starts with
+#[test]
+fn typedef_qualifiers_in_a_body() {
+    let parsed = fte("void() g = { const typedef float t; };\n");
+    assert!(parsed.errors().next().is_none());
+    assert!(
+        parsed
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::TypedefDecl)
+    );
+}
+
+// spec FTEF-21.1: the token after a block is lexed with its flags and read with them restored
+#[test]
+fn the_token_after_a_block_is_read_restored() {
+    let source = "extern \"C\" int a; float *p, q;\n";
+    let parsed = fte(source);
+    let float = at(source, "float");
+    assert!(!parsed.lex_flags_at(float).has(LexFlag::QcFuncs));
+    assert!(parsed.flags_at(float).has(FteFlag::Qcfuncs));
+    assert!(!parsed.flags_at(float).has(FteFlag::AssumeInteger));
+    let decl = parsed.tree().unwrap().declarations().nth(1).unwrap();
+    assert!(matches!(decl.ty(), Some(ast::Type::Pointer(_))));
+}

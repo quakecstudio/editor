@@ -77,9 +77,20 @@ pub struct RawDecl {
     /// Whether it, or a declarator of its declaration before it, is C's function pointer
     /// `(*name)`, `isvar |= isptr>0`, a variable (FTEF-21.7).
     pub pointer_var: bool,
-    /// Whether `extern` was written on a declaration whose base type is no function, which
-    /// `QCC_PR_ParseDefs` then drops, and warns of with `qcfuncs` on (FTEF-21.10).
-    pub extern_warning: bool,
+    /// For an `extern` declaration at file level, the base type `QCC_PR_ParseDefs` tests it
+    /// against, which resolution reads with the typedefs it knows (FTEF-21.10).
+    pub extern_base: Option<ExternBase>,
+}
+
+/// The base type of an `extern` declaration and what `QCC_PR_ParseDefs` reads with it: `if
+/// (externfnc && !pr_scope && basetype->type != ev_function) { if (flag_qcfuncs) ...warning...;
+/// externfnc=false; }` (FTEF-21.10).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExternBase {
+    /// The declaration's type before its declarators, a left out one's `int`.
+    pub ty: Type,
+    /// Whether `qcfuncs` was on after the type, which the warning needs.
+    pub qcfuncs: bool,
 }
 
 /// A declaration qualifier FTEQCC's `QCC_PR_ParseDefs` reads before a type (FTEF-15.1), written
@@ -257,7 +268,7 @@ impl RawDecl {
             flags: CompilerFlags::default(),
             assumevar: false,
             pointer_var: false,
-            extern_warning: false,
+            extern_base: None,
         }
     }
 
@@ -948,6 +959,11 @@ pub struct FileDecls {
 struct Cx<'a> {
     fte: bool,
     flags: &'a [(usize, qc_syntax::CompilerFlags)],
+    /// The lexer's flags, which differ from `flags` at the token after an `extern` block
+    /// (FTEF-21.2).
+    lex: &'a [(usize, qc_lexer::LexFlags)],
+    /// Where each of the file's tokens starts, trivia aside, in order.
+    tokens: &'a [usize],
     keywords: &'a [(usize, Keywords)],
 }
 
@@ -955,7 +971,7 @@ impl Cx<'_> {
     /// The lexer's flags at offset `at` (FTEF-12.12): the last that holds from at or before it,
     /// else the defaults.
     fn lex_flags_at(self, at: usize) -> qc_lexer::LexFlags {
-        self.flags_at(at).lex()
+        qc_lexer::LexFlags::at(self.lex, at)
     }
 
     /// The compiler flags at offset `at` (FTEF-21.1): the last that holds from at or before it,
@@ -964,19 +980,11 @@ impl Cx<'_> {
         CompilerFlags::at(self.flags, at)
     }
 
-    /// The compiler flags at the first token of `scope` that starts at or after `at`, the token
-    /// FTEQCC looks at once it has read what ends at `at` (FTEF-21.1); the flags at `at` when
-    /// `scope` holds none.
-    fn next_flags(self, scope: &SyntaxNode, at: usize) -> CompilerFlags {
-        let next = std::iter::once(scope.clone())
-            .chain(scope.ancestors())
-            .find_map(|node| {
-                node.tokens()
-                    .find(|t| !t.kind().is_trivia() && t.span().start >= at)
-                    .map(|t| t.span().start)
-            })
-            .unwrap_or(at);
-        self.flags_at(next)
+    /// The compiler flags at the first token that starts at or after `at`, the token FTEQCC
+    /// looks at once it has read what ends at `at` (FTEF-21.1); the flags at `at` past the last.
+    fn next_flags(self, at: usize) -> CompilerFlags {
+        let index = self.tokens.partition_point(|&start| start < at);
+        self.flags_at(self.tokens.get(index).copied().unwrap_or(at))
     }
 
     /// The keywords at offset `at` (FTEF-20.1).
@@ -1044,9 +1052,17 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
         return out;
     };
     let fte = dialect.has_fteqcc_extensions();
+    let tokens: Vec<usize> = tree
+        .syntax()
+        .tokens()
+        .filter(|t| !t.kind().is_trivia())
+        .map(|t| t.span().start)
+        .collect();
     let cx = Cx {
         fte,
         flags: parse.flags(),
+        lex: parse.lex_flags(),
+        tokens: &tokens,
         keywords: parse.keywords(),
     };
     for node in tree
@@ -1334,7 +1350,7 @@ fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
     {
         qualifiers.retain(|q| *q != Qualifier::Extern);
         let after = ty_node.as_ref().map_or(0, |t| t.syntax().span().end);
-        if cx.next_flags(td.syntax(), after).has(FteFlag::Qcfuncs) {
+        if cx.next_flags(after).has(FteFlag::Qcfuncs) {
             out.push(warn("extern keyword may only apply to qc functions."));
         }
     }
@@ -1584,25 +1600,21 @@ fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut Vec<RawDecl>
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
     // FTEF-15.1: the qualifiers before the type hold for every declarator.
-    let mut qualifiers = qualifiers_of(decl.syntax());
-    // FTEF-21.10: `if (externfnc && !pr_scope && basetype->type != ev_function) { if
-    // (flag_qcfuncs) QCC_PR_ParseWarning(..., "extern keyword may only apply to qc
-    // functions."); externfnc=false; }`, read once the base type is.
-    let mut extern_warning = false;
-    if fte
-        && qualifiers.contains(&Qualifier::Extern)
-        && decl.ty().as_ref().is_none_or(|t| no_function(t, &base))
-    {
-        qualifiers.retain(|q| *q != Qualifier::Extern);
+    let qualifiers = qualifiers_of(decl.syntax());
+    // FTEF-21.10: `extern` is tested against the base type, read once the type is.
+    let extern_base = (fte && qualifiers.contains(&Qualifier::Extern)).then(|| {
         let after = decl.ty().map_or(0, |t| t.syntax().span().end);
-        extern_warning = cx.next_flags(decl.syntax(), after).has(FteFlag::Qcfuncs);
-    }
+        ExternBase {
+            ty: base.clone(),
+            qcfuncs: cx.next_flags(after).has(FteFlag::Qcfuncs),
+        }
+    });
     let flags = cx.flags_at(decl.syntax().span().start);
     for raw in out.iter_mut().skip(first) {
         if raw.enum_item.is_none() {
             raw.qualifiers.clone_from(&qualifiers);
             raw.flags = flags;
-            raw.extern_warning = extern_warning;
+            raw.extern_base.clone_from(&extern_base);
         }
     }
 }
@@ -1854,12 +1866,7 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
         .flags
         .iter()
         .any(|(_, flags)| flags.has(FteFlag::PrSubscopedlocals));
-    if cx.fte
-        && subscope_somewhere
-        && cx
-            .next_flags(block.syntax(), end)
-            .has(FteFlag::PrSubscopedlocals)
-    {
+    if cx.fte && subscope_somewhere && cx.next_flags(end).has(FteFlag::PrSubscopedlocals) {
         for local in body.locals.iter_mut().skip(first) {
             local.scope_end.get_or_insert(end);
         }

@@ -359,3 +359,25 @@ fn a_blocks_lexical_diagnostics() {
     assert_eq!(errors("extern \"QC\" { string s = \"\\9\"; }\n"), []);
     assert_eq!(errors("string s = \"\\9\";\n"), []);
 }
+
+// spec FTEF-21.10: `extern` is tested against the base type with its typedefs read
+#[test]
+fn extern_on_a_typedef() {
+    assert_eq!(
+        codes("typedef float myfloat;\nextern myfloat x;\n"),
+        [Code::W0214]
+    );
+    assert_eq!(
+        codes("typedef void() fn;\nextern fn h;\n"),
+        codes("extern void() h;\n")
+    );
+}
+
+// spec FTEF-21.1: the definition after a block reads the flags it restored
+#[test]
+fn the_definition_after_a_block() {
+    assert_eq!(
+        errors("extern \"C\" int a; enum { A, B };\nstring s = B;\n"),
+        [Code::E0213]
+    );
+}

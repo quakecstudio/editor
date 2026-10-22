@@ -50,6 +50,9 @@ pub struct Parse {
     /// The compiler flags the tokens were lexed and read with, each from the byte it holds from
     /// (FTEF-12.12, FTEF-21.1), the first at byte 0.
     flags: Vec<(usize, CompilerFlags)>,
+    /// The flags the lexer read each token with, each from the byte it holds from (FTEF-12.12),
+    /// which differ from [`Parse::flags`] at the token after an `extern` block (FTEF-21.2).
+    lex: Vec<(usize, qc_lexer::LexFlags)>,
     /// The keywords the parser read each token with, each from the byte it holds from
     /// (FTEF-20.1): the preprocessor's marks and the changes the definitions made.
     keywords: Vec<(usize, Keywords)>,
@@ -73,10 +76,18 @@ impl Parse {
         CompilerFlags::at(&self.flags, at)
     }
 
+    /// The flags the lexer read the tokens with (FTEF-12.12): each the byte they hold from and
+    /// the flags, in order, the first at byte 0. They are [`Self::flags`]' but at the token after
+    /// an `extern` block, which FTEQCC lexed before it restored the block's flags (FTEF-21.2).
+    #[must_use]
+    pub fn lex_flags(&self) -> &[(usize, qc_lexer::LexFlags)] {
+        &self.lex
+    }
+
     /// The flags the lexer read the token at byte `at` with (FTEF-12.12).
     #[must_use]
     pub fn lex_flags_at(&self, at: usize) -> qc_lexer::LexFlags {
-        self.flags_at(at).lex()
+        qc_lexer::LexFlags::at(&self.lex, at)
     }
 
     /// The spans of the tokens of a preprocessor's text that the parser lexed with other flags
@@ -214,16 +225,19 @@ fn parse_text(
     let mut blocks = Vec::new();
     let mut pass = 0_usize;
     loop {
-        let marks = flags::marks(edits, &blocks);
+        let marks = flags::marks(edits, &blocks, flags::Reading::Parsed);
         let lex: Vec<(usize, qc_lexer::LexFlags)> =
-            marks.iter().map(|&(at, flags)| (at, flags.lex())).collect();
+            flags::marks(edits, &blocks, flags::Reading::Lexed)
+                .iter()
+                .map(|&(at, flags)| (at, flags.lex()))
+                .collect();
         let input = input::Input::new(source, dialect, text, &lex);
         let mut parser = parser::Parser::new(input, dialect, keywords, &marks);
         parser.source_file();
         pass = pass.saturating_add(1);
         if parser.blocks() == blocks.as_slice() || pass >= PASSES {
             let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
-                parser.relexed(&flags::marks(edits, &[]))
+                parser.relexed(&flags::marks(edits, &[], flags::Reading::Lexed))
             } else {
                 Vec::new()
             };
@@ -232,6 +246,7 @@ fn parse_text(
                 green,
                 diagnostics,
                 flags: marks,
+                lex,
                 keywords,
                 relexed,
             };
