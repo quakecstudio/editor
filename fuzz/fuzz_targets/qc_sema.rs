@@ -72,7 +72,8 @@ fuzz_target!(|data: &[u8]| {
     // The missing-builtin check reads the parses and the index resolved from them.
     let parses: Vec<_> = files.iter().map(|text| qc_syntax::parse_with(text, dialect)).collect();
     let lowered: Vec<_> = parses.iter().map(|parse| lower_file(parse, dialect)).collect();
-    let resolved = resolve_module(&lowered, ResolveOptions { dialect, autoproto });
+    let options = ResolveOptions { dialect, autoproto, ..ResolveOptions::default() };
+    let resolved = resolve_module(&lowered, options);
     for engine in Engine::ALL {
         for kind in [ModuleKind::Ssqc, ModuleKind::Csqc, ModuleKind::Menuqc] {
             for d in missing_builtins(engine, kind, &parses, &resolved, dialect) {

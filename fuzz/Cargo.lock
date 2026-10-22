@@ -193,6 +193,7 @@ name = "qc-syntax"
 version = "2026.10.0"
 dependencies = [
  "qc-lexer",
+ "qc-preproc",
 ]
 
 [[package]]
