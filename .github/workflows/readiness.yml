@@ -96,7 +96,7 @@ jobs:
       list: ${{ steps.list.outputs.list }}
     steps:
       - id: list
-        run: echo "list=$(jq -cn --arg crates "$CRATES" '$crates | split(" ") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+        run: echo "list=$(jq -cn --arg crates "$CRATES" '$crates | [splits("\\s+")] | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
 
   # One runner per crate, so a run takes the slowest crate's time rather than
   # the sum of them all.
@@ -122,7 +122,7 @@ jobs:
           tool: cargo-mutants@27.1.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: readiness-mutation-${{ runner.os }}
+          shared-key: readiness-mutation-${{ runner.os }}-${{ strategy.job-index }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # xtask's tests of `cargo xtask oracles fuzz` go past its check for clang
       # only when the C compiler is clang, so that its mutants are tested.

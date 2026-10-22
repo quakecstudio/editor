@@ -169,6 +169,13 @@ fn qccx_percent_immediates() {
         ]
     );
     assert_eq!(kinds(b"%1.5;", qccx).len(), 2);
+    assert_eq!(
+        kinds(b"%1..", qccx),
+        [
+            TokenKind::Float(f32::from_bits(1)),
+            TokenKind::Punct(Punct::DotDot)
+        ]
+    );
     assert_eq!(kinds(b"5 % 2", qccx)[1], TokenKind::Punct(Punct::Percent));
     assert_eq!(
         kinds(b"%5", LexFlags::default()),
