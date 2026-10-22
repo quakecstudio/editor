@@ -1,0 +1,23 @@
+[package]
+name = "qc-codegen"
+description = "The QuakeC compiler's code generator: lowers the semantic model to a version 6 progs.dat"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-diag = { workspace = true }
+qc-lexer = { workspace = true }
+qc-progs = { workspace = true }
+qc-sema = { workspace = true }
+qc-syntax = { workspace = true }
+qc-types = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+
+[lints]
+workspace = true

@@ -136,6 +136,8 @@ pub struct Db {
     paths: HashMap<FileId, PathBuf>,
     /// The parse and lowering of each compiled file's last expansion.
     expanded: HashMap<FileId, ExpandedFile>,
+    /// Where each span of each compiled file's last expansion came from (QC-9.7).
+    origins: HashMap<FileId, OriginMap>,
     /// The memoized analysis of a module read through the preprocessor.
     analysis: Option<Memo<(ModuleInput, ModuleAnalysis)>>,
     /// Query-run counters.
@@ -459,6 +461,12 @@ impl Db {
             index: resolve_mapped(&decls, &sources, options),
             syntax,
         };
+        self.origins = input
+            .compiled
+            .iter()
+            .zip(preprocessed.files)
+            .map(|(&id, rendered)| (id, rendered.origins))
+            .collect();
         self.analysis = Some(Memo {
             value: (input.clone(), analysis.clone()),
             computed_at: max_revision,
@@ -472,6 +480,22 @@ impl Db {
     #[must_use]
     pub fn expanded_decls(&self, file: FileId) -> Option<&FileDecls> {
         self.expanded.get(&file).map(|expanded| &expanded.decls)
+    }
+
+    /// The parse of compiled file `file`'s expansion as [`Db::analyze_module`] last read it,
+    /// the tree the compiler lowers (QC-9.16), whose spans are those of
+    /// [`Db::expanded_decls`]; `None` before a module that compiles it has been analysed.
+    #[must_use]
+    pub fn expanded_parse(&self, file: FileId) -> Option<&Parse> {
+        self.expanded.get(&file).map(|expanded| &expanded.parse)
+    }
+
+    /// Where each span of compiled file `file`'s expansion came from, as
+    /// [`Db::analyze_module`] last read it (QC-9.7): a span of [`Db::expanded_parse`] located
+    /// in a source file; `None` before a module that compiles it has been analysed.
+    #[must_use]
+    pub fn expanded_origins(&self, file: FileId) -> Option<&OriginMap> {
+        self.origins.get(&file)
     }
 
     /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
