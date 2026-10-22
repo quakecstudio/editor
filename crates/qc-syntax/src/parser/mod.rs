@@ -21,10 +21,11 @@
 //! before abandoning it (QC-24.2); the rest would be consequences of it.
 
 use qc_lexer::{Code, Diagnostic, Dialect, LexFlag, Span};
-use qc_preproc::{Enabled, Keyword, KeywordEdit, Keywords};
+use qc_preproc::{CompilerFlags, Enabled, FteFlag, Keyword, KeywordEdit, Keywords, Priorities};
 
 mod fte;
 
+use crate::flags::{Block, Linkage};
 use crate::input::{Input, Piece, Tok};
 use crate::kind::SyntaxKind as K;
 use crate::tree::{Builder, Checkpoint, GreenNode};
@@ -48,21 +49,108 @@ pub const LIMIT_QCC_MAX_NAME: usize = 64;
 /// name of `FTEQCC_MAX_NAME - 1` bytes or more is "name too long" (FTEF-15.7).
 pub const FTEQCC_MAX_NAME: usize = 256;
 
-/// `TOP_PRIORITY` in `qcc/pr_comp.c`: the loosest binary operator priority.
-const TOP_PRIORITY: u8 = 6;
+/// The operator priorities an expression is read with (FTEF-21.4, FTEF-21.5): QuakeC's,
+/// `PR_Expression`'s and FTEQCC's without `flag_cpriority`, in id's numbering, one below
+/// FTEQCC's, or FTEQCC's C priorities, in its own numbering. Under both a binary operator of
+/// priority `p` takes a right operand of priority `p - 1`, an assignment one of its own, and a
+/// unary operand is of [`UNARY_PRIORITY`], below every binary operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Precedence(Priorities);
 
-/// `NOT_PRIORITY` in `qcc/pr_comp.c`: the priority of the operand of `!` (QC-15.6).
-const NOT_PRIORITY: u8 = 4;
+impl Precedence {
+    /// `TOP_PRIORITY`: the loosest binary operator priority, `priority_class[MAX_PRIORITY_CLASSES]`.
+    const fn top(self) -> u8 {
+        match self.0 {
+            Priorities::Qc => 6,
+            Priorities::C => 13,
+        }
+    }
 
-/// The priority of `=`, the only right-associative operator.
-const ASSIGN_PRIORITY: u8 = 5;
+    /// `NOT_PRIORITY`, `priority_class[PC_UNARYNOT]`: the priority of the operand of `!`
+    /// (QC-15.6) and `~` (FTE-19.4); under C's, [`UNARY_PRIORITY`].
+    const fn not(self) -> u8 {
+        match self.0 {
+            Priorities::Qc => 4,
+            Priorities::C => UNARY_PRIORITY,
+        }
+    }
 
-/// FTEQCC's `TERNARY_PRIORITY`: the priority `?:` is read at, equal to the assignment
-/// priority and tighter than `&&` and `||` (FTE-8.4). `QCC_PrioritiseOpcodes` sets
-/// `priority_class[PC_TERNARY] = 6; priority_class[PC_STORE] = 6;` and
-/// `priority_class[PC_LOGICAND] = 7;` without `flag_cpriority`, one above this parser's
-/// numbering, whose `&&` and `||` are 6.
-const TERNARY_PRIORITY: u8 = ASSIGN_PRIORITY;
+    /// `ASSIGN_PRIORITY`, `priority_class[PC_STORE]`: the priority of `=` and the compound
+    /// assignments, the right-associative operators.
+    const fn assign(self) -> u8 {
+        match self.0 {
+            Priorities::Qc => 5,
+            Priorities::C => 13,
+        }
+    }
+
+    /// FTEQCC's `TERNARY_PRIORITY`, `priority_class[PC_TERNARY]`: the priority `?:` is read at.
+    /// Under QuakeC's it equals the assignment priority and is tighter than `&&` and `||`
+    /// (FTE-8.4): `priority_class[PC_TERNARY] = 6; priority_class[PC_STORE] = 6;` and
+    /// `priority_class[PC_LOGICAND] = 7;`, one above this numbering, whose `&&` and `||` are 6.
+    /// Under C's it is looser than `||` and tighter than the assignments.
+    const fn ternary(self) -> u8 {
+        match self.0 {
+            Priorities::Qc => 5,
+            Priorities::C => 12,
+        }
+    }
+
+    /// The priority of `+` and `-` (QC-15.1), `priority_class[PC_ADDSUB]`.
+    const fn add(self) -> u8 {
+        ADD_PRIORITY
+    }
+
+    /// The priority of a binary operator (QC-15.1), from `pr_opcodes`' priority classes. Under
+    /// QuakeC's, FTEQCC's operators at the matching vanilla priority (FTE-6, FTE-7, FTE-19.3):
+    /// `QCC_PrioritiseOpcodes` puts shifts, `^`, `&` and `|` in the class of `*` and `/`, with
+    /// `*^` and `><` (`PC_MULDIV`), and `<=>` in the class of `==` (`PC_EQUALITY`, FTEF-13.24).
+    /// Under C's, each class at its C priority (FTEF-21.5).
+    const fn binary(self, kind: K) -> Option<u8> {
+        match self.0 {
+            Priorities::Qc => match kind {
+                K::Star
+                | K::Slash
+                | K::Amp
+                | K::Pipe
+                | K::Percent
+                | K::Caret
+                | K::Shr
+                | K::Shl
+                | K::StarCaret
+                | K::Cross => Some(2),
+                K::Plus | K::Minus => Some(ADD_PRIORITY),
+                K::EqEq
+                | K::NotEq
+                | K::LessEq
+                | K::GreaterEq
+                | K::Less
+                | K::Greater
+                | K::Spaceship => Some(4),
+                // `=` and the FTEQCC compound assignments (FTE-6, FTE-19.3) are
+                // right-associative at the assignment priority.
+                kind if is_assignment(kind) => Some(5),
+                K::AndAnd | K::OrOr => Some(6),
+                _ => None,
+            },
+            // `priority_class[PC_MULDIV] = 2; ... priority_class[PC_STORE] = 13;`
+            Priorities::C => match kind {
+                K::Star | K::Slash | K::Percent | K::StarCaret | K::Cross => Some(2),
+                K::Plus | K::Minus => Some(ADD_PRIORITY),
+                K::Shl | K::Shr => Some(4),
+                K::Less | K::LessEq | K::Greater | K::GreaterEq => Some(5),
+                K::EqEq | K::NotEq | K::Spaceship => Some(6),
+                K::Amp => Some(7),
+                K::Caret => Some(8),
+                K::Pipe => Some(9),
+                K::AndAnd => Some(10),
+                K::OrOr => Some(11),
+                kind if is_assignment(kind) => Some(13),
+                _ => None,
+            },
+        }
+    }
+}
 
 /// A clause of a `for` header (FTE-2.1), which FTEQCC discards or keeps (FTEF-18.25).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +194,12 @@ enum Member {
     Accessor,
 }
 
+/// The byte a character of a token's text stands for: the text holds each byte as the
+/// character of its code (`Tok::text`).
+fn latin1_byte(c: char) -> u8 {
+    u8::try_from(u32::from(c)).unwrap_or(b'?')
+}
+
 /// How far the declaration-line test looks for the `)` of a parameter list.
 const LOOKAHEAD: usize = 256;
 
@@ -130,34 +224,6 @@ const ADD_PRIORITY: u8 = 3;
 /// FTEQCC's `UNARY_PRIORITY`: the operand of a prefix `-`, `+` or of a cast is a term with its
 /// postfix forms and no binary operator (FTE-19.4, FTE-19.6).
 const UNARY_PRIORITY: u8 = 1;
-
-/// The priority of a binary operator (QC-15.1), from `pr_opcodes`, plus the FTEQCC operators
-/// at the matching vanilla priority (FTE-6, FTE-7, FTE-19.3): FTEQCC's default
-/// `QCC_PrioritiseOpcodes` puts shifts, `^`, `&` and `|` in the class of `*` and `/`, with
-/// `*^` and `><` (`PC_MULDIV`), and `<=>` in the class of `==` (`PC_EQUALITY`, FTEF-13.24).
-const fn binary_priority(kind: K) -> Option<u8> {
-    match kind {
-        K::Star
-        | K::Slash
-        | K::Amp
-        | K::Pipe
-        | K::Percent
-        | K::Caret
-        | K::Shr
-        | K::Shl
-        | K::StarCaret
-        | K::Cross => Some(2),
-        K::Plus | K::Minus => Some(ADD_PRIORITY),
-        K::EqEq | K::NotEq | K::LessEq | K::GreaterEq | K::Less | K::Greater | K::Spaceship => {
-            Some(4)
-        }
-        // `=` and the FTEQCC compound assignments (FTE-6, FTE-19.3) are right-associative at
-        // the assignment priority.
-        kind if is_assignment(kind) => Some(ASSIGN_PRIORITY),
-        K::AndAnd | K::OrOr => Some(TOP_PRIORITY),
-        _ => None,
-    }
-}
 
 /// Whether a binary operator kind is an assignment (`=` or an FTEQCC compound assignment),
 /// so its left operand must be assignable (QC-27.10, FTE-6, FTE-19.3).
@@ -185,6 +251,9 @@ const fn is_assignment(kind: K) -> bool {
 struct TypeShape {
     function: bool,
     field: bool,
+    /// Whether `QCC_PR_ParseType` read the type with `qcfuncs` on where a parameter list may
+    /// follow it, so a `(` after it was the type's (FTEF-21.7).
+    qcfuncs: bool,
 }
 
 /// What a parsed expression is, for the checks on assignments and initialisers.
@@ -249,10 +318,24 @@ pub(crate) struct Parser<'a> {
     /// The keywords from each byte on, as the parser read them: its starting keywords, each of
     /// [`Self::edits`] and each change a definition made (FTEF-20.4).
     keyword_marks: Vec<(usize, Keywords)>,
+    /// The compiler flags from each byte on, as the input was lexed with them (FTEF-21.1).
+    flags: Vec<(usize, CompilerFlags)>,
+    /// The `extern` blocks read, in the order they ended (FTEF-21.2).
+    blocks: Vec<Block>,
+    /// How many `extern` blocks with a `{` the current token is in, whose `}` recovery stops at.
+    open_blocks: usize,
+    /// Whether the expression being read is the operand of `!` or `~`, FTEQCC's
+    /// `EXPR_WARN_ABOVE_1` (FTEF-21.6).
+    unary_not: bool,
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn new(input: Input<'a>, dialect: Dialect, edits: &[(usize, KeywordEdit)]) -> Self {
+    pub(crate) fn new(
+        input: Input<'a>,
+        dialect: Dialect,
+        edits: &[(usize, KeywordEdit)],
+        flags: &[(usize, CompilerFlags)],
+    ) -> Self {
         let mut parser = Self {
             input,
             dialect,
@@ -273,9 +356,57 @@ impl<'a> Parser<'a> {
             edits: edits.to_vec(),
             applied: 0,
             keyword_marks: Vec::new(),
+            flags: flags.to_vec(),
+            blocks: Vec::new(),
+            open_blocks: 0,
+            unary_not: false,
         };
         parser.sync_keywords();
         parser
+    }
+
+    /// The `extern` blocks read (FTEF-21.2).
+    pub(crate) fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    /// The compiler flags in force at the token `n` ahead (FTEF-21.1), as FTEQCC reads a flag
+    /// while that token is the one it looks at.
+    fn flags_ahead(&self, n: usize) -> CompilerFlags {
+        let at = self
+            .nth(n)
+            .map_or(self.input.source.len(), |t| t.span.start);
+        CompilerFlags::at(&self.flags, at)
+    }
+
+    /// Whether `flag` is on at the token `n` ahead (FTEF-21.1).
+    fn flag_ahead(&self, n: usize, flag: FteFlag) -> bool {
+        self.flags_ahead(n).has(flag)
+    }
+
+    /// The spans of the tokens of a preprocessor's text that were lexed with other flags than
+    /// `preprocessor`, the flags the preprocessor lexed them with, those of an `extern` block
+    /// (FTEF-21.2); their lexical errors and warnings become the parser's.
+    pub(crate) fn relexed(&mut self, preprocessor: &[(usize, CompilerFlags)]) -> Vec<Span> {
+        let spans: Vec<Span> = self
+            .input
+            .tokens
+            .iter()
+            .map(|t| t.span)
+            .filter(|span| {
+                qc_lexer::LexFlags::at(&self.input.flags, span.start)
+                    != CompilerFlags::at(preprocessor, span.start).lex()
+            })
+            .collect();
+        let within = |d: &Diagnostic| {
+            spans.iter().any(|span| {
+                span.start <= d.span.start
+                    && d.span.start < span.end.max(span.start.saturating_add(1))
+            })
+        };
+        let lexical = std::mem::take(&mut self.input.lexical);
+        self.errors.extend(lexical.into_iter().filter(within));
+        spans
     }
 
     /// The tree, every diagnostic, lexical ones included, in source order, and the keywords
@@ -658,7 +789,7 @@ impl<'a> Parser<'a> {
             }
             match kind {
                 K::LBrace => depth = depth.saturating_add(1),
-                K::RBrace if depth == 0 && in_block => break,
+                K::RBrace if depth == 0 && (in_block || self.open_blocks > 0) => break,
                 K::RBrace => depth = depth.saturating_sub(1),
                 _ => {}
             }
@@ -681,47 +812,160 @@ impl<'a> Parser<'a> {
     /// A whole file: declarations, and the trivia and directives around them (QC-11.1).
     pub(crate) fn source_file(&mut self) {
         self.builder.start_node(K::SourceFile);
-        while let Some(tok) = self.current() {
-            let _ = tok;
+        while self.current().is_some() {
             self.start_item();
             let before = self.pos;
-            if self.fteqcc() && self.at(K::Semicolon) {
-                // FTE-17.3: `QCC_PR_ParseDefs` skips any `;` before a definition, so the `;`
-                // after a function body may be written or not.
-                self.bump();
-            } else if self.fteqcc() && self.kw(0, Keyword::Typedef, "typedef") {
-                self.typedef_decl();
-            } else if self.fteqcc() && self.at_enum_body() {
-                self.enum_decl();
-            } else if self.fteqcc() && self.at_class() {
-                // FTEF-9.1: a class, or its forward declaration, after any qualifiers.
-                self.class_decl();
-            } else if self.fteqcc() && self.kw(0, Keyword::Accessor, "accessor") {
-                // FTEF-10.1: an accessor type.
-                self.accessor_decl();
-            } else if self.fteqcc()
-                && self.at_struct_keyword(0)
-                && (self.nth(1).is_some_and(|t| t.kind == K::LBrace)
-                    || (self.nth(1).is_some_and(|t| t.kind == K::Name)
-                        && self.nth(2).is_some_and(|t| {
-                            matches!(t.kind, K::LBrace | K::Semicolon | K::Colon)
-                        })))
-            {
-                // FTEF-6.1: a named struct or union, or its forward declaration.
-                self.struct_decl();
-            } else if self.starts_declaration() {
-                self.declaration();
-            } else {
-                let message = format!("\"{}\" is not a type", self.found());
-                self.error(Code::E0203, message);
-                self.skip(false, true);
-            }
+            self.item();
             if self.pos == before {
                 self.bump_error();
             }
         }
         self.flush();
         self.finish_node();
+    }
+
+    /// One file-level item, what `QCC_PR_ParseDefs` reads at file level: a declaration or one of
+    /// the FTEQCC dialect's file-level constructs.
+    fn item(&mut self) {
+        if self.fteqcc() && self.at(K::Semicolon) {
+            // FTE-17.3: `QCC_PR_ParseDefs` skips any `;` before a definition, so the `;`
+            // after a function body may be written or not.
+            self.bump();
+        } else if self.fteqcc() && self.at_extern_block() {
+            // FTEF-21.2: `extern` and a string, as the first qualifier.
+            self.extern_block(Site::File);
+        } else if self.fteqcc() && self.at_typedef() {
+            self.typedef_decl();
+        } else if self.fteqcc() && self.at_enum_body() {
+            self.enum_decl();
+        } else if self.fteqcc() && self.at_class() {
+            // FTEF-9.1: a class, or its forward declaration, after any qualifiers.
+            self.class_decl();
+        } else if self.fteqcc() && self.kw(0, Keyword::Accessor, "accessor") {
+            // FTEF-10.1: an accessor type.
+            self.accessor_decl();
+        } else if self.fteqcc()
+            && self.at_struct_keyword(0)
+            && (self.nth(1).is_some_and(|t| t.kind == K::LBrace)
+                || (self.nth(1).is_some_and(|t| t.kind == K::Name)
+                    && self
+                        .nth(2)
+                        .is_some_and(|t| matches!(t.kind, K::LBrace | K::Semicolon | K::Colon))))
+        {
+            // FTEF-6.1: a named struct or union, or its forward declaration.
+            self.struct_decl();
+        } else if self.starts_declaration() {
+            self.declaration();
+        } else {
+            let message = format!("\"{}\" is not a type", self.found());
+            self.error(Code::E0203, message);
+            self.skip(false, true);
+        }
+    }
+
+    /// Whether a typedef starts here: `typedef`, with its keyword, after any qualifiers
+    /// (FTEF-21.14).
+    fn at_typedef(&self) -> bool {
+        let mut n = 0_usize;
+        while self.decl_qualifier(n) {
+            n = n.saturating_add(1);
+        }
+        self.kw(n, Keyword::Typedef, "typedef")
+    }
+
+    /// Whether an `extern` block starts here (FTEF-21.2): `extern`, with its keyword, then a
+    /// string, `if (!hadmodifier && pr_token_type == tt_immediate &&
+    /// pr_immediate_type==type_string)`, so only as the first qualifier.
+    fn at_extern_block(&self) -> bool {
+        self.at_extern_block_at(0)
+    }
+
+    /// [`Self::at_extern_block`] at the token `n` ahead.
+    fn at_extern_block_at(&self, n: usize) -> bool {
+        self.kw(n, Keyword::Extern, "extern")
+            && self
+                .nth(n.saturating_add(1))
+                .is_some_and(|t| t.kind == K::StringLit)
+    }
+
+    /// `extern "C" { ... }`, `extern "C"` and one definition, and the same for `"QC"` and any
+    /// other string (FTEF-21.2), at `site`: the string's parts joined, as `QCC_PR_LexString`
+    /// joins them, and compared in any case. The flags it sets hold from the token after the
+    /// string to the token after the one that follows the block, as FTEQCC lexed them; the block
+    /// is recorded for the pass that lexes the text with them.
+    fn extern_block(&mut self, site: Site) {
+        self.start_node(K::ExternBlock);
+        if !self.at_extern_block() {
+            // `local extern "C" ...`: `QCC_PR_ParseStatement` reads `local` and then
+            // `QCC_PR_ParseDefs`, whose first qualifier is the `extern`.
+            self.bump();
+        }
+        self.bump();
+        let mut text = Vec::new();
+        while let Some(tok) = self.current().filter(|t| t.kind == K::StringLit) {
+            text.extend(tok.text.chars().map(latin1_byte));
+            self.bump();
+        }
+        let linkage = Linkage::of(&text);
+        let start = self.current_span().start;
+        if self.at(K::LBrace) {
+            self.bump();
+            self.open_blocks = self.open_blocks.saturating_add(1);
+            loop {
+                if self.at(K::RBrace) {
+                    self.bump();
+                    break;
+                }
+                if self.current().is_none() {
+                    // `if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; }`
+                    self.expected("}");
+                    break;
+                }
+                self.start_item();
+                let before = self.pos;
+                self.block_item(site);
+                if self.pos == before {
+                    self.bump_error();
+                }
+            }
+            self.open_blocks = self.open_blocks.saturating_sub(1);
+        } else {
+            // `QCC_PR_ParseDefs(NULL, false);`, which skips any `;` before its definition.
+            while self.at(K::Semicolon) {
+                self.bump();
+            }
+            if self.current().is_some() {
+                self.block_item(site);
+            }
+        }
+        // The token after the block's last is lexed before the flags are restored, and read
+        // after.
+        let lookahead = self.current_span().start;
+        let end = self
+            .nth(1)
+            .map_or(self.input.source.len(), |t| t.span.start);
+        self.blocks.push(Block {
+            start,
+            lookahead,
+            end,
+            linkage,
+        });
+        self.finish_node();
+    }
+
+    /// One definition of an `extern` block at `site`: an item at file level, a local definition
+    /// in a body (FTEF-21.2).
+    fn block_item(&mut self, site: Site) {
+        match site {
+            Site::File => self.item(),
+            Site::Body | Site::Member => {
+                if self.at_extern_block() {
+                    self.extern_block(site);
+                } else {
+                    self.local_decl(false);
+                }
+            }
+        }
     }
 
     /// Whether the current token starts a top-level declaration. Vanilla: a `.` or a type
@@ -734,6 +978,9 @@ impl<'a> Parser<'a> {
         };
         if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
+        }
+        if tok.kind == K::LBracket && self.fteqcc() {
+            return self.fte_starts_declaration();
         }
         if tok.kind != K::Name {
             return false;
@@ -772,7 +1019,7 @@ impl<'a> Parser<'a> {
         // FTEF-20.4: a declaration's body defines only the parameters of its own type.
         self.params.clear();
         if self.fteqcc() {
-            self.fte_type()
+            self.fte_decl_type()
         } else {
             self.type_()
         }
@@ -782,7 +1029,15 @@ impl<'a> Parser<'a> {
     /// type (FTEF-7.1). Only the FTEQCC dialect reads it.
     fn typedef_decl(&mut self) {
         self.start_node(K::TypedefDecl);
+        // FTEF-21.14: `QCC_PR_ParseDefs` reads `typedef` in its loop of qualifiers, before or
+        // after the others.
+        if self.fteqcc() {
+            self.fte_qualifiers();
+        }
         self.bump_as(K::TypedefKw);
+        if self.fteqcc() {
+            self.fte_qualifiers_after(true);
+        }
         // FTEF-19.9: `typedef;` defines no type, which `QCC_PR_ParseDefs` warns of.
         if self.at(K::Semicolon) {
             self.bump();
@@ -792,18 +1047,25 @@ impl<'a> Parser<'a> {
         let tagged_body = self.nth(1).is_some_and(|t| t.kind == K::LBrace)
             || (self.nth(1).is_some_and(|t| t.kind == K::Name)
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
-        if self.at_struct_keyword(0) && tagged_body {
-            self.struct_type();
-            // FTEF-7.1: `typedef struct { ... } *Name;` names a pointer to it.
-            while self.at(K::Star) {
-                self.bump();
+        let mut shape = TypeShape::default();
+        // FTEF-19.21: `typedef` is a modifier, so after it the type may be left out, an `int`.
+        let omitted = self.fteqcc()
+            && self.fte_type_omitted()
+            && self
+                .current()
+                .is_some_and(|t| type_keyword(&t.text).is_none())
+            && !self.c_type_word(0);
+        match (omitted, self.at_struct_keyword(0) && tagged_body) {
+            (true, _) => {}
+            (false, true) => self.struct_type(),
+            (false, false) if self.at_enum_keyword(0) => {
+                // FTEF-7.1: `typedef enum { ... } Name;`.
+                self.enum_body();
             }
-        } else if self.at_enum_keyword(0) {
-            // FTEF-7.1: `typedef enum { ... } Name;`.
-            self.enum_body();
-        } else {
-            // FTEF-7.1: `typedef <type> Name;`, any type.
-            self.type_or_user_type();
+            (false, false) => {
+                // FTEF-7.1: `typedef <type> Name;`, any type.
+                shape = self.type_or_user_type().unwrap_or_default();
+            }
         }
         if self.at_declaration_line() {
             // FTEF-18.27: after a struct that lost its `}`, a declaration line is the next
@@ -818,9 +1080,18 @@ impl<'a> Parser<'a> {
             self.finish_node();
             return;
         }
+        // FTEF-7.1: `typedef struct { ... } *Name;` names a pointer to it; FTEF-21.7: the name is
+        // a declarator's, after its `*`s, its parameter lists or a `(*`.
+        let pointer = self.declarator_head(&mut shape, true);
         self.name();
         while self.at(K::LBracket) {
             self.array_suffix();
+        }
+        if pointer {
+            self.expect(K::RParen, ")");
+            if self.at_function_list() {
+                self.fte_param_list();
+            }
         }
         if !self.expect(K::Semicolon, ";") {
             self.recover(false);
@@ -961,8 +1232,10 @@ impl<'a> Parser<'a> {
             self.bump();
             return;
         }
+        let mut first = true;
         let function = loop {
-            let function = self.declarator(ty, site);
+            let function = self.declarator(ty, site, first);
+            first = false;
             if !self.at(K::Comma) {
                 break function;
             }
@@ -996,20 +1269,24 @@ impl<'a> Parser<'a> {
     /// Parses one declarator; returns whether its type is a function type, whose `;` an
     /// FTEQCC declaration may leave out (FTE-17.3). A definition's name is
     /// `QCC_PR_DummyDef`'s, once its type is known (FTEF-20.4).
-    fn declarator(&mut self, ty: TypeShape, site: Site) -> bool {
+    fn declarator(&mut self, ty: TypeShape, site: Site, first: bool) -> bool {
         self.start_node(K::Declarator);
-        // FTEF-4.1: `T a, *b` declares `b` a pointer, each `*` one level (FTEF-18.26).
-        let mut levels = 0_usize;
-        while self.fteqcc() && self.at(K::Star) {
-            levels = levels.saturating_add(1);
-            if !self.enter() {
-                break;
-            }
-            self.bump();
-        }
-        self.leave(levels);
+        let mut ty = ty;
+        let pointer = self.declarator_head(&mut ty, first);
         let mut name = self.found();
         self.name();
+        if pointer {
+            // `name = QCC_PR_ParseName (); if (QCC_PR_CheckToken ("[")) { ... } QCC_PR_Expect
+            // (")"); ... if (QCC_PR_CheckToken ("(")) type = QCC_PR_ParseFunctionType(...)`
+            if self.at(K::LBracket) {
+                self.array_suffix();
+            }
+            self.expect(K::RParen, ")");
+            if self.at_function_list() {
+                self.fte_param_list();
+                ty.function = true;
+            }
+        }
         // FTEF-9.4: `Class::member` names a member a class declares, whose definition is named
         // `Class::member` (FTEF-20.4).
         while self.fteqcc() && self.at(K::ColonColon) {
@@ -1017,7 +1294,6 @@ impl<'a> Parser<'a> {
             name = format!("{name}::{}", self.found());
             self.name();
         }
-        let mut ty = ty;
         // FTEQCC array suffix `[N]` or `[]` after the declared name (FTE-13.1). Vanilla uses
         // `[` only in a state header `=[frame, think]`, after `=`, so this does not change
         // vanilla; after a function declarator a `[` is its state header (FTE-17.2).
@@ -1054,6 +1330,53 @@ impl<'a> Parser<'a> {
         }
         self.finish_node();
         ty.function
+    }
+
+    /// What `QCC_PR_ParseDefs` reads of a declarator before its name (FTEF-4.1, FTEF-21.7):
+    /// its `*`s, each a pointer (`T a, *b` declares `b` one, FTEF-18.26), then each parameter list
+    /// of its `while(QCC_PR_CheckToken ("("))`, a function returning the type so far, which marks
+    /// `ty` a function's, up to `(*`, C's function pointer, whose `(` and `*`s it takes. Returns
+    /// whether it took them, so the name, a `)` and a parameter list follow. When the type is
+    /// the first declarator's of a type `QCC_PR_ParseType` read with `qcfuncs` on, the type took
+    /// any parameter list, and its `ParseFunctionType` finds no list at `(*`, which this leaves
+    /// for the name to refuse.
+    fn declarator_head(&mut self, ty: &mut TypeShape, first: bool) -> bool {
+        let mut levels = 0_usize;
+        while self.fteqcc() && self.at(K::Star) {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
+            }
+            self.bump();
+        }
+        let mut pointer = false;
+        while self.fteqcc() && self.at(K::LParen) {
+            levels = levels.saturating_add(1);
+            if !self.enter() {
+                break;
+            }
+            if self.nth(1).is_some_and(|t| t.kind == K::Star) {
+                if first && ty.qcfuncs {
+                    break;
+                }
+                // `else { //c-style function pointer while (QCC_PR_CheckToken("*")) isptr++;`
+                self.bump();
+                while self.at(K::Star) {
+                    self.bump();
+                }
+                pointer = true;
+                break;
+            }
+            self.fte_param_list();
+            ty.function = true;
+        }
+        self.leave(levels);
+        pointer
+    }
+
+    /// Whether a parameter list starts here: a `(` that opens no `(*name)` (FTEF-15.3).
+    fn at_function_list(&self) -> bool {
+        self.at(K::LParen) && !self.nth(1).is_some_and(|t| t.kind == K::Star)
     }
 
     /// `[N]` or `[]` after a declared name (FTE-13.1): a fixed size or a size inferred from
@@ -1326,6 +1649,7 @@ impl<'a> Parser<'a> {
             return inner.map(|_| TypeShape {
                 function: false,
                 field: true,
+                qcfuncs: true,
             });
         }
         let keyword = self
@@ -1345,6 +1669,7 @@ impl<'a> Parser<'a> {
             return Some(TypeShape {
                 function: false,
                 field: false,
+                qcfuncs: true,
             });
         }
         self.builder.start_node_at(checkpoint, K::FunctionType);
@@ -1353,6 +1678,7 @@ impl<'a> Parser<'a> {
         Some(TypeShape {
             function: true,
             field: false,
+            qcfuncs: true,
         })
     }
 
@@ -1541,7 +1867,7 @@ impl<'a> Parser<'a> {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
-            // (FTEF-19.17): only `__exit` is the keyword.
+            // (FTEF-19.30): only `__exit` is the keyword.
             self.exit_stmt();
         } else if self.kw(0, Keyword::Loop, "loop") {
             self.loop_stmt();
@@ -1551,11 +1877,21 @@ impl<'a> Parser<'a> {
             self.for_stmt();
         } else if self.checks(0, Enabled::Always, "do") {
             self.do_stmt();
+        } else if self.kw(0, Keyword::Local, "local") && self.at_extern_block_at(1) {
+            // FTEF-21.2: `local` and then an `extern` block.
+            self.extern_block(Site::Body);
         } else if self.kw(0, Keyword::Local, "local") {
             self.local_decl(true);
-        } else if self.strcmp_kw(0, Keyword::Typedef, "typedef") {
-            // FTEF-19.9: `typedef` in a function body names a type there.
+        } else if self.strcmp_kw(0, Keyword::Typedef, "typedef")
+            || (self.fte_looks_like_local() && self.at_typedef())
+        {
+            // FTEF-19.9: `typedef` in a function body names a type there; FTEF-21.14: after the
+            // qualifiers a statement of definitions starts with.
             self.typedef_decl();
+        } else if self.strcmp_kw(0, Keyword::Extern, "extern") && self.at_extern_block() {
+            // FTEF-21.2: `QCC_PR_ParseStatement` tests `extern` exactly, then
+            // `QCC_PR_ParseDefs` reads the block, whose definitions are locals.
+            self.extern_block(Site::Body);
         } else if self.fte_looks_like_local() {
             // FTEF-16.1, FTEF-20.6: a statement of the full dialect that declares locals.
             self.local_decl(false);
@@ -1682,8 +2018,10 @@ impl<'a> Parser<'a> {
             self.bump_as(K::LocalKw);
         }
         if let Some(ty) = self.type_or_user_type() {
+            let mut first = true;
             loop {
-                self.declarator(ty, Site::Body);
+                self.declarator(ty, Site::Body, first);
+                first = false;
                 if !self.at(K::Comma) {
                     break;
                 }
@@ -1916,9 +2254,31 @@ impl<'a> Parser<'a> {
 
     // ---- expressions ----
 
-    /// `PR_Expression (TOP_PRIORITY)`.
+    /// `PR_Expression (TOP_PRIORITY)`. It is no operand of `!` or `~`, whatever it is in, so
+    /// the operators it reads are not warned of (FTEF-21.6).
     fn expression(&mut self) -> Option<Expr> {
-        self.expr(TOP_PRIORITY)
+        let top = self.precedence().top();
+        self.operand(top, false)
+    }
+
+    /// The operator priorities at the current token (FTEF-21.4): under an FTEQCC dialect those
+    /// `QCC_PrioritiseOpcodes` set last, else QuakeC's.
+    fn precedence(&self) -> Precedence {
+        if self.fteqcc() {
+            Precedence(self.flags_ahead(0).priorities())
+        } else {
+            Precedence(Priorities::Qc)
+        }
+    }
+
+    /// An expression of priority `max` read as an operand of its own, `QCC_PR_Expression`'s
+    /// with `EXPR_WARN_ABOVE_1` when `unary_not` (the operand of `!` or `~`, FTEF-21.6) and
+    /// without it otherwise.
+    fn operand(&mut self, max: u8, unary_not: bool) -> Option<Expr> {
+        let outer = std::mem::replace(&mut self.unary_not, unary_not);
+        let expr = self.expr(max);
+        self.unary_not = outer;
+        expr
     }
 
     /// An expression where FTEQCC allows a sequence, `a, b, c`, each evaluated and the last
@@ -2016,6 +2376,7 @@ impl<'a> Parser<'a> {
             if priority > max {
                 break;
             }
+            let precedence = self.precedence();
             let assign = self.current().map(|t| t.kind).is_some_and(is_assignment);
             levels = levels.saturating_add(1);
             if !self.enter() {
@@ -2033,16 +2394,26 @@ impl<'a> Parser<'a> {
             // right operand at once, so it stays for the right operand to read.
             if self
                 .current()
-                .is_some_and(|t| binary_priority(t.kind).is_some())
+                .is_some_and(|t| precedence.binary(t.kind).is_some())
             {
                 self.bump();
             }
-            let rhs_max = if priority == ASSIGN_PRIORITY {
+            let rhs_max = if priority == precedence.assign() {
                 priority
             } else {
                 priority.saturating_sub(1)
             };
             let rhs = self.expr(rhs_max);
+            // FTEF-21.6: `if (priority > 1 && exprflags & EXPR_WARN_ABOVE_1)
+            // QCC_PR_ParseWarning(WARN_UNARYNOTSCOPE, ...)`, once the right operand is read.
+            if self.unary_not && self.fteqcc() {
+                let span = self.current_span();
+                self.warning_at(
+                    Code::W0227,
+                    "suggest parenthesis for unary operator that applies to multiple terms",
+                    span,
+                );
+            }
             if assign {
                 // FTEF-18.25: an assignment sets `qcc_usefulstatement` once its right side is
                 // read.
@@ -2066,7 +2437,7 @@ impl<'a> Parser<'a> {
         // of `=`, `&&` and `||` is read at this priority and reaches the `?` first. It is only
         // reachable in an FTEQCC dialect, since the vanilla lexer has no `?` token (it is
         // "Unknown punctuation").
-        if max >= TERNARY_PRIORITY && self.at(K::Question) {
+        if max >= self.precedence().ternary() && self.at(K::Question) {
             lhs = self.ternary(checkpoint, lhs);
         }
         Some(lhs)
@@ -2077,9 +2448,10 @@ impl<'a> Parser<'a> {
     /// "work[s] around (4-3) being parsed as 4 -3 with no operator between" by reading it as
     /// `+` and the negative number, at the priority of `+`.
     fn operator_priority(&self, tok: &Tok) -> Option<u8> {
-        binary_priority(tok.kind).or_else(|| {
+        let precedence = self.precedence();
+        precedence.binary(tok.kind).or_else(|| {
             let negative = tok.kind == K::FloatLit && tok.text.starts_with('-');
-            (self.fteqcc() && negative).then_some(ADD_PRIORITY)
+            (self.fteqcc() && negative).then_some(precedence.add())
         })
     }
 
@@ -2228,22 +2600,23 @@ impl<'a> Parser<'a> {
         let mut tail = Tail::Plain;
         let (node, assignable) = match kind {
             K::Not => {
+                let not = self.precedence().not();
                 self.start_node(K::NotExpr);
                 self.bump();
-                self.expr(NOT_PRIORITY);
+                self.operand(not, true);
                 (K::NotExpr, false)
             }
             // FTE-19.4: FTEQCC's `QCC_PR_RefTerm` reads `~` with an operand of `NOT_PRIORITY`,
             // as `!`, and `-` and `+` with one of `UNARY_PRIORITY`.
             K::Tilde | K::Minus | K::Plus if self.fteqcc() => {
-                let operand = if kind == K::Tilde {
-                    NOT_PRIORITY
+                let max = if kind == K::Tilde {
+                    self.precedence().not()
                 } else {
                     UNARY_PRIORITY
                 };
                 self.start_node(K::UnaryExpr);
                 self.bump();
-                self.expr(operand);
+                self.operand(max, kind == K::Tilde);
                 (K::UnaryExpr, false)
             }
             // FTEF-16.2: the full dialect's casts, to any type.
@@ -2264,7 +2637,7 @@ impl<'a> Parser<'a> {
             K::At if self.fteqcc() && self.lexed_with(start, LexFlag::Qccx) => {
                 self.start_node(K::UnaryExpr);
                 self.bump();
-                self.expr(UNARY_PRIORITY);
+                self.operand(UNARY_PRIORITY, false);
                 (K::UnaryExpr, true)
             }
             // FTEF-16.7: `++e` and `--e`, `&e` and `*e`.
@@ -2275,7 +2648,7 @@ impl<'a> Parser<'a> {
                 }
                 self.start_node(K::UnaryExpr);
                 self.bump();
-                self.expr(UNARY_PRIORITY);
+                self.operand(UNARY_PRIORITY, false);
                 (K::UnaryExpr, kind == K::Star)
             }
             // FTEF-16.3: `[x, y, z]`.

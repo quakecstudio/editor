@@ -15,6 +15,7 @@
 //! as bytes, wherever FTEQCC meets one (`docs/spec/dialect-fteqcc.md`, FTEF-14.33 to FTEF-14.47,
 //! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.32, `fte_macro`).
 
+mod compiler_flags;
 pub mod cond;
 mod fte_directive;
 mod fte_keywords;
@@ -29,6 +30,7 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
     qcc_load_in_place, skip_script_line,
@@ -143,9 +145,6 @@ pub struct FileOutput {
     pub tokens: Vec<PpToken>,
     /// Lexical and preprocessor diagnostics.
     pub diagnostics: Vec<Diagnostic>,
-    /// In an FTEQCC dialect, each `#pragma noref N` in the file: the index of the first token
-    /// after it, and whether the definitions from there on are `noref` (FTEF-12.6).
-    pub noref: Vec<(usize, bool)>,
     /// In an FTEQCC dialect, each `#pragma autoproto [N]` in the file: the index of the first
     /// token after it, whether it asks for autoprototyping, and the directive's span
     /// (FTEF-12.10).
@@ -155,10 +154,12 @@ pub struct FileOutput {
     /// the settings from there on (FTEF-14.63), for the warnings the parser and the semantic
     /// model report.
     pub warnings: Vec<(usize, WarningSettings)>,
-    /// In an FTEQCC dialect, the compiler flags the lexer reads where the file starts, at token
-    /// 0, and after each `#pragma flag` that changes them: the index of the first token after it
-    /// and the flags from there on (FTEF-12.12), for a reader that lexes the tokens' text again.
-    pub lex_flags: Vec<(usize, LexFlags)>,
+    /// In an FTEQCC dialect, the compiler flags the lexer, the parser and the semantic model read
+    /// where the file starts, at token 0, and each change a `#pragma flag`, `noref`, `nosave` or
+    /// `defaultstatic` makes to them: the index of the first token after it and the change, which
+    /// sets only what the pragma names (FTEF-12.6, FTEF-12.12, FTEF-21.1, FTEF-21.14), for a
+    /// parser that lexes the tokens' text again.
+    pub flags: Vec<(usize, FlagEdit)>,
     /// In an FTEQCC dialect, the keywords the parser reads where the file starts, at token 0, and
     /// each change a `#pragma keyword`, `#pragma flag` or `#pragma TARGET` makes to them: the
     /// index of the first token after it and the change, which sets only what the pragma names
@@ -991,6 +992,9 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte.warnings = self.command_line.warnings(WarningSettings::default());
             self.fte.flags = self.command_line.flags(self.fte.flags);
+            // FTEF-21.4: `QCC_PR_BeginCompilation` calls `QCC_PrioritiseOpcodes` once the
+            // command line is read.
+            self.fte.flags.prioritise();
             self.fte.target = self.command_line.target();
         }
         self
@@ -1095,7 +1099,9 @@ impl<L: Loader> Preprocessor<L> {
         };
         run.out.warnings.extend(warnings.map(|w| (0, w)));
         if self.dialect.has_fteqcc_extensions() {
-            run.out.lex_flags.push((0, self.fte.flags.lex_flags()));
+            run.out
+                .flags
+                .push((0, FlagEdit::whole(self.fte.flags.compiler_flags())));
             run.out
                 .keywords
                 .push((0, KeywordEdit::whole(self.fte.keywords())));

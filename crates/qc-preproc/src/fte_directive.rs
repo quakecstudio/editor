@@ -30,6 +30,7 @@ use std::rc::Rc;
 
 use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 
+use crate::compiler_flags::{FlagEdit, PragmaDefault};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
@@ -1375,10 +1376,18 @@ impl<L: Loader> Preprocessor<L> {
         // first pass, so a `#pragma flag` holds into the second (FTEF-12.11).
         // FTEF-14.72: then `QCC_PR_CommandLinePrecompilerOptions` reads the command line again.
         let defaults = FteState::default();
+        // FTEF-21.4: `QCC_PrioritiseOpcodes` runs once, before the first pass, so the priorities
+        // a pragma set hold into the second too.
+        let priorities = self.fte.flags.priorities();
+        // FTEF-21.14: `defaultstatic = 0;`, while `defaultnoref` and `defaultnosave` hold.
+        self.fte.flags.set_default(PragmaDefault::Static, false);
         self.fte = FteState {
             ifs: self.fte.ifs,
             warnings: self.command_line.warnings(defaults.warnings),
-            flags: self.command_line.flags(self.fte.flags),
+            flags: self
+                .command_line
+                .flags(self.fte.flags)
+                .with_priorities(priorities),
             target: self.command_line.target(),
             ..defaults
         };
@@ -1844,7 +1853,8 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `#pragma` (FTEF-14.43, FTEF-14.70), whose `#` is at `hash` and whose line ends at `end`
     /// in `bytes`: `DONT_COMPILE_THIS_FILE`, `once`, `file`, `line`, `includedir`, `noref`,
-    /// `autoproto` and `warning` change what is read; the others change only the build.
+    /// `nosave`, `defaultstatic`, `autoproto`, `flag`, `keyword`, `TARGET` and `warning` change
+    /// what is read; the others change only the build.
     fn fte_pragma(
         &mut self,
         run: &mut Run,
@@ -1896,10 +1906,21 @@ impl<L: Loader> Preprocessor<L> {
                 let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
                 run.report(Code::W0117, warning, at);
             }
-        } else if pragma.is("noref") {
-            // FTEF-12.6: `defaultnoref = !!atoi(msg);`
-            let index = run.out.tokens.len();
-            run.out.noref.push((index, cond::fte_atoi(message) != 0));
+        } else if let Some(default) = [
+            ("noref", PragmaDefault::Noref),
+            ("nosave", PragmaDefault::Nosave),
+            ("defaultstatic", PragmaDefault::Static),
+        ]
+        .into_iter()
+        .find_map(|(name, default)| pragma.is(name).then_some(default))
+        {
+            // FTEF-12.6, FTEF-21.14: `defaultnoref = !!atoi(msg);`, and so `defaultnosave` and
+            // `defaultstatic`.
+            let on = cond::fte_atoi(message) != 0;
+            self.fte.flags.set_default(default, on);
+            run.out
+                .flags
+                .push((run.out.tokens.len(), FlagEdit::of_default(default, on)));
         } else if pragma.is("autoproto") {
             // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`
             let on = message.is_empty() || cond::fte_atoi(message) != 0;
@@ -1908,14 +1929,14 @@ impl<L: Loader> Preprocessor<L> {
             run.out.autoproto.push((index, on, at));
         } else if pragma.is("keyword") || pragma.is("flag") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let lexed_with = self.fte.flags.lex_flags();
             let (warnings, set) = self.fte.flags.apply_pragma(message);
             for warning in warnings {
                 run.report(Code::W0113, warning, at);
             }
-            let flags = self.fte.flags.lex_flags();
-            if flags != lexed_with {
-                run.out.lex_flags.push((run.out.tokens.len(), flags));
+            // FTEF-21.1: the flags it names, which an `extern "C"` block may have changed since.
+            let edit = FlagEdit::of_flags(&set, self.fte.flags.compiler_flags());
+            if !edit.is_empty() {
+                run.out.flags.push((run.out.tokens.len(), edit));
             }
             // FTEF-20.1: the keywords it names, which a definition may have turned off since.
             let edit = KeywordEdit::of_flags(&set, self.fte.keywords());

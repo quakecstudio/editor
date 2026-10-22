@@ -143,6 +143,11 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-19.2).
 - **QCD-3.33** `E0233` "initializer-string too long": under an FTEQCC profile, an 8-bit array
   initialised with a string of more bytes than its size, at the initialiser (FTEF-19.8).
+- **QCD-3.34** `E0234` "TARGET not yet defined, cannot create NAME as an alias": under an FTEQCC
+  profile, a definition whose attribute `alias(TARGET)` names no definition there, at the name
+  (`dialect-fteqcc.md`, FTEF-21.9).
+- **QCD-3.35** `E0235` "alias NAME may not be initialised": under an FTEQCC profile, a definition
+  given the attribute `alias` and an initialiser, at the name (FTEF-21.9).
 
 ## QCD-4 Expression and statement errors
 
@@ -430,6 +435,12 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.67** `W0221` "\"NAME\" keyword used as variable name - coexisting", or "- disabling"
   with `kce` off: under an FTEQCC profile, a new definition named as a keyword that is on, at
   the name (`dialect-fteqcc.md`, FTEF-20.4).
+- **QCD-7.68** `W0227` "suggest parenthesis for unary operator that applies to multiple terms":
+  under an FTEQCC profile, each binary operator the operand of a `!` or `~` takes, at the token
+  after its right operand (`dialect-fteqcc.md`, FTEF-21.6).
+- **QCD-7.69** `W0228` "Unknown attribute \"NAME\"", or "accumulating an accumulating
+  accumulation": under an FTEQCC profile, an attribute FTEQCC does not know, at it, or
+  `accumulate` given to a definition `accumulate` already marks, at the attribute (FTEF-21.9).
 
 ## QCD-8 Preprocessor errors
 
