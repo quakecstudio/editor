@@ -500,7 +500,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `#pragma TARGET fte_99999`. Two warnings depend on what the compiler has made so far, which the
   preprocessor does not know, and are not modelled: `optimise` inside a function ("unable to
   change optimisation options mid-function") and a `TARGET` that switches to or from Hexen II
-  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.14).
+  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.15).
 - **FTEF-12.12** Seven of the flags `#pragma flag` sets (FTEF-12.11) change how FTEQCC lexes,
   and hold from the token after the directive: `QCC_PR_Lex` reads each token as the parser asks
   for it, with the flags of that moment (`qc_lexer::LexFlags`, `qc_lexer::lex_flagged`). The
@@ -544,16 +544,17 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   !QCC_PR_CheckCompConst()) QCC_PR_LexName ();`), so with `#define FOO 5`, `FOO` is the name
   `FOO` and `#FOO` is `5`. `nofileline` (`flag_nopragmafileline`): `#pragma file` and `#pragma
   line` change nothing (`if (!flag_nopragmafileline)`).
-- **FTEF-12.14** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
-  parse, the compiler or its console output rather than to the tokens: `acc` (its `|` in a string
-  as a line feed, and reacc's type names) has no `FLAG_MIDCOMPILE`, so only the command line's
-  `-Facc` sets it, and this profile reads no command line; `caseinsensitive` (names and keywords
-  compared in any case, `QCC_PR_CheckName`, `QCC_PR_CheckKeyword`), `assumedouble` (a number with
-  a `.` is a `double`, a type this profile's tokens do not carry, FTEF-13.5) and the keyword
-  flags are the parser's and the type checker's (L3); `cpriority` reorders `pr_opcodes` for the
-  parser; `msvcstyle` and `debugmacros` change only what FTEQCC prints. A pragma emits no progs
-  output of its own (as FTE-16.3); its effects on the output (the target format, the CRC, the
-  flags) are realised by codegen (L-01).
+- **FTEF-12.14** **Withdrawn** (P2-118, #549): it said `caseinsensitive` and `assumedouble`
+  are not modelled, but the semantic model reads them (FTEF-19.24, FTEF-19.25), and the command
+  line that sets `acc` and `caseinsens` is read (FTEF-14.71). Replaced by FTEF-12.15.
+- **FTEF-12.15** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
+  compiler or its console output rather than to the tokens or the definitions: `acc` (its `|`
+  in a string as a line feed, and reacc's type names, FTEF-19.17); the keyword flags, which a
+  `#pragma keyword` or a `-K` option sets and this profile's parser does not read, keeping
+  FTEQCC's default keywords (FTEF-2.7, FTEF-19.1); `cpriority`, which reorders `pr_opcodes` for
+  the parser's operator priorities; and `msvcstyle` and `debugmacros`, which change only what
+  FTEQCC prints. A pragma emits no progs output of its own (as FTE-16.3); its effects on the
+  output (the target format, the CRC, the flags) are realised by codegen (L-01).
 
 ## FTEF-13 Further tokens
 
@@ -1551,6 +1552,31 @@ profile the preprocessor reads them as FTEQCC does.
   only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
   of 1024 bytes or more is that undefined behaviour, which this profile reports as an error
   (FTEF-14.66).
+- **FTEF-14.71** FTEQCC's command line sets the warnings and compiler flags each time
+  `QCC_SetDefaultProperties` resets them, before the first pass and the second autoprototyping
+  pass, as it ends by calling `QCC_PR_CommandLinePrecompilerOptions`, which reads every
+  argument in order, but the value `-srcfile`, `-src`, `-o`, the nine `-max_` options and a bare
+  `-I` take, the next argument (`if (++i == myargc)`, `i++;`). First `QCC_CheckParm ("-Fqccx")`,
+  in any case (`QC_strcasecmp`), ignores F313 and F314. An argument that
+  starts with `-W` in any case (`strnicmp(myargv[i], "-W", 2)`) is a warning option, its text
+  after `-W` compared in any case: `all` makes each ignored warning a warning but F208, F209,
+  F311, F330 and F332 ("these warnings require -Wextra to enable"), and F319, Q205, F312, F307,
+  F320, F322, F321, Q208 and F211 only while F321 is not ignored; `extra` makes every ignored
+  warning a warning; `none` ignores every warning; `error` sets `werror`; `no-mundane` ignores
+  F306, Q207, F319, Q201, F300, F208, Q302, Q205, Q120, F316, the warning of an `#undef` of no
+  macro, F209, F301 and F331; `error-NAME`, `no-NAME` and `NAME` set the warning
+  `QCC_WarningForName` finds for NAME (FTEF-14.63) to an error, ignored or a warning, and a
+  NAME it does not find changes nothing. `-Farithmetic-exceptions` makes F332 an error and
+  `-Fno-arithmetic-exceptions` ignores it. After every argument, with `werror` set, each warning
+  not ignored is an error (`if (qccwarningaction[j]) qccwarningaction[j] = WA_ERROR;`). An
+  argument that starts with `-F` or `-K` in any case turns on, or after `no-` off, the first row
+  of `compiler_flag[]` whose abbreviation it names in any case, whether or not the row has
+  `FLAG_MIDCOMPILE`, so only the command line sets `caseinsens`. The command line's warnings for
+  arguments it does not recognise ("Unrecognised warning parameter", printed against "cmdline")
+  are not reported: they belong to no file of the module. The `/W`, `/F` and `/K` spellings
+  FTEQCC reads only on Windows (`WINDOWSARG`) and `-std=`, which sets every flag and keyword to
+  its default and then a dialect's, are not read: the pinned oracle is not built for Windows,
+  and this profile is read with its own dialect.
 
 ## FTEF-15 Declarations
 
@@ -2286,3 +2312,65 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   left out when a qualifier is followed by a name and then `;`, `,`, `=` or `[`; a name that is
   a type there (`static t;` after `typedef float t;`) is not told apart, and is read as the
   name.
+- **FTEF-19.22** The parser's and the semantic model's warnings are reported as FTEQCC's
+  warning settings stand where it gives each (FTEF-14.63, FTEF-14.71): ignored, a warning, or
+  an error, `E0125`. Each is the warning `QCC_PR_ParseWarning` is given its text with:
+  `W0203` `WARN_UNDESIRABLECONVENTION`; `W0204` and `W0313` Q205 (`WARN_POINTLESSSTATEMENT`);
+  `W0205` and `W0215` `WARN_UNEXPECTEDPUNCT`; `W0206`, `W0210`, `W0211` and `W0223` F129
+  (`WARN_COMPATIBILITYHACK`); `W0207` Q207; `W0208` F306; `W0209` F308; `W0212` F329; `W0213`
+  F310; `W0214` and `W0226` `unimplemented` (`WARN_IGNOREDKEYWORD`); `W0216` F335; `W0217`
+  `WARN_NOTSTANDARDBEHAVIOUR`; `W0218` F321; `W0219` `WARN_NOTCONSTANT`; `W0220` F314; `W0221`
+  `WARN_KEYWORDDISABLED`; `W0222` F320; `W0224` F328; `W0225` F327; `W0312` Q111; `W0314` F326.
+  The five that `warningnames[]` does not name are warnings by default, and no `#pragma
+  warning` names them, but `-Wnone`, `-Wextra` and `-Werror` reach them. A warning is read with
+  the settings at the token it stands at: a definition's at its first token, a local's, a
+  parameter's and a name's use at theirs. `W0201` (vanilla's) and `W0311` (this project's own,
+  QCD-7.17) are no FTEQCC warning and are reported as they are.
+- **FTEF-19.23** A builtin's engine name written as strings (`#"NAME"`, `:"NAME"`, FTE-17.5) is
+  their value as FTEQCC's lexer read them, with the compiler flags in force at the initialiser
+  (FTEF-12.12): with `qcfuncs` off `\101` is C's octal escape, `A`, and with it on Quake's
+  yellow `1` and the digits after it; under `utf8` a `\u` escape writes UTF-8.
+- **FTEF-19.24** `QCC_PR_LexNumber` types a number by the flags in force where it stands
+  (FTEF-12.12). Under `assumeint` a number with no suffix and no `.` is an integer by its
+  magnitude (`if (num > UINT64_C(0x7fffffffffffffff)) pr_immediate_type = type_uint64; else if
+  (num > 0xffffffffu) ... type_int64; else if (num > 0x7fffffffu) ... type_uint; else ...
+  type_integer;`), a number with an `f` suffix staying a float (its branch sets `type_float` first),
+  and a character constant is an `__int32` (`QCC_PR_LexVector`, `if
+  (flag_assume_integer) { pr_immediate_type = type_integer; ...`); under `assumedouble` a number
+  with a `.` is a `__double` (`pr_immediate_type = flag_assume_double?type_double:type_float;`),
+  but after an `f` suffix (`else if (c == 'f' || c == 'F') { pr_immediate_type = type_float;`). A
+  single `l` suffix is 64 bits, and under `ILP32` only two are (`if (islong >=
+  (flag_ILP32?2:1))`).
+  The literal's type is then cast as FTEF-19.2 says: `string s = 5;` under `assumeint` is
+  "Implicit cast from __int32 to string", and `string s = 1.5;` under `assumedouble` "Cannot
+  cast from __double to string". The value is kept as the lexer keeps it, a float's bits
+  (FTEF-13.5).
+- **FTEF-19.25** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.71), FTEQCC's
+  name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
+  `QCC_PR_GetDef` makes two passes, the first taking only a definition whose name is the one
+  written (`if (ins == 0 && strcmp(def->name, name))`), the second, which only a lookup makes
+  (`insmax = allocate?1:2;`), any whose name it is in any case, the newest first (the table's
+  chain). So a use of `foo` finds `Foo` when nothing is named `foo`, the function's locals
+  before the globals, and of `float Foo = 1; string FOO = "a";` the string, the one defined
+  last (`float x = foo;` is "Cannot cast from string to float"); a type name is found in any
+  case; a definition named as another in another case is a definition of its
+  own. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case;
+  this profile's parser reads keywords as written, which no program of the corpus or the
+  differential changes, so `FLOAT x;` stays "not a type".
+- **FTEF-19.26** Under `qccx`, `@` before a term is that term read as a string (`QCC_PR_RefTerm`,
+  `if (flag_qccx && QCC_PR_CheckToken ("@"))`, `QCC_PR_RefExpression (retbuf,
+  UNARY_PRIORITY, EXPR_DISALLOW_COMMA)`), a reference that may be assigned; that it applies only
+  to a float or an integer, "'@' operator only functions on floats and ints. go figure.", is the
+  type checker's (FTEF-19.17). Without `qccx`, `@` is no term. `^^` is a token of
+  `pr_punctuation` that no operator of `pr_opcodes` names, so `a ^^ b` ends the expression
+  after `a`.
+- **FTEF-19.27** A module's source in source form, the `progs.src` FTEQCC compiles as code
+  (PRJ-4.4), is read by `Db::parse` past a first line that starts with `#!` (PRJ-4.10), as
+  `qc_syntax::parse_module_source` reads it: the database takes a module's prelude
+  (`ModuleInput::prelude`) to be that file.
+- **FTEF-19.28** FTEQCC names its core types once, before the first pass, with the flags the
+  command line set: `type_string = QCC_PR_NewType(flag_qcfuncs?"string":"__string", ev_string,
+  true);`, and so `vector` and `entity`, then `__string`, `__vector` and `__entity` whatever the
+  flag. So under `-Fno-qcfuncs` or `-Kno-qcfuncs` the words `string`, `vector` and `entity` are
+  no type, "\"WORD\" is not a type" (`E0203`, FTEF-19.20), unless a typedef names the word
+  again, while a `#pragma flag disable qcfuncs`, read after the types are named, keeps them.

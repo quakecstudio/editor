@@ -56,7 +56,9 @@ label" warning `W0312`, "Goto statement with no matching label" error `E0308` an
 does not do anything" warning `W0313` (FTEF-18.23 to FTEF-18.25; QCD-4.8, QCD-7.29,
 QCD-7.30). FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
-the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
+the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2). Under `qccx` an `@` before a term is a unary
+term (FTEF-19.26), and a parse keeps the compiler flags its tokens were lexed with
+(`Parse::lex_flags_at`), which a builtin's engine name is read with (FTEF-19.23).
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check

@@ -14,6 +14,7 @@
 //! spelling of a type in FTEQCC's messages. Written as a clean port: the rule is one table of
 //! the types' kinds, not the C's chain of conditions.
 
+use qc_lexer::{LexFlag, LexFlags};
 use qc_syntax::c_scalar::{CScalar, CWords};
 
 use crate::ty::{SimpleType, Type};
@@ -49,6 +50,27 @@ pub struct Literal {
     pub null: bool,
 }
 
+/// FTEF-19.24: the type `assumeint` gives a number with no suffix, by its magnitude as
+/// `QCC_PR_LexNumber` reads it: past `0x7fffffffffffffff` `__uint64`, past `0xffffffff`
+/// `__int64`, past `0x7fffffff` `__uint32`, else `__int32`.
+fn assumed_int(base: u32, digits: &str) -> ConstType {
+    let mut num: u64 = 0;
+    for digit in digits.chars().map_while(|c| c.to_digit(base)) {
+        num = num
+            .wrapping_mul(u64::from(base))
+            .wrapping_add(u64::from(digit));
+    }
+    if num > 0x7fff_ffff_ffff_ffff {
+        ConstType::Uint64
+    } else if num > 0xffff_ffff {
+        ConstType::Int64
+    } else if num > 0x7fff_ffff {
+        ConstType::Uint
+    } else {
+        ConstType::Integer
+    }
+}
+
 impl Literal {
     /// The type and nullness `QCC_PR_LexNumber` gives the number token `text` (FTEF-3.1):
     /// a sign, a `0x` or leading-`0` base, the digits of that base, then a fraction, which
@@ -56,7 +78,7 @@ impl Literal {
     /// no digit of the base, and `i`, `u` and `l` in either order an integer of that sign and
     /// width. With none the number is a float (FTEF-3.3, `flag_assume_integer` off).
     #[must_use]
-    pub fn of_fteqcc_number(text: &str) -> Self {
+    pub fn of_fteqcc_number(text: &str, flags: LexFlags) -> Self {
         let unsigned = text.strip_prefix('-').unwrap_or(text);
         let (base, digits) = if let Some(hex) = unsigned
             .strip_prefix("0x")
@@ -85,10 +107,12 @@ impl Literal {
                 .all(|c| c == '0');
             // `-0.0` is a float whose word is not 0 (its sign bit), so it is no null.
             zero &= !text.starts_with('-');
-            if fraction
-                .trim_start_matches(|c: char| c.is_ascii_digit())
-                .starts_with(['d', 'D'])
-            {
+            // FTEF-19.24: `pr_immediate_type = flag_assume_double?type_double:type_float;`, then
+            // an `f` suffix makes it a float and a `d` a double.
+            let suffix = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
+            if suffix.starts_with(['f', 'F']) {
+                ConstType::Float
+            } else if suffix.starts_with(['d', 'D']) || flags.has(LexFlag::AssumeDouble) {
                 ConstType::Double
             } else {
                 ConstType::Float
@@ -96,8 +120,13 @@ impl Literal {
         } else {
             match rest.chars().next() {
                 Some('d' | 'D') => ConstType::Double,
+                // FTEF-19.24: an `f` suffix is a float before `assumeint` is read.
+                Some('f' | 'F') => ConstType::Float,
                 Some('i' | 'I' | 'u' | 'U' | 'l' | 'L') => {
-                    let long = rest.contains(['l', 'L']);
+                    // `if (islong >= (flag_ILP32?2:1))`: one `l` is 64 bits, or two under
+                    // `ILP32` (FTEF-12.12).
+                    let longs = rest.chars().filter(|c| matches!(c, 'l' | 'L')).count();
+                    let long = longs >= if flags.has(LexFlag::Ilp32) { 2 } else { 1 };
                     let unsigned = rest.contains(['u', 'U']);
                     match (long, unsigned) {
                         (true, true) => ConstType::Uint64,
@@ -106,6 +135,7 @@ impl Literal {
                         (false, false) => ConstType::Integer,
                     }
                 }
+                Some(_) | None if flags.has(LexFlag::AssumeInt) => assumed_int(base, digits),
                 Some(_) | None => ConstType::Float,
             }
         };

@@ -29,7 +29,9 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 (FTEQCC's `-I`, FTEF-14.49) first; and runs the pragmas that change what is read, `line`, `file`,
 `once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
 (FTEF-14.33 to FTEF-14.47); a `#` after a `\` that joins a line of code to the next starts
-none (FTEF-14.53). Under GMQCC an `#include` is tried beside the file that holds it first
+none (FTEF-14.53). FTEQCC's command line, `CommandLine` (`fte_options.rs`, ported from
+`QCC_PR_CommandLinePrecompilerOptions`), sets the warnings and compiler flags with its `-W`, `-F`
+and `-K` options, read again each time the settings are reset (FTEF-14.71). Under GMQCC an `#include` is tried beside the file that holds it first
 (PRJ-5.12), and `FTEQCC` and `__FTEQCC__` are not defined (PRJ-5.15). In the vanilla dialect
 an `#include` not beside the file that holds it is looked for in the module's include
 directories (QC-9.20). `fte_directive/graph.rs` gives the

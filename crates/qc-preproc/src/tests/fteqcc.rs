@@ -638,7 +638,8 @@ fn file_constant_is_fteqcc_s_text() {
         (vec![string(b"a.qc")], vec![])
     );
     assert_eq!(fte_in("c:a.qc", "__FILE__\n"), (vec![string(b"c")], vec![]));
-    let bell = qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"").unwrap();
+    let bell =
+        qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"", qc_lexer::LexFlags::default()).unwrap();
     assert_eq!(
         fte_in("a\\b.qc", "__FILE__\n"),
         (vec![string(&bell)], vec![])
