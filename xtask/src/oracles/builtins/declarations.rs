@@ -584,7 +584,7 @@ const WARNINGS: &[&str] = &[
 ];
 
 /// Every case of the family, `f` bound before each program.
-/// Programs with the command-line options they are compiled with (FTEF-14.71, FTEF-19.22): a
+/// Programs with the command-line options they are compiled with (FTEF-14.72, FTEF-19.22): a
 /// definition warning made an error, ignored or left a warning, by name, by `-Wall`, `-Wextra`,
 /// `-Wnone`, `-Wno-mundane` and `-Werror`, in either order, and the flags `-F` and `-K` set.
 const OPTIONS: &[(&[&str], &str)] = &[
@@ -732,7 +732,7 @@ pub(super) fn cases() -> Vec<Case> {
         options: WERROR_OPTIONS.map(str::to_owned).to_vec(),
         ..Case::new(Dialect::Fteqcc, program(source))
     }));
-    // FTEF-14.71: the command line's warning and flag options.
+    // FTEF-14.72: the command line's warning and flag options.
     for (options, source) in OPTIONS {
         cases.push(Case {
             options: options.iter().map(|&o| o.to_owned()).collect(),

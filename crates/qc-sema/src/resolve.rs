@@ -31,15 +31,15 @@ use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::WarningSettings;
-use qc_syntax::Dialect;
 use qc_syntax::c_scalar::CScalar;
+use qc_syntax::{Dialect, Keyword, Keywords};
 
 use crate::cast::{ConstType, Kind, Source};
 use crate::expand::{OriginMap, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, FileDecls, LiteralValue, MemberBase, MemberKind,
-    Qualifier, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse, RawValue, StatePart,
-    TypeKind, UseKind, ValueKind, top_level_kind,
+    Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse, RawValue,
+    StatePart, TypeKind, UseKind, ValueKind, top_level_kind,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
@@ -95,7 +95,7 @@ pub struct ResolveOptions {
     /// FTEQCC's `-Fautoproto` (FTE-22.3): every top-level declaration of the module is
     /// visible to every function body. Only meaningful with an FTEQCC dialect.
     pub autoproto: bool,
-    /// FTEQCC's `-Fcaseinsens` (FTEF-19.25): a name no definition has is looked up again in
+    /// FTEQCC's `-Fcaseinsens` (FTEF-19.29): a name no definition has is looked up again in
     /// any case. Only meaningful with an FTEQCC dialect.
     pub case_insensitive: bool,
     /// Whether `qcfuncs` was off when FTEQCC named its core types, by the command line's
@@ -124,6 +124,9 @@ pub(crate) struct Sources<'a> {
     /// For each entry, under FTEQCC, the warning settings and the offsets they hold from
     /// (FTEF-19.22).
     pub(crate) warnings: &'a [&'a [(usize, WarningSettings)]],
+    /// For each entry, the keywords its parser read each token with, from each offset
+    /// (FTEF-20.1).
+    pub(crate) keywords: &'a [&'a [(usize, Keywords)]],
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
@@ -152,6 +155,8 @@ pub(crate) fn resolve_mapped(
         maps: sources.maps,
         warnings: sources.warnings,
         settings: None,
+        keyword_marks: sources.keywords,
+        keywords: Keywords::default(),
         extensions: &sources.extensions,
         fteqcc,
         autoproto: fteqcc && options.autoproto,
@@ -297,13 +302,17 @@ struct Resolver<'a> {
     warnings: &'a [&'a [(usize, WarningSettings)]],
     /// Under FTEQCC, the warning settings in force where the resolver reads (FTEF-19.22).
     settings: Option<WarningSettings>,
+    /// For each compiled file, the keywords its parser read each token with (FTEF-20.1).
+    keyword_marks: &'a [&'a [(usize, Keywords)]],
+    /// The keywords in force where the resolver reads (FTEF-20.1).
+    keywords: Keywords,
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
     /// Whether an FTEQCC profile is in force (FTE-22).
     fteqcc: bool,
     /// Whether FTEQCC autoprototypes the module (FTE-22.3).
     autoproto: bool,
-    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.25).
+    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.29).
     case_insensitive: bool,
     /// Whether FTEQCC named its core types with `qcfuncs` off (FTEF-19.28).
     qcfuncs_off: bool,
@@ -410,29 +419,6 @@ fn is_intrinsic(name: &str) -> bool {
     )
 }
 
-/// Whether a definition named `name` of type `ty` is named as one of the keywords
-/// `QCC_PR_DummyDef`'s `KEYWORD` list tests, enabled by default (FTEF-19.16): `break` only for
-/// a definition that is no function.
-fn is_keyword_name(name: &str, ty: &Type) -> bool {
-    matches!(
-        name,
-        "var"
-            | "for"
-            | "switch"
-            | "case"
-            | "local"
-            | "default"
-            | "goto"
-            | "continue"
-            | "string"
-            | "float"
-            | "entity"
-            | "vector"
-            | "const"
-            | "asm"
-    ) || (name == "break" && !ty.is_function())
-}
-
 /// The initialiser of a declaration, as redeclaration sees it (QC-11.5, FTE-22.5): `None`
 /// when there is none, and otherwise its value when it is a single literal.
 type Init<'a> = Option<Option<&'a LiteralValue>>;
@@ -502,6 +488,10 @@ impl<'a> Resolver<'a> {
         if let Some(events) = self.warnings.get(self.unit.0) {
             self.settings = settings_at(events, at).or(self.settings);
         }
+        // FTEF-20.1: and the keywords the parser read there.
+        if let Some(marks) = self.keyword_marks.get(self.unit.0) {
+            self.keywords = Keywords::at(marks, at);
+        }
     }
 
     /// Looks up a global name: the first global definition with that name (QC-12.2). Under
@@ -525,13 +515,20 @@ impl<'a> Resolver<'a> {
 
     /// Adds a definition and returns its id. A class member is not a global by its name.
     fn push_def(&mut self, def: Definition) -> DefId {
-        // FTEF-19.16: `QCC_PR_DummyDef` warns of a definition named as an enabled keyword,
-        // which keeps its meaning beside it (`keywords_coexist`).
-        if self.fteqcc && is_keyword_name(&def.name, &def.ty) {
-            let message = format!(
-                "\"{}\" keyword used as variable name - coexisting",
-                def.name
-            );
+        // FTEF-20.4: `QCC_PR_DummyDef` warns of a definition named as a keyword that is on,
+        // which keeps its meaning beside it with `kce` on and is turned off with it off.
+        if self.fteqcc
+            && self
+                .keywords
+                .named_definition(&def.name, def.ty.is_function())
+                .is_some()
+        {
+            let what = if self.keywords.coexist() {
+                "coexisting"
+            } else {
+                "disabling"
+            };
+            let message = format!("\"{}\" keyword used as variable name - {what}", def.name);
             self.report(Code::W0221, def.location, message);
         }
         let id = DefId(self.index.defs.len());
@@ -2266,6 +2263,11 @@ impl<'a> Resolver<'a> {
         {
             self.declare_next_think(file, next_name, *next_span);
         }
+        // FTEF-20.5: a `state` statement declares its next think function as a header does.
+        for (next_name, next_span) in &body.next_thinks {
+            self.settle(next_span.start);
+            self.declare_next_think(file, next_name, *next_span);
+        }
         // QC-11.10, QC-11.9: locals; a local field or function is an error (QCD-3.8 is the
         // parser's; the semantic check is QC-11.9).
         for local in &body.locals {
@@ -2299,8 +2301,57 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
+        for alias in &body.aliases {
+            self.declare_alias(file, scope, alias);
+        }
         // QC-12.5: resolve each name use against globals and this function's own locals.
         self.resolve_uses(file, Some(scope), &body.uses);
+    }
+
+    /// One alias of a `using` statement (FTEF-20.5): the definition its target names, found as
+    /// a value is, else "NAME is not defined" (`ERR_NOTDEFINED`); the alias a local of its type
+    /// that `QCC_PR_DummyDef` makes, with no lookup, until the statement ends.
+    fn declare_alias(&mut self, file: FileId, scope: Scope, alias: &RawAlias) {
+        let (target, target_span) = &alias.target;
+        self.settle(target_span.start);
+        let target_location = self.at(file, *target_span);
+        let at = Scope {
+            at: target_span.start,
+            ..scope
+        };
+        let Some(def) = self.lookup_in_scope(at, target) else {
+            self.report(
+                Code::E0313,
+                target_location,
+                format!("{target} is not defined"),
+            );
+            return;
+        };
+        if let Some(f) = self.fact_mut(def) {
+            f.referenced = true;
+        }
+        self.index.refs.push(Reference {
+            location: target_location,
+            def,
+        });
+        let ty = self.index.def(def).map_or(Type::Unknown, |d| d.ty.clone());
+        let (name, span) = &alias.alias;
+        self.settle(span.start);
+        let location = self.at(file, *span);
+        let id = self.push_def(Definition {
+            name: name.clone(),
+            ty,
+            kind: DefKind::Local,
+            location,
+            owner: Some(scope.owner),
+            initialized: false,
+            member_of: None,
+            generated: false,
+        });
+        if let Some(f) = self.fact_mut(id) {
+            f.referenced = true;
+            f.scope_end = alias.scope_end;
+        }
     }
 
     /// FTEF-19.20: reports the first name in `ty` that is no type at `at`, "\"NAME\" is not a
@@ -2323,7 +2374,7 @@ impl<'a> Resolver<'a> {
 
     /// Whether `name` is a name FTEQCC registers, a type declared before, or one of a body's
     /// `typedefs` before `at` (FTEF-19.20); under `-Fcaseinsens` in any case, `QCC_TypeForName`'s
-    /// table searched so (FTEF-19.25).
+    /// table searched so (FTEF-19.29).
     fn is_type_name(&self, name: &str, typedefs: &[(String, usize)], at: usize) -> bool {
         let exact = REGISTERED_TYPES.contains(&name)
             || self.type_names.contains(name)
@@ -2487,6 +2538,10 @@ impl<'a> Resolver<'a> {
             return Found::Def(def);
         }
         if !self.fteqcc || !is_intrinsic(name) {
+            return Found::Unknown;
+        }
+        // FTEF-20.11: `keyword_class && !strcmp(name, "this")`, and `super` so.
+        if matches!(name, "this" | "super") && !self.keywords.has(Keyword::Class) {
             return Found::Unknown;
         }
         let class = scope.and_then(|s| s.class);
@@ -2869,7 +2924,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// A global name as a use finds it (QC-12.2): as written, then under `-Fcaseinsens` in any
-    /// case (FTEF-19.25).
+    /// case (FTEF-19.29).
     fn lookup_used_global(&self, name: &str) -> Option<DefId> {
         self.lookup_global(name)
             .or_else(|| self.lookup_any_case(None, name))
@@ -2886,7 +2941,7 @@ impl<'a> Resolver<'a> {
             .or_else(|| self.lookup_any_case(Some(scope), name))
     }
 
-    /// FTEF-19.25: under `-Fcaseinsens`, a name no definition has as written is the last local
+    /// FTEF-19.29: under `-Fcaseinsens`, a name no definition has as written is the last local
     /// of the function, then the last global, whose name is it in any ASCII case, as the hash
     /// table's chain gives the newest first:
     /// `QCC_PR_GetDef`'s second pass (`ins == 1`), which a lookup that allocates nothing makes

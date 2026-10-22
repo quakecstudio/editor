@@ -35,6 +35,7 @@ pub use binum::builtin_binum;
 pub use kind::SyntaxKind;
 pub use parser::{FTEQCC_MAX_NAME, LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
+pub use qc_preproc::{Keyword, KeywordEdit, Keywords};
 pub use tree::{GreenElement, GreenNode, GreenToken, SyntaxElement, SyntaxNode, SyntaxToken};
 
 use ast::AstNode as _;
@@ -47,6 +48,9 @@ pub struct Parse {
     /// The compiler flags the tokens were lexed with, each from the byte it holds from
     /// (FTEF-12.12); empty for the defaults.
     lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// The keywords the parser read each token with, each from the byte it holds from
+    /// (FTEF-20.1): the preprocessor's marks and the changes the definitions made.
+    keywords: Vec<(usize, Keywords)>,
 }
 
 impl Parse {
@@ -62,6 +66,21 @@ impl Parse {
     #[must_use]
     pub fn lex_flags_at(&self, at: usize) -> qc_lexer::LexFlags {
         qc_lexer::LexFlags::at(&self.lex_flags, at)
+    }
+
+    /// The keywords the parser read the tokens with (FTEF-20.1): each the byte they hold from
+    /// and the keywords, in order; the text before the first holds FTEQCC's defaults.
+    #[must_use]
+    pub fn keywords(&self) -> &[(usize, Keywords)] {
+        &self.keywords
+    }
+
+    /// The keywords the parser read the token at byte `at` with (FTEF-20.1): FTEQCC's defaults
+    /// unless a mark [`parse_preprocessed_flagged`] was given, or a definition named as a
+    /// keyword, changed them before it.
+    #[must_use]
+    pub fn keywords_at(&self, at: usize) -> Keywords {
+        Keywords::at(&self.keywords, at)
     }
 
     /// The root of the tree, a [`SyntaxKind::SourceFile`] node.
@@ -115,7 +134,7 @@ pub fn parse(source: &[u8]) -> Parse {
 /// tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Source, &[])
+    parse_text(source, dialect, input::Text::Source, &[], &[])
 }
 
 /// Parses a module's source in source form (`docs/spec/project-file.md` PRJ-4.4), in `dialect`:
@@ -124,7 +143,7 @@ pub fn parse_with(source: &[u8], dialect: Dialect) -> Parse {
 /// bytes trivia the lexer skipped. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::ModuleSource, &[])
+    parse_text(source, dialect, input::Text::ModuleSource, &[], &[])
 }
 
 /// Parses text a preprocessor wrote, in `dialect`: as [`parse_with`], except that the text
@@ -136,21 +155,25 @@ pub fn parse_module_source(source: &[u8], dialect: Dialect) -> Parse {
 /// Implements QC-9.19. Never fails, and the tree's text is `source`, byte for byte.
 #[must_use]
 pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
-    parse_text(source, dialect, input::Text::Preprocessed, &[])
+    parse_text(source, dialect, input::Text::Preprocessed, &[], &[])
 }
 
 /// [`parse_preprocessed`] of text whose tokens FTEQCC lexed under the compiler flags `flags`
 /// gives (FTEF-12.12): each the byte the flags hold from and the flags, in order, as
 /// `qc_preproc::FileOutput::lex_flags` marks them by token. The text before the first holds the
 /// default flags. `macroinstrings` is not read: this text has no macros to look up, and the
-/// preprocessor writes a string a `#NAME` wrote to as its bytes (`PpToken::spelling`).
+/// preprocessor writes a string a `#NAME` wrote to as its bytes (`PpToken::spelling`). Under an
+/// FTEQCC dialect the parser reads each keyword with the keywords `keywords` changes, each the
+/// byte the change holds from and the change, in order, as `qc_preproc::FileOutput::keywords`
+/// marks them by token, starting from FTEQCC's defaults (FTEF-20.1).
 #[must_use]
 pub fn parse_preprocessed_flagged(
     source: &[u8],
     dialect: Dialect,
     flags: &[(usize, qc_lexer::LexFlags)],
+    keywords: &[(usize, KeywordEdit)],
 ) -> Parse {
-    parse_text(source, dialect, input::Text::Preprocessed, flags)
+    parse_text(source, dialect, input::Text::Preprocessed, flags, keywords)
 }
 
 fn parse_text(
@@ -158,14 +181,16 @@ fn parse_text(
     dialect: Dialect,
     text: input::Text,
     flags: &[(usize, qc_lexer::LexFlags)],
+    keywords: &[(usize, KeywordEdit)],
 ) -> Parse {
     let input = input::Input::new(source, dialect, text, flags);
-    let mut parser = parser::Parser::new(input, dialect);
+    let mut parser = parser::Parser::new(input, dialect, keywords);
     parser.source_file();
-    let (green, diagnostics) = parser.finish();
+    let (green, diagnostics, keywords) = parser.finish();
     Parse {
         green,
         diagnostics,
         lex_flags: flags.to_vec(),
+        keywords,
     }
 }

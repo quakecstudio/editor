@@ -15,7 +15,7 @@
 //! the types' kinds, not the C's chain of conditions.
 
 use qc_lexer::{LexFlag, LexFlags};
-use qc_syntax::c_scalar::{CScalar, CWords};
+use qc_syntax::c_scalar::CScalar;
 
 use crate::ty::{SimpleType, Type};
 
@@ -190,11 +190,10 @@ pub enum Kind {
     Opaque,
 }
 
-/// The scalar the C type words `words` make, when the loop takes all of them (FTEF-2.8).
-fn c_scalar(words: &str) -> Option<CScalar> {
-    let count = words.split(' ').count();
-    let (taken, ty) = CWords::read(words.split(' '));
-    ty.filter(|_| taken == count).map(|t| t.scalar)
+/// The scalar a [`Type::Named`] names: one FTEQCC registers by that name, as lowering names
+/// the type C type words make (FTEF-2.8, FTEF-20.9).
+fn c_scalar(name: &str) -> Option<CScalar> {
+    CScalar::named(name)
 }
 
 impl Kind {
@@ -216,10 +215,10 @@ impl Kind {
         }
     }
 
-    /// The kind the C type words `words` name, as the parser took them (FTEF-2.8), or
-    /// `Opaque` when they are not all taken.
-    fn of_c_words(words: &str) -> Self {
-        let Some(scalar) = c_scalar(words) else {
+    /// The kind the registered type name `name` names (FTEF-2.8), or `Opaque` when it names
+    /// none.
+    fn of_c_words(name: &str) -> Self {
+        let Some(scalar) = c_scalar(name) else {
             return Self::Opaque;
         };
         match scalar {
@@ -229,9 +228,12 @@ impl Kind {
             CScalar::Uint => Self::Uint,
             CScalar::Int64 => Self::Int64,
             CScalar::Uint64 => Self::Uint64,
-            CScalar::Int16 | CScalar::Uint16 | CScalar::Int8 | CScalar::Uint8 | CScalar::Bool => {
-                Self::Opaque
-            }
+            CScalar::Int16
+            | CScalar::Uint16
+            | CScalar::Int8
+            | CScalar::Uint8
+            | CScalar::Bool
+            | CScalar::BFloat => Self::Opaque,
         }
     }
 

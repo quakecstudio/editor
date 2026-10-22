@@ -4,6 +4,8 @@
 
 use std::rc::Rc;
 
+use qc_syntax::c_scalar::CContext;
+
 use qc_lexer::{LexFlag, LexFlags};
 
 use super::{ConstType, Kind, Literal, Source};
@@ -13,8 +15,9 @@ fn simple(ty: SimpleType) -> Type {
     Type::Simple(ty)
 }
 
-fn named(name: &str) -> Type {
-    Type::Named(Rc::from(name))
+/// The type lowering makes of the type words `words` under FTEQCC's defaults.
+fn named(words: &str) -> Type {
+    Type::named(words, CContext::default())
 }
 
 // spec FTEF-3.1: `QCC_PR_LexNumber` types a number by its fraction and suffix, a `d` being a

@@ -314,6 +314,34 @@ ast_node!(
     /// `sizeof` and a type or an expression (FTEF-18.12).
     SizeofExpr
 );
+ast_node!(
+    /// `loop s` (FTEF-20.5).
+    LoopStmt
+);
+ast_node!(
+    /// `thinktime e : t;` (FTEF-20.5).
+    ThinktimeStmt
+);
+ast_node!(
+    /// `state [frame, next];` (FTEF-20.5).
+    StateStmt
+);
+ast_node!(
+    /// `using (names) s` or `using names;` (FTEF-20.5).
+    UsingStmt
+);
+ast_node!(
+    /// One name of a `using` and its alias (FTEF-20.5).
+    UsingAlias
+);
+ast_node!(
+    /// `__exit;` (FTEF-20.5).
+    ExitStmt
+);
+ast_node!(
+    /// `asm` and an instruction or a block of them (FTEF-20.5).
+    AsmStmt
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -358,6 +386,18 @@ ast_enum!(
         Label(LabelStmt),
         /// `goto name;` (FTEF-18.23).
         Goto(GotoStmt),
+        /// `loop s` (FTEF-20.5).
+        Loop(LoopStmt),
+        /// `thinktime e : t;` (FTEF-20.5).
+        Thinktime(ThinktimeStmt),
+        /// `state [frame, next];` (FTEF-20.5).
+        State(StateStmt),
+        /// `using (names) s` or `using names;` (FTEF-20.5).
+        Using(UsingStmt),
+        /// `__exit;` (FTEF-20.5).
+        Exit(ExitStmt),
+        /// `asm` and its instructions (FTEF-20.5).
+        Asm(AsmStmt),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -803,6 +843,64 @@ impl GotoStmt {
     #[must_use]
     pub fn label(&self) -> Option<SyntaxToken> {
         self.0.token_of(K::Name)
+    }
+}
+
+impl AsmStmt {
+    /// The `local` declarations among its instructions (FTEF-20.5).
+    pub fn locals(&self) -> impl Iterator<Item = LocalDecl> {
+        children(&self.0)
+    }
+}
+
+impl LoopStmt {
+    /// The loop body (FTEF-20.5).
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl ThinktimeStmt {
+    /// The entity, then the time, in order (FTEF-20.5).
+    pub fn operands(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
+    }
+}
+
+impl StateStmt {
+    /// The `[frame, next]` it runs (FTEF-20.5).
+    #[must_use]
+    pub fn state(&self) -> Option<State> {
+        child(&self.0)
+    }
+}
+
+impl UsingStmt {
+    /// The names it aliases, in order (FTEF-20.5).
+    pub fn aliases(&self) -> impl Iterator<Item = UsingAlias> {
+        children(&self.0)
+    }
+
+    /// The statement the aliases are made for, when the names are in parentheses; without, they
+    /// hold to the end of the scope.
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl UsingAlias {
+    /// The name of the definition aliased (FTEF-20.5).
+    #[must_use]
+    pub fn target(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+
+    /// The alias's name: the one after `=`, else the definition's own.
+    #[must_use]
+    pub fn alias(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
     }
 }
 

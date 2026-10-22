@@ -199,10 +199,22 @@ pub enum SyntaxKind {
     AccessorKw,
     /// `goto` (FTEQCC, FTEF-18.23).
     GotoKw,
-    /// `__until` (FTEQCC, FTEF-18.9).
+    /// `until`, by default only `__until` (FTEQCC, FTEF-18.31, FTEF-20.5).
     UntilKw,
     /// `sizeof` (FTEQCC, FTEF-18.12).
     SizeofKw,
+    /// `loop` starting a statement (FTEQCC, FTEF-20.5).
+    LoopKw,
+    /// `thinktime` starting a statement (FTEQCC, FTEF-20.5).
+    ThinktimeKw,
+    /// `state` starting a statement (FTEQCC, FTEF-20.5).
+    StateKw,
+    /// `using` starting a statement (FTEQCC, FTEF-20.5).
+    UsingKw,
+    /// `exit`, only as `__exit`, starting a statement (FTEQCC, FTEF-20.5).
+    ExitKw,
+    /// `asm` starting a statement (FTEQCC, FTEF-20.5).
+    AsmKw,
 
     /// A whole file.
     SourceFile,
@@ -322,6 +334,20 @@ pub enum SyntaxKind {
     GotoStmt,
     /// `sizeof` and a type or an expression (FTEQCC, FTEF-18.12).
     SizeofExpr,
+    /// `loop s` (FTEQCC, FTEF-20.5).
+    LoopStmt,
+    /// `thinktime e : t;` (FTEQCC, FTEF-20.5).
+    ThinktimeStmt,
+    /// `state [frame, next];` (FTEQCC, FTEF-20.5).
+    StateStmt,
+    /// `using (names) s` or `using names;` (FTEQCC, FTEF-20.5).
+    UsingStmt,
+    /// One name of a `using`, and the alias it is given after `=` (FTEQCC, FTEF-20.5).
+    UsingAlias,
+    /// `__exit;` (FTEQCC, FTEF-20.5).
+    ExitStmt,
+    /// `asm` and an instruction or a block of them (FTEQCC, FTEF-20.5).
+    AsmStmt,
     /// Tokens the parser could not place, kept so that no byte is lost.
     Error,
 }
@@ -374,6 +400,12 @@ impl SyntaxKind {
                 | Self::GotoKw
                 | Self::UntilKw
                 | Self::SizeofKw
+                | Self::LoopKw
+                | Self::ThinktimeKw
+                | Self::StateKw
+                | Self::UsingKw
+                | Self::ExitKw
+                | Self::AsmKw
         )
     }
 

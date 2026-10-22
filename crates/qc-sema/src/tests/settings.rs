@@ -175,7 +175,7 @@ fn assumed_types_from_the_pragma() {
     assert_eq!(codes("string s = 5;\n", &["-Fassumeint"]), [Code::W0220]);
 }
 
-// spec FTEF-19.25: under `-Fcaseinsens` a use finds a definition of the name in any case, the
+// spec FTEF-19.29: under `-Fcaseinsens` a use finds a definition of the name in any case, the
 // one written first, and a definition is never one of another case
 #[test]
 fn case_insensitive_names() {

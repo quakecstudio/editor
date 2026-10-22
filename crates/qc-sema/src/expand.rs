@@ -42,7 +42,7 @@ pub struct ModuleInput {
     /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
     pub include_dirs: Vec<PathBuf>,
     /// FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and compiler
-    /// flags the module is read with (FTEF-14.71); none by default.
+    /// flags the module is read with (FTEF-14.72); none by default.
     pub command_line: CommandLine,
 }
 
@@ -140,6 +140,9 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, the warning settings: the rendered offset from which each holds, and the
     /// settings (FTEF-14.63, FTEF-19.22); empty under the vanilla dialect.
     pub(crate) warnings: Vec<(usize, WarningSettings)>,
+    /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
+    /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
+    pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
 }
 
 /// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
@@ -329,6 +332,11 @@ fn run<L: Loader>(
             .warnings
             .iter()
             .map(|&(token, settings)| (offset_of(&rendered, token), settings))
+            .collect();
+        rendered.keywords = output
+            .keywords
+            .iter()
+            .map(|&(token, edit)| (offset_of(&rendered, token), edit))
             .collect();
         out.files.push(rendered);
     }
