@@ -3,10 +3,119 @@
 //! FTEQCC's compiler flags as the preprocessor reads them (FTEF-12.12, FTEF-12.13): each case was
 //! compiled with the pinned FTEQCC (`fteqcc -Tid`), which read the same tokens.
 
+use std::path::Path;
+
 use qc_lexer::{LexFlag, LexFlags};
 
 use super::{codes, one_fte, tokens};
-use crate::Code;
+use crate::{
+    Code, CommandLine, FileOutput, Keyword, KeywordEdit, Keywords, MemoryLoader, Preprocessor,
+};
+
+/// The keywords in force after each of `out`'s keyword marks, each at the token it holds from.
+fn keyword_states(out: &FileOutput) -> Vec<(usize, Keywords)> {
+    let mut now = Keywords::NONE;
+    out.keywords
+        .iter()
+        .map(|&(at, edit)| {
+            now = edit.apply(now);
+            (at, now)
+        })
+        .collect()
+}
+
+/// Preprocesses `a.qc` under the FTEQCC dialect with the command line `args`.
+fn one_with(text: &str, args: &[&str]) -> FileOutput {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(qc_lexer::Dialect::Fteqcc)
+        .with_command_line(CommandLine::new(args));
+    pp.preprocess_file(Path::new("a.qc")).unwrap()
+}
+
+// spec FTEF-20.1: the keywords are marked by token: the whole state at token 0, then each
+// `#pragma keyword` or `#pragma flag` that names a keyword, `kce` or `caseinsens`, setting only
+// those; a pragma that names none adds no mark, and the vanilla dialect has none
+#[test]
+fn keyword_changes_are_marked() {
+    let (_, out) = one_fte(concat!(
+        "a\n",
+        "#pragma keyword disable for\n",
+        "b\n",
+        "#pragma flag enable qccx\n",
+        "c\n",
+        "#pragma flag disable kce\n",
+        "d\n",
+    ));
+    let off = Keywords::default().with(Keyword::For, false);
+    assert_eq!(
+        keyword_states(&out),
+        [
+            (0, Keywords::default()),
+            (1, off),
+            (3, off.with_coexist(false)),
+        ]
+    );
+    let defined = Keywords::default().with(Keyword::Switch, false);
+    let named = out.keywords.get(1).map(|&(_, edit)| edit.apply(defined));
+    assert_eq!(named, Some(defined.with(Keyword::For, false)));
+    let (_, out) = super::one("a\n#pragma keyword disable for\nb\n");
+    assert!(out.keywords.is_empty());
+    let out = one_with("a\n", &["-Kno-for", "-Fcaseinsens"]);
+    assert_eq!(
+        out.keywords,
+        [(0, KeywordEdit::whole(off.with_case_insensitive(true)))]
+    );
+}
+
+// spec FTEF-20.4: `#pragma TARGET` marks whether the target is Hexen II's, for a definition
+// named `float`, only when that changes
+#[test]
+fn a_target_pragma_marks_the_hexen2_target() {
+    let (_, out) = one_fte(concat!(
+        "a\n",
+        "#pragma TARGET HEXEN2\n",
+        "b\n",
+        "#pragma TARGET UHEXEN2\n",
+        "c\n",
+        "#pragma TARGET FTE\n",
+        "d\n",
+        "#pragma TARGET NOPE\n",
+        "e\n",
+    ));
+    let states = keyword_states(&out);
+    let hexen2: Vec<(usize, bool)> = states
+        .iter()
+        .map(|&(at, k)| (at, k.hexen2_target()))
+        .collect();
+    assert_eq!(hexen2, [(0, false), (1, true), (3, false)]);
+    let out = one_with("a\n", &["-Thexen2"]);
+    assert!(keyword_states(&out).iter().all(|(_, k)| k.hexen2_target()));
+}
+
+// spec FTEF-20.3: a Hexen II target turns on `thinktime`, `until` and `loop` after the command
+// line, as the second pass starts again
+#[test]
+fn a_hexen2_target_turns_its_keywords_on() {
+    for args in [&["-Thexen2"][..], &["-Tuhexen2"], &["-Tfteh2"], &["-Th2"]] {
+        let out = one_with("a\n", args);
+        let (_, keywords) = keyword_states(&out)[0];
+        for keyword in [Keyword::Thinktime, Keyword::Until, Keyword::Loop] {
+            assert!(keywords.has(keyword), "{args:?} {keyword:?}");
+        }
+    }
+    for args in [&["-Tfte"][..], &["-h2"], &[], &["-Thexen2", "-Tid"]] {
+        let out = one_with("a\n", args);
+        assert!(!keyword_states(&out)[0].1.has(Keyword::Loop), "{args:?}");
+    }
+    let out = one_with("#pragma TARGET HEXEN2\na\n", &[]);
+    assert!(
+        keyword_states(&out)
+            .iter()
+            .all(|(_, k)| !k.has(Keyword::Loop))
+    );
+}
 
 // spec FTEF-12.12: a `#pragma flag` changes how the tokens after it are lexed, and a later one
 // changes them back
@@ -120,7 +229,7 @@ fn nofileline_ignores_file_and_line_pragmas() {
     assert_eq!(tokens(&out), r#"101 "x.qc""#);
 }
 
-// spec FTEF-12.15: the flags that belong to the parse, the compiler or its output change no
+// spec FTEF-12.16: the flags that belong to the parse, the compiler or its output change no
 // token, and `acc`, which a pragma cannot set, leaves a `|` in a string as it is
 // spec FTEF-19.24: `assumedouble` changes no token, and is marked for the semantic model
 #[test]

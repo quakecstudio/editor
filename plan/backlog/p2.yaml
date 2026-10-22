@@ -1665,6 +1665,7 @@ issues:
   - P2-117
   - P2-118
   - P2-119
+  - P2-120
   - P2-121
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
@@ -2385,6 +2386,28 @@ issues:
   - cargo test -p qc-preproc -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins
 - key: P2-121
+  title: Read FTEQCC's extern "C" and extern "QC" blocks
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-119 (#554). `QCC_PR_ParseDefs` reads `extern` followed by a string, as its first qualifier, as a block of definitions (`extern "C" { ... }`) or one definition (`extern "C" float x;`), and for `"C"` (in any case) turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and `subscope` on until the block ends, and for `"QC"` turns `qcfuncs` on, restoring them after (`//this C++ism is for parsing types`). The pinned FTEQCC compiles `extern "C" { float x; }`; the profile's parser reads the string as no type. The flags change how the tokens inside are lexed (FTEF-12.12) and how definitions are made (FTEF-19.3), so the parser needs to lex the block again with them, which the preprocessor's marks cannot say, as the block is the parser's.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax and crates/qc-sema: `extern "C"` and `extern "QC"` blocks and single definitions parsed, the tokens inside lexed and the definitions made with the flags they set, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_PR_ParseDefs`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l3.md: a row for the `extern` string branch of `QCC_PR_ParseDefs`'
+  acceptance:
+  - 'A statement and a citing test for each flag the block sets; `extern "C" { float x = 5; }` makes `x` a variable of an integer value and `extern "QC" { ... }` reads its strings with `qcfuncs` on, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of both blocks'
+  verify:
+  - cargo test -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-120
   title: Name a function's parameters as id's qcc does after a parameter of function type
   labels:
   - L3-semantics

@@ -43,6 +43,7 @@ use super::Oracles;
 
 mod declarations;
 mod directives;
+mod keywords;
 mod lexical;
 
 /// The recorded outcomes of the oracles, relative to the repository.
@@ -107,7 +108,7 @@ pub(crate) struct Case {
     /// The files around it, or `None` for `t.qc` alone.
     pub(crate) project: Option<Project>,
     /// The `-W`, `-F` and `-K` options FTEQCC and the profile are both given, which set the
-    /// warnings and compiler flags (FTEF-14.71, FTEF-19.22); under [`WERROR_OPTIONS`] a warning
+    /// warnings and compiler flags (FTEF-14.72, FTEF-19.22); under [`WERROR_OPTIONS`] a warning
     /// either compiler gives alone changes the outcome.
     pub(crate) options: Vec<String>,
 }
@@ -1204,6 +1205,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(directives::cases());
     cases.extend(lexical::cases());
     cases.extend(declarations::cases());
+    cases.extend(keywords::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));

@@ -163,6 +163,8 @@ pub enum Code {
     E0311,
     /// "class NAME has no super" (QCD-4.12).
     E0312,
+    /// "NAME is not defined" (QCD-4.13).
+    E0313,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -183,6 +185,8 @@ pub enum Code {
     E0509,
     /// "NAME is an FTEQCC extension, not in vanilla QuakeC" (QCD-6.10).
     E0510,
+    /// "Bad op code name NAME" (QCD-6.11).
+    E0511,
     /// "No destination filename.  qcc -help for info." (QCD-5.1).
     E0401,
     /// "Error opening PATH: REASON" (QCD-5.2).
@@ -282,7 +286,7 @@ pub enum Code {
     W0219,
     /// "Implicit cast from TYPE to TYPE" (QCD-7.46).
     W0220,
-    /// "\"NAME\" keyword used as variable name - coexisting" (QCD-7.47).
+    /// "\"NAME\" keyword used as variable name - coexisting", or "- disabling" (QCD-7.67).
     W0221,
     /// "Parameter N of NAME is not named" (QCD-7.48).
     W0222,
@@ -309,7 +313,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 139] = [
+    pub const ALL: [Self; 141] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -380,6 +384,7 @@ impl Code {
         Self::E0310,
         Self::E0311,
         Self::E0312,
+        Self::E0313,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -396,6 +401,7 @@ impl Code {
         Self::E0508,
         Self::E0509,
         Self::E0510,
+        Self::E0511,
         Self::W0101,
         Self::W0102,
         Self::W0103,
@@ -571,6 +577,8 @@ impl Code {
             Self::W0208 => "W0208",
             Self::W0207 => "W0207",
             Self::E0404 => "E0404",
+            Self::E0313 => "E0313",
+            Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
             Self::E0310 => "E0310",
@@ -738,6 +746,8 @@ impl Code {
             | Self::E0310
             | Self::E0311
             | Self::E0312
+            | Self::E0313
+            | Self::E0511
             | Self::E0404
             | Self::E0408 => true,
         }

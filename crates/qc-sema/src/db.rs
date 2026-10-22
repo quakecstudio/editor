@@ -83,6 +83,8 @@ struct ExpandedFile {
     /// The compiler flags FTEQCC's lexer read in the text, from each rendered offset
     /// (FTEF-12.12).
     lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// The pragmas' changes to the keywords, from each rendered offset (FTEF-20.1).
+    keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -392,8 +394,10 @@ impl Db {
         };
         let mut syntax = preprocessed.diagnostics;
         let mut decls = Vec::with_capacity(input.compiled.len());
+        let mut keywords = Vec::with_capacity(input.compiled.len());
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
             let file = self.expanded_file(id, rendered);
+            keywords.push(file.parse.keywords().to_vec());
             for d in file.parse.diagnostics() {
                 // FTEF-19.22: a parser warning takes the settings where it stands.
                 let settings = settings_at(&rendered.warnings, d.span.start);
@@ -432,10 +436,13 @@ impl Db {
             .iter()
             .map(|r| r.warnings.as_slice())
             .collect();
+        let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
+            keywords.iter().map(Vec::as_slice).collect();
         let sources = Sources {
             maps: &maps,
             noref: &noref,
             warnings: &warnings,
+            keywords: &keywords,
             extensions,
         };
         self.bump_module_index();
@@ -445,7 +452,7 @@ impl Db {
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
-            // FTEF-19.25, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
+            // FTEF-19.29, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
             // before the core types are named.
             case_insensitive: command_line_flags.is_on(qc_preproc::FteFlag::Caseinsensitive),
             qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
@@ -492,23 +499,30 @@ impl Db {
     }
 
     /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
-    /// ones when the expansion and the lexer's flags in it are unchanged, otherwise parsed and
-    /// lowered again.
+    /// ones when the expansion and the lexer's flags and keywords in it are unchanged, otherwise
+    /// parsed and lowered again.
     fn expanded_file(&mut self, file: FileId, rendered: &Rendered) -> ExpandedFile {
         let text = rendered.text.as_slice();
         if let Some(cached) = self.expanded.get(&file)
             && cached.text == text
             && cached.lex_flags == rendered.lex_flags
+            && cached.keywords == rendered.keywords
         {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_preprocessed_flagged(text, self.dialect, &rendered.lex_flags);
+        let parse = qc_syntax::parse_preprocessed_flagged(
+            text,
+            self.dialect,
+            &rendered.lex_flags,
+            &rendered.keywords,
+        );
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
             lex_flags: rendered.lex_flags.clone(),
+            keywords: rendered.keywords.clone(),
             parse,
             decls,
         };

@@ -314,6 +314,34 @@ ast_node!(
     /// `sizeof` and a type or an expression (FTEF-18.12).
     SizeofExpr
 );
+ast_node!(
+    /// `loop s` (FTEF-20.5).
+    LoopStmt
+);
+ast_node!(
+    /// `thinktime e : t;` (FTEF-20.5).
+    ThinktimeStmt
+);
+ast_node!(
+    /// `state [frame, next];` (FTEF-20.5).
+    StateStmt
+);
+ast_node!(
+    /// `using (names) s` or `using names;` (FTEF-20.5).
+    UsingStmt
+);
+ast_node!(
+    /// One name of a `using` and its alias (FTEF-20.5).
+    UsingAlias
+);
+ast_node!(
+    /// `__exit;` (FTEF-20.5).
+    ExitStmt
+);
+ast_node!(
+    /// `asm` and an instruction or a block of them (FTEF-20.5).
+    AsmStmt
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -358,6 +386,18 @@ ast_enum!(
         Label(LabelStmt),
         /// `goto name;` (FTEF-18.23).
         Goto(GotoStmt),
+        /// `loop s` (FTEF-20.5).
+        Loop(LoopStmt),
+        /// `thinktime e : t;` (FTEF-20.5).
+        Thinktime(ThinktimeStmt),
+        /// `state [frame, next];` (FTEF-20.5).
+        State(StateStmt),
+        /// `using (names) s` or `using names;` (FTEF-20.5).
+        Using(UsingStmt),
+        /// `__exit;` (FTEF-20.5).
+        Exit(ExitStmt),
+        /// `asm` and its instructions (FTEF-20.5).
+        Asm(AsmStmt),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -806,6 +846,64 @@ impl GotoStmt {
     }
 }
 
+impl AsmStmt {
+    /// The `local` declarations among its instructions (FTEF-20.5).
+    pub fn locals(&self) -> impl Iterator<Item = LocalDecl> {
+        children(&self.0)
+    }
+}
+
+impl LoopStmt {
+    /// The loop body (FTEF-20.5).
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl ThinktimeStmt {
+    /// The entity, then the time, in order (FTEF-20.5).
+    pub fn operands(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
+    }
+}
+
+impl StateStmt {
+    /// The `[frame, next]` it runs (FTEF-20.5).
+    #[must_use]
+    pub fn state(&self) -> Option<State> {
+        child(&self.0)
+    }
+}
+
+impl UsingStmt {
+    /// The names it aliases, in order (FTEF-20.5).
+    pub fn aliases(&self) -> impl Iterator<Item = UsingAlias> {
+        children(&self.0)
+    }
+
+    /// The statement the aliases are made for, when the names are in parentheses; without, they
+    /// hold to the end of the scope.
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl UsingAlias {
+    /// The name of the definition aliased (FTEF-20.5).
+    #[must_use]
+    pub fn target(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+
+    /// The alias's name: the one after `=`, else the definition's own.
+    #[must_use]
+    pub fn alias(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
+    }
+}
+
 impl SizeofExpr {
     /// The type it measures, when it is given a type (FTEF-18.12).
     #[must_use]
@@ -950,22 +1048,50 @@ impl AccessorDecl {
 }
 
 impl AccessorMember {
+    /// The words before the type, `inline` and `get` or `set`, as the parser took them, in
+    /// any case and in a class with a `__` (FTEF-20.11), and the names after them.
+    fn words(&self) -> (Vec<SyntaxToken>, Vec<SyntaxToken>) {
+        let names: Vec<SyntaxToken> = self
+            .0
+            .child_tokens()
+            .filter(|t| t.kind() == K::Name)
+            .collect();
+        let is = |token: &SyntaxToken, word: &str| {
+            let text = token.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case(word)
+        };
+        let mut lead = 0_usize;
+        if names.first().is_some_and(|t| is(t, "inline")) {
+            lead = 1;
+        }
+        if names
+            .get(lead)
+            .is_some_and(|t| is(t, "get") || is(t, "set"))
+        {
+            lead = lead.saturating_add(1);
+        }
+        let (words, rest) = names.split_at(lead.min(names.len()));
+        (words.to_vec(), rest.to_vec())
+    }
+
     /// The member's name, if it has one: the name after `inline`, `get` or `set` and the
     /// type.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        self.0
-            .child_tokens()
-            .filter(|t| t.kind() == K::Name)
-            .find(|t| !matches!(t.text_lossless().as_str(), "inline" | "get" | "set"))
+        self.words().1.into_iter().next()
     }
 
     /// Whether it is a `set` member.
     #[must_use]
     pub fn is_set(&self) -> bool {
-        self.0
-            .child_tokens()
-            .any(|t| t.kind() == K::Name && t.text_lossless() == "set")
+        self.words().0.last().is_some_and(|t| {
+            let text = t.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case("set")
+        })
     }
 
     /// The index parameter's name in `[Type name]`, if any.
