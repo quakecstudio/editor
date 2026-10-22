@@ -421,7 +421,13 @@ impl<'a> Compiler<'a> {
             | ast::Stmt::Continue(_)
             | ast::Stmt::Empty(_)
             | ast::Stmt::Label(_)
-            | ast::Stmt::Goto(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
+            | ast::Stmt::Goto(_)
+            | ast::Stmt::Loop(_)
+            | ast::Stmt::Thinktime(_)
+            | ast::Stmt::State(_)
+            | ast::Stmt::Using(_)
+            | ast::Stmt::Exit(_)
+            | ast::Stmt::Asm(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
         }
         Ok(())
     }
