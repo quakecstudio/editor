@@ -57,8 +57,21 @@ does not do anything" warning `W0313` (FTEF-18.23 to FTEF-18.25; QCD-4.8, QCD-7.
 QCD-7.30). FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
 the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2). Under `qccx` an `@` before a term is a unary
-term (FTEF-19.26), and a parse keeps the compiler flags its tokens were lexed with
-(`Parse::lex_flags_at`), which a builtin's engine name is read with (FTEF-19.23).
+term (FTEF-19.26), and a parse keeps the compiler flags its tokens were lexed and read with
+(`Parse::flags_at`, `Parse::lex_flags_at`), which a builtin's engine name is read with
+(FTEF-19.23).
+
+The flags change in the middle of a file (FTEF-21): the parser applies the preprocessor's
+changes, `qc_preproc::FlagEdit`s, and its own `extern "C"` and `extern "QC"` blocks', which
+save and restore six flags (`src/flags.rs`, ported from FTEQCC's `QCC_PR_ParseDefs`), and lexes
+the text again with the blocks it read, reporting the lexical diagnostics of the tokens they
+lex otherwise (FTEF-21.1 to FTEF-21.3). It reads expressions with the operator priorities the
+flags give, QuakeC's or C's, and warns `W0227` of an operator the operand of `!` or `~` takes
+(FTEF-21.4 to FTEF-21.6, QCD-7.68); with `qcfuncs` off it reads a declaration's `*`s and
+parameter lists as each declarator's, C's function pointers and a first parameter that is a
+lone name (FTEF-21.7, FTEF-21.8); it reads attribute lists after a qualifier, or with
+`attributes` on at file level, with their warnings `W0228` (FTEF-21.9, QCD-7.69); and it reads
+`typedef` among the qualifiers (FTEF-21.14).
 
 Under an FTEQCC dialect the parser reads each keyword with FTEQCC's keyword flags in force at
 its token (`docs/spec/dialect-fteqcc.md` FTEF-20): the marks `parse_preprocessed_flagged` is
@@ -72,7 +85,9 @@ defines nothing (FTEF-20.12).
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
-the syntactic ones. The one exception is `src/c_scalar.rs`, ported from FTEQCC's
+the syntactic ones. The exceptions are `src/flags.rs`, ported from FTEQCC's `QCC_PR_ParseDefs`
+(the flags an `extern` block saves, sets and restores, FTEF-21.2, FTEF-21.3), and
+`src/c_scalar.rs`, ported from FTEQCC's
 `QCC_PR_ParseType` and `QCC_PR_CheckKeyword` (FTEF-2.7 to FTEF-2.11): which C type words the
 default keywords enable, the loop that reads them and the type they make, with the
 "ignoring unsupported" warnings `W0226` (QCD-7.52). The parser reads a type's C words with it,

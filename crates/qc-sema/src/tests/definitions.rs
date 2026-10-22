@@ -1266,7 +1266,7 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.17: an initialiser that is an expression is compared by its text and not typed,
+// spec FTEF-19.30: an initialiser that is an expression is compared by its text and not typed,
 // an `extern` function is no error whatever the target, and an attribute before the type is
 // refused, as the pinned FTEQCC refuses it
 #[test]

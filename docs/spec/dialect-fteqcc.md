@@ -500,7 +500,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `#pragma TARGET fte_99999`. Two warnings depend on what the compiler has made so far, which the
   preprocessor does not know, and are not modelled: `optimise` inside a function ("unable to
   change optimisation options mid-function") and a `TARGET` that switches to or from Hexen II
-  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.16).
+  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.17).
 - **FTEF-12.12** Seven of the flags `#pragma flag` sets (FTEF-12.11) change how FTEQCC lexes,
   and hold from the token after the directive: `QCC_PR_Lex` reads each token as the parser asks
   for it, with the flags of that moment (`qc_lexer::LexFlags`, `qc_lexer::lex_flagged`). The
@@ -537,7 +537,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   the lookup stops after 64 macros, as FTEQCC's recursion has no bound and never returns for a
   macro whose text names itself. The preprocessor lexes the rest of a text again when the flags
   change, or under `macroinstrings` when a macro is defined or undefined, and marks each change
-  by token in `FileOutput::lex_flags`, which `qc_syntax::parse_preprocessed_flagged` reads to
+  by token in `FileOutput::flags`, which `qc_syntax::parse_preprocessed_flagged` reads to
   lex the preprocessed text again as FTEQCC lexed it.
 - **FTEF-12.13** Two flags change the preprocessor's reading. `hashonly` (`flag_hashonly`): a name
   is a macro's or a built-in constant's only after a `#` (`if (flag_hashonly ||
@@ -551,12 +551,14 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
 - **FTEF-12.15** **Withdrawn** (P2-119, #554): it said the keyword flags are not read, but the
   parser reads each keyword with the flags in force at its token (FTEF-20). Replaced by
   FTEF-12.16.
-- **FTEF-12.16** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
+- **FTEF-12.16** **Withdrawn** (P2-121, #556): it said `cpriority` is not modelled, but the
+  parser reads the priorities it sets (FTEF-21.4). Replaced by FTEF-12.17.
+- **FTEF-12.17** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
   compiler or its console output rather than to the tokens or the definitions: `acc` (its `|`
-  in a string as a line feed, and reacc's type names and keywords, FTEF-19.17, FTEF-20.13);
-  `cpriority`, which reorders `pr_opcodes` for the parser's operator priorities; and
+  in a string as a line feed, and reacc's type names and keywords, FTEF-19.30, FTEF-20.13); and
   `msvcstyle` and `debugmacros`, which change only what FTEQCC prints. The keyword flags, which
-  `#pragma keyword` and `#pragma flag` set with the others, are FTEF-20's. A pragma emits no
+  `#pragma keyword` and `#pragma flag` set with the others, are FTEF-20's, and the flags the
+  parser and the semantic model read, `cpriority` among them, FTEF-21's. A pragma emits no
   progs output of its own (as FTE-16.3); its effects on the output (the target format, the CRC,
   the flags) are realised by codegen (L-01).
 
@@ -2151,7 +2153,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `E0213`, and `entity e = 0;`, `string s = -0;` and `void() g = 0;` cast. A string initialised
   with `_(...)` takes one string literal, else the error `E0232` "_() intrinsic accepts only a
   string immediate". An initialiser that is no literal and no name is not typed by this profile
-  (FTEF-19.17).
+  (FTEF-19.30).
 - **FTEF-19.3** A definition is a constant when its first declaration makes it one, `GDF_CONST`:
   `const`, or at file level and not `var`, initialised, a function or a field (`if (isconstant
   || (!isvar && !pr_scope && ((isinitialised && !flag_assumevar) || type->type == ev_function ||
@@ -2221,7 +2223,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   unsized definition takes the size a later one gives; an unsized array's initialiser sizes it
   (`QCC_PR_ParseDefArray` counts the elements of `{ ... }`, and a string's bytes and its
   terminator, `dim[0] = pr_immediate_strlen+1;`). A size that is no number literal is not
-  compared (FTEF-19.17). An array is initialised with `{ ... }`, or an array of an 8-bit
+  compared (FTEF-19.30). An array is initialised with `{ ... }`, or an array of an 8-bit
   integer (`__int8`, `__uint8`, `__char`: `def.cast->type == ev_bitfld && def.cast->bits == 8`)
   with a string: anything else is the error `E0204` "expected {, found X"
   (`QCC_PR_ParseInitializerType_Internal`, `QCC_PR_Expect("{");`). A string of more bytes than
@@ -2234,8 +2236,8 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `typedef float t; typedef int t;` is the error and `typedef float t; typedef t t;` is not. A
   redeclaration compares a typedef's name as the type it names (`typedef float t; t x; vector
   x;` is `E0205`). A typedef with a storage qualifier is the error `E0224` "bad combination of
-  modifiers with typedef (defining NAME)", `static`, `noref` and `nosave` among them, as no
-  `#pragma` makes them the default here; `typedef;` and `typedef float;` define nothing, with the
+  modifiers with typedef (defining NAME)", `static`, `noref` and `nosave` among them when no
+  `#pragma` makes them the default (FTEF-21.14); `typedef;` and `typedef float;` define nothing, with the
   warning `W0215` "typedef defines no types". A `typedef` in a function body is a definition
   statement (FTEF-19.1), checked as one at file level, whose type name this profile reads as
   any other type name.
@@ -2243,7 +2245,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   gives another, made with `QCC_PR_DummyDef`. A name's value is the one after its `=`, a number
   or a numeric constant converted to the base type, or the one before it plus 1; under
   `enumflags` times 2, starting at 1, and 1 after a 0 (`if (!next_i) next_f = next_i = 1;`).
-  Each enum starts its count again. After a value this profile does not compute (FTEF-19.17)
+  Each enum starts its count again. After a value this profile does not compute (FTEF-19.30)
   the names that follow have no value it compares. A
   string or vector after `=` is the error `E0227` "Implicit type mismatch. Needed float, got
   string." (`QCC_SupplyConversion`), a name that is no constant with a value the error `E0228`
@@ -2297,28 +2299,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `const` and `var`, and "function modifier on non-function." for `inline`, `wrap`, `weak` or
   `accumulate` on what is no function, which `accumulate` makes the error `E0230` "accumulate
   applies only to functions, not NAME".
-- **FTEF-19.17** These parts of the path are not modelled by this profile, each for its reason:
-  the types and values of initialisers, default values, array sizes and enum values that are
-  expressions other than a literal, a name or `_()`, which FTEQCC folds and types as it compiles
-  them, the compiler's work (P2-06, constant folding P2-08), so the profile compares such an
-  initialiser by its text (FTEF-17.10) and checks no type of it; the output target, under which
-  `-Tid` makes an `extern` function the error "extern is not supported with this target format"
-  (`QCC_PR_FinishCompilation`) that a target with extern support (`QCF_FTE`) does not give, a
-  code-generation choice (`#pragma target`, P2-07), the FTEQCC corpus mods that use `extern`
-  targetting FTE; the warnings FTEQCC gives as it writes the program rather than as it defines a
-  name, a definition never referred to ("no references", `WARN_NOTREFERENCED`), a function
-  returning a large type (`WARN_SLOW_LARGERETURN`), a field allocated twice ("Field def already
-  has a value", "Inconsistant field def") and the end_sys checks, which belong to the compiler's
-  output (QC-25); struct and union initialisers (designated members, "member ... was already
-  ininitialised", "inherited structs must use designated initialisers", "initializer-string too
-  long") and a definition of a struct type not yet defined ("redeclared with different storage
-  type"), whose checks need the members' layout, the compiler's (QC-21); FTEQCC's reacc and
-  hexenc syntaxes (`flag_acc`, `var name : type`, a field `alias`), which `-Tid` does not
-  enable; attributes `[[...]]`, which `QCC_PR_ParseDefs` reads only after a qualifier or with
-  `flag_attributes`, as the profile's parser does not, the pinned FTEQCC refusing
-  `[[alias("y")]] float x;` as the profile does; and the lexer flags `#pragma flag` sets (`qccx`,
-  which allows float, string and entity casts, `assumeint` and `assumevar`), which the profile
-  reads as off, their `-Tid` defaults.
+- **FTEF-19.17** **Withdrawn** (P2-121, #556): it said attributes, `assumeint` and `assumevar` are
+  not modelled, but the parser and the semantic model read them (FTEF-21.9, FTEF-19.24,
+  FTEF-21.11). Replaced by FTEF-19.30.
 - **FTEF-19.18** The definitions family of `cargo xtask oracles builtins`
   (`xtask/src/oracles/builtins/declarations.rs`) compiles programs that bind `f` and then make
   the definitions these statements and QC-11 to QC-13 describe, under both profiles, and the
@@ -2329,8 +2312,8 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   = y;`, which differs as QC-27.8 says.
 - **FTEF-19.19** The locals a `for` statement defines, in its first clause or anywhere in its
   body, leave scope at its end: `QCC_PR_ParseStatement_For` keeps `subscopestart =
-  pr.local_tail` and, when `pr_subscopedlocals` is off (only `extern "C"` sets it), `subscopestop
-  = pr.local_tail->nextlocal`, which is the end of the list, and after the statement removes
+  pr.local_tail` and `subscopestop = pr_subscopedlocals?NULL:pr.local_tail->nextlocal`, which
+  is the end of the list whether `subscope` is on or off (FTEF-21.12), and after the statement removes
   every local after `subscopestart` from `localstable` ("remove any new locals from the
   hashtable. typically this is just the stuff inside the for(here;;)"). So after the loop the
   name is the global again, or "Unknown value", and a local of the name is a new definition of
@@ -2349,7 +2332,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   value \"NAME\"", FTEF-2.10); this profile, whose parser cannot tell a type name from a value,
   reports the same `E0203` there and makes no local, an error either way. A type of more than
   one word that is no run of C words (`struct tag`, an inline `enum` or `struct`) and the types
-  of a class's or struct's members are not checked (FTEF-19.17).
+  of a class's or struct's members are not checked (FTEF-19.30).
 - **FTEF-19.21** After a qualifier the type may be left out: `QCC_PR_ParseDefs` sets
   `hadmodifier` for each storage class or modifier it reads and calls `QCC_PR_ParseType (false,
   hadmodifier, ...)`, whose `silentfail` returns no type instead of "not a type", and then
@@ -2400,7 +2383,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   `if (flag_qccx && QCC_PR_CheckToken ("@"))`, `QCC_PR_RefExpression (retbuf,
   UNARY_PRIORITY, EXPR_DISALLOW_COMMA)`), a reference that may be assigned; that it applies only
   to a float or an integer, "'@' operator only functions on floats and ints. go figure.", is the
-  type checker's (FTEF-19.17). Without `qccx`, `@` is no term. `^^` is a token of
+  type checker's (FTEF-19.30). Without `qccx`, `@` is no term. `^^` is a token of
   `pr_punctuation` that no operator of `pr_opcodes` names, so `a ^^ b` ends the expression
   after `a`.
 - **FTEF-19.27** A module's source in source form, the `progs.src` FTEQCC compiles as code
@@ -2424,6 +2407,26 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   case; a definition named as another in another case is a definition of its
   own. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case
   (FTEF-20.2).
+
+- **FTEF-19.30** These parts of the path are not modelled by this profile, each for its reason:
+  the types and values of initialisers, default values, array sizes and enum values that are
+  expressions other than a literal, a name or `_()`, which FTEQCC folds and types as it compiles
+  them, the compiler's work (P2-06, constant folding P2-08), so the profile compares such an
+  initialiser by its text (FTEF-17.10) and checks no type of it; the output target, under which
+  `-Tid` makes an `extern` function the error "extern is not supported with this target format"
+  (`QCC_PR_FinishCompilation`) that a target with extern support (`QCF_FTE`) does not give, a
+  code-generation choice (`#pragma target`, P2-07), the FTEQCC corpus mods that use `extern`
+  targetting FTE; the warnings FTEQCC gives as it writes the program rather than as it defines a
+  name, a definition never referred to ("no references", `WARN_NOTREFERENCED`), a function
+  returning a large type (`WARN_SLOW_LARGERETURN`), a field allocated twice ("Field def already
+  has a value", "Inconsistant field def") and the end_sys checks, which belong to the compiler's
+  output (QC-25); struct and union initialisers (designated members, "member ... was already
+  ininitialised", "inherited structs must use designated initialisers", "initializer-string too
+  long") and a definition of a struct type not yet defined ("redeclared with different storage
+  type"), whose checks need the members' layout, the compiler's (QC-21); FTEQCC's reacc and
+  hexenc syntaxes (`flag_acc`, `var name : type`, a field `alias`), which `-Tid` does not
+  enable; and the casts the flags `qccx`, `lax` and `typeexplicit` allow, which the profile
+  reads as off, their `-Tid` defaults (FTEF-21.15).
 
 ## FTEF-20 Keywords
 
@@ -2516,13 +2519,13 @@ and compares the outcome with the pinned FTEQCC's.
   name after it, from its name until the statement `s` ends; `using a, b = c;` makes them to
   the end of the function. `asm` takes an instruction, or several in `{ }`: `local` and a definition, or a
   token that is an `opname` of `pr_opcodes[]` exactly and its operands up to a `;`, which are
-  code generation's (FTEF-19.17); any other token is `E0511` "Bad op code name NAME"
+  code generation's (FTEF-19.30); any other token is `E0511` "Bad op code name NAME"
   (`ERR_BADOPCODE`). `thinktime e : t;` looks up `nextthink` and `time` by name when the target
   has no `OP_THINKTIME` (`QCC_PR_GetSRef(NULL, "nextthink", ...)`), "Unknown value
   \"nextthink\"" when there is none: on the standard target, and on every target but
   `QCF_HEXEN2` and `QCF_UHEXEN2` in this profile, which takes the other targets' opcode sets for
   code generation's (L-01); that `e` must be an entity and `t` a float ("thinktime type
-  mismatch") is the type checker's (FTEF-19.17). By default `loop`, `until`, `state`,
+  mismatch") is the type checker's (FTEF-19.30). By default `loop`, `until`, `state`,
   `thinktime` and `using` are off, so only their `__` spellings start these statements.
 - **FTEF-20.6** In a body a statement defines locals when its first token is a name
   `QCC_TypeForName` finds, not followed by `::`, or is exactly one of the words
@@ -2574,7 +2577,191 @@ and compares the outcome with the pinned FTEQCC's.
 - **FTEF-20.13** The reacc keywords `CodeSys`, `function`, `objdata`, `object`, `pfunc`,
   `system`, `real`, `external` and `exit` are `#define`d as `flag_acc` (`#define keyword_codesys
   flag_acc //reacc needs this`), which only `-Facc` and `-std=reacc` set. Their syntax is
-  reacc's, which this profile does not read (FTEF-19.17): it reads the reacc keywords as off,
+  reacc's, which this profile does not read (FTEF-19.30): it reads the reacc keywords as off,
   so after a type at file level `__function` and in a function's initialiser `__external`,
   which `QCC_PR_CheckKeyword` would take, are names, where the pinned FTEQCC reads reacc's
   function and builtin syntax; `__exit` is FTEF-20.5's.
+
+## FTEF-21 Flags that change in the middle of a file
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseDefs` (the `extern` string branch, `ignoreptr`, the
+`flag_qcfuncs`, `flag_assumevar`, `flag_attributes` and `defaultstatic` reads),
+`QCC_PrioritiseOpcodes`, `QCC_PR_RefExpression`, `QCC_PR_RefTerm` (`!` and `~`),
+`QCC_PR_ParseStatement` (a block's end), `QCC_PR_GetDef` (`pr_subscopedlocals`),
+`QCC_PR_ParseEnum`; `qcc_pr_lex.c`, `QCC_PR_Precompiler` (`flag`, `keyword`, `noref`, `nosave`,
+`defaultstatic`), `QCC_PR_ParseType` and `QCC_PR_ParseFunctionType` (their `flag_qcfuncs`
+reads); `qccmain.c`, `compiler_flag[]`, `QCC_PR_BeginCompilation` and
+`QCC_SetDefaultProperties`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Every
+place the pinned FTEQCC changes a flag the lexer, the parser or the definitions read is a row of
+the table "Where the flags change" of [`inventory-l2.md`](inventory-l2.md).
+
+FTEQCC keeps its compiler flags in globals that `QCC_PR_Lex` and the parser read as each token
+is lexed and parsed: `#pragma flag` changes them between two tokens (FTEF-12.11, FTEF-12.12), and
+so does `QCC_PR_ParseDefs`, which sets some of them for an `extern "C"` block and restores them
+after it. The preprocessor cannot know the second: the block is the parser's.
+
+### Behaviour
+
+- **FTEF-21.1** Each token is lexed, parsed and its definitions made with the flags in force when
+  FTEQCC looks at it: a file starts with the preprocessor's (the command line's, then each
+  pragma's before it, from file to file), each `#pragma flag` or `keyword` sets only the flags it
+  names from the token after it (`*compiler_flag[f].enabled = st;`), and the parser replays them
+  with the changes its `extern` blocks make, at one token in FTEQCC's order: a block's restore
+  (before the token is lexed), a block's start (before `QCC_PR_Lex` lexes the token after its
+  string), then the pragmas in the white space before the token, which `QCC_PR_Lex` runs as it
+  lexes it. The flags kept are those the lexer reads (FTEF-12.12), `cpriority`, `assumevar`,
+  `subscope` and `attributes`, with the operator priorities (FTEF-21.4) and the defaults of
+  FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.15's.
+  A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
+  after what it read, is the flag at that token: `subscope` at a block's end is read at the token
+  after its `}`.
+- **FTEF-21.2** `QCC_PR_ParseDefs` reads `extern` as its first qualifier, with its keyword, then a
+  string (`if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`),
+  as a block: a `{`, definitions up to a `}` (`QCC_PR_ParseDefs(NULL, false)` each), or with no
+  `{` one definition, which may follow any number of `;`. The string's parts are joined as any
+  string's (`"" "C"` is `C`) and compared in any case (`strcasecmp`): `"C"` turns `qcfuncs` off and
+  `cpriority`, `assumeint`, `assumevar` and `subscope` on (`flag_qcfuncs = false; flag_cpriority
+  = true; flag_assume_integer = true; ... flag_assumevar = true; pr_subscopedlocals = true;`),
+  `assumedouble` left as it is ("not forced, too annoying"); `"QC"` turns `qcfuncs` on, the others
+  "refrain from changing it"; any other string changes nothing, and the block is read all the
+  same. The flags hold from the token after the string, which `QCC_PR_Lex()` lexes once they are
+  set, to the token after the block's last, which `QCC_PR_CheckToken("}")` or the definition's
+  end lexes before they are restored: so in `extern "C" { float y; } string s = "\9";` the word
+  `string` is lexed with `qcfuncs` off and `"\9"` with it on. A file that ends in the block is
+  "expected }" (`if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; }`). After another
+  qualifier the string is no block (`const extern "C" {` is "\"C\" - not a name" after the
+  warning of FTEF-21.10). In a body `QCC_PR_ParseStatement` reads `extern` exactly, or `local`
+  and then `extern`, as a definition, so the block's definitions are locals, and `x = 1;` in it
+  is no definition. The parser lexes the text again with the blocks it read, and reports the
+  lexical errors and warnings of the tokens they lex otherwise, in place of the preprocessor's.
+- **FTEF-21.3** At a block's end FTEQCC restores the six flags it saved where it started
+  (`flag_qcfuncs = old_qcfuncs; flag_cpriority = old_cpriority; flag_assume_integer =
+  old_assumeint; flag_assume_double = old_assumef64; flag_assumevar = old_assumevar;
+  pr_subscopedlocals = old_subscope;`, "FIXME: reset all flags+keywords?"), so a `#pragma flag`
+  in the block that names one of them holds only to its end, and one that names any other flag
+  holds after it: in `extern "C" { #pragma flag enable qcfuncs }` `qcfuncs` is on to the `}` and
+  off again before it as before the block. Blocks nest, each restoring what it saved, the inner
+  first.
+- **FTEF-21.4** The operator priorities are `QCC_PrioritiseOpcodes`', which reads `flag_cpriority`
+  when it runs: once a compile starts, from `QCC_PR_BeginCompilation` after the command line is
+  read (`-Fcpriority`, `-std=c`), and at each `#pragma flag` that names `cpriority`, at once
+  (`if (compiler_flag[f].enabled == &flag_cpriority) QCC_PrioritiseOpcodes();`). Nothing else runs
+  it: an `extern "C"` block sets `flag_cpriority` and leaves the priorities as they are ("we don't
+  currently change operator precedence"), a pragma in the block that names `cpriority` sets them
+  for the rest of the compile though the block restores the flag, and the priorities hold into
+  the second autoprototyping pass, which `QCC_SetDefaultProperties` starts without
+  `QCC_PR_BeginCompilation`.
+- **FTEF-21.5** With `cpriority` on `QCC_PrioritiseOpcodes` gives each class of `pr_opcodes` C's
+  priority: `priority_class[PC_UNARYNOT] = 1; priority_class[PC_MULDIV] = 2;
+  priority_class[PC_ADDSUB] = 3; priority_class[PC_SHIFT] = 4; priority_class[PC_RELATION] = 5;
+  priority_class[PC_EQUALITY] = 6; priority_class[PC_BITAND] = 7; priority_class[PC_BITXOR] = 8;
+  priority_class[PC_BITOR] = 9; priority_class[PC_LOGICAND] = 10; priority_class[PC_LOGICOR] =
+  11; priority_class[PC_TERNARY] = 12; priority_class[PC_STORE] = 13;`. The classes are the
+  opcodes' (`*`, `/`, `%`, `*^` and `><` `PC_MULDIV`; `+` and `-` `PC_ADDSUB`; `<<` and `>>`
+  `PC_SHIFT`; `<`, `<=`, `>` and `>=` `PC_RELATION`; `==`, `!=` and `<=>` `PC_EQUALITY`; `&`, `^`
+  and `|`; `&&`; `||`; the assignments `PC_STORE`), so `a == b & c` is `(a == b) & c`, `!a == b`
+  is `(!a) == b` (`NOT_PRIORITY` is 1, the term and its calls), `a || b ? c : d` is `(a || b) ? c
+  : d`, and `x = a ? b : c` assigns the conditional. With it off they are QuakeC's (FTE-19.3,
+  FTE-8.4).
+- **FTEF-21.6** `!` and `~` read their operand with `EXPR_WARN_ABOVE_1`, which every right operand
+  of a binary operator in it is read with too, and an expression in parentheses, an argument and
+  a subscript are not, so each binary operator the operand takes is the warning F304 "suggest
+  parenthesis for unary operator that applies to multiple terms" (`if (priority > 1 && exprflags &
+  EXPR_WARN_ABOVE_1)`, `WARN_UNARYNOTSCOPE`, on by default, `W0227`), given at the token after its
+  right operand: with QuakeC's priorities `!a == b`, `!a * b`, `~a & b` and `!(a) == b` warn, and
+  `!a && b`, `!(a == b)` and `-a == b` do not; with C's none does, the operand being a term.
+- **FTEF-21.7** With `qcfuncs` off `QCC_PR_ParseType` takes no parameter list (`if (flag_qcfuncs &&
+  QCC_PR_CheckToken ("("))`), so `void()` is no type where a type is read alone, a parameter's,
+  a member's or a cast's, and `QCC_PR_ParseDefs` reads a declaration's type without its `*`s
+  (`QCC_PR_ParseType (false, hadmodifier, !flag_qcfuncs)`, `ignoreptr`), which each declarator
+  reads: `float *a, b;` makes `a` a pointer and `b` a `float`, where with it on both are pointers.
+  Each declarator then reads `*`s, and parameter lists before its name in a loop (`while(
+  QCC_PR_CheckToken ("("))`), each a function returning the type so far, which the type took
+  before with `qcfuncs` on, so `.void() think;` declares a function returning `.void`, not a
+  field, and a list may stand before any declarator's name whatever the flag (`float a, (float
+  x) g;`); and C's function pointer `(*name)` or `(*name[N])` and a parameter list, a function
+  type with a pointer to it for each `*` past the first, a variable (`isvar |= isptr>0;`) as
+  every declarator after it in the declaration, but in a `typedef`. Where the type took a list,
+  its first declarator's `(*` is a list `QCC_PR_ParseFunctionType` refuses ("expected function arg
+  list"), so `float (*fp)(float);` is an error with `qcfuncs` on.
+- **FTEF-21.8** With `qcfuncs` off `QCC_PR_ParseFunctionType` reads `()` as variadic (`if
+  (!flag_qcfuncs) ftype->vargs = true; //'void name()' is vargs/undefined in C89`), so `void h();`
+  is `void(...)`; a first parameter that is no type, as an `int` named by the word (`if
+  (!flag_qcfuncs) t = type_integer; //c89 assumes int.`), so `void h(x);` is `void(__int32 x)`,
+  where a later one is "\"y\" is not a type"; and an array parameter `[N]` as a pointer ("just
+  turn it into a pointer and ditch the top-level size. C style."), as `[]` is whatever the flag
+  ("length omitted. just treat it as a pointer"), where with it on `float a[2]` is a `float`.
+- **FTEF-21.9** `QCC_PR_ParseDefs` reads `[[` among the qualifiers after one of them, `typedef`
+  among them, or with `attributes` on outside a function (`else if
+  ((hadmodifier||(flag_attributes && !pr_scope)) && QCC_PR_CheckToken("["))`), then
+  `QCC_PR_Expect("[")`, attributes and `,`s up to a `]`, and `QCC_PR_Expect("]")`, and counts it a
+  qualifier. Its attributes, each name read with `QCC_PR_CheckName`: `alias(NAME)` or
+  `alias("NAME")`, `accumulate`, `eraseable`, which is `noref`, and `__deprecated` with an
+  optional `("reason")` (`QCC_PR_CheckKeyword(false, "deprecated")`, so a bare `deprecated` is
+  none), whose argument is a string or the error "expected string". Any other token is F321
+  "Unknown attribute \"NAME\"" (`WARN_GMQCC_SPECIFIC`, `W0228`), and the tokens up to the next
+  `]` or `,` are passed over, so `[[foo(1, 2)]]` warns of `foo` and of `2`; an `accumulate` after
+  one is F321 "accumulating an accumulating accumulation". A definition given `alias(TARGET)` is
+  made with no lookup of its name (`QCC_PR_DummyDef`) and refers to the definition `TARGET` names
+  in its scope, "TARGET not yet defined, cannot create NAME as an alias" (`E0234`) when none does;
+  it may not be initialised, "alias NAME may not be initialised" (`E0235`), and its type may be
+  another's; `alias` counts among the storage classes of FTEF-19.16. With `attributes` off a
+  file-level `[[` is "\"[\" is not a type", and in a body `[[` is an expression's.
+- **FTEF-21.10** `QCC_PR_ParseDefs` tests `extern` against the declaration's type, once it is read
+  (`if (externfnc && !pr_scope && basetype->type != ev_function) { if (flag_qcfuncs)
+  QCC_PR_ParseWarning(WARN_IGNOREDKEYWORD, "extern keyword may only apply to qc functions.");
+  externfnc=false; }`): on a type that is no function's, a C-style declarator's `void
+  h(float x)` and a left out type's included, the `extern` is dropped, so the function is no
+  external one and needs a body ("function NAME has no body"), with the warning only when
+  `qcfuncs` is on. With `qcfuncs` off a C function declared in a body is a global constant
+  whose body is elsewhere (`if (!flag_qcfuncs && pr_scope) isconstant = externfnc = true; //in C,
+  a locally defined function refers to an external one.`), made in the global scope
+  (`externfnc?NULL:pr_scope`), so `void h();` in a body declares the global `h`.
+- **FTEF-21.11** With `assumevar` on an initialised global is no constant (`(isinitialised &&
+  !flag_assumevar)`, "initialised things are assumed to be consts, unless assumevar is
+  specified"), read once the `=` is: so a name that initialises another global is
+  "initializer for 'NAME' is not constant" (`E0214`), and `const` still makes a constant.
+- **FTEF-21.12** With `subscope` on at a block's end FTEQCC removes the locals made in the block
+  from `localstable` (`if (pr_subscopedlocals) { //remove any new locals from the hashtable.`), so
+  after it their names are the global again or "Unknown value", and a local whose name a local
+  already has is a new one: `QCC_PR_GetDef` passes the old one over for a type mismatch ("assume
+  it was defined in a different subscope") and, but for a `static`, for any other ("subscopes mean
+  that the later one replaces the first, hopefully."), with no "duplicate definition ignored", and
+  from there the name is the new one, the newest in the table first. A local is found from where
+  it is made. A `for` statement's locals leave scope whether the flag is on or off (FTEF-19.19).
+- **FTEF-21.13** With `assumeint` on where `QCC_PR_ParseEnum` starts an enum's base type is
+  `__int32` (`basetype = (flag_assume_integer?type_integer:type_float);`), so its names are
+  integers, which a string may be initialised with, with the warning of FTEF-19.2.
+- **FTEF-21.14** `#pragma noref N`, `#pragma nosave N` and `#pragma defaultstatic N` set the
+  defaults `QCC_PR_ParseDefs` starts each definition with (`pbool isstatic=defaultstatic; ...
+  pbool noref = defaultnoref; pbool nosave = defaultnosave;`, `!!atoi(msg)`), from the token
+  after them, as their marks hold them from file to file; `QCC_SetDefaultProperties` sets
+  `defaultstatic = 0;` before the second autoprototyping pass and leaves the others. Under
+  `defaultstatic` every global is `static` (FTEF-19.12) but one marked `nonstatic`, which only
+  outside a function undoes it, and every local is a `static` local. A `typedef`'s `static`,
+  `noref` and `nosave` are no "bad combination of modifiers with typedef" when the default is on
+  (`||(isstatic && !defaultstatic) ||(noref && !defaultnoref) ||(nosave && !defaultnosave)`),
+  `auto`, `register` and `nonstatic` never are, and under `defaultstatic` a typedef has two storage
+  classes, "Conflicting storage classes.". `QCC_PR_ParseDefs` reads `typedef` among its other
+  qualifiers, before or after them, and after it, a modifier, a type may be left out
+  (FTEF-19.21): `typedef static x;` names an `__int32` and is the error.
+- **FTEF-21.15** The flags a pragma may set mid-compile that no token, tree or definition reads
+  are not modelled, each for its reason: `nosave`'s default but for a typedef, and `optimise`,
+  `opcode`, `iffloat`, `ifstring`, `ifvector`, `vectorlogic`, `nullemptystr`, `boundchecks`,
+  `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`, `omitinternals`, `embedsrc`,
+  `dumpfilenames`, `annotate`, `brokenarray`, `rootconstructor` and `pythonlogic`, which the
+  compiler's output reads (P2-06 onward); `msvcstyle`, `debugmacros` and `verbose`, which change
+  only what FTEQCC prints; the target's `flag_pointerrelocs` and `flag_undefwordsize`, which
+  `#pragma TARGET` sets with `QCC_OPCodeSetTarget` and code generation and its casts read; the
+  dereference of a function `*f`, which `qcfuncs` makes "attempt to dereference function type."
+  in `QCC_PR_RefTerm`, `vargtodouble`, and the `__int32` that `&&` and `||` of constants fold to
+  under `assumeint`, the expression typing's and the compiler's; under `qccx` the field access
+  `e^[f]` and `e[f]` of `QCC_PR_ParseField`, which only the expression's type, an entity's, tells
+  from `^` and a vector or an index, so the parser reads the first as `^` and the second as an
+  index, both accepted as FTEQCC accepts them; and the casts `lax`, `typeexplicit` and `qccx`
+  allow, which the semantic model's casts do not read yet (P2-122).
+- **FTEF-21.16** The flag family of `cargo xtask oracles builtins`
+  (`xtask/src/oracles/builtins/flags.rs`) compiles programs that bind `f` and then use each of
+  these statements, under the FTEQCC profile, with no option, with `-Werror -Wno-Q208` for those
+  a warning decides, and with the command-line options that set the flags. Its run of
+  2026-10-21 (macOS arm64) agrees with the pinned FTEQCC on every case.

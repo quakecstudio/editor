@@ -17,11 +17,13 @@
 //!
 //! This crate is written from the spec, not ported, but for [`c_scalar`], the loop over C
 //! type words of FTEQCC's `QCC_PR_ParseType`, which is ported so the parser and the semantic
-//! model read those words as FTEQCC does.
+//! model read those words as FTEQCC does, and `flags`, the flags an `extern "C"` block of
+//! FTEQCC's `QCC_PR_ParseDefs` saves, sets and restores (FTEF-21.2, FTEF-21.3).
 
 pub mod ast;
 mod binum;
 pub mod c_scalar;
+mod flags;
 mod input;
 mod kind;
 mod parser;
@@ -35,7 +37,7 @@ pub use binum::builtin_binum;
 pub use kind::SyntaxKind;
 pub use parser::{FTEQCC_MAX_NAME, LIMIT_MAX_PARMS, LIMIT_QCC_MAX_NAME, QC_MAX_NESTING};
 pub use qc_lexer::{Code, Diagnostic, Dialect, Span};
-pub use qc_preproc::{Keyword, KeywordEdit, Keywords};
+pub use qc_preproc::{CompilerFlags, FlagEdit, Keyword, KeywordEdit, Keywords, Priorities};
 pub use tree::{GreenElement, GreenNode, GreenToken, SyntaxElement, SyntaxNode, SyntaxToken};
 
 use ast::AstNode as _;
@@ -45,27 +47,45 @@ use ast::AstNode as _;
 pub struct Parse {
     green: GreenNode,
     diagnostics: Vec<Diagnostic>,
-    /// The compiler flags the tokens were lexed with, each from the byte it holds from
-    /// (FTEF-12.12); empty for the defaults.
-    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// The compiler flags the tokens were lexed and read with, each from the byte it holds from
+    /// (FTEF-12.12, FTEF-21.1), the first at byte 0.
+    flags: Vec<(usize, CompilerFlags)>,
     /// The keywords the parser read each token with, each from the byte it holds from
     /// (FTEF-20.1): the preprocessor's marks and the changes the definitions made.
     keywords: Vec<(usize, Keywords)>,
+    /// The tokens of a preprocessor's text the parser lexed with other flags than the
+    /// preprocessor did, those of an `extern` block (FTEF-21.2).
+    relexed: Vec<Span>,
 }
 
 impl Parse {
-    /// The compiler flags the tokens were lexed with (FTEF-12.12): each the byte it holds from
-    /// and the flags, in order, as [`parse_preprocessed_flagged`] was given them; the text before
-    /// the first holds the defaults.
+    /// The compiler flags the tokens were lexed and read with (FTEF-12.12, FTEF-21.1): each the
+    /// byte it holds from and the flags, in order, the first at byte 0: the changes
+    /// [`parse_preprocessed_flagged`] was given and those of the `extern` blocks the parser read.
     #[must_use]
-    pub fn lex_flags(&self) -> &[(usize, qc_lexer::LexFlags)] {
-        &self.lex_flags
+    pub fn flags(&self) -> &[(usize, CompilerFlags)] {
+        &self.flags
     }
 
-    /// The compiler flags the token at byte `at` was lexed with (FTEF-12.12).
+    /// The compiler flags in force at the token at byte `at` (FTEF-21.1).
+    #[must_use]
+    pub fn flags_at(&self, at: usize) -> CompilerFlags {
+        CompilerFlags::at(&self.flags, at)
+    }
+
+    /// The flags the lexer read the token at byte `at` with (FTEF-12.12).
     #[must_use]
     pub fn lex_flags_at(&self, at: usize) -> qc_lexer::LexFlags {
-        qc_lexer::LexFlags::at(&self.lex_flags, at)
+        self.flags_at(at).lex()
+    }
+
+    /// The spans of the tokens of a preprocessor's text that the parser lexed with other flags
+    /// than the preprocessor's marks give, those of an `extern` block (FTEF-21.2), in order; their
+    /// lexical errors and warnings are in [`Self::diagnostics`], and the preprocessor's for them
+    /// are not FTEQCC's. Empty for any other text.
+    #[must_use]
+    pub fn relexed(&self) -> &[Span] {
+        &self.relexed
     }
 
     /// The keywords the parser read the tokens with (FTEF-20.1): each the byte they hold from
@@ -158,10 +178,11 @@ pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
     parse_text(source, dialect, input::Text::Preprocessed, &[], &[])
 }
 
-/// [`parse_preprocessed`] of text whose tokens FTEQCC lexed under the compiler flags `flags`
-/// gives (FTEF-12.12): each the byte the flags hold from and the flags, in order, as
-/// `qc_preproc::FileOutput::lex_flags` marks them by token. The text before the first holds the
-/// default flags. `macroinstrings` is not read: this text has no macros to look up, and the
+/// [`parse_preprocessed`] of text whose compiler flags `flags` changes (FTEF-12.12, FTEF-21.1):
+/// each the byte the change holds from and the change, in order, as
+/// `qc_preproc::FileOutput::flags` marks them by token, starting from FTEQCC's defaults. The
+/// parser lexes the text with them and with the changes its own `extern` blocks make
+/// (FTEF-21.2). `macroinstrings` is not read: this text has no macros to look up, and the
 /// preprocessor writes a string a `#NAME` wrote to as its bytes (`PpToken::spelling`). Under an
 /// FTEQCC dialect the parser reads each keyword with the keywords `keywords` changes, each the
 /// byte the change holds from and the change, in order, as `qc_preproc::FileOutput::keywords`
@@ -170,27 +191,51 @@ pub fn parse_preprocessed(source: &[u8], dialect: Dialect) -> Parse {
 pub fn parse_preprocessed_flagged(
     source: &[u8],
     dialect: Dialect,
-    flags: &[(usize, qc_lexer::LexFlags)],
+    flags: &[(usize, FlagEdit)],
     keywords: &[(usize, KeywordEdit)],
 ) -> Parse {
     parse_text(source, dialect, input::Text::Preprocessed, flags, keywords)
 }
 
+/// How many times a text is parsed at most to find the `extern` blocks it holds (FTEF-21.2).
+/// A pass lexes the text with the blocks the pass before it read. The flags a block sets change
+/// how its strings and numbers read, not where a token ends, so the second pass reads the
+/// blocks the first did; the limit stops a text whose blocks would move from pass to pass,
+/// which no flag a block sets makes, and the last pass is kept.
+const PASSES: usize = 4;
+
 fn parse_text(
     source: &[u8],
     dialect: Dialect,
     text: input::Text,
-    flags: &[(usize, qc_lexer::LexFlags)],
+    edits: &[(usize, FlagEdit)],
     keywords: &[(usize, KeywordEdit)],
 ) -> Parse {
-    let input = input::Input::new(source, dialect, text, flags);
-    let mut parser = parser::Parser::new(input, dialect, keywords);
-    parser.source_file();
-    let (green, diagnostics, keywords) = parser.finish();
-    Parse {
-        green,
-        diagnostics,
-        lex_flags: flags.to_vec(),
-        keywords,
+    let mut blocks = Vec::new();
+    let mut pass = 0_usize;
+    loop {
+        let marks = flags::marks(edits, &blocks);
+        let lex: Vec<(usize, qc_lexer::LexFlags)> =
+            marks.iter().map(|&(at, flags)| (at, flags.lex())).collect();
+        let input = input::Input::new(source, dialect, text, &lex);
+        let mut parser = parser::Parser::new(input, dialect, keywords, &marks);
+        parser.source_file();
+        pass = pass.saturating_add(1);
+        if parser.blocks() == blocks.as_slice() || pass >= PASSES {
+            let relexed = if text == input::Text::Preprocessed && !blocks.is_empty() {
+                parser.relexed(&flags::marks(edits, &[]))
+            } else {
+                Vec::new()
+            };
+            let (green, diagnostics, keywords) = parser.finish();
+            return Parse {
+                green,
+                diagnostics,
+                flags: marks,
+                keywords,
+                relexed,
+            };
+        }
+        blocks = parser.blocks().to_vec();
     }
 }

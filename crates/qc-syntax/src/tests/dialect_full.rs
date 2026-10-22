@@ -743,7 +743,7 @@ fn a_comma_may_end_the_declarators() {
 // operator
 #[test]
 fn at_under_qccx_and_caret_caret() {
-    let qccx = qc_lexer::LexFlags::default().with(qc_lexer::LexFlag::Qccx, true);
+    let qccx = super::whole(&[(qc_preproc::FteFlag::Qccx, true)]);
     let source = b"float x;\nstring s;\nvoid() g = { s = @x; };\n";
     let flagged = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[]);
     assert_eq!(flagged.errors().count(), 0, "{:?}", flagged.diagnostics());
@@ -764,6 +764,6 @@ fn at_under_qccx_and_caret_caret() {
         0
     );
     // The parse keeps the flags it was given.
-    assert_eq!(flagged.lex_flags_at(5), qccx);
+    assert!(flagged.lex_flags_at(5).has(qc_lexer::LexFlag::Qccx));
     assert_eq!(plain.lex_flags_at(5), qc_lexer::LexFlags::default());
 }

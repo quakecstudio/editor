@@ -342,6 +342,30 @@ ast_node!(
     /// `asm` and an instruction or a block of them (FTEF-20.5).
     AsmStmt
 );
+ast_node!(
+    /// `extern` and a string, and a `{ }` block of definitions or one definition (FTEF-21.2).
+    ExternBlock
+);
+ast_node!(
+    /// `[N]` or `[]` after a declared name or a parameter's (FTE-13.1, FTEF-15.3).
+    ArraySuffix
+);
+
+impl ArraySuffix {
+    /// Whether it is `[]`, with no size.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.children().next().is_none()
+    }
+}
+ast_node!(
+    /// `[[ ... ]]` among a declaration's qualifiers (FTEF-21.9).
+    AttributeList
+);
+ast_node!(
+    /// One attribute of an [`AttributeList`] (FTEF-21.9).
+    Attribute
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -398,6 +422,8 @@ ast_enum!(
         Exit(ExitStmt),
         /// `asm` and its instructions (FTEF-20.5).
         Asm(AsmStmt),
+        /// `extern "C" { ... }` and its local definitions (FTEF-21.2).
+        Extern(ExternBlock),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -451,15 +477,71 @@ ast_enum!(
     }
 );
 
+/// Pushes the children of `node` onto `out`, those of each `extern` block in its place.
+fn flatten_externs(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
+    for child in node.children() {
+        if child.kind() == K::ExternBlock {
+            flatten_externs(&child, out);
+        } else {
+            out.push(child);
+        }
+    }
+}
+
+impl ExternBlock {
+    /// What the block holds, in order: each node a definition is, a nested block's in its place
+    /// (FTEF-21.2).
+    #[must_use]
+    pub fn items(&self) -> Vec<SyntaxNode> {
+        let mut items = Vec::new();
+        flatten_externs(&self.0, &mut items);
+        items
+    }
+}
+
+impl AttributeList {
+    /// The attributes, in order.
+    pub fn attributes(&self) -> impl Iterator<Item = Attribute> {
+        children(&self.0)
+    }
+}
+
+impl Attribute {
+    /// The attribute's name: its first token.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().find(|t| !t.kind().is_trivia())
+    }
+
+    /// The tokens after the name, up to the attribute's end, trivia aside: an argument list
+    /// `( ... )` for `alias` and `__deprecated`.
+    pub fn arguments(&self) -> impl Iterator<Item = SyntaxToken> {
+        self.0
+            .child_tokens()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(1)
+    }
+}
+
 /// What a declaration's members are, shared by [`Declaration`] and [`LocalDecl`].
 fn decl_type(node: &SyntaxNode) -> Option<Type> {
     child(node)
 }
 
 impl SourceFile {
-    /// The file-level declarations, in order.
+    /// The file-level declarations, in order, those of an `extern` block among them in its
+    /// place (FTEF-21.2).
     pub fn declarations(&self) -> impl Iterator<Item = Declaration> {
-        children(&self.0)
+        self.items().into_iter().filter_map(Declaration::cast)
+    }
+
+    /// The file-level items, in order: each node a definition is, the items of an `extern`
+    /// block in its place rather than the block (FTEF-21.2).
+    #[must_use]
+    pub fn items(&self) -> Vec<SyntaxNode> {
+        let mut items = Vec::new();
+        flatten_externs(&self.0, &mut items);
+        items
     }
 
     /// The directive lines between declarations.
@@ -533,14 +615,24 @@ impl Declarator {
         scope_of(&self.0)
     }
 
-    /// How many `*` come before the name: `T *p` declares a pointer (FTEF-4.1).
+    /// How many `*` come before the name and any `(`: `T *p` declares a pointer (FTEF-4.1).
     #[must_use]
     pub fn pointer_depth(&self) -> usize {
-        self.0
-            .child_tokens()
-            .take_while(|t| t.kind() != K::Name)
-            .filter(|t| t.kind() == K::Star)
-            .count()
+        head_stars(&self.0)
+    }
+
+    /// The parameter lists before the name, each a function returning the type so far
+    /// (FTEF-21.7).
+    #[must_use]
+    pub fn prefix_params(&self) -> Vec<ParamList> {
+        prefix_lists(&self.0, self.name().as_ref())
+    }
+
+    /// For C's function pointer `(*name)(params)`, how many `*` the parentheses hold before the
+    /// name (FTEF-21.7); `None` for any other declarator.
+    #[must_use]
+    pub fn pointer_form(&self) -> Option<usize> {
+        pointer_form(&self.0)
     }
 
     /// The array suffixes after the name (FTE-13.1, FTEF-5).
@@ -556,11 +648,54 @@ impl Declarator {
     }
 
     /// The parameters of an FTEQCC C-style function declarator `rettype name(params)`
-    /// (FTE-17.1); `None` for every other declarator.
+    /// (FTE-17.1), or of C's function pointer `(*name)(params)` (FTEF-21.7): the list after the
+    /// name; `None` for every other declarator.
     #[must_use]
     pub fn params(&self) -> Option<ParamList> {
-        child(&self.0)
+        suffix_list(&self.0, self.name().as_ref())
     }
+}
+
+/// How many `*` tokens of `node` come before its first name and `(` (FTEF-4.1, FTEF-21.7).
+fn head_stars(node: &SyntaxNode) -> usize {
+    node.child_tokens()
+        .take_while(|t| !matches!(t.kind(), K::Name | K::LParen))
+        .filter(|t| t.kind() == K::Star)
+        .count()
+}
+
+/// The `ParamList` children of `node` before the token `name` (FTEF-21.7).
+fn prefix_lists(node: &SyntaxNode, name: Option<&SyntaxToken>) -> Vec<ParamList> {
+    let end = name.map_or(0, |t| t.span().start);
+    node.children()
+        .filter(|n| n.span().start < end)
+        .filter_map(ParamList::cast)
+        .collect()
+}
+
+/// The first `ParamList` child of `node` after the token `name`.
+fn suffix_list(node: &SyntaxNode, name: Option<&SyntaxToken>) -> Option<ParamList> {
+    let start = name?.span().end;
+    node.children()
+        .filter(|n| n.span().start >= start)
+        .find_map(ParamList::cast)
+}
+
+/// For C's function pointer `(*name)`, the `*` tokens between the `(` and the name; `None` when
+/// no `(` token of `node` comes before its first name (FTEF-21.7).
+fn pointer_form(node: &SyntaxNode) -> Option<usize> {
+    let mut tokens = node
+        .child_tokens()
+        .skip_while(|t| t.kind() != K::LParen && t.kind() != K::Name);
+    if tokens.next()?.kind() != K::LParen {
+        return None;
+    }
+    Some(
+        tokens
+            .take_while(|t| t.kind() != K::Name)
+            .filter(|t| t.kind() == K::Star)
+            .count(),
+    )
 }
 
 /// The five simple types (QC-10.1).
@@ -652,6 +787,12 @@ impl Param {
     #[must_use]
     pub fn ty(&self) -> Option<Type> {
         child(&self.0)
+    }
+
+    /// The array suffixes after its name (FTEF-15.3), in order.
+    #[must_use]
+    pub fn array_suffixes(&self) -> Vec<ArraySuffix> {
+        children(&self.0).collect()
     }
 
     /// The parameter's name.
@@ -1490,6 +1631,31 @@ impl TypedefDecl {
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
         self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
+    }
+
+    /// How many `*` come before the name and any `(` (FTEF-7.1, FTEF-21.7).
+    #[must_use]
+    pub fn pointer_depth(&self) -> usize {
+        head_stars(&self.0)
+    }
+
+    /// The parameter lists before the name (FTEF-21.7).
+    #[must_use]
+    pub fn prefix_params(&self) -> Vec<ParamList> {
+        prefix_lists(&self.0, self.name().as_ref())
+    }
+
+    /// For C's function pointer `typedef T (*name)(params)`, how many `*` the parentheses hold
+    /// before the name (FTEF-21.7); `None` for any other.
+    #[must_use]
+    pub fn pointer_form(&self) -> Option<usize> {
+        pointer_form(&self.0)
+    }
+
+    /// The parameter list after the name, of C's function pointer (FTEF-21.7).
+    #[must_use]
+    pub fn params(&self) -> Option<ParamList> {
+        suffix_list(&self.0, self.name().as_ref())
     }
 }
 

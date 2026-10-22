@@ -340,7 +340,7 @@ fn type_keywords_follow_their_flags() {
         []
     );
     assert_eq!(errors("class C { };\n", Keywords::default()), []);
-    let no_qcfuncs = qc_lexer::LexFlags::default().with(qc_lexer::LexFlag::QcFuncs, false);
+    let no_qcfuncs = super::whole(&[(qc_preproc::FteFlag::Qcfuncs, false)]);
     let parsed = parse_preprocessed_flagged(
         b"class C { };\n",
         Dialect::Fteqcc,

@@ -58,6 +58,28 @@ pub enum SimpleType {
     Entity,
 }
 
+/// What FTEQCC's `QCC_PR_ParseType` and `QCC_PR_ParseFunctionType` read at a token besides
+/// the type's own words: the keywords and `ILP32` the C type words are read with (FTEF-20.9),
+/// and whether `qcfuncs` is on (FTEF-21.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TypeContext {
+    /// What the loop over C type words reads.
+    pub words: CContext,
+    /// Whether `qcfuncs` is on: off, `()` is variadic, a first parameter with no type an
+    /// `__int32`, and an array parameter a pointer.
+    pub qcfuncs: bool,
+}
+
+impl Default for TypeContext {
+    /// FTEQCC's defaults: the default keywords, `ILP32` off and `qcfuncs` on.
+    fn default() -> Self {
+        Self {
+            words: CContext::default(),
+            qcfuncs: true,
+        }
+    }
+}
+
 /// A function type: a return type, parameter types and whether it is variadic (QC-10.3).
 ///
 /// Parameter names are not part of the type (QC-10.3); only the types and the count are
@@ -118,9 +140,10 @@ impl Type {
     /// and may hand back a partial type (QCD-1.4). `..float` nests field types (QC-10.2). An
     /// FTEQCC type word that is not one of the five is [`Type::Named`] (FTEF-2, FTEF-7.2): C
     /// type words read as the parser read them, with the keywords and `ILP32` `context` gives
-    /// at the type's offset (FTEF-20.9), name the scalar they make.
+    /// at the type's offset (FTEF-20.9), name the scalar they make; a parameter list is read
+    /// with the `qcfuncs` it gives (FTEF-21.8).
     #[must_use]
-    pub fn from_ast(ty: &ast::Type, context: &dyn Fn(usize) -> CContext) -> Self {
+    pub fn from_ast(ty: &ast::Type, context: &dyn Fn(usize) -> TypeContext) -> Self {
         #[cfg(test)]
         FROM_AST_CALLS.with(|calls| calls.set(calls.get().saturating_add(1)));
         match ty {
@@ -131,7 +154,7 @@ impl Type {
                     if text.is_empty() {
                         Self::Unknown
                     } else {
-                        Self::named(&text, context(simple.syntax().span().start))
+                        Self::named(&text, context(simple.syntax().span().start).words)
                     }
                 }
             },
@@ -153,16 +176,37 @@ impl Type {
                     .map_or(Self::Simple(SimpleType::Void), |r| {
                         Self::from_ast(&r, context)
                     });
-                let (params, variadic) = func.params().map_or((Vec::new(), false), |list| {
-                    (Self::params_of(&list, context), list.is_variadic())
-                });
-                Self::Function(Rc::new(FunctionType {
-                    ret,
-                    params,
-                    variadic,
-                }))
+                func.params().map_or_else(
+                    || {
+                        Self::Function(Rc::new(FunctionType {
+                            ret: ret.clone(),
+                            params: Vec::new(),
+                            variadic: false,
+                        }))
+                    },
+                    |list| Self::function_of(ret.clone(), &list, context),
+                )
             }
         }
+    }
+
+    /// The function type returning `ret` with the parameters of `list`, read with `context`:
+    /// variadic when the list is, or, with `qcfuncs` off after its `)`, when it is `()`
+    /// (`if (!flag_qcfuncs) ftype->vargs = true; //'void name()' is vargs/undefined in C89`,
+    /// FTEF-21.8).
+    #[must_use]
+    pub fn function_of(
+        ret: Self,
+        list: &ast::ParamList,
+        context: &dyn Fn(usize) -> TypeContext,
+    ) -> Self {
+        let empty = list.params().next().is_none() && !list.is_variadic();
+        let variadic = list.is_variadic() || (empty && !context(list.syntax().span().end).qcfuncs);
+        Self::Function(Rc::new(FunctionType {
+            ret,
+            params: Self::params_of(list, context),
+            variadic,
+        }))
     }
 
     /// The type a name of type words `words` makes, read with `context` (FTEF-20.9): the scalar
@@ -187,15 +231,9 @@ impl Type {
     /// parameter that is itself a function type would otherwise be lowered again at every
     /// level of nesting.
     #[must_use]
-    pub fn params_of(list: &ast::ParamList, context: &dyn Fn(usize) -> CContext) -> Vec<Self> {
+    pub fn params_of(list: &ast::ParamList, context: &dyn Fn(usize) -> TypeContext) -> Vec<Self> {
         let params: Vec<ast::Param> = list.params().collect();
-        let types: Vec<Self> = params
-            .iter()
-            .map(|p| {
-                p.ty()
-                    .map_or(Self::Unknown, |t| Self::from_ast(&t, context))
-            })
-            .collect();
+        let types: Vec<Self> = params.iter().map(|p| Self::param_of(p, context)).collect();
         if let ([only], [ty]) = (params.as_slice(), types.as_slice())
             && only.name().is_none()
             && *ty == Self::Simple(SimpleType::Void)
@@ -203,6 +241,27 @@ impl Type {
             return Vec::new();
         }
         types
+    }
+}
+
+impl Type {
+    /// A parameter's type, read with `context` (FTEF-15.3, FTEF-21.8): its type, or with
+    /// `qcfuncs` off, for one that has none, `__int32` (`if (!flag_qcfuncs) t = type_integer;
+    /// //c89 assumes int.`); a pointer for an unsized array (`//length omitted. just treat it as
+    /// a pointer...?`), and for a sized one with `qcfuncs` off (`just turn it into a pointer and
+    /// ditch the top-level size. C style.`).
+    fn param_of(param: &ast::Param, context: &dyn Fn(usize) -> TypeContext) -> Self {
+        let at = param.syntax().span().start;
+        let qcfuncs = context(at).qcfuncs;
+        let ty = match param.ty() {
+            Some(t) => Self::from_ast(&t, context),
+            None if !qcfuncs => Self::Named(Rc::from(CScalar::Integer.name())),
+            None => Self::Unknown,
+        };
+        match param.array_suffixes().first() {
+            Some(suffix) if suffix.is_empty() || !qcfuncs => Self::Pointer(Rc::new(ty)),
+            Some(_) | None => ty,
+        }
     }
 }
 

@@ -43,6 +43,7 @@ use super::Oracles;
 
 mod declarations;
 mod directives;
+mod flags;
 mod keywords;
 mod lexical;
 
@@ -1206,6 +1207,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(lexical::cases());
     cases.extend(declarations::cases());
     cases.extend(keywords::cases());
+    cases.extend(flags::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));

@@ -80,9 +80,8 @@ impl ModuleAnalysis {
 #[derive(Clone, Debug)]
 struct ExpandedFile {
     text: Vec<u8>,
-    /// The compiler flags FTEQCC's lexer read in the text, from each rendered offset
-    /// (FTEF-12.12).
-    lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// The pragmas' changes to the compiler flags, from each rendered offset (FTEF-21.1).
+    flags: Vec<(usize, qc_preproc::FlagEdit)>,
     /// The pragmas' changes to the keywords, from each rendered offset (FTEF-20.1).
     keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
     parse: Parse,
@@ -393,9 +392,19 @@ impl Db {
         let mut syntax = preprocessed.diagnostics;
         let mut decls = Vec::with_capacity(input.compiled.len());
         let mut keywords = Vec::with_capacity(input.compiled.len());
+        let mut relexed = Vec::new();
+        let preprocessor_count = syntax.len();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
             let file = self.expanded_file(id, rendered);
             keywords.push(file.parse.keywords().to_vec());
+            // FTEF-21.2: the tokens an `extern` block lexed with other flags have the parser's
+            // lexical errors and warnings, not the preprocessor's.
+            relexed.extend(
+                file.parse
+                    .relexed()
+                    .iter()
+                    .filter_map(|&span| rendered.origins.locate(span)),
+            );
             for d in file.parse.diagnostics() {
                 // FTEF-19.22: a parser warning takes the settings where it stands.
                 let settings = settings_at(&rendered.warnings, d.span.start);
@@ -411,12 +420,22 @@ impl Db {
             }
             decls.push(file.decls);
         }
+        if !relexed.is_empty() {
+            let mut index = 0_usize;
+            syntax.retain(|d| {
+                let from_preprocessor = index < preprocessor_count;
+                index = index.saturating_add(1);
+                // A lexical diagnostic is of group 01 (QCD-1.1, QCD-2).
+                let lexical = d.diagnostic.code.as_str().get(1..3) == Some("01");
+                let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
+                !(from_preprocessor
+                    && lexical
+                    && relexed
+                        .iter()
+                        .any(|l| l.file == d.file && l.span.contains(at)))
+            });
+        }
         let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
-        let noref: Vec<&[(usize, bool)]> = preprocessed
-            .files
-            .iter()
-            .map(|r| r.noref.as_slice())
-            .collect();
         // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
         // `*extensions.qc`.
         let extensions = self
@@ -438,7 +457,6 @@ impl Db {
             keywords.iter().map(Vec::as_slice).collect();
         let sources = Sources {
             maps: &maps,
-            noref: &noref,
             warnings: &warnings,
             keywords: &keywords,
             extensions,
@@ -481,7 +499,7 @@ impl Db {
         let text = rendered.text.as_slice();
         if let Some(cached) = self.expanded.get(&file)
             && cached.text == text
-            && cached.lex_flags == rendered.lex_flags
+            && cached.flags == rendered.flags
             && cached.keywords == rendered.keywords
         {
             return cached.clone();
@@ -490,14 +508,14 @@ impl Db {
         let parse = qc_syntax::parse_preprocessed_flagged(
             text,
             self.dialect,
-            &rendered.lex_flags,
+            &rendered.flags,
             &rendered.keywords,
         );
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
-            lex_flags: rendered.lex_flags.clone(),
+            flags: rendered.flags.clone(),
             keywords: rendered.keywords.clone(),
             parse,
             decls,

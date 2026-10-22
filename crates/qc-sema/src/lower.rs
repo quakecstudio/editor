@@ -10,14 +10,14 @@
 //! only that file (GOAL-1, the incremental model).
 
 use qc_diag::{Code, Diagnostic, Span};
-use qc_preproc::Enabled;
+use qc_preproc::{Enabled, FteFlag, PragmaDefault};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::{CContext, CScalar, CWords};
-use qc_syntax::{Dialect, Keyword, Keywords, Parse, SyntaxKind, SyntaxNode};
+use qc_syntax::{CompilerFlags, Dialect, Keyword, Keywords, Parse, SyntaxKind, SyntaxNode};
 
 use crate::cast::{ConstType, Literal};
 use crate::symbol::DefKind;
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{SimpleType, Type, TypeContext};
 
 /// A name a file declares, before cross-file resolution.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +68,18 @@ pub struct RawDecl {
     pub enum_item: Option<EnumItem>,
     /// For a `typedef`'s name, the type it names (FTEF-19.9).
     pub typedef: Option<Type>,
+    /// The compiler flags and pragma defaults where the declaration starts, which
+    /// `QCC_PR_ParseDefs` reads first (FTEF-21.1, FTEF-21.14).
+    pub flags: CompilerFlags,
+    /// Whether `assumevar` was on at its initialiser, which makes an initialised global no
+    /// constant (FTEF-21.11).
+    pub assumevar: bool,
+    /// Whether it, or a declarator of its declaration before it, is C's function pointer
+    /// `(*name)`, `isvar |= isptr>0`, a variable (FTEF-21.7).
+    pub pointer_var: bool,
+    /// Whether `extern` was written on a declaration whose base type is no function, which
+    /// `QCC_PR_ParseDefs` then drops, and warns of with `qcfuncs` on (FTEF-21.10).
+    pub extern_warning: bool,
 }
 
 /// A declaration qualifier FTEQCC's `QCC_PR_ParseDefs` reads before a type (FTEF-15.1), written
@@ -106,6 +118,9 @@ pub enum Qualifier {
     Deprecated(Option<String>),
     /// `auto` or `register`.
     Auto,
+    /// The attribute `alias(NAME)` or `alias("NAME")`: the definition names the one `NAME`
+    /// names (FTEF-21.9).
+    Alias(String),
 }
 
 impl Qualifier {
@@ -164,7 +179,7 @@ pub enum ValueKind {
     /// FTEQCC's `_(...)` translation intrinsic, and whether its argument is one string
     /// literal (FTEF-19.2).
     Translate(bool),
-    /// Any other expression, whose type the model does not compute (FTEF-19.17).
+    /// Any other expression, whose type the model does not compute (FTEF-19.30).
     Other,
 }
 
@@ -177,7 +192,7 @@ pub enum ArrayDim {
     /// `[]` with nothing to size it, which FTEQCC's `QCC_PR_GetDef` compares with no other
     /// size.
     Unsized,
-    /// A size given by an expression the model does not evaluate (FTEF-19.17).
+    /// A size given by an expression the model does not evaluate (FTEF-19.30).
     Unknown,
 }
 
@@ -239,7 +254,34 @@ impl RawDecl {
             params: Vec::new(),
             enum_item: None,
             typedef: None,
+            flags: CompilerFlags::default(),
+            assumevar: false,
+            pointer_var: false,
+            extern_warning: false,
         }
+    }
+
+    /// Whether it is `static`: written so, or under `#pragma defaultstatic 1` and not
+    /// `nonstatic` (FTEF-21.14).
+    #[must_use]
+    pub fn is_static(&self) -> bool {
+        self.has(&Qualifier::Static)
+            || (self.flags.default_on(PragmaDefault::Static) && !self.has(&Qualifier::Nonstatic))
+    }
+
+    /// Whether it is `noref`: written so, or under `#pragma noref 1` (FTEF-12.6).
+    #[must_use]
+    pub fn is_noref(&self) -> bool {
+        self.has(&Qualifier::Noref) || self.flags.default_on(PragmaDefault::Noref)
+    }
+
+    /// The name its `alias` attribute gives (FTEF-21.9).
+    #[must_use]
+    pub fn alias(&self) -> Option<&str> {
+        self.qualifiers.iter().find_map(|q| match q {
+            Qualifier::Alias(name) => Some(name.as_str()),
+            _ => None,
+        })
     }
 
     /// Whether the qualifier `q` marks it.
@@ -424,12 +466,72 @@ fn array_dim(declarator: &ast::Declarator, init: Option<&ast::Initializer>) -> O
     )
 }
 
-/// The qualifiers of the `Qualifier` children of `node` (FTEF-15.1).
+/// The qualifiers of the `Qualifier` children of `node` (FTEF-15.1), and of its attribute lists
+/// (FTEF-21.9), in order.
 fn qualifiers_of(node: &SyntaxNode) -> Vec<Qualifier> {
-    node.children()
-        .filter(|n| n.kind() == SyntaxKind::Qualifier)
-        .filter_map(|n| Qualifier::of(&first_word(&n), &token_text(&n)))
-        .collect()
+    let mut out = Vec::new();
+    for child in node.children() {
+        match child.kind() {
+            SyntaxKind::Qualifier => {
+                out.extend(Qualifier::of(&first_word(&child), &token_text(&child)))
+            }
+            SyntaxKind::AttributeList => {
+                let Some(list) = ast::AttributeList::cast(child) else {
+                    continue;
+                };
+                out.extend(list.attributes().filter_map(|a| attribute_qualifier(&a)));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The qualifier an attribute is (FTEF-21.9): `alias` the name or string it gives, `accumulate`,
+/// `eraseable` a `noref` and `__deprecated` its reason; `None` for an unknown one, which the
+/// parser warned of.
+fn attribute_qualifier(attribute: &ast::Attribute) -> Option<Qualifier> {
+    let name = attribute.name()?;
+    let word = name.text_lossless();
+    let mut arguments = attribute.arguments();
+    // `QCC_PR_CheckName` as the parser read the names, and `__deprecated` in any case after
+    // its `__` (FTEF-20.2).
+    let deprecated = word
+        .strip_prefix("__")
+        .is_some_and(|rest| rest.eq_ignore_ascii_case("deprecated"));
+    match if deprecated {
+        "__deprecated"
+    } else {
+        word.as_str()
+    } {
+        "alias" => {
+            let target =
+                arguments.find(|t| matches!(t.kind(), SyntaxKind::Name | SyntaxKind::StringLit))?;
+            let text = target.text_lossless();
+            Some(Qualifier::Alias(
+                if target.kind() == SyntaxKind::StringLit {
+                    text.trim_matches('"').to_owned()
+                } else {
+                    text
+                },
+            ))
+        }
+        "accumulate" => Some(Qualifier::Accumulate),
+        "eraseable" => Some(Qualifier::Noref),
+        "__deprecated" => {
+            let reason: String = arguments
+                .filter(|t| t.kind() == SyntaxKind::StringLit)
+                .map(|t| t.text_lossless().trim_matches('"').to_owned())
+                .collect();
+            Some(Qualifier::Deprecated(
+                attribute
+                    .arguments()
+                    .any(|t| t.kind() == SyntaxKind::StringLit)
+                    .then_some(reason),
+            ))
+        }
+        _ => None,
+    }
 }
 
 /// The parameters of a parameter list as FTEQCC's redeclaration rules compare them
@@ -723,8 +825,14 @@ pub struct RawLocal {
     /// The first array dimension, when the declarator has one (FTEF-19.8).
     pub array: Option<ArrayDim>,
     /// The byte offset where the innermost `for` statement it is defined in ends, after which
-    /// its name is no longer found (FTEF-19.19); `None` outside any `for`.
+    /// its name is no longer found (FTEF-19.19), or under `subscope` the block (FTEF-21.12);
+    /// `None` outside any.
     pub scope_end: Option<usize>,
+    /// The compiler flags and pragma defaults where its declaration starts (FTEF-21.1).
+    pub flags: CompilerFlags,
+    /// Whether it is a C function declaration with `qcfuncs` off, which declares a global
+    /// constant function rather than a local (FTEF-21.10).
+    pub global_function: bool,
 }
 
 impl RawLocal {
@@ -732,6 +840,13 @@ impl RawLocal {
     #[must_use]
     pub fn has(&self, q: &Qualifier) -> bool {
         self.qualifiers.contains(q)
+    }
+
+    /// Whether it is `static`: written so, or under `#pragma defaultstatic 1`, which
+    /// `nonstatic` does not undo in a body (FTEF-21.14).
+    #[must_use]
+    pub fn is_static(&self) -> bool {
+        self.has(&Qualifier::Static) || self.flags.default_on(PragmaDefault::Static)
     }
 }
 
@@ -753,7 +868,8 @@ fn deprecated_of(qualifiers: &[Qualifier]) -> Option<&str> {
         | Qualifier::Wrap
         | Qualifier::Weak
         | Qualifier::Accumulate
-        | Qualifier::Auto => None,
+        | Qualifier::Auto
+        | Qualifier::Alias(_) => None,
     })
 }
 
@@ -831,7 +947,7 @@ pub struct FileDecls {
 #[derive(Clone, Copy)]
 struct Cx<'a> {
     fte: bool,
-    flags: &'a [(usize, qc_lexer::LexFlags)],
+    flags: &'a [(usize, qc_syntax::CompilerFlags)],
     keywords: &'a [(usize, Keywords)],
 }
 
@@ -839,7 +955,28 @@ impl Cx<'_> {
     /// The lexer's flags at offset `at` (FTEF-12.12): the last that holds from at or before it,
     /// else the defaults.
     fn lex_flags_at(self, at: usize) -> qc_lexer::LexFlags {
-        qc_lexer::LexFlags::at(self.flags, at)
+        self.flags_at(at).lex()
+    }
+
+    /// The compiler flags at offset `at` (FTEF-21.1): the last that holds from at or before it,
+    /// else the defaults.
+    fn flags_at(self, at: usize) -> CompilerFlags {
+        CompilerFlags::at(self.flags, at)
+    }
+
+    /// The compiler flags at the first token of `scope` that starts at or after `at`, the token
+    /// FTEQCC looks at once it has read what ends at `at` (FTEF-21.1); the flags at `at` when
+    /// `scope` holds none.
+    fn next_flags(self, scope: &SyntaxNode, at: usize) -> CompilerFlags {
+        let next = std::iter::once(scope.clone())
+            .chain(scope.ancestors())
+            .find_map(|node| {
+                node.tokens()
+                    .find(|t| !t.kind().is_trivia() && t.span().start >= at)
+                    .map(|t| t.span().start)
+            })
+            .unwrap_or(at);
+        self.flags_at(next)
     }
 
     /// The keywords at offset `at` (FTEF-20.1).
@@ -855,14 +992,28 @@ impl Cx<'_> {
         }
     }
 
+    /// What a type is read with at offset `at`: its C type words' context and `qcfuncs`
+    /// (FTEF-20.9, FTEF-21.8).
+    fn type_context(self, at: usize) -> TypeContext {
+        TypeContext {
+            words: self.c_context(at),
+            qcfuncs: self.flags_at(at).has(FteFlag::Qcfuncs),
+        }
+    }
+
     /// The semantic type of `ty`, its C type words read as the parser read them (FTEF-20.9).
     fn ty(self, ty: &ast::Type) -> Type {
-        Type::from_ast(ty, &|at| self.c_context(at))
+        Type::from_ast(ty, &|at| self.type_context(at))
     }
 
     /// The parameter types of `list`, as [`Self::ty`] reads each.
     fn params(self, list: &ast::ParamList) -> Vec<Type> {
-        Type::params_of(list, &|at| self.c_context(at))
+        Type::params_of(list, &|at| self.type_context(at))
+    }
+
+    /// The function type returning `ret` with the parameters of `list` (FTEF-21.8).
+    fn function(self, ret: Type, list: &ast::ParamList) -> Type {
+        Type::function_of(ret, list, &|at| self.type_context(at))
     }
 
     /// Whether `token` is `keyword` spelled `word`, as the parser read it (FTEF-20.2).
@@ -895,7 +1046,7 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
     let fte = dialect.has_fteqcc_extensions();
     let cx = Cx {
         fte,
-        flags: parse.lex_flags(),
+        flags: parse.flags(),
         keywords: parse.keywords(),
     };
     for node in tree
@@ -915,7 +1066,7 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
     // Walk the top-level nodes in source order, so a name an `enum` or `typedef` declares is
     // visible to the declarations after it (QC-12.5, QC-23.3). Only an FTEQCC parse has
     // `enum` and `typedef` nodes.
-    for node in tree.syntax().children() {
+    for node in tree.items() {
         match node.kind() {
             SyntaxKind::Declaration => {
                 if let Some(decl) = ast::Declaration::cast(node) {
@@ -950,7 +1101,12 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                         record_fields(&field, &mut out.members);
                     }
                     // FTEF-6.1: `struct { ... } a[4], *p;` declares variables too.
+                    let first = out.decls.len();
                     lower_declarators(st.declarators(), &base, None, cx, &mut out.decls);
+                    let flags = cx.flags_at(st.syntax().span().start);
+                    for raw in out.decls.iter_mut().skip(first) {
+                        raw.flags = flags;
+                    }
                 }
             }
             SyntaxKind::AccessorDecl => {
@@ -985,6 +1141,15 @@ fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>) {
     let base = match (&base_node, &legacy_word) {
         (Some(node), _) => cx.ty(node),
         (None, Some(word)) => legacy_base(word, cx).unwrap_or(Type::Unknown),
+        // FTEF-21.13: `basetype = (flag_assume_integer?type_integer:type_float);`, as
+        // `QCC_PR_ParseEnum` starts.
+        (None, None)
+            if cx
+                .flags_at(en.syntax().span().start)
+                .has(FteFlag::AssumeInteger) =>
+        {
+            Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
+        }
         (None, None) => Type::Simple(SimpleType::Float),
     };
     // FTEF-19.10: a base type with no `:` before it is FTEQCC's legacy form, and `enum class`
@@ -1101,7 +1266,7 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, &mut out.decls);
     }
-    out.diagnostics.extend(typedef_diagnostics(td));
+    out.diagnostics.extend(typedef_diagnostics(td, cx));
     let Some(token) = td.name() else {
         return;
     };
@@ -1112,24 +1277,42 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
         .syntax()
         .children()
         .any(|n| n.kind() == SyntaxKind::ArraySuffix);
-    let pointer = td
-        .syntax()
-        .child_tokens()
-        .any(|t| t.kind() == SyntaxKind::Star);
-    decl.typedef = Some(
-        td.syntax()
+    // FTEF-21.7: the name is a declarator's, so its parameter lists and C's `(*name)(params)`
+    // make the function type it names.
+    let pointer = td.pointer_depth() > 0 || td.pointer_form().is_some_and(|stars| stars > 1);
+    let node = td.syntax().children().find_map(ast::Type::cast);
+    // FTEF-19.21: with its type left out, a typedef names an `int`.
+    let omitted = node.is_none()
+        && td
+            .syntax()
             .children()
-            .find_map(ast::Type::cast)
-            .filter(|_| !array && !pointer)
-            .map_or(Type::Unknown, |t| cx.ty(&t)),
-    );
+            .all(|n| !matches!(n.kind(), SyntaxKind::StructType | SyntaxKind::EnumDecl));
+    decl.typedef = Some(if omitted {
+        Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
+    } else {
+        node.filter(|_| !array && !pointer)
+            .map_or(Type::Unknown, |t| {
+                let mut ty = cx.ty(&t);
+                for list in td.prefix_params() {
+                    ty = cx.function(ty, &list);
+                }
+                if let Some(list) = td.params().filter(|_| td.pointer_form().is_some()) {
+                    ty = cx.function(ty, &list);
+                }
+                ty
+            })
+    });
     out.decls.push(decl);
 }
 
 /// FTEF-19.9: what is wrong with a `typedef` alone: `typedef;` and `typedef float;` define no
-/// type, a warning; a storage qualifier is "bad combination of modifiers with typedef", and
-/// `static`, `noref` and `nosave` too, as the defaults FTEQCC compares them with are off.
-fn typedef_diagnostics(td: &ast::TypedefDecl) -> Vec<Diagnostic> {
+/// type, a warning; a qualifier is "bad combination of modifiers with typedef", but `auto`,
+/// `register` and `nonstatic`, and `static`, `noref` and `nosave` when a `#pragma` makes them the
+/// default (FTEF-21.14). Before it, as for any declaration, `extern` on a type that is no
+/// function's is dropped, with its warning when `qcfuncs` is on (FTEF-21.10), and more than one
+/// storage class, `typedef` among them and `static` by its default, is "Conflicting storage
+/// classes." (FTEF-19.16).
+fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
     let Some(token) = td.name() else {
         return vec![Diagnostic {
             code: Code::W0215,
@@ -1137,17 +1320,70 @@ fn typedef_diagnostics(td: &ast::TypedefDecl) -> Vec<Diagnostic> {
             span: td.syntax().span(),
         }];
     };
-    if qualifiers_of(td.syntax()).is_empty() {
-        return Vec::new();
-    }
-    vec![Diagnostic {
-        code: Code::E0224,
-        message: format!(
-            "bad combination of modifiers with typedef (defining {})",
-            token.text_lossless()
-        ),
+    let mut qualifiers = qualifiers_of(td.syntax());
+    let flags = cx.flags_at(td.syntax().span().start);
+    let mut out = Vec::new();
+    let warn = |message: &str| Diagnostic {
+        code: Code::W0214,
+        message: message.to_owned(),
         span: token.span(),
-    }]
+    };
+    let ty_node = td.syntax().children().find_map(ast::Type::cast);
+    if qualifiers.contains(&Qualifier::Extern)
+        && ty_node.as_ref().is_some_and(|t| no_function(t, &cx.ty(t)))
+    {
+        qualifiers.retain(|q| *q != Qualifier::Extern);
+        let after = ty_node.as_ref().map_or(0, |t| t.syntax().span().end);
+        if cx.next_flags(td.syntax(), after).has(FteFlag::Qcfuncs) {
+            out.push(warn("extern keyword may only apply to qc functions."));
+        }
+    }
+    let has = |q: &Qualifier| qualifiers.contains(q);
+    let statics = has(&Qualifier::Static)
+        || (flags.default_on(PragmaDefault::Static) && !has(&Qualifier::Nonstatic));
+    let storage = 1_usize
+        .saturating_add(usize::from(has(&Qualifier::Extern)))
+        .saturating_add(usize::from(has(&Qualifier::Auto)))
+        .saturating_add(usize::from(statics))
+        .saturating_add(usize::from(has(&Qualifier::Shared)))
+        .saturating_add(usize::from(
+            qualifiers.iter().any(|q| matches!(q, Qualifier::Alias(_))),
+        ));
+    if storage > 1 {
+        out.push(warn("Conflicting storage classes."));
+    }
+    if has(&Qualifier::Const) && has(&Qualifier::Var) {
+        out.push(warn("Conflicting constness."));
+    }
+    let bad = qualifiers.iter().any(|q| match q {
+        Qualifier::Static => !flags.default_on(PragmaDefault::Static),
+        Qualifier::Noref => !flags.default_on(PragmaDefault::Noref),
+        Qualifier::Nosave => !flags.default_on(PragmaDefault::Nosave),
+        Qualifier::Auto | Qualifier::Nonstatic => false,
+        Qualifier::Extern
+        | Qualifier::Shared
+        | Qualifier::Const
+        | Qualifier::Var
+        | Qualifier::Used
+        | Qualifier::Strip
+        | Qualifier::Inline
+        | Qualifier::Wrap
+        | Qualifier::Weak
+        | Qualifier::Accumulate
+        | Qualifier::Deprecated(_)
+        | Qualifier::Alias(_) => true,
+    });
+    if bad {
+        out.push(Diagnostic {
+            code: Code::E0224,
+            message: format!(
+                "bad combination of modifiers with typedef (defining {})",
+                token.text_lossless()
+            ),
+            span: token.span(),
+        });
+    }
+    out
 }
 
 /// An FTEQCC class: its name as a type, and its parent and members (FTEF-9). A member
@@ -1233,7 +1469,7 @@ fn lower_member(
             continue;
         };
         declared = true;
-        let ty = c_style_function_type(&base, &declarator, cx).unwrap_or_else(|| base.clone());
+        let ty = declarator_type(&base, &declarator, cx);
         let kind = if !ty.is_function() {
             MemberKind::Field
         } else if virtual_ {
@@ -1348,12 +1584,66 @@ fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut Vec<RawDecl>
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
     // FTEF-15.1: the qualifiers before the type hold for every declarator.
-    let qualifiers = qualifiers_of(decl.syntax());
+    let mut qualifiers = qualifiers_of(decl.syntax());
+    // FTEF-21.10: `if (externfnc && !pr_scope && basetype->type != ev_function) { if
+    // (flag_qcfuncs) QCC_PR_ParseWarning(..., "extern keyword may only apply to qc
+    // functions."); externfnc=false; }`, read once the base type is.
+    let mut extern_warning = false;
+    if fte
+        && qualifiers.contains(&Qualifier::Extern)
+        && decl.ty().as_ref().is_none_or(|t| no_function(t, &base))
+    {
+        qualifiers.retain(|q| *q != Qualifier::Extern);
+        let after = decl.ty().map_or(0, |t| t.syntax().span().end);
+        extern_warning = cx.next_flags(decl.syntax(), after).has(FteFlag::Qcfuncs);
+    }
+    let flags = cx.flags_at(decl.syntax().span().start);
     for raw in out.iter_mut().skip(first) {
         if raw.enum_item.is_none() {
             raw.qualifiers.clone_from(&qualifiers);
+            raw.flags = flags;
+            raw.extern_warning = extern_warning;
         }
     }
+}
+
+/// Whether the declaration type `node`, lowered to `ty`, is surely no function's, which
+/// `QCC_PR_ParseDefs` tests its `extern` against (FTEF-21.10): a vanilla or C type word, a
+/// field or a pointer. A type a program names may be a function's typedef.
+fn no_function(node: &ast::Type, ty: &Type) -> bool {
+    match node {
+        ast::Type::Field(_) | ast::Type::Pointer(_) => true,
+        ast::Type::Function(_) => false,
+        ast::Type::Simple(_) => match ty {
+            Type::Simple(_) => true,
+            Type::Named(name) => CScalar::named(name).is_some(),
+            Type::Unknown | Type::Field(_) | Type::Function(_) | Type::Pointer(_) => false,
+        },
+    }
+}
+
+/// The type a declarator declares of a declaration whose type is `base` (FTEF-4.1, FTEF-21.7):
+/// a pointer for each `*` before it, a function returning the type so far for each parameter
+/// list before its name, and for C's function pointer `(*name)(params)` the function of those
+/// parameters, a pointer to it for each `*` past the first; then a C-style declarator's own list
+/// after the name (FTE-17.1).
+fn declarator_type(base: &Type, declarator: &ast::Declarator, cx: Cx<'_>) -> Type {
+    let mut ty = base.clone();
+    for _ in 0..declarator.pointer_depth() {
+        ty = Type::Pointer(std::rc::Rc::new(ty));
+    }
+    for list in declarator.prefix_params() {
+        ty = cx.function(ty, &list);
+    }
+    if let Some(list) = declarator.params() {
+        ty = cx.function(ty, &list);
+    }
+    if let Some(stars) = declarator.pointer_form() {
+        for _ in 1..stars {
+            ty = Type::Pointer(std::rc::Rc::new(ty));
+        }
+    }
+    ty
 }
 
 /// The names `declarators` declare with the type `base`, whose syntax is `ty` when it has
@@ -1366,24 +1656,24 @@ fn lower_declarators(
     out: &mut Vec<RawDecl>,
 ) {
     let fte = cx.fte;
+    let mut pointer_var = false;
     for declarator in declarators {
         let Some(name_token) = declarator.name() else {
             continue;
         };
         let name = name_token.text_lossless();
         let span = name_token.span();
-        // FTEF-4.1: `T *name` is a pointer.
-        let mut base = base.clone();
-        for _ in 0..declarator.pointer_depth() {
-            base = Type::Pointer(std::rc::Rc::new(base));
-        }
-        let base = &base;
-        // FTE-17.1: an FTEQCC C-style declarator `rettype name(params)` has its own
-        // `ParamList`; its type is the function type of the return type and those
-        // parameters, so it is the type a vanilla `rettype(params) name` declares.
-        let ty = c_style_function_type(base, &declarator, cx).unwrap_or_else(|| base.clone());
+        // FTEF-4.1, FTE-17.1, FTEF-21.7: the declarator's `*`s and parameter lists.
+        let ty = declarator_type(base, &declarator, cx);
         let init = declarator.initializer();
+        pointer_var |= declarator.pointer_form().is_some();
         let mut raw = RawDecl::new(name, span, ty.clone());
+        raw.pointer_var = pointer_var;
+        // FTEF-21.11: `flag_assumevar` as `QCC_PR_ParseDefs` reads it, after the `=`.
+        let after_eq = init
+            .as_ref()
+            .map_or(declarator.syntax().span().end, |i| i.syntax().span().start);
+        raw.assumevar = cx.flags_at(after_eq).has(FteFlag::Assumevar);
         raw.initialized = init.is_some();
         // QCD-3.6: the vanilla profile compares no two values, so it keeps none.
         raw.literal = if fte {
@@ -1448,18 +1738,6 @@ fn function_params(ty: &ast::Type) -> Option<ast::ParamList> {
         ast::Type::Function(func) => func.params(),
         ast::Type::Simple(_) | ast::Type::Field(_) | ast::Type::Pointer(_) => None,
     }
-}
-
-/// If `declarator` is an FTEQCC C-style function declarator (its own `(params)` list beside
-/// the name), the function type built from the return type `ret` and the parameter types;
-/// otherwise `None` (FTE-17.1).
-fn c_style_function_type(ret: &Type, declarator: &ast::Declarator, cx: Cx<'_>) -> Option<Type> {
-    let list = declarator.params()?;
-    Some(Type::Function(std::rc::Rc::new(FunctionType {
-        ret: ret.clone(),
-        params: cx.params(&list),
-        variadic: list.is_variadic(),
-    })))
 }
 
 /// The next-think name of a state header `[frame, next]`, if present (QC-13.6).
@@ -1565,12 +1843,30 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
 }
 
 fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
+    let first = body.locals.len();
     for stmt in block.statements() {
         lower_stmt(&stmt, cx, body);
     }
+    // FTEF-21.12: `if (pr_subscopedlocals) { //remove any new locals from the hashtable.`, read
+    // once the `}` is, with the token after it lexed.
+    let end = block.syntax().span().end;
+    let subscope_somewhere = cx
+        .flags
+        .iter()
+        .any(|(_, flags)| flags.has(FteFlag::PrSubscopedlocals));
+    if cx.fte
+        && subscope_somewhere
+        && cx
+            .next_flags(block.syntax(), end)
+            .has(FteFlag::PrSubscopedlocals)
+    {
+        for local in body.locals.iter_mut().skip(first) {
+            local.scope_end.get_or_insert(end);
+        }
+    }
     // FTEF-19.9: a `typedef` in a body is checked as one at file level.
     for td in block.syntax().children().filter_map(ast::TypedefDecl::cast) {
-        body.diagnostics.extend(typedef_diagnostics(&td));
+        body.diagnostics.extend(typedef_diagnostics(&td, cx));
         if let Some(name) = td.name() {
             body.typedefs
                 .push((name.text_lossless(), name.span().start));
@@ -1581,6 +1877,12 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
+        // FTEF-21.2: a body's `extern` block holds local definitions.
+        ast::Stmt::Extern(block) => {
+            for local in block.items().into_iter().filter_map(ast::LocalDecl::cast) {
+                lower_local(&local, cx, body);
+            }
+        }
         ast::Stmt::Block(block) => lower_block(block, cx, body),
         ast::Stmt::Return(ret) => {
             if let Some(expr) = ret.value() {
@@ -1665,7 +1967,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
         | ast::Stmt::Goto(_)
         | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
-        // code generation's (FTEF-19.17).
+        // code generation's (FTEF-19.30).
         ast::Stmt::Asm(asm) => {
             for local in asm.locals() {
                 lower_local(&local, cx, body);
@@ -1757,7 +2059,7 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
         let Some(name_token) = declarator.name() else {
             continue;
         };
-        let ty = c_style_function_type(&base, &declarator, cx).unwrap_or_else(|| base.clone());
+        let ty = declarator_type(&base, &declarator, cx);
         let init = declarator.initializer();
         // A local initialiser is a constant value; if it is a non-constant expression we
         // still record any names it uses, so references in it resolve (QC-12.5).
@@ -1784,6 +2086,13 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
         } else {
             None
         };
+        // FTEF-21.10: `if (!flag_qcfuncs && pr_scope) isconstant = externfnc = true; //in C, a
+        // locally defined function refers to an external one.`, at a C-style declarator's `(`.
+        let global_function = fte
+            && declarator.params().is_some_and(|list| {
+                !cx.flags_at(list.syntax().span().start)
+                    .has(FteFlag::Qcfuncs)
+            });
         body.locals.push(RawLocal {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1795,6 +2104,8 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
             literal,
             array: array_dim(&declarator, init.as_ref()),
             scope_end: None,
+            flags: cx.flags_at(local.syntax().span().start),
+            global_function,
         });
     }
 }
