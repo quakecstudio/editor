@@ -2466,8 +2466,9 @@ issues:
     main at 5026fa25; the nightly Fuzz workflow, run 39751193549
   depends: []
   deliverable:
-  - 'fuzz/fuzz_targets/qc_sema.rs: `ResolveOptions` built from its `Default`, naming only the fields the target varies, so a new field does not break the build'
+  - 'fuzz/fuzz_targets/qc_sema.rs: `ResolveOptions` built with a struct update from its `Default`, so a new field does not break the build; the leading byte''s bits 2 and 3 turn on `-Fcaseinsens` (FTEF-19.29) and `-Fno-qcfuncs` (FTEF-19.28), on the command line and in the resolver''s options, so the two new paths are fuzzed'
+  - 'fuzz/Cargo.lock: current with the workspace crates the targets build'
   acceptance:
-  - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR; a dispatched Fuzz workflow run on main after the merge passes'
+  - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR'
   verify:
   - cargo xtask fuzz --time 30
