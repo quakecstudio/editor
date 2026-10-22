@@ -523,7 +523,7 @@ fn declaration_qualifiers_parse() {
     assert_eq!(fte_errors("foo = 1;\n"), [Code::E0203]);
     // A C type word starts a declaration, so one with no name is the declaration's error.
     assert_eq!(fte_errors("int = 5;\n"), [Code::E0201]);
-    assert_eq!(fte_errors("unsigned;\n"), [Code::E0201]);
+    assert_eq!(fte_errors("unsigned = 2;\n"), [Code::E0201]);
 }
 
 // spec FTEF-19.21: after a qualifier the type may be left out, at file level and in a body
@@ -773,4 +773,33 @@ fn a_comma_may_end_the_declarators() {
     assert_eq!(names, [b"g".to_vec(), b"f".to_vec()]);
     fte_ok(&in_body("local float x, ;\nx = 1;"));
     assert!(!fte_errors("void() f = #5, , ;\n").is_empty());
+}
+
+// spec FTEF-19.26: under `qccx` `@e` is a unary term; without it `@` is none, and `^^` is no
+// operator
+#[test]
+fn at_under_qccx_and_caret_caret() {
+    let qccx = qc_lexer::LexFlags::default().with(qc_lexer::LexFlag::Qccx, true);
+    let source = b"float x;\nstring s;\nvoid() g = { s = @x; };\n";
+    let flagged = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[]);
+    assert_eq!(flagged.errors().count(), 0, "{:?}", flagged.diagnostics());
+    assert!(
+        flagged
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::UnaryExpr)
+    );
+    let plain = crate::parse_preprocessed(source, Dialect::Fteqcc);
+    assert!(plain.errors().next().is_some());
+    let caret = fte("float x;\nvoid() g = { x = x ^^ x; };\n");
+    assert!(caret.errors().next().is_some());
+    assert_eq!(
+        fte("float x;\nvoid() g = { x = x ^ x; };\n")
+            .errors()
+            .count(),
+        0
+    );
+    // The parse keeps the flags it was given.
+    assert_eq!(flagged.lex_flags_at(5), qccx);
+    assert_eq!(plain.lex_flags_at(5), qc_lexer::LexFlags::default());
 }

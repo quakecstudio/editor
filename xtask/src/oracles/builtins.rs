@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use qc_preproc::CommandLine;
 use qc_preproc::cond::fte_atoi;
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
@@ -42,6 +43,7 @@ use super::Oracles;
 
 mod declarations;
 mod directives;
+mod keywords;
 mod lexical;
 
 /// The recorded outcomes of the oracles, relative to the repository.
@@ -105,10 +107,15 @@ pub(crate) struct Case {
     pub(crate) encoding: Encoding,
     /// The files around it, or `None` for `t.qc` alone.
     pub(crate) project: Option<Project>,
-    /// Whether FTEQCC is given `-Werror` and the profile's warnings count as errors, so the
-    /// case compares the two compilers' warnings (FTEF-19).
-    pub(crate) werror: bool,
+    /// The `-W`, `-F` and `-K` options FTEQCC and the profile are both given, which set the
+    /// warnings and compiler flags (FTEF-14.72, FTEF-19.22); under [`WERROR_OPTIONS`] a warning
+    /// either compiler gives alone changes the outcome.
+    pub(crate) options: Vec<String>,
 }
+
+/// The options under which every warning is an error, but Q208, "no end_sys_fields defined",
+/// which every program without system definitions gets.
+pub(crate) const WERROR_OPTIONS: [&str; 2] = ["-Werror", "-Wno-Q208"];
 
 /// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
 /// encoding FTEQCC's file loader decodes (FTEF-14.64).
@@ -200,7 +207,7 @@ impl Case {
             source,
             encoding: Encoding::Utf8,
             project: None,
-            werror: false,
+            options: Vec::new(),
         }
     }
 
@@ -241,8 +248,9 @@ impl Case {
                 key.push_str(&format!("|progs.src {name}"));
             }
         }
-        if self.werror {
-            key.push_str("|-Werror");
+        if !self.options.is_empty() {
+            key.push('|');
+            key.push_str(&self.options.join(" "));
         }
         key
     }
@@ -1197,6 +1205,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(directives::cases());
     cases.extend(lexical::cases());
     cases.extend(declarations::cases());
+    cases.extend(keywords::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1556,10 +1565,11 @@ fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
         compiled: vec![FileId(0)],
         autoproto: None,
         include_dirs: case.include_dirs().map(PathBuf::from).collect(),
+        command_line: CommandLine::new(&case.options),
     });
     let errors = analysis
         .diagnostics()
-        .filter(|d| case.werror || d.diagnostic.code.is_error())
+        .filter(|d| d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
     (db, errors)
@@ -1695,11 +1705,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let mut command = if fteqcc {
         let mut command = Command::new(&oracles.fteqcc);
         command.arg("-Tid");
-        if case.werror {
-            // Q208, "no end_sys_fields defined", is what every program without system
-            // definitions gets.
-            command.args(["-Werror", "-Wno-Q208"]);
-        }
+        command.args(&case.options);
         command.args(case.include_dirs().map(|dir| format!("-I{dir}")));
         command
     } else {
@@ -1952,6 +1958,11 @@ fn show(case: &Case) -> String {
     let dialect = match case.encoding.name() {
         Some(encoding) => format!("{} {encoding}", dialect_name(case.dialect)),
         None => dialect_name(case.dialect).to_owned(),
+    };
+    let dialect = if case.options.is_empty() {
+        dialect
+    } else {
+        format!("{dialect} {}", case.options.join(" "))
     };
     match &case.project {
         None => format!("{dialect} {:?}", case.source),

@@ -31,7 +31,9 @@ use std::rc::Rc;
 use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 
 use crate::cond::{self, FteIfError, fte_white};
+use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
+use crate::fte_tables::TargetFormat;
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
     WarningSettings, fte_pragma, normalize,
@@ -1338,6 +1340,17 @@ pub(crate) struct FteState {
     pub(crate) warnings: WarningSettings,
     /// The compiler flags and keywords on (FTEF-12.11).
     pub(crate) flags: FlagSettings,
+    /// `qcc_targetformat`: the command line's, then each `#pragma TARGET`'s (FTEF-20.4).
+    pub(crate) target: TargetFormat,
+}
+
+impl FteState {
+    /// The keywords the parser reads from here (FTEF-20.1): the flags', under the target.
+    pub(crate) fn keywords(&self) -> Keywords {
+        self.flags
+            .keywords()
+            .with_hexen2_target(self.target.keeps_float())
+    }
 }
 
 /// The most directives one inside another's reading this profile runs: a deliberate divergence,
@@ -1360,10 +1373,14 @@ impl<L: Loader> Preprocessor<L> {
     pub(crate) fn fte_default_properties(&mut self) {
         // `QCC_SetDefaultProperties` sets no compiler flag: `QCC_main` set them once, before the
         // first pass, so a `#pragma flag` holds into the second (FTEF-12.11).
+        // FTEF-14.72: then `QCC_PR_CommandLinePrecompilerOptions` reads the command line again.
+        let defaults = FteState::default();
         self.fte = FteState {
             ifs: self.fte.ifs,
-            flags: self.fte.flags,
-            ..FteState::default()
+            warnings: self.command_line.warnings(defaults.warnings),
+            flags: self.command_line.flags(self.fte.flags),
+            target: self.command_line.target(),
+            ..defaults
         };
         // FTEF-14.68: FTEQCC prints a `-I` option's warning against no file, "cmdline".
         for dir in &self.command_line_dirs {
@@ -1893,12 +1910,18 @@ impl<L: Loader> Preprocessor<L> {
         } else if pragma.is("keyword") || pragma.is("flag") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
             let lexed_with = self.fte.flags.lex_flags();
-            for warning in self.fte.flags.apply_pragma(message) {
+            let (warnings, set) = self.fte.flags.apply_pragma(message);
+            for warning in warnings {
                 run.report(Code::W0113, warning, at);
             }
             let flags = self.fte.flags.lex_flags();
             if flags != lexed_with {
                 run.out.lex_flags.push((run.out.tokens.len(), flags));
+            }
+            // FTEF-20.1: the keywords it names, which a definition may have turned off since.
+            let edit = KeywordEdit::of_flags(&set, self.fte.keywords());
+            if !edit.is_empty() {
+                run.out.keywords.push((run.out.tokens.len(), edit));
             }
         } else if pragma.is("optimise") || pragma.is("optimize") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
@@ -1912,8 +1935,19 @@ impl<L: Loader> Preprocessor<L> {
             }
         } else if pragma.is("TARGET") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            for warning in fte_pragma::target_warnings(message) {
+            let (target, warnings) = fte_pragma::target_warnings(message);
+            for warning in warnings {
                 run.report(Code::W0117, warning, at);
+            }
+            // FTEF-20.4: `QCC_OPCodeSetTargetName` sets `qcc_targetformat`, which a definition
+            // named `float` reads.
+            if let Some(target) = target {
+                let was = self.fte.target.keeps_float();
+                self.fte.target = target;
+                if target.keeps_float() != was {
+                    let edit = KeywordEdit::hexen2_target(target.keeps_float());
+                    run.out.keywords.push((run.out.tokens.len(), edit));
+                }
             }
         } else if !fte_pragma::is_known(&pragma.name) {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));

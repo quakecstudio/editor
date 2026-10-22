@@ -56,7 +56,19 @@ label" warning `W0312`, "Goto statement with no matching label" error `E0308` an
 does not do anything" warning `W0313` (FTEF-18.23 to FTEF-18.25; QCD-4.8, QCD-7.29,
 QCD-7.30). FTEQCC knows every type name when it parses; this
 parser runs before names are known, so it tells a declaration or a cast from an expression by
-the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2).
+the shape of the tokens (FTEF-15.1, FTEF-16.1, FTEF-16.2). Under `qccx` an `@` before a term is a unary
+term (FTEF-19.26), and a parse keeps the compiler flags its tokens were lexed with
+(`Parse::lex_flags_at`), which a builtin's engine name is read with (FTEF-19.23).
+
+Under an FTEQCC dialect the parser reads each keyword with FTEQCC's keyword flags in force at
+its token (`docs/spec/dialect-fteqcc.md` FTEF-20): the marks `parse_preprocessed_flagged` is
+given, from the preprocessor's `#pragma keyword`, `#pragma flag` and command line, and the
+changes a definition named as a keyword makes with `kce` off (`Parse::keywords_at`). A `__`
+spelling is every keyword, a bare word only one whose flag is on, in any case under
+`caseinsens` (`qc_preproc::Keywords::checks`). With their flags on, or written with `__`, the
+statements `loop`, `until`, `state`, `thinktime`, `using`, `__exit` and `asm` parse, the last
+reporting an instruction that names no opcode as `E0511` (QCD-6.11); and a type followed by `;`
+defines nothing (FTEF-20.12).
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
@@ -69,7 +81,9 @@ and `qc-sema` names the type with it.
 - **Layer:** L2 syntax. It depends on `qc-lexer` and `qc-preproc`, whose FTEQCC directive reader
   ends a directive line.
 - **Spec sections:** the syntax-error codes QCD-6 and the recovery rule QCD-1 of
-  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). These are the sections
+  [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), and the parser's
+  keywords FTEF-20.1, FTEF-20.2 and FTEF-20.5 to FTEF-20.13 of
+  [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md). These are the sections
   the parser owns in full, so a readiness run attributes only them to it and every active
   statement of each is cited by a test here.
 - **Also cited here, in sections a higher layer completes:** the syntactic parts of QC-10,

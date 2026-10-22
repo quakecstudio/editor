@@ -1287,7 +1287,7 @@ fn what_the_profile_does_not_model() {
 // spec QCD-4.12: E0312 "class NAME has no super"
 // spec QCD-3.30: E0230 "accumulate applies only to functions, not NAME"
 // spec QCD-7.38: W0213 "Autocvar ..."
-// spec QCD-7.47: W0221 "\"NAME\" keyword used as variable name - coexisting"
+// spec QCD-7.67: W0221 "\"NAME\" keyword used as variable name - coexisting"
 #[test]
 fn intrinsics_autocvars_keywords_and_qualifiers() {
     let messages = |source: &str| -> Vec<String> {

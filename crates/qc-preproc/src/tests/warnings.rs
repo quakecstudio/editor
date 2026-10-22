@@ -51,11 +51,18 @@ fn flag_pragmas_warn_as_fteqcc_does() {
     assert!(warned("#pragma keyword off class\n").is_empty());
     let mut settings = crate::FlagSettings::default();
     assert!(settings.is_on(FteFlag::Qcfuncs) && !settings.is_on(FteFlag::Hashonly));
-    assert!(settings.apply_pragma(b"on hashonly").is_empty());
+    assert_eq!(
+        settings.apply_pragma(b"on hashonly"),
+        (Vec::new(), vec![FteFlag::Hashonly])
+    );
     assert!(settings.is_on(FteFlag::Hashonly));
-    assert!(settings.apply_pragma(b"off qcfuncs").is_empty());
+    assert_eq!(
+        settings.apply_pragma(b"off qcfuncs for"),
+        (Vec::new(), vec![FteFlag::Qcfuncs, FteFlag::ForKeyword])
+    );
     assert!(!settings.is_on(FteFlag::Qcfuncs));
-    assert_eq!(settings.apply_pragma(b"on int").len(), 1);
+    let (warnings, set) = settings.apply_pragma(b"on int");
+    assert_eq!((warnings.len(), set), (1, Vec::new()));
 }
 
 // spec FTEF-12.11: `optimise`, `opcode` and `TARGET` warn for what FTEQCC's tables do not hold,

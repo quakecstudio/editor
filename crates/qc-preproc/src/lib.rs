@@ -17,8 +17,10 @@
 
 pub mod cond;
 mod fte_directive;
+mod fte_keywords;
 mod fte_line;
 mod fte_macro;
+mod fte_options;
 mod fte_pragma;
 pub(crate) mod fte_tables;
 mod fte_warning;
@@ -31,9 +33,11 @@ pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
     qcc_load_in_place, skip_script_line,
 };
+pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
+pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
-pub use fte_tables::FteFlag;
+pub use fte_tables::{FteFlag, is_opcode_name};
 pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
 pub use source::{
     FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
@@ -155,6 +159,11 @@ pub struct FileOutput {
     /// 0, and after each `#pragma flag` that changes them: the index of the first token after it
     /// and the flags from there on (FTEF-12.12), for a reader that lexes the tokens' text again.
     pub lex_flags: Vec<(usize, LexFlags)>,
+    /// In an FTEQCC dialect, the keywords the parser reads where the file starts, at token 0, and
+    /// each change a `#pragma keyword`, `#pragma flag` or `#pragma TARGET` makes to them: the
+    /// index of the first token after it and the change, which sets only what the pragma names
+    /// (FTEF-20.1).
+    pub keywords: Vec<(usize, KeywordEdit)>,
 }
 
 #[derive(Debug)]
@@ -869,6 +878,9 @@ pub struct Preprocessor<L> {
     /// The module's include directories, FTEQCC's `-I` options (FTEF-14.49), as FTEQCC keeps
     /// them, as bytes.
     command_line_dirs: Vec<Vec<u8>>,
+    /// In an FTEQCC dialect, the command line's options that set the warnings and the compiler
+    /// flags, read again each time the settings are reset (FTEF-14.72).
+    command_line: CommandLine,
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
@@ -915,6 +927,7 @@ impl<L: Loader> Preprocessor<L> {
             frames_full: false,
             fte: FteState::default(),
             command_line_dirs: Vec::new(),
+            command_line: CommandLine::default(),
             include_dirs: Vec::new(),
             macro_edits: 0,
         }
@@ -964,6 +977,21 @@ impl<L: Loader> Preprocessor<L> {
         self.dialect = dialect;
         if dialect.has_fteqcc_extensions() {
             self.fte_default_properties();
+        }
+        self
+    }
+
+    /// Gives FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and the
+    /// compiler flags (FTEF-14.72), after the dialect: they hold from the first file, and are
+    /// read again each time `QCC_SetDefaultProperties` resets the settings. Under the vanilla
+    /// dialect they change nothing.
+    #[must_use]
+    pub fn with_command_line(mut self, command_line: CommandLine) -> Self {
+        self.command_line = command_line;
+        if self.dialect.has_fteqcc_extensions() {
+            self.fte.warnings = self.command_line.warnings(WarningSettings::default());
+            self.fte.flags = self.command_line.flags(self.fte.flags);
+            self.fte.target = self.command_line.target();
         }
         self
     }
@@ -1068,6 +1096,9 @@ impl<L: Loader> Preprocessor<L> {
         run.out.warnings.extend(warnings.map(|w| (0, w)));
         if self.dialect.has_fteqcc_extensions() {
             run.out.lex_flags.push((0, self.fte.flags.lex_flags()));
+            run.out
+                .keywords
+                .push((0, KeywordEdit::whole(self.fte.keywords())));
         }
         let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());

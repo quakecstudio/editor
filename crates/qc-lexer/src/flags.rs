@@ -22,6 +22,9 @@ pub enum LexFlag {
     AssumeInt,
     /// `macroinstrings`: `#NAME` in a string is the value of the macro `NAME`.
     MacroInStrings,
+    /// `assumedouble`: a number with a `.` is a `double` (FTEF-19.24). The lexer reads it as it
+    /// reads a float; the semantic model types it.
+    AssumeDouble,
 }
 
 impl LexFlag {
@@ -35,6 +38,7 @@ impl LexFlag {
             Self::Ssp => 16,
             Self::AssumeInt => 32,
             Self::MacroInStrings => 64,
+            Self::AssumeDouble => 128,
         }
     }
 }
@@ -64,6 +68,18 @@ impl LexFlags {
             self.bits & !flag.bit()
         };
         Self { bits }
+    }
+
+    /// The flags in force at byte `at` of a text whose flags change at `marks`, each the byte it
+    /// holds from and the flags, in order: the last mark at or before `at`, else the defaults
+    /// (FTEF-12.12).
+    #[must_use]
+    pub fn at(marks: &[(usize, Self)], at: usize) -> Self {
+        marks
+            .iter()
+            .take_while(|(from, _)| *from <= at)
+            .last()
+            .map_or_else(Self::default, |(_, flags)| *flags)
     }
 
     /// Whether `flag` is on.

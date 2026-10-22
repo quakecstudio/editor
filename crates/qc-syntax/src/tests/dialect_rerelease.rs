@@ -169,7 +169,7 @@ fn fte_builtin(source: &str) -> (Option<String>, Option<String>) {
     };
     (
         builtin.number().map(|t| t.text_lossless()),
-        builtin.engine_name(),
+        builtin.engine_name(qc_lexer::LexFlags::default()),
     )
 }
 
@@ -543,7 +543,7 @@ fn preprocessed_text_is_lexed_with_its_flags() {
     use qc_lexer::{LexFlag, LexFlags};
     let source = b"string s = \"a\":\"b\";\nstring t = \"a\":\"b\";\n";
     let errors = |flags: &[(usize, LexFlags)]| -> Vec<Code> {
-        crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, flags)
+        crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, flags, &[])
             .errors()
             .map(|d| d.code)
             .collect()
@@ -556,11 +556,11 @@ fn preprocessed_text_is_lexed_with_its_flags() {
     assert!(!errors(&[(0, LexFlags::default()), (second_line, qccx)]).is_empty());
     assert!(!errors(&[(0, qccx), (second_line, LexFlags::default())]).is_empty());
     assert!(errors(&[(0, qccx), (second_line, qccx)]).is_empty());
-    let parsed = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)]);
+    let parsed = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[]);
     assert_eq!(parsed.syntax().text(), source);
     let ssp = LexFlags::default().with(LexFlag::Ssp, true);
     let powers = |flags: &[(usize, LexFlags)]| {
-        crate::parse_preprocessed_flagged(b"float x = 2 ** 3;\n", Dialect::Fteqcc, flags)
+        crate::parse_preprocessed_flagged(b"float x = 2 ** 3;\n", Dialect::Fteqcc, flags, &[])
             .syntax()
             .tokens()
             .filter(|t| t.kind() == SyntaxKind::StarCaret)
@@ -574,6 +574,7 @@ fn preprocessed_text_is_lexed_with_its_flags() {
         b"string s = \"#X\";\n",
         Dialect::Fteqcc,
         &[(0, strings)],
+        &[],
     );
     assert!(parsed.diagnostics().is_empty());
 }

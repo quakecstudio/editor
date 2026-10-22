@@ -1664,6 +1664,8 @@ issues:
   - P2-116
   - P2-117
   - P2-118
+  - P2-119
+  - P2-121
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2360,4 +2362,47 @@ issues:
   - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
   verify:
   - cargo test -p qc-sema -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-119
+  title: Read FTEQCC's keyword flags in the parser
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-118 (#549). FTEQCC's keywords are flags of `compiler_flag[]` (`keyword_class`, `keyword_for`, `keyword_long` and about 70 more, `qccmain.c`), which `#pragma keyword`, `#pragma flag` and the `-K` and `-F` options turn on and off, and which `-std=` sets as a group. A disabled keyword is a name to `QCC_PR_CheckKeyword` and `QCC_PR_ParseStatement`, and its `__` spelling still a keyword. The preprocessor already tracks them (`qc_preproc::FlagSettings`, FTEF-12.11), but the parser reads FTEQCC's default keywords everywhere (FTEF-2.7, FTEF-19.1, FTEF-12.15), so a program that turns a keyword on or off is read as if it had not.
+  depends:
+  - P2-116
+  deliverable:
+  - 'crates/qc-preproc: the keyword flags marked by token in `FileOutput`, as `lex_flags` are; crates/qc-syntax: the parser reads each keyword with the flags in force at its token (declarations, statements, qualifiers, the C type words of `c_scalar`), ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, with spec statements replacing FTEF-12.15''s keyword clause'
+  acceptance:
+  - 'A statement per keyword group and a citing test; `#pragma keyword enable long` makes `long x;` a definition and `#pragma keyword disable for` makes `for` a name, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases that turn keywords on and off'
+  verify:
+  - cargo test -p qc-preproc -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-121
+  title: Read FTEQCC's extern "C" and extern "QC" blocks
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-119 (#554). `QCC_PR_ParseDefs` reads `extern` followed by a string, as its first qualifier, as a block of definitions (`extern "C" { ... }`) or one definition (`extern "C" float x;`), and for `"C"` (in any case) turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and `subscope` on until the block ends, and for `"QC"` turns `qcfuncs` on, restoring them after (`//this C++ism is for parsing types`). The pinned FTEQCC compiles `extern "C" { float x; }`; the profile's parser reads the string as no type. The flags change how the tokens inside are lexed (FTEF-12.12) and how definitions are made (FTEF-19.3), so the parser needs to lex the block again with them, which the preprocessor's marks cannot say, as the block is the parser's.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax and crates/qc-sema: `extern "C"` and `extern "QC"` blocks and single definitions parsed, the tokens inside lexed and the definitions made with the flags they set, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_PR_ParseDefs`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l3.md: a row for the `extern` string branch of `QCC_PR_ParseDefs`'
+  acceptance:
+  - 'A statement and a citing test for each flag the block sets; `extern "C" { float x = 5; }` makes `x` a variable of an integer value and `extern "QC" { ... }` reads its strings with `qcfuncs` on, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of both blocks'
+  verify:
+  - cargo test -p qc-syntax -p qc-sema
   - cargo xtask oracles builtins

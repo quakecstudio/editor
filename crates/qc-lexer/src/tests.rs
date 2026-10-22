@@ -1824,16 +1824,20 @@ fn each_prefix_writes_its_bytes() {
 // that is not one whole string part
 #[test]
 fn a_string_part_gives_its_bytes() {
-    use super::fteqcc_string_bytes;
-    assert_eq!(fteqcc_string_bytes(b"\"ab\""), Some(b"ab".to_vec()));
-    assert_eq!(fteqcc_string_bytes(b"L\"ab\""), Some(b"ab".to_vec()));
+    use super::{LexFlags, fteqcc_string_bytes};
+    let fteqcc_string_bytes_default = |text: &[u8]| fteqcc_string_bytes(text, LexFlags::default());
+    assert_eq!(fteqcc_string_bytes_default(b"\"ab\""), Some(b"ab".to_vec()));
     assert_eq!(
-        fteqcc_string_bytes(b"u8\"\\[\""),
+        fteqcc_string_bytes_default(b"L\"ab\""),
+        Some(b"ab".to_vec())
+    );
+    assert_eq!(
+        fteqcc_string_bytes_default(b"u8\"\\[\""),
         Some(b"\xee\x80\x90".to_vec())
     );
-    assert_eq!(fteqcc_string_bytes(b"\"ab\" "), None);
-    assert_eq!(fteqcc_string_bytes(b"ab"), None);
-    assert_eq!(fteqcc_string_bytes(b""), None);
+    assert_eq!(fteqcc_string_bytes_default(b"\"ab\" "), None);
+    assert_eq!(fteqcc_string_bytes_default(b"ab"), None);
+    assert_eq!(fteqcc_string_bytes_default(b""), None);
 }
 
 // spec FTEF-13.7: a string on a directive's line is no part an `L` on a later line joins, though

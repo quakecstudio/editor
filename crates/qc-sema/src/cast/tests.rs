@@ -4,6 +4,10 @@
 
 use std::rc::Rc;
 
+use qc_syntax::c_scalar::CContext;
+
+use qc_lexer::{LexFlag, LexFlags};
+
 use super::{ConstType, Kind, Literal, Source};
 use crate::ty::{FunctionType, SimpleType, Type};
 
@@ -11,8 +15,9 @@ fn simple(ty: SimpleType) -> Type {
     Type::Simple(ty)
 }
 
-fn named(name: &str) -> Type {
-    Type::Named(Rc::from(name))
+/// The type lowering makes of the type words `words` under FTEQCC's defaults.
+fn named(words: &str) -> Type {
+    Type::named(words, CContext::default())
 }
 
 // spec FTEF-3.1: `QCC_PR_LexNumber` types a number by its fraction and suffix, a `d` being a
@@ -36,7 +41,11 @@ fn numbers_are_typed_by_their_suffix() {
         ("010", ConstType::Float),
         ("-5i", ConstType::Integer),
     ] {
-        assert_eq!(Literal::of_fteqcc_number(text).ty, ty, "{text}");
+        assert_eq!(
+            Literal::of_fteqcc_number(text, LexFlags::default()).ty,
+            ty,
+            "{text}"
+        );
     }
 }
 
@@ -59,12 +68,16 @@ fn null_is_an_integer_or_float_zero() {
         ("0.5", false),
         ("0x10", false),
     ] {
-        assert_eq!(Literal::of_fteqcc_number(text).null, null, "{text}");
+        assert_eq!(
+            Literal::of_fteqcc_number(text, LexFlags::default()).null,
+            null,
+            "{text}"
+        );
     }
 }
 
 fn literal(text: &str) -> Source<'static> {
-    Source::Literal(Literal::of_fteqcc_number(text))
+    Source::Literal(Literal::of_fteqcc_number(text, LexFlags::default()))
 }
 
 fn constant(ty: ConstType) -> Source<'static> {
@@ -264,5 +277,69 @@ fn type_names_are_fteqcc_spellings() {
     assert_eq!(
         Type::Pointer(Rc::new(simple(SimpleType::Entity))).fteqcc_name(),
         "entity*"
+    );
+}
+
+// spec FTEF-19.24: under `assumeint` a number with no suffix is an integer type by its magnitude,
+// and under `assumedouble` a number with a `.` is a double
+#[test]
+fn assumed_number_types() {
+    let int = LexFlags::default().with(LexFlag::AssumeInt, true);
+    let double = LexFlags::default().with(LexFlag::AssumeDouble, true);
+    for (text, ty) in [
+        ("5", ConstType::Integer),
+        ("-5", ConstType::Integer),
+        ("2147483647", ConstType::Integer),
+        ("2147483648", ConstType::Uint),
+        ("0xffffffff", ConstType::Uint),
+        ("4294967296", ConstType::Int64),
+        ("0x7fffffffffffffff", ConstType::Int64),
+        ("0x8000000000000000", ConstType::Uint64),
+        ("010", ConstType::Integer),
+        ("5u", ConstType::Uint),
+        ("5d", ConstType::Double),
+        ("5.5", ConstType::Float),
+    ] {
+        assert_eq!(Literal::of_fteqcc_number(text, int).ty, ty, "{text}");
+    }
+    assert!(Literal::of_fteqcc_number("0", int).null);
+    assert_eq!(
+        Literal::of_fteqcc_number("5.5", double).ty,
+        ConstType::Double
+    );
+    assert!(!Literal::of_fteqcc_number("0.0", double).null);
+    assert_eq!(Literal::of_fteqcc_number("5", double).ty, ConstType::Float);
+    assert_eq!(
+        Literal::of_fteqcc_number("5i", double).ty,
+        ConstType::Integer
+    );
+    // An `f` suffix is a float under either.
+    assert_eq!(Literal::of_fteqcc_number("5f", int).ty, ConstType::Float);
+    assert_eq!(Literal::of_fteqcc_number("5F", int).ty, ConstType::Float);
+    assert_eq!(
+        Literal::of_fteqcc_number("1.5f", double).ty,
+        ConstType::Float
+    );
+    assert_eq!(
+        Literal::of_fteqcc_number("1.5d", LexFlags::default()).ty,
+        ConstType::Double
+    );
+}
+
+// spec FTEF-19.24: one `l` is 64 bits, or two under `ILP32` (FTEF-12.12)
+#[test]
+fn long_suffixes_and_ilp32() {
+    let ilp32 = LexFlags::default().with(LexFlag::Ilp32, true);
+    let plain = LexFlags::default();
+    assert_eq!(Literal::of_fteqcc_number("5l", plain).ty, ConstType::Int64);
+    assert_eq!(
+        Literal::of_fteqcc_number("5l", ilp32).ty,
+        ConstType::Integer
+    );
+    assert_eq!(Literal::of_fteqcc_number("5ul", ilp32).ty, ConstType::Uint);
+    assert_eq!(Literal::of_fteqcc_number("5ll", ilp32).ty, ConstType::Int64);
+    assert_eq!(
+        Literal::of_fteqcc_number("5llu", ilp32).ty,
+        ConstType::Uint64
     );
 }

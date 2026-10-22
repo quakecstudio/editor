@@ -25,12 +25,14 @@ mod dialect_statements;
 mod expansion;
 mod incremental;
 mod initialiser_uses;
+mod keywords;
 mod members;
 mod navigation;
 mod properties;
 mod recovery;
 mod resolution;
 mod reviewer;
+mod settings;
 mod types;
 
 use crate::db::Db;

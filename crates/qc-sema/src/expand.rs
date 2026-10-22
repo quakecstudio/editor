@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_lexer::TokenKind;
-use qc_preproc::{FileSpan, Loader, PpToken, Preprocessor};
+use qc_preproc::{CommandLine, FileSpan, Loader, PpToken, Preprocessor, WarningSettings};
 use qc_project::{FileGraph, Form, Module, Via};
 
 use crate::resolve::FileDiagnostic;
@@ -41,6 +41,9 @@ pub struct ModuleInput {
     pub autoproto: Option<bool>,
     /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
     pub include_dirs: Vec<PathBuf>,
+    /// FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and compiler
+    /// flags the module is read with (FTEF-14.72); none by default.
+    pub command_line: CommandLine,
 }
 
 impl ModuleInput {
@@ -134,6 +137,26 @@ pub(crate) struct Rendered {
     /// The compiler flags FTEQCC's lexer read: the rendered offset from which each holds, and the
     /// flags (FTEF-12.12).
     pub(crate) lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// Under FTEQCC, the warning settings: the rendered offset from which each holds, and the
+    /// settings (FTEF-14.63, FTEF-19.22); empty under the vanilla dialect.
+    pub(crate) warnings: Vec<(usize, WarningSettings)>,
+    /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
+    /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
+    pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+}
+
+/// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
+/// that starts at or before it; `None` when there are none, as under the vanilla dialect.
+pub(crate) fn settings_at(
+    warnings: &[(usize, WarningSettings)],
+    at: usize,
+) -> Option<WarningSettings> {
+    warnings
+        .iter()
+        .take_while(|(from, _)| *from <= at)
+        .last()
+        .or_else(|| warnings.first())
+        .map(|(_, settings)| *settings)
 }
 
 /// The preprocessed module: each compiled file rendered, and the preprocessor's diagnostics
@@ -191,6 +214,7 @@ pub(crate) fn preprocess(
     };
     let mut pp = Preprocessor::new(loader)
         .with_dialect(dialect)
+        .with_command_line(input.command_line.clone())
         .with_include_dirs(&input.include_dirs);
     let (mut first, pragma, late) = run(&mut pp, files, input);
     if !pragma.or(input.autoproto).unwrap_or(autoproto) {
@@ -303,6 +327,16 @@ fn run<L: Loader>(
             .lex_flags
             .iter()
             .map(|&(token, flags)| (offset_of(&rendered, token), flags))
+            .collect();
+        rendered.warnings = output
+            .warnings
+            .iter()
+            .map(|&(token, settings)| (offset_of(&rendered, token), settings))
+            .collect();
+        rendered.keywords = output
+            .keywords
+            .iter()
+            .map(|&(token, edit)| (offset_of(&rendered, token), edit))
             .collect();
         out.files.push(rendered);
     }
