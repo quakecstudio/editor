@@ -500,7 +500,7 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   `#pragma TARGET fte_99999`. Two warnings depend on what the compiler has made so far, which the
   preprocessor does not know, and are not modelled: `optimise` inside a function ("unable to
   change optimisation options mid-function") and a `TARGET` that switches to or from Hexen II
-  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.15).
+  after the first statement. The pragmas' effects on the build are the compiler's (FTEF-12.16).
 - **FTEF-12.12** Seven of the flags `#pragma flag` sets (FTEF-12.11) change how FTEQCC lexes,
   and hold from the token after the directive: `QCC_PR_Lex` reads each token as the parser asks
   for it, with the flags of that moment (`qc_lexer::LexFlags`, `qc_lexer::lex_flagged`). The
@@ -546,15 +546,19 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   line` change nothing (`if (!flag_nopragmafileline)`).
 - **FTEF-12.14** **Withdrawn** (P2-118, #549): it said `caseinsensitive` and `assumedouble`
   are not modelled, but the semantic model reads them (FTEF-19.24, FTEF-19.25), and the command
-  line that sets `acc` and `caseinsens` is read (FTEF-14.71). Replaced by FTEF-12.15.
-- **FTEF-12.15** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
+  line that sets `acc` and `caseinsens` is read (FTEF-14.71). Replaced by FTEF-12.15, itself
+  replaced by FTEF-12.16.
+- **FTEF-12.15** **Withdrawn** (P2-119, #554): it said the keyword flags are not read, but the
+  parser reads each keyword with the flags in force at its token (FTEF-20). Replaced by
+  FTEF-12.16.
+- **FTEF-12.16** The other flags `qcc_pr_lex.c` reads are not modelled, as they belong to the
   compiler or its console output rather than to the tokens or the definitions: `acc` (its `|`
-  in a string as a line feed, and reacc's type names, FTEF-19.17); the keyword flags, which a
-  `#pragma keyword` or a `-K` option sets and this profile's parser does not read, keeping
-  FTEQCC's default keywords (FTEF-2.7, FTEF-19.1); `cpriority`, which reorders `pr_opcodes` for
-  the parser's operator priorities; and `msvcstyle` and `debugmacros`, which change only what
-  FTEQCC prints. A pragma emits no progs output of its own (as FTE-16.3); its effects on the
-  output (the target format, the CRC, the flags) are realised by codegen (L-01).
+  in a string as a line feed, and reacc's type names and keywords, FTEF-19.17, FTEF-20.13);
+  `cpriority`, which reorders `pr_opcodes` for the parser's operator priorities; and
+  `msvcstyle` and `debugmacros`, which change only what FTEQCC prints. The keyword flags, which
+  `#pragma keyword` and `#pragma flag` set with the others, are FTEF-20's. A pragma emits no
+  progs output of its own (as FTE-16.3); its effects on the output (the target format, the CRC,
+  the flags) are realised by codegen (L-01).
 
 ## FTEF-13 Further tokens
 
@@ -1552,7 +1556,9 @@ profile the preprocessor reads them as FTEQCC does.
   only the white space after its name (`qcc_iswhite(pr_file_p[a])`), cannot reach it; a pragma line
   of 1024 bytes or more is that undefined behaviour, which this profile reports as an error
   (FTEF-14.66).
-- **FTEF-14.71** FTEQCC's command line sets the warnings and compiler flags each time
+- **FTEF-14.71** **Withdrawn** (P2-119, #554): it said `-std=` is not read, but `-std=` sets
+  the keywords the parser reads (FTEF-20.1). Replaced by FTEF-14.72.
+- **FTEF-14.72** FTEQCC's command line sets the warnings and compiler flags each time
   `QCC_SetDefaultProperties` resets them, before the first pass and the second autoprototyping
   pass, as it ends by calling `QCC_PR_CommandLinePrecompilerOptions`, which reads every
   argument in order, but the value `-srcfile`, `-src`, `-o`, the nine `-max_` options and a bare
@@ -1573,10 +1579,49 @@ profile the preprocessor reads them as FTEQCC does.
   of `compiler_flag[]` whose abbreviation it names in any case, whether or not the row has
   `FLAG_MIDCOMPILE`, so only the command line sets `caseinsens`. The command line's warnings for
   arguments it does not recognise ("Unrecognised warning parameter", printed against "cmdline")
-  are not reported: they belong to no file of the module. The `/W`, `/F` and `/K` spellings
-  FTEQCC reads only on Windows (`WINDOWSARG`) and `-std=`, which sets every flag and keyword to
-  its default and then a dialect's, are not read: the pinned oracle is not built for Windows,
-  and this profile is read with its own dialect.
+  are not reported: they belong to no file of the module. A `-F` NAME no row of `compiler_flag[]`
+  has is a compatibility flag: `short-logic` sets the `lo` optimisation, `correct-logic`
+  `ifvector` and `vectorlogic`, and `false-empty-strings` `ifstring`, each turned off after
+  `no-`. An argument that starts with `-std=` in any case sets every flag and keyword to its
+  default (`*compiler_flag[p].enabled = !!(compiler_flag[p].flags & FLAG_ASDEFAULT)`) and then
+  a dialect's, in order with the `-K` and `-F` options: `C`, `c89`, `c90`, `c99`, `c11` and
+  `c17` in any case "set up for greatest C compatibility" (`for`, `goto`, `extern`, `static`,
+  `auto`, `switch`, `case`, `default`, `int`, `typedef`, `struct`, `union`, `enum`, `float`,
+  `double`, `long`, `short`, `char`, `signed`, `unsigned`, `register` and `volatile` on; `asm`,
+  `accessor`, `class`, `var`, `inout`, `optional`, `state`, `inline`, `nosave`, `shared`,
+  `noref`, `unused`, `used`, `local`, `nonstatic`, `ignore`, `strip`, `vector`, `entity`,
+  `string`, `integer`, `enumflags`, `thinktime`, `until` and `loop` off; `ILP32`, `lo`,
+  `assumevar`, `subscope`, `cpriority`, `assumeint`, `assumedouble` and `iffloat` on and
+  `qcfuncs`, `macroinstrings` and `boundchecks` off; and F302 a warning, Q101, Q105 and Q106
+  errors, and F306, `octal` and Q205 ignored), `c++` the same with `class` and `inline` then
+  on; `c23` none of them, being missing from the test of the C names; and, compared exactly,
+  `qccx` (`qccx` on, F313 and F314 ignored), `preqcc` (`hashonly` and `macroinstrings` on),
+  `reacc` (`acc` on, `macroinstrings` off), `frikqcc` (`state` on, `macroinstrings` off),
+  `fteqcc` (none), `qcc` and `id` (`ifvector`, `vectorlogic`, `asm`, `break`, `continue`, `for`,
+  `goto`, `const`, `var`, `inout`, `optional`, `state`, `inline`, `nosave`, `extern`, `shared`,
+  `noref`, `unused`, `used`, `static`, `nonstatic`, `ignore`, `strip`, `switch`, `case`,
+  `default`, `accessor`, `class`, `vector`, `entity`, `float`, `string`, `int`, `integer`,
+  `typedef`, `struct`, `union`, `enum`, `enumflags`, `thinktime`, `until`, `loop`, `wrap` and
+  `weak` off, and F320 an error), `hcc` and `hexenc` (the same off but `break`, `switch`,
+  `case` and `default`, with `macroinstrings` off and `thinktime`, `until`, `loop`, `switch`,
+  `case`, `default` and `break` on), and `gmqcc` (`ifvector`, `vectorlogic`, `ssp`,
+  `attributes`, `assumevar`, `subscope`, `cpriority`, `allowuninit`, `reciprocal-math`,
+  `undefwordsize` and `lo` on, `boundchecks` and `macroinstrings` off, `asm`, `inout`,
+  `optional`, `state`, `inline`, `nosave`, `extern`, `shared`, `unused`, `used`, `nonstatic`,
+  `ignore`, `strip`, `accessor`, `class`, `vector`, `entity`, `float`, `string`, `int`,
+  `integer`, `struct`, `union`, `enumflags`, `thinktime`, `until`, `loop`, `wrap` and `weak`
+  off and `enum`, `break`, `continue`, `for`, `goto`, `typedef`, `switch`, `case`, `default`,
+  `const`, `var`, `static` and `noref` on; and F208, F319, Q205, F312, F307, F320, F322, F302,
+  F321, `octal`, Q208, F211 and F333 ignored and Q106 an error); any other is "Unrecognised std
+  parameter", the flags already at their defaults. The macros `-std=` defines for the C dialects
+  (`__STDC_HOSTED__`, `__STDC_VERSION__` and the rest) are not read, as the profile reads no
+  `-D` of the command line: a module's defines are the project graph's (PRJ-5.4). The module is
+  compiled as `fteqcc -Tid` with these options after it (PRJ-3.4), so its target is the
+  standard one, which the `-h2`, `-fte`, `-fteh2` and `-dp` that `QCC_SetDefaultProperties`
+  reads before the options cannot change, and then that of each `-TNAME` that names one of
+  `targets[]` (`QCC_OPCodeSetTargetName`, FTEF-12.11), in order, `-Tparse` none. The `/W`, `/F`
+  and `/K` spellings FTEQCC reads only on Windows (`WINDOWSARG`) are not read: the pinned
+  oracle is not built for Windows.
 
 ## FTEF-15 Declarations
 
@@ -1833,14 +1878,8 @@ FTEF-18.5.
 - **FTEF-18.8** `if !(e)` takes the statement when `e` is false, like `if not (e)`
   (FTEF-16.5): `if (!negate && QCC_PR_CheckToken("!"))` sets `negate = 2`, with the warning
   "if !() is specific to fteqcc" (`WARN_FTE_SPECIFIC`).
-- **FTEF-18.9** `until (e) s` repeats `s` while `e` is false, and `do s until (e);` is the
-  `do` loop with the test reversed: `wasuntil = QCC_PR_CheckKeyword(keyword_until, "until"); if
-  (wasuntil || QCC_PR_CheckKeyword(keyword_while, "while"))`, and in `do`, `until =
-  QCC_PR_CheckKeyword(keyword_until, "until"); if (!until) QCC_PR_Expect ("while");`. `until` is
-  a keyword only for the Hexen II targets (`nondefaultkeyword` in the keyword table, forced on
-  `if (qcc_targetformat == QCF_HEXEN2 || ...)`), or when written `__until`, which
-  `QCC_PR_CheckKeyword` matches whether or not the keyword is enabled (FTEF-15.1); otherwise
-  `until (e)` is a call of a function named `until`.
+- **FTEF-18.9** **Withdrawn** (P2-119, #554): it said `until` is a keyword only for the Hexen II
+  targets, but a `#pragma keyword` or a `-K` option turns it on too. Replaced by FTEF-18.31.
 - **FTEF-18.10** A `case` label may give a range, `case a .. b:`, matched when the value is from
   `a` to `b` inclusive: after the first value `QCC_PR_ParseStatement` tries `if (QCC_PR_CheckToken(".."))`
   and reads a second with `QCC_PR_RefExpression (&pr_casesref2[num_cases], TOP_PRIORITY,
@@ -2042,6 +2081,15 @@ FTEQCC corpus mods is
 [`vectors/dialect-fteqcc/coverage.txt`](vectors/dialect-fteqcc/coverage.txt). The vectors of
 the `Codegen (later)` statements are added when L-01 (codegen) fixes them, each checked
 against FTEQCC.
+- **FTEF-18.31** `until (e) s` repeats `s` while `e` is false, and `do s until (e);` is the
+  `do` loop with the test reversed: `wasuntil = QCC_PR_CheckKeyword(keyword_until, "until"); if
+  (wasuntil || QCC_PR_CheckKeyword(keyword_while, "while"))`, and in `do`, `until =
+  QCC_PR_CheckKeyword(keyword_until, "until"); if (!until) QCC_PR_Expect ("while");`. `until` is
+  a keyword when its flag is on: by default only for the Hexen II targets (`nondefaultkeyword`
+  in the keyword table, forced on `if (qcc_targetformat == QCF_HEXEN2 || ...)`, FTEF-20.3), and
+  after `#pragma keyword enable until`, `-Kuntil` or a `-std=` that sets it (FTEF-20.1); or when
+  written `__until`, which `QCC_PR_CheckKeyword` matches whether or not the keyword is enabled
+  (FTEF-20.2); otherwise `until (e)` is a call of a function named `until`.
 
 ## FTEF-19 Definitions as FTEQCC makes them
 
@@ -2313,7 +2361,7 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   a type there (`static t;` after `typedef float t;`) is not told apart, and is read as the
   name.
 - **FTEF-19.22** The parser's and the semantic model's warnings are reported as FTEQCC's
-  warning settings stand where it gives each (FTEF-14.63, FTEF-14.71): ignored, a warning, or
+  warning settings stand where it gives each (FTEF-14.63, FTEF-14.72): ignored, a warning, or
   an error, `E0125`. Each is the warning `QCC_PR_ParseWarning` is given its text with:
   `W0203` `WARN_UNDESIRABLECONVENTION`; `W0204` and `W0313` Q205 (`WARN_POINTLESSSTATEMENT`);
   `W0205` and `W0215` `WARN_UNEXPECTEDPUNCT`; `W0206`, `W0210`, `W0211` and `W0223` F129
@@ -2345,18 +2393,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   "Implicit cast from __int32 to string", and `string s = 1.5;` under `assumedouble` "Cannot
   cast from __double to string". The value is kept as the lexer keeps it, a float's bits
   (FTEF-13.5).
-- **FTEF-19.25** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.71), FTEQCC's
-  name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
-  `QCC_PR_GetDef` makes two passes, the first taking only a definition whose name is the one
-  written (`if (ins == 0 && strcmp(def->name, name))`), the second, which only a lookup makes
-  (`insmax = allocate?1:2;`), any whose name it is in any case, the newest first (the table's
-  chain). So a use of `foo` finds `Foo` when nothing is named `foo`, the function's locals
-  before the globals, and of `float Foo = 1; string FOO = "a";` the string, the one defined
-  last (`float x = foo;` is "Cannot cast from string to float"); a type name is found in any
-  case; a definition named as another in another case is a definition of its
-  own. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case;
-  this profile's parser reads keywords as written, which no program of the corpus or the
-  differential changes, so `FLOAT x;` stays "not a type".
+- **FTEF-19.25** **Withdrawn** (P2-119, #554): it said the parser reads keywords as written
+  under `-Fcaseinsens`, but it matches them in any case as FTEQCC does (FTEF-20.2). Replaced by
+  FTEF-19.29.
 - **FTEF-19.26** Under `qccx`, `@` before a term is that term read as a string (`QCC_PR_RefTerm`,
   `if (flag_qccx && QCC_PR_CheckToken ("@"))`, `QCC_PR_RefExpression (retbuf,
   UNARY_PRIORITY, EXPR_DISALLOW_COMMA)`), a reference that may be assigned; that it applies only
@@ -2374,3 +2413,168 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   flag. So under `-Fno-qcfuncs` or `-Kno-qcfuncs` the words `string`, `vector` and `entity` are
   no type, "\"WORD\" is not a type" (`E0203`, FTEF-19.20), unless a typedef names the word
   again, while a `#pragma flag disable qcfuncs`, read after the types are named, keeps them.
+- **FTEF-19.29** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.72), FTEQCC's
+  name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
+  `QCC_PR_GetDef` makes two passes, the first taking only a definition whose name is the one
+  written (`if (ins == 0 && strcmp(def->name, name))`), the second, which only a lookup makes
+  (`insmax = allocate?1:2;`), any whose name it is in any case, the newest first (the table's
+  chain). So a use of `foo` finds `Foo` when nothing is named `foo`, the function's locals
+  before the globals, and of `float Foo = 1; string FOO = "a";` the string, the one defined
+  last (`float x = foo;` is "Cannot cast from string to float"); a type name is found in any
+  case; a definition named as another in another case is a definition of its
+  own. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case
+  (FTEF-20.2).
+
+## FTEF-20 Keywords
+
+**Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
+`QCC_PR_ParseFunctionType`; `qcc_pr_comp.c`, the `keyword_*` defines, `QCC_PR_ParseStatement`,
+`QCC_PR_ParseStatement_Using`, `QCC_PR_ParseAsm`, `QCC_PR_ParseDefs`, `QCC_PR_DummyDef`,
+`QCC_PR_ParseImmediateStatements` and `QCC_PR_ParseRefValue`; `qccmain.c`, `compiler_flag[]`,
+`QCC_PR_CommandLinePrecompilerOptions` and `QCC_SetDefaultProperties`;
+`qcc_pr_lex.c`, `QCC_PR_ParseEntClass`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+The places FTEQCC reads and sets its keyword flags are rows of [`inventory-l2.md`](inventory-l2.md)
+and [`inventory-l3.md`](inventory-l3.md).
+
+FTEQCC's keywords are flags of `compiler_flag[]` (`keyword_for`, `keyword_long` and the rest of
+the `keyword_*` rows), each on or off as the compile goes, and its parser asks for each with
+`QCC_PR_CheckKeyword(keyword_X, "X")`. The statements below say how the flags are set and where
+they are read; FTEF-2.7, FTEF-2.10, FTEF-15.1, FTEF-15.3, FTEF-16.1, FTEF-19.1 and FTEF-19.16
+describe the same places with the flags at their defaults. The keyword family of
+`cargo xtask oracles builtins` (`xtask/src/oracles/builtins/keywords.rs`) turns each on and off
+and compares the outcome with the pinned FTEQCC's.
+
+### Behaviour
+
+- **FTEF-20.1** The parser reads each keyword with the flags in force at its token. They start
+  as `compiler_flag[]` sets them (`FLAG_ASDEFAULT`, `qc_preproc::Keywords::default`), then as the
+  command line sets them (`-K`, `-F` and `-std=`, FTEF-14.72) and a Hexen II target (FTEF-20.3),
+  then as each `#pragma keyword` or `#pragma flag` sets them (FTEF-12.11) from the token after
+  the directive, which FTEQCC lexes, and so reads the directive, before the parser asks for it;
+  and a definition named as a keyword may turn that keyword off (FTEF-20.4). The preprocessor
+  marks the flags by token (`qc_preproc::FileOutput::keywords`): the first token holds the
+  whole state, and a pragma's mark sets only the flags it names, `kce` and `caseinsens` among
+  them, so a keyword a definition turned off stays off unless a pragma names it again. The
+  flags carry from file to file and into the second autoprototyping pass, as the pragmas'
+  flags do (FTEF-12.11). `QCC_ImportProgs`, which `#merge` runs, turns `wrap` and `weak` on
+  ("these keywords are implicitly enabled by #merge"); this profile opens no file for `#merge`
+  (FTEF-14.47), so it turns none on. Under the vanilla dialect, which has no keyword flags, the
+  parser reads id's words as `qcc` does (QC-14.1).
+- **FTEF-20.2** `QCC_PR_CheckKeyword(enabled, word)` takes a token that starts with `__` when
+  the rest is `word` in any case, whether or not the keyword is on ("lets just always go
+  insensitive with a leading underscore pair": `if (pr_token[0] == '_' && pr_token[1] == '_')
+  { if (stricmp(string, pr_token+2)) return false; ...`), and any other token only when the
+  keyword is on and the token is `word`, in any case under `caseinsens` (`if
+  (flag_caseinsensitive) { if (stricmp (string, pr_token)) return false; }`) and exactly
+  otherwise. `return`, `if`, `else`, `while`, `do` and `not` are `#define`d as 1, always on;
+  `_Bool`, `sizeof`, `_length` and a class's member words (FTEF-20.11) are asked for with `1`
+  or `true`; `deprecated` with `false`, so only `__deprecated` is it. `QCC_PR_CheckName(word)`,
+  which reads an accessor's `get`, `set` and `inline` and an enum's `class`, takes `word`, in
+  any case under `caseinsens`, and never a `__` spelling. So `__FOR` is `for` with the keyword
+  off, `FOR` is `for` only under `-Fcaseinsens`, and `__while` is `while`.
+- **FTEF-20.3** After the command line `QCC_SetDefaultProperties` turns on `thinktime`, `until`
+  and `loop` for a Hexen II target: `if (qcc_targetformat == QCF_HEXEN2 || qcc_targetformat ==
+  QCF_UHEXEN2 || qcc_targetformat == QCF_FTEH2) { keyword_thinktime = true; keyword_until =
+  true; keyword_loop = true; }`. The target is the command line's (FTEF-14.72), which
+  `QCC_SetDefaultProperties` sets again before each pass, so a `#pragma TARGET` turns none of
+  them on.
+- **FTEF-20.4** `QCC_PR_DummyDef` warns of a new definition named exactly as a keyword that is
+  on, `W0221` "\"NAME\" keyword used as variable name - coexisting" (`WARN_KEYWORDDISABLED`,
+  which has no name) with `kce` on, and with it off "- disabling" and turns the keyword off
+  (`#define KEYWORD(x) if (!STRCMP(name, #x) && keyword_##x) do{ ... keyword_##x =
+  keywords_coexist;}while(0)`): `var`, `thinktime`, `for`, `switch`, `case`, `local`,
+  `default`, `goto`, `break` for a definition that is no function, `continue`, `state`,
+  `string`, `float` unless the target is `QCF_HEXEN2` or `QCF_UHEXEN2` ("hexen2 requires
+  this..."), `entity`, `vector`, `const` and `asm`. The keyword is off from the token after the
+  name. `QCC_PR_DummyDef` makes every definition: a global, a local, a field, the parameters of
+  a function with a body as `QCC_PR_ParseImmediateStatements` reads it (a prototype's and a
+  builtin's make none), an enum's names, a state header's or `state` statement's next think
+  function when it is new, and a `using` alias; a typedef's name, a struct's members and a
+  class's members are none, and `Class::member` is named so, no keyword. So with `kce` off `float for;` makes `for (;;) {}` a call of the
+  float `for`, the error "not a function", and `for = 1;` an assignment. Two deliberate
+  divergences, both only with `kce` off, as the parser turns the keyword off and the semantic
+  model makes the definitions: a definition named as a keyword turns it off even when it is a
+  redeclaration, which `QCC_PR_GetDef` finds with no new definition; and the keyword is off to
+  the end of the file the definition is in, and on again in the next file and the second
+  autoprototyping pass unless a definition there turns it off, as each file is parsed on its own;
+  and a body whose function type a typedef names defines no parameter, as the parser knows no
+  typedef's parameters.
+- **FTEF-20.5** A statement of `QCC_PR_ParseStatement` is read by its first token, the keywords
+  tried in its order: `{`; `return`; `exit` (`keyword_exit` is `flag_acc`, reacc's, FTEF-20.13,
+  so only `__exit`), `OP_DONE` and a `;`; `loop` and a statement, run again until a `break`;
+  `until` or `while`, a parenthesised condition and a statement; `for`; `do`, a statement, then
+  `until` with its keyword or `while` exactly (`QCC_PR_Expect ("while")`, so `__while` there is
+  "expected while"); `local` and a definition; the definitions of FTEF-20.6; `state`, a state
+  header `[frame, next]` as a function's (FTEF-18.3) and a `;`; `if`, with `not` (FTEF-16.5);
+  `switch`; `using`; `asm`; a `:` label (FTEF-18.23); `goto`; `break`, which before a `(` is a
+  call of the function `break` (`if (!STRCMP ("(", pr_token))`), and else a `;`; `continue`;
+  `case`; `default`; `thinktime`, an expression, a `:`, an expression and a `;`; `;`; a `name:`
+  label; and else an expression. Each keyword starts its statement whatever follows it, so with
+  `for` on `for = 1;` is "expected (, found =". `using (a, b = c) s` finds each name as a value is
+  found (`QCC_PR_GetDef (NULL, name, pr_scope, false, 0, 0)`), "NAME is not defined"
+  (`E0313`) when none is, and makes an alias of its type named as it is or, after `=`, as the
+  name after it, from its name until the statement `s` ends; `using a, b = c;` makes them to
+  the end of the function. `asm` takes an instruction, or several in `{ }`: `local` and a definition, or a
+  token that is an `opname` of `pr_opcodes[]` exactly and its operands up to a `;`, which are
+  code generation's (FTEF-19.17); any other token is `E0511` "Bad op code name NAME"
+  (`ERR_BADOPCODE`). `thinktime e : t;` looks up `nextthink` and `time` by name when the target
+  has no `OP_THINKTIME` (`QCC_PR_GetSRef(NULL, "nextthink", ...)`), "Unknown value
+  \"nextthink\"" when there is none: on the standard target, and on every target but
+  `QCF_HEXEN2` and `QCF_UHEXEN2` in this profile, which takes the other targets' opcode sets for
+  code generation's (L-01); that `e` must be an entity and `t` a float ("thinktime type
+  mismatch") is the type checker's (FTEF-19.17). By default `loop`, `until`, `state`,
+  `thinktime` and `using` are off, so only their `__` spellings start these statements.
+- **FTEF-20.6** In a body a statement defines locals when its first token is a name
+  `QCC_TypeForName` finds, not followed by `::`, or is exactly one of the words
+  `QCC_PR_ParseStatement` tests with `STRCMP` with its keyword on: `var`, `noref`, `string`,
+  `float`, `double`, `entity`, `vector`, `integer`, `unsigned`, `signed`, `long`, `int`, `short`,
+  `char`, `_Bool` (always), `register`, `volatile`, `static`, `class`, `struct`, `union`,
+  `enum`, `extern`, `auto`, `typedef` and `const`; or is a `.`. No `__` spelling and no other
+  case is among them, so `__typedef float t;` and `__long x;` in a body are values, "Unknown
+  value", and `typedef` there starts a typedef only as written.
+- **FTEF-20.7** `QCC_PR_ParseDefs` reads qualifiers before a type in a loop, each with its
+  keyword: `typedef`, `extern`, `auto`, `register`, `static`, `shared`, `const`, `var`,
+  `nonstatic` (only outside a function: `!pr_scope && QCC_PR_CheckKeyword(keyword_nonstatic,
+  "nonstatic")`), `unused` or `noref`, `used`, `nosave`, `strip` or `ignore`, `inline`, `wrap`,
+  `weak`, `accumulate` and `deprecated` (`QCC_PR_CheckKeyword(false, "deprecated")`). So with
+  its keyword off a qualifier is a type's name, `#pragma keyword disable const` making `const
+  float x = 1;` "\"const\" is not a type", and with it on a qualifier off by default is one,
+  `#pragma keyword enable unused` making `unused float x;` a definition.
+- **FTEF-20.8** `QCC_PR_ParseType` reads, each with its keyword, `const` (with "ignoring
+  unsupported const keyword") and `volatile` before a type and `const` after a `*`
+  (FTEF-2.11); then `accessor` (FTEF-10.1); `class` only with `qcfuncs` on (`if (flag_qcfuncs &&
+  QCC_PR_CheckKeyword (keyword_class, "class"))`, at its token, FTEF-12.12); `enum`, `enumflags`,
+  `union` and `struct`; and then a name `QCC_TypeForName` finds or the C type words
+  (FTEF-20.9). With its keyword off each is a type's name, so `#pragma keyword disable struct`
+  makes `struct s { float a; };` "\"struct\" is not a type" while `__struct s { ... };` defines
+  the struct.
+- **FTEF-20.9** The loop over C type words (FTEF-2.8) takes each word with its keyword in force
+  at the type: `register`, `signed`, `unsigned`, `long`, `int` or `integer`, `short`, `char`,
+  `_Bool` (always), `float` and `double`. `_Bool` is `__bint` with `keyword_int` on and
+  `__bfloat` with it off (`if (keyword_int) type = type_bint; else type = type_bfloat;`), and
+  `longbits` is 32 under `ILP32` and 64 otherwise (`#define longbits (flag_ILP32?32:64)`,
+  FTEF-12.12), so with `#pragma flag enable ILP32` `__long l;` is `__int32`. The type the words
+  make is the one FTEQCC registers, named as `QCC_PR_NewType` names it (`__int32`, `__uint64`,
+  `__int16`, `__bfloat`), which the semantic model compares and writes in messages (TypeName).
+  So `#pragma keyword enable long` makes `long l;` an `__int64` and `long int l;` an `__int32`.
+- **FTEF-20.10** `QCC_PR_ParseFunctionType` reads a parameter's qualifiers with their keywords:
+  `optional` (`keyword_optional`, on by default) and `inout`, `out` and `in`
+  (`keyword_inout`, off by default, so only `__inout`, `__out` and `__in`).
+- **FTEF-20.11** `QCC_PR_ParseEntClass` reads a class member's words with
+  `QCC_PR_CheckKeyword(1, ...)`, always on: `nonvirtual`, `static`, `const`, `var`, `virtual`,
+  `ignore`, `strip`, `inline`, `get` and `set`, and `public`, `private` and `protected` before a
+  `:`, so `__STATIC` is `static` there and `STATIC` under `caseinsens`. `QCC_PR_ParseRefValue`
+  takes `this` and `super` as the intrinsics of FTEF-19.16 only with `keyword_class` on
+  (`else if (keyword_class && !strcmp(name, "this"))`), and with it off they are names like any
+  other, "Unknown value" when no definition has them.
+- **FTEF-20.12** `QCC_PR_ParseDefs` takes a `;` right after a declaration's type and defines
+  nothing (`if (QCC_PR_CheckToken (";")) { if (istypedef) ...; return; }`, "type (%s) with no
+  name" commented out), so `float;`, `const float;` and, in a body, `enum { A, B };` and `struct
+  s { float a; };` are definitions of no name; `typedef;` and `typedef float;` are FTEF-19.9's.
+- **FTEF-20.13** The reacc keywords `CodeSys`, `function`, `objdata`, `object`, `pfunc`,
+  `system`, `real`, `external` and `exit` are `#define`d as `flag_acc` (`#define keyword_codesys
+  flag_acc //reacc needs this`), which only `-Facc` and `-std=reacc` set. Their syntax is
+  reacc's, which this profile does not read (FTEF-19.17): it reads the reacc keywords as off,
+  so after a type at file level `__function` and in a function's initialiser `__external`,
+  which `QCC_PR_CheckKeyword` would take, are names, where the pinned FTEQCC reads reacc's
+  function and builtin syntax; `__exit` is FTEF-20.5's.

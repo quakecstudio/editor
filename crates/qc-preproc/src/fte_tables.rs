@@ -1313,13 +1313,21 @@ pub(crate) const OPCODES: [&str; 413] = [
     "WSTATE",
 ];
 
+/// Whether `name` is the `opname` of a row of `pr_opcodes[]`, compared exactly (`STRCMP`), as
+/// `QCC_PR_ParseAsm` reads an `asm` instruction's first token (FTEF-20.5).
+#[must_use]
+pub fn is_opcode_name(name: &str) -> bool {
+    OPCODES.contains(&name)
+}
+
 /// `OP_NUMREALOPS`: the rows of [`OPCODES`] from here on are internal.
 pub(crate) const REAL_OPCODES: usize = 282;
 
 /// An output format of `targets[]` (`qcc_targetformat_t`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum TargetFormat {
-    /// `QCF_STANDARD`.
+    /// `QCF_STANDARD`, the default.
+    #[default]
     Standard,
     /// `QCF_QSS`.
     Qss,
@@ -1339,6 +1347,20 @@ pub(crate) enum TargetFormat {
     Darkplaces,
     /// `QCF_QTEST`.
     Qtest,
+}
+
+impl TargetFormat {
+    /// Whether `QCC_PR_DummyDef` takes it for Hexen II's, under which a definition named `float`
+    /// leaves the keyword on: `QCF_HEXEN2` or `QCF_UHEXEN2` (FTEF-20.4).
+    pub(crate) const fn keeps_float(self) -> bool {
+        matches!(self, Self::Hexen2 | Self::Uhexen2)
+    }
+
+    /// Whether `QCC_SetDefaultProperties` turns on `thinktime`, `until` and `loop` for it:
+    /// `QCF_HEXEN2`, `QCF_UHEXEN2` or `QCF_FTEH2` (FTEF-20.3).
+    pub(crate) const fn is_hexen2(self) -> bool {
+        matches!(self, Self::Hexen2 | Self::Uhexen2 | Self::Fteh2)
+    }
 }
 
 /// `targets[]`: each name `#pragma TARGET` matches in any case, its format and its default

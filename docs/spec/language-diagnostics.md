@@ -178,6 +178,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (FTEF-19.16).
 - **QCD-4.12** `E0312` "class NAME has no super": under an FTEQCC profile, `super` in a member
   function of a class with no parent, at the name (FTEF-19.16).
+- **QCD-4.13** `E0313` "NAME is not defined": under an FTEQCC profile, a name of a `using`
+  statement that no definition has, at the name (FTEF-20.5).
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -233,6 +235,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `%`, `?` and `:`; QCD-3.1 "not a name" for a stray `+`/`*` of `++`/`+=`; QCD-3.3 "NAME is
   not a type" for `const`, `var`, `nosave`, `typedef`, `enum` and a user type), which is also
   a diagnostic under the vanilla profile.
+- **QCD-6.11** `E0511` "Bad op code name NAME": under an FTEQCC profile, an instruction of an
+  `asm` statement whose first token is no opcode's name, at the token (FTEF-20.5).
 
 ## QCD-7 Warnings
 
@@ -359,8 +363,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (FTEF-19.3).
 - **QCD-7.46** `W0220` "Implicit cast from TYPE to TYPE": under an FTEQCC profile, an implicit
   cast FTEQCC makes with its warning, at the value (FTEF-19.2).
-- **QCD-7.47** `W0221` "\"NAME\" keyword used as variable name - coexisting": under an FTEQCC
-  profile, a definition named as an enabled keyword, at the name (FTEF-19.16).
+- **QCD-7.47** **Withdrawn** (P2-119, #554): it gave `W0221` only the text "- coexisting", but
+  with `kce` off the warning is "- disabling". Replaced by QCD-7.67.
 - **QCD-7.48** `W0222` "Parameter N of NAME is not named": under an FTEQCC profile, a parameter
   with no name of a function with a body, at the parameter (FTEF-19.1).
 - **QCD-7.49** `W0223` "incompatible redeclaration. Please validate builtin numbers.
@@ -423,6 +427,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.66** `W0123` "Hanging \\" and a CR: under an FTEQCC profile, a `\` in a string before a
   CR that no LF follows, FTEQCC's `WARN_HANGINGSLASHR`, which `warningnames[]` does not name and
   which is a warning by default (`dialect-fteqcc.md`, FTEF-13.25).
+- **QCD-7.67** `W0221` "\"NAME\" keyword used as variable name - coexisting", or "- disabling"
+  with `kce` off: under an FTEQCC profile, a new definition named as a keyword that is on, at
+  the name (`dialect-fteqcc.md`, FTEF-20.4).
 
 ## QCD-8 Preprocessor errors
 

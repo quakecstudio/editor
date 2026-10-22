@@ -22,6 +22,7 @@ mod dialect_rerelease;
 mod dialect_statements;
 mod expressions;
 mod fte_directives;
+mod keywords;
 mod lossless;
 mod nesting;
 mod recovery;
@@ -67,6 +68,17 @@ impl Program<'_> {
     fn parse(&self) -> Parse {
         parse(self.source().as_bytes())
     }
+}
+
+/// Parses `source` under the FTEQCC profile with the keywords `keywords` in force from its first
+/// byte, as the preprocessor marks them (FTEF-20.1).
+fn fte_with(source: &str, keywords: crate::Keywords) -> Parse {
+    crate::parse_preprocessed_flagged(
+        source.as_bytes(),
+        crate::Dialect::Fteqcc,
+        &[],
+        &[(0, crate::KeywordEdit::whole(keywords))],
+    )
 }
 
 /// Parses a function body made of `body`.

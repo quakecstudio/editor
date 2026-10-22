@@ -371,7 +371,7 @@ fn if_not_bang_parses() {
     assert!(if_stmt.syntax().token_of(SyntaxKind::Not).is_some());
 }
 
-// spec FTEF-18.9: `__until (e) s` and `do s __until (e);`, and `until (e)` is a call when not a keyword
+// spec FTEF-18.31: `__until (e) s` and `do s __until (e);`, and `until (e)` is a call when not a keyword
 #[test]
 fn until_loops_parse() {
     let parsed = fte_ok(&in_body("__until (a) b = 1;\ndo b = 2; __UNTIL (a);"));

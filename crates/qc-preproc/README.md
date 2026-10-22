@@ -30,8 +30,13 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 `once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
 (FTEF-14.33 to FTEF-14.47); a `#` after a `\` that joins a line of code to the next starts
 none (FTEF-14.53). FTEQCC's command line, `CommandLine` (`fte_options.rs`, ported from
-`QCC_PR_CommandLinePrecompilerOptions`), sets the warnings and compiler flags with its `-W`, `-F`
-and `-K` options, read again each time the settings are reset (FTEF-14.71). Under GMQCC an `#include` is tried beside the file that holds it first
+`QCC_PR_CommandLinePrecompilerOptions`), sets the warnings, compiler flags, keywords and target with its
+`-W`, `-F`, `-K`, `-std=` and `-T` options, read again each time the settings are reset, a Hexen
+II target turning on its keywords after them (FTEF-14.72, FTEF-20.3). FTEQCC's keywords
+(`Keywords`, `fte_keywords.rs`, ported from `QCC_PR_CheckKeyword`, `QCC_PR_CheckName` and
+`QCC_PR_DummyDef`'s `KEYWORD` list) are marked by token in `FileOutput::keywords`, each
+`#pragma keyword`, `#pragma flag` and `#pragma TARGET` setting only what it names, for the parser
+to read each keyword with the flags in force at its token (FTEF-20.1, FTEF-20.2, FTEF-20.4). Under GMQCC an `#include` is tried beside the file that holds it first
 (PRJ-5.12), and `FTEQCC` and `__FTEQCC__` are not defined (PRJ-5.15). In the vanilla dialect
 an `#include` not beside the file that holds it is looked for in the module's include
 directories (QC-9.20). `fte_directive/graph.rs` gives the
