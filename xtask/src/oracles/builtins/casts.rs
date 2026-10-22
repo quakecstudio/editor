@@ -54,6 +54,10 @@ const CAST_PROGRAMS: &[&str] = &[
     "#pragma flag enable lax\nvoid() g = [\"a\", g] {};\n",
     "#pragma flag enable lax\nvoid() g = [++ \"a\" .. 2] {};\n",
     "#pragma flag enable lax\nvoid() g = [++ 1 .. '1 2 3'] {};\n",
+    "#pragma flag enable lax\nvoid() g = [++ \"a\" .. \"b\"] {};\n",
+    "void() g = [++ \"a\" .. \"b\"] {};\n",
+    "#pragma flag enable typeexplicit\nvoid() g = [1i, 5] {};\n",
+    "typedef string str;\nconst str s = \"a\";\nenum { A = s };\n",
     "enum { A = \"a\" };\n",
     "#pragma flag enable lax\nenum { A = \"a\" };\n",
     "#pragma flag enable lax\nenum { A = \"a\", B };\nfloat x = B;\nfloat x = 2;\n",
@@ -95,6 +99,15 @@ const CAST_PROGRAMS: &[&str] = &[
 
 /// Programs whose outcome a warning decides, compiled with every warning an error.
 const CAST_WARNINGS: &[&str] = &[
+    // FTEF-19.31: functions and pointers compared through their typedefs and what they point
+    // to.
+    "typedef float t;\nvoid() g = { void(t x) a; void(float x) b = a; };\n",
+    "void() g = { void(int x) a; void(integer x) b = a; };\n",
+    "void() g = { void(float x) a; void(vector x) b = a; };\n",
+    "void() g = { float **p; vector **q = p; };\n",
+    "void() g = { float **p; float *q = p; };\n",
+    "typedef __uint8 byte;\nbyte *p = \"a\";\n",
+    "typedef void v;\nv *p = \"a\";\n",
     // FTEF-22.1, FTEF-22.2: the warnings of `lax` and `qccx`.
     "#pragma flag enable lax\nfloat x = \"a\";\n",
     "#pragma flag enable qccx\nfloat x = \"a\";\n",

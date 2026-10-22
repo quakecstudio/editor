@@ -1270,8 +1270,9 @@ fn extern_and_static_on_a_variable() {
 }
 
 // spec FTEF-19.32: an initialiser that is an expression is compared by its text and not typed,
-// an `extern` function is no error whatever the target, and an attribute before the type is
-// refused, as the pinned FTEQCC refuses it
+// and an attribute before the type is refused, as the pinned FTEQCC refuses it
+// spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
+// functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);

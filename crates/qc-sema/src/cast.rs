@@ -389,6 +389,19 @@ pub enum Source<'a> {
     Typed(&'a Type),
 }
 
+/// Whether two pointers' targets `a` and `b` are one type to `typecmp_lax`, which follows
+/// pointers to what they point to: a pointer and a pointer agree by their targets, anything
+/// else as [`Type::fteqcc_same`] says.
+fn pointees_agree(a: &Type, b: &Type) -> bool {
+    match (a, b) {
+        (Type::Pointer(a), Type::Pointer(b)) => pointees_agree(a, b),
+        (Type::Pointer(_), other) | (other, Type::Pointer(_)) => {
+            other.fteqcc_kind() == Kind::Opaque
+        }
+        _ => a.fteqcc_same(b),
+    }
+}
+
 /// What a pointer type points to, as `QCC_TryEvaluateCast` tells pointers apart (FTEF-22.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Pointee {
@@ -481,11 +494,17 @@ impl Source<'_> {
         }
         if let (Type::Pointer(to_inner), Some(Type::Pointer(from_inner))) = (to, from_ty) {
             // `typecmp_lax` of what they point to, a type the model does not follow agreeing.
-            return Some(if from_inner.fteqcc_same(to_inner) {
+            return Some(if pointees_agree(from_inner, to_inner) {
                 Cast::Silent
             } else {
                 Cast::Implicit
             });
+        }
+        // `typecmp` of two functions: the same type part by part is a cast to itself.
+        if let (Type::Function(_), Some(from @ Type::Function(_))) = (to, from_ty)
+            && from.fteqcc_same(to)
+        {
+            return Some(Cast::Silent);
         }
         let wordish = |k: Kind| matches!(k, Pointer | String | Integer | Uint | Function);
         let qccx = flags.has(FteFlag::Qccx);

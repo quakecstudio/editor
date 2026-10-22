@@ -2412,13 +2412,18 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   pointer to an 8-bit integer (`__int8*`, `__uint8*`) and back ("string and char* are the same
   type"), and a pointer, a function or a string to `void*` and `void*` to them ("can cast any
   pointer type to void*"), with no warning; a pointer to another, with `W0220` unless they point
-  to one type (`typecmp_lax`), a type this profile does not follow agreeing with any; pointers,
+  to one type (`typecmp_lax`, which follows a pointer to what it points to), a type this profile
+  does not follow agreeing with any; pointers,
   strings, integers, unsigned and functions among themselves, and an integer to an entity and
   back, the casts "acceptable but probably an error", with `W0220` but between the two integer
   types. Nothing else casts: `float x = "a";`, `entity e = 1;`, `void() g = 5;`, `string s =
   5l;`, `vector v = 5u;` and `entity e = 0d;` are `E0213`, and `entity e = 0;`, `string s =
   -0;` and `void() g = 0;` cast; `void *p = "a";` and `__uint8 *p = "a";` cast with no word,
   `float *p = "a";`, `__int16 *p = "a";` and a `float*` initialising a `vector*` with `W0220`.
+  The types are compared with every typedef in them resolved, as `QCC_PR_ParseType` resolves
+  them, and two functions the same part by part (FTEF-17.12) are one type: `typedef float t;`
+  makes a `void(t x)` initialise a `void(float x)` with no word, and `typedef __uint8 byte;` a
+  string a `byte*`.
   These are the casts with `lax`, `qccx` and `flag_undefwordsize` off, their `-Tid` defaults;
   FTEF-22 gives what each changes. A string initialised with `_(...)` takes one string
   literal, else the error `E0232` "_() intrinsic accepts only a string immediate". An
@@ -2840,8 +2845,9 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   warning `W0230` of that text (`WARN_LAXCAST`, F314), the value kept as it is: an enum's name
   then has the value it would have had with no `=`, as `QCC_PR_ParseEnum` reads the value of a
   number only (`enum { A = "a", B };` makes `B` 1), and a frame of a cycle `[++ a .. b]` is then
-  the error `E0238` "state type mismatch" (`if (s1.cast->type != ev_float || def.cast->type !=
-  ev_float)`). A and B are `basictypenames`' (`integer`, `uint`, `long`, `ulong`, `double`), so
+  the error `E0238` "state type mismatch", once, after both frames are converted (`if
+  (s1.cast->type != ev_float || def.cast->type != ev_float)`). `E0236` and `E0227` are fatal,
+  so a state header's first one is its last word. A and B are `basictypenames`' (`integer`, `uint`, `long`, `ulong`, `double`), so
   under `assumeint` `enum { A = "a" };` is "Implicit type mismatch. Needed integer, got
   string.". A name's value is converted by its definition's type, before its constness is read,
   so a `string` constant initialising an enum's name is `E0227` and a variable `float` "is not a
@@ -2866,8 +2872,11 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   (`def->isextern`, an `extern` `QCC_PR_ParseDefs` kept, FTEF-21.10) is the error `E0239`
   "extern is not supported with this target format", at its definition. So `extern void(float
   x) h;` is the error under `-Tid`, and no error under `-Tfte` or after `#pragma target fte`
-  anywhere in the module, the last target holding. A module the semantic model reads without
-  its preprocessing (`Db::module_index`) has no target and is not checked.
+  anywhere in the module, the last target holding. It is reported definition by definition with
+  the functions that have no body (QCD-3.11), and, as those are, also when the module has other errors, which
+  FTEQCC's check (`if (pr_error_count) return false;`) never reaches (QCD-1.4); the outcome is
+  the same. A module the semantic model reads without its preprocessing (`Db::module_index`) has
+  no target and is not checked.
 - **FTEF-22.6** Each value is cast or converted with the flags at the token after it: FTEQCC
   casts it once `QCC_PR_Expression` has read it, which has lexed that token, and the pragmas
   before it with it (FTEF-21.1). So in `float x = "a"` then `#pragma flag enable lax` then `;`

@@ -166,7 +166,7 @@ pub(crate) fn resolve_mapped(
         case_insensitive: fteqcc && options.case_insensitive,
         qcfuncs_off: fteqcc && options.qcfuncs_off,
         target: options.target.filter(|_| fteqcc),
-        externs: Vec::new(),
+        externs: HashSet::new(),
         unit: FileId(0),
         facts: Vec::new(),
         globals: HashMap::new(),
@@ -316,8 +316,8 @@ struct Resolver<'a> {
     qcfuncs_off: bool,
     /// Under FTEQCC, the output format `QCC_PR_FinishCompilation` reads (FTEF-22.5).
     target: Option<TargetFormat>,
-    /// The functions an `extern` at file level made, `def->isextern`, in order (FTEF-22.5).
-    externs: Vec<DefId>,
+    /// The functions an `extern` at file level made, `def->isextern` (FTEF-22.5).
+    externs: HashSet<DefId>,
     /// The compiled file, the unit a `static` is visible in (FTEF-19.12).
     unit: FileId,
     /// For each definition, what [`Facts`] holds.
@@ -558,6 +558,30 @@ impl<'a> Resolver<'a> {
             }
         }
         ty
+    }
+
+    /// `ty` with every typedef in it resolved, what a pointer points to, a field holds and a
+    /// function takes and returns included, as FTEQCC's types are once `QCC_PR_ParseType` has
+    /// read them; `depth` bounds a typedef that names itself through a pointer.
+    fn resolved_deep(&self, ty: &Type, depth: usize) -> Type {
+        let ty = self.resolved(ty);
+        let Some(depth) = depth.checked_sub(1) else {
+            return ty;
+        };
+        match ty {
+            Type::Pointer(inner) => Type::Pointer(Rc::new(self.resolved_deep(&inner, depth))),
+            Type::Field(inner) => Type::Field(Rc::new(self.resolved_deep(&inner, depth))),
+            Type::Function(func) => Type::Function(Rc::new(FunctionType {
+                ret: self.resolved_deep(&func.ret, depth),
+                params: func
+                    .params
+                    .iter()
+                    .map(|p| self.resolved_deep(p, depth))
+                    .collect(),
+                variadic: func.variadic,
+            })),
+            Type::Unknown | Type::Simple(_) | Type::Named(_) => ty,
+        }
     }
 
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
@@ -1175,8 +1199,8 @@ impl<'a> Resolver<'a> {
         // FTEF-22.5: `if (externfnc && !pr_scope) { ... def->isextern = true; }`.
         // `QCC_PR_FinishCompilation` checks the constant ones, every function but a `var` one.
         let constant = !decl.has(&Qualifier::Var) && !decl.pointer_var;
-        if self.fteqcc && external && constant && !aborted && !self.externs.contains(&def) {
-            self.externs.push(def);
+        if self.fteqcc && external && constant && !aborted {
+            self.externs.insert(def);
         }
         if let Some(f) = self.fact_mut(def) {
             f.shared |= shared;
@@ -1569,20 +1593,22 @@ impl<'a> Resolver<'a> {
                 Ok(None)
             }
             ValueKind::Name(source_name) => {
-                self.check_named_value(name, &ty, source_name, holder, (location, value.cast_flags))
+                self.check_named_value(name, &ty, source_name, holder, location, value.cast_flags)
             }
             ValueKind::Other => Ok(None),
         }
     }
 
-    /// [`Resolver::check_value`] of a value that is the name `source_name`.
+    /// [`Resolver::check_value`] of a value that is the name `source_name`, cast with the
+    /// flags `flags` at the token after it (FTEF-22.6).
     fn check_named_value(
         &mut self,
         name: &str,
         ty: &Type,
         source_name: &str,
         holder: Holder,
-        (location, flags): (Location, CompilerFlags),
+        location: Location,
+        flags: CompilerFlags,
     ) -> Result<Option<LiteralValue>, Fatal> {
         let lookup = |name: &str| match holder {
             Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
@@ -1744,6 +1770,15 @@ impl<'a> Resolver<'a> {
         location: Location,
         flags: CompilerFlags,
     ) -> bool {
+        let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        let typed;
+        let source = match source {
+            Source::Typed(ty) => {
+                typed = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                Source::Typed(&typed)
+            }
+            Source::Literal(_) => source,
+        };
         let (code, verb) = match source.cast(to, flags) {
             Cast::Silent => return false,
             Cast::Implicit => (Code::W0220, "Implicit cast"),
@@ -1912,7 +1947,7 @@ impl<'a> Resolver<'a> {
                     next
                 }
             }
-            Some(value) => self.enum_value(file, value, (item.number, next), &base),
+            Some(value) => self.enum_value(file, value, item.number, next, &base),
         };
         if item.flags
             && let Some(v) = value
@@ -2010,7 +2045,8 @@ impl<'a> Resolver<'a> {
         &mut self,
         file: FileId,
         value: &RawValue,
-        (number, next): (Option<u32>, Option<f64>),
+        number: Option<u32>,
+        next: Option<f64>,
         base: &Type,
     ) -> Option<f64> {
         let location = self.at(file, value.span);
@@ -2030,7 +2066,7 @@ impl<'a> Resolver<'a> {
             }
             ValueKind::Name(name) => {
                 let def = self.lookup_global(name)?;
-                let ty = self.index.def(def).map(|d| d.ty.clone())?;
+                let ty = self.resolved(&self.index.def(def)?.ty);
                 let supply = self.supply_value(Source::Typed(&ty), wanted, value, location);
                 if matches!(supply, Supply::Explicit | Supply::Mismatch) {
                     return None;
@@ -2601,8 +2637,9 @@ impl<'a> Resolver<'a> {
     /// FTEF-19.14: FTEQCC converts a state header's frame to a float with
     /// `QCC_SupplyConversion` (FTEF-22.3), and requires its next function to be a `void()`,
     /// "Type mismatch" for a literal but 0. A cycle's frame that `lax` let through unconverted
-    /// is "state type mismatch".
+    /// is "state type mismatch", once both frames are converted. A fatal error ends the header.
     fn check_state_literals(&mut self, file: FileId, body: &RawBody) {
+        let mut unconverted = None;
         for (part, value) in &body.state_literals {
             let ValueKind::Literal(literal) = &value.kind else {
                 continue;
@@ -2611,9 +2648,14 @@ impl<'a> Resolver<'a> {
             match part {
                 StatePart::Frame | StatePart::CycleFrame => {
                     let source = Source::Literal(*literal);
-                    let supply = self.supply_value(source, Kind::Float, value, location);
-                    if supply == Supply::Lax && *part == StatePart::CycleFrame {
-                        self.report(Code::E0238, location, "state type mismatch".to_owned());
+                    match self.supply_value(source, Kind::Float, value, location) {
+                        Supply::Converted => {}
+                        Supply::Lax => {
+                            if *part == StatePart::CycleFrame {
+                                unconverted = Some(location);
+                            }
+                        }
+                        Supply::Explicit | Supply::Mismatch => return,
                     }
                 }
                 StatePart::Next => {
@@ -2626,6 +2668,10 @@ impl<'a> Resolver<'a> {
                     }
                 }
             }
+        }
+        // `if (s1.cast->type != ev_float || def.cast->type != ev_float)`, after both.
+        if let Some(location) = unconverted {
+            self.report(Code::E0238, location, "state type mismatch".to_owned());
         }
     }
 
@@ -3213,11 +3259,24 @@ impl<'a> Resolver<'a> {
     /// Under FTEQCC one marked `noref`, by its qualifier or `#pragma noref 1`, that the module
     /// does not refer to is not reported (FTEF-17.11): FTEQCC's check skips a definition `if
     /// (d->unused && !d->used)`.
+    ///
+    /// FTEF-22.5: in the same pass, definition by definition, an `extern` function is an error
+    /// on a target with no `extern`. Like the undefined functions, and unlike FTEQCC's check,
+    /// which a module with errors never reaches, it is reported whatever else was (QCD-1.4).
     fn check_undefined_functions(&mut self) {
         let used: HashSet<DefId> = self.index.refs.iter().map(|r| r.def).collect();
+        let externs_refused = self.target.is_some_and(|target| !target.supports_extern());
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for (index, def) in self.index.defs.iter().enumerate() {
             let id = DefId(index);
+            if externs_refused && self.externs.contains(&id) && self.resolved(&def.ty).is_function()
+            {
+                undefined.push(diag(
+                    Code::E0239,
+                    def.location,
+                    "extern is not supported with this target format".to_owned(),
+                ));
+            }
             let skipped = self.fteqcc && self.unused.contains(&id) && !used.contains(&id);
             if def.kind == DefKind::Function
                 && !def.initialized
@@ -3230,21 +3289,6 @@ impl<'a> Resolver<'a> {
                     def.location,
                     format!("function {} was not defined", def.name),
                 ));
-            }
-        }
-        // FTEF-22.5: an `extern` function on a target that has none is an error.
-        if self.target.is_some_and(|target| !target.supports_extern()) {
-            for &id in &self.externs {
-                let Some(def) = self.index.def(id) else {
-                    continue;
-                };
-                if self.resolved(&def.ty).is_function() {
-                    undefined.push(diag(
-                        Code::E0239,
-                        def.location,
-                        "extern is not supported with this target format".to_owned(),
-                    ));
-                }
             }
         }
         self.index.diagnostics.extend(undefined);

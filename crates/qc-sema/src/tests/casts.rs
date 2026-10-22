@@ -409,3 +409,52 @@ fn the_second_pass_starts_on_the_standard_target() {
     let codes: Vec<Code> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();
     assert_eq!(codes, [Code::W0220, Code::E0237]);
 }
+
+// spec FTEF-19.31: types are compared with their typedefs resolved, a function by its parts and
+// a pointer by what it points to, all the way down
+#[test]
+fn casts_compare_types_through_typedefs_and_pointers() {
+    for source in [
+        "typedef float t;\nvoid() g = { void(t x) a; void(float x) b = a; };\n",
+        "void() g = { void(int x) a; void(integer x) b = a; };\n",
+        "typedef __uint8 byte;\nbyte *p = \"a\";\n",
+        "typedef void v;\nv *p = \"a\";\n",
+    ] {
+        assert_eq!(codes(source), [], "{source}");
+    }
+    assert_eq!(
+        diags("void() g = { void(float x) a; void(vector x) b = a; };\n"),
+        one(
+            Code::W0220,
+            "Implicit cast from void(float) to void(vector)"
+        )
+    );
+    assert_eq!(
+        diags("void() g = { float **p; vector **q = p; };\n"),
+        one(Code::W0220, "Implicit cast from float** to vector**")
+    );
+    assert_eq!(
+        diags("void() g = { float **p; float *q = p; };\n"),
+        one(Code::W0220, "Implicit cast from float** to float*")
+    );
+}
+
+// spec FTEF-22.3: a cycle's two frames are converted before "state type mismatch", given once,
+// and a fatal conversion ends the header; a named enum value converts by its typedef's type
+#[test]
+fn state_headers_and_typedef_enum_values() {
+    let lax = "#pragma flag enable lax\n";
+    assert_eq!(
+        codes(&format!("{lax}void() g = [++ \"a\" .. \"b\"] {{}};\n")),
+        [Code::W0230, Code::W0230, Code::E0238]
+    );
+    assert_eq!(codes("void() g = [++ \"a\" .. \"b\"] {};\n"), [Code::E0227]);
+    assert_eq!(
+        codes("#pragma flag enable typeexplicit\nvoid() g = [1i, 5] {};\n"),
+        [Code::E0236]
+    );
+    assert_eq!(
+        codes("typedef string str;\nconst str s = \"a\";\nenum { A = s };\n"),
+        [Code::E0227]
+    );
+}
