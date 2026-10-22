@@ -226,7 +226,8 @@ impl FlagEdit {
     /// `flags` after this edit.
     #[must_use]
     pub const fn apply(self, flags: CompilerFlags) -> CompilerFlags {
-        // The bits under the mask that differ from the edit's are flipped, the rest kept.
+        // The merge written with `^`, not `(flags & !mask) | (bits & mask)`, whose `|` joins
+        // disjoint bits and so reads the same as `^` to a mutation test.
         CompilerFlags {
             bits: flags.bits ^ ((flags.bits ^ self.bits) & self.mask),
         }
