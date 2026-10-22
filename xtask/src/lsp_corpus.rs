@@ -311,10 +311,15 @@ fn initialize(dir: &Path, target: &str, autoproto: bool) -> Value {
         "params": {
             "processId": null,
             "rootUri": uri::from_path(dir),
-            "capabilities": { "textDocument": {
-                "hover": { "contentFormat": ["markdown"] },
-                "rename": { "prepareSupport": true },
-            } },
+            "capabilities": {
+                "textDocument": {
+                    "hover": { "contentFormat": ["markdown"] },
+                    "rename": { "prepareSupport": true, "honorsChangeAnnotations": true },
+                },
+                "workspace": { "workspaceEdit": {
+                    "documentChanges": true, "changeAnnotationSupport": {},
+                } },
+            },
             "initializationOptions": {
                 "dialect": "fteqcc", "target": target, "autoproto": autoproto,
             },
@@ -522,16 +527,30 @@ fn summary(dir: &Path, ask: Ask, result: &Value) -> String {
             )
         }
         Ask::Rename => {
-            let changes = result["changes"].as_object();
+            // Plain `changes`, or `documentChanges` of annotated edits that need confirmation
+            // (ADR-0019).
             let mut edits = 0_usize;
             let mut files = Vec::new();
-            for (uri, list) in changes.into_iter().flatten() {
+            let mut count_file = |uri: &str, list: &Value| {
                 let count = list.as_array().map_or(0, Vec::len);
                 edits = edits.saturating_add(count);
                 let path = uri::to_path(uri).unwrap_or_default();
                 files.push(format!("{} x{count}", relative(dir, &path)));
+            };
+            for (uri, list) in result["changes"].as_object().into_iter().flatten() {
+                count_file(uri, list);
             }
-            format!("{edits} edits ({})", files.join(", "))
+            for change in result["documentChanges"].as_array().into_iter().flatten() {
+                let uri = at(change, "/textDocument/uri").as_str().unwrap_or_default();
+                count_file(uri, at(change, "/edits"));
+            }
+            let confirm =
+                at(result, "/changeAnnotations/map-name/needsConfirmation") == &json!(true);
+            format!(
+                "{edits} edits ({}){}",
+                files.join(", "),
+                if confirm { ", each to confirm" } else { "" }
+            )
         }
         Ask::Completion => {
             let list = result.as_array().map(Vec::as_slice).unwrap_or_default();

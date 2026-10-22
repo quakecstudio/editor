@@ -32,7 +32,7 @@ before the next, so every answer is computed on the state the messages before it
 | `textDocument/publishDiagnostics` | Every problem of each file the build would report, `W0311` for the target engine's missing builtins included; an empty list clears a file |
 | `textDocument/definition` | The first declaration of the name at the cursor |
 | `textDocument/references` | Every use, and with `includeDeclaration` every declaration, in every module |
-| `textDocument/prepareRename`, `textDocument/rename` | The edits of every declaration and use; refused for a name the engine binds, through a macro, or when the new name would change what the code means; a warning (`window/showMessage`) for a function or field a map may name |
+| `textDocument/prepareRename`, `textDocument/rename` | The edits of every declaration and use; refused for a name the engine binds, through a macro, or when the new name would change what the code means; the edits of a function or field a map may name each need the modder's confirmation, through change annotations, and are refused to a client that cannot confirm them (ADR-0019) |
 | `textDocument/hover` | The declaration as written, its comment, and for a builtin which engines have it |
 | `textDocument/completion` | The names in scope; fields after `.` |
 | `textDocument/semanticTokens/full` | Functions, fields, globals, parameters and locals, with declaration, constant and builtin modifiers |

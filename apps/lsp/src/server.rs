@@ -13,15 +13,15 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use qc_ide::{
-    AnalysisHost, Config, DefKind, Diagnostic, FileRange, HighlightKind, Modifier, RenameError,
-    Severity, Span,
+    AnalysisHost, Config, DefKind, Diagnostic, FileEdit, FileRange, HighlightKind, Modifier,
+    RenameError, Severity, Span,
 };
 use qc_project::Loader;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use crate::lines::{Encoding, LineIndex, Position};
+use crate::lines::{Encoding, LineIndex, Position, Range};
 use crate::render::Markup;
 use crate::transport::write_message;
 use crate::uri;
@@ -98,6 +98,18 @@ pub enum Exit {
     Failure,
 }
 
+/// The `ChangeAnnotationIdentifier` of a rename's edits of a name a map may use.
+const MAP_NAME: &str = "map-name";
+
+/// Whether the client asks the modder before applying an annotated edit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Confirmation {
+    /// It supports `documentChanges` and change annotations, and honors them in a rename.
+    Annotations,
+    /// It does not, so an edit that needs confirmation cannot be sent.
+    Unsupported,
+}
+
 /// The token types of the semantic-token legend, in the order of their numbers.
 pub const TOKEN_TYPES: [&str; 4] = ["function", "property", "variable", "parameter"];
 
@@ -113,6 +125,8 @@ pub struct Server<L, W> {
     encoding: Encoding,
     /// How hovers are written.
     markup: Markup,
+    /// Whether the client asks the modder to confirm an annotated edit.
+    confirmation: Confirmation,
     /// The version of each open document.
     versions: HashMap<PathBuf, i32>,
     /// What was last published for each document.
@@ -132,6 +146,7 @@ impl<L: Loader, W: Write> Server<L, W> {
             host: AnalysisHost::new(loader, Config::default()),
             encoding: Encoding::Utf16,
             markup: Markup::PlainText,
+            confirmation: Confirmation::Unsupported,
             versions: HashMap::new(),
             published: HashMap::new(),
             queued: Vec::new(),
@@ -313,6 +328,28 @@ impl<L: Loader, W: Write> Server<L, W> {
             .rename
             .and_then(|r| r.prepare_support)
             .unwrap_or(false);
+        // A rename's edits that need the modder's confirmation are `AnnotatedTextEdit`s, which
+        // only a `TextDocumentEdit` holds ("support for `AnnotatedTextEdit`. The support is
+        // guarded by the client capability `workspace.workspaceEdit.changeAnnotationSupport`. If
+        // a client doesn't signal the capability, servers shouldn't send `AnnotatedTextEdit`
+        // literals back to the client."), so the client must support `documentChanges`, change
+        // annotations, and honor them in a rename by "asking for confirmation".
+        let edit = params
+            .capabilities
+            .workspace
+            .as_ref()
+            .and_then(|w| w.workspace_edit.as_ref());
+        let annotated = edit.is_some_and(|e| {
+            e.document_changes == Some(true) && e.change_annotation_support.is_some()
+        }) && document
+            .rename
+            .and_then(|r| r.honors_change_annotations)
+            .unwrap_or(false);
+        self.confirmation = if annotated {
+            Confirmation::Annotations
+        } else {
+            Confirmation::Unsupported
+        };
         let options = params.initialization_options.unwrap_or_default();
         self.host.set_config(Config {
             dialect: options.dialect,
@@ -588,27 +625,72 @@ impl<L: Loader, W: Write> Server<L, W> {
             .host
             .rename(&path, offset, &params.new_name)
             .map_err(|err| rename_error(&err))?;
-        if let Some(caution) = rename.caution {
-            self.queued.push((
-                "window/showMessage".to_owned(),
-                json!({ "type": 2, "message": format!("Renamed: {caution}.") }),
+        // ADR-0019: the edits of a name a map may use are each confirmed by the modder.
+        let Some(caution) = rename.caution else {
+            let mut changes = BTreeMap::new();
+            for file in &rename.edits {
+                let edits = self
+                    .edit_ranges(file)
+                    .into_iter()
+                    .map(|(range, new_text)| proto::TextEdit { range, new_text })
+                    .collect();
+                changes.insert(uri::from_path(&file.path), edits);
+            }
+            return to_value(&proto::WorkspaceEdit {
+                changes: Some(changes),
+                ..proto::WorkspaceEdit::default()
+            });
+        };
+        if self.confirmation == Confirmation::Unsupported {
+            // The specification is silent on what a server does when the client cannot confirm
+            // an edit; ADR-0019 refuses the rename rather than make it unasked.
+            return Err(ResponseError::new(
+                ErrorCode::RequestFailed,
+                format!(
+                    "{caution}. This client cannot ask before applying those edits (it does not \
+                     honor change annotations), so the rename is refused; rename it by hand"
+                ),
             ));
         }
-        let mut changes = BTreeMap::new();
-        for file in rename.edits {
-            let text = self.host.text(&file.path).unwrap_or_default();
-            let lines = LineIndex::new(&text, self.encoding);
-            let edits = file
-                .edits
-                .iter()
-                .map(|(span, new_text)| proto::TextEdit {
-                    range: lines.range(span.start, span.end),
-                    new_text: new_text.clone(),
+        let mut document_changes = Vec::new();
+        for file in &rename.edits {
+            let edits = self
+                .edit_ranges(file)
+                .into_iter()
+                .map(|(range, new_text)| proto::AnnotatedTextEdit {
+                    range,
+                    new_text,
+                    annotation_id: MAP_NAME.to_owned(),
                 })
                 .collect();
-            changes.insert(uri::from_path(&file.path), edits);
+            document_changes.push(proto::TextDocumentEdit {
+                text_document: proto::OptionalVersionedTextDocumentIdentifier {
+                    uri: uri::from_path(&file.path),
+                    version: self.versions.get(&file.path).copied(),
+                },
+                edits,
+            });
         }
-        to_value(&proto::WorkspaceEdit { changes })
+        let annotation = proto::ChangeAnnotation {
+            label: format!("Rename a name a map may use: {}", caution.name()),
+            needs_confirmation: true,
+            description: format!("{caution}."),
+        };
+        to_value(&proto::WorkspaceEdit {
+            document_changes: Some(document_changes),
+            change_annotations: Some(BTreeMap::from([(MAP_NAME.to_owned(), annotation)])),
+            ..proto::WorkspaceEdit::default()
+        })
+    }
+
+    /// The protocol ranges and new text of one file's rename edits.
+    fn edit_ranges(&mut self, file: &FileEdit) -> Vec<(Range, String)> {
+        let text = self.host.text(&file.path).unwrap_or_default();
+        let lines = LineIndex::new(&text, self.encoding);
+        file.edits
+            .iter()
+            .map(|(span, new_text)| (lines.range(span.start, span.end), new_text.clone()))
+            .collect()
     }
 
     /// `textDocument/hover`: a `Hover`, or `null`.

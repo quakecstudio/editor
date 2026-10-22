@@ -38,7 +38,7 @@ edit.
 | --- | --- | --- |
 | Go-to-definition | `definition` | `ModuleIndex::definition_at`, a later declaration going to the first (QC-11.5) |
 | Find-references | `references` | `ModuleIndex::references`, across every module that compiles the definition's file |
-| Rename | `prepare_rename`, `rename` | Every declaration and use, a vector's components with it (QC-11.7); refused for a name the engine binds (EDICT-2.2, EDICT-3.2, EDICT-3.4), through a macro (QC-9.7), and unless the edited modules resolve to the same definitions, uses and diagnostics; a function or field a map may name comes with a caution (EDICT-8.2, EDICT-8.6) |
+| Rename | `prepare_rename`, `rename` | Every declaration and use, a vector's components with it (QC-11.7); refused for a name the engine binds (EDICT-2.2, EDICT-3.2, EDICT-3.4), through a macro (QC-9.7), and unless the edited modules resolve to the same definitions, uses and diagnostics; a function or field a map may name comes with a caution (EDICT-8.2, EDICT-8.6), which the server turns into edits the modder confirms (ADR-0019) |
 | Hover | `hover` | The declaration as written, its comment, and for a builtin the target engine's entry and every engine's (ENGT-3.9, ENGT-3.11) |
 | Completion | `completions` | The globals declared before the cursor (QC-12.5; all with autoprototyping, FTE-22.3), and the enclosing function's parameters and earlier locals (QC-12.1); only fields after `.` or `->` (QC-16.6) |
 | Highlighting | `highlights` | Each resolved name by what it names, with declaration, constant (QC-11.6, vanilla) and builtin modifiers |

@@ -74,6 +74,16 @@ pub enum Caution {
     MapField(String),
 }
 
+impl Caution {
+    /// The renamed name.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Self::MapFunction(name) | Self::MapField(name) => name,
+        }
+    }
+}
+
 impl fmt::Display for Caution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

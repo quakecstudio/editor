@@ -119,19 +119,111 @@ fn rename() {
     assert_eq!(s.error_code(4), -32803);
     let message = s.response(4)["error"]["message"].as_str().unwrap();
     assert!(message.contains("not a QuakeC name"), "{message}");
-    // LSP 3.18, "ShowMessage Notification": a function a map may name is renamed with a warning
-    // (`MessageType.Warning`, 2) the client shows, after the answer.
-    assert_eq!(
-        s.result(5)["changes"][uri("code.qc")]
-            .as_array()
+    // ADR-0019, LSP 3.18 `TextDocumentEdit`: "If a client doesn't signal the capability,
+    // servers shouldn't send `AnnotatedTextEdit` literals back to the client", so a client that
+    // cannot confirm the edits of a name a map may use gets the rename refused.
+    assert_eq!(s.error_code(5), -32803);
+    let refused = s.response(5)["error"]["message"].as_str().unwrap();
+    assert!(
+        refused.contains("heal") && refused.contains("change annotations"),
+        "{refused}"
+    );
+    assert!(s.notifications("window/showMessage").is_empty());
+}
+
+/// The client capabilities of a client that confirms annotated rename edits.
+fn confirming() -> Value {
+    json!({
+        "workspace": { "workspaceEdit": {
+            "documentChanges": true,
+            "changeAnnotationSupport": { "groupsOnLabel": true },
+        } },
+        "textDocument": { "rename": { "prepareSupport": true, "honorsChangeAnnotations": true } },
+    })
+}
+
+// LSP 3.18, `ChangeAnnotation.needsConfirmation`: "A flag which indicates that user confirmation
+// is needed before applying the change". ADR-0019: to a client that honors change annotations
+// (`workspace.workspaceEdit.changeAnnotationSupport`, `documentChanges` and the rename's
+// `honorsChangeAnnotations`), every edit of a function or field a map may name is an
+// `AnnotatedTextEdit` naming one annotation that needs confirmation; any other rename stays
+// plain `changes`.
+#[test]
+fn rename_asks_before_editing_a_name_a_map_may_use() {
+    let rename = |needle: &str, new: &str| {
+        let mut params = at("code.qc", CODE, needle, 0);
+        params["newName"] = json!(new);
+        params
+    };
+    let s = session(
+        project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
+        &[
+            initialize_with(json!(null), confirming()),
+            notification("initialized", json!({})),
+            notification(
+                "textDocument/didOpen",
+                json!({ "textDocument": { "uri": uri("code.qc"), "languageId": "quakec",
+                                          "version": 7, "text": CODE } }),
+            ),
+            request(1, "textDocument/rename", rename("heal", "mend")),
+            request(2, "textDocument/rename", rename("health", "hp")),
+        ],
+    );
+    let edit = s.result(1);
+    assert_eq!(edit.get("changes"), None);
+    let annotation = &edit["changeAnnotations"]["map-name"];
+    assert_eq!(annotation["needsConfirmation"], json!(true));
+    assert!(annotation["label"].as_str().unwrap().contains("heal"));
+    assert!(
+        annotation["description"]
+            .as_str()
             .unwrap()
-            .len(),
+            .contains("classname")
+    );
+    let changes = edit["documentChanges"].as_array().unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(
+        changes[0]["textDocument"],
+        json!({ "uri": uri("code.qc"), "version": 7 })
+    );
+    assert_eq!(
+        changes[0]["edits"],
+        json!([{ "range": range(CODE, "heal", 0), "newText": "mend", "annotationId": "map-name" }])
+    );
+    // A global no map names is renamed with plain edits, none annotated.
+    let plain = s.result(2);
+    assert_eq!(plain.get("changeAnnotations"), None);
+    assert_eq!(plain.get("documentChanges"), None);
+    assert_eq!(
+        plain["changes"][uri("defs.qc")].as_array().unwrap().len(),
         1
     );
-    let shown = s.notifications("window/showMessage");
-    assert_eq!(shown.len(), 1, "{shown:?}");
-    assert_eq!(shown[0]["type"], json!(2));
-    assert!(shown[0]["message"].as_str().unwrap().contains("heal"));
+}
+
+// LSP 3.18: a client with change annotations but no `honorsChangeAnnotations` for rename, or
+// with no `documentChanges` to carry an `AnnotatedTextEdit`, cannot confirm, so the rename of a
+// name a map may use is refused (ADR-0019).
+#[test]
+fn rename_is_refused_to_a_client_that_cannot_confirm() {
+    for capabilities in [
+        json!({ "workspace": { "workspaceEdit": {
+            "documentChanges": true, "changeAnnotationSupport": {} } } }),
+        json!({ "workspace": { "workspaceEdit": { "changeAnnotationSupport": {} } },
+                "textDocument": { "rename": { "honorsChangeAnnotations": true } } }),
+        json!({ "workspace": { "workspaceEdit": { "documentChanges": true } },
+                "textDocument": { "rename": { "honorsChangeAnnotations": true } } }),
+    ] {
+        let mut params = at("code.qc", CODE, "heal", 0);
+        params["newName"] = json!("mend");
+        let s = session(
+            project(&[("defs.qc", DEFS), ("code.qc", CODE)]),
+            &[
+                initialize_with(json!(null), capabilities.clone()),
+                request(1, "textDocument/rename", params),
+            ],
+        );
+        assert_eq!(s.error_code(1), -32803, "{capabilities}");
+    }
 }
 
 // LSP 3.18, "Hover Request": a `Hover` whose contents are `MarkupContent` in a format the client

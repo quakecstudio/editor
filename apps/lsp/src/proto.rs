@@ -166,6 +166,28 @@ pub struct HoverCapabilities {
 pub struct RenameCapabilities {
     /// Whether the client sends `textDocument/prepareRename`.
     pub prepare_support: Option<bool>,
+    /// Whether the client honors the change annotations of a rename's workspace edit, "for
+    /// example, presenting the workspace edit in the user interface and asking for
+    /// confirmation".
+    pub honors_change_annotations: Option<bool>,
+}
+
+/// `WorkspaceEditClientCapabilities`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEditCapabilities {
+    /// Whether the client supports versioned document changes, `documentChanges`.
+    pub document_changes: Option<bool>,
+    /// Present when the client "in general supports change annotations on text edits".
+    pub change_annotation_support: Option<serde_json::Value>,
+}
+
+/// `WorkspaceClientCapabilities`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCapabilities {
+    /// Workspace edits.
+    pub workspace_edit: Option<WorkspaceEditCapabilities>,
 }
 
 /// `TextDocumentClientCapabilities`.
@@ -185,6 +207,8 @@ pub struct ClientCapabilities {
     pub general: Option<GeneralCapabilities>,
     /// Text document capabilities.
     pub text_document: Option<TextDocumentCapabilities>,
+    /// Workspace capabilities.
+    pub workspace: Option<WorkspaceCapabilities>,
 }
 
 /// `InitializeParams`.
@@ -273,14 +297,65 @@ pub struct TextEdit {
     pub new_text: String,
 }
 
-/// `WorkspaceEdit` with `changes` only, which every client supports
-/// (`types/workspaceEdit.md`: "If a client neither supports `documentChanges` nor
-/// `workspace.workspaceEdit.resourceOperations` then only plain `TextEdit`s using the `changes`
-/// property are supported").
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// `WorkspaceEdit`: plain `changes`, which every client supports (`types/workspaceEdit.md`: "If
+/// a client neither supports `documentChanges` nor `workspace.workspaceEdit.resourceOperations`
+/// then only plain `TextEdit`s using the `changes` property are supported"), or
+/// `documentChanges` with the `changeAnnotations` their edits name.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceEdit {
     /// The edits of each document, by URI.
-    pub changes: std::collections::BTreeMap<String, Vec<TextEdit>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes: Option<std::collections::BTreeMap<String, Vec<TextEdit>>>,
+    /// The edits of each document, as `TextDocumentEdit`s.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_changes: Option<Vec<TextDocumentEdit>>,
+    /// The annotations the edits name, by identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_annotations: Option<std::collections::BTreeMap<String, ChangeAnnotation>>,
+}
+
+/// `OptionalVersionedTextDocumentIdentifier`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct OptionalVersionedTextDocumentIdentifier {
+    /// The document.
+    pub uri: String,
+    /// The version of the open document, `null` for one that is not open.
+    pub version: Option<i32>,
+}
+
+/// `TextDocumentEdit` whose edits are `AnnotatedTextEdit`s.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextDocumentEdit {
+    /// The document to change.
+    pub text_document: OptionalVersionedTextDocumentIdentifier,
+    /// The edits.
+    pub edits: Vec<AnnotatedTextEdit>,
+}
+
+/// `AnnotatedTextEdit`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotatedTextEdit {
+    /// The range replaced.
+    pub range: Range,
+    /// Its new text.
+    pub new_text: String,
+    /// The `ChangeAnnotationIdentifier` of its annotation.
+    pub annotation_id: String,
+}
+
+/// `ChangeAnnotation`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangeAnnotation {
+    /// "A human-readable string describing the actual change."
+    pub label: String,
+    /// "A flag which indicates that user confirmation is needed before applying the change."
+    pub needs_confirmation: bool,
+    /// "A human-readable string which is rendered less prominently".
+    pub description: String,
 }
 
 /// `Diagnostic`.
