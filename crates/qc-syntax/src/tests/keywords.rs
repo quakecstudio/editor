@@ -458,3 +458,42 @@ fn reacc_keywords_are_names() {
     assert_eq!(errors("float __CodeSys;\n", defaults), []);
     assert!(!holds(&in_body("exit;"), defaults, K::ExitStmt));
 }
+
+// spec FTEF-20.5: the views of the keyword statements give their parts
+#[test]
+fn keyword_statement_views() {
+    use crate::ast::{self, AstNode as _};
+    let node = |body: &str, kind: K| {
+        fte_with(&in_body(body), Keywords::default())
+            .syntax()
+            .descendants()
+            .find(|n| n.kind() == kind)
+            .unwrap()
+    };
+    let asm = ast::AsmStmt::cast(node("asm { local float x; DONE; }", K::AsmStmt)).unwrap();
+    assert_eq!(asm.locals().count(), 1);
+    let looped = ast::LoopStmt::cast(node("__loop { break; }", K::LoopStmt)).unwrap();
+    assert!(looped.body().is_some());
+    let think = ast::ThinktimeStmt::cast(node("__thinktime e : 0.1;", K::ThinktimeStmt)).unwrap();
+    assert_eq!(think.operands().count(), 2);
+    let state = ast::StateStmt::cast(node("__state [1, f];", K::StateStmt)).unwrap();
+    assert!(state.state().is_some());
+    let using = ast::UsingStmt::cast(node("__using (a, b = c) {}", K::UsingStmt)).unwrap();
+    assert!(using.body().is_some());
+    let names: Vec<(String, String)> = using
+        .aliases()
+        .map(|a| {
+            (
+                a.target().unwrap().text_lossless(),
+                a.alias().unwrap().text_lossless(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("a".to_owned(), "a".to_owned()),
+            ("b".to_owned(), "c".to_owned())
+        ]
+    );
+}

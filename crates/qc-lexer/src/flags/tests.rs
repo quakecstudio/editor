@@ -59,6 +59,13 @@ fn flags_set_and_clear() {
             .with(LexFlag::QcFuncs, true)
             .has(LexFlag::QcFuncs)
     );
+    // The flags at a byte are the last mark's at or before it, else the defaults.
+    let qccx = LexFlags::NONE.with(LexFlag::Qccx, true);
+    let marks = [(4, qccx), (9, LexFlags::NONE)];
+    assert_eq!(LexFlags::at(&marks, 3), LexFlags::default());
+    assert_eq!(LexFlags::at(&marks, 4), qccx);
+    assert_eq!(LexFlags::at(&marks, 8), qccx);
+    assert_eq!(LexFlags::at(&marks, 9), LexFlags::NONE);
     for flag in [
         LexFlag::QcFuncs,
         LexFlag::Qccx,

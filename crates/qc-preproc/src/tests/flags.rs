@@ -163,6 +163,23 @@ fn a_flag_holds_into_the_second_pass() {
     );
 }
 
+// spec FTEF-14.72: the command line's `-W` and `-T` options are read again as the second pass
+// starts, so they hold in it as in the first
+#[test]
+fn the_command_line_holds_into_the_second_pass() {
+    assert_eq!(codes(&one_with("/* /* */\n", &[])), [Code::W0112]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"/* /* */\n");
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(Dialect::Fteqcc)
+        .with_command_line(CommandLine::new(&["-Wno-F325", "-Thexen2"]));
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert!(codes(&out).is_empty());
+    assert!(keyword_states(&out).iter().all(|(_, k)| k.hexen2_target()));
+}
+
 // spec FTEF-12.12: the preprocessor marks each change of the lexer's flags by token, starting
 // with the defaults at token 0; a pragma that changes no lexer flag adds no mark
 #[test]

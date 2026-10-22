@@ -248,7 +248,7 @@ fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
     let Some(mut node) = hide.as_deref() else {
         return false;
     };
-    let Some(count) = live.get(name).filter(|count| count.get() > 0) else {
+    let Some(count) = live.get(name).filter(|count| count.get() != 0) else {
         return false;
     };
     loop {
@@ -484,9 +484,9 @@ impl TokenStream {
         // A change of the macros alone matters only to a string with a `#` in it.
         let macros_only = key.flags == self.key.flags;
         self.key = key;
-        let hashed = |t: &Token| {
-            matches!(t.kind, TokenKind::String(_))
-                && text.get(t.span.range()).is_some_and(|b| b.contains(&b'#'))
+        let hashed = |t: &Token| match t.kind {
+            TokenKind::String(_) => text.get(t.span.range()).is_some_and(|b| b.contains(&b'#')),
+            _ => false,
         };
         if macros_only
             && !self

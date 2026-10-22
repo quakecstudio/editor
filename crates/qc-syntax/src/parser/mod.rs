@@ -337,16 +337,10 @@ impl<'a> Parser<'a> {
     }
 
     /// `QCC_PR_CheckName(word)` of the token `n` ahead (FTEF-20.2): `word`, in any case under
-    /// `caseinsens`.
+    /// `caseinsens`. Only an FTEQCC dialect's enums read it, so the keywords are always FTEQCC's.
     fn names(&self, n: usize, word: &str) -> bool {
-        self.nth(n).is_some_and(|t| {
-            t.kind == K::Name
-                && if self.fteqcc() {
-                    self.keywords_ahead(n).names(word, &t.text)
-                } else {
-                    t.text == word
-                }
-        })
+        self.nth(n)
+            .is_some_and(|t| t.kind == K::Name && self.keywords_ahead(n).names(word, &t.text))
     }
 
     /// `keyword_X && !STRCMP(word, pr_token)` of the token `n` ahead (FTEF-20.6): `word` exactly,

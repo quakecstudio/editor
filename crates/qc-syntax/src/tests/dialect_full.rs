@@ -800,6 +800,8 @@ fn at_under_qccx_and_caret_caret() {
         0
     );
     // The parse keeps the flags it was given.
+    assert_eq!(flagged.lex_flags(), [(0, qccx)]);
+    assert!(plain.lex_flags().is_empty());
     assert_eq!(flagged.lex_flags_at(5), qccx);
     assert_eq!(plain.lex_flags_at(5), qc_lexer::LexFlags::default());
 }

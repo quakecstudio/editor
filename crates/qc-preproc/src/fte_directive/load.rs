@@ -130,17 +130,20 @@ fn decode_utf(wide: Wide, bytes: &[u8], from: usize) -> (Vec<u8>, Vec<usize>) {
 /// bytes, a surrogate's in three as any other value of U+0800 to U+FFFF, written to `text`;
 /// how many bytes it wrote.
 fn encode(code: u32, text: &mut Vec<u8>) -> usize {
-    let tail = |shift: u32| low_byte(((code >> shift) & 0x3f) | 0x80);
+    // Each byte is UTF-8's marker plus the code's bits under the mask, which the marker's bits
+    // leave clear, so the sum is the marker with those bits set.
+    let byte =
+        |marker: u8, shift: u32, mask: u32| marker.wrapping_add(low_byte((code >> shift) & mask));
+    let tail = |shift: u32| byte(0x80, shift, 0x3f);
     let before = text.len();
     if code <= 0x7f {
         text.push(low_byte(code));
     } else if code <= 0x7ff {
-        text.extend_from_slice(&[low_byte(((code >> 6) & 0x1f) | 0xc0), tail(0)]);
+        text.extend_from_slice(&[byte(0xc0, 6, 0x1f), tail(0)]);
     } else if code <= 0xffff {
-        text.extend_from_slice(&[low_byte(((code >> 12) & 0xf) | 0xe0), tail(6), tail(0)]);
+        text.extend_from_slice(&[byte(0xe0, 12, 0xf), tail(6), tail(0)]);
     } else {
-        let lead = low_byte(((code >> 18) & 0x07) | 0xf0);
-        text.extend_from_slice(&[lead, tail(12), tail(6), tail(0)]);
+        text.extend_from_slice(&[byte(0xf0, 18, 0x07), tail(12), tail(6), tail(0)]);
     }
     text.len().saturating_sub(before)
 }
