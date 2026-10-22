@@ -429,6 +429,36 @@ malformed directive without a diagnostic.
   output. The graph reports each such file and reads on, so every file a module names is
   listed. This is a deliberate divergence: the compile's outcome, an error, is the same, and
   the IDE shows every missing file at once rather than one a build.
+- **PRJ-6.7** Each entry also records the file's name, FTEQCC's, relative to the graph's
+  directory, the source's own (FTEQCC run there, as `cargo xtask oracles builtins` runs it): the
+  source is named by its file name, `compilingrootfile` (`QC_strlcpy(compilingrootfile,
+  qccmprogsdat, sizeof(compilingrootfile));` after `QC_snprintfz (qccmprogsdat,
+  sizeof(qccmprogsdat), "%s%s", qccmsourcedir, sourcefileslist[currentsourcefile++]);`,
+  `qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`); a list entry is
+  `QCC_FindBestInclude(qcc_token, compilingrootfile, 2);`, an `#includelist` entry
+  `QCC_FindBestInclude(pr_token, compilingfile, true);` and an `#include`
+  `QCC_FindBestInclude(msg, compilingfile, false);` (`qcc_pr_lex.c`), each the word joined by
+  `QCC_JoinPaths(fullname, sizeof(fullname), newfile, currentfile);` after the last `/` or `\`
+  of the name of the file it is found beside, or alone when it starts with one (`if (*newfile ==
+  '/' || *newfile == '\\')`), or joined so to the name of the include directory it is found in.
+  An include directory is named as `QCC_PR_AddIncludePath` keeps it: as given, `.` when empty,
+  with a `/` after it unless it ends in `/` or `\` (`if (*e != '/' && *e != '\\')`); a `#pragma
+  includedir` one is its token with that `/`, joined to the name of the file being compiled
+  (`QCC_JoinPaths(newinc, sizeof(newinc), qcc_token, compilingfile);`). The beside file is the
+  one PRJ-5.2, PRJ-5.11 and PRJ-5.12 say. A name is not normalized: `src/./a.qc` stays so. The
+  vanilla and GMQCC dialects name their files the same way. So with `progs.src` listing
+  `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the names are `src/a.qc`,
+  `src/x/b.qh` and `src/c.qh`, and with it listing `sub\top.qc`, which includes `tab.qh`,
+  `sub\top.qc` and `sub\tab.qh`.
+- **PRJ-6.8** Under the FTEQCC dialect the file a name brings in is the file of that name in the
+  graph's directory, as FTEQCC opens it there: `QCC_FileSize` and `QCC_ReadFile` (`qcctui.c`)
+  open the name with `f = fopen(fname, "rb");`, and `QCC_FindBestInclude` takes the first name
+  for which `if (qccprogfuncs->funcs.parms->FileSize(fullname) == -1)` is false. So `\` in a name separates directories only where
+  the host's separator does, and an include directory given relative is in the graph's
+  directory. `#pragma once` marks the name of the file being compiled (FTEF-14.70) and a name
+  found is skipped when it is marked (`if (!strcmp(onced->name, fullname))`, then `return;`), so a list
+  that names `a.qc`, which holds `#pragma once`, then `./a.qc`, compiles it twice. The vanilla
+  and GMQCC dialects find files as PRJ-5.2 and PRJ-5.12 say and mark the file itself.
 
 ### Constants
 

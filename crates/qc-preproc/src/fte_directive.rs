@@ -25,7 +25,7 @@ pub(crate) use load::first_nul;
 pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 
 use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
@@ -37,7 +37,7 @@ use crate::fte_macro::{Reading, Text};
 use crate::fte_tables::TargetFormat;
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
-    WarningSettings, fte_pragma, normalize,
+    WarningSettings, fte_pragma,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -1126,8 +1126,9 @@ pub(crate) fn elif_defined(
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
-/// `name` itself when it starts with one (FTEF-14.40).
-pub(crate) fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
+/// `name` itself when it starts with one (FTEF-14.40, PRJ-6.7).
+#[must_use]
+pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     if name.first().is_some_and(|&b| b == b'/' || b == b'\\') {
         return name.to_vec();
     }
@@ -1146,6 +1147,21 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
     let mut names = vec![join_paths(name, compiling)];
     names.extend(dirs.iter().map(|dir| join_paths(name, dir)));
     names
+}
+
+/// The name `QCC_PR_AddIncludePath(new)` keeps for the include directory `new`: `.` for an empty
+/// one, and a `/` after it unless it ends in `/` or `\` (FTEF-14.70, PRJ-6.7).
+#[must_use]
+pub fn include_dir_name(new: &[u8]) -> Vec<u8> {
+    let mut dir = if new.is_empty() {
+        b".".to_vec()
+    } else {
+        new.to_vec()
+    };
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    dir
 }
 
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
@@ -1174,10 +1190,7 @@ impl FteState {
         if dirs.len() >= FTE_MAX_INCLUDE_DIRS {
             return Some("Too many include dirs. Ignoring and hoping the stars align.");
         }
-        let mut dir = given.to_vec();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
+        let dir = include_dir_name(given);
         if dir.len() >= FTE_INCLUDE_TABLE_BYTES {
             return Some("Include path too long.");
         }
@@ -1810,10 +1823,10 @@ impl<L: Loader> Preprocessor<L> {
             && let Some(cursor) = run.cursors.iter().rev().find(|c| c.file == at.file)
         {
             let here = join_paths(name, &cursor.read_as);
-            let path = normalize(&PathBuf::from(lossy(&here)));
+            let path = self.open_path(Path::new(&lossy(&here)));
             let known = names
                 .iter()
-                .any(|name| normalize(&PathBuf::from(lossy(name))) == path);
+                .any(|name| self.open_path(Path::new(&lossy(name))) == path);
             if !known {
                 names.insert(0, here);
             }
@@ -1821,7 +1834,7 @@ impl<L: Loader> Preprocessor<L> {
         let mut first_error = None;
         let mut found = None;
         for candidate in &names {
-            let path = normalize(&PathBuf::from(lossy(candidate)));
+            let path = self.open_path(Path::new(&lossy(candidate)));
             match self.loader.load(&path) {
                 Ok(text) => {
                     found = Some((candidate.clone(), path, text));

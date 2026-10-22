@@ -12,7 +12,7 @@
 //! origins, so every definition, reference and diagnostic is reported at a span of a source
 //! file, while the lossless tree of the file as written stays the editing view.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -44,26 +44,36 @@ pub struct ModuleInput {
     /// FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and compiler
     /// flags the module is read with (FTEF-14.72); none by default.
     pub command_line: CommandLine,
+    /// The name the compiler is given each file of [`Self::prelude`] and [`Self::compiled`] by,
+    /// the graph's (PRJ-6.7), which `__FILE__` writes and an `#include` is joined to
+    /// (FTEF-14.32, FTEF-14.73). A file with none is named by its path.
+    pub names: BTreeMap<FileId, String>,
+    /// The directory a name is the file of, FTEQCC's working directory, the graph's
+    /// (PRJ-6.8); empty by default, so a name is the file of that path.
+    pub dir: PathBuf,
 }
 
 impl ModuleInput {
     /// The input for a module's file graph, each file named by its index in
     /// `graph.files` (as [`Location::file`] is): the root `progs.src` of the source form is
     /// the prelude, and every file the graph lists but did not reach by `#include` is
-    /// compiled, in the graph's order.
+    /// compiled, in the graph's order, by the graph's name for it, in the graph's directory
+    /// (FTEF-14.73).
     #[must_use]
     pub fn from_graph(graph: &FileGraph) -> Self {
         let mut input = Self {
             autoproto: graph.autoproto,
+            dir: graph.dir.clone(),
             ..Self::default()
         };
         for (index, file) in graph.files.iter().enumerate() {
             let id = FileId(index);
             match file.via {
-                Via::Include => {}
+                Via::Include => continue,
                 Via::Root if graph.form == Some(Form::Source) => input.prelude.push(id),
                 Via::Root | Via::Listed | Via::IncludeList => input.compiled.push(id),
             }
+            input.names.insert(id, file.name.clone());
         }
         input
     }
@@ -213,7 +223,8 @@ pub(crate) fn preprocess(
     let mut pp = Preprocessor::new(loader)
         .with_dialect(dialect)
         .with_command_line(input.command_line.clone())
-        .with_include_dirs(&input.include_dirs);
+        .with_include_dirs(&input.include_dirs)
+        .with_working_dir(&input.dir);
     let (mut first, pragma, late) = run(&mut pp, files, input);
     if !pragma.or(input.autoproto).unwrap_or(autoproto) {
         first.diagnostics.extend(late);
@@ -247,11 +258,14 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
+                // FTEF-14.73: the preprocessor is given the file's name, and opens it in the
+                // input's directory.
+                let named = input.names.get(id).map_or(path.as_path(), Path::new);
                 // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
                 let output = if compiled {
-                    pp.preprocess_file(path)
+                    pp.preprocess_file(named)
                 } else {
-                    pp.preprocess_source(path)
+                    pp.preprocess_source(named)
                 };
                 output.map_err(|err| format!("{}: {err}", path.display()))
             }

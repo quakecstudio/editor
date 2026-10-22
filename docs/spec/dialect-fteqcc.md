@@ -1088,8 +1088,7 @@ profile the preprocessor reads them as FTEQCC does.
   binds the name `t.qc`, after `#pragma file(ex_a:b)` `ex_a`, and after `#pragma file(e\\x)`
   `e\x`; with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the
   pinned FTEQCC names them `src/a.qc`, `src/x/b.qh` and `src/c.qh`. The semantic model gives the
-  preprocessor each file's path as its input names it, the `progs.src` entry only where the
-  caller makes it so (P2-95).
+  preprocessor each file's name as FTEF-14.73 says.
 - **FTEF-14.33** An `#if` or `#elif` expression is read as `ParsePrecompilerIf` reads it, not
   with the C precedence of PRJ-5.5, by the preprocessor and by the graph of a module of this
   dialect. `||` and `&&` share one level and group to the right, the right side read first:
@@ -1624,6 +1623,23 @@ profile the preprocessor reads them as FTEQCC does.
   `targets[]` (`QCC_OPCodeSetTargetName`, FTEF-12.11), in order, `-Tparse` none. The `/W`, `/F`
   and `/K` spellings FTEQCC reads only on Windows (`WINDOWSARG`) are not read: the pinned
   oracle is not built for Windows.
+- **FTEF-14.73** The semantic model (`Db::analyze_module`) gives the preprocessor each file it
+  compiles by the name its input holds for it, which for a module's graph
+  (`ModuleInput::from_graph`) is the graph's name (PRJ-6.7), not the path the database holds the
+  file by, and the preprocessor opens a name, and each name an `#include` is joined to
+  (FTEF-14.40), as the file of that name in the input's directory, the graph's (PRJ-6.8). So
+  `__FILE__` (FTEF-14.32) in a listed file and in each file it includes is the name FTEQCC gives
+  it, compiled in the source's directory: with `progs.src` listing `src/a.qc` it binds
+  `void() f = :__FILE__;` to `src/a.qc` in that file, to `src/x/b.qh` in the `x/b.qh` it
+  includes, to `src/c.qh` in a `c.qh` that one includes, to `src/y/c.qh` after `#pragma
+  includedir y`, to `src/./b.qh` in a `b.qh` that `src/./a.qc` includes, and to `inc/c.qh` in a
+  `c.qh` found with `-Iinc` or `-Iinc/`; with it listing `sub\top.qc`, to `sub`, a tab and
+  `op.qc`, the `\t` an escape (FTEF-14.32), and in a `tab.qh` that file includes, to `sub`, a
+  tab and `ab.qh`. A file with no name in the input is given by its path, in no directory. The
+  named projects of `cargo xtask oracles builtins` (`NAMED_PROJECTS` and `NAMED_DIR_PROJECTS` in
+  `xtask/src/oracles/builtins/directives.rs`) hold these cases, the profile reading every
+  FTEQCC case with no `progs.src` of its own through its graph in a directory of its own
+  (`graph_input`), and the run of 2026-10-22 (macOS arm64) bound each as the pinned FTEQCC does.
 
 ## FTEF-15 Declarations
 

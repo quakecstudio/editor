@@ -32,8 +32,8 @@ mod tests;
 
 pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
-    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
-    qcc_load_in_place, skip_script_line,
+    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, include_dir_name, join_paths,
+    qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
@@ -885,6 +885,9 @@ pub struct Preprocessor<L> {
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
+    /// The directory a file's name is opened in, FTEQCC's working directory (PRJ-6.8); empty
+    /// by default, so a name is opened as it is given.
+    working_dir: PathBuf,
     /// How many times a macro has been defined or undefined, so a text lexed under
     /// `macroinstrings` is lexed again after it (FTEF-12.12).
     macro_edits: u64,
@@ -930,6 +933,7 @@ impl<L: Loader> Preprocessor<L> {
             command_line_dirs: Vec::new(),
             command_line: CommandLine::default(),
             include_dirs: Vec::new(),
+            working_dir: PathBuf::new(),
             macro_edits: 0,
         }
     }
@@ -1021,6 +1025,23 @@ impl<L: Loader> Preprocessor<L> {
         self
     }
 
+    /// Gives the directory a file's name is opened in, FTEQCC's working directory (PRJ-6.8):
+    /// FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`, `qcctui.c`), so a
+    /// relative name is the file of that name in the directory it runs in, `\` a separator only
+    /// where the host's is. The name `__FILE__` writes and an `#include` is joined to is still the
+    /// name as given (FTEF-14.32). None by default, so a name is opened as it is given.
+    #[must_use]
+    pub fn with_working_dir(mut self, dir: &Path) -> Self {
+        self.working_dir = dir.to_path_buf();
+        self
+    }
+
+    /// The path of the file named `name`: in the working directory, normalized
+    /// ([`Self::with_working_dir`]).
+    pub(crate) fn open_path(&self, name: &Path) -> PathBuf {
+        normalize(&self.working_dir.join(name))
+    }
+
     /// Every file read so far.
     #[must_use]
     pub const fn sources(&self) -> &SourceMap {
@@ -1086,7 +1107,7 @@ impl<L: Loader> Preprocessor<L> {
     /// [`Self::preprocess_file`] of a file that starts as `start` says.
     fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
-        let path = normalize(path);
+        let path = self.open_path(path);
         let bytes = self.loader.load(&path)?;
         let warnings = self
             .dialect

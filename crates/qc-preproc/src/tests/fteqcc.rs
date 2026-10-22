@@ -752,6 +752,41 @@ fn an_included_file_is_named_beside_the_compiled_file() {
     assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
+// spec FTEF-14.73: in a working directory a name is the file of that name in it, a file it
+// includes too, and `__FILE__` writes the name as given; a name with no file there is the
+// loader's error
+#[test]
+fn names_are_opened_in_the_working_directory() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("/w/src/a.qc", "__FILE__\n#include \"x/b.qh\"\n".as_bytes());
+    loader.insert("/w/src/x/b.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(qc_lexer::Dialect::Fteqcc)
+        .with_working_dir(Path::new("/w"));
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/a.qc".to_vec()),
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+        ]
+    );
+    assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+    assert!(pp.preprocess_file(Path::new("a.qc")).is_err());
+    assert!(pp.preprocess_file(Path::new("/w/src/a.qc")).is_ok());
+}
+
+// spec FTEF-14.70: `QCC_PR_AddIncludePath` names an empty directory `.` and puts a `/` after a
+// name unless it ends in `/` or `\`
+#[test]
+fn include_directory_names() {
+    assert_eq!(crate::include_dir_name(b""), b"./");
+    assert_eq!(crate::include_dir_name(b"inc"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc/"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc\\"), b"inc\\");
+}
+
 // spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
 // case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
 #[test]

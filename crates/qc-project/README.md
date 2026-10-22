@@ -21,7 +21,10 @@ file, with no `FTEQCC` defined (PRJ-5.15). Under the FTEQCC and GMQCC dialects a
 a list is split as id's `COM_Parse` splits it, a byte of 0x80 or more white space and a quoted
 word running across lines (QC-23.8, QC-23.9), and it ends at the NUL byte where id's `qcc` ends
 it (PRJ-4.11, QC-23.7), as each vanilla file does (PRJ-5.16). A file that cannot be opened is
-reported and the graph reads on, where both compilers stop (PRJ-6.6).
+reported and the graph reads on, where both compilers stop (PRJ-6.6). Each file of the graph
+has its name, FTEQCC's, joined as `QCC_JoinPaths` joins it, relative to the source's directory
+(PRJ-6.7), and under FTEQCC is the file of that name there, `#pragma once` comparing names
+(PRJ-6.8).
 
 Files open as the host file system opens them, as FTEQCC and id's `qcc` do, and a name whose
 case differs from the file it opened is warning W0402 on every OS, so a project that would

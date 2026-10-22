@@ -227,9 +227,7 @@ fn a_compiled_file_that_cannot_be_read_is_an_error() {
     let input = ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(2), FileId(1)],
-        autoproto: None,
-        include_dirs: Vec::new(),
-        command_line: qc_preproc::CommandLine::default(),
+        ..ModuleInput::default()
     };
     assert_eq!(
         db.file_path(FileId(1)),
@@ -381,9 +379,7 @@ fn an_unchanged_module_is_served_from_cache() {
     let fewer = ModuleInput {
         prelude: Vec::new(),
         compiled: input.compiled[..2].to_vec(),
-        autoproto: None,
-        include_dirs: Vec::new(),
-        command_line: qc_preproc::CommandLine::default(),
+        ..ModuleInput::default()
     };
     db.analyze_module(&fewer);
     let after = db.counts();
@@ -478,6 +474,7 @@ fn origin_maps_keep_the_first_origin_out_of_order() {
 fn module_input_from_a_graph() {
     let file = |path: &str, via| GraphFile {
         path: PathBuf::from(path),
+        name: path.to_owned(),
         via,
         parent: None,
     };

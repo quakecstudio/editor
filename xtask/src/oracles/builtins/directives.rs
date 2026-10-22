@@ -846,6 +846,53 @@ const INCLUDE_PROJECTS: &[IncludeProject] = &[
     ),
 ];
 
+/// A file that binds `f` to the name `__FILE__` writes for it (FTEF-14.32).
+const NAMED: &str = "void() f = :__FILE__;\n";
+
+/// Projects whose files bind `f` to their names, which the profile reads from the graph's
+/// names in a directory of its own (FTEF-14.73, PRJ-6.7, PRJ-6.8): a listed file in a
+/// subdirectory, a file it includes beside it and in another directory, one a `#pragma
+/// includedir` finds, a name with `./` in it, and names with `\` in them, which the name is
+/// joined after and which are no separator where the host's is `/`.
+const NAMED_PROJECTS: &[IncludeProject] = &[
+    ("src/a.qc", NAMED, &[]),
+    ("src/a.qc", NESTED, &[("src/x/b.qh", NAMED)]),
+    (
+        "src/a.qc",
+        NESTED,
+        &[("src/x/b.qh", "#include \"c.qh\"\n"), ("src/c.qh", NAMED)],
+    ),
+    (
+        "src/a.qc",
+        "#pragma includedir y\n#include \"c.qh\"\n",
+        &[("src/y/c.qh", NAMED)],
+    ),
+    ("src/./a.qc", "#include \"b.qh\"\n", &[("src/b.qh", NAMED)]),
+    ("sub\\top.qc", NAMED, &[]),
+    (
+        "sub\\top.qc",
+        "#include \"tab.qh\"\n",
+        &[("sub\\tab.qh", NAMED)],
+    ),
+];
+
+/// The named projects with include directories, FTEQCC's `-I`, which name a file found in them
+/// by the directory as given and a `/` (FTEF-14.70, PRJ-6.7).
+const NAMED_DIR_PROJECTS: &[DirProject] = &[
+    (
+        "t.qc",
+        "#include \"c.qh\"\n",
+        &[("inc/c.qh", NAMED)],
+        &["inc"],
+    ),
+    (
+        "t.qc",
+        "#include \"c.qh\"\n",
+        &[("inc/c.qh", NAMED)],
+        &["inc/"],
+    ),
+];
+
 /// The case of `source` compiled as `compiled` with `files` beside it.
 fn project_case(compiled: &str, source: &str, files: &[(&str, String)]) -> Case {
     let mut files: Vec<(String, String)> = files
@@ -917,6 +964,7 @@ const DIR_PROJECTS: &[DirProject] = &[
 fn include_cases() -> Vec<Case> {
     let mut cases: Vec<Case> = INCLUDE_PROJECTS
         .iter()
+        .chain(NAMED_PROJECTS)
         .map(|&(compiled, source, files)| {
             let files: Vec<(&str, String)> = files
                 .iter()
@@ -925,7 +973,7 @@ fn include_cases() -> Vec<Case> {
             project_case(compiled, source, &files)
         })
         .collect();
-    for &(compiled, source, files, dirs) in DIR_PROJECTS {
+    for &(compiled, source, files, dirs) in DIR_PROJECTS.iter().chain(NAMED_DIR_PROJECTS) {
         let files: Vec<(&str, String)> = files
             .iter()
             .map(|&(name, text)| (name, text.to_owned()))
