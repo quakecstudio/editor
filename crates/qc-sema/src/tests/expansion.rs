@@ -474,7 +474,7 @@ fn origin_maps_keep_the_first_origin_out_of_order() {
 fn module_input_from_a_graph() {
     let file = |path: &str, via| GraphFile {
         path: PathBuf::from(path),
-        name: path.to_owned(),
+        name: Some(path.to_owned()),
         via,
         parent: None,
     };

@@ -44,7 +44,8 @@ impl Default for ProjectSpec<'_> {
 enum Given {
     /// By the graph's input, [`ModuleInput::from_graph`].
     Graph,
-    /// By their paths alone, with no names.
+    /// By their paths alone, with no names, in the graph's directory, which a path is not
+    /// opened in.
     Paths,
 }
 
@@ -86,7 +87,6 @@ fn bound_name(spec: &ProjectSpec<'_>, given: Given) -> (Option<String>, Vec<qc_d
     };
     if given == Given::Paths {
         input.names.clear();
-        input.dir = PathBuf::new();
     }
     let errors = db
         .analyze_module(&input)

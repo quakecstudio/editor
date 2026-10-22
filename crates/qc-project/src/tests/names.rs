@@ -7,9 +7,13 @@ use std::path::{Path, PathBuf};
 use super::{GraphSpec, build, diags, names};
 use crate::FileGraph;
 
-/// The graph's names for its files.
+/// The graph's names for its files, `-` for none.
 fn given(graph: &FileGraph) -> Vec<&str> {
-    graph.files.iter().map(|f| f.name.as_str()).collect()
+    graph
+        .files
+        .iter()
+        .map(|f| f.name.as_deref().unwrap_or("-"))
+        .collect()
 }
 
 /// An FTEQCC module of `files` whose `progs.src`, in `qc/`, lists `compiled`.
@@ -156,12 +160,12 @@ fn fteqcc_once_compares_names() {
         files: &files,
         ..GraphSpec::default()
     });
-    assert_eq!(given(&graph), ["a.qc"]);
+    assert_eq!(names(&graph), ["a.qc"]);
 }
 
-// spec PRJ-6.7: the vanilla dialect names its files too, joined as FTEQCC joins them
+// spec PRJ-6.7: under the other dialects a file has no name
 #[test]
-fn vanilla_names_are_joined_too() {
+fn other_dialects_name_no_file() {
     let graph = build(&GraphSpec {
         files: &[
             ("qc/progs.src", "progs.dat\nsrc/a.qc\n"),
@@ -171,5 +175,6 @@ fn vanilla_names_are_joined_too() {
         src: "qc/progs.src",
         ..GraphSpec::default()
     });
-    assert_eq!(given(&graph), ["src/a.qc", "src/x/b.qh"]);
+    assert_eq!(given(&graph), ["-", "-"]);
+    assert_eq!(names(&graph), ["qc/src/a.qc", "qc/src/x/b.qh"]);
 }

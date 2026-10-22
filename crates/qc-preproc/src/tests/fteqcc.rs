@@ -769,9 +769,9 @@ fn an_included_file_is_named_beside_the_compiled_file() {
     assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
-// spec FTEF-14.73: in a working directory a name is the file of that name in it, a file it
-// includes too, and `__FILE__` writes the name as given; a name with no file there is the
-// loader's error
+// spec FTEF-14.73: a file is opened at its path and named by its name, which `__FILE__`
+// writes and an `#include` is joined to, the joined name opened in the working directory; a
+// file given by its path alone is named by it and opened as it is
 #[test]
 fn names_are_opened_in_the_working_directory() {
     let mut loader = MemoryLoader::new();
@@ -780,7 +780,9 @@ fn names_are_opened_in_the_working_directory() {
     let mut pp = Preprocessor::new(loader)
         .with_dialect(qc_lexer::Dialect::Fteqcc)
         .with_working_dir(Path::new("/w"));
-    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    let out = pp
+        .preprocess_file_named(Path::new("/w/src/a.qc"), b"src/a.qc")
+        .unwrap();
     let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
     assert_eq!(
         kinds,
@@ -790,8 +792,16 @@ fn names_are_opened_in_the_working_directory() {
         ]
     );
     assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
-    assert!(pp.preprocess_file(Path::new("a.qc")).is_err());
-    assert!(pp.preprocess_file(Path::new("/w/src/a.qc")).is_ok());
+    assert!(pp.preprocess_file(Path::new("src/a.qc")).is_err());
+    let out = pp
+        .preprocess_source_named(Path::new("/w/src/x/b.qh"), b"progs.src")
+        .unwrap();
+    assert_eq!(out.tokens[0].kind, TokenKind::String(b"progs.src".to_vec()));
+    let out = pp.preprocess_file(Path::new("/w/src/x/b.qh")).unwrap();
+    assert_eq!(
+        out.tokens[0].kind,
+        TokenKind::String(b"/w/src/x/b.qh".to_vec())
+    );
 }
 
 // spec FTEF-14.70: `QCC_PR_AddIncludePath` names an empty directory `.` and puts a `/` after a
@@ -802,6 +812,9 @@ fn include_directory_names() {
     assert_eq!(crate::include_dir_name(b"inc"), b"inc/");
     assert_eq!(crate::include_dir_name(b"inc/"), b"inc/");
     assert_eq!(crate::include_dir_name(b"inc\\"), b"inc\\");
+    assert_eq!(crate::pragma_include_dir(b"y", b"src/a.qc"), b"src/y/");
+    assert_eq!(crate::pragma_include_dir(b"y\\", b"src/a.qc"), b"src/y\\");
+    assert_eq!(crate::pragma_include_dir(b"", b"src/a.qc"), b"src/");
 }
 
 // spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any

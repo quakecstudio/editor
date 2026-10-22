@@ -26,8 +26,9 @@ source file, an included file's own where it came from one (QC-9.2). The per-fil
 lowering are memoized on the expanded text, so editing a macro's definition re-parses the files
 whose expansion it changes and no others. `Db::parse` stays the lossless tree of the file as
 written, the editing view. Each compiled file is given to the preprocessor by the name its
-`ModuleInput` holds, the graph's for a module (`ModuleInput::from_graph`), and opened in the
-graph's directory, so `__FILE__` and the names of included files are FTEQCC's (FTEF-14.73).
+`ModuleInput` holds, the graph's for an FTEQCC module (`ModuleInput::from_graph`), and the
+names its `#include`s are joined to are opened in the graph's directory, so `__FILE__` and the
+names of included files are FTEQCC's (FTEF-14.73).
 
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.8). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`

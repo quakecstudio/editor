@@ -429,9 +429,9 @@ malformed directive without a diagnostic.
   output. The graph reports each such file and reads on, so every file a module names is
   listed. This is a deliberate divergence: the compile's outcome, an error, is the same, and
   the IDE shows every missing file at once rather than one a build.
-- **PRJ-6.7** Each entry also records the file's name, FTEQCC's, relative to the graph's
-  directory, the source's own (FTEQCC run there, as `cargo xtask oracles builtins` runs it): the
-  source is named by its file name, `compilingrootfile` (`QC_strlcpy(compilingrootfile,
+- **PRJ-6.7** Under the FTEQCC dialect each entry also records the file's name, relative to the
+  graph's directory, the source's own (FTEQCC run there, as `cargo xtask oracles builtins` runs
+  it): the source is named by its file name, `compilingrootfile` (`QC_strlcpy(compilingrootfile,
   qccmprogsdat, sizeof(compilingrootfile));` after `QC_snprintfz (qccmprogsdat,
   sizeof(qccmprogsdat), "%s%s", qccmsourcedir, sourcefileslist[currentsourcefile++]);`,
   `qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`); a list entry is
@@ -445,8 +445,9 @@ malformed directive without a diagnostic.
   with a `/` after it unless it ends in `/` or `\` (`if (*e != '/' && *e != '\\')`); a `#pragma
   includedir` one is its token with that `/`, joined to the name of the file being compiled
   (`QCC_JoinPaths(newinc, sizeof(newinc), qcc_token, compilingfile);`). The beside file is the
-  one PRJ-5.2, PRJ-5.11 and PRJ-5.12 say. A name is not normalized: `src/./a.qc` stays so. The
-  vanilla and GMQCC dialects name their files the same way. So with `progs.src` listing
+  one PRJ-5.2 and PRJ-5.11 say. A name is not normalized: `src/./a.qc` stays so. Under the
+  vanilla and GMQCC dialects an entry has no name, as how their compilers name a file is not
+  quoted here. So with `progs.src` listing
   `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the names are `src/a.qc`,
   `src/x/b.qh` and `src/c.qh`, and with it listing `sub\top.qc`, which includes `tab.qh`,
   `sub\top.qc` and `sub\tab.qh`.
@@ -457,8 +458,10 @@ malformed directive without a diagnostic.
   the host's separator does, and an include directory given relative is in the graph's
   directory. `#pragma once` marks the name of the file being compiled (FTEF-14.70) and a name
   found is skipped when it is marked (`if (!strcmp(onced->name, fullname))`, then `return;`), so a list
-  that names `a.qc`, which holds `#pragma once`, then `./a.qc`, compiles it twice. The vanilla
-  and GMQCC dialects find files as PRJ-5.2 and PRJ-5.12 say and mark the file itself.
+  that names `a.qc`, which holds `#pragma once`, then `./a.qc`, compiles it twice. An include
+  directory's file is the word in the directory's path, the directory given relative in the
+  graph's directory. The vanilla and GMQCC dialects find files as PRJ-5.2 and PRJ-5.12 say and
+  mark the file itself.
 
 ### Constants
 

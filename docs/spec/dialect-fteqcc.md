@@ -1624,10 +1624,10 @@ profile the preprocessor reads them as FTEQCC does.
   and `/K` spellings FTEQCC reads only on Windows (`WINDOWSARG`) are not read: the pinned
   oracle is not built for Windows.
 - **FTEF-14.73** The semantic model (`Db::analyze_module`) gives the preprocessor each file it
-  compiles by the name its input holds for it, which for a module's graph
-  (`ModuleInput::from_graph`) is the graph's name (PRJ-6.7), not the path the database holds the
-  file by, and the preprocessor opens a name, and each name an `#include` is joined to
-  (FTEF-14.40), as the file of that name in the input's directory, the graph's (PRJ-6.8). So
+  compiles at the path the database holds it by and named by the name its input holds for it,
+  which for an FTEQCC module's graph (`ModuleInput::from_graph`) is the graph's name (PRJ-6.7),
+  and the preprocessor opens each name an `#include` is joined to (FTEF-14.40) as the file of
+  that name in the input's directory, the graph's (PRJ-6.8). So
   `__FILE__` (FTEF-14.32) in a listed file and in each file it includes is the name FTEQCC gives
   it, compiled in the source's directory: with `progs.src` listing `src/a.qc` it binds
   `void() f = :__FILE__;` to `src/a.qc` in that file, to `src/x/b.qh` in the `x/b.qh` it
@@ -1635,7 +1635,7 @@ profile the preprocessor reads them as FTEQCC does.
   includedir y`, to `src/./b.qh` in a `b.qh` that `src/./a.qc` includes, and to `inc/c.qh` in a
   `c.qh` found with `-Iinc` or `-Iinc/`; with it listing `sub\top.qc`, to `sub`, a tab and
   `op.qc`, the `\t` an escape (FTEF-14.32), and in a `tab.qh` that file includes, to `sub`, a
-  tab and `ab.qh`. A file with no name in the input is given by its path, in no directory. The
+  tab and `ab.qh`. A file with no name in the input is named by its path. The
   named projects of `cargo xtask oracles builtins` (`NAMED_PROJECTS` and `NAMED_DIR_PROJECTS` in
   `xtask/src/oracles/builtins/directives.rs`) hold these cases, the profile reading every
   FTEQCC case with no `progs.src` of its own through its graph in a directory of its own

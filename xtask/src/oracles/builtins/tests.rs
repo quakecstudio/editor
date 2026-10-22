@@ -563,7 +563,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1445);
+    assert_eq!(family.len(), 1454);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -1025,7 +1025,8 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let (source, encoding) = decoded(&fs::read(dir.join(compiled)).unwrap());
         let mut files = Vec::new();
         written(&dir, &dir, &mut files);
-        files.retain(|(name, _)| name != "progs.src" && name != compiled);
+        // A listed name may hold a `./` the file's own name has not (PRJ-6.7).
+        files.retain(|(name, _)| name != "progs.src" && Path::new(name) != Path::new(compiled));
         files.sort();
         let project = (dir.ends_with("project")).then(|| Project {
             compiled: compiled.to_owned(),

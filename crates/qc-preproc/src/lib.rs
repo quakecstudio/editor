@@ -33,7 +33,7 @@ mod tests;
 pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
     FileStart, FteEvent, FteFileReader, ModuleState, com_parse, include_dir_name, join_paths,
-    qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
+    pragma_include_dir, qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
@@ -885,8 +885,8 @@ pub struct Preprocessor<L> {
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
-    /// The directory a file's name is opened in, FTEQCC's working directory (PRJ-6.8); empty
-    /// by default, so a name is opened as it is given.
+    /// The directory the name an `#include` is joined to is opened in, FTEQCC's working
+    /// directory (PRJ-6.8); empty by default, so a name is opened as it is.
     working_dir: PathBuf,
     /// How many times a macro has been defined or undefined, so a text lexed under
     /// `macroinstrings` is lexed again after it (FTEF-12.12).
@@ -1025,11 +1025,11 @@ impl<L: Loader> Preprocessor<L> {
         self
     }
 
-    /// Gives the directory a file's name is opened in, FTEQCC's working directory (PRJ-6.8):
-    /// FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`, `qcctui.c`), so a
-    /// relative name is the file of that name in the directory it runs in, `\` a separator only
-    /// where the host's is. The name `__FILE__` writes and an `#include` is joined to is still the
-    /// name as given (FTEF-14.32). None by default, so a name is opened as it is given.
+    /// Gives the directory the name of an `#include`d file is opened in, FTEQCC's working
+    /// directory (PRJ-6.8): FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`,
+    /// `qcctui.c`), so a relative name is the file of that name in the directory it runs in, `\`
+    /// a separator only where the host's is. The name `__FILE__` writes is still the name as
+    /// joined (FTEF-14.32). Empty by default, so a name is opened as it is.
     #[must_use]
     pub fn with_working_dir(mut self, dir: &Path) -> Self {
         self.working_dir = dir.to_path_buf();
@@ -1037,7 +1037,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// The path of the file named `name`: in the working directory, normalized
-    /// ([`Self::with_working_dir`]).
+    /// ([`Self::with_working_dir`], FTEF-14.73).
     pub(crate) fn open_path(&self, name: &Path) -> PathBuf {
         normalize(&self.working_dir.join(name))
     }
@@ -1090,7 +1090,18 @@ impl<L: Loader> Preprocessor<L> {
     /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Compiled)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Compiled)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path` named `name`, the name FTEQCC gives it,
+    /// which `__FILE__` writes and an `#include` is joined to (FTEF-14.32, FTEF-14.73).
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_file_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Compiled)
     }
 
     /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
@@ -1101,13 +1112,29 @@ impl<L: Loader> Preprocessor<L> {
     ///
     /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
     pub fn preprocess_source(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Source)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Source)
     }
 
-    /// [`Self::preprocess_file`] of a file that starts as `start` says.
-    fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
-        let name = path.as_os_str().as_encoded_bytes().to_vec();
-        let path = self.open_path(path);
+    /// [`Self::preprocess_source`] of the source at `path` named `name`, as
+    /// [`Self::preprocess_file_named`] names a file.
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_source_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Source)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path`, named `name`, that starts as `start`
+    /// says.
+    fn preprocess(
+        &mut self,
+        path: &Path,
+        name: Vec<u8>,
+        start: FileStart,
+    ) -> io::Result<FileOutput> {
+        let path = normalize(path);
         let bytes = self.loader.load(&path)?;
         let warnings = self
             .dialect

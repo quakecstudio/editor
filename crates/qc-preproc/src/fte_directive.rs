@@ -1164,6 +1164,19 @@ pub fn include_dir_name(new: &[u8]) -> Vec<u8> {
     dir
 }
 
+/// The directory `#pragma includedir TOKEN` names in a file being compiled as `compiling`
+/// (FTEF-14.70, PRJ-6.7): `TOKEN` with a `/` after it unless it is empty or ends in `/` or `\`
+/// (`if (*qcc_token)`), joined to `compiling` (`QCC_JoinPaths(newinc, sizeof(newinc),
+/// qcc_token, compilingfile);`).
+#[must_use]
+pub fn pragma_include_dir(token: &[u8], compiling: &[u8]) -> Vec<u8> {
+    let mut dir = token.to_vec();
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    join_paths(&dir, compiling)
+}
+
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
 /// one more is "Too many include dirs. Ignoring and hoping the stars align." (FTEF-14.70).
 const FTE_MAX_INCLUDE_DIRS: usize = 8;
@@ -1204,13 +1217,10 @@ impl Pragma {
     /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
-        let mut dir = com_parse(&self.message, 0)
+        let token = com_parse(&self.message, 0)
             .map(|(token, _)| token)
             .unwrap_or_default();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
-        join_paths(&dir, compiling)
+        pragma_include_dir(&token, compiling)
     }
 
     /// The name `#pragma file` gives (FTEF-14.32): the text, or within the `(` it starts with and

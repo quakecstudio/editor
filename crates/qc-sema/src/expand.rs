@@ -45,11 +45,12 @@ pub struct ModuleInput {
     /// flags the module is read with (FTEF-14.72); none by default.
     pub command_line: CommandLine,
     /// The name the compiler is given each file of [`Self::prelude`] and [`Self::compiled`] by,
-    /// the graph's (PRJ-6.7), which `__FILE__` writes and an `#include` is joined to
-    /// (FTEF-14.32, FTEF-14.73). A file with none is named by its path.
+    /// the graph's under FTEQCC (PRJ-6.7), which `__FILE__` writes and an `#include` is joined
+    /// to (FTEF-14.32, FTEF-14.73). A file with none is named by its path.
     pub names: BTreeMap<FileId, String>,
-    /// The directory a name is the file of, FTEQCC's working directory, the graph's
-    /// (PRJ-6.8); empty by default, so a name is the file of that path.
+    /// The directory the name an `#include` is joined to is the file of, FTEQCC's working
+    /// directory, the graph's when it names its files (PRJ-6.8); empty by default, so a name is
+    /// the file of that path.
     pub dir: PathBuf,
 }
 
@@ -63,7 +64,6 @@ impl ModuleInput {
     pub fn from_graph(graph: &FileGraph) -> Self {
         let mut input = Self {
             autoproto: graph.autoproto,
-            dir: graph.dir.clone(),
             ..Self::default()
         };
         for (index, file) in graph.files.iter().enumerate() {
@@ -73,7 +73,12 @@ impl ModuleInput {
                 Via::Root if graph.form == Some(Form::Source) => input.prelude.push(id),
                 Via::Root | Via::Listed | Via::IncludeList => input.compiled.push(id),
             }
-            input.names.insert(id, file.name.clone());
+            if let Some(name) = &file.name {
+                input.names.insert(id, name.clone());
+            }
+        }
+        if !input.names.is_empty() {
+            input.dir.clone_from(&graph.dir);
         }
         input
     }
@@ -258,14 +263,13 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
-                // FTEF-14.73: the preprocessor is given the file's name, and opens it in the
-                // input's directory.
-                let named = input.names.get(id).map_or(path.as_path(), Path::new);
+                // FTEF-14.73: the preprocessor is given the file's name where the input has one.
                 // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
-                let output = if compiled {
-                    pp.preprocess_file(named)
-                } else {
-                    pp.preprocess_source(named)
+                let output = match (input.names.get(id), compiled) {
+                    (Some(name), true) => pp.preprocess_file_named(path, name.as_bytes()),
+                    (Some(name), false) => pp.preprocess_source_named(path, name.as_bytes()),
+                    (None, true) => pp.preprocess_file(path),
+                    (None, false) => pp.preprocess_source(path),
                 };
                 output.map_err(|err| format!("{}: {err}", path.display()))
             }
