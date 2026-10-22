@@ -1,0 +1,19 @@
+[package]
+name = "qc-ide"
+description = "The editor features of QuakeC Studio over the semantic model: navigation, rename, hover, completion, highlighting, inlay hints and diagnostics, with no protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+qc-diag = { workspace = true }
+qc-engines = { workspace = true }
+qc-project = { workspace = true }
+qc-sema = { workspace = true }
+qc-syntax = { workspace = true }
+
+[lints]
+workspace = true

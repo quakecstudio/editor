@@ -1,0 +1,105 @@
+# cargo xtask lsp-corpus: rerelease, the FTEQCC profile, target rerelease
+definition T_Damage weapons.qc:71:3: defs.qc:806:68
+references T_Damage weapons.qc:71:3: 43 (ai.qc x1, client.qc x5, combat.qc x5, defs.qc x1, doors.qc x2, fight.qc x2, misc.qc x1, monsters/enforcer.qc x1, monsters/fiend.qc x2, monsters/ogre.qc x1, monsters/rotfish.qc x1, monsters/rottweiler.qc x2, monsters/shambler.qc x2, monsters/spawn.qc x1, monsters/vore.qc x1, monsters/zombie.qc x1, plats.qc x2, triggers.qc x3, weapons.qc x9)
+hover T_Damage weapons.qc:71:3: ```quakec\nvoid(entity targ, entity inflictor, entity attacker, float damage) T_Damage\n```\n\n---\n\n============\nT_Damage\n\nThe damage is coming from inflictor, but get mad at attacker\nThis should be the only function that ever reduces health.\n============
+prepare-rename T_Damage weapons.qc:71:3: 71:3
+rename T_Damage weapons.qc:71:3: 43 edits (ai.qc x1, client.qc x5, combat.qc x5, defs.qc x1, doors.qc x2, fight.qc x2, misc.qc x1, monsters/enforcer.qc x1, monsters/fiend.qc x2, monsters/ogre.qc x1, monsters/rotfish.qc x1, monsters/rottweiler.qc x2, monsters/shambler.qc x2, monsters/spawn.qc x1, monsters/vore.qc x1, monsters/zombie.qc x1, plats.qc x2, triggers.qc x3, weapons.qc x9), each to confirm
+definition SUB_Remove subs.qc:22:8: defs.qc:801:8
+references SUB_Remove subs.qc:22:8: 16 (defs.qc x1, items.qc x1, misc.qc x1, monsters/enforcer.qc x1, monsters/scrag.qc x1, monsters/shambler.qc x1, monsters/zombie.qc x2, player.qc x1, subs.qc x1, triggers.qc x2, weapons.qc x4)
+hover SUB_Remove subs.qc:22:8: ```quakec\nvoid() SUB_Remove\n```
+prepare-rename SUB_Remove subs.qc:22:8: 22:8
+rename SUB_Remove subs.qc:22:8: 16 edits (defs.qc x1, items.qc x1, misc.qc x1, monsters/enforcer.qc x1, monsters/scrag.qc x1, monsters/shambler.qc x1, monsters/zombie.qc x2, player.qc x1, subs.qc x1, triggers.qc x2, weapons.qc x4), each to confirm
+definition save combat.qc:171:2: combat.qc:145:14
+references save combat.qc:171:2: 7 (combat.qc x7)
+hover save combat.qc:171:2: ```quakec\nlocal float save\n```
+prepare-rename save combat.qc:171:2: 171:2
+rename save combat.qc:171:2: 7 edits (combat.qc x7)
+definition damage combat.qc:160:44: combat.qc:141:60
+references damage combat.qc:160:44: 7 (combat.qc x7)
+hover damage combat.qc:160:44: ```quakec\nfloat damage\n```
+prepare-rename damage combat.qc:160:44: 160:44
+rename damage combat.qc:160:44: 7 edits (combat.qc x7)
+definition takedamage combat.qc:123:7: defs.qc:163:9
+references takedamage combat.qc:123:7: 44 (buttons.qc x3, client.qc x3, combat.qc x4, defs.qc x1, doors.qc x6, misc.qc x2, monsters.qc x3, monsters/chthon.qc x1, monsters/fiend.qc x1, monsters/ogre.qc x1, monsters/rottweiler.qc x1, monsters/shub.qc x2, monsters/spawn.qc x2, monsters/zombie.qc x1, player.qc x1, triggers.qc x4, weapons.qc x8)
+hover takedamage combat.qc:123:7: ```quakec\n.float takedamage\n```
+prepare-rename takedamage combat.qc:123:7: error takedamage is a system field, which the engine finds by its place before end_sys_fields
+rename takedamage combat.qc:123:7: error takedamage is a system field, which the engine finds by its place before end_sys_fields
+definition coop combat.qc:153:7: defs.qc:48:8
+references coop combat.qc:153:7: 14 (ai.qc x1, client.qc x6, combat.qc x1, defs.qc x1, items.qc x2, monsters/shub.qc x1, player.qc x1, weapons.qc x1)
+hover coop combat.qc:153:7: ```quakec\nfloat coop\n```
+prepare-rename coop combat.qc:153:7: error coop is a system global, which the engine finds by its place before end_sys_globals
+rename coop combat.qc:153:7: error coop is a system global, which the engine finds by its place before end_sys_globals
+definition wait doors.qc:54:11: defs.qc:590:9
+references wait doors.qc:54:11: 30 (buttons.qc x3, defs.qc x1, doors.qc x9, misc.qc x4, plats.qc x6, triggers.qc x7)
+hover wait doors.qc:54:11: ```quakec\n.float wait\n```\n\n---\n\ntime from firing to restarting
+prepare-rename wait doors.qc:54:11: 54:11
+rename wait doors.qc:54:11: 30 edits (buttons.qc x3, defs.qc x1, doors.qc x9, misc.qc x4, plats.qc x6, triggers.qc x7), each to confirm
+definition damage_attacker combat.qc:164:2: defs.qc:473:8
+references damage_attacker combat.qc:164:2: 7 (buttons.qc x1, combat.qc x1, defs.qc x1, player.qc x3, triggers.qc x1)
+hover damage_attacker combat.qc:164:2: ```quakec\nentity damage_attacker\n```\n\n---\n\nset by T_Damage
+prepare-rename damage_attacker combat.qc:164:2: 164:2
+rename damage_attacker combat.qc:164:2: 7 edits (buttons.qc x1, combat.qc x1, defs.qc x1, player.qc x3, triggers.qc x1)
+definition FL_FLY defs.qc:248:7: defs.qc:248:7
+references FL_FLY defs.qc:248:7: 5 (defs.qc x1, monsters.qc x3, triggers.qc x1)
+hover FL_FLY defs.qc:248:7: ```quakec\nfloat FL_FLY\n```\n\n---\n\nedict.flags
+prepare-rename FL_FLY defs.qc:248:7: 248:7
+rename FL_FLY defs.qc:248:7: 5 edits (defs.qc x1, monsters.qc x3, triggers.qc x1)
+definition setorigin weapons.qc:129:2: defs.qc:655:26
+references setorigin weapons.qc:129:2: 33 (client.qc x1, defs.qc x1, doors.qc x3, items.qc x1, misc.qc x3, monsters/enforcer.qc x1, monsters/ogre.qc x1, monsters/scrag.qc x2, monsters/shambler.qc x1, monsters/shub.qc x2, monsters/zombie.qc x1, plats.qc x5, player.qc x2, subs.qc x1, triggers.qc x3, weapons.qc x4, world.qc x1)
+hover setorigin weapons.qc:129:2: ```quakec\nvoid(entity e, vector o) setorigin\n```\n\n---\n\nBuiltin `#2`.  \nKEX has it as `void(entity e, vector o) setorigin`.  \nEngines with it: Vanilla, QuakeSpasm, Ironwail, vkQuake, FTEQW, DarkPlaces, KEX.
+prepare-rename setorigin weapons.qc:129:2: 129:2
+rename setorigin weapons.qc:129:2: 33 edits (client.qc x1, defs.qc x1, doors.qc x3, items.qc x1, misc.qc x3, monsters/enforcer.qc x1, monsters/ogre.qc x1, monsters/scrag.qc x2, monsters/shambler.qc x1, monsters/shub.qc x2, monsters/zombie.qc x1, plats.qc x5, player.qc x2, subs.qc x1, triggers.qc x3, weapons.qc x4, world.qc x1)
+definition bprint client.qc:405:3: defs.qc:683:21
+references bprint client.qc:405:3: 42 (client.qc x41, defs.qc x1)
+hover bprint client.qc:405:3: ```quakec\nvoid(string s, ...) bprint\n```\n\n---\n\nBuiltin `#0:ex_bprint`.  \nKEX has it as `void(string s, ...) bprint`.  \nEngines with it: QuakeSpasm, Ironwail, vkQuake, KEX.  \nEngines without it: Vanilla, FTEQW, DarkPlaces.
+prepare-rename bprint client.qc:405:3: 405:3
+rename bprint client.qc:405:3: 42 edits (client.qc x41, defs.qc x1)
+completion at combat.qc:171:2: 657 items, first self other world time frametime, last take save oldself
+completion at combat.qc:123:7: 219 items, first modelindex absmin absmin_x absmin_y absmin_z, last spawn_deferred killstring volume
+inlay-hints combat.qc: 58 hints, first 41:13 v1:, 41:31 v2:, 41:66 nomonsters:, 41:72 forent:, 51:12 v1:
+semantic-tokens defs.qc: 484 tokens
+semantic-tokens subs.qc: 323 tokens
+semantic-tokens fight.qc: 385 tokens
+semantic-tokens ai.qc: 557 tokens
+semantic-tokens combat.qc: 424 tokens
+semantic-tokens itemnames.qc: 45 tokens
+semantic-tokens items.qc: 1596 tokens
+semantic-tokens weapons.qc: 1580 tokens
+semantic-tokens world.qc: 315 tokens
+semantic-tokens client.qc: 1891 tokens
+semantic-tokens player.qc: 934 tokens
+semantic-tokens monsters.qc: 303 tokens
+semantic-tokens doors.qc: 1056 tokens
+semantic-tokens buttons.qc: 184 tokens
+semantic-tokens triggers.qc: 677 tokens
+semantic-tokens plats.qc: 508 tokens
+semantic-tokens misc.qc: 705 tokens
+semantic-tokens monsters/ogre.qc: 746 tokens
+semantic-tokens monsters/fiend.qc: 481 tokens
+semantic-tokens monsters/shambler.qc: 644 tokens
+semantic-tokens monsters/knight.qc: 401 tokens
+semantic-tokens monsters/grunt.qc: 448 tokens
+semantic-tokens monsters/scrag.qc: 593 tokens
+semantic-tokens monsters/rottweiler.qc: 485 tokens
+semantic-tokens monsters/zombie.qc: 838 tokens
+semantic-tokens monsters/chthon.qc: 631 tokens
+semantic-tokens monsters/spawn.qc: 367 tokens
+semantic-tokens monsters/hellknight.qc: 746 tokens
+semantic-tokens monsters/rotfish.qc: 347 tokens
+semantic-tokens monsters/vore.qc: 402 tokens
+semantic-tokens monsters/enforcer.qc: 548 tokens
+semantic-tokens monsters/shub.qc: 442 tokens
+semantic-tokens bots/bot.qc: 2 tokens
+diagnostics: none
+# the same, target quake
+diagnostics ai.qc: W0311 x3
+diagnostics client.qc: W0311 x45
+diagnostics doors.qc: W0311 x8
+diagnostics items.qc: W0311 x18
+diagnostics monsters/hellknight.qc: W0311 x1
+diagnostics monsters/ogre.qc: W0311 x1
+diagnostics monsters/shub.qc: W0311 x1
+diagnostics player.qc: W0311 x2
+diagnostics subs.qc: W0311 x1
+diagnostics triggers.qc: W0311 x6
+diagnostics weapons.qc: W0311 x3

@@ -473,9 +473,10 @@ groups:
     - P2-13
     - P2-14
     - P2-16
+    - P2-126
     - P0-24
     deliverable:
-    - 'docs/readiness/p2-ra.md following docs/readiness/_template.md, covering: P2-13, P2-14, P2-16'
+    - 'docs/readiness/p2-ra.md following docs/readiness/_template.md, covering: P2-13, P2-14, P2-16, P2-126'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -509,10 +510,12 @@ groups:
     depends:
     - P3-09
     - P3-10
+    - P3-31
+    - P3-32
     - P2-R3
     - P0-24
     deliverable:
-    - 'docs/readiness/p3-r3.md following docs/readiness/_template.md, covering: P3-09, P3-10'
+    - 'docs/readiness/p3-r3.md following docs/readiness/_template.md, covering: P3-09, P3-10, P3-31, P3-32'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
