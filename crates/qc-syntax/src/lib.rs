@@ -235,7 +235,7 @@ fn parse_text(
         let mut parser = parser::Parser::new(input, dialect, keywords, &marks);
         parser.source_file();
         pass = pass.saturating_add(1);
-        // The blocks this pass read are those it was lexed with, or the passes are spent.
+        // Done when this pass read the blocks it was lexed with, or when the passes are spent.
         let settled = parser.blocks() == blocks.as_slice();
         if settled {
             return finish(parser, text, edits, &blocks, marks, lex);
