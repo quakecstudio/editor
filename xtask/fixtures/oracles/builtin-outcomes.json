@@ -5863,7 +5863,7 @@
   "fteqcc|void() f = #5;\nfloat *const x;\nvoid() g = { x = 0; };\n|-Werror -Wno-Q208": "rejected",
   "fteqcc|void() f = #5;\nfloat *p = \"a\";\n": "bound 5 f",
   "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Fundefwordsize": "rejected",
-  "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Fundefwordsize -Tid": "bound 5 f",
+  "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Fundefwordsize -Tstandard": "bound 5 f",
   "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Tdp": "rejected",
   "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Tdp -Tfte": "bound 5 f",
   "fteqcc|void() f = #5;\nfloat *p = \"a\";\n|-Tdp_1": "rejected",

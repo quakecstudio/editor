@@ -119,7 +119,7 @@ const CAST_OPTIONS: &[(&[&str], &str)] = &[
     (&["-Tdp"], "float *p = \"a\";\n"),
     (&["-Tdp_1"], "float *p = \"a\";\n"),
     (&["-Fundefwordsize"], "float *p = \"a\";\n"),
-    (&["-Fundefwordsize", "-Tid"], "float *p = \"a\";\n"),
+    (&["-Fundefwordsize", "-Tstandard"], "float *p = \"a\";\n"),
     (&["-Tdp", "-Tfte"], "float *p = \"a\";\n"),
     (&["-std=gmqcc"], "float *p = \"a\";\n"),
     (&["-Tfte"], "extern void(float x) h;\n"),
