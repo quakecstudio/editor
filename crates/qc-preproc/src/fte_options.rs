@@ -730,7 +730,7 @@ impl CommandLine {
 
 #[cfg(test)]
 mod tests {
-    use super::CommandLine;
+    use super::{CommandLine, Std};
     use crate::fte_pragma::FlagSettings;
     use crate::fte_tables::{FteFlag, TargetFormat};
     use crate::fte_warning::{FteWarning as W, WarningAction as A, WarningSettings};
@@ -807,6 +807,8 @@ mod tests {
                 .flags(FlagSettings::default())
                 .is_on(flag)
         };
+        assert_eq!(Std::of(b"fteqcc"), Std::Fteqcc);
+        assert_eq!(Std::of(b"FTEQCC"), Std::Unknown);
         assert!(on(&["-std=c"], FteFlag::LongKeyword));
         assert!(on(&["-std=C"], FteFlag::Ilp32));
         assert!(on(&["-STD=c99"], FteFlag::AssumeInteger));

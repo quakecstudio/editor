@@ -159,6 +159,18 @@ fn a_flag_pragma_lexes_the_rest_again() {
     assert_eq!(codes(&out), [Code::E0102]);
 }
 
+// spec FTEF-12.12: a `#pragma flag` in an expansion (FTEF-14.46) lexes the rest of the
+// expansion again with the new flags
+#[test]
+fn a_flag_pragma_in_an_expansion_lexes_the_rest_of_it_again() {
+    let (_, out) = one_fte(concat!(
+        "#pragma warning disable F303\n",
+        "#define D \\\n#pragma flag enable qccx \\\n\"a\":\"b\"\n",
+        "D\n",
+    ));
+    assert_eq!(tokens(&out), r#""a" "\x00" "b""#);
+}
+
 // spec FTEF-12.11: `QCC_main` sets the flags once, before the first pass, so a `#pragma flag`
 // holds into the second autoprototyping pass
 #[test]

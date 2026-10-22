@@ -111,7 +111,9 @@ fn decode_utf(wide: Wide, bytes: &[u8], from: usize) -> (Vec<u8>, Vec<usize>) {
             if let Some(low) = low.filter(|l| (0xdc00..0xe000).contains(l))
                 && (0xd800..0xdc00).contains(&unit)
             {
-                code = (((unit & 0x3ff) << 10) | (low & 0x3ff)).saturating_add(0x1_0000);
+                // The high unit's ten bits above the low unit's, added: they do not overlap.
+                let high = (unit & 0x3ff) << 10;
+                code = high.wrapping_add(low & 0x3ff).saturating_add(0x1_0000);
                 index = index.saturating_add(1);
             }
         }

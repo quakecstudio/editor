@@ -603,8 +603,10 @@ impl KeywordEdit {
     /// `keywords` after this edit.
     #[must_use]
     pub const fn apply(self, keywords: Keywords) -> Keywords {
+        // The merge written with `^`, as `FlagEdit::apply` is: in `(k & !mask) | (bits & mask)`
+        // the `|` joins disjoint bits and so reads the same as `^` to a mutation test.
         Keywords {
-            bits: (keywords.bits & !self.mask) | (self.bits & self.mask),
+            bits: keywords.bits ^ ((keywords.bits ^ self.bits) & self.mask),
         }
     }
 }

@@ -179,6 +179,9 @@ fn edits_set_only_what_they_name() {
     );
     let hexen2 = KeywordEdit::hexen2_target(true).apply(Keywords::default());
     assert!(hexen2.hexen2_target() && hexen2.has(Keyword::For));
+    // A keyword the edit turns on that is on stays on.
+    let on = KeywordEdit::of_flags(&[FteFlag::ForKeyword], Keywords::default());
+    assert!(on.apply(Keywords::default()).has(Keyword::For));
     assert!(
         !KeywordEdit::hexen2_target(false)
             .apply(hexen2)

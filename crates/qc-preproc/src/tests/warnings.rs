@@ -94,6 +94,9 @@ fn build_pragmas_warn_against_fteqcc_s_tables() {
     );
     // `OP_NUMREALOPS` and the rows after it are internal.
     let internal = OPCODES[REAL_OPCODES];
+    // An `asm` instruction's name is a row's `opname`, compared exactly (FTEF-20.5).
+    assert!(crate::is_opcode_name("STORE_F"));
+    assert!(!crate::is_opcode_name("store_f"));
     assert_eq!(
         warned(&format!("#pragma opcode off {internal}\n")),
         one(Code::W0113, &format!("opcode {internal} is internal"))
@@ -404,8 +407,35 @@ fn each_warning_code_stands_for_its_fteqcc_warning() {
         (Code::W0121, FteWarning::Denormal),
         (Code::W0122, FteWarning::MacroInString),
         (Code::W0123, FteWarning::HangingSlashR),
+        (Code::W0203, FteWarning::UndesirableConvention),
+        (Code::W0204, FteWarning::PointlessStatement),
+        (Code::W0313, FteWarning::PointlessStatement),
+        (Code::W0205, FteWarning::UnexpectedPunct),
+        (Code::W0215, FteWarning::UnexpectedPunct),
+        (Code::W0206, FteWarning::CompatibilityHack),
+        (Code::W0210, FteWarning::CompatibilityHack),
+        (Code::W0211, FteWarning::CompatibilityHack),
+        (Code::W0223, FteWarning::CompatibilityHack),
+        (Code::W0207, FteWarning::DuplicateDefinition),
+        (Code::W0208, FteWarning::SameNameAsGlobal),
+        (Code::W0209, FteWarning::TypeMismatchRedecOptional),
+        (Code::W0212, FteWarning::RedeclarationMismatch),
+        (Code::W0213, FteWarning::MisusedAutocvar),
+        (Code::W0214, FteWarning::IgnoredKeyword),
+        (Code::W0226, FteWarning::IgnoredKeyword),
+        (Code::W0216, FteWarning::MemberNotDefined),
+        (Code::W0217, FteWarning::NotStandardBehaviour),
+        (Code::W0218, FteWarning::GmqccSpecific),
+        (Code::W0219, FteWarning::NotConstant),
+        (Code::W0220, FteWarning::LaxCast),
+        (Code::W0221, FteWarning::KeywordDisabled),
+        (Code::W0222, FteWarning::ParamWithNoName),
+        (Code::W0224, FteWarning::DeprecatedSyntax),
+        (Code::W0225, FteWarning::EnumflagsNotInteger),
         (Code::W0227, FteWarning::UnaryNotScope),
         (Code::W0228, FteWarning::GmqccSpecific),
+        (Code::W0312, FteWarning::DuplicateLabel),
+        (Code::W0314, FteWarning::DeprecatedVariable),
     ] {
         assert_eq!(FteWarning::of_code(code), Some(warning), "{code:?}");
     }
