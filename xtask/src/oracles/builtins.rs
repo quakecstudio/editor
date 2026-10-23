@@ -1021,7 +1021,7 @@ fn variadic_uses() -> Vec<MacroUse> {
 }
 
 /// `__FILE__`, the name `progs.src` lists or a `#pragma file` gives, as FTEQCC writes it
-/// (FTEF-14.32), under 12 pragmas and through two macros, and after three pragmas whose text
+/// (FTEF-14.74), under 12 pragmas and through two macros, and after three pragmas whose text
 /// holds a comment, a string or a `\` that would run across their line break.
 fn file_sources() -> Vec<String> {
     let long = format!("#pragma file({})\n", "n".repeat(260));
@@ -1068,7 +1068,7 @@ const DECLARATION_SOURCES: &[&str] = &[
     "void() g, f = #5, ;\n",
 ];
 
-/// The macro-text family (FTEF-14.22 to FTEF-14.27, FTEF-14.32, P2-80 to P2-84 and P2-87, from
+/// The macro-text family (FTEF-14.22 to FTEF-14.27, FTEF-14.74, P2-80 to P2-84 and P2-87, from
 /// the fourth P2-R2 review): programs whose macros FTEQCC reads as text where a token model
 /// would not, and the declarations they write. Each is a whole program.
 fn macro_text_cases() -> Vec<String> {

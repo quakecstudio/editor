@@ -846,7 +846,7 @@ const INCLUDE_PROJECTS: &[IncludeProject] = &[
     ),
 ];
 
-/// A file that binds `f` to the name `__FILE__` writes for it (FTEF-14.32).
+/// A file that binds `f` to the name `__FILE__` writes for it (FTEF-14.74).
 const NAMED: &str = "void() f = :__FILE__;\n";
 
 /// Projects whose files bind `f` to their names, which the profile reads from the graph's

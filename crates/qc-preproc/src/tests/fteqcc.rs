@@ -695,7 +695,7 @@ fn fte_in(path: &str, text: &str) -> (Vec<TokenKind>, Vec<Code>) {
     (kinds, codes(&out))
 }
 
-// spec FTEF-14.32: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
+// spec FTEF-14.74: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
 // its first `:`, and `"`, read as a string literal with nothing in the name escaped
 #[test]
 fn file_constant_is_fteqcc_s_text() {
@@ -733,7 +733,7 @@ fn file_constant_is_fteqcc_s_text() {
     );
 }
 
-// spec FTEF-14.32: an argument copies `__FILE__` as its text, which a `#` then writes into a
+// spec FTEF-14.74: an argument copies `__FILE__` as its text, which a `#` then writes into a
 // string as it stands
 #[test]
 fn a_stringified_file_constant_holds_its_text() {
@@ -741,7 +741,7 @@ fn a_stringified_file_constant_holds_its_text() {
     assert_eq!(tok.kind, TokenKind::String(br#""dx.qc""#.to_vec()));
 }
 
-// spec FTEF-14.32: an included file is named by the bytes between its quotes joined to the
+// spec FTEF-14.74: an included file is named by the bytes between its quotes joined to the
 // compiled file's name after its last `/` or `\`, also when another included file includes it,
 // and alone when it starts with `/`; in a macro's chunk the name is the file's
 #[test]
@@ -817,7 +817,7 @@ fn include_directory_names() {
     assert_eq!(crate::pragma_include_dir(b"", b"src/a.qc"), b"src/");
 }
 
-// spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
+// spec FTEF-14.74: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
 // case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
 #[test]
 fn pragma_file_names_the_file() {
@@ -846,7 +846,7 @@ fn pragma_file_names_the_file() {
     );
 }
 
-// spec FTEF-14.32: a pragma's text runs to its line's break whatever a comment, a string or a
+// spec FTEF-14.74: a pragma's text runs to its line's break whatever a comment, a string or a
 // `\` in it would run across, and reading goes on there
 #[test]
 fn a_pragma_s_text_ends_at_its_line_s_break() {

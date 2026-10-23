@@ -14,7 +14,7 @@ use crate::db::Db;
 use crate::expand::ModuleInput;
 use crate::symbol::FileId;
 
-/// A file that binds `f` to the name `__FILE__` writes for it (FTEF-14.32).
+/// A file that binds `f` to the name `__FILE__` writes for it (FTEF-14.74).
 const NAMED: &str = "void() f = :__FILE__;\n";
 
 /// The directory the project's `progs.src` is in, a resolved path.

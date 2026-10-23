@@ -62,7 +62,7 @@ pub struct GraphFile {
     /// Under FTEQCC the file's name as the compiler is given it (PRJ-6.7): the name
     /// `progs.src`, an `#includelist` or an `#include` gives, joined to the name of the file it
     /// was found beside or of the include directory it was found in, relative to
-    /// [`FileGraph::dir`]. `__FILE__` writes it (FTEF-14.32). `None` under the other dialects.
+    /// [`FileGraph::dir`]. `__FILE__` writes it (FTEF-14.74). `None` under the other dialects.
     pub name: Option<String>,
     /// How it came in.
     pub via: Via,

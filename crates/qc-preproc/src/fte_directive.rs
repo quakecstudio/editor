@@ -1223,7 +1223,7 @@ impl Pragma {
         pragma_include_dir(&token, compiling)
     }
 
-    /// The name `#pragma file` gives (FTEF-14.32): the text, or within the `(` it starts with and
+    /// The name `#pragma file` gives (FTEF-14.74): the text, or within the `(` it starts with and
     /// the first `)` after it.
     pub(crate) fn file_name(&self) -> Vec<u8> {
         match self.message.strip_prefix(b"(") {
@@ -1455,7 +1455,7 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// `s_filen` as `__FILE__` writes it (FTEF-14.32): the name the innermost `#pragma file`
+    /// `s_filen` as `__FILE__` writes it (FTEF-14.74): the name the innermost `#pragma file`
     /// of an open chunk gave, or else the name of the file being read.
     pub(crate) fn fte_file_name(run: &Run) -> &[u8] {
         run.chunks

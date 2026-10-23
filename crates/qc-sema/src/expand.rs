@@ -46,7 +46,7 @@ pub struct ModuleInput {
     pub command_line: CommandLine,
     /// The name the compiler is given each file of [`Self::prelude`] and [`Self::compiled`] by,
     /// the graph's under FTEQCC (PRJ-6.7), which `__FILE__` writes and an `#include` is joined
-    /// to (FTEF-14.32, FTEF-14.73). A file with none is named by its path.
+    /// to (FTEF-14.74, FTEF-14.73). A file with none is named by its path.
     pub names: BTreeMap<FileId, String>,
     /// The directory the name an `#include` is joined to is the file of, FTEQCC's working
     /// directory, the graph's when it names its files (PRJ-6.8); empty by default, so a name is

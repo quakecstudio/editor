@@ -486,7 +486,7 @@ fn pragma(message: &[u8]) -> Pragma {
     }
 }
 
-// spec FTEF-14.32: `#pragma file` names the file its text names, or within the `(` it starts
+// spec FTEF-14.74: `#pragma file` names the file its text names, or within the `(` it starts
 // with and the first `)` after it
 #[test]
 fn pragma_file_names() {

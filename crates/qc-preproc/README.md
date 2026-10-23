@@ -85,8 +85,8 @@ macro's body as the text the `#define` reader stored, finds a use's arguments by
 text after its `(`, writes the expansion as text, each byte with where it came from, and lexes
 that text as a chunk of its own, read until reading goes past its last token: `##` pastes, `#`
 strings, `__VA_COUNT__`, built-in constants with FTEQCC's lines and `__FILE__` names, the
-chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.32). Under both dialects the
-expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
+chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.31, FTEF-14.74). Under both
+dialects the expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
 A file is named as its caller gives it (`preprocess_file_named`), which `__FILE__` writes and
 an `#include` is joined to, and the joined name is opened in the working directory
 `with_working_dir` gives (FTEF-14.73, PRJ-6.8); `join_paths`, `include_dir_name` and

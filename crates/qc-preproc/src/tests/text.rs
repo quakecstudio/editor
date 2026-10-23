@@ -721,7 +721,7 @@ fn a_paste_of_two_arguments_stands_over_both() {
     assert_eq!(pp.sources().text(token.span), Some(&b"x, y"[..]));
 }
 
-// spec FTEF-14.32: the tokens of a built-in constant's text read in a chunk touch each other, and
+// spec FTEF-14.74: the tokens of a built-in constant's text read in a chunk touch each other, and
 // a lexical error a chunk's text holds right after a macro used in it took its arguments is
 // reported
 #[test]

@@ -13,7 +13,7 @@
 //! project's own definition; FTEQCC's pragmas come with the dialect profiles. In an FTEQCC
 //! dialect the preprocessor reads FTEQCC's directives as FTEQCC's `QCC_PR_Precompiler` does,
 //! as bytes, wherever FTEQCC meets one (`docs/spec/dialect-fteqcc.md`, FTEF-14.33 to FTEF-14.47,
-//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.32, `fte_macro`).
+//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.74, `fte_macro`).
 
 mod compiler_flags;
 pub mod cond;
@@ -289,7 +289,7 @@ enum Place {
     /// An expansion's chunk, the token ending at this offset in its text.
     Chunk(usize),
     /// A built-in constant's text, a chunk of its own that holds nothing a macro's name in it
-    /// could read on in (FTEF-14.17, FTEF-14.32).
+    /// could read on in (FTEF-14.17, FTEF-14.74).
     Builtin,
 }
 
@@ -694,7 +694,7 @@ struct Cursor {
     file: FileId,
     path: PathBuf,
     /// Under FTEQCC, the file's name as FTEQCC has it, `s_filen`, which `__FILE__` writes
-    /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
+    /// (FTEF-14.74): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
     name: Vec<u8>,
     /// The file's name as it was read, which no `#pragma file` changes: what a GMQCC
     /// `#include` and `#pragma` in it are joined to (PRJ-5.12).
@@ -725,7 +725,7 @@ impl Cursor {
 #[derive(Default)]
 struct Run {
     /// The name of the source file of `progs.src` being preprocessed, as the caller gave it:
-    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.32).
+    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.74).
     unit: Vec<u8>,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
@@ -1029,7 +1029,7 @@ impl<L: Loader> Preprocessor<L> {
     /// directory (PRJ-6.8): FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`,
     /// `qcctui.c`), so a relative name is the file of that name in the directory it runs in, `\`
     /// a separator only where the host's is. The name `__FILE__` writes is still the name as
-    /// joined (FTEF-14.32). Empty by default, so a name is opened as it is.
+    /// joined (FTEF-14.74). Empty by default, so a name is opened as it is.
     #[must_use]
     pub fn with_working_dir(mut self, dir: &Path) -> Self {
         self.working_dir = dir.to_path_buf();
@@ -1087,7 +1087,7 @@ impl<L: Loader> Preprocessor<L> {
     /// The loader's error when the file itself cannot be read; a project reports that as
     /// QCD-5.2. Every other problem is a diagnostic in the output.
     ///
-    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
+    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.74), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
         let name = path.as_os_str().as_encoded_bytes().to_vec();
@@ -1095,7 +1095,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// [`Self::preprocess_file`] of the file at `path` named `name`, the name FTEQCC gives it,
-    /// which `__FILE__` writes and an `#include` is joined to (FTEF-14.32, FTEF-14.73).
+    /// which `__FILE__` writes and an `#include` is joined to (FTEF-14.74, FTEF-14.73).
     ///
     /// # Errors
     ///
@@ -2166,7 +2166,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<Vec<u8>>, usize)> {
 }
 
 /// `bytes` as a QuakeC string literal, the spelling of a string an FTEQCC expansion made
-/// (QC-9.16, FTEF-14.31, FTEF-14.32): `"`, `\`, a line break and a carriage return escaped,
+/// (QC-9.16, FTEF-14.31, FTEF-14.74): `"`, `\`, a line break and a carriage return escaped,
 /// and a byte of 0x80 or more written as `\x` and its two hex digits, which an FTEQCC string
 /// reads back as that byte (FTEF-13.11), so the spelling is UTF-8 and reads back as `bytes`.
 fn quote_bytes(bytes: &[u8]) -> String {
