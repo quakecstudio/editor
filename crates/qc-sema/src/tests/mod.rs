@@ -29,6 +29,7 @@ mod initialiser_uses;
 mod keywords;
 mod members;
 mod navigation;
+mod passes;
 mod properties;
 mod recovery;
 mod resolution;

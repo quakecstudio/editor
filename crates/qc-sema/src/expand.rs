@@ -36,7 +36,7 @@ pub struct ModuleInput {
     pub prelude: Vec<FileId>,
     /// The files compiled, in compilation order (QC-23.3).
     pub compiled: Vec<FileId>,
-    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.10), which the
+    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.18), which the
     /// graph reads, since that file is not preprocessed here.
     pub autoproto: Option<bool>,
     /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
@@ -141,6 +141,57 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
     /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
     pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// Under FTEQCC, each `#pragma autoproto` of the file: the rendered offset from which it
+    /// holds and the setting it makes (FTEF-12.18); empty under the vanilla dialect.
+    pub(crate) pragmas: Vec<(usize, bool)>,
+}
+
+/// FTEQCC's `autoprototype` flag over the first pass: whether it is on where each compiled file
+/// starts and from which rendered offset each `#pragma autoproto` of the file sets it
+/// (FTEF-12.18). A declaration read while it is on is only prototyped, with no body and no
+/// value (FTEF-12.18).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ProtoPlan {
+    /// For each compiled file, in order: the flag where the file starts, and its changes.
+    files: Vec<(bool, Vec<(usize, bool)>)>,
+    /// The flag after the last file, which decides whether FTEQCC makes a second pass.
+    last: bool,
+}
+
+impl ProtoPlan {
+    /// The plan for `initial`, the flag before the first file, and the first pass's `files`.
+    fn new(initial: bool, files: &[Rendered]) -> Self {
+        let mut state = initial;
+        let mut plan = Vec::with_capacity(files.len());
+        for file in files {
+            plan.push((state, file.pragmas.clone()));
+            state = file.pragmas.last().map_or(state, |&(_, on)| on);
+        }
+        Self {
+            files: plan,
+            last: state,
+        }
+    }
+
+    /// Whether FTEQCC prototypes what it reads at the rendered offset `at` of compiled file
+    /// `file`: the flag as the last pragma that holds from at or before `at` set it.
+    pub(crate) fn proto_at(&self, file: usize, at: usize) -> bool {
+        let Some((start, pragmas)) = self.files.get(file) else {
+            return false;
+        };
+        let held = pragmas.partition_point(|&(from, _)| from <= at);
+        held.checked_sub(1)
+            .and_then(|i| pragmas.get(i))
+            .map_or(*start, |&(_, on)| on)
+    }
+
+    /// Whether any token of `files` is read while the flag is on.
+    fn any_proto(&self, files: &[Rendered]) -> bool {
+        files
+            .iter()
+            .enumerate()
+            .any(|(index, file)| file.starts.iter().any(|&start| self.proto_at(index, start)))
+    }
 }
 
 /// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
@@ -165,9 +216,17 @@ pub(crate) struct Preprocessed {
     pub(crate) files: Vec<Rendered>,
     /// Lexical and preprocessor diagnostics.
     pub(crate) diagnostics: Vec<FileDiagnostic>,
-    /// Whether the module was read with FTEQCC's autoprototyping (FTE-22.3): asked for by the
-    /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.10).
+    /// Whether FTEQCC makes a second pass (FTE-22.3): `autoprototype` is on when the first pass
+    /// ends, by the caller or by the last `#pragma autoproto` of the module (FTEF-12.18). Then
+    /// [`Self::files`] is the second pass's rendering and [`Self::first`] the first's.
     pub(crate) autoproto: bool,
+    /// With a second pass, the first pass's rendering of the compiled files.
+    pub(crate) first: Vec<Rendered>,
+    /// With a second pass, the first pass's lexical and preprocessor diagnostics.
+    pub(crate) first_diagnostics: Vec<FileDiagnostic>,
+    /// What the first pass prototypes (FTEF-12.18), when it prototypes anything or a second
+    /// pass follows it; `None` for a single pass that prototypes nothing.
+    pub(crate) plan: Option<ProtoPlan>,
 }
 
 /// Reads files out of the database by path, so the preprocessor sees the editor's buffers
@@ -197,10 +256,10 @@ pub(crate) struct Files<'a> {
 
 /// Preprocesses the module `input` in `dialect` (QC-9, QC-23.3), and with FTEQCC's
 /// autoprototyping twice, as FTEQCC reads the files twice (FTE-22.3, FTE-22.4).
-/// Autoprototyping is `autoproto`, FTEQCC's `-Fautoproto`, unless a `#pragma autoproto`
-/// before any definition of the module says otherwise (FTEF-12.10). A later one is the
-/// warning of FTEF-12.10, given once: FTEQCC's second pass skips the pragma
-/// (`if (!autoprototyped)`).
+/// `autoproto` is FTEQCC's `-Fautoproto`, the flag `autoprototype` starts with. A `#pragma
+/// autoproto` anywhere in the first pass sets it from there on, since `numpr_globals` is
+/// `RESERVED_OFS` until the compile ends, and FTEQCC makes the second pass when it is on at the
+/// end of the first (FTEF-12.18). The second pass skips the pragma (`if (!autoprototyped)`).
 pub(crate) fn preprocess(
     files: &Files<'_>,
     input: &ModuleInput,
@@ -214,31 +273,39 @@ pub(crate) fn preprocess(
         .with_dialect(dialect)
         .with_command_line(input.command_line.clone())
         .with_include_dirs(&input.include_dirs);
-    let (mut first, pragma, late) = run(&mut pp, files, input);
-    if !pragma.or(input.autoproto).unwrap_or(autoproto) {
-        first.diagnostics.extend(late);
-        return first;
+    let (mut pass, prelude) = run(&mut pp, files, input);
+    // FTEF-14.72: the command line's `-Fautoproto` sets `autoprototype` before the first pass.
+    let flagged = dialect.has_fteqcc_extensions()
+        && input
+            .command_line
+            .flags(qc_preproc::FlagSettings::default())
+            .is_on(qc_preproc::FteFlag::Autoprototype);
+    let initial = prelude.or(input.autoproto).unwrap_or(autoproto || flagged);
+    let plan = ProtoPlan::new(initial, &pass.files);
+    if !plan.last {
+        if plan.any_proto(&pass.files) {
+            pass.plan = Some(plan);
+        }
+        return pass;
     }
     pp.restart();
-    let (mut second, _, _) = run(&mut pp, files, input);
-    second.autoproto = true;
-    second.diagnostics.extend(late);
-    second
+    let (mut again, _) = run(&mut pp, files, input);
+    again.autoproto = true;
+    again.first = pass.files;
+    again.first_diagnostics = pass.diagnostics;
+    again.plan = Some(plan);
+    again
 }
 
-/// One pass over the prelude and the compiled files, the setting of the last
-/// `#pragma autoproto` that comes before any definition (FTEF-12.10): one in the prelude, or
-/// one in a compiled file before the first token of any compiled file; and the warning for
-/// each later one.
+/// One pass over the prelude and the compiled files, and the setting of the last `#pragma
+/// autoproto` of the prelude, which holds before the first compiled file (FTEF-12.18).
 fn run<L: Loader>(
     pp: &mut Preprocessor<L>,
     files: &Files<'_>,
     input: &ModuleInput,
-) -> (Preprocessed, Option<bool>, Vec<FileDiagnostic>) {
+) -> (Preprocessed, Option<bool>) {
     let mut out = Preprocessed::default();
-    let mut late = Vec::new();
     let mut pragma = None;
-    let mut defined = false;
     let listed = input
         .prelude
         .iter()
@@ -275,26 +342,12 @@ fn run<L: Loader>(
                 continue;
             }
         };
-        for &(at, on, span) in &output.autoproto {
-            if !compiled || (!defined && at == 0) {
-                pragma = Some(on);
-            } else if let Some(location) = source_location(pp, files, span) {
-                // `if (numpr_globals != RESERVED_OFS) QCC_PR_ParseWarning(WARN_BADPRAGMA,
-                // "#pragma autoproto must appear before any definitions");`
-                late.push(FileDiagnostic {
-                    file: location.file,
-                    diagnostic: Diagnostic {
-                        code: Code::W0108,
-                        message: "#pragma autoproto must appear before any definitions".to_owned(),
-                        span: location.span,
-                    },
-                });
-            }
-        }
         if !compiled {
+            if let Some(&(_, on, _)) = output.autoproto.last() {
+                pragma = Some(on);
+            }
             continue;
         }
-        defined |= !output.tokens.is_empty();
         for d in output.diagnostics {
             let Some(location) = source_location(pp, files, d.span) else {
                 continue;
@@ -331,9 +384,14 @@ fn run<L: Loader>(
             .iter()
             .map(|&(token, edit)| (offset_of(&rendered, token), edit))
             .collect();
+        rendered.pragmas = output
+            .autoproto
+            .iter()
+            .map(|&(token, on, _)| (offset_of(&rendered, token), on))
+            .collect();
         out.files.push(rendered);
     }
-    (out, pragma, late)
+    (out, pragma)
 }
 
 /// The database location of a preprocessor span: the database file with the same path, and the

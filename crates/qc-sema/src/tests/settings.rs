@@ -175,8 +175,8 @@ fn assumed_types_from_the_pragma() {
     assert_eq!(codes("string s = 5;\n", &["-Fassumeint"]), [Code::W0220]);
 }
 
-// spec FTEF-19.29: under `-Fcaseinsens` a use finds a definition of the name in any case, the
-// one written first, and a definition is never one of another case
+// spec FTEF-19.31: under `-Fcaseinsens` a use finds a definition of the name in any case, and
+// a definition is never one of another case
 #[test]
 fn case_insensitive_names() {
     let source = "float Foo;\nvoid() g = { foo = 1; };\n";

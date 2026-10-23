@@ -147,7 +147,7 @@ pub struct FileOutput {
     pub diagnostics: Vec<Diagnostic>,
     /// In an FTEQCC dialect, each `#pragma autoproto [N]` in the file: the index of the first
     /// token after it, whether it asks for autoprototyping, and the directive's span
-    /// (FTEF-12.10).
+    /// (FTEF-12.18).
     pub autoproto: Vec<(usize, bool, FileSpan)>,
     /// In an FTEQCC dialect, FTEQCC's warning settings where the file starts, at token 0, and
     /// after each `#pragma warning` that changes them: the index of the first token after it and

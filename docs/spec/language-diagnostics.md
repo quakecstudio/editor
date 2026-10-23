@@ -315,9 +315,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.27** `W0107` "$modelname name too long": under an FTEQCC profile, a `$modelname` of
   64 bytes or more, at the command, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
   FTEF-18.29).
-- **QCD-7.28** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
-  profile, a `#pragma autoproto` after the first definition, at the directive, FTEQCC's warning
-  of the same text (`dialect-fteqcc.md`, FTEF-12.10).
+- **QCD-7.28** **Withdrawn** (P2-132, #569): it said a `#pragma autoproto` after the first
+  definition is the warning `W0108`, but FTEQCC takes it wherever it stands and never warns while
+  it parses. Replaced by FTEF-12.18.
 - **QCD-7.29** `W0313` "Statement does not do anything": under an FTEQCC profile, a discarded
   expression that calls, assigns and increments nothing, at the expression, FTEQCC's warning of
   the same text (`dialect-fteqcc.md`, FTEF-18.25).

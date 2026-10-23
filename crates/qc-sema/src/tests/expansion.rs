@@ -503,7 +503,7 @@ fn module_input_from_a_graph() {
     assert_eq!(ModuleInput::from_graph(&graph).compiled, [FileId(0)]);
 }
 
-// spec FTEF-12.10: the `#pragma autoproto` setting the graph read from a list-form
+// spec FTEF-12.18: the `#pragma autoproto` setting the graph read from a list-form
 // `progs.src` is the module input's.
 #[test]
 fn module_input_keeps_the_graph_autoproto() {

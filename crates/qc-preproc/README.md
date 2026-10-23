@@ -55,7 +55,7 @@ place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.10
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
 (`cond::fte_atoi`, FTEF-14.55). `#pragma autoproto` is recorded for the semantic model
-(FTEF-12.10). `#pragma flag` sets FTEQCC's compiler flags (`FlagSettings`, FTEF-12.11): the text
+(FTEF-12.18). `#pragma flag` sets FTEQCC's compiler flags (`FlagSettings`, FTEF-12.11): the text
 from there on is lexed again with the flags the lexer reads (`Lexing`, FTEF-12.12), and each
 change to the flags the lexer, the parser and the semantic model read, the operator priorities
 a pragma that names `cpriority` sets among them (`Priorities`, FTEF-21.4), and to the defaults

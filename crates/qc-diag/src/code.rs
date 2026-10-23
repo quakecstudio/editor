@@ -205,7 +205,7 @@ pub enum Code {
     W0106,
     /// "$modelname name too long" (QCD-7.27).
     W0107,
-    /// "#pragma autoproto must appear before any definitions" (QCD-7.28).
+    /// "#pragma autoproto must appear before any definitions": FTEQCC never gives it (FTEF-12.18).
     W0108,
     /// "preprocessor directive within preprocessor macro NAME", as a warning (QCD-7.31).
     W0109,

@@ -41,11 +41,13 @@ use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
+mod caseinsens;
 mod declarations;
 mod directives;
 mod flags;
 mod keywords;
 mod lexical;
+mod passes;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -1208,6 +1210,8 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(declarations::cases());
     cases.extend(keywords::cases());
     cases.extend(flags::cases());
+    cases.extend(passes::cases());
+    cases.extend(caseinsens::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));

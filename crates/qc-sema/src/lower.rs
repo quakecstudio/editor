@@ -74,6 +74,10 @@ pub struct RawDecl {
     /// Whether `assumevar` was on at its initialiser, which makes an initialised global no
     /// constant (FTEF-21.11).
     pub assumevar: bool,
+    /// Whether FTEQCC's autoprototyping skipped the initialiser it wrote (FTEF-12.18): the
+    /// definition is made constant by it, as one written with it (`isinitialised`), and is not
+    /// initialised.
+    pub skipped_init: bool,
     /// Whether it, or a declarator of its declaration before it, is C's function pointer
     /// `(*name)`, `isvar |= isptr>0`, a variable (FTEF-21.7).
     pub pointer_var: bool,
@@ -267,8 +271,28 @@ impl RawDecl {
             typedef: None,
             flags: CompilerFlags::default(),
             assumevar: false,
+            skipped_init: false,
             pointer_var: false,
             extern_base: None,
+        }
+    }
+
+    /// The declaration as FTEQCC reads it while `autoprototype` is on (FTEF-12.18): the name and
+    /// its type are made, and the initialiser is skipped over, a function's body or a value, a
+    /// builtin number or a `_(\"...\")`, as `QCC_PR_ParseDefs` does with `if (autoprototype ||
+    /// ...) { /* ignore the code and stuff */ }`.
+    #[must_use]
+    pub(crate) fn prototyped(&self) -> Self {
+        Self {
+            skipped_init: self.initialized,
+            initialized: false,
+            literal: None,
+            body: None,
+            builtin: false,
+            next_think: None,
+            uses: Vec::new(),
+            value: None,
+            ..self.clone()
         }
     }
 

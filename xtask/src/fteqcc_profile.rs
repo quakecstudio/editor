@@ -23,7 +23,7 @@
 //! Makefiles' `-I` options, FTEF-14.49) and Nuclide's own `src/menu-fn`. Copper and Arcane
 //! Dimensions (`cargo xtask corpus fetch copper arcane-dimensions`) are checked too (P2-38):
 //! FTEQCC builds them from list-form `progs.src` files, Copper's with `#pragma autoproto`
-//! (FTEF-12.10).
+//! (FTEF-12.18).
 
 use std::fs;
 use std::path::{Path, PathBuf};

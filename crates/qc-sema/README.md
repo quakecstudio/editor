@@ -69,7 +69,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   functions of FTE-23.7 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
   QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.35, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
-  QCD-7.3, QCD-7.23, QCD-7.28, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
+  QCD-7.3, QCD-7.23, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
@@ -104,9 +104,10 @@ involving a type name that is no typedef's or a pointer is no type mismatch (FTE
 variable (FTEF-15.5); a function with no body is reported unless it is `noref` and not
 referred to (FTEF-17.11); and a builtin given for a function with a body is a warning, the body kept
 (FTEF-17.9). The names in state headers, sequences, case ranges and `sizeof` are resolved
-(FTEF-18), and a `#pragma autoproto` before any definition, in a compiled file or a list-form
-`progs.src`, reads the module with autoprototyping (FTEF-12.10), and a later one is the
-warning `W0108` (QCD-7.28). FreeCS, Rad-Therapy, Nuclide's
+(FTEF-18), and a `#pragma autoproto`, wherever it stands in a compiled file or in a list-form
+`progs.src`, reads the module with autoprototyping (FTEF-12.18): the first pass compiles what
+stands before it in full and only declares the rest, the second compiles it all again with the
+flags, keywords and priorities the first pass ended with (FTEF-12.19, FTEF-12.20). FreeCS, Rad-Therapy, Nuclide's
 `menu-fn`, Copper and Arcane Dimensions resolve with no error (`cargo xtask fteqcc-profile`).
 
 The definitions themselves follow id's `PR_ParseDefs` and `PR_GetDef` and FTEQCC's
