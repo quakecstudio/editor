@@ -29,7 +29,7 @@ pub(crate) enum Step {
 }
 
 /// The steps, cheapest first.
-pub(crate) const STEPS: [Step; 16] = [
+pub(crate) const STEPS: [Step; 17] = [
     Step::Cargo(&["fmt", "--all", "--check"]),
     Step::Program("plan", "python3", &["plan/check.py"]),
     Step::Program(
@@ -75,6 +75,18 @@ pub(crate) const STEPS: [Step; 16] = [
         "sources",
     ]),
     Step::Xtask("deny-fixtures"),
+    // The cargo-fuzz targets (`fuzz/`) are outside the workspace with their own
+    // lock file, so the workspace `clippy` and `test` steps never build them and
+    // a struct or API change can break a target unnoticed until the nightly Fuzz
+    // run (it did, 2026-10-22: a new `ResolveOptions` field broke `qc_sema.rs`).
+    // `cargo check` on the pinned stable toolchain catches that class of error
+    // (it is a type error) without the sanitizer instrumentation `cargo xtask
+    // fuzz` needs nightly for, so this builds the targets without running them.
+    Step::Program(
+        "fuzz-build",
+        "cargo",
+        &["check", "--manifest-path", "fuzz/Cargo.toml", "--locked"],
+    ),
     // The differential VM suite QA-1 names: the fast subset (id 1.01, zero
     // divergences, DIFF-10.3). It builds the oracles and needs the corpus
     // progs (`cargo xtask corpus build`), so in CI the `Test Assets (linux)`
@@ -251,6 +263,7 @@ mod tests {
             "cargo xtask attribution",
             "cargo xtask contrast",
             "cargo deny --locked --all-features check advisories bans licenses sources",
+            "cargo check --manifest-path fuzz/Cargo.toml --locked",
             "cargo xtask differential --fast",
             "python3 plan/check.py",
             "python3 -m unittest discover -s plan -p test_*.py",
@@ -326,6 +339,7 @@ mod tests {
             "plan",
             "plan-tests",
             "specs",
+            "fuzz-build",
         ] {
             assert!(names.contains(&name), "{name}");
         }
@@ -362,6 +376,7 @@ mod tests {
                 "contrast",
                 "clippy-fixtures",
                 "deny-fixtures",
+                "fuzz-build",
                 "differential",
             ]
         );
