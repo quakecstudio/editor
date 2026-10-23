@@ -2006,13 +2006,9 @@ FTEF-18.5.
     statement and a discarded `for` clause the flag then carries what came before, a call in an
     earlier condition included, since only the discarding and the `,` clear it; this profile
     keeps the flag over one file.
-- **FTEF-18.26** Under this profile the nesting limit of QC-27.15 counts the FTEQCC constructs
-  too: the operand of a prefix `-`, `+`, `~`, `++`, `--`, `&` or `*` (FTE-19.4, FTEF-16.7), of
-  a cast (FTEF-16.2) and of `sizeof` (FTEF-18.12) is one level inside it, as the operand of `!`
-  is, each `*` and each parameter list of a type (FTEF-4.1, FTEF-18.15) nests the type one
-  level deeper, and so does each `*` before a declarator's name (FTEF-15.6). QC-27.16 then
-  holds as for vanilla: a prefix `++` or `--` it unwinds through is read as no postfix one, and
-  a type or a declarator takes no further `*` or parameter list. FTEQCC has no such limit.
+- **FTEF-18.26** **Withdrawn** (P2-130, #567): it counted the operators, casts, `sizeof`, `*`s
+  and parameter lists but not an `extern` block, whose `QCC_PR_ParseDefs` recursion nested
+  without a limit. Replaced by FTEF-18.32.
 - **FTEF-18.27** This profile's error recovery (QCD-1.4) treats the full dialect's bodies as a
   function body: a struct's fields, a class's members and an accessor's members end at a
   declaration line, a token at column 0 that has a declaration's shape or is one of `typedef`,
@@ -2092,6 +2088,18 @@ against FTEQCC.
   after `#pragma keyword enable until`, `-Kuntil` or a `-std=` that sets it (FTEF-20.1); or when
   written `__until`, which `QCC_PR_CheckKeyword` matches whether or not the keyword is enabled
   (FTEF-20.2); otherwise `until (e)` is a call of a function named `until`.
+- **FTEF-18.32** Under this profile the nesting limit of QC-27.15 counts the FTEQCC constructs
+  too: the operand of a prefix `-`, `+`, `~`, `++`, `--`, `&` or `*` (FTE-19.4, FTEF-16.7), of
+  a cast (FTEF-16.2) and of `sizeof` (FTEF-18.12) is one level inside it, as the operand of `!`
+  is, each `*` and each parameter list of a type (FTEF-4.1, FTEF-18.15) nests the type one
+  level deeper, and so does each `*` before a declarator's name (FTEF-15.6); and each `extern`
+  block (FTEF-21.17) is one level for the definitions it holds, braced or not, at file level,
+  in a body and behind `local`, since `QCC_PR_ParseDefs(NULL, false)` calls itself for them. So
+  `extern "C" { extern "C" { ... float y; } }` and `extern "C" extern "C" ... float y;` nest to
+  the limit and no further, whether the braces close or not. QC-27.16 then holds as for
+  vanilla: a prefix `++` or `--` it unwinds through is read as no postfix one, a type or a
+  declarator takes no further `*` or parameter list, and a block past the limit is one error token, its `extern`. FTEQCC has no such limit. The tests parse every construct that nests, repeated,
+  under both profiles, so that no recursive entry of the parser is without its level.
 
 ## FTEF-19 Definitions as FTEQCC makes them
 
@@ -2527,14 +2535,8 @@ and compares the outcome with the pinned FTEQCC's.
   code generation's (L-01); that `e` must be an entity and `t` a float ("thinktime type
   mismatch") is the type checker's (FTEF-19.30). By default `loop`, `until`, `state`,
   `thinktime` and `using` are off, so only their `__` spellings start these statements.
-- **FTEF-20.6** In a body a statement defines locals when its first token is a name
-  `QCC_TypeForName` finds, not followed by `::`, or is exactly one of the words
-  `QCC_PR_ParseStatement` tests with `STRCMP` with its keyword on: `var`, `noref`, `string`,
-  `float`, `double`, `entity`, `vector`, `integer`, `unsigned`, `signed`, `long`, `int`, `short`,
-  `char`, `_Bool` (always), `register`, `volatile`, `static`, `class`, `struct`, `union`,
-  `enum`, `extern`, `auto`, `typedef` and `const`; or is a `.`. No `__` spelling and no other
-  case is among them, so `__typedef float t;` and `__long x;` in a body are values, "Unknown
-  value", and `typedef` there starts a typedef only as written.
+- **FTEF-20.6** **Withdrawn** (P2-131, #568): it found a type by its exact name only, and left
+  the types the program defines and a `for` initialiser's types out. Replaced by FTEF-20.14.
 - **FTEF-20.7** `QCC_PR_ParseDefs` reads qualifiers before a type in a loop, each with its
   keyword: `typedef`, `extern`, `auto`, `register`, `static`, `shared`, `const`, `var`,
   `nonstatic` (only outside a function: `!pr_scope && QCC_PR_CheckKeyword(keyword_nonstatic,
@@ -2581,6 +2583,34 @@ and compares the outcome with the pinned FTEQCC's.
   so after a type at file level `__function` and in a function's initialiser `__external`,
   which `QCC_PR_CheckKeyword` would take, are names, where the pinned FTEQCC reads reacc's
   function and builtin syntax; `__exit` is FTEF-20.5's.
+- **FTEF-20.14** In a body a statement defines locals when its first token is a name
+  `QCC_TypeForName` finds, not followed by `::` (`strncmp(pr_file_p, "::", 2)`, so with the `::`
+  touching the name), or is exactly one of the words `QCC_PR_ParseStatement` tests with
+  `STRCMP` with its keyword on: `var`, `noref`, `string`, `float`, `double`, `entity`, `vector`,
+  `integer`, `unsigned`, `signed`, `long`, `int`, `short`, `char`, `_Bool` (always),
+  `register`, `volatile`, `static`, `class`, `struct`, `union`, `enum`, `extern`, `auto`,
+  `typedef` and `const`; or is a `.`. No `__` spelling and no other case is among the `STRCMP`
+  words, so `__typedef float t;` and `__long x;` in a body are values, "Unknown value", and
+  `typedef` there starts a typedef only as written. `QCC_TypeForName` searches the table of the
+  names `QCC_PR_NewType` registers (`void`, `float`, `vector`, `string`, `entity`, `__double`,
+  `__int`, `__int32`, `__uint`, `__uint32`, `__int64`, `__uint64`, `__int16`, `__uint16`,
+  `__int8`, `__uint8`, `__bint`, `__bfloat`, `__variant`, `variant`, `__string`, `__vector`
+  and `__entity`) and of the types the program made, a `typedef`'s name and the tag of a
+  `struct`, `union`, `enum`, `class` or `accessor`, a local `typedef`'s in its function only
+  (`t->scope == pr_scope`), and under `-Fcaseinsens` it searches in any case
+  (`pHash_Get = &Hash_GetInsensitive`, FTEF-19.29): `Float x;`, `VECTOR v;`, `Entity e;`,
+  `String s;`, `FLOAT x; x = 1;`, `__Int x;`, `Float;` and `ENTITY:;` are definitions, the last
+  `":" - not a name`, and `float Float; ... Float = 1;` is `"=" - not a name`, and a
+  `typedef float Foo;` makes `Foo = 1;` that error. A name that is
+  such a type starts a definition whatever follows it, `void;` and `__variant;` among them
+  (FTEF-20.12), and a name that is none is a value. The `for` initialiser is no statement:
+  `QCC_PR_ParseStatement_For` reads each of its items, separated by `,`, with
+  `QCC_PR_ParseType (false, true, false)`, which finds those names, the C type words with
+  `QCC_PR_CheckKeyword` (FTEF-20.9, in any case under `caseinsens`), so `for
+  (Integer i; ; )` defines `i` under `-Fcaseinsens` and `for (Float i = 0; ...)` defines it,
+  while a name it finds nothing for is the first item of an expression. In `sizeof (NAME)` and
+  a cast's parentheses such a name is a type, and with `caseinsens` off the same name in
+  another case is a value, "Unknown value".
 
 ## FTEF-21 Flags that change in the middle of a file
 
@@ -2618,27 +2648,9 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   them restored, the pragmas before it applied first and the restore after them, so a pragma
   there that names one of the six saved flags is undone for the reading and holds for the
   lexing.
-- **FTEF-21.2** `QCC_PR_ParseDefs` reads `extern` as its first qualifier, with its keyword, then a
-  string (`if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`),
-  as a block: a `{`, definitions up to a `}` (`QCC_PR_ParseDefs(NULL, false)` each), or with no
-  `{` one definition, which may follow any number of `;`. The string's parts are joined as any
-  string's (`"" "C"` is `C`) and compared in any case (`strcasecmp`): `"C"` turns `qcfuncs` off and
-  `cpriority`, `assumeint`, `assumevar` and `subscope` on (`flag_qcfuncs = false; flag_cpriority
-  = true; flag_assume_integer = true; ... flag_assumevar = true; pr_subscopedlocals = true;`),
-  `assumedouble` left as it is ("not forced, too annoying"); `"QC"` turns `qcfuncs` on, the others
-  "refrain from changing it"; any other string changes nothing, and the block is read all the
-  same. The flags hold from the token after the string, which `QCC_PR_Lex()` lexes once they are
-  set, to the token after the block's last, which `QCC_PR_CheckToken("}")` or the definition's
-  end lexes before they are restored: so in `extern "C" { float y; } string s = "\9";` the word
-  `string` is lexed with `qcfuncs` off and `"\9"` with it on, and the definition `string` starts
-  is read with the flags restored (FTEF-21.1), so `extern "C" int a; enum { A };` names a
-  `float` enum. A file that ends in the block is
-  "expected }" (`if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; }`). After another
-  qualifier the string is no block (`const extern "C" {` is "\"C\" - not a name" after the
-  warning of FTEF-21.10). In a body `QCC_PR_ParseStatement` reads `extern` exactly, or `local`
-  and then `extern`, as a definition, so the block's definitions are locals, and `x = 1;` in it
-  is no definition. The parser lexes the text again with the blocks it read, and reports the
-  lexical errors and warnings of the tokens they lex otherwise, in place of the preprocessor's.
+- **FTEF-21.2** **Withdrawn** (P2-130, #567): it joined every string beside the block's, compared
+  the whole of it, took a `;` before the end of the text or a `}` for a definition, and gave
+  the blocks no nesting level. Replaced by FTEF-21.17.
 - **FTEF-21.3** At a block's end FTEQCC restores the six flags it saved where it started
   (`flag_qcfuncs = old_qcfuncs; flag_cpriority = old_cpriority; flag_assume_integer =
   old_assumeint; flag_assume_double = old_assumef64; flag_assumevar = old_assumevar;
@@ -2773,3 +2785,42 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   these statements, under the FTEQCC profile, with no option, with `-Werror -Wno-Q208` for those
   a warning decides, and with the command-line options that set the flags. Its run of
   2026-10-21 (macOS arm64) agrees with the pinned FTEQCC on every case.
+- **FTEF-21.17** `QCC_PR_ParseDefs` reads `extern` as its first qualifier, with its keyword, then a
+  string (`if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`),
+  as a block: a `{`, definitions up to a `}` (`QCC_PR_ParseDefs(NULL, false)` each), or with no
+  `{` one definition. The string is the one token the lexer read, whose parts
+  `QCC_PR_LexString` joined as any string's (`"" "C"` is `C`); a string beside it that comes
+  from another text is another token, a macro's and the source's or two macros', so with `#define
+  C "C"` the program `extern C C { string s = "\9"; }` is the block `"C"` and a definition that
+  starts with the string `"C"`, `"C" is not a type`, where `#define C "C" "x"` and `extern C {
+  ... }` is the block `"Cx"`. It is compared with `strcasecmp(pr_token, "C")` and
+  `strcasecmp(pr_token, "QC")`, so in any case, and only up to its first NUL, where `pr_token`
+  ends: `"C\x00x"` is `"C"`, and under `qccx` so is `"C":"x"`, whose `:` the lexer writes as a
+  NUL; `"C"` turns `qcfuncs` off and
+  `cpriority`, `assumeint`, `assumevar` and `subscope` on (`flag_qcfuncs = false; flag_cpriority
+  = true; flag_assume_integer = true; ... flag_assumevar = true; pr_subscopedlocals = true;`),
+  `assumedouble` left as it is ("not forced, too annoying"); `"QC"` turns `qcfuncs` on, the others
+  "refrain from changing it"; any other string changes nothing, and the block is read all the
+  same. Each of its definitions is a `QCC_PR_ParseDefs` call, whose first act is `while
+  (QCC_PR_CheckToken(";"))` and whose second is to read a type, so the `;`s may stand before
+  each definition and after none: a block or an `extern "STRING"` that reaches the end of the text
+  with no definition is the error `"" is not a type` (`extern "C"`, `extern "C";`, `extern "C"
+  ;;;`, `extern "C" "QC"`), and one that reaches a `}` is `"}" is not a type` (`extern "C" { ; }`,
+  `extern "C" { float y; ;; }`); a `;` after a definition at the end of the text is the same
+  (`float x;;` and `void() g = {};;` at file level, where the file's loop tests for the end of
+  the text only before a call). The flags hold from the token after the string, which
+  `QCC_PR_Lex()` lexes once they are set, to the token after the block's last, which
+  `QCC_PR_CheckToken("}")` or the definition's end lexes before they are restored: so in
+  `extern "C" { float y; } string s = "\9";` the word `string` is lexed with `qcfuncs` off and
+  `"\9"` with it on, and the definition `string` starts is read with the flags restored
+  (FTEF-21.1), so `extern "C" int a; enum { A };` names a `float` enum. A file that ends in the
+  block is "expected }" (`if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; }`). After
+  another qualifier the string is no block (`const extern "C" {` is "\"C\" - not a name" after
+  the warning of FTEF-21.10). In a body `QCC_PR_ParseStatement` reads `extern` exactly, or
+  `local` and then `extern`, as a definition, so the block's definitions are locals, and `x = 1;`
+  in it is no definition; a `typedef` in the block is a definition of it as at file level. A
+  qualifier alone, `static;`, `const;` or `const *x;`, is a definition of an `int` of no name:
+  the type is left out where the token after the qualifiers is no name (FTEF-19.21). The block is
+  one level of nesting (FTEF-18.32). The parser lexes the text again with the blocks it read, and
+  reports the lexical errors and warnings of the tokens they lex otherwise, in place of the
+  preprocessor's.
