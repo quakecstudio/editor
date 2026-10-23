@@ -178,3 +178,25 @@ fn other_dialects_name_no_file() {
     assert_eq!(given(&graph), ["-", "-"]);
     assert_eq!(names(&graph), ["qc/src/a.qc", "qc/src/x/b.qh"]);
 }
+
+// spec PRJ-6.8: a word that starts with `\` is FTEQCC's name as it is, the file of that name in
+// the source's directory, not one in an include directory, where `\` is no separator
+#[cfg(unix)]
+#[test]
+fn a_backslash_word_is_not_looked_for_in_an_include_directory() {
+    let files = [("t.qc", "#include \"\\b.qh\"\n"), ("inc/\\b.qh", "")];
+    let graph = fteqcc("t.qc", &files, &["inc"]);
+    assert_eq!(diags(&graph), ["E0111 qc/t.qc:1"]);
+    let files = [("t.qc", "#include \"\\b.qh\"\n"), ("\\b.qh", "")];
+    let graph = fteqcc("t.qc", &files, &["inc"]);
+    assert_eq!(given(&graph), ["t.qc", "\\b.qh"]);
+}
+
+// spec PRJ-6.8: an absolute word is the same file beside the compiled file and in every include
+// directory, found in neither when it is missing
+#[test]
+fn an_absolute_word_is_one_file() {
+    let files = [("t.qc", "#include \"/abs/b.qh\"\n")];
+    let graph = fteqcc("t.qc", &files, &["inc"]);
+    assert_eq!(diags(&graph), ["E0111 qc/t.qc:1"]);
+}

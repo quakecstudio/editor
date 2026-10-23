@@ -1034,13 +1034,23 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             include_dirs,
             progs,
         });
-        let case = Case {
+        let mut case = Case {
             dialect,
             source,
             encoding,
             project,
             options,
         };
+        // Where `\` is a separator, a named project's `sub\tab.qh` is read back as `sub/tab.qh`
+        // (PRJ-6.8): its other files are named with the `\` its listed name has.
+        if !recorded.contains_key(&case.key())
+            && let Some(project) = &mut case.project
+            && project.compiled.contains('\\')
+        {
+            for (name, _) in &mut project.files {
+                *name = name.replace('/', "\\");
+            }
+        }
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
     }
 }

@@ -968,12 +968,10 @@ impl<L: Loader> Builder<'_, L> {
         for (base_name, base) in beside {
             add(self.beside(word, base_name, base));
         }
-        // `QCC_FindBestInclude` tries every include directory, where an absolute name is the
-        // name itself; the other dialects skip them for one.
-        if self.dialect == Dialect::Fteqcc || relative.is_relative() {
-            for dir in &self.include_dirs {
-                add(self.in_dir(word, dir));
-            }
+        // `QCC_FindBestInclude` tries every include directory; an absolute word is the same file
+        // in each, which is tried once.
+        for dir in &self.include_dirs {
+            add(self.in_dir(word, dir));
         }
         let mut first_error: Option<io::Error> = None;
         let mut found = None;
