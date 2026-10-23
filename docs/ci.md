@@ -141,6 +141,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
+| `fuzz-build` | `cargo check --manifest-path fuzz/Cargo.toml --locked` | `cargo xtask ci` | `cargo xtask ci` |
 | `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
 
 The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. An xtask test
@@ -148,6 +149,14 @@ The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. 
 `run:` line of `ci.yml` with the step's exact command, and `cargo xtask ci --skip` fails on a
 name no step has. Every job here is a required check, so a skipped step still has to pass
 before a change merges.
+
+The `fuzz-build` step builds the cargo-fuzz targets in [`fuzz/`](../fuzz) with `cargo check`
+on the pinned stable toolchain, without running them. The fuzz crate is outside the workspace
+with its own lock file, so the `clippy` and `test` steps never build it, and a struct or API
+change can break a target unnoticed until the nightly `Fuzz` run (it did on 2026-10-22, when a
+new `ResolveOptions` field broke `fuzz/fuzz_targets/qc_sema.rs`). `cargo check` catches that
+class of error, a type error, without the sanitizer instrumentation `cargo xtask fuzz` needs
+nightly for.
 
 [`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml):
 

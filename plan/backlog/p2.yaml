@@ -1669,6 +1669,7 @@ issues:
   - P2-122
   - P2-123
   - P2-124
+  - P2-127
   - P2-130
   - P2-131
   - P2-132
@@ -2475,6 +2476,28 @@ issues:
   - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR'
   verify:
   - cargo xtask fuzz --time 30
+- key: P2-127
+  title: Build the cargo-fuzz targets in cargo xtask ci so a broken target fails PR CI
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The cargo-fuzz crate (fuzz/) is outside the workspace with its own lock file, so the clippy and test steps of `cargo xtask ci` never build it. A struct or API change that breaks a fuzz target goes unnoticed until the nightly Fuzz workflow: that happened on 2026-10-22 (run 39751193549), when a new ResolveOptions field broke fuzz/fuzz_targets/qc_sema.rs (P2-124, fixed in #563). A build-only check of the fuzz crate on the pinned stable toolchain was measured at about 5 seconds, so it is a step in the existing `cargo xtask ci` rather than a new CI job. `cargo check` catches the missing-field class of error (it is a type error) without the sanitizer instrumentation `cargo xtask fuzz` needs nightly for; the step does not run the fuzzers.
+  depends:
+  - P2-124
+  deliverable:
+  - 'xtask/src/ci.rs: a `fuzz-build` step in STEPS running `cargo check --manifest-path fuzz/Cargo.toml --locked`, with the two step-enumerating tests (ci_runs_every_check_the_issue_names, every_step_has_its_own_name) updated to match'
+  - 'docs/ci.md: the fuzz-build step listed in the cargo xtask ci step table with its command and job'
+  acceptance:
+  - 'cargo xtask ci runs the fuzz-build step; reintroducing a missing struct field in a fuzz target makes the step fail (recorded in the PR), and the clean tree passes'
+  - 'cargo test -p xtask is green with the updated step tests'
+  verify:
+  - cargo test -p xtask
+  - cargo xtask ci
 - key: P2-130
   title: Read an FTEQCC extern block as QCC_PR_ParseDefs reads it, nested to any depth
   labels:
