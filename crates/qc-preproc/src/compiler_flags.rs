@@ -4,7 +4,7 @@
 //! stands (`docs/spec/dialect-fteqcc.md` FTEF-12.12, FTEF-21), with the defaults `#pragma noref`,
 //! `#pragma nosave` and `#pragma defaultstatic` set for each definition, and the changes a
 //! `#pragma` makes to them, which the parser applies as it reads the tokens, with the changes
-//! its own `extern "C"` blocks make (FTEF-21.2).
+//! its own `extern "C"` blocks make (FTEF-21.17).
 
 use qc_lexer::{LexFlag, LexFlags};
 
@@ -174,7 +174,7 @@ impl CompilerFlags {
 /// A change to [`CompilerFlags`] at a token: the bits it sets and their values. The first of a
 /// file holds the whole state; a `#pragma flag` sets only the flags it names, and the priorities
 /// when it names `cpriority`, so a flag an `extern "C"` block changed holds unless the pragma
-/// names it (FTEF-21.2).
+/// names it (FTEF-21.17).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FlagEdit {
     mask: u32,

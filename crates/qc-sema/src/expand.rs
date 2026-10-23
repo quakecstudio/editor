@@ -141,6 +141,10 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
     /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
     pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// The rendered offset of each string token that follows a string token it does not make
+    /// one string with: FTEQCC's lexer joins the parts of a string written in one text, not a
+    /// macro's string and the one beside it (FTEF-21.17).
+    pub(crate) seams: Vec<usize>,
 }
 
 /// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
@@ -377,6 +381,9 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
             out.text.push(b' ');
         }
         last_line = line;
+        if last.is_some_and(|last| unjoined_strings(last, token)) {
+            out.seams.push(out.text.len());
+        }
         last = Some(token);
         out.starts.push(out.text.len());
         if let Some(location) = source_location(pp, files, origin) {
@@ -396,6 +403,18 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
     }
     out
+}
+
+/// Whether `last` and `next` are strings that `QCC_PR_LexString` does not read into one: it
+/// joins the parts written in the text it is reading, a macro's text or a file's, so strings of
+/// two expansions, or of an expansion and the source, or of two files, are two tokens.
+fn unjoined_strings(last: &PpToken, next: &PpToken) -> bool {
+    matches!(last.kind, TokenKind::String(_))
+        && matches!(next.kind, TokenKind::String(_))
+        && match (last.expansion, next.expansion) {
+            (None, None) => last.span.file != next.span.file,
+            (from, to) => from != to,
+        }
 }
 
 /// Whether `next` comes right after `last` in the text the compiler reads, both rendered as

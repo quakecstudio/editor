@@ -14,7 +14,7 @@
 //! duplicates, replaces, swaps or moves whole tokens and token runs, inserts QuakeC fragments
 //! (keywords, types, punctuation, literals, frame macros, directives, comments, and the FTEQCC
 //! dialect's operators, declarations and statements), and wraps token runs in brackets and
-//! prefix operators to probe the nesting limit (QC-27.15, FTEF-18.26). One mutation in eight is libFuzzer's own byte mutation, so the lexer's edge
+//! prefix operators to probe the nesting limit (QC-27.15, FTEF-18.32). One mutation in eight is libFuzzer's own byte mutation, so the lexer's edge
 //! cases stay covered. An input longer than 4 KB is first cut to a window of whole tokens,
 //! which keeps the run fast on whole corpus files. The cross-over splices a token run of one
 //! input into the other.

@@ -300,3 +300,25 @@ fn core_type_names_without_qcfuncs() {
     assert_eq!(codes("vector v;\n", &[]), []);
     assert_eq!(codes("#pragma flag disable qcfuncs\nvector v;\n", &[]), []);
 }
+
+// spec FTEF-19.29: under `-Fcaseinsens` a class is found in any case by `Class::member`, a
+// member's definition and a parent's name, as `QCC_TypeForName` searches its table
+#[test]
+fn a_class_is_found_in_any_case() {
+    let class = "class Foo { float a; void() m = {}; };\n";
+    for rest in [
+        "void() g = { foo::m(); };\n",
+        "void() foo::n = {};\n",
+        "class Bar : foo { };\nvoid() g = { Bar::m(); };\n",
+    ] {
+        let source = format!("{class}{rest}");
+        let errors = |args: &[&str]| -> Vec<Code> {
+            codes(&source, args)
+                .into_iter()
+                .filter(|c| c.is_error())
+                .collect()
+        };
+        assert_eq!(errors(&["-Fcaseinsens"]), [], "{source}");
+        assert_ne!(errors(&[]), [], "{source}");
+    }
+}
