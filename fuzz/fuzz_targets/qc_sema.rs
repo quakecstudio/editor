@@ -2,7 +2,8 @@
 
 //! Feeds arbitrary bytes to the semantic model (P2-54) as a module of one to three files, split
 //! at the first two NULs after a leading byte that picks the profile: bit 0 the FTEQCC
-//! profile, bit 1 autoprototyping. The module is resolved as written (`Db::module_index`) and
+//! profile, bit 1 autoprototyping, bit 2 `-Fcaseinsens` (FTEF-19.29) and bit 3 `-Fno-qcfuncs`
+//! (FTEF-19.28), the last two as the command line and as the resolver's options. The module is resolved as written (`Db::module_index`) and
 //! through the preprocessor (`Db::analyze_module`), and checked against every engine for
 //! missing builtins (`qc_engines::missing_builtins`). Fails on a panic, on a definition,
 //! reference or diagnostic outside the bytes of its file, and when editing each file in turn
@@ -14,6 +15,7 @@ use std::path::PathBuf;
 
 use libfuzzer_sys::fuzz_target;
 use qc_engines::{Engine, missing_builtins};
+use qc_preproc::CommandLine;
 use qc_project::ModuleKind;
 use qc_sema::lower::lower_file;
 use qc_sema::{Db, FileId, Location, ModuleIndex, ModuleInput, ResolveOptions, resolve_module};
@@ -55,9 +57,19 @@ fuzz_target!(|data: &[u8]| {
     };
     let dialect = if flags & 1 == 1 { Dialect::Fteqcc } else { Dialect::Vanilla };
     let autoproto = flags & 2 == 2;
+    let case_insensitive = flags & 4 == 4;
+    let qcfuncs_off = flags & 8 == 8;
+    let args: Vec<&str> = [(case_insensitive, "-Fcaseinsens"), (qcfuncs_off, "-Fno-qcfuncs")]
+        .into_iter()
+        .filter_map(|(on, arg)| on.then_some(arg))
+        .collect();
     let files: Vec<&[u8]> = rest.splitn(3, |b| *b == 0).collect();
     let ids: Vec<FileId> = (0..files.len()).map(FileId).collect();
-    let input = ModuleInput { compiled: ids.clone(), ..ModuleInput::default() };
+    let input = ModuleInput {
+        compiled: ids.clone(),
+        command_line: CommandLine::new(&args),
+        ..ModuleInput::default()
+    };
 
     let mut db = db_of(&files, dialect, autoproto);
     let index = db.module_index(&ids);
@@ -72,7 +84,15 @@ fuzz_target!(|data: &[u8]| {
     // The missing-builtin check reads the parses and the index resolved from them.
     let parses: Vec<_> = files.iter().map(|text| qc_syntax::parse_with(text, dialect)).collect();
     let lowered: Vec<_> = parses.iter().map(|parse| lower_file(parse, dialect)).collect();
-    let resolved = resolve_module(&lowered, ResolveOptions { dialect, autoproto });
+    // The struct update keeps the build when `ResolveOptions` gains a field.
+    let options = ResolveOptions {
+        dialect,
+        autoproto,
+        case_insensitive,
+        qcfuncs_off,
+        ..ResolveOptions::default()
+    };
+    let resolved = resolve_module(&lowered, options);
     for engine in Engine::ALL {
         for kind in [ModuleKind::Ssqc, ModuleKind::Csqc, ModuleKind::Menuqc] {
             for d in missing_builtins(engine, kind, &parses, &resolved, dialect) {
