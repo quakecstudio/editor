@@ -275,6 +275,9 @@ fn a_programs_types_start_definitions() {
             assert_eq!(codes(&fte(&source)).is_empty(), !exact, "{source}");
         }
     }
+    // A type the file defines is every later function's.
+    let source = "typedef float Foo;\nvoid() g = {};\nvoid() h = { Foo = 1; };\n";
+    assert_eq!(count(&fte(source), K::BinaryExpr), 0);
     // A typedef in a body is that body's: the next function sees a value.
     let source = "void() g = { typedef float Foo; Foo = 1; };\nvoid() h = { Foo = 1; };\n";
     let parsed = fte(source);
@@ -322,5 +325,48 @@ fn qualifiers_may_stand_alone() {
     ] {
         assert_eq!(codes(&fte(source)), [], "{source}");
         assert_eq!(codes(&fte(&in_body(source))), [], "{source}");
+    }
+}
+
+// spec FTEF-20.14: a name that is a type starts a definition unless `::` touches it, as
+// `strncmp(pr_file_p, "::", 2)` tests, so `Foo::m();` is a call and `Foo ::m();` a definition
+#[test]
+fn a_touching_scope_resolution_is_an_expression() {
+    let define = "class Foo { float a; void() m = {}; };\n";
+    for (body, locals) in [
+        ("Foo::m();", 0),
+        ("Foo :: m();", 1),
+        ("Foo ::m();", 1),
+        ("Foo:: m();", 0),
+        ("float::x;", 1),
+        ("__variant::x;", 0),
+        ("__variant ::x;", 1),
+    ] {
+        let source = format!("{define}{}", in_body(body));
+        assert_eq!(count(&fte(&source), K::LocalDecl), locals, "{source}");
+    }
+}
+
+// spec FTEF-20.14: at file level a registered type's name alone is a definition of no name, as
+// `QCC_PR_ParseDefs` reads every definition, in any case under `caseinsens`
+#[test]
+fn a_registered_name_alone_is_a_definition() {
+    for word in [
+        "__variant",
+        "__int",
+        "__string",
+        "variant",
+        "__bint",
+        "__uint8",
+    ] {
+        let source = format!("{word};\n");
+        assert_eq!(codes(&fte(&source)), [], "{source}");
+        assert_eq!(count(&fte(&source), K::Declaration), 1, "{source}");
+    }
+    for word in ["__Variant", "__String", "Variant"] {
+        let source = format!("{word};\n");
+        assert_eq!(codes(&insensitive(&source)), [], "{source}");
+        assert_eq!(count(&insensitive(&source), K::Declaration), 1, "{source}");
+        assert_ne!(codes(&fte(&source)), [], "{source}");
     }
 }

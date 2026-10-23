@@ -2104,7 +2104,7 @@ impl<'a> Resolver<'a> {
         decl: &'a RawDecl,
         location: Location,
     ) -> Vec<Pending<'a>> {
-        let Some(class) = self.class_names.get(scope).copied() else {
+        let Some(class) = self.class_named(scope) else {
             let name = format!("{scope}::{}", decl.name);
             if self.structs.contains(scope) {
                 if self.lookup_global(&name).is_none() {
@@ -2182,10 +2182,7 @@ impl<'a> Resolver<'a> {
             if let Some(id) = info.members.get(name) {
                 return Some(*id);
             }
-            current = info
-                .parent
-                .as_ref()
-                .and_then(|p| self.class_names.get(p).copied());
+            current = info.parent.as_ref().and_then(|p| self.class_named(p));
         }
         None
     }
@@ -2196,12 +2193,27 @@ impl<'a> Resolver<'a> {
             .get(&class)?
             .parent
             .as_ref()
-            .and_then(|p| self.class_names.get(p).copied())
+            .and_then(|p| self.class_named(p))
     }
 
     /// The class a type names, if it names one (FTEF-17.3).
     fn class_of(&self, ty: &Type) -> Option<DefId> {
-        self.class_names.get(ty.type_name()?).copied()
+        self.class_named(ty.type_name()?)
+    }
+
+    /// The class named `name`: the one with that name, else under `-Fcaseinsens` the newest
+    /// whose name is it in any case, as `QCC_TypeForName` searches its table (FTEF-19.29).
+    fn class_named(&self, name: &str) -> Option<DefId> {
+        self.class_names.get(name).copied().or_else(|| {
+            if !self.case_insensitive {
+                return None;
+            }
+            self.class_names
+                .iter()
+                .filter(|(class, _)| class.eq_ignore_ascii_case(name))
+                .map(|(_, def)| *def)
+                .max_by_key(|def| def.0)
+        })
     }
 
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -2666,7 +2678,7 @@ impl<'a> Resolver<'a> {
         let class = if prefix == "super" {
             scope.and_then(|s| s.class).and_then(|c| self.parent_of(c))
         } else {
-            self.class_names.get(prefix).copied()
+            self.class_named(prefix)
         };
         if let Some(class) = class
             && let Some(def) = self.member_in(class, name)

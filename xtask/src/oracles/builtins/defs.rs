@@ -149,6 +149,25 @@ fn extern_programs() -> Vec<String> {
             }
         }
     }
+    // FTEF-21.10: `extern` on a definition, which is no block: in a body and at file level, alone
+    // and with the other qualifiers and a typedef.
+    for item in [
+        "extern float y;",
+        "extern float y = 1;",
+        "extern vector v;",
+        "extern const float y;",
+        "extern static float y;",
+        "static extern float y;",
+        "extern typedef float y;",
+        "typedef extern float y;",
+        "extern typedef void() y;",
+        "typedef extern void() y;",
+        "extern float y, z;",
+        "extern float y; extern float y;",
+    ] {
+        sources.extend(at_sites(item));
+        sources.extend(at_sites(&format!("float y;\n{item}")));
+    }
     // FTEF-20.12: a qualifier and no type or name, beside an `extern` block and alone.
     for item in [
         "static;",
@@ -510,6 +529,18 @@ const USER_SITES: &[&str] = &[
     "void(T a) fn = #6;\n",
 ];
 
+/// A class's member read through its name, with the `::` touching it or not: a type's name
+/// starts a definition unless `::` follows it right away (FTEF-20.14).
+const CLASS_SITES: &[&str] = &[
+    "void() g = { T::m(); };\n",
+    "void() g = { T ::m(); };\n",
+    "void() g = { T:: m(); };\n",
+    "void() g = { T :: m(); };\n",
+    "void() g = { local float x; T::m(); x = 1; };\n",
+    "void() T::n = {};\n",
+    "class Bar : T { };\nvoid() g = { Bar::m(); };\n",
+];
+
 /// Where a user type is a struct's member.
 const USER_MEMBER_SITES: &[&str] = &["struct s { T a; };\n"];
 
@@ -559,6 +590,15 @@ pub(super) fn cases() -> Vec<Case> {
                 for site in declared.chain(vanilla).chain(float) {
                     cases.push(with(options, site.replace('T', &spelling)));
                 }
+            }
+        }
+        for spelling in ["Foo", "foo", "FOO"] {
+            for site in CLASS_SITES {
+                let class = "class Foo { float a; void() m = {}; };\n";
+                cases.push(with(
+                    options,
+                    format!("{class}{}", site.replace('T', spelling)),
+                ));
             }
         }
         for define in USER_TYPES {

@@ -1282,7 +1282,8 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, &mut out.decls);
     }
-    out.diagnostics.extend(typedef_diagnostics(td, cx));
+    out.diagnostics
+        .extend(typedef_diagnostics(td, cx, TypedefScope::File));
     let Some(token) = td.name() else {
         return;
     };
@@ -1321,14 +1322,24 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     out.decls.push(decl);
 }
 
+/// Where a `typedef` is: `QCC_PR_ParseDefs` drops `extern` from a definition whose type is no
+/// function's only `if (externfnc && !pr_scope ...)`, at file level (FTEF-21.10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypedefScope {
+    /// Outside every function.
+    File,
+    /// In a function's body, where the `extern` stays.
+    Body,
+}
+
 /// FTEF-19.9: what is wrong with a `typedef` alone: `typedef;` and `typedef float;` define no
 /// type, a warning; a qualifier is "bad combination of modifiers with typedef", but `auto`,
 /// `register` and `nonstatic`, and `static`, `noref` and `nosave` when a `#pragma` makes them the
-/// default (FTEF-21.14). Before it, as for any declaration, `extern` on a type that is no
-/// function's is dropped, with its warning when `qcfuncs` is on (FTEF-21.10), and more than one
+/// default (FTEF-21.14). Before it, as for any declaration at file level, `extern` on a type that
+/// is no function's is dropped, with its warning when `qcfuncs` is on (FTEF-21.10), and more than one
 /// storage class, `typedef` among them and `static` by its default, is "Conflicting storage
 /// classes." (FTEF-19.16).
-fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
+fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>, scope: TypedefScope) -> Vec<Diagnostic> {
     let Some(token) = td.name() else {
         return vec![Diagnostic {
             code: Code::W0215,
@@ -1345,7 +1356,8 @@ fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
         span: token.span(),
     };
     let ty_node = td.syntax().children().find_map(ast::Type::cast);
-    if qualifiers.contains(&Qualifier::Extern)
+    if scope == TypedefScope::File
+        && qualifiers.contains(&Qualifier::Extern)
         && ty_node.as_ref().is_some_and(|t| no_function(t, &cx.ty(t)))
     {
         qualifiers.retain(|q| *q != Qualifier::Extern);
@@ -1873,7 +1885,8 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
     }
     // FTEF-19.9: a `typedef` in a body is checked as one at file level.
     for td in block.syntax().children().filter_map(ast::TypedefDecl::cast) {
-        body.diagnostics.extend(typedef_diagnostics(&td, cx));
+        body.diagnostics
+            .extend(typedef_diagnostics(&td, cx, TypedefScope::Body));
         if let Some(name) = td.name() {
             body.typedefs
                 .push((name.text_lossless(), name.span().start));

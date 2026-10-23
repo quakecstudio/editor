@@ -222,21 +222,21 @@ impl Parser<'_> {
     /// finds (FTEF-19.20, FTEF-19.29): the vanilla type words, the scalars and the other names of
     /// [`REGISTERED_TYPES`], in any case under `caseinsens`.
     pub(super) fn registered_type(&self, n: usize) -> bool {
-        let Some(tok) = self.nth(n).filter(|t| t.kind == K::Name) else {
-            return false;
-        };
         let any_case = self.any_case(n);
-        let named = |name: &str| {
-            if any_case {
-                name.eq_ignore_ascii_case(&tok.text)
-            } else {
-                name == tok.text
-            }
-        };
-        self.type_word(n).is_some()
-            || self.scalar_name(n).is_some()
-            || REGISTERED_TYPES.iter().any(|name| named(name))
-            || self.types.iter().any(|(name, _)| named(name))
+        self.nth(n).is_some_and(|tok| {
+            let named = |name: &str| {
+                if any_case {
+                    name.eq_ignore_ascii_case(&tok.text)
+                } else {
+                    name == tok.text
+                }
+            };
+            tok.kind == K::Name
+                && (self.type_word(n).is_some()
+                    || self.scalar_name(n).is_some()
+                    || REGISTERED_TYPES.iter().any(|name| named(name))
+                    || self.types.iter().any(|(name, _)| named(name)))
+        })
     }
 
     /// The scalar type the token `n` ahead names, a name FTEQCC registers (`QCC_TypeForName`):

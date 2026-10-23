@@ -400,6 +400,20 @@ fn extern_on_a_typedef() {
         codes("typedef void() fn;\nextern fn h;\n"),
         codes("extern void() h;\n")
     );
+    // `!pr_scope`: in a body the `extern` stays, and a typedef takes no qualifier.
+    for body in [
+        "typedef extern float y;",
+        "extern typedef float y;",
+        "typedef extern void() y;",
+    ] {
+        assert_eq!(
+            errors(&format!("void() g = {{ {body} }};\n")),
+            [Code::E0224],
+            "{body}"
+        );
+    }
+    assert_eq!(errors("typedef extern float y;\n"), []);
+    assert_eq!(errors("void() g = { extern float y; };\n"), []);
 }
 
 // spec FTEF-21.1: the definition after a block reads the flags it restored

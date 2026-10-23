@@ -853,7 +853,7 @@ impl<'a> Parser<'a> {
     /// One file-level item, what `QCC_PR_ParseDefs` reads at file level: a declaration or one of
     /// the FTEQCC dialect's file-level constructs.
     fn item(&mut self) {
-        if self.fteqcc() && self.at(K::Semicolon) && !self.defs_start() {
+        if self.fteqcc() && !self.defs_start() {
             // FTE-17.3, FTEF-21.17: `QCC_PR_ParseDefs` skips any `;` and then reads a definition.
             return;
         }
