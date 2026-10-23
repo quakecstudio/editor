@@ -447,3 +447,83 @@ fn the_scope_of_a_scoped_name_is_a_type() {
     assert_eq!(errors("typedef Void t;\n"), [Code::E0203]);
     assert_eq!(errors_with("typedef Void t;\n", &["-Fcaseinsens"]), []);
 }
+
+// spec FTEF-12.19: the index holds each definition and reference once, though two passes read
+// the declaration, and a single pass that prototypes skips the parse errors of what it skips
+#[test]
+fn the_index_holds_each_declaration_once() {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    let source = "float x = 5;\n#pragma autoproto\nenum { A, B };\nfloat y = x;\nvoid() f = {};\n";
+    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    let analysis = db.analyze_module(&ModuleInput {
+        compiled: vec![FileId(0)],
+        ..ModuleInput::default()
+    });
+    let named = |name: &str| {
+        analysis
+            .index
+            .defs
+            .iter()
+            .filter(|d| d.name == name)
+            .count()
+    };
+    assert_eq!(named("A"), 1);
+    assert_eq!(named("y"), 1);
+    let uses_of_x = analysis
+        .index
+        .refs
+        .iter()
+        .filter(|r| {
+            analysis
+                .index
+                .defs
+                .get(r.def.0)
+                .is_some_and(|d| d.name == "x")
+        })
+        .count();
+    assert_eq!(uses_of_x, 1);
+    // `g`'s body is skipped by the only pass, which ends with the flag off.
+    assert_eq!(
+        errors("#pragma autoproto\nvoid() g = { nothing( };\n#pragma autoproto 0\n"),
+        [Code::E0211]
+    );
+}
+
+// spec FTEF-12.19: what the first pass compiled in full leaves nothing of its locals behind, and
+// what both passes report is reported once
+#[test]
+fn the_first_pass_leaves_only_its_declarations() {
+    assert_eq!(
+        errors("void() g = { const float n = 1; };\n#pragma autoproto\nfloat z = 2;\n"),
+        [Code::E0216, Code::E0206]
+    );
+    // A global a body made is cut off with it and made again by the second pass.
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    let source = "void() g = { local float autocvar_x = 1; };\n#pragma autoproto\nfloat y;\n";
+    db.set_file(FileId(0), PathBuf::from("t.qc"), source.as_bytes().to_vec());
+    let analysis = db.analyze_module(&ModuleInput {
+        compiled: vec![FileId(0)],
+        ..ModuleInput::default()
+    });
+    let named = analysis
+        .index
+        .defs
+        .iter()
+        .filter(|d| d.name == "autocvar_x")
+        .count();
+    assert_eq!(named, 1);
+    let twice = codes_with("float x = \"a\";\n#pragma autoproto\n", &[]);
+    let once = codes_with("float x = \"a\";\n", &[]);
+    assert_eq!(twice.len(), once.len(), "{twice:?} {once:?}");
+}
+
+// spec FTEF-19.31: a struct is found in any case only under `-Fcaseinsens`
+#[test]
+fn a_struct_scope_is_exact_without_the_option() {
+    assert_eq!(
+        errors("struct S { float a; };\nfloat s::g;\n"),
+        [Code::E0225]
+    );
+}

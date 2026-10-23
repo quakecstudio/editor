@@ -261,9 +261,10 @@ pub(crate) fn resolve_mapped(
             }
             None => r.pass(files, &prototyped, false),
         }
-        let first_pass = r.index.diagnostics.len();
+        let first_pass = (r.index.diagnostics.len(), r.index.refs.len());
         r.pass(files, &[], true);
-        r.drop_repeats(first_pass);
+        r.drop_repeats(first_pass.0);
+        r.drop_repeated_refs(first_pass.1);
     } else {
         r.pass(files, &prototyped, true);
     }
@@ -2041,6 +2042,20 @@ impl<'a> Resolver<'a> {
                 let single = v as f32;
                 LiteralValue::Float(single.to_bits())
             });
+        // The same declaration read by the other pass is one definition for navigation.
+        if self
+            .globals
+            .get(&decl.name)
+            .into_iter()
+            .flatten()
+            .any(|id| {
+                self.index
+                    .def(*id)
+                    .is_some_and(|d| d.location == location && d.ty == decl.ty)
+            })
+        {
+            return;
+        }
         // FTEF-17.10: a new definition each time, never a redeclaration, which the name's
         // lookups find before the older ones (`Hash_Add`, FTEF-19.31).
         if let Type::Named(strict) = &decl.ty
@@ -2443,9 +2458,20 @@ impl<'a> Resolver<'a> {
         self.index.defs.truncate(defs);
         self.facts.truncate(defs);
         self.index.refs.truncate(refs);
+        // A body may define a global (an `autocvar_` local, FTEF-19.16), which is cut off too.
         for ids in self.globals.values_mut() {
             ids.retain(|id| id.0 < defs);
         }
+    }
+
+    /// Removes the references after the first `earlier` that are among them, which the last
+    /// pass made again.
+    fn drop_repeated_refs(&mut self, earlier: usize) {
+        let later = self.index.refs.split_off(earlier);
+        let found = self.index.refs.clone();
+        self.index
+            .refs
+            .extend(later.into_iter().filter(|r| !found.contains(r)));
     }
 
     /// Removes the diagnostics after the first `earlier` that are among them, which the last

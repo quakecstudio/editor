@@ -2,7 +2,7 @@
 
 //! Feeds arbitrary bytes to the semantic model (P2-54) as a module of one to three files, split
 //! at the first two NULs after a leading byte that picks the profile: bit 0 the FTEQCC
-//! profile, bit 1 autoprototyping, bit 2 `-Fcaseinsens` (FTEF-19.29) and bit 3 `-Fno-qcfuncs`
+//! profile, bit 1 autoprototyping, bit 2 `-Fcaseinsens` (FTEF-19.31) and bit 3 `-Fno-qcfuncs`
 //! (FTEF-19.28), the last two as the command line and as the resolver's options. The module is resolved as written (`Db::module_index`) and
 //! through the preprocessor (`Db::analyze_module`), and checked against every engine for
 //! missing builtins (`qc_engines::missing_builtins`). Fails on a panic, on a definition,

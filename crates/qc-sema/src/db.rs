@@ -35,7 +35,9 @@ use std::path::{Path, PathBuf};
 use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, ProtoPlan, Rendered, preprocess, settings_at};
+use crate::expand::{
+    Files, ModuleInput, OriginMap, Preprocessed, ProtoPlan, Rendered, preprocess, settings_at,
+};
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
     FileDiagnostic, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
@@ -390,7 +392,7 @@ impl Db {
             }
             preprocess(&files, input, self.dialect, self.autoproto)
         };
-        let mut syntax = preprocessed.diagnostics;
+        let mut syntax = preprocessed.diagnostics.clone();
         let mut decls = Vec::with_capacity(input.compiled.len());
         let mut keywords = Vec::with_capacity(input.compiled.len());
         let mut relexed = Vec::new();
@@ -406,31 +408,21 @@ impl Db {
                     .iter()
                     .filter_map(|&span| rendered.origins.locate(span)),
             );
-            syntax.extend(parse_diagnostics(&file.parse, rendered, id, &[]));
+            // FTEF-12.19: a single pass that prototypes part of the module skips those
+            // initialisers as the first of two does.
+            let skipped = match (&preprocessed.plan, preprocessed.autoproto) {
+                (Some(plan), false) => prototyped_initialisers(&file.parse, plan, decls.len()),
+                (Some(_) | None, _) => Vec::new(),
+            };
+            syntax.extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
             decls.push(file.decls);
         }
-        // FTEF-12.18: the first pass of a two-pass compile, read with its own flags, warning
-        // settings and keywords.
-        let mut first_decls = Vec::with_capacity(preprocessed.first.len());
-        let mut first_keywords = Vec::with_capacity(preprocessed.first.len());
-        let mut first_syntax: Vec<FileDiagnostic> = preprocessed
-            .first_diagnostics
-            .iter()
-            .filter(|d| lexer_code(d.diagnostic.code))
-            .cloned()
-            .collect();
-        for (&id, rendered) in input.compiled.iter().zip(&preprocessed.first) {
-            let file = self.expanded_file(id, rendered, true);
-            first_keywords.push(file.parse.keywords().to_vec());
-            // FTEF-12.19: what the first pass skips over, FTEQCC's parser does not read.
-            let skipped = preprocessed
-                .plan
-                .as_ref()
-                .map(|plan| prototyped_initialisers(&file.parse, plan, first_decls.len()))
-                .unwrap_or_default();
-            first_syntax.extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
-            first_decls.push(file.decls);
-        }
+        let FirstRead {
+            decls: first_decls,
+            keywords: first_keywords,
+            relexed: first_relexed,
+            syntax: first_syntax,
+        } = self.read_first_pass(input, &preprocessed);
         if !relexed.is_empty() {
             let mut index = 0_usize;
             syntax.retain(|d| {
@@ -447,7 +439,12 @@ impl Db {
         }
         // The first pass found its own, which the second finds again unless its flags differ.
         for d in first_syntax {
-            if !syntax.contains(&d) {
+            let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
+            let relexed_there = lexer_code(d.diagnostic.code)
+                && first_relexed
+                    .iter()
+                    .any(|l| l.file == d.file && l.span.contains(at));
+            if !relexed_there && !syntax.contains(&d) {
                 syntax.push(d);
             }
         }
@@ -513,6 +510,44 @@ impl Db {
             computed_at: max_revision,
         });
         analysis
+    }
+
+    /// FTEF-12.18: the first pass of a two-pass compile, read with its own flags, warning
+    /// settings and keywords: each compiled file's declarations and keywords, the spans its
+    /// `extern` blocks lexed otherwise, and the diagnostics the second pass may not find again.
+    fn read_first_pass(&mut self, input: &ModuleInput, preprocessed: &Preprocessed) -> FirstRead {
+        if preprocessed.first.is_empty() {
+            self.expanded.retain(|(_, first), _| !*first);
+        }
+        let mut read = FirstRead {
+            syntax: preprocessed
+                .first_diagnostics
+                .iter()
+                .filter(|d| lexer_code(d.diagnostic.code))
+                .cloned()
+                .collect(),
+            ..FirstRead::default()
+        };
+        for (&id, rendered) in input.compiled.iter().zip(&preprocessed.first) {
+            let file = self.expanded_file(id, rendered, true);
+            read.keywords.push(file.parse.keywords().to_vec());
+            read.relexed.extend(
+                file.parse
+                    .relexed()
+                    .iter()
+                    .filter_map(|&span| rendered.origins.locate(span)),
+            );
+            // FTEF-12.19: what the first pass skips over, FTEQCC's parser does not read.
+            let skipped = preprocessed
+                .plan
+                .as_ref()
+                .map(|plan| prototyped_initialisers(&file.parse, plan, read.decls.len()))
+                .unwrap_or_default();
+            read.syntax
+                .extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
+            read.decls.push(file.decls);
+        }
+        read
     }
 
     /// The lowered declarations of compiled file `file` as [`Db::analyze_module`] last read
@@ -590,6 +625,19 @@ const fn lexer_code(code: Code) -> bool {
             | Code::W0121
             | Code::W0123
     )
+}
+
+/// What [`Db::read_first_pass`] reads of the first pass.
+#[derive(Default)]
+struct FirstRead {
+    /// Each compiled file's declarations.
+    decls: Vec<FileDecls>,
+    /// Each compiled file's keywords at each offset.
+    keywords: Vec<Vec<(usize, qc_syntax::Keywords)>>,
+    /// The spans its `extern` blocks lexed with other flags.
+    relexed: Vec<Location>,
+    /// Its diagnostics.
+    syntax: Vec<FileDiagnostic>,
 }
 
 /// The diagnostics of the parse of compiled file `id`, whose expansion is `rendered`, at their
