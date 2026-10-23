@@ -317,7 +317,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   FTEF-18.29).
 - **QCD-7.28** **Withdrawn** (P2-132, #569): it said a `#pragma autoproto` after the first
   definition is the warning `W0108`, but FTEQCC takes it wherever it stands and never warns while
-  it parses. Replaced by FTEF-12.18.
+  it parses. Replaced by QCD-7.70.
 - **QCD-7.29** `W0313` "Statement does not do anything": under an FTEQCC profile, a discarded
   expression that calls, assigns and increments nothing, at the expression, FTEQCC's warning of
   the same text (`dialect-fteqcc.md`, FTEF-18.25).
@@ -441,6 +441,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.69** `W0228` "Unknown attribute \"NAME\"", or "accumulating an accumulating
   accumulation": under an FTEQCC profile, an attribute FTEQCC does not know, at it, or
   `accumulate` given to a definition `accumulate` already marks, at the attribute (FTEF-21.9).
+- **QCD-7.70** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
+  profile, never reported, since FTEQCC gives it only when `numpr_globals` is not `RESERVED_OFS`,
+  which no definition makes while it parses (FTEF-12.18); the code is the warning class a
+  `#pragma warning` names (FTEF-14.63).
 
 ## QCD-8 Preprocessor errors
 

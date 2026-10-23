@@ -159,7 +159,8 @@ fn the_pragma_holds_across_files() {
     );
 }
 
-// spec FTEF-12.18: a pragma after a definition is no warning, `W0108` being unreachable
+// spec FTEF-12.18, QCD-7.70: a pragma after a definition is no warning, `W0108` being
+// unreachable
 #[test]
 fn no_pragma_is_a_warning() {
     let source = format!("float x;\n#pragma autoproto\n{USES_LATER}#pragma autoproto\n");

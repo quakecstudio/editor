@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, Rendered, preprocess, settings_at};
+use crate::expand::{Files, ModuleInput, OriginMap, ProtoPlan, Rendered, preprocess, settings_at};
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
     FileDiagnostic, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
@@ -618,11 +618,7 @@ fn parse_diagnostics<'a>(
 /// The spans of the initialisers, function bodies among them, of the declarations that FTEQCC's
 /// first pass reads with `autoprototype` on, in compiled file number `file` (FTEF-12.19): it
 /// skips over them.
-fn prototyped_initialisers(
-    parse: &Parse,
-    plan: &crate::expand::ProtoPlan,
-    file: usize,
-) -> Vec<qc_diag::Span> {
+fn prototyped_initialisers(parse: &Parse, plan: &ProtoPlan, file: usize) -> Vec<qc_diag::Span> {
     use qc_syntax::ast::AstNode;
 
     let Some(tree) = parse.tree() else {
