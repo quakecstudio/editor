@@ -960,7 +960,7 @@ struct Cx<'a> {
     fte: bool,
     flags: &'a [(usize, qc_syntax::CompilerFlags)],
     /// The lexer's flags, which differ from `flags` at the token after an `extern` block
-    /// (FTEF-21.2).
+    /// (FTEF-21.17).
     lex: &'a [(usize, qc_lexer::LexFlags)],
     /// Where each of the file's tokens starts, trivia aside, in order.
     tokens: &'a [usize],
@@ -1884,7 +1884,7 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
-        // FTEF-21.2: a body's `extern` block holds local definitions.
+        // FTEF-21.17: a body's `extern` block holds local definitions.
         ast::Stmt::Extern(block) => {
             for local in block.items().into_iter().filter_map(ast::LocalDecl::cast) {
                 lower_local(&local, cx, body);

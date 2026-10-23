@@ -320,8 +320,16 @@ pub(crate) struct Parser<'a> {
     keyword_marks: Vec<(usize, Keywords)>,
     /// The compiler flags from each byte on, as the input was lexed with them (FTEF-21.1).
     flags: Vec<(usize, CompilerFlags)>,
-    /// The `extern` blocks read, in the order they ended (FTEF-21.2).
+    /// The types the program defined so far, each with whether a function's body defined it,
+    /// which only that body sees: `QCC_TypeForName` finds a typedef in the scope it was made
+    /// in (FTEF-20.14).
+    types: Vec<(String, bool)>,
+    /// The `extern` blocks read, in the order they ended (FTEF-21.17).
     blocks: Vec<Block>,
+    /// The bytes strings start at that FTEQCC's lexer did not read into the string before
+    /// them: it joins only the parts written in one text, not a macro's string and the one
+    /// beside it (FTEF-21.17).
+    seams: Vec<usize>,
     /// How many `extern` blocks with a `{` the current token is in, whose `}` recovery stops at.
     open_blocks: usize,
     /// Whether the expression being read is the operand of `!` or `~`, FTEQCC's
@@ -335,6 +343,7 @@ impl<'a> Parser<'a> {
         dialect: Dialect,
         edits: &[(usize, KeywordEdit)],
         flags: &[(usize, CompilerFlags)],
+        seams: &[usize],
     ) -> Self {
         let mut parser = Self {
             input,
@@ -357,7 +366,9 @@ impl<'a> Parser<'a> {
             applied: 0,
             keyword_marks: Vec::new(),
             flags: flags.to_vec(),
+            types: Vec::new(),
             blocks: Vec::new(),
+            seams: seams.to_vec(),
             open_blocks: 0,
             unary_not: false,
         };
@@ -365,7 +376,7 @@ impl<'a> Parser<'a> {
         parser
     }
 
-    /// The `extern` blocks read (FTEF-21.2).
+    /// The `extern` blocks read (FTEF-21.17).
     pub(crate) fn blocks(&self) -> &[Block] {
         &self.blocks
     }
@@ -386,7 +397,7 @@ impl<'a> Parser<'a> {
 
     /// The spans of the tokens of a preprocessor's text that were lexed with other flags than
     /// `preprocessor`, the flags the preprocessor lexed them with, those of an `extern` block
-    /// (FTEF-21.2); their lexical errors and warnings become the parser's.
+    /// (FTEF-21.17); their lexical errors and warnings become the parser's.
     pub(crate) fn relexed(&mut self, preprocessor: &[(usize, CompilerFlags)]) -> Vec<Span> {
         let spans: Vec<Span> = self
             .input
@@ -448,6 +459,26 @@ impl<'a> Parser<'a> {
             .fold(self.keywords, |keywords, (_, edit)| edit.apply(keywords))
     }
 
+    /// Whether the token `n` ahead is read with `caseinsens` on, under which FTEQCC searches its
+    /// name tables in any case (`Hash_GetInsensitive`, FTEF-19.29). Only a full dialect has it.
+    fn any_case(&self, n: usize) -> bool {
+        self.fteqcc() && self.keywords_ahead(n).case_insensitive()
+    }
+
+    /// The vanilla type word the token `n` ahead names, as `QCC_TypeForName` finds it (QC-10.1,
+    /// FTEF-19.29): `void`, `float`, `vector`, `string` or `entity`, in any case under
+    /// `caseinsens`.
+    fn type_word(&self, n: usize) -> Option<K> {
+        let tok = self.nth(n).filter(|t| t.kind == K::Name)?;
+        type_keyword(&tok.text).or_else(|| {
+            if self.any_case(n) {
+                type_keyword(&tok.text.to_ascii_lowercase())
+            } else {
+                None
+            }
+        })
+    }
+
     /// `QCC_PR_CheckKeyword(enabled, word)` of the token `n` ahead (FTEF-20.2): a name that is
     /// the keyword with the keywords in force at it. Under the vanilla dialect, which has no
     /// keyword flags, a name that is `word` exactly.
@@ -475,7 +506,7 @@ impl<'a> Parser<'a> {
             .is_some_and(|t| t.kind == K::Name && self.keywords_ahead(n).names(word, &t.text))
     }
 
-    /// `keyword_X && !STRCMP(word, pr_token)` of the token `n` ahead (FTEF-20.6): `word` exactly,
+    /// `keyword_X && !STRCMP(word, pr_token)` of the token `n` ahead (FTEF-20.14): `word` exactly,
     /// with its keyword on; no `__` spelling and no other case.
     fn strcmp_kw(&self, n: usize, keyword: Keyword, word: &str) -> bool {
         self.nth(n).is_some_and(|t| {
@@ -543,7 +574,7 @@ impl<'a> Parser<'a> {
         if matches!(tok.kind, K::Dot | K::DotDot) {
             return true;
         }
-        if tok.kind != K::Name || type_keyword(&tok.text).is_none() {
+        if tok.kind != K::Name || self.type_word(n).is_none() {
             return false;
         }
         let next = n.saturating_add(1);
@@ -822,12 +853,12 @@ impl<'a> Parser<'a> {
     /// One file-level item, what `QCC_PR_ParseDefs` reads at file level: a declaration or one of
     /// the FTEQCC dialect's file-level constructs.
     fn item(&mut self) {
-        if self.fteqcc() && self.at(K::Semicolon) {
-            // FTE-17.3: `QCC_PR_ParseDefs` skips any `;` before a definition, so the `;`
-            // after a function body may be written or not.
-            self.bump();
-        } else if self.fteqcc() && self.at_extern_block() {
-            // FTEF-21.2: `extern` and a string, as the first qualifier.
+        if self.fteqcc() && self.at(K::Semicolon) && !self.defs_start() {
+            // FTE-17.3, FTEF-21.17: `QCC_PR_ParseDefs` skips any `;` and then reads a definition.
+            return;
+        }
+        if self.fteqcc() && self.at_extern_block() {
+            // FTEF-21.17: `extern` and a string, as the first qualifier.
             self.extern_block(Site::File);
         } else if self.fteqcc() && self.at_typedef() {
             self.typedef_decl();
@@ -868,7 +899,7 @@ impl<'a> Parser<'a> {
         self.kw(n, Keyword::Typedef, "typedef")
     }
 
-    /// Whether an `extern` block starts here (FTEF-21.2): `extern`, with its keyword, then a
+    /// Whether an `extern` block starts here (FTEF-21.17): `extern`, with its keyword, then a
     /// string, `if (!hadmodifier && pr_token_type == tt_immediate &&
     /// pr_immediate_type==type_string)`, so only as the first qualifier.
     fn at_extern_block(&self) -> bool {
@@ -883,12 +914,37 @@ impl<'a> Parser<'a> {
                 .is_some_and(|t| t.kind == K::StringLit)
     }
 
+    /// The start of one `QCC_PR_ParseDefs`: its `while (QCC_PR_CheckToken(";"))`, then a
+    /// definition, which the end of the text or a `}` is not, the error `QCC_PR_ParseType` gives
+    /// (FTEF-21.17, `"" is not a type`). False, with the error reported, when none follows.
+    fn defs_start(&mut self) -> bool {
+        while self.at(K::Semicolon) {
+            self.bump();
+        }
+        if self.current().is_some() {
+            return true;
+        }
+        let message = format!("\"{}\" is not a type", self.found());
+        self.error(Code::E0203, message);
+        false
+    }
+
     /// `extern "C" { ... }`, `extern "C"` and one definition, and the same for `"QC"` and any
-    /// other string (FTEF-21.2), at `site`: the string's parts joined, as `QCC_PR_LexString`
-    /// joins them, and compared in any case. The flags it sets hold from the token after the
-    /// string to the token after the one that follows the block, as FTEQCC lexed them; the block
-    /// is recorded for the pass that lexes the text with them.
+    /// other string (FTEF-21.17), at `site`: the string's parts joined, as `QCC_PR_LexString`
+    /// joins them, and compared in any case up to the first NUL. The flags it sets hold from the
+    /// token after the string to the token after the one that follows the block, as FTEQCC
+    /// lexed them; the block is recorded for the pass that lexes the text with them. Each block
+    /// is one level of nesting (FTEF-18.32).
     fn extern_block(&mut self, site: Site) {
+        if self.enter() {
+            self.extern_block_inner(site);
+        } else {
+            self.bump_error();
+        }
+        self.leave(1);
+    }
+
+    fn extern_block_inner(&mut self, site: Site) {
         self.start_node(K::ExternBlock);
         if !self.at_extern_block() {
             // `local extern "C" ...`: `QCC_PR_ParseStatement` reads `local` and then
@@ -897,7 +953,12 @@ impl<'a> Parser<'a> {
         }
         self.bump();
         let mut text = Vec::new();
-        while let Some(tok) = self.current().filter(|t| t.kind == K::StringLit) {
+        let mut first = true;
+        while let Some(tok) = self
+            .current()
+            .filter(|t| t.kind == K::StringLit && (first || !self.seams.contains(&t.span.start)))
+        {
+            first = false;
             text.extend(tok.text.chars().map(latin1_byte));
             self.bump();
         }
@@ -925,13 +986,8 @@ impl<'a> Parser<'a> {
             }
             self.open_blocks = self.open_blocks.saturating_sub(1);
         } else {
-            // `QCC_PR_ParseDefs(NULL, false);`, which skips any `;` before its definition.
-            while self.at(K::Semicolon) {
-                self.bump();
-            }
-            if self.current().is_some() {
-                self.block_item(site);
-            }
+            // `QCC_PR_ParseDefs(NULL, false);`
+            self.block_item(site);
         }
         // The token after the block's last is lexed before the flags are restored, and read
         // after.
@@ -949,13 +1005,19 @@ impl<'a> Parser<'a> {
     }
 
     /// One definition of an `extern` block at `site`: an item at file level, a local definition
-    /// in a body (FTEF-21.2).
+    /// in a body (FTEF-21.17).
     fn block_item(&mut self, site: Site) {
+        if !self.defs_start() {
+            return;
+        }
         match site {
             Site::File => self.item(),
             Site::Body | Site::Member => {
                 if self.at_extern_block() {
                     self.extern_block(site);
+                } else if self.fteqcc() && self.at_typedef() {
+                    // `QCC_PR_ParseDefs` reads `typedef` among the qualifiers (FTEF-21.14).
+                    self.typedef_decl();
                 } else {
                     self.local_decl(false);
                 }
@@ -980,7 +1042,7 @@ impl<'a> Parser<'a> {
         if tok.kind != K::Name {
             return false;
         }
-        if type_keyword(&tok.text).is_some() {
+        if self.type_word(0).is_some() {
             return true;
         }
         if !self.fteqcc() {
@@ -1046,9 +1108,7 @@ impl<'a> Parser<'a> {
         // FTEF-19.21: `typedef` is a modifier, so after it the type may be left out, an `int`.
         let omitted = self.fteqcc()
             && self.fte_type_omitted()
-            && self
-                .current()
-                .is_some_and(|t| type_keyword(&t.text).is_none())
+            && self.type_word(0).is_none()
             && !self.c_type_word(0);
         match (omitted, self.at_struct_keyword(0) && tagged_body) {
             (true, _) => {}
@@ -1078,7 +1138,10 @@ impl<'a> Parser<'a> {
         // FTEF-7.1: `typedef struct { ... } *Name;` names a pointer to it; FTEF-21.7: the name is
         // a declarator's, after its `*`s, its parameter lists or a `(*`.
         let pointer = self.declarator_head(&mut shape, true);
-        self.name();
+        let declared = self.found();
+        if self.name() {
+            self.declare_type(declared);
+        }
         while self.at(K::LBracket) {
             self.array_suffix();
         }
@@ -1105,6 +1168,7 @@ impl<'a> Parser<'a> {
         }
         if self.at(K::Name) {
             // FTEF-6.1: the struct's tag.
+            self.declare_type(self.found());
             self.bump();
         }
         if self.at(K::Colon) {
@@ -1185,6 +1249,7 @@ impl<'a> Parser<'a> {
             self.bump();
         }
         if self.at(K::Name) {
+            self.declare_type(self.found());
             self.bump();
         }
         if self.at(K::Colon) {
@@ -1328,7 +1393,7 @@ impl<'a> Parser<'a> {
     }
 
     /// What `QCC_PR_ParseDefs` reads of a declarator before its name (FTEF-4.1, FTEF-21.7):
-    /// its `*`s, each a pointer (`T a, *b` declares `b` one, FTEF-18.26), then each parameter list
+    /// its `*`s, each a pointer (`T a, *b` declares `b` one, FTEF-18.32), then each parameter list
     /// of its `while(QCC_PR_CheckToken ("("))`, a function returning the type so far, which marks
     /// `ty` a function's, up to `(*`, C's function pointer, whose `(` and `*`s it takes. Returns
     /// whether it took them, so the name, a `)` and a parameter list follow. When the type is
@@ -1647,11 +1712,7 @@ impl<'a> Parser<'a> {
                 qcfuncs: true,
             });
         }
-        let keyword = self
-            .current()
-            .filter(|t| t.kind == K::Name)
-            .and_then(|t| type_keyword(&t.text));
-        let Some(keyword) = keyword else {
+        let Some(keyword) = self.type_word(0) else {
             let message = format!("\"{}\" is not a type", self.found());
             self.error(Code::E0203, message);
             return None;
@@ -1754,7 +1815,15 @@ impl<'a> Parser<'a> {
         self.block_inner(function);
         if function {
             self.bodies = self.bodies.saturating_sub(1);
+            if self.bodies == 0 {
+                self.types.retain(|(_, local)| !local);
+            }
         }
+    }
+
+    /// Records that the program defined the type `name` here (FTEF-20.14).
+    fn declare_type(&mut self, name: String) {
+        self.types.push((name, self.bodies > 0));
     }
 
     fn block_inner(&mut self, function: bool) {
@@ -1854,7 +1923,7 @@ impl<'a> Parser<'a> {
     }
 
     /// A statement of an FTEQCC dialect that starts with a name, as `QCC_PR_ParseStatement`
-    /// tests its keywords, in its order, each with the keywords in force (FTEF-20.5, FTEF-20.6).
+    /// tests its keywords, in its order, each with the keywords in force (FTEF-20.5, FTEF-20.14).
     fn fte_statement(&mut self) {
         let break_call =
             self.kw(0, Keyword::Break, "break") && self.nth(1).is_some_and(|t| t.kind == K::LParen);
@@ -1873,7 +1942,7 @@ impl<'a> Parser<'a> {
         } else if self.checks(0, Enabled::Always, "do") {
             self.do_stmt();
         } else if self.kw(0, Keyword::Local, "local") && self.at_extern_block_at(1) {
-            // FTEF-21.2: `local` and then an `extern` block.
+            // FTEF-21.17: `local` and then an `extern` block.
             self.extern_block(Site::Body);
         } else if self.kw(0, Keyword::Local, "local") {
             self.local_decl(true);
@@ -1884,11 +1953,11 @@ impl<'a> Parser<'a> {
             // qualifiers a statement of definitions starts with.
             self.typedef_decl();
         } else if self.strcmp_kw(0, Keyword::Extern, "extern") && self.at_extern_block() {
-            // FTEF-21.2: `QCC_PR_ParseStatement` tests `extern` exactly, then
+            // FTEF-21.17: `QCC_PR_ParseStatement` tests `extern` exactly, then
             // `QCC_PR_ParseDefs` reads the block, whose definitions are locals.
             self.extern_block(Site::Body);
         } else if self.fte_looks_like_local() {
-            // FTEF-16.1, FTEF-20.6: a statement of the full dialect that declares locals.
+            // FTEF-16.1, FTEF-20.14: a statement of the full dialect that declares locals.
             self.local_decl(false);
         } else if self.kw(0, Keyword::State, "state") {
             self.state_stmt();
@@ -1958,9 +2027,8 @@ impl<'a> Parser<'a> {
         let init = clause == Clause::Init;
         self.start_node(K::ForClause);
         let local = self.kw(0, Keyword::Local, "local");
-        let declares = local
-            || self.looks_like_declaration(0)
-            || (self.fteqcc() && self.fte_looks_like_local());
+        let declares =
+            local || self.looks_like_declaration(0) || (self.fteqcc() && self.for_init_declares());
         if init && declares {
             let keyword = local;
             self.for_local_decl(keyword);
@@ -1977,7 +2045,7 @@ impl<'a> Parser<'a> {
                     self.discard_before_comma(expr);
                 }
                 self.bump();
-                if init && self.fte_looks_like_local() {
+                if init && self.for_init_declares() {
                     self.for_local_decl(false);
                     break;
                 }
@@ -1993,6 +2061,14 @@ impl<'a> Parser<'a> {
             }
         }
         self.finish_node();
+    }
+
+    /// Whether a `for` initialiser's item defines a local: a statement of definitions
+    /// (FTEF-16.1), or what `QCC_PR_ParseType` reads as a type there, a C type word in whatever
+    /// case its keyword is found in (FTEF-20.14); `QCC_PR_ParseStatement_For` calls it, not the
+    /// statement's own `STRCMP` tests.
+    fn for_init_declares(&self) -> bool {
+        self.fte_looks_like_local() || self.c_type_word(0)
     }
 
     /// One expression of a `for` clause: in the first clause each is discarded on its own
@@ -2617,9 +2693,7 @@ impl<'a> Parser<'a> {
             // FTEF-16.2: the full dialect's casts, to any type.
             K::LParen if self.fteqcc() && self.fte_at_cast() => {
                 // FTEF-18.25: `(void)` makes the expression `void`.
-                let void_cast = self
-                    .nth(1)
-                    .is_some_and(|t| t.kind == K::Name && t.text == "void")
+                let void_cast = self.type_word(1) == Some(K::VoidKw)
                     && self.nth(2).is_some_and(|t| t.kind == K::RParen);
                 self.fte_cast();
                 if void_cast {

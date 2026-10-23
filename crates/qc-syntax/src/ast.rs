@@ -343,7 +343,7 @@ ast_node!(
     AsmStmt
 );
 ast_node!(
-    /// `extern` and a string, and a `{ }` block of definitions or one definition (FTEF-21.2).
+    /// `extern` and a string, and a `{ }` block of definitions or one definition (FTEF-21.17).
     ExternBlock
 );
 ast_node!(
@@ -422,7 +422,7 @@ ast_enum!(
         Exit(ExitStmt),
         /// `asm` and its instructions (FTEF-20.5).
         Asm(AsmStmt),
-        /// `extern "C" { ... }` and its local definitions (FTEF-21.2).
+        /// `extern "C" { ... }` and its local definitions (FTEF-21.17).
         Extern(ExternBlock),
         /// `e;`.
         Expr(ExprStmt),
@@ -490,7 +490,7 @@ fn flatten_externs(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
 
 impl ExternBlock {
     /// What the block holds, in order: each node a definition is, a nested block's in its place
-    /// (FTEF-21.2).
+    /// (FTEF-21.17).
     #[must_use]
     pub fn items(&self) -> Vec<SyntaxNode> {
         let mut items = Vec::new();
@@ -530,13 +530,13 @@ fn decl_type(node: &SyntaxNode) -> Option<Type> {
 
 impl SourceFile {
     /// The file-level declarations, in order, those of an `extern` block among them in its
-    /// place (FTEF-21.2).
+    /// place (FTEF-21.17).
     pub fn declarations(&self) -> impl Iterator<Item = Declaration> {
         self.items().into_iter().filter_map(Declaration::cast)
     }
 
     /// The file-level items, in order: each node a definition is, the items of an `extern`
-    /// block in its place rather than the block (FTEF-21.2).
+    /// block in its place rather than the block (FTEF-21.17).
     #[must_use]
     pub fn items(&self) -> Vec<SyntaxNode> {
         let mut items = Vec::new();

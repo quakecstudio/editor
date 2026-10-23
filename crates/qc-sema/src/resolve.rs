@@ -31,7 +31,7 @@ use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{FteFlag, WarningSettings};
-use qc_syntax::c_scalar::CScalar;
+use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
 use qc_syntax::{Dialect, Keyword, Keywords};
 
 use crate::cast::{ConstType, Kind, Source};
@@ -226,18 +226,6 @@ pub(crate) fn resolve_mapped(
     }
     r.finish()
 }
-
-/// The names FTEQCC's `QCC_PR_NewType` registers for `QCC_TypeForName` that are no C scalar
-/// (FTEF-19.20): `type_variant`'s two names and the `__` names of the core types
-/// (`qccmain.c`).
-const REGISTERED_TYPES: [&str; 6] = [
-    "__variant",
-    "variant",
-    "__string",
-    "__vector",
-    "__entity",
-    "__bfloat",
-];
 
 /// What the resolver knows of an FTEQCC class (FTEF-9).
 #[derive(Debug)]

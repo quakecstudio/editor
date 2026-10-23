@@ -14,7 +14,7 @@ use qc_lexer::{Code, LexFlag, Span};
 use qc_preproc::{Enabled, FteFlag, Keyword};
 
 use super::{Member, Parser, Site, TypeShape, UNARY_PRIORITY};
-use crate::c_scalar::{CContext, CScalar, CWord, CWords};
+use crate::c_scalar::{CContext, CScalar, CWord, CWords, REGISTERED_TYPES};
 use crate::kind::SyntaxKind as K;
 
 /// Most parameters an FTEQCC function type may have: `MAX_PARMS+MAX_EXTRA_PARMS` in
@@ -48,7 +48,7 @@ const QUALIFIERS: [(&str, Enabled); 19] = [
 ];
 
 /// The words a statement of `QCC_PR_ParseStatement` that starts with one defines locals at,
-/// each tested with `STRCMP`, exactly, with its keyword on (FTEF-20.6): `_Bool` always.
+/// each tested with `STRCMP`, exactly, with its keyword on (FTEF-20.14): `_Bool` always.
 const LOCAL_WORDS: [(&str, Enabled); 26] = [
     ("var", Enabled::By(Keyword::Var)),
     ("noref", Enabled::By(Keyword::Noref)),
@@ -143,10 +143,15 @@ impl Parser<'_> {
     /// `QCC_PR_ParseType` with `silentfail` finds no type and `QCC_PR_ParseDefs` assumes
     /// `int`.
     pub(super) fn fte_type_omitted(&self) -> bool {
-        self.at(K::Name)
-            && self
+        match self.current().map(|t| t.kind) {
+            Some(K::Name) => self
                 .nth(1)
-                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket))
+                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
+            // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21).
+            Some(K::Semicolon | K::Star | K::LParen | K::LBracket) => true,
+            _ => false,
+        }
     }
 
     /// Whether the token `n` ahead is `volatile` as `QCC_PR_ParseType` reads it, with its keyword,
@@ -172,7 +177,7 @@ impl Parser<'_> {
     }
 
     /// Whether a statement that starts with the token `n` ahead defines locals by one of the
-    /// words `QCC_PR_ParseStatement` tests exactly with their keyword on (FTEF-20.6).
+    /// words `QCC_PR_ParseStatement` tests exactly with their keyword on (FTEF-20.14).
     fn starts_local_statement(&self, n: usize) -> bool {
         LOCAL_WORDS.iter().any(|&(word, enabled)| match enabled {
             Enabled::By(keyword) => self.strcmp_kw(n, keyword, word),
@@ -200,8 +205,50 @@ impl Parser<'_> {
     pub(super) fn c_type_word(&self, n: usize) -> bool {
         self.nth(n).is_some_and(|t| {
             t.kind == K::Name
-                && t.text != "float"
+                && self.type_word(n) != Some(K::FloatKw)
                 && CWord::of(&t.text, self.keywords_ahead(n)).is_some()
+        })
+    }
+
+    /// Whether `::` is the token `n` ahead and touches the token before it, as `QCC_PR_ParseStatement`
+    /// tests `strncmp(pr_file_p, "::", 2)` right after a name.
+    fn at_scope_resolution(&self, n: usize) -> bool {
+        let before = self.nth(n.saturating_sub(1)).map(|t| t.span.end);
+        self.nth(n)
+            .is_some_and(|t| t.kind == K::ColonColon && Some(t.span.start) == before)
+    }
+
+    /// Whether the token `n` ahead is a name FTEQCC registers as a type, which `QCC_TypeForName`
+    /// finds (FTEF-19.20, FTEF-19.29): the vanilla type words, the scalars and the other names of
+    /// [`REGISTERED_TYPES`], in any case under `caseinsens`.
+    pub(super) fn registered_type(&self, n: usize) -> bool {
+        let Some(tok) = self.nth(n).filter(|t| t.kind == K::Name) else {
+            return false;
+        };
+        let any_case = self.any_case(n);
+        let named = |name: &str| {
+            if any_case {
+                name.eq_ignore_ascii_case(&tok.text)
+            } else {
+                name == tok.text
+            }
+        };
+        self.type_word(n).is_some()
+            || self.scalar_name(n).is_some()
+            || REGISTERED_TYPES.iter().any(|name| named(name))
+            || self.types.iter().any(|(name, _)| named(name))
+    }
+
+    /// The scalar type the token `n` ahead names, a name FTEQCC registers (`QCC_TypeForName`):
+    /// in any case under `caseinsens` (FTEF-19.29).
+    pub(super) fn scalar_name(&self, n: usize) -> Option<CScalar> {
+        let tok = self.nth(n).filter(|t| t.kind == K::Name)?;
+        CScalar::named(&tok.text).or_else(|| {
+            if self.any_case(n) {
+                CScalar::named(&tok.text.to_ascii_lowercase())
+            } else {
+                None
+            }
         })
     }
 
@@ -374,6 +421,9 @@ impl Parser<'_> {
             K::LBracket => self.flag_ahead(0, FteFlag::Attributes),
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if self.at_tagged_type(0) => true,
+            // `QCC_PR_ParseDefs` reads every definition, so a registered type's name alone starts
+            // one (FTEF-20.12).
+            K::Name if self.registered_type(0) => true,
             // A type name is followed by the declarator's name, a `*` or a parameter list;
             // a name alone is "not a type" (FTE-21.1).
             K::Name => {
@@ -399,9 +449,11 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        // FTEF-20.6: `QCC_PR_ParseStatement` finds a type by its name with `QCC_TypeForName`,
+        // FTEF-20.14: `QCC_PR_ParseStatement` finds a type by its name with `QCC_TypeForName`,
         // then tests its words exactly, with their keywords on.
-        if CScalar::named(&tok.text).is_some() || self.starts_local_statement(0) {
+        if (self.registered_type(0) && !self.at_scope_resolution(1))
+            || self.starts_local_statement(0)
+        {
             return true;
         }
         if self.c_type_word(0) || self.at_volatile(0) || self.decl_qualifier(0) {
@@ -528,7 +580,7 @@ impl Parser<'_> {
             self.error(Code::E0203, message);
             return None;
         }
-        // FTEF-18.26: each `*` and each parameter list nests the type one level deeper.
+        // FTEF-18.32: each `*` and each parameter list nests the type one level deeper.
         let mut levels = 0_usize;
         while !ignore_pointers && self.at(K::Star) {
             levels = levels.saturating_add(1);
@@ -598,7 +650,6 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        let text = tok.text.clone();
         if self.at_enum_keyword(0) {
             // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`. FTEF-8.4: it
             // always has its body; an enum is named by its type name alone.
@@ -653,7 +704,7 @@ impl Parser<'_> {
             }
             return true;
         }
-        if let Some(keyword) = super::type_keyword(&text) {
+        if let Some(keyword) = self.type_word(0) {
             self.start_node(K::SimpleType);
             // A vanilla type word is a type of its own name, which `QCC_PR_ParseType` finds
             // with `QCC_TypeForName` before its C type words, so no C word joins it (FTEF-2.4).
@@ -735,7 +786,7 @@ impl Parser<'_> {
             && !self.flag_ahead(0, FteFlag::Qcfuncs)
             && self
                 .current()
-                .is_some_and(|t| t.kind == K::Name && super::type_keyword(&t.text).is_none())
+                .is_some_and(|t| t.kind == K::Name && self.type_word(0).is_none())
             && !self.c_type_word(0)
             && !self.at_tagged_type(0)
             && self
@@ -807,7 +858,10 @@ impl Parser<'_> {
         // declaration's type.
         self.fte_qualifiers();
         self.bump_as(K::ClassKw);
-        self.name();
+        let declared = self.found();
+        if self.name() {
+            self.declare_type(declared);
+        }
         if self.at(K::Colon) {
             self.bump();
             self.name();
@@ -947,7 +1001,10 @@ impl Parser<'_> {
     pub(super) fn accessor_decl(&mut self) {
         self.start_node(K::AccessorDecl);
         self.bump_as(K::AccessorKw);
-        self.name();
+        let declared = self.found();
+        if self.name() {
+            self.declare_type(declared);
+        }
         if self.at(K::Colon) {
             self.bump();
             self.fte_type();
@@ -1040,7 +1097,7 @@ impl Parser<'_> {
         if first.kind != K::Name {
             return false;
         }
-        if super::type_keyword(&first.text).is_some() || self.c_type_word(1) {
+        if self.type_word(1).is_some() || self.c_type_word(1) {
             return true;
         }
         if !self.fte_type_name(1) {
@@ -1112,7 +1169,7 @@ impl Parser<'_> {
         match t.kind {
             K::RParen | K::Ellipsis | K::Dot | K::DotDot => true,
             K::Name => {
-                super::type_keyword(&t.text).is_some()
+                self.type_word(n).is_some()
                     || self.c_type_word(n)
                     || self.param_qualifier(n)
                     || self
@@ -1183,10 +1240,7 @@ impl Parser<'_> {
         match tok.kind {
             K::Dot | K::DotDot => true,
             K::Name => {
-                if super::type_keyword(&tok.text).is_some()
-                    || self.c_type_word(0)
-                    || self.at_tagged_type(0)
-                {
+                if self.registered_type(0) || self.c_type_word(0) || self.at_tagged_type(0) {
                     return true;
                 }
                 if !bracket || !self.fte_type_name(0) {

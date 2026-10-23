@@ -20,7 +20,7 @@ use qc_preproc::{CompilerFlags, FlagEdit, FteFlag};
 /// The flags an `extern` block saves and restores: `pbool old_qcfuncs = flag_qcfuncs; pbool
 /// old_cpriority = flag_cpriority; pbool old_assumeint = flag_assume_integer; pbool
 /// old_assumef64 = flag_assume_double; pbool old_assumevar = flag_assumevar; pbool old_subscope
-/// = pr_subscopedlocals;` (FTEF-21.2).
+/// = pr_subscopedlocals;` (FTEF-21.17).
 const SAVED: [FteFlag; 6] = [
     FteFlag::Qcfuncs,
     FteFlag::Cpriority,
@@ -30,7 +30,7 @@ const SAVED: [FteFlag; 6] = [
     FteFlag::PrSubscopedlocals,
 ];
 
-/// What an `extern` block's string asks for (FTEF-21.2), compared in any case
+/// What an `extern` block's string asks for (FTEF-21.17), compared in any case
 /// (`strcasecmp`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Linkage {
@@ -43,8 +43,11 @@ pub(crate) enum Linkage {
 }
 
 impl Linkage {
-    /// The linkage the string `text` names.
+    /// The linkage the string `text` names, compared as `strcasecmp(pr_token, ...)` compares
+    /// it: up to the first NUL, where `pr_token` ends.
     pub(crate) fn of(text: &[u8]) -> Self {
+        let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+        let text = text.get(..end).unwrap_or(text);
         if text.eq_ignore_ascii_case(b"C") {
             Self::C
         } else if text.eq_ignore_ascii_case(b"QC") {
