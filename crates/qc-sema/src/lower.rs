@@ -1884,7 +1884,7 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
         }
     }
     // FTEF-19.9: a `typedef` in a body is checked as one at file level.
-    for td in block.syntax().children().filter_map(ast::TypedefDecl::cast) {
+    for td in block_typedefs(block.syntax()) {
         body.diagnostics
             .extend(typedef_diagnostics(&td, cx, TypedefScope::Body));
         if let Some(name) = td.name() {
@@ -1892,6 +1892,20 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
                 .push((name.text_lossless(), name.span().start));
         }
     }
+}
+
+/// The `typedef`s of a block's statements, those of the `extern` blocks among them
+/// (FTEF-21.17): `QCC_PR_ParseDefs` reads a `typedef` in a block as it reads one anywhere.
+fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
+    let mut found = Vec::new();
+    for child in node.children() {
+        if child.kind() == SyntaxKind::ExternBlock {
+            found.extend(block_typedefs(&child));
+        } else if let Some(td) = ast::TypedefDecl::cast(child) {
+            found.push(td);
+        }
+    }
+    found
 }
 
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {

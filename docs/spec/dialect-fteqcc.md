@@ -2515,7 +2515,7 @@ and compares the outcome with the pinned FTEQCC's.
   so only `__exit`), `OP_DONE` and a `;`; `loop` and a statement, run again until a `break`;
   `until` or `while`, a parenthesised condition and a statement; `for`; `do`, a statement, then
   `until` with its keyword or `while` exactly (`QCC_PR_Expect ("while")`, so `__while` there is
-  "expected while"); `local` and a definition; the definitions of FTEF-20.6; `state`, a state
+  "expected while"); `local` and a definition; the definitions of FTEF-20.14; `state`, a state
   header `[frame, next]` as a function's (FTEF-18.3) and a `;`; `if`, with `not` (FTEF-16.5);
   `switch`; `using`; `asm`; a `:` label (FTEF-18.23); `goto`; `break`, which before a `(` is a
   call of the function `break` (`if (!STRCMP ("(", pr_token))`), and else a `;`; `continue`;

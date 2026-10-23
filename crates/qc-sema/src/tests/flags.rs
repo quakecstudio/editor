@@ -412,6 +412,15 @@ fn extern_on_a_typedef() {
             "{body}"
         );
     }
+    // A typedef in an `extern` block in a body is that body's, and is checked as any.
+    assert_eq!(
+        errors("void() g = { extern \"C\" { typedef float F; } F x; };\n"),
+        []
+    );
+    assert_eq!(
+        errors("void() g = { extern \"C\" { typedef static float F; } };\n"),
+        [Code::E0224]
+    );
     assert_eq!(errors("typedef extern float y;\n"), []);
     assert_eq!(errors("void() g = { extern float y; };\n"), []);
 }

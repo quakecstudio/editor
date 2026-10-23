@@ -326,8 +326,8 @@ pub(crate) struct Parser<'a> {
     types: Vec<(String, bool)>,
     /// The `extern` blocks read, in the order they ended (FTEF-21.17).
     blocks: Vec<Block>,
-    /// The bytes strings start at that FTEQCC's lexer did not read into the string before
-    /// them: it joins only the parts written in one text, not a macro's string and the one
+    /// The bytes, in increasing order, strings start at that FTEQCC's lexer did not read into
+    /// the string before them: it joins only the parts written in one text, not a macro's string and the one
     /// beside it (FTEF-21.17).
     seams: Vec<usize>,
     /// How many `extern` blocks with a `{` the current token is in, whose `}` recovery stops at.
@@ -915,8 +915,10 @@ impl<'a> Parser<'a> {
     }
 
     /// The start of one `QCC_PR_ParseDefs`: its `while (QCC_PR_CheckToken(";"))`, then a
-    /// definition, which the end of the text or a `}` is not, the error `QCC_PR_ParseType` gives
-    /// (FTEF-21.17, `"" is not a type`). False, with the error reported, when none follows.
+    /// definition, which the end of the text is not, the error `QCC_PR_ParseType` gives
+    /// (FTEF-21.17, `"" is not a type`). False, with the error reported, when none follows. A `}`
+    /// is no definition either, but its error, `"}" is not a type`, is the one the definition's
+    /// own parse gives.
     fn defs_start(&mut self) -> bool {
         while self.at(K::Semicolon) {
             self.bump();
@@ -954,10 +956,9 @@ impl<'a> Parser<'a> {
         self.bump();
         let mut text = Vec::new();
         let mut first = true;
-        while let Some(tok) = self
-            .current()
-            .filter(|t| t.kind == K::StringLit && (first || !self.seams.contains(&t.span.start)))
-        {
+        while let Some(tok) = self.current().filter(|t| {
+            t.kind == K::StringLit && (first || self.seams.binary_search(&t.span.start).is_err())
+        }) {
             first = false;
             text.extend(tok.text.chars().map(latin1_byte));
             self.bump();

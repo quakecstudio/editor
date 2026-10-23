@@ -2201,19 +2201,17 @@ impl<'a> Resolver<'a> {
         self.class_named(ty.type_name()?)
     }
 
-    /// The class named `name`: the one with that name, else under `-Fcaseinsens` the newest
-    /// whose name is it in any case, as `QCC_TypeForName` searches its table (FTEF-19.29).
+    /// The class named `name`: the one with that name, under `-Fcaseinsens` the newest whose
+    /// name is it in any case, as `QCC_TypeForName` searches its table (FTEF-19.29).
     fn class_named(&self, name: &str) -> Option<DefId> {
-        self.class_names.get(name).copied().or_else(|| {
-            if !self.case_insensitive {
-                return None;
-            }
-            self.class_names
-                .iter()
-                .filter(|(class, _)| class.eq_ignore_ascii_case(name))
-                .map(|(_, def)| *def)
-                .max_by_key(|def| def.0)
-        })
+        if !self.case_insensitive {
+            return self.class_names.get(name).copied();
+        }
+        self.class_names
+            .iter()
+            .filter(|(class, _)| class.eq_ignore_ascii_case(name))
+            .map(|(_, def)| *def)
+            .max_by_key(|def| def.0)
     }
 
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
