@@ -28,6 +28,7 @@ on:
     branches: [main]
     paths:
       - Cargo.lock
+      - fuzz/Cargo.lock
       - "**/Cargo.toml"
       - .cargo/config.toml
       - rust-toolchain.toml
@@ -316,6 +317,12 @@ jobs:
         with:
           shared-key: xtask-ci-${{ runner.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          # The fuzz-build step of cargo xtask ci checks the cargo-fuzz crate,
+          # which is its own workspace with its own target dir; cache it too so
+          # the step is incremental and the light path stays fast.
+          workspaces: |
+            . -> target
+            fuzz -> fuzz/target
       # Format, Clippy, Unit Tests (linux), cargo-deny and Test Assets (linux)
       # run these steps of cargo xtask ci with the same command, so this job
       # skips them and each runs once (docs/ci.md). Test Assets runs the fast
