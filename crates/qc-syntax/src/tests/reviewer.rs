@@ -290,3 +290,72 @@ fn reviewer_fteqcc_colon_numbers_bind_as_hash_numbers() {
         assert_eq!(fte_builtins(source), [(None, Some(binum))], "{source}");
     }
 }
+
+/// Whether `source`, parsed under the FTEQCC profile with `keywords` from its first byte, has a
+/// node of `kind`.
+fn holds_with(source: &str, keywords: crate::Keywords, kind: crate::SyntaxKind) -> bool {
+    super::fte_with(source, keywords)
+        .syntax()
+        .descendants()
+        .any(|n| n.kind() == kind)
+}
+
+// spec FTEF-20.2: only a token that starts with exactly `__` and goes on with the word is the
+// keyword when it is off: `___loop` and `__ loop` are not `loop`, `__LoOp` is. The pinned FTEQCC
+// refuses `void() g = { ___loop { break; } };` and `{ __ loop { break; } }`, and compiles
+// `{ __Loop { __Break; } }`
+#[test]
+fn reviewer_only_a_double_underscore_spells_a_keyword() {
+    use crate::{Keyword, Keywords, SyntaxKind as K};
+    let off = Keywords::default().with(Keyword::Loop, false);
+    let body = |stmts: &str| format!("void() g = {{ {stmts} }};\n");
+    assert!(holds_with(&body("__LoOp { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("___loop { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("__ loop { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("loop { break; }"), off, K::LoopStmt));
+}
+
+// spec FTEF-20.6: a body's statement defines locals at a name `QCC_TypeForName` finds, whatever
+// that word's keyword: with `float`, `vector`, `entity` or `string` off, as `-std=hcc` and
+// `#pragma keyword disable float` turn them off, `float x;` in a body is still a local. The
+// pinned FTEQCC compiles each such program
+#[test]
+fn reviewer_a_type_word_whose_keyword_is_off_still_defines_a_local() {
+    use crate::{Keyword, Keywords, SyntaxKind as K};
+    for (keyword, stmts) in [
+        (Keyword::Float, "float x; x = 1;"),
+        (Keyword::Vector, "vector v; v = '1 2 3';"),
+        (Keyword::Entity, "entity e;"),
+        (Keyword::String, "string s; s = \"a\";"),
+    ] {
+        let source = format!("void() g = {{ {stmts} }};\n");
+        let off = Keywords::default().with(keyword, false);
+        let parsed = super::fte_with(&source, off);
+        assert_eq!(parsed.errors().count(), 0, "{source}");
+        assert!(holds_with(&source, off, K::LocalDecl), "{source}");
+    }
+}
+
+// spec FTEF-21.2: the block's string is compared once its escapes are read and its prefix
+// dropped: `"\x43"`, `"\{67}"`, `u8"C"` and `R"(C)"` are `"C"` and lex the block with
+// `qcfuncs` off, so `"\9"` in it is "Bad character code", while `"\103"`, which under `qcfuncs`
+// is no `C` (FTEF-12.12), and `"C "` are not. The pinned FTEQCC refuses the first four programs
+// and compiles the other two
+#[test]
+fn reviewer_an_extern_block_s_string_is_compared_as_read() {
+    let fte = |source: &str| parse_with(source.as_bytes(), Dialect::Fteqcc);
+    let bad_code = |source: &str| {
+        fte(source)
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == Code::E0103)
+    };
+    for linkage in ["\"\\x43\"", "\"\\{67}\"", "u8\"C\"", "R\"(C)\""] {
+        let source = format!("extern {linkage} {{ string s = \"\\9\"; }}\n");
+        assert!(bad_code(&source), "{source}");
+    }
+    for linkage in ["\"\\103\"", "\"C \""] {
+        let source = format!("extern {linkage} {{ string s = \"\\9\"; }}\n");
+        assert!(!bad_code(&source), "{source}");
+    }
+}
