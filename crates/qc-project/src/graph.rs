@@ -446,9 +446,9 @@ impl Cursor {
     /// A list-form `progs.src` whose text is `text`, as [`progs_text`] gives it.
     fn list(path: PathBuf, text: Vec<u8>) -> Self {
         let base = Base::Progs { output_seen: false };
+        // Reading starts at the text's start: `new` of no text gives no mark to pass over.
         Self {
             text,
-            pos: 0,
             ..Self::new(path, Vec::new(), None, base)
         }
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The nesting limit (QC-27.15, QC-27.16) under the FTEQCC profile (FTEF-18.26), and the tree
+//! The nesting limit (QC-27.15, QC-27.16) under the FTEQCC profile (FTEF-18.32), and the tree
 //! after the limit under both profiles.
 
 use super::Program;
@@ -28,7 +28,7 @@ fn in_body(body: &str) -> String {
     .source()
 }
 
-/// A nesting form of FTEF-18.26: a program with `n` repeats of its nesting part.
+/// A nesting form of FTEF-18.32: a program with `n` repeats of its nesting part.
 struct Form {
     name: &'static str,
     source: fn(usize) -> String,
@@ -36,7 +36,7 @@ struct Form {
     limit: usize,
 }
 
-/// Every FTEQCC form FTEF-18.26 counts, with its limit: the statement, its expression and an
+/// Every FTEQCC form FTEF-18.32 counts, with its limit: the statement, its expression and an
 /// assignment's right side take the levels the vanilla parentheses do, and a declaration's type
 /// one (QC-27.15).
 fn forms() -> Vec<Form> {
@@ -102,6 +102,37 @@ fn forms() -> Vec<Form> {
             limit: QC_MAX_NESTING - 1,
         },
         Form {
+            name: "extern blocks",
+            source: |n| format!("{}float y;\n{}", "extern \"C\" { ".repeat(n), "}".repeat(n)),
+            limit: QC_MAX_NESTING - 1,
+        },
+        Form {
+            name: "extern blocks in a body",
+            source: |n| {
+                in_body(&format!(
+                    "{}float y;{}",
+                    "extern \"C\" { ".repeat(n),
+                    "}".repeat(n)
+                ))
+            },
+            limit: QC_MAX_NESTING - 2,
+        },
+        Form {
+            name: "unbraced extern blocks",
+            source: |n| format!("{}float y;\n", "extern \"C\" ".repeat(n)),
+            limit: QC_MAX_NESTING - 1,
+        },
+        Form {
+            name: "unbraced extern blocks in a body",
+            source: |n| in_body(&format!("{}float y;", "extern \"C\" ".repeat(n))),
+            limit: QC_MAX_NESTING - 2,
+        },
+        Form {
+            name: "local extern blocks in a body",
+            source: |n| in_body(&format!("local {}float y;", "extern \"C\" ".repeat(n))),
+            limit: QC_MAX_NESTING - 2,
+        },
+        Form {
             name: "parameter default",
             source: |n| format!("void(float a = {}1) f;\n", "- ".repeat(n)),
             limit: QC_MAX_NESTING - 3,
@@ -117,7 +148,7 @@ fn fte_errors(source: &str) -> Vec<Code> {
         .collect()
 }
 
-// spec FTEF-18.26: each prefix operator, cast, `*` and parameter list of a type is one level,
+// spec FTEF-18.32: each prefix operator, cast, `*` and parameter list of a type is one level,
 // so each form parses at its limit and is "nesting too deep" one past it
 // spec QC-27.15: the error is E0509 at the token where the limit is passed
 #[test]
@@ -133,7 +164,7 @@ fn fteqcc_nesting_limit() {
     }
 }
 
-// spec FTEF-18.26: no input of these forms exhausts the stack: 100000 repeats of each, and of
+// spec FTEF-18.32: no input of these forms exhausts the stack: 100000 repeats of each, and of
 // the unspaced `---...` and `+++...`, which lex as prefix `--` and `++`, keep every byte,
 // report E0509 and stay within the limit's depth
 // spec QC-27.16: once the limit is passed nothing nests deeper
@@ -158,6 +189,19 @@ fn deep_fteqcc_input_does_not_overflow() {
     sources.push((
         "unspaced parameter default".to_owned(),
         format!("void(float a = {}1) f;\n", "-".repeat(100_000)),
+    ));
+    // FTEF-18.32: the blocks that never close nest as far.
+    sources.push((
+        "unclosed extern blocks".to_owned(),
+        "extern \"C\" { ".repeat(100_000),
+    ));
+    sources.push((
+        "unclosed extern blocks in a body".to_owned(),
+        in_body(&"extern \"C\" { ".repeat(100_000)),
+    ));
+    sources.push((
+        "unbraced extern blocks without a definition".to_owned(),
+        "extern \"C\" ".repeat(100_000),
     ));
     for (name, source) in sources {
         let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
@@ -197,5 +241,127 @@ fn the_next_statement_nests_afresh() {
             tree_depth(&parsed.syntax())
         );
         assert_eq!(parsed.syntax().text(), source.as_bytes());
+    }
+}
+
+/// One construct's opening, repeated: each recursion the parser has, with its own nesting.
+const CONSTRUCTS: &[&str] = &[
+    "struct { ",
+    "union { ",
+    "struct s { struct t { ",
+    "struct s : ",
+    "enum : enum : enum : ",
+    "enum { A = ",
+    "enumflags : enum : ",
+    "class c { class d { ",
+    "class c : c : c : ",
+    "accessor a : a : ",
+    "typedef typedef typedef ",
+    "typedef struct { ",
+    "float(*(*(*",
+    "float(float(float(",
+    "float (*",
+    ".",
+    "..",
+    ". . . .",
+    "[[ [[ [[ ",
+    "float x = { { { ",
+    "void() g = { local local local ",
+    "void() g = { static static static ",
+    "void() g = { const const const ",
+    "const const const const ",
+    "static static static ",
+    "volatile volatile ",
+    "void() g = { x = sizeof(sizeof(sizeof(",
+    "void() g = { x = !!!!!",
+    "void() g = { x = a ? a ? a ? ",
+    "void() g = { x = a = a = a = ",
+    "void() g = { x = ( ( ( ",
+    "void() g = { x = a[a[a[a[",
+    "void() g = { x = a.a.a.a.a",
+    "void() g = { x = a(a(a(a(",
+    "void() g = { x = (float)(float)(float)",
+    "void() g = { x = -(-(-(",
+    "void() g = { switch (1) { switch (1) { ",
+    "void() g = { do do do do ",
+    "void() g = { if (1) if (1) if (1) ",
+    "void() g = { else else else ",
+    "void() g = { while (1) while (1) while (1) ",
+    "void() g = { for (;;) for (;;) for (;;) ",
+    "void() g = { { { { { ",
+    "void() g = { case 1: case 1: case 1: ",
+    "void() g = { a: a: a: a: ",
+    "void() g = { asm { asm { asm { ",
+    "void() g = { using (a) using (a) using (a) ",
+    "void() g = { state [ 1, g ] state [",
+    "void() g = { typedef typedef typedef ",
+    "void() g = { extern extern extern ",
+    "void() g = { local extern \"C\" local extern \"C\" ",
+    "void() g = { struct s { struct s { struct s { ",
+    "void() g = { enum { A, B } enum { A, B } ",
+    "void() g = { float f = { { { ",
+    "void() g = { for (float i = { { ",
+    "void(void(void(void(",
+    "void(float a = void(float a = void(float a = ",
+    "float a[a[a[a[",
+    "float a = a = a = a = ",
+    "#define a a\n a a a",
+    "extern \"C\" extern \"C\" ",
+    "extern \"C\" { extern \"C\" { ",
+    "float x[sizeof(float[sizeof(float[",
+    "float x = (float(*)(float))",
+    "var var var var ",
+    "nosave nosave nosave ",
+    "[[ alias( [[ alias(",
+    "[[deprecated(\"\")]] [[deprecated(\"\")]] ",
+    "void() g = { x = a, a, a, a, a, a",
+    "void() g = { for (a = 0, a = 0, a = 0, a = 0, ",
+    "void() g = { x = a ++ ++ ++ ++ ",
+    "void() g = { x = ++ ++ ++ ++ ++ a",
+    "void() g = { x = ~~~~~~~~~~~~ a",
+    "void() g = { x = * * * * * a",
+    "void() g = { x = & & & & a",
+    "void() g = { x = a -> a -> a -> a ",
+    "void() g = { x = a :: a :: a :: ",
+    "void() g = { x = :: :: ::",
+    "void() g = { x = @ @ @ @ @",
+    "void() g = { x = a <=> a <=> a <=> ",
+    "void() g = { x = a ** a ** a ** ",
+    "void() g = { x = a >< a >< a >< ",
+    "void() g = { x = a *^ a *^ a *^ ",
+    "void() g = { x = a ?: a ?: a ?: ",
+    "void() g = { x = a ?? a ?? a ?? ",
+    "void() g = { x = a ? a : a ? a : ",
+    "void() g = { local float x[2][2][2][2][",
+    "void() g = { return return return return ",
+    "void() g = { thinktime a : thinktime a : ",
+    "void() g = { loop loop loop loop ",
+    "void() g = { until(1) until(1) until(1) ",
+    "void() g = { __exit; __exit; ",
+    "void() g = { goto goto goto goto ",
+    "void() g = { #5 #5 #5 ",
+    "void() g = [1, g] { [++ 1 .. 2] [++ 1 .. 2] ",
+    "void() g = [-[-[-[-",
+    "void() g = [ - - - - - ",
+    "void() g = #5: #5: ",
+];
+
+// spec FTEF-18.32: every construct that nests, repeated 5000 times, parses on a 2 MiB stack under
+// both profiles, keeps every byte and holds a tree no deeper than a few nodes a level of the
+// limit, so no recursive entry of the parser lacks its level
+// spec QC-27.15: the limit holds for every recursion, whatever the construct
+#[test]
+fn every_construct_is_bounded() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        for construct in CONSTRUCTS {
+            let source = construct.repeat(5_000);
+            let parsed = parse_with(source.as_bytes(), dialect);
+            assert_eq!(parsed.syntax().text(), source.as_bytes(), "{construct}");
+            assert!(
+                tree_depth(&parsed.syntax()) <= 8 * QC_MAX_NESTING,
+                "{dialect:?} {construct}: depth {}",
+                tree_depth(&parsed.syntax())
+            );
+        }
     }
 }

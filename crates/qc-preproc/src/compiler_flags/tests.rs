@@ -73,6 +73,24 @@ fn edits_set_what_they_name() {
     assert!(FlagEdit::of_flags(&[FteFlag::Iffloat], now).is_empty());
     assert!(!edit.is_empty());
     assert_eq!(FlagEdit::whole(now).apply(before), now);
+    // An edit turns off a named flag that is on, and keeps one it does not name.
+    let on = CompilerFlags::default()
+        .with(FteFlag::Qccx, true)
+        .with(FteFlag::Utf8strings, true);
+    let off = FlagEdit::of_flags(&[FteFlag::Qccx], CompilerFlags::default()).apply(on);
+    assert!(!off.has(FteFlag::Qccx) && off.has(FteFlag::Utf8strings));
+    // A flag named twice is named once.
+    for flag in [FteFlag::Qccx, FteFlag::Cpriority] {
+        assert_eq!(
+            FlagEdit::of_flags(&[flag, flag], now),
+            FlagEdit::of_flags(&[flag], now)
+        );
+    }
+    // The flags at a byte are the last mark's at or before it, else the defaults.
+    let marks = [(4, now), (9, before)];
+    assert_eq!(CompilerFlags::at(&marks, 3), CompilerFlags::default());
+    assert_eq!(CompilerFlags::at(&marks, 4), now);
+    assert_eq!(CompilerFlags::at(&marks, 9), before);
 }
 
 // spec FTEF-21.4: a pragma that names `cpriority` sets the priorities by it, at once, and any

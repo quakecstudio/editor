@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+use qc_lexer::Dialect;
+
 use super::{codes, one_fte, tokens};
 use crate::{
     Code, CommandLine, CompilerFlags, FileOutput, FteFlag, Keyword, KeywordEdit, Keywords,
@@ -141,6 +143,67 @@ fn a_flag_pragma_lexes_the_rest_again() {
         "\"a\":\"b\";\n",
     ));
     assert_eq!(tokens(&out), r#""a" : "b" ; "a" "\x00" "b" ; "a" : "b" ;"#);
+    // The lexical errors before the pragma stay, once each, and those after are the new
+    // lexing's.
+    let (_, out) = one_fte("\"a\n#pragma flag enable qccx\n\"b\n");
+    assert_eq!(codes(&out), [Code::E0102, Code::E0102]);
+    let (_, out) = one_fte("\"a\n#pragma flag enable qccx\nb\n");
+    assert_eq!(codes(&out), [Code::E0102]);
+    // A pragma in an expansion (FTEF-14.46) lexes again from the end of the use, where an error
+    // of the string that touches it is the new lexing's alone.
+    let (_, out) = one_fte(concat!(
+        "#pragma warning disable F303\n",
+        "#define D \\\n#pragma flag enable qccx \\\nx\n",
+        "D\"a\n",
+    ));
+    assert_eq!(codes(&out), [Code::E0102]);
+}
+
+// spec FTEF-12.12: a `#pragma flag` in an expansion (FTEF-14.46) lexes the rest of the
+// expansion again with the new flags
+#[test]
+fn a_flag_pragma_in_an_expansion_lexes_the_rest_of_it_again() {
+    let (_, out) = one_fte(concat!(
+        "#pragma warning disable F303\n",
+        "#define D \\\n#pragma flag enable qccx \\\n\"a\":\"b\"\n",
+        "D\n",
+    ));
+    assert_eq!(tokens(&out), r#""a" "\x00" "b""#);
+}
+
+// spec FTEF-12.11: `QCC_main` sets the flags once, before the first pass, so a `#pragma flag`
+// holds into the second autoprototyping pass
+#[test]
+fn a_flag_holds_into_the_second_pass() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"#pragma flag enable qccx\n\"a\":\"b\";\n");
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(tokens(&out), r#""a" "\x00" "b" ;"#);
+    assert!(
+        flag_states(&out)
+            .iter()
+            .all(|(_, flags)| flags.has(FteFlag::Qccx))
+    );
+}
+
+// spec FTEF-14.72: the command line's `-W` and `-T` options are read again as the second pass
+// starts, so they hold in it as in the first
+#[test]
+fn the_command_line_holds_into_the_second_pass() {
+    assert_eq!(codes(&one_with("/* /* */\n", &[])), [Code::W0112]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", b"/* /* */\n");
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(Dialect::Fteqcc)
+        .with_command_line(CommandLine::new(&["-Wno-F325", "-Thexen2"]));
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert!(codes(&out).is_empty());
+    assert!(keyword_states(&out).iter().all(|(_, k)| k.hexen2_target()));
 }
 
 // spec FTEF-12.12: the preprocessor marks each change of the lexer's flags by token, starting
@@ -279,4 +342,71 @@ fn other_flags_change_no_token() {
     let (_, out) = one_fte(&format!("#pragma flag enable acc caseinsens\n{text}"));
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);
     assert_eq!(codes(&out), [Code::W0113, Code::W0113]);
+}
+
+// spec FTEF-14.73: under `-Fcaseinsens` the macro table is searched in any case, by a use, by
+// `#ifdef`, `#ifndef`, `#if defined()` and `#if NAME`, and a definition in another case replaces
+// the macro; without it the names are exact
+#[test]
+fn macros_are_found_in_any_case_under_caseinsens() {
+    let any = ["-Fcaseinsens"];
+    let found = |define: &str, use_: &str, args: &[&str]| {
+        let out = one_with(&format!("{define}\n{use_}\n"), args);
+        tokens(&out)
+    };
+    assert_eq!(found("#define Foo 5", "foo FOO Foo", &any), "5 5 5");
+    assert_eq!(found("#define Foo 5", "foo FOO Foo", &[]), "foo FOO 5");
+    assert_eq!(found("#define foo(a) a", "FOO(1)", &any), "1");
+    assert_eq!(found("#define foo(a) a", "FOO(1)", &[]), "FOO ( 1 )");
+    let test = |condition: &str, args: &[&str]| {
+        found(
+            "#define Foo 5",
+            &format!("{condition}\nyes\n#else\nno\n#endif"),
+            args,
+        )
+    };
+    for condition in [
+        "#ifdef foo",
+        "#if defined(fOO)",
+        "#if foo == 5",
+        "#if !defined(bar)",
+    ] {
+        assert_eq!(test(condition, &any), "yes", "{condition}");
+    }
+    assert_eq!(test("#ifndef FOO", &any), "no");
+    assert_eq!(test("#ifdef foo", &[]), "no");
+    assert_eq!(found("#define foo 5\n#define FOO 6", "foo", &any), "6");
+    assert_eq!(found("#define foo 5\n#undef foo", "foo", &any), "foo");
+}
+
+// spec FTEF-14.73: `#undef` finds the macro in any case but removes it only when the name is the
+// spelling it was defined with, and says nothing of a macro it found
+#[test]
+fn undef_removes_the_spelling_it_names() {
+    let any = ["-Fcaseinsens"];
+    let out = one_with("#define foo 5\n#undef FOO\nfoo\n", &any);
+    assert_eq!(tokens(&out), "5");
+    assert_eq!(codes(&out), []);
+    let out = one_with("#undef FOO\n", &any);
+    assert_eq!(codes(&out), [Code::W0114]);
+    let out = one_with("#define foo 5\n#undef FOO\n", &[]);
+    assert_eq!(codes(&out), [Code::W0114]);
+}
+
+// spec FTEF-14.73: the macros FTEQCC defines itself are added before the search is switched, so
+// under `-Fcaseinsens` none is found, in any case; a macro whose body names another finds it
+// in any case
+#[test]
+fn the_built_in_macros_are_not_found_in_any_case() {
+    let any = ["-Fcaseinsens"];
+    for name in ["FTEQCC", "fteqcc", "__FTEQCC__", "__fteqcc__"] {
+        let out = one_with(&format!("#ifdef {name}\nyes\n#else\nno\n#endif\n"), &any);
+        assert_eq!(tokens(&out), "no", "{name}");
+    }
+    let out = one_with("#ifdef FTEQCC\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "yes");
+    let out = one_with("#ifdef fteqcc\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "no");
+    let out = one_with("#define Foo 5\n#define bar FOO\nbar\n", &any);
+    assert_eq!(tokens(&out), "5");
 }

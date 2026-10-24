@@ -47,7 +47,7 @@ fn keywords_change_where_they_are_marked() {
         (g, KeywordEdit::whole(with(Keyword::For, false))),
         (h, KeywordEdit::whole(Keywords::default())),
     ];
-    let parsed = parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, &[], &marks);
+    let parsed = parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, &[], &marks, &[]);
     assert_eq!(parsed.errors().count(), 0);
     assert!(has(&parsed, K::ForStmt));
     assert!(!parsed.keywords_at(g).has(Keyword::For));
@@ -149,8 +149,13 @@ fn definitions_turn_keywords_off_without_kce() {
         (0, KeywordEdit::whole(lone)),
         (9, KeywordEdit::whole(lone.with(Keyword::For, true))),
     ];
-    let parsed =
-        parse_preprocessed_flagged(b"float for\n;\nfloat y;\n", Dialect::Fteqcc, &[], &marks);
+    let parsed = parse_preprocessed_flagged(
+        b"float for\n;\nfloat y;\n",
+        Dialect::Fteqcc,
+        &[],
+        &marks,
+        &[],
+    );
     assert!(parsed.keywords().windows(2).all(|w| w[0].0 <= w[1].0));
     assert!(!parsed.keywords_at(12).has(Keyword::For));
     // The keyword is a name from the token after the definition.
@@ -257,7 +262,7 @@ fn bad_asm_opcodes() {
     );
 }
 
-// spec FTEF-20.6: a body's statement defines locals at a registered type's name or at one of
+// spec FTEF-20.14: a body's statement defines locals at a registered type's name or at one of
 // `QCC_PR_ParseStatement`'s words, exactly, with its keyword on
 #[test]
 fn local_definition_words() {
@@ -346,6 +351,7 @@ fn type_keywords_follow_their_flags() {
         Dialect::Fteqcc,
         &[(0, no_qcfuncs)],
         &[(0, KeywordEdit::whole(Keywords::default()))],
+        &[],
     );
     assert_ne!(parsed.errors().count(), 0);
     assert_ne!(
@@ -457,4 +463,43 @@ fn reacc_keywords_are_names() {
     assert_eq!(errors("float __function;\n", defaults), []);
     assert_eq!(errors("float __CodeSys;\n", defaults), []);
     assert!(!holds(&in_body("exit;"), defaults, K::ExitStmt));
+}
+
+// spec FTEF-20.5: the views of the keyword statements give their parts
+#[test]
+fn keyword_statement_views() {
+    use crate::ast::{self, AstNode as _};
+    let node = |body: &str, kind: K| {
+        fte_with(&in_body(body), Keywords::default())
+            .syntax()
+            .descendants()
+            .find(|n| n.kind() == kind)
+            .unwrap()
+    };
+    let asm = ast::AsmStmt::cast(node("asm { local float x; DONE; }", K::AsmStmt)).unwrap();
+    assert_eq!(asm.locals().count(), 1);
+    let looped = ast::LoopStmt::cast(node("__loop { break; }", K::LoopStmt)).unwrap();
+    assert!(looped.body().is_some());
+    let think = ast::ThinktimeStmt::cast(node("__thinktime e : 0.1;", K::ThinktimeStmt)).unwrap();
+    assert_eq!(think.operands().count(), 2);
+    let state = ast::StateStmt::cast(node("__state [1, f];", K::StateStmt)).unwrap();
+    assert!(state.state().is_some());
+    let using = ast::UsingStmt::cast(node("__using (a, b = c) {}", K::UsingStmt)).unwrap();
+    assert!(using.body().is_some());
+    let names: Vec<(String, String)> = using
+        .aliases()
+        .map(|a| {
+            (
+                a.target().unwrap().text_lossless(),
+                a.alias().unwrap().text_lossless(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("a".to_owned(), "a".to_owned()),
+            ("b".to_owned(), "c".to_owned())
+        ]
+    );
 }

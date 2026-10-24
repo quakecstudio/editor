@@ -21,7 +21,7 @@ fn fte(source: &str) -> Parse {
 /// `source`, a preprocessor's text, parsed under the FTEQCC profile with the flag changes
 /// `edits`, each at its byte.
 fn flagged(source: &str, edits: &[(usize, FlagEdit)]) -> Parse {
-    parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, edits, &[])
+    parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, edits, &[], &[])
 }
 
 /// The codes of every diagnostic, warnings included.
@@ -57,7 +57,7 @@ fn returned(parsed: &Parse) -> String {
     sexpr(&ret.value().unwrap())
 }
 
-// spec FTEF-21.2: `extern` and a string is a block of definitions, or one definition after any
+// spec FTEF-21.17: `extern` and a string is a block of definitions, or one definition after any
 // `;`; its tokens are lexed with the flags the string sets, `"C"` in any case, its parts joined
 #[test]
 fn extern_blocks_are_read() {
@@ -103,9 +103,26 @@ fn extern_blocks_are_read() {
     assert!(!parsed.lex_flags_at(at(source, "{")).has(LexFlag::QcFuncs));
     assert!(parsed.flags_at(at(source, "x;")).has(FteFlag::Assumevar));
     assert!(!parsed.flags_at(at(source, "y;")).has(FteFlag::Assumevar));
+    // Recovery from an error in a block stops at its `}`, which closes the block.
+    let recovered = fte("extern \"C\" { x x x } float y;\n");
+    let block = recovered
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::ExternBlock)
+        .unwrap();
+    assert!(block.text().ends_with(b"}"));
+    // In a body `extern` before no string is a qualifier, no block.
+    let local = fte("void() f = { extern float x; };\n");
+    assert!(local.errors().next().is_none());
+    assert!(
+        !local
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::ExternBlock)
+    );
 }
 
-// spec FTEF-21.2: a block's flags hold to the token after its last, which FTEQCC lexed before it
+// spec FTEF-21.17: a block's flags hold to the token after its last, which FTEQCC lexed before it
 // restored them, so the word after a `}` is the block's and the string after it is not
 #[test]
 fn a_blocks_flags_end_after_the_next_token() {
@@ -130,7 +147,7 @@ fn a_blocks_flags_end_after_the_next_token() {
     assert!(!parsed.lex_flags_at(at(source, "s =")).has(LexFlag::QcFuncs));
 }
 
-// spec FTEF-21.2: a file that ends in a block is "expected }", after another qualifier the
+// spec FTEF-21.17: a file that ends in a block is "expected }", after another qualifier the
 // string is no block, and in a body a block's definitions are locals
 #[test]
 fn extern_block_edges() {
@@ -314,6 +331,12 @@ fn c_declarators() {
             .is_none()
     );
     assert!(
+        flagged("float (*fp);\ntypedef float (*tp);\n", &off)
+            .errors()
+            .next()
+            .is_none()
+    );
+    assert!(
         flagged("typedef float *fp;\n", &off)
             .errors()
             .next()
@@ -348,6 +371,14 @@ fn c_parameters() {
         .find_map(ast::Param::cast)
         .unwrap();
     assert!(param.ty().is_some());
+    // A type's own word alone is a type, not a name.
+    let parsed = flagged("void h(float);\n", &off);
+    let param = parsed
+        .syntax()
+        .descendants()
+        .find_map(ast::Param::cast)
+        .unwrap();
+    assert!(param.ty().is_some() && param.name().is_none());
 }
 
 // spec FTEF-21.9: attribute lists after a qualifier, and at file level with `attributes` on;
@@ -375,6 +406,12 @@ fn attribute_lists() {
             .errors()
             .next()
             .is_none()
+    );
+    // In a body `attributes` reads none: `flag_attributes && !pr_scope`.
+    assert!(
+        flagged("void() f = { local [[eraseable]] float x; };\n", &on)
+            .errors()
+            .any(|d| d.code == Code::E0203)
     );
     assert!(fte("const [[]] float x;\n").errors().next().is_none());
     assert!(fte("const [] float x;\n").errors().next().is_some());
@@ -465,4 +502,125 @@ fn the_token_after_a_block_is_read_restored() {
     assert!(!parsed.flags_at(float).has(FteFlag::AssumeInteger));
     let decl = parsed.tree().unwrap().declarations().nth(1).unwrap();
     assert!(matches!(decl.ty(), Some(ast::Type::Pointer(_))));
+}
+
+// spec FTEF-21.7: the views of C's declarators, typedefs, parameters and arrays give their parts
+// spec FTEF-21.17: an `extern` block's view gives its definitions
+// spec FTEF-21.9: an attribute's view gives the tokens after its name
+#[test]
+fn c_declaration_views() {
+    let off = [(0, whole(&[(FteFlag::Qcfuncs, false)]))];
+    let first = |parsed: &Parse| {
+        parsed
+            .tree()
+            .unwrap()
+            .declarations()
+            .next()
+            .unwrap()
+            .declarators()
+            .collect::<Vec<_>>()
+    };
+    let parsed = flagged("float (**fp)(float), *a, h(float x);\n", &off);
+    let forms: Vec<Option<usize>> = first(&parsed)
+        .iter()
+        .map(ast::Declarator::pointer_form)
+        .collect();
+    assert_eq!(forms, [Some(2), None, None]);
+    let typedef = |source: &str| {
+        flagged(source, &off)
+            .syntax()
+            .descendants()
+            .find_map(ast::TypedefDecl::cast)
+            .unwrap()
+    };
+    let cb = typedef("typedef void (**cb)(float);\n");
+    assert_eq!(cb.pointer_form(), Some(2));
+    assert!(cb.params().is_some());
+    assert!(cb.prefix_params().is_empty());
+    let pp = typedef("typedef float **pp;\n");
+    assert_eq!(pp.pointer_depth(), 2);
+    assert_eq!(pp.pointer_form(), None);
+    assert!(pp.params().is_none());
+    let field = typedef("typedef .void() think_t;\n");
+    assert_eq!(field.pointer_depth(), 0);
+    assert_eq!(field.prefix_params().len(), 1);
+    // A list right before the name is before it.
+    assert_eq!(
+        typedef("typedef .void()think_t;\n").prefix_params().len(),
+        1
+    );
+    let arrays = fte("float a[2], b[];\nvoid(float c[3][4]) f;\n");
+    let suffixes: Vec<bool> = arrays
+        .syntax()
+        .descendants()
+        .filter_map(ast::ArraySuffix::cast)
+        .map(|s| s.is_empty())
+        .collect();
+    assert_eq!(suffixes, [false, true, false, false]);
+    let param = arrays
+        .syntax()
+        .descendants()
+        .find_map(ast::Param::cast)
+        .unwrap();
+    assert_eq!(param.array_suffixes().len(), 2);
+    let block = fte("extern \"C\" { float x; extern \"QC\" { float y; } float z; }\n");
+    let items = block
+        .syntax()
+        .descendants()
+        .find_map(ast::ExternBlock::cast)
+        .unwrap()
+        .items();
+    assert_eq!(items.len(), 3);
+    let list = fte("const [[eraseable, alias( y )]] float x;\n");
+    let arguments: Vec<Vec<String>> = list
+        .syntax()
+        .descendants()
+        .filter_map(ast::Attribute::cast)
+        .map(|a| a.arguments().map(|t| t.text_lossless()).collect())
+        .collect();
+    assert_eq!(
+        arguments,
+        [vec![], vec!["(".to_owned(), "y".to_owned(), ")".to_owned()]]
+    );
+}
+
+// spec FTEF-21.17: in a preprocessor's text an `extern` block's tokens, lexed by the preprocessor
+// with the flags before the block, are lexed again with the block's, to the token after its `}`,
+// and their lexical errors are the parser's
+#[test]
+fn a_block_in_a_preprocessors_text_is_lexed_again() {
+    let source = "float a;\nextern \"C\" { string s = \"\\9\"; } float b;\nstring t = \"\\9\";\n";
+    let parsed = flagged(source, &[]);
+    let spans: Vec<(usize, usize)> = parsed.relexed().iter().map(|s| (s.start, s.end)).collect();
+    assert_eq!(
+        spans,
+        [
+            (20, 21),
+            (22, 28),
+            (29, 30),
+            (31, 32),
+            (33, 37),
+            (37, 38),
+            (39, 40),
+            (41, 46)
+        ]
+    );
+    assert_eq!(codes(&parsed), [Code::E0103]);
+    let marks: Vec<usize> = parsed.flags().iter().map(|&(at, _)| at).collect();
+    assert_eq!(marks, [0, 20, 41]);
+    assert!(parsed.flags()[1].1.has(FteFlag::Assumevar));
+    // A source file, or a text with no block, is lexed once.
+    assert!(fte(source).relexed().is_empty());
+    assert!(flagged("string t = \"\\9\";\n", &[]).relexed().is_empty());
+    // The token after the `}` is lexed again and its error is the parser's; the error of the
+    // token after it, which starts where the last relexed one ends, is the preprocessor's alone.
+    let off = [(0, whole(&[(FteFlag::Qcfuncs, false)]))];
+    let touching = flagged("extern \"C\" { float x; }\"\\9\"\"\\9\";\n", &off);
+    let errors = codes(&touching)
+        .iter()
+        .filter(|&&c| c == Code::E0103)
+        .count();
+    assert_eq!(errors, 1);
+    let unterminated = flagged("extern \"C\" { float x; }\"\\9\"\"abc\n", &off);
+    assert!(!codes(&unterminated).contains(&Code::E0102));
 }

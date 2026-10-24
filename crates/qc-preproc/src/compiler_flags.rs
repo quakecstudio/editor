@@ -5,7 +5,7 @@
 //! with the defaults `#pragma noref`,
 //! `#pragma nosave` and `#pragma defaultstatic` set for each definition, and the changes a
 //! `#pragma` makes to them, which the parser applies as it reads the tokens, with the changes
-//! its own `extern "C"` blocks make (FTEF-21.2).
+//! its own `extern "C"` blocks make (FTEF-21.17).
 
 use qc_lexer::{LexFlag, LexFlags};
 
@@ -178,7 +178,7 @@ impl CompilerFlags {
 /// A change to [`CompilerFlags`] at a token: the bits it sets and their values. The first of a
 /// file holds the whole state; a `#pragma flag` sets only the flags it names, and the priorities
 /// when it names `cpriority`, so a flag an `extern "C"` block changed holds unless the pragma
-/// names it (FTEF-21.2).
+/// names it (FTEF-21.17).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FlagEdit {
     mask: u32,
@@ -199,14 +199,12 @@ impl FlagEdit {
     /// `now`'s when `set` names `cpriority`; a flag [`CompilerFlags`] does not keep sets none.
     #[must_use]
     pub fn of_flags(set: &[FteFlag], now: CompilerFlags) -> Self {
-        let mask = set.iter().fold(0_u32, |mask, &flag| {
-            let priorities = if flag == FteFlag::Cpriority {
-                C_PRIORITIES
-            } else {
-                0
-            };
-            mask | CompilerFlags::bit(flag) | priorities
-        });
+        let priorities = set.contains(&FteFlag::Cpriority).then_some(C_PRIORITIES);
+        let mask = set
+            .iter()
+            .map(|&flag| CompilerFlags::bit(flag))
+            .chain(priorities)
+            .fold(0_u32, std::ops::BitOr::bitor);
         Self {
             mask,
             bits: now.bits & mask,
@@ -232,8 +230,10 @@ impl FlagEdit {
     /// `flags` after this edit.
     #[must_use]
     pub const fn apply(self, flags: CompilerFlags) -> CompilerFlags {
+        // The merge written with `^`, not `(flags & !mask) | (bits & mask)`, whose `|` joins
+        // disjoint bits and so reads the same as `^` to a mutation test.
         CompilerFlags {
-            bits: (flags.bits & !self.mask) | (self.bits & self.mask),
+            bits: flags.bits ^ ((flags.bits ^ self.bits) & self.mask),
         }
     }
 }

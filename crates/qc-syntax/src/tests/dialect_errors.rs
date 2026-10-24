@@ -258,7 +258,7 @@ fn deep_field_types() {
 
 // spec FTE-21.1: a body's statement that starts with a parameter list longer than the parser
 // looks ahead is no declaration line
-// spec FTEF-20.6: one that starts with `float` defines locals, as `QCC_PR_ParseStatement` finds
+// spec FTEF-20.14: one that starts with `float` defines locals, as `QCC_PR_ParseStatement` finds
 // the type by its name, so `float = 3;` is "not a name"
 #[test]
 fn declaration_shapes_in_a_body() {

@@ -47,6 +47,7 @@ pub use source::{
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
@@ -167,6 +168,90 @@ pub struct FileOutput {
     pub keywords: Vec<(usize, KeywordEdit)>,
 }
 
+/// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
+/// name as written, or under `-Fcaseinsens` in any case.
+#[derive(Debug, Default)]
+struct MacroTable {
+    /// Each macro under its name, in lower case when the table is searched in any case, with the
+    /// spelling it was defined with.
+    entries: HashMap<String, (String, Rc<Macro>)>,
+    any_case: bool,
+}
+
+impl MacroTable {
+    /// Searches the table in any case from now on, or not (`pHash_Get`). The built-in macros
+    /// were added before the search was switched, to the buckets of the name as written, which
+    /// the search in any case does not reach: none is found then (FTEF-14.73).
+    fn set_any_case(&mut self, on: bool) {
+        self.any_case = on;
+        if on {
+            self.entries.clear();
+        }
+    }
+
+    /// Defines a built-in macro, which `QCC_PR_BeginCompilation` adds with the search of the name
+    /// as written: not found once the table is searched in any case.
+    fn insert_builtin(&mut self, name: &str, mac: Rc<Macro>) {
+        if !self.any_case {
+            self.insert(name.to_owned(), mac);
+        }
+    }
+
+    fn key<'n>(&self, name: &'n str) -> Cow<'n, str> {
+        if self.any_case && name.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(name.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(name)
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&Rc<Macro>> {
+        self.entries.get(&*self.key(name)).map(|(_, mac)| mac)
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.entries.contains_key(&*self.key(name))
+    }
+
+    /// Defines `name`, replacing the macro a name of any case in the search named.
+    fn insert(&mut self, name: String, mac: Rc<Macro>) {
+        self.entries
+            .insert(self.key(&name).into_owned(), (name, mac));
+    }
+
+    /// `#undef`: whether the table has the macro, and whether `name` is its spelling, which removes it.
+    /// `QCC_PR_UndefineName` finds it with `pHash_Get` but removes it with `Hash_Remove`, which
+    /// compares the name exactly and hashes it as written; a macro written in another case is
+    /// kept, and one with an upper case letter is looked for in a bucket it is not in
+    /// (FTEF-14.73).
+    fn remove(&mut self, name: &str) -> Undef {
+        let key = self.key(name).into_owned();
+        match self.entries.get(&key) {
+            None => Undef::Absent,
+            Some((spelling, _)) if spelling != name => Undef::Kept,
+            Some(_) => {
+                self.entries.remove(&key);
+                Undef::Removed
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+/// What `#undef` did to the macro table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Undef {
+    /// No macro has the name.
+    Absent,
+    /// A macro has it in another spelling, which `Hash_Remove` does not match.
+    Kept,
+    /// The macro was removed.
+    Removed,
+}
+
 #[derive(Debug)]
 struct Macro {
     /// The parameters' names, as bytes, for FTEQCC compares them bytewise (FTEF-14.23).
@@ -249,7 +334,7 @@ fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
     let Some(mut node) = hide.as_deref() else {
         return false;
     };
-    let Some(count) = live.get(name).filter(|count| count.get() > 0) else {
+    let Some(count) = live.get(name).filter(|count| count.get() != 0) else {
         return false;
     };
     loop {
@@ -320,7 +405,7 @@ struct TokenStream {
 pub(crate) struct Lexing<'a> {
     dialect: Dialect,
     flags: LexFlags,
-    macros: Option<&'a HashMap<String, Rc<Macro>>>,
+    macros: Option<&'a MacroTable>,
     /// How many times the macros have changed, which matters under `macroinstrings` only.
     edits: u64,
 }
@@ -359,7 +444,7 @@ impl Lexing<'_> {
     fn lex(self, text: &[u8]) -> qc_lexer::Lexed {
         let macros = self.macros;
         let lookup = move |name: &[u8]| {
-            let mac = macros?.get(&*String::from_utf8_lossy(name))?;
+            let mac = macros?.get(&String::from_utf8_lossy(name))?;
             Some(
                 mac.text()
                     .map(|text| text.bytes().to_vec())
@@ -485,9 +570,9 @@ impl TokenStream {
         // A change of the macros alone matters only to a string with a `#` in it.
         let macros_only = key.flags == self.key.flags;
         self.key = key;
-        let hashed = |t: &Token| {
-            matches!(t.kind, TokenKind::String(_))
-                && text.get(t.span.range()).is_some_and(|b| b.contains(&b'#'))
+        let hashed = |t: &Token| match t.kind {
+            TokenKind::String(_) => text.get(t.span.range()).is_some_and(|b| b.contains(&b'#')),
+            _ => false,
         };
         if macros_only
             && !self
@@ -500,11 +585,11 @@ impl TokenStream {
             return;
         }
         let offset = self.read_offset().min(text.len());
-        let next = self.tokens.partition_point(|t| t.span.start < offset);
         let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
-        self.tokens.truncate(next);
+        // The tokens not read yet are those from `pos`, which start at or after where reading
+        // stands, so they are the ones lexed again.
+        self.tokens.truncate(self.pos);
         self.tokens.extend(rest.tokens);
-        self.pos = next;
         self.diagnostics.retain(|d| d.span.start < offset);
         self.diagnostics.extend(rest.diagnostics);
     }
@@ -865,7 +950,7 @@ pub struct Preprocessor<L> {
     loader: L,
     dialect: Dialect,
     sources: SourceMap,
-    macros: HashMap<String, Rc<Macro>>,
+    macros: MacroTable,
     expansions: Vec<Expansion>,
     /// In an FTEQCC dialect, every frame macro defined so far (FTE-22.4).
     carried_frames: HashMap<String, CarriedFrame>,
@@ -921,7 +1006,7 @@ impl<L: Loader> Preprocessor<L> {
             loader,
             dialect: Dialect::Vanilla,
             sources: SourceMap::default(),
-            macros: HashMap::new(),
+            macros: MacroTable::default(),
             expansions: Vec::new(),
             carried_frames: HashMap::new(),
             model_name: String::new(),
@@ -1000,6 +1085,9 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte.warnings = self.command_line.warnings(WarningSettings::default());
             self.fte.flags = self.command_line.flags(self.fte.flags);
+            // FTEF-14.73: `pHash_Get = &Hash_GetInsensitive;` searches the macro table in any case.
+            self.macros
+                .set_any_case(self.fte.flags.is_on(FteFlag::Caseinsensitive));
             // FTEF-21.4: `QCC_PR_BeginCompilation` calls `QCC_PrioritiseOpcodes` once the
             // command line is read.
             self.fte.flags.prioritise();

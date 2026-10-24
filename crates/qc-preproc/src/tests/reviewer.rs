@@ -50,6 +50,7 @@ fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
 // leaves each inner one, which its hide set names, as written, with no diagnostic
 #[test]
 fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 100_000_usize;
     let mut text = "#define F(x) x\n".to_owned();
     text.push_str(&"F(".repeat(n));
@@ -73,6 +74,7 @@ fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
 // so the expansion outgrows the bound, which is reported once
 #[test]
 fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 10_000_usize;
     let head = n.saturating_sub(1);
     let mut text = "#define M0 1\n".to_owned();
@@ -258,4 +260,112 @@ fn reviewer_a_pragma_s_name_ends_at_a_tab_and_not_after_a_leading_paren() {
 fn reviewer_a_comment_before_an_if_value_leaves_no_value() {
     let (toks, errs) = fte("#if /* c */ 1\nyes\n#endif\nb\n");
     assert_eq!((toks.as_str(), errs), ("b", vec![Code::E0121]));
+}
+
+// The cases below were compiled with the pinned FTEQCC (fte-team/fteqw@f937b9d, `-Tid`) by the
+// fifth P2-R2 review, each after `void() f = #5;`, and the profile agreed with every one through
+// `cargo xtask oracles builtins`.
+
+/// The keywords in force at token 0 of `out`, from its first mark.
+fn first_keywords(out: &crate::FileOutput) -> crate::Keywords {
+    out.keywords
+        .first()
+        .map_or(crate::Keywords::default(), |&(_, edit)| {
+            edit.apply(crate::Keywords::NONE)
+        })
+}
+
+/// The keywords in force at the end of `text`, preprocessed as `a.qc` under FTEQCC.
+fn keywords_after(text: &str) -> (crate::Keywords, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let mut now = crate::Keywords::NONE;
+    for &(_, edit) in &out.keywords {
+        now = edit.apply(now);
+    }
+    (now, codes(&out))
+}
+
+// spec FTEF-12.11: a pragma's flags and keywords hold into the second autoprototyping pass from
+// its first token, wherever the pragma stood in the first: after `#pragma autoproto`,
+// `string s = "\9";` before `#pragma flag disable qcfuncs` is "Bad character code \9" and
+// `loop { break; }` before `#pragma keyword enable loop` a loop, in the second pass
+#[test]
+fn reviewer_a_pragma_after_the_tokens_holds_from_the_second_pass_s_start() {
+    use crate::{CompilerFlags, FteFlag, Keyword};
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        b"float x;\n#pragma flag disable qcfuncs\n#pragma keyword enable loop\n",
+    );
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let first = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let second = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let flags_at_start = |out: &crate::FileOutput| {
+        out.flags
+            .first()
+            .map(|&(at, edit)| (at, edit.apply(CompilerFlags::default())))
+    };
+    assert!(flags_at_start(&first).is_some_and(|(at, f)| at == 0 && f.has(FteFlag::Qcfuncs)));
+    assert!(!first_keywords(&first).has(Keyword::Loop));
+    assert!(flags_at_start(&second).is_some_and(|(at, f)| at == 0 && !f.has(FteFlag::Qcfuncs)));
+    assert!(first_keywords(&second).has(Keyword::Loop));
+}
+
+// spec FTEF-12.11: `#pragma keyword` reads its state and names with `QCC_COM_Parse`: a quoted
+// name is the name, the state and name in any case; a state it does not know sets nothing; and
+// `int`, whose row lacks `FLAG_MIDCOMPILE`, cannot be turned off by a pragma, so `int x;` still
+// declares an int. The pinned FTEQCC compiles `#pragma keyword enable "loop"`, `enable LOOP` and
+// `ON loop` before a `loop` statement and `disable int` before `int x;`, and refuses `maybe
+// loop` before the statement
+#[test]
+fn reviewer_keyword_pragmas_read_their_words_as_qcc_com_parse_does() {
+    use crate::Keyword;
+    for text in [
+        "#pragma keyword enable \"loop\"\n",
+        "#pragma keyword enable LOOP\n",
+        "#pragma keyword ON loop\n",
+    ] {
+        let (keywords, errors) = keywords_after(text);
+        assert!(keywords.has(Keyword::Loop), "{text}");
+        assert_eq!(errors, [], "{text}");
+    }
+    let (keywords, errors) = keywords_after("#pragma keyword maybe loop\n");
+    assert!(!keywords.has(Keyword::Loop));
+    assert_eq!(errors, [Code::W0113]);
+    let (keywords, errors) = keywords_after("#pragma keyword disable int\n");
+    assert!(keywords.has(Keyword::Int));
+    assert_eq!(errors, [Code::W0113]);
+}
+
+// spec FTEF-14.72: `-std=` compares the names other than the C ones exactly, so `-std=QCC` and
+// `-std=Id` only set the defaults, `for` staying on, and `-std=QCCX` sets no `qccx`; `-std=` after
+// a `-F` sets that flag back to its default, and before it does not. The pinned FTEQCC compiles
+// `for (;;) {}` under `-std=QCC` and `-std=Id`, refuses `"a":"b"` under `-std=QCCX`, and reads
+// `{ { float x; } x = 1; }` with `subscope` off under `-Fsubscope -std=fteqcc` and on under
+// `-std=fteqcc -Fsubscope`
+#[test]
+fn reviewer_std_names_but_the_c_ones_are_exact_and_reset_earlier_options() {
+    use crate::{CommandLine, FlagSettings, FteFlag};
+    let on = |args: &[&str], flag| {
+        CommandLine::new(args)
+            .flags(FlagSettings::default())
+            .is_on(flag)
+    };
+    assert!(on(&["-std=QCC"], FteFlag::ForKeyword));
+    assert!(on(&["-std=Id"], FteFlag::ForKeyword));
+    assert!(!on(&["-std=id"], FteFlag::ForKeyword));
+    assert!(!on(&["-std=QCCX"], FteFlag::Qccx));
+    assert!(on(&["-std=qccx"], FteFlag::Qccx));
+    assert!(!on(
+        &["-Fsubscope", "-std=fteqcc"],
+        FteFlag::PrSubscopedlocals
+    ));
+    assert!(on(
+        &["-std=fteqcc", "-Fsubscope"],
+        FteFlag::PrSubscopedlocals
+    ));
 }

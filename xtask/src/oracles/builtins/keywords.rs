@@ -80,7 +80,7 @@ const KEYWORD_PROGRAMS: &[&str] = &[
     "void() g = { __goto l; l: ; };\n",
     "void() g = { __local float x; };\n",
     "float x = __sizeof(float);\n",
-    // FTEF-20.6: the words a body's statement defines locals at, exactly, with their keyword.
+    // FTEF-20.14: the words a body's statement defines locals at, exactly, with their keyword.
     "#pragma keyword enable long\nvoid() g = { long x; x = 1; };\n",
     "#pragma keyword disable var\nfloat var;\nvoid() g = { var = 1; };\n",
     "float var;\nvoid() g = { var = 1; };\n",
