@@ -41,6 +41,7 @@ use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
 
+mod casts;
 mod declarations;
 mod defs;
 mod directives;
@@ -1209,6 +1210,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(declarations::cases());
     cases.extend(keywords::cases());
     cases.extend(flags::cases());
+    cases.extend(casts::cases());
     cases.extend(defs::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();

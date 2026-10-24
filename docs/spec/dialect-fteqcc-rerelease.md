@@ -847,7 +847,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
 - **FTE-23.16** A `#` before a macro that stands for a number, `#define N 5` and `void() f =
   #N;`, initialises `f` with `5`, which FTEQCC cannot cast to a function: the error `E0213`
-  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.2), as for `#__LINE__`, the
+  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.31), as for `#__LINE__`, the
   line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
   cast from string to void()" and makes no builtin function, as this profile makes none; the
   differential reads that as accepted with no builtin number.

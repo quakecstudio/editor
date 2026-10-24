@@ -96,7 +96,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   frame cycle whose two constant frames run against its `++` or `--`, FTEQCC's error of the
   same text (`dialect-fteqcc.md`, FTEF-18.28), over the two frames.
 - **QCD-3.13** `E0213` "Cannot cast from TYPE to TYPE": under an FTEQCC profile, an initialiser
-  or default value FTEQCC's implicit cast refuses, at the value (`dialect-fteqcc.md`, FTEF-19.2,
+  or default value FTEQCC's implicit cast refuses, at the value (`dialect-fteqcc.md`, FTEF-19.31,
   FTEF-19.10).
 - **QCD-3.14** `E0214` "initializer for 'NAME' is not constant": under an FTEQCC profile, a
   global or `static` initialised with a name that is no constant, at the name (FTEF-19.3).
@@ -140,7 +140,7 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   on a name another file defined, at the name (FTEF-19.12).
 - **QCD-3.32** `E0232` "_() intrinsic accepts only a string immediate": under an FTEQCC profile,
   a string initialised with `_()` of anything but one string literal, at the initialiser
-  (FTEF-19.2).
+  (FTEF-19.31).
 - **QCD-3.33** `E0233` "initializer-string too long": under an FTEQCC profile, an 8-bit array
   initialised with a string of more bytes than its size, at the initialiser (FTEF-19.8).
 - **QCD-3.34** `E0234` "TARGET not yet defined, cannot create NAME as an alias": under an FTEQCC
@@ -148,6 +148,16 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (`dialect-fteqcc.md`, FTEF-21.9).
 - **QCD-3.35** `E0235` "alias NAME may not be initialised": under an FTEQCC profile, a definition
   given the attribute `alias` and an initialiser, at the name (FTEF-21.9).
+- **QCD-3.36** `E0236` "Automatic type conversions disabled. Needed TYPE, got TYPE.": under an
+  FTEQCC profile with `typeexplicit` on, an enum value or a state frame not of the number type
+  wanted, at the value (`dialect-fteqcc.md`, FTEF-22.3).
+- **QCD-3.37** `E0237` "pointer<->string casts were disabled.": under an FTEQCC profile with
+  `flag_undefwordsize` on, a string cast to a pointer, at the value (FTEF-22.4).
+- **QCD-3.38** `E0238` "state type mismatch": under an FTEQCC profile, a frame of a cycle that
+  `lax` left of a type that is no float, at the frame (FTEF-22.3).
+- **QCD-3.39** `E0239` "extern is not supported with this target format": under an FTEQCC
+  profile, an `extern` function when the output target is none of FTE's, at its definition
+  (FTEF-22.5).
 
 ## QCD-4 Expression and statement errors
 
@@ -367,7 +377,7 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   under an FTEQCC profile, a constant with no value yet initialising a constant, at the name
   (FTEF-19.3).
 - **QCD-7.46** `W0220` "Implicit cast from TYPE to TYPE": under an FTEQCC profile, an implicit
-  cast FTEQCC makes with its warning, at the value (FTEF-19.2).
+  cast FTEQCC makes with its warning, at the value (FTEF-19.31).
 - **QCD-7.47** **Withdrawn** (P2-119, #554): it gave `W0221` only the text "- coexisting", but
   with `kce` off the warning is "- disabling". Replaced by QCD-7.67.
 - **QCD-7.48** `W0222` "Parameter N of NAME is not named": under an FTEQCC profile, a parameter
@@ -441,6 +451,11 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.69** `W0228` "Unknown attribute \"NAME\"", or "accumulating an accumulating
   accumulation": under an FTEQCC profile, an attribute FTEQCC does not know, at it, or
   `accumulate` given to a definition `accumulate` already marks, at the attribute (FTEF-21.9).
+- **QCD-7.70** `W0229` "Implicit lax cast from TYPE to TYPE": under an FTEQCC profile with `lax`
+  on, a cast FTEQCC refuses otherwise, at the value (`dialect-fteqcc.md`, FTEF-22.1).
+- **QCD-7.71** `W0230` "Implicit type mismatch. Needed TYPE, got TYPE.": under an FTEQCC profile
+  with `lax` on, an enum value or a state frame that nothing converts to the number type wanted,
+  at the value (FTEF-22.3).
 
 ## QCD-8 Preprocessor errors
 

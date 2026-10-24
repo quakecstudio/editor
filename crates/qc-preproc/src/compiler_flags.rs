@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The FTEQCC compiler flags the lexer, the parser and the semantic model read where a token
-//! stands (`docs/spec/dialect-fteqcc.md` FTEF-12.12, FTEF-21), with the defaults `#pragma noref`,
+//! stands (`docs/spec/dialect-fteqcc.md` FTEF-12.12, FTEF-21), the casts' among them (FTEF-22),
+//! with the defaults `#pragma noref`,
 //! `#pragma nosave` and `#pragma defaultstatic` set for each definition, and the changes a
 //! `#pragma` makes to them, which the parser applies as it reads the tokens, with the changes
 //! its own `extern "C"` blocks make (FTEF-21.17).
@@ -12,7 +13,7 @@ use crate::fte_tables::FteFlag;
 
 /// The flags [`CompilerFlags`] keeps, each with the bit it is, and the lexer's flag it is, if
 /// the lexer reads it.
-const KEPT: [(FteFlag, u32, Option<LexFlag>); 12] = [
+const KEPT: [(FteFlag, u32, Option<LexFlag>); 15] = [
     (FteFlag::Qcfuncs, 1, Some(LexFlag::QcFuncs)),
     (FteFlag::Qccx, 1 << 1, Some(LexFlag::Qccx)),
     (FteFlag::Utf8strings, 1 << 2, Some(LexFlag::Utf8Strings)),
@@ -29,6 +30,9 @@ const KEPT: [(FteFlag, u32, Option<LexFlag>); 12] = [
     (FteFlag::Assumevar, 1 << 9, None),
     (FteFlag::PrSubscopedlocals, 1 << 10, None),
     (FteFlag::Attributes, 1 << 11, None),
+    (FteFlag::Laxcasts, 1 << 16, None),
+    (FteFlag::Typeexplicit, 1 << 17, None),
+    (FteFlag::Undefwordsize, 1 << 18, None),
 ];
 
 /// The bit of [`CompilerFlags`] that holds the operator priorities, C's when set.

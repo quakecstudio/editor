@@ -187,6 +187,8 @@ pub(crate) struct Preprocessed {
     /// Whether the module was read with FTEQCC's autoprototyping (FTE-22.3): asked for by the
     /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.10).
     pub(crate) autoproto: bool,
+    /// The output format once the last file is read (FTEF-22.5).
+    pub(crate) target: qc_preproc::TargetFormat,
 }
 
 /// Reads files out of the database by path, so the preprocessor sees the editor's buffers
@@ -355,6 +357,7 @@ fn run<L: Loader>(
             .collect();
         out.files.push(rendered);
     }
+    out.target = pp.target();
     (out, pragma, late)
 }
 

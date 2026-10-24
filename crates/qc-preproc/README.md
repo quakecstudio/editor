@@ -60,7 +60,9 @@ from there on is lexed again with the flags the lexer reads (`Lexing`, FTEF-12.1
 change to the flags the lexer, the parser and the semantic model read, the operator priorities
 a pragma that names `cpriority` sets among them (`Priorities`, FTEF-21.4), and to the defaults
 `#pragma noref`, `nosave` and `defaultstatic` set (FTEF-21.14) is marked in `FileOutput::flags`
-as a `FlagEdit` of `CompilerFlags` that sets only what it names (FTEF-21.1), and `hashonly` and
+as a `FlagEdit` of `CompilerFlags` that sets only what it names (FTEF-21.1), the casts' flags
+among them, with `flag_undefwordsize` as `#pragma TARGET` and `-T` set it, and the target at the
+end is `Preprocessor::target` (FTEF-22.4, FTEF-22.5), and `hashonly` and
 `nofileline` change the preprocessor's own reading (FTEF-12.13). A word or string of a directive
 past FTEQCC's 1023 bytes, a pragma past its `msg[1024]` and a comment the text ends in are FTEQCC's
 errors (FTEF-14.66, FTEF-14.67). The graph's reader also reads a list-form `progs.src`
