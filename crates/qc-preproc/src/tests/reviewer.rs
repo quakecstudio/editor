@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use super::{codes, tokens};
+use super::{codes, one_fte, tokens};
 use crate::{Code, MemoryLoader, Preprocessor};
 
 /// The tokens and diagnostic codes of `text` as `a.qc` under `dialect`, preprocessed on a
@@ -368,4 +368,46 @@ fn reviewer_std_names_but_the_c_ones_are_exact_and_reset_earlier_options() {
         &["-std=fteqcc", "-Fsubscope"],
         FteFlag::PrSubscopedlocals
     ));
+}
+
+// spec FTEF-14.52: a directive's name is compared exactly, with or without `caseinsens`, so
+// `#DEFINE`, `#Define`, `#IFDEF` and `#PRAGMA` are no directives and `#define` is; the pinned
+// FTEQCC refuses each of the first three with "Explicit precompiler usage when not defined"
+#[test]
+fn reviewer_directive_names_are_read_exactly() {
+    for args in [&[][..], &["-Fcaseinsens"][..]] {
+        let run = |text: &str| {
+            let mut loader = MemoryLoader::new();
+            loader.insert("a.qc", text.as_bytes());
+            let mut pp = Preprocessor::new(loader)
+                .with_dialect(qc_lexer::Dialect::Fteqcc)
+                .with_command_line(crate::CommandLine::new(args));
+            let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+            (tokens(&out), codes(&out))
+        };
+        assert_eq!(run("#define X 1\nX\n"), ("1".to_owned(), vec![]));
+        assert_eq!(run("#DEFINE X 1\nX\n").0, "# DEFINE X 1 X");
+        assert_eq!(run("#Define X 1\nX\n").0, "# Define X 1 X");
+        assert_eq!(
+            run("#define X 1\n#IFDEF X\nX\n#ENDIF\n").0,
+            "# IFDEF 1 1 # ENDIF"
+        );
+    }
+}
+
+// spec FTEF-12.11: the pragma `keyword` and `flag` read their state and their name with
+// `QC_strcasecmp`, so these lines each leave a mark and no diagnostic; the pinned FTEQCC reads
+// each silently
+#[test]
+fn reviewer_pragma_states_and_names_are_read_in_any_case() {
+    for text in [
+        "#pragma KEYWORD OFF LOOP\nx\n",
+        "#pragma Flag Disable Qcfuncs\nx\n",
+        "#pragma flag Disable QCFUNCS\nx\n",
+        "#pragma flag ENABLE ASSUMEVAR\nx\n",
+    ] {
+        let (_, out) = one_fte(text);
+        assert_eq!(codes(&out), vec![], "{text}");
+        assert!(!out.keywords.is_empty() || !out.flags.is_empty(), "{text}");
+    }
 }

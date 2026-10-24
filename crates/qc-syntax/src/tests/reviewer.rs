@@ -7,6 +7,7 @@
 use super::{Program, errors};
 use crate::QC_MAX_NESTING;
 use crate::ast::{AstNode as _, Builtin};
+use crate::kind::SyntaxKind as K;
 use crate::{Code, Dialect, SyntaxNode, parse_with};
 
 /// The deepest chain of nodes from `root` to a leaf, counted without recursion.
@@ -357,5 +358,123 @@ fn reviewer_an_extern_block_s_string_is_compared_as_read() {
     for linkage in ["\"\\103\"", "\"C \""] {
         let source = format!("extern {linkage} {{ string s = \"\\9\"; }}\n");
         assert!(!bad_code(&source), "{source}");
+    }
+}
+
+/// `source` parsed under the FTEQCC profile with `caseinsens` on or off.
+fn fte_case(source: &str, insensitive: bool) -> crate::Parse {
+    super::fte_with(
+        source,
+        crate::Keywords::default().with_case_insensitive(insensitive),
+    )
+}
+
+// spec FTEF-20.14: under `caseinsens` every statement keyword, a loop's and a switch's and a
+// jump's, is found in any case, as `QCC_PR_CheckKeyword` compares with `stricmp`; with it off
+// the capitalised word is a name. The pinned FTEQCC compiles each body under `-Fcaseinsens`
+#[test]
+fn reviewer_statement_keywords_are_found_in_any_case_under_caseinsens() {
+    for body in [
+        "IF (1) {} ELSE {}",
+        "While (1) { Break; }",
+        "DO { Continue; } while (0);",
+        "FOR (;;) { BREAK; }",
+        "Switch (1) { Case 1: Break; Default: Break; }",
+        "Goto l; l: ;",
+        "Local float x; x = 1;",
+        "Return;",
+    ] {
+        let source = format!("void() g = {{ {body} }};\n");
+        assert_eq!(errors(&fte_case(&source, true)), vec![], "{body}");
+    }
+    assert!(
+        fte_case("void() g = { IF (1) {} };\n", false)
+            .errors()
+            .next()
+            .is_some()
+    );
+}
+
+// spec FTEF-21.17: `extern` is a keyword like the others, so under `caseinsens` `EXTERN "C" {`
+// and `Extern "c" {` open a block, in a body too; with it off they are names and no block. The
+// pinned FTEQCC compiles both blocks under `-Fcaseinsens`
+#[test]
+fn reviewer_an_extern_block_opens_in_any_case_under_caseinsens() {
+    let blocks = |source: &str, insensitive: bool| {
+        let parsed = fte_case(source, insensitive);
+        let found = parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::ExternBlock)
+            .count();
+        (found, errors(&parsed))
+    };
+    for source in [
+        "EXTERN \"C\" { float x = 5; float y = x; }\n",
+        "Extern \"c\" { float x = 5; float y = x; }\n",
+    ] {
+        assert_eq!(blocks(source, true), (1, vec![]), "{source}");
+        assert_eq!(blocks(source, false).0, 0, "{source}");
+    }
+}
+
+// spec FTEF-20.2: `__` before a keyword spells it in any case whether or not `caseinsens` is
+// on
+#[test]
+fn reviewer_a_double_underscore_keyword_is_found_in_any_case_without_caseinsens() {
+    for insensitive in [false, true] {
+        for word in ["__LOOP", "__Loop", "__loop"] {
+            let source = format!("void() g = {{ {word} {{ break; }} }};\n");
+            assert_eq!(errors(&fte_case(&source, insensitive)), vec![], "{source}");
+        }
+    }
+}
+
+// spec FTEF-6.1: a class's member may follow a `public:` label, which FTEQCC reads and
+// ignores; the pinned FTEQCC compiles `class C { public: float a; };`
+#[test]
+fn reviewer_a_class_member_may_follow_a_public_label() {
+    let source = "class C { public: float a; };\nvoid() g = { C c; };\n";
+    assert_eq!(errors(&fte_case(source, false)), vec![]);
+}
+
+// spec QC-27.15: 100000 nested `extern "C" {` blocks, closed or not, and 100000 unbraced
+// `extern "C" ` before a definition, at file level and in a body, parse on a 2 MiB thread with
+// "nesting too deep" and keep every byte; the pinned FTEQCC recurses without a limit
+#[test]
+fn reviewer_nested_extern_blocks_stop_at_the_limit_on_a_small_stack() {
+    let n = 100_000;
+    let open = "extern \"C\" { ".repeat(n);
+    let bare = "extern \"C\" ".repeat(n);
+    let shut = " }".repeat(n);
+    let shapes = [
+        format!("{open}float y;{shut}"),
+        format!("{open}float y;"),
+        format!("{bare}float y;"),
+    ];
+    for item in shapes {
+        for source in [format!("{item}\n"), format!("void() g = {{ {item} }};\n")] {
+            let bytes = source.clone().into_bytes();
+            let (depth, kept, too_deep) = std::thread::Builder::new()
+                .stack_size(2 << 20)
+                .spawn(move || {
+                    let parsed = parse_with(&bytes, Dialect::Fteqcc);
+                    (
+                        tree_depth(&parsed.syntax()),
+                        parsed.syntax().text() == bytes,
+                        parsed.errors().any(|d| d.code == Code::E0509),
+                    )
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            assert!(too_deep, "{}", &source[..30]);
+            assert!(kept, "{}", &source[..30]);
+            assert!(
+                depth <= QC_MAX_NESTING.saturating_mul(4),
+                "{}",
+                &source[..30]
+            );
+        }
     }
 }
