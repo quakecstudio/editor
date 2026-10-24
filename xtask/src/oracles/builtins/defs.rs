@@ -564,6 +564,8 @@ fn macro_table_programs() -> Vec<String> {
         "#define foo 5\n#undef foo\n#define Foo 6\n",
         "#define Foo 5\n#undef foo\n",
         "#define Foo 5\n#undef bar\n",
+        "#define Foo 5\n#define bar FOO\n",
+        "#define foo 5\n#define Bar FOO\n",
     ] {
         for use_ in [
             "float x = foo;",
@@ -575,6 +577,10 @@ fn macro_table_programs() -> Vec<String> {
             "float x = foo(5);",
             "float x = Foo(5);",
             "float x = FOO(5);",
+            "#ifdef fteqcc\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef FTEQCC\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef __fteqcc__\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#if defined(Fteqcc)\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
             "#ifdef foo\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
             "#ifdef Foo\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
             "#ifdef FOO\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",

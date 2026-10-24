@@ -392,3 +392,21 @@ fn undef_removes_the_spelling_it_names() {
     let out = one_with("#define foo 5\n#undef FOO\n", &[]);
     assert_eq!(codes(&out), [Code::W0114]);
 }
+
+// spec FTEF-14.73: the macros FTEQCC defines itself are added before the search is switched, so
+// under `-Fcaseinsens` none is found, in any case; a macro whose body names another finds it
+// in any case
+#[test]
+fn the_built_in_macros_are_not_found_in_any_case() {
+    let any = ["-Fcaseinsens"];
+    for name in ["FTEQCC", "fteqcc", "__FTEQCC__", "__fteqcc__"] {
+        let out = one_with(&format!("#ifdef {name}\nyes\n#else\nno\n#endif\n"), &any);
+        assert_eq!(tokens(&out), "no", "{name}");
+    }
+    let out = one_with("#ifdef FTEQCC\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "yes");
+    let out = one_with("#ifdef fteqcc\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "no");
+    let out = one_with("#define Foo 5\n#define bar FOO\nbar\n", &any);
+    assert_eq!(tokens(&out), "5");
+}

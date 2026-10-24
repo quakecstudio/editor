@@ -1638,7 +1638,10 @@ profile the preprocessor reads them as FTEQCC does.
   bucket the macro was not added to, which the pinned FTEQCC reads when it is empty and ends
   with a segmentation fault (measured on macOS arm64, the differential's host). This profile
   removes a macro only when the `#undef` names its spelling, finds it in any case, and never
-  ends; the differential holds no program that makes FTEQCC read an empty bucket.
+  ends; the differential holds no program that makes FTEQCC read an empty bucket. The macros
+  FTEQCC defines itself, `FTEQCC` and `__FTEQCC__`, are added before the search is switched, to
+  the buckets of the name as written, so under `-Fcaseinsens` `#ifdef FTEQCC` is false, as is
+  `#ifdef fteqcc` (measured); this profile finds no built-in macro there.
 
 ## FTEF-15 Declarations
 

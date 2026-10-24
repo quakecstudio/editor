@@ -36,8 +36,8 @@ use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
 use crate::fte_tables::TargetFormat;
 use crate::{
-    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
-    WarningSettings, fte_pragma, normalize,
+    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Undef,
+    Variadic, WarningSettings, fte_pragma, normalize,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -1408,7 +1408,7 @@ impl<L: Loader> Preprocessor<L> {
                 name_span: Span::new(0, 0),
                 evil: false,
             };
-            self.macros.insert(name.to_owned(), Rc::new(mac));
+            self.macros.insert_builtin(name, Rc::new(mac));
             self.macros_changed();
         }
     }
@@ -1538,11 +1538,13 @@ impl<L: Loader> Preprocessor<L> {
                 let name = lossy(text.get(name).unwrap_or_default());
                 // FTEF-14.57: `QCC_PR_ParseWarning(WARN_UNDEFNOTDEFINED, "Precompiler constant %s
                 // was not defined", name);`
-                if self.macros.remove(&name) {
-                    self.macros_changed();
-                } else {
-                    let message = format!("Precompiler constant {name} was not defined");
-                    run.report(Code::W0114, message, at(end.at));
+                match self.macros.remove(&name) {
+                    Undef::Removed => self.macros_changed(),
+                    Undef::Kept => {}
+                    Undef::Absent => {
+                        let message = format!("Precompiler constant {name} was not defined");
+                        run.report(Code::W0114, message, at(end.at));
+                    }
                 }
                 end.resume(run, &reading, hash)
             }

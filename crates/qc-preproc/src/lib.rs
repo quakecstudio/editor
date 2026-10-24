@@ -47,6 +47,7 @@ pub use source::{
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
@@ -178,46 +179,59 @@ struct MacroTable {
 }
 
 impl MacroTable {
-    /// Searches the table in any case from now on, or not (`pHash_Get`).
+    /// Searches the table in any case from now on, or not (`pHash_Get`). The built-in macros
+    /// were added before the search was switched, to the buckets of the name as written, which
+    /// the search in any case does not reach: none is found then (FTEF-14.73).
     fn set_any_case(&mut self, on: bool) {
         self.any_case = on;
+        if on {
+            self.entries.clear();
+        }
     }
 
-    fn key(&self, name: &str) -> String {
-        if self.any_case {
-            name.to_ascii_lowercase()
+    /// Defines a built-in macro, which `QCC_PR_BeginCompilation` adds with the search of the name
+    /// as written: not found once the table is searched in any case.
+    fn insert_builtin(&mut self, name: &str, mac: Rc<Macro>) {
+        if !self.any_case {
+            self.insert(name.to_owned(), mac);
+        }
+    }
+
+    fn key<'n>(&self, name: &'n str) -> Cow<'n, str> {
+        if self.any_case && name.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(name.to_ascii_lowercase())
         } else {
-            name.to_owned()
+            Cow::Borrowed(name)
         }
     }
 
     fn get(&self, name: &str) -> Option<&Rc<Macro>> {
-        self.entries.get(&self.key(name)).map(|(_, mac)| mac)
+        self.entries.get(&*self.key(name)).map(|(_, mac)| mac)
     }
 
     fn contains_key(&self, name: &str) -> bool {
-        self.entries.contains_key(&self.key(name))
+        self.entries.contains_key(&*self.key(name))
     }
 
     /// Defines `name`, replacing the macro a name of any case in the search named.
     fn insert(&mut self, name: String, mac: Rc<Macro>) {
-        self.entries.insert(self.key(&name), (name, mac));
+        self.entries
+            .insert(self.key(&name).into_owned(), (name, mac));
     }
 
-    /// `#undef`: whether the table has the macro, and removes it when `name` is its spelling.
+    /// `#undef`: whether the table has the macro, and whether `name` is its spelling, which removes it.
     /// `QCC_PR_UndefineName` finds it with `pHash_Get` but removes it with `Hash_Remove`, which
     /// compares the name exactly and hashes it as written; a macro written in another case is
     /// kept, and one with an upper case letter is looked for in a bucket it is not in
     /// (FTEF-14.73).
-    fn remove(&mut self, name: &str) -> bool {
-        let key = self.key(name);
+    fn remove(&mut self, name: &str) -> Undef {
+        let key = self.key(name).into_owned();
         match self.entries.get(&key) {
-            None => false,
-            Some((spelling, _)) => {
-                if spelling == name {
-                    self.entries.remove(&key);
-                }
-                true
+            None => Undef::Absent,
+            Some((spelling, _)) if spelling != name => Undef::Kept,
+            Some(_) => {
+                self.entries.remove(&key);
+                Undef::Removed
             }
         }
     }
@@ -225,6 +239,17 @@ impl MacroTable {
     fn clear(&mut self) {
         self.entries.clear();
     }
+}
+
+/// What `#undef` did to the macro table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Undef {
+    /// No macro has the name.
+    Absent,
+    /// A macro has it in another spelling, which `Hash_Remove` does not match.
+    Kept,
+    /// The macro was removed.
+    Removed,
 }
 
 #[derive(Debug)]
