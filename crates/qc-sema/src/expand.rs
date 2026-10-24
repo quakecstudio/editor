@@ -46,7 +46,7 @@ pub struct ModuleInput {
     pub command_line: CommandLine,
     /// The name the compiler is given each file of [`Self::prelude`] and [`Self::compiled`] by,
     /// the graph's under FTEQCC (PRJ-6.7), which `__FILE__` writes and an `#include` is joined
-    /// to (FTEF-14.74, FTEF-14.73). A file with none is named by its path.
+    /// to (FTEF-14.74, FTEF-14.75). A file with none is named by its path.
     pub names: BTreeMap<FileId, String>,
     /// The directory the name an `#include` is joined to is the file of, FTEQCC's working
     /// directory, the graph's when it names its files (PRJ-6.8); empty by default, so a name is
@@ -59,7 +59,7 @@ impl ModuleInput {
     /// `graph.files` (as [`Location::file`] is): the root `progs.src` of the source form is
     /// the prelude, and every file the graph lists but did not reach by `#include` is
     /// compiled, in the graph's order, by the graph's name for it, in the graph's directory
-    /// (FTEF-14.73).
+    /// (FTEF-14.75).
     #[must_use]
     pub fn from_graph(graph: &FileGraph) -> Self {
         let mut input = Self {
@@ -156,6 +156,10 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
     /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
     pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// The rendered offset of each string token that follows a string token it does not make
+    /// one string with: FTEQCC's lexer joins the parts of a string written in one text, not a
+    /// macro's string and the one beside it (FTEF-21.17).
+    pub(crate) seams: Vec<usize>,
 }
 
 /// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
@@ -263,7 +267,7 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
-                // FTEF-14.73: the preprocessor is given the file's name where the input has one.
+                // FTEF-14.75: the preprocessor is given the file's name where the input has one.
                 // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
                 let output = match (input.names.get(id), compiled) {
                     (Some(name), true) => pp.preprocess_file_named(path, name.as_bytes()),
@@ -395,6 +399,9 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
             out.text.push(b' ');
         }
         last_line = line;
+        if last.is_some_and(|last| unjoined_strings(last, token)) {
+            out.seams.push(out.text.len());
+        }
         last = Some(token);
         out.starts.push(out.text.len());
         if let Some(location) = source_location(pp, files, origin) {
@@ -414,6 +421,18 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
     }
     out
+}
+
+/// Whether `last` and `next` are strings that `QCC_PR_LexString` does not read into one: it
+/// joins the parts written in the text it is reading, a macro's text or a file's, so strings of
+/// two expansions, or of an expansion and the source, or of two files, are two tokens.
+fn unjoined_strings(last: &PpToken, next: &PpToken) -> bool {
+    matches!(last.kind, TokenKind::String(_))
+        && matches!(next.kind, TokenKind::String(_))
+        && match (last.expansion, next.expansion) {
+            (None, None) => last.span.file != next.span.file,
+            (from, to) => from != to,
+        }
 }
 
 /// Whether `next` comes right after `last` in the text the compiler reads, both rendered as

@@ -343,3 +343,70 @@ fn other_flags_change_no_token() {
     assert_eq!(tokens(&out), r#"x = 1.5 "a|b" 97 ;"#);
     assert_eq!(codes(&out), [Code::W0113, Code::W0113]);
 }
+
+// spec FTEF-14.73: under `-Fcaseinsens` the macro table is searched in any case, by a use, by
+// `#ifdef`, `#ifndef`, `#if defined()` and `#if NAME`, and a definition in another case replaces
+// the macro; without it the names are exact
+#[test]
+fn macros_are_found_in_any_case_under_caseinsens() {
+    let any = ["-Fcaseinsens"];
+    let found = |define: &str, use_: &str, args: &[&str]| {
+        let out = one_with(&format!("{define}\n{use_}\n"), args);
+        tokens(&out)
+    };
+    assert_eq!(found("#define Foo 5", "foo FOO Foo", &any), "5 5 5");
+    assert_eq!(found("#define Foo 5", "foo FOO Foo", &[]), "foo FOO 5");
+    assert_eq!(found("#define foo(a) a", "FOO(1)", &any), "1");
+    assert_eq!(found("#define foo(a) a", "FOO(1)", &[]), "FOO ( 1 )");
+    let test = |condition: &str, args: &[&str]| {
+        found(
+            "#define Foo 5",
+            &format!("{condition}\nyes\n#else\nno\n#endif"),
+            args,
+        )
+    };
+    for condition in [
+        "#ifdef foo",
+        "#if defined(fOO)",
+        "#if foo == 5",
+        "#if !defined(bar)",
+    ] {
+        assert_eq!(test(condition, &any), "yes", "{condition}");
+    }
+    assert_eq!(test("#ifndef FOO", &any), "no");
+    assert_eq!(test("#ifdef foo", &[]), "no");
+    assert_eq!(found("#define foo 5\n#define FOO 6", "foo", &any), "6");
+    assert_eq!(found("#define foo 5\n#undef foo", "foo", &any), "foo");
+}
+
+// spec FTEF-14.73: `#undef` finds the macro in any case but removes it only when the name is the
+// spelling it was defined with, and says nothing of a macro it found
+#[test]
+fn undef_removes_the_spelling_it_names() {
+    let any = ["-Fcaseinsens"];
+    let out = one_with("#define foo 5\n#undef FOO\nfoo\n", &any);
+    assert_eq!(tokens(&out), "5");
+    assert_eq!(codes(&out), []);
+    let out = one_with("#undef FOO\n", &any);
+    assert_eq!(codes(&out), [Code::W0114]);
+    let out = one_with("#define foo 5\n#undef FOO\n", &[]);
+    assert_eq!(codes(&out), [Code::W0114]);
+}
+
+// spec FTEF-14.73: the macros FTEQCC defines itself are added before the search is switched, so
+// under `-Fcaseinsens` none is found, in any case; a macro whose body names another finds it
+// in any case
+#[test]
+fn the_built_in_macros_are_not_found_in_any_case() {
+    let any = ["-Fcaseinsens"];
+    for name in ["FTEQCC", "fteqcc", "__FTEQCC__", "__fteqcc__"] {
+        let out = one_with(&format!("#ifdef {name}\nyes\n#else\nno\n#endif\n"), &any);
+        assert_eq!(tokens(&out), "no", "{name}");
+    }
+    let out = one_with("#ifdef FTEQCC\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "yes");
+    let out = one_with("#ifdef fteqcc\nyes\n#else\nno\n#endif\n", &[]);
+    assert_eq!(tokens(&out), "no");
+    let out = one_with("#define Foo 5\n#define bar FOO\nbar\n", &any);
+    assert_eq!(tokens(&out), "5");
+}

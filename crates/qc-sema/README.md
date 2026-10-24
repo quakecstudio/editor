@@ -28,7 +28,7 @@ whose expansion it changes and no others. `Db::parse` stays the lossless tree of
 written, the editing view. Each compiled file is given to the preprocessor by the name its
 `ModuleInput` holds, the graph's for an FTEQCC module (`ModuleInput::from_graph`), and the
 names its `#include`s are joined to are opened in the graph's directory, so `__FILE__` and the
-names of included files are FTEQCC's (FTEF-14.73).
+names of included files are FTEQCC's (FTEF-14.75).
 
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.8). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`

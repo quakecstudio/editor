@@ -769,7 +769,7 @@ fn an_included_file_is_named_beside_the_compiled_file() {
     assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
-// spec FTEF-14.73: a file is opened at its path and named by its name, which `__FILE__`
+// spec FTEF-14.75: a file is opened at its path and named by its name, which `__FILE__`
 // writes and an `#include` is joined to, the joined name opened in the working directory; a
 // file given by its path alone is named by it and opened as it is
 #[test]

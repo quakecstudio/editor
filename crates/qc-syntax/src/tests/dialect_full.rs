@@ -781,7 +781,8 @@ fn a_comma_may_end_the_declarators() {
 fn at_under_qccx_and_caret_caret() {
     let qccx = super::whole(&[(qc_preproc::FteFlag::Qccx, true)]);
     let source = b"float x;\nstring s;\nvoid() g = { s = @x; };\n";
-    let flagged = crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[]);
+    let flagged =
+        crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[], &[]);
     assert_eq!(flagged.errors().count(), 0, "{:?}", flagged.diagnostics());
     assert!(
         flagged

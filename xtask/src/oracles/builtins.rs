@@ -42,6 +42,7 @@ use qc_syntax::{Code, Dialect, ast};
 use super::Oracles;
 
 mod declarations;
+mod defs;
 mod directives;
 mod flags;
 mod keywords;
@@ -1208,6 +1209,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(declarations::cases());
     cases.extend(keywords::cases());
     cases.extend(flags::cases());
+    cases.extend(defs::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -1549,7 +1551,7 @@ pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
 
 /// The directory the profile reads an FTEQCC case's files from, where the graph finds them, so
 /// that the database holds each file by its path in it, as the editor's does, and the
-/// preprocessor is given the graph's name for it (FTEF-14.73, PRJ-6.7).
+/// preprocessor is given the graph's name for it (FTEF-14.75, PRJ-6.7).
 const PROFILE_DIR: &str = "/oracle/project";
 
 /// `case` as the compiler reads it, through the preprocessor (`Db::analyze_module`): the

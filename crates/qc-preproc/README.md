@@ -89,7 +89,7 @@ chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.31, FTEF-14.74
 dialects the expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
 A file is named as its caller gives it (`preprocess_file_named`), which `__FILE__` writes and
 an `#include` is joined to, and the joined name is opened in the working directory
-`with_working_dir` gives (FTEF-14.73, PRJ-6.8); `join_paths`, `include_dir_name` and
+`with_working_dir` gives (FTEF-14.75, PRJ-6.8); `join_paths`, `include_dir_name` and
 `pragma_include_dir` are FTEQCC's `QCC_JoinPaths`, the name `QCC_PR_AddIncludePath` keeps and
 the directory `#pragma includedir` adds, which the project graph names its files with (PRJ-6.7).
 `fte_directive_end` gives, for a reader that runs no directive, where an FTEQCC directive's text

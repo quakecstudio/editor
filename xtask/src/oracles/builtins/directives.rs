@@ -850,7 +850,7 @@ const INCLUDE_PROJECTS: &[IncludeProject] = &[
 const NAMED: &str = "void() f = :__FILE__;\n";
 
 /// Projects whose files bind `f` to their names, which the profile reads from the graph's
-/// names in a directory of its own (FTEF-14.73, PRJ-6.7, PRJ-6.8): a listed file in a
+/// names in a directory of its own (FTEF-14.75, PRJ-6.7, PRJ-6.8): a listed file in a
 /// subdirectory, a file it includes beside it and in another directory, one a `#pragma
 /// includedir` finds, a name with `./` in it, and names with `\` in them, which the name is
 /// joined after and which are no separator where the host's is `/`.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The name the preprocessor is given for each file of a project's graph (FTEF-14.73), read
+//! The name the preprocessor is given for each file of a project's graph (FTEF-14.75), read
 //! through `Db::analyze_module` with the database holding each file by its resolved path, as
 //! the editor's does. The cases are the named projects of `cargo xtask oracles builtins`
 //! (`NAMED_PROJECTS` in `xtask/src/oracles/builtins/directives.rs`), whose names the pinned
@@ -107,7 +107,7 @@ fn named(name: &str) -> (Option<String>, Vec<qc_diag::Code>) {
     (Some(name.to_owned()), Vec::new())
 }
 
-// spec FTEF-14.73: a listed file is named by its `progs.src` entry, not by the path the
+// spec FTEF-14.75: a listed file is named by its `progs.src` entry, not by the path the
 // database holds it by
 #[test]
 fn a_listed_file_is_named_by_its_entry() {
@@ -125,7 +125,7 @@ fn a_listed_file_is_named_by_its_entry() {
     );
 }
 
-// spec FTEF-14.73: an included file is named by its `#include` joined to the compiled file's
+// spec FTEF-14.75: an included file is named by its `#include` joined to the compiled file's
 // name, beside it and in a directory a `#pragma includedir` adds
 #[test]
 fn an_included_file_is_named_from_the_compiled_file() {
@@ -160,7 +160,7 @@ fn an_included_file_is_named_from_the_compiled_file() {
     assert_eq!(bound_name(&dotted, Given::Graph), named("src/./b.qh"));
 }
 
-// spec FTEF-14.73: a file found in an include directory is named by the directory as given
+// spec FTEF-14.75: a file found in an include directory is named by the directory as given
 // with a `/` after it, which the preprocessor opens in the graph's directory
 #[test]
 fn a_file_in_an_include_directory_is_named_by_the_directory() {
@@ -174,7 +174,7 @@ fn a_file_in_an_include_directory_is_named_by_the_directory() {
     }
 }
 
-// spec FTEF-14.73: a `\` in a listed name is kept, and an included file's name is joined after
+// spec FTEF-14.75: a `\` in a listed name is kept, and an included file's name is joined after
 // it, whichever separator the host has
 #[test]
 fn a_backslash_name_is_kept_and_joined_after() {

@@ -79,7 +79,7 @@ pub(crate) struct Input<'a> {
     pub(crate) diagnostics: Vec<Diagnostic>,
     /// Every lexical error and warning of the text, a preprocessor's text's too, which
     /// [`Self::diagnostics`] leaves out: the parser reports those of the tokens it lexed with
-    /// other flags than the preprocessor did (FTEF-21.2).
+    /// other flags than the preprocessor did (FTEF-21.17).
     pub(crate) lexical: Vec<Diagnostic>,
     /// The compiler flags the tokens were lexed with, each from the byte it holds from
     /// (FTEF-12.12).
