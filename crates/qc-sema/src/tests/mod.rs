@@ -31,6 +31,7 @@ mod keywords;
 mod members;
 mod names;
 mod navigation;
+mod passes;
 mod properties;
 mod recovery;
 mod resolution;

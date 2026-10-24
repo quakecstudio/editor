@@ -36,7 +36,7 @@ use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
 use qc_syntax::{Dialect, Keyword, Keywords};
 
 use crate::cast::{Cast, ConstType, Kind, Source, Supply};
-use crate::expand::{OriginMap, settings_at};
+use crate::expand::{OriginMap, ProtoPlan, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
     MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse,
@@ -96,7 +96,7 @@ pub struct ResolveOptions {
     /// FTEQCC's `-Fautoproto` (FTE-22.3): every top-level declaration of the module is
     /// visible to every function body. Only meaningful with an FTEQCC dialect.
     pub autoproto: bool,
-    /// FTEQCC's `-Fcaseinsens` (FTEF-19.29): a name no definition has is looked up again in
+    /// FTEQCC's `-Fcaseinsens` (FTEF-19.33): a name no definition has is looked up again in
     /// any case. Only meaningful with an FTEQCC dialect.
     pub case_insensitive: bool,
     /// Whether `qcfuncs` was off when FTEQCC named its core types, by the command line's
@@ -133,6 +133,25 @@ pub(crate) struct Sources<'a> {
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
+    /// What the first pass prototypes (FTEF-12.18): with a second pass the first pass's
+    /// [`Self::first`], else the only pass. `None` when it prototypes nothing.
+    pub(crate) plan: Option<&'a ProtoPlan>,
+    /// With a second pass, the first pass's files, as it read them. Without it the first pass
+    /// is the files themselves, all prototyped.
+    pub(crate) first: Option<FirstPass<'a>>,
+}
+
+/// The first pass of a two-pass compile, read with the flags, warning settings and keywords
+/// the first pass had (FTEF-12.11, FTEF-14.72).
+pub(crate) struct FirstPass<'a> {
+    /// The lowered declarations of each compiled file.
+    pub(crate) files: &'a [FileDecls],
+    /// Where each span of each file's rendered text came from.
+    pub(crate) maps: &'a [&'a OriginMap],
+    /// The warning settings of each file.
+    pub(crate) warnings: &'a [&'a [(usize, WarningSettings)]],
+    /// The keywords of each file.
+    pub(crate) keywords: &'a [&'a [(usize, Keywords)]],
 }
 
 /// A function body waiting to be resolved: its file, its function, its class and the
@@ -145,14 +164,59 @@ type Pending<'a> = (
     Option<&'a RawDecl>,
 );
 
+/// Whether FTEQCC's `autoprototype` is on where a pass reads a declaration (FTEF-12.18).
+#[derive(Clone, Copy)]
+enum Prototyping<'a> {
+    /// Never: the second pass, or a module without autoprototyping.
+    Off,
+    /// Always: the first pass of a module that autoprototypes from its first token.
+    On,
+    /// As the pragmas of the first pass set it.
+    Plan(&'a ProtoPlan),
+}
+
+impl Prototyping<'_> {
+    /// Whether it is on at the rendered offset `at` of compiled file `file`.
+    fn at(self, file: usize, at: usize) -> bool {
+        match self {
+            Self::Off => false,
+            Self::On => true,
+            Self::Plan(plan) => plan.proto_at(file, at),
+        }
+    }
+}
+
 /// [`resolve_module`] for files the parser read after preprocessing, located through
 /// `sources`, so every location in the index is a span of a source file.
+///
+/// With autoprototyping FTEQCC reads the module twice (FTE-22.3, FTEF-12.18): the first pass,
+/// where `autoprototype` is on, only declares what it reads, and the second compiles it all
+/// with every name declared. A `#pragma autoproto` turns the flag on part way through the first
+/// pass, so what it reads before is compiled in full, and again in the second pass.
 pub(crate) fn resolve_mapped(
     files: &[FileDecls],
     sources: &Sources<'_>,
     options: ResolveOptions,
 ) -> ModuleIndex {
     let fteqcc = options.dialect.has_fteqcc_extensions();
+    let two = fteqcc && options.autoproto;
+    let plan = match sources.plan {
+        Some(plan) if fteqcc => Prototyping::Plan(plan),
+        Some(_) | None => Prototyping::Off,
+    };
+    // The first pass of two is the files themselves, all prototyped, unless the preprocessor
+    // kept it.
+    let first_files = sources.first.as_ref().map_or(files, |first| first.files);
+    let first_plan = if two && sources.first.is_none() {
+        Prototyping::On
+    } else {
+        plan
+    };
+    let prototyped = if two || matches!(plan, Prototyping::Plan(_)) {
+        prototyped(first_files, first_plan)
+    } else {
+        Vec::new()
+    };
     let mut r = Resolver {
         index: ModuleIndex::default(),
         maps: sources.maps,
@@ -162,7 +226,7 @@ pub(crate) fn resolve_mapped(
         keywords: Keywords::default(),
         extensions: &sources.extensions,
         fteqcc,
-        autoproto: fteqcc && options.autoproto,
+        autoproto: false,
         case_insensitive: fteqcc && options.case_insensitive,
         qcfuncs_off: fteqcc && options.qcfuncs_off,
         target: options.target.filter(|_| fteqcc),
@@ -189,50 +253,69 @@ pub(crate) fn resolve_mapped(
         enum_next: EnumCursor::Start,
         type_names: HashSet::new(),
     };
-    // FTE-22.3: with autoprototyping FTEQCC's first pass reads only the definitions, so the
-    // second, which compiles the bodies, finds every top-level name already declared.
-    let defer = r.autoproto;
-    let mut bodies: Vec<Pending<'_>> = Vec::new();
-    for (index, file) in files.iter().enumerate() {
-        let file_id = FileId(index);
-        r.unit = file_id;
-        for d in &file.diagnostics {
-            r.settle(d.span.start);
-            let location = r.at(file_id, d.span);
-            r.report(d.code, location, d.message.clone());
+    if two {
+        // FTE-22.3: the first pass reads only the definitions, so the second, which compiles
+        // the bodies, finds every top-level name already declared.
+        match &sources.first {
+            Some(first) => {
+                r.maps = first.maps;
+                r.warnings = first.warnings;
+                r.keyword_marks = first.keywords;
+                r.pass(first.files, &prototyped, false);
+                r.maps = sources.maps;
+                r.warnings = sources.warnings;
+                r.keyword_marks = sources.keywords;
+            }
+            None => r.pass(files, &prototyped, false),
         }
-        let mut tags = file.struct_tags.iter().peekable();
-        for decl in &file.decls {
-            // FTEF-19.20: a struct's tag is a type from where it is written.
-            while let Some((tag, _)) = tags.next_if(|(_, at)| *at < decl.span.end) {
-                r.type_names.insert(tag.clone());
-            }
-            r.settle(decl.span.start);
-            let pending = r.declare_top_level(file_id, decl);
-            // FTEF-12.6: `#pragma noref` holds from where it stands to the next one, across
-            // files, as the definition's flags hold it.
-            if decl.is_noref()
-                && let Some(def) = r.lookup_global(&decl.name)
-            {
-                r.unused.insert(def);
-            }
-            if decl.enum_item.is_none() {
-                r.resolve_uses(file_id, None, &decl.uses);
-            }
-            if defer {
-                bodies.extend(pending);
-            } else {
-                for pending in pending {
-                    r.resolve_pending(pending);
-                }
-            }
-        }
-    }
-    for pending in bodies {
-        r.resolve_pending(pending);
+        let first_pass = (r.index.diagnostics.len(), r.index.refs.len());
+        r.pass(files, &[], true);
+        r.drop_repeats(first_pass.0);
+        r.drop_repeated_refs(first_pass.1);
+    } else {
+        r.pass(files, &prototyped, true);
     }
     r.finish()
 }
+
+/// Each declaration of `files` as FTEQCC reads it with `autoprototype` as `proto` says: only the
+/// ones it is on for, prototyped (FTEF-12.18), the others `None`.
+fn prototyped(files: &[FileDecls], proto: Prototyping<'_>) -> Vec<Vec<Option<RawDecl>>> {
+    files
+        .iter()
+        .enumerate()
+        .map(|(index, file)| {
+            file.decls
+                .iter()
+                .map(|decl| proto.at(index, decl.span.start).then(|| decl.prototyped()))
+                .collect()
+        })
+        .collect()
+}
+
+/// The names `QCC_main` registers with `QCC_PR_NewType` that are in the table `QCC_TypeForName`
+/// searches and are no `QCC_PR_ParseType` C word (FTEF-19.20, FTEF-19.33): found in any case under
+/// `-Fcaseinsens`, as `Hash_GetInsensitive` finds them. `string`, `vector` and `entity` are there
+/// only while `qcfuncs` is on when they are named (FTEF-19.28).
+const TABLE_TYPES: [&str; 17] = [
+    "void",
+    "float",
+    "__double",
+    "__int32",
+    "__uint32",
+    "__int64",
+    "__uint64",
+    "__variant",
+    "__int8",
+    "__uint8",
+    "__int16",
+    "__uint16",
+    "__bfloat",
+    "__bint",
+    "variant",
+    "__int",
+    "__uint",
+];
 
 /// What the resolver knows of an FTEQCC class (FTEF-9).
 #[derive(Debug)]
@@ -298,7 +381,7 @@ struct Resolver<'a> {
     fteqcc: bool,
     /// Whether FTEQCC autoprototypes the module (FTE-22.3).
     autoproto: bool,
-    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.29).
+    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.33).
     case_insensitive: bool,
     /// Whether FTEQCC named its core types with `qcfuncs` off (FTEF-19.28).
     qcfuncs_off: bool,
@@ -532,6 +615,48 @@ impl<'a> Resolver<'a> {
         id
     }
 
+    /// What `table` holds for `name`: the entry written so, else under `-Fcaseinsens` the one
+    /// whose name differs only in case, as `Hash_GetInsensitive` finds it (FTEF-19.33).
+    fn named<'t, V>(&self, table: &'t HashMap<String, V>, name: &str) -> Option<&'t V> {
+        table.get(name).or_else(|| {
+            if !self.case_insensitive {
+                return None;
+            }
+            table
+                .iter()
+                .filter(|(key, _)| key.eq_ignore_ascii_case(name))
+                .max_by(|a, b| a.0.cmp(b.0))
+                .map(|(_, value)| value)
+        })
+    }
+
+    /// Whether `table` has an entry for `name` ([`Self::named`]).
+    fn has_name_key<V>(&self, table: &HashMap<String, V>, name: &str) -> bool {
+        self.named(table, name).is_some()
+    }
+
+    /// The type name the program defined that `name` is, in any case under `-Fcaseinsens`
+    /// (FTEF-19.33): the one written so, else the greatest of those that differ in case.
+    fn type_name_spelled(&self, name: &str) -> Option<&str> {
+        if let Some(exact) = self.type_names.get(name) {
+            return Some(exact.as_str());
+        }
+        if !self.case_insensitive {
+            return None;
+        }
+        self.type_names
+            .iter()
+            .filter(|t| t.eq_ignore_ascii_case(name))
+            .max()
+            .map(String::as_str)
+    }
+
+    /// Whether `set` holds `name`, in any case under `-Fcaseinsens` (FTEF-19.33).
+    fn has_name(&self, set: &HashSet<String>, name: &str) -> bool {
+        set.contains(name)
+            || (self.case_insensitive && set.iter().any(|t| t.eq_ignore_ascii_case(name)))
+    }
+
     /// A type with the typedef names it holds resolved to the types they name (FTEF-19.9),
     /// as `QCC_TypeForName` gives a typedef's real type.
     fn resolved(&self, ty: &Type) -> Type {
@@ -540,7 +665,7 @@ impl<'a> Resolver<'a> {
             let Type::Named(name) = &ty else {
                 return ty;
             };
-            match self.typedefs.get(name.as_ref()) {
+            match self.named(&self.typedefs, name.as_ref()) {
                 Some(aliased) => ty = aliased.clone(),
                 None => return ty,
             }
@@ -573,7 +698,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
-    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.12).
+    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.13).
     fn same_type(&self, old: &Type, ty: &Type) -> bool {
         if self.fteqcc {
             self.resolved(old).fteqcc_same(&self.resolved(ty))
@@ -1000,7 +1125,8 @@ impl<'a> Resolver<'a> {
     /// file level and not `var`, initialised, a function or a field (`GDF_CONST`). An
     /// `autocvar_` never is (FTEF-19.16).
     fn constant_at_file_level(decl: &RawDecl) -> bool {
-        !decl.name.starts_with("autocvar_") && Self::constness(decl, decl.initialized)
+        !decl.name.starts_with("autocvar_")
+            && Self::constness(decl, decl.initialized || decl.skipped_init)
     }
 
     /// FTEF-19.3: the constness `QCC_PR_ParseDefs` gives a file-level declaration, initialised
@@ -1260,7 +1386,7 @@ impl<'a> Resolver<'a> {
         if !decl.name.starts_with("autocvar_") {
             return;
         }
-        let what = if Self::constness(decl, decl.initialized) {
+        let what = if Self::constness(decl, decl.initialized || decl.skipped_init) {
             "constant"
         } else if decl.is_static() {
             "static"
@@ -1287,6 +1413,10 @@ impl<'a> Resolver<'a> {
         existing: Option<DefId>,
         location: Location,
     ) -> bool {
+        // FTEF-12.19: autoprototyping skips the initialiser before any of this is read.
+        if decl.skipped_init {
+            return false;
+        }
         if !decl.initialized {
             if decl.has(&Qualifier::Accumulate)
                 && let Some(existing) = existing
@@ -1608,7 +1738,7 @@ impl<'a> Resolver<'a> {
         // plain name, as a named enum's values are (FTEF-19.10).
         let found = lookup(source_name).or_else(|| {
             let (prefix, bare) = source_name.split_once("::")?;
-            (!self.class_names.contains_key(prefix))
+            (!self.has_name_key(&self.class_names, prefix))
                 .then(|| lookup(bare))
                 .flatten()
         });
@@ -1639,7 +1769,7 @@ impl<'a> Resolver<'a> {
         // FTEF-19.10: a strict enum's value casts to no other type, but under `lax`
         // (FTEF-22.1).
         if let Type::Named(strict) = &source_ty
-            && let Some(base) = self.strict_enums.get(strict.as_ref())
+            && let Some(base) = self.named(&self.strict_enums, strict.as_ref())
             && source_ty != *ty
         {
             let (code, verb) = if flags.has(FteFlag::Laxcasts) {
@@ -1860,8 +1990,12 @@ impl<'a> Resolver<'a> {
                 let Some(ty) = &decl.typedef else {
                     return;
                 };
+                // FTEF-19.20: the type a typedef names is read as any declaration's type is.
+                if self.check_type_names(ty, &[], decl.span.start, location) {
+                    return;
+                }
                 let ty = self.resolved(ty);
-                match self.typedefs.get(&decl.name) {
+                match self.named(&self.typedefs, &decl.name) {
                     Some(old) if !old.fteqcc_same(&ty) => {
                         let message = format!(
                             "Cannot redeclare typedef {} from {} to {}",
@@ -1971,11 +2105,22 @@ impl<'a> Resolver<'a> {
                 let single = v as f32;
                 LiteralValue::Float(single.to_bits())
             });
-        // FTEF-17.10: a new definition each time, never a redeclaration; a name defined
-        // before keeps its definition for lookups.
-        if self.lookup_global(&decl.name).is_some() {
+        // The same declaration read by the other pass is one definition for navigation.
+        if self
+            .globals
+            .get(&decl.name)
+            .into_iter()
+            .flatten()
+            .any(|id| {
+                self.index
+                    .def(*id)
+                    .is_some_and(|d| d.location == location && d.ty == decl.ty)
+            })
+        {
             return;
         }
+        // FTEF-17.10: a new definition each time, never a redeclaration, which the name's
+        // lookups find before the older ones (`Hash_Add`, FTEF-19.33).
         if let Type::Named(strict) = &decl.ty
             && decl.ty != base
         {
@@ -1991,6 +2136,11 @@ impl<'a> Resolver<'a> {
             member_of: None,
             generated: false,
         });
+        if let Some(newer) = self.globals.get_mut(&decl.name)
+            && let Some(last) = newer.pop()
+        {
+            newer.insert(0, last);
+        }
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = true;
         }
@@ -2116,6 +2266,7 @@ impl<'a> Resolver<'a> {
             .def(def)
             .map(|d| d.name.clone())
             .unwrap_or_default();
+        self.check_parent(def, &name, class);
         self.class_names.entry(name.clone()).or_insert(def);
         self.declare_spawnfunc(def, &name);
         let info = self.classes.entry(def).or_insert_with(|| ClassInfo {
@@ -2168,6 +2319,62 @@ impl<'a> Resolver<'a> {
         pending
     }
 
+    /// FTEF-9.7: the parent of a class is a type `QCC_TypeForName` finds, a class or an entity,
+    /// and the same one each time the class is given its members.
+    fn check_parent(&mut self, def: DefId, name: &str, class: &RawClass) {
+        let Some(parent) = &class.parent else {
+            return;
+        };
+        let Some(location) = self.index.def(def).map(|d| d.location) else {
+            return;
+        };
+        let found = self.named(&self.class_names, parent).copied();
+        let entity = parent == "__entity" || (parent == "entity" && !self.qcfuncs_off);
+        if found.is_none() && !entity {
+            let parent_type = Type::Named(parent.as_str().into());
+            if self.unknown_type_name(&parent_type, &[], 0).is_some()
+                || (name == parent && !self.class_names.contains_key(name))
+            {
+                self.report(
+                    Code::E0240,
+                    location,
+                    format!("Parent class {parent} was not yet defined"),
+                );
+                return;
+            }
+            let kind = self.resolved(&parent_type).fteqcc_kind();
+            if !matches!(kind, Kind::Entity | Kind::Opaque)
+                || self.has_name(&self.structs, parent)
+                || self.has_name(&self.enum_types, parent)
+            {
+                self.report(
+                    Code::E0241,
+                    location,
+                    format!("Parent type {parent} is not a class/entity"),
+                );
+                return;
+            }
+        }
+        // The class is the one its name finds, in any case under `-Fcaseinsens`.
+        let class_def = self.named(&self.class_names, name).copied().unwrap_or(def);
+        let redeclared = self
+            .classes
+            .get(&class_def)
+            .is_some_and(|info| !info.members.is_empty());
+        let before = self
+            .classes
+            .get(&class_def)
+            .and_then(|info| info.parent.as_ref())
+            .and_then(|p| self.named(&self.class_names, p).copied());
+        if redeclared && before != found {
+            self.report(
+                Code::E0242,
+                location,
+                format!("Parent class changed on redeclaration of {name}"),
+            );
+        }
+    }
+
     /// FTEF-9.5: every class defines `spawnfunc_Name`, so maps can spawn it; FTEQCC writes its
     /// body when the program writes none, so it is never undefined.
     fn declare_spawnfunc(&mut self, class: DefId, name: &str) {
@@ -2210,9 +2417,9 @@ impl<'a> Resolver<'a> {
         decl: &'a RawDecl,
         location: Location,
     ) -> Vec<Pending<'a>> {
-        let Some(class) = self.class_named(scope) else {
+        let Some(class) = self.named(&self.class_names, scope).copied() else {
             let name = format!("{scope}::{}", decl.name);
-            if self.structs.contains(scope) {
+            if self.has_name(&self.structs, scope) {
                 if self.lookup_global(&name).is_none() {
                     self.report(
                         Code::E0226,
@@ -2235,6 +2442,18 @@ impl<'a> Resolver<'a> {
         };
         let member = match self.member_in(class, &decl.name) {
             Some(existing) => {
+                // FTEF-19.4: a body for a member already initialised, as for any definition.
+                if decl.body.is_some()
+                    && !decl.redefinable()
+                    && !self.redefinable.contains(&existing)
+                    && self.index.def(existing).is_some_and(|d| d.initialized)
+                {
+                    self.report(
+                        Code::E0216,
+                        location,
+                        "redeclaration of function body".to_owned(),
+                    );
+                }
                 if decl.initialized
                     && let Some(d) = self.index.defs.get_mut(existing.0)
                 {
@@ -2285,10 +2504,13 @@ impl<'a> Resolver<'a> {
         let mut current = Some(class);
         for _ in 0..MAX_CLASS_DEPTH {
             let info = self.classes.get(&current?)?;
-            if let Some(id) = info.members.get(name) {
+            if let Some(id) = self.named(&info.members, name) {
                 return Some(*id);
             }
-            current = info.parent.as_ref().and_then(|p| self.class_named(p));
+            current = info
+                .parent
+                .as_ref()
+                .and_then(|p| self.named(&self.class_names, p).copied());
         }
         None
     }
@@ -2299,25 +2521,12 @@ impl<'a> Resolver<'a> {
             .get(&class)?
             .parent
             .as_ref()
-            .and_then(|p| self.class_named(p))
+            .and_then(|p| self.named(&self.class_names, p).copied())
     }
 
     /// The class a type names, if it names one (FTEF-17.3).
     fn class_of(&self, ty: &Type) -> Option<DefId> {
-        self.class_named(ty.type_name()?)
-    }
-
-    /// The class named `name`: the one with that name, under `-Fcaseinsens` the newest whose
-    /// name is it in any case, as `QCC_TypeForName` searches its table (FTEF-19.29).
-    fn class_named(&self, name: &str) -> Option<DefId> {
-        if !self.case_insensitive {
-            return self.class_names.get(name).copied();
-        }
-        self.class_names
-            .iter()
-            .filter(|(class, _)| class.eq_ignore_ascii_case(name))
-            .map(|(_, def)| *def)
-            .max_by_key(|def| def.0)
+        self.named(&self.class_names, ty.type_name()?).copied()
     }
 
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -2341,8 +2550,93 @@ impl<'a> Resolver<'a> {
         self.index.refs.push(Reference { location, def });
     }
 
+    /// One FTEQCC pass over `files`, whose declarations `prototyped` replaces where it holds
+    /// one (FTEF-12.18). The last pass is the one the module is compiled by: its bodies stay in
+    /// the index and its lowering diagnostics are reported. An earlier pass leaves in the index
+    /// only the declarations (FTEF-12.19), and the diagnostics it found, which the last pass
+    /// finds again and [`Self::drop_repeats`] removes.
+    fn pass(&mut self, files: &'a [FileDecls], prototyped: &'a [Vec<Option<RawDecl>>], last: bool) {
+        self.enum_next = EnumCursor::Start;
+        for (index, file) in files.iter().enumerate() {
+            let file_id = FileId(index);
+            self.unit = file_id;
+            if last {
+                for d in &file.diagnostics {
+                    self.settle(d.span.start);
+                    let location = self.at(file_id, d.span);
+                    self.report(d.code, location, d.message.clone());
+                }
+            }
+            let protos = prototyped.get(index);
+            let mut tags = file.struct_tags.iter().peekable();
+            for (at, written) in file.decls.iter().enumerate() {
+                let proto = protos.and_then(|p| p.get(at)).and_then(Option::as_ref);
+                let decl = proto.unwrap_or(written);
+                self.autoproto = proto.is_some();
+                // FTEF-19.20: a struct's tag is a type from where it is written.
+                while let Some((tag, _)) = tags.next_if(|(_, from)| *from < decl.span.end) {
+                    self.type_names.insert(tag.clone());
+                }
+                self.settle(decl.span.start);
+                let pending = self.declare_top_level(file_id, decl);
+                // FTEF-12.6: `#pragma noref` holds from where it stands to the next one,
+                // across files, as the definition's flags hold it.
+                if decl.is_noref()
+                    && let Some(def) = self.lookup_global(&decl.name)
+                {
+                    self.unused.insert(def);
+                }
+                if decl.enum_item.is_none() {
+                    self.resolve_uses(file_id, None, &decl.uses);
+                }
+                for pending in pending {
+                    if last {
+                        self.resolve_pending(pending);
+                    } else {
+                        self.resolve_discarded(pending);
+                    }
+                }
+            }
+        }
+        self.autoproto = false;
+    }
+
+    /// Resolves a body for its diagnostics alone: what it adds to the index, its locals and
+    /// references, is taken out again (FTEF-12.19).
+    fn resolve_discarded(&mut self, pending: Pending<'a>) {
+        let (defs, refs) = (self.index.defs.len(), self.index.refs.len());
+        self.resolve_pending(pending);
+        self.index.defs.truncate(defs);
+        self.facts.truncate(defs);
+        self.index.refs.truncate(refs);
+        // A body may define a global (an `autocvar_` local, FTEF-19.16), which is cut off too.
+        for ids in self.globals.values_mut() {
+            ids.retain(|id| id.0 < defs);
+        }
+    }
+
+    /// Removes the references after the first `earlier` that are among them, which the last
+    /// pass made again.
+    fn drop_repeated_refs(&mut self, earlier: usize) {
+        let later = self.index.refs.split_off(earlier);
+        let found = self.index.refs.clone();
+        self.index
+            .refs
+            .extend(later.into_iter().filter(|r| !found.contains(r)));
+    }
+
+    /// Removes the diagnostics after the first `earlier` that are among them, which the last
+    /// pass found again.
+    fn drop_repeats(&mut self, earlier: usize) {
+        let later = self.index.diagnostics.split_off(earlier);
+        let found = self.index.diagnostics.clone();
+        self.index
+            .diagnostics
+            .extend(later.into_iter().filter(|d| !found.contains(d)));
+    }
+
     fn resolve_pending(&mut self, (file, def, class, body, decl): Pending<'a>) {
-        // A body autoprototyping defers is still read in its own unit (FTEF-19.12).
+        // A body is read in its own unit (FTEF-19.12).
         self.unit = file;
         self.resolve_body(file, def, class, body, decl);
     }
@@ -2580,7 +2874,7 @@ impl<'a> Resolver<'a> {
 
     /// Whether `name` is a name FTEQCC registers, a type declared before, or one of a body's
     /// `typedefs` before `at` (FTEF-19.20); under `-Fcaseinsens` in any case, `QCC_TypeForName`'s
-    /// table searched so (FTEF-19.29).
+    /// table searched so (FTEF-19.33).
     fn is_type_name(&self, name: &str, typedefs: &[(String, usize)], at: usize) -> bool {
         let exact = REGISTERED_TYPES.contains(&name)
             || self.type_names.contains(name)
@@ -2589,7 +2883,12 @@ impl<'a> Resolver<'a> {
             || (self.case_insensitive
                 && (REGISTERED_TYPES
                     .iter()
+                    .chain(&TABLE_TYPES)
                     .any(|t| t.eq_ignore_ascii_case(name))
+                    || (!self.qcfuncs_off
+                        && ["string", "vector", "entity"]
+                            .iter()
+                            .any(|t| t.eq_ignore_ascii_case(name)))
                     || self.type_names.iter().any(|t| t.eq_ignore_ascii_case(name))
                     || typedefs
                         .iter()
@@ -2788,8 +3087,17 @@ impl<'a> Resolver<'a> {
         let class = if prefix == "super" {
             scope.and_then(|s| s.class).and_then(|c| self.parent_of(c))
         } else {
-            self.class_named(prefix)
+            self.named(&self.class_names, prefix).copied()
         };
+        // FTEF-19.33: the scope of `Scope::name` is read as a type name.
+        if prefix != "super"
+            && class.is_none()
+            && self
+                .unknown_type_name(&Type::Named(prefix.into()), &[], 0)
+                .is_some()
+        {
+            return Found::Error(Code::E0203, format!("\"{prefix}\" is not a type"));
+        }
         if let Some(class) = class
             && let Some(def) = self.member_in(class, name)
         {
@@ -2797,7 +3105,12 @@ impl<'a> Resolver<'a> {
         }
         // A definition named `Scope::name`, as a strict enum's value is (FTEF-19.10), comes
         // before the plain name.
-        if let Some(def) = self.lookup_global(&format!("{prefix}::{name}")) {
+        // FTEF-19.33: the type is found in any case, and the value it names is the one written
+        // (`strcmp (acc->fieldname, name)`).
+        let spelled = self
+            .type_name_spelled(prefix)
+            .map_or_else(|| prefix.to_owned(), str::to_owned);
+        if let Some(def) = self.lookup_global(&format!("{spelled}::{name}")) {
             return Found::Def(def);
         }
         if let Some(def) = self.lookup_global(name) {
@@ -2832,7 +3145,7 @@ impl<'a> Resolver<'a> {
         if let Some(field) = field {
             return Found::Def(field);
         }
-        if let Some(member) = self.any_member.get(name) {
+        if let Some(member) = self.named(&self.any_member, name) {
             return Found::Def(*member);
         }
         if def.is_some() || self.is_member_name(name) {
@@ -2875,7 +3188,7 @@ impl<'a> Resolver<'a> {
     /// (FTE-9.1), an array's `length` (FTE-13.3), or a field of a struct or accessor the
     /// module defines (FTE-14.2, FTEF-6.5, FTEF-10.2).
     fn is_member_name(&self, name: &str) -> bool {
-        matches!(name, "x" | "y" | "z" | "length") || self.members.contains(name)
+        matches!(name, "x" | "y" | "z" | "length") || self.has_name(&self.members, name)
     }
 
     /// Declares a local of a function body (QC-11.10, FTEF-19.1), with its initialiser's
@@ -3180,7 +3493,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// A global name as a use finds it (QC-12.2): as written, then under `-Fcaseinsens` in any
-    /// case (FTEF-19.29).
+    /// case (FTEF-19.33).
     fn lookup_used_global(&self, name: &str) -> Option<DefId> {
         self.lookup_global(name)
             .or_else(|| self.lookup_any_case(None, name))
@@ -3197,7 +3510,7 @@ impl<'a> Resolver<'a> {
             .or_else(|| self.lookup_any_case(Some(scope), name))
     }
 
-    /// FTEF-19.29: under `-Fcaseinsens`, a name no definition has as written is the last local
+    /// FTEF-19.33: under `-Fcaseinsens`, a name no definition has as written is the last local
     /// of the function, then the last global, whose name is it in any ASCII case, as the hash
     /// table's chain gives the newest first:
     /// `QCC_PR_GetDef`'s second pass (`ins == 1`), which a lookup that allocates nothing makes
@@ -3236,7 +3549,7 @@ impl<'a> Resolver<'a> {
             let member = || {
                 scope
                     .class
-                    .filter(|_| !self.class_names.contains_key(name))
+                    .filter(|_| !self.has_name_key(&self.class_names, name))
                     .and_then(|c| self.member_in(c, name))
             };
             self.lookup_local(scope, name)

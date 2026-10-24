@@ -158,6 +158,15 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.39** `E0239` "extern is not supported with this target format": under an FTEQCC
   profile, an `extern` function when the output target is none of FTE's, at its definition
   (FTEF-22.5).
+- **QCD-3.40** `E0240` "Parent class NAME was not yet defined": under an FTEQCC profile, a
+  `class Name : Parent {` whose parent names no type, at the class's name, FTEQCC's error of the
+  same text (`dialect-fteqcc.md`, FTEF-9.7). Under `-Fcaseinsens` the type is found in any case.
+- **QCD-3.41** `E0241` "Parent type NAME is not a class/entity": under an FTEQCC profile, a
+  `class Name : Parent {` whose parent is a type that is no class or entity, as a struct, an enum
+  or `float` is, at the class's name (`dialect-fteqcc.md`, FTEF-9.7).
+- **QCD-3.42** `E0242` "Parent class changed on redeclaration of NAME": under an FTEQCC profile,
+  a class given its members again with another parent, at the class's name (`dialect-fteqcc.md`,
+  FTEF-9.7).
 
 ## QCD-4 Expression and statement errors
 
@@ -325,9 +334,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.27** `W0107` "$modelname name too long": under an FTEQCC profile, a `$modelname` of
   64 bytes or more, at the command, FTEQCC's warning of the same text (`dialect-fteqcc.md`,
   FTEF-18.29).
-- **QCD-7.28** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
-  profile, a `#pragma autoproto` after the first definition, at the directive, FTEQCC's warning
-  of the same text (`dialect-fteqcc.md`, FTEF-12.10).
+- **QCD-7.28** **Withdrawn** (P2-132, #569): it said a `#pragma autoproto` after the first
+  definition is the warning `W0108`, but FTEQCC takes it wherever it stands and never warns while
+  it parses. Replaced by QCD-7.72.
 - **QCD-7.29** `W0313` "Statement does not do anything": under an FTEQCC profile, a discarded
   expression that calls, assigns and increments nothing, at the expression, FTEQCC's warning of
   the same text (`dialect-fteqcc.md`, FTEF-18.25).
@@ -456,6 +465,10 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.71** `W0230` "Implicit type mismatch. Needed TYPE, got TYPE.": under an FTEQCC profile
   with `lax` on, an enum value or a state frame that nothing converts to the number type wanted,
   at the value (FTEF-22.3).
+- **QCD-7.72** `W0108` "#pragma autoproto must appear before any definitions": under an FTEQCC
+  profile, never reported, since FTEQCC gives it only when `numpr_globals` is not `RESERVED_OFS`,
+  which no definition makes while it parses (FTEF-12.18); the code is the warning class a
+  `#pragma warning` names (FTEF-14.63).
 
 ## QCD-8 Preprocessor errors
 

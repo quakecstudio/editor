@@ -365,6 +365,16 @@ heavily class-based (547 `class` declarations across the three mods).
 - **FTEF-9.6** Codegen (later): the field layout, vtable and `this`-call lowering, and the
   version 7 requirement, are fixed by L-01.
 
+- **FTEF-9.7** `QCC_PR_ParseEntClass` reads a class's parent with `QCC_TypeForName`, so after
+  `:` a name that is no type is the error `E0240` "Parent class NAME was not yet defined"
+  (`QCC_PR_ParseError(ERR_NOTANAME, "Parent class %s was not yet defined", parentname);`), also
+  for the class itself (`class C : C {`), and a type that is no entity (`if (fieldtype->type !=
+  ev_entity)`), a struct, an enum or `float`, is `E0241` "Parent type NAME is not a
+  class/entity"; `entity`, a class and a typedef of one are parents. A class given its members
+  again with a parent other than the first is `E0242` "Parent class changed on redeclaration of
+  NAME" (`if (redeclaration && fieldtype != newt->parentclass)`). Under `-Fcaseinsens` the
+  parent is found in any case (FTEF-19.33), so `class D : c` after `class C` is a class of `C`.
+
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of
@@ -456,19 +466,9 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   pragma '%s'" (as FTE-16.2), not an error.
 - **FTEF-12.9** **Withdrawn** (P2-42, #429): it said a later `#pragma autoproto` reports
   nothing, but FTEQCC warns for it. Replaced by FTEF-12.10.
-- **FTEF-12.10** `#pragma autoproto` before any definition turns on the autoprototyping of
-  FTE-22.3 for the module, as `-Fautoproto` does, and `#pragma autoproto 0` turns it off:
-  `QCC_PR_Precompiler` sets `autoprototype = *msg?!!atoi(msg):true;` only
-  `if (numpr_globals == RESERVED_OFS)`, and otherwise warns "#pragma autoproto must appear
-  before any definitions". It holds for one module: `QCC_main`, run once per `progs.src`,
-  starts with `parseonly = autoprototyped = autoprototype = false;`. A list-form `progs.src`
-  is read through the preprocessor (`QCC_ContinueCompile` calls `QCC_PR_LexWhitespace(false)`
-  before each entry), so a `#pragma autoproto` there, as Copper's `progs.src` has, holds for the
-  whole module. This profile takes a pragma in a compiled file only before the first token of
-  any compiled file. A later one is ignored with the warning `W0108` "#pragma autoproto must
-  appear before any definitions" (`WARN_BADPRAGMA`, on by default) at the directive, once: the
-  check stands inside `if (!autoprototyped)`, so the second autoprototyping pass skips the
-  pragma without a word.
+- **FTEF-12.10** **Withdrawn** (P2-132, #569): it said a `#pragma autoproto` is taken only before
+  any definition and otherwise warns, but `numpr_globals` is `RESERVED_OFS` for the whole parse,
+  so FTEQCC takes it wherever it stands and never warns. Replaced by FTEF-12.18.
 - **FTEF-12.8** **Withdrawn** (P2-116, #544): it said a `#pragma` does not affect the token
   stream, but `#pragma flag` turns on and off flags `QCC_PR_Lex` reads. Replaced by FTEF-12.12.
 - **FTEF-12.11** The build pragmas are read as `QCC_PR_Precompiler` reads them, against FTEQCC's
@@ -561,6 +561,61 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   parser and the semantic model read, `cpriority` among them, FTEF-21's. A pragma emits no
   progs output of its own (as FTE-16.3); its effects on the output (the target format, the CRC,
   the flags) are realised by codegen (L-01).
+
+- **FTEF-12.18** `#pragma autoproto [N]` is taken wherever it stands in the first pass.
+  `QCC_PR_Precompiler` reads it as `if (!autoprototyped) { if (numpr_globals != RESERVED_OFS)
+  QCC_PR_ParseWarning(WARN_BADPRAGMA, "#pragma autoproto must appear before any definitions");
+  else autoprototype = *msg?!!atoi(msg):true; }`, and no definition changes `numpr_globals`: only
+  `QCC_FinaliseDef`, which `QCC_UnmarshalLocals` runs when `QCC_FinishCompile` ends the compile,
+  and `QCC_FinaliseTemps` add to it (`numpr_globals += def->symbolsize;`), `#merge` itself
+  calling it "not normally changed until after compiling". So `void() f = #5;`, `float x;`,
+  `typedef float t;` and a function with a body before the pragma leave it as it was, and the
+  warning is never given while FTEQCC parses (this profile gives none; `W0108` is only the class
+  `#pragma warning` names, FTEF-14.63). `autoprototype` starts false (`parseonly =
+  autoprototyped = autoprototype = false;` in `QCC_main`, once per `progs.src`) or as `-Fautoproto`
+  sets it (FTEF-14.72), and as a list-form `progs.src`'s pragma sets it: that file is read through
+  the preprocessor (`QCC_ContinueCompile` calls `QCC_PR_LexWhitespace(false)` before each
+  entry), so its pragma, as Copper's has, holds for the whole module. Each `#pragma autoproto`
+  of the first pass then sets it from the token after it, across the module's files and
+  `#include`s in compilation order, `autoproto 0` off and any other number or none on. FTEQCC
+  makes the second pass if the flag is on when the first ends (`if (autoprototype) { qccmsrc =
+  originalqccmsrc; autoprototyped = autoprototype; QCC_SetDefaultProperties(); autoprototype =
+  false; ...`), and in the second pass the pragma is skipped without a word (`if
+  (!autoprototyped)`). So `float x; #pragma autoproto` is a two-pass compile, `#pragma autoproto`
+  and then `#pragma autoproto 0` is a one-pass compile, and `-Fautoproto` with a last `#pragma
+  autoproto 0` is a one-pass compile whose functions are all skipped (FTEF-12.19).
+- **FTEF-12.19** The first pass reads each declaration with `autoprototype` as it is at its
+  `=`. While it is on, `QCC_PR_ParseDefs` makes the definition and skips what initialises it (`if
+  (autoprototype || dostrip || ...) { //ignore the code and stuff`): a frame header `[ ... ]`, a
+  body `{ ... }` balanced, a string's `_("...")`, or the tokens to the next `,` or `;`, a
+  builtin's `#` and number among them, and then `QCC_FreeDef`s it. The definition is made as the
+  written `=` decides its constness (`isinitialised = QCC_PR_CheckToken ("=") || ...`, then
+  `GDF_CONST` unless `assumevar`), and is not initialised, so `float x = 5; float y = x;` is read
+  as it is without the pragma, and the value is not checked: a name used in a skipped body or
+  value is not looked up, and the lexical errors of its tokens are still the lexer's. While it is
+  off, the declaration is compiled in full, so an error in it, such as `Unknown value "h"` for a
+  name defined after it, is the first pass's, and a function body in it is compiled. The second
+  pass compiles everything again with every name the first pass made defined: a function with a
+  body from the first pass that is given a body again is "redeclaration of function body" and
+  "incompatible redeclaration" (a builtin, a prototype or a body the first pass skipped is not),
+  and a value is compared with the first pass's as FTE-22.5 says. When no second pass follows, a
+  function whose body was skipped is "function NAME has no body" (`ERR_NOFUNC`), which this
+  profile reports as QC-11.8's "NAME was not defined" (`E0211`). This profile reads the first
+  pass as its own file (its flags, keywords and warning settings, FTEF-12.20), declares what it
+  skips uninitialised, and reports once what both passes report, but for the parse diagnostics of
+  the skipped initialisers.
+- **FTEF-12.20** The second pass starts with what the first pass ended with, but for what
+  `QCC_SetDefaultProperties` sets again: the compiler flags, which `QCC_main` set once
+  (FTEF-12.11), the keywords (FTEF-20.1), the operator priorities (FTEF-21.4), the pragma defaults
+  `noref` and `nosave` (`defaultstatic` is 0, FTEF-21.14) and the definitions the first pass
+  made carry; the macros (FTE-22.3), the warning settings (FTEF-14.63) and the target
+  (FTEF-20.3) are the command line's again. The preprocessor marks the second pass's first token
+  with the flags the first pass ended with, and the second pass is lexed, parsed and its
+  definitions made with them: `#pragma autoproto` and `float x = 5; float y = x;` followed by `#pragma
+  flag enable assumevar` is the redeclaration of x as non-constant (F329) and not "is not
+  constant", `string s = B;` after an enum of `float` names, with `assumeint` on at the end,
+  reads `B` as an `__int32` (F314), and `[[eraseable]] float x;` before a last `#pragma flag
+  enable attributes` is refused by the first pass, where `attributes` is off.
 
 ## FTEF-13 Further tokens
 
@@ -1849,11 +1904,17 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   and the pinned FTEQCC refuses each; `noref void() g;` compiles, and a `noref` function that is
   called is an error. A member function is not checked, and a class's `spawnfunc_Name`
   (FTEF-9.5), whose body FTEQCC writes when the program does not, is never undefined.
-- **FTEF-17.12** Under this profile a redeclaration is a type mismatch only when neither type,
+- **FTEF-17.12** **Withdrawn** (P2-132, #569): it said a pointer is a type the model does not
+  follow, but FTEQCC compares pointers by what they point to, and `float *a; float a;` is a
+  mismatch. Replaced by FTEF-17.13.
+- **FTEF-17.13** Under this profile a redeclaration is a type mismatch only when neither type,
   with each typedef's name read as the type it names (`QCC_TypeForName`: `if (t && t->type ==
   ev_typedef) return t->aux_type;`, FTEF-19.9), involves another type name (a class, struct,
-  union, accessor or enum), a pointer or an unknown type, whose meaning the model does not
-  follow; otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. So
+  union, accessor or enum) or an unknown type, whose meaning the model does not follow;
+  otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. A pointer is
+  compared with a pointer by what each points to and is never the type of a non-pointer, so
+  `float *a; float a;` is the error "Type mismatch on redeclaration of a. float, should
+  be float*" (`E0205`), `float *a; float *a;` none, and `float *a; string *a;` one. So
   `typedef float t; t x; float x;` is no mismatch and `typedef float t; t x; vector x;` is one.
 
 ## FTEF-18 Further statements, terms and frame macros
@@ -2427,18 +2488,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   flag. So under `-Fno-qcfuncs` or `-Kno-qcfuncs` the words `string`, `vector` and `entity` are
   no type, "\"WORD\" is not a type" (`E0203`, FTEF-19.20), unless a typedef names the word
   again, while a `#pragma flag disable qcfuncs`, read after the types are named, keeps them.
-- **FTEF-19.29** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.72), FTEQCC's
-  name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
-  `QCC_PR_GetDef` makes two passes, the first taking only a definition whose name is the one
-  written (`if (ins == 0 && strcmp(def->name, name))`), the second, which only a lookup makes
-  (`insmax = allocate?1:2;`), any whose name it is in any case, the newest first (the table's
-  chain). So a use of `foo` finds `Foo` when nothing is named `foo`, the function's locals
-  before the globals, and of `float Foo = 1; string FOO = "a";` the string, the one defined
-  last (`float x = foo;` is "Cannot cast from string to float"); a type name is found in any
-  case; a definition named as another in another case is a definition of its
-  own. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case
-  (FTEF-20.2).
-
+- **FTEF-19.29** **Withdrawn** (P2-132, #569): it said a type name is found in any case, but
+  the type table also holds a scope's, a typedef's redeclaration, a class's members and an
+  enum's names, each searched or compared a way of its own. Replaced by FTEF-19.33.
 - **FTEF-19.30** **Withdrawn** (P2-122, #558): it said the output target's `extern` check and
   the casts `qccx`, `lax` and `typeexplicit` allow are not modelled, but the semantic model reads
   them (FTEF-22). Replaced by FTEF-19.32.
@@ -2489,6 +2541,38 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   type"), whose checks need the members' layout, the compiler's (QC-21); and FTEQCC's reacc and
   hexenc syntaxes (`flag_acc`, `var name : type`, a field `alias`), which `-Tid` does not
   enable.
+
+- **FTEF-19.33** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.72), FTEQCC's
+  name tables are searched in any case (`pHash_Get = &Hash_GetInsensitive;`), and
+  `QCC_PR_GetDef` makes two passes, the first taking only a definition whose name is the one
+  written (`if (ins == 0 && strcmp(def->name, name))`), the second, which only a lookup makes
+  (`insmax = allocate?1:2;`), any whose name it is in any case, the newest first (the table's
+  chain). So a use of `foo` finds `Foo` when nothing is named `foo`, the function's locals
+  before the globals, and of `float Foo = 1; string FOO = "a";` the string, the one defined
+  last (`float x = foo;` is "Cannot cast from string to float"); a definition named as another
+  in another case is a definition of its own. `QCC_TypeForName` searches the type table the
+  same way, so a type is found in any case wherever a declaration, a typedef, a parameter or a
+  `Scope::` reads one: the names `QCC_main` registers (`void`, `float`, `string`, `vector`,
+  `entity` when `qcfuncs` was on, `__string`, `__int32`, `__variant`, `variant`, `__bfloat` and
+  the rest of its list) and the typedefs, structs, unions, enums and classes the program names,
+  so `Void() h = #6;`, `VECTOR v;`, `typedef Entity e;` and `enum E {A}; float y = e::A;` are
+  read as their lower case, and `Long x;` is "\"Long\" is not a type" as `long` is, the C words
+  of `QCC_PR_ParseType` being the keywords of FTEF-20.2. A typedef of a name differing in case
+  from one made, with another type, is "Cannot redeclare typedef"; the members of a class found
+  by its name or a parent's are found in any case, `C::F` and `c::f` naming `C::f`; and an enum's
+  value after `Scope::` is the exact one (`strcmp (acc->fieldname, name)`), so `E::a` is
+  `Unknown value "E::a"` while `a` finds `A`. `QCC_PR_ParseEnum` makes each value a new definition
+  with `QCC_PR_DummyDef`, never a redeclaration, which the lookups find before an older one of
+  its name, so `enum {A, B}; #pragma flag enable assumeint` and another `enum {A, B}` make `B` an
+  `__int32`. The keywords `QCC_PR_CheckKeyword` and `QCC_PR_CheckName` then also match in any case
+  (FTEF-20.2); a statement that starts with a type word in another case is the parser's
+  (FTEF-20.6). This profile does not search the preprocessor's macro table in any case, nor
+  follow a class named as a parent in another case or report one not defined.
+- **FTEF-19.34** The scope of `Scope::name` is read as `QCC_TypeForName` reads a type: a class,
+  struct, union, enum or typedef the program defined, or a name `QCC_main` registers, else the
+  error `"Scope" is not a type` (`ERR_NOTATYPE`), as for `Nope::thing()`, `Other::g` after
+  `float Other::g = 1;` ("Other is not a class", FTEF-19.15) and `e::A` after `enum E {A, B};`.
+  `super` is a class's parent and no type name.
 
 ## FTEF-20 Keywords
 

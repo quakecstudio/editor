@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Resolution of FTEQCC's further statements and terms (`docs/spec/dialect-fteqcc.md`, FTEF-18),
-//! the builtin redeclaration FTEQCC accepts (FTEF-17.9), and `#pragma autoproto` (FTEF-12.10).
+//! the builtin redeclaration FTEQCC accepts (FTEF-17.9), and `#pragma autoproto` (FTEF-12.18).
 
 use std::path::PathBuf;
 
@@ -180,8 +180,9 @@ fn builtin_after_a_noref_body_is_accepted() {
     assert_eq!(messages(&index), Vec::<String>::new());
 }
 
-// spec FTEF-12.10: `#pragma autoproto` before any definition reads the module with autoprototyping, `#pragma autoproto 0` without; a later one is ignored with a warning
-// spec QCD-7.28: W0108 "#pragma autoproto must appear before any definitions"
+// spec FTEF-12.18: `#pragma autoproto` anywhere in a compiled file reads the module with
+// autoprototyping and never warns, `#pragma autoproto 0` without it, and a list-form
+// `progs.src`'s pragma, which the graph reads, sets the flag before the first file
 #[test]
 fn autoproto_pragma_turns_autoprototyping_on() {
     let later_use = ("b.qc", "void() a = { later(); };\nvoid() later = {};\n");
@@ -193,18 +194,16 @@ fn autoproto_pragma_turns_autoprototyping_on() {
         None,
     );
     assert_eq!(analysis_errors(&pragma), Vec::<Code>::new());
-    assert!(analysis_with(&pragma, Code::W0108).is_empty());
-    // After a definition the pragma is ignored, with a warning at it.
-    let late = analyze(
-        &[("a.qc", "float x;\n#pragma autoproto\n"), later_use],
-        None,
-    );
-    assert_eq!(analysis_errors(&late), [Code::E0301]);
-    assert_eq!(
-        analysis_with(&late, Code::W0108),
-        ["0:9 #pragma autoproto must appear before any definitions"]
-    );
-    assert!(!Code::W0108.is_error());
+    // After a definition the pragma is taken all the same, with no warning, in the file or in
+    // a later one.
+    for files in [
+        [("a.qc", "float x;\n#pragma autoproto\n"), later_use],
+        [("a.qc", "float x;\n"), ("c.qc", "#pragma autoproto\n")],
+    ] {
+        let late = analyze(&files, None);
+        assert_eq!(analysis_errors(&late), Vec::<Code>::new());
+        assert!(analysis_with(&late, Code::W0108).is_empty());
+    }
     let late_file = analyze(
         &[
             ("a.qc", "float x;\n"),
@@ -213,17 +212,9 @@ fn autoproto_pragma_turns_autoprototyping_on() {
         ],
         None,
     );
-    assert_eq!(analysis_errors(&late_file), [Code::E0301]);
-    assert_eq!(analysis_with(&late_file, Code::W0108).len(), 1);
-    // With autoprototyping the late pragma is warned once: the second pass skips it.
-    let twice = analyze(
-        &[("a.qc", "float x;\n#pragma autoproto\n"), later_use],
-        Some(true),
-    );
-    assert_eq!(analysis_errors(&twice), Vec::<Code>::new());
-    assert_eq!(analysis_with(&twice, Code::W0108).len(), 1);
-    // A list-form `progs.src`'s pragma, which the graph reads, holds for the module, and a
-    // compiled file's `#pragma autoproto 0` before any definition turns it off again.
+    assert_eq!(analysis_errors(&late_file), Vec::<Code>::new());
+    // A list-form `progs.src`'s pragma, which the graph reads, holds for the module, and the
+    // last `#pragma autoproto 0` of a compiled file turns it off again.
     let listed = analyze(&[("a.qc", "float x;\n"), later_use], Some(true));
     assert_eq!(analysis_errors(&listed), Vec::<Code>::new());
     let off = analyze(

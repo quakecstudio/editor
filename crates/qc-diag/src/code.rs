@@ -151,6 +151,12 @@ pub enum Code {
     E0238,
     /// "extern is not supported with this target format" (QCD-3.39).
     E0239,
+    /// "Parent class NAME was not yet defined" (QCD-3.40).
+    E0240,
+    /// "Parent type NAME is not a class/entity" (QCD-3.41).
+    E0241,
+    /// "Parent class changed on redeclaration of NAME" (QCD-3.42).
+    E0242,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -213,7 +219,7 @@ pub enum Code {
     W0106,
     /// "$modelname name too long" (QCD-7.27).
     W0107,
-    /// "#pragma autoproto must appear before any definitions" (QCD-7.28).
+    /// "#pragma autoproto must appear before any definitions": FTEQCC never gives it (FTEF-12.18).
     W0108,
     /// "preprocessor directive within preprocessor macro NAME", as a warning (QCD-7.31).
     W0109,
@@ -322,7 +328,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 145] = [
+    pub const ALL: [Self; 148] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -387,6 +393,9 @@ impl Code {
         Self::E0237,
         Self::E0238,
         Self::E0239,
+        Self::E0240,
+        Self::E0241,
+        Self::E0242,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -519,6 +528,9 @@ impl Code {
             Self::E0237 => "E0237",
             Self::E0238 => "E0238",
             Self::E0239 => "E0239",
+            Self::E0240 => "E0240",
+            Self::E0241 => "E0241",
+            Self::E0242 => "E0242",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -728,6 +740,9 @@ impl Code {
             | Self::E0237
             | Self::E0238
             | Self::E0239
+            | Self::E0240
+            | Self::E0241
+            | Self::E0242
             | Self::E0301
             | Self::E0308
             | Self::E0501

@@ -1951,7 +1951,7 @@ impl<L: Loader> Preprocessor<L> {
                 .flags
                 .push((run.out.tokens.len(), FlagEdit::of_default(default, on)));
         } else if pragma.is("autoproto") {
-            // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`
+            // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`
             let on = message.is_empty() || cond::fte_atoi(message) != 0;
             let index = run.out.tokens.len();
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));

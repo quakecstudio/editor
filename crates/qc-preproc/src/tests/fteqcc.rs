@@ -407,7 +407,7 @@ fn pragma_defaults_carry_over() {
     assert!(first.default_on(PragmaDefault::Nosave));
 }
 
-// spec FTEF-12.10: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
+// spec FTEF-12.18: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
 #[test]
 fn autoproto_pragmas_are_recorded() {
     let (_, out) = one_fte("#pragma autoproto\na\n#pragma AutoProto 0\n#pragma autoproto 2\n");

@@ -707,7 +707,7 @@ fn array_sizes_of_redeclarations() {
 
 // spec FTEF-19.9: a typedef names its type again, a typedef's name is its type, a storage
 // qualifier is an error and a typedef with no name a warning
-// spec FTEF-17.12: a redeclaration reads a typedef's name as the type it names
+// spec FTEF-17.13: a redeclaration reads a typedef's name as the type it names
 // spec QCD-3.19: E0219 "Cannot redeclare typedef NAME from TYPE to TYPE"
 // spec QCD-3.24: E0224 "bad combination of modifiers with typedef (defining NAME)"
 // spec QCD-7.40: W0215 "typedef defines no types"

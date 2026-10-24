@@ -460,13 +460,13 @@ impl<'a> Parser<'a> {
     }
 
     /// Whether the token `n` ahead is read with `caseinsens` on, under which FTEQCC searches its
-    /// name tables in any case (`Hash_GetInsensitive`, FTEF-19.29). Only a full dialect has it.
+    /// name tables in any case (`Hash_GetInsensitive`, FTEF-19.33). Only a full dialect has it.
     fn any_case(&self, n: usize) -> bool {
         self.fteqcc() && self.keywords_ahead(n).case_insensitive()
     }
 
     /// The vanilla type word the token `n` ahead names, as `QCC_TypeForName` finds it (QC-10.1,
-    /// FTEF-19.29): `void`, `float`, `vector`, `string` or `entity`, in any case under
+    /// FTEF-19.33): `void`, `float`, `vector`, `string` or `entity`, in any case under
     /// `caseinsens`.
     fn type_word(&self, n: usize) -> Option<K> {
         let tok = self.nth(n).filter(|t| t.kind == K::Name)?;

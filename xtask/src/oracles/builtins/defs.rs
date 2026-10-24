@@ -3,7 +3,7 @@
 //! The `QCC_PR_ParseDefs` family of the builtin differential (P2-130, P2-131): `extern` blocks
 //! (`docs/spec/dialect-fteqcc.md` FTEF-21.17) in the forms they nest, end and compare their
 //! string in, at file level and in a body, and a type name written in another case where
-//! `-Fcaseinsens` finds it (FTEF-19.29, FTEF-20.14). Each program binds `f` first, so it is
+//! `-Fcaseinsens` finds it (FTEF-19.33, FTEF-20.14). Each program binds `f` first, so it is
 //! accepted only when FTEQCC read the whole of it.
 
 use qc_syntax::Dialect;
@@ -328,7 +328,7 @@ fn plain_programs() -> Vec<String> {
 }
 
 /// The names FTEQCC registers as types (`qccmain.c`, `QCC_PR_NewType`), which `QCC_TypeForName`
-/// finds, in any case under `-Fcaseinsens` (FTEF-19.29).
+/// finds, in any case under `-Fcaseinsens` (FTEF-19.33).
 const REGISTERED: &[&str] = &[
     "void",
     "float",
