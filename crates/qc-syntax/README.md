@@ -21,7 +21,8 @@ the text after a UTF-8 byte order mark (`qc_preproc::qcc_load_in_place`, FTEF-14
 `parse` parses the vanilla dialect; `parse_with(source, dialect)` parses a chosen `Dialect`;
 `parse_preprocessed(source, dialect)` parses text a preprocessor wrote, which has no directive
 lines, so a `#` first on its line is a token (QC-9.19), and `parse_preprocessed_flagged` such
-text lexed with the FTEQCC compiler flags the preprocessor marked (FTEF-12.12);
+text lexed with the FTEQCC compiler flags the preprocessor marked (FTEF-12.12), and with the
+seams between strings of different texts, which `QCC_PR_LexString` does not join (FTEF-21.17);
 `parse_module_source` parses a module's source in source form, past a `#!` first line under an
 FTEQCC dialect (PRJ-4.10). FTEQCC's `*^`, `><` and `<=>` parse as binary operators (FTEF-13.24).
 An FTEQCC dialect also parses the FTEQCC constructs the Quake rerelease uses
@@ -78,7 +79,9 @@ its token (`docs/spec/dialect-fteqcc.md` FTEF-20): the marks `parse_preprocessed
 given, from the preprocessor's `#pragma keyword`, `#pragma flag` and command line, and the
 changes a definition named as a keyword makes with `kce` off (`Parse::keywords_at`). A `__`
 spelling is every keyword, a bare word only one whose flag is on, in any case under
-`caseinsens` (`qc_preproc::Keywords::checks`). With their flags on, or written with `__`, the
+`caseinsens` (`qc_preproc::Keywords::checks`). A name FTEQCC registers as a type, or the program defined, starts a
+definition of locals in the case `QCC_TypeForName` finds it in, any case under `caseinsens`
+(FTEF-20.14). With their flags on, or written with `__`, the
 statements `loop`, `until`, `state`, `thinktime`, `using`, `__exit` and `asm` parse, the last
 reporting an instruction that names no opcode as `E0511` (QCD-6.11); and a type followed by `;`
 defines nothing (FTEF-20.12).
@@ -86,7 +89,7 @@ defines nothing (FTEF-20.12).
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 the syntactic ones. The exceptions are `src/flags.rs`, ported from FTEQCC's `QCC_PR_ParseDefs`
-(the flags an `extern` block saves, sets and restores, FTEF-21.2, FTEF-21.3), and
+(the flags an `extern` block saves, sets and restores, FTEF-21.17, FTEF-21.3), and
 `src/c_scalar.rs`, ported from FTEQCC's
 `QCC_PR_ParseType` and `QCC_PR_CheckKeyword` (FTEF-2.7 to FTEF-2.11): which C type words the
 default keywords enable, the loop that reads them and the type they make, with the
@@ -104,7 +107,7 @@ and `qc-sema` names the type with it.
 - **Also cited here, in sections a higher layer completes:** the syntactic parts of QC-10,
   QC-11, QC-13, QC-14 and QC-15 in [`language.md`](../../docs/spec/language.md), the parser's
   divergences QC-27.3, QC-27.7, QC-27.8, QC-27.9, QC-27.10, QC-27.15 and QC-27.16, the FTEQCC
-  profile's nesting (FTEF-18.26), and the parser error
+  profile's nesting (FTEF-18.32), and the parser error
   codes QCD-3.1 to QCD-3.4. The semantics, type rules and code generation of QC-10 to QC-15,
   and the redeclaration and resolution errors of QCD-3, belong to the semantic model and the
   compiler, so those sections are not declared above.
@@ -123,7 +126,7 @@ Two rules, neither of which changes how a correct program parses:
 
 Only the first error of each statement or declaration is reported, as `qcc` reports one and
 abandons the declaration (QC-24.2). Nesting is bounded (QC-27.15), the FTEQCC constructs
-included (FTEF-18.26), and once the limit is passed nothing in the statement or declaration
+included (FTEF-18.32), and once the limit is passed nothing in the statement or declaration
 nests deeper (QC-27.16), so no input exhausts the stack.
 
 ## Invariants

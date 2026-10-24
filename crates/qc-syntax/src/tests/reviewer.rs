@@ -201,7 +201,7 @@ fn reviewer_fteqcc_right_nesting_chains_are_bounded() {
     }
 }
 
-// spec FTEF-18.26: the expressions FTEQCC reads outside a function body, an enum value, a
+// spec FTEF-18.32: the expressions FTEQCC reads outside a function body, an enum value, a
 // parameter's default and a global's initialiser, count prefix operators and parentheses
 // towards the limit like a body's
 #[test]
@@ -315,7 +315,7 @@ fn reviewer_only_a_double_underscore_spells_a_keyword() {
     assert!(!holds_with(&body("loop { break; }"), off, K::LoopStmt));
 }
 
-// spec FTEF-20.6: a body's statement defines locals at a name `QCC_TypeForName` finds, whatever
+// spec FTEF-20.14: a body's statement defines locals at a name `QCC_TypeForName` finds, whatever
 // that word's keyword: with `float`, `vector`, `entity` or `string` off, as `-std=hcc` and
 // `#pragma keyword disable float` turn them off, `float x;` in a body is still a local. The
 // pinned FTEQCC compiles each such program
@@ -336,7 +336,7 @@ fn reviewer_a_type_word_whose_keyword_is_off_still_defines_a_local() {
     }
 }
 
-// spec FTEF-21.2: the block's string is compared once its escapes are read and its prefix
+// spec FTEF-21.17: the block's string is compared once its escapes are read and its prefix
 // dropped: `"\x43"`, `"\{67}"`, `u8"C"` and `R"(C)"` are `"C"` and lex the block with
 // `qcfuncs` off, so `"\9"` in it is "Bad character code", while `"\103"`, which under `qcfuncs`
 // is no `C` (FTEF-12.12), and `"C "` are not. The pinned FTEQCC refuses the first four programs

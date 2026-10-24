@@ -12,6 +12,7 @@
 
 mod ast_view;
 mod declarations;
+mod defs;
 mod dialect;
 mod dialect_ast;
 mod dialect_builtins;
@@ -91,6 +92,7 @@ fn fte_with(source: &str, keywords: crate::Keywords) -> Parse {
         crate::Dialect::Fteqcc,
         &[],
         &[(0, crate::KeywordEdit::whole(keywords))],
+        &[],
     )
 }
 

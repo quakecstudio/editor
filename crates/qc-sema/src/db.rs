@@ -86,6 +86,9 @@ struct ExpandedFile {
     flags: Vec<(usize, qc_preproc::FlagEdit)>,
     /// The pragmas' changes to the keywords, from each rendered offset (FTEF-20.1).
     keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// The rendered offsets of the strings FTEQCC's lexer did not join to the one before them
+    /// (FTEF-21.17).
+    seams: Vec<usize>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -400,7 +403,7 @@ impl Db {
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
             let file = self.expanded_file(id, rendered, false);
             keywords.push(file.parse.keywords().to_vec());
-            // FTEF-21.2: the tokens an `extern` block lexed with other flags have the parser's
+            // FTEF-21.17: the tokens an `extern` block lexed with other flags have the parser's
             // lexical errors and warnings, not the preprocessor's.
             relexed.extend(
                 file.parse
@@ -579,6 +582,7 @@ impl Db {
             && cached.text == text
             && cached.flags == rendered.flags
             && cached.keywords == rendered.keywords
+            && cached.seams == rendered.seams
         {
             return cached.clone();
         }
@@ -588,6 +592,7 @@ impl Db {
             self.dialect,
             &rendered.flags,
             &rendered.keywords,
+            &rendered.seams,
         );
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
@@ -595,6 +600,7 @@ impl Db {
             text: text.to_vec(),
             flags: rendered.flags.clone(),
             keywords: rendered.keywords.clone(),
+            seams: rendered.seams.clone(),
             parse,
             decls,
         };
@@ -604,7 +610,7 @@ impl Db {
 }
 
 /// Whether the lexer gives `code` as it lexes a token's text, which lexing the token again with
-/// other flags gives again or not (QCD-2, FTEF-12.12, FTEF-21.2): the lexical errors and the
+/// other flags gives again or not (QCD-2, FTEF-12.12, FTEF-21.17): the lexical errors and the
 /// lexer's own warnings, not the preprocessor's, such as a stale macro or a macro in a string.
 const fn lexer_code(code: Code) -> bool {
     matches!(

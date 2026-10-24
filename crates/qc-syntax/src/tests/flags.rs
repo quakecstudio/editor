@@ -21,7 +21,7 @@ fn fte(source: &str) -> Parse {
 /// `source`, a preprocessor's text, parsed under the FTEQCC profile with the flag changes
 /// `edits`, each at its byte.
 fn flagged(source: &str, edits: &[(usize, FlagEdit)]) -> Parse {
-    parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, edits, &[])
+    parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, edits, &[], &[])
 }
 
 /// The codes of every diagnostic, warnings included.
@@ -57,7 +57,7 @@ fn returned(parsed: &Parse) -> String {
     sexpr(&ret.value().unwrap())
 }
 
-// spec FTEF-21.2: `extern` and a string is a block of definitions, or one definition after any
+// spec FTEF-21.17: `extern` and a string is a block of definitions, or one definition after any
 // `;`; its tokens are lexed with the flags the string sets, `"C"` in any case, its parts joined
 #[test]
 fn extern_blocks_are_read() {
@@ -122,7 +122,7 @@ fn extern_blocks_are_read() {
     );
 }
 
-// spec FTEF-21.2: a block's flags hold to the token after its last, which FTEQCC lexed before it
+// spec FTEF-21.17: a block's flags hold to the token after its last, which FTEQCC lexed before it
 // restored them, so the word after a `}` is the block's and the string after it is not
 #[test]
 fn a_blocks_flags_end_after_the_next_token() {
@@ -147,7 +147,7 @@ fn a_blocks_flags_end_after_the_next_token() {
     assert!(!parsed.lex_flags_at(at(source, "s =")).has(LexFlag::QcFuncs));
 }
 
-// spec FTEF-21.2: a file that ends in a block is "expected }", after another qualifier the
+// spec FTEF-21.17: a file that ends in a block is "expected }", after another qualifier the
 // string is no block, and in a body a block's definitions are locals
 #[test]
 fn extern_block_edges() {
@@ -505,7 +505,7 @@ fn the_token_after_a_block_is_read_restored() {
 }
 
 // spec FTEF-21.7: the views of C's declarators, typedefs, parameters and arrays give their parts
-// spec FTEF-21.2: an `extern` block's view gives its definitions
+// spec FTEF-21.17: an `extern` block's view gives its definitions
 // spec FTEF-21.9: an attribute's view gives the tokens after its name
 #[test]
 fn c_declaration_views() {
@@ -584,7 +584,7 @@ fn c_declaration_views() {
     );
 }
 
-// spec FTEF-21.2: in a preprocessor's text an `extern` block's tokens, lexed by the preprocessor
+// spec FTEF-21.17: in a preprocessor's text an `extern` block's tokens, lexed by the preprocessor
 // with the flags before the block, are lexed again with the block's, to the token after its `}`,
 // and their lexical errors are the parser's
 #[test]

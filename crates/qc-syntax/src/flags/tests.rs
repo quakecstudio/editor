@@ -46,7 +46,7 @@ fn no_change_holds_the_defaults() {
     assert_eq!(flags.priorities(), Priorities::Qc);
 }
 
-// spec FTEF-21.2: `"C"` turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and
+// spec FTEF-21.17: `"C"` turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and
 // `subscope` on, `assumedouble` left as it is; `"QC"` turns `qcfuncs` on; any other string sets
 // nothing; each from the block's start to its end
 #[test]

@@ -349,7 +349,7 @@ pub enum SyntaxKind {
     /// `asm` and an instruction or a block of them (FTEQCC, FTEF-20.5).
     AsmStmt,
     /// `extern "C"` or `extern "QC"`, or `extern` and any string, and a `{ }` block of
-    /// definitions or one definition, read with the flags the string sets (FTEQCC, FTEF-21.2).
+    /// definitions or one definition, read with the flags the string sets (FTEQCC, FTEF-21.17).
     ExternBlock,
     /// `[[ ... ]]` among a declaration's qualifiers: its attributes (FTEQCC, FTEF-21.9).
     AttributeList,

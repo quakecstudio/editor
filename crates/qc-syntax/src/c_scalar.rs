@@ -98,6 +98,17 @@ pub enum CScalar {
     BFloat,
 }
 
+/// The names FTEQCC's `QCC_PR_NewType` registers for `QCC_TypeForName` that are no C scalar
+/// (FTEF-19.20): `type_variant`'s two names and the `__` names of the core types (`qccmain.c`).
+pub const REGISTERED_TYPES: [&str; 6] = [
+    "__variant",
+    "variant",
+    "__string",
+    "__vector",
+    "__entity",
+    "__bfloat",
+];
+
 impl CScalar {
     /// The scalar a name FTEQCC registers as a type is (`qccmain.c`, `QCC_PR_NewType`), which
     /// `QCC_TypeForName` finds before the C type words are read (FTEF-2.8); `float` included.
@@ -209,7 +220,16 @@ impl CWords {
         let mut state = Self::default();
         let mut taken = 0_usize;
         let mut words = words.into_iter().peekable();
-        if let Some(scalar) = words.peek().and_then(|w| CScalar::named(w)) {
+        let registered = |word: &str| {
+            CScalar::named(word).or_else(|| {
+                if keywords.case_insensitive() {
+                    CScalar::named(&word.to_ascii_lowercase())
+                } else {
+                    None
+                }
+            })
+        };
+        if let Some(scalar) = words.peek().and_then(|w| registered(w)) {
             return (
                 1,
                 Some(CType {

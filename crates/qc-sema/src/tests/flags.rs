@@ -51,7 +51,7 @@ fn codes_with(source: &str, args: &[&str]) -> Vec<Code> {
     analysed(source, args).into_iter().map(|(c, _)| c).collect()
 }
 
-// spec FTEF-21.2: `"C"` turns `assumevar` on for its block, in any case, its string's parts
+// spec FTEF-21.17: `"C"` turns `assumevar` on for its block, in any case, its string's parts
 // joined, and for one definition after any `;`; any other string sets nothing
 // spec FTEF-21.11: under `assumevar` an initialised global is no constant, so naming it in
 // another's initialiser is "is not constant", and `const` still makes one
@@ -351,7 +351,7 @@ fn the_parsers_flag_warnings_follow_the_settings() {
     assert_eq!(codes_with(attribute, &["-Wno-F321"]), []);
 }
 
-// spec FTEF-21.2: the tokens a block lexes otherwise have the parser's lexical diagnostics, not
+// spec FTEF-21.17: the tokens a block lexes otherwise have the parser's lexical diagnostics, not
 // the preprocessor's
 #[test]
 fn a_blocks_lexical_diagnostics() {
@@ -361,6 +361,35 @@ fn a_blocks_lexical_diagnostics() {
     );
     assert_eq!(errors("extern \"QC\" { string s = \"\\9\"; }\n"), []);
     assert_eq!(errors("string s = \"\\9\";\n"), []);
+}
+
+// spec FTEF-21.17: `QCC_PR_LexString` joins the parts of a string written in one text, so a
+// macro's string and the string beside it are two tokens: the first is the block's string, the
+// second starts its definition
+#[test]
+fn a_macros_string_is_not_joined_to_its_neighbour() {
+    let probe = "{ string s = \"\\9\"; }";
+    let block = |define: &str, string: &str| errors(&format!("{define}extern {string} {probe}\n"));
+    assert_eq!(block("#define C \"C\"\n", "C"), [Code::E0103]);
+    assert_eq!(block("", "\"C\" \"C\""), []);
+    assert_eq!(block("#define C \"C\" \"x\"\n", "C"), []);
+    assert_eq!(
+        block("#define C \"C\"\n", "C C"),
+        [Code::E0203, Code::E0103]
+    );
+    assert_eq!(
+        block("#define C \"C\"\n", "\"C\" C"),
+        [Code::E0203, Code::E0103]
+    );
+    assert_eq!(
+        block("#define C \"C\"\n", "C \"x\""),
+        [Code::E0203, Code::E0103]
+    );
+    assert_eq!(block("#define C(a) a \"x\"\n", "C(\"C\")"), []);
+    assert_eq!(
+        block("#define D \"C\"\n#define C D \"x\"\n", "C"),
+        [Code::E0203, Code::E0103]
+    );
 }
 
 // spec FTEF-21.10: `extern` is tested against the base type with its typedefs read
@@ -374,6 +403,29 @@ fn extern_on_a_typedef() {
         codes("typedef void() fn;\nextern fn h;\n"),
         codes("extern void() h;\n")
     );
+    // `!pr_scope`: in a body the `extern` stays, and a typedef takes no qualifier.
+    for body in [
+        "typedef extern float y;",
+        "extern typedef float y;",
+        "typedef extern void() y;",
+    ] {
+        assert_eq!(
+            errors(&format!("void() g = {{ {body} }};\n")),
+            [Code::E0224],
+            "{body}"
+        );
+    }
+    // A typedef in an `extern` block in a body is that body's, and is checked as any.
+    assert_eq!(
+        errors("void() g = { extern \"C\" { typedef float F; } F x; };\n"),
+        []
+    );
+    assert_eq!(
+        errors("void() g = { extern \"C\" { typedef static float F; } };\n"),
+        [Code::E0224]
+    );
+    assert_eq!(errors("typedef extern float y;\n"), []);
+    assert_eq!(errors("void() g = { extern float y; };\n"), []);
 }
 
 // spec FTEF-21.1: the definition after a block reads the flags it restored

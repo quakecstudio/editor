@@ -16,7 +16,7 @@ use super::{Case, WERROR_OPTIONS};
 
 /// Programs compiled with no option.
 const FLAG_PROGRAMS: &[&str] = &[
-    // FTEF-21.2: `"C"` lexes its strings with `qcfuncs` off, so `\9` is "Bad character code";
+    // FTEF-21.17: `"C"` lexes its strings with `qcfuncs` off, so `\9` is "Bad character code";
     // `"QC"` with it on.
     "extern \"C\" { string s = \"\\9\"; }\n",
     "extern \"QC\" { string s = \"\\9\"; }\n",
@@ -30,7 +30,7 @@ const FLAG_PROGRAMS: &[&str] = &[
     "extern \"C\" {\n#pragma flag enable qcfuncs\n}\nstring s = \"\\9\";\n",
     "extern \"C\" {\n#pragma flag enable qcfuncs\nstring s = \"\\9\";\n}\n",
     "extern \"C\" {\n#pragma flag enable utf8\n}\nstring s = \"\\xff\";\n",
-    // FTEF-21.2, FTEF-21.11: `"C"` turns `assumevar` on, in any case, its string's parts
+    // FTEF-21.17, FTEF-21.11: `"C"` turns `assumevar` on, in any case, its string's parts
     // joined; any other string sets nothing.
     "extern \"C\" { float x = 5; float y = x; }\n",
     "extern \"C\" float x = 5;\nfloat y = x;\n",
@@ -45,7 +45,7 @@ const FLAG_PROGRAMS: &[&str] = &[
     "#pragma flag enable assumevar\nfloat x = 5;\nfloat y = x;\n",
     "#pragma flag enable assumevar\nconst float x = 5;\nfloat y = x;\n",
     "float x = 5;\nfloat y = x;\n",
-    // FTEF-21.2: the block's forms: `{ }`, one definition after any `;`, `extern` first only,
+    // FTEF-21.17: the block's forms: `{ }`, one definition after any `;`, `extern` first only,
     // an unended block, and a block of locals in a body.
     "extern \"C\" {\n",
     "extern \"C\" ;\nfloat x = 5;\nfloat y = x;\n",

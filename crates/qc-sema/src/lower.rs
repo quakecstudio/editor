@@ -984,7 +984,7 @@ struct Cx<'a> {
     fte: bool,
     flags: &'a [(usize, qc_syntax::CompilerFlags)],
     /// The lexer's flags, which differ from `flags` at the token after an `extern` block
-    /// (FTEF-21.2).
+    /// (FTEF-21.17).
     lex: &'a [(usize, qc_lexer::LexFlags)],
     /// Where each of the file's tokens starts, trivia aside, in order.
     tokens: &'a [usize],
@@ -1306,7 +1306,8 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, &mut out.decls);
     }
-    out.diagnostics.extend(typedef_diagnostics(td, cx));
+    out.diagnostics
+        .extend(typedef_diagnostics(td, cx, TypedefScope::File));
     let Some(token) = td.name() else {
         return;
     };
@@ -1345,14 +1346,24 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     out.decls.push(decl);
 }
 
+/// Where a `typedef` is: `QCC_PR_ParseDefs` drops `extern` from a definition whose type is no
+/// function's only `if (externfnc && !pr_scope ...)`, at file level (FTEF-21.10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypedefScope {
+    /// Outside every function.
+    File,
+    /// In a function's body, where the `extern` stays.
+    Body,
+}
+
 /// FTEF-19.9: what is wrong with a `typedef` alone: `typedef;` and `typedef float;` define no
 /// type, a warning; a qualifier is "bad combination of modifiers with typedef", but `auto`,
 /// `register` and `nonstatic`, and `static`, `noref` and `nosave` when a `#pragma` makes them the
-/// default (FTEF-21.14). Before it, as for any declaration, `extern` on a type that is no
-/// function's is dropped, with its warning when `qcfuncs` is on (FTEF-21.10), and more than one
+/// default (FTEF-21.14). Before it, as for any declaration at file level, `extern` on a type that
+/// is no function's is dropped, with its warning when `qcfuncs` is on (FTEF-21.10), and more than one
 /// storage class, `typedef` among them and `static` by its default, is "Conflicting storage
 /// classes." (FTEF-19.16).
-fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
+fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>, scope: TypedefScope) -> Vec<Diagnostic> {
     let Some(token) = td.name() else {
         return vec![Diagnostic {
             code: Code::W0215,
@@ -1369,7 +1380,8 @@ fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>) -> Vec<Diagnostic> {
         span: token.span(),
     };
     let ty_node = td.syntax().children().find_map(ast::Type::cast);
-    if qualifiers.contains(&Qualifier::Extern)
+    if scope == TypedefScope::File
+        && qualifiers.contains(&Qualifier::Extern)
         && ty_node.as_ref().is_some_and(|t| no_function(t, &cx.ty(t)))
     {
         qualifiers.retain(|q| *q != Qualifier::Extern);
@@ -1896,8 +1908,9 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
         }
     }
     // FTEF-19.9: a `typedef` in a body is checked as one at file level.
-    for td in block.syntax().children().filter_map(ast::TypedefDecl::cast) {
-        body.diagnostics.extend(typedef_diagnostics(&td, cx));
+    for td in block_typedefs(block.syntax()) {
+        body.diagnostics
+            .extend(typedef_diagnostics(&td, cx, TypedefScope::Body));
         if let Some(name) = td.name() {
             body.typedefs
                 .push((name.text_lossless(), name.span().start));
@@ -1905,10 +1918,24 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
     }
 }
 
+/// The `typedef`s of a block's statements, those of the `extern` blocks among them
+/// (FTEF-21.17): `QCC_PR_ParseDefs` reads a `typedef` in a block as it reads one anywhere.
+fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
+    let mut found = Vec::new();
+    for child in node.children() {
+        if child.kind() == SyntaxKind::ExternBlock {
+            found.extend(block_typedefs(&child));
+        } else if let Some(td) = ast::TypedefDecl::cast(child) {
+            found.push(td);
+        }
+    }
+    found
+}
+
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
-        // FTEF-21.2: a body's `extern` block holds local definitions.
+        // FTEF-21.17: a body's `extern` block holds local definitions.
         ast::Stmt::Extern(block) => {
             for local in block.items().into_iter().filter_map(ast::LocalDecl::cast) {
                 lower_local(&local, cx, body);
