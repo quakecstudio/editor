@@ -2115,9 +2115,21 @@ fn check_where(
             let known = held.get(&key).and_then(|t| Outcome::parse(t));
             let outcome = match known {
                 Some(o) => o,
-                None => oracle(oracles, &work, case)?,
+                None => match oracle(oracles, &work, case) {
+                    Ok(o) => o,
+                    Err(problem) => {
+                        println!("ORACLE-ERROR {problem}");
+                        Outcome::Rejected
+                    }
+                },
             };
             outcomes.insert(key, outcome);
+            if outcomes.len() % 3000 == 0 {
+                let raw: BTreeMap<&String, String> =
+                    outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
+                fs::write(&cache, serde_json::to_string(&raw).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+            }
         }
         let raw: BTreeMap<&String, String> =
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();

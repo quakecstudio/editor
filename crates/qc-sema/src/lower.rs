@@ -55,6 +55,9 @@ pub struct RawDecl {
     /// For a type's name, the kind of type it names: a class, struct, union, typedef, enum or
     /// accessor, which may be declared more than once (FTEF-7.2).
     pub type_kind: Option<TypeKind>,
+    /// Whether this stands for a type written with no declarator, `float (x);`, which only has
+    /// its type names checked (FTEF-20.12).
+    pub type_only: bool,
     /// The qualifiers written before the type (FTEF-15.1), in order.
     pub qualifiers: Vec<Qualifier>,
     /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
@@ -197,6 +200,8 @@ pub enum ValueKind {
     /// FTEQCC's `_(...)` translation intrinsic, and whether its argument is one string
     /// literal (FTEF-19.31).
     Translate(bool),
+    /// An element of a named array, `name[index]` (FTEF-19.40).
+    Indexed(String),
     /// Any other expression, whose type the model does not compute (FTEF-19.32).
     Other,
 }
@@ -247,6 +252,9 @@ pub struct EnumItem {
     pub legacy: bool,
     /// Whether this is the enum's first name, where its count starts (FTEF-19.10).
     pub first: bool,
+    /// The enum's own type name, which `QCC_PR_ParseEnum` keeps its names under; `None` for an
+    /// enum with no name or a legacy base type (FTEF-19.37).
+    pub enum_name: Option<String>,
 }
 
 impl RawDecl {
@@ -266,6 +274,7 @@ impl RawDecl {
             scope: None,
             class: None,
             type_kind: None,
+            type_only: false,
             qualifiers: Vec::new(),
             value: None,
             array: None,
@@ -413,6 +422,12 @@ fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
             );
             ValueKind::Translate(string)
         }
+        ast::Expr::Index(index) if fte => match index.base() {
+            Some(ast::Expr::Name(base)) if base.scope().is_none() => base
+                .name()
+                .map_or(ValueKind::Other, |t| ValueKind::Indexed(t.text_lossless())),
+            _ => ValueKind::Other,
+        },
         _ => ValueKind::Other,
     };
     let first = expr
@@ -628,6 +643,9 @@ pub struct RawMember {
     pub initialized: bool,
     /// A member function's body written in the class.
     pub body: Option<RawBody>,
+    /// Whether it is given a value though it is no function, `static` or `const`, and the
+    /// value is no 0: "Can only initialise member functions" (FTEF-9.10).
+    pub bad_init: bool,
 }
 
 /// What a class member is (FTEF-9.2, FTEF-9.3).
@@ -806,6 +824,9 @@ pub struct RawBody {
     pub next_thinks: Vec<(String, Span)>,
     /// The aliases the body's `using` statements make (FTEF-20.5).
     pub aliases: Vec<RawAlias>,
+    /// The types the body's declarations write with no declarator, each with where it starts,
+    /// which only have their type names checked (FTEF-20.12).
+    pub type_only: Vec<(Type, Span)>,
 }
 
 /// One alias a `using` statement makes (FTEF-20.5): `QCC_PR_GetDef (NULL, name, pr_scope,
@@ -928,6 +949,8 @@ pub struct RawUse {
     pub scope: Option<String>,
     /// For a member use, what the access is made on.
     pub base: MemberBase,
+    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.41).
+    pub called: bool,
 }
 
 impl RawUse {
@@ -939,6 +962,7 @@ impl RawUse {
             kind,
             scope: None,
             base: MemberBase::Unknown,
+            called: false,
         }
     }
 }
@@ -952,6 +976,9 @@ pub enum UseKind {
     /// class member, or a vector member, `.length` or a struct field (FTE-9, FTE-13, FTE-14,
     /// FTEF-9.3).
     Member,
+    /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
+    /// type first (FTEF-19.39).
+    TypeOrValue,
 }
 
 /// What a member access is made on, as far as the syntax tells (FTEF-17.3).
@@ -965,6 +992,158 @@ pub enum MemberBase {
     Type(Type),
     /// A call of a named function, whose return type is the base's.
     Call(String),
+}
+
+/// A `struct` or `union` as `QCC_PR_ParseStruct` reads it (FTEF-6, FTEF-6.7): its tag, its
+/// parent and its members, wherever the type is written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawStruct {
+    /// Where the keyword stands, which orders the struct among the declarations.
+    pub at: usize,
+    /// The tag's span, else the keyword's.
+    pub span: Span,
+    /// The tag; `None` for an anonymous struct or union.
+    pub name: Option<String>,
+    /// Whether it is a `union`.
+    pub union: bool,
+    /// The parent a struct names after `:`, with its span.
+    pub parent: Option<(String, Span)>,
+    /// Whether it has a body, so it defines the type; `struct Name` alone names one.
+    pub body: bool,
+    /// Whether a function's body writes it, where `QCC_PR_ParseStruct`'s type lasts to the
+    /// block's end.
+    pub local: bool,
+    /// The members, in order, of the body.
+    pub members: Vec<StructMember>,
+}
+
+/// One member of a [`RawStruct`] (FTEF-6.7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructMember {
+    /// The name; empty for an anonymous member.
+    pub name: String,
+    /// The name's span, else the member's.
+    pub span: Span,
+    /// The member's type, with the `*`s and parameter list of its declarator.
+    pub ty: Type,
+    /// The text of its array suffixes, in order.
+    pub array: Vec<String>,
+    /// The width after `:`, when the member is a bitfield: the number when it is a literal,
+    /// else `None` inside `Some`.
+    pub bits: Option<Option<u32>>,
+    /// Whether `static` qualifies it, so it is a global and no member.
+    pub is_static: bool,
+}
+
+/// The [`RawStruct`] of a `StructType` node.
+fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
+    let keyword = node.child_tokens().next()?;
+    let union = keyword.kind() == SyntaxKind::UnionKw;
+    let mut name = None;
+    let mut parent = None;
+    let mut after_colon = false;
+    let mut body = false;
+    for token in node.child_tokens() {
+        match token.kind() {
+            SyntaxKind::Name if after_colon && parent.is_none() => {
+                parent = Some((token.text_lossless(), token.span()));
+            }
+            SyntaxKind::Name if name.is_none() && !body => {
+                name = Some(token.text_lossless());
+            }
+            SyntaxKind::Colon if !body => after_colon = true,
+            SyntaxKind::LBrace => body = true,
+            _ => {}
+        }
+    }
+    let local = node
+        .ancestors()
+        .any(|n| matches!(n.kind(), SyntaxKind::Block | SyntaxKind::FunctionBody));
+    let span = node
+        .child_tokens()
+        .find(|t| t.kind() == SyntaxKind::Name)
+        .map_or_else(|| keyword.span(), |t| t.span());
+    let mut members = Vec::new();
+    let mut ty = Type::Unknown;
+    let mut is_static = false;
+    for field in node.children().filter(|n| n.kind() == SyntaxKind::StructField) {
+        if let Some(node) = field.children().find_map(ast::Type::cast) {
+            ty = cx.ty(&node);
+            is_static = field
+                .children()
+                .filter(|n| n.kind() == SyntaxKind::Qualifier)
+                .any(|q| q.child_tokens().any(|t| t.text_lossless() == "static"));
+        }
+        let mut member_ty = ty.clone();
+        for _ in field
+            .child_tokens()
+            .take_while(|t| t.kind() != SyntaxKind::Name)
+            .filter(|t| t.kind() == SyntaxKind::Star)
+        {
+            member_ty = Type::Pointer(std::rc::Rc::new(member_ty));
+        }
+        if let Some(list) = field.children().find_map(ast::ParamList::cast) {
+            member_ty = cx.function(member_ty, &list);
+        }
+        let member_name = field.child_tokens().find(|t| t.kind() == SyntaxKind::Name);
+        let bits = field
+            .child_tokens()
+            .any(|t| t.kind() == SyntaxKind::Colon)
+            .then(|| {
+                field
+                    .children()
+                    .filter_map(ast::Expr::cast)
+                    .last()
+                    .and_then(|e| {
+                        LiteralValue::of_literal(
+                            &e,
+                            Dialect::Fteqcc,
+                            cx.lex_flags_at(e.syntax().span().start),
+                        )
+                    })
+                    .and_then(|value| match value {
+                        LiteralValue::Float(bits) => {
+                            let number = f32::from_bits(bits);
+                            #[expect(
+                                clippy::cast_possible_truncation,
+                                clippy::cast_sign_loss,
+                                reason = "spec FTEF-6.9: the width is an integer constant"
+                            )]
+                            let width = number as u32;
+                            Some(width)
+                        }
+                        LiteralValue::Vector(_)
+                        | LiteralValue::String(_)
+                        | LiteralValue::Builtin { .. }
+                        | LiteralValue::Text(_) => None,
+                    })
+            });
+        members.push(StructMember {
+            name: member_name
+                .as_ref()
+                .map(|t| t.text_lossless())
+                .unwrap_or_default(),
+            span: member_name.as_ref().map_or_else(|| field.span(), |t| t.span()),
+            ty: member_ty,
+            array: field
+                .children()
+                .filter(|n| n.kind() == SyntaxKind::ArraySuffix)
+                .map(|n| token_text(&n))
+                .collect(),
+            bits,
+            is_static,
+        });
+    }
+    Some(RawStruct {
+        at: keyword.span().start,
+        span,
+        name,
+        union,
+        parent,
+        body,
+        local,
+        members,
+    })
 }
 
 /// Every declaration a file contributes, in source order.
@@ -981,6 +1160,9 @@ pub struct FileDecls {
     /// The tag of every `struct` or `union` the file writes, nested in another's members too,
     /// with where it stands: `QCC_PR_ParseStruct` makes it a type there (FTEF-19.20).
     pub struct_tags: Vec<(String, usize)>,
+    /// Every `struct` and `union` the file writes, nested ones too, in source order
+    /// (FTEF-6.7).
+    pub structs: Vec<RawStruct>,
 }
 
 /// What lowering reads besides the tree: whether the dialect is FTEQCC's, the compiler flags
@@ -1109,6 +1291,13 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
             out.struct_tags
                 .push((tag.text_lossless(), tag.span().start));
         }
+        out.structs.extend(lower_struct(&node, cx));
+        for field in node
+            .children()
+            .filter(|n| n.kind() == SyntaxKind::StructField)
+        {
+            record_fields(&field, &mut out.members);
+        }
     }
     // Walk the top-level nodes in source order, so a name an `enum` or `typedef` declares is
     // visible to the declarations after it (QC-12.5, QC-23.3). Only an FTEQCC parse has
@@ -1144,9 +1333,6 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
                         }
                         None => Type::Unknown,
                     };
-                    for field in st.fields() {
-                        record_fields(&field, &mut out.members);
-                    }
                     // FTEF-6.1: `struct { ... } a[4], *p;` declares variables too.
                     let first = out.decls.len();
                     lower_declarators(st.declarators(), &base, None, cx, &mut out.decls);
@@ -1219,6 +1405,10 @@ fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>) {
         })
         .then(|| en.name().map(|t| t.text_lossless()))
         .flatten();
+    let enum_name = en
+        .name()
+        .map(|t| t.text_lossless())
+        .filter(|_| legacy_word.is_none());
     for (index, node) in en.enumerators().enumerate() {
         let Some(token) = node.child_tokens().find(|t| t.kind() == SyntaxKind::Name) else {
             continue;
@@ -1252,6 +1442,7 @@ fn lower_enum(en: &ast::EnumDecl, cx: Cx<'_>, out: &mut Vec<RawDecl>) {
             number,
             legacy: legacy && index == 0,
             first: index == 0,
+            enum_name: enum_name.clone(),
         });
         out.push(decl);
     }
@@ -1303,13 +1494,6 @@ fn record_fields(field: &SyntaxNode, members: &mut Vec<String>) {
 /// it resolves. A struct's fields are member names, not globals, and an enum's names are
 /// constants.
 fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
-    for field in td
-        .syntax()
-        .descendants()
-        .filter(|n| n.kind() == SyntaxKind::StructField)
-    {
-        record_fields(&field, &mut out.members);
-    }
     if let Some(en) = td.syntax().children().find_map(ast::EnumDecl::cast) {
         lower_enum(&en, cx, &mut out.decls);
     }
@@ -1490,6 +1674,14 @@ fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecls) {
     let mut decl = RawDecl::type_name(&name, TypeKind::Class);
     decl.class = Some(raw);
     out.decls.push(decl);
+    // FTEF-9.8: the variables declared with the class as their type.
+    let base = Type::Named(std::rc::Rc::from(class_name.as_str()));
+    let first = out.decls.len();
+    lower_declarators(class.declarators(), &base, None, cx, &mut out.decls);
+    let flags = cx.flags_at(class.syntax().span().start);
+    for raw in out.decls.iter_mut().skip(first) {
+        raw.flags = flags;
+    }
 }
 
 /// The first word of a node, as written.
@@ -1542,9 +1734,27 @@ fn lower_member(
         };
         let init = declarator.initializer();
         let body = match &init {
-            Some(ast::Initializer::Body(fn_body)) => Some(lower_body(fn_body, &ty, cx)),
+            Some(ast::Initializer::Body(fn_body)) => {
+                let mut body = lower_body(fn_body, &ty, cx);
+                // FTEF-19.43: a member's state header names its next function in the class.
+                if let Some(next) = next_think_of(fn_body) {
+                    body.next_thinks.insert(0, next);
+                }
+                Some(body)
+            }
             _ => None,
         };
+        let null = match &init {
+            Some(ast::Initializer::Value(expr)) => {
+                matches!(token_text(expr.syntax()).as_str(), "0" | "0i")
+            }
+            _ => false,
+        };
+        let bad_init = init.is_some()
+            && kind == MemberKind::Field
+            && !null
+            && !has("static")
+            && !has("const");
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1552,6 +1762,7 @@ fn lower_member(
             kind,
             initialized: init.is_some(),
             body,
+            bad_init,
         });
     }
     // FTEF-9.4: `Name(void);`, a constructor written without a return type.
@@ -1571,6 +1782,7 @@ fn lower_member(
             kind: MemberKind::Method,
             initialized: false,
             body: None,
+            bad_init: false,
         });
     }
 }
@@ -1587,6 +1799,13 @@ fn lower_accessor(acc: &ast::AccessorDecl, cx: Cx<'_>, out: &mut FileDecls) {
     for member in acc.members() {
         out.members.extend(member.name().map(|t| t.text_lossless()));
         lower_accessor_body(&member, &accessor, cx, &mut out.decls);
+    }
+    let base = Type::Named(std::rc::Rc::from(accessor.as_str()));
+    let first = out.decls.len();
+    lower_declarators(acc.declarators(), &base, None, cx, &mut out.decls);
+    let flags = cx.flags_at(acc.syntax().span().start);
+    for raw in out.decls.iter_mut().skip(first) {
+        raw.flags = flags;
     }
 }
 
@@ -1624,7 +1843,7 @@ fn lower_accessor_body(
             });
         }
         if let Some(block) = fn_body.block() {
-            lower_block(&block, cx, &mut body);
+            lower_block(&block, cx, &mut body, Flow::default());
         }
         decl.body = Some(body);
         decl.initialized = true;
@@ -1646,6 +1865,15 @@ fn lower_declaration(decl: &ast::Declaration, cx: Cx<'_>, out: &mut Vec<RawDecl>
         .map_or_else(|| omitted_type(decl.syntax(), fte), |t| cx.ty(&t));
     let first = out.len();
     lower_declarators(decl.declarators(), &base, decl.ty(), cx, out);
+    if decl.declarators().next().is_none()
+        && fte
+        && let Some(node) = decl.ty()
+    {
+        let span = node.syntax().span();
+        let mut raw = RawDecl::new(String::new(), span, base.clone());
+        raw.type_only = true;
+        out.push(raw);
+    }
     // FTEF-15.1: the qualifiers before the type hold for every declarator.
     let qualifiers = qualifiers_of(decl.syntax());
     // FTEF-21.10: `extern` is tested against the base type, read once the type is.
@@ -1835,7 +2063,7 @@ fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) -> RawBody 
         }
     }
     if let Some(block) = fn_body.block() {
-        lower_block(&block, cx, &mut body);
+        lower_block(&block, cx, &mut body, Flow::default());
     }
     body
 }
@@ -1903,10 +2131,36 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
     function_params(&ty)
 }
 
-fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
+/// Which loops and `switch`es a statement is in, which `break` and `continue` find their target
+/// in (FTEF-21.18).
+#[derive(Clone, Copy, Debug, Default)]
+struct Flow {
+    loops: usize,
+    switches: usize,
+}
+
+impl Flow {
+    /// The flow in a loop's body.
+    fn in_loop(self) -> Self {
+        Self {
+            loops: self.loops.saturating_add(1),
+            ..self
+        }
+    }
+
+    /// The flow in a `switch`'s body.
+    fn in_switch(self) -> Self {
+        Self {
+            switches: self.switches.saturating_add(1),
+            ..self
+        }
+    }
+}
+
+fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     let first = body.locals.len();
     for stmt in block.statements() {
-        lower_stmt(&stmt, cx, body);
+        lower_stmt(&stmt, cx, body, flow);
     }
     // FTEF-21.12: `if (pr_subscopedlocals) { //remove any new locals from the hashtable.`, read
     // once the `}` is, with the token after it lexed.
@@ -1945,7 +2199,7 @@ fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
     found
 }
 
-fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
+fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
         // FTEF-21.17: a body's `extern` block holds local definitions.
@@ -1954,7 +2208,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 lower_local(&local, cx, body);
             }
         }
-        ast::Stmt::Block(block) => lower_block(block, cx, body),
+        ast::Stmt::Block(block) => lower_block(block, cx, body, flow),
         ast::Stmt::Return(ret) => {
             if let Some(expr) = ret.value() {
                 lower_expr(&expr, cx, &mut body.uses);
@@ -1965,10 +2219,10 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 lower_expr(&cond, cx, &mut body.uses);
             }
             if let Some(then) = if_stmt.then_branch() {
-                lower_stmt(&then, cx, body);
+                lower_stmt(&then, cx, body, flow);
             }
             if let Some(els) = if_stmt.else_branch() {
-                lower_stmt(&els, cx, body);
+                lower_stmt(&els, cx, body, flow);
             }
         }
         ast::Stmt::While(while_stmt) => {
@@ -1976,12 +2230,12 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 lower_expr(&cond, cx, &mut body.uses);
             }
             if let Some(inner) = while_stmt.body() {
-                lower_stmt(&inner, cx, body);
+                lower_stmt(&inner, cx, body, flow.in_loop());
             }
         }
         ast::Stmt::Do(do_stmt) => {
             if let Some(inner) = do_stmt.body() {
-                lower_stmt(&inner, cx, body);
+                lower_stmt(&inner, cx, body, flow.in_loop());
             }
             if let Some(cond) = do_stmt.condition() {
                 lower_expr(&cond, cx, &mut body.uses);
@@ -2003,7 +2257,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 }
             }
             if let Some(inner) = for_stmt.body() {
-                lower_stmt(&inner, cx, body);
+                lower_stmt(&inner, cx, body, flow.in_loop());
             }
             let end = for_stmt.syntax().span().end;
             for local in body.locals.iter_mut().skip(first) {
@@ -2024,16 +2278,37 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                             lower_expr(&value, cx, &mut body.uses);
                         }
                     } else if let Some(stmt) = ast::Stmt::cast(node) {
-                        lower_stmt(&stmt, cx, body);
+                        lower_stmt(&stmt, cx, body, flow.in_switch());
                     }
                 }
+            } else if let Some(stmt) = switch_stmt.statement() {
+                // FTEF-18.33: the body of a `switch` is any statement.
+                lower_stmt(&stmt, cx, body, flow.in_switch());
             }
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
         // neither do a label and `goto` (FTEF-18.23), whose names are labels, not values.
-        ast::Stmt::Break(_)
-        | ast::Stmt::Continue(_)
-        | ast::Stmt::Empty(_)
+        ast::Stmt::Break(node) => {
+            // FTEF-21.18: a `break` that no loop or `switch` holds is "illegal breaks".
+            if flow.loops == 0 && flow.switches == 0 {
+                body.diagnostics.push(Diagnostic {
+                    code: Code::E0244,
+                    message: "function contains illegal breaks".to_owned(),
+                    span: node.syntax().span(),
+                });
+            }
+        }
+        ast::Stmt::Continue(node) => {
+            // FTEF-21.18: a `continue` that no loop holds is "illegal continues".
+            if flow.loops == 0 {
+                body.diagnostics.push(Diagnostic {
+                    code: Code::E0245,
+                    message: "function contains illegal continues".to_owned(),
+                    span: node.syntax().span(),
+                });
+            }
+        }
+        ast::Stmt::Empty(_)
         | ast::Stmt::Label(_)
         | ast::Stmt::Goto(_)
         | ast::Stmt::Exit(_) => {}
@@ -2047,7 +2322,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
         // FTEF-20.5: `loop s` runs its statement.
         ast::Stmt::Loop(loop_stmt) => {
             if let Some(inner) = loop_stmt.body() {
-                lower_stmt(&inner, cx, body);
+                lower_stmt(&inner, cx, body, flow.in_loop());
             }
         }
         // FTEF-20.5: `thinktime e : t;` uses its operands and, unless the target is Hexen II's,
@@ -2097,7 +2372,7 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody) {
                 });
             }
             if let Some(inner) = inner {
-                lower_stmt(&inner, cx, body);
+                lower_stmt(&inner, cx, body, flow);
             }
         }
         ast::Stmt::Expr(expr_stmt) => {
@@ -2126,6 +2401,12 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
         .map_or_else(|| omitted_type(local.syntax(), fte), |t| cx.ty(&t));
     // QC-11.9 holds only in vanilla: FTEQCC allows a field or function local (FTE-21.2).
     let bad = !fte && (base.is_field() || base.is_function());
+    if fte
+        && local.declarators().next().is_none()
+        && let Some(node) = local.ty()
+    {
+        body.type_only.push((base.clone(), node.syntax().span()));
+    }
     for declarator in local.declarators() {
         let Some(name_token) = declarator.name() else {
             continue;
@@ -2261,7 +2542,16 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
         ast::Expr::Call(call) => {
             let callee = call.callee();
             if let Some(callee) = &callee {
+                let before = uses.len();
                 lower_expr(callee, cx, uses);
+                if fte
+                    && let ast::Expr::Name(name) = callee
+                    && name.scope().is_none()
+                    && uses.len() == before.saturating_add(1)
+                    && let Some(use_) = uses.last_mut()
+                {
+                    use_.called = true;
+                }
             }
             // FTEF-17.4: `autocvar(name, default)` names the cvar, which is no value. (`sizeof`
             // and the type it may take are a `SizeofExpr`, FTEF-18.12.)
@@ -2272,7 +2562,16 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
             let skip = usize::from(callee_name.as_deref() == Some("autocvar"));
             if let Some(args) = call.args() {
                 for arg in args.args().skip(skip) {
+                    let before = uses.len();
                     lower_expr(&arg, cx, uses);
+                    // FTEF-17.1: `spawn(Thing)` takes a class by its name.
+                    if callee_name.as_deref() == Some("spawn")
+                        && let ast::Expr::Name(_) = &arg
+                        && uses.len() == before.saturating_add(1)
+                        && let Some(use_) = uses.last_mut()
+                    {
+                        use_.kind = UseKind::TypeOrValue;
+                    }
                 }
             }
         }
@@ -2334,7 +2633,14 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
         // not.
         ast::Expr::Sizeof(sizeof) => {
             if let Some(operand) = sizeof.operand() {
+                let before = uses.len();
                 lower_expr(&operand, cx, uses);
+                if let ast::Expr::Name(_) = &operand
+                    && uses.len() == before.saturating_add(1)
+                    && let Some(use_) = uses.last_mut()
+                {
+                    use_.kind = UseKind::TypeOrValue;
+                }
             }
         }
     }

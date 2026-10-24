@@ -622,6 +622,7 @@ impl Parser<'_> {
             self.finish_node();
         }
         self.leave(levels);
+        self.type_derived = levels > 0;
         Some(TypeShape {
             function,
             field: false,
@@ -942,6 +943,11 @@ impl Parser<'_> {
         if !opened {
             return;
         }
+        if self.bodies > 0 {
+            // `if (pr_scope) QCC_PR_ParseError(ERR_REDECLARATION, "Declaration of class %s%s%s
+            // within function", ...)`
+            self.error(Code::E0253, "Declaration of class within function");
+        }
         if self.at(K::Comma) {
             // `if (QCC_PR_CheckToken(",")) QCC_PR_ParseError(ERR_NOTANAME, "member missing name");`
             self.error(Code::E0201, "member missing name");
@@ -1070,7 +1076,15 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
-        match self.fte_type() {
+        let struct_keyword = self.at_struct_keyword(0);
+        let ty = self.fte_type();
+        if struct_keyword && !self.type_derived {
+            // `if (basetype->type == ev_struct || basetype->type == ev_union)
+            // QCC_PR_ParseError(ERR_INTERNAL, "Struct or union in class %s", classname);`; a
+            // pointer to one is a pointer.
+            self.error(Code::E0254, "Struct or union in class");
+        }
+        match ty {
             // `Name(void);`: a constructor with no return type (FTEF-9.4).
             Some(ty) if ty.function && self.at(K::Semicolon) => self.bump(),
             // A member's recovery stops at the `}` that closes the class.

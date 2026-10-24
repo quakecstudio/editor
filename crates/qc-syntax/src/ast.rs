@@ -1152,6 +1152,12 @@ impl ClassDecl {
     pub fn accessor_members(&self) -> impl Iterator<Item = AccessorMember> {
         children(&self.0)
     }
+
+    /// The variables declared with the class as their type, `class C { ... } a, *b;`
+    /// (FTEF-9.8).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
+        children(&self.0)
+    }
 }
 
 impl StructDecl {
@@ -1184,6 +1190,11 @@ impl AccessorDecl {
 
     /// The members, in order.
     pub fn members(&self) -> impl Iterator<Item = AccessorMember> {
+        children(&self.0)
+    }
+
+    /// The variables declared with the accessor as their type (FTEF-10.1).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
         children(&self.0)
     }
 }
@@ -1488,6 +1499,12 @@ impl SwitchStmt {
     #[must_use]
     pub fn block(&self) -> Option<Block> {
         child(&self.0)
+    }
+
+    /// The body when it is no block, `switch (e) statement` (FTEF-18.33).
+    #[must_use]
+    pub fn statement(&self) -> Option<Stmt> {
+        self.0.children().find_map(Stmt::cast)
     }
 }
 

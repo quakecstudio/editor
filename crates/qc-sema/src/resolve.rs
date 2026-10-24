@@ -40,7 +40,7 @@ use crate::expand::{OriginMap, ProtoPlan, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
     MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse,
-    RawValue, StatePart, TypeKind, UseKind, ValueKind, top_level_kind,
+    RawStruct, RawValue, StatePart, StructMember, TypeKind, UseKind, ValueKind, top_level_kind,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
@@ -247,6 +247,10 @@ pub(crate) fn resolve_mapped(
         structs: HashSet::new(),
         strict_enums: HashMap::new(),
         enum_types: HashSet::new(),
+        enum_values: HashMap::new(),
+        enum_redeclared: false,
+        struct_defs: HashMap::new(),
+        type_defs: HashSet::new(),
         redefinable: HashSet::new(),
         unused: HashSet::new(),
         bodies: HashSet::new(),
@@ -324,6 +328,17 @@ struct ClassInfo {
     parent: Option<String>,
     /// The class's own members by name.
     members: HashMap<String, DefId>,
+}
+
+/// A struct or union `QCC_PR_ParseStruct` made (FTEF-6.10).
+#[derive(Clone, Debug)]
+struct StructDef {
+    /// The own members of its body.
+    members: Vec<StructMember>,
+    /// The parent's name, as the type table keys it.
+    parent: Option<String>,
+    /// Whether a body defined it, else a tag named it.
+    defined: bool,
 }
 
 /// What the resolver knows of a definition beyond its [`Definition`], as `qcc` and FTEQCC keep
@@ -416,6 +431,15 @@ struct Resolver<'a> {
     structs: HashSet<String>,
     /// The names of the named enums' types (FTEF-19.10).
     enum_types: HashSet<String>,
+    /// The value of each name of a named enum, by the enum's name and the name's (FTEF-19.37).
+    enum_values: HashMap<(String, String), f64>,
+    /// Whether the enum being declared names a type already, so `QCC_PR_ParseEnum` reads its
+    /// name as the base type and keeps no names under it (FTEF-19.10).
+    enum_redeclared: bool,
+    /// The structs and unions defined so far, by name (FTEF-6.10).
+    struct_defs: HashMap<String, StructDef>,
+    /// The definitions that stand for a type's name, which are no values (FTEF-19.39).
+    type_defs: HashSet<DefId>,
     /// The base type of each `enum class`, whose values are of its own type (FTEF-19.10).
     strict_enums: HashMap<String, Type>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
@@ -1158,9 +1182,14 @@ impl<'a> Resolver<'a> {
             // with its body, and a typedef in more than one header.
             let def =
                 self.declare_global(&decl.name, &Type::Unknown, DefKind::Global, location, None);
+            self.type_defs.insert(def);
             if let Some(class) = &decl.class {
                 return Special::Declared(self.declare_class(file, def, class));
             }
+            return Special::Declared(Vec::new());
+        }
+        if decl.type_only {
+            self.check_type_names(&decl.ty, &[], decl.span.start, location);
             return Special::Declared(Vec::new());
         }
         if self.fteqcc
@@ -1209,7 +1238,7 @@ impl<'a> Resolver<'a> {
         let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var) && decl.ty.is_function() {
             DefKind::Global
         } else {
-            top_level_kind(&decl.ty)
+            top_level_kind(&self.resolved(&decl.ty))
         };
         let pending = |def: DefId| {
             decl.body
@@ -1713,6 +1742,27 @@ impl<'a> Resolver<'a> {
             ValueKind::Name(source_name) => {
                 self.check_named_value(name, &ty, source_name, holder, location, value.cast_flags)
             }
+            ValueKind::Indexed(array) => {
+                // FTEF-19.40: an element of a variable is no constant.
+                if matches!(holder, Holder::Global | Holder::Static(_)) {
+                    let found = match holder {
+                        Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
+                            self.lookup_in_scope(scope, array)
+                        }
+                        Holder::Global => self.lookup_used_global(array),
+                    };
+                    if let Some(source) = found
+                        && !self.facts.get(source.0).is_some_and(|f| f.constant)
+                    {
+                        self.report(
+                            Code::E0214,
+                            location,
+                            format!("initializer for '{name}' is not constant"),
+                        );
+                    }
+                }
+                Ok(None)
+            }
             ValueKind::Other => Ok(None),
         }
     }
@@ -1970,7 +2020,7 @@ impl<'a> Resolver<'a> {
                         return true;
                     }
                 }
-                ValueKind::Translate(_) | ValueKind::Other => {}
+                ValueKind::Translate(_) | ValueKind::Indexed(_) | ValueKind::Other => {}
             }
         }
         false
@@ -2014,7 +2064,8 @@ impl<'a> Resolver<'a> {
             TypeKind::Enum => {
                 // FTEF-19.10: `enum Name {` of a name already an enum's type reads the name as
                 // the base type, the legacy form.
-                if !self.enum_types.insert(decl.name.clone()) {
+                self.enum_redeclared = !self.enum_types.insert(decl.name.clone());
+                if self.enum_redeclared {
                     self.report(
                         Code::W0224,
                         location,
@@ -2075,6 +2126,28 @@ impl<'a> Resolver<'a> {
             && let Some(v) = value
         {
             self.warn_enumflag(v, &base, location);
+        }
+        // FTEF-19.37: a name an enum gave again with another value is "NAME::ITEM already
+        // declared".
+        if let (Some(enum_name), Some(v), false) = (&item.enum_name, value, self.enum_redeclared) {
+            let key = (
+                if self.case_insensitive {
+                    enum_name.to_ascii_lowercase()
+                } else {
+                    enum_name.clone()
+                },
+                decl.name.clone(),
+            );
+            #[expect(
+                clippy::float_cmp,
+                reason = "spec FTEF-19.37: FTEQCC compares the constants' values exactly"
+            )]
+            let differs = self.enum_values.get(&key).is_some_and(|old| *old != v);
+            if differs {
+                let message = format!("{enum_name}::{} already declared", decl.name);
+                self.report(Code::E0251, location, message);
+            }
+            self.enum_values.entry(key).or_insert(v);
         }
         // A value the model does not compute leaves every later implicit one unknown.
         self.enum_next = value.map_or(EnumCursor::Unknown, |v| {
@@ -2227,7 +2300,7 @@ impl<'a> Resolver<'a> {
                     Some(_) | None => None,
                 }
             }
-            ValueKind::Translate(_) | ValueKind::Other => None,
+            ValueKind::Translate(_) | ValueKind::Indexed(_) | ValueKind::Other => None,
         }
     }
 
@@ -2279,6 +2352,13 @@ impl<'a> Resolver<'a> {
         let mut pending = Vec::new();
         for member in &class.members {
             let location = self.at(file, member.span);
+            if member.bad_init {
+                self.report(
+                    Code::E0257,
+                    location,
+                    "Can only initialise member functions".to_owned(),
+                );
+            }
             let kind = match member.kind {
                 MemberKind::Field | MemberKind::Virtual => DefKind::Field,
                 MemberKind::Method => DefKind::Function,
@@ -2317,6 +2397,209 @@ impl<'a> Resolver<'a> {
             }
         }
         pending
+    }
+
+    /// The key `name` is found by in the type tables: itself, or in lower case under
+    /// `-Fcaseinsens` (FTEF-19.33).
+    fn type_key(&self, name: &str) -> String {
+        if self.case_insensitive {
+            name.to_ascii_lowercase()
+        } else {
+            name.to_owned()
+        }
+    }
+
+    /// Whether a type named `name` has a size already, so a `struct` of that name given a body
+    /// is compared with it (`if (newt->size)`, FTEF-6.10): a type FTEQCC registers, a class, an
+    /// enum or a typedef.
+    fn sized_type_named(&self, name: &str) -> bool {
+        let key = self.type_key(name);
+        if let Some(def) = self.struct_defs.get(&key) {
+            return def.defined;
+        }
+        let same = |other: &str| {
+            if self.case_insensitive {
+                other.eq_ignore_ascii_case(name)
+            } else {
+                other == name
+            }
+        };
+        REGISTERED_TYPES.iter().any(|other| same(other))
+            || CScalar::named(name).is_some()
+            || self.class_names.keys().any(|other| same(other))
+            || self.enum_types.iter().any(|other| same(other))
+            || self.typedefs.keys().any(|other| same(other))
+    }
+
+    /// `QCC_PR_ParseStruct` (FTEF-6.7 to FTEF-6.10): a struct's parent, its redefinition and its
+    /// members. A struct a function's body writes lasts to the block's end and is not followed
+    /// here.
+    fn declare_struct(&mut self, file: FileId, st: &RawStruct) {
+        if !self.fteqcc || st.local {
+            return;
+        }
+        let location = self.at(file, st.span);
+        let mut parent_key = None;
+        if let Some((parent, _)) = &st.parent {
+            let key = self.type_key(parent);
+            let is_struct = self.struct_defs.contains_key(&key) || self.has_name(&self.structs, parent);
+            if !is_struct && !self.is_type_name(parent, &[], st.at) {
+                self.report(
+                    Code::E0247,
+                    location,
+                    format!("Parent type {parent} was not yet defined"),
+                );
+                return;
+            }
+            if !is_struct {
+                self.report(
+                    Code::E0248,
+                    location,
+                    format!("Parent type {parent} is not a struct"),
+                );
+                return;
+            }
+            parent_key = Some(key);
+        }
+        let name = st.name.as_deref();
+        let key = name.map(|n| self.type_key(n));
+        let known = key.as_ref().and_then(|k| self.struct_defs.get(k)).cloned();
+        let sized = name.is_some_and(|n| self.sized_type_named(n));
+        if let Some(def) = &known
+            && (def.defined || def.parent.is_some())
+            && let Some(parent_key) = &parent_key
+            && def.parent.as_ref() != Some(parent_key)
+        {
+            self.report(
+                Code::E0249,
+                location,
+                "Redeclaration of struct with different parent type".to_owned(),
+            );
+            return;
+        }
+        if !st.body {
+            if let (Some(key), None) = (&key, &known) {
+                self.struct_defs.insert(
+                    key.clone(),
+                    StructDef {
+                        members: Vec::new(),
+                        parent: parent_key,
+                        defined: false,
+                    },
+                );
+            }
+            return;
+        }
+        let members: Vec<&StructMember> = st.members.iter().collect();
+        self.check_struct_members(location, st, &members);
+        let owned: Vec<StructMember> = st.members.clone();
+        let same = |old: &[StructMember]| {
+            old.len() == owned.len()
+                && old.iter().zip(&owned).all(|(a, b)| {
+                    (&a.name, &a.ty, &a.array, a.bits, a.is_static)
+                        == (&b.name, &b.ty, &b.array, b.bits, b.is_static)
+                })
+        };
+        if sized
+            && let Some(old) = known.as_ref().map(|d| &d.members)
+            && !same(old)
+        {
+            let kind = if st.union { "union" } else { "struct" };
+            self.report(
+                Code::E0246,
+                location,
+                format!("{kind} {} redeclared differently", name.unwrap_or_default()),
+            );
+            return;
+        }
+        if sized && known.is_none() {
+            // A type of another kind has the name, which no body of ours equals.
+            let kind = if st.union { "union" } else { "struct" };
+            self.report(
+                Code::E0246,
+                location,
+                format!("{kind} {} redeclared differently", name.unwrap_or_default()),
+            );
+            return;
+        }
+        if let Some(key) = key {
+            self.struct_defs.insert(
+                key,
+                StructDef {
+                    members: owned,
+                    parent: parent_key,
+                    defined: true,
+                },
+            );
+        }
+    }
+
+    /// The checks of a struct's members (FTEF-6.7): each member's type is one, and a bitfield's
+    /// is an integer's.
+    fn check_struct_members(&mut self, location: Location, st: &RawStruct, members: &[&StructMember]) {
+        for member in members {
+            if self.check_type_names(&member.ty, &[], st.at, location) {
+                return;
+            }
+            if member.bits.is_some_and(|width| width.is_some_and(|w| w > 64)) {
+                self.report(Code::E0250, location, "too many bits".to_owned());
+                return;
+            }
+            if self.incomplete_struct(&member.ty, st.name.as_deref()) {
+                let message = format!("type {} not fully defined yet", member.ty.fteqcc_name());
+                self.report(Code::E0255, location, message);
+                return;
+            }
+            if member.bits.is_some() && !self.bitfield_type(&member.ty) {
+                self.report(
+                    Code::E0250,
+                    location,
+                    "bitfields must be integer types".to_owned(),
+                );
+                return;
+            }
+        }
+    }
+
+    /// Whether `ty` is a struct or union a member cannot hold yet, one with no body so far or
+    /// the one being defined (`type == newt || ((type->type == ev_struct || ev_union) &&
+    /// !type->size)`, FTEF-6.7).
+    fn incomplete_struct(&self, ty: &Type, own: Option<&str>) -> bool {
+        let Type::Named(name) = ty else {
+            return false;
+        };
+        let tagged = name
+            .strip_prefix("struct ")
+            .or_else(|| name.strip_prefix("union "))
+            .map(str::trim);
+        let bare = tagged.unwrap_or(name);
+        let key = self.type_key(bare);
+        if own.is_some_and(|own| self.type_key(own) == key) {
+            return true;
+        }
+        match self.struct_defs.get(&key) {
+            Some(def) => !def.defined,
+            None => tagged.is_some(),
+        }
+    }
+
+    /// Whether a bitfield may have type `ty` (`type->type == ev_integer || ev_uint || ev_int64 ||
+    /// ev_uint64`, FTEF-6.9): a type the model follows by its kind, a type a program names being
+    /// one it does not follow.
+    fn bitfield_type(&self, ty: &Type) -> bool {
+        match ty.fteqcc_kind() {
+            Kind::Integer | Kind::Uint | Kind::Int64 | Kind::Uint64 => true,
+            Kind::Opaque => ty.fteqcc_scalar().is_none() && matches!(ty, Type::Named(_)),
+            Kind::Void
+            | Kind::String
+            | Kind::Float
+            | Kind::Vector
+            | Kind::Entity
+            | Kind::Field
+            | Kind::Function
+            | Kind::Pointer
+            | Kind::Double => false,
+        }
     }
 
     /// FTEF-9.7: the parent of a class is a type `QCC_TypeForName` finds, a class or an entity,
@@ -2533,13 +2816,44 @@ impl<'a> Resolver<'a> {
     ///
     /// If the name does not exist it is declared as a global `void()`. If it exists with a
     /// different type it is a type mismatch (QCD-3.5).
-    fn declare_next_think(&mut self, file: FileId, name: &str, span: Span) {
+    fn declare_next_think(&mut self, file: FileId, class: Option<DefId>, name: &str, span: Span) {
         let void_fn = Type::Function(Rc::new(FunctionType {
             ret: Type::Simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
         }));
         let location = self.at(file, span);
+        // FTEF-19.43: in a member function the name is a member function of the class or its
+        // parents first, which must be a `void()`.
+        let earlier = |d: &Definition| d.location.file != location.file || d.location.span.start <= span.start;
+        if let Some(def) = class
+            .and_then(|c| self.member_in(c, name))
+            .filter(|def| self.index.def(*def).is_some_and(earlier))
+        {
+            let member_ty = self.index.def(def).map(|d| d.ty.clone());
+            if let Some(member_ty) = member_ty
+                && !member_ty.fteqcc_same(&void_fn)
+            {
+                self.report(
+                    Code::E0309,
+                    location,
+                    format!(
+                        "Type mismatch: {}, should be void()",
+                        member_ty.fteqcc_name()
+                    ),
+                );
+            }
+            self.index.refs.push(Reference { location, def });
+            return;
+        }
+        // FTEF-19.33: a name found in any case under `-Fcaseinsens` is that definition.
+        let found = self
+            .lookup_global(name)
+            .or_else(|| self.lookup_any_case(None, name));
+        let name = found
+            .and_then(|d| self.index.def(d))
+            .map_or_else(|| name.to_owned(), |d| d.name.clone());
+        let name = name.as_str();
         let facts = DeclFacts {
             constant: true,
             ..DeclFacts::default()
@@ -2569,6 +2883,7 @@ impl<'a> Resolver<'a> {
             }
             let protos = prototyped.get(index);
             let mut tags = file.struct_tags.iter().peekable();
+            let mut structs = file.structs.iter().peekable();
             for (at, written) in file.decls.iter().enumerate() {
                 let proto = protos.and_then(|p| p.get(at)).and_then(Option::as_ref);
                 let decl = proto.unwrap_or(written);
@@ -2576,6 +2891,9 @@ impl<'a> Resolver<'a> {
                 // FTEF-19.20: a struct's tag is a type from where it is written.
                 while let Some((tag, _)) = tags.next_if(|(_, from)| *from < decl.span.end) {
                     self.type_names.insert(tag.clone());
+                }
+                while let Some(st) = structs.next_if(|st| st.at < decl.span.end) {
+                    self.declare_struct(file_id, st);
                 }
                 self.settle(decl.span.start);
                 let pending = self.declare_top_level(file_id, decl);
@@ -2704,15 +3022,19 @@ impl<'a> Resolver<'a> {
         if let Some(decl) = decl
             && let Some((next_name, next_span)) = &decl.next_think
         {
-            self.declare_next_think(file, next_name, *next_span);
+            self.declare_next_think(file, scope.class, next_name, *next_span);
         }
         // FTEF-20.5: a `state` statement declares its next think function as a header does.
         for (next_name, next_span) in &body.next_thinks {
             self.settle(next_span.start);
-            self.declare_next_think(file, next_name, *next_span);
+            self.declare_next_think(file, scope.class, next_name, *next_span);
         }
         // QC-11.10, QC-11.9: locals; a local field or function is an error (QCD-3.8 is the
         // parser's; the semantic check is QC-11.9).
+        for (ty, span) in &body.type_only {
+            let location = self.at(file, *span);
+            self.check_type_names(ty, &body.typedefs, span.start, location);
+        }
         for local in &body.locals {
             self.settle(local.span.start);
             let location = self.at(file, local.span);
@@ -3002,13 +3324,18 @@ impl<'a> Resolver<'a> {
             });
             let found = match (&use_.scope, use_.kind) {
                 (Some(prefix), _) if self.fteqcc => self.resolve_scoped(scope, prefix, &use_.name),
-                (_, UseKind::Value) => self.resolve_value(scope, &use_.name),
+                (_, UseKind::Value) => self.resolve_value(scope, &use_.name, false),
+                (_, UseKind::TypeOrValue) => self.resolve_value(scope, &use_.name, true),
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
             };
             match found {
                 Found::Def(def) => {
                     if let Some(f) = self.fact_mut(def) {
                         f.referenced = true;
+                    }
+                    // FTEF-19.41: a call of a name whose type is a value's, not a function's.
+                    if self.fteqcc && use_.called && self.index.def(def).is_some_and(|d| self.not_callable(&d.ty)) {
+                        self.report(Code::E0256, location, "not a function".to_owned());
                     }
                     if self.fteqcc
                         && let Some(reason) =
@@ -3037,15 +3364,36 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// Whether a value of type `ty` cannot be called (`not a function`, FTEF-19.41): a float,
+    /// vector, string, entity or struct.
+    fn not_callable(&self, ty: &Type) -> bool {
+        match self.resolved(ty) {
+            Type::Simple(SimpleType::Float | SimpleType::Vector | SimpleType::String | SimpleType::Entity) => true,
+            Type::Named(name) => {
+                let bare = name
+                    .strip_prefix("struct ")
+                    .or_else(|| name.strip_prefix("union "))
+                    .unwrap_or(&name);
+                self.struct_defs.contains_key(&self.type_key(bare))
+            }
+            Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) | Type::Unknown => false,
+        }
+    }
+
     /// A plain name used as a value: the function's own, then in a member function the
     /// class's members (FTEF-17.2), then a global (QC-12.2, FTE-22.1); under FTEQCC then an
     /// intrinsic (FTEF-17.4), `this` and `super` only in a member function (FTEF-19.16).
-    fn resolve_value(&self, scope: Option<Scope>, name: &str) -> Found {
+    fn resolve_value(&self, scope: Option<Scope>, name: &str, type_ok: bool) -> Found {
         let def = match scope {
             Some(scope) => self.lookup_in_scope(scope, name),
             None => self.lookup_used_global(name),
         };
         if let Some(def) = def {
+            // FTEF-19.39: a type's name is no value; `QCC_PR_ParseValue` finds no definition by
+            // it.
+            if self.fteqcc && !type_ok && self.type_defs.contains(&def) {
+                return Found::Unknown;
+            }
             return Found::Def(def);
         }
         if !self.fteqcc || !is_intrinsic(name) {
@@ -3132,6 +3480,12 @@ impl<'a> Resolver<'a> {
     /// names no definition; a name that is none of these is unknown.
     fn resolve_member(&self, scope: Option<Scope>, use_: &RawUse) -> Found {
         let name = use_.name.as_str();
+        if let Some((owner, true)) = self.struct_matches(scope, &use_.base, name) {
+            return Found::Error(
+                Code::E0252,
+                format!("multiple members found matching {owner}.{name}"),
+            );
+        }
         if let Some(class) = self.base_class(scope, &use_.base)
             && let Some(def) = self.member_in(class, name)
         {
@@ -3152,6 +3506,60 @@ impl<'a> Resolver<'a> {
             return Found::Nothing;
         }
         Found::Unknown
+    }
+
+    /// The struct a member access is made on, when a name's type is one (FTEF-6.5), and whether
+    /// more than one of its own members (the nearest struct with one) is named `name`, or by it
+    /// in any case under `-Fcaseinsens`: `QCC_PR_FindStructMember`'s "multiple members found
+    /// matching" (FTEF-6.11).
+    fn struct_matches(
+        &self,
+        scope: Option<Scope>,
+        base: &MemberBase,
+        name: &str,
+    ) -> Option<(String, bool)> {
+        if !self.fteqcc {
+            return None;
+        }
+        let MemberBase::Name(base) = base else {
+            return None;
+        };
+        let def = match scope {
+            Some(scope) => self.lookup_in_scope(scope, base),
+            None => self.lookup_used_global(base),
+        }?;
+        let Type::Named(type_name) = self.resolved(&self.index.def(def)?.ty) else {
+            return None;
+        };
+        let bare = type_name
+            .strip_prefix("struct ")
+            .or_else(|| type_name.strip_prefix("union "))
+            .unwrap_or(&type_name);
+        let mut current = Some(self.type_key(bare));
+        for _ in 0..MAX_CLASS_DEPTH {
+            let key = current?;
+            let def = self.struct_defs.get(&key)?;
+            // A member declared again with its name, type and size is one
+            // (`oldparm && oldparm->arraysize == arraysize && !typecmp_lax`).
+            let mut distinct: Vec<(&str, &Type, &[String])> = Vec::new();
+            for m in &def.members {
+                let same_name = if self.case_insensitive {
+                    m.name.eq_ignore_ascii_case(name)
+                } else {
+                    m.name == name
+                };
+                let entry = (m.name.as_str(), &m.ty, m.array.as_slice());
+                if same_name && !distinct.contains(&entry) {
+                    distinct.push(entry);
+                }
+            }
+            let matching = distinct.len();
+            if matching > 0 {
+                return Some((bare.to_owned(), matching > 1));
+            }
+            current = def.parent.clone();
+        }
+        None
     }
 
     /// The class of what a member access is made on (FTEF-17.3): `this`, a name's type, a
@@ -3551,6 +3959,13 @@ impl<'a> Resolver<'a> {
                     .class
                     .filter(|_| !self.has_name_key(&self.class_names, name))
                     .and_then(|c| self.member_in(c, name))
+                    // FTEF-17.2: only a member function is found by its bare name; a field is
+                    // `this.field`.
+                    .filter(|id| {
+                        self.index
+                            .def(*id)
+                            .is_some_and(|d| d.kind == DefKind::Function)
+                    })
             };
             self.lookup_local(scope, name)
                 .or_else(member)
@@ -3589,12 +4004,14 @@ impl<'a> Resolver<'a> {
                 ));
             }
             let skipped = self.fteqcc && self.unused.contains(&id) && !used.contains(&id);
-            if def.kind == DefKind::Function
-                && !def.initialized
-                && !def.generated
-                && def.member_of.is_none()
-                && !skipped
-            {
+            // FTEF-19.42: a member function a class declares and nothing defines has no body
+            // either, a virtual one among them, which is a field of function type.
+            let member_function = def.member_of.is_some()
+                && (def.kind == DefKind::Function
+                    || (def.kind == DefKind::Field && self.resolved(&def.ty).is_function()));
+            let function =
+                (def.kind == DefKind::Function && def.member_of.is_none()) || member_function;
+            if function && !def.initialized && !def.generated && !skipped {
                 undefined.push(diag(
                     Code::E0211,
                     def.location,

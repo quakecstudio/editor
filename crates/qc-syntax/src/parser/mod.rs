@@ -340,6 +340,8 @@ pub(crate) struct Parser<'a> {
     /// Whether a body that lost its `}` ended at a declaration line (FTEF-18.27), so what
     /// follows it in the declaration is the next declaration's, not read as its declarators.
     recovering: bool,
+    /// Whether the type last read had a `*` or a parameter list after its base.
+    type_derived: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -378,6 +380,7 @@ impl<'a> Parser<'a> {
             unary_not: false,
             in_typedef: false,
             recovering: false,
+            type_derived: false,
         };
         parser.sync_keywords();
         parser
@@ -1152,7 +1155,7 @@ impl<'a> Parser<'a> {
         self.bump_as(if union { K::UnionKw } else { K::StructKw });
         if self.at(K::LBrace) {
             self.bump();
-            self.struct_members();
+            self.struct_members(if union { "union" } else { "struct" }, "");
             self.finish_node();
             return;
         }
@@ -1162,7 +1165,7 @@ impl<'a> Parser<'a> {
             self.finish_node();
             return;
         }
-        self.declare_type(tag);
+        self.declare_type(tag.clone());
         let mut parent = false;
         if !union && self.at(K::Colon) {
             // FTEF-6.3: `struct Child : Parent`; a union takes no parent.
@@ -1183,15 +1186,18 @@ impl<'a> Parser<'a> {
             false
         };
         if opened {
-            self.struct_members();
+            self.struct_members(if union { "union" } else { "struct" }, &tag);
         }
         self.finish_node();
     }
 
     /// The members of a struct's body, up to and including its `}` (FTEF-6.7).
-    fn struct_members(&mut self) {
+    fn struct_members(&mut self, kind: &str, tag: &str) {
         // `newparm`: whether a member's type is open for a `,`, until its `;`.
         let mut open = false;
+        // `numparms`: the members counted, which a `static` one is not (FTEF-6.7).
+        let mut members = 0_usize;
+        let mut statics = false;
         loop {
             if self.current().is_none() {
                 self.expected("}");
@@ -1200,6 +1206,14 @@ impl<'a> Parser<'a> {
             if self.at(K::RBrace) {
                 if open {
                     self.expected(";");
+                }
+                if members == 0 {
+                    let name = if tag.is_empty() {
+                        format!("<{kind}>")
+                    } else {
+                        tag.to_owned()
+                    };
+                    self.error(Code::E0243, format!("{kind} {name} has no members"));
                 }
                 self.bump();
                 return;
@@ -1225,6 +1239,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.struct_declarator();
                 self.finish_node();
+                members = members.saturating_add(usize::from(!statics));
             } else {
                 if open {
                     self.expected(";");
@@ -1234,8 +1249,9 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 self.start_node(K::StructField);
-                open = self.struct_member();
+                (open, statics) = self.struct_member();
                 self.finish_node();
+                members = members.saturating_add(usize::from(open && !statics));
             }
             if self.pos == before {
                 self.bump_error();
@@ -1263,27 +1279,29 @@ impl<'a> Parser<'a> {
     /// One new type of a struct's body and its first declarator: `static` or `virtual`, then
     /// `QCC_PR_ParseType(false, false, true)`, the `*`s, and a name, `(name)` or nothing before
     /// the `;` (FTEF-6.7). Whether a `,` may continue it.
-    fn struct_member(&mut self) -> bool {
+    fn struct_member(&mut self) -> (bool, bool) {
+        let mut statics = false;
         while ["static", "virtual"]
             .iter()
             .any(|word| self.checks(0, Enabled::Always, word))
         {
+            statics |= self.checks(0, Enabled::Always, "static");
             self.start_node(K::Qualifier);
             self.bump();
             self.finish_node();
         }
         let Some(ty) = self.fte_member_type() else {
             self.recover(true);
-            return false;
+            return (false, statics);
         };
         if ty.qcfuncs && self.at(K::LParen) && self.nth(1).is_some_and(|t| t.kind == K::Star) {
             // `ParseType` with `qcfuncs` took the `(`, and `ParseFunctionType` found a `*`.
             self.error(Code::E0204, "expected function arg list");
             self.recover(true);
-            return false;
+            return (false, statics);
         }
         self.struct_declarator();
-        true
+        (true, statics)
     }
 
     /// What follows a struct member's type, or a `,`: `*`s, then a name, `(*name)` or nothing,
@@ -1401,29 +1419,37 @@ impl<'a> Parser<'a> {
             self.fte_type();
         }
         if self.expect(K::LBrace, "{") {
-            while !self.at(K::RBrace) && self.current().is_some() {
-                let before = self.pos;
+            // `while(1) { name = QCC_PR_ParseName(); ...; if (QCC_PR_CheckToken("}")) break;
+            // QCC_PR_Expect(","); if (QCC_PR_CheckToken("}")) break; }`: at least one name, and
+            // a `,` may end the list (FTEF-19.38).
+            loop {
                 self.start_node(K::Enumerator);
                 // FTEF-20.4: `QCC_PR_ParseEnum` makes each name with `QCC_PR_DummyDef`.
                 let name = self.found();
-                if self.name() {
+                let named = self.name();
+                if named {
                     self.define(&name, false);
                 }
-                if self.at(K::Eq) {
+                if named && self.at(K::Eq) {
                     self.bump();
                     self.expression();
                 }
                 self.finish_node();
-                if !self.at(K::Comma) {
-                    break;
+                if !named {
+                    return;
                 }
-                self.bump();
-                if self.pos == before {
-                    self.bump_error();
-                    break;
+                if self.at(K::RBrace) {
+                    self.bump();
+                    return;
+                }
+                if !self.expect(K::Comma, ",") {
+                    return;
+                }
+                if self.at(K::RBrace) {
+                    self.bump();
+                    return;
                 }
             }
-            self.expect(K::RBrace, "}");
         }
     }
 
