@@ -50,6 +50,7 @@ mod flags;
 mod keywords;
 mod lexical;
 mod passes;
+mod types;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -1109,6 +1110,9 @@ fn vanilla_paired(form: &str) -> bool {
 
 /// Every case, in a fixed order.
 pub(crate) fn cases() -> Vec<Case> {
+    if std::env::var_os("QS_TYPES_ONLY").is_some() {
+        return types::cases();
+    }
     // FTE-23.6: names and strings longer than FTEQCC's 255-byte `fname`, and than id's
     // 63-byte names (QC-3.3).
     let mut values: Vec<String> = VALUES.iter().map(|&value| value.to_owned()).collect();
@@ -1216,6 +1220,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(caseinsens::cases());
     cases.extend(casts::cases());
     cases.extend(defs::cases());
+    cases.extend(types::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -2071,6 +2076,57 @@ fn check_where(
     }
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
+    if let Some(file) = std::env::var_os("QS_PROGS") {
+        let work = oracles.work.join("builtins-dev");
+        fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
+        let text = fs::read_to_string(file).map_err(|e| e.to_string())?;
+        for program in text.split("\n====\n") {
+            for options in [vec![], vec!["-Fcaseinsens".to_owned()]] {
+                let case = Case {
+                    options,
+                    ..Case::new(Dialect::Fteqcc, format!("{}{program}\n", directives::BIND))
+                };
+                let ours = profile(&case);
+                let theirs = oracle(oracles, &work, &case)?;
+                let mark = if ours.0 == theirs { "  ok " } else { "DIFF " };
+                println!("{mark}{} | oracle {theirs} | profile {} {:?}", case.options.join(" "), ours.0, ours.1);
+                if ours.0 != theirs {
+                    println!("      {program}");
+                }
+            }
+        }
+        return Ok(true);
+    }
+    if let Some(cache) = std::env::var_os("QS_TYPES_ONLY") {
+        let cache = PathBuf::from(cache);
+        let work = oracles.work.join(format!(
+            "builtins-{}",
+            cache.file_stem().and_then(|s| s.to_str()).unwrap_or("dev")
+        ));
+        fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
+        let held: BTreeMap<String, String> = fs::read_to_string(&cache)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let mut outcomes = BTreeMap::new();
+        let all = cases();
+        for case in &all {
+            let key = case.key();
+            let known = held.get(&key).and_then(|t| Outcome::parse(t));
+            let outcome = match known {
+                Some(o) => o,
+                None => oracle(oracles, &work, case)?,
+            };
+            outcomes.insert(key, outcome);
+        }
+        let raw: BTreeMap<&String, String> =
+            outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
+        fs::write(&cache, serde_json::to_string(&raw).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        let tally = compare(&all, &outcomes, host);
+        println!("oracles: {} cases: {tally}", all.len());
+        return Ok(tally.differ == 0);
+    }
     let cases = cases();
     let graph_cases = graph_cases();
     let mut outcomes = BTreeMap::new();

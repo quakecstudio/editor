@@ -1315,19 +1315,6 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
     }
     out.diagnostics
         .extend(typedef_diagnostics(td, cx, TypedefScope::File));
-    let Some(token) = td.name() else {
-        return;
-    };
-    let mut decl = RawDecl::type_name(&token, TypeKind::Typedef);
-    // FTEF-19.9: the type it names, which a typedef of the same name must name again. An
-    // array typedef names a type the model does not follow.
-    let array = td
-        .syntax()
-        .children()
-        .any(|n| n.kind() == SyntaxKind::ArraySuffix);
-    // FTEF-21.7: the name is a declarator's, so its parameter lists and C's `(*name)(params)`
-    // make the function type it names.
-    let pointer = td.pointer_depth() > 0 || td.pointer_form().is_some_and(|stars| stars > 1);
     let node = td.syntax().children().find_map(ast::Type::cast);
     // FTEF-19.21: with its type left out, a typedef names an `int`.
     let omitted = node.is_none()
@@ -1335,22 +1322,39 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
             .syntax()
             .children()
             .all(|n| !matches!(n.kind(), SyntaxKind::StructType | SyntaxKind::EnumDecl));
-    decl.typedef = Some(if omitted {
-        Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
-    } else {
-        node.filter(|_| !array && !pointer)
-            .map_or(Type::Unknown, |t| {
-                let mut ty = cx.ty(&t);
-                for list in td.prefix_params() {
-                    ty = cx.function(ty, &list);
-                }
-                if let Some(list) = td.params().filter(|_| td.pointer_form().is_some()) {
-                    ty = cx.function(ty, &list);
-                }
-                ty
-            })
-    });
-    out.decls.push(decl);
+    for declarator in td.declarators() {
+        let Some(token) = declarator.name() else {
+            continue;
+        };
+        let mut decl = RawDecl::type_name(&token, TypeKind::Typedef);
+        // FTEF-19.9: the type it names, which a typedef of the same name must name again. An
+        // array typedef names a type the model does not follow.
+        let array = declarator.array_suffixes().next().is_some();
+        // FTEF-21.7: the name is a declarator's, so its parameter lists and C's `(*name)(params)`
+        // make the function type it names.
+        let pointer = declarator.pointer_depth() > 0
+            || declarator.pointer_form().is_some_and(|stars| stars > 1);
+        decl.typedef = Some(if omitted {
+            Type::Named(std::rc::Rc::from(CScalar::Integer.name()))
+        } else {
+            node.clone()
+                .filter(|_| !array && !pointer)
+                .map_or(Type::Unknown, |t| {
+                    let mut ty = cx.ty(&t);
+                    for list in declarator.prefix_params() {
+                        ty = cx.function(ty, &list);
+                    }
+                    if let Some(list) = declarator
+                        .params()
+                        .filter(|_| declarator.pointer_form().is_some())
+                    {
+                        ty = cx.function(ty, &list);
+                    }
+                    ty
+                })
+        });
+        out.decls.push(decl);
+    }
 }
 
 /// Where a `typedef` is: `QCC_PR_ParseDefs` drops `extern` from a definition whose type is no
@@ -1371,7 +1375,7 @@ enum TypedefScope {
 /// storage class, `typedef` among them and `static` by its default, is "Conflicting storage
 /// classes." (FTEF-19.16).
 fn typedef_diagnostics(td: &ast::TypedefDecl, cx: Cx<'_>, scope: TypedefScope) -> Vec<Diagnostic> {
-    let Some(token) = td.name() else {
+    let Some(token) = td.declarators().find_map(|d| d.name()) else {
         return vec![Diagnostic {
             code: Code::W0215,
             message: "typedef defines no types".to_owned(),
@@ -1920,7 +1924,7 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody) {
     for td in block_typedefs(block.syntax()) {
         body.diagnostics
             .extend(typedef_diagnostics(&td, cx, TypedefScope::Body));
-        if let Some(name) = td.name() {
+        for name in td.declarators().filter_map(|d| d.name()) {
             body.typedefs
                 .push((name.text_lossless(), name.span().start));
         }
