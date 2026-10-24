@@ -1679,6 +1679,24 @@ profile the preprocessor reads them as FTEQCC does.
   `targets[]` (`QCC_OPCodeSetTargetName`, FTEF-12.11), in order, `-Tparse` none. The `/W`, `/F`
   and `/K` spellings FTEQCC reads only on Windows (`WINDOWSARG`) are not read: the pinned
   oracle is not built for Windows.
+- **FTEF-14.73** Under `-Fcaseinsens`, which only the command line sets (FTEF-14.72), FTEQCC
+  searches its macro table in any case: `pHash_Get = &Hash_GetInsensitive;` and
+  `QCC_PR_CheckCompConst`, `QCC_PR_DefineName` and `QCC_PR_UndefineName`
+  look a name up with `pHash_Get(&compconstantstable, name)`. So after `#define Foo 5` a use of
+  `foo` or `FOO`, `#ifdef foo`, `#ifndef foo`, `#if defined(foo)`, `#if foo == 5` and a macro
+  whose body names `foo` find it, and without `-Fcaseinsens` they do not; a definition in another
+  case finds the old macro (`oldcnst = pHash_Get(&compconstantstable, pr_token);`) and replaces
+  it. `#undef` finds the macro the same way, with no "was not defined" warning, but removes it
+  with `Hash_Remove(&compconstantstable, name)`, which hashes the name as written and compares it
+  exactly: `#undef foo` of a macro defined as `Foo` leaves it defined, and `#undef` of a name
+  with an upper case letter, or a redefinition of a macro that was defined with one, looks in a
+  bucket the macro was not added to, which the pinned FTEQCC reads when it is empty and ends
+  with a segmentation fault (measured on macOS arm64, the differential's host). This profile
+  removes a macro only when the `#undef` names its spelling, finds it in any case, and never
+  ends; the differential holds no program that makes FTEQCC read an empty bucket. The macros
+  FTEQCC defines itself, `FTEQCC` and `__FTEQCC__`, are added before the search is switched, to
+  the buckets of the name as written, so under `-Fcaseinsens` `#ifdef FTEQCC` is false, as is
+  `#ifdef fteqcc` (measured); this profile finds no built-in macro there.
 
 ## FTEF-15 Declarations
 

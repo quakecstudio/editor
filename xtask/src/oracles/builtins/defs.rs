@@ -544,6 +544,70 @@ const CLASS_SITES: &[&str] = &[
 /// Where a user type is a struct's member.
 const USER_MEMBER_SITES: &[&str] = &["struct s { T a; };\n"];
 
+/// Programs that define a macro and use its name in another case: the macro table is searched in
+/// any case under `-Fcaseinsens` (FTEF-14.73). `#undef` of a name with an upper case letter
+/// crashes the pinned FTEQCC (`Hash_Remove` reads an empty bucket), so only lower case names are
+/// undefined and a macro is redefined only when it was defined in lower case.
+fn macro_table_programs() -> Vec<String> {
+    let mut sources = Vec::new();
+    for define in [
+        "#define Foo 5\n",
+        "#define foo 5\n",
+        "#define FOO 5\n",
+        "#define fOo 5\n",
+        "#define Foo(a) a\n",
+        "#define foo(a) a\n",
+        "#define Foo 5\n#define Bar Foo\n",
+        "#define foo 5\n#define bar foo\n",
+        "#define foo 5\n#define FOO 6\n",
+        "#define foo 5\n#undef foo\n",
+        "#define foo 5\n#undef foo\n#define Foo 6\n",
+        "#define Foo 5\n#undef foo\n",
+        "#define Foo 5\n#undef bar\n",
+        "#define Foo 5\n#define bar FOO\n",
+        "#define foo 5\n#define Bar FOO\n",
+    ] {
+        for use_ in [
+            "float x = foo;",
+            "float x = Foo;",
+            "float x = FOO;",
+            "float x = BAR;",
+            "float x = bar;",
+            "float x = Bar;",
+            "float x = foo(5);",
+            "float x = Foo(5);",
+            "float x = FOO(5);",
+            "#ifdef fteqcc\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef FTEQCC\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef __fteqcc__\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#if defined(Fteqcc)\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef foo\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef Foo\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef FOO\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifndef foo\nfloat x = zzz;\n#endif",
+            "#ifndef FOO\nfloat x = zzz;\n#endif",
+            "#if defined(foo)\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#if defined(FOO)\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#if !defined(Foo)\nfloat x = zzz;\n#endif",
+            "#if foo == 5\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#if FOO == 5\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef zzz\n#elif defined(FOO)\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#ifdef zzz\n#elifdef foo\nfloat x = 5;\n#else\nfloat x = zzz;\n#endif",
+            "#undef foo\nfloat x = foo;",
+            "#undef foo\nfloat x = Foo;",
+            "#undef bar\nfloat x = BAR;",
+        ] {
+            // A call of an object-like macro is no definition's value.
+            let call = use_.contains("(5)");
+            if call != define.contains("(a)") {
+                continue;
+            }
+            sources.push(format!("{define}{use_}\n"));
+        }
+    }
+    sources
+}
+
 /// The command-line options the type programs are compiled with.
 const CASE_OPTIONS: &[&[&str]] = &[&["-Fcaseinsens"], &[]];
 
@@ -559,6 +623,9 @@ pub(super) fn cases() -> Vec<Case> {
         ..Case::new(Dialect::Fteqcc, program(&source))
     };
     for options in CASE_OPTIONS {
+        for source in macro_table_programs() {
+            cases.push(with(options, source));
+        }
         let insensitive = !options.is_empty();
         for body in ISSUE_BODIES {
             cases.push(with(options, format!("void() g = {{ {body} }};\n")));
