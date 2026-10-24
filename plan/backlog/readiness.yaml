@@ -270,12 +270,13 @@ groups:
     - P2-121
     - P2-130
     - P2-131
+    - P2-133
     - P1-R2
     - P0-24
     deliverable:
     - 'docs/readiness/p2-r2.md following docs/readiness/_template.md, covering: P2-29, P2-15, P2-28, P2-33, P2-39, P2-40, P2-41, P2-42, P2-50, P2-51, P2-55, P2-59, P2-65, P2-66, P2-63, P2-69, P2-71, P2-72,
       P2-73, P2-75, P2-76, P2-79, P2-80, P2-81, P2-82, P2-83, P2-86, P2-87, P2-94, P2-96, P2-97, P2-98, P2-99, P2-101, P2-102, P2-107, P2-108, P2-109, P2-110, P2-111, P2-112, P2-114, P2-116, P2-119, P2-121,
-      P2-130, P2-131'
+      P2-130, P2-131, P2-133'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README
@@ -332,10 +333,11 @@ groups:
     - P2-118
     - P2-122
     - P2-132
+    - P2-134
     - P0-24
     deliverable:
     - 'docs/readiness/p2-r3.md following docs/readiness/_template.md, covering: P2-02, P2-03, P2-26, P2-04, P2-30, P2-31, P2-35, P2-05, P2-32, P2-34, P2-38, P2-43, P2-53, P2-54, P2-56, P2-67, P2-58, P2-70,
-      P2-74, P2-77, P2-78, P2-84, P2-95, P2-117, P2-118, P2-122, P2-132'
+      P2-74, P2-77, P2-78, P2-84, P2-95, P2-117, P2-118, P2-122, P2-132, P2-134'
     - Ratchet values for every crate in the layer committed to CI
     acceptance:
     - Every threshold in ADR-0009 met for every crate in the layer, or a per-crate exception with its reason recorded in the crate README

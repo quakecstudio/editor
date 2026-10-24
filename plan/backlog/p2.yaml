@@ -1673,6 +1673,8 @@ issues:
   - P2-130
   - P2-131
   - P2-132
+  - P2-133
+  - P2-134
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2559,6 +2561,50 @@ issues:
   - 'crates/qc-sema (`expand.rs` and the definitions the semantic model makes) and docs/spec/dialect-fteqcc.md FTEF-12.10, FTEF-21.1 and FTEF-19.29: `#pragma autoproto` taken while FTEQCC has allocated no global, as `numpr_globals != RESERVED_OFS` decides; the second pass''s definitions made with the flags its first token is marked with; and a type name found in any case under `caseinsens` where a declaration''s type is read; each a spec statement and a citing test'
   acceptance:
   - 'The three groups of programs above compile, or are refused, as the pinned FTEQCC compiles them, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-133
+  title: Read FTEQCC's struct, union, class and typedef declarations as its parser reads them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  - QA-2
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), with over 1000 more programs in four batches of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64). The profile's parser reads `struct`, `union`, `class` and `typedef` as one declaration each, a narrower grammar than `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` (`qcc_pr_lex.c`, `qcc_pr_comp.c`). FTEQCC compiles each of these and the profile reports an error in the parser (the code is in brackets): (1) a class or struct named as C names it, `class C; class C x;`, `class C { float a; }; class C x;`, `void() g = { class C x; };` and `class float x;` (E0203 "is not a type"; `QCC_PR_ParseType` calls `QCC_PR_ParseEntClass`, which returns the type of a `class NAME` with no `{`, and the declarators follow); (2) a struct body's access labels and nested declarations, `struct S { public: float a; private: float b; protected: float c; };`, `struct S { struct T { float a; }; };`, `struct S { enum { A }; float a; };` and the anonymous members `struct S { struct { float a; }; float b; };` and `struct S { union { float a; vector v; }; float A; };` (E0201 "not a name"; `QCC_PR_ParseStruct` reads `public`, `private` and `protected` with `QCC_PR_CheckKeyword(1, ...)` and then `QCC_PR_ParseType` for the member, which makes the type of a nested `struct`, `union` or `enum` whether or not a declarator follows); (3) a `typedef` with a declarator list, `typedef float t, u;`, `typedef float t, *u;`, `typedef void() fn, fn2;`, `typedef struct S { float a; } T, *PT;`, `typedef class C { float a; } CC;` and `typedef typedef float tt;` (E0204 and E0203; `QCC_PR_ParseDefs` loops over its declarators after `typedef` as it does after any type); (4) in a body, an unnamed struct for a local, `struct { float a; } x; x.a = 1;` and `local struct { float a; } x;`, and a cast to a named struct's pointer, `(struct S *)0;` (E0301 "Unknown value", E0204; both compile at file level). The profile accepts, and FTEQCC refuses, the forms that need what follows the name: `struct S : P;` and `class D : C;` ("expected {": `QCC_PR_Expect("{")` after a parent), `union U : P { float b; };` (a union takes no parent, `if (structtype == ev_struct && QCC_PR_CheckToken(":"))`), `class C { float a = 1; };` ("expected function arg list"), a second access label in a class, `class C { private: float a; protected: float b; };` ("expected :, found float": `QCC_PR_ParseEntClass` reads a label only where `firstkeyword` is set) and `float (x);` ("expected function arg list"). FTEF-6.1 says "the anonymous `struct { ... }` define[s] an aggregate" and FTEF-15.6 that `struct { ... } a[4], *p;` declares variables, and neither states the forms above.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-syntax (`parser/fte.rs`, `struct_decl`, `struct_type` and the declaration parser in `parser/mod.rs`) and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-7, FTEF-9 and FTEF-15.6: the declarations above read as `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` read them, at file level, in a body and in a member list, and the forms FTEQCC refuses refused, each a spec statement quoting the source and a citing test; the tree keeps every byte, the nesting limit of QC-27.15 counts every new construct that nests, and the fuzz target `parser` and the property tests cover them'
+  acceptance:
+  - 'Each program above is read as the pinned FTEQCC reads it under the FTEQCC profile (a definition, or the error it gives), and with `-Fcaseinsens` where a type name is involved, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  - 'The qc-syntax ratchets in `ratchets.toml` hold (lines, branches, mutation, spec citations)'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-134
+  title: Check the declarations and statements FTEQCC refuses in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), on the L3 path the builtin differential runs (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64); the parser reports nothing for any of them. The semantic model accepts where FTEQCC refuses: (1) `break;` and `continue;` outside a loop, `void() g = { break; };` ("g: function contains illegal breaks"; also `BREAK;` and `Continue;` under `-Fcaseinsens`); (2) a struct defined twice with different members, `struct S { float a; }; struct S { float b; };` ("redeclared differently"), a typedef redeclared as another type, `typedef float t; typedef vector T;` under `-Fcaseinsens`, a struct, union or enum with no members, `struct s {}; struct S {};`, `enum E { };`, and a repeated enumerator, `enum E { A, A };`; (3) an undefined parent, `class D : E { float b; };` ("Parent class E was not yet defined"), `struct S : P { float b; };`, and a pointer from the child to the parent, `struct P { float a; }; struct S : P { float b; }; void() g = { S s; local P *p = &s; };`; (4) a bitfield on a float, `struct S { float a : 3; };` ("bitfields must be integer types"), and a struct called as a function, `S s; s = S(1);`; (5) a name in the wrong case without `caseinsens`: `enum E { Alpha, Beta }; float x = e::Alpha;` (E is a type, e is not); (6) a union with members `a` and `A`, `union U { float a; float A; }; void() g = { U s; s.A = 1; };` under `-Fcaseinsens` (`QCC_PR_FindStructMember` finds two); (7) inside `extern "C"`: `float x[2]; float y = x[1];` ("initializer is not constant") and `typedef float (*fp)(float); fp x;` ("function x has no body"); (8) a class member `void() m = { a = 1; }` that names a member, `class C { float a; void() m = { a = 1; }; };`, `class C { void() m; void() n = {}; };` and a state in a member, `class C { float() m = [1, m] { return 1; }; };`. FTEQCC accepts and the semantic model refuses a state's next function in another case: `$frame run`, `void() g = [$RUN, G] {};` under `-Fcaseinsens` compiles in FTEQCC and the semantic model reports E0211 for `G`, which `Hash_GetInsensitive` finds as `g`. `-Facc` and `-std=reacc`'s type names are not in this list (FTEF-19.30, FTEF-20.13 state them outside the profile); FTEQCC's crash on a redefinition or `#undef` of a macro with an upper case letter under `-Fcaseinsens` (exit 139 from `Hash_Remove`) is its own defect, not a divergence to match.
+  depends:
+  - P2-132
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs` and the checks beside it) and docs/spec/dialect-fteqcc.md FTEF-19, FTEF-20 and FTEF-21: each refusal and acceptance above made as the pinned FTEQCC makes it, or the program named in a spec statement as outside the profile with its reason; each a spec statement quoting the source and a citing test'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
   - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
   verify:
   - cargo test -p qc-sema
