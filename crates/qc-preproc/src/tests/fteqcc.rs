@@ -695,7 +695,7 @@ fn fte_in(path: &str, text: &str) -> (Vec<TokenKind>, Vec<Code>) {
     (kinds, codes(&out))
 }
 
-// spec FTEF-14.32: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
+// spec FTEF-14.74: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
 // its first `:`, and `"`, read as a string literal with nothing in the name escaped
 #[test]
 fn file_constant_is_fteqcc_s_text() {
@@ -733,7 +733,7 @@ fn file_constant_is_fteqcc_s_text() {
     );
 }
 
-// spec FTEF-14.32: an argument copies `__FILE__` as its text, which a `#` then writes into a
+// spec FTEF-14.74: an argument copies `__FILE__` as its text, which a `#` then writes into a
 // string as it stands
 #[test]
 fn a_stringified_file_constant_holds_its_text() {
@@ -741,7 +741,7 @@ fn a_stringified_file_constant_holds_its_text() {
     assert_eq!(tok.kind, TokenKind::String(br#""dx.qc""#.to_vec()));
 }
 
-// spec FTEF-14.32: an included file is named by the bytes between its quotes joined to the
+// spec FTEF-14.74: an included file is named by the bytes between its quotes joined to the
 // compiled file's name after its last `/` or `\`, also when another included file includes it,
 // and alone when it starts with `/`; in a macro's chunk the name is the file's
 #[test]
@@ -769,7 +769,55 @@ fn an_included_file_is_named_beside_the_compiled_file() {
     assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
-// spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
+// spec FTEF-14.75: a file is opened at its path and named by its name, which `__FILE__`
+// writes and an `#include` is joined to, the joined name opened in the working directory; a
+// file given by its path alone is named by it and opened as it is
+#[test]
+fn names_are_opened_in_the_working_directory() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("/w/src/a.qc", "__FILE__\n#include \"x/b.qh\"\n".as_bytes());
+    loader.insert("/w/src/x/b.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(qc_lexer::Dialect::Fteqcc)
+        .with_working_dir(Path::new("/w"));
+    let out = pp
+        .preprocess_file_named(Path::new("/w/src/a.qc"), b"src/a.qc")
+        .unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/a.qc".to_vec()),
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+        ]
+    );
+    assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+    assert!(pp.preprocess_file(Path::new("src/a.qc")).is_err());
+    let out = pp
+        .preprocess_source_named(Path::new("/w/src/x/b.qh"), b"progs.src")
+        .unwrap();
+    assert_eq!(out.tokens[0].kind, TokenKind::String(b"progs.src".to_vec()));
+    let out = pp.preprocess_file(Path::new("/w/src/x/b.qh")).unwrap();
+    assert_eq!(
+        out.tokens[0].kind,
+        TokenKind::String(b"/w/src/x/b.qh".to_vec())
+    );
+}
+
+// spec FTEF-14.70: `QCC_PR_AddIncludePath` names an empty directory `.` and puts a `/` after a
+// name unless it ends in `/` or `\`
+#[test]
+fn include_directory_names() {
+    assert_eq!(crate::include_dir_name(b""), b"./");
+    assert_eq!(crate::include_dir_name(b"inc"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc/"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc\\"), b"inc\\");
+    assert_eq!(crate::pragma_include_dir(b"y", b"src/a.qc"), b"src/y/");
+    assert_eq!(crate::pragma_include_dir(b"y\\", b"src/a.qc"), b"src/y\\");
+    assert_eq!(crate::pragma_include_dir(b"", b"src/a.qc"), b"src/");
+}
+
+// spec FTEF-14.74: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
 // case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
 #[test]
 fn pragma_file_names_the_file() {
@@ -798,7 +846,7 @@ fn pragma_file_names_the_file() {
     );
 }
 
-// spec FTEF-14.32: a pragma's text runs to its line's break whatever a comment, a string or a
+// spec FTEF-14.74: a pragma's text runs to its line's break whatever a comment, a string or a
 // `\` in it would run across, and reading goes on there
 #[test]
 fn a_pragma_s_text_ends_at_its_line_s_break() {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The case-insensitive family of the builtin differential (P2-132): programs whose outcome
-//! `-Fcaseinsens` decides (`docs/spec/dialect-fteqcc.md` FTEF-19.31): FTEQCC's name tables, the
+//! `-Fcaseinsens` decides (`docs/spec/dialect-fteqcc.md` FTEF-19.33): FTEQCC's name tables, the
 //! type table and the definitions', are searched in any case, so a type name or a name written in
 //! another case than its definition is found. Each program binds `f` first, so `f` is bound only
 //! when FTEQCC compiled the rest. It is compiled with and without the option, the words of C

@@ -175,7 +175,7 @@ fn assumed_types_from_the_pragma() {
     assert_eq!(codes("string s = 5;\n", &["-Fassumeint"]), [Code::W0220]);
 }
 
-// spec FTEF-19.31: under `-Fcaseinsens` a use finds a definition of the name in any case, and
+// spec FTEF-19.33: under `-Fcaseinsens` a use finds a definition of the name in any case, and
 // a definition is never one of another case
 #[test]
 fn case_insensitive_names() {
@@ -301,7 +301,7 @@ fn core_type_names_without_qcfuncs() {
     assert_eq!(codes("#pragma flag disable qcfuncs\nvector v;\n", &[]), []);
 }
 
-// spec FTEF-19.31: under `-Fcaseinsens` a class is found in any case by `Class::member`, a
+// spec FTEF-19.33: under `-Fcaseinsens` a class is found in any case by `Class::member`, a
 // member's definition and a parent's name, as `QCC_TypeForName` searches its table
 #[test]
 fn a_class_is_found_in_any_case() {

@@ -25,7 +25,10 @@ origin, its own span or the outermost macro use (QC-9.7), so every definition, r
 source file, an included file's own where it came from one (QC-9.2). The per-file parse and
 lowering are memoized on the expanded text, so editing a macro's definition re-parses the files
 whose expansion it changes and no others. `Db::parse` stays the lossless tree of the file as
-written, the editing view.
+written, the editing view. Each compiled file is given to the preprocessor by the name its
+`ModuleInput` holds, the graph's for an FTEQCC module (`ModuleInput::from_graph`), and the
+names its `#include`s are joined to are opened in the graph's directory, so `__FILE__` and the
+names of included files are FTEQCC's (FTEF-14.75).
 
 `Db::set_dialect` chooses the dialect the model parses and resolves in (PRJ-2.8). Under an
 FTEQCC dialect the binding forms of `docs/spec/dialect-fteqcc-rerelease.md` resolve: `enum`
@@ -69,17 +72,19 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   functions of FTE-23.7 and the cast of FTE-23.16. Of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md), the diagnostics
   QCD-3.5 to QCD-3.8, QCD-3.11, QCD-3.13 to QCD-3.35, QCD-4.1, QCD-4.9 to QCD-4.13, QCD-5.4,
-  QCD-7.3, QCD-7.23, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
+  QCD-7.3, QCD-7.23, QCD-7.72, QCD-7.32 to QCD-7.51 and QCD-7.67. Of
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
-  FTEF-17.13, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
-  and FTEF-19.19 to FTEF-19.30: the warning settings, the command line's flags, the lexer's
+  FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
+  and FTEF-19.19 to FTEF-19.32: the warning settings, the command line's flags, the lexer's
   flags in literals and engine names, case insensitivity and a module's source; the flags
   that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
   `qcfuncs` off, the attributes and the definitions `alias` makes (QCD-3.34, QCD-3.35),
   `assumevar`, `subscope`, `assumeint`'s enums and the defaults of `#pragma noref`, `nosave` and
-  `defaultstatic`; and the
+  `defaultstatic`; the flags and the target the casts and conversions read, FTEF-22.1 to
+  FTEF-22.6 (`lax`, `qccx`, `typeexplicit`, `flag_undefwordsize` and the `extern` check of the
+  target, QCD-3.36 to QCD-3.39, QCD-7.70 and QCD-7.71); and the
   keywords' parts that are the semantic model's, FTEF-20.4 (the warning for a definition named
   as a keyword), FTEF-20.5 (the names of `using`, `thinktime` and `state`), FTEF-20.9 (the
   registered type C type words name) and FTEF-20.11 (`this` and `super`). The
@@ -99,7 +104,7 @@ before the globals, and after `.` or `->` through the class of what the access i
 intrinsics are no names to define; equal initialisers, builtins of one number and engine name
 that FTEQCC would bind to one function (FTE-23.7), enums declared again and `noref`
 definitions are no redeclaration (FTEF-17.10, FTEF-17.8); a redeclaration
-involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.13); `wrap`, `weak` and
+involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.12); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
 variable (FTEF-15.5); a function with no body is reported unless it is `noref` and not
 referred to (FTEF-17.11); and a builtin given for a function with a body is a warning, the body kept

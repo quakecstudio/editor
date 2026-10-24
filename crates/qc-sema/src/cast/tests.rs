@@ -8,7 +8,9 @@ use qc_syntax::c_scalar::CContext;
 
 use qc_lexer::{LexFlag, LexFlags};
 
-use super::{ConstType, Kind, Literal, Source};
+use qc_preproc::{CompilerFlags, FteFlag};
+
+use super::{Cast, ConstType, Kind, Literal, Source, Supply};
 use crate::ty::{FunctionType, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
@@ -49,7 +51,7 @@ fn numbers_are_typed_by_their_suffix() {
     }
 }
 
-// spec FTEF-19.2: `QCC_SRef_IsNull` holds for an integer, unsigned or float 0, written in any
+// spec FTEF-19.31: `QCC_SRef_IsNull` holds for an integer, unsigned or float 0, written in any
 // base and with `-`, and for no double, 64-bit or nonzero value, nor `-0.0`
 #[test]
 fn null_is_an_integer_or_float_zero() {
@@ -84,13 +86,24 @@ fn constant(ty: ConstType) -> Source<'static> {
     Source::Literal(Literal::of(ty))
 }
 
-// spec FTEF-19.2: a float casts to the numbers and to a vector, and to nothing else unless it
+/// Whether FTEQCC's implicit cast of `source` to `to` fails with its default flags.
+fn refused(source: Source<'_>, to: &Type) -> bool {
+    source.cast(to, CompilerFlags::default()) == Cast::Refused
+}
+
+/// Whether FTEQCC makes the implicit cast of `source` to `to` with "Implicit cast", with its
+/// default flags.
+fn warns(source: Source<'_>, to: &Type) -> bool {
+    source.cast(to, CompilerFlags::default()) == Cast::Implicit
+}
+
+// spec FTEF-19.31: a float casts to the numbers and to a vector, and to nothing else unless it
 // is null
 #[test]
 fn a_float_casts_to_numbers_and_vectors() {
-    assert!(!literal("1").refused(&simple(SimpleType::Float)));
-    assert!(!literal("1").refused(&simple(SimpleType::Vector)));
-    assert!(!literal("1").refused(&named("int")));
+    assert!(!refused(literal("1"), &simple(SimpleType::Float)));
+    assert!(!refused(literal("1"), &simple(SimpleType::Vector)));
+    assert!(!refused(literal("1"), &named("int")));
     for to in [
         simple(SimpleType::String),
         simple(SimpleType::Entity),
@@ -102,12 +115,12 @@ fn a_float_casts_to_numbers_and_vectors() {
             variadic: false,
         })),
     ] {
-        assert!(literal("1").refused(&to), "{to:?}");
-        assert!(!literal("0").refused(&to), "{to:?}");
+        assert!(refused(literal("1"), &to), "{to:?}");
+        assert!(!refused(literal("0"), &to), "{to:?}");
     }
 }
 
-// spec FTEF-19.2: an integer casts to a string, an entity, a function and a vector, a double
+// spec FTEF-19.31: an integer casts to a string, an entity, a function and a vector, a double
 // and a 64-bit integer to no string, and a uint to no vector
 #[test]
 fn integers_cast_where_cast_tries_them() {
@@ -117,51 +130,60 @@ fn integers_cast_where_cast_tries_them() {
         simple(SimpleType::Vector),
         simple(SimpleType::Float),
     ] {
-        assert!(!literal("1i").refused(&to), "{to:?}");
+        assert!(!refused(literal("1i"), &to), "{to:?}");
     }
-    assert!(literal("1i").refused(&Type::Field(Rc::new(simple(SimpleType::Float)))));
-    assert!(literal("1d").refused(&simple(SimpleType::String)));
-    assert!(literal("1d").refused(&simple(SimpleType::Vector)));
-    assert!(literal("0d").refused(&simple(SimpleType::Entity)));
-    assert!(literal("5l").refused(&simple(SimpleType::String)));
-    assert!(literal("5u").refused(&simple(SimpleType::Vector)));
-    assert!(!literal("5u").refused(&simple(SimpleType::String)));
+    assert!(refused(
+        literal("1i"),
+        &Type::Field(Rc::new(simple(SimpleType::Float)))
+    ));
+    assert!(refused(literal("1d"), &simple(SimpleType::String)));
+    assert!(refused(literal("1d"), &simple(SimpleType::Vector)));
+    assert!(refused(literal("0d"), &simple(SimpleType::Entity)));
+    assert!(refused(literal("5l"), &simple(SimpleType::String)));
+    assert!(refused(literal("5u"), &simple(SimpleType::Vector)));
+    assert!(!refused(literal("5u"), &simple(SimpleType::String)));
 }
 
-// spec FTEF-19.2: a vector casts only to a vector, a string to the integers, strings and
+// spec FTEF-19.31: a vector casts only to a vector, a string to the integers, strings and
 // functions, and a type a program names is not checked
 #[test]
 fn vectors_strings_and_named_types() {
-    assert!(!constant(ConstType::Vector).refused(&simple(SimpleType::Vector)));
+    assert!(!refused(
+        constant(ConstType::Vector),
+        &simple(SimpleType::Vector)
+    ));
     for to in [
         simple(SimpleType::Float),
         simple(SimpleType::String),
         simple(SimpleType::Entity),
         named("int"),
     ] {
-        assert!(constant(ConstType::Vector).refused(&to), "{to:?}");
+        assert!(refused(constant(ConstType::Vector), &to), "{to:?}");
     }
-    assert!(!constant(ConstType::String).refused(&named("int")));
-    assert!(constant(ConstType::String).refused(&simple(SimpleType::Entity)));
-    assert!(!constant(ConstType::String).refused(&named("Player")));
-    assert!(!constant(ConstType::Vector).refused(&Type::Unknown));
+    assert!(!refused(constant(ConstType::String), &named("int")));
+    assert!(refused(
+        constant(ConstType::String),
+        &simple(SimpleType::Entity)
+    ));
+    assert!(!refused(constant(ConstType::String), &named("Player")));
+    assert!(!refused(constant(ConstType::Vector), &Type::Unknown));
 }
 
-// spec FTEF-19.2: a named definition casts as its type does, a field to another field type
+// spec FTEF-19.31: a named definition casts as its type does, a field to another field type
 // never, and to its own type always
 #[test]
 fn named_definitions_cast_by_their_type() {
     let field = Type::Field(Rc::new(simple(SimpleType::Float)));
     let other = Type::Field(Rc::new(simple(SimpleType::Vector)));
-    assert!(!Source::Typed(&field).refused(&field));
-    assert!(Source::Typed(&field).refused(&other));
-    assert!(Source::Typed(&field).refused(&simple(SimpleType::Float)));
+    assert!(!refused(Source::Typed(&field), &field));
+    assert!(refused(Source::Typed(&field), &other));
+    assert!(refused(Source::Typed(&field), &simple(SimpleType::Float)));
     let entity = simple(SimpleType::Entity);
-    assert!(Source::Typed(&entity).refused(&simple(SimpleType::Float)));
-    assert!(!Source::Typed(&entity).refused(&named("int")));
+    assert!(refused(Source::Typed(&entity), &simple(SimpleType::Float)));
+    assert!(!refused(Source::Typed(&entity), &named("int")));
 }
 
-// spec FTEF-19.2: C type words and registered type names are the type FTEF-2.8 makes, an 8-
+// spec FTEF-19.31: C type words and registered type names are the type FTEF-2.8 makes, an 8-
 // or 16-bit integer none the model follows
 #[test]
 fn c_words_name_their_kinds() {
@@ -199,28 +221,40 @@ fn c_words_name_their_kinds() {
     assert!(!Kind::Vector.is_numeric());
 }
 
-// spec FTEF-19.2: a pointer casts to a pointer and a string, integers among themselves, and
+// spec FTEF-19.31: a pointer casts to a pointer and a string, integers among themselves, and
 // the casts that warn are those "acceptable but probably an error" and to a vector
 #[test]
 fn pointers_and_warnings() {
     let pointer = |ty: SimpleType| Type::Pointer(Rc::new(simple(ty)));
     let float_ptr = pointer(SimpleType::Float);
-    assert!(!Source::Typed(&float_ptr).refused(&pointer(SimpleType::Vector)));
-    assert!(!Source::Typed(&float_ptr).refused(&simple(SimpleType::String)));
-    assert!(Source::Typed(&float_ptr).refused(&simple(SimpleType::Float)));
-    assert!(Source::Typed(&float_ptr).refused(&simple(SimpleType::Entity)));
+    assert!(!refused(
+        Source::Typed(&float_ptr),
+        &pointer(SimpleType::Vector)
+    ));
+    assert!(!refused(
+        Source::Typed(&float_ptr),
+        &simple(SimpleType::String)
+    ));
+    assert!(refused(
+        Source::Typed(&float_ptr),
+        &simple(SimpleType::Float)
+    ));
+    assert!(refused(
+        Source::Typed(&float_ptr),
+        &simple(SimpleType::Entity)
+    ));
     let int = named("int");
     let entity = simple(SimpleType::Entity);
     let string = simple(SimpleType::String);
-    assert!(!Source::Typed(&int).warns(&named("unsigned")));
-    assert!(Source::Typed(&int).warns(&entity));
-    assert!(Source::Typed(&entity).warns(&int));
-    assert!(Source::Typed(&string).warns(&int));
-    assert!(!Source::Typed(&string).warns(&string));
-    assert!(!Source::Typed(&int).warns(&simple(SimpleType::Float)));
-    assert!(literal("1").warns(&simple(SimpleType::Vector)));
-    assert!(!literal("0").warns(&simple(SimpleType::Vector)));
-    assert!(!literal("1").warns(&simple(SimpleType::String)));
+    assert!(!warns(Source::Typed(&int), &named("unsigned")));
+    assert!(warns(Source::Typed(&int), &entity));
+    assert!(warns(Source::Typed(&entity), &int));
+    assert!(warns(Source::Typed(&string), &int));
+    assert!(!warns(Source::Typed(&string), &string));
+    assert!(!warns(Source::Typed(&int), &simple(SimpleType::Float)));
+    assert!(warns(literal("1"), &simple(SimpleType::Vector)));
+    assert!(!warns(literal("0"), &simple(SimpleType::Vector)));
+    assert!(!warns(literal("1"), &simple(SimpleType::String)));
     let f = |param: SimpleType| {
         Type::Function(Rc::new(FunctionType {
             ret: simple(SimpleType::Void),
@@ -228,8 +262,14 @@ fn pointers_and_warnings() {
             variadic: false,
         }))
     };
-    assert!(Source::Typed(&f(SimpleType::Float)).warns(&f(SimpleType::Vector)));
-    assert!(!Source::Typed(&f(SimpleType::Float)).warns(&f(SimpleType::Float)));
+    assert!(warns(
+        Source::Typed(&f(SimpleType::Float)),
+        &f(SimpleType::Vector)
+    ));
+    assert!(!warns(
+        Source::Typed(&f(SimpleType::Float)),
+        &f(SimpleType::Float)
+    ));
 }
 
 // spec FTEF-17.13: two types are FTEQCC's same type part by part, a C word by its kind
@@ -267,7 +307,7 @@ fn types_are_the_same_part_by_part() {
     assert!(!f(float.clone(), vec![], false).fteqcc_same(&f(named("int"), vec![], false)));
 }
 
-// spec FTEF-19.2: the message spells a type as FTEQCC's `TypeName` does
+// spec FTEF-19.31: the message spells a type as FTEQCC's `TypeName` does
 #[test]
 fn type_names_are_fteqcc_spellings() {
     assert_eq!(named("int").fteqcc_name(), "__int32");
@@ -349,4 +389,191 @@ fn long_suffixes_and_ilp32() {
         Literal::of_fteqcc_number("5llu", ilp32).ty,
         ConstType::Uint64
     );
+}
+
+fn flags(set: &[FteFlag]) -> CompilerFlags {
+    set.iter().fold(CompilerFlags::default(), |flags, &flag| {
+        flags.with(flag, true)
+    })
+}
+
+// spec FTEF-22.1: under `lax` a refused cast is made with its warning, and a cast that is made
+// is unchanged
+#[test]
+fn lax_casts() {
+    let lax = flags(&[FteFlag::Laxcasts]);
+    let float = simple(SimpleType::Float);
+    assert_eq!(constant(ConstType::String).cast(&float, lax), Cast::Lax);
+    assert_eq!(literal("1").cast(&float, lax), Cast::Silent);
+    assert_eq!(
+        literal("1").cast(&simple(SimpleType::Vector), lax),
+        Cast::Implicit
+    );
+    assert_eq!(
+        constant(ConstType::String).cast(&float, CompilerFlags::default()),
+        Cast::Refused
+    );
+}
+
+// spec FTEF-22.2: `qccx` casts a float to an entity or a string and back, with the warning
+#[test]
+fn qccx_casts() {
+    let qccx = flags(&[FteFlag::Qccx]);
+    let (float, entity, string) = (
+        simple(SimpleType::Float),
+        simple(SimpleType::Entity),
+        simple(SimpleType::String),
+    );
+    assert_eq!(literal("1").cast(&entity, qccx), Cast::Implicit);
+    assert_eq!(literal("1").cast(&string, qccx), Cast::Implicit);
+    assert_eq!(Source::Typed(&entity).cast(&float, qccx), Cast::Implicit);
+    assert_eq!(Source::Typed(&string).cast(&float, qccx), Cast::Implicit);
+    assert_eq!(literal("1d").cast(&entity, qccx), Cast::Refused);
+    assert_eq!(
+        constant(ConstType::String).cast(&simple(SimpleType::Vector), qccx),
+        Cast::Refused
+    );
+    assert_eq!(literal("0").cast(&entity, qccx), Cast::Silent);
+}
+
+// spec FTEF-22.4: under `flag_undefwordsize` a string to any pointer is disabled, a pointer to a
+// string not
+#[test]
+fn undefined_word_size_casts() {
+    let dp = flags(&[FteFlag::Undefwordsize]);
+    let pointer = |ty: Type| Type::Pointer(Rc::new(ty));
+    for to in [
+        pointer(simple(SimpleType::Float)),
+        pointer(simple(SimpleType::Void)),
+        pointer(named("__uint8")),
+    ] {
+        assert_eq!(
+            constant(ConstType::String).cast(&to, dp),
+            Cast::StringPointerDisabled,
+            "{to:?}"
+        );
+    }
+    let float_ptr = pointer(simple(SimpleType::Float));
+    assert_eq!(
+        Source::Typed(&float_ptr).cast(&simple(SimpleType::String), dp),
+        Cast::Implicit
+    );
+    assert_eq!(literal("0").cast(&float_ptr, dp), Cast::Silent);
+}
+
+// spec FTEF-19.31: `void*` and pointers to 8-bit integers cast with no warning, other pointers
+// with one unless they point to one type
+#[test]
+fn void_and_byte_pointer_casts() {
+    let none = CompilerFlags::default();
+    let pointer = |ty: Type| Type::Pointer(Rc::new(ty));
+    let void_ptr = pointer(simple(SimpleType::Void));
+    let byte_ptr = pointer(named("__int8"));
+    let float_ptr = pointer(simple(SimpleType::Float));
+    let string = simple(SimpleType::String);
+    assert_eq!(
+        constant(ConstType::String).cast(&void_ptr, none),
+        Cast::Silent
+    );
+    assert_eq!(
+        constant(ConstType::String).cast(&byte_ptr, none),
+        Cast::Silent
+    );
+    assert_eq!(
+        constant(ConstType::String).cast(&float_ptr, none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        constant(ConstType::String).cast(&pointer(named("__int16")), none),
+        Cast::Implicit
+    );
+    assert_eq!(Source::Typed(&void_ptr).cast(&string, none), Cast::Silent);
+    assert_eq!(Source::Typed(&byte_ptr).cast(&string, none), Cast::Silent);
+    assert_eq!(
+        Source::Typed(&float_ptr).cast(&void_ptr, none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&void_ptr).cast(&pointer(simple(SimpleType::Vector)), none),
+        Cast::Silent
+    );
+    assert_eq!(
+        Source::Typed(&float_ptr).cast(&pointer(simple(SimpleType::Vector)), none),
+        Cast::Implicit
+    );
+    assert_eq!(
+        Source::Typed(&pointer(named("int"))).cast(&pointer(named("integer")), none),
+        Cast::Silent
+    );
+}
+
+// spec FTEF-22.3: `QCC_SupplyConversion` converts the numbers but a double and a 32-bit integer,
+// refuses any conversion under `typeexplicit`, and under `lax` keeps a value nothing converts
+#[test]
+fn supplied_conversions() {
+    let none = CompilerFlags::default();
+    let explicit = flags(&[FteFlag::Typeexplicit]);
+    let lax = flags(&[FteFlag::Laxcasts]);
+    assert_eq!(literal("1i").supply(Kind::Float, none), Supply::Converted);
+    assert_eq!(
+        literal("1i").supply(Kind::Float, explicit),
+        Supply::Explicit
+    );
+    assert_eq!(
+        literal("1").supply(Kind::Float, explicit),
+        Supply::Converted
+    );
+    assert_eq!(
+        literal("1u").supply(Kind::Integer, explicit),
+        Supply::Converted
+    );
+    assert_eq!(literal("1d").supply(Kind::Integer, none), Supply::Mismatch);
+    assert_eq!(literal("1d").supply(Kind::Int64, none), Supply::Converted);
+    assert_eq!(literal("1l").supply(Kind::Integer, none), Supply::Converted);
+    assert_eq!(literal("1").supply(Kind::Vector, none), Supply::Converted);
+    assert_eq!(
+        constant(ConstType::String).supply(Kind::Float, none),
+        Supply::Mismatch
+    );
+    assert_eq!(
+        constant(ConstType::String).supply(Kind::Float, lax),
+        Supply::Lax
+    );
+    assert_eq!(
+        constant(ConstType::String).supply(Kind::Float, explicit),
+        Supply::Explicit
+    );
+    assert_eq!(
+        constant(ConstType::Vector).supply(Kind::Float, none),
+        Supply::Mismatch
+    );
+    let pointer = |ty: Type| Type::Pointer(Rc::new(ty));
+    let float_ptr = pointer(simple(SimpleType::Float));
+    assert_eq!(
+        Source::Typed(&float_ptr).supply(Kind::Integer, none),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&float_ptr).supply(Kind::Float, none),
+        Supply::Mismatch
+    );
+    assert_eq!(
+        Source::Typed(&float_ptr).supply(Kind::Pointer, explicit),
+        Supply::Converted
+    );
+    assert_eq!(
+        Source::Typed(&named("Player")).supply(Kind::Float, explicit),
+        Supply::Converted
+    );
+    for (kind, name) in [
+        (Kind::Integer, "integer"),
+        (Kind::Uint, "uint"),
+        (Kind::Int64, "long"),
+        (Kind::Uint64, "ulong"),
+        (Kind::Double, "double"),
+        (Kind::Opaque, "variant"),
+        (Kind::String, "string"),
+    ] {
+        assert_eq!(kind.basic_name(), name);
+    }
 }

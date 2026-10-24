@@ -219,7 +219,7 @@ impl Parser<'_> {
     }
 
     /// Whether the token `n` ahead is a name FTEQCC registers as a type, which `QCC_TypeForName`
-    /// finds (FTEF-19.20, FTEF-19.31): the vanilla type words, the scalars and the other names of
+    /// finds (FTEF-19.20, FTEF-19.33): the vanilla type words, the scalars and the other names of
     /// [`REGISTERED_TYPES`], in any case under `caseinsens`.
     pub(super) fn registered_type(&self, n: usize) -> bool {
         let any_case = self.any_case(n);
@@ -240,7 +240,7 @@ impl Parser<'_> {
     }
 
     /// The scalar type the token `n` ahead names, a name FTEQCC registers (`QCC_TypeForName`):
-    /// in any case under `caseinsens` (FTEF-19.31).
+    /// in any case under `caseinsens` (FTEF-19.33).
     pub(super) fn scalar_name(&self, n: usize) -> Option<CScalar> {
         let tok = self.nth(n).filter(|t| t.kind == K::Name)?;
         CScalar::named(&tok.text).or_else(|| {

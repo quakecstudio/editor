@@ -337,6 +337,7 @@ impl Db {
             autoproto: self.autoproto,
             case_insensitive: false,
             qcfuncs_off: false,
+            target: None,
         };
         let index = resolve_module(&lowered, options);
         self.module = Some(Memo {
@@ -499,10 +500,11 @@ impl Db {
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
-            // FTEF-19.31, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
+            // FTEF-19.33, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
             // before the core types are named.
             case_insensitive: command_line_flags.is_on(qc_preproc::FteFlag::Caseinsensitive),
             qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
+            target: Some(preprocessed.target),
         };
         let analysis = ModuleAnalysis {
             index: resolve_mapped(&decls, &sources, options),

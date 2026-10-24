@@ -117,7 +117,7 @@ fn a_scoped_base_is_not_the_global_of_its_name() {
 }
 
 // spec FTEF-16.4: `super::member` is the member of the parent of the function's class, and a
-// scope that is no class and names no type is "is not a type" (FTEF-19.31).
+// scope that is no class and names no type is "is not a type" (FTEF-19.33).
 #[test]
 fn super_names_the_parent_member() {
     let source = "\
@@ -128,7 +128,7 @@ void Q::Go(void) { super::Go(); };
 void() f = { Nope::thing(); };
 ";
     let index = fte_index_of(source);
-    // FTEF-19.31: the scope of `Scope::name` is read as a type name.
+    // FTEF-19.33: the scope of `Scope::name` is read as a type name.
     assert_eq!(messages(&index), ["\"Nope\" is not a type"]);
     let parent = member(&index, "P", "Go");
     assert_eq!(target_of(&index, source, "super::Go", 0), Some(parent));
@@ -288,7 +288,7 @@ fn a_scoped_definition_adds_a_member_or_a_global() {
         None,
         "the definition"
     );
-    // FTEF-19.31: the use's scope is no type, so the use names nothing.
+    // FTEF-19.33: the use's scope is no type, so the use names nothing.
     assert_eq!(target_of(&index, source, "Other::g", 1), None, "the use");
 }
 

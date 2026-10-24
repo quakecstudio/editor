@@ -143,12 +143,20 @@ pub enum Code {
     E0234,
     /// "alias NAME may not be initialised" (QCD-3.35).
     E0235,
-    /// "Parent class NAME was not yet defined" (QCD-3.36).
+    /// "Automatic type conversions disabled. Needed TYPE, got TYPE." (QCD-3.36).
     E0236,
-    /// "Parent type NAME is not a class/entity" (QCD-3.37).
+    /// "pointer<->string casts were disabled." (QCD-3.37).
     E0237,
-    /// "Parent class changed on redeclaration of NAME" (QCD-3.38).
+    /// "state type mismatch" (QCD-3.38).
     E0238,
+    /// "extern is not supported with this target format" (QCD-3.39).
+    E0239,
+    /// "Parent class NAME was not yet defined" (QCD-3.40).
+    E0240,
+    /// "Parent type NAME is not a class/entity" (QCD-3.41).
+    E0241,
+    /// "Parent class changed on redeclaration of NAME" (QCD-3.42).
+    E0242,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -302,6 +310,10 @@ pub enum Code {
     /// "Unknown attribute \"NAME\"" and "accumulating an accumulating accumulation"
     /// (QCD-7.69).
     W0228,
+    /// "Implicit lax cast from TYPE to TYPE" (QCD-7.70).
+    W0229,
+    /// "Implicit type mismatch. Needed TYPE, got TYPE." as a warning (QCD-7.71).
+    W0230,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -316,7 +328,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 142] = [
+    pub const ALL: [Self; 148] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -380,6 +392,10 @@ impl Code {
         Self::E0236,
         Self::E0237,
         Self::E0238,
+        Self::E0239,
+        Self::E0240,
+        Self::E0241,
+        Self::E0242,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -454,6 +470,8 @@ impl Code {
         Self::W0226,
         Self::W0227,
         Self::W0228,
+        Self::W0229,
+        Self::W0230,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -509,6 +527,10 @@ impl Code {
             Self::E0236 => "E0236",
             Self::E0237 => "E0237",
             Self::E0238 => "E0238",
+            Self::E0239 => "E0239",
+            Self::E0240 => "E0240",
+            Self::E0241 => "E0241",
+            Self::E0242 => "E0242",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -564,6 +586,8 @@ impl Code {
             Self::W0226 => "W0226",
             Self::W0227 => "W0227",
             Self::W0228 => "W0228",
+            Self::W0229 => "W0229",
+            Self::W0230 => "W0230",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -652,6 +676,8 @@ impl Code {
             | Self::W0226
             | Self::W0227
             | Self::W0228
+            | Self::W0229
+            | Self::W0230
             | Self::W0311
             | Self::W0312
             | Self::W0313
@@ -713,6 +739,10 @@ impl Code {
             | Self::E0236
             | Self::E0237
             | Self::E0238
+            | Self::E0239
+            | Self::E0240
+            | Self::E0241
+            | Self::E0242
             | Self::E0301
             | Self::E0308
             | Self::E0501

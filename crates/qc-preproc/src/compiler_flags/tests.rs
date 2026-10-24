@@ -7,8 +7,8 @@ use crate::fte_tables::FteFlag;
 use crate::{CommandLine, FlagSettings};
 
 // spec FTEF-21.1: the flags kept are the lexer's eight, `cpriority`, `assumevar`, `subscope` and
-// `attributes`; any other is read as off and set to nothing
-// spec FTEF-21.15: a flag only the compiler's output or casts read, `lax` among them, is not kept
+// `attributes`, with the casts' (FTEF-22); any other is read as off and set to nothing
+// spec FTEF-21.18: a flag only the compiler's output reads is not kept
 #[test]
 fn the_kept_flags() {
     let all = [
@@ -24,25 +24,32 @@ fn the_kept_flags() {
         FteFlag::Assumevar,
         FteFlag::PrSubscopedlocals,
         FteFlag::Attributes,
+        FteFlag::Laxcasts,
+        FteFlag::Typeexplicit,
+        FteFlag::Undefwordsize,
     ];
     for flag in all {
         let on = CompilerFlags::default().with(flag, true);
         assert!(on.has(flag), "{flag:?}");
         assert!(!on.with(flag, false).has(flag), "{flag:?}");
+        for other in all.iter().filter(|&&other| other != flag) {
+            assert!(
+                !on.has(*other) || *other == FteFlag::Qcfuncs,
+                "{flag:?} {other:?}"
+            );
+        }
     }
-    let lax = CompilerFlags::default().with(FteFlag::Laxcasts, true);
-    assert_eq!(lax, CompilerFlags::default());
-    assert!(!lax.has(FteFlag::Laxcasts));
-    for flag in [
-        FteFlag::Typeexplicit,
-        FteFlag::Iffloat,
-        FteFlag::Undefwordsize,
-    ] {
-        assert_eq!(
-            CompilerFlags::default().with(flag, true),
-            CompilerFlags::default()
-        );
+    for flag in [FteFlag::Iffloat, FteFlag::Boundchecks] {
+        let on = CompilerFlags::default().with(flag, true);
+        assert_eq!(on, CompilerFlags::default());
+        assert!(!on.has(flag));
     }
+    // The casts' flags are none of the lexer's.
+    let casts = CompilerFlags::default()
+        .with(FteFlag::Laxcasts, true)
+        .with(FteFlag::Typeexplicit, true)
+        .with(FteFlag::Undefwordsize, true);
+    assert_eq!(casts.lex(), CompilerFlags::default().lex());
     let lex = CompilerFlags::default()
         .with(FteFlag::Dblstarexp, true)
         .with(FteFlag::Assumevar, true)
@@ -63,7 +70,7 @@ fn edits_set_what_they_name() {
     assert!(after.has(FteFlag::Qccx));
     assert!(!after.has(FteFlag::Utf8strings));
     assert!(!after.has(FteFlag::Qcfuncs));
-    assert!(FlagEdit::of_flags(&[FteFlag::Laxcasts], now).is_empty());
+    assert!(FlagEdit::of_flags(&[FteFlag::Iffloat], now).is_empty());
     assert!(!edit.is_empty());
     assert_eq!(FlagEdit::whole(now).apply(before), now);
     // An edit turns off a named flag that is on, and keeps one it does not name.

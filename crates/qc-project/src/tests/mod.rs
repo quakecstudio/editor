@@ -11,6 +11,7 @@ mod case;
 mod directives;
 mod forms;
 mod manifest;
+mod names;
 mod open;
 mod properties;
 

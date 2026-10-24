@@ -460,13 +460,13 @@ impl<'a> Parser<'a> {
     }
 
     /// Whether the token `n` ahead is read with `caseinsens` on, under which FTEQCC searches its
-    /// name tables in any case (`Hash_GetInsensitive`, FTEF-19.31). Only a full dialect has it.
+    /// name tables in any case (`Hash_GetInsensitive`, FTEF-19.33). Only a full dialect has it.
     fn any_case(&self, n: usize) -> bool {
         self.fteqcc() && self.keywords_ahead(n).case_insensitive()
     }
 
     /// The vanilla type word the token `n` ahead names, as `QCC_TypeForName` finds it (QC-10.1,
-    /// FTEF-19.31): `void`, `float`, `vector`, `string` or `entity`, in any case under
+    /// FTEF-19.33): `void`, `float`, `vector`, `string` or `entity`, in any case under
     /// `caseinsens`.
     fn type_word(&self, n: usize) -> Option<K> {
         let tok = self.nth(n).filter(|t| t.kind == K::Name)?;
@@ -1932,7 +1932,7 @@ impl<'a> Parser<'a> {
             self.return_stmt();
         } else if self.checks(0, Enabled::Never, "exit") {
             // `keyword_exit` is `flag_acc`, reacc's, which this profile does not read
-            // (FTEF-19.30): only `__exit` is the keyword.
+            // (FTEF-19.32): only `__exit` is the keyword.
             self.exit_stmt();
         } else if self.kw(0, Keyword::Loop, "loop") {
             self.loop_stmt();

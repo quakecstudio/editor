@@ -42,6 +42,7 @@ use qc_syntax::{Code, Dialect, ast};
 use super::Oracles;
 
 mod caseinsens;
+mod casts;
 mod declarations;
 mod defs;
 mod directives;
@@ -1024,7 +1025,7 @@ fn variadic_uses() -> Vec<MacroUse> {
 }
 
 /// `__FILE__`, the name `progs.src` lists or a `#pragma file` gives, as FTEQCC writes it
-/// (FTEF-14.32), under 12 pragmas and through two macros, and after three pragmas whose text
+/// (FTEF-14.74), under 12 pragmas and through two macros, and after three pragmas whose text
 /// holds a comment, a string or a `\` that would run across their line break.
 fn file_sources() -> Vec<String> {
     let long = format!("#pragma file({})\n", "n".repeat(260));
@@ -1071,7 +1072,7 @@ const DECLARATION_SOURCES: &[&str] = &[
     "void() g, f = #5, ;\n",
 ];
 
-/// The macro-text family (FTEF-14.22 to FTEF-14.27, FTEF-14.32, P2-80 to P2-84 and P2-87, from
+/// The macro-text family (FTEF-14.22 to FTEF-14.27, FTEF-14.74, P2-80 to P2-84 and P2-87, from
 /// the fourth P2-R2 review): programs whose macros FTEQCC reads as text where a token model
 /// would not, and the declarations they write. Each is a whole program.
 fn macro_text_cases() -> Vec<String> {
@@ -1213,6 +1214,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(flags::cases());
     cases.extend(passes::cases());
     cases.extend(caseinsens::cases());
+    cases.extend(casts::cases());
     cases.extend(defs::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
@@ -1553,34 +1555,91 @@ pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
     (refusal(case, &errors), errors)
 }
 
+/// The directory the profile reads an FTEQCC case's files from, where the graph finds them, so
+/// that the database holds each file by its path in it, as the editor's does, and the
+/// preprocessor is given the graph's name for it (FTEF-14.75, PRJ-6.7).
+const PROFILE_DIR: &str = "/oracle/project";
+
 /// `case` as the compiler reads it, through the preprocessor (`Db::analyze_module`): the
 /// database, and each error's place and code.
 fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     let mut db = Db::new();
     db.set_dialect(case.dialect);
-    db.set_file(
-        FileId(0),
-        PathBuf::from(case.compiled()),
-        case.source_bytes(),
-    );
-    // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
-    for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
-        let id = FileId(index.saturating_add(1));
-        db.set_file(id, PathBuf::from(name), text.as_bytes().to_vec());
-    }
-    let analysis = db.analyze_module(&ModuleInput {
-        prelude: Vec::new(),
-        compiled: vec![FileId(0)],
-        autoproto: None,
-        include_dirs: case.include_dirs().map(PathBuf::from).collect(),
-        command_line: CommandLine::new(&case.options),
-    });
+    let has_progs = case.project.as_ref().is_some_and(|p| p.progs.is_some());
+    let input = if case.dialect == Dialect::Fteqcc && !has_progs {
+        graph_input(&mut db, case)
+    } else {
+        db.set_file(
+            FileId(0),
+            PathBuf::from(case.compiled()),
+            case.source_bytes(),
+        );
+        // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
+        for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
+            let id = FileId(index.saturating_add(1));
+            db.set_file(id, PathBuf::from(name), text.as_bytes().to_vec());
+        }
+        ModuleInput {
+            compiled: vec![FileId(0)],
+            include_dirs: case.include_dirs().map(PathBuf::from).collect(),
+            command_line: CommandLine::new(&case.options),
+            ..ModuleInput::default()
+        }
+    };
+    let analysis = db.analyze_module(&input);
     let errors = analysis
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
     (db, errors)
+}
+
+/// The module input of the FTEQCC `case` as the editor opens it: the project graph of its
+/// `progs.src` in [`PROFILE_DIR`] (PRJ-6), each file of the graph put in `db` by its path at its
+/// index, and every other file of the case after them, for the preprocessor to `#include`.
+fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
+    let dir = Path::new(PROFILE_DIR);
+    let at = |name: &str| qc_project::normalize(&dir.join(name));
+    let mut texts = vec![(at(case.compiled()), case.source_bytes())];
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        texts.push((at(name), text.as_bytes().to_vec()));
+    }
+    let mut loader = qc_project::MemoryLoader::new();
+    loader.insert(at("progs.src"), case.progs_src_bytes());
+    for (path, text) in &texts {
+        loader.insert(path.clone(), text.clone());
+    }
+    let include_dirs: Vec<PathBuf> = case.include_dirs().map(PathBuf::from).collect();
+    let graph = qc_project::build_graph(
+        &mut loader,
+        &at("progs.src"),
+        &[],
+        &include_dirs,
+        case.dialect,
+    );
+    let text_of = |path: &Path| {
+        texts
+            .iter()
+            .find(|(known, _)| known == path)
+            .map(|(_, text)| text.clone())
+            .unwrap_or_default()
+    };
+    for (index, file) in graph.files.iter().enumerate() {
+        db.set_file(FileId(index), file.path.clone(), text_of(&file.path));
+    }
+    let mut next = graph.files.len();
+    for (path, text) in &texts {
+        if graph.files.iter().all(|file| file.path != *path) {
+            db.set_file(FileId(next), path.clone(), text.clone());
+            next = next.saturating_add(1);
+        }
+    }
+    ModuleInput {
+        include_dirs,
+        command_line: CommandLine::new(&case.options),
+        ..ModuleInput::from_graph(&graph)
+    }
 }
 
 /// How the profile refuses `case` with the errors `errors`, in the order of their place.

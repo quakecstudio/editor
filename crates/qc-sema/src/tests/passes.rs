@@ -2,7 +2,7 @@
 
 //! FTEQCC's two autoprototyping passes as the semantic model reads them
 //! (`docs/spec/dialect-fteqcc.md` FTEF-12.18 to FTEF-12.20), and the names it finds in any case
-//! under `-Fcaseinsens` (FTEF-19.31, FTEF-19.32). Each program is also a case of the two-pass
+//! under `-Fcaseinsens` (FTEF-19.33, FTEF-19.34). Each program is also a case of the two-pass
 //! and case-insensitive families of `cargo xtask oracles builtins`, which compare the outcome
 //! with the pinned FTEQCC.
 
@@ -159,7 +159,7 @@ fn the_pragma_holds_across_files() {
     );
 }
 
-// spec FTEF-12.18, QCD-7.70: a pragma after a definition is no warning, `W0108` being
+// spec FTEF-12.18, QCD-7.72: a pragma after a definition is no warning, `W0108` being
 // unreachable
 #[test]
 fn no_pragma_is_a_warning() {
@@ -326,7 +326,7 @@ fn keywords_priorities_and_settings_in_the_second_pass() {
     );
 }
 
-// spec FTEF-19.31: under `-Fcaseinsens` a type is found in any case where a declaration reads
+// spec FTEF-19.33: under `-Fcaseinsens` a type is found in any case where a declaration reads
 // one, `QCC_TypeForName` searching its table so
 #[test]
 fn type_names_are_found_in_any_case() {
@@ -357,7 +357,7 @@ fn type_names_are_found_in_any_case() {
     assert_eq!(errors_with("Char x;\n", &insens), [Code::E0203]);
 }
 
-// spec FTEF-19.31: a typedef of a name differing in case from one made, with another type, is
+// spec FTEF-19.33: a typedef of a name differing in case from one made, with another type, is
 // "Cannot redeclare typedef"
 #[test]
 fn a_typedef_in_another_case_is_a_redeclaration() {
@@ -373,7 +373,7 @@ fn a_typedef_in_another_case_is_a_redeclaration() {
     assert_eq!(errors("typedef float Foo;\ntypedef string foo;\n"), []);
 }
 
-// spec FTEF-19.31: the members of a class are found in any case, by its name in any case, and
+// spec FTEF-19.33: the members of a class are found in any case, by its name in any case, and
 // an enum's value after `Scope::` is the exact one
 #[test]
 fn members_and_enum_values_in_any_case() {
@@ -422,7 +422,7 @@ fn members_and_enum_values_in_any_case() {
     );
 }
 
-// spec FTEF-19.31: an enum's value is a new definition each time, found before an older one
+// spec FTEF-19.33: an enum's value is a new definition each time, found before an older one
 #[test]
 fn an_enums_values_are_new_definitions() {
     assert_eq!(
@@ -434,7 +434,7 @@ fn an_enums_values_are_new_definitions() {
     );
 }
 
-// spec FTEF-19.32: the scope of `Scope::name` is a type, "is not a type" when it is none
+// spec FTEF-19.34: the scope of `Scope::name` is a type, "is not a type" when it is none
 #[test]
 fn the_scope_of_a_scoped_name_is_a_type() {
     assert_eq!(errors("void() f = { Nope::thing(); };\n"), [Code::E0203]);
@@ -519,7 +519,7 @@ fn the_first_pass_leaves_only_its_declarations() {
     assert_eq!(twice.len(), once.len(), "{twice:?} {once:?}");
 }
 
-// spec FTEF-19.31: a struct is found in any case only under `-Fcaseinsens`
+// spec FTEF-19.33: a struct is found in any case only under `-Fcaseinsens`
 #[test]
 fn a_struct_scope_is_exact_without_the_option() {
     assert_eq!(
@@ -569,7 +569,7 @@ fn pointers_are_compared_by_what_they_point_to() {
     }
 }
 
-// spec FTEF-9.7, QCD-3.36, QCD-3.37, QCD-3.38: a class's parent is a type that is a class or an
+// spec FTEF-9.7, QCD-3.40, QCD-3.41, QCD-3.42: a class's parent is a type that is a class or an
 // entity, the same each time the class is given its members
 #[test]
 fn a_class_parent_is_read_as_a_type() {
@@ -578,11 +578,11 @@ fn a_class_parent_is_read_as_a_type() {
         errors("class C { float x; };\nclass D : C { float y; };\n"),
         []
     );
-    assert_eq!(errors("class D : Nope { float y; };\n"), [Code::E0236]);
-    assert_eq!(errors("class C : C { float z; };\n"), [Code::E0236]);
+    assert_eq!(errors("class D : Nope { float y; };\n"), [Code::E0240]);
+    assert_eq!(errors("class C : C { float z; };\n"), [Code::E0240]);
     assert_eq!(
         errors("class C { float x; };\nclass D : c { float y; };\n"),
-        [Code::E0236]
+        [Code::E0240]
     );
     assert_eq!(
         errors_with(
@@ -591,24 +591,24 @@ fn a_class_parent_is_read_as_a_type() {
         ),
         []
     );
-    assert_eq!(errors("class D : float { float y; };\n"), [Code::E0237]);
+    assert_eq!(errors("class D : float { float y; };\n"), [Code::E0241]);
     assert_eq!(
         errors("struct S { float a; };\nclass D : S { float y; };\n"),
-        [Code::E0237]
+        [Code::E0241]
     );
     assert_eq!(
         errors("enum En { A };\nclass D : En { float y; };\n"),
-        [Code::E0237]
+        [Code::E0241]
     );
     assert_eq!(errors("class D : entity { float y; };\n"), []);
     assert_eq!(errors("typedef entity E;\nclass D : E { float y; };\n"), []);
     let changed = "class C { float x; };\nclass D { float y; };\n";
     assert_eq!(
         errors(&format!("{changed}class C : D {{ float z; }};\n")),
-        [Code::E0238]
+        [Code::E0242]
     );
     assert_eq!(
         errors_with(&format!("{changed}class c : D {{ float z; }};\n"), &insens),
-        [Code::E0238]
+        [Code::E0242]
     );
 }

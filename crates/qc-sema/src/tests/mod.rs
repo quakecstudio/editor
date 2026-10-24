@@ -16,6 +16,7 @@
     reason = "test code: a failed unwrap, expect, panic or index is a failed test"
 )]
 
+mod casts;
 mod definitions;
 mod dialect;
 mod dialect_builtins;
@@ -28,6 +29,7 @@ mod incremental;
 mod initialiser_uses;
 mod keywords;
 mod members;
+mod names;
 mod navigation;
 mod passes;
 mod properties;
