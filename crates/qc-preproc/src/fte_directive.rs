@@ -1538,7 +1538,7 @@ impl<L: Loader> Preprocessor<L> {
                 let name = lossy(text.get(name).unwrap_or_default());
                 // FTEF-14.57: `QCC_PR_ParseWarning(WARN_UNDEFNOTDEFINED, "Precompiler constant %s
                 // was not defined", name);`
-                if self.macros.remove(&name).is_some() {
+                if self.macros.remove(&name) {
                     self.macros_changed();
                 } else {
                     let message = format!("Precompiler constant {name} was not defined");

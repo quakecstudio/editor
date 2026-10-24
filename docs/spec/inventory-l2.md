@@ -146,6 +146,7 @@ of the second name; C's octal escapes are `QCC_PR_LexEscapedCodepoint`'s, withou
 | `QCC_FindQCFiles` | `qccmain.c` | `-Facc` with no `progs.src`: every `.qc` in the directory | none | PRJ-3.4 | none: the command line is not modelled | not modelled |
 | `QCC_ImportProgs`, `QCC_AddFile` | `qccmain.c`, `qcc_cmdlib.c` | `#merge` and `#datafile` read a file into the build | none | FTEF-14.39 | none: the build's files | not modelled |
 | `QCC_WarningForName`, `QCC_NameForWarning` | `qccmain.c` | Warning names (`F303`, `Q120`, `octal`) for `#pragma warning` | `qc_preproc::FteWarning` | FTEF-14.63, FTEF-14.46 | `EVIL_SETTINGS` | ported |
+| `QCC_PR_CheckCompConst`, `QCC_PR_DefineName`, `QCC_PR_UndefineName`, `Hash_GetInsensitive` (`pHash_Get`), `Hash_Remove` | `qcc_pr_lex.c`, `hash.c`, `qccmain.c` | The macro table searched in any case under `-Fcaseinsens`; `#undef` removing only the spelling it names | `qc_preproc` `MacroTable` | FTEF-14.73 | `macro_table_programs` | ported |
 | `QC_strcasecmp`, `QC_strlcpy`, `QC_strlcat`, `QC_strnlcpy`, `Q_strlcpy` | `qcc_cmdlib.c`, `qcc_pr_lex.c` | ASCII case-insensitive pragma names; truncation of copies | `qc_preproc` pragma matching | FTEF-14.43 | `PRAGMAS` | ported |
 
 ## id's functions FTEQCC dropped or replaced

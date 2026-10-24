@@ -167,6 +167,66 @@ pub struct FileOutput {
     pub keywords: Vec<(usize, KeywordEdit)>,
 }
 
+/// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
+/// name as written, or under `-Fcaseinsens` in any case.
+#[derive(Debug, Default)]
+struct MacroTable {
+    /// Each macro under its name, in lower case when the table is searched in any case, with the
+    /// spelling it was defined with.
+    entries: HashMap<String, (String, Rc<Macro>)>,
+    any_case: bool,
+}
+
+impl MacroTable {
+    /// Searches the table in any case from now on, or not (`pHash_Get`).
+    fn set_any_case(&mut self, on: bool) {
+        self.any_case = on;
+    }
+
+    fn key(&self, name: &str) -> String {
+        if self.any_case {
+            name.to_ascii_lowercase()
+        } else {
+            name.to_owned()
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&Rc<Macro>> {
+        self.entries.get(&self.key(name)).map(|(_, mac)| mac)
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.entries.contains_key(&self.key(name))
+    }
+
+    /// Defines `name`, replacing the macro a name of any case in the search named.
+    fn insert(&mut self, name: String, mac: Rc<Macro>) {
+        self.entries.insert(self.key(&name), (name, mac));
+    }
+
+    /// `#undef`: whether the table has the macro, and removes it when `name` is its spelling.
+    /// `QCC_PR_UndefineName` finds it with `pHash_Get` but removes it with `Hash_Remove`, which
+    /// compares the name exactly and hashes it as written; a macro written in another case is
+    /// kept, and one with an upper case letter is looked for in a bucket it is not in
+    /// (FTEF-14.73).
+    fn remove(&mut self, name: &str) -> bool {
+        let key = self.key(name);
+        match self.entries.get(&key) {
+            None => false,
+            Some((spelling, _)) => {
+                if spelling == name {
+                    self.entries.remove(&key);
+                }
+                true
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
 #[derive(Debug)]
 struct Macro {
     /// The parameters' names, as bytes, for FTEQCC compares them bytewise (FTEF-14.23).
@@ -320,7 +380,7 @@ struct TokenStream {
 pub(crate) struct Lexing<'a> {
     dialect: Dialect,
     flags: LexFlags,
-    macros: Option<&'a HashMap<String, Rc<Macro>>>,
+    macros: Option<&'a MacroTable>,
     /// How many times the macros have changed, which matters under `macroinstrings` only.
     edits: u64,
 }
@@ -359,7 +419,7 @@ impl Lexing<'_> {
     fn lex(self, text: &[u8]) -> qc_lexer::Lexed {
         let macros = self.macros;
         let lookup = move |name: &[u8]| {
-            let mac = macros?.get(&*String::from_utf8_lossy(name))?;
+            let mac = macros?.get(&String::from_utf8_lossy(name))?;
             Some(
                 mac.text()
                     .map(|text| text.bytes().to_vec())
@@ -865,7 +925,7 @@ pub struct Preprocessor<L> {
     loader: L,
     dialect: Dialect,
     sources: SourceMap,
-    macros: HashMap<String, Rc<Macro>>,
+    macros: MacroTable,
     expansions: Vec<Expansion>,
     /// In an FTEQCC dialect, every frame macro defined so far (FTE-22.4).
     carried_frames: HashMap<String, CarriedFrame>,
@@ -921,7 +981,7 @@ impl<L: Loader> Preprocessor<L> {
             loader,
             dialect: Dialect::Vanilla,
             sources: SourceMap::default(),
-            macros: HashMap::new(),
+            macros: MacroTable::default(),
             expansions: Vec::new(),
             carried_frames: HashMap::new(),
             model_name: String::new(),
@@ -992,6 +1052,9 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte.warnings = self.command_line.warnings(WarningSettings::default());
             self.fte.flags = self.command_line.flags(self.fte.flags);
+            // FTEF-14.73: `pHash_Get = &Hash_GetInsensitive;` searches the macro table in any case.
+            self.macros
+                .set_any_case(self.fte.flags.is_on(FteFlag::Caseinsensitive));
             // FTEF-21.4: `QCC_PR_BeginCompilation` calls `QCC_PrioritiseOpcodes` once the
             // command line is read.
             self.fte.flags.prioritise();
