@@ -25,7 +25,7 @@ pub(crate) use load::first_nul;
 pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 
 use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
@@ -37,7 +37,7 @@ use crate::fte_macro::{Reading, Text};
 use crate::fte_tables::{FteFlag, TargetFormat};
 use crate::{
     Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Undef,
-    Variadic, WarningSettings, fte_pragma, normalize,
+    Variadic, WarningSettings, fte_pragma,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -1126,8 +1126,9 @@ pub(crate) fn elif_defined(
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
-/// `name` itself when it starts with one (FTEF-14.40).
-pub(crate) fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
+/// `name` itself when it starts with one (FTEF-14.40, PRJ-6.7).
+#[must_use]
+pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     if name.first().is_some_and(|&b| b == b'/' || b == b'\\') {
         return name.to_vec();
     }
@@ -1146,6 +1147,34 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
     let mut names = vec![join_paths(name, compiling)];
     names.extend(dirs.iter().map(|dir| join_paths(name, dir)));
     names
+}
+
+/// The name `QCC_PR_AddIncludePath(new)` keeps for the include directory `new`: `.` for an empty
+/// one, and a `/` after it unless it ends in `/` or `\` (FTEF-14.70, PRJ-6.7).
+#[must_use]
+pub fn include_dir_name(new: &[u8]) -> Vec<u8> {
+    let mut dir = if new.is_empty() {
+        b".".to_vec()
+    } else {
+        new.to_vec()
+    };
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    dir
+}
+
+/// The directory `#pragma includedir TOKEN` names in a file being compiled as `compiling`
+/// (FTEF-14.70, PRJ-6.7): `TOKEN` with a `/` after it unless it is empty or ends in `/` or `\`
+/// (`if (*qcc_token)`), joined to `compiling` (`QCC_JoinPaths(newinc, sizeof(newinc),
+/// qcc_token, compilingfile);`).
+#[must_use]
+pub fn pragma_include_dir(token: &[u8], compiling: &[u8]) -> Vec<u8> {
+    let mut dir = token.to_vec();
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    join_paths(&dir, compiling)
 }
 
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
@@ -1174,10 +1203,7 @@ impl FteState {
         if dirs.len() >= FTE_MAX_INCLUDE_DIRS {
             return Some("Too many include dirs. Ignoring and hoping the stars align.");
         }
-        let mut dir = given.to_vec();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
+        let dir = include_dir_name(given);
         if dir.len() >= FTE_INCLUDE_TABLE_BYTES {
             return Some("Include path too long.");
         }
@@ -1191,16 +1217,13 @@ impl Pragma {
     /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
-        let mut dir = com_parse(&self.message, 0)
+        let token = com_parse(&self.message, 0)
             .map(|(token, _)| token)
             .unwrap_or_default();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
-        join_paths(&dir, compiling)
+        pragma_include_dir(&token, compiling)
     }
 
-    /// The name `#pragma file` gives (FTEF-14.32): the text, or within the `(` it starts with and
+    /// The name `#pragma file` gives (FTEF-14.74): the text, or within the `(` it starts with and
     /// the first `)` after it.
     pub(crate) fn file_name(&self) -> Vec<u8> {
         match self.message.strip_prefix(b"(") {
@@ -1435,7 +1458,7 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
-    /// `s_filen` as `__FILE__` writes it (FTEF-14.32): the name the innermost `#pragma file`
+    /// `s_filen` as `__FILE__` writes it (FTEF-14.74): the name the innermost `#pragma file`
     /// of an open chunk gave, or else the name of the file being read.
     pub(crate) fn fte_file_name(run: &Run) -> &[u8] {
         run.chunks
@@ -1816,10 +1839,10 @@ impl<L: Loader> Preprocessor<L> {
             && let Some(cursor) = run.cursors.iter().rev().find(|c| c.file == at.file)
         {
             let here = join_paths(name, &cursor.read_as);
-            let path = normalize(&PathBuf::from(lossy(&here)));
+            let path = self.open_path(Path::new(&lossy(&here)));
             let known = names
                 .iter()
-                .any(|name| normalize(&PathBuf::from(lossy(name))) == path);
+                .any(|name| self.open_path(Path::new(&lossy(name))) == path);
             if !known {
                 names.insert(0, here);
             }
@@ -1827,7 +1850,7 @@ impl<L: Loader> Preprocessor<L> {
         let mut first_error = None;
         let mut found = None;
         for candidate in &names {
-            let path = normalize(&PathBuf::from(lossy(candidate)));
+            let path = self.open_path(Path::new(&lossy(candidate)));
             match self.loader.load(&path) {
                 Ok(text) => {
                     found = Some((candidate.clone(), path, text));

@@ -13,7 +13,7 @@
 //! project's own definition; FTEQCC's pragmas come with the dialect profiles. In an FTEQCC
 //! dialect the preprocessor reads FTEQCC's directives as FTEQCC's `QCC_PR_Precompiler` does,
 //! as bytes, wherever FTEQCC meets one (`docs/spec/dialect-fteqcc.md`, FTEF-14.33 to FTEF-14.47,
-//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.32, `fte_macro`).
+//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.74, `fte_macro`).
 
 mod compiler_flags;
 pub mod cond;
@@ -32,8 +32,8 @@ mod tests;
 
 pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
-    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
-    qcc_load_in_place, skip_script_line,
+    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, include_dir_name, join_paths,
+    pragma_include_dir, qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
 };
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
@@ -374,7 +374,7 @@ enum Place {
     /// An expansion's chunk, the token ending at this offset in its text.
     Chunk(usize),
     /// A built-in constant's text, a chunk of its own that holds nothing a macro's name in it
-    /// could read on in (FTEF-14.17, FTEF-14.32).
+    /// could read on in (FTEF-14.17, FTEF-14.74).
     Builtin,
 }
 
@@ -779,7 +779,7 @@ struct Cursor {
     file: FileId,
     path: PathBuf,
     /// Under FTEQCC, the file's name as FTEQCC has it, `s_filen`, which `__FILE__` writes
-    /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
+    /// (FTEF-14.74): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
     name: Vec<u8>,
     /// The file's name as it was read, which no `#pragma file` changes: what a GMQCC
     /// `#include` and `#pragma` in it are joined to (PRJ-5.12).
@@ -810,7 +810,7 @@ impl Cursor {
 #[derive(Default)]
 struct Run {
     /// The name of the source file of `progs.src` being preprocessed, as the caller gave it:
-    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.32).
+    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.74).
     unit: Vec<u8>,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
@@ -970,6 +970,9 @@ pub struct Preprocessor<L> {
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
+    /// The directory the name an `#include` is joined to is opened in, FTEQCC's working
+    /// directory (PRJ-6.8); empty by default, so a name is opened as it is.
+    working_dir: PathBuf,
     /// How many times a macro has been defined or undefined, so a text lexed under
     /// `macroinstrings` is lexed again after it (FTEF-12.12).
     macro_edits: u64,
@@ -1015,6 +1018,7 @@ impl<L: Loader> Preprocessor<L> {
             command_line_dirs: Vec::new(),
             command_line: CommandLine::default(),
             include_dirs: Vec::new(),
+            working_dir: PathBuf::new(),
             macro_edits: 0,
         }
     }
@@ -1117,6 +1121,23 @@ impl<L: Loader> Preprocessor<L> {
         self
     }
 
+    /// Gives the directory the name of an `#include`d file is opened in, FTEQCC's working
+    /// directory (PRJ-6.8): FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`,
+    /// `qcctui.c`), so a relative name is the file of that name in the directory it runs in, `\`
+    /// a separator only where the host's is. The name `__FILE__` writes is still the name as
+    /// joined (FTEF-14.74). Empty by default, so a name is opened as it is.
+    #[must_use]
+    pub fn with_working_dir(mut self, dir: &Path) -> Self {
+        self.working_dir = dir.to_path_buf();
+        self
+    }
+
+    /// The path of the file named `name`: in the working directory, normalized
+    /// ([`Self::with_working_dir`], FTEF-14.75).
+    pub(crate) fn open_path(&self, name: &Path) -> PathBuf {
+        normalize(&self.working_dir.join(name))
+    }
+
     /// Every file read so far.
     #[must_use]
     pub const fn sources(&self) -> &SourceMap {
@@ -1162,10 +1183,21 @@ impl<L: Loader> Preprocessor<L> {
     /// The loader's error when the file itself cannot be read; a project reports that as
     /// QCD-5.2. Every other problem is a diagnostic in the output.
     ///
-    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
+    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.74), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Compiled)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Compiled)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path` named `name`, the name FTEQCC gives it,
+    /// which `__FILE__` writes and an `#include` is joined to (FTEF-14.74, FTEF-14.75).
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_file_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Compiled)
     }
 
     /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
@@ -1176,12 +1208,28 @@ impl<L: Loader> Preprocessor<L> {
     ///
     /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
     pub fn preprocess_source(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Source)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Source)
     }
 
-    /// [`Self::preprocess_file`] of a file that starts as `start` says.
-    fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
-        let name = path.as_os_str().as_encoded_bytes().to_vec();
+    /// [`Self::preprocess_source`] of the source at `path` named `name`, as
+    /// [`Self::preprocess_file_named`] names a file.
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_source_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Source)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path`, named `name`, that starts as `start`
+    /// says.
+    fn preprocess(
+        &mut self,
+        path: &Path,
+        name: Vec<u8>,
+        start: FileStart,
+    ) -> io::Result<FileOutput> {
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
         let warnings = self
@@ -2214,7 +2262,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<Vec<u8>>, usize)> {
 }
 
 /// `bytes` as a QuakeC string literal, the spelling of a string an FTEQCC expansion made
-/// (QC-9.16, FTEF-14.31, FTEF-14.32): `"`, `\`, a line break and a carriage return escaped,
+/// (QC-9.16, FTEF-14.31, FTEF-14.74): `"`, `\`, a line break and a carriage return escaped,
 /// and a byte of 0x80 or more written as `\x` and its two hex digits, which an FTEQCC string
 /// reads back as that byte (FTEF-13.11), so the spelling is UTF-8 and reads back as `bytes`.
 fn quote_bytes(bytes: &[u8]) -> String {
