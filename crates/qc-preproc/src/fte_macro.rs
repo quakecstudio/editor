@@ -5,7 +5,7 @@
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_CheckCompConst, QCC_PR_ExpandPreProcessorMacro, QCC_PR_ExpandStrCatMarkup, QCC_PR_PreProcessor_Define, QCC_PR_IncludeChunkEx, QCC_PR_LexWhitespace, QCC_PR_SimpleGetToken, QCC_PR_SkipToEndOfLine
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, QCC_COM_Parse2
 
-//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.32, and
+//! FTEQCC's macros (`docs/spec/dialect-fteqcc.md` FTEF-14.13 to FTEF-14.74, and
 //! `docs/spec/language.md` QC-9.16), ported from FTEQCC's behaviour under ADR-0017's
 //! clean-port policy. FTEQCC keeps a macro's body as the text `QCC_PR_PreProcessor_Define`
 //! stored, finds a use's arguments by scanning the text after its `(`, writes the expansion as
@@ -241,7 +241,7 @@ pub(crate) struct ChunkReader {
     /// the line FTEQCC was reading when it included the chunk (FTEF-14.27).
     line: i32,
     /// The name a `#pragma file` read in the chunk gave, `s_filen` until the chunk ends
-    /// (FTEF-14.32, FTEF-14.46).
+    /// (FTEF-14.74, FTEF-14.46).
     file_name: Option<Vec<u8>>,
     /// The line a `#pragma line` read in the chunk gave the chunk's line starting at this
     /// offset (FTEF-14.43).
@@ -363,7 +363,7 @@ impl ChunkReader {
         self.consumed.push(Span::new(hash, end));
     }
 
-    /// Gives the chunk the name `name` from here on, as `#pragma file` does (FTEF-14.32).
+    /// Gives the chunk the name `name` from here on, as `#pragma file` does (FTEF-14.74).
     pub(crate) fn rename(&mut self, name: Vec<u8>) {
         self.file_name = Some(name);
     }
@@ -412,11 +412,11 @@ static NO_TEXT: Text = Text {
 };
 
 /// The size of the buffer `QCC_PR_CheckBuiltinCompConst` writes a built-in constant's text in,
-/// `char retbuf[256]`, of which `QC_snprintfz` fills at most 255 bytes (FTEF-14.32).
+/// `char retbuf[256]`, of which `QC_snprintfz` fills at most 255 bytes (FTEF-14.74).
 const FTE_BUILTIN_TEXT: usize = 256;
 
 /// The text `QCC_PR_CheckBuiltinCompConst` writes for the built-in constant `name`, which FTEQCC
-/// then reads as a chunk of its own (FTEF-14.7, FTEF-14.32), at the line `line` (FTEF-14.27) in
+/// then reads as a chunk of its own (FTEF-14.7, FTEF-14.74), at the line `line` (FTEF-14.27) in
 /// the file named `file`; `None` when `name` is none. `__FILE__` is `"%s"` of the name, kept to
 /// 255 bytes and ended at its first `:` (`erk = strchr(retbuf, ':'); if (erk) { erk[0] = '\"';
 /// erk[1] = 0; }`), nothing in it escaped.
@@ -1345,7 +1345,7 @@ impl<L: Loader> Preprocessor<L> {
     /// `QCC_PR_CheckBuiltinCompConst` writes for it ([`builtin_text`]), read as a chunk of its
     /// own (`QCC_PR_IncludeChunkEx(tok, true, NULL, NULL);`) before the text after the name, so
     /// its tokens touch nothing beside them (FTEF-14.17), and its lexical errors reported at the
-    /// name (FTEF-14.32). Whether `name`, the name of `item`, is one, and was replaced.
+    /// name (FTEF-14.74). Whether `name`, the name of `item`, is one, and was replaced.
     fn fte_builtin(&self, run: &mut Run, item: &Item, name: &str) -> bool {
         // `if (constname[0] != '_' || constname[1] != '_') return NULL;`: most names are none,
         // and are known before their line is looked for.

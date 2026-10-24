@@ -29,6 +29,7 @@ mod incremental;
 mod initialiser_uses;
 mod keywords;
 mod members;
+mod names;
 mod navigation;
 mod properties;
 mod recovery;
