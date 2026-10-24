@@ -675,7 +675,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
-    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.12).
+    /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.13).
     fn same_type(&self, old: &Type, ty: &Type) -> bool {
         if self.fteqcc {
             self.resolved(old).fteqcc_same(&self.resolved(ty))
@@ -2172,6 +2172,7 @@ impl<'a> Resolver<'a> {
             .def(def)
             .map(|d| d.name.clone())
             .unwrap_or_default();
+        self.check_parent(def, &name, class);
         self.class_names.entry(name.clone()).or_insert(def);
         self.declare_spawnfunc(def, &name);
         let info = self.classes.entry(def).or_insert_with(|| ClassInfo {
@@ -2222,6 +2223,62 @@ impl<'a> Resolver<'a> {
             }
         }
         pending
+    }
+
+    /// FTEF-9.7: the parent of a class is a type `QCC_TypeForName` finds, a class or an entity,
+    /// and the same one each time the class is given its members.
+    fn check_parent(&mut self, def: DefId, name: &str, class: &RawClass) {
+        let Some(parent) = &class.parent else {
+            return;
+        };
+        let Some(location) = self.index.def(def).map(|d| d.location) else {
+            return;
+        };
+        let found = self.named(&self.class_names, parent).copied();
+        let entity = parent == "__entity" || (parent == "entity" && !self.qcfuncs_off);
+        if found.is_none() && !entity {
+            let parent_type = Type::Named(parent.as_str().into());
+            if self.unknown_type_name(&parent_type, &[], 0).is_some()
+                || (name == parent && !self.class_names.contains_key(name))
+            {
+                self.report(
+                    Code::E0236,
+                    location,
+                    format!("Parent class {parent} was not yet defined"),
+                );
+                return;
+            }
+            let kind = self.resolved(&parent_type).fteqcc_kind();
+            if !matches!(kind, Kind::Entity | Kind::Opaque)
+                || self.has_name(&self.structs, parent)
+                || self.has_name(&self.enum_types, parent)
+            {
+                self.report(
+                    Code::E0237,
+                    location,
+                    format!("Parent type {parent} is not a class/entity"),
+                );
+                return;
+            }
+        }
+        // The class is the one its name finds, in any case under `-Fcaseinsens`.
+        let class_def = self.named(&self.class_names, name).copied().unwrap_or(def);
+        let redeclared = self
+            .classes
+            .get(&class_def)
+            .is_some_and(|info| !info.members.is_empty());
+        let before = self
+            .classes
+            .get(&class_def)
+            .and_then(|info| info.parent.as_ref())
+            .and_then(|p| self.named(&self.class_names, p).copied());
+        if redeclared && before != found {
+            self.report(
+                Code::E0238,
+                location,
+                format!("Parent class changed on redeclaration of {name}"),
+            );
+        }
     }
 
     /// FTEF-9.5: every class defines `spawnfunc_Name`, so maps can spawn it; FTEQCC writes its

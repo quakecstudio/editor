@@ -233,9 +233,12 @@ fn c_parameters() {
         errors("extern \"C\" { void h(float a[2]); }\nvoid h(float *a) = #1;\n"),
         []
     );
-    // FTEF-17.12: the model compares no pointer, so the `float` of `a[2]` with `qcfuncs` on is
-    // no mismatch it sees.
-    assert_eq!(errors("void h(float a[2]);\nvoid h(float *a) = #1;\n"), []);
+    // FTEF-17.13: with `qcfuncs` on the `float` of `a[2]` is no pointer, as the pinned FTEQCC
+    // reads it, "Type mismatch on redeclaration of h. void(float* a), should be void(float a)".
+    assert_eq!(
+        errors("void h(float a[2]);\nvoid h(float *a) = #1;\n"),
+        [Code::E0205, Code::E0211]
+    );
     assert_eq!(errors("void h(float a[]);\nvoid h(float *a) = #1;\n"), []);
 }
 

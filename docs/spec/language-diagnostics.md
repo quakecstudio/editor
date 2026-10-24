@@ -148,6 +148,15 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (`dialect-fteqcc.md`, FTEF-21.9).
 - **QCD-3.35** `E0235` "alias NAME may not be initialised": under an FTEQCC profile, a definition
   given the attribute `alias` and an initialiser, at the name (FTEF-21.9).
+- **QCD-3.36** `E0236` "Parent class NAME was not yet defined": under an FTEQCC profile, a
+  `class Name : Parent {` whose parent names no type, at the class's name, FTEQCC's error of the
+  same text (`dialect-fteqcc.md`, FTEF-9.7). Under `-Fcaseinsens` the type is found in any case.
+- **QCD-3.37** `E0237` "Parent type NAME is not a class/entity": under an FTEQCC profile, a
+  `class Name : Parent {` whose parent is a type that is no class or entity, as a struct, an enum
+  or `float` is, at the class's name (`dialect-fteqcc.md`, FTEF-9.7).
+- **QCD-3.38** `E0238` "Parent class changed on redeclaration of NAME": under an FTEQCC profile,
+  a class given its members again with another parent, at the class's name (`dialect-fteqcc.md`,
+  FTEF-9.7).
 
 ## QCD-4 Expression and statement errors
 

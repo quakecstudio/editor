@@ -365,6 +365,16 @@ heavily class-based (547 `class` declarations across the three mods).
 - **FTEF-9.6** Codegen (later): the field layout, vtable and `this`-call lowering, and the
   version 7 requirement, are fixed by L-01.
 
+- **FTEF-9.7** `QCC_PR_ParseEntClass` reads a class's parent with `QCC_TypeForName`, so after
+  `:` a name that is no type is the error `E0236` "Parent class NAME was not yet defined"
+  (`QCC_PR_ParseError(ERR_NOTANAME, "Parent class %s was not yet defined", parentname);`), also
+  for the class itself (`class C : C {`), and a type that is no entity (`if (fieldtype->type !=
+  ev_entity)`), a struct, an enum or `float`, is `E0237` "Parent type NAME is not a
+  class/entity"; `entity`, a class and a typedef of one are parents. A class given its members
+  again with a parent other than the first is `E0238` "Parent class changed on redeclaration of
+  NAME" (`if (redeclaration && fieldtype != newt->parentclass)`). Under `-Fcaseinsens` the
+  parent is found in any case (FTEF-19.31), so `class D : c` after `class C` is a class of `C`.
+
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of
@@ -1856,11 +1866,17 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   and the pinned FTEQCC refuses each; `noref void() g;` compiles, and a `noref` function that is
   called is an error. A member function is not checked, and a class's `spawnfunc_Name`
   (FTEF-9.5), whose body FTEQCC writes when the program does not, is never undefined.
-- **FTEF-17.12** Under this profile a redeclaration is a type mismatch only when neither type,
+- **FTEF-17.12** **Withdrawn** (P2-132, #569): it said a pointer is a type the model does not
+  follow, but FTEQCC compares pointers by what they point to, and `float *a; float a;` is a
+  mismatch. Replaced by FTEF-17.13.
+- **FTEF-17.13** Under this profile a redeclaration is a type mismatch only when neither type,
   with each typedef's name read as the type it names (`QCC_TypeForName`: `if (t && t->type ==
   ev_typedef) return t->aux_type;`, FTEF-19.9), involves another type name (a class, struct,
-  union, accessor or enum), a pointer or an unknown type, whose meaning the model does not
-  follow; otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. So
+  union, accessor or enum) or an unknown type, whose meaning the model does not follow;
+  otherwise QC-11.5 holds, with the differences FTEF-19.6 and FTEF-19.7 accept. A pointer is
+  compared with a pointer by what each points to and is never the type of a non-pointer, so
+  `float *a; float a;` is the error "Type mismatch on redeclaration of a. float, should
+  be float*" (`E0205`), `float *a; float *a;` none, and `float *a; string *a;` one. So
   `typedef float t; t x; float x;` is no mismatch and `typedef float t; t x; vector x;` is one.
 
 ## FTEF-18 Further statements, terms and frame macros

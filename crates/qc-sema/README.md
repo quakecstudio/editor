@@ -73,7 +73,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md), the classes' members, FTEF-9.1,
   FTEF-9.2, FTEF-9.3, FTEF-9.4 and FTEF-9.5, the accessor
   members FTEF-10.2 and FTEF-10.3, the scoped names of FTEF-16.4, the redeclarations of
-  FTEF-17.12, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
+  FTEF-17.13, the C scalar types FTEF-2.8 names, the definitions of FTEF-19.1 to FTEF-19.16
   and FTEF-19.19 to FTEF-19.30: the warning settings, the command line's flags, the lexer's
   flags in literals and engine names, case insensitivity and a module's source; the flags
   that change in the middle of a file, FTEF-21.7 to FTEF-21.14: the types and definitions with
@@ -99,7 +99,7 @@ before the globals, and after `.` or `->` through the class of what the access i
 intrinsics are no names to define; equal initialisers, builtins of one number and engine name
 that FTEQCC would bind to one function (FTE-23.7), enums declared again and `noref`
 definitions are no redeclaration (FTEF-17.10, FTEF-17.8); a redeclaration
-involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.12); `wrap`, `weak` and
+involving a type name that is no typedef's or a pointer is no type mismatch (FTEF-17.13); `wrap`, `weak` and
 `accumulate` functions may be defined again, `extern` ones elsewhere, and a `var` function is a
 variable (FTEF-15.5); a function with no body is reported unless it is `noref` and not
 referred to (FTEF-17.11); and a builtin given for a function with a body is a warning, the body kept

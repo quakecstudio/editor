@@ -527,3 +527,88 @@ fn a_struct_scope_is_exact_without_the_option() {
         [Code::E0225]
     );
 }
+
+// spec FTEF-17.13: a pointer is compared with a pointer by what it points to, and is never the
+// type of a non-pointer
+#[test]
+fn pointers_are_compared_by_what_they_point_to() {
+    for (source, mismatch) in [
+        ("float a;\nextern \"C\" { float *a; }\n", true),
+        ("extern \"C\" { float *a; }\nfloat a;\n", true),
+        (
+            "extern \"C\" { float *a; }\nextern \"C\" { float *a; }\n",
+            false,
+        ),
+        (
+            "extern \"C\" { float *a; }\nextern \"C\" { string *a; }\n",
+            true,
+        ),
+        (
+            "extern \"C\" { float **a; }\nextern \"C\" { float *a; }\n",
+            true,
+        ),
+        (
+            "typedef float t;\nextern \"C\" { float *a; }\nextern \"C\" { t *a; }\n",
+            false,
+        ),
+        (
+            "#pragma flag disable qcfuncs\nfloat *a, b;\nfloat b;\n",
+            false,
+        ),
+        (
+            "#pragma flag disable qcfuncs\nfloat *a, b;\nfloat *b;\n",
+            true,
+        ),
+    ] {
+        let want: Vec<Code> = if mismatch {
+            vec![Code::E0205]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(errors(source), want, "{source:?}");
+    }
+}
+
+// spec FTEF-9.7, QCD-3.36, QCD-3.37, QCD-3.38: a class's parent is a type that is a class or an
+// entity, the same each time the class is given its members
+#[test]
+fn a_class_parent_is_read_as_a_type() {
+    let insens = ["-Fcaseinsens"];
+    assert_eq!(
+        errors("class C { float x; };\nclass D : C { float y; };\n"),
+        []
+    );
+    assert_eq!(errors("class D : Nope { float y; };\n"), [Code::E0236]);
+    assert_eq!(errors("class C : C { float z; };\n"), [Code::E0236]);
+    assert_eq!(
+        errors("class C { float x; };\nclass D : c { float y; };\n"),
+        [Code::E0236]
+    );
+    assert_eq!(
+        errors_with(
+            "class C { float x; };\nclass D : c { float y; };\n",
+            &insens
+        ),
+        []
+    );
+    assert_eq!(errors("class D : float { float y; };\n"), [Code::E0237]);
+    assert_eq!(
+        errors("struct S { float a; };\nclass D : S { float y; };\n"),
+        [Code::E0237]
+    );
+    assert_eq!(
+        errors("enum En { A };\nclass D : En { float y; };\n"),
+        [Code::E0237]
+    );
+    assert_eq!(errors("class D : entity { float y; };\n"), []);
+    assert_eq!(errors("typedef entity E;\nclass D : E { float y; };\n"), []);
+    let changed = "class C { float x; };\nclass D { float y; };\n";
+    assert_eq!(
+        errors(&format!("{changed}class C : D {{ float z; }};\n")),
+        [Code::E0238]
+    );
+    assert_eq!(
+        errors_with(&format!("{changed}class c : D {{ float z; }};\n"), &insens),
+        [Code::E0238]
+    );
+}

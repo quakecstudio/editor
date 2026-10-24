@@ -143,6 +143,12 @@ pub enum Code {
     E0234,
     /// "alias NAME may not be initialised" (QCD-3.35).
     E0235,
+    /// "Parent class NAME was not yet defined" (QCD-3.36).
+    E0236,
+    /// "Parent type NAME is not a class/entity" (QCD-3.37).
+    E0237,
+    /// "Parent class changed on redeclaration of NAME" (QCD-3.38).
+    E0238,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -310,7 +316,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 139] = [
+    pub const ALL: [Self; 142] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -371,6 +377,9 @@ impl Code {
         Self::E0233,
         Self::E0234,
         Self::E0235,
+        Self::E0236,
+        Self::E0237,
+        Self::E0238,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -497,6 +506,9 @@ impl Code {
             Self::E0233 => "E0233",
             Self::E0234 => "E0234",
             Self::E0235 => "E0235",
+            Self::E0236 => "E0236",
+            Self::E0237 => "E0237",
+            Self::E0238 => "E0238",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -698,6 +710,9 @@ impl Code {
             | Self::E0233
             | Self::E0234
             | Self::E0235
+            | Self::E0236
+            | Self::E0237
+            | Self::E0238
             | Self::E0301
             | Self::E0308
             | Self::E0501
