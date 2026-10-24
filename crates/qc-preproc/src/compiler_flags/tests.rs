@@ -8,7 +8,7 @@ use crate::{CommandLine, FlagSettings};
 
 // spec FTEF-21.1: the flags kept are the lexer's eight, `cpriority`, `assumevar`, `subscope` and
 // `attributes`, with the casts' (FTEF-22); any other is read as off and set to nothing
-// spec FTEF-21.17: a flag only the compiler's output reads is not kept
+// spec FTEF-21.18: a flag only the compiler's output reads is not kept
 #[test]
 fn the_kept_flags() {
     let all = [

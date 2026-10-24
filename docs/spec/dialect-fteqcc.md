@@ -2627,7 +2627,7 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   string), then the pragmas in the white space before the token, which `QCC_PR_Lex` runs as it
   lexes it. The flags kept are those the lexer reads (FTEF-12.12), `cpriority`, `assumevar`,
   `subscope` and `attributes`, with the operator priorities (FTEF-21.4) and the defaults of
-  FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.17's.
+  FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.18's.
   A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
   after what it read, is the flag at that token: `subscope` at a block's end is read at the token
   after its `}`. The token after an `extern` block is lexed with the block's flags and read with
@@ -2771,13 +2771,13 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   (FTEF-19.21): `typedef static x;` names an `__int32` and is the error.
 - **FTEF-21.15** **Withdrawn** (P2-122, #558): it said the target's `flag_undefwordsize` and the
   casts `lax`, `typeexplicit` and `qccx` allow are not modelled, but the semantic model's casts
-  and conversions read them (FTEF-22). Replaced by FTEF-21.17.
+  and conversions read them (FTEF-22). Replaced by FTEF-21.18.
 - **FTEF-21.16** The flag family of `cargo xtask oracles builtins`
   (`xtask/src/oracles/builtins/flags.rs`) compiles programs that bind `f` and then use each of
   these statements, under the FTEQCC profile, with no option, with `-Werror -Wno-Q208` for those
   a warning decides, and with the command-line options that set the flags. Its run of
   2026-10-21 (macOS arm64) agrees with the pinned FTEQCC on every case.
-- **FTEF-21.17** The flags a pragma may set mid-compile that no token, tree, definition or cast
+- **FTEF-21.18** The flags a pragma may set mid-compile that no token, tree, definition or cast
   of the semantic model reads are not modelled, each for its reason: `nosave`'s default but for
   a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `ifvector`, `vectorlogic`,
   `nullemptystr`, `boundchecks`, `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`,
