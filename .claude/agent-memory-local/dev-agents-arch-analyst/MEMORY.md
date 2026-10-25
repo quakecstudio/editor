@@ -1,0 +1,2 @@
+- [CONV-17 audit filing](project_conv17_audit.md) - [rust] findings go to plan/ as one type:chore per layer (one PR each); last audit 2026-10-20, PR #487
+- [Worktree Bash guard](feedback_worktree_bash.md) - [any] keep Bash commands plain; scripts in scratchpad files; git -C
