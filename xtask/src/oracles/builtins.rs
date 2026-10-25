@@ -2089,7 +2089,12 @@ fn check_where(
                 let ours = profile(&case);
                 let theirs = oracle(oracles, &work, &case)?;
                 let mark = if ours.0 == theirs { "  ok " } else { "DIFF " };
-                println!("{mark}{} | oracle {theirs} | profile {} {:?}", case.options.join(" "), ours.0, ours.1);
+                println!(
+                    "{mark}{} | oracle {theirs} | profile {} {:?}",
+                    case.options.join(" "),
+                    ours.0,
+                    ours.1
+                );
                 if ours.0 != theirs {
                     println!("      {program}");
                 }
@@ -2127,14 +2132,20 @@ fn check_where(
             if outcomes.len() % 3000 == 0 {
                 let raw: BTreeMap<&String, String> =
                     outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
-                fs::write(&cache, serde_json::to_string(&raw).map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?;
+                fs::write(
+                    &cache,
+                    serde_json::to_string(&raw).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
             }
         }
         let raw: BTreeMap<&String, String> =
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
-        fs::write(&cache, serde_json::to_string(&raw).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        fs::write(
+            &cache,
+            serde_json::to_string(&raw).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         let tally = compare(&all, &outcomes, host);
         println!("oracles: {} cases: {tally}", all.len());
         return Ok(tally.differ == 0);

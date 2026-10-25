@@ -187,6 +187,10 @@ pub enum Code {
     E0256,
     /// "Can only initialise member functions" (QCD-3.53).
     E0257,
+    /// "Accessor NAME cannot be based upon TYPE" (QCD-3.54).
+    E0258,
+    /// "function contains illegal cases" (QCD-4.18).
+    E0259,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -358,7 +362,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 163] = [
+    pub const ALL: [Self; 165] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -441,6 +445,8 @@ impl Code {
         Self::E0255,
         Self::E0256,
         Self::E0257,
+        Self::E0258,
+        Self::E0259,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -526,6 +532,7 @@ impl Code {
 
     /// The code as written in messages, such as `E0101`.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::E0101 => "E0101",
@@ -591,6 +598,8 @@ impl Code {
             Self::E0255 => "E0255",
             Self::E0256 => "E0256",
             Self::E0257 => "E0257",
+            Self::E0258 => "E0258",
+            Self::E0259 => "E0259",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -696,6 +705,7 @@ impl Code {
 
     /// Whether the code is an error rather than a warning.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn is_error(self) -> bool {
         match self {
             Self::W0101
@@ -818,6 +828,8 @@ impl Code {
             | Self::E0255
             | Self::E0256
             | Self::E0257
+            | Self::E0258
+            | Self::E0259
             | Self::E0301
             | Self::E0308
             | Self::E0501

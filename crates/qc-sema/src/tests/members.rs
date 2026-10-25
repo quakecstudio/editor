@@ -240,7 +240,7 @@ fn an_accessor_member_may_name_its_function() {
     assert!(!initialized("box::set_size"));
 }
 
-// spec FTEF-17.2: `Class::member` declares a member the class does not, of the kind its type
+// spec FTEF-17.14: `Class::member` declares a member the class does not, of the kind its type
 // gives, and a later `Class::member` refers to it; a scope that is no class names the global
 // `Scope::member`.
 #[test]

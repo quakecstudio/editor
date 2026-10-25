@@ -58,6 +58,9 @@ pub struct RawDecl {
     /// Whether this stands for a type written with no declarator, `float (x);`, which only has
     /// its type names checked (FTEF-20.12).
     pub type_only: bool,
+    /// For an accessor, its base type after `:`, `None` inside `Some` when it has none
+    /// (FTEF-10.6).
+    pub accessor: Option<Option<Type>>,
     /// The qualifiers written before the type (FTEF-15.1), in order.
     pub qualifiers: Vec<Qualifier>,
     /// A value initialiser, as the checks of QC-11.3 and FTEF-19.31 read it.
@@ -200,7 +203,7 @@ pub enum ValueKind {
     /// FTEQCC's `_(...)` translation intrinsic, and whether its argument is one string
     /// literal (FTEF-19.31).
     Translate(bool),
-    /// An element of a named array, `name[index]` (FTEF-19.40).
+    /// An element of a named array, `name[index]` (FTEF-19.39).
     Indexed(String),
     /// Any other expression, whose type the model does not compute (FTEF-19.32).
     Other,
@@ -253,7 +256,7 @@ pub struct EnumItem {
     /// Whether this is the enum's first name, where its count starts (FTEF-19.10).
     pub first: bool,
     /// The enum's own type name, which `QCC_PR_ParseEnum` keeps its names under; `None` for an
-    /// enum with no name or a legacy base type (FTEF-19.37).
+    /// enum with no name or a legacy base type (FTEF-19.36).
     pub enum_name: Option<String>,
 }
 
@@ -275,6 +278,7 @@ impl RawDecl {
             class: None,
             type_kind: None,
             type_only: false,
+            accessor: None,
             qualifiers: Vec::new(),
             value: None,
             array: None,
@@ -646,6 +650,8 @@ pub struct RawMember {
     /// Whether it is given a value though it is no function, `static` or `const`, and the
     /// value is no 0: "Can only initialise member functions" (FTEF-9.10).
     pub bad_init: bool,
+    /// Whether `var` qualifies it, so a function member of it needs no body (FTEF-19.41).
+    pub is_var: bool,
 }
 
 /// What a class member is (FTEF-9.2, FTEF-9.3).
@@ -949,7 +955,7 @@ pub struct RawUse {
     pub scope: Option<String>,
     /// For a member use, what the access is made on.
     pub base: MemberBase,
-    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.41).
+    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.40).
     pub called: bool,
 }
 
@@ -976,8 +982,13 @@ pub enum UseKind {
     /// class member, or a vector member, `.length` or a struct field (FTE-9, FTE-13, FTE-14,
     /// FTEF-9.3).
     Member,
+    /// The name of a type a cast or a `sizeof` writes, which must be one (FTEF-19.43).
+    TypeName,
+    /// A cast of a literal to a type, whose name is the use's and the literal's type its
+    /// scope: a struct takes no such value (FTEF-6.12).
+    CastTo,
     /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
-    /// type first (FTEF-19.39).
+    /// type first (FTEF-19.38).
     TypeOrValue,
 }
 
@@ -1066,7 +1077,10 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
     let mut members = Vec::new();
     let mut ty = Type::Unknown;
     let mut is_static = false;
-    for field in node.children().filter(|n| n.kind() == SyntaxKind::StructField) {
+    for field in node
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::StructField)
+    {
         if let Some(node) = field.children().find_map(ast::Type::cast) {
             ty = cx.ty(&node);
             is_static = field
@@ -1123,7 +1137,9 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                 .as_ref()
                 .map(|t| t.text_lossless())
                 .unwrap_or_default(),
-            span: member_name.as_ref().map_or_else(|| field.span(), |t| t.span()),
+            span: member_name
+                .as_ref()
+                .map_or_else(|| field.span(), |t| t.span()),
             ty: member_ty,
             array: field
                 .children()
@@ -1528,10 +1544,7 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
                     for list in declarator.prefix_params() {
                         ty = cx.function(ty, &list);
                     }
-                    if let Some(list) = declarator
-                        .params()
-                        .filter(|_| declarator.pointer_form().is_some())
-                    {
+                    if let Some(list) = declarator.params() {
                         ty = cx.function(ty, &list);
                     }
                     ty
@@ -1736,7 +1749,7 @@ fn lower_member(
         let body = match &init {
             Some(ast::Initializer::Body(fn_body)) => {
                 let mut body = lower_body(fn_body, &ty, cx);
-                // FTEF-19.43: a member's state header names its next function in the class.
+                // FTEF-19.42: a member's state header names its next function in the class.
                 if let Some(next) = next_think_of(fn_body) {
                     body.next_thinks.insert(0, next);
                 }
@@ -1750,11 +1763,8 @@ fn lower_member(
             }
             _ => false,
         };
-        let bad_init = init.is_some()
-            && kind == MemberKind::Field
-            && !null
-            && !has("static")
-            && !has("const");
+        let bad_init =
+            init.is_some() && kind == MemberKind::Field && !null && !has("static") && !has("const");
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -1763,6 +1773,7 @@ fn lower_member(
             initialized: init.is_some(),
             body,
             bad_init,
+            is_var: has("var"),
         });
     }
     // FTEF-9.4: `Name(void);`, a constructor written without a return type.
@@ -1783,6 +1794,7 @@ fn lower_member(
             initialized: false,
             body: None,
             bad_init: false,
+            is_var: false,
         });
     }
 }
@@ -1794,8 +1806,14 @@ fn lower_accessor(acc: &ast::AccessorDecl, cx: Cx<'_>, out: &mut FileDecls) {
         return;
     };
     let accessor = name.text_lossless();
-    out.decls
-        .push(RawDecl::type_name(&name, TypeKind::Accessor));
+    let mut type_decl = RawDecl::type_name(&name, TypeKind::Accessor);
+    type_decl.accessor = Some(
+        acc.syntax()
+            .children()
+            .find_map(ast::Type::cast)
+            .map(|t| cx.ty(&t)),
+    );
+    out.decls.push(type_decl);
     for member in acc.members() {
         out.members.extend(member.name().map(|t| t.text_lossless()));
         lower_accessor_body(&member, &accessor, cx, &mut out.decls);
@@ -2162,6 +2180,20 @@ fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     for stmt in block.statements() {
         lower_stmt(&stmt, cx, body, flow);
     }
+    // FTEF-21.19: a `case` or `default` that no `switch` holds is "illegal cases".
+    if flow.switches == 0
+        && !body.diagnostics.iter().any(|d| d.code == Code::E0259)
+        && let Some(label) = block
+            .syntax()
+            .children()
+            .find(|n| n.kind() == SyntaxKind::CaseLabel)
+    {
+        body.diagnostics.push(Diagnostic {
+            code: Code::E0259,
+            message: "function contains illegal cases".to_owned(),
+            span: label.span(),
+        });
+    }
     // FTEF-21.12: `if (pr_subscopedlocals) { //remove any new locals from the hashtable.`, read
     // once the `}` is, with the token after it lexed.
     let end = block.syntax().span().end;
@@ -2197,6 +2229,23 @@ fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
         }
     }
     found
+}
+
+/// A `break` (`is_break`) or `continue` that no loop, and for a `break` no `switch`, holds
+/// (FTEF-21.19): FTEQCC counts it and reports the function once.
+fn illegal_jump(body: &mut RawBody, flow: Flow, node: &SyntaxNode, is_break: bool) {
+    let (held, code, what) = if is_break {
+        (flow.loops > 0 || flow.switches > 0, Code::E0244, "breaks")
+    } else {
+        (flow.loops > 0, Code::E0245, "continues")
+    };
+    if !held && !body.diagnostics.iter().any(|d| d.code == code) {
+        body.diagnostics.push(Diagnostic {
+            code,
+            message: format!("function contains illegal {what}"),
+            span: node.span(),
+        });
+    }
 }
 
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
@@ -2288,30 +2337,9 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
         // neither do a label and `goto` (FTEF-18.23), whose names are labels, not values.
-        ast::Stmt::Break(node) => {
-            // FTEF-21.18: a `break` that no loop or `switch` holds is "illegal breaks".
-            if flow.loops == 0 && flow.switches == 0 {
-                body.diagnostics.push(Diagnostic {
-                    code: Code::E0244,
-                    message: "function contains illegal breaks".to_owned(),
-                    span: node.syntax().span(),
-                });
-            }
-        }
-        ast::Stmt::Continue(node) => {
-            // FTEF-21.18: a `continue` that no loop holds is "illegal continues".
-            if flow.loops == 0 {
-                body.diagnostics.push(Diagnostic {
-                    code: Code::E0245,
-                    message: "function contains illegal continues".to_owned(),
-                    span: node.syntax().span(),
-                });
-            }
-        }
-        ast::Stmt::Empty(_)
-        | ast::Stmt::Label(_)
-        | ast::Stmt::Goto(_)
-        | ast::Stmt::Exit(_) => {}
+        ast::Stmt::Break(node) => illegal_jump(body, flow, node.syntax(), true),
+        ast::Stmt::Continue(node) => illegal_jump(body, flow, node.syntax(), false),
+        ast::Stmt::Empty(_) | ast::Stmt::Label(_) | ast::Stmt::Goto(_) | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
         // code generation's (FTEF-19.32).
         ast::Stmt::Asm(asm) => {
@@ -2602,6 +2630,25 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
             }
         }
         ast::Expr::Cast(cast) => {
+            if let Some(ty) = cast.ty() {
+                type_uses(&ty, cx, uses);
+                if cx.fte
+                    && let Some(ast::Expr::Literal(literal)) = cast.operand()
+                    && let Type::Named(name) = cx.ty(&ty)
+                {
+                    let from = match literal.kind() {
+                        Some(ast::LiteralKind::Vector) => "vector",
+                        Some(ast::LiteralKind::String) => "string",
+                        Some(ast::LiteralKind::Float | ast::LiteralKind::FrameRef) | None => {
+                            "float"
+                        }
+                    };
+                    let mut use_ =
+                        RawUse::new(name.to_string(), ty.syntax().span(), UseKind::CastTo);
+                    use_.scope = Some(from.to_owned());
+                    uses.push(use_);
+                }
+            }
             if let Some(operand) = cast.operand() {
                 lower_expr(&operand, cx, uses);
             }
@@ -2632,6 +2679,9 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
         // FTEQCC `sizeof` (FTEF-18.12): an expression it measures names values; a type does
         // not.
         ast::Expr::Sizeof(sizeof) => {
+            if let Some(ty) = sizeof.ty() {
+                type_uses(&ty, cx, uses);
+            }
             if let Some(operand) = sizeof.operand() {
                 let before = uses.len();
                 lower_expr(&operand, cx, uses);
@@ -2642,6 +2692,29 @@ fn lower_expr(expr: &ast::Expr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
                     use_.kind = UseKind::TypeOrValue;
                 }
             }
+        }
+    }
+}
+
+/// The name a type written in a cast or `sizeof` ends in, as a use that must name a type
+/// (FTEF-19.43): under the `*`s and field marks, a name that is no C type word.
+fn type_uses(ty: &ast::Type, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
+    if !cx.fte {
+        return;
+    }
+    let mut current = cx.ty(ty);
+    loop {
+        match current {
+            Type::Pointer(inner) | Type::Field(inner) => current = (*inner).clone(),
+            Type::Named(name) if !name.contains(char::is_whitespace) => {
+                uses.push(RawUse::new(
+                    name.to_string(),
+                    ty.syntax().span(),
+                    UseKind::TypeName,
+                ));
+                return;
+            }
+            Type::Named(_) | Type::Simple(_) | Type::Function(_) | Type::Unknown => return,
         }
     }
 }

@@ -923,7 +923,19 @@ impl Parser<'_> {
         if !self.name() {
             return;
         }
-        self.declare_type(declared);
+        self.declare_type(declared.clone());
+        let outer = self.class_name.replace(declared);
+        self.class_body(outer);
+    }
+
+    /// The rest of a class after its name: a parent and the body; `outer` is the class being
+    /// read around it, which comes back at the end.
+    fn class_body(&mut self, outer: Option<String>) {
+        self.class_rest();
+        self.class_name = outer;
+    }
+
+    fn class_rest(&mut self) {
         let mut parent = false;
         if self.at(K::Colon) {
             self.bump();
@@ -1077,6 +1089,7 @@ impl Parser<'_> {
             self.finish_node();
         }
         let struct_keyword = self.at_struct_keyword(0);
+        let head = self.found();
         let ty = self.fte_type();
         if struct_keyword && !self.type_derived {
             // `if (basetype->type == ev_struct || basetype->type == ev_union)
@@ -1086,7 +1099,20 @@ impl Parser<'_> {
         }
         match ty {
             // `Name(void);`: a constructor with no return type (FTEF-9.4).
-            Some(ty) if ty.function && self.at(K::Semicolon) => self.bump(),
+            Some(ty) if ty.function && self.at(K::Semicolon) => {
+                let same = |class: &str| {
+                    if self.any_case(0) {
+                        class.eq_ignore_ascii_case(&head)
+                    } else {
+                        class == head
+                    }
+                };
+                if !self.class_name.as_deref().is_some_and(same) {
+                    let message = format!("\"{head}\" is not a type");
+                    self.error(Code::E0203, message);
+                }
+                self.bump();
+            }
             // A member's recovery stops at the `}` that closes the class.
             Some(ty) => self.declarators(ty, Site::Member),
             None => self.recover(true),
@@ -1135,10 +1161,7 @@ impl Parser<'_> {
         if self.at(K::LBrace) {
             self.bump();
             // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
-            while !self.at(K::RBrace)
-                && self.current().is_some()
-                && !self.lost_brace()
-            {
+            while !self.at(K::RBrace) && self.current().is_some() && !self.lost_brace() {
                 let before = self.pos;
                 self.start_item();
                 self.accessor_member(Member::Accessor);

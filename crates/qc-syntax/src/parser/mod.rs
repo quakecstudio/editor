@@ -342,6 +342,10 @@ pub(crate) struct Parser<'a> {
     recovering: bool,
     /// Whether the type last read had a `*` or a parameter list after its base.
     type_derived: bool,
+    /// Whether the member just read is a bitfield, which a `,` does not go on with.
+    after_bitfield: bool,
+    /// The class whose members are being read.
+    class_name: Option<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -381,6 +385,8 @@ impl<'a> Parser<'a> {
             in_typedef: false,
             recovering: false,
             type_derived: false,
+            after_bitfield: false,
+            class_name: None,
         };
         parser.sync_keywords();
         parser
@@ -1126,7 +1132,8 @@ impl<'a> Parser<'a> {
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
         let mut shape = TypeShape::default();
         // FTEF-19.21: `typedef` is a modifier, so after it the type may be left out, an `int`.
-        let omitted = self.fte_type_omitted() && self.type_word(0).is_none() && !self.c_type_word(0);
+        let omitted =
+            self.fte_type_omitted() && self.type_word(0).is_none() && !self.c_type_word(0);
         match (omitted, self.at_struct_keyword(0) && tagged_body) {
             (true, _) => {}
             (false, true) => self.struct_type(),
@@ -1235,6 +1242,10 @@ impl<'a> Parser<'a> {
                     self.bump_error();
                     return;
                 }
+                if self.after_bitfield {
+                    // A bitfield's type is `bitfld` and no `,` goes on with it (FTEF-6.9).
+                    self.error(Code::E0204, "expected ;");
+                }
                 self.start_node(K::StructField);
                 self.bump();
                 self.struct_declarator();
@@ -1248,6 +1259,7 @@ impl<'a> Parser<'a> {
                 if self.member_label() {
                     continue;
                 }
+                self.after_bitfield = false;
                 self.start_node(K::StructField);
                 (open, statics) = self.struct_member();
                 self.finish_node();
@@ -1325,6 +1337,10 @@ impl<'a> Parser<'a> {
             self.name();
         }
         while self.at(K::LBracket) {
+            if self.nth(1).is_some_and(|t| t.kind == K::RBracket) {
+                // `QCC_PR_IntConstExpr()` reads the size, which `]` is none of.
+                self.error(Code::E0201, "not a name");
+            }
             self.array_suffix();
         }
         if self.at(K::LParen) {
@@ -1339,11 +1355,18 @@ impl<'a> Parser<'a> {
             // FTEF-6.4: a bitfield `int name : bits;`.
             self.bump();
             self.expression();
+            self.after_bitfield = true;
         }
         if self.at(K::Eq) {
-            // `QCC_PR_ParseDefaultInitialiser (type)`.
+            // `defaultval = QCC_PR_ParseDefaultInitialiser (type); QCC_PR_ParseWarning
+            // (ERR_INTERNAL, "TODO: pre-initialised struct members are not implemented yet");`,
+            // an error.
             self.bump();
             self.expression();
+            self.error(
+                Code::E0204,
+                "TODO: pre-initialised struct members are not implemented yet",
+            );
         }
     }
 
@@ -1406,7 +1429,8 @@ impl<'a> Parser<'a> {
     fn enum_head_and_body(&mut self) {
         self.bump_as(K::EnumKw);
         // `strictenum = QCC_PR_CheckName("class");`
-        if self.names(0, "class") {
+        let strict = self.names(0, "class");
+        if strict {
             self.bump();
         }
         if self.at(K::Name) {
@@ -1417,11 +1441,14 @@ impl<'a> Parser<'a> {
             // `: int` or another underlying type, accepted and ignored (FTE-15.2).
             self.bump();
             self.fte_type();
+        } else if strict && !self.expect(K::Colon, ":") {
+            // `else if (strictenum) QCC_PR_Expect(":");` (FTEF-8.5)
+            return;
         }
         if self.expect(K::LBrace, "{") {
             // `while(1) { name = QCC_PR_ParseName(); ...; if (QCC_PR_CheckToken("}")) break;
             // QCC_PR_Expect(","); if (QCC_PR_CheckToken("}")) break; }`: at least one name, and
-            // a `,` may end the list (FTEF-19.38).
+            // a `,` may end the list (FTEF-19.37).
             loop {
                 self.start_node(K::Enumerator);
                 // FTEF-20.4: `QCC_PR_ParseEnum` makes each name with `QCC_PR_DummyDef`.
@@ -1483,7 +1510,7 @@ impl<'a> Parser<'a> {
             self.bump();
             return;
         }
-        if self.fteqcc() && !self.muted {
+        if self.fteqcc() && !self.muted && site != Site::Member {
             // FTE-17.3: after a function declaration `QCC_PR_ParseDefs` only checks for a
             // `;`. FTE-21.3: after any other definition a missing `;` is FTEQCC's warning
             // "Missing semicolon at end of definition", and the next statement or
@@ -1596,7 +1623,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.nth(1).is_some_and(|t| t.kind == K::Star) {
-                if first && ty.qcfuncs {
+                if first && ty.qcfuncs && !ty.function {
                     break;
                 }
                 // `else { //c-style function pointer while (QCC_PR_CheckToken("*")) isptr++;`

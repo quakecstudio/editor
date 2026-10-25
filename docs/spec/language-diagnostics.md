@@ -167,6 +167,28 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-3.42** `E0242` "Parent class changed on redeclaration of NAME": under an FTEQCC profile,
   a class given its members again with another parent, at the class's name (`dialect-fteqcc.md`,
   FTEF-9.7).
+- **QCD-3.43** `E0243` "struct NAME has no members": under an FTEQCC profile, a struct or union
+  whose body has no member that is not `static`, at the `}` (`dialect-fteqcc.md`, FTEF-6.7).
+- **QCD-3.44** `E0246` "struct NAME redeclared differently": under an FTEQCC profile, a struct
+  given a body again, or whose name a sized type has, with other members (FTEF-6.10).
+- **QCD-3.45** `E0247` "Parent type NAME was not yet defined": a struct whose parent names no
+  type (FTEF-6.10).
+- **QCD-3.46** `E0248` "Parent type NAME is not a struct": a struct whose parent is another
+  kind of type (FTEF-6.10).
+- **QCD-3.47** `E0249` "Redeclaration of struct with different parent type": a struct given a
+  parent other than its earlier one (FTEF-6.10).
+- **QCD-3.48** `E0250` "bitfields must be integer types" and "too many bits": a bitfield whose
+  type is no `int`, `unsigned` or 64-bit integer, or whose width is above 64 (FTEF-6.9).
+- **QCD-3.49** `E0251` "ENUM::NAME already declared": an enumerator of a named enum given again
+  with another value (FTEF-19.36).
+- **QCD-3.50** `E0253` "Declaration of class NAME within function": a class with a body in a
+  function's body (FTEF-9.8).
+- **QCD-3.51** `E0254` "Struct or union in class NAME": a class member whose type is a struct or
+  union (FTEF-9.11).
+- **QCD-3.52** `E0255` "type NAME not fully defined yet": a struct member whose type is the
+  struct itself or one with no body so far (FTEF-6.10).
+- **QCD-3.53** `E0257` "Can only initialise member functions": a class member given a value that
+  is no function's, `static` or `const`, nor 0 (FTEF-9.10).
 
 ## QCD-4 Expression and statement errors
 
@@ -204,6 +226,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   function of a class with no parent, at the name (FTEF-19.16).
 - **QCD-4.13** `E0313` "NAME is not defined": under an FTEQCC profile, a name of a `using`
   statement that no definition has, at the name (FTEF-20.5).
+- **QCD-4.14** `E0244` "function contains illegal breaks": under an FTEQCC profile, a `break`
+  that no loop or `switch` holds (FTEF-21.19).
+- **QCD-4.15** `E0245` "function contains illegal continues": a `continue` that no loop holds
+  (FTEF-21.19).
+- **QCD-4.16** `E0252` "multiple members found matching STRUCT.NAME": a member access that
+  more than one member of the struct matches, in any case under `-Fcaseinsens` (FTEF-6.11).
+- **QCD-4.17** `E0256` "not a function": a call of a name whose type is a value's (FTEF-19.40).
 
 ## QCD-5 Project, limit and fatal errors
 
