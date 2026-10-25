@@ -233,7 +233,7 @@ fn typedef_struct_forms() {
 }
 
 // spec FTE-15.1: an enum's last enumerator may have a `,` after it
-// spec FTEF-19.38: an enum has at least one enumerator, `QCC_PR_ParseEnum` reading a name
+// spec FTEF-19.37: an enum has at least one enumerator, `QCC_PR_ParseEnum` reading a name
 // before it looks for the `}`
 #[test]
 fn enum_trailing_comma_and_empty_enum() {

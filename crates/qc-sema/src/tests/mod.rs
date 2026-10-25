@@ -37,6 +37,7 @@ mod recovery;
 mod resolution;
 mod reviewer;
 mod settings;
+mod type_declarations;
 mod types;
 
 use crate::db::Db;

@@ -1135,10 +1135,7 @@ impl Parser<'_> {
         if self.at(K::LBrace) {
             self.bump();
             // FTEF-18.27: an accessor that lost its `}` ends at the next declaration line.
-            while !self.at(K::RBrace)
-                && self.current().is_some()
-                && !self.lost_brace()
-            {
+            while !self.at(K::RBrace) && self.current().is_some() && !self.lost_brace() {
                 let before = self.pos;
                 self.start_item();
                 self.accessor_member(Member::Accessor);

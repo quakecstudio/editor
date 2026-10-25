@@ -1126,7 +1126,8 @@ impl<'a> Parser<'a> {
                 && self.nth(2).is_some_and(|t| t.kind == K::LBrace));
         let mut shape = TypeShape::default();
         // FTEF-19.21: `typedef` is a modifier, so after it the type may be left out, an `int`.
-        let omitted = self.fte_type_omitted() && self.type_word(0).is_none() && !self.c_type_word(0);
+        let omitted =
+            self.fte_type_omitted() && self.type_word(0).is_none() && !self.c_type_word(0);
         match (omitted, self.at_struct_keyword(0) && tagged_body) {
             (true, _) => {}
             (false, true) => self.struct_type(),
@@ -1341,9 +1342,15 @@ impl<'a> Parser<'a> {
             self.expression();
         }
         if self.at(K::Eq) {
-            // `QCC_PR_ParseDefaultInitialiser (type)`.
+            // `defaultval = QCC_PR_ParseDefaultInitialiser (type); QCC_PR_ParseWarning
+            // (ERR_INTERNAL, "TODO: pre-initialised struct members are not implemented yet");`,
+            // an error.
             self.bump();
             self.expression();
+            self.error(
+                Code::E0204,
+                "TODO: pre-initialised struct members are not implemented yet",
+            );
         }
     }
 
@@ -1421,7 +1428,7 @@ impl<'a> Parser<'a> {
         if self.expect(K::LBrace, "{") {
             // `while(1) { name = QCC_PR_ParseName(); ...; if (QCC_PR_CheckToken("}")) break;
             // QCC_PR_Expect(","); if (QCC_PR_CheckToken("}")) break; }`: at least one name, and
-            // a `,` may end the list (FTEF-19.38).
+            // a `,` may end the list (FTEF-19.37).
             loop {
                 self.start_node(K::Enumerator);
                 // FTEF-20.4: `QCC_PR_ParseEnum` makes each name with `QCC_PR_DummyDef`.

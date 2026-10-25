@@ -39,8 +39,8 @@ use crate::cast::{Cast, ConstType, Kind, Source, Supply};
 use crate::expand::{OriginMap, ProtoPlan, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
-    MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawUse,
-    RawStruct, RawValue, StatePart, StructMember, TypeKind, UseKind, ValueKind, top_level_kind,
+    MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawStruct,
+    RawUse, RawValue, StatePart, StructMember, TypeKind, UseKind, ValueKind, top_level_kind,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
@@ -431,14 +431,14 @@ struct Resolver<'a> {
     structs: HashSet<String>,
     /// The names of the named enums' types (FTEF-19.10).
     enum_types: HashSet<String>,
-    /// The value of each name of a named enum, by the enum's name and the name's (FTEF-19.37).
+    /// The value of each name of a named enum, by the enum's name and the name's (FTEF-19.36).
     enum_values: HashMap<(String, String), f64>,
     /// Whether the enum being declared names a type already, so `QCC_PR_ParseEnum` reads its
     /// name as the base type and keeps no names under it (FTEF-19.10).
     enum_redeclared: bool,
     /// The structs and unions defined so far, by name (FTEF-6.10).
     struct_defs: HashMap<String, StructDef>,
-    /// The definitions that stand for a type's name, which are no values (FTEF-19.39).
+    /// The definitions that stand for a type's name, which are no values (FTEF-19.38).
     type_defs: HashSet<DefId>,
     /// The base type of each `enum class`, whose values are of its own type (FTEF-19.10).
     strict_enums: HashMap<String, Type>,
@@ -1743,7 +1743,7 @@ impl<'a> Resolver<'a> {
                 self.check_named_value(name, &ty, source_name, holder, location, value.cast_flags)
             }
             ValueKind::Indexed(array) => {
-                // FTEF-19.40: an element of a variable is no constant.
+                // FTEF-19.39: an element of a variable is no constant.
                 if matches!(holder, Holder::Global | Holder::Static(_)) {
                     let found = match holder {
                         Holder::Local(scope) | Holder::Static(scope) | Holder::Const(scope) => {
@@ -2127,7 +2127,7 @@ impl<'a> Resolver<'a> {
         {
             self.warn_enumflag(v, &base, location);
         }
-        // FTEF-19.37: a name an enum gave again with another value is "NAME::ITEM already
+        // FTEF-19.36: a name an enum gave again with another value is "NAME::ITEM already
         // declared".
         if let (Some(enum_name), Some(v), false) = (&item.enum_name, value, self.enum_redeclared) {
             let key = (
@@ -2140,7 +2140,7 @@ impl<'a> Resolver<'a> {
             );
             #[expect(
                 clippy::float_cmp,
-                reason = "spec FTEF-19.37: FTEQCC compares the constants' values exactly"
+                reason = "spec FTEF-19.36: FTEQCC compares the constants' values exactly"
             )]
             let differs = self.enum_values.get(&key).is_some_and(|old| *old != v);
             if differs {
@@ -2442,8 +2442,15 @@ impl<'a> Resolver<'a> {
         let mut parent_key = None;
         if let Some((parent, _)) = &st.parent {
             let key = self.type_key(parent);
-            let is_struct = self.struct_defs.contains_key(&key) || self.has_name(&self.structs, parent);
-            if !is_struct && !self.is_type_name(parent, &[], st.at) {
+            let is_struct =
+                self.struct_defs.contains_key(&key) || self.has_name(&self.structs, parent);
+            let known = is_struct
+                || matches!(
+                    parent.as_str(),
+                    "void" | "float" | "vector" | "string" | "entity"
+                )
+                || self.is_type_name(parent, &[], st.at);
+            if !known {
                 self.report(
                     Code::E0247,
                     location,
@@ -2536,12 +2543,20 @@ impl<'a> Resolver<'a> {
 
     /// The checks of a struct's members (FTEF-6.7): each member's type is one, and a bitfield's
     /// is an integer's.
-    fn check_struct_members(&mut self, location: Location, st: &RawStruct, members: &[&StructMember]) {
+    fn check_struct_members(
+        &mut self,
+        location: Location,
+        st: &RawStruct,
+        members: &[&StructMember],
+    ) {
         for member in members {
             if self.check_type_names(&member.ty, &[], st.at, location) {
                 return;
             }
-            if member.bits.is_some_and(|width| width.is_some_and(|w| w > 64)) {
+            if member
+                .bits
+                .is_some_and(|width| width.is_some_and(|w| w > 64))
+            {
                 self.report(Code::E0250, location, "too many bits".to_owned());
                 return;
             }
@@ -2823,9 +2838,11 @@ impl<'a> Resolver<'a> {
             variadic: false,
         }));
         let location = self.at(file, span);
-        // FTEF-19.43: in a member function the name is a member function of the class or its
+        // FTEF-19.42: in a member function the name is a member function of the class or its
         // parents first, which must be a `void()`.
-        let earlier = |d: &Definition| d.location.file != location.file || d.location.span.start <= span.start;
+        let earlier = |d: &Definition| {
+            d.location.file != location.file || d.location.span.start <= span.start
+        };
         if let Some(def) = class
             .and_then(|c| self.member_in(c, name))
             .filter(|def| self.index.def(*def).is_some_and(earlier))
@@ -3333,8 +3350,14 @@ impl<'a> Resolver<'a> {
                     if let Some(f) = self.fact_mut(def) {
                         f.referenced = true;
                     }
-                    // FTEF-19.41: a call of a name whose type is a value's, not a function's.
-                    if self.fteqcc && use_.called && self.index.def(def).is_some_and(|d| self.not_callable(&d.ty)) {
+                    // FTEF-19.40: a call of a name whose type is a value's, not a function's.
+                    if self.fteqcc
+                        && use_.called
+                        && self
+                            .index
+                            .def(def)
+                            .is_some_and(|d| self.not_callable(&d.ty))
+                    {
                         self.report(Code::E0256, location, "not a function".to_owned());
                     }
                     if self.fteqcc
@@ -3364,11 +3387,13 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    /// Whether a value of type `ty` cannot be called (`not a function`, FTEF-19.41): a float,
+    /// Whether a value of type `ty` cannot be called (`not a function`, FTEF-19.40): a float,
     /// vector, string, entity or struct.
     fn not_callable(&self, ty: &Type) -> bool {
         match self.resolved(ty) {
-            Type::Simple(SimpleType::Float | SimpleType::Vector | SimpleType::String | SimpleType::Entity) => true,
+            Type::Simple(
+                SimpleType::Float | SimpleType::Vector | SimpleType::String | SimpleType::Entity,
+            ) => true,
             Type::Named(name) => {
                 let bare = name
                     .strip_prefix("struct ")
@@ -3376,7 +3401,11 @@ impl<'a> Resolver<'a> {
                     .unwrap_or(&name);
                 self.struct_defs.contains_key(&self.type_key(bare))
             }
-            Type::Simple(_) | Type::Field(_) | Type::Function(_) | Type::Pointer(_) | Type::Unknown => false,
+            Type::Simple(_)
+            | Type::Field(_)
+            | Type::Function(_)
+            | Type::Pointer(_)
+            | Type::Unknown => false,
         }
     }
 
@@ -3389,7 +3418,7 @@ impl<'a> Resolver<'a> {
             None => self.lookup_used_global(name),
         };
         if let Some(def) = def {
-            // FTEF-19.39: a type's name is no value; `QCC_PR_ParseValue` finds no definition by
+            // FTEF-19.38: a type's name is no value; `QCC_PR_ParseValue` finds no definition by
             // it.
             if self.fteqcc && !type_ok && self.type_defs.contains(&def) {
                 return Found::Unknown;
@@ -4004,7 +4033,7 @@ impl<'a> Resolver<'a> {
                 ));
             }
             let skipped = self.fteqcc && self.unused.contains(&id) && !used.contains(&id);
-            // FTEF-19.42: a member function a class declares and nothing defines has no body
+            // FTEF-19.41: a member function a class declares and nothing defines has no body
             // either, a virtual one among them, which is a field of function type.
             let member_function = def.member_of.is_some()
                 && (def.kind == DefKind::Function

@@ -97,7 +97,7 @@ void() user = { Thing t = Thing::Make(); t.Spawned(); ((Thing)self).m_flTime = 4
 
 // spec FTEF-9.1: a class and its parent; members of the parent are members of the child.
 // spec FTEF-17.1: a class's name is a type and a value, `spawn(Thing)`.
-// spec FTEF-17.2: members resolve through the class and its parents, a member function by its
+// spec FTEF-17.14: members resolve through the class and its parents, a member function by its
 // bare name, a field as `this.field`.
 #[test]
 fn class_members_resolve() {
@@ -301,7 +301,7 @@ fn opaque_types_are_compatible() {
 
 // spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
 // unless it is marked `noref` and not referred to; a member function a class declares and no
-// `Class::member` defines has none either (FTEF-19.42).
+// `Class::member` defines has none either (FTEF-19.41).
 #[test]
 fn undefined_functions_are_reported_unless_noref_and_unused() {
     let unused = fte_index_of("void() never;\n");

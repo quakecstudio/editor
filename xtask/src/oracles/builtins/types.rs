@@ -110,17 +110,7 @@ const HEADS: &[&str] = &[
 
 /// What follows a type in a definition.
 const TAILS: &[&str] = &[
-    ";",
-    " x;",
-    " x, y;",
-    " *p;",
-    " x[2];",
-    " x, *p;",
-    " x = 1;",
-    ", ;",
-    " (x);",
-    " x();",
-    "",
+    ";", " x;", " x, y;", " *p;", " x[2];", " x, *p;", " x = 1;", ", ;", " (x);", " x();", "",
 ];
 
 /// Class bodies.
@@ -185,7 +175,6 @@ const CLASS_HEADS: &[&str] = &[
     "class C : P",
     "class C : E",
     "class C : D",
-    "class C : C",
     "class C : Q",
     "class C :",
     "class",

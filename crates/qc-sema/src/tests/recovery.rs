@@ -65,10 +65,7 @@ fn partial_expressions_resolve_what_they_have() {
         assert_eq!(unknown(source), expected, "{source:?}");
     }
     // A field of a type no program defines is a type error, not a value (FTEF-20.12).
-    assert_eq!(
-        unknown("void() f = { .x; };\n"),
-        ["\"x\" is not a type"]
-    );
+    assert_eq!(unknown("void() f = { .x; };\n"), ["\"x\" is not a type"]);
 }
 
 // spec QCD-1.4: a class, typedef, accessor, member, enumerator or function with no name or no

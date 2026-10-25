@@ -200,7 +200,7 @@ pub enum ValueKind {
     /// FTEQCC's `_(...)` translation intrinsic, and whether its argument is one string
     /// literal (FTEF-19.31).
     Translate(bool),
-    /// An element of a named array, `name[index]` (FTEF-19.40).
+    /// An element of a named array, `name[index]` (FTEF-19.39).
     Indexed(String),
     /// Any other expression, whose type the model does not compute (FTEF-19.32).
     Other,
@@ -253,7 +253,7 @@ pub struct EnumItem {
     /// Whether this is the enum's first name, where its count starts (FTEF-19.10).
     pub first: bool,
     /// The enum's own type name, which `QCC_PR_ParseEnum` keeps its names under; `None` for an
-    /// enum with no name or a legacy base type (FTEF-19.37).
+    /// enum with no name or a legacy base type (FTEF-19.36).
     pub enum_name: Option<String>,
 }
 
@@ -949,7 +949,7 @@ pub struct RawUse {
     pub scope: Option<String>,
     /// For a member use, what the access is made on.
     pub base: MemberBase,
-    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.41).
+    /// Whether the name is the callee of a call, `name(...)` (FTEF-19.40).
     pub called: bool,
 }
 
@@ -977,7 +977,7 @@ pub enum UseKind {
     /// FTEF-9.3).
     Member,
     /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
-    /// type first (FTEF-19.39).
+    /// type first (FTEF-19.38).
     TypeOrValue,
 }
 
@@ -1066,7 +1066,10 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
     let mut members = Vec::new();
     let mut ty = Type::Unknown;
     let mut is_static = false;
-    for field in node.children().filter(|n| n.kind() == SyntaxKind::StructField) {
+    for field in node
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::StructField)
+    {
         if let Some(node) = field.children().find_map(ast::Type::cast) {
             ty = cx.ty(&node);
             is_static = field
@@ -1123,7 +1126,9 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                 .as_ref()
                 .map(|t| t.text_lossless())
                 .unwrap_or_default(),
-            span: member_name.as_ref().map_or_else(|| field.span(), |t| t.span()),
+            span: member_name
+                .as_ref()
+                .map_or_else(|| field.span(), |t| t.span()),
             ty: member_ty,
             array: field
                 .children()
@@ -1528,10 +1533,7 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
                     for list in declarator.prefix_params() {
                         ty = cx.function(ty, &list);
                     }
-                    if let Some(list) = declarator
-                        .params()
-                        .filter(|_| declarator.pointer_form().is_some())
-                    {
+                    if let Some(list) = declarator.params() {
                         ty = cx.function(ty, &list);
                     }
                     ty
@@ -1736,7 +1738,7 @@ fn lower_member(
         let body = match &init {
             Some(ast::Initializer::Body(fn_body)) => {
                 let mut body = lower_body(fn_body, &ty, cx);
-                // FTEF-19.43: a member's state header names its next function in the class.
+                // FTEF-19.42: a member's state header names its next function in the class.
                 if let Some(next) = next_think_of(fn_body) {
                     body.next_thinks.insert(0, next);
                 }
@@ -1750,11 +1752,8 @@ fn lower_member(
             }
             _ => false,
         };
-        let bad_init = init.is_some()
-            && kind == MemberKind::Field
-            && !null
-            && !has("static")
-            && !has("const");
+        let bad_init =
+            init.is_some() && kind == MemberKind::Field && !null && !has("static") && !has("const");
         out.push(RawMember {
             name: name_token.text_lossless(),
             span: name_token.span(),
@@ -2199,6 +2198,23 @@ fn block_typedefs(node: &qc_syntax::SyntaxNode) -> Vec<ast::TypedefDecl> {
     found
 }
 
+/// A `break` (`is_break`) or `continue` that no loop, and for a `break` no `switch`, holds
+/// (FTEF-21.19): FTEQCC counts it and reports the function once.
+fn illegal_jump(body: &mut RawBody, flow: Flow, node: &SyntaxNode, is_break: bool) {
+    let (held, code, what) = if is_break {
+        (flow.loops > 0 || flow.switches > 0, Code::E0244, "breaks")
+    } else {
+        (flow.loops > 0, Code::E0245, "continues")
+    };
+    if !held && !body.diagnostics.iter().any(|d| d.code == code) {
+        body.diagnostics.push(Diagnostic {
+            code,
+            message: format!("function contains illegal {what}"),
+            span: node.span(),
+        });
+    }
+}
+
 fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
     match stmt {
         ast::Stmt::Local(local) => lower_local(local, cx, body),
@@ -2288,30 +2304,9 @@ fn lower_stmt(stmt: &ast::Stmt, cx: Cx<'_>, body: &mut RawBody, flow: Flow) {
         }
         // `break;`, `continue;` (FTE-4) and `;` (FTE-21.5) bind no names and use none, and
         // neither do a label and `goto` (FTEF-18.23), whose names are labels, not values.
-        ast::Stmt::Break(node) => {
-            // FTEF-21.18: a `break` that no loop or `switch` holds is "illegal breaks".
-            if flow.loops == 0 && flow.switches == 0 {
-                body.diagnostics.push(Diagnostic {
-                    code: Code::E0244,
-                    message: "function contains illegal breaks".to_owned(),
-                    span: node.syntax().span(),
-                });
-            }
-        }
-        ast::Stmt::Continue(node) => {
-            // FTEF-21.18: a `continue` that no loop holds is "illegal continues".
-            if flow.loops == 0 {
-                body.diagnostics.push(Diagnostic {
-                    code: Code::E0245,
-                    message: "function contains illegal continues".to_owned(),
-                    span: node.syntax().span(),
-                });
-            }
-        }
-        ast::Stmt::Empty(_)
-        | ast::Stmt::Label(_)
-        | ast::Stmt::Goto(_)
-        | ast::Stmt::Exit(_) => {}
+        ast::Stmt::Break(node) => illegal_jump(body, flow, node.syntax(), true),
+        ast::Stmt::Continue(node) => illegal_jump(body, flow, node.syntax(), false),
+        ast::Stmt::Empty(_) | ast::Stmt::Label(_) | ast::Stmt::Goto(_) | ast::Stmt::Exit(_) => {}
         // FTEF-20.5: an `asm` statement's `local` declarations define locals; its operands are
         // code generation's (FTEF-19.32).
         ast::Stmt::Asm(asm) => {

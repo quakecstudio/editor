@@ -526,6 +526,7 @@ impl Code {
 
     /// The code as written in messages, such as `E0101`.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::E0101 => "E0101",
@@ -696,6 +697,7 @@ impl Code {
 
     /// Whether the code is an error rather than a warning.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn is_error(self) -> bool {
         match self {
             Self::W0101
