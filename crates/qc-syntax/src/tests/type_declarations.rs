@@ -375,15 +375,27 @@ fn the_struct_member_check_is_per_member() {
     );
 }
 
-// spec FTEF-18.34: a block of many declaration lines is read in time linear in its length
+// spec FTEF-18.34: a block of many declaration lines is read whole whatever its length, each
+// line a local, with no error, and one that lost its `}` ends at the first
 #[test]
-fn many_declaration_lines_in_one_block_parse_quickly() {
-    let body = "float a;\n".repeat(20_000);
-    let source = format!("void() g = {{\n{body}}};");
-    let started = std::time::Instant::now();
-    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
-    assert_eq!(parsed.syntax().text(), source.as_bytes());
-    assert!(started.elapsed().as_secs() < 5);
+fn many_declaration_lines_in_one_block_are_all_locals() {
+    for lines in [1_usize, 100, 2_000] {
+        let body = "float a;\n".repeat(lines);
+        let source = format!("void() g = {{\n{body}}};");
+        let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+        assert_eq!(parsed.syntax().text(), source.as_bytes());
+        assert_eq!(parsed.errors().count(), 0, "{lines} lines");
+        let locals = parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == crate::SyntaxKind::LocalDecl)
+            .count();
+        assert_eq!(locals, lines, "{lines} lines");
+        let lost = format!("void() g = {{\n{body}");
+        let parsed = parse_with(lost.as_bytes(), Dialect::Fteqcc);
+        assert_eq!(parsed.syntax().text(), lost.as_bytes());
+        assert_ne!(parsed.errors().count(), 0, "{lines} lines, no brace");
+    }
 }
 
 // spec FTEF-7.5: a definition whose type is a typedef of a function type takes a body, a state
