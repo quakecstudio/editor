@@ -14,6 +14,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::exec::{Exec, System};
+use crate::host::parse_host;
 
 const USAGE: &str = "usage: cargo xtask fuzz [<target>...] [--time <duration>]\n       \
                      <duration> is seconds, or a number with s, m or h (default 60s)";
@@ -103,15 +104,6 @@ fn host_triple(root: &Path, exec: &dyn Exec) -> Result<String, String> {
         .ok_or_else(|| "rustc -vV printed no host line".to_owned())
 }
 
-/// The triple on the `host:` line of `rustc -vV` output.
-fn parse_host(version: &str) -> Option<&str> {
-    version
-        .lines()
-        .find_map(|line| line.strip_prefix("host:"))
-        .map(str::trim)
-        .filter(|host| !host.is_empty())
-}
-
 /// The cargo arguments that fuzz `target`, built for `host`, for `seconds`.
 ///
 /// `-print_funcs=0` stops libFuzzer symbolizing each newly covered function, which on macOS
@@ -183,7 +175,7 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, parse_host, run, run_args};
+    use super::{DEFAULT_SECONDS, Options, parse_args, parse_duration, run, run_args};
     use crate::exec::{Fake, Reply};
 
     /// cargo-fuzz and rustc as `fails` says: listing two targets, the first run passing and the
@@ -329,14 +321,5 @@ mod tests {
                 "-print_funcs=0"
             ])
         );
-    }
-
-    #[test]
-    fn host_line() {
-        let version = "rustc 1.99.0-nightly (abc 2026-10-01)\nbinary: rustc\n\
-                       host: x86_64-unknown-linux-gnu\nrelease: 1.99.0-nightly\n";
-        assert_eq!(parse_host(version), Some("x86_64-unknown-linux-gnu"));
-        assert_eq!(parse_host("rustc 1.99.0\nrelease: 1.99.0\n"), None);
-        assert_eq!(parse_host("host:   \n"), None);
     }
 }

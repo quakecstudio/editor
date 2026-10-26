@@ -2452,9 +2452,9 @@ issues:
   depends:
   - P2-109
   deliverable:
-  - 'xtask/src/readiness.rs `mutation()`: the per-test-binary data limit and the core-file setting, for the host''s target triple, on every host that enforces them, with a test, and the workflow''s copy removed; xtask''s own tests'' builds outside the limit; docs/testing.md to match'
+  - 'xtask/src/readiness.rs `mutation()`: the per-test-binary data limit and the core-file setting, for the host''s target triple as cargo reports it, on every host that enforces them, with a test, and the workflow''s copy removed; docs/testing.md to match. The programs xtask''s own tests start (`cargo metadata`, git, bash, one clang compile and link of a one-line program) stay under the limit: prlimit''s single value sets the hard limit too, so only a wrapper at every spawn site could lift it, and none of them comes near 3 GiB'
   acceptance:
-  - 'A test of `mutation()` shows the runner it sets for the host triple; a Readiness run of xtask finishes its mutation job with no build refused by the limit'
+  - 'A test of `mutation()` shows the runner it sets for each host triple, the data limit for Linux and none for macOS and Windows'
   verify:
   - cargo test -p xtask readiness
 - key: P2-124

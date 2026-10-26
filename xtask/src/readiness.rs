@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::exec::{Exec, System};
-use crate::host::host_triple;
+use crate::host::cargo_host;
 use crate::oracles::{COVERAGE_ENV, vm_oracle};
 use crate::test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
@@ -484,8 +484,9 @@ const MUTANT_DATA_LIMIT: u64 = 3 * 1024 * 1024 * 1024;
 /// enforce the limit. On Linux, `prlimit --data` (util-linux) sets
 /// `RLIMIT_DATA` to [`MUTANT_DATA_LIMIT`] and `--core=0` writes no core file
 /// for a binary it aborts; a single value "Specify[s] both limits to the same
-/// value" (prlimit(1)), so a process the test starts cannot raise it. macOS
-/// does not enforce `RLIMIT_DATA` and has no prlimit, and Windows has neither.
+/// value" (prlimit(1), <https://man7.org/linux/man-pages/man1/prlimit.1.html>),
+/// so a process the test starts cannot raise it. macOS does not enforce
+/// `RLIMIT_DATA` and has no prlimit, and Windows has neither.
 ///
 /// cargo reads the runner for a target from `CARGO_TARGET_<triple>_RUNNER`:
 /// "Keys are converted to uppercase, dots and dashes are converted to
@@ -493,8 +494,9 @@ const MUTANT_DATA_LIMIT: u64 = 3 * 1024 * 1024 * 1024;
 /// "If a runner is provided, executables for the target <triple> will be
 /// executed by invoking the specified runner with the actual executable passed
 /// as an argument. This applies to cargo run, cargo test and cargo bench
-/// commands" (`target.<triple>.runner`). cargo mutants runs each mutant's tests
-/// with `cargo test`, so every test binary gets the runner.
+/// commands" (`target.<triple>.runner`; both at
+/// <https://doc.rust-lang.org/cargo/reference/config.html>). cargo mutants runs
+/// each mutant's tests with `cargo test`, so every test binary gets the runner.
 pub(crate) fn mutant_runner(host: &str) -> Option<(String, String)> {
     if !host.contains("-linux-") {
         return None;
@@ -511,9 +513,9 @@ fn mutation(root: &Path, target: &Target, tools: &Tools<'_>) -> Result<Score, St
     let out = tools.scratch.join(format!("mutants-{}", target.name));
     let mut command = cargo_for(root, &tools.scratch, target, None);
     // Each test binary under the data limit, where the host enforces one. The
-    // limit is set here, on the host's triple, rather than in the workflow, so
-    // a local run and an arm64 runner get it too.
-    if let Some((name, value)) = mutant_runner(host_triple()?) {
+    // limit is set here, on the triple cargo reports for the host, rather than
+    // in the workflow, so a local run and an arm64 runner get it too.
+    if let Some((name, value)) = mutant_runner(&cargo_host(root, tools.exec)?) {
         command.env(name, value);
     }
     // cargo mutants tests a copy of the tree, which without `.git` fails the
