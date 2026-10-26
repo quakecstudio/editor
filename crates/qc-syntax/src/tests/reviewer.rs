@@ -478,3 +478,205 @@ fn reviewer_nested_extern_blocks_stop_at_the_limit_on_a_small_stack() {
         }
     }
 }
+
+// The eighth P2-R2 review's tests (TEST-9). Each program was run through the pinned FTEQCC
+// first (`cargo xtask oracles builtins --record`, a scratch family, macOS arm64) and the test
+// asserts what FTEQCC did: the first list of each test compiles there, the second does not.
+
+/// The codes of the errors `source` gets under the FTEQCC profile, after checking that the
+/// tree gives back every byte.
+fn fte_codes(source: &str) -> Vec<Code> {
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source.as_bytes(), "{source}");
+    parsed.errors().map(|d| d.code).collect()
+}
+
+// spec FTEF-18.34: a struct, class, enum or function body that has its `}` is read whole
+// whatever its columns, so a member or a local at column 0 is one and the declaration after
+// the `}` is the file's; a body that lost its `}` ends at the next declaration line with an
+// error. The pinned FTEQCC compiles the closed forms and refuses the open ones
+#[test]
+fn reviewer_a_closed_body_keeps_its_column_0_members() {
+    for source in [
+        "struct S {\nfloat a;\n\nfloat x;\n};\nfloat y;\n",
+        "class C {\nfloat a;\nvoid() m = {\nfloat b;\nthis.a = b;\n};\n};\nfloat x;\n",
+        "enum E {\nA,\nB\n};\nfloat x;\n",
+        "void() g = {\nstruct S {\nfloat a;\n} x;\nx.a = 1;\n};\n",
+        "void() g = {\n{\n{\nfloat a;\n}\n}\n};\n\nfloat y;\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "struct S {\nfloat a;\n\nfloat x;\n",
+        "struct S {\nfloat a;\n\nvoid() g = {};\n",
+        "class C {\nfloat a;\n\nfloat x;\n",
+        "void() g = {\n\tfloat a = 1;\n\nvoid() h = {\n\tfloat a = 2;\n};\n",
+    ] {
+        assert_eq!(fte_codes(source), [Code::E0204], "{source}");
+    }
+}
+
+// spec FTEF-20.14: `struct`, `union`, `class`, `typedef`, `enum`, a struct body's labels and
+// its `static` and `virtual` are keywords `QCC_PR_CheckKeyword` finds in any case under
+// `caseinsens` and names without it. The pinned FTEQCC compiles each under `-Fcaseinsens`
+// and refuses each without
+#[test]
+fn reviewer_type_keywords_and_labels_are_found_in_any_case_under_caseinsens() {
+    for source in [
+        "STRUCT S { float a; };\n",
+        "Struct S { float a; };\n",
+        "UNION U { float a; };\n",
+        "CLASS C { float a; };\n",
+        "TYPEDEF float t;\n",
+        "Typedef float t; t x;\n",
+        "ENUM E { A };\n",
+        "struct S { PUBLIC: float a; };\n",
+        "struct S { Private: float a; };\n",
+        "class C { PUBLIC: float a; };\n",
+        "class C { Protected: : float a; };\n",
+        "class C { VIRTUAL void() m = {}; };\n",
+        "class C { Static float a; };\n",
+        "struct S { STATIC float a; float b; };\n",
+        "struct S { Virtual void() m = {}; float b; };\n",
+        "struct P { float a; }; STRUCT S : P { float b; };\n",
+    ] {
+        assert_eq!(errors(&fte_case(source, true)), vec![], "{source}");
+        assert!(
+            fte_case(source, false).errors().next().is_some(),
+            "{source}"
+        );
+    }
+}
+
+// spec FTEF-6.7: a struct body's member may be a nested class, struct, union, enum or
+// accessor, with or without a declarator, to any depth, a pointer to the struct itself and a
+// bitfield after a `,` or with an expression's width; a class in a class, a typedef in a
+// struct, a width with no name and a `,` after a width are refused. The pinned FTEQCC agrees
+#[test]
+fn reviewer_nested_types_are_members_as_parse_struct_reads_them() {
+    for source in [
+        "struct S { class C { float a; } c; };\n",
+        "struct S { class C { float a; }; };\n",
+        "class C { struct S { float a; } *p; };\n",
+        "struct S { struct T { struct U { float a; } u; } t; };\n",
+        "struct S { struct T { struct U { float a; }; }; };\n",
+        "struct S { struct { struct { float a; }; }; };\n",
+        "struct S { union { struct { float a; float b; }; vector v; }; };\n",
+        "struct S { struct T { float a; } t[2]; };\n",
+        "struct S { struct T { float a; } *t, u; };\n",
+        "struct S { struct S *next; };\n",
+        "struct S { S *next; };\n",
+        "struct S { enum E { A } e; };\n",
+        "struct S { accessor A : float; };\n",
+        "struct S { int a, b : 3; };\n",
+        "struct S { int a : (1 + 2); };\n",
+        "struct S { int a : 1 + 2; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "class C { class D { float a; }; };\n",
+        "struct S { typedef float t; t x; };\n",
+        "struct S { int : 3; };\n",
+        "struct S { int a : 3, b; };\n",
+        "struct S { float a : 3 = 1; };\n",
+        "class C { ;; };\n",
+        "class C { float a;; float b; };\n",
+        "struct {};\n",
+        "struct;\n",
+        "struct S;;\n",
+        "struct S { float a; };;\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}
+
+// spec FTEF-7.4: a typedef's declarators are any definition's, through chains, arrays, fields
+// and enums, and `typedef` is read any number of times; a name may be both a type and a
+// variable or be defined twice as one type; the forms `QCC_PR_ParseDefs` refuses are refused.
+// The pinned FTEQCC agrees on each
+#[test]
+fn reviewer_typedef_declarators_are_any_definition_s() {
+    for source in [
+        "typedef float t; typedef t u; typedef u v; v x = 1;\n",
+        "typedef float t[2]; typedef t u[3]; u x;\n",
+        "typedef typedef typedef float tt; tt x;\n",
+        "typedef float t; t t;\n",
+        "typedef float t; typedef t t;\n",
+        "typedef float t, t;\n",
+        "typedef float T, t;\n",
+        "typedef float t,;\n",
+        "typedef float t typedef;\n",
+        "typedef struct S { float a; } S; S x;\n",
+        "typedef struct S { float a; } s; s x; S y;\n",
+        "typedef .float ft; .ft f2;\n",
+        "typedef float t; .t f2;\n",
+        "typedef enum { A } E, *PE;\n",
+        "typedef enum E : int { A } T;\n",
+        "typedef enumflags { A } E;\n",
+        "typedef enum class E : float { A } T; T x = E::A;\n",
+        "typedef accessor A : float { get float x = { return 1; } } B;\n",
+        "void() g = { if (1) typedef float t; };\n",
+        "void() g = { while (0) typedef float t; };\n",
+        "typedef float t\nfloat x;\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "typedef, float t;\n",
+        "typedef float, t;\n",
+        "typedef float t, , u;\n",
+        "typedef float t u;\n",
+        "typedef float t = 1, u;\n",
+        "typedef float typedef t;\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}
+
+// spec FTEF-9.8, FTEF-6.8: a struct's or class's name, with or without its keyword, stands
+// before a field's `.` and as a function's return type; after a body `x = { 1 }, y = { 2 }`
+// and `x[2] = { { 1 }, { 2 } }` are its declarators; a constructor is the member named exactly
+// as the class, and a `~` or a `= {}` on it is refused; a `}` with no `;` before a declaration
+// is refused and a definition's missing `;` before a line is not. The pinned FTEQCC agrees
+#[test]
+fn reviewer_a_type_name_stands_before_fields_functions_and_initialisers() {
+    for source in [
+        "struct S { float a; }; .S f2;\n",
+        "struct S { float a; }; .struct S f2;\n",
+        "class C { float a; }; .C f2;\n",
+        "class C { float a; }; .class C f2;\n",
+        "struct S { float a; }; S() h = #6;\n",
+        "struct S { float a; }; S *() h = #6;\n",
+        "class C { float a; }; C() h = #6;\n",
+        "class C { float a; }; class C() h = #6;\n",
+        "struct P { float a; }; void(struct S : P { float b; } x) h = #6;\n",
+        "struct P { float a; }; struct S : P { float b; } x;\n",
+        "struct S { float a; } x = { 1 }, y = { 2 };\n",
+        "struct S { float a; } x[2] = { { 1 }, { 2 } };\n",
+        "struct S { float a; } x\nfloat b;\n",
+        "struct S { float a; }; S S;\n",
+        "class C { float a; } C;\n",
+        "class C { float C; };\n",
+        "class C { void() C = {}; };\n",
+        "struct { float a; };\n",
+        "union { float a; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "class C { ~C(); };\n",
+        "class C { void() ~C; };\n",
+        "class C { C() = {}; };\n",
+        "struct S { float a; }\nfloat b;\n",
+        "struct S { float a; } float b;\n",
+        "class C { float a; }\nfloat b;\n",
+        "enum E { A }\nfloat b;\n",
+        "struct S { float a; } x, struct T { float b; } y;\n",
+        "struct P { float a; }; struct : P { float b; } x;\n",
+        "struct P { float a; }; typedef struct : P { float b; } T;\n",
+        "struct P { float a; }; struct S : struct P { float b; };\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}

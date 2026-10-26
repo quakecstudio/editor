@@ -1752,6 +1752,7 @@ issues:
   - P2-137
   - P2-138
   - P2-146
+  - P2-145
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2733,3 +2734,25 @@ issues:
   - cargo test -p xtask ci::
   - actionlint .github/workflows/ci.yml .github/workflows/readiness.yml
   - zizmor .github/workflows/
+- key: P2-145
+  title: Check struct, class and typedef uses as FTEQCC does in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the eighth P2-R2 readiness review (docs/readiness/p2-r2.md) on PR #581's branch (9aefebc), against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`, macOS arm64), with about 2,300 programs of the review's own around the `types` family of the builtin differential (`cargo xtask oracles builtins --record`, a scratch family); the parser reports nothing for any of them, so they are the semantic model's, beside P2-134 and P2-136. The model accepts where FTEQCC refuses: (1) a struct's array member sized by zero or by a name, `struct S { float a[0]; };`, `struct S { float a[A]; };`; (2) a typedef, struct or enum made in a body used after it or in an enclosing block, `void() g = { typedef struct S { float a; } T; }; S y;`, `void() g = { typedef enum { A } E; }; float x = A;`, `void() g = { { typedef float t; } t x; };`; (3) a class given its body again without its parent, `class C { float a; }; class D : C { float b; }; class D { float b; };`, a `virtual` override of a member the parent declared without `virtual`, `class C { void() m = {}; }; class D : C { virtual void() m = {}; };`, a member defined with another function type than declared, `class C { void(float x) m; }; void() C::m = {};` and `void(vector x) C::m = {};`, and a constructor defined with the class as its return type, `class C { C(); }; C() C::C = {};`; (4) a class member read as a constant initialiser or through the class, `class C { float a; }; float x = C::a;`, `class C { static float a; }; float x = C::a;` (and with `= 1`), `local float x = c::a;` under `-Fcaseinsens`; a member named before its declaration in a member function, `class C { void() m = { n(); }; void() n = {}; };`, `this.n()` and `this.a = 1;` before `float a;`; (5) a class member initialised with a value other than the literal `0`, `class C { float a = 0.0; };` and `float a = -0;` (FTEQCC refuses, "Can only initialise member functions": `QCC_SRef_IsNull` is false for them), while `vector v = '0 0 0';` is accepted by FTEQCC and refused by the model; (6) a class's field member or array member assigned as a value, `class C { .float f; }; ... c.f = 1;`, `class C { float a[2]; }; ... c.a = 1;`, a class value as a float, `local float x = c;`, and a class with the parent `vector`, `string` or `void` under `-Fcaseinsens`; (7) a struct's member reached through a pointer, a double pointer, an index or a cast, `local S *p = 0; p->a`, `p.a`, `(*p).a`, `p[0].a`, `*p`, `p[0]`, `(**pp).a`, `(*pp)->a`, `pp->a`, `pp[0][0].a`, pointer arithmetic `p + 1`, `p++`, the address of a member or a local `&x.a`, `&x`, `&x[0]`, `&p` and the casts `(S *)&y`, `(S *)&x.a`, `(float *)&x`, `(S *)1`, `(S *)1.5`, `(S *)'1 2 3'`, `(entity)p` and `(float)p` ("Address-of operator is not supported in this form without extensions" and "Cannot cast", the class P2-136 (1) names, here through every operator); (8) a struct compared, `if (x == y)`, passed where a float is taken or a float where a struct is, `void(float a) h; h(x);`, `void(S s) h; h(1);`, and an aggregate with more values than the struct, its parent's members included, or its array has, `struct S : P { float b; } x = { 1, 2 };`, `struct T { S s; } x = { 1 };`, `{ 1, 2, 3 }` for two members, `{ 1, 1, 2, 3 }` for a float and a vector, `struct S { float a[2]; } x = { 1, 2 };`; (9) a bitfield written, `struct S { int a : 3; } x; ... x.a = 1;` (P2-136 (2), at file level); (10) a call of a call, `typedef void() fn; fn(fn a) h = { return a; }; void() g = { h(g)(); };`, and the address of a function, `fn *p; ... p = &g;`. The model refuses where FTEQCC accepts: a struct's static member through its name, `struct S { static float a; float b; }; void() g = { S::a = 1; };`; a struct made in a body beside a typedef used in the same body, `void() g = { typedef struct S { float a; } T; T x; S y; };`; a vector member's suffix on a class, `class C { vector v; }; ... c.v_x = 1;`, `c.v_y`; `.length` on an array of structs, `S x[2]; ... x.length`; and, with `qcfuncs` off, a struct parameter's member written, `void(S s) h = { s.a = 1; }; ... h(x);`, and a typedef'd function type as a parameter or a return type, `void(fn callback) h = { callback(); }`, `fn(fn a) h = { return a; };`.
+  depends:
+  - P2-134
+  - P2-136
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs`, `lower.rs`) and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-7, FTEF-9, FTEF-17, FTEF-19 and FTEF-21: each program above compiled or refused as the pinned FTEQCC does, or named in a spec statement as outside the profile with its reason, each a spec statement quoting the source and a citing test; the programs in `xtask/src/oracles/builtins/types.rs` as cases'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
