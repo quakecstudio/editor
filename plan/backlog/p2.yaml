@@ -1543,6 +1543,32 @@ issues:
   - 'Under the FTEQCC profile `__FILE__` is the string FTEQCC gives for the same project on every host, a `\` and a `:` in the name included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-preproc
+- key: P2-135
+  title: Shard the readiness mutation job across runners
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - TEST-10
+  summary: |
+    The Readiness workflow's mutation job runs one crate per runner, so a run takes the slowest crate's whole cargo-mutants run: on the L2 run 40094712627 (2026-10-24) qc-preproc took 3 h 40 min and qc-syntax 1 h 47 min on one 4-core runner each, while qc-lexer and qc-project took about 12 minutes. cargo-mutants 27.1.0 runs one shard of the generated mutants with `--shard k/n` (`cargo mutants --help`: "Run only one shard of all generated mutants: specify as e.g. 1/4"), so a crate's mutants can be spread over several runners and the per-crate score put back together by the ratchet.
+  depends:
+  - P2-123
+  deliverable:
+  - '.github/workflows/readiness.yml: the `mutation` job''s matrix becomes (crate, shard), with a shard count per crate roughly proportional to its mutant count, each job running `cargo xtask readiness mutation --shard k/n` and uploading its own artifact; the 3 GiB data limit and the core-file settings stay as they are'
+  - 'xtask/src/readiness.rs: `cargo xtask readiness mutation` takes `--shard k/n` and passes it to cargo mutants as `--shard k/n`, recording the shard in the measurement'
+  - 'xtask/src/ratchet.rs: the ratchet merges each crate''s shard measurements into one score (the mutant counts add; a timed-out mutant counts as caught and an unviable one does not count, as today), refusing a shard measured twice or a set with a shard missing'
+  - 'docs/testing.md and docs/ci.md: the mutation job described as sharded'
+  acceptance:
+  - 'A Readiness run of the L2 crates finishes in well under an hour with the same per-crate scores an unsharded run would give'
+  - 'The ratchet job reads the sharded artifacts and reports one score per crate'
+  - 'xtask tests cover the `--shard` argument, its validation and the merge of shard outcomes'
+  verify:
+  - cargo test -p xtask readiness
+  - 'A workflow_dispatch Readiness run on the branch with crates="qc-lexer qc-project" showing sharded mutation jobs and a merged score per crate'
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1675,6 +1701,7 @@ issues:
   - P2-132
   - P2-133
   - P2-134
+  - P2-135
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
