@@ -10,7 +10,7 @@ use qc_lexer::Dialect;
 use super::{codes, one_fte, tokens};
 use crate::{
     Code, CommandLine, CompilerFlags, FileOutput, FteFlag, Keyword, KeywordEdit, Keywords,
-    MemoryLoader, Preprocessor, Priorities,
+    MemoryLoader, Preprocessor, Priorities, TargetFormat,
 };
 
 /// The compiler flags in force after each of `out`'s flag marks, each at the token it holds
@@ -409,4 +409,44 @@ fn the_built_in_macros_are_not_found_in_any_case() {
     assert_eq!(tokens(&out), "no");
     let out = one_with("#define Foo 5\n#define bar FOO\nbar\n", &any);
     assert_eq!(tokens(&out), "5");
+}
+
+/// Every output format of `targets[]`.
+const EVERY_TARGET: [TargetFormat; 10] = [
+    TargetFormat::Standard,
+    TargetFormat::Qss,
+    TargetFormat::Hexen2,
+    TargetFormat::Uhexen2,
+    TargetFormat::Kk7,
+    TargetFormat::Fte,
+    TargetFormat::Fteh2,
+    TargetFormat::FteDebug,
+    TargetFormat::Darkplaces,
+    TargetFormat::Qtest,
+];
+
+// spec FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` to true for `QCF_DARKPLACES`
+// only and to false for every other format
+#[test]
+fn only_the_darkplaces_target_has_an_undefined_word_size() {
+    for format in EVERY_TARGET {
+        assert_eq!(
+            format.undefined_word_size(),
+            format == TargetFormat::Darkplaces,
+            "{format:?}"
+        );
+    }
+}
+
+// spec FTEF-22.5: an `extern` function is the error unless the target is `QCF_FTE`,
+// `QCF_FTEDEBUG` or `QCF_FTEH2`
+#[test]
+fn only_the_fte_targets_support_extern() {
+    for format in EVERY_TARGET {
+        let fte = matches!(
+            format,
+            TargetFormat::Fte | TargetFormat::FteDebug | TargetFormat::Fteh2
+        );
+        assert_eq!(format.supports_extern(), fte, "{format:?}");
+    }
 }
