@@ -765,6 +765,44 @@ fn has_arg(command: &Command, arg: &str) -> bool {
     command.get_args().any(|a| a == arg)
 }
 
+/// What `mutation()` runs: `cargo -vV`, answered with `host`, then
+/// `cargo mutants`, which exits with `code` after writing `outcomes`.
+fn mutants_reply(command: &Command, host: &str, code: i32, outcomes: &str) -> Reply {
+    if has_arg(command, "-vV") {
+        return Reply {
+            stdout: format!("cargo 1.99.0 (abc 2026-09-01)\nhost: {host}\n"),
+            ..Reply::default()
+        };
+    }
+    Reply {
+        code,
+        files: vec![(
+            after(command, "--output")
+                .unwrap()
+                .join("mutants.out/outcomes.json"),
+            outcomes.to_owned().into_bytes(),
+        )],
+        ..Reply::default()
+    }
+}
+
+/// The `CARGO_TARGET_*_RUNNER` variables `command` sets, in order.
+fn runner_envs(command: &Command) -> Vec<(String, Option<String>)> {
+    command
+        .get_envs()
+        .filter(|(key, _)| {
+            let key = key.to_string_lossy();
+            key.starts_with("CARGO_TARGET_") && key.ends_with("_RUNNER")
+        })
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.map(|value| value.to_string_lossy().into_owned()),
+            )
+        })
+        .collect()
+}
+
 fn fixture(check: &str) -> Target {
     resolve(&root(), &format!("{FIXTURES}/{check}")).unwrap()
 }
@@ -875,16 +913,10 @@ fn mutation_keeps_proptests_random_seed() {
     let outcomes = recorded("mutation", "outcomes.json");
     let envs = std::cell::RefCell::new(None);
     let fake = Fake::new(|command: &Command| {
-        envs.replace(Some(proptest_envs(command)));
-        Reply {
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
+        if !has_arg(command, "-vV") {
+            envs.replace(Some(proptest_envs(command)));
         }
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let tools = tools(&fake, "mutation-random-seed");
     mutation(&root(), &fixture("mutation"), &tools).unwrap();
@@ -939,23 +971,14 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
     let outcomes = recorded("mutation", "outcomes.json");
     let reply = |code: i32| {
         let outcomes = outcomes.clone();
-        move |command: &Command| Reply {
-            code,
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
-        }
+        move |command: &Command| mutants_reply(command, "x86_64-unknown-linux-gnu", code, &outcomes)
     };
     let target = fixture("mutation");
     for code in [0, 2, 3] {
         let fake = Fake::new(reply(code));
         let score = mutation(&root(), &target, &tools(&fake, "mutation-reads")).unwrap();
         assert_eq!(score.total, 2);
-        let line = fake.seen.borrow()[0].clone();
+        let line = fake.seen.borrow()[1].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
         assert!(line.contains("--jobs "), "{line}");
         // The fixture is its own workspace, without the `mutants` profile.
@@ -972,29 +995,94 @@ fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
     let outcomes = recorded("mutation", "outcomes.json");
     let incremental = std::cell::RefCell::new(None);
     let fake = Fake::new(|command: &Command| {
-        incremental.replace(
-            command
-                .get_envs()
-                .find(|(key, _)| *key == "CARGO_INCREMENTAL")
-                .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
-        );
-        Reply {
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
+        if !has_arg(command, "-vV") {
+            incremental.replace(
+                command
+                    .get_envs()
+                    .find(|(key, _)| *key == "CARGO_INCREMENTAL")
+                    .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
+            );
         }
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let target = resolve(&root(), "qs-porting-example").unwrap();
     mutation(&root(), &target, &tools(&fake, "mutation-member")).unwrap();
-    let line = fake.seen.borrow()[0].clone();
+    let line = fake.seen.borrow()[1].clone();
     assert!(line.contains("--profile mutants "), "{line}");
     assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
     // Without incremental builds, every mutant rebuilds the crate in full.
     assert_eq!(incremental.borrow().as_deref(), Some("1"));
+}
+
+#[test]
+fn the_mutant_runner_limits_data_memory_on_linux_hosts_only() {
+    let limit = "prlimit --data=3221225472 --core=0 --".to_owned();
+    assert_eq!(
+        mutant_runner("x86_64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit.clone()
+        ))
+    );
+    assert_eq!(
+        mutant_runner("aarch64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit
+        ))
+    );
+    assert_eq!(mutant_runner("aarch64-apple-darwin"), None);
+    assert_eq!(mutant_runner("x86_64-pc-windows-msvc"), None);
+}
+
+#[test]
+fn mutation_sets_the_runner_for_the_host_triple() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let limit = "prlimit --data=3221225472 --core=0 --".to_owned();
+    // Whatever this test runs on, the host cargo reports decides the runner:
+    // the data limit on a Linux host, named by its triple, and none elsewhere.
+    for (host, expected) in [
+        (
+            "x86_64-unknown-linux-gnu",
+            vec![(
+                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+                Some(limit.clone()),
+            )],
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            vec![(
+                "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+                Some(limit.clone()),
+            )],
+        ),
+        ("aarch64-apple-darwin", Vec::new()),
+        ("x86_64-pc-windows-msvc", Vec::new()),
+    ] {
+        let runners = std::cell::RefCell::new(None);
+        let fake = Fake::new(|command: &Command| {
+            if !has_arg(command, "-vV") {
+                runners.replace(Some(runner_envs(command)));
+            }
+            mutants_reply(command, host, 0, &outcomes)
+        });
+        mutation(
+            &root(),
+            &fixture("mutation"),
+            &tools(&fake, "mutation-runner"),
+        )
+        .unwrap();
+        assert_eq!(runners.borrow().as_ref(), Some(&expected), "{host}");
+    }
+    // Without the host, the limit cannot be named, so there is no measurement.
+    let no_host = Fake::new(|_: &Command| Reply::exit(0));
+    let error = mutation(
+        &root(),
+        &fixture("mutation"),
+        &tools(&no_host, "mutation-runner"),
+    )
+    .unwrap_err();
+    assert!(error.contains("no host line"), "{error}");
 }
 
 #[test]
