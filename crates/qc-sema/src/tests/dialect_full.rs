@@ -87,9 +87,9 @@ class Thing : Base
 \tvirtual void Spawned(void);
 \tstatic Thing Make(void);
 };
-void Base::Spawned(void) { m_flBase = 1; };
+void Base::Spawned(void) { this.m_flBase = 1; };
 void Base::Helper(void) { };
-void Thing::Thing(void) { m_flTime = time; m_flBase = 2; };
+void Thing::Thing(void) { this.m_flTime = time; this.m_flBase = 2; };
 void Thing::Spawned(void) { super::Spawned(); Helper(); think = Base::Helper; };
 Thing Thing::Make(void) { Thing t = spawn(Thing); t.m_flTime = 3; t.health = 1; return t; };
 void() user = { Thing t = Thing::Make(); t.Spawned(); ((Thing)self).m_flTime = 4; };
@@ -97,7 +97,8 @@ void() user = { Thing t = Thing::Make(); t.Spawned(); ((Thing)self).m_flTime = 4
 
 // spec FTEF-9.1: a class and its parent; members of the parent are members of the child.
 // spec FTEF-17.1: a class's name is a type and a value, `spawn(Thing)`.
-// spec FTEF-17.2: members resolve through the class and its parents, before the globals.
+// spec FTEF-17.14: members resolve through the class and its parents, a member function by its
+// bare name, a field as `this.field`.
 #[test]
 fn class_members_resolve() {
     let index = fte_index_of(CLASSES);
@@ -299,15 +300,20 @@ fn opaque_types_are_compatible() {
 }
 
 // spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
-// unless it is marked `noref` and not referred to; a member function is not checked.
+// unless it is marked `noref` and not referred to; a member function a class declares and no
+// `Class::member` defines has none either (FTEF-19.41).
 #[test]
 fn undefined_functions_are_reported_unless_noref_and_unused() {
     let unused = fte_index_of("void() never;\n");
     assert_eq!(errors(&unused), [Code::E0211]);
     let used = fte_index_of("void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&used), [Code::E0211]);
-    let noref = fte_index_of("noref void() never;\nclass A { nonvirtual void M(void); };\n");
+    let noref = fte_index_of("noref void() never;\n");
     assert_eq!(errors(&noref), Vec::<Code>::new());
+    let member = fte_index_of("class A { nonvirtual void M(void); };\n");
+    assert_eq!(errors(&member), [Code::E0211]);
+    let defined = fte_index_of("class A { nonvirtual void M(void); };\nvoid A::M(void) {};\n");
+    assert_eq!(errors(&defined), Vec::<Code>::new());
     let noref_used = fte_index_of("noref void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&noref_used), [Code::E0211]);
 }
