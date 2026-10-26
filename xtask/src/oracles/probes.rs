@@ -307,7 +307,7 @@ mod tests {
         let work = fresh_dir("probes-agree");
         let fake = Fake::new(agreeing);
         assert!(check(&fake_oracles(&work, &fake)).unwrap());
-        assert_eq!(fake.seen.borrow().len(), PROBES.len());
+        assert_eq!(fake.seen.lock().unwrap().len(), PROBES.len());
         assert!(work.join("probes/progs.dat").is_file());
     }
 

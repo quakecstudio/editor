@@ -131,13 +131,13 @@ fn the_oracles_are_built_once_from_the_files_fetched() {
         "{generated}"
     );
     assert!(dir.join(OUT).join("bin/stamp").is_file());
-    let compiles = fake.seen.borrow().len();
+    let compiles = fake.seen.lock().unwrap().len();
     // qcc, FTEQCC and the VM oracle: each source, then each link.
     let sources = QCC_FILES.len() + FTEQCC_FILES.len() + 2 + VM_HARNESS.len();
     assert_eq!(compiles, sources + 3);
     // Built again with nothing changed: the stamp says the binaries are current.
     build_with(&dir, &fake, &files).unwrap();
-    assert_eq!(fake.seen.borrow().len(), compiles);
+    assert_eq!(fake.seen.lock().unwrap().len(), compiles);
     assert_eq!(files.asked.borrow().len(), 2, "the fetched files are kept");
     // A change to one of the oracles' own files rebuilds them.
     fs::write(
@@ -146,7 +146,7 @@ fn the_oracles_are_built_once_from_the_files_fetched() {
     )
     .unwrap();
     build_with(&dir, &fake, &files).unwrap();
-    assert_eq!(fake.seen.borrow().len(), compiles * 2);
+    assert_eq!(fake.seen.lock().unwrap().len(), compiles * 2);
 }
 
 #[test]
@@ -297,7 +297,7 @@ fn the_fuzz_targets_build_seed_and_run() {
     assert!(run(&dir, &words("fuzz scenario --time 5"), &fake, &files).unwrap());
     let corpus = dir.join(OUT).join("fuzz/scenario/corpus");
     assert!(fs::read_dir(&corpus).unwrap().count() > 50);
-    let seen = fake.seen.borrow().clone();
+    let seen = fake.seen.lock().unwrap().clone();
     let fuzzing = seen.last().unwrap();
     assert!(fuzzing.contains("-max_total_time=5"), "{fuzzing}");
     assert!(seen.iter().any(|line| line.contains("-DQS_FUZZ_SCENARIO")));

@@ -569,7 +569,7 @@ fn checking_runs_every_case_and_counts_the_failures() {
         .iter()
         .filter(|case| case.checks.contains(&Check::SameTwice))
         .count();
-    assert_eq!(fake.seen.borrow().len(), cases.len() + twice);
+    assert_eq!(fake.seen.lock().unwrap().len(), cases.len() + twice);
     assert!(check(&oracles, Some(&["no-such-case"])).is_err());
     assert!(
         check(&oracles, Some(&[][..])).is_ok(),
@@ -587,7 +587,7 @@ fn a_refusal_passes_an_oracle_that_refuses_with_its_message() {
     });
     let oracles = fake_oracles(&work, &fake);
     assert!(check(&oracles, Some(&["frames-too-many"])).unwrap());
-    let seen = fake.seen.borrow();
+    let seen = fake.seen.lock().unwrap();
     assert!(seen[0].starts_with("vm-oracle scenario "), "{}", seen[0]);
     assert!(seen[0].ends_with("trace.bin"), "{}", seen[0]);
     assert!(work.join("scenarios/frames-too-many/case.scn").is_file());
@@ -616,7 +616,7 @@ fn a_case_reads_the_trace_the_oracle_wrote() {
     assert!(work.join("scenarios/entities-file/map.ent").is_file());
     // A second run, for a case that compares two, writes the trace again.
     assert!(!check(&oracles, Some(&["deterministic"])).unwrap());
-    assert_eq!(fake.seen.borrow().len(), 4);
+    assert_eq!(fake.seen.lock().unwrap().len(), 4);
 }
 
 #[test]
