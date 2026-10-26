@@ -369,7 +369,10 @@ fn a_missing_semicolon_between_members_does_not_end_the_body() {
 fn the_struct_member_check_is_per_member() {
     assert_eq!(errors("class C { float *p; struct S s; };"), [Code::E0254]);
     assert_eq!(errors("class C { struct S *s; float a; };"), []);
-    assert_eq!(errors("class C { struct S *s; struct S t; };"), [Code::E0254]);
+    assert_eq!(
+        errors("class C { struct S *s; struct S t; };"),
+        [Code::E0254]
+    );
 }
 
 // spec FTEF-18.34: a block of many declaration lines is read in time linear in its length
