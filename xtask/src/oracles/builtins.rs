@@ -50,6 +50,7 @@ mod flags;
 mod keywords;
 mod lexical;
 mod passes;
+mod types;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -1216,6 +1217,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(caseinsens::cases());
     cases.extend(casts::cases());
     cases.extend(defs::cases());
+    cases.extend(types::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
@@ -2050,6 +2052,19 @@ fn show(case: &Case) -> String {
 /// writes it) and the profile against them.
 pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
     check_where(root, oracles, record, Host::HOST)
+}
+
+/// Checks the profile against the outcomes [`FIXTURE`] records, without the oracles: what
+/// [`check`] tallies once the oracles agree with the fixture, in seconds instead of minutes.
+pub(crate) fn check_recorded(root: &Path) -> Result<bool, String> {
+    let recorded = read_fixture(root)?;
+    let cases = cases();
+    let tally = compare(&cases, &recorded, Host::HOST);
+    println!(
+        "oracles: {} builtin initialiser cases against {FIXTURE}: {tally}",
+        cases.len()
+    );
+    Ok(tally.differ == 0)
 }
 
 /// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
