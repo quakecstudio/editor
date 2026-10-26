@@ -132,11 +132,18 @@ pub(crate) struct Oracles<'a> {
 
 /// Runs `cargo xtask oracles [build | id101 <dir> | rerelease <dir> | json <trace>]`.
 pub(crate) fn main(root: &Path, args: &[String]) -> Result<bool, String> {
-    run(root, args, &System, &CURL)
+    run(root, args, &System, &CURL, &builtins::Suite::all)
 }
 
-/// [`main`] with the programs `exec` runs and the files `net` fetches.
-fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<bool, String> {
+/// [`main`] with the programs `exec` runs, the files `net` fetches and the cases `suite` makes
+/// for the builtin differential, made only when a command runs it.
+fn run(
+    root: &Path,
+    args: &[String],
+    exec: &dyn Exec,
+    net: &dyn Net,
+    suite: &dyn Fn() -> builtins::Suite,
+) -> Result<bool, String> {
     let build = || build_with(root, exec, net);
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {
@@ -146,14 +153,14 @@ fn run(root: &Path, args: &[String], exec: &dyn Exec, net: &dyn Net) -> Result<b
             let numbers = numbers::check(root, &oracles)?;
             let probes = probes::check(&oracles)?;
             let scenarios = scenarios::check(&oracles, None)?;
-            let builtins = builtins::check(root, &oracles, false)?;
+            let builtins = builtins::check(root, &oracles, false, &suite())?;
             Ok([vectors, numbers, probes, scenarios, builtins]
                 .iter()
                 .all(|passed| *passed))
         }
-        ["builtins"] => builtins::check(root, &build()?, false),
-        ["builtins", "--record"] => builtins::check(root, &build()?, true),
-        ["builtins", "--recorded"] => builtins::check_recorded(root),
+        ["builtins"] => builtins::check(root, &build()?, false, &suite()),
+        ["builtins", "--record"] => builtins::check(root, &build()?, true, &suite()),
+        ["builtins", "--recorded"] => builtins::check_recorded(root, &suite()),
         ["fuzz", rest @ ..] => fuzz::run(root, rest, exec, net),
         ["scenarios", names @ ..] => {
             let oracles = build()?;

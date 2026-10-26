@@ -12,7 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::testing::{fresh_dir, root};
+use super::testing::{fresh_dir, root, sample_suite};
 use super::*;
 use crate::exec::{Fake, Reply};
 
@@ -228,44 +228,48 @@ fn words(text: &str) -> Vec<String> {
 fn every_command_of_cargo_xtask_oracles_runs() {
     let (dir, files) = fake_root("oracles-commands");
     let fake = Fake::new(tools(0));
-    assert!(run(&dir, &words("build"), &fake, &files).unwrap());
+    // A dozen cases stand for the cross product: the commands are what is tested here.
+    let suite = || sample_suite().0;
+    assert!(run(&dir, &words("build"), &fake, &files, &suite).unwrap());
     // The fake VM oracle writes no trace, so every check that reads one fails.
-    assert!(!run(&dir, &[], &fake, &files).unwrap());
-    assert!(!run(&dir, &words("scenarios defaults"), &fake, &files).unwrap());
+    assert!(!run(&dir, &[], &fake, &files, &suite).unwrap());
+    assert!(!run(&dir, &words("scenarios defaults"), &fake, &files, &suite).unwrap());
     // The fake compilers write no progs.dat, so the builtin differential fails too.
-    assert!(!run(&dir, &words("builtins"), &fake, &files).unwrap());
+    assert!(!run(&dir, &words("builtins"), &fake, &files, &suite).unwrap());
     // spec FTEF-14.50: where `unsigned long` is 32 bits the fixture is not recorded at all.
-    let recording = run(&dir, &words("builtins --record"), &fake, &files);
+    let recording = run(&dir, &words("builtins --record"), &fake, &files, &suite);
     if super::builtins::ULong::HOST == super::builtins::ULong::Bits64 {
         assert!(!recording.unwrap());
     } else {
         assert!(recording.is_err());
     }
-    assert!(run(&dir, &words("builtins again"), &fake, &files).is_err());
-    assert!(run(&dir, &words("id101 nowhere"), &fake, &files).is_err());
+    assert!(run(&dir, &words("builtins again"), &fake, &files, &suite).is_err());
+    assert!(run(&dir, &words("id101 nowhere"), &fake, &files, &suite).is_err());
     let codebases = fresh_dir("oracles-commands-codebases");
-    assert!(run(&dir, &words("rerelease"), &fake, &files).is_err());
+    assert!(run(&dir, &words("rerelease"), &fake, &files, &suite).is_err());
     assert!(
         run(
             &dir,
             &["rerelease".to_owned(), codebases.display().to_string()],
             &fake,
-            &files
+            &files,
+            &suite
         )
         .is_err()
     );
     assert!(
-        run(&dir, &words("unknown"), &fake, &files)
+        run(&dir, &words("unknown"), &fake, &files, &suite)
             .err()
             .unwrap()
             .contains("usage")
     );
-    assert!(run(&dir, &words("fuzz"), &fake, &files).is_err());
+    assert!(run(&dir, &words("fuzz"), &fake, &files, &suite).is_err());
     assert!(super::main(&dir, &words("unknown")).is_err());
 }
 
 #[test]
 fn a_trace_prints_as_json() {
+    let suite = || sample_suite().0;
     let dir = fresh_dir("oracles-json");
     let trace = dir.join("t.trace");
     let bytes = qc_trace::encode(&qc_trace::Trace {
@@ -276,25 +280,42 @@ fn a_trace_prints_as_json() {
     let fake = Fake::new(tools(0));
     let files = Files::default();
     let args = ["json".to_owned(), trace.display().to_string()];
-    assert!(run(&dir, &args, &fake, &files).unwrap());
+    assert!(run(&dir, &args, &fake, &files, &suite).unwrap());
     fs::write(&trace, b"not a trace").unwrap();
-    assert!(run(&dir, &args, &fake, &files).is_err());
+    assert!(run(&dir, &args, &fake, &files, &suite).is_err());
     fs::remove_file(&trace).unwrap();
-    assert!(run(&dir, &args, &fake, &files).is_err());
+    assert!(run(&dir, &args, &fake, &files, &suite).is_err());
 }
 
 #[test]
 fn the_fuzz_targets_build_seed_and_run() {
+    let suite = || sample_suite().0;
     let (dir, files) = fake_root("oracles-fuzz");
     let fake = Fake::new(tools(0));
     // Where the C compiler is not clang (gcc on Linux, MSVC on Windows, unless CC says
     // otherwise), fuzzing stops before building anything.
     if Compiler::find(&dir, Instrument::Fuzz, &fake).is_err() {
-        let error = run(&dir, &words("fuzz scenario --time 5"), &fake, &files).unwrap_err();
+        let error = run(
+            &dir,
+            &words("fuzz scenario --time 5"),
+            &fake,
+            &files,
+            &suite,
+        )
+        .unwrap_err();
         assert!(error.contains("need clang"), "{error}");
         return;
     }
-    assert!(run(&dir, &words("fuzz scenario --time 5"), &fake, &files).unwrap());
+    assert!(
+        run(
+            &dir,
+            &words("fuzz scenario --time 5"),
+            &fake,
+            &files,
+            &suite
+        )
+        .unwrap()
+    );
     let corpus = dir.join(OUT).join("fuzz/scenario/corpus");
     assert!(fs::read_dir(&corpus).unwrap().count() > 50);
     let seen = fake.seen.lock().unwrap().clone();
@@ -308,6 +329,6 @@ fn the_fuzz_targets_build_seed_and_run() {
         },
         None => Reply::exit(77),
     });
-    assert!(!run(&dir, &words("fuzz init --time 5"), &crashes, &files).unwrap());
+    assert!(!run(&dir, &words("fuzz init --time 5"), &crashes, &files, &suite).unwrap());
     assert!(dir.join(OUT).join("fuzz/init/fuzz.log").is_file());
 }

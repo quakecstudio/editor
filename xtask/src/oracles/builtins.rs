@@ -235,7 +235,7 @@ impl Case {
     }
 
     /// The case's key in [`FIXTURE`].
-    fn key(&self) -> String {
+    pub(crate) fn key(&self) -> String {
         let mut key = format!("{}|", dialect_name(self.dialect));
         if let Some(project) = &self.project {
             key.push_str(&project.compiled);
@@ -2037,6 +2037,22 @@ pub(crate) fn graph_cases() -> Vec<Case> {
     directives::graph_cases()
 }
 
+/// The cases a check runs: cases of the cross product, and project graph cases.
+pub(crate) struct Suite {
+    pub(crate) cases: Vec<Case>,
+    pub(crate) graph: Vec<Case>,
+}
+
+impl Suite {
+    /// Every case: the whole cross product and every graph case, as `cargo xtask oracles` runs.
+    pub(crate) fn all() -> Self {
+        Self {
+            cases: cases(),
+            graph: graph_cases(),
+        }
+    }
+}
+
 /// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
 /// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
 /// round; whose oracle rejected the program where the graph reports no error, as each compiler
@@ -2044,38 +2060,42 @@ pub(crate) fn graph_cases() -> Vec<Case> {
 /// accepted nor rejected the program, so that the case says nothing of what it read (PRJ-5.13).
 /// Where `long` is 32 bits a case whose directive holds a number `atoi` reads otherwise may read
 /// the other file (FTEF-14.55).
-pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
+pub(crate) fn graph_differences(
+    graph: &[Case],
+    outcomes: &BTreeMap<String, Outcome>,
+    ulong: ULong,
+) -> Vec<String> {
     let mut differ = Vec::new();
-    for case in graph_cases() {
+    for case in graph {
         let read = match outcomes.get(&case.key()) {
             Some(Outcome::Bound { number: 5, .. }) => true,
             Some(Outcome::Accepted) => false,
             Some(Outcome::Rejected) => {
-                if !graph_reads(&case).1 {
+                if !graph_reads(case).1 {
                     let why = "oracle rejected, the graph reports no error";
-                    differ.push(format!("{}: {why}", show(&case)));
+                    differ.push(format!("{}: {why}", show(case)));
                 }
                 continue;
             }
             Some(oracle) => {
                 differ.push(format!(
                     "{}: oracle {oracle}, which reads no file",
-                    show(&case)
+                    show(case)
                 ));
                 continue;
             }
             None => {
-                differ.push(format!("{}: not recorded in {FIXTURE}", show(&case)));
+                differ.push(format!("{}: not recorded in {FIXTURE}", show(case)));
                 continue;
             }
         };
-        if graph_reads(&case).0 != read && !ulong.atoi_reads_otherwise(&case) {
+        if graph_reads(case).0 != read && !ulong.atoi_reads_otherwise(case) {
             let which = if read {
                 "the oracle reads the file, the graph does not"
             } else {
                 "the oracle does not read the file, the graph does"
             };
-            differ.push(format!("{}: {which}", show(&case)));
+            differ.push(format!("{}: {which}", show(case)));
         }
     }
     differ
@@ -2127,18 +2147,23 @@ fn show(case: &Case) -> String {
     }
 }
 
-/// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,
-/// writes it) and the profile against them.
-pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
-    check_where(root, oracles, record, Host::HOST)
+/// Runs every case of `suite` through the oracles; checks them against [`FIXTURE`] (or, with
+/// `record`, writes it) and the profile against them.
+pub(crate) fn check(
+    root: &Path,
+    oracles: &Oracles,
+    record: bool,
+    suite: &Suite,
+) -> Result<bool, String> {
+    check_where(root, oracles, record, Host::HOST, suite)
 }
 
 /// Checks the profile against the outcomes [`FIXTURE`] records, without the oracles: what
 /// [`check`] tallies once the oracles agree with the fixture, in seconds instead of minutes.
-pub(crate) fn check_recorded(root: &Path) -> Result<bool, String> {
+pub(crate) fn check_recorded(root: &Path, suite: &Suite) -> Result<bool, String> {
     let recorded = read_fixture(root)?;
-    let cases = cases();
-    let tally = compare(&cases, &recorded, Host::HOST)?;
+    let cases = &suite.cases;
+    let tally = compare(cases, &recorded, Host::HOST)?;
     println!(
         "oracles: {} builtin initialiser cases against {FIXTURE}: {tally}",
         cases.len()
@@ -2155,8 +2180,9 @@ fn check_where(
     oracles: &Oracles,
     record: bool,
     host: impl Into<Host>,
+    suite: &Suite,
 ) -> Result<bool, String> {
-    check_on(root, oracles, record, host, threads())
+    check_on(root, oracles, record, host, suite, threads())
 }
 
 /// [`check_where`] with the oracles and the profile on `threads` threads, each thread's oracle
@@ -2167,6 +2193,7 @@ fn check_on(
     oracles: &Oracles,
     record: bool,
     host: impl Into<Host>,
+    suite: &Suite,
     threads: NonZero<usize>,
 ) -> Result<bool, String> {
     let host = host.into();
@@ -2179,13 +2206,13 @@ fn check_on(
     }
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
-    let cases = cases();
-    let graph_cases = graph_cases();
+    let cases = &suite.cases;
+    let graph_cases = &suite.graph;
     // A graph case may be a case of the cross product too.
     let mut keys = HashSet::new();
     let unique: Vec<&Case> = cases
         .iter()
-        .chain(&graph_cases)
+        .chain(graph_cases)
         .filter(|case| keys.insert(case.key()))
         .collect();
     let ran = across_cores(&unique, threads, |thread, case| {
@@ -2206,7 +2233,7 @@ fn check_on(
     if record {
         if host.overrun != Overrun::Caught {
             let held = read_fixture(root).unwrap_or_default();
-            for case in cases.iter().chain(&graph_cases) {
+            for case in cases.iter().chain(graph_cases) {
                 let key = case.key();
                 if let Some(outcome) = held.get(&key).filter(|_| host.reads_otherwise(case)) {
                     outcomes.insert(key, outcome.clone());
@@ -2227,7 +2254,7 @@ fn check_on(
         // A changed cross product is recorded again with `--record` once it is right. Where
         // `long` is 32 bits a wide `#pragma line` or `#if` number may read otherwise
         // (FTEF-14.50, FTEF-14.55).
-        for case in cases.iter().chain(&graph_cases) {
+        for case in cases.iter().chain(graph_cases) {
             let key = case.key();
             let Some(outcome) = outcomes.get(&key) else {
                 continue;
@@ -2244,12 +2271,12 @@ fn check_on(
             println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
-    let tally = compare_on(&cases, &outcomes, host, threads)?;
+    let tally = compare_on(cases, &outcomes, host, threads)?;
     println!(
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    let graph = graph_differences(&outcomes, ulong);
+    let graph = graph_differences(graph_cases, &outcomes, ulong);
     for problem in &graph {
         println!("FAIL  project graph: {problem}");
     }
