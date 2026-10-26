@@ -72,7 +72,7 @@ mod tests {
             cargo_host(root(), &fake).unwrap(),
             "aarch64-unknown-linux-gnu"
         );
-        assert!(fake.seen.borrow()[0].ends_with(" -vV"));
+        assert!(fake.seen.lock().unwrap()[0].ends_with(" -vV"));
         let failed = Fake::new(|_: &Command| Reply {
             code: 1,
             stderr: "bad".to_owned(),

@@ -8,8 +8,10 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use qc_progs::{Function, ProgsFile, write};
 use qc_syntax::{Code, Dialect};
@@ -17,9 +19,9 @@ use qc_types::Slot;
 
 use super::super::testing::{fake_oracles, fresh_dir, root};
 use super::{
-    Case, Encoding, FIXTURE, Host, Outcome, Overrun, ProgsSrc, Project, Tally, ULong, bound, cases,
-    check, check_where, compare, expected_difference, graph_cases, graph_differences, oracle,
-    profile, read_fixture,
+    Case, Encoding, FIXTURE, Host, Outcome, Overrun, ProgsSrc, Project, Tally, ULong, across_cores,
+    bound, cases, check, check_on, check_where, compare, compare_on, expected_difference,
+    graph_cases, graph_differences, oracle, profile, read_fixture, threads,
 };
 use crate::exec::{Fake, Reply};
 
@@ -53,7 +55,7 @@ fn the_profile_agrees_with_the_recorded_oracles() {
     keys.dedup();
     assert_eq!(keys.len(), recorded.len());
     assert!(keys.iter().all(|key| recorded.contains_key(key)));
-    let tally = compare(&cases, &recorded, ULong::Bits64);
+    let tally = compare(&cases, &recorded, ULong::Bits64).unwrap();
     assert_eq!(tally.differ, 0, "{tally}");
     assert_eq!(
         tally.expected.keys().copied().collect::<Vec<_>>(),
@@ -1154,9 +1156,15 @@ fn check_passes_when_the_oracles_give_the_recording() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(check(&repo, &oracles, false).unwrap());
-    assert_eq!(fake.seen.borrow().len(), recorded.len());
-    assert!(fake.seen.borrow().iter().any(|line| line == "fteqcc -Tid"));
-    assert!(fake.seen.borrow().iter().any(|line| line == "qcc"));
+    assert_eq!(fake.seen.lock().unwrap().len(), recorded.len());
+    assert!(
+        fake.seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|line| line == "fteqcc -Tid")
+    );
+    assert!(fake.seen.lock().unwrap().iter().any(|line| line == "qcc"));
 }
 
 // spec FTE-23.15: an oracle that gives another outcome than the fixture fails the check, and
@@ -1192,6 +1200,97 @@ fn check_fails_on_a_stale_recording_and_records_anew() {
     assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
 }
 
+// The work runs on as many threads as asked, at most one per item, each thread a run of
+// consecutive items, and the results come back in the items' order; a thread that panics is
+// an error, not a panic of the caller.
+#[test]
+fn across_cores_keeps_the_items_order_on_any_thread_count() {
+    let items: Vec<usize> = (0..960).collect();
+    let serial: Vec<usize> = items.iter().map(|item| item * 3).collect();
+    for count in [1, 2, 3, 4, 8, 16, 32, 64] {
+        let threads = NonZero::new(count).unwrap();
+        let seen = Mutex::new(Vec::new());
+        let results = across_cores(&items, threads, |thread, item| {
+            seen.lock().unwrap().push(thread);
+            item * 3
+        })
+        .unwrap();
+        assert_eq!(results, serial, "{count} threads");
+        let mut seen = seen.into_inner().unwrap();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen, (0..count).collect::<Vec<_>>(), "{count} threads");
+    }
+    // More threads than items: one item each.
+    let few = &items[..5];
+    let seen = Mutex::new(Vec::new());
+    let results = across_cores(few, NonZero::new(8).unwrap(), |thread, item| {
+        seen.lock().unwrap().push((thread, *item));
+        *item
+    })
+    .unwrap();
+    assert_eq!(results, few);
+    let mut seen = seen.into_inner().unwrap();
+    seen.sort_unstable();
+    assert_eq!(seen, [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]);
+    assert_eq!(
+        across_cores(&[0_usize; 0], NonZero::<usize>::MIN, |_, item| *item).unwrap(),
+        Vec::<usize>::new()
+    );
+    assert!(threads().get() >= 1);
+    let panicked = across_cores(&items, NonZero::new(4).unwrap(), |_, item| {
+        assert_ne!(*item, 500, "a thread that panics");
+        *item
+    });
+    assert!(panicked.unwrap_err().contains("panicked"));
+}
+
+// spec FTE-23.15: the profile's comparison with the recording gives the same tally on one
+// thread, on three and on every core: an unrecorded case, a differing one, the expected
+// differences and the agreeing cases counted alike
+#[test]
+fn compare_gives_the_serial_tally_on_any_thread_count() {
+    let mut recorded = read_fixture(&root()).unwrap();
+    // Every 25th case of the cross product: both dialects, a few thousand cases.
+    let cases: Vec<Case> = cases().into_iter().step_by(25).collect();
+    assert!(cases.iter().any(|case| case.dialect == Dialect::Vanilla));
+    assert!(cases.iter().any(|case| case.dialect == Dialect::Fteqcc));
+    recorded.remove(&cases[1].key());
+    recorded.insert(cases[2].key(), bound_as(1234, "unexpected"));
+    let serial = compare_on(&cases, &recorded, ULong::Bits64, NonZero::<usize>::MIN).unwrap();
+    assert_eq!(serial.differ, 2, "{serial}");
+    assert!(serial.agree > 2000, "{serial}");
+    assert!(!serial.expected.is_empty(), "{serial}");
+    let three = compare_on(&cases, &recorded, ULong::Bits64, NonZero::new(3).unwrap()).unwrap();
+    assert_eq!(three, serial);
+    assert_eq!(compare(&cases, &recorded, ULong::Bits64).unwrap(), serial);
+}
+
+// spec FTE-23.15: the oracles run across the cores, each thread in a work directory of its
+// own, and `--record` writes the fixture a run on one thread writes, byte for byte
+#[test]
+fn check_records_the_serial_fixture_on_any_thread_count() {
+    let recorded = read_fixture(&root()).unwrap();
+    let repo = repository("builtins-threads", &recorded);
+    let fake = Fake::new(answering(recorded.clone()));
+    let oracles = fake_oracles(&repo.join("work"), &fake);
+    let path = repo.join(FIXTURE);
+    fs::write(&path, "{}\n").unwrap();
+    assert!(check_on(&repo, &oracles, true, ULong::Bits64, NonZero::<usize>::MIN).unwrap());
+    let serial = fs::read(&path).unwrap();
+    assert_eq!(read_fixture(&repo).unwrap(), recorded);
+    let work = repo.join("work").join("builtins");
+    assert!(work.join("thread0").is_dir());
+    assert!(!work.join("thread1").exists());
+    fs::write(&path, "{}\n").unwrap();
+    let four = NonZero::new(4).unwrap();
+    assert!(check_on(&repo, &oracles, true, ULong::Bits64, four).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), serial);
+    assert!(work.join("thread3").is_dir());
+    assert!(!work.join("thread4").exists());
+    assert_eq!(fake.seen.lock().unwrap().len(), recorded.len() * 2);
+}
+
 // spec FTE-23.15: an oracle whose outcome the profile does not share fails the check, even
 // when the recording has it
 #[test]
@@ -1202,11 +1301,14 @@ fn check_fails_when_the_profile_differs() {
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
     assert!(!check(&repo, &oracles, false).unwrap());
-    let tally = compare(&cases(), &recorded, ULong::Bits64);
+    let tally = compare(&cases(), &recorded, ULong::Bits64).unwrap();
     assert_eq!(tally.differ, 1);
     let mut missing = recorded;
     missing.remove(&fte("void() f = #5;\n").key());
-    assert_eq!(compare(&cases(), &missing, ULong::Bits64).differ, 2);
+    assert_eq!(
+        compare(&cases(), &missing, ULong::Bits64).unwrap().differ,
+        2
+    );
 }
 
 // spec FTE-23.15: a compiler that cannot run, a progs it does not write, and an FTEQCC progs

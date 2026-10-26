@@ -244,7 +244,7 @@ mod tests {
         let work = fresh_dir("numbers-agree");
         let fake = Fake::new(agreeing);
         assert!(check(&root(), &fake_oracles(&work, &fake)).unwrap());
-        assert!(fake.seen.borrow().len() > 100);
+        assert!(fake.seen.lock().unwrap().len() > 100);
     }
 
     #[test]
