@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 09b79b8e7b6c1e4b5e0ff6bbfda1bf46f1215b7394d5853b6d263b35caa42825 # shrinks to source = "float a, b, c;\nentity e;\n.float fl;\ntypedef struct { float x; } point_t;\nconst float K = 3;\nvoid() f =\n{\n\ta += b % 2;\n};\nfloat z;\n"
