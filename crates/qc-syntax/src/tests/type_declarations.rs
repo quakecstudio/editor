@@ -367,8 +367,9 @@ fn a_missing_semicolon_between_members_does_not_end_the_body() {
 // spec FTEF-9.11: the struct check reads the member's own type, not the one before it
 #[test]
 fn the_struct_member_check_is_per_member() {
-    assert!(errors("class C { float *p; struct ; };").contains(&Code::E0254));
-    assert!(!errors("class C { struct S *s; float ; };").contains(&Code::E0254));
+    assert_eq!(errors("class C { float *p; struct S s; };"), [Code::E0254]);
+    assert_eq!(errors("class C { struct S *s; float a; };"), []);
+    assert_eq!(errors("class C { struct S *s; struct S t; };"), [Code::E0254]);
 }
 
 // spec FTEF-18.34: a block of many declaration lines is read in time linear in its length
