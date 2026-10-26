@@ -1727,6 +1727,7 @@ issues:
   - P2-135
   - P2-136
   - P2-137
+  - P2-146
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2683,3 +2684,28 @@ issues:
   verify:
   - cargo test -p qc-sema -p qc-syntax
   - cargo xtask oracles builtins
+- key: P2-146
+  title: Stop CI at the first failing test
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  summary: |
+    A CI run with one failing unit test runs every other test to the end on all three operating systems before it reports, and a failing build target lets the other targets build on. The run's verdict is known at the first failure; what follows only holds runners that other pull requests and the merge queue are waiting for.
+  depends:
+  - P2-123
+  deliverable:
+  - '.github/workflows/ci.yml: `fail-fast: true` on the Unit Tests and Build matrices, so the first failing OS or target cancels its siblings; the workspace tests and the light path''s xtask tests run with cargo-nextest (`cargo nextest run --locked --workspace --all-features`, a pinned version through the existing taiki-e/install-action step) with its fail-fast default, so a job stops scheduling tests after the first failure; doc tests kept with `cargo test --doc` only if the workspace has any'
+  - '.github/workflows/readiness.yml: `fail-fast: true` on the flakes matrix; the mutation shards stay at `fail-fast: false`, since each shard is an independent measurement'
+  - 'xtask/src/ci.rs and docs/ci.md: the test step and the skip name mirror the workflow''s command; a `.config/nextest.toml` only if the defaults need changing'
+  acceptance:
+  - 'The Unit Tests, Build and Readiness flakes matrices set `fail-fast: true` and the Readiness mutation matrix keeps `fail-fast: false`'
+  - 'The Unit Tests job runs the workspace tests with cargo-nextest at a pinned version, and the xtask test `every_step_ci_skips_runs_in_another_job_with_the_same_command` holds the `cargo xtask ci` test step to the same command'
+  - 'actionlint and zizmor pass on both workflows'
+  verify:
+  - cargo test -p xtask ci::
+  - actionlint .github/workflows/ci.yml .github/workflows/readiness.yml
+  - zizmor .github/workflows/
