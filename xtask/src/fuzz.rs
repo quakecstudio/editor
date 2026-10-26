@@ -206,7 +206,7 @@ mod tests {
     fn every_listed_target_runs_for_the_host() {
         let fake = Fake::new(tools(false));
         assert!(run(Path::new("."), &args(&["--time", "2m"]), &fake).unwrap());
-        let seen = fake.seen.borrow();
+        let seen = fake.seen.lock().unwrap();
         assert_eq!(seen[0], "cargo +nightly fuzz list");
         assert_eq!(seen[1], "rustc +nightly -vV");
         assert!(
@@ -222,7 +222,7 @@ mod tests {
         let named = Fake::new(tools(false));
         assert!(run(Path::new("."), &args(&["qs-map"]), &named).unwrap());
         assert_eq!(
-            named.seen.borrow().len(),
+            named.seen.lock().unwrap().len(),
             2,
             "a named target needs no listing"
         );

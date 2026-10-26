@@ -161,13 +161,10 @@ fn tagged_struct_variables_and_struct_declarations() {
         top_kinds("struct tag { float a; }; float b;\n"),
         [SyntaxKind::StructDecl, SyntaxKind::Declaration]
     );
-    // A struct with no `;` after it is reported, and the next declaration still read.
+    // A struct with no `;` after it takes the next word for a variable's name, as
+    // `QCC_PR_ParseDefs` does, so `.float` is no name (FTEF-6.7).
     let source = "struct tag { float a; }\n.float b;\n";
-    assert_eq!(fte_codes(source), [Code::E0204]);
-    assert_eq!(
-        top_kinds(source),
-        [SyntaxKind::StructDecl, SyntaxKind::Declaration]
-    );
+    assert_eq!(fte_codes(source), [Code::E0201]);
 }
 
 // spec FTEF-7.1: `typedef struct { ... } Name;` and `typedef struct tag { ... } Name;` define
@@ -182,26 +179,35 @@ fn typedef_struct_forms() {
     ] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::StructType], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::StructType, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
         let decl = ast::TypedefDecl::cast(typedef).unwrap();
-        assert_eq!(text(decl.name()), "T", "{source}");
+        assert_eq!(
+            text(decl.declarators().next().unwrap().name()),
+            "T",
+            "{source}"
+        );
     }
     for source in ["typedef struct tag T;\n", "typedef union tag T;\n"] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::SimpleType], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::SimpleType, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
     }
     // `typedef struct { ... } *P;` names a pointer to it.
     let source = "typedef struct { float a; } *P;\n";
     assert_eq!(fte_codes(source), []);
-    let typedef = first_node(source, SyntaxKind::TypedefDecl);
-    let stars = token_kinds(&typedef)
-        .into_iter()
-        .filter(|k| *k == SyntaxKind::Star)
-        .count();
-    assert_eq!(stars, 1);
+    let typedef = ast::TypedefDecl::cast(first_node(source, SyntaxKind::TypedefDecl)).unwrap();
+    let declarator = typedef.declarators().next().unwrap();
+    assert_eq!(declarator.pointer_depth(), 1);
     // `typedef enum { ... } Name;` defines the enum there.
     for source in [
         "typedef enum { A, B } E;\n",
@@ -209,7 +215,11 @@ fn typedef_struct_forms() {
     ] {
         let typedef = first_node(source, SyntaxKind::TypedefDecl);
         let direct: Vec<SyntaxKind> = typedef.children().map(|n| n.kind()).collect();
-        assert_eq!(direct, [SyntaxKind::EnumDecl], "{source}");
+        assert_eq!(
+            direct,
+            [SyntaxKind::EnumDecl, SyntaxKind::Declarator],
+            "{source}"
+        );
         assert_eq!(fte_codes(source), [], "{source}");
     }
     // An array typedef, `typedef float V[3];`.
@@ -217,16 +227,20 @@ fn typedef_struct_forms() {
     assert_eq!(fte_codes(source), []);
     assert!(
         first_node(source, SyntaxKind::TypedefDecl)
-            .children()
+            .descendants()
             .any(|n| n.kind() == SyntaxKind::ArraySuffix)
     );
 }
 
-// spec FTE-15.1: an enum's last enumerator may have a `,` after it, and an enum may have none
+// spec FTE-15.1: an enum's last enumerator may have a `,` after it
+// spec FTEF-19.37: an enum has at least one enumerator, `QCC_PR_ParseEnum` reading a name
+// before it looks for the `}`
 #[test]
 fn enum_trailing_comma_and_empty_enum() {
     assert_eq!(fte_codes("enum { A, B, };\n"), []);
-    assert_eq!(fte_codes("enum { };\n"), []);
+    assert_eq!(fte_codes("enum { };\n"), [Code::E0201]);
+    assert_eq!(fte_codes("enum { , };\n"), [Code::E0201]);
+    assert_eq!(fte_codes("enum { A,, B };\n"), [Code::E0201]);
     let decl = ast::EnumDecl::cast(first_node("enum { A, B, };\n", SyntaxKind::EnumDecl)).unwrap();
     assert_eq!(decl.enumerators().count(), 2);
 }
@@ -529,8 +543,15 @@ fn class_member_kinds() {
             .collect()
     };
     assert_eq!(
-        members("public:\nprivate:\nprotected:\nvirtual:\nnonvirtual:"),
-        [SyntaxKind::AccessLabel; 5]
+        members("public:\nprivate:\nprotected: :\nvirtual:\nnonvirtual:\nfloat a;"),
+        [
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::AccessLabel,
+            SyntaxKind::Declaration,
+        ]
     );
     assert_eq!(
         members("virtual void Think(void);\nfloat public;\nfloat get;"),

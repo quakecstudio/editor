@@ -187,7 +187,10 @@ fn typedef_view() {
     let parsed = fte(source);
     assert_eq!(parsed.errors().count(), 0);
     let typedef: ast::TypedefDecl = first(source);
-    assert_eq!(typedef.name().unwrap().text(), b"poseInfo");
+    assert_eq!(
+        typedef.declarators().next().unwrap().name().unwrap().text(),
+        b"poseInfo"
+    );
     assert_eq!(parsed.tree().unwrap().declarations().count(), 1);
 }
 

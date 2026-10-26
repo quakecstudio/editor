@@ -349,7 +349,7 @@ mod tests {
         .unwrap();
         msvc.link(&[PathBuf::from("a.obj")], Path::new("bin.exe"))
             .unwrap();
-        let seen = fake.seen.borrow();
+        let seen = fake.seen.lock().unwrap();
         let gnu_flags = GNU_FLAGS.join(" ");
         assert_eq!(
             seen[0],
@@ -387,7 +387,7 @@ mod tests {
         fuzz.object(&unit(Code::Upstream, &[], None), Path::new("c.o"))
             .unwrap();
         fuzz.link(&[], Path::new("fuzz")).unwrap();
-        let seen = fake.seen.borrow();
+        let seen = fake.seen.lock().unwrap();
         assert!(seen[0].contains("-fprofile-instr-generate -fcoverage-mapping -DQS_COVERAGE"));
         assert!(
             !seen[1].contains("-fprofile-instr-generate"),

@@ -90,7 +90,7 @@ fn c_style_definitions_match_vanilla_prototypes() {
     assert_eq!(error_codes(&mismatch), [Code::E0205, Code::E0211]);
 }
 
-// spec FTE-17.2: a body written without `=` defines the function and binds its parameters.
+// spec FTE-17.7: a body written without `=` defines the function and binds its parameters.
 #[test]
 fn bodies_without_equals_define_functions() {
     let index = fte_index_of("float out;\nvoid set(float v) { out = v; }\nvoid() g { set(1); }\n");

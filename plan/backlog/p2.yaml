@@ -1748,8 +1748,10 @@ issues:
   - P2-133
   - P2-134
   - P2-135
+  - P2-136
   - P2-137
   - P2-138
+  - P2-146
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2684,3 +2686,50 @@ issues:
   verify:
   - cargo test -p qc-sema
   - cargo xtask oracles builtins
+- key: P2-136
+  title: Check struct values, member accesses and C function forms as FTEQCC does
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while making P2-133's type declaration family of the builtin differential (`xtask/src/oracles/builtins/types.rs`), against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`, macOS arm64). The semantic model accepts programs FTEQCC refuses, each about a value's type or an operator rather than a declaration, so P2-133 left them out of its cases: (1) the address of a struct, `struct S { float a; }; S x, *p = &x;`, `void() g = { S s; local S *p = &s; p.a = 1; };`, `p->a`, `(*p).a` and a parent's pointer to a child, `struct P { float a; }; struct S : P { float b; }; void() g = { S s; local P *p = &s; };` ("Address-of operator is not supported in this form without extensions"); (2) a bitfield read or written under the id target, `struct S { int a : 3; }; void() g = { S s; s.a = 1; };` ("BitandInt function not defined: cannot emulate int&int"); (3) a struct member called, `S s; s.a();` ("not a function"), and a struct assigned a value of another struct, `S s; T t; t = s;` ("Cannot cast from struct S to struct T"); (4) an aggregate with more elements than the array or struct has, `float x[2] = {1, 2, 3};` and `struct S { float a; }; S x = {1, 2};` (read as "Missing semicolon at end of definition" and ""2" is not a type"); (5) a label written twice, `void() g = { l: ; l: ; };` ("Duplicate label l", then "invalid label name ";""), a second `default:`, `switch (1) { default: default: ; }` ("Duplicated default case"), a `case` of another type than the switch's, `switch (1) { case "a": ; }` ("Implicit type mismatch. Needed float, got string."), and two parameters of one name, `void(float a, float a) g = { };` ("Duplicate definition of a."); (6) the names of an anonymous union member under `-Fcaseinsens`, `struct S { union { float a; vector v; }; float A; }; S x; void() g = { x.a = 1; x.A = 2; };` ("multiple members found matching", FTEF-6.11 names the anonymous member's names as not followed); (7) an accessor's `set` member with a parameter list, `accessor A : float { get float x = {}; set void(float v) y = {}; };` ("expected =, found ("); and (8) with `qcfuncs` off, C's function definitions and pointers in a body, `void() g = { void x() {} };`, `void() g = { float x(float) { return 1; } };`, `void() g = { float (*x)(float); x(1); };`, `void() g = { entity (*x)(); };` and `float (*x)(float)(float);`, which FTEQCC accepts and the parser refuses, and `const float (*x)(float);`, which FTEQCC refuses ("Conflicting constness", "function x has no body") and the model accepts.
+  depends:
+  - P2-133
+  - P2-134
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs`, `lower.rs`), crates/qc-syntax for group 8, and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-16, FTEF-18, FTEF-19 and FTEF-21: each program above compiled or refused as the pinned FTEQCC does, or named in a spec statement as outside the profile with its reason, each a spec statement quoting the source and a citing test; the programs back in `types.rs` as cases'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-146
+  title: Stop CI at the first failing test
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  summary: |
+    A CI run with one failing unit test runs every other test to the end on all three operating systems before it reports, and a failing build target lets the other targets build on. The run's verdict is known at the first failure; what follows only holds runners that other pull requests and the merge queue are waiting for.
+  depends:
+  - P2-123
+  deliverable:
+  - '.github/workflows/ci.yml: `fail-fast: true` on the Unit Tests and Build matrices, so the first failing OS or target cancels its siblings; the workspace tests and the light path''s xtask tests run with cargo-nextest (`cargo nextest run --locked --workspace --all-features`, a pinned version through the existing taiki-e/install-action step) with its fail-fast default, so a job stops scheduling tests after the first failure; doc tests kept with `cargo test --doc` only if the workspace has any'
+  - '.github/workflows/readiness.yml: `fail-fast: true` on the flakes matrix; the mutation shards stay at `fail-fast: false`, since each shard is an independent measurement'
+  - 'xtask/src/ci.rs and docs/ci.md: the test step and the skip name mirror the workflow''s command; a `.config/nextest.toml` only if the defaults need changing'
+  acceptance:
+  - 'The Unit Tests, Build and Readiness flakes matrices set `fail-fast: true` and the Readiness mutation matrix keeps `fail-fast: false`'
+  - 'The Unit Tests job runs the workspace tests with cargo-nextest at a pinned version, and the xtask test `every_step_ci_skips_runs_in_another_job_with_the_same_command` holds the `cargo xtask ci` test step to the same command'
+  - 'actionlint and zizmor pass on both workflows'
+  verify:
+  - cargo test -p xtask ci::
+  - actionlint .github/workflows/ci.yml .github/workflows/readiness.yml
+  - zizmor .github/workflows/

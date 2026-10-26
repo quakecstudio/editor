@@ -157,6 +157,47 @@ pub enum Code {
     E0241,
     /// "Parent class changed on redeclaration of NAME" (QCD-3.42).
     E0242,
+    /// "struct NAME has no members" (QCD-3.43).
+    E0243,
+    /// "function contains illegal breaks" (QCD-4.14).
+    E0244,
+    /// "function contains illegal continues" (QCD-4.15).
+    E0245,
+    /// "struct NAME redeclared differently" (QCD-3.44).
+    E0246,
+    /// "Parent type NAME was not yet defined" (QCD-3.45).
+    E0247,
+    /// "Parent type NAME is not a struct" (QCD-3.46).
+    E0248,
+    /// "Redeclaration of struct with different parent type" (QCD-3.47).
+    E0249,
+    /// "bitfields must be integer types" (QCD-3.48).
+    E0250,
+    /// "ENUM::NAME already declared" (QCD-3.49).
+    E0251,
+    /// "multiple members found matching STRUCT.NAME" (QCD-4.16).
+    E0252,
+    /// "Declaration of class NAME within function" (QCD-3.50).
+    E0253,
+    /// "Struct or union in class NAME" (QCD-3.51).
+    E0254,
+    /// "type NAME not fully defined yet" (QCD-3.52).
+    E0255,
+    /// "not a function" (QCD-4.17).
+    E0256,
+    /// "Can only initialise member functions" (QCD-3.53).
+    E0257,
+    /// "Accessor NAME cannot be based upon TYPE", "Accessor NAME basic type mismatch (TYPE,
+    /// expected TYPE)" and "Type NAME cannot be redefined as an accessor" (QCD-3.54).
+    E0258,
+    /// "function contains illegal cases" (QCD-4.18).
+    E0259,
+    /// "Incompatible redeclaration of class NAME" (QCD-3.55).
+    E0260,
+    /// "NAME is not a member of STRUCT" (QCD-4.19).
+    E0261,
+    /// "Value is not an integer constant" (QCD-3.56).
+    E0262,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
@@ -328,7 +369,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 148] = [
+    pub const ALL: [Self; 168] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -396,6 +437,26 @@ impl Code {
         Self::E0240,
         Self::E0241,
         Self::E0242,
+        Self::E0243,
+        Self::E0244,
+        Self::E0245,
+        Self::E0246,
+        Self::E0247,
+        Self::E0248,
+        Self::E0249,
+        Self::E0250,
+        Self::E0251,
+        Self::E0252,
+        Self::E0253,
+        Self::E0254,
+        Self::E0255,
+        Self::E0256,
+        Self::E0257,
+        Self::E0258,
+        Self::E0259,
+        Self::E0260,
+        Self::E0261,
+        Self::E0262,
         Self::E0301,
         Self::E0308,
         Self::E0309,
@@ -481,6 +542,7 @@ impl Code {
 
     /// The code as written in messages, such as `E0101`.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::E0101 => "E0101",
@@ -531,6 +593,26 @@ impl Code {
             Self::E0240 => "E0240",
             Self::E0241 => "E0241",
             Self::E0242 => "E0242",
+            Self::E0243 => "E0243",
+            Self::E0244 => "E0244",
+            Self::E0245 => "E0245",
+            Self::E0246 => "E0246",
+            Self::E0247 => "E0247",
+            Self::E0248 => "E0248",
+            Self::E0249 => "E0249",
+            Self::E0250 => "E0250",
+            Self::E0251 => "E0251",
+            Self::E0252 => "E0252",
+            Self::E0253 => "E0253",
+            Self::E0254 => "E0254",
+            Self::E0255 => "E0255",
+            Self::E0256 => "E0256",
+            Self::E0257 => "E0257",
+            Self::E0258 => "E0258",
+            Self::E0259 => "E0259",
+            Self::E0260 => "E0260",
+            Self::E0261 => "E0261",
+            Self::E0262 => "E0262",
             Self::E0301 => "E0301",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
@@ -636,6 +718,7 @@ impl Code {
 
     /// Whether the code is an error rather than a warning.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm for each code")]
     pub const fn is_error(self) -> bool {
         match self {
             Self::W0101
@@ -743,6 +826,26 @@ impl Code {
             | Self::E0240
             | Self::E0241
             | Self::E0242
+            | Self::E0243
+            | Self::E0244
+            | Self::E0245
+            | Self::E0246
+            | Self::E0247
+            | Self::E0248
+            | Self::E0249
+            | Self::E0250
+            | Self::E0251
+            | Self::E0252
+            | Self::E0253
+            | Self::E0254
+            | Self::E0255
+            | Self::E0256
+            | Self::E0257
+            | Self::E0258
+            | Self::E0259
+            | Self::E0260
+            | Self::E0261
+            | Self::E0262
             | Self::E0301
             | Self::E0308
             | Self::E0501
