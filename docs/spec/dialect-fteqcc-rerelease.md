@@ -451,10 +451,9 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   istypedef||isstatic);` for every type, and only then `isinitialised = QCC_PR_CheckToken ("=") ||
   ((type->type == ev_function) && (pr_token[0] == '{' || pr_token[0] == '[' || pr_token[0] ==
   ':'));`. So a `[` right after the name is the array suffix: `void() h = {}; void() g[2] = { h, h
-  };` declares an array of two functions, as do `g[]`, `g[2][2]`, `*g[2]`, `void(float a) g[2]`,
-  with `static`, `var` or `const`, with `{ h }`, `{}` or `{ h, h }, i = {}`, through a typedef
+  };` declares an array of two functions, as do `g[]`, `*g[2]`, `void(float a) g[2]`, with `static`, `var` or `const`, with `{ h }` or `{}`, a two-dimensional one with braces per dimension (`g[2][2] = { { h, h }, { h, h } }`, and `{ h, h, h, h }` is "expected {, found h", FTEF-19.8), through a typedef
   (`typedef void() fn; fn g[2] = { h, h };`, `fn *g[2]`, `typedef fn fns[2]; fns g = { h, h };`),
-  and `g[0]()` calls an element; `void() g [1, g] {};` and `$frame a1 void() g [$a1, g] { };` are
+  and `g[0]()` calls an element; one with no initialiser, `void() x[2];`, holds functions with no body ("function x has no body", FTEF-17.11); `void() g [1, g] {};` and `$frame a1 void() g [$a1, g] { };` are
   refused, `1, g` being no array size. With no suffix the body, state header and builtin follow as
   before, in both orders, `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
   (`rerelease-mg1/defs.qc`), `void() g = [1, g] {};`, `void() g { };` and `void() g : 6;`. Source:

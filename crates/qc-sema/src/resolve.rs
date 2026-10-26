@@ -1328,6 +1328,9 @@ impl<'a> Resolver<'a> {
         if self.fteqcc && !aborted {
             aborted |= self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref());
         }
+        if self.fteqcc && !aborted {
+            aborted |= self.check_array_declaration(file, decl, location);
+        }
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
         let value = if aborted || (!self.fteqcc && was_initialized && decl.initialized) {
             Ok(None)
@@ -1999,6 +2002,35 @@ impl<'a> Resolver<'a> {
         Ok((source_ty == *ty)
             .then(|| self.literals.get(&source).cloned())
             .flatten())
+    }
+
+    /// The checks of an array declaration beyond its value (FTEF-19.8, FTE-17.7): each
+    /// dimension takes its own braces, `{ { 1, 2 }, { 3, 4 } }`
+    /// (`QCC_PR_ParseInitializerType_Internal` recurses with "expected {, found X"), and an
+    /// array of functions with no initialiser holds functions with no body. Returns whether the
+    /// declaration was aborted.
+    fn check_array_declaration(
+        &mut self,
+        file: FileId,
+        decl: &RawDecl,
+        location: Location,
+    ) -> bool {
+        if decl.array_dims >= 2
+            && let Some((first, span)) = &decl.aggregate_first
+            && first != "{"
+        {
+            let location = self.at(file, *span);
+            self.report(Code::E0204, location, format!("expected {{, found {first}"));
+            return true;
+        }
+        if decl.array.is_some() && !decl.initialized && self.resolved(&decl.ty).is_function() {
+            self.report(
+                Code::E0211,
+                location,
+                format!("function {} has no body", decl.name),
+            );
+        }
+        false
     }
 
     /// FTEF-19.8: an array is initialised with `{ ... }`, or an array of `char` with a string;
@@ -3384,7 +3416,7 @@ impl<'a> Resolver<'a> {
         // FTEF-7.5: a next function declared through a typedef has the typedef's type, which
         // must be a `void()` (FTEF-19.42).
         if let Some(d) = found.and_then(|d| self.index.def(d))
-            && let Type::Named(_) = &d.ty
+            && matches!(&d.ty, Type::Named(_) | Type::Function(_))
         {
             let resolved = self.resolved(&d.ty);
             if resolved.is_function() && !resolved.fteqcc_same(&void_fn) {

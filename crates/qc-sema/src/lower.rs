@@ -67,6 +67,11 @@ pub struct RawDecl {
     pub value: Option<RawValue>,
     /// The first array dimension, when the declarator has one (FTEF-5, FTEF-19.8).
     pub array: Option<ArrayDim>,
+    /// How many array suffixes the declarator has (FTEF-19.8).
+    pub array_dims: usize,
+    /// For an aggregate initialiser, the first token inside its braces and its span: a
+    /// two-dimensional array needs a `{` there (FTEF-19.8).
+    pub aggregate_first: Option<(String, Span)>,
     /// The parameters of the function type the declaration gives, as FTEQCC's redeclaration
     /// rules compare them (FTEF-19.6, FTEF-19.7); empty for any other type.
     pub params: Vec<RawParamInfo>,
@@ -287,6 +292,8 @@ impl RawDecl {
             qualifiers: Vec::new(),
             value: None,
             array: None,
+            array_dims: 0,
+            aggregate_first: None,
             params: Vec::new(),
             enum_item: None,
             typedef: None,
@@ -2321,6 +2328,18 @@ fn lower_declarators(
         raw.scope = declarator.scope().map(|t| t.text_lossless());
         raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         raw.array = array_dim(&declarator, init.as_ref());
+        raw.array_dims = declarator.array_suffixes().count();
+        if let Some(ast::Initializer::Aggregate(agg)) = &init {
+            raw.aggregate_first = agg
+                .syntax()
+                .descendants_with_tokens()
+                .filter_map(|e| match e {
+                    qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
+                    qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+                })
+                .nth(1)
+                .map(|t| (t.text_lossless(), t.span()));
+        }
         if let Some(ast::Initializer::Value(expr)) = &init {
             raw.value = Some(raw_value(expr, cx));
         }

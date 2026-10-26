@@ -999,3 +999,31 @@ fn an_array_of_functions_needs_no_body() {
         assert_eq!(errors(source, &["-Fcaseinsens"]), [], "{source}");
     }
 }
+
+// spec FTE-17.7, FTEF-19.8: an array of functions with no initialiser has no body, each
+// dimension of an array takes its own braces, and a state's next think of another function
+// type is a mismatch
+#[test]
+fn arrays_of_functions_are_checked() {
+    assert_eq!(errors("void() x[2];", &[]), [Code::E0211]);
+    assert_eq!(
+        errors("void() h = {}; void() g[2][2] = { h, h, h, h };", &[]),
+        [Code::E0204]
+    );
+    assert_eq!(
+        errors(
+            "void() h = {}; void() g[2][2] = { { h, h }, { h, h } };",
+            &[]
+        ),
+        []
+    );
+    assert_eq!(
+        errors("float x[2][2] = { 1, 2, 3, 4 };", &[]),
+        [Code::E0204]
+    );
+    assert_eq!(
+        errors("#pragma flag disable qcfuncs\nvoid() g = [1, g] {};", &[]),
+        [Code::E0309]
+    );
+    assert_eq!(errors("void() g = [1, g] {};", &[]), []);
+}

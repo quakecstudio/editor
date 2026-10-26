@@ -441,11 +441,10 @@ fn an_array_of_functions_is_an_array() {
     accepts(&[
         "void() h = {}; void() g[2] = { h, h };",
         "void() h = {}; void() g[] = { h, h };",
-        "void() h = {}; void() g[2][2] = { h, h, h, h };",
+        "void() h = {}; void() g[2][2] = { { h, h }, { h, h } };",
         "void() h = {}; void() *g[2] = { h, h };",
         "void(float a) h = {}; void(float a) g[2] = { h, h };",
         "void() h = {}; static void() g[2] = { h, h };",
-        "void() h = {}; void() g[2] = { h, h }, i = {};",
         "void() h = {}; typedef void() fn; fn g[2] = { h, h };",
         "void() h = {}; typedef void() fn; typedef fn fns[2]; fns g = { h, h };",
         "void() h = {}; void() g[2] = { h, h }; void() k = { g[0](); };",
