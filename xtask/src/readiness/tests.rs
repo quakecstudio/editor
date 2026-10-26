@@ -570,6 +570,7 @@ fn the_command_line_names_a_check_an_output_and_crates() {
             check: Check::Flakes,
             out: PathBuf::from("m.json"),
             os: "linux".to_owned(),
+            shard: None,
             crates: vec!["a".to_owned(), "b".to_owned()],
         }
     );
@@ -704,6 +705,7 @@ fn the_oracles_have_no_mutation_score_and_say_why() {
             &root(),
             Check::Mutation,
             &target,
+            None,
             &tools(&fake, "oracles-no-mutation")
         )
         .unwrap(),
@@ -737,9 +739,15 @@ fn the_oracles_spec_sections_come_from_their_readme() {
         );
     }
     let fake = Fake::new(|_: &Command| Reply::exit(0));
-    let score = measure(&root(), Check::Spec, &target, &tools(&fake, "oracles-spec"))
-        .unwrap()
-        .unwrap();
+    let score = measure(
+        &root(),
+        Check::Spec,
+        &target,
+        None,
+        &tools(&fake, "oracles-spec"),
+    )
+    .unwrap()
+    .unwrap();
     assert!(score.total > 0, "{score:?}");
 }
 
@@ -919,7 +927,7 @@ fn mutation_keeps_proptests_random_seed() {
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let tools = tools(&fake, "mutation-random-seed");
-    mutation(&root(), &fixture("mutation"), &tools).unwrap();
+    mutation(&root(), &fixture("mutation"), None, &tools).unwrap();
     assert_eq!(envs.borrow().as_ref(), Some(&BTreeMap::new()));
 }
 
@@ -976,7 +984,7 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
     let target = fixture("mutation");
     for code in [0, 2, 3] {
         let fake = Fake::new(reply(code));
-        let score = mutation(&root(), &target, &tools(&fake, "mutation-reads")).unwrap();
+        let score = mutation(&root(), &target, None, &tools(&fake, "mutation-reads")).unwrap();
         assert_eq!(score.total, 2);
         let line = fake.seen.borrow()[1].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
@@ -986,7 +994,7 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         assert!(!line.contains("--minimum-test-timeout"), "{line}");
     }
     let failed = Fake::new(reply(4));
-    let error = mutation(&root(), &target, &tools(&failed, "mutation-reads")).unwrap_err();
+    let error = mutation(&root(), &target, None, &tools(&failed, "mutation-reads")).unwrap_err();
     assert!(error.contains("cargo mutants failed"), "{error}");
 }
 
@@ -1006,7 +1014,7 @@ fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let target = resolve(&root(), "qs-porting-example").unwrap();
-    mutation(&root(), &target, &tools(&fake, "mutation-member")).unwrap();
+    mutation(&root(), &target, None, &tools(&fake, "mutation-member")).unwrap();
     let line = fake.seen.borrow()[1].clone();
     assert!(line.contains("--profile mutants "), "{line}");
     assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
@@ -1069,6 +1077,7 @@ fn mutation_sets_the_runner_for_the_host_triple() {
         mutation(
             &root(),
             &fixture("mutation"),
+            None,
             &tools(&fake, "mutation-runner"),
         )
         .unwrap();
@@ -1079,6 +1088,7 @@ fn mutation_sets_the_runner_for_the_host_triple() {
     let error = mutation(
         &root(),
         &fixture("mutation"),
+        None,
         &tools(&no_host, "mutation-runner"),
     )
     .unwrap_err();
@@ -1230,4 +1240,115 @@ fn a_measurement_runs_the_check_for_each_crate_named() {
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.crates.len(), 2);
     assert_eq!(measurement.crates["oracles"].passed, FLAKE_RUNS);
+}
+
+#[test]
+fn a_shard_is_k_of_n_with_k_below_n() {
+    let shard = Shard::parse("1/4").unwrap();
+    assert_eq!((shard.index(), shard.count()), (1, 4));
+    assert_eq!(shard.to_string(), "1/4");
+    assert_eq!(Shard::parse("0/1").unwrap(), Shard::new(0, 1).unwrap());
+    assert_eq!(Shard::parse("9/10").unwrap(), Shard::new(9, 10).unwrap());
+    assert!(Shard::new(0, 1).unwrap() < Shard::new(1, 2).unwrap());
+    for bad in [
+        "", "1", "1/", "/4", "a/4", "1/b", "-1/4", "1/2/3", "4/4", "5/4", "0/0", "1/0",
+    ] {
+        let error = Shard::parse(bad).unwrap_err();
+        assert!(error.contains("shard"), "{bad:?}: {error}");
+    }
+    assert!(
+        Shard::new(4, 4)
+            .unwrap_err()
+            .contains("less than the count")
+    );
+    assert!(Shard::new(0, 0).unwrap_err().contains("at least 1"));
+}
+
+#[test]
+fn a_shard_is_written_in_json_as_its_text() {
+    let shard = Shard::new(2, 8).unwrap();
+    let json = serde_json::to_string(&shard).unwrap();
+    assert_eq!(json, "\"2/8\"");
+    assert_eq!(serde_json::from_str::<Shard>(&json).unwrap(), shard);
+    assert!(serde_json::from_str::<Shard>("\"8/8\"").is_err());
+    assert!(serde_json::from_str::<Shard>("2").is_err());
+    // A measurement before sharding, with no shard field, still reads.
+    let whole: Measurement =
+        serde_json::from_str(r#"{"check":"mutation","os":"linux","crates":{}}"#).unwrap();
+    assert_eq!(whole.shard, None);
+    assert!(!serde_json::to_string(&whole).unwrap().contains("shard"));
+    let sharded = Measurement {
+        shard: Some(shard),
+        ..whole
+    };
+    let text = serde_json::to_string(&sharded).unwrap();
+    assert!(text.contains(r#""shard":"2/8""#), "{text}");
+    assert_eq!(serde_json::from_str::<Measurement>(&text).unwrap(), sharded);
+}
+
+#[test]
+fn the_command_line_takes_a_shard_for_the_mutation_check_only() {
+    let options = parse_args(&args("mutation --shard 1/4 --out m.json a")).unwrap();
+    assert_eq!(options.shard, Some(Shard::new(1, 4).unwrap()));
+    assert_eq!(options.check, Check::Mutation);
+    assert_eq!(
+        parse_args(&args("mutation --out m.json a")).unwrap().shard,
+        None
+    );
+    for bad in [
+        "mutation --shard --out m.json a",
+        "mutation --shard 4/4 --out m.json a",
+        "mutation --shard four --out m.json a",
+        "lines --shard 0/4 --out m.json a",
+        "flakes --shard 0/1 --out m.json a",
+    ] {
+        let error = parse_args(&args(bad)).unwrap_err();
+        assert!(error.contains("shard"), "{bad:?}: {error}");
+    }
+    let error = parse_args(&args("lines --shard 0/4 --out m.json a")).unwrap_err();
+    assert!(error.contains("only the mutation check"), "{error}");
+}
+
+#[test]
+fn a_shard_is_passed_to_cargo_mutants_dealt_round_robin() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let fake = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    let target = fixture("mutation");
+    let score = mutation(
+        &root(),
+        &target,
+        Some(Shard::new(3, 10).unwrap()),
+        &tools(&fake, "mutation-shard"),
+    )
+    .unwrap();
+    assert_eq!(score.total, 2);
+    let line = fake.seen.borrow()[1].clone();
+    assert!(line.contains(" --shard 3/10 "), "{line}");
+    assert!(line.contains(" --sharding round-robin "), "{line}");
+    assert!(line.contains(" --no-shuffle "), "{line}");
+    let whole = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    mutation(&root(), &target, None, &tools(&whole, "mutation-shard")).unwrap();
+    let line = whole.seen.borrow()[1].clone();
+    assert!(!line.contains("--shard"), "{line}");
+}
+
+#[test]
+fn a_sharded_measurement_records_its_shard() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let out = fresh("readiness/run-shard").join("mutation-2.json");
+    let fake = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    let mut command = args("mutation --os linux --shard 2/3 --out");
+    command.push(out.display().to_string());
+    command.push(format!("{FIXTURES}/mutation"));
+    assert!(run_check(&root(), &command, &tools(&fake, "run-shard")).unwrap());
+    let measurement: Measurement =
+        serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(measurement.shard, Some(Shard::new(2, 3).unwrap()));
+    assert_eq!(measurement.crates["fx-mutation"].total, 2);
 }
