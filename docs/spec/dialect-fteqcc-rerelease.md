@@ -814,7 +814,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   and empty variadic arguments (FTEF-14.26); functions with no body, `noref` or not and
   referred to or not (FTEF-17.11); declarators ended by a `,` (FTEF-15.8); and `__FILE__` under
   12 `#pragma file` names, through two macros and after three pragmas whose text holds a
-  comment, a string or a `\` (FTEF-14.32); in both dialects names of 62, 63, 70, 254, 255
+  comment, a string or a `\` (FTEF-14.74); in both dialects names of 62, 63, 70, 254, 255
   and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7); and under FTEQCC
   1351 programs of the directive family (`xtask/src/oracles/builtins/directives.rs`), every
   directive and pragma FTEQCC's `QCC_PR_Precompiler` knows read where FTEQCC reads one: 18
@@ -847,7 +847,7 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
 - **FTE-23.16** A `#` before a macro that stands for a number, `#define N 5` and `void() f =
   #N;`, initialises `f` with `5`, which FTEQCC cannot cast to a function: the error `E0213`
-  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.2), as for `#__LINE__`, the
+  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.31), as for `#__LINE__`, the
   line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
   cast from string to void()" and makes no builtin function, as this profile makes none; the
   differential reads that as accepted with no builtin number.

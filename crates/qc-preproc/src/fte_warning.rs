@@ -166,6 +166,16 @@ pub enum FteWarning {
     MacroInString,
     /// `WARN_HANGINGSLASHR`, which has no name.
     HangingSlashR,
+    /// `WARN_UNDESIRABLECONVENTION`, which has no name.
+    UndesirableConvention,
+    /// `WARN_UNEXPECTEDPUNCT`, which has no name.
+    UnexpectedPunct,
+    /// `WARN_NOTSTANDARDBEHAVIOUR`, which has no name.
+    NotStandardBehaviour,
+    /// `WARN_NOTCONSTANT`, which has no name.
+    NotConstant,
+    /// `WARN_KEYWORDDISABLED`, which has no name.
+    KeywordDisabled,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -238,7 +248,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 68] = [
+const ALL: [FteWarning; 73] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -307,6 +317,11 @@ const ALL: [FteWarning; 68] = [
     FteWarning::Debugging,
     FteWarning::MacroInString,
     FteWarning::HangingSlashR,
+    FteWarning::UndesirableConvention,
+    FteWarning::UnexpectedPunct,
+    FteWarning::NotStandardBehaviour,
+    FteWarning::NotConstant,
+    FteWarning::KeywordDisabled,
 ];
 
 impl FteWarning {
@@ -391,11 +406,18 @@ impl FteWarning {
             | Self::StringTooLong
             | Self::BadTarget
             | Self::Debugging
-            | Self::HangingSlashR => WarningAction::Warn,
+            | Self::HangingSlashR
+            | Self::UndesirableConvention
+            | Self::UnexpectedPunct
+            | Self::NotStandardBehaviour
+            | Self::NotConstant
+            | Self::KeywordDisabled => WarningAction::Warn,
         }
     }
 
-    /// The FTEQCC warning a warning code of this profile reports, under an FTEQCC dialect.
+    /// The FTEQCC warning a warning code of this profile reports, under an FTEQCC dialect: the
+    /// lexer's and preprocessor's (FTEF-14.63), and the parser's and semantic model's, each the
+    /// `WARN_` value `QCC_PR_ParseWarning` gives its text with (FTEF-19.22).
     #[must_use]
     pub const fn of_code(code: Code) -> Option<Self> {
         Some(match code {
@@ -418,6 +440,31 @@ impl FteWarning {
             Code::W0121 => Self::Denormal,
             Code::W0122 => Self::MacroInString,
             Code::W0123 => Self::HangingSlashR,
+            Code::W0203 => Self::UndesirableConvention,
+            Code::W0204 | Code::W0313 => Self::PointlessStatement,
+            Code::W0205 | Code::W0215 => Self::UnexpectedPunct,
+            Code::W0206 | Code::W0210 | Code::W0211 | Code::W0223 => Self::CompatibilityHack,
+            Code::W0207 => Self::DuplicateDefinition,
+            Code::W0208 => Self::SameNameAsGlobal,
+            Code::W0209 => Self::TypeMismatchRedecOptional,
+            Code::W0212 => Self::RedeclarationMismatch,
+            Code::W0213 => Self::MisusedAutocvar,
+            Code::W0214 | Code::W0226 => Self::IgnoredKeyword,
+            Code::W0216 => Self::MemberNotDefined,
+            Code::W0217 => Self::NotStandardBehaviour,
+            Code::W0218 => Self::GmqccSpecific,
+            Code::W0219 => Self::NotConstant,
+            Code::W0220 => Self::LaxCast,
+            Code::W0221 => Self::KeywordDisabled,
+            Code::W0222 => Self::ParamWithNoName,
+            Code::W0224 => Self::DeprecatedSyntax,
+            Code::W0225 => Self::EnumflagsNotInteger,
+            Code::W0227 => Self::UnaryNotScope,
+            Code::W0228 => Self::GmqccSpecific,
+            Code::W0229 => Self::Debugging,
+            Code::W0230 => Self::LaxCast,
+            Code::W0312 => Self::DuplicateLabel,
+            Code::W0314 => Self::DeprecatedVariable,
             _ => return None,
         })
     }
@@ -497,11 +544,32 @@ impl WarningSettings {
                     WarningAction::Warn | WarningAction::Error => WarningAction::Warn,
                 },
             };
-            if let Some(slot) = self.actions.get_mut(warning.index()) {
-                *slot = set;
-            }
+            self.set(warning, set);
         }
         (self, warnings)
+    }
+
+    /// Sets `warning` to `action`.
+    pub(crate) fn set(&mut self, warning: FteWarning, action: WarningAction) {
+        if let Some(slot) = self.actions.get_mut(warning.index()) {
+            *slot = action;
+        }
+    }
+
+    /// Sets every warning to what `to` makes of its setting.
+    pub(crate) fn set_all(&mut self, to: impl Fn(WarningAction) -> WarningAction) {
+        for slot in &mut self.actions {
+            *slot = to(*slot);
+        }
+    }
+
+    /// Makes each ignored warning that `chosen` takes a warning.
+    pub(crate) fn turn_on_ignored(&mut self, chosen: impl Fn(FteWarning) -> bool) {
+        for (warning, slot) in ALL.iter().zip(self.actions.iter_mut()) {
+            if *slot == WarningAction::Ignore && chosen(*warning) {
+                *slot = WarningAction::Warn;
+            }
+        }
     }
 
     /// The code a diagnostic of code `code` is reported with under these settings, or `None`

@@ -8,6 +8,7 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use proptest::prelude::*;
 
@@ -17,6 +18,18 @@ use super::{
     Code, FileOutput, FileSpan, LIMIT_QCC_MAX_FRAMES, MemoryLoader, PpToken, Preprocessor,
     SourceMap, TokenKind,
 };
+
+/// Held by each test that writes macro expansions near a file's bound (FTEF-14.28, QC-9.18),
+/// which takes from 150 MB to 2 GB, so that they run one at a time and the suite needs about
+/// the memory of the largest, under the Readiness mutation job's cap on each test binary
+/// (P2-109). A test of 300 MB or less that runs for long is left out, so that the suite's time,
+/// and with it each mutant's timeout, stays short.
+static BOUND_TESTS: Mutex<()> = Mutex::new(());
+
+/// Waits until no other bound test runs; a failed one still lets the rest run.
+fn one_bound_test_at_a_time() -> MutexGuard<'static, ()> {
+    BOUND_TESTS.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// A project: its files, and the ones compiled, in order. By default one file, `a.qc`,
 /// is compiled.
@@ -329,6 +342,7 @@ fn macro_chain(n: usize) -> String {
 // whole set again, the second use takes quadratic time and the test times out)
 #[test]
 fn a_long_chain_of_macros_expands_to_its_end() {
+    let _one = one_bound_test_at_a_time();
     for n in [10_000, 100_000] {
         let mut text = macro_chain(n);
         writeln!(text, "M{}", n.saturating_sub(1)).unwrap();

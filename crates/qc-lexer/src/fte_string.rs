@@ -12,15 +12,16 @@
 
 use crate::{Code, Dialect, Lexed, Lexer, Span, TokenKind, is_fteqcc_whitespace};
 
-/// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token, an
-/// `L"..."` after another part included (FTEF-13.7); `None` when `text` is not one such part.
+/// The bytes of `text`, one part of an FTEQCC string literal as the lexer made its token under
+/// the compiler flags `flags` (FTEF-12.12), an `L"..."` after another part included
+/// (FTEF-13.7); `None` when `text` is not one such part.
 #[must_use]
-pub fn fteqcc_string_bytes(text: &[u8]) -> Option<Vec<u8>> {
+pub fn fteqcc_string_bytes(text: &[u8], flags: crate::LexFlags) -> Option<Vec<u8>> {
     let mut lexer = Lexer {
         text,
         pos: 0,
         dialect: Dialect::Fteqcc,
-        flags: crate::LexFlags::default(),
+        flags,
         marks: &[],
         macros: &|_| None,
         out: Lexed::default(),
@@ -516,9 +517,11 @@ impl Lexer<'_> {
         code
     }
 
-    /// Writes `code`, read at `at`, as `output` says ([`write`]), with FTEQCC's F301 warnings
-    /// (FTEF-13.22): "Cannot convert codepoint %#x to quake's charset" for a Quake output's code
-    /// above 0x7F outside 0xE000 to 0xE0FF, and for a UTF-8 one [`Self::utf8_code`]'s.
+    /// Writes `code`, read at `at`, as `output` says (FTEF-13.8): as UTF-8 (`forceutf8`,
+    /// [`Self::utf8_code`], with its F301 warning), or as a Quake character (`forcequake`), its
+    /// low byte, a code from 0xE000 to 0xE0FF being Quake's glyph, with FTEQCC's F301 warning
+    /// "Cannot convert codepoint %#x to quake's charset" for a code above 0x7F outside them
+    /// (FTEF-13.22).
     fn write_code(&mut self, contents: &mut Vec<u8>, code: u32, output: Output, at: usize) {
         match output {
             Output::Utf8 => self.utf8_code(contents, code, at),
@@ -530,7 +533,7 @@ impl Lexer<'_> {
                         Span::new(at, self.pos.max(at.saturating_add(1))),
                     );
                 }
-                write(contents, code, output);
+                contents.push(low_byte(code));
             }
         }
     }
@@ -562,17 +565,6 @@ impl Lexer<'_> {
 /// The low byte of a code, as `pr_token[len] = c;` stores it in a `char`.
 fn low_byte(code: u32) -> u8 {
     code.to_le_bytes().first().copied().unwrap_or(0)
-}
-
-/// Writes `code` as `output` says (FTEF-13.8): as UTF-8 (`forceutf8`), or as a Quake
-/// character (`forcequake`): a code from 0xE000 to 0xE0FF is its low byte, Quake's glyph,
-/// and any other its low byte too, a code above 0x7F with FTEQCC's warning "Cannot convert
-/// codepoint %#x to quake's charset".
-fn write(contents: &mut Vec<u8>, code: u32, output: Output) {
-    match output {
-        Output::Utf8 => utf8(contents, code),
-        Output::Quake | Output::QuakeFromUtf8 => contents.push(low_byte(code)),
-    }
 }
 
 /// `code` as FTEQCC's `forceutf8` writes it (FTEF-13.8): as many bytes as its size needs, up

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
 use crate::fte_directive::join_paths;
-use crate::{Code, MemoryLoader, Preprocessor, TokenKind};
+use crate::{Code, CompilerFlags, Dialect, MemoryLoader, PragmaDefault, Preprocessor, TokenKind};
 
 /// The tokens of `text` preprocessed under the FTEQCC dialect, and its diagnostic codes.
 fn fte(text: &str) -> (String, Vec<Code>) {
@@ -139,6 +139,9 @@ fn includelists_produce_no_tokens() {
     assert_eq!((toks.as_str(), errs), ("a d", vec![]));
     let (toks, errs) = fte("#includelist\n#define N 5\nb.qc, (c.qc)\n#endlist\nN\n");
     assert_eq!((toks.as_str(), errs), ("5", vec![]));
+    // The line break after a word is white space, so the `#` after it starts a directive.
+    let (toks, errs) = fte("#includelist\nb.qc\n#define N 5\n#endlist\nN\n");
+    assert_eq!((toks.as_str(), errs), ("5", vec![]));
     // The words on the line are junk; the list starts after it.
     assert_eq!(
         fte("#includelist b.qc #endlist\nx\n"),
@@ -253,6 +256,20 @@ fn append_eof_and_build_directives() {
         ("y".to_owned(), vec![Code::E0121])
     );
     assert_eq!(fte("#forcecrc\n5\ny\n"), ("y".to_owned(), vec![]));
+    // Its number takes a `.` but one before another `.` (`c == '.'&&pr_file_p[1]!='.'`), so
+    // `1.5` is all number and `1..` leaves `..` on the line.
+    assert_eq!(fte("#forcecrc 1.5\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc 1..\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    // A `0x` where the number starts is taken whole, and only there: `#forcecrc0x1f` is all
+    // number, and the `x` of `#forcecrc1x5` ends it.
+    assert_eq!(fte("#forcecrc0x1f\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc1x5\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
     assert_eq!(fte("#pack\nzz\ny\n"), ("y".to_owned(), vec![Code::E0121]));
     assert_eq!(fte("#packid\ny\n"), (String::new(), vec![Code::E0121]));
     assert_eq!(fte("#pack id\ny\n"), ("y".to_owned(), vec![Code::E0121]));
@@ -321,26 +338,76 @@ fn open_blocks_at_the_end_of_a_file() {
     assert_eq!((tokens(&b), codes(&b)), ("b".to_owned(), vec![Code::E0109]));
 }
 
+/// Each mark of `out` that sets the pragma default `default`, with the token it holds from and
+/// what it sets.
+fn default_marks(out: &crate::FileOutput, default: PragmaDefault) -> Vec<(usize, bool)> {
+    out.flags
+        .iter()
+        .skip(1)
+        .filter_map(|&(at, edit)| {
+            let on = edit.apply(CompilerFlags::default()).default_on(default);
+            let off = edit
+                .apply(CompilerFlags::default().with_default(default, true))
+                .default_on(default);
+            (on == off).then_some((at, on))
+        })
+        .collect()
+}
+
 // spec FTEF-12.6: `#pragma noref N` is recorded at the token it precedes, so the definitions
 // after it are `noref` or not
 // spec FTEF-14.70: its text is read with `atoi`, so one with no number, or a `(`, is 0
+// spec FTEF-21.14: `#pragma nosave N` and `#pragma defaultstatic N` are recorded alike
 #[test]
 fn noref_pragmas_are_recorded() {
     let (_, out) = one_fte(
         "a\n#pragma noref 1\nb c\n#pragma noref 0\nd\n#pragma noref\ne\n#pragma noref(1)\n",
     );
     assert_eq!(
-        out.noref,
+        default_marks(&out, PragmaDefault::Noref),
         vec![(1, true), (3, false), (4, false), (5, false)]
     );
+    let (_, out) = one_fte("#pragma nosave 1\na\n#pragma defaultstatic 1\nb\n");
+    assert_eq!(default_marks(&out, PragmaDefault::Nosave), vec![(0, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Static), vec![(1, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Noref), vec![]);
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#pragma noref 1\n".as_bytes());
     let mut pp = Preprocessor::new(loader);
     let vanilla = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert!(vanilla.noref.is_empty());
+    assert!(vanilla.flags.is_empty());
 }
 
-// spec FTEF-12.10: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
+// spec FTEF-21.14: the defaults hold from one file to the next, and the second pass starts with
+// `defaultstatic` off and `noref` and `nosave` as they were
+#[test]
+fn pragma_defaults_carry_over() {
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        "#pragma noref 1\n#pragma nosave 1\n#pragma defaultstatic 1\n".as_bytes(),
+    );
+    loader.insert("b.qc", "x\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let b = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    let first = b.flags[0].1.apply(CompilerFlags::default());
+    for default in [
+        PragmaDefault::Static,
+        PragmaDefault::Noref,
+        PragmaDefault::Nosave,
+    ] {
+        assert!(first.default_on(default), "{default:?}");
+    }
+    pp.restart();
+    let again = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    let first = again.flags[0].1.apply(CompilerFlags::default());
+    assert!(!first.default_on(PragmaDefault::Static));
+    assert!(first.default_on(PragmaDefault::Noref));
+    assert!(first.default_on(PragmaDefault::Nosave));
+}
+
+// spec FTEF-12.18: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
 #[test]
 fn autoproto_pragmas_are_recorded() {
     let (_, out) = one_fte("#pragma autoproto\na\n#pragma AutoProto 0\n#pragma autoproto 2\n");
@@ -348,10 +415,10 @@ fn autoproto_pragmas_are_recorded() {
     assert_eq!(pragmas, vec![(0, true), (1, false), (1, true)]);
     let starts: Vec<usize> = out.autoproto.iter().map(|p| p.2.span.start).collect();
     assert_eq!(starts, vec![0, 20, 40]);
-    assert!(out.noref.is_empty());
+    assert!(default_marks(&out, PragmaDefault::Noref).is_empty());
     // A directive's name is matched as written, so `#PRAGMA` is none, and its words are code.
     let (_, out) = one_fte("#PRAGMA noref 1\n#pragma NOREF 1\nx");
-    assert_eq!(out.noref, vec![(4, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Noref), vec![(4, true)]);
     assert_eq!(codes(&out), vec![]);
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#pragma autoproto\n".as_bytes());
@@ -628,7 +695,7 @@ fn fte_in(path: &str, text: &str) -> (Vec<TokenKind>, Vec<Code>) {
     (kinds, codes(&out))
 }
 
-// spec FTEF-14.32: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
+// spec FTEF-14.74: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
 // its first `:`, and `"`, read as a string literal with nothing in the name escaped
 #[test]
 fn file_constant_is_fteqcc_s_text() {
@@ -638,7 +705,8 @@ fn file_constant_is_fteqcc_s_text() {
         (vec![string(b"a.qc")], vec![])
     );
     assert_eq!(fte_in("c:a.qc", "__FILE__\n"), (vec![string(b"c")], vec![]));
-    let bell = qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"").unwrap();
+    let bell =
+        qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"", qc_lexer::LexFlags::default()).unwrap();
     assert_eq!(
         fte_in("a\\b.qc", "__FILE__\n"),
         (vec![string(&bell)], vec![])
@@ -665,7 +733,7 @@ fn file_constant_is_fteqcc_s_text() {
     );
 }
 
-// spec FTEF-14.32: an argument copies `__FILE__` as its text, which a `#` then writes into a
+// spec FTEF-14.74: an argument copies `__FILE__` as its text, which a `#` then writes into a
 // string as it stands
 #[test]
 fn a_stringified_file_constant_holds_its_text() {
@@ -673,7 +741,7 @@ fn a_stringified_file_constant_holds_its_text() {
     assert_eq!(tok.kind, TokenKind::String(br#""dx.qc""#.to_vec()));
 }
 
-// spec FTEF-14.32: an included file is named by the bytes between its quotes joined to the
+// spec FTEF-14.74: an included file is named by the bytes between its quotes joined to the
 // compiled file's name after its last `/` or `\`, also when another included file includes it,
 // and alone when it starts with `/`; in a macro's chunk the name is the file's
 #[test]
@@ -701,7 +769,55 @@ fn an_included_file_is_named_beside_the_compiled_file() {
     assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
 }
 
-// spec FTEF-14.32: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
+// spec FTEF-14.75: a file is opened at its path and named by its name, which `__FILE__`
+// writes and an `#include` is joined to, the joined name opened in the working directory; a
+// file given by its path alone is named by it and opened as it is
+#[test]
+fn names_are_opened_in_the_working_directory() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("/w/src/a.qc", "__FILE__\n#include \"x/b.qh\"\n".as_bytes());
+    loader.insert("/w/src/x/b.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(qc_lexer::Dialect::Fteqcc)
+        .with_working_dir(Path::new("/w"));
+    let out = pp
+        .preprocess_file_named(Path::new("/w/src/a.qc"), b"src/a.qc")
+        .unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/a.qc".to_vec()),
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+        ]
+    );
+    assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+    assert!(pp.preprocess_file(Path::new("src/a.qc")).is_err());
+    let out = pp
+        .preprocess_source_named(Path::new("/w/src/x/b.qh"), b"progs.src")
+        .unwrap();
+    assert_eq!(out.tokens[0].kind, TokenKind::String(b"progs.src".to_vec()));
+    let out = pp.preprocess_file(Path::new("/w/src/x/b.qh")).unwrap();
+    assert_eq!(
+        out.tokens[0].kind,
+        TokenKind::String(b"/w/src/x/b.qh".to_vec())
+    );
+}
+
+// spec FTEF-14.70: `QCC_PR_AddIncludePath` names an empty directory `.` and puts a `/` after a
+// name unless it ends in `/` or `\`
+#[test]
+fn include_directory_names() {
+    assert_eq!(crate::include_dir_name(b""), b"./");
+    assert_eq!(crate::include_dir_name(b"inc"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc/"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc\\"), b"inc\\");
+    assert_eq!(crate::pragma_include_dir(b"y", b"src/a.qc"), b"src/y/");
+    assert_eq!(crate::pragma_include_dir(b"y\\", b"src/a.qc"), b"src/y\\");
+    assert_eq!(crate::pragma_include_dir(b"", b"src/a.qc"), b"src/");
+}
+
+// spec FTEF-14.74: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
 // case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
 #[test]
 fn pragma_file_names_the_file() {
@@ -730,7 +846,7 @@ fn pragma_file_names_the_file() {
     );
 }
 
-// spec FTEF-14.32: a pragma's text runs to its line's break whatever a comment, a string or a
+// spec FTEF-14.74: a pragma's text runs to its line's break whatever a comment, a string or a
 // `\` in it would run across, and reading goes on there
 #[test]
 fn a_pragma_s_text_ends_at_its_line_s_break() {

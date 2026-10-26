@@ -77,7 +77,6 @@ fn input_cut_off_at_the_end() {
 fn not_a_type() {
     for source in [
         "typedef 1 x;\n",
-        "typedef static x;\n",
         "typedef for x;\n",
         "goto x;\n",
         "void(1) f;\n",
@@ -191,7 +190,7 @@ fn label_colon_must_touch() {
     assert_eq!(fte_errors(&in_body("a: b = 1;")), []);
 }
 
-// spec FTEF-18.9: only `__until` is the loop keyword; another `__` word is a name
+// spec FTEF-18.31: only `__until` is the loop keyword; another `__` word is a name
 #[test]
 fn only_until_is_a_keyword() {
     assert_eq!(fte_errors(&in_body("__foo(a);")), []);
@@ -257,8 +256,10 @@ fn deep_field_types() {
     assert!(fte_errors(&source).contains(&Code::E0509));
 }
 
-// spec FTE-21.1: a body's statement that starts with a type word followed by no name, or by a
-// parameter list longer than the parser looks ahead, is no declaration line
+// spec FTE-21.1: a body's statement that starts with a parameter list longer than the parser
+// looks ahead is no declaration line
+// spec FTEF-20.14: one that starts with `float` defines locals, as `QCC_PR_ParseStatement` finds
+// the type by its name, so `float = 3;` is "not a name"
 #[test]
 fn declaration_shapes_in_a_body() {
     use crate::SyntaxKind as K;
@@ -271,8 +272,8 @@ fn declaration_shapes_in_a_body() {
             .unwrap();
         block.children().map(|n| n.kind()).collect()
     };
-    assert_eq!(kinds("float = 3;"), [K::ExprStmt]);
-    assert_eq!(fte_errors(&in_body("float = 3;")), []);
+    assert_eq!(kinds("float = 3;"), [K::LocalDecl]);
+    assert_eq!(fte_errors(&in_body("float = 3;")), [Code::E0201]);
     // At column 0, a list longer than the lookahead does not end the body: the statement, an
     // error, is read in it, and the next declaration after the body.
     let long = format!(

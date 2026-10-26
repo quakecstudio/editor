@@ -374,6 +374,25 @@ fn typedefs_of_any_type_parse() {
     fte_ok("typedef int handle_t;\nhandle_t h;\nvoid(handle_t a) f;\n");
 }
 
+// spec FTEF-19.9: a `typedef` in a function body is a definition statement there, under FTEQCC
+// only
+#[test]
+fn a_typedef_in_a_body_is_a_definition() {
+    let parsed = fte_ok("void() f = { typedef float t; t x; };\n");
+    assert!(
+        parsed
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::TypedefDecl)
+    );
+    assert!(
+        !parse(b"void() f = { typedef float t; };\n")
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::TypedefDecl)
+    );
+}
+
 // spec FTEF-8.2: `enumflags` takes an element type and explicit values, and an enum may be
 // written as a parameter's type.
 #[test]
@@ -502,6 +521,23 @@ fn declaration_qualifiers_parse() {
         fte_ok(source);
     }
     assert_eq!(fte_errors("foo = 1;\n"), [Code::E0203]);
+    // A C type word starts a declaration, so one with no name is the declaration's error.
+    assert_eq!(fte_errors("int = 5;\n"), [Code::E0201]);
+    assert_eq!(fte_errors("unsigned = 2;\n"), [Code::E0201]);
+}
+
+// spec FTEF-19.21: after a qualifier the type may be left out, at file level and in a body
+#[test]
+fn a_qualifier_may_leave_the_type_out() {
+    for source in [
+        "const x = 5;\n",
+        "static x;\n",
+        "nosave x, y;\n",
+        "var x[2];\n",
+        "void() f = { const x = 5; };\n",
+    ] {
+        assert_eq!(fte_errors(source), [], "{source}");
+    }
 }
 
 // spec FTEF-15.2: a function returns any type and may be initialised with a value.
@@ -737,4 +773,36 @@ fn a_comma_may_end_the_declarators() {
     assert_eq!(names, [b"g".to_vec(), b"f".to_vec()]);
     fte_ok(&in_body("local float x, ;\nx = 1;"));
     assert!(!fte_errors("void() f = #5, , ;\n").is_empty());
+}
+
+// spec FTEF-19.26: under `qccx` `@e` is a unary term; without it `@` is none, and `^^` is no
+// operator
+#[test]
+fn at_under_qccx_and_caret_caret() {
+    let qccx = super::whole(&[(qc_preproc::FteFlag::Qccx, true)]);
+    let source = b"float x;\nstring s;\nvoid() g = { s = @x; };\n";
+    let flagged =
+        crate::parse_preprocessed_flagged(source, Dialect::Fteqcc, &[(0, qccx)], &[], &[]);
+    assert_eq!(flagged.errors().count(), 0, "{:?}", flagged.diagnostics());
+    assert!(
+        flagged
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == SyntaxKind::UnaryExpr)
+    );
+    let plain = crate::parse_preprocessed(source, Dialect::Fteqcc);
+    assert!(plain.errors().next().is_some());
+    let caret = fte("float x;\nvoid() g = { x = x ^^ x; };\n");
+    assert!(caret.errors().next().is_some());
+    assert_eq!(
+        fte("float x;\nvoid() g = { x = x ^ x; };\n")
+            .errors()
+            .count(),
+        0
+    );
+    // The parse keeps the flags it was given.
+    let lexed = qc_lexer::LexFlags::default().with(qc_lexer::LexFlag::Qccx, true);
+    assert_eq!(flagged.lex_flags(), [(0, lexed)]);
+    assert_eq!(flagged.lex_flags_at(5), lexed);
+    assert_eq!(plain.lex_flags_at(5), qc_lexer::LexFlags::default());
 }

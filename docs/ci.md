@@ -143,6 +143,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
+| `fuzz-build` | `cargo check --manifest-path fuzz/Cargo.toml --locked` | `cargo xtask ci` | `cargo xtask ci` |
 | `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
 
 The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. An xtask test
@@ -150,6 +151,14 @@ The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. 
 `run:` line of `ci.yml` with the step's exact command, and `cargo xtask ci --skip` fails on a
 name no step has. Every job here is a required check, so a skipped step still has to pass
 before a change merges.
+
+The `fuzz-build` step builds the cargo-fuzz targets in [`fuzz/`](../fuzz) with `cargo check`
+on the pinned stable toolchain, without running them. The fuzz crate is outside the workspace
+with its own lock file, so the `clippy` and `test` steps never build it, and a struct or API
+change can break a target unnoticed until the nightly `Fuzz` run (it did on 2026-10-22, when a
+new `ResolveOptions` field broke `fuzz/fuzz_targets/qc_sema.rs`). `cargo check` catches that
+class of error, a type error, without the sanitizer instrumentation `cargo xtask fuzz` needs
+nightly for.
 
 [`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml):
 
@@ -193,9 +202,9 @@ reviewer runs it and links the run in the report ([testing.md](testing.md#measur
 | Check | Runs on | What it does |
 | --- | --- | --- |
 | `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
-| `Readiness mutation` | Linux | `cargo xtask readiness mutation` (a full cargo-mutants run per crate) |
+| `Readiness mutation (<crate> <k/n>)` | Linux | `cargo xtask readiness mutation --shard k/n` (one shard of a cargo-mutants run of one crate, one job per shard, the shard count per crate from the table in the `crates` job; xtask limits each test binary to 3 GiB of data memory on Linux) |
 | `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
-| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement, `ratchets.toml` and its history; uploads the `readiness` artifact |
+| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement (a crate's mutation shards added into one score), `ratchets.toml` and its history; uploads the `readiness` artifact |
 
 Every action is pinned to a commit SHA with its version in a comment, every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.

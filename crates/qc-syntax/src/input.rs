@@ -77,6 +77,13 @@ pub(crate) struct Input<'a> {
     pub(crate) pieces: Vec<Piece>,
     pub(crate) tokens: Vec<Tok>,
     pub(crate) diagnostics: Vec<Diagnostic>,
+    /// Every lexical error and warning of the text, a preprocessor's text's too, which
+    /// [`Self::diagnostics`] leaves out: the parser reports those of the tokens it lexed with
+    /// other flags than the preprocessor did (FTEF-21.17).
+    pub(crate) lexical: Vec<Diagnostic>,
+    /// The compiler flags the tokens were lexed with, each from the byte it holds from
+    /// (FTEF-12.12).
+    pub(crate) flags: Vec<(usize, LexFlags)>,
 }
 
 fn latin1(bytes: &[u8]) -> String {
@@ -138,8 +145,9 @@ impl<'a> Lexable<'a> {
             .flatten();
         match loaded {
             // The mark the loader skips is no text the lexer reads: under FTEQCC its bytes would
-            // start a name (FTEF-13.16), so they are read as the spaces they stand for.
-            Some((text, start)) if start > 0 => {
+            // start a name (FTEF-13.16), so they are read as the spaces they stand for. The
+            // loader's text is its own copy, so this writes no further one.
+            Some((text, start)) => {
                 let mut text = text.into_owned();
                 for byte in text.iter_mut().take(start) {
                     *byte = b' ';
@@ -150,11 +158,6 @@ impl<'a> Lexable<'a> {
                     end: source.len(),
                 }
             }
-            Some((text, start)) => Self {
-                text,
-                start,
-                end: source.len(),
-            },
             None => Self {
                 text: Cow::Borrowed(source),
                 start: 0,
@@ -229,6 +232,8 @@ impl<'a> Input<'a> {
             pieces: Vec::with_capacity(lexed.tokens.len().saturating_mul(2)),
             tokens: Vec::with_capacity(lexed.tokens.len()),
             diagnostics: Vec::new(),
+            lexical: Vec::new(),
+            flags: flags.to_vec(),
         };
         let text_end = lexable.end;
         let fte = dialect.has_fteqcc_extensions();
@@ -352,6 +357,8 @@ impl<'a> Input<'a> {
         // reports none (QC-9.21).
         if text.is_source() {
             input.diagnostics = lexed.diagnostics;
+        } else {
+            input.lexical = lexed.diagnostics;
         }
         if text_end < source.len() {
             input.pieces.push(Piece::Leaf(

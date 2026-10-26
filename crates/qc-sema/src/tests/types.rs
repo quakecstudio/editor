@@ -10,7 +10,7 @@ use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
 use crate::symbol::FileId;
-use crate::ty::{FROM_AST_CALLS, FunctionType, SimpleType, Type};
+use crate::ty::{FROM_AST_CALLS, FunctionType, SimpleType, Type, TypeContext};
 
 /// Lowers the type of the first file-level declaration in `source`.
 fn first_decl_type(source: &str) -> Type {
@@ -18,7 +18,7 @@ fn first_decl_type(source: &str) -> Type {
     let tree = parse.tree().expect("a tree");
     let decl = tree.declarations().next().expect("a declaration");
     let ty = decl.ty().expect("a type");
-    Type::from_ast(&ty)
+    Type::from_ast(&ty, &|_| TypeContext::default())
 }
 
 // spec QC-10.1: the five simple types; a vector is three floats, the rest one word.
@@ -154,7 +154,7 @@ fn malformed_type_is_unknown() {
     };
     assert!(field.inner().is_none());
     assert_eq!(
-        Type::from_ast(&ast::Type::Field(field)),
+        Type::from_ast(&ast::Type::Field(field), &|_| { TypeContext::default() }),
         Type::Field(std::rc::Rc::new(Type::Unknown))
     );
 }

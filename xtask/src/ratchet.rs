@@ -31,7 +31,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::bench::{commit, unix_time};
 use crate::layers::FILE as LAYERS;
-use crate::readiness::{Check, FLAKE_RUNS, Measurement, Score, describe, floor_percent, reaches};
+use crate::readiness::{
+    Check, FLAKE_RUNS, Measurement, Score, Shard, describe, floor_percent, reaches,
+};
 use crate::{Report, print_outcome};
 
 pub(crate) const FILE: &str = "ratchets.toml";
@@ -378,28 +380,98 @@ pub(crate) fn history_problems(versions: &[Version], members: &BTreeSet<String>)
 /// Every measurement by crate, check and OS.
 type Measured = BTreeMap<String, BTreeMap<Check, BTreeMap<String, Score>>>;
 
+/// Every measurement by crate, check and OS, each one whole or as the shards
+/// it was measured in. A crate's mutation check may be sharded over several
+/// runners (`cargo xtask readiness mutation --shard k/n`); its shards are
+/// added back into one score by [`merge`]. A check measured twice, whole and
+/// in shards, with a shard missing from its set or with shards of different
+/// counts is a problem, and so is a shard of a check other than mutation; the
+/// crate then has no score for that check.
 fn group(measurements: &[Measurement], report: &mut Report) -> Measured {
-    let mut measured = Measured::new();
+    let mut parts: BTreeMap<(String, Check, String), Vec<Part>> = BTreeMap::new();
     for measurement in measurements {
         for (name, score) in &measurement.crates {
-            let by_os = measured
-                .entry(name.clone())
+            parts
+                .entry((name.clone(), measurement.check, measurement.os.clone()))
                 .or_default()
-                .entry(measurement.check)
-                .or_default();
-            if by_os
-                .insert(measurement.os.clone(), score.clone())
-                .is_some()
-            {
-                report.problems.push(format!(
-                    "{name} {} on {} is measured twice",
-                    measurement.check.name(),
-                    measurement.os
-                ));
+                .push((measurement.shard, score.clone()));
+        }
+    }
+    let mut measured = Measured::new();
+    for ((name, check, os), mut parts) in parts {
+        let what = format!("{name} {} on {os}", check.name());
+        parts.sort_by_key(|(shard, _)| *shard);
+        match merge(check, &parts) {
+            Ok(score) => {
+                measured
+                    .entry(name)
+                    .or_default()
+                    .entry(check)
+                    .or_default()
+                    .insert(os, score);
             }
+            Err(problem) => report.problems.push(format!("{what} {problem}")),
         }
     }
     measured
+}
+
+/// One measurement of a crate, check and OS: whole, or one shard of it.
+type Part = (Option<Shard>, Score);
+
+/// One score from the measurements of one crate, check and OS, sorted by
+/// shard: the one whole measurement, or every shard of one count added
+/// together, the mutant counts summed and the survivors listed in shard order.
+fn merge(check: Check, parts: &[Part]) -> Result<Score, String> {
+    if let [(None, score)] = parts {
+        return Ok(score.clone());
+    }
+    if check != Check::Mutation && parts.iter().any(|(shard, _)| shard.is_some()) {
+        return Err("is measured in shards, which only the mutation check has".to_owned());
+    }
+    let mut shards = Vec::new();
+    for (shard, score) in parts {
+        let Some(shard) = shard else {
+            return Err(if parts.iter().all(|(shard, _)| shard.is_none()) {
+                "is measured twice".to_owned()
+            } else {
+                "is measured whole and in shards".to_owned()
+            });
+        };
+        shards.push((*shard, score));
+    }
+    let mut merged = Score {
+        passed: 0,
+        total: 0,
+        failures: Vec::new(),
+    };
+    let mut count = None;
+    let mut expected = 0;
+    for (shard, score) in shards {
+        let count = *count.get_or_insert(shard.count());
+        if shard.count() != count {
+            return Err(format!(
+                "is measured in {count} shards and in {} shards",
+                shard.count()
+            ));
+        }
+        if shard.index() < expected {
+            return Err(format!("shard {shard} is measured twice"));
+        }
+        if shard.index() > expected {
+            return Err(format!("shard {expected}/{count} is missing"));
+        }
+        expected = expected.saturating_add(1);
+        merged.passed = merged.passed.saturating_add(score.passed);
+        merged.total = merged.total.saturating_add(score.total);
+        merged.failures.extend(score.failures.iter().cloned());
+    }
+    if let Some(count) = count
+        && expected < count
+    {
+        return Err(format!("shard {expected}/{count} is missing"));
+    }
+    Ok(merged)
 }
 
 /// Judges one crate's measurements; every check must be there.

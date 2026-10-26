@@ -68,15 +68,19 @@ impl Wide {
 
     /// The code unit `unit`, of [`Self::width`] bytes.
     fn value(self, unit: &[u8]) -> u32 {
-        let mut value = 0_u32;
-        let little = matches!(self, Self::Utf32Le | Self::Utf16Le);
-        let mut push = |byte: &u8| value = (value << 8) | u32::from(*byte);
-        if little {
-            unit.iter().rev().for_each(&mut push);
+        // The unit's bytes, at most 4, at the low end of a 4-byte word.
+        let mut word = [0_u8; 4];
+        if matches!(self, Self::Utf32Le | Self::Utf16Le) {
+            for (place, &byte) in word.iter_mut().zip(unit) {
+                *place = byte;
+            }
+            u32::from_le_bytes(word)
         } else {
-            unit.iter().for_each(&mut push);
+            for (place, &byte) in word.iter_mut().rev().zip(unit.iter().rev()) {
+                *place = byte;
+            }
+            u32::from_be_bytes(word)
         }
-        value
     }
 }
 
@@ -107,7 +111,9 @@ fn decode_utf(wide: Wide, bytes: &[u8], from: usize) -> (Vec<u8>, Vec<usize>) {
             if let Some(low) = low.filter(|l| (0xdc00..0xe000).contains(l))
                 && (0xd800..0xdc00).contains(&unit)
             {
-                code = (((unit & 0x3ff) << 10) | (low & 0x3ff)).saturating_add(0x1_0000);
+                // The high unit's ten bits above the low unit's, added: they do not overlap.
+                let high = (unit & 0x3ff) << 10;
+                code = high.wrapping_add(low & 0x3ff).saturating_add(0x1_0000);
                 index = index.saturating_add(1);
             }
         }
@@ -126,17 +132,20 @@ fn decode_utf(wide: Wide, bytes: &[u8], from: usize) -> (Vec<u8>, Vec<usize>) {
 /// bytes, a surrogate's in three as any other value of U+0800 to U+FFFF, written to `text`;
 /// how many bytes it wrote.
 fn encode(code: u32, text: &mut Vec<u8>) -> usize {
-    let tail = |shift: u32| low_byte(((code >> shift) & 0x3f) | 0x80);
+    // Each byte is UTF-8's marker plus the code's bits under the mask, which the marker's bits
+    // leave clear, so the sum is the marker with those bits set.
+    let byte =
+        |marker: u8, shift: u32, mask: u32| marker.wrapping_add(low_byte((code >> shift) & mask));
+    let tail = |shift: u32| byte(0x80, shift, 0x3f);
     let before = text.len();
     if code <= 0x7f {
         text.push(low_byte(code));
     } else if code <= 0x7ff {
-        text.extend_from_slice(&[low_byte(((code >> 6) & 0x1f) | 0xc0), tail(0)]);
+        text.extend_from_slice(&[byte(0xc0, 6, 0x1f), tail(0)]);
     } else if code <= 0xffff {
-        text.extend_from_slice(&[low_byte(((code >> 12) & 0xf) | 0xe0), tail(6), tail(0)]);
+        text.extend_from_slice(&[byte(0xe0, 12, 0xf), tail(6), tail(0)]);
     } else {
-        let lead = low_byte(((code >> 18) & 0x07) | 0xf0);
-        text.extend_from_slice(&[lead, tail(12), tail(6), tail(0)]);
+        text.extend_from_slice(&[byte(0xf0, 18, 0x07), tail(12), tail(6), tail(0)]);
     }
     text.len().saturating_sub(before)
 }

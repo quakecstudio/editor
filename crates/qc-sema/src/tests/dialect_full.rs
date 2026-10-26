@@ -282,18 +282,20 @@ fn other_initialisers_compare_token_for_token() {
     assert_eq!(errors(&other), [Code::E0206]);
 }
 
-// spec FTEF-17.12: a redeclaration whose type involves a type name, a pointer or an unknown
-// type is no mismatch; one between two simple types still is.
+// spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
+// mismatch; one between two simple types still is, and so is a pointer against a non-pointer.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
 #[test]
 fn opaque_types_are_compatible() {
     let index = fte_index_of(
         "typedef float bool;\nbool flag;\nfloat flag;\n__variant(float) get;\nfloat(float) get = #1;\n\
-         float *p;\nentity p;\n",
+         float *p;\nfloat *p;\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let mismatch = fte_index_of("float x;\nstring x;\n");
     assert_eq!(errors(&mismatch), [Code::E0205]);
+    let pointer = fte_index_of("float *p;\nentity p;\n");
+    assert_eq!(errors(&pointer), [Code::E0205]);
 }
 
 // spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
@@ -365,8 +367,7 @@ fn noref_allows_reinitialisation() {
     let input = ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(1)],
-        autoproto: None,
-        include_dirs: Vec::new(),
+        ..ModuleInput::default()
     };
     let analysis = db.analyze_module(&input);
     let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();

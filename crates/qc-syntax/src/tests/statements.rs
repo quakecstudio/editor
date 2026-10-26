@@ -53,6 +53,14 @@ fn keywords_are_contextual() {
     let parsed = body("do = 1;");
     assert_eq!(errors(&parsed)[0], (Code::E0201, "not a name".to_owned()));
     assert!(matches!(statements(&parsed)[0], ast::Stmt::Do(_)));
+    // `for` and `switch` start a statement only before a `(`, `break` and `continue` only
+    // before a `;`; elsewhere they are names.
+    let parsed = Program {
+        globals: "float for, switch, break, continue;\n",
+        body: "for = 1; switch = 2; break = 3; continue = 4;",
+    }
+    .parse();
+    assert_eq!(errors(&parsed), vec![]);
     // Keywords taken as keywords get keyword kinds; the same words elsewhere stay names.
     let tokens: Vec<SyntaxKind> = body("if (a) b = 1; else b = 2;")
         .syntax()

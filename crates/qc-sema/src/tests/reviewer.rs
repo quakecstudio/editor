@@ -361,8 +361,7 @@ fn fte_binding(defines: &str, use_: &str) -> (Vec<qc_diag::Code>, Option<(i32, S
         .analyze_module(&ModuleInput {
             prelude: Vec::new(),
             compiled: vec![FileId(0)],
-            autoproto: None,
-            include_dirs: Vec::new(),
+            ..ModuleInput::default()
         })
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
