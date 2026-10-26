@@ -18,6 +18,7 @@ whatever tool runs it.
 | `shellcheck`, `shfmt` | Shell linting in the hooks | The OS package manager |
 | `curl`, `shasum` or `sha256sum` | `scripts/refresh-specs.sh` | The OS |
 | `cargo-deny` | `cargo deny check` | `cargo install --locked cargo-deny` |
+| `cargo-nextest` | `make test` and the test step of `cargo xtask ci` | `cargo install --locked cargo-nextest` |
 
 ### Claude Code on the web and other Linux containers
 
@@ -27,7 +28,7 @@ when they are missing, and installs the git hooks from `.pre-commit-config.yaml`
 step skips silently if the network policy blocks its download, and the hook always exits 0.
 It does nothing on macOS or Windows, where you set up the tools yourself.
 
-`cargo-deny`, `cargo-llvm-cov` and `cargo-mutants` are not installed by the hook because they
+`cargo-deny`, `cargo-nextest`, `cargo-llvm-cov` and `cargo-mutants` are not installed by the hook because they
 take minutes to build; install them when a task needs them.
 
 ### Network
