@@ -491,6 +491,7 @@ fn measurement(check: Check, os: &str, name: &str, score: Score) -> Measurement 
     Measurement {
         check,
         os: os.to_owned(),
+        shard: None,
         crates: [(name.to_owned(), score)].into(),
     }
 }
@@ -627,4 +628,114 @@ fn a_history_path_that_cannot_be_read_is_an_error() {
     let error = record(&root(), &path, true, &Measured::new()).unwrap_err();
     assert!(error.contains("history.json"), "{error}");
     assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+}
+
+fn shard(index: u64, count: u64, name: &str, score: Score) -> Measurement {
+    Measurement {
+        shard: Some(Shard::new(index, count).unwrap()),
+        ..measurement(Check::Mutation, "linux", name, score)
+    }
+}
+
+fn mutation_of(measurements: &[Measurement], report: &mut Report) -> Option<Score> {
+    group(measurements, report)
+        .get("qs-x")
+        .and_then(|checks| checks.get(&Check::Mutation))
+        .and_then(|by_os| by_os.get("linux"))
+        .cloned()
+}
+
+#[test]
+fn the_shards_of_a_crates_mutants_add_up_to_one_score() {
+    let survivor = |name: &str| Score {
+        passed: 0,
+        total: 1,
+        failures: vec![name.to_owned()],
+    };
+    // Out of order, with another crate's shard and another OS in between.
+    let shards = [
+        shard(2, 3, "qs-x", survivor("src/c.rs: replace c with 0")),
+        shard(0, 1, "qs-y", score(5, 5)),
+        shard(0, 3, "qs-x", score(10, 12)),
+        Measurement {
+            os: "macos".to_owned(),
+            ..shard(0, 1, "qs-x", score(1, 1))
+        },
+        shard(1, 3, "qs-x", survivor("src/a.rs: replace a with 0")),
+    ];
+    let mut report = Report::default();
+    let merged = mutation_of(&shards, &mut report).unwrap();
+    assert_eq!(report.problems, Vec::<String>::new());
+    assert_eq!((merged.passed, merged.total), (10, 14));
+    assert_eq!(
+        merged.failures,
+        ["src/a.rs: replace a with 0", "src/c.rs: replace c with 0"]
+    );
+    // One shard of one is the whole measurement.
+    let mut report = Report::default();
+    let one = mutation_of(&[shard(0, 1, "qs-x", score(3, 4))], &mut report).unwrap();
+    assert_eq!((one.passed, one.total), (3, 4));
+    assert_eq!(report.problems, Vec::<String>::new());
+}
+
+#[test]
+fn a_shard_missing_repeated_mixed_or_beside_a_whole_measurement_is_a_problem() {
+    let cases: [(&str, Vec<Measurement>); 7] = [
+        (
+            "qs-x mutation on linux shard 1/3 is missing",
+            vec![
+                shard(0, 3, "qs-x", score(1, 1)),
+                shard(2, 3, "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux shard 2/3 is missing",
+            vec![
+                shard(0, 3, "qs-x", score(1, 1)),
+                shard(1, 3, "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux shard 1/2 is measured twice",
+            vec![
+                shard(0, 2, "qs-x", score(1, 1)),
+                shard(1, 2, "qs-x", score(1, 1)),
+                shard(1, 2, "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux is measured in 2 shards and in 3 shards",
+            vec![
+                shard(0, 2, "qs-x", score(1, 1)),
+                shard(1, 2, "qs-x", score(1, 1)),
+                shard(2, 3, "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux is measured whole and in shards",
+            vec![
+                shard(0, 1, "qs-x", score(1, 1)),
+                measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux is measured twice",
+            vec![
+                measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
+                measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x lines on linux is measured in shards, which only the mutation check has",
+            vec![Measurement {
+                check: Check::Lines,
+                ..shard(0, 1, "qs-x", score(1, 1))
+            }],
+        ),
+    ];
+    for (problem, measurements) in cases {
+        let mut report = Report::default();
+        assert_eq!(mutation_of(&measurements, &mut report), None, "{problem}");
+        assert_eq!(report.problems, [problem]);
+    }
 }

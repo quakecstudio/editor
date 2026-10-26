@@ -17,6 +17,9 @@
 //! measured. Each crate's numbers come from its own tests. Measuring never
 //! fails because a number is low; only a tool that cannot run fails it. The
 //! coverage checks run property tests on a fixed seed ([`PROPTEST_FIXED`]).
+//! The mutation check can measure one [`Shard`] of each crate's mutants, so
+//! that a crate's run is spread over several runners; `cargo xtask ratchet`
+//! adds the shards' scores back together.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -41,7 +44,8 @@ pub(crate) const NIGHTLY: &str = "nightly-2026-10-01";
 pub(crate) const FLAKE_RUNS: u64 = 20;
 
 const USAGE: &str = "usage: cargo xtask readiness <lines | branches | mutation | spec | flakes> \
-                     --out <file.json> [--os <name>] <crate>...";
+                     --out <file.json> [--os <name>] [--shard <k/n>] <crate>...\n       \
+                     --shard measures mutants k of n only (k from 0), as cargo mutants counts them";
 
 /// One readiness check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -98,12 +102,85 @@ pub(crate) struct Score {
     pub(crate) failures: Vec<String>,
 }
 
-/// The JSON file one measurement writes: one check, on one OS, for each crate.
+/// The JSON file one measurement writes: one check, on one OS, for each
+/// crate; of one shard of each crate's mutants when the mutation check was
+/// sharded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Measurement {
     pub(crate) check: Check,
     pub(crate) os: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) shard: Option<Shard>,
     pub(crate) crates: BTreeMap<String, Score>,
+}
+
+/// One shard of a crate's mutants, `k/n`, as cargo mutants numbers them:
+/// `--shard <SHARD>`, "Run only one shard of all generated mutants: specify as
+/// e.g. 1/4" (`cargo mutants --help`, 27.1.0), where k counts from 0 and must
+/// be less than n (`cargo mutants --shard 4/4` is refused with "shard k must be
+/// less than n"). Written in JSON as the same `k/n` string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub(crate) struct Shard {
+    index: u64,
+    count: u64,
+}
+
+impl Shard {
+    /// `k/n`, with k below n.
+    pub(crate) fn new(index: u64, count: u64) -> Result<Shard, String> {
+        if count == 0 {
+            return Err("a shard count must be at least 1".to_owned());
+        }
+        if index >= count {
+            return Err(format!(
+                "shard {index}/{count}: the shard number must be less than the count"
+            ));
+        }
+        Ok(Shard { index, count })
+    }
+
+    /// `"k/n"`.
+    pub(crate) fn parse(text: &str) -> Result<Shard, String> {
+        let Some((index, count)) = text.split_once('/') else {
+            return Err(format!("a shard is written k/n, not {text:?}"));
+        };
+        let number = |part: &str| {
+            part.parse::<u64>()
+                .map_err(|error| format!("shard {text:?}: {part:?} is not a count: {error}"))
+        };
+        Shard::new(number(index)?, number(count)?)
+    }
+
+    /// k, counting from 0.
+    pub(crate) fn index(self) -> u64 {
+        self.index
+    }
+
+    /// n, the number of shards the crate's mutants are divided into.
+    pub(crate) fn count(self) -> u64 {
+        self.count
+    }
+}
+
+impl std::fmt::Display for Shard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.index, self.count)
+    }
+}
+
+impl TryFrom<String> for Shard {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Shard, String> {
+        Shard::parse(&text)
+    }
+}
+
+impl From<Shard> for String {
+    fn from(shard: Shard) -> String {
+        shard.to_string()
+    }
 }
 
 /// A crate to measure.
@@ -138,6 +215,7 @@ struct Options {
     check: Check,
     out: PathBuf,
     os: String,
+    shard: Option<Shard>,
     crates: Vec<String>,
 }
 
@@ -169,11 +247,15 @@ fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, St
     let mut measurement = Measurement {
         check: options.check,
         os: options.os,
+        shard: options.shard,
         crates: BTreeMap::new(),
     };
+    let shard = options
+        .shard
+        .map_or(String::new(), |shard| format!(" shard {shard}"));
     for name in &options.crates {
         let target = resolve(root, name)?;
-        let Some(score) = measure(root, options.check, &target, tools)? else {
+        let Some(score) = measure(root, options.check, &target, options.shard, tools)? else {
             println!(
                 "{} {}: not measured: {NO_C_MUTATION}",
                 target.name,
@@ -182,7 +264,7 @@ fn run_check(root: &Path, args: &[String], tools: &Tools<'_>) -> Result<bool, St
             continue;
         };
         println!(
-            "{} {}: {}",
+            "{} {}{shard}: {}",
             target.name,
             options.check.name(),
             describe(&score)
@@ -207,11 +289,16 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     };
     let mut out = None;
     let mut os = std::env::consts::OS.to_owned();
+    let mut shard = None;
     let mut crates = Vec::new();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--out" => out = Some(PathBuf::from(iter.next().ok_or(USAGE)?)),
             "--os" => iter.next().ok_or(USAGE)?.clone_into(&mut os),
+            "--shard" => {
+                let text = iter.next().ok_or(USAGE)?;
+                shard = Some(Shard::parse(text).map_err(|error| format!("{error}\n{USAGE}"))?);
+            }
             flag if flag.starts_with("--") => return Err(format!("unknown flag {flag}\n{USAGE}")),
             name => crates.push(name.to_owned()),
         }
@@ -222,10 +309,16 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
     if crates.is_empty() {
         return Err(format!("name at least one crate\n{USAGE}"));
     }
+    if shard.is_some() && check != Check::Mutation {
+        return Err(format!(
+            "--shard divides mutants, so only the mutation check takes it\n{USAGE}"
+        ));
+    }
     Ok(Options {
         check,
         out,
         os,
+        shard,
         crates,
     })
 }
@@ -309,11 +402,13 @@ const NO_C_MUTATION: &str = "cargo mutants mutates Rust, and the oracles are C; 
                              their exception is in ratchets.toml";
 
 /// The score of `check` for `target`, or `None` when no tool measures it
-/// (the oracles' mutation score).
+/// (the oracles' mutation score); of `shard` of the mutants alone when the
+/// mutation check is sharded.
 fn measure(
     root: &Path,
     check: Check,
     target: &Target,
+    shard: Option<Shard>,
     tools: &Tools<'_>,
 ) -> Result<Option<Score>, String> {
     let score = match (check, target.kind) {
@@ -322,7 +417,7 @@ fn measure(
             coverage(root, target, check, tools)?
         }
         (Check::Mutation, Kind::Oracles) => return Ok(None),
-        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target, tools)?,
+        (Check::Mutation, Kind::Member | Kind::Standalone) => mutation(root, target, shard, tools)?,
         (Check::Spec, _) => spec(&target.dir)?,
         (Check::Flakes, Kind::Oracles) => oracle_flakes(root, tools.exec)?,
         (Check::Flakes, Kind::Member | Kind::Standalone) => flakes(root, target, tools)?,
@@ -509,8 +604,24 @@ pub(crate) fn mutant_runner(host: &str) -> Option<(String, String)> {
     Some((name, value))
 }
 
-fn mutation(root: &Path, target: &Target, tools: &Tools<'_>) -> Result<Score, String> {
-    let out = tools.scratch.join(format!("mutants-{}", target.name));
+/// The mutation score of `target`, of `shard` of its mutants alone when given.
+fn mutation(
+    root: &Path,
+    target: &Target,
+    shard: Option<Shard>,
+    tools: &Tools<'_>,
+) -> Result<Score, String> {
+    // One output directory per shard, so that shards run side by side on one
+    // machine do not read each other's outcomes.
+    let out = tools.scratch.join(match shard {
+        Some(shard) => format!(
+            "mutants-{}-{}-of-{}",
+            target.name,
+            shard.index(),
+            shard.count()
+        ),
+        None => format!("mutants-{}", target.name),
+    });
     let mut command = cargo_for(root, &tools.scratch, target, None);
     // Each test binary under the data limit, where the host enforces one. The
     // limit is set here, on the triple cargo reports for the host, rather than
@@ -545,6 +656,17 @@ fn mutation(root: &Path, target: &Target, tools: &Tools<'_>) -> Result<Score, St
             "--minimum-test-timeout",
             MUTANT_TIMEOUT_FLOOR,
         ]);
+    }
+    // One shard of the mutants, dealt round robin ("Run mutant `i` on shard
+    // `i % k`", `cargo mutants --help`, `--sharding`) rather than in slices,
+    // so that each shard gets mutants from every file and the shards take
+    // about the same time. `--no-shuffle` above keeps the deal the same on
+    // every run of one commit.
+    if let Some(shard) = shard {
+        command
+            .arg("--shard")
+            .arg(shard.to_string())
+            .args(["--sharding", "round-robin"]);
     }
     command
         .arg("--manifest-path")
