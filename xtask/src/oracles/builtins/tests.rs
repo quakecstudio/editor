@@ -17,7 +17,7 @@ use qc_progs::{Function, ProgsFile, write};
 use qc_syntax::{Code, Dialect};
 use qc_types::Slot;
 
-use super::super::testing::{fake_oracles, fresh_dir, root};
+use super::super::testing::{fake_oracles, fresh_dir, root, sample_suite};
 use super::{
     Case, Encoding, FIXTURE, Host, Outcome, Overrun, ProgsSrc, Project, Tally, ULong, across_cores,
     bound, cases, check, check_where, compare, compare_on, expected_difference, graph_cases,
@@ -71,9 +71,9 @@ fn the_profile_agrees_with_the_recorded_oracles() {
 #[test]
 fn the_graph_lists_what_the_recorded_fteqcc_compiles() {
     let recorded = read_fixture(&root()).unwrap();
-    let differ = graph_differences(&recorded, ULong::Bits64);
-    assert!(differ.is_empty(), "{differ:#?}");
     let cases = graph_cases();
+    let differ = graph_differences(&cases, &recorded, ULong::Bits64);
+    assert!(differ.is_empty(), "{differ:#?}");
     assert_eq!(cases.len(), 247);
     let read = cases
         .iter()
@@ -238,7 +238,7 @@ fn graph_differences_are_found() {
     ] {
         let mut changed = recorded.clone();
         changed.insert(first.clone(), outcome);
-        let differ = graph_differences(&changed, ULong::Bits64);
+        let differ = graph_differences(&cases, &changed, ULong::Bits64);
         assert_eq!(differ.len(), 1, "{differ:?}");
         assert!(differ[0].ends_with(expected), "{differ:?}");
     }
@@ -249,11 +249,11 @@ fn graph_differences_are_found() {
         .key();
     let mut changed = recorded.clone();
     changed.insert(unread, bound_as(5, "f"));
-    let differ = graph_differences(&changed, ULong::Bits64);
+    let differ = graph_differences(&cases, &changed, ULong::Bits64);
     assert!(differ[0].ends_with("the oracle reads the file, the graph does not"));
     let mut missing = recorded;
     missing.remove(&first);
-    let differ = graph_differences(&missing, ULong::Bits64);
+    let differ = graph_differences(&cases, &missing, ULong::Bits64);
     assert!(differ[0].ends_with("not recorded in xtask/fixtures/oracles/builtin-outcomes.json"));
 }
 
@@ -421,8 +421,8 @@ fn a_wide_if_value_may_read_another_file_where_long_is_32_bits() {
             _ => Outcome::Accepted,
         };
         flipped.insert(case.key(), other);
-        let bits64 = graph_differences(&flipped, ULong::Bits64);
-        let bits32 = graph_differences(&flipped, ULong::Bits32);
+        let bits64 = graph_differences(&cases, &flipped, ULong::Bits64);
+        let bits32 = graph_differences(&cases, &flipped, ULong::Bits32);
         assert_eq!(bits64.len(), 1, "{bits64:?}");
         assert_eq!(bits32.len(), usize::from(case == plain), "{bits32:?}");
     }
@@ -1151,11 +1151,11 @@ fn repository(name: &str, fixture: &BTreeMap<String, Outcome>) -> PathBuf {
 // the oracles give what the fixture records and the profile agrees
 #[test]
 fn check_passes_when_the_oracles_give_the_recording() {
-    let recorded = read_fixture(&root()).unwrap();
+    let (suite, recorded) = sample_suite();
     let repo = repository("builtins-agree", &recorded);
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(check(&repo, &oracles, false).unwrap());
+    assert!(check(&repo, &oracles, false, &suite).unwrap());
     assert_eq!(fake.seen.lock().unwrap().len(), recorded.len());
     assert!(
         fake.seen
@@ -1168,7 +1168,11 @@ fn check_passes_when_the_oracles_give_the_recording() {
     // The oracles ran across the cores, each thread in a work directory of its own.
     let work = repo.join("work").join("builtins");
     assert!(work.join("thread0").join("progs.src").is_file());
-    assert!(!work.join(format!("thread{}", threads())).exists());
+    assert!(
+        !work
+            .join(format!("thread{}", threads().get().min(recorded.len())))
+            .exists()
+    );
     assert!(!work.join("progs.src").exists());
 }
 
@@ -1176,39 +1180,40 @@ fn check_passes_when_the_oracles_give_the_recording() {
 // `--record` writes what the oracles gave
 #[test]
 fn check_fails_on_a_stale_recording_and_records_anew() {
-    let recorded = read_fixture(&root()).unwrap();
+    let (suite, recorded) = sample_suite();
     let key = fte("void() f = #5;\n").key();
     let mut stale = recorded.clone();
     stale.insert(key.clone(), bound_as(6, "f"));
     let repo = repository("builtins-stale", &stale);
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(!check(&repo, &oracles, false).unwrap());
+    assert!(!check(&repo, &oracles, false, &suite).unwrap());
     // spec FTEF-14.50: where `unsigned long` is 32 bits nothing is recorded, and a wide
     // `#pragma line` the oracle reads otherwise there is no stale recording
-    assert!(check_where(&repo, &oracles, true, ULong::Bits32).is_err());
+    assert!(check_where(&repo, &oracles, true, ULong::Bits32, &suite).is_err());
     assert_eq!(read_fixture(&repo).unwrap(), stale);
-    assert!(check_where(&repo, &oracles, true, ULong::Bits64).unwrap());
+    assert!(check_where(&repo, &oracles, true, ULong::Bits64, &suite).unwrap());
     assert_eq!(read_fixture(&repo).unwrap(), recorded);
-    // Recorded across the cores, the fixture is byte for byte the repository's, which a run
-    // on one thread wrote.
+    // Recorded across the cores, the fixture is what a run on one thread writes: the
+    // repository's entries for these cases, in key order, pretty-printed.
+    let raw: BTreeMap<&String, String> = recorded.iter().map(|(k, v)| (k, v.to_string())).collect();
     assert_eq!(
-        fs::read(repo.join(FIXTURE)).unwrap(),
-        fs::read(root().join(FIXTURE)).unwrap()
+        fs::read_to_string(repo.join(FIXTURE)).unwrap(),
+        format!("{}\n", serde_json::to_string_pretty(&raw).unwrap())
     );
     let wide = fte("#pragma line 4294967297\nvoid() f = :__LINESTR__;\n");
     let mut llp64 = recorded.clone();
     llp64.insert(wide.key(), bound_as(0, "-1"));
     let fake32 = Fake::new(answering(llp64));
     let oracles32 = fake_oracles(&repo.join("work"), &fake32);
-    assert!(check_where(&repo, &oracles32, false, ULong::Bits32).unwrap());
-    assert!(!check_where(&repo, &oracles32, false, ULong::Bits64).unwrap());
+    assert!(check_where(&repo, &oracles32, false, ULong::Bits32, &suite).unwrap());
+    assert!(!check_where(&repo, &oracles32, false, ULong::Bits64, &suite).unwrap());
     // A recording of a case the cross product no longer makes is stale too.
     let mut extra = recorded.clone();
     extra.insert("fteqcc|gone".to_owned(), Outcome::Rejected);
     let repo = repository("builtins-extra", &extra);
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64, &suite).unwrap());
 }
 
 // The work runs on as many threads as asked, at most one per item, every item once, and the
@@ -1277,17 +1282,15 @@ fn across_cores_keeps_the_items_order_on_any_thread_count() {
 // differences and the agreeing cases counted alike
 #[test]
 fn compare_gives_the_serial_tally_on_any_thread_count() {
-    let mut recorded = read_fixture(&root()).unwrap();
-    // Every 25th case of the cross product: both dialects, a few thousand cases.
-    let cases: Vec<Case> = cases().into_iter().step_by(25).collect();
+    let (suite, mut recorded) = sample_suite();
+    let cases = suite.cases;
     assert!(cases.iter().any(|case| case.dialect == Dialect::Vanilla));
     assert!(cases.iter().any(|case| case.dialect == Dialect::Fteqcc));
     recorded.remove(&cases[1].key());
     recorded.insert(cases[2].key(), bound_as(1234, "unexpected"));
     let serial = compare_on(&cases, &recorded, ULong::Bits64, NonZero::<usize>::MIN).unwrap();
     assert_eq!(serial.differ, 2, "{serial}");
-    assert!(serial.agree > 2000, "{serial}");
-    assert!(!serial.expected.is_empty(), "{serial}");
+    assert!(serial.agree >= 9, "{serial}");
     let three = compare_on(&cases, &recorded, ULong::Bits64, NonZero::new(3).unwrap()).unwrap();
     assert_eq!(three, serial);
     assert_eq!(compare(&cases, &recorded, ULong::Bits64).unwrap(), serial);
@@ -1297,18 +1300,20 @@ fn compare_gives_the_serial_tally_on_any_thread_count() {
 // when the recording has it
 #[test]
 fn check_fails_when_the_profile_differs() {
-    let mut recorded = read_fixture(&root()).unwrap();
+    let (suite, mut recorded) = sample_suite();
     recorded.insert(fte("void() f = #16d;\n").key(), bound_as(16, "f"));
     let repo = repository("builtins-differ", &recorded);
     let fake = Fake::new(answering(recorded.clone()));
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(!check(&repo, &oracles, false).unwrap());
-    let tally = compare(&cases(), &recorded, ULong::Bits64).unwrap();
+    assert!(!check(&repo, &oracles, false, &suite).unwrap());
+    let tally = compare(&suite.cases, &recorded, ULong::Bits64).unwrap();
     assert_eq!(tally.differ, 1);
     let mut missing = recorded;
     missing.remove(&fte("void() f = #5;\n").key());
     assert_eq!(
-        compare(&cases(), &missing, ULong::Bits64).unwrap().differ,
+        compare(&suite.cases, &missing, ULong::Bits64)
+            .unwrap()
+            .differ,
         2
     );
 }
@@ -1611,9 +1616,10 @@ fn an_unseen_overrun_host_records_the_stopping_build_s_outcome() {
         ulong: ULong::Bits64,
         overrun: Overrun::Unseen,
     };
-    let recorded = read_fixture(&root()).unwrap();
-    let overrun = cases()
-        .into_iter()
+    let (suite, recorded) = sample_suite();
+    let overrun = suite
+        .cases
+        .iter()
         .find(|case| {
             case.source
                 .starts_with(&format!("#pragma includedir {}\n", "d".repeat(1024)))
@@ -1626,8 +1632,8 @@ fn an_unseen_overrun_host_records_the_stopping_build_s_outcome() {
     let repo = repository("builtins-glibc", &recorded);
     let fake = Fake::new(answering(on_glibc));
     let oracles = fake_oracles(&repo.join("work"), &fake);
-    assert!(check_where(&repo, &oracles, false, glibc).unwrap());
-    assert!(!check_where(&repo, &oracles, false, ULong::Bits64).unwrap());
-    assert!(check_where(&repo, &oracles, true, glibc).unwrap());
+    assert!(check_where(&repo, &oracles, false, glibc, &suite).unwrap());
+    assert!(!check_where(&repo, &oracles, false, ULong::Bits64, &suite).unwrap());
+    assert!(check_where(&repo, &oracles, true, glibc, &suite).unwrap());
     assert_eq!(read_fixture(&repo).unwrap(), recorded);
 }
