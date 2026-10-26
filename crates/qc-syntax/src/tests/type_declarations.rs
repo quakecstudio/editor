@@ -345,3 +345,39 @@ fn a_static_or_virtual_struct_member_takes_a_body() {
     assert_ne!(errors("struct S { float a = 1; };"), []);
     assert_ne!(errors("struct S { void() m = {}; };"), []);
 }
+
+// spec FTEF-6.7: a member's missing `;` is reported and the body is read on, to its `}`
+#[test]
+fn a_missing_semicolon_between_members_does_not_end_the_body() {
+    let source = "struct S { float a float b; }; S x;";
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert_eq!(
+        parsed.errors().map(|d| d.code).collect::<Vec<_>>(),
+        [Code::E0204]
+    );
+    let decl = parsed
+        .syntax()
+        .descendants()
+        .find_map(ast::StructDecl::cast)
+        .unwrap();
+    assert_eq!(decl.fields().count(), 2);
+    assert_eq!(decl.declarators().count(), 0);
+}
+
+// spec FTEF-9.11: the struct check reads the member's own type, not the one before it
+#[test]
+fn the_struct_member_check_is_per_member() {
+    assert!(errors("class C { float *p; struct ; };").contains(&Code::E0254));
+    assert!(!errors("class C { struct S *s; float ; };").contains(&Code::E0254));
+}
+
+// spec FTEF-18.34: a block of many declaration lines is read in time linear in its length
+#[test]
+fn many_declaration_lines_in_one_block_parse_quickly() {
+    let body = "float a;\n".repeat(20_000);
+    let source = format!("void() g = {{\n{body}}};");
+    let started = std::time::Instant::now();
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source.as_bytes());
+    assert!(started.elapsed().as_secs() < 5);
+}

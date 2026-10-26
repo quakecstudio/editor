@@ -998,9 +998,12 @@ pub enum UseKind {
     Member,
     /// The name of a type a cast or a `sizeof` writes, which must be one (FTEF-19.43).
     TypeName,
-    /// A cast of a literal to a type, whose name is the use's and the literal's type its
-    /// scope: a struct takes no such value (FTEF-6.12).
-    CastTo,
+    /// A cast of a literal to a type, whose name is the use's, from the literal's type: a
+    /// struct takes no such value (FTEF-6.12).
+    CastTo {
+        /// The literal's type, as FTEQCC names it.
+        from: &'static str,
+    },
     /// A name that may be a type's, in a `sizeof` (FTEF-18.12): the operand FTEQCC tries as a
     /// type first (FTEF-19.38).
     TypeOrValue,
@@ -1143,9 +1146,10 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
         });
         let initialized = field.child_tokens().any(|t| t.kind() == SyntaxKind::Eq);
         let mut member_ty = ty.clone();
+        // The `*`s before the name, not those of C's `(*name)(params)` (FTEF-21.7).
         for _ in field
             .child_tokens()
-            .take_while(|t| t.kind() != SyntaxKind::Name)
+            .take_while(|t| !matches!(t.kind(), SyntaxKind::Name | SyntaxKind::LParen))
             .filter(|t| t.kind() == SyntaxKind::Star)
         {
             member_ty = Type::Pointer(std::rc::Rc::new(member_ty));
@@ -1158,13 +1162,11 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
             .child_tokens()
             .any(|t| t.kind() == SyntaxKind::Colon)
             .then(|| {
-                field
-                    .children()
-                    .filter_map(ast::Expr::cast)
-                    .last()
+                width
+                    .as_ref()
                     .and_then(|e| {
                         LiteralValue::of_literal(
-                            &e,
+                            e,
                             Dialect::Fteqcc,
                             cx.lex_flags_at(e.syntax().span().start),
                         )
@@ -1175,10 +1177,11 @@ fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                             #[expect(
                                 clippy::cast_possible_truncation,
                                 clippy::cast_sign_loss,
-                                reason = "spec FTEF-6.9: the width is an integer constant"
+                                reason = "spec FTEF-6.9: the width is an integer constant, \
+                                          and a negative or fractional one is none"
                             )]
                             let width = number as u32;
-                            Some(width)
+                            (number >= 0.0 && number.fract() == 0.0).then_some(width)
                         }
                         LiteralValue::Vector(_)
                         | LiteralValue::String(_)
@@ -1942,9 +1945,17 @@ fn lower_member(
             }
             _ => None,
         };
+        // `QCC_SRef_IsNull`: the constant's value is 0, however it is written.
         let null = match &init {
             Some(ast::Initializer::Value(expr)) => {
-                matches!(token_text(expr.syntax()).as_str(), "0" | "0i")
+                LiteralValue::of_literal(
+                    expr,
+                    Dialect::Fteqcc,
+                    cx.lex_flags_at(expr.syntax().span().start),
+                )
+                .is_some_and(
+                    |v| matches!(v, LiteralValue::Float(bits) if f32::from_bits(bits) == 0.0),
+                ) || matches!(token_text(expr.syntax()).as_str(), "0i")
             }
             _ => false,
         };
@@ -2969,9 +2980,11 @@ fn lower_cast(cast: &ast::CastExpr, cx: Cx<'_>, uses: &mut Vec<RawUse>) {
                 Some(ast::LiteralKind::String) => "string",
                 Some(ast::LiteralKind::Float | ast::LiteralKind::FrameRef) | None => "float",
             };
-            let mut use_ = RawUse::new(name.to_string(), ty.syntax().span(), UseKind::CastTo);
-            use_.scope = Some(from.to_owned());
-            uses.push(use_);
+            uses.push(RawUse::new(
+                name.to_string(),
+                ty.syntax().span(),
+                UseKind::CastTo { from },
+            ));
         }
     }
     if let Some(operand) = cast.operand() {

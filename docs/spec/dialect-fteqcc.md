@@ -330,7 +330,7 @@ inheritance, bitfields and nested members.
   "Redeclaration of struct with different parent type". A direct member whose type is the struct
   itself, or a struct with no body so far, is "type %s not fully defined yet" (`if (type == newt
   || ((type->type == ev_struct || type->type == ev_union) && !type->size))`,
-  `QCC_PR_ParseWarning(ERR_NOTANAME, ...)`). A struct written in a function's body is compared with the struct of its name as any is, and its tag is a type from there on (FTEQCC drops it at the block's end, which this profile does not follow). The struct's own name is no parent of it (`newt = QCC_TypeForName(tname)` comes after the parent is found): `struct S : S { float a; };` is "Parent type S was not yet defined", and `struct S; struct S : S { float a; };` never ends in FTEQCC. Source:
+  `QCC_PR_ParseWarning(ERR_NOTANAME, ...)`). A struct written in a function's body is compared with the struct of its name as any is, and lasts to the body's end (`QCC_PR_ParseStruct` with `pr_scope`, dropped with the block's locals), so a struct of its name after the body is another. The struct's own name is no parent of it (`newt = QCC_TypeForName(tname)` comes after the parent is found): `struct S : S { float a; };` is "Parent type S was not yet defined", and `struct S; struct S : S { float a; };` never ends in FTEQCC. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseStruct`.
 - **FTEF-6.11** The member after `.` of a struct is `QCC_PR_FindStructMember`'s: the members of

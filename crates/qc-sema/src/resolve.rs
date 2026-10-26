@@ -1272,10 +1272,11 @@ impl<'a> Resolver<'a> {
             return Vec::new();
         }
         // FTE-11, FTEF-15.5: a `var` of function type holds a function; it defines none.
-        let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var) && decl.ty.is_function() {
+        let resolved_ty = self.resolved(&decl.ty);
+        let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var) && resolved_ty.is_function() {
             DefKind::Global
         } else {
-            top_level_kind(&self.resolved(&decl.ty))
+            top_level_kind(&resolved_ty)
         };
         let pending = |def: DefId| {
             decl.body
@@ -2369,14 +2370,9 @@ impl<'a> Resolver<'a> {
         // FTEF-19.36: a name an enum gave again with another value is "NAME::ITEM already
         // declared".
         if let (Some(enum_name), Some(v), false) = (&item.enum_name, value, self.enum_redeclared) {
-            let key = (
-                if self.case_insensitive {
-                    enum_name.to_ascii_lowercase()
-                } else {
-                    enum_name.clone()
-                },
-                decl.name.clone(),
-            );
+            // FTEF-19.33: the enum is found in any case under `-Fcaseinsens`; the name is
+            // compared exactly (`strcmp (acc->fieldname, name)`), so `A` and `a` are two.
+            let key = (self.type_key(enum_name), decl.name.clone());
             #[expect(
                 clippy::float_cmp,
                 reason = "spec FTEF-19.36: FTEQCC compares the constants' values exactly"
@@ -2749,6 +2745,30 @@ impl<'a> Resolver<'a> {
             || self.class_names.keys().any(|other| same(other))
             || self.enum_types.iter().any(|other| same(other))
             || self.typedefs.keys().any(|other| same(other))
+    }
+
+    /// Declares the structs of `structs` made before `end`, in order. The structs a function's
+    /// body writes are its own (`QCC_PR_ParseStruct` with `pr_scope`, dropped with the block's
+    /// locals, FTEF-6.10): a run of them is declared together, checked, and taken out of the
+    /// file's types again.
+    fn declare_structs_before(
+        &mut self,
+        file: FileId,
+        structs: &mut std::iter::Peekable<std::slice::Iter<'a, RawStruct>>,
+        end: usize,
+    ) {
+        while let Some(st) = structs.next_if(|st| st.end <= end) {
+            if !st.local {
+                self.declare_struct(file, st);
+                continue;
+            }
+            let saved = self.struct_defs.clone();
+            self.declare_struct(file, st);
+            while let Some(st) = structs.next_if(|st| st.local && st.end <= end) {
+                self.declare_struct(file, st);
+            }
+            self.struct_defs = saved;
+        }
     }
 
     /// `QCC_PR_ParseStruct` (FTEF-6.7 to FTEF-6.10): a struct's parent, its redefinition and its
@@ -3363,9 +3383,7 @@ impl<'a> Resolver<'a> {
                 while let Some((tag, _)) = tags.next_if(|(_, from)| *from < decl.span.end) {
                     self.type_names.insert(tag.clone());
                 }
-                while let Some(st) = structs.next_if(|st| st.end <= decl.span.end) {
-                    self.declare_struct(file_id, st);
-                }
+                self.declare_structs_before(file_id, &mut structs, decl.span.end);
                 self.settle(decl.span.start);
                 let pending = self.declare_top_level(file_id, decl);
                 // FTEF-12.6: `#pragma noref` holds from where it stands to the next one,
@@ -3387,9 +3405,7 @@ impl<'a> Resolver<'a> {
                 }
             }
             // The structs a last body writes, and any after the last declaration.
-            for st in structs {
-                self.declare_struct(file_id, st);
-            }
+            self.declare_structs_before(file_id, &mut structs, usize::MAX);
         }
         self.autoproto = false;
     }
@@ -3807,9 +3823,8 @@ impl<'a> Resolver<'a> {
                 }
                 (_, UseKind::Value) => self.resolve_value(scope, &use_.name, false),
                 (_, UseKind::TypeOrValue) => self.resolve_value(scope, &use_.name, true),
-                (_, UseKind::CastTo) => {
+                (_, UseKind::CastTo { from }) => {
                     if self.struct_type_name(&use_.name).is_some() {
-                        let from = use_.scope.clone().unwrap_or_default();
                         let message = format!("Cannot cast from {from} to struct {}", use_.name);
                         self.report(Code::E0213, location, message);
                     }

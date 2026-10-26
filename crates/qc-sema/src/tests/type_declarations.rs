@@ -871,3 +871,65 @@ fn a_function_pointer_parameter_and_a_for_initialiser_type() {
         assert_eq!(errors(source, &[]), [], "{source}");
     }
 }
+
+// spec FTEF-15.5: a `var` of a function type named through a typedef holds a function and
+// defines none
+#[test]
+fn a_var_of_a_typedef_function_type_needs_no_body() {
+    assert_eq!(errors("typedef void() fn; var fn x;", &[]), []);
+}
+
+// spec FTEF-6.10: a struct a body writes lasts to the body's end; a struct of its name after it
+// is another
+#[test]
+fn a_bodys_struct_ends_with_the_body() {
+    assert_eq!(
+        errors(
+            "void() g = { struct S { float a; } s; }; struct S { float b; }; S x; float y; \
+             void() h = { y = x.b; };",
+            &[]
+        ),
+        []
+    );
+}
+
+// spec FTEF-9.10: the value that makes no "Can only initialise member functions" is the
+// constant 0 however it is written
+#[test]
+fn a_null_member_value_is_the_constant_zero() {
+    for source in [
+        "class C { float a = 0.0; };",
+        "class C { float a = 00; };",
+        "class C { float a = 0x0; };",
+        "class C { float a = 0i; };",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+    assert_eq!(errors("class C { float a = 0.5; };", &[]), [Code::E0257]);
+}
+
+// spec FTEF-21.7: a struct member written as C's `(*name)(params)` with `qcfuncs` off is a
+// function type, the `*` the declarator's, compared so on redeclaration
+#[test]
+fn a_function_pointer_member_is_a_function_type() {
+    let off = "#pragma flag disable qcfuncs\nstruct S { float (*fp)(float); }; \
+               struct S { float (*fp)(float); };";
+    assert_eq!(errors(off, &[]), []);
+}
+
+// spec FTEF-19.36, FTEF-19.33: an enumerator in another case is another name, under
+// `-Fcaseinsens` too, while the enum is found in any case
+#[test]
+fn an_enumerator_in_another_case_is_another_name() {
+    assert_eq!(errors("enum E { A = 1, a = 2 };", &["-Fcaseinsens"]), []);
+    assert_eq!(
+        errors("enum E { A = 1, A = 2 };", &["-Fcaseinsens"]),
+        [Code::E0251]
+    );
+}
+
+// spec FTEF-6.9: a negative width is a width the model does not follow, and no error
+#[test]
+fn a_negative_width_is_accepted() {
+    assert_eq!(errors("struct S { int a : -1; };", &[]), []);
+}

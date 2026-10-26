@@ -535,6 +535,7 @@ impl Parser<'_> {
     }
 
     fn fte_type_inner(&mut self, place: Place) -> Option<TypeShape> {
+        self.type_derived = false;
         // FTEF-21.7: `ignoreptr`, read once, as the declaration starts.
         let ignore_pointers = match place {
             Place::Declaration => !self.flag_ahead(0, FteFlag::Qcfuncs),
@@ -953,18 +954,14 @@ impl Parser<'_> {
             return;
         }
         self.declare_type(declared.clone());
+        // The class being read around this one comes back once its body is read.
         let outer = self.class_name.replace(declared);
-        self.class_body(outer);
-    }
-
-    /// The rest of a class after its name: a parent and the body; `outer` is the class being
-    /// read around it, which comes back at the end.
-    fn class_body(&mut self, outer: Option<String>) {
-        self.class_rest();
+        self.class_body();
         self.class_name = outer;
     }
 
-    fn class_rest(&mut self) {
+    /// The rest of a class after its name: a parent, which needs the body, and the body.
+    fn class_body(&mut self) {
         let mut parent = false;
         if self.at(K::Colon) {
             self.bump();

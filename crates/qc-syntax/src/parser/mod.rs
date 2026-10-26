@@ -351,6 +351,37 @@ pub(crate) struct Parser<'a> {
     member_function: bool,
     /// The class whose members are being read.
     class_name: Option<String>,
+    /// For each token, the index of the `}` that pairs with the innermost `{` open before it,
+    /// `None` when that `{` never closes: one pass over the tokens, so that a body that
+    /// lost its `}` is told apart in constant time at each declaration line (FTEF-18.34).
+    brace_close: Vec<Option<usize>>,
+}
+
+/// For each token index, the index of the `}` pairing with the innermost `{` still open
+/// before it. A `}` with no `{` open closes nothing.
+fn brace_closes(tokens: &[Tok]) -> Vec<Option<usize>> {
+    let mut open_at: Vec<Option<usize>> = Vec::with_capacity(tokens.len().saturating_add(1));
+    let mut close_of: Vec<Option<usize>> = vec![None; tokens.len()];
+    let mut stack: Vec<usize> = Vec::new();
+    for (i, tok) in tokens.iter().enumerate() {
+        open_at.push(stack.last().copied());
+        match tok.kind {
+            K::LBrace => stack.push(i),
+            K::RBrace => {
+                if let Some(open) = stack.pop()
+                    && let Some(slot) = close_of.get_mut(open)
+                {
+                    *slot = Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    open_at.push(stack.last().copied());
+    open_at
+        .into_iter()
+        .map(|open| open.and_then(|o| close_of.get(o).copied().flatten()))
+        .collect()
 }
 
 impl<'a> Parser<'a> {
@@ -361,6 +392,7 @@ impl<'a> Parser<'a> {
         flags: &[(usize, CompilerFlags)],
         seams: &[usize],
     ) -> Self {
+        let brace_close = brace_closes(&input.tokens);
         let mut parser = Self {
             input,
             dialect,
@@ -394,6 +426,7 @@ impl<'a> Parser<'a> {
             member_global: false,
             member_function: false,
             class_name: None,
+            brace_close,
         };
         parser.sync_keywords();
         parser
@@ -1260,8 +1293,9 @@ impl<'a> Parser<'a> {
                 members = members.saturating_add(usize::from(!statics));
             } else {
                 if open {
+                    // "missing semi-colon" (FTEF-6.7): the member is read on (QCD-1.4).
                     self.expected(";");
-                    return;
+                    open = false;
                 }
                 if self.member_label() {
                     continue;
@@ -1415,20 +1449,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Whether a `}` that matches the current open brace stands ahead.
+    /// Whether a `}` that matches the current open brace stands ahead: the `}` the innermost
+    /// `{` before this token pairs with, found once for every token (`brace_close`).
     fn closes_ahead(&self) -> bool {
-        let mut depth = 0_usize;
-        let mut n = 0_usize;
-        while let Some(tok) = self.nth(n) {
-            match tok.kind {
-                K::LBrace => depth = depth.saturating_add(1),
-                K::RBrace if depth == 0 => return true,
-                K::RBrace => depth = depth.saturating_sub(1),
-                _ => {}
-            }
-            n = n.saturating_add(1);
-        }
-        false
+        self.brace_close
+            .get(self.pos)
+            .is_some_and(|close| close.is_some())
     }
 
     /// `enum [class] [Name] [: type] { A, B = n, ... };` (FTE-15.1, FTE-15.2, FTE-15.4). The
