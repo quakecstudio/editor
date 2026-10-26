@@ -1592,6 +1592,29 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo mutants -p qc-preproc --profile mutants -F 'undefined_word_size|supports_extern|of_code'
+- key: P2-138
+  title: Run the builtin differential's cases across the cores
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  - TEST-6
+  summary: |
+    The builtin differential (`cargo xtask oracles builtins`) grew to 76,487 cases with P2-133 (#581), and `xtask/src/oracles/builtins.rs` runs them one at a time: `check_where` loops over `cases()` calling `oracle` for each, which writes a project directory, spawns fteqcc or qcc through `Exec::output_within` and reads the `progs.dat`, and `compare` walks every case through the profile the same way. On that PR CI's "Run cargo test --workspace" step went from 11 to 22 minutes to 64 minutes on Linux and "Build and check the oracles" from 6 to 9 minutes to 33, on 4-core runners whose other three cores sat idle. The xtask test `the_profile_agrees_with_the_recorded_oracles` runs `compare` on every host.
+  depends:
+  - P2-133
+  deliverable:
+  - 'xtask/src/oracles/builtins.rs: the oracle loop of `check_where` and `compare` run their cases on `std::thread::available_parallelism()` threads under `std::thread::scope`, with no new dependency; each worker compiles in a work directory of its own, so no two runs share a `progs.src` or `progs.dat`; the results are collected in case order into the same map and tally, so the printed lines, the FAIL lines and the recorded fixture are byte for byte those of the serial run'
+  - 'xtask/src/exec.rs: `Exec` is `Sync`, so an `Oracles` can be shared by the workers, and the test `Fake` keeps what it saw behind a `Mutex`'
+  acceptance:
+  - 'The xtask tests with the canned `answering` fake pass unchanged, and a test shows the parallel `compare` gives the tally of a serial walk and the parallel oracle loop records the fixture a serial walk records'
+  - 'The PR records `cargo test -p xtask the_profile_agrees_with_the_recorded_oracles` timed before and after on the same host, and the time of `cargo xtask oracles builtins` where the oracles are built'
+  verify:
+  - cargo test -p xtask
+  - cargo xtask oracles builtins
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1726,6 +1749,7 @@ issues:
   - P2-134
   - P2-135
   - P2-137
+  - P2-138
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
