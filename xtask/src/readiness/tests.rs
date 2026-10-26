@@ -1328,6 +1328,10 @@ fn a_shard_is_passed_to_cargo_mutants_dealt_round_robin() {
     assert!(line.contains(" --shard 3/10 "), "{line}");
     assert!(line.contains(" --sharding round-robin "), "{line}");
     assert!(line.contains(" --no-shuffle "), "{line}");
+    assert!(
+        line.contains("mutants-fx-mutation-3-of-10"),
+        "a shard writes in its own directory: {line}"
+    );
     let whole = Fake::new(|command: &Command| {
         mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });

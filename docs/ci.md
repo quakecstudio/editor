@@ -200,7 +200,7 @@ reviewer runs it and links the run in the report ([testing.md](testing.md#measur
 | Check | Runs on | What it does |
 | --- | --- | --- |
 | `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
-| `Readiness mutation (<crate> <k/n>)` | Linux | `cargo xtask readiness mutation --shard k/n` (one shard of a cargo-mutants run of one crate, one job per shard, 10 shards for qc-preproc, 4 for qc-syntax and 1 for any other crate; xtask limits each test binary to 3 GiB of data memory on Linux) |
+| `Readiness mutation (<crate> <k/n>)` | Linux | `cargo xtask readiness mutation --shard k/n` (one shard of a cargo-mutants run of one crate, one job per shard, the shard count per crate from the table in the `crates` job; xtask limits each test binary to 3 GiB of data memory on Linux) |
 | `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
 | `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement (a crate's mutation shards added into one score), `ratchets.toml` and its history; uploads the `readiness` artifact |
 

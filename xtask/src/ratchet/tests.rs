@@ -680,7 +680,7 @@ fn the_shards_of_a_crates_mutants_add_up_to_one_score() {
 
 #[test]
 fn a_shard_missing_repeated_mixed_or_beside_a_whole_measurement_is_a_problem() {
-    let cases: [(&str, Vec<Measurement>); 6] = [
+    let cases: [(&str, Vec<Measurement>); 7] = [
         (
             "qs-x mutation on linux shard 1/3 is missing",
             vec![
@@ -712,9 +712,16 @@ fn a_shard_missing_repeated_mixed_or_beside_a_whole_measurement_is_a_problem() {
             ],
         ),
         (
-            "qs-x mutation on linux is measured twice",
+            "qs-x mutation on linux is measured whole and in shards",
             vec![
                 shard(0, 1, "qs-x", score(1, 1)),
+                measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
+            ],
+        ),
+        (
+            "qs-x mutation on linux is measured twice",
+            vec![
+                measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
                 measurement(Check::Mutation, "linux", "qs-x", score(1, 1)),
             ],
         ),

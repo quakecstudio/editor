@@ -383,9 +383,10 @@ type Measured = BTreeMap<String, BTreeMap<Check, BTreeMap<String, Score>>>;
 /// Every measurement by crate, check and OS, each one whole or as the shards
 /// it was measured in. A crate's mutation check may be sharded over several
 /// runners (`cargo xtask readiness mutation --shard k/n`); its shards are
-/// added back into one score by [`merge`]. A check measured twice, whole or
-/// in a shard, a shard missing from its set, or shards of different counts,
-/// is a problem, and so is a shard of a check other than mutation.
+/// added back into one score by [`merge`]. A check measured twice, whole and
+/// in shards, with a shard missing from its set or with shards of different
+/// counts is a problem, and so is a shard of a check other than mutation; the
+/// crate then has no score for that check.
 fn group(measurements: &[Measurement], report: &mut Report) -> Measured {
     let mut parts: BTreeMap<(String, Check, String), Vec<Part>> = BTreeMap::new();
     for measurement in measurements {
@@ -431,20 +432,23 @@ fn merge(check: Check, parts: &[Part]) -> Result<Score, String> {
     let mut shards = Vec::new();
     for (shard, score) in parts {
         let Some(shard) = shard else {
-            return Err("is measured twice".to_owned());
+            return Err(if parts.iter().all(|(shard, _)| shard.is_none()) {
+                "is measured twice".to_owned()
+            } else {
+                "is measured whole and in shards".to_owned()
+            });
         };
         shards.push((*shard, score));
     }
-    let Some(count) = shards.first().map(|(shard, _)| shard.count()) else {
-        return Err("is not measured".to_owned());
-    };
     let mut merged = Score {
         passed: 0,
         total: 0,
         failures: Vec::new(),
     };
+    let mut count = None;
     let mut expected = 0;
     for (shard, score) in shards {
+        let count = *count.get_or_insert(shard.count());
         if shard.count() != count {
             return Err(format!(
                 "is measured in {count} shards and in {} shards",
@@ -462,7 +466,9 @@ fn merge(check: Check, parts: &[Part]) -> Result<Score, String> {
         merged.total = merged.total.saturating_add(score.total);
         merged.failures.extend(score.failures.iter().cloned());
     }
-    if expected < count {
+    if let Some(count) = count
+        && expected < count
+    {
         return Err(format!("shard {expected}/{count} is missing"));
     }
     Ok(merged)

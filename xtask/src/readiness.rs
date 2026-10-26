@@ -611,7 +611,17 @@ fn mutation(
     shard: Option<Shard>,
     tools: &Tools<'_>,
 ) -> Result<Score, String> {
-    let out = tools.scratch.join(format!("mutants-{}", target.name));
+    // One output directory per shard, so that shards run side by side on one
+    // machine do not read each other's outcomes.
+    let out = tools.scratch.join(match shard {
+        Some(shard) => format!(
+            "mutants-{}-{}-of-{}",
+            target.name,
+            shard.index(),
+            shard.count()
+        ),
+        None => format!("mutants-{}", target.name),
+    });
     let mut command = cargo_for(root, &tools.scratch, target, None);
     // Each test binary under the data limit, where the host enforces one. The
     // limit is set here, on the triple cargo reports for the host, rather than
