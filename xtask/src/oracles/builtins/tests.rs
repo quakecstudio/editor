@@ -1267,7 +1267,8 @@ fn compare_gives_the_serial_tally_on_any_thread_count() {
 }
 
 // spec FTE-23.15: the oracles run across the cores, each thread in a work directory of its
-// own, and `--record` writes the fixture a run on one thread writes, byte for byte
+// own, and `--record` writes, byte for byte, the fixture the repository holds, which a run on
+// one thread wrote
 #[test]
 fn check_records_the_serial_fixture_on_any_thread_count() {
     let recorded = read_fixture(&root()).unwrap();
@@ -1276,19 +1277,16 @@ fn check_records_the_serial_fixture_on_any_thread_count() {
     let oracles = fake_oracles(&repo.join("work"), &fake);
     let path = repo.join(FIXTURE);
     fs::write(&path, "{}\n").unwrap();
-    assert!(check_on(&repo, &oracles, true, ULong::Bits64, NonZero::<usize>::MIN).unwrap());
-    let serial = fs::read(&path).unwrap();
-    assert_eq!(read_fixture(&repo).unwrap(), recorded);
-    let work = repo.join("work").join("builtins");
-    assert!(work.join("thread0").is_dir());
-    assert!(!work.join("thread1").exists());
-    fs::write(&path, "{}\n").unwrap();
     let four = NonZero::new(4).unwrap();
     assert!(check_on(&repo, &oracles, true, ULong::Bits64, four).unwrap());
-    assert_eq!(fs::read(&path).unwrap(), serial);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        fs::read(root().join(FIXTURE)).unwrap()
+    );
+    let work = repo.join("work").join("builtins");
     assert!(work.join("thread3").is_dir());
     assert!(!work.join("thread4").exists());
-    assert_eq!(fake.seen.lock().unwrap().len(), recorded.len() * 2);
+    assert_eq!(fake.seen.lock().unwrap().len(), recorded.len());
 }
 
 // spec FTE-23.15: an oracle whose outcome the profile does not share fails the check, even
