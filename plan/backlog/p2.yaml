@@ -1569,6 +1569,29 @@ issues:
   verify:
   - cargo test -p xtask readiness
   - 'A workflow_dispatch Readiness run on the branch with crates="qc-lexer qc-project" showing sharded mutation jobs and a merged score per crate'
+- key: P2-137
+  title: Kill the four qc-preproc mutants the L2 measurement left
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-2
+  summary: |
+    The L2 readiness measurement on main (Readiness run 40332289531, commit cc91093) left four surviving mutants in qc-preproc, which hold P2-R2 below ADR-0009's mutation threshold. All four are in code P2-122 (#558) added for the casts and the target's extern check: `TargetFormat::undefined_word_size` replaced with `false`, `TargetFormat::supports_extern` replaced with `true` and with `false` (crates/qc-preproc/src/fte_tables.rs), and the `Code::W0229` arm deleted from `FteWarning::of_code` (crates/qc-preproc/src/fte_warning.rs). Each is covered by a spec statement (FTEF-22.4, FTEF-22.5 and FTEF-22.1) whose citing tests live in qc-sema, so no qc-preproc test fails when the method lies.
+  depends:
+  - P2-121
+  - P2-130
+  deliverable:
+  - 'crates/qc-preproc/src/tests/flags.rs: tests that `TargetFormat::undefined_word_size` is true for `Darkplaces` and false for every other format, and that `TargetFormat::supports_extern` is true for `Fte`, `FteDebug` and `Fteh2` and false for every other format, each citing its statement (FTEF-22.4, FTEF-22.5)'
+  - 'crates/qc-preproc/src/tests/warnings.rs: the `of_code` table test extended with `W0229` as `WARN_DEBUGGING`, citing FTEF-22.1'
+  acceptance:
+  - 'cargo mutants -p qc-preproc --profile mutants -F ''undefined_word_size|supports_extern|of_code'' reports the four mutants caught, with the command and result recorded in the PR'
+  - 'No file outside crates/qc-preproc changes'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo mutants -p qc-preproc --profile mutants -F 'undefined_word_size|supports_extern|of_code'
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1703,6 +1726,7 @@ issues:
   - P2-134
   - P2-135
   - P2-136
+  - P2-137
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
