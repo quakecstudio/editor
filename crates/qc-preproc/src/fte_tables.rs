@@ -1325,7 +1325,7 @@ pub(crate) const REAL_OPCODES: usize = 282;
 
 /// An output format of `targets[]` (`qcc_targetformat_t`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum TargetFormat {
+pub enum TargetFormat {
     /// `QCF_STANDARD`, the default.
     #[default]
     Standard,
@@ -1360,6 +1360,21 @@ impl TargetFormat {
     /// `QCF_HEXEN2`, `QCF_UHEXEN2` or `QCF_FTEH2` (FTEF-20.3).
     pub(crate) const fn is_hexen2(self) -> bool {
         matches!(self, Self::Hexen2 | Self::Uhexen2 | Self::Fteh2)
+    }
+
+    /// The `flag_undefwordsize` `QCC_OPCodeSetTarget` sets for it, `true` only for
+    /// `QCF_DARKPLACES`: `flag_undefwordsize = false; ... case QCF_DARKPLACES: flag_undefwordsize
+    /// = true;` (FTEF-22.4).
+    pub(crate) const fn undefined_word_size(self) -> bool {
+        matches!(self, Self::Darkplaces)
+    }
+
+    /// Whether `QCC_PR_FinishCompilation` lets a function be `extern` under it: `QCF_FTE`,
+    /// `QCF_FTEDEBUG` or `QCF_FTEH2` (`if (qcc_targetformat == QCF_FTE || qcc_targetformat ==
+    /// QCF_FTEDEBUG || qcc_targetformat == QCF_FTEH2) externokay = true;`, FTEF-22.5).
+    #[must_use]
+    pub const fn supports_extern(self) -> bool {
+        matches!(self, Self::Fte | Self::FteDebug | Self::Fteh2)
     }
 }
 

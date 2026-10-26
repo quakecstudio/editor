@@ -86,12 +86,48 @@ jobs:
           path: measured/
           if-no-files-found: error
 
+  # The mutation job's matrix as a JSON list of {crate, shard}: each crate's
+  # mutants are dealt into shards, one runner each, so a run takes the time of
+  # one shard rather than of the slowest crate. The shard count of a crate is
+  # set by the time its whole run took on one 4-core runner: on run
+  # 40094712627 (2026-10-24) qc-preproc (1451 mutants) took 3 h 40 min and
+  # qc-syntax (1401) 1 h 47 min, while qc-lexer (494) and qc-project (262)
+  # took about 12 minutes each, half of it the runner's setup and the baseline
+  # build that every shard pays again. A crate not listed is one shard; a crate
+  # named by its directory is looked up by its last component.
+  crates:
+    name: Readiness crates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      mutation: ${{ steps.list.outputs.mutation }}
+    steps:
+      - id: list
+        run: |
+          matrix=$(jq -cn --arg crates "$CRATES" '
+            {"qc-preproc": 10, "qc-syntax": 4} as $shards
+            | [$crates | splits("\\s+") | select(. != "")]
+            | map(. as $crate
+                  | ($shards[$crate | sub("/+$"; "") | sub(".*/"; "")] // 1) as $count
+                  | range($count)
+                  | {crate: $crate, shard: "\(.)/\($count)"})')
+          echo "mutation=$matrix" >> "$GITHUB_OUTPUT"
+
+  # One runner per shard of a crate's mutants (k/n, k from 0, as cargo
+  # mutants counts them); the ratchet job adds a crate's shards back into one
+  # score and fails when one is missing.
   mutation:
-    name: Readiness mutation
+    name: Readiness mutation (${{ matrix.crate }} ${{ matrix.shard }})
+    needs: crates
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.crates.outputs.mutation) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,25 +137,39 @@ jobs:
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: cargo-mutants@27.1.0
+      # The shards of a crate share one cache.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: readiness-mutation-${{ runner.os }}
+          shared-key: readiness-mutation-${{ runner.os }}-${{ matrix.crate }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # xtask's tests of `cargo xtask oracles fuzz` go past its check for clang
       # only when the C compiler is clang, so that its mutants are tested.
       - name: Set up clang for xtask
-        if: ${{ contains(format(' {0} ', inputs.crates), ' xtask ') }}
+        if: ${{ matrix.crate == 'xtask' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-18
           echo "CC=clang-18" >> "$GITHUB_ENV"
+      # The runner pipes core files to systemd-coredump with no size limit, so a
+      # test binary that aborts with gigabytes of memory takes the runner's
+      # memory and disk while it is dumped. A plain core pattern lets the
+      # RLIMIT_CORE of 0 that xtask gives each test binary write none.
+      - name: Write no core files
+        run: sudo sysctl -w kernel.core_pattern=core
+      # xtask limits each test binary's data memory to 3 GiB (readiness.rs,
+      # `mutant_runner`), so a mutant that stops a reader advancing aborts its
+      # test instead of taking the runner's 16 GB (P2-109).
       - name: Measure the mutation score
-        run: |
-          read -ra crates <<< "$CRATES"
-          cargo xtask readiness mutation --os linux --out measured/mutation.json "${crates[@]}"
+        env:
+          CRATE: ${{ matrix.crate }}
+          SHARD: ${{ matrix.shard }}
+          INDEX: ${{ strategy.job-index }}
+        run: cargo xtask readiness mutation --os linux --shard "$SHARD" --out "measured/mutation-$INDEX.json" "$CRATE"
+      # Named by the matrix index: a crate named by its directory has a `/`,
+      # and so does a shard.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: measured-mutation
+          name: measured-mutation-${{ strategy.job-index }}
           path: measured/
           if-no-files-found: error
 

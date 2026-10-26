@@ -674,6 +674,12 @@ impl CommandLine {
     #[must_use]
     pub fn flags(&self, mut flags: FlagSettings) -> FlagSettings {
         for arg in self.options() {
+            // FTEF-22.4: each `-TNAME` that names a target runs `QCC_OPCodeSetTarget`, which sets
+            // `flag_undefwordsize` by the format, among the other options in order.
+            if let Some(format) = target_option(arg) {
+                flags.set(FteFlag::Undefwordsize, format.undefined_word_size());
+                continue;
+            }
             if let Some(name) = after(arg, b"-std=") {
                 flags = FlagSettings::default();
                 for (flag, on) in Std::of(name).flags() {
@@ -712,25 +718,26 @@ impl CommandLine {
     /// `-dp` that `QCC_SetDefaultProperties` reads first are set again by the `-Tid`; then each
     /// `-TNAME` that names one, in order, `-Tparse` none.
     pub(crate) fn target(&self) -> TargetFormat {
-        let mut target = TargetFormat::Standard;
-        for arg in self.options() {
-            // `!strncmp(myargv[i], "-T", 2)`, in this case only.
-            let Some(name) = arg.strip_prefix(b"-T") else {
-                continue;
-            };
-            if name != b"parse"
-                && let Some((format, _)) = target_named(name)
-            {
-                target = format;
-            }
-        }
-        target
+        self.options()
+            .filter_map(target_option)
+            .last()
+            .unwrap_or(TargetFormat::Standard)
     }
+}
+
+/// The target the option `arg` sets: `-TNAME` (`!strncmp(myargv[i], "-T", 2)`, in this case
+/// only) whose NAME names one, `-Tparse` none.
+fn target_option(arg: &[u8]) -> Option<TargetFormat> {
+    let name = arg.strip_prefix(b"-T")?;
+    if name == b"parse" {
+        return None;
+    }
+    target_named(name).map(|(format, _)| format)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::CommandLine;
+    use super::{CommandLine, Std};
     use crate::fte_pragma::FlagSettings;
     use crate::fte_tables::{FteFlag, TargetFormat};
     use crate::fte_warning::{FteWarning as W, WarningAction as A, WarningSettings};
@@ -807,6 +814,8 @@ mod tests {
                 .flags(FlagSettings::default())
                 .is_on(flag)
         };
+        assert_eq!(Std::of(b"fteqcc"), Std::Fteqcc);
+        assert_eq!(Std::of(b"FTEQCC"), Std::Unknown);
         assert!(on(&["-std=c"], FteFlag::LongKeyword));
         assert!(on(&["-std=C"], FteFlag::Ilp32));
         assert!(on(&["-STD=c99"], FteFlag::AssumeInteger));

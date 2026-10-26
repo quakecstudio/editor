@@ -53,6 +53,19 @@ fn flags_set_and_clear() {
     assert!(flags.has(LexFlag::Qccx) && !flags.has(LexFlag::QcFuncs));
     assert!(!flags.with(LexFlag::Qccx, false).has(LexFlag::Qccx));
     assert!(LexFlags::default().has(LexFlag::QcFuncs));
+    // Turning on a flag that is on leaves it on.
+    assert!(
+        LexFlags::default()
+            .with(LexFlag::QcFuncs, true)
+            .has(LexFlag::QcFuncs)
+    );
+    // The flags at a byte are the last mark's at or before it, else the defaults.
+    let qccx = LexFlags::NONE.with(LexFlag::Qccx, true);
+    let marks = [(4, qccx), (9, LexFlags::NONE)];
+    assert_eq!(LexFlags::at(&marks, 3), LexFlags::default());
+    assert_eq!(LexFlags::at(&marks, 4), qccx);
+    assert_eq!(LexFlags::at(&marks, 8), qccx);
+    assert_eq!(LexFlags::at(&marks, 9), LexFlags::NONE);
     for flag in [
         LexFlag::QcFuncs,
         LexFlag::Qccx,
@@ -61,6 +74,7 @@ fn flags_set_and_clear() {
         LexFlag::Ssp,
         LexFlag::AssumeInt,
         LexFlag::MacroInStrings,
+        LexFlag::AssumeDouble,
     ] {
         let alone = LexFlags::NONE.with(flag, true);
         assert!(alone.has(flag));
@@ -153,6 +167,23 @@ fn qccx_percent_immediates() {
     assert_eq!(float_bits(b"%-3", qccx), (-3_i32).cast_unsigned());
     // `do ... while`: the byte after `0x` is taken whatever it is.
     assert_eq!(kinds(b"%0xz;", qccx).len(), 2);
+    // `0x` is passed over only where the number starts, and a `.` is taken but one before
+    // another `.`.
+    assert_eq!(
+        kinds(b"%5x1", qccx),
+        [
+            TokenKind::Float(f32::from_bits(5)),
+            TokenKind::Name("x1".to_owned())
+        ]
+    );
+    assert_eq!(kinds(b"%1.5;", qccx).len(), 2);
+    assert_eq!(
+        kinds(b"%1..", qccx),
+        [
+            TokenKind::Float(f32::from_bits(1)),
+            TokenKind::Punct(Punct::DotDot)
+        ]
+    );
     assert_eq!(kinds(b"5 % 2", qccx)[1], TokenKind::Punct(Punct::Percent));
     assert_eq!(
         kinds(b"%5", LexFlags::default()),
@@ -173,6 +204,9 @@ fn qccx_and_assumeint_hex_numbers() {
         messages(&lexed(b"0x100000001", qccx)),
         [(Code::W0111, "numerical overflow")]
     );
+    // Low bits that are a negative `int` are no overflow.
+    assert_eq!(float_bits(b"0x1ffffffff", qccx), u32::MAX);
+    assert!(lexed(b"0x1ffffffff", qccx).diagnostics.is_empty());
     assert_eq!(float_bits(b"0xffffffffffffffff", qccx), u32::MAX);
     assert!(lexed(b"0xffffffffffffffff", qccx).diagnostics.is_empty());
     // A decimal number is the float of its value.
@@ -235,6 +269,14 @@ fn ilp32_needs_two_ls() {
 #[test]
 fn ssp_double_star() {
     let ssp = with(LexFlag::Ssp);
+    assert_eq!(
+        kinds(b"2*3", ssp),
+        [
+            TokenKind::Float(2.0),
+            TokenKind::Punct(Punct::Star),
+            TokenKind::Float(3.0)
+        ]
+    );
     assert_eq!(
         kinds(b"2**3", ssp),
         [

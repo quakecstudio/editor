@@ -13,7 +13,8 @@ use std::path::{Component, Path, PathBuf};
 
 use qc_lexer::{Code, Dialect, is_whitespace};
 use qc_preproc::{
-    FileStart, FteEvent, FteFileReader, Loader, ModuleState, com_parse, cond, qcc_load_as,
+    FileStart, FteEvent, FteFileReader, Loader, ModuleState, com_parse, cond, include_dir_name,
+    join_paths, pragma_include_dir, qcc_load_as,
 };
 
 /// Most entries a module's file graph may hold (PRJ-6.4).
@@ -58,6 +59,11 @@ pub enum Via {
 pub struct GraphFile {
     /// The file, as resolved.
     pub path: PathBuf,
+    /// Under FTEQCC the file's name as the compiler is given it (PRJ-6.7): the name
+    /// `progs.src`, an `#includelist` or an `#include` gives, joined to the name of the file it
+    /// was found beside or of the include directory it was found in, relative to
+    /// [`FileGraph::dir`]. `__FILE__` writes it (FTEF-14.74). `None` under the other dialects.
+    pub name: Option<String>,
     /// How it came in.
     pub via: Via,
     /// The entry of the file that brought it in; `None` for the root and for list entries.
@@ -82,6 +88,9 @@ pub struct Diagnostic {
 pub struct FileGraph {
     /// How the source was read; `None` when it could not be read.
     pub form: Option<Form>,
+    /// The directory the files' names are relative to, the module's source's own, where FTEQCC
+    /// is run (PRJ-6.7, PRJ-6.8).
+    pub dir: PathBuf,
     /// The files compiled, in compilation order.
     pub files: Vec<GraphFile>,
     /// The output the source declares (PRJ-4.12, PRJ-5.6).
@@ -89,7 +98,7 @@ pub struct FileGraph {
     /// The other programs' sources it registers with `#pragma sourcefile` (PRJ-5.7).
     pub sourcefiles: Vec<PathBuf>,
     /// What a `#pragma autoproto [N]` in a list-form `progs.src` asks for, which comes
-    /// before every definition of the module (FTEF-12.10); `None` when there is none.
+    /// before every definition of the module (FTEF-12.18); `None` when there is none.
     pub autoproto: Option<bool>,
     /// The problems found.
     pub diagnostics: Vec<Diagnostic>,
@@ -397,9 +406,13 @@ enum Base {
 #[derive(Debug)]
 struct Cursor {
     path: PathBuf,
+    /// The file's name (PRJ-6.7).
+    name: Option<String>,
     /// The file being compiled while this one is read, FTEQCC's `compilingfile`: the file
     /// itself, or for an `#include`d one the file that included it is read for.
     unit: PathBuf,
+    /// The name of [`Self::unit`].
+    unit_name: Option<String>,
     text: Vec<u8>,
     pos: usize,
     line: u32,
@@ -420,10 +433,18 @@ struct Cursor {
 }
 
 impl Cursor {
-    fn new(path: PathBuf, text: Vec<u8>, entry: Option<usize>, base: Base) -> Self {
+    fn new(
+        path: PathBuf,
+        name: Option<String>,
+        text: Vec<u8>,
+        entry: Option<usize>,
+        base: Base,
+    ) -> Self {
         Self {
             unit: path.clone(),
             path,
+            unit_name: name.clone(),
+            name,
             pos: if text.starts_with(UTF8_BOM) {
                 UTF8_BOM.len()
             } else {
@@ -444,36 +465,48 @@ impl Cursor {
     }
 
     /// A list-form `progs.src` whose text is `text`, as [`progs_text`] gives it.
-    fn list(path: PathBuf, text: Vec<u8>) -> Self {
+    fn list(path: PathBuf, name: Option<String>, text: Vec<u8>) -> Self {
         let base = Base::Progs { output_seen: false };
+        // Reading starts at the text's start: `new` of no text gives no mark to pass over.
         Self {
             text,
-            pos: 0,
-            ..Self::new(path, Vec::new(), None, base)
+            ..Self::new(path, name, Vec::new(), None, base)
         }
     }
 
     /// A QuakeC file of a vanilla module, of `bytes`: its text ends at its first NUL byte, as
     /// id's `LoadFile` and the lexer end it (QC-1.1, PRJ-5.1).
-    fn vanilla(path: PathBuf, mut bytes: Vec<u8>, entry: Option<usize>) -> Self {
+    fn vanilla(
+        path: PathBuf,
+        name: Option<String>,
+        mut bytes: Vec<u8>,
+        entry: Option<usize>,
+    ) -> Self {
         if let Some(nul) = bytes.iter().position(|&b| b == 0) {
             bytes.truncate(nul);
         }
-        Self::new(path, bytes, entry, Base::Code)
+        Self::new(path, name, bytes, entry, Base::Code)
     }
 
     /// A list-form `progs.src` of an FTEQCC or GMQCC module, of `bytes`, read as FTEQCC reads it
     /// (PRJ-4.9).
-    fn fteqcc_list(path: PathBuf, bytes: Vec<u8>) -> Self {
-        let mut cursor = Self::new(path, Vec::new(), None, Base::Progs { output_seen: true });
+    fn fteqcc_list(path: PathBuf, name: Option<String>, bytes: Vec<u8>) -> Self {
+        let base = Base::Progs { output_seen: true };
+        let mut cursor = Self::new(path, name, Vec::new(), None, base);
         cursor.fte = Some(FteFileReader::progs(bytes));
         cursor
     }
 
     /// A QuakeC file of an FTEQCC or GMQCC module, read as FTEQCC reads it from `start`
     /// (PRJ-5.13, PRJ-5.15).
-    fn fteqcc(path: PathBuf, text: Vec<u8>, entry: Option<usize>, start: FileStart) -> Self {
-        let mut cursor = Self::new(path, Vec::new(), entry, Base::Code);
+    fn fteqcc(
+        path: PathBuf,
+        name: Option<String>,
+        text: Vec<u8>,
+        entry: Option<usize>,
+        start: FileStart,
+    ) -> Self {
+        let mut cursor = Self::new(path, name, Vec::new(), entry, Base::Code);
         cursor.fte = Some(FteFileReader::new(text, start));
         cursor
     }
@@ -509,15 +542,88 @@ struct Builder<'l, L> {
     /// The macros, and under FTEQCC and GMQCC its count of open sides (PRJ-5.4, PRJ-5.13,
     /// PRJ-5.15).
     state: ModuleState,
-    include_dirs: Vec<PathBuf>,
-    once: HashSet<PathBuf>,
+    include_dirs: Vec<IncludeDir>,
+    once: HashSet<Marked>,
     stack: Vec<Cursor>,
     graph: FileGraph,
     /// The module's dialect, which decides how an `#if` reads (PRJ-5.5, FTEF-14.33).
     dialect: Dialect,
 }
 
+/// An include directory: under FTEQCC its name, which a file found in it is named by
+/// (PRJ-6.7), and its path.
+#[derive(Debug)]
+struct IncludeDir {
+    name: Option<String>,
+    path: PathBuf,
+}
+
+/// What `#pragma once` marks (PRJ-5.9): under FTEQCC the name of the file being compiled, which
+/// `QCC_FindBestInclude` compares with the name it finds (`if (!strcmp(onced->name, fullname))`,
+/// PRJ-6.8); under the other dialects the file.
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum Marked {
+    Name(String),
+    Path(PathBuf),
+}
+
+impl Marked {
+    /// The mark of the file at `path` named `name`: its name when it has one.
+    fn of(name: Option<&String>, path: &Path) -> Self {
+        name.map_or_else(|| Self::Path(path.to_path_buf()), |n| Self::Name(n.clone()))
+    }
+}
+
+/// Bytes of a name as text, each byte that is no UTF-8 replaced.
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// Whether FTEQCC's `QCC_JoinPaths` takes `word` as it is: it starts with `/` or `\`.
+fn absolute(word: &str) -> bool {
+    word.starts_with(['/', '\\'])
+}
+
 impl<L: Loader> Builder<'_, L> {
+    /// The file FTEQCC opens for the name `name`: the one of that name in the directory it is
+    /// run in, the source's (PRJ-6.8).
+    fn open_path(&self, name: &str) -> PathBuf {
+        normalize(&self.root_dir.join(name))
+    }
+
+    /// The name and the file of `word` found beside the file at `base`, named `base_name`
+    /// under FTEQCC (PRJ-6.7, PRJ-6.8), or under the other dialects in `base`'s directory with
+    /// no name (PRJ-5.2).
+    fn beside(
+        &self,
+        word: &str,
+        base_name: Option<&String>,
+        base: &Path,
+    ) -> (Option<String>, PathBuf) {
+        match base_name {
+            Some(base_name) => {
+                let name = text(&join_paths(word.as_bytes(), base_name.as_bytes()));
+                let path = self.open_path(&name);
+                (Some(name), path)
+            }
+            None => (None, normalize(&dir_of(base).join(word))),
+        }
+    }
+
+    /// The name and the file of `word` found in the include directory `dir` (PRJ-6.7): under
+    /// FTEQCC the word after the directory's name, the file in the directory's path, or the
+    /// word alone and its file when `QCC_JoinPaths` takes it as it is.
+    fn in_dir(&self, word: &str, dir: &IncludeDir) -> (Option<String>, PathBuf) {
+        match &dir.name {
+            Some(_) if absolute(word) => (Some(word.to_owned()), self.open_path(word)),
+            Some(dir_name) => {
+                let name = text(&join_paths(word.as_bytes(), dir_name.as_bytes()));
+                (Some(name), normalize(&dir.path.join(word)))
+            }
+            None => (None, normalize(&dir.path.join(word))),
+        }
+    }
+
     fn report(&mut self, code: Code, message: String, file: &Path, line: u32) {
         self.graph.diagnostics.push(Diagnostic {
             code,
@@ -757,10 +863,10 @@ impl<L: Loader> Builder<'_, L> {
         let (args, _, _) = com_parse_words(args, b"", false, None);
         // FTEF-14.70: FTEQCC joins an include directory to the file being compiled and marks
         // that file with `#pragma once`; GMQCC's reading uses the file holding it (PRJ-5.12).
-        let marked = if self.dialect == Dialect::Fteqcc {
-            &cursor.unit
+        let (marked, marked_name) = if self.dialect == Dialect::Fteqcc {
+            (&cursor.unit, cursor.unit_name.as_ref())
         } else {
-            &cursor.path
+            (&cursor.path, cursor.name.as_ref())
         };
         let here = dir_of(marked);
         match pragma.as_str() {
@@ -779,14 +885,22 @@ impl<L: Loader> Builder<'_, L> {
             }
             "includedir" => {
                 if let Some(dir) = args.first() {
-                    self.include_dirs.push(normalize(&here.join(dir)));
+                    // FTEF-14.70: the token with a `/`, joined to the file being compiled.
+                    let (name, path) = match marked_name {
+                        Some(base) => {
+                            let name = text(&pragma_include_dir(dir.as_bytes(), base.as_bytes()));
+                            let path = self.open_path(&name);
+                            (Some(name), path)
+                        }
+                        None => (None, normalize(&here.join(dir))),
+                    };
+                    self.include_dirs.push(IncludeDir { name, path });
                 }
             }
             "once" => {
-                let path = marked.clone();
-                self.once.insert(path);
+                self.once.insert(Marked::of(marked_name, marked));
             }
-            // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
+            // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`. FTEQCC reads a list-form
             // `progs.src` with its preprocessor, so the pragma there holds for the module.
             "autoproto" if matches!(cursor.base, Base::Progs { .. }) => {
                 let on = args
@@ -827,40 +941,44 @@ impl<L: Loader> Builder<'_, L> {
     /// Finds `word` (PRJ-5.2) and starts reading it. Under FTEQCC an `#include` or an
     /// `#includelist` entry is found beside the file being compiled, not the file it is in
     /// (PRJ-5.11, FTEF-14.40); under GMQCC an `#include` is found beside the file it is in and
-    /// then beside the file being compiled (PRJ-5.12).
+    /// then beside the file being compiled (PRJ-5.12). Each candidate is named as PRJ-6.7 says,
+    /// and under FTEQCC is the file of its name (PRJ-6.8).
     fn bring_in(&mut self, word: &str, line: u32, via: Via) {
         let Some(cursor) = self.stack.last() else {
             return;
         };
         let from = cursor.path.clone();
-        let unit = cursor.unit.clone();
-        let beside: Vec<&Path> = match (self.dialect, via) {
-            (Dialect::Gmqcc, Via::Include) => vec![&from, &unit],
-            (Dialect::Fteqcc, Via::Include | Via::IncludeList) => vec![&unit],
+        let here = (cursor.name.as_ref(), from.as_path());
+        let unit = (cursor.unit_name.as_ref(), cursor.unit.as_path());
+        let beside: Vec<(Option<&String>, &Path)> = match (self.dialect, via) {
+            (Dialect::Gmqcc, Via::Include) => vec![here, unit],
+            (Dialect::Fteqcc, Via::Include | Via::IncludeList) => vec![unit],
             (Dialect::Vanilla, _)
             | (Dialect::Fteqcc, Via::Root | Via::Listed)
-            | (Dialect::Gmqcc, Via::Root | Via::Listed | Via::IncludeList) => vec![&from],
+            | (Dialect::Gmqcc, Via::Root | Via::Listed | Via::IncludeList) => vec![here],
         };
         let parent = cursor.entry;
         let relative = Path::new(word);
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        for base in beside {
-            let candidate = normalize(&dir_of(base).join(relative));
-            if !candidates.contains(&candidate) {
-                candidates.push(candidate);
+        let mut candidates: Vec<(Option<String>, PathBuf)> = Vec::new();
+        let mut add = |(name, path): (Option<String>, PathBuf)| {
+            if !candidates.iter().any(|(_, known)| *known == path) {
+                candidates.push((name, path));
             }
+        };
+        for (base_name, base) in beside {
+            add(self.beside(word, base_name, base));
         }
-        if relative.is_relative() {
-            for dir in &self.include_dirs {
-                candidates.push(normalize(&dir.join(relative)));
-            }
+        // `QCC_FindBestInclude` tries every include directory; an absolute word is the same file
+        // in each, which is tried once.
+        for dir in &self.include_dirs {
+            add(self.in_dir(word, dir));
         }
         let mut first_error: Option<io::Error> = None;
         let mut found = None;
-        for candidate in &candidates {
+        for (name, candidate) in &candidates {
             match self.loader.load(candidate) {
                 Ok(bytes) => {
-                    found = Some((candidate.clone(), bytes));
+                    found = Some((name.clone(), candidate.clone(), bytes));
                     break;
                 }
                 Err(err) => {
@@ -868,8 +986,11 @@ impl<L: Loader> Builder<'_, L> {
                 }
             }
         }
-        let Some((path, bytes)) = found else {
-            let shown = candidates.first().cloned().unwrap_or_default();
+        let Some((name, path, bytes)) = found else {
+            let shown = candidates
+                .first()
+                .map(|(_, path)| path.clone())
+                .unwrap_or_default();
             let reason = first_error.map_or_else(String::new, |e| e.to_string());
             let (code, message) = if via == Via::Include {
                 (
@@ -889,7 +1010,7 @@ impl<L: Loader> Builder<'_, L> {
             let message = format!("{word} differs in case from the file it opens, {stored}");
             self.report(Code::W0402, message, &from, line);
         }
-        if self.once.contains(&path) {
+        if self.once.contains(&Marked::of(name.as_ref(), &path)) {
             return;
         }
         if self.stack.len() >= PRJ_MAX_DEPTH {
@@ -906,6 +1027,7 @@ impl<L: Loader> Builder<'_, L> {
         let entry = self.graph.files.len();
         self.graph.files.push(GraphFile {
             path: path.clone(),
+            name: name.clone(),
             via,
             parent,
         });
@@ -915,13 +1037,16 @@ impl<L: Loader> Builder<'_, L> {
             } else {
                 FileStart::Compiled
             };
-            Cursor::fteqcc(path, bytes, Some(entry), start)
+            Cursor::fteqcc(path, name, bytes, Some(entry), start)
         } else {
-            Cursor::vanilla(path, bytes, Some(entry))
+            Cursor::vanilla(path, name, bytes, Some(entry))
         };
         // `QCC_Include(fullname, newunit)`: only a file read as a new unit is compiled.
-        if via == Via::Include {
-            cursor.unit = unit;
+        if via == Via::Include
+            && let Some(including) = self.stack.last()
+        {
+            cursor.unit.clone_from(&including.unit);
+            cursor.unit_name.clone_from(&including.unit_name);
         }
         self.stack.push(cursor);
     }
@@ -999,9 +1124,36 @@ pub fn build_graph<L: Loader>(
     dialect: Dialect,
 ) -> FileGraph {
     let src = normalize(src);
+    // PRJ-6.7: FTEQCC is run in the source's directory, so it names the source by its file
+    // name, `compilingrootfile`.
+    let fteqcc = dialect == Dialect::Fteqcc;
+    let root_name = fteqcc.then(|| {
+        src.file_name()
+            .unwrap_or(src.as_os_str())
+            .to_string_lossy()
+            .into_owned()
+    });
+    let root_dir = dir_of(&src);
+    let include_dirs = include_dirs
+        .iter()
+        .map(|dir| {
+            if fteqcc {
+                let name = text(&include_dir_name(dir.as_os_str().as_encoded_bytes()));
+                IncludeDir {
+                    name: Some(name),
+                    path: normalize(&root_dir.join(dir)),
+                }
+            } else {
+                IncludeDir {
+                    name: None,
+                    path: normalize(dir),
+                }
+            }
+        })
+        .collect();
     let mut builder = Builder {
         loader,
-        root_dir: dir_of(&src),
+        root_dir: root_dir.clone(),
         state: {
             let defines = defines.iter().map(|d| (d.name.clone(), d.value.clone()));
             if dialect == Dialect::Fteqcc {
@@ -1010,10 +1162,13 @@ pub fn build_graph<L: Loader>(
                 ModuleState::new(defines)
             }
         },
-        include_dirs: include_dirs.iter().map(|d| normalize(d)).collect(),
+        include_dirs,
         once: HashSet::new(),
         stack: Vec::new(),
-        graph: FileGraph::default(),
+        graph: FileGraph {
+            dir: root_dir,
+            ..FileGraph::default()
+        },
         dialect,
     };
     let text = match builder.loader.load(&src) {
@@ -1025,31 +1180,34 @@ pub fn build_graph<L: Loader>(
         }
     };
     let listed = progs_text(&text, dialect);
-    let fteqcc = dialect.has_fteqcc_extensions();
+    let fte_reader = dialect.has_fteqcc_extensions();
     match source_form(&listed, dialect) {
         Some(true) => {
             builder.graph.form = Some(Form::Source);
             builder.graph.files.push(GraphFile {
                 path: src.clone(),
+                name: root_name.clone(),
                 via: Via::Root,
                 parent: None,
             });
-            let cursor = if fteqcc {
-                Cursor::fteqcc(src, text, Some(0), FileStart::Source)
+            let cursor = if fte_reader {
+                Cursor::fteqcc(src, root_name, text, Some(0), FileStart::Source)
             } else {
-                Cursor::vanilla(src, text, Some(0))
+                Cursor::vanilla(src, root_name, text, Some(0))
             };
             builder.stack.push(cursor);
         }
         // PRJ-4.9: FTEQCC reads a list with no word, an empty output name and no file, as it
         // reads any other list.
-        Some(false) | None if fteqcc => {
+        Some(false) | None if fte_reader => {
             builder.graph.form = Some(Form::List);
-            builder.stack.push(Cursor::fteqcc_list(src, text));
+            builder
+                .stack
+                .push(Cursor::fteqcc_list(src, root_name, text));
         }
         Some(false) => {
             builder.graph.form = Some(Form::List);
-            builder.stack.push(Cursor::list(src, listed));
+            builder.stack.push(Cursor::list(src, root_name, listed));
         }
         None => {
             builder.graph.form = Some(Form::List);

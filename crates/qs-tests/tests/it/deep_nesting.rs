@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Input nested far past the limit goes through the whole front end under the FTEQCC
-//! profile (P2-50): the parser bounds its tree (QC-27.15, QC-27.16, FTEF-18.26), so lowering
+//! profile (P2-50): the parser bounds its tree (QC-27.15, QC-27.16, FTEF-18.32), so lowering
 //! and resolving the tree cannot exhaust the stack either. A long chain of macros goes through
 //! the preprocessor in front of them without exhausting it (QC-9.17, P2-65).
 
@@ -50,7 +50,7 @@ fn deep_sources() -> Vec<(&'static str, String)> {
     ]
 }
 
-// spec FTEF-18.26: each form, 100000 deep, parses with "nesting too deep" and resolves through
+// spec FTEF-18.32: each form, 100000 deep, parses with "nesting too deep" and resolves through
 // the incremental database under the FTEQCC profile without exhausting the stack
 // spec QC-27.16: the tree past the limit is no deeper, so the semantic model walks it safely
 #[test]

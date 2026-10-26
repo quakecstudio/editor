@@ -139,6 +139,24 @@ pub enum Code {
     E0232,
     /// "initializer-string too long" (QCD-3.33).
     E0233,
+    /// "NAME not yet defined, cannot create NAME as an alias" (QCD-3.34).
+    E0234,
+    /// "alias NAME may not be initialised" (QCD-3.35).
+    E0235,
+    /// "Automatic type conversions disabled. Needed TYPE, got TYPE." (QCD-3.36).
+    E0236,
+    /// "pointer<->string casts were disabled." (QCD-3.37).
+    E0237,
+    /// "state type mismatch" (QCD-3.38).
+    E0238,
+    /// "extern is not supported with this target format" (QCD-3.39).
+    E0239,
+    /// "Parent class NAME was not yet defined" (QCD-3.40).
+    E0240,
+    /// "Parent type NAME is not a class/entity" (QCD-3.41).
+    E0241,
+    /// "Parent class changed on redeclaration of NAME" (QCD-3.42).
+    E0242,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
     /// "type mismatch for OP" (QCD-4.2).
@@ -213,7 +231,7 @@ pub enum Code {
     W0106,
     /// "$modelname name too long" (QCD-7.27).
     W0107,
-    /// "#pragma autoproto must appear before any definitions" (QCD-7.28).
+    /// "#pragma autoproto must appear before any definitions": FTEQCC never gives it (FTEF-12.18).
     W0108,
     /// "preprocessor directive within preprocessor macro NAME", as a warning (QCD-7.31).
     W0109,
@@ -299,6 +317,15 @@ pub enum Code {
     /// "ignoring unsupported unsigned keyword, type will be signed", "long doubles are not
     /// supported, using double" and "ignoring unsupported const keyword" (QCD-7.52).
     W0226,
+    /// "suggest parenthesis for unary operator that applies to multiple terms" (QCD-7.68).
+    W0227,
+    /// "Unknown attribute \"NAME\"" and "accumulating an accumulating accumulation"
+    /// (QCD-7.69).
+    W0228,
+    /// "Implicit lax cast from TYPE to TYPE" (QCD-7.70).
+    W0229,
+    /// "Implicit type mismatch. Needed TYPE, got TYPE." as a warning (QCD-7.71).
+    W0230,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -313,7 +340,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 141] = [
+    pub const ALL: [Self; 154] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -372,6 +399,15 @@ impl Code {
         Self::E0231,
         Self::E0232,
         Self::E0233,
+        Self::E0234,
+        Self::E0235,
+        Self::E0236,
+        Self::E0237,
+        Self::E0238,
+        Self::E0239,
+        Self::E0240,
+        Self::E0241,
+        Self::E0242,
         Self::E0301,
         Self::E0302,
         Self::E0303,
@@ -450,6 +486,10 @@ impl Code {
         Self::W0224,
         Self::W0225,
         Self::W0226,
+        Self::W0227,
+        Self::W0228,
+        Self::W0229,
+        Self::W0230,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -459,6 +499,7 @@ impl Code {
 
     /// The code as written in messages, such as `E0101`.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm per code")]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::E0101 => "E0101",
@@ -500,6 +541,15 @@ impl Code {
             Self::E0231 => "E0231",
             Self::E0232 => "E0232",
             Self::E0233 => "E0233",
+            Self::E0234 => "E0234",
+            Self::E0235 => "E0235",
+            Self::E0236 => "E0236",
+            Self::E0237 => "E0237",
+            Self::E0238 => "E0238",
+            Self::E0239 => "E0239",
+            Self::E0240 => "E0240",
+            Self::E0241 => "E0241",
+            Self::E0242 => "E0242",
             Self::E0301 => "E0301",
             Self::E0302 => "E0302",
             Self::E0303 => "E0303",
@@ -559,6 +609,10 @@ impl Code {
             Self::W0224 => "W0224",
             Self::W0225 => "W0225",
             Self::W0226 => "W0226",
+            Self::W0227 => "W0227",
+            Self::W0228 => "W0228",
+            Self::W0229 => "W0229",
+            Self::W0230 => "W0230",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -605,152 +659,11 @@ impl Code {
         }
     }
 
-    /// Whether the code is an error rather than a warning.
+    /// Whether the code is an error rather than a warning: every code is an `E` or a `W`
+    /// code (QCD-1.1).
     #[must_use]
     pub const fn is_error(self) -> bool {
-        match self {
-            Self::W0101
-            | Self::W0102
-            | Self::W0103
-            | Self::W0104
-            | Self::W0105
-            | Self::W0106
-            | Self::W0107
-            | Self::W0108
-            | Self::W0109
-            | Self::W0110
-            | Self::W0111
-            | Self::W0112
-            | Self::W0113
-            | Self::W0114
-            | Self::W0115
-            | Self::W0116
-            | Self::W0117
-            | Self::W0118
-            | Self::W0119
-            | Self::W0120
-            | Self::W0121
-            | Self::W0122
-            | Self::W0123
-            | Self::W0201
-            | Self::W0203
-            | Self::W0204
-            | Self::W0205
-            | Self::W0206
-            | Self::W0219
-            | Self::W0220
-            | Self::W0221
-            | Self::W0222
-            | Self::W0223
-            | Self::W0224
-            | Self::W0225
-            | Self::W0226
-            | Self::W0311
-            | Self::W0312
-            | Self::W0313
-            | Self::W0207
-            | Self::W0208
-            | Self::W0209
-            | Self::W0210
-            | Self::W0211
-            | Self::W0212
-            | Self::W0213
-            | Self::W0214
-            | Self::W0215
-            | Self::W0216
-            | Self::W0217
-            | Self::W0218
-            | Self::W0314
-            | Self::W0402 => false,
-            Self::E0101
-            | Self::E0102
-            | Self::E0103
-            | Self::E0104
-            | Self::E0105
-            | Self::E0106
-            | Self::E0107
-            | Self::E0108
-            | Self::E0109
-            | Self::E0110
-            | Self::E0111
-            | Self::E0112
-            | Self::E0113
-            | Self::E0114
-            | Self::E0115
-            | Self::E0116
-            | Self::E0117
-            | Self::E0118
-            | Self::E0119
-            | Self::E0120
-            | Self::E0121
-            | Self::E0122
-            | Self::E0123
-            | Self::E0124
-            | Self::E0125
-            | Self::E0201
-            | Self::E0202
-            | Self::E0203
-            | Self::E0204
-            | Self::E0205
-            | Self::E0206
-            | Self::E0208
-            | Self::E0209
-            | Self::E0210
-            | Self::E0211
-            | Self::E0212
-            | Self::E0231
-            | Self::E0232
-            | Self::E0233
-            | Self::E0301
-            | Self::E0302
-            | Self::E0303
-            | Self::E0304
-            | Self::E0305
-            | Self::E0306
-            | Self::E0307
-            | Self::E0308
-            | Self::E0501
-            | Self::E0502
-            | Self::E0503
-            | Self::E0504
-            | Self::E0505
-            | Self::E0506
-            | Self::E0507
-            | Self::E0508
-            | Self::E0509
-            | Self::E0510
-            | Self::E0401
-            | Self::E0402
-            | Self::E0406
-            | Self::E0407
-            | Self::E0207
-            | Self::E0213
-            | Self::E0214
-            | Self::E0215
-            | Self::E0216
-            | Self::E0217
-            | Self::E0218
-            | Self::E0219
-            | Self::E0220
-            | Self::E0221
-            | Self::E0222
-            | Self::E0223
-            | Self::E0224
-            | Self::E0225
-            | Self::E0226
-            | Self::E0227
-            | Self::E0228
-            | Self::E0229
-            | Self::E0230
-            | Self::E0309
-            | Self::E0310
-            | Self::E0311
-            | Self::E0312
-            | Self::E0313
-            | Self::E0511
-            | Self::E0404
-            | Self::E0408 => true,
-        }
+        matches!(self.as_str().as_bytes(), [b'E', ..])
     }
 
     /// The code's severity: [`Severity::Error`] for an `E` code, [`Severity::Warning`] for a

@@ -7,6 +7,7 @@
 use super::{Program, errors};
 use crate::QC_MAX_NESTING;
 use crate::ast::{AstNode as _, Builtin};
+use crate::kind::SyntaxKind as K;
 use crate::{Code, Dialect, SyntaxNode, parse_with};
 
 /// The deepest chain of nodes from `root` to a leaf, counted without recursion.
@@ -201,7 +202,7 @@ fn reviewer_fteqcc_right_nesting_chains_are_bounded() {
     }
 }
 
-// spec FTEF-18.26: the expressions FTEQCC reads outside a function body, an enum value, a
+// spec FTEF-18.32: the expressions FTEQCC reads outside a function body, an enum value, a
 // parameter's default and a global's initialiser, count prefix operators and parentheses
 // towards the limit like a body's
 #[test]
@@ -288,5 +289,192 @@ fn reviewer_fteqcc_colon_numbers_bind_as_hash_numbers() {
         ("void() bx :5;\n", 5),
     ] {
         assert_eq!(fte_builtins(source), [(None, Some(binum))], "{source}");
+    }
+}
+
+/// Whether `source`, parsed under the FTEQCC profile with `keywords` from its first byte, has a
+/// node of `kind`.
+fn holds_with(source: &str, keywords: crate::Keywords, kind: crate::SyntaxKind) -> bool {
+    super::fte_with(source, keywords)
+        .syntax()
+        .descendants()
+        .any(|n| n.kind() == kind)
+}
+
+// spec FTEF-20.2: only a token that starts with exactly `__` and goes on with the word is the
+// keyword when it is off: `___loop` and `__ loop` are not `loop`, `__LoOp` is. The pinned FTEQCC
+// refuses `void() g = { ___loop { break; } };` and `{ __ loop { break; } }`, and compiles
+// `{ __Loop { __Break; } }`
+#[test]
+fn reviewer_only_a_double_underscore_spells_a_keyword() {
+    use crate::{Keyword, Keywords, SyntaxKind as K};
+    let off = Keywords::default().with(Keyword::Loop, false);
+    let body = |stmts: &str| format!("void() g = {{ {stmts} }};\n");
+    assert!(holds_with(&body("__LoOp { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("___loop { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("__ loop { break; }"), off, K::LoopStmt));
+    assert!(!holds_with(&body("loop { break; }"), off, K::LoopStmt));
+}
+
+// spec FTEF-20.14: a body's statement defines locals at a name `QCC_TypeForName` finds, whatever
+// that word's keyword: with `float`, `vector`, `entity` or `string` off, as `-std=hcc` and
+// `#pragma keyword disable float` turn them off, `float x;` in a body is still a local. The
+// pinned FTEQCC compiles each such program
+#[test]
+fn reviewer_a_type_word_whose_keyword_is_off_still_defines_a_local() {
+    use crate::{Keyword, Keywords, SyntaxKind as K};
+    for (keyword, stmts) in [
+        (Keyword::Float, "float x; x = 1;"),
+        (Keyword::Vector, "vector v; v = '1 2 3';"),
+        (Keyword::Entity, "entity e;"),
+        (Keyword::String, "string s; s = \"a\";"),
+    ] {
+        let source = format!("void() g = {{ {stmts} }};\n");
+        let off = Keywords::default().with(keyword, false);
+        let parsed = super::fte_with(&source, off);
+        assert_eq!(parsed.errors().count(), 0, "{source}");
+        assert!(holds_with(&source, off, K::LocalDecl), "{source}");
+    }
+}
+
+// spec FTEF-21.17: the block's string is compared once its escapes are read and its prefix
+// dropped: `"\x43"`, `"\{67}"`, `u8"C"` and `R"(C)"` are `"C"` and lex the block with
+// `qcfuncs` off, so `"\9"` in it is "Bad character code", while `"\103"`, which under `qcfuncs`
+// is no `C` (FTEF-12.12), and `"C "` are not. The pinned FTEQCC refuses the first four programs
+// and compiles the other two
+#[test]
+fn reviewer_an_extern_block_s_string_is_compared_as_read() {
+    let fte = |source: &str| parse_with(source.as_bytes(), Dialect::Fteqcc);
+    let bad_code = |source: &str| {
+        fte(source)
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == Code::E0103)
+    };
+    for linkage in ["\"\\x43\"", "\"\\{67}\"", "u8\"C\"", "R\"(C)\""] {
+        let source = format!("extern {linkage} {{ string s = \"\\9\"; }}\n");
+        assert!(bad_code(&source), "{source}");
+    }
+    for linkage in ["\"\\103\"", "\"C \""] {
+        let source = format!("extern {linkage} {{ string s = \"\\9\"; }}\n");
+        assert!(!bad_code(&source), "{source}");
+    }
+}
+
+/// `source` parsed under the FTEQCC profile with `caseinsens` on or off.
+fn fte_case(source: &str, insensitive: bool) -> crate::Parse {
+    super::fte_with(
+        source,
+        crate::Keywords::default().with_case_insensitive(insensitive),
+    )
+}
+
+// spec FTEF-20.14: under `caseinsens` every statement keyword, a loop's and a switch's and a
+// jump's, is found in any case, as `QCC_PR_CheckKeyword` compares with `stricmp`; with it off
+// the capitalised word is a name. The pinned FTEQCC compiles each body under `-Fcaseinsens`
+#[test]
+fn reviewer_statement_keywords_are_found_in_any_case_under_caseinsens() {
+    for body in [
+        "IF (1) {} ELSE {}",
+        "While (1) { Break; }",
+        "DO { Continue; } while (0);",
+        "FOR (;;) { BREAK; }",
+        "Switch (1) { Case 1: Break; Default: Break; }",
+        "Goto l; l: ;",
+        "Local float x; x = 1;",
+        "Return;",
+    ] {
+        let source = format!("void() g = {{ {body} }};\n");
+        assert_eq!(errors(&fte_case(&source, true)), vec![], "{body}");
+    }
+    assert!(
+        fte_case("void() g = { IF (1) {} };\n", false)
+            .errors()
+            .next()
+            .is_some()
+    );
+}
+
+// spec FTEF-21.17: `extern` is a keyword like the others, so under `caseinsens` `EXTERN "C" {`
+// and `Extern "c" {` open a block, in a body too; with it off they are names and no block. The
+// pinned FTEQCC compiles both blocks under `-Fcaseinsens`
+#[test]
+fn reviewer_an_extern_block_opens_in_any_case_under_caseinsens() {
+    let blocks = |source: &str, insensitive: bool| {
+        let parsed = fte_case(source, insensitive);
+        let found = parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::ExternBlock)
+            .count();
+        (found, errors(&parsed))
+    };
+    for source in [
+        "EXTERN \"C\" { float x = 5; float y = x; }\n",
+        "Extern \"c\" { float x = 5; float y = x; }\n",
+    ] {
+        assert_eq!(blocks(source, true), (1, vec![]), "{source}");
+        assert_eq!(blocks(source, false).0, 0, "{source}");
+    }
+}
+
+// spec FTEF-20.2: `__` before a keyword spells it in any case whether or not `caseinsens` is
+// on
+#[test]
+fn reviewer_a_double_underscore_keyword_is_found_in_any_case_without_caseinsens() {
+    for insensitive in [false, true] {
+        for word in ["__LOOP", "__Loop", "__loop"] {
+            let source = format!("void() g = {{ {word} {{ break; }} }};\n");
+            assert_eq!(errors(&fte_case(&source, insensitive)), vec![], "{source}");
+        }
+    }
+}
+
+// spec FTEF-6.1: a class's member may follow a `public:` label, which FTEQCC reads and
+// ignores; the pinned FTEQCC compiles `class C { public: float a; };`
+#[test]
+fn reviewer_a_class_member_may_follow_a_public_label() {
+    let source = "class C { public: float a; };\nvoid() g = { C c; };\n";
+    assert_eq!(errors(&fte_case(source, false)), vec![]);
+}
+
+// spec QC-27.15: 100000 nested `extern "C" {` blocks, closed or not, and 100000 unbraced
+// `extern "C" ` before a definition, at file level and in a body, parse on a 2 MiB thread with
+// "nesting too deep" and keep every byte; the pinned FTEQCC recurses without a limit
+#[test]
+fn reviewer_nested_extern_blocks_stop_at_the_limit_on_a_small_stack() {
+    let n = 100_000;
+    let open = "extern \"C\" { ".repeat(n);
+    let bare = "extern \"C\" ".repeat(n);
+    let shut = " }".repeat(n);
+    let shapes = [
+        format!("{open}float y;{shut}"),
+        format!("{open}float y;"),
+        format!("{bare}float y;"),
+    ];
+    for item in shapes {
+        for source in [format!("{item}\n"), format!("void() g = {{ {item} }};\n")] {
+            let bytes = source.clone().into_bytes();
+            let (depth, kept, too_deep) = std::thread::Builder::new()
+                .stack_size(2 << 20)
+                .spawn(move || {
+                    let parsed = parse_with(&bytes, Dialect::Fteqcc);
+                    (
+                        tree_depth(&parsed.syntax()),
+                        parsed.syntax().text() == bytes,
+                        parsed.errors().any(|d| d.code == Code::E0509),
+                    )
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+            assert!(too_deep, "{}", &source[..30]);
+            assert!(kept, "{}", &source[..30]);
+            assert!(
+                depth <= QC_MAX_NESTING.saturating_mul(4),
+                "{}",
+                &source[..30]
+            );
+        }
     }
 }

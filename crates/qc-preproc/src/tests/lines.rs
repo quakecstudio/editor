@@ -127,6 +127,14 @@ fn text_after_a_directive_is_lexed_again_as_the_preprocessor_reads_on() {
         _ => None,
     });
     assert_eq!(frames, Some(vec![Span::new(17, 18), Span::new(19, 20)]));
+    // The new lexing may make more tokens than it replaces, which all stand in their place.
+    assert_eq!(
+        spans(&relexed(b"#if\"a b c\";\n$frame f g\n", 5)),
+        (
+            vec![(0, 1), (1, 3), (6, 7), (8, 9), (9, 11), (12, 22)],
+            vec![9]
+        )
+    );
     // An error of the first lexing that the new one does not make is gone.
     let text = b"#if\"a b\" \"c\n";
     assert_eq!(spans(&lex_with(text, Dialect::Fteqcc)).1, [9]);

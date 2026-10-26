@@ -11,10 +11,10 @@
 //! program FTEQCC accepts is read another way.
 
 use qc_lexer::{Code, LexFlag, Span};
-use qc_preproc::{Enabled, Keyword};
+use qc_preproc::{Enabled, FteFlag, Keyword};
 
 use super::{Member, Parser, Site, TypeShape, UNARY_PRIORITY};
-use crate::c_scalar::{CContext, CScalar, CWord, CWords};
+use crate::c_scalar::{CContext, CScalar, CWord, CWords, REGISTERED_TYPES};
 use crate::kind::SyntaxKind as K;
 
 /// Most parameters an FTEQCC function type may have: `MAX_PARMS+MAX_EXTRA_PARMS` in
@@ -48,7 +48,7 @@ const QUALIFIERS: [(&str, Enabled); 19] = [
 ];
 
 /// The words a statement of `QCC_PR_ParseStatement` that starts with one defines locals at,
-/// each tested with `STRCMP`, exactly, with its keyword on (FTEF-20.6): `_Bool` always.
+/// each tested with `STRCMP`, exactly, with its keyword on (FTEF-20.14): `_Bool` always.
 const LOCAL_WORDS: [(&str, Enabled); 26] = [
     ("var", Enabled::By(Keyword::Var)),
     ("noref", Enabled::By(Keyword::Noref)),
@@ -128,16 +128,30 @@ const RESERVED: [(&str, Enabled); 28] = [
     ("exit", Enabled::Never),
 ];
 
+/// Where `QCC_PR_ParseType` reads a type, which decides its `ignoreptr` (FTEF-21.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Place {
+    /// A declaration's type, read by `QCC_PR_ParseDefs` with `ignoreptr` when `qcfuncs` is off.
+    Declaration,
+    /// Any other: a parameter's, a member's, a cast's, a field's inner type of either.
+    Nested,
+}
+
 impl Parser<'_> {
     /// Whether a declaration whose qualifiers were read leaves its type out (FTEF-19.21): a
     /// name followed by what ends a declarator, `;`, `,`, `=` or `[`, where
     /// `QCC_PR_ParseType` with `silentfail` finds no type and `QCC_PR_ParseDefs` assumes
     /// `int`.
     pub(super) fn fte_type_omitted(&self) -> bool {
-        self.at(K::Name)
-            && self
+        match self.current().map(|t| t.kind) {
+            Some(K::Name) => self
                 .nth(1)
-                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket))
+                .is_some_and(|t| matches!(t.kind, K::Semicolon | K::Comma | K::Eq | K::LBracket)),
+            // `QCC_PR_ParseType` with `silentfail` returns no type for a token that is no name,
+            // so `static;` and `const *x;` are an `int`'s definitions (FTEF-19.21).
+            Some(K::Semicolon | K::Star | K::LParen | K::LBracket) => true,
+            _ => false,
+        }
     }
 
     /// Whether the token `n` ahead is `volatile` as `QCC_PR_ParseType` reads it, with its keyword,
@@ -163,7 +177,7 @@ impl Parser<'_> {
     }
 
     /// Whether a statement that starts with the token `n` ahead defines locals by one of the
-    /// words `QCC_PR_ParseStatement` tests exactly with their keyword on (FTEF-20.6).
+    /// words `QCC_PR_ParseStatement` tests exactly with their keyword on (FTEF-20.14).
     fn starts_local_statement(&self, n: usize) -> bool {
         LOCAL_WORDS.iter().any(|&(word, enabled)| match enabled {
             Enabled::By(keyword) => self.strcmp_kw(n, keyword, word),
@@ -191,8 +205,50 @@ impl Parser<'_> {
     pub(super) fn c_type_word(&self, n: usize) -> bool {
         self.nth(n).is_some_and(|t| {
             t.kind == K::Name
-                && t.text != "float"
+                && self.type_word(n) != Some(K::FloatKw)
                 && CWord::of(&t.text, self.keywords_ahead(n)).is_some()
+        })
+    }
+
+    /// Whether `::` is the token `n` ahead and touches the token before it, as `QCC_PR_ParseStatement`
+    /// tests `strncmp(pr_file_p, "::", 2)` right after a name.
+    fn at_scope_resolution(&self, n: usize) -> bool {
+        let before = self.nth(n.saturating_sub(1)).map(|t| t.span.end);
+        self.nth(n)
+            .is_some_and(|t| t.kind == K::ColonColon && Some(t.span.start) == before)
+    }
+
+    /// Whether the token `n` ahead is a name FTEQCC registers as a type, which `QCC_TypeForName`
+    /// finds (FTEF-19.20, FTEF-19.33): the vanilla type words, the scalars and the other names of
+    /// [`REGISTERED_TYPES`], in any case under `caseinsens`.
+    pub(super) fn registered_type(&self, n: usize) -> bool {
+        let any_case = self.any_case(n);
+        self.nth(n).is_some_and(|tok| {
+            let named = |name: &str| {
+                if any_case {
+                    name.eq_ignore_ascii_case(&tok.text)
+                } else {
+                    name == tok.text
+                }
+            };
+            tok.kind == K::Name
+                && (self.type_word(n).is_some()
+                    || self.scalar_name(n).is_some()
+                    || REGISTERED_TYPES.iter().any(|name| named(name))
+                    || self.types.iter().any(|(name, _)| named(name)))
+        })
+    }
+
+    /// The scalar type the token `n` ahead names, a name FTEQCC registers (`QCC_TypeForName`):
+    /// in any case under `caseinsens` (FTEF-19.33).
+    pub(super) fn scalar_name(&self, n: usize) -> Option<CScalar> {
+        let tok = self.nth(n).filter(|t| t.kind == K::Name)?;
+        CScalar::named(&tok.text).or_else(|| {
+            if self.any_case(n) {
+                CScalar::named(&tok.text.to_ascii_lowercase())
+            } else {
+                None
+            }
         })
     }
 
@@ -230,11 +286,30 @@ impl Parser<'_> {
     }
 
     /// The qualifiers before a declaration's type (FTEF-15.1), each its own node; a
-    /// `__deprecated` takes its optional `("reason")`. Returns whether it read one,
-    /// `QCC_PR_ParseDefs`'s `hadmodifier`.
+    /// `__deprecated` takes its optional `("reason")`; and the attribute lists among them
+    /// (FTEF-21.9). Returns whether it read one, `QCC_PR_ParseDefs`'s `hadmodifier`.
     pub(super) fn fte_qualifiers(&mut self) -> bool {
-        let mut read = false;
-        while self.decl_qualifier(0) {
+        self.fte_qualifiers_after(false)
+    }
+
+    /// [`Self::fte_qualifiers`] after a `typedef` when `typedef` says, which is one of them.
+    pub(super) fn fte_qualifiers_after(&mut self, typedef: bool) -> bool {
+        let mut read = typedef;
+        let mut accumulate = false;
+        loop {
+            if !self.decl_qualifier(0) {
+                // FTEF-21.9: `else if ((hadmodifier||(flag_attributes && !pr_scope)) &&
+                // QCC_PR_CheckToken("["))`.
+                let attributes =
+                    read || (self.bodies == 0 && self.flag_ahead(0, FteFlag::Attributes));
+                if !(attributes && self.at(K::LBracket)) {
+                    break;
+                }
+                self.attribute_list(&mut accumulate);
+                read = true;
+                continue;
+            }
+            accumulate |= self.kw(0, Keyword::Accumulate, "accumulate");
             let text = self.found();
             let deprecated = self.checks(0, Enabled::Never, "deprecated");
             read = true;
@@ -257,6 +332,82 @@ impl Parser<'_> {
         read
     }
 
+    /// `[[ ... ]]` (FTEF-21.9): `QCC_PR_CheckToken("[")`, then `QCC_PR_Expect("[")`, then
+    /// attributes and `,`s up to a `]`, then `QCC_PR_Expect("]")`.
+    fn attribute_list(&mut self, accumulate: &mut bool) {
+        self.start_node(K::AttributeList);
+        self.bump();
+        self.expect(K::LBracket, "[");
+        while self.current().is_some() {
+            if self.at(K::Comma) {
+                self.bump();
+            } else if self.at(K::RBracket) {
+                self.bump();
+                break;
+            } else {
+                self.attribute(accumulate);
+            }
+        }
+        self.expect(K::RBracket, "]");
+        self.finish_node();
+    }
+
+    /// One attribute (FTEF-21.9): `alias(NAME)` or `alias("NAME")`, `accumulate`, `eraseable`,
+    /// `__deprecated` with an optional `("reason")`, each name read with `QCC_PR_CheckName` but
+    /// `__deprecated`'s with `QCC_PR_CheckKeyword(false, ...)`; any other token is "Unknown
+    /// attribute", and the tokens up to the next `]` or `,` are passed over.
+    fn attribute(&mut self, accumulate: &mut bool) {
+        self.start_node(K::Attribute);
+        if self.names(0, "alias") {
+            self.bump();
+            self.expect(K::LParen, "(");
+            if self.at(K::Name) {
+                self.name();
+            } else if self
+                .current()
+                .is_some_and(|t| matches!(t.kind, K::StringLit | K::FloatLit | K::VectorLit))
+            {
+                self.bump();
+            }
+            self.expect(K::RParen, ")");
+        } else if self.names(0, "accumulate") {
+            if *accumulate {
+                let span = self.current_span();
+                self.warning_at(
+                    Code::W0228,
+                    "accumulating an accumulating accumulation",
+                    span,
+                );
+            }
+            *accumulate = true;
+            self.bump();
+        } else if self.names(0, "eraseable") {
+            self.bump();
+        } else if self.checks(0, Enabled::Never, "deprecated") {
+            self.bump();
+            if self.at(K::LParen) {
+                self.bump();
+                if self.at(K::StringLit) {
+                    while self.at(K::StringLit) {
+                        self.bump();
+                    }
+                } else {
+                    // `QCC_PR_ParseError (ERR_EXPECTED, "expected string");`
+                    self.error(Code::E0204, "expected string");
+                }
+                self.expect(K::RParen, ")");
+            }
+        } else {
+            let message = format!("Unknown attribute \"{}\"", self.found());
+            let span = self.current_span();
+            self.warning_at(Code::W0228, message, span);
+            while self.current().is_some() && !self.at(K::RBracket) && !self.at(K::Comma) {
+                self.bump();
+            }
+        }
+        self.finish_node();
+    }
+
     /// Whether the current name starts a file-level declaration (FTEF-15.1): a qualifier, a
     /// C type word, a tagged type, or a name that may be a type. `starts_declaration` has
     /// already taken a `.`, a `..` and a vanilla type word.
@@ -266,8 +417,13 @@ impl Parser<'_> {
         };
         match tok.kind {
             K::Name if self.decl_qualifier(0) || self.c_type_word(0) || self.at_volatile(0) => true,
+            // FTEF-21.9: with `attributes` on, a file-level declaration may start with `[[`.
+            K::LBracket => self.flag_ahead(0, FteFlag::Attributes),
             // `struct tag x;`, `enum name x;`: a tagged type names a declaration's type.
             K::Name if self.at_tagged_type(0) => true,
+            // `QCC_PR_ParseDefs` reads every definition, so a registered type's name alone starts
+            // one (FTEF-20.12).
+            K::Name if self.registered_type(0) => true,
             // A type name is followed by the declarator's name, a `*` or a parameter list;
             // a name alone is "not a type" (FTE-21.1).
             K::Name => {
@@ -293,9 +449,11 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        // FTEF-20.6: `QCC_PR_ParseStatement` finds a type by its name with `QCC_TypeForName`,
+        // FTEF-20.14: `QCC_PR_ParseStatement` finds a type by its name with `QCC_TypeForName`,
         // then tests its words exactly, with their keywords on.
-        if CScalar::named(&tok.text).is_some() || self.starts_local_statement(0) {
+        if (self.registered_type(0) && !self.at_scope_resolution(1))
+            || self.starts_local_statement(0)
+        {
             return true;
         }
         if self.c_type_word(0) || self.at_volatile(0) || self.decl_qualifier(0) {
@@ -346,20 +504,33 @@ impl Parser<'_> {
     }
 
     /// `QCC_PR_ParseType` (FTEF-2, FTEF-4, FTEF-7): `.T` and `..T` field types, `struct` or
-    /// `union` and a tag, the C type words, a vanilla type or a type name, then `*`s, then a
-    /// parameter list.
+    /// `union` and a tag, the C type words, a vanilla type or a type name, then `*`s, then, with
+    /// `qcfuncs` on, a parameter list (FTEF-21.7).
     pub(super) fn fte_type(&mut self) -> Option<TypeShape> {
+        self.fte_type_at(Place::Nested)
+    }
+
+    /// The type of a declaration, `QCC_PR_ParseDefs`'s `QCC_PR_ParseType (false, hadmodifier,
+    /// !flag_qcfuncs)`: with `qcfuncs` off it takes no `*`, which each declarator takes instead
+    /// (FTEF-21.7).
+    pub(super) fn fte_decl_type(&mut self) -> Option<TypeShape> {
+        self.fte_type_at(Place::Declaration)
+    }
+
+    fn fte_type_at(&mut self, place: Place) -> Option<TypeShape> {
         if !self.enter() {
             self.bump_error();
             self.leave(1);
             return None;
         }
-        let shape = self.fte_type_inner();
+        let shape = self.fte_type_inner(place);
         self.leave(1);
         shape
     }
 
-    fn fte_type_inner(&mut self) -> Option<TypeShape> {
+    fn fte_type_inner(&mut self, place: Place) -> Option<TypeShape> {
+        // FTEF-21.7: `ignoreptr`, read once, as the declaration starts.
+        let ignore_pointers = place == Place::Declaration && !self.flag_ahead(0, FteFlag::Qcfuncs);
         if self.kw(0, Keyword::Const, "const") {
             // FTEF-2.11: `QCC_PR_ParseType` reads a `const` and ignores it, with a warning.
             self.warn_const();
@@ -379,12 +550,13 @@ impl Parser<'_> {
             self.start_node(K::FieldType);
             self.start_node(K::FieldType);
             self.bump();
-            let inner = self.fte_type();
+            let inner = self.fte_type_at(place);
             self.finish_node();
             self.finish_node();
             return inner.map(|_| TypeShape {
                 function: false,
                 field: true,
+                qcfuncs: false,
             });
         }
         if self.at(K::Dot) {
@@ -394,11 +566,12 @@ impl Parser<'_> {
                 // `.*float`: a field of pointer to float (FTEF-4.1).
                 self.bump();
             }
-            let inner = self.fte_type();
+            let inner = self.fte_type_at(place);
             self.finish_node();
             return inner.map(|_| TypeShape {
                 function: false,
                 field: true,
+                qcfuncs: false,
             });
         }
         let checkpoint = self.checkpoint();
@@ -407,9 +580,9 @@ impl Parser<'_> {
             self.error(Code::E0203, message);
             return None;
         }
-        // FTEF-18.26: each `*` and each parameter list nests the type one level deeper.
+        // FTEF-18.32: each `*` and each parameter list nests the type one level deeper.
         let mut levels = 0_usize;
-        while self.at(K::Star) {
+        while !ignore_pointers && self.at(K::Star) {
             levels = levels.saturating_add(1);
             if !self.enter() {
                 break;
@@ -423,10 +596,13 @@ impl Parser<'_> {
             }
             self.finish_node();
         }
-        let function = self.at_function_params();
+        // FTEF-21.7: `if (flag_qcfuncs && QCC_PR_CheckToken ("("))`, at the token after the
+        // type's words and `*`s.
+        let qcfuncs = self.flag_ahead(0, FteFlag::Qcfuncs);
+        let function = qcfuncs && self.at_function_params();
         // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
         // further parameter list makes a function returning the type so far.
-        while self.at_function_params() {
+        while function && self.at_function_params() {
             levels = levels.saturating_add(1);
             if !self.enter() {
                 break;
@@ -439,6 +615,7 @@ impl Parser<'_> {
         Some(TypeShape {
             function,
             field: false,
+            qcfuncs,
         })
     }
 
@@ -473,7 +650,6 @@ impl Parser<'_> {
         if tok.kind != K::Name {
             return false;
         }
-        let text = tok.text.clone();
         if self.at_enum_keyword(0) {
             // FTEF-8.2: an enum written as a type, `enumflags:float{A, B} flags`. FTEF-8.4: it
             // always has its body; an enum is named by its type name alone.
@@ -528,7 +704,7 @@ impl Parser<'_> {
             }
             return true;
         }
-        if let Some(keyword) = super::type_keyword(&text) {
+        if let Some(keyword) = self.type_word(0) {
             self.start_node(K::SimpleType);
             // A vanilla type word is a type of its own name, which `QCC_PR_ParseType` finds
             // with `QCC_TypeForName` before its C type words, so no C word joins it (FTEF-2.4).
@@ -572,7 +748,7 @@ impl Parser<'_> {
                 break;
             }
             let before = self.pos;
-            names.extend(self.fte_param());
+            names.extend(self.fte_param(count == 0));
             count = count.saturating_add(1);
             if self.pos == before {
                 self.bump_error();
@@ -591,14 +767,36 @@ impl Parser<'_> {
         self.params = names;
     }
 
-    /// One parameter of [`Parser::fte_param_list`]: its name, if it has one, and whether its
-    /// type is a function's.
-    fn fte_param(&mut self) -> Option<(String, bool)> {
+    /// One parameter of [`Parser::fte_param_list`], the list's first when `first` says: its
+    /// name, if it has one, and whether its type is a function's.
+    fn fte_param(&mut self, first: bool) -> Option<(String, bool)> {
         self.start_node(K::Param);
+        let mut qualified = false;
         while self.param_qualifier(0) {
+            qualified = true;
             self.start_node(K::Qualifier);
             self.bump();
             self.finish_node();
+        }
+        // FTEF-21.8: with `qcfuncs` off a first parameter that is no type is an `int` named by
+        // its word (`maybename`, `if (!flag_qcfuncs) t = type_integer;`). A lone name is read
+        // so; one a typedef names is not told apart.
+        let lone_name = first
+            && !qualified
+            && !self.flag_ahead(0, FteFlag::Qcfuncs)
+            && self
+                .current()
+                .is_some_and(|t| t.kind == K::Name && self.type_word(0).is_none())
+            && !self.c_type_word(0)
+            && !self.at_tagged_type(0)
+            && self
+                .nth(1)
+                .is_some_and(|t| matches!(t.kind, K::RParen | K::Comma));
+        if lone_name {
+            let name = self.found();
+            self.name();
+            self.finish_node();
+            return Some((name, false));
         }
         let Some(ty) = self.fte_type() else {
             self.skip_param();
@@ -660,7 +858,10 @@ impl Parser<'_> {
         // declaration's type.
         self.fte_qualifiers();
         self.bump_as(K::ClassKw);
-        self.name();
+        let declared = self.found();
+        if self.name() {
+            self.declare_type(declared);
+        }
         if self.at(K::Colon) {
             self.bump();
             self.name();
@@ -787,6 +988,7 @@ impl Parser<'_> {
             let shape = TypeShape {
                 function: false,
                 field: false,
+                qcfuncs: false,
             };
             self.declarators(shape, Site::File);
         } else if !self.expect(K::Semicolon, ";") {
@@ -799,7 +1001,10 @@ impl Parser<'_> {
     pub(super) fn accessor_decl(&mut self) {
         self.start_node(K::AccessorDecl);
         self.bump_as(K::AccessorKw);
-        self.name();
+        let declared = self.found();
+        if self.name() {
+            self.declare_type(declared);
+        }
         if self.at(K::Colon) {
             self.bump();
             self.fte_type();
@@ -892,7 +1097,7 @@ impl Parser<'_> {
         if first.kind != K::Name {
             return false;
         }
-        if super::type_keyword(&first.text).is_some() || self.c_type_word(1) {
+        if self.type_word(1).is_some() || self.c_type_word(1) {
             return true;
         }
         if !self.fte_type_name(1) {
@@ -964,7 +1169,7 @@ impl Parser<'_> {
         match t.kind {
             K::RParen | K::Ellipsis | K::Dot | K::DotDot => true,
             K::Name => {
-                super::type_keyword(&t.text).is_some()
+                self.type_word(n).is_some()
                     || self.c_type_word(n)
                     || self.param_qualifier(n)
                     || self
@@ -984,7 +1189,7 @@ impl Parser<'_> {
         if self.at(K::LBrace) {
             self.aggregate_init();
         } else {
-            self.expr(UNARY_PRIORITY);
+            self.operand(UNARY_PRIORITY, false);
         }
     }
 
@@ -1035,10 +1240,7 @@ impl Parser<'_> {
         match tok.kind {
             K::Dot | K::DotDot => true,
             K::Name => {
-                if super::type_keyword(&tok.text).is_some()
-                    || self.c_type_word(0)
-                    || self.at_tagged_type(0)
-                {
+                if self.registered_type(0) || self.c_type_word(0) || self.at_tagged_type(0) {
                     return true;
                 }
                 if !bracket || !self.fte_type_name(0) {

@@ -427,7 +427,8 @@ impl<'a> Compiler<'a> {
             | ast::Stmt::State(_)
             | ast::Stmt::Using(_)
             | ast::Stmt::Exit(_)
-            | ast::Stmt::Asm(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
+            | ast::Stmt::Asm(_)
+            | ast::Stmt::Extern(_) => return Err(Abort::Internal(Internal::Unsupported, span)),
         }
         Ok(())
     }

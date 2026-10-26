@@ -25,18 +25,19 @@ pub(crate) use load::first_nul;
 pub use load::{qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line};
 
 use std::ops::Range;
-use std::path::PathBuf;
+use std::path::Path;
 use std::rc::Rc;
 
 use qc_lexer::{Code, Dialect, FTEQCC_MAX_WORD, Span};
 
+use crate::compiler_flags::{FlagEdit, PragmaDefault};
 use crate::cond::{self, FteIfError, fte_white};
 use crate::fte_keywords::{KeywordEdit, Keywords};
 use crate::fte_macro::{Reading, Text};
-use crate::fte_tables::TargetFormat;
+use crate::fte_tables::{FteFlag, TargetFormat};
 use crate::{
-    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Variadic,
-    WarningSettings, fte_pragma, normalize,
+    Body, ChunkReader, FileId, FileSpan, FlagSettings, Loader, Macro, Preprocessor, Run, Undef,
+    Variadic, WarningSettings, fte_pragma,
 };
 
 /// The longest name `QCC_PR_DefineName` defines: `MAXCONSTANTNAMELENGTH` in FTEQCC's `qcc.h`,
@@ -1125,8 +1126,9 @@ pub(crate) fn elif_defined(
 }
 
 /// `QCC_JoinPaths(fullname, size, name, base)`: `name` after the last `/` or `\` of `base`, or
-/// `name` itself when it starts with one (FTEF-14.40).
-pub(crate) fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
+/// `name` itself when it starts with one (FTEF-14.40, PRJ-6.7).
+#[must_use]
+pub fn join_paths(name: &[u8], base: &[u8]) -> Vec<u8> {
     if name.first().is_some_and(|&b| b == b'/' || b == b'\\') {
         return name.to_vec();
     }
@@ -1145,6 +1147,34 @@ pub(crate) fn include_candidates(name: &[u8], compiling: &[u8], dirs: &[Vec<u8>]
     let mut names = vec![join_paths(name, compiling)];
     names.extend(dirs.iter().map(|dir| join_paths(name, dir)));
     names
+}
+
+/// The name `QCC_PR_AddIncludePath(new)` keeps for the include directory `new`: `.` for an empty
+/// one, and a `/` after it unless it ends in `/` or `\` (FTEF-14.70, PRJ-6.7).
+#[must_use]
+pub fn include_dir_name(new: &[u8]) -> Vec<u8> {
+    let mut dir = if new.is_empty() {
+        b".".to_vec()
+    } else {
+        new.to_vec()
+    };
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    dir
+}
+
+/// The directory `#pragma includedir TOKEN` names in a file being compiled as `compiling`
+/// (FTEF-14.70, PRJ-6.7): `TOKEN` with a `/` after it unless it is empty or ends in `/` or `\`
+/// (`if (*qcc_token)`), joined to `compiling` (`QCC_JoinPaths(newinc, sizeof(newinc),
+/// qcc_token, compilingfile);`).
+#[must_use]
+pub fn pragma_include_dir(token: &[u8], compiling: &[u8]) -> Vec<u8> {
+    let mut dir = token.to_vec();
+    if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
+        dir.push(b'/');
+    }
+    join_paths(&dir, compiling)
 }
 
 /// The most include directories FTEQCC keeps: `#define MAXINCLUDEDIRS 8` in `qcc_pr_lex.c`;
@@ -1173,10 +1203,7 @@ impl FteState {
         if dirs.len() >= FTE_MAX_INCLUDE_DIRS {
             return Some("Too many include dirs. Ignoring and hoping the stars align.");
         }
-        let mut dir = given.to_vec();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
+        let dir = include_dir_name(given);
         if dir.len() >= FTE_INCLUDE_TABLE_BYTES {
             return Some("Include path too long.");
         }
@@ -1190,16 +1217,13 @@ impl Pragma {
     /// (FTEF-14.70): the text's first token read with `QCC_COM_Parse`, with a `/` after it unless
     /// it ends in `/` or `\`, joined to `compiling`.
     pub(crate) fn include_dir(&self, compiling: &[u8]) -> Vec<u8> {
-        let mut dir = com_parse(&self.message, 0)
+        let token = com_parse(&self.message, 0)
             .map(|(token, _)| token)
             .unwrap_or_default();
-        if dir.last().is_some_and(|&b| b != b'/' && b != b'\\') {
-            dir.push(b'/');
-        }
-        join_paths(&dir, compiling)
+        pragma_include_dir(&token, compiling)
     }
 
-    /// The name `#pragma file` gives (FTEF-14.32): the text, or within the `(` it starts with and
+    /// The name `#pragma file` gives (FTEF-14.74): the text, or within the `(` it starts with and
     /// the first `)` after it.
     pub(crate) fn file_name(&self) -> Vec<u8> {
         match self.message.strip_prefix(b"(") {
@@ -1375,10 +1399,21 @@ impl<L: Loader> Preprocessor<L> {
         // first pass, so a `#pragma flag` holds into the second (FTEF-12.11).
         // FTEF-14.72: then `QCC_PR_CommandLinePrecompilerOptions` reads the command line again.
         let defaults = FteState::default();
+        // FTEF-21.4: `QCC_PrioritiseOpcodes` runs once, before the first pass, so the priorities
+        // a pragma set hold into the second too.
+        let priorities = self.fte.flags.priorities();
+        // FTEF-21.14: `defaultstatic = 0;`, while `defaultnoref` and `defaultnosave` hold.
+        self.fte.flags.set_default(PragmaDefault::Static, false);
+        // FTEF-22.4: its `QCC_OPCodeSetTarget` of the standard target clears
+        // `flag_undefwordsize` before the command line is read.
+        self.fte.flags.set(FteFlag::Undefwordsize, false);
         self.fte = FteState {
             ifs: self.fte.ifs,
             warnings: self.command_line.warnings(defaults.warnings),
-            flags: self.command_line.flags(self.fte.flags),
+            flags: self
+                .command_line
+                .flags(self.fte.flags)
+                .with_priorities(priorities),
             target: self.command_line.target(),
             ..defaults
         };
@@ -1399,7 +1434,7 @@ impl<L: Loader> Preprocessor<L> {
                 name_span: Span::new(0, 0),
                 evil: false,
             };
-            self.macros.insert(name.to_owned(), Rc::new(mac));
+            self.macros.insert_builtin(name, Rc::new(mac));
             self.macros_changed();
         }
     }
@@ -1414,15 +1449,16 @@ impl<L: Loader> Preprocessor<L> {
             .rev()
             .find(|c| c.file == file)
             .and_then(|c| c.line_base);
+        // A file's base is set as its reading passes the pragma, and no offset before it is
+        // asked for after that: tokens are read in order, and a use whose scan ran a directive
+        // is refused with reading going on after its arguments, none read again (FTEF-14.45).
         match base {
-            Some((from, value)) if at >= from => {
-                value.wrapping_add_unsigned(line(at).saturating_sub(line(from)))
-            }
-            _ => i32::try_from(line(at)).unwrap_or(i32::MAX),
+            Some((from, value)) => value.wrapping_add_unsigned(line(at).saturating_sub(line(from))),
+            None => i32::try_from(line(at)).unwrap_or(i32::MAX),
         }
     }
 
-    /// `s_filen` as `__FILE__` writes it (FTEF-14.32): the name the innermost `#pragma file`
+    /// `s_filen` as `__FILE__` writes it (FTEF-14.74): the name the innermost `#pragma file`
     /// of an open chunk gave, or else the name of the file being read.
     pub(crate) fn fte_file_name(run: &Run) -> &[u8] {
         run.chunks
@@ -1528,11 +1564,13 @@ impl<L: Loader> Preprocessor<L> {
                 let name = lossy(text.get(name).unwrap_or_default());
                 // FTEF-14.57: `QCC_PR_ParseWarning(WARN_UNDEFNOTDEFINED, "Precompiler constant %s
                 // was not defined", name);`
-                if self.macros.remove(&name).is_some() {
-                    self.macros_changed();
-                } else {
-                    let message = format!("Precompiler constant {name} was not defined");
-                    run.report(Code::W0114, message, at(end.at));
+                match self.macros.remove(&name) {
+                    Undef::Removed => self.macros_changed(),
+                    Undef::Kept => {}
+                    Undef::Absent => {
+                        let message = format!("Precompiler constant {name} was not defined");
+                        run.report(Code::W0114, message, at(end.at));
+                    }
                 }
                 end.resume(run, &reading, hash)
             }
@@ -1801,10 +1839,10 @@ impl<L: Loader> Preprocessor<L> {
             && let Some(cursor) = run.cursors.iter().rev().find(|c| c.file == at.file)
         {
             let here = join_paths(name, &cursor.read_as);
-            let path = normalize(&PathBuf::from(lossy(&here)));
+            let path = self.open_path(Path::new(&lossy(&here)));
             let known = names
                 .iter()
-                .any(|name| normalize(&PathBuf::from(lossy(name))) == path);
+                .any(|name| self.open_path(Path::new(&lossy(name))) == path);
             if !known {
                 names.insert(0, here);
             }
@@ -1812,7 +1850,7 @@ impl<L: Loader> Preprocessor<L> {
         let mut first_error = None;
         let mut found = None;
         for candidate in &names {
-            let path = normalize(&PathBuf::from(lossy(candidate)));
+            let path = self.open_path(Path::new(&lossy(candidate)));
             match self.loader.load(&path) {
                 Ok(text) => {
                     found = Some((candidate.clone(), path, text));
@@ -1844,7 +1882,8 @@ impl<L: Loader> Preprocessor<L> {
 
     /// `#pragma` (FTEF-14.43, FTEF-14.70), whose `#` is at `hash` and whose line ends at `end`
     /// in `bytes`: `DONT_COMPILE_THIS_FILE`, `once`, `file`, `line`, `includedir`, `noref`,
-    /// `autoproto` and `warning` change what is read; the others change only the build.
+    /// `nosave`, `defaultstatic`, `autoproto`, `flag`, `keyword`, `TARGET` and `warning` change
+    /// what is read; the others change only the build.
     fn fte_pragma(
         &mut self,
         run: &mut Run,
@@ -1896,26 +1935,37 @@ impl<L: Loader> Preprocessor<L> {
                 let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
                 run.report(Code::W0117, warning, at);
             }
-        } else if pragma.is("noref") {
-            // FTEF-12.6: `defaultnoref = !!atoi(msg);`
-            let index = run.out.tokens.len();
-            run.out.noref.push((index, cond::fte_atoi(message) != 0));
+        } else if let Some(default) = [
+            ("noref", PragmaDefault::Noref),
+            ("nosave", PragmaDefault::Nosave),
+            ("defaultstatic", PragmaDefault::Static),
+        ]
+        .into_iter()
+        .find_map(|(name, default)| pragma.is(name).then_some(default))
+        {
+            // FTEF-12.6, FTEF-21.14: `defaultnoref = !!atoi(msg);`, and so `defaultnosave` and
+            // `defaultstatic`.
+            let on = cond::fte_atoi(message) != 0;
+            self.fte.flags.set_default(default, on);
+            run.out
+                .flags
+                .push((run.out.tokens.len(), FlagEdit::of_default(default, on)));
         } else if pragma.is("autoproto") {
-            // FTEF-12.10: `autoprototype = *msg?!!atoi(msg):true;`
+            // FTEF-12.18: `autoprototype = *msg?!!atoi(msg):true;`
             let on = message.is_empty() || cond::fte_atoi(message) != 0;
             let index = run.out.tokens.len();
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
             run.out.autoproto.push((index, on, at));
         } else if pragma.is("keyword") || pragma.is("flag") {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));
-            let lexed_with = self.fte.flags.lex_flags();
             let (warnings, set) = self.fte.flags.apply_pragma(message);
             for warning in warnings {
                 run.report(Code::W0113, warning, at);
             }
-            let flags = self.fte.flags.lex_flags();
-            if flags != lexed_with {
-                run.out.lex_flags.push((run.out.tokens.len(), flags));
+            // FTEF-21.1: the flags it names, which an `extern "C"` block may have changed since.
+            let edit = FlagEdit::of_flags(&set, self.fte.flags.compiler_flags());
+            if !edit.is_empty() {
+                run.out.flags.push((run.out.tokens.len(), edit));
             }
             // FTEF-20.1: the keywords it names, which a definition may have turned off since.
             let edit = KeywordEdit::of_flags(&set, self.fte.keywords());
@@ -1947,6 +1997,14 @@ impl<L: Loader> Preprocessor<L> {
                     let edit = KeywordEdit::hexen2_target(target.keeps_float());
                     run.out.keywords.push((run.out.tokens.len(), edit));
                 }
+                // FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` by the format,
+                // which the casts read.
+                self.fte
+                    .flags
+                    .set(FteFlag::Undefwordsize, target.undefined_word_size());
+                let edit =
+                    FlagEdit::of_flags(&[FteFlag::Undefwordsize], self.fte.flags.compiler_flags());
+                run.out.flags.push((run.out.tokens.len(), edit));
             }
         } else if !fte_pragma::is_known(&pragma.name) {
             let at = bytes.reading().place(hash..end.max(hash.saturating_add(1)));

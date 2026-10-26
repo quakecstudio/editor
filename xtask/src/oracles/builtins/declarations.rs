@@ -108,7 +108,7 @@ const VANILLA: &[&str] = &[
 
 /// The FTEQCC programs whose outcome FTEQCC's errors decide (FTEF-19).
 const FTEQCC: &[&str] = &[
-    // FTEF-19.2: literal initialisers are cast to the definition's type, a null to any.
+    // FTEF-19.31: literal initialisers are cast to the definition's type, a null to any.
     "float x = \"a\";\n",
     "entity e = 1;\n",
     ".float fl = 1;\n",
@@ -509,7 +509,7 @@ const FTEQCC: &[&str] = &[
 /// its statement says, or none: the profile's warnings must be FTEQCC's (FTEF-19).
 const WARNINGS: &[&str] = &[
     // FTEF-2.9, FTEF-2.11: narrowed types and `const` in a type. Each program uses what it
-    // defines, since FTEQCC warns of an unreferenced global (Q302, FTEF-19.17).
+    // defines, since FTEQCC warns of an unreferenced global (Q302, FTEF-19.32).
     "unsigned float x;\nvoid() g = { x = 1; };\n",
     "__long __double x;\nvoid() g = { x = 1; };\n",
     "unsigned __long __double x;\nvoid() g = { x = 1; };\n",
@@ -536,7 +536,7 @@ const WARNINGS: &[&str] = &[
     "void(float) g = {};\n",
     "void(float a, float) g = {};\n",
     "void(void) g = {};\n",
-    // FTEF-19.2: implicit casts.
+    // FTEF-19.31: implicit casts.
     "vector v = 1;\n",
     "string s = 1i;\n",
     "entity e = 1i;\n",
