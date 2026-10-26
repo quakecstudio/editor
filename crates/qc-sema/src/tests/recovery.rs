@@ -69,18 +69,25 @@ fn partial_expressions_resolve_what_they_have() {
 
 // spec QCD-1.4: a class, typedef, accessor, member, enumerator or function with no name or no
 // body declares nothing and stops nothing after it.
+// spec FTEF-17.11: a function left with no body is still reported
 #[test]
 fn nameless_declarations_declare_nothing() {
-    for source in [
-        "class { float x; };\n",
-        "typedef float;\n",
-        "accessor : float;\n",
-        "class A { float; };\n",
-        "enum { = 1 };\n",
-        "void(float a) f = ;\n",
-        "void() f = [1, ] { };\n",
+    for (source, bodyless) in [
+        ("class { float x; };\n", None),
+        ("typedef float;\n", None),
+        ("accessor : float;\n", None),
+        ("class A { float; };\n", None),
+        ("enum { = 1 };\n", None),
+        ("void(float a) f = ;\n", Some("function f was not defined")),
+        ("void() f = [1, ] { };\n", None),
     ] {
         let after = format!("{source}void() g = {{ u1 = 1; }};\n");
-        assert_eq!(unknown(&after), ["Unknown value \"u1\""], "{source:?}");
+        let mut expected = vec!["Unknown value \"u1\""];
+        expected.extend(bodyless);
+        if source.starts_with("typedef") {
+            // FTEF-19.9: a typedef that defines no type is a warning.
+            expected.insert(0, "typedef defines no types");
+        }
+        assert_eq!(unknown(&after), expected, "{source:?}");
     }
 }

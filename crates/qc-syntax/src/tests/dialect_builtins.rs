@@ -42,7 +42,7 @@ fn binding(init: &str) -> (Option<i32>, Option<String>) {
         builtin
             .number()
             .and_then(|t| builtin_binum(&t.text_lossless(), Dialect::Fteqcc)),
-        builtin.engine_name(),
+        builtin.engine_name(qc_lexer::LexFlags::default()),
     )
 }
 
@@ -240,4 +240,11 @@ fn the_vanilla_name_limit_stays() {
     let source = format!("void() {name} = #5;\n");
     assert_eq!(errors(&parse(source.as_bytes())), [Code::E0202]);
     assert_eq!(errors(&fte(&source)), []);
+}
+
+// spec FTEF-14.56: a NUL byte of the file inside a string is a space of the loader's text, so
+// it is part of the engine name
+#[test]
+fn a_nul_byte_in_an_engine_name_is_a_space() {
+    assert_eq!(binding(":\"ab\0cd\"").1.as_deref(), Some("ab cd"));
 }

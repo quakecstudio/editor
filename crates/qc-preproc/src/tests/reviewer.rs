@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use super::{codes, tokens};
+use super::{codes, one_fte, tokens};
 use crate::{Code, MemoryLoader, Preprocessor};
 
 /// The tokens and diagnostic codes of `text` as `a.qc` under `dialect`, preprocessed on a
@@ -50,6 +50,7 @@ fn reviewer_a_chain_of_function_macros_expands_to_its_end() {
 // leaves each inner one, which its hide set names, as written, with no diagnostic
 #[test]
 fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 100_000_usize;
     let mut text = "#define F(x) x\n".to_owned();
     text.push_str(&"F(".repeat(n));
@@ -69,10 +70,11 @@ fn reviewer_a_call_nested_in_its_own_argument_expands_once() {
 // spec QC-9.17: in a 10000-long chain whose every macro also names the chain's head, the head
 // is hidden in each expansion (a name with live hide-set nodes is still looked up in the
 // token's own set), so each use of it is left as written and the chain still reaches its end
-// spec FTEF-14.19: under FTEQCC the head is expanded again in each chunk it is not open in,
+// spec FTEF-14.28: under FTEQCC the head is expanded again in each chunk it is not open in,
 // so the expansion outgrows the bound, which is reported once
 #[test]
 fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
+    let _one = super::one_bound_test_at_a_time();
     let n = 10_000_usize;
     let head = n.saturating_sub(1);
     let mut text = "#define M0 1\n".to_owned();
@@ -87,4 +89,325 @@ fn reviewer_a_chain_that_names_its_head_leaves_the_head_unexpanded() {
     );
     let (_, codes) = on_small_stack(text, qc_lexer::Dialect::Fteqcc);
     assert_eq!(codes, vec![Code::E0120]);
+}
+
+/// The tokens and diagnostic codes of `text` as `a.qc` under FTEQCC.
+fn fte(text: &str) -> (String, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    (tokens(&out), codes(&out))
+}
+
+// The cases below were compiled with the pinned FTEQCC (fte-team/fteqw@f937b9d, `-Tid`) by the
+// fourth P2-R2 review, each as `void() f = USE;` after its definitions, and the profile agreed
+// with every one through `cargo xtask oracles builtins`.
+
+// spec FTEF-14.29: a `\` and line break between a name and its `(` in a body is dropped as the
+// body is stored, so the `(` follows the name and opens its arguments
+#[test]
+fn reviewer_a_continued_line_in_a_body_still_opens_the_arguments() {
+    assert_eq!(
+        fte("#define M(x) x\n#define K M\\\n(#5)\nK"),
+        ("# 5".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.14: one argument pasted to itself is its text twice, and `x##_a` given as an
+// argument to another macro is pasted before that macro reads it
+#[test]
+fn reviewer_pastes_join_an_argument_to_itself_and_inside_an_argument() {
+    assert_eq!(
+        fte("#define E(n) #5:n##n\nE(ex)"),
+        ("# 5 : exex".to_owned(), vec![Code::W0117])
+    );
+    assert_eq!(
+        fte("#define E(x) #5:x\n#define F(x) E(x##_a)\nF(ex)"),
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
+    );
+}
+
+// spec FTEF-14.31: a string in an argument is one piece of it, so its comma splits nothing, and
+// `#a` writes the string's own quotes escaped
+#[test]
+fn reviewer_a_string_s_comma_does_not_split_an_argument() {
+    let (text, codes) = fte("#define S(a) #a\n:S(\"a,b\")");
+    assert_eq!((text.as_str(), codes), (": \"\\\"a,b\\\"\"", vec![]));
+}
+
+// spec FTEF-14.5: white space around a parameter's name in the list is not part of it
+#[test]
+fn reviewer_spaces_around_a_parameter_name_are_dropped() {
+    assert_eq!(
+        fte("#define E( n ) :n\nE(ex_a)"),
+        (": ex_a".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define E(n , m) n:m\nE(#5, ex_a)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.9: one empty argument more than the parameters is accepted and unused, two are
+// E0116, and a variadic macro takes any number of empty ones
+#[test]
+fn reviewer_trailing_empty_arguments_count_as_fteqcc_counts_them() {
+    assert_eq!(
+        fte("#define E(n) n\nE(#5:ex_a,)"),
+        ("# 5 : ex_a".to_owned(), vec![])
+    );
+    assert_eq!(fte("#define E(n) n\nE(#5:ex_a,,)").1, vec![Code::E0116]);
+    assert_eq!(
+        fte("#define E(a,...) #5:a\nE(ex_a, , ,)"),
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
+    );
+}
+
+// spec FTEF-14.20: a macro named in an argument is expanded when the expansion is read, in the
+// macro's chunk, and a function-like macro written with its arguments inside an argument is
+// expanded there
+#[test]
+fn reviewer_a_macro_in_an_argument_expands_where_it_is_read() {
+    assert_eq!(
+        fte("#define E(x) #5:x\n#define ex_a ex_b\nE(ex_a)"),
+        ("# 5 : ex_b".to_owned(), vec![Code::W0117])
+    );
+    assert_eq!(
+        fte("#define E(x) x\n#define G(x) #5:x\nE(G(ex_a))"),
+        ("# 5 : ex_a".to_owned(), vec![Code::W0117])
+    );
+}
+
+// Fifth P2-R2 review: each case below was compiled with the pinned FTEQCC first
+// (`cargo xtask oracles builtins` with the case added), and the profile agreed.
+
+// spec FTEF-14.57: `#undef` and `#ifndef` with no name before a `//` comment read the comment
+// with `QCC_PR_SimpleGetToken`, which stops at its line break, so a `\` at the comment's end
+// carries nothing to the next line
+#[test]
+fn reviewer_a_comment_in_place_of_a_name_ends_at_its_line_break() {
+    // FTEF-14.57: and with no name removes none, "Precompiler constant  was not defined".
+    assert_eq!(
+        fte("#undef // c \\\nzz\n"),
+        ("zz".to_owned(), vec![Code::W0114])
+    );
+    assert_eq!(
+        fte("#ifndef // c \\\nyes\n#endif\n"),
+        ("yes".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.57: `QCC_PR_SimpleGetToken` stops at no `/*`, so `#ifdef X/**/` asks for the
+// macro `X/**/` and `#undef X/**/` removes no macro
+#[test]
+fn reviewer_a_comment_joined_to_a_name_is_part_of_the_word() {
+    assert_eq!(
+        fte("#define X 1\n#ifdef X/**/\nyes\n#endif\nno\n"),
+        ("no".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#define X 1\n#undef X/**/\nX\n"),
+        ("1".to_owned(), vec![Code::W0114])
+    );
+}
+
+// spec FTEF-14.35: a comment before `#undef`'s name leaves the name to `QCC_PR_SkipToEndOfLine`,
+// whose `errorifnonwhite` makes it "unexpected tokens at end of line"
+#[test]
+fn reviewer_a_comment_before_undef_s_name_is_an_error() {
+    let (toks, errs) = fte("#define X 1\n#undef /**/ X\nX\n");
+    assert_eq!((toks.as_str(), errs), ("1", vec![Code::W0114, Code::E0121]));
+}
+
+// spec FTEF-14.37: a skipped line is read as `QCC_PR_SkipToEndOfLine` reads it, which knows no
+// character constant, so the `/*` in `'/*'` opens a comment that hides the next `#endif`
+#[test]
+fn reviewer_a_comment_opened_in_a_character_constant_hides_a_skipped_endif() {
+    assert_eq!(
+        fte("#ifdef Q\nx = '/*';\n#endif\nzz\n*/\n#endif\nb\n"),
+        ("b".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.37: `QCC_PR_FalsePreProcessorIf` passes over only spaces and tabs after a `#`, so
+// `#`, a vertical tab and `endif` closes no skipped side
+#[test]
+fn reviewer_a_vertical_tab_after_a_skipped_hash_hides_the_endif() {
+    assert_eq!(
+        fte("#ifdef Q\n#\x0bendif\nzz\n#endif\nb\n"),
+        ("b".to_owned(), vec![])
+    );
+}
+
+// spec FTEF-14.43: a pragma's name ends at a tab as at a space, and a `(` that comes first ends
+// an empty name, so `#pragma (line 40)` numbers no line
+#[test]
+fn reviewer_a_pragma_s_name_ends_at_a_tab_and_not_after_a_leading_paren() {
+    assert_eq!(
+        fte("#pragma\tline\t40\n__LINE__\n"),
+        ("40".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#pragma (line 40)\n__LINE__\n"),
+        ("2".to_owned(), vec![Code::W0113])
+    );
+}
+
+// spec FTEF-14.33: a value read with `QCC_PR_SimpleGetToken` stops at a `/*`, so `#if /* c */ 1`
+// has no value, "unexpected end-of-line", and is false
+#[test]
+fn reviewer_a_comment_before_an_if_value_leaves_no_value() {
+    let (toks, errs) = fte("#if /* c */ 1\nyes\n#endif\nb\n");
+    assert_eq!((toks.as_str(), errs), ("b", vec![Code::E0121]));
+}
+
+// The cases below were compiled with the pinned FTEQCC (fte-team/fteqw@f937b9d, `-Tid`) by the
+// fifth P2-R2 review, each after `void() f = #5;`, and the profile agreed with every one through
+// `cargo xtask oracles builtins`.
+
+/// The keywords in force at token 0 of `out`, from its first mark.
+fn first_keywords(out: &crate::FileOutput) -> crate::Keywords {
+    out.keywords
+        .first()
+        .map_or(crate::Keywords::default(), |&(_, edit)| {
+            edit.apply(crate::Keywords::NONE)
+        })
+}
+
+/// The keywords in force at the end of `text`, preprocessed as `a.qc` under FTEQCC.
+fn keywords_after(text: &str) -> (crate::Keywords, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let mut now = crate::Keywords::NONE;
+    for &(_, edit) in &out.keywords {
+        now = edit.apply(now);
+    }
+    (now, codes(&out))
+}
+
+// spec FTEF-12.11: a pragma's flags and keywords hold into the second autoprototyping pass from
+// its first token, wherever the pragma stood in the first: after `#pragma autoproto`,
+// `string s = "\9";` before `#pragma flag disable qcfuncs` is "Bad character code \9" and
+// `loop { break; }` before `#pragma keyword enable loop` a loop, in the second pass
+#[test]
+fn reviewer_a_pragma_after_the_tokens_holds_from_the_second_pass_s_start() {
+    use crate::{CompilerFlags, FteFlag, Keyword};
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        b"float x;\n#pragma flag disable qcfuncs\n#pragma keyword enable loop\n",
+    );
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let first = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    pp.restart();
+    let second = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let flags_at_start = |out: &crate::FileOutput| {
+        out.flags
+            .first()
+            .map(|&(at, edit)| (at, edit.apply(CompilerFlags::default())))
+    };
+    assert!(flags_at_start(&first).is_some_and(|(at, f)| at == 0 && f.has(FteFlag::Qcfuncs)));
+    assert!(!first_keywords(&first).has(Keyword::Loop));
+    assert!(flags_at_start(&second).is_some_and(|(at, f)| at == 0 && !f.has(FteFlag::Qcfuncs)));
+    assert!(first_keywords(&second).has(Keyword::Loop));
+}
+
+// spec FTEF-12.11: `#pragma keyword` reads its state and names with `QCC_COM_Parse`: a quoted
+// name is the name, the state and name in any case; a state it does not know sets nothing; and
+// `int`, whose row lacks `FLAG_MIDCOMPILE`, cannot be turned off by a pragma, so `int x;` still
+// declares an int. The pinned FTEQCC compiles `#pragma keyword enable "loop"`, `enable LOOP` and
+// `ON loop` before a `loop` statement and `disable int` before `int x;`, and refuses `maybe
+// loop` before the statement
+#[test]
+fn reviewer_keyword_pragmas_read_their_words_as_qcc_com_parse_does() {
+    use crate::Keyword;
+    for text in [
+        "#pragma keyword enable \"loop\"\n",
+        "#pragma keyword enable LOOP\n",
+        "#pragma keyword ON loop\n",
+    ] {
+        let (keywords, errors) = keywords_after(text);
+        assert!(keywords.has(Keyword::Loop), "{text}");
+        assert_eq!(errors, [], "{text}");
+    }
+    let (keywords, errors) = keywords_after("#pragma keyword maybe loop\n");
+    assert!(!keywords.has(Keyword::Loop));
+    assert_eq!(errors, [Code::W0113]);
+    let (keywords, errors) = keywords_after("#pragma keyword disable int\n");
+    assert!(keywords.has(Keyword::Int));
+    assert_eq!(errors, [Code::W0113]);
+}
+
+// spec FTEF-14.72: `-std=` compares the names other than the C ones exactly, so `-std=QCC` and
+// `-std=Id` only set the defaults, `for` staying on, and `-std=QCCX` sets no `qccx`; `-std=` after
+// a `-F` sets that flag back to its default, and before it does not. The pinned FTEQCC compiles
+// `for (;;) {}` under `-std=QCC` and `-std=Id`, refuses `"a":"b"` under `-std=QCCX`, and reads
+// `{ { float x; } x = 1; }` with `subscope` off under `-Fsubscope -std=fteqcc` and on under
+// `-std=fteqcc -Fsubscope`
+#[test]
+fn reviewer_std_names_but_the_c_ones_are_exact_and_reset_earlier_options() {
+    use crate::{CommandLine, FlagSettings, FteFlag};
+    let on = |args: &[&str], flag| {
+        CommandLine::new(args)
+            .flags(FlagSettings::default())
+            .is_on(flag)
+    };
+    assert!(on(&["-std=QCC"], FteFlag::ForKeyword));
+    assert!(on(&["-std=Id"], FteFlag::ForKeyword));
+    assert!(!on(&["-std=id"], FteFlag::ForKeyword));
+    assert!(!on(&["-std=QCCX"], FteFlag::Qccx));
+    assert!(on(&["-std=qccx"], FteFlag::Qccx));
+    assert!(!on(
+        &["-Fsubscope", "-std=fteqcc"],
+        FteFlag::PrSubscopedlocals
+    ));
+    assert!(on(
+        &["-std=fteqcc", "-Fsubscope"],
+        FteFlag::PrSubscopedlocals
+    ));
+}
+
+// spec FTEF-14.52: a directive's name is compared exactly, with or without `caseinsens`, so
+// `#DEFINE`, `#Define`, `#IFDEF` and `#PRAGMA` are no directives and `#define` is; the pinned
+// FTEQCC refuses each of the first three with "Explicit precompiler usage when not defined"
+#[test]
+fn reviewer_directive_names_are_read_exactly() {
+    for args in [&[][..], &["-Fcaseinsens"][..]] {
+        let run = |text: &str| {
+            let mut loader = MemoryLoader::new();
+            loader.insert("a.qc", text.as_bytes());
+            let mut pp = Preprocessor::new(loader)
+                .with_dialect(qc_lexer::Dialect::Fteqcc)
+                .with_command_line(crate::CommandLine::new(args));
+            let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+            (tokens(&out), codes(&out))
+        };
+        assert_eq!(run("#define X 1\nX\n"), ("1".to_owned(), vec![]));
+        assert_eq!(run("#DEFINE X 1\nX\n").0, "# DEFINE X 1 X");
+        assert_eq!(run("#Define X 1\nX\n").0, "# Define X 1 X");
+        assert_eq!(
+            run("#define X 1\n#IFDEF X\nX\n#ENDIF\n").0,
+            "# IFDEF 1 1 # ENDIF"
+        );
+    }
+}
+
+// spec FTEF-12.11: the pragma `keyword` and `flag` read their state and their name with
+// `QC_strcasecmp`, so these lines each leave a mark and no diagnostic; the pinned FTEQCC reads
+// each silently
+#[test]
+fn reviewer_pragma_states_and_names_are_read_in_any_case() {
+    for text in [
+        "#pragma KEYWORD OFF LOOP\nx\n",
+        "#pragma Flag Disable Qcfuncs\nx\n",
+        "#pragma flag Disable QCFUNCS\nx\n",
+        "#pragma flag ENABLE ASSUMEVAR\nx\n",
+    ] {
+        let (_, out) = one_fte(text);
+        assert_eq!(codes(&out), vec![], "{text}");
+        assert!(!out.keywords.is_empty() || !out.flags.is_empty(), "{text}");
+    }
 }

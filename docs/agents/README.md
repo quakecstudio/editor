@@ -32,7 +32,7 @@ Creating new GitHub repositories (such as `quakecstudio/tree-sitter-quakec`) is 
 | `implementer` subagent | All build work (specs, ports, features, tests, tooling, docs) and decision drafts |
 | `reviewer` subagent | Readiness reviews and phase gates; never fixes what it reviews |
 | `.claude/skills/work-issue/scripts/start.sh` | Sets the issue's Status on the project board to In Progress when work starts; closing it moves it to Done |
-| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge |
+| `.claude/skills/work-issue/scripts/land.sh` | Waits for CI, adds the PR to the merge queue, waits for the merge; first refuses a body with a closing keyword in a negated sentence (`check-pr-body.sh`) |
 
 `status.py` sorts issues into tracks by who may work them: `build`, `review` (readiness and gates), `human` (`needs:human` or `escalated`), and `agents` (`build` and `review`). The orchestrator works the `agents` track and routes each issue by its track, so a readiness review is always done by a different agent from the one that wrote the code.
 
@@ -71,7 +71,7 @@ When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR 
 | --- | --- |
 | 0 | Mostly yours: the agent builds the repo foundation (#1, #2, #3, #24 tooling, #7, the porting process #9) and drafts every decision, then waits for you on the name, preview host, MVP scope and the signing secrets. The license is decided; the agent closes the gate. |
 | 1 | Long and mostly autonomous: specs and ports of id's formats and VM, the oracles in `oracles/` (#35), the differential runner, then readiness reviews. |
-| 2 | Autonomous except the UI work, which follows the framework chosen in #10 and the approved mockups. The grammar (#71) lives in `quakecstudio/tree-sitter-quakec`. |
+| 2 | Autonomous except the UI work, which follows egui ([ADR-0003](../adr/0003-ui-framework.md)) and the approved mockups. The grammar (#71) lives in `quakecstudio/tree-sitter-quakec`. |
 | 3 | The preview host is our Rust app in `apps/preview-host` (ADR-0004), checked against id's engine built in `oracles/`. Engine integration tests need the redistributable test assets chosen in #17. |
 | 4 | Autonomous through signing (#23: the secrets are set; agents build the signing workflow) and release, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |

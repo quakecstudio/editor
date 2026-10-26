@@ -684,14 +684,17 @@ mod bodies {
 
     use crate::mock::{MessageDest, MockEngine};
     use crate::{BuiltinError, MockBuiltins};
-    use qc_edict::system::{field_by_name, global_by_name};
+    use qc_edict::EDICT_SYS_GLOBALS_END;
+    use qc_edict::system::{SYSTEM_GLOBALS, field_by_name, global_by_name};
     use qc_progs::opcode::Opcode;
     use qc_progs::{Function, Progs, ProgsFile, Statement, write};
-    use qc_types::{PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
+    use qc_types::{Etype, PROGS_OFS_PARM0, PROGS_OFS_RETURN, PROGS_PARM_SLOTS, Slot};
     use qc_vm::{Machine, NoObserver, RunError, ServerState};
 
-    /// A global slot holding the function value the entry's `CALL` calls.
-    const CALL_TARGET_SLOT: i32 = 60;
+    /// A global slot holding the function value the entry's `CALL` calls: the first slot past
+    /// the system globals (EDICT-2.1), so no builtin that writes one, such as `makevectors`
+    /// writing `v_forward` (slots 59 to 61), overwrites it.
+    const CALL_TARGET_SLOT: i32 = 92;
     /// The entity field slots the progs has (EDICT-3.3 minimum); the mock adds none.
     const ENTITY_FIELDS: i32 = 105;
 
@@ -746,6 +749,18 @@ mod bodies {
             ..ProgsFile::default()
         };
         write(&file).unwrap()
+    }
+
+    // No spec statement: this pins the fixture, whose call target must lie outside every
+    // system global (EDICT-2.1 lists them) so that a builtin's writes cannot redirect the call.
+    #[test]
+    fn the_call_target_slot_is_past_the_system_globals() {
+        let slot = usize::try_from(CALL_TARGET_SLOT).unwrap();
+        assert!(slot >= EDICT_SYS_GLOBALS_END, "{slot}");
+        for var in SYSTEM_GLOBALS {
+            let size = if var.etype == Etype::Vector { 3 } else { 1 };
+            assert!(slot < var.slot || slot >= var.slot + size, "{}", var.name);
+        }
     }
 
     /// A string table from a list of strings; returns the bytes and the offset of each.
@@ -1352,6 +1367,45 @@ mod bodies {
         assert_eq!(f.machine.edicts().is_free(1), Some(true));
     }
 
+    // spec BUILTIN-3.2: error and objerror are host errors: they reach the VM as one and leave
+    // the call depth where they raised it, here the entry function's 1.
+    #[test]
+    fn error_and_objerror_are_host_errors_that_keep_the_depth() {
+        for number in [10_u32, 11] {
+            let (strings, offsets) = string_table(&["deep"]);
+            let mut f = Fixture::new(number, 1, strings, 0);
+            f.set_parm_i(0, offsets[0]);
+            let error = f.run(ServerState::Active).expect_err("host error");
+            assert_eq!(
+                error.kind,
+                qc_vm::ErrorKind::Host {
+                    message: "deep".to_owned()
+                }
+            );
+            assert_eq!(f.machine.depth(), 1, "builtin {number}");
+        }
+    }
+
+    // spec BUILTIN-3.3: break is a fatal error, which reaches the VM as one and leaves the depth.
+    // spec BUILTIN-3.1: a builtin's runtime error resets the depth to 0, as PR_RunError does.
+    #[test]
+    fn fatal_and_runtime_builtin_errors_keep_their_class() {
+        let mut fatal = Fixture::new(6, 0, vec![0], 0);
+        let error = fatal.run(ServerState::Active).expect_err("fatal error");
+        assert!(error.kind.is_fatal());
+        assert_eq!(fatal.machine.depth(), 1);
+
+        let mut runtime = Fixture::new(5, 0, vec![0], 0);
+        let error = runtime.run(ServerState::Active).expect_err("runtime error");
+        assert_eq!(
+            error.kind,
+            qc_vm::ErrorKind::Builtin {
+                message: "unimplemented bulitin".to_owned()
+            }
+        );
+        assert_eq!(runtime.machine.depth(), 0);
+    }
+
     // ----- BUILTIN-2: argument checks (the DIFF-6.6 messages) -----
 
     // spec BUILTIN-2.7: an entity value that names no edict is invalid entity.
@@ -1527,19 +1581,22 @@ mod bodies {
         assert_eq!(f.field_v(1, "origin"), [10.0, 20.0, 30.0]);
     }
 
-    // spec DIFF-6.6: the four argument-check messages are the mock's runtime errors; a message
-    // destination enum round-trips its variants (used by the Write builtins).
+    // spec BUILTIN-13.1, DIFF-6.5: each message destination counts into its own buffer:
+    // MSG_BROADCAST the unreliable datagram, MSG_ALL the reliable one, MSG_INIT the signon
+    // buffer, and MSG_ONE into none of them.
+    // spec BUILTIN-4.4: a typed engine-only error reports its builtin's number and name.
     #[test]
     fn message_dest_variants() {
-        for dest in [
-            MessageDest::Broadcast,
-            MessageDest::One,
-            MessageDest::All,
-            MessageDest::Init,
-        ] {
-            assert_eq!(dest, dest);
-        }
-        // A typed engine-only error still reports its message (BUILTIN-4.4).
+        let sizes = |dest: MessageDest| {
+            let mut engine = MockEngine::new("start", 0, 1);
+            assert!(!engine.append_message(dest, 3));
+            let b = &engine.buffers;
+            (b.unreliable, b.reliable, b.signon)
+        };
+        assert_eq!(sizes(MessageDest::Broadcast), (3, 0, 0));
+        assert_eq!(sizes(MessageDest::All), (0, 3, 0));
+        assert_eq!(sizes(MessageDest::Init), (0, 0, 3));
+        assert_eq!(sizes(MessageDest::One), (0, 0, 0));
         let error = BuiltinError::EngineOnly {
             number: 16,
             name: "traceline",
@@ -2802,26 +2859,28 @@ mod bodies {
         f.run_ok(ServerState::Active);
     }
 
-    // spec DIFF-7.8: movetogoal does not step when the yaw delta is more than 45 degrees; with
-    // angles_y 90 and ideal_yaw 0 the delta is 90, so it holds. With the subtraction turned
-    // into an addition the delta would be 90 too, so use asymmetric values: angles_y 20,
-    // ideal_yaw 10 gives delta 10 (steps); the addition gives 30 (also steps) - instead pin
-    // the window's upper edge where delta is exactly 315 (no step) vs just under.
+    // spec DIFF-7.8: movetogoal steps only when `angles_y - ideal_yaw` is not strictly between
+    // 45 and 315, so at the window's upper edge a delta of exactly 315 steps and 314, just
+    // inside, holds.
     #[test]
-    fn movetogoal_holds_at_delta_315() {
-        let mut f = Fixture::new(67, 1, vec![0], 0);
-        f.machine.edicts_mut().alloc(1.0).unwrap();
-        f.set_field_f(1, "flags", 512.0); // FL_ONGROUND
-        f.set_field_v(1, "origin", [0.0, 0.0, 0.0]);
-        f.set_field_v(1, "angles", [0.0, 315.0, 0.0]); // delta = 315 - 0 = 315
-        f.set_field_f(1, "ideal_yaw", 0.0);
-        f.set_field_f(1, "yaw_speed", 0.0); // keep angles_y 315
-        f.set_global_entity("self", 1);
-        f.set_parm_f(0, 10.0);
-        f.run_ok(ServerState::Active);
-        // delta 315 is not strictly less than 315, so the window excludes it and it steps;
-        // yaw 0 step 10 moves origin_x to 10.
-        assert_eq!(f.field_v(1, "origin")[0], 10.0);
+    fn movetogoal_steps_at_delta_315_and_holds_at_314() {
+        let origin_x_after = |angles_y: f32| {
+            let mut f = Fixture::new(67, 1, vec![0], 0);
+            f.machine.edicts_mut().alloc(1.0).unwrap();
+            f.set_field_f(1, "flags", 512.0); // FL_ONGROUND
+            f.set_field_v(1, "origin", [0.0, 0.0, 0.0]);
+            f.set_field_v(1, "angles", [0.0, angles_y, 0.0]); // delta = angles_y - 0
+            f.set_field_f(1, "ideal_yaw", 0.0);
+            f.set_field_f(1, "yaw_speed", 0.0); // keep angles_y
+            f.set_global_entity("self", 1);
+            f.set_parm_f(0, 10.0);
+            f.run_ok(ServerState::Active);
+            f.field_v(1, "origin")[0]
+        };
+        // 315 is not strictly less than 315: outside the window, so a step of 10 along yaw 0.
+        assert_eq!(origin_x_after(315.0), 10.0);
+        // 314 is inside the window: no step.
+        assert_eq!(origin_x_after(314.0), 0.0);
     }
 
     // spec DIFF-7.8: movetogoal with angles_y 100 and ideal_yaw 10 has delta 90 (in the 45..315

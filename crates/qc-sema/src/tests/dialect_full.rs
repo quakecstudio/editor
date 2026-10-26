@@ -208,9 +208,33 @@ fn type_names_may_be_declared_again() {
 fn intrinsics_resolve() {
     let index = fte_index_of(
         "float() f = { local float n = sizeof(int) + autocvar(cl_speed, 3) + randomv(); \
-         _(\"text\"); return this ? 0 : 1; };\n",
+         _(\"text\"); return 0; };\n\
+         class C { float() m; };\nfloat() C::m = { return this ? 0 : 1; };\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+}
+
+// spec FTEF-19.16: an intrinsic is looked up as a name first, `random` among them, and `this`
+// and `super` are errors outside a member function, `super` also in a class with no parent
+#[test]
+fn intrinsics_are_names_first_and_this_needs_a_class() {
+    let index =
+        fte_index_of("float() random = #7;\nvoid() f = { local float r; r = random(); };\n");
+    assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
+    let random = defs_named(&index, "random")[0];
+    assert_eq!(index.refs.iter().filter(|r| r.def == random).count(), 1);
+    let undeclared = fte_index_of("void() f = { local float r; r = random(); };\n");
+    assert_eq!(errors(&undeclared), Vec::<Code>::new());
+    let outside = fte_index_of("void() f = { local entity e; e = this; e = super; };\n");
+    assert_eq!(errors(&outside), [Code::E0310, Code::E0311]);
+    let orphan =
+        fte_index_of("class C { void() m; };\nvoid() C::m = { local entity e; e = super; };\n");
+    assert_eq!(messages(&orphan), ["class C has no super"]);
+    let child = fte_index_of(
+        "class B { };\nclass C : B { void() m; };\n\
+         void() C::m = { local entity e; e = super; };\n",
+    );
+    assert_eq!(errors(&child), Vec::<Code>::new(), "{:?}", messages(&child));
 }
 
 // spec FTEF-17.10: a second initialiser written the same way, a builtin of the same number and
@@ -221,7 +245,7 @@ fn equal_initialisers_are_accepted() {
     let index = fte_index_of(
         "const vector v = [0, 0, 0];\nconst vector v = [0, 0, 0];\n\
          void() b = #12;\nvoid() b = #12;\n\
-         enum { A, B };\nenum { A, B };\nconst float B = 7;\n",
+         enum { A, B };\nenum { A, B };\nconst float B = 1;\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let different = fte_index_of("void() b = #12;\nvoid() b = #13;\n");
@@ -258,28 +282,34 @@ fn other_initialisers_compare_token_for_token() {
     assert_eq!(errors(&other), [Code::E0206]);
 }
 
-// spec FTEF-17.6: a redeclaration whose type involves a type name, a pointer or an unknown
-// type is no mismatch; one between two simple types still is.
+// spec FTEF-17.13: a redeclaration whose type involves a type name or an unknown type is no
+// mismatch; one between two simple types still is, and so is a pointer against a non-pointer.
 // spec FTEF-11.2: `__variant` mixes with a concrete type without a type error.
 #[test]
 fn opaque_types_are_compatible() {
     let index = fte_index_of(
-        "typedef float bool;\nbool flag;\nfloat flag;\n__variant(float) get;\nfloat(float) get;\n\
-         float *p;\nentity p;\n",
+        "typedef float bool;\nbool flag;\nfloat flag;\n__variant(float) get;\nfloat(float) get = #1;\n\
+         float *p;\nfloat *p;\n",
     );
     assert_eq!(errors(&index), Vec::<Code>::new(), "{:?}", messages(&index));
     let mismatch = fte_index_of("float x;\nstring x;\n");
     assert_eq!(errors(&mismatch), [Code::E0205]);
+    let pointer = fte_index_of("float *p;\nentity p;\n");
+    assert_eq!(errors(&pointer), [Code::E0205]);
 }
 
-// spec FTEF-17.7: a function with no body is an error only where it is referred to, and a
-// member function is not checked.
+// spec FTEF-17.11: a function with no body is an error whether or not it is referred to,
+// unless it is marked `noref` and not referred to; a member function is not checked.
 #[test]
-fn undefined_functions_need_a_reference() {
-    let unused = fte_index_of("void() never;\nclass A { nonvirtual void M(void); };\n");
-    assert_eq!(errors(&unused), Vec::<Code>::new());
+fn undefined_functions_are_reported_unless_noref_and_unused() {
+    let unused = fte_index_of("void() never;\n");
+    assert_eq!(errors(&unused), [Code::E0211]);
     let used = fte_index_of("void() needed;\nvoid() f = { needed(); };\n");
     assert_eq!(errors(&used), [Code::E0211]);
+    let noref = fte_index_of("noref void() never;\nclass A { nonvirtual void M(void); };\n");
+    assert_eq!(errors(&noref), Vec::<Code>::new());
+    let noref_used = fte_index_of("noref void() needed;\nvoid() f = { needed(); };\n");
+    assert_eq!(errors(&noref_used), [Code::E0211]);
 }
 
 // spec FTEF-15.5: `wrap`, `weak` and `accumulate` definitions may be given again, `extern` has
@@ -297,7 +327,11 @@ fn redefinable_external_and_variable_functions() {
     let v = defs_named(&index, "v")[0];
     assert_eq!(index.defs[v.0].kind, DefKind::Global);
     let twice = fte_index_of("void() a = { };\nvoid() a = { };\n");
-    assert_eq!(errors(&twice), [Code::E0206]);
+    assert_eq!(errors(&twice), [Code::E0216, Code::E0206]);
+    // FTEF-19.4: a body after a wrap is one more body for the function.
+    let after_wrap =
+        fte_index_of("void() a = { };\n__wrap void() a = { prior(); };\nvoid() a = { };\n");
+    assert_eq!(errors(&after_wrap), [Code::E0216, Code::E0206]);
 }
 
 // spec FTEF-10.2: an accessor's members are no globals, and their bodies see `this`, `value`
@@ -333,7 +367,7 @@ fn noref_allows_reinitialisation() {
     let input = ModuleInput {
         prelude: Vec::new(),
         compiled: vec![FileId(0), FileId(1)],
-        autoproto: None,
+        ..ModuleInput::default()
     };
     let analysis = db.analyze_module(&input);
     let codes: Vec<_> = analysis.diagnostics().map(|d| d.diagnostic.code).collect();

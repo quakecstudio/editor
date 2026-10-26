@@ -7,7 +7,8 @@
 )]
 
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use proptest::prelude::*;
 
@@ -18,11 +19,25 @@ use super::{
     SourceMap, TokenKind,
 };
 
+/// Held by each test that writes macro expansions near a file's bound (FTEF-14.28, QC-9.18),
+/// which takes from 150 MB to 2 GB, so that they run one at a time and the suite needs about
+/// the memory of the largest, under the Readiness mutation job's cap on each test binary
+/// (P2-109). A test of 300 MB or less that runs for long is left out, so that the suite's time,
+/// and with it each mutant's timeout, stays short.
+static BOUND_TESTS: Mutex<()> = Mutex::new(());
+
+/// Waits until no other bound test runs; a failed one still lets the rest run.
+fn one_bound_test_at_a_time() -> MutexGuard<'static, ()> {
+    BOUND_TESTS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// A project: its files, and the ones compiled, in order. By default one file, `a.qc`,
 /// is compiled.
 struct ProjectSpec<'a> {
     files: &'a [(&'a str, &'a str)],
     compile: &'a [&'a str],
+    /// The module's include directories (`Preprocessor::with_include_dirs`).
+    include_dirs: &'a [&'a str],
 }
 
 impl Default for ProjectSpec<'_> {
@@ -30,6 +45,7 @@ impl Default for ProjectSpec<'_> {
         Self {
             files: &[],
             compile: &["a.qc"],
+            include_dirs: &[],
         }
     }
 }
@@ -39,7 +55,8 @@ fn project(spec: &ProjectSpec<'_>) -> (Preprocessor<MemoryLoader>, Vec<FileOutpu
     for (path, text) in spec.files {
         loader.insert(*path, text.as_bytes());
     }
-    let mut pp = Preprocessor::new(loader);
+    let dirs: Vec<PathBuf> = spec.include_dirs.iter().map(PathBuf::from).collect();
+    let mut pp = Preprocessor::new(loader).with_include_dirs(&dirs);
     let outputs = spec
         .compile
         .iter()
@@ -169,6 +186,7 @@ fn include_relative_to_includer() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["src/a.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "float y ; float z ; float x ;");
     let paths: Vec<String> = outputs[0]
@@ -179,6 +197,68 @@ fn include_relative_to_includer() {
         .collect();
     assert_eq!(paths[0], "src/inc/b.qc:1");
     assert_eq!(paths[3], "src/c.qc:1");
+}
+
+// spec QC-9.20: under the vanilla dialect an `#include` not beside the including file is found
+// in the include directories, in order
+#[test]
+fn include_found_in_an_include_directory() {
+    let files = [
+        ("src/a.qc", "#include \"b.qh\"\nfloat x;"),
+        ("one/b.qh", "float y;"),
+        ("two/b.qh", "float z;"),
+    ];
+    let (pp, outputs) = project(&ProjectSpec {
+        files: &files,
+        compile: &["src/a.qc"],
+        include_dirs: &["one", "two"],
+    });
+    assert_eq!(tokens(&outputs[0]), "float y ; float x ;");
+    assert!(outputs[0].diagnostics.is_empty());
+    let paths: Vec<String> = outputs[0]
+        .tokens
+        .iter()
+        .map(|t| where_(pp.sources(), t.span))
+        .collect();
+    assert_eq!(paths[0], "one/b.qh:1");
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files[..1],
+        compile: &["src/a.qc"],
+        include_dirs: &["one", "two"],
+    });
+    let codes: Vec<&str> = outputs[0]
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["E0111"]);
+    // The message shows the path as the host writes it.
+    let message = outputs[0].diagnostics[0].message.replace('\\', "/");
+    assert!(message.contains("src/b.qh"), "{message}");
+}
+
+// spec QC-9.20: a file beside the including file is preferred to one in an include directory,
+// and an absolute name is not looked for in them
+#[test]
+fn include_beside_the_includer_is_preferred() {
+    let files = [
+        ("src/a.qc", "#include \"b.qh\"\nfloat x;"),
+        ("src/b.qh", "float w;"),
+        ("one/b.qh", "float y;"),
+    ];
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files,
+        compile: &["src/a.qc"],
+        include_dirs: &["one"],
+    });
+    assert_eq!(tokens(&outputs[0]), "float w ; float x ;");
+    let files = [("a.qc", "#include \"/b.qh\"\n"), ("one/b.qh", "float y;")];
+    let (_, outputs) = project(&ProjectSpec {
+        files: &files,
+        include_dirs: &["one"],
+        ..ProjectSpec::default()
+    });
+    assert_eq!(outputs[0].diagnostics[0].code.as_str(), "E0111");
 }
 
 // spec QC-9.2: diagnostics in included text carry the included file's name and line
@@ -262,6 +342,7 @@ fn macro_chain(n: usize) -> String {
 // whole set again, the second use takes quadratic time and the test times out)
 #[test]
 fn a_long_chain_of_macros_expands_to_its_end() {
+    let _one = one_bound_test_at_a_time();
     for n in [10_000, 100_000] {
         let mut text = macro_chain(n);
         writeln!(text, "M{}", n.saturating_sub(1)).unwrap();
@@ -417,6 +498,7 @@ fn macros_span_files() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "0");
     assert_eq!(tokens(&outputs[1]), "1 $f");
@@ -599,6 +681,7 @@ fn blocks_close_per_file() {
     let (_, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(
         tokens(&outputs[1]),
@@ -627,6 +710,7 @@ fn frames_per_source_file() {
     let (pp, outputs) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(tokens(&outputs[0]), "1");
     assert_eq!(tokens(&outputs[1]), "0 $a");
@@ -674,7 +758,7 @@ fn fteqcc_frames_carry_between_files() {
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], false);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
     assert_eq!(tokens(&outputs[1]), "x = 0 ; y = 1 ; x = 1 ; y = 0 ;");
-    // FTEF-18.22: the uses before b.qc's own `$frame` are stale, and its second `b` is a
+    // FTEF-18.29: the uses before b.qc's own `$frame` are stale, and its second `b` is a
     // duplicate.
     assert_eq!(
         diagnostics(&pp, &outputs[1]),
@@ -686,6 +770,7 @@ fn fteqcc_frames_carry_between_files() {
     let (_, vanilla) = project(&ProjectSpec {
         files: &files,
         compile: &["a.qc", "b.qc"],
+        ..ProjectSpec::default()
     });
     assert_eq!(codes(&vanilla[1]), [Code::E0106, Code::E0106]);
     // Another file's definition replaces the value; the same file's second one does not.
@@ -709,7 +794,7 @@ fn autoprototyping_keeps_frames_and_forgets_macros() {
     ];
     let (pp, outputs) = fte_project(&files, &["a.qc", "b.qc"], true);
     assert_eq!(tokens(&outputs[0]), "x = 1 ;");
-    // FTEF-18.22: the frame is the first pass's reading of b.qc, so the use is stale.
+    // FTEF-18.29: the frame is the first pass's reading of b.qc, so the use is stale.
     assert_eq!(
         diagnostics(&pp, &outputs[0]),
         "W0105 Stale macro used (CORPSEFRAME, defined in b.qc) @a.qc:1\n"
@@ -879,29 +964,33 @@ fn memory_loader_case_rules() {
 // is the least of them, so the warning is the same whatever order the file system lists them
 #[test]
 fn fs_loader_picks_the_least_case_variant() {
+    use std::ffi::{OsStr, OsString};
+
     use super::Loader as _;
+    use super::source::stored_entry;
+    // A case-sensitive directory's listing, in both orders: `D` (0x44) is less than `d`
+    // (0x64), so the least is `Defs.qc`, and an entry named exactly wins.
+    let listing =
+        |names: &[&str]| -> Vec<OsString> { names.iter().map(|&n| OsString::from(n)).collect() };
+    let stored = |name: &str, names: &[&str]| {
+        stored_entry(OsStr::new(name), listing(names)).map(|n| n.to_string_lossy().into_owned())
+    };
+    for names in [["defs.qc", "Defs.qc"], ["Defs.qc", "defs.qc"]] {
+        assert_eq!(stored("DEFS.qc", &names).as_deref(), Some("Defs.qc"));
+        assert_eq!(stored("defs.qc", &names).as_deref(), Some("defs.qc"));
+    }
+    assert_eq!(stored("x.qc", &["defs.qc"]), None);
+    // `FsLoader` reads the directory's listing, on any host.
     let dir = std::env::temp_dir().join(format!("qc-preproc-least-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // Two entries that differ only in case. On a case-insensitive host only one can exist,
-    // so skip there: the tie-break is only reachable where both coexist.
     std::fs::write(dir.join("Defs.qc"), "").unwrap();
-    let both = std::fs::write(dir.join("defs.qc"), "").is_ok()
-        && std::fs::read(dir.join("Defs.qc")).is_ok()
-        && std::fs::read(dir.join("defs.qc")).is_ok()
-        && std::fs::metadata(dir.join("Defs.qc")).unwrap().len() == 0;
-    let stored = super::FsLoader
+    let found = super::FsLoader
         .stored_name(&dir.join("DEFS.qc"))
         .map(|n| n.to_string_lossy().into_owned());
-    let listed: std::collections::BTreeSet<String> = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let missing = super::FsLoader.stored_name(&dir.join("other.qc"));
     std::fs::remove_dir_all(&dir).unwrap();
-    if both && listed.contains("Defs.qc") && listed.contains("defs.qc") {
-        // `D` (0x44) is less than `d` (0x64), so the least is `Defs.qc`.
-        assert_eq!(stored.as_deref(), Some("Defs.qc"));
-    }
+    assert_eq!(found.as_deref(), Some("Defs.qc"));
+    assert_eq!(missing, None);
 }
 
 // spec PRJ-7.2: when a memory loader holds two keys whose first components differ only in
@@ -971,6 +1060,14 @@ proptest! {
         }
     }
 }
+mod directives;
+mod flags;
 mod fteqcc;
+mod graph;
+mod lines;
+mod load;
 mod reviewer;
 mod spacing;
+mod text;
+mod warnings;
+mod words;

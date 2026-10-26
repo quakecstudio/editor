@@ -1414,174 +1414,184 @@ issues:
   verify:
   - cargo test -p qc-preproc
 - key: P2-80
-  title: Refactor the L0 format crates to CONV-17
-  labels:
-  - L0-formats
-  - area:process
-  - type:chore
-  size: L
-  reqs:
-  - CONV-17
-  depends:
-  - P2-60
-  deliverable:
-  - 'One PR with one commit per crate group, in this order: qc-diag, qc-types, qc-progs, qs-bsp, qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav, qs-log and qs-paths, qs-install and qs-vfs, qs-map. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
-  - 'Commit for qc-diag: crates/qc-diag/src/lib.rs: the findings qc-diag/2 to qc-diag/4 of docs/audits/conv-17-l0-l3.md. `Span::covers` (from qc-sema''s free `covers`, crates/qc-sema/src/nav.rs:76), `Span::to` (the span join written out at crates/qc-preproc/src/lib.rs:920, :1056, :1716 and crates/qc-sema/src/expand.rs:89), and `Span::len` and `Span::is_empty` (crates/qc-lexer/src/lib.rs:992, :1051, :1060), each used at those sites'
-  - 'Commit for qc-diag: Public items changed: new methods on `qc_diag::Span` only; dependent crates touched: qc-lexer, qc-preproc, qc-sema'
-  - 'Commit for qc-types: crates/qc-types/src/lib.rs: the findings qc-types/1 and qc-types/2 of docs/audits/conv-17-l0-l3.md. `StringRef`, `EntityRef`, `FieldRef`, `FunctionRef`, `PointerRef` and `Slot` get private fields with `from_bits` and `bits` (and `Slot::ZERO`), and conversions between a reference and a `Slot` replace `Slot::from_i32(world.0)` and the like'
-  - 'Commit for qc-types: Public items changed: the fields of those six types; dependent crates touched: qc-vm, qc-edict, qc-builtins, qc-progs (tests), qs-differential, qs-tests and xtask'
-  - 'Commit for qc-progs: crates/qc-progs: the findings cross/1 (its part) and qc-progs/1 to qc-progs/4 of docs/audits/conv-17-l0-l3.md. `Slot`''s decode reads through `read_array`; `Record::encode` on the sealed trait replaces `encode_statement`, `encode_def` and `encode_function`; `Format::secondary_version` serves both the writer and the reader; one table-offset lookup in `write`'
-  - 'Commit for qc-progs: Public items changed: none'
-  - 'Commit for qs-bsp: crates/qs-bsp: the findings qs-bsp/1 to qs-bsp/8 of docs/audits/conv-17-l0-l3.md. One little-endian reader returning `Option`, with today''s 0 kept by `.unwrap_or_default()` where callers get it; a `LumpId` enum in place of `BSP_LUMP_*` and `lump_name`; `AnimationSet`; exhaustive `match` in `BspLoader::fitz` and `Reader::bsp2`; a `PathId` newtype carrying the doubling rule now only in crates/qs-vfs/examples/walk.rs; one `leaf_of` citing BSP-7.2; the miptex header read through `qs_wad::MipTexHeader`; `calc_surface_extents` returning its values'
-  - 'Commit for qs-bsp: Public items changed: `BSP_LUMP_*`, `lump_name`, the lump fields of `BspError`, the path-ID parameters of `lit.rs`, and possibly the miptex constants; dependent crates touched: qs-vfs (examples/walk.rs); a new dependency of qs-bsp on qs-wad (both L0)'
-  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: crates/qc-lno, crates/qs-mdl, crates/qs-pak, crates/qs-wad and crates/qs-wav: the findings cross/1 (their part), qc-lno/1, qs-mdl/1 to qs-mdl/3, qs-pak/1, qs-wad/1 and qs-wav/1 of docs/audits/conv-17-l0-l3.md. Each crate keeps one generic `read_array<const N>` reader in the qc-progs shape, with today''s result past the end of the input kept at every caller (0 or `None`, as listed in cross/1); qs-mdl shares one cursor between `mdl.rs` and `spr.rs`, with the interval-reading loop as one of its methods'
-  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: Public items changed: none'
-  - 'Commit for qs-log and qs-paths: crates/qs-log and crates/qs-paths: the findings qs-log/1 to qs-log/3 and qs-paths/1 and qs-paths/2 of docs/audits/conv-17-l0-l3.md. `LogError::Directives` keeps the `tracing_subscriber` parse error as its `source` in place of `reason: String`; the panic location is formatted once; `payload_len` is inlined; `Platform::is_absolute`; one `absolute_var` and one `join_all` in qs-paths'
-  - 'Commit for qs-log and qs-paths: Public items changed: `qs_log::LogError::Directives` (no dependent outside qs-log)'
-  - 'Commit for qs-install and qs-vfs: crates/qs-vfs and crates/qs-install: the findings qs-install/1 to qs-install/3, qs-vfs/1 and qs-vfs/2 of docs/audits/conv-17-l0-l3.md. One public `find_entry` in qs-vfs for the FS-3.7 directory-entry match, used by qs-vfs''s `resolve` and qs-install''s `Finder::child` (which keeps its fallback for links); `FileRef` and `Location` with private fields and accessors; `parse_block` without its redundant bool; one canonical-path dedupe and one child-text read in qs-install'
-  - 'Commit for qs-install and qs-vfs: Public items changed: `qs_vfs::FileRef`, `qs_vfs::Location`, and the new `qs_vfs::find_entry`; dependent crates touched: qs-install, and crates/qs-vfs/examples/walk.rs'
-  - 'Commit for qs-map: crates/qs-map: the findings qs-map/1 to qs-map/9 of docs/audits/conv-17-l0-l3.md. A `TokenLimit` enum (or two named constructors) for `Lexer::new`; `next` and `same_line` in place of `Reader::get(crossline)`; the texture-vector and on-plane functions and the dot product written once, generic over the float type, with `qbsp_plane` and `plane` kept apart (MAP-3.6); one `to_f32`; the MAP-2.4, MAP-2.10 and MAP-4.6 limit predicates shared by the checker and the reader; one `WAD_KEYS` and one line-break-aware token read; `Parser::number` without its out-parameter; `Entity::check_pairs`; a named struct from `MapFile::brush_models`'
-  - 'Commit for qs-map: Public items changed: `qs_map::Lexer::new`, the geometry functions, `MapFile::brush_models`; no dependent outside qs-map uses them'
-  acceptance:
-  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
-  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
-  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
-  verify:
-  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
-- key: P2-81
-  title: Refactor the L1 VM crates to CONV-17
-  labels:
-  - L1-vm
-  - area:vm
-  - type:chore
-  size: L
-  reqs:
-  - CONV-17
-  depends:
-  - P2-80
-  deliverable:
-  - 'One PR with one commit per crate group, in this order: qc-edict, qc-vm, qc-builtins, qc-trace. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
-  - 'Commit for qc-edict: crates/qc-edict: the findings qc-edict/1 to qc-edict/5 of docs/audits/conv-17-l0-l3.md. Typed system globals and fields in `qc_edict::system` (constants or `SysGlobal` and `SysField` enums with `const fn slot()`), the tables built from them, used in place of the 53 name lookups in crates/qc-builtins/src/dispatch.rs and the slot numbers hard-coded in crates/qc-vm/src/ops.rs and crates/qc-edict/src/store.rs; `EdictStore::is_client`; `set_field` returning a `#[must_use]` `Result`; the EDICT-1.6 pointer inversion as a method beside `EdictLayout::pointer_value`; an `EdictNumber` newtype with a private field'
-  - 'Commit for qc-edict: Public items changed: new items in `qc_edict::system`, `EdictStore::set_field`, the edict-number parameters of `EdictStore` and `EdictLayout`; dependent crates touched: qc-vm, qc-builtins, qs-differential'
-  - 'Commit for qc-vm: crates/qc-vm: the findings qc-vm/1 to qc-vm/8 of docs/audits/conv-17-l0-l3.md. A `Divergence` enum with one variant per VM rule, `const fn statement()` and a `Display` that writes today''s text byte for byte, in place of `ErrorKind::Divergence { statement: &str, detail: String }`, with one builder in place of six; `read_slot` for the 28 `global_error` wrappers; enums or the `Opcode` in place of the `equal`, `and` and `on_nonzero` bools; one set of float and integer conversions shared with qc-builtins, whose duplicates, `*_public` wrappers and duplicate constant go; `execute` folded into `Machine::execute_program` and `run_error` a method; one function-by-index helper; the dead `trace_flag` removed or justified and the misplaced `set_global_test` rustdoc fixed'
-  - 'Commit for qc-vm: Public items changed: `qc_vm::ErrorKind::Divergence`, `qc_builtins::math::{float_to_int, f64_to_f32_public, int_to_f32_public}`; dependent crates touched: qc-builtins'
-  - 'Commit for qc-builtins: crates/qc-builtins: the findings qc-builtins/1 to qc-builtins/10 and qc-builtins/12 of docs/audits/conv-17-l0-l3.md. `int_to_f64`, `eq_f32` and `exact_eq` inlined, with the float comparisons under `#[expect(clippy::float_cmp, reason = "spec ...")]`; one NaN and infinity text; one `whole_degrees`; slot-level parameter, field and return helpers; `write_bytes` for every `SZ_GetSpace` overflow, one `b_write`, one `precache`, a shared `set_size`; one mock precache helper; the mock''s overflow results as `#[must_use]` `Result`s; `BuiltinError::Runtime` and `Fatal` as variants per error with a `Display` that keeps id''s bytes (DIFF-8.2), `Host(String)` kept; the `0..3` axis loops as array operations; the unused `_header`, `Engine::has_world`, the unreachable `EngineOnly` arm and the generic `MockBuiltins<E>` removed or justified in their rustdoc'
-  - 'Commit for qc-builtins: Public items changed: `qc_builtins::BuiltinError`, the mock''s precache and append functions, and possibly `Engine` and `MockBuiltins`; dependent crates touched: qs-differential, qs-tests'
-  - 'Commit for qc-trace: crates/qc-trace: the finding qc-trace/1 of docs/audits/conv-17-l0-l3.md. A `JsonFault` enum with `Display` in place of `TraceError::Json { reason: String }`'
-  - 'Commit for qc-trace: Public items changed: `qc_trace::TraceError::Json` (`#[non_exhaustive]`; no dependent matches it)'
-  acceptance:
-  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
-  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
-  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
-  - 'The trace error records the VM writes are byte for byte the same, shown by the existing trace and differential tests'
-  - 'The builtin error text the differential compares (DIFF-8.2) is byte for byte the same, shown by the existing differential tests'
-  verify:
-  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
-- key: P2-82
-  title: Refactor the L2 syntax crates to CONV-17
+  title: Split and copy FTEQCC macro arguments as FTEQCC's argument scanner does
   labels:
   - L2-syntax
   - area:language
-  - type:chore
-  size: L
+  - type:feature
+  size: S
   reqs:
-  - CONV-17
+  - LANG-1
   - LANG-5
-  - TEST-4
-  - TEST-5
   depends:
-  - P2-81
+  - P2-79
   deliverable:
-  - 'One PR with one commit per crate group, in this order: qc-lexer, qc-preproc, qc-project, qc-syntax. The fix of P2-85 comes before the qc-lexer commit and the fix of P2-84 before the qc-syntax commit, each in a commit of its own, and the PR closes both. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
-  - 'Commit for qc-lexer: crates/qc-lexer: the findings qc-lexer/1 to qc-lexer/8 of docs/audits/conv-17-l0-l3.md, the qc-lexer side. `Directive` and `Pragma` enums with `from_word`, used at crates/qc-lexer/src/lib.rs:884; a private `DollarCommand` enum; `Prefix` as `Raw` or `Cooked(Output)`; `fte_escape` and `character` returning `Option` in place of searching the diagnostics; public `is_name_start` and `is_name_char`, `fte_white` (moved from qc-preproc), one integer-to-`f32` function, `latin1` and the vector-literal reader, for the crates above to use'
-  - 'Commit for qc-lexer: Public items changed: new public enums and functions in qc-lexer only; the qc-preproc, qc-project and qc-syntax commits and P2-83 adopt them'
-  - 'Commit for qc-preproc: crates/qc-preproc: the findings qc-preproc/1 to qc-preproc/9 and qc-preproc/11 to qc-preproc/13 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1 and qc-lexer/5 to qc-lexer/7. qc-lexer''s `Directive` and `Pragma` matched exhaustively in `directive`, `fteqcc_conditional` and `fteqcc_directive`; one enum-based conditional stack in `qc_preproc::cond`, keeping the vanilla `#else` (QC-9.6, E0109) and FTEQCC''s; `normalize` made public; a `Level` enum and a `CmpOp` table in `cond.rs`; `collect_args`, `fte_substitute` and `stringified` returning their results; no `literal_next` carried between passes; `FrameMacros` and expansion-guard enums chosen once from `Dialect`; an enum in place of `carry_frame`''s `force`; one whitespace skip; a `DirectiveLine` built once; `FileId` and `ExpansionId` with private fields'
-  - 'Commit for qc-preproc: Public items changed: `qc_preproc::{FileId, ExpansionId}` fields (no dependent uses them), a new public conditional stack in `qc_preproc::cond`, `qc_preproc::normalize`'
-  - 'Commit for qc-project: crates/qc-project: the findings qc-project/1 to qc-project/5 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1, qc-lexer/5, qc-preproc/1 and qc-preproc/2. A `ManifestError` enum in `ProjectError::Manifest` in place of the message `String`; `source_form` returning `Option<Form>`; `FileGraph::is_program_list`; one comment-skip step; a `GraphIndex` newtype for `GraphFile.parent`; qc-lexer''s `Directive`, `Pragma` and name-byte functions and qc-preproc''s conditional stack used in `Builder::directive`; `normalize` re-exported from qc-preproc in place of the copy'
-  - 'Commit for qc-project: Public items changed: `qc_project::ProjectError::Manifest`, `GraphFile::parent`; dependent crates touched: qc-sema (tests), xtask only if it names them'
-  - 'Commit for qc-syntax: crates/qc-syntax: the findings qc-syntax/1 to qc-syntax/5, qc-syntax/8 to qc-syntax/12, qc-syntax/14, qc-syntax/15, qc-syntax/17, qc-syntax/18 and its part of qc-lexer/8 of docs/audits/conv-17-l0-l3.md. `RecoveryFault` and `DeletionFailure` in place of `Result<usize, String>` and `DeletionReport::failures: Vec<String>`; one `Keyword` enum with `from_word` applying FTEF-15.1 once, in place of the string sets and `at_word` sites, with keyword words bumped as their own `SyntaxKind` so that the `ast` accessors read kinds; `ast::Item` and `SourceFile::items` used by recovery and by qc-sema''s `lower_file`; `Scope` and `BlockKind` enums for the recovery and block bools; a `LinePosition` enum; one paren lookahead, star skip, error skip and nesting guard; `TypeShape` constants; `FieldExpr::operator`; `SyntaxKind::from_token_kind`; `ast::Type::params` and `ast::Builtin::binding` used by qc-sema and qc-engines; qc-lexer''s `latin1`'
-  - 'Commit for qc-syntax: Public items changed: `qc_syntax::recovery::DeletionReport`, `SyntaxKind` (new variants), `ast::AccessorMember`, `ast::EnumDecl`, new `ast::Item`, `ast::Type::params`, `ast::Builtin::binding`; dependent crates touched: qc-sema, qc-engines, qs-tests and xtask (parse_corpus.rs and every exhaustive match on `SyntaxKind`)'
-  - 'Commit for the FTEQCC grammar differential (approved by Justin, 2026-10-20): a generator in xtask that writes random FTEQCC programs from the grammar of docs/spec/dialect-fteqcc.md and docs/spec/dialect-fteqcc-rerelease.md, covering every declaration form, every keyword and qualifier spelling including the `__`-prefixed ones (FTEF-15.1), class and accessor member forms, statements and enums, and compares, for each program, whether the FTEQCC profile and the pinned FTEQCC accept or reject it, and the diagnostic code where both reject. It runs as part of the oracle differential (`cargo xtask oracles builtins` or a sibling `cargo xtask oracles` check run by the same CI workflow), so that valid FTEQCC input the profile rejects, or input it accepts that FTEQCC rejects, fails the run unless an expected difference names the spec statement that explains it. A seeded corpus of the generated programs and the oracle''s outcomes is recorded as a fixture under xtask/fixtures/oracles/ (as builtin-outcomes.json is), so that `cargo test -p xtask` replays it without the oracle'
-  - 'Commit for the duplicate-diagnostic invariant (approved by Justin, 2026-10-20): a statement in docs/spec/language-diagnostics.md that the lexer, preprocessor and parser never report two diagnostics with the same code at the same span, checked in the `parser` and `qc-preproc` fuzz targets (fuzz/fuzz_targets/parser.rs, qc_preproc.rs) and in the qc-lexer, qc-preproc and qc-syntax property tests'
-  - 'A difference the grammar differential finds is fixed in a commit of its own with the spec statement and a test that cites it, as P2-84 and P2-85 are, or named as an expected difference with the statement that explains it; the refactor commits themselves change no behaviour'
+  - 'crates/qc-preproc (`collect_args`, `fte_macro.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.18 and FTEF-14.20 (or new statements beside them): `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) finds an argument''s end by scanning bytes, skipping only a `"` string (`do { pr_file_p++; } while( (pr_file_p[-1] == ''\\'' || pr_file_p[0] != ''\"'') && *pr_file_p && *pr_file_p != ''\n'' );`), so a `,` or `)` inside a character constant or a comment ends the argument, and a string whose last byte before its `"` is a `\` does not end there. The fourth P2-R2 review compared the profile at commit 2a48d73 with the pinned FTEQCC (`-Tid`, as cases of `cargo xtask oracles builtins` of the form `void() f = USE;`): with `#define E(n) :n`, FTEQCC refuses `E('','')`, `E('')'')` and `E(''('')` ("Bad vector"), which the profile binds as builtins 44, 41 and 40; with `#define M(x) x`, FTEQCC refuses `M(#5 /* ) */)` ("EOF inside comment"), `M(#5 /* , */)` and `M(#5 // )` then a line break and `)`, which the profile binds as builtin 5; with `#define E(n) n`, FTEQCC refuses `E(:"ex\\")` and `E(:"ex\\") ")"` and `E(#5:ex_a\` then a line break and `)`, which the profile accepts; with `#define S(a) #a`, FTEQCC binds `:S(e''x)` by the name `e''x`, which the profile refuses (its lexer opens a character constant at the `''`). And a built-in constant an argument copies as its value replaces the white space and `//` comment before it as well (`end = QCC_PR_CheckBuiltinCompConst(...)` is written in place of `argstart` to `argend`): with `#define E(n) n`, FTEQCC binds `E(# __LINE__)` as builtin 2, and `E(#//` then a line break and `__LINE__)`, and with `#define K(x) x`, `K(#` then a line break and `__LINE__)`, as builtin 3, where the profile refuses all three'
   acceptance:
-  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
-  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
-  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
-  - 'The spellings each place accepts are those of P2-84''s fix, and the lossless round trip of the corpus is unchanged (`cargo xtask parse-corpus` or the qs-tests corpus case)'
-  - 'The grammar differential runs in CI over a case count stated in the PR and in the generator''s rustdoc, and reports 0 differences that no expected difference explains; the recorded corpus replays in `cargo test -p xtask` without the oracle'
-  - 'The duplicate-diagnostic invariant holds in the property tests and in a fuzz run of the `parser` and `qc-preproc` targets whose length and result are recorded in the PR (the 24-hour TEST-5 run stays with the readiness review), and catches P2-85: with P2-85''s fix reverted the invariant fails on its double E0101, recorded in the PR'
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; the vanilla dialect is unchanged; each with a test citing the statement it pins'
   verify:
-  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
-  - 'cargo xtask oracles (the grammar differential); cargo xtask fuzz parser --time 10m and cargo xtask fuzz qc-preproc --time 10m'
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-81
+  title: Store an FTEQCC macro's body as FTEQCC's `#define` reader does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (the `#define` reader, `fte_opens_arguments`) and docs/spec/dialect-fteqcc.md FTEF-14 (new statements, and FTEF-14.18 corrected): `QCC_PR_PreProcessor_Define` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) stores a body with each `/* */` comment and each `\` before a line break dropped and the white space around them kept, so a function-like macro''s name and its `(` written apart only by those in a body are apart only by spaces when the body is read: with `#define M(x) x`, the pinned FTEQCC (`-Tid`) binds `void() f = K;` as builtin 5 for each of `#define K M /**/ (#5)`, `#define K M/**/ (#5)`, `#define K M \` then a line break and `(#5)`, and `#define K M\` then a line break and ` (#5)`, where the profile at commit 2a48d73 leaves `M` a name and refuses `f` (FTEF-14.18 says a comment before the `(` leaves the name, which holds for the source but not for a stored body). The reader also toggles its `quote` flag at every `"`, an escaped one included (`if (*s == ''\"'') quote=!quote;`), and ends the body at a `//` outside it, so `#define N :"ex\"_a//"` stores `:"ex\"_a` and FTEQCC refuses `void() f = N;`, which the profile binds by the name `ex"_a//`. And a parameter list naming one parameter twice is an error ("duplicate macro paramter name"), so FTEQCC refuses `#define E(n, n) n`, which the profile accepts. Found by the fourth P2-R2 review'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, a duplicate parameter name is a diagnostic, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-82
+  title: "Expand FTEQCC's `__VA_COUNT__` and its `,##__VA_ARGS__`"
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (`fte_macro.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.5 (or new statements beside it): in a variadic macro''s body `QCC_PR_ExpandPreProcessorMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `__VA_COUNT__` as the number of variadic arguments (`QC_snprintfz(tmp, sizeof(tmp), "%i", param-1+extraparam);`, and "__VA_COUNT__ without any variable args" when a named one is missing), and a `##` before `__VA_ARGS__` with no variadic argument removes the `,` before it (`else if (noargexpand) { if(*bufferlen>0 && (*buffer)[*bufferlen-1] == '','') *bufferlen-=1; }`). The fourth P2-R2 review compared the profile at commit 2a48d73 with the pinned FTEQCC (`-Tid`): FTEQCC binds `#define V(...) :__VA_COUNT__` then `void() f = V(a, b);` as builtin 1, where the profile binds the name `__VA_COUNT__`; it refuses `#define V(a, ...) #5:__VA_COUNT__` with `V(a, b)`, which the profile binds by the name `__VA_COUNT__`; it binds `#define V(a, ...) a,##__VA_ARGS__` with `V(#5)` as builtin 5, which the profile refuses; and it binds `#define E(...) #5 __VA_ARGS__` with `E(, )` as builtin 5, which the profile refuses. FTEF-14.5 names neither form'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, and the cases are added to the macro family of `cargo xtask oracles builtins` with 0 unexplained differences; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
 - key: P2-83
-  title: Refactor the L3 semantics crates to CONV-17
+  title: Bound the tokens one macro expansion writes
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  - QA-2
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-preproc (`Preprocessor::expand`, `Expanded`) and docs/spec/dialect-fteqcc.md FTEF-14.19, with docs/spec/language.md for the vanilla dialect: FTEF-14.19 says this profile''s expansions write "at most `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens", but the bound is checked before an expansion is made and counts its tokens after, so one expansion of a body that names its parameter many times, given a long argument, writes body uses times argument tokens with no `E0120`. The fourth P2-R2 review measured, at commit 2a48d73 in a release build on macOS arm64, `#define D(x)` followed by 8000 `x` and a use `D(` followed by 8000 `1` and `)`, a 32018-byte file: 64000000 tokens and no diagnostic under either dialect, 5.5 s under FTEQCC and 7.5 s under the vanilla dialect (which states no bound at all), with 10.4 GB peak resident memory for the test process that ran both; a 2000-by-2000 file of 8018 bytes writes 4000000 tokens. Doubling the file quadruples the tokens (a 16018-byte file writes 16000000), so a file of a few tens of kilobytes exhausts the memory of the semantic model, which preprocesses on every edit. The bound should hold for each expansion as it is written, under both dialects (a stated limit with its diagnostic for the vanilla dialect, as FTEF-14.19 states FTEQCC''s)'
+  acceptance:
+  - 'Under each dialect the 8000-by-8000 file above is preprocessed with the bound''s diagnostic and no more tokens than the stated bound, in a qc-preproc test citing the statement it pins; files of the corpus are unchanged (`cargo xtask fteqcc-profile`, `cargo xtask sema-corpus`)'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-84
+  title: Report an FTEQCC function with no body as FTEQCC does
   labels:
   - L3-semantics
   - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-sema/src/resolve.rs `check_undefined_functions` and docs/spec/dialect-fteqcc.md FTEF-17.7 (withdrawn and replaced): FTEF-17.7 says "A function with no body is an error only where the module refers to it: the bodyless check skips a definition when `d->unused && !d->used`", but `unused` is the `noref` mark, so FTEQCC (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) reports "function %s has no body" for every bodyless function that is not both `noref` and unreferenced. The fifth P2-R3 review compiled with the pinned FTEQCC (`-Tid`): `void() f = #5;` then `void() g;` is "t.qc:2: error: function g has no body", as are `void() f = #5, g;` and the macro forms `#define V(a, ...) a,##__VA_ARGS__` with `V(#5, g)` and `#define V(a, ...) a __VA_ARGS__` with `V(#5, :ex_a, b)`; `noref void() g;` compiles. The FTEQCC profile at commit 2a48d73 reports no error for any of them, and E0211 only for a referenced one (`check_undefined_functions`, whose rustdoc says FTEQCC "skips an unreferenced one marked `noref`, which this model does not follow"); no statement states that as a divergence. Found by the fifth P2-R3 review'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile a bodyless function that is not `noref` (by its qualifier or `#pragma noref 1`, FTEF-12.6) is an error whether or not the module refers to it, and a `noref` one only when it is referred to; the corpus still resolves with no error (`cargo xtask fteqcc-profile`, `cargo xtask sema-corpus`); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
+- key: P2-86
+  title: Restore the qc-lexer and qc-preproc readiness ratchets after the FTEQCC macro port
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-5
+  - TEST-1
+  depends:
+  - P2-79
+  deliverable:
+  - 'crates/qc-lexer (src/fte_string.rs), crates/qc-preproc (src/fte_macro.rs, src/lib.rs `builtin`) and docs/spec/dialect-fteqcc.md FTEF-14.21: the L2 Readiness run 39455878689 on main after #486 failed `cargo xtask ratchet` on qc-lexer lines (935 of 937, needs 100%), qc-preproc branches (520 of 574, needs 91%) and two qc-preproc mutants neither killed nor listed as equivalent, the deleted `"` and `\` match arms of `quote` (src/lib.rs). The two uncovered lexer lines and the uncovered preprocessor branches that no input reaches are removed; the reachable ones get tests. The surviving mutants are killed by tests of `__FILE__`''s escaped spelling, recorded as the deliberate divergence FTEF-14.21'
+  acceptance:
+  - 'cargo xtask readiness lines qc-lexer, branches qc-preproc and mutation qc-preproc, measured as the Readiness workflow does, meet the minimums in ratchets.toml with no unlisted survivor and no lowered ratchet; each new test cites the statement it pins'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc
+  - cargo xtask readiness lines qc-lexer
+  - cargo xtask readiness branches qc-preproc
+  - cargo xtask readiness mutation qc-preproc
+- key: P2-87
+  title: Give FTEQCC's `__FILE__` the name as `progs.src` wrote it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-86
+  deliverable:
+  - 'crates/qc-preproc (`builtin`) and docs/spec/dialect-fteqcc.md (FTEF-14.21 withdrawn for a new statement): `QCC_PR_CheckBuiltinCompConst` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) writes `__FILE__` as `QC_snprintfz(retbuf, retbufsize, "\"%s\"", s_filen);` with nothing escaped, reads that text again as a string literal, and ends the name at its first `:` (`erk = strchr(retbuf, '':'');`). The profile escapes the name and keeps it whole (FTEF-14.21), because its name is the host''s normalised path, with `\` separators on Windows and possibly a drive, not `s_filen`. Found by the self-review of P2-86'
+  acceptance:
+  - 'Under the FTEQCC profile `__FILE__` is the string FTEQCC gives for the same project on every host, a `\` and a `:` in the name included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-135
+  title: Shard the readiness mutation job across runners
+  labels:
+  - repo
+  - area:process
   - type:chore
-  size: L
+  size: S
   reqs:
-  - CONV-17
+  - TEST-2
+  - TEST-10
+  summary: |
+    The Readiness workflow's mutation job runs one crate per runner, so a run takes the slowest crate's whole cargo-mutants run: on the L2 run 40094712627 (2026-10-24) qc-preproc took 3 h 40 min and qc-syntax 1 h 47 min on one 4-core runner each, while qc-lexer and qc-project took about 12 minutes. cargo-mutants 27.1.0 runs one shard of the generated mutants with `--shard k/n` (`cargo mutants --help`: "Run only one shard of all generated mutants: specify as e.g. 1/4"), so a crate's mutants can be spread over several runners and the per-crate score put back together by the ratchet.
   depends:
-  - P2-82
+  - P2-123
   deliverable:
-  - 'One PR with one commit per crate group, in this order: qc-sema, qc-engines. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
-  - 'Commit for qc-sema: crates/qc-sema: the findings qc-sema/1 to qc-sema/22 of docs/audits/conv-17-l0-l3.md. `Dialect` in place of `fte: bool` in lower.rs and `fteqcc: bool` in the resolver; a `Qualifier` enum read through qc-syntax''s `Keyword`; `FileId` and `DefId` with private fields (`FileId::new` and `index` public, `DefId`''s constructor `pub(crate)`); `ModuleIndex` with private fields and slice accessors; `RawDecl` without the dead `local`, with `RawInit` and `RawDeclKind` in place of its initialiser and type-name flags; `Type::component`, `DefKind::of_top_level` or `Type::top_level_kind`, `Type::compatible_in`, `Type::function`; an `Init` enum and an `Origin` enum in the resolver; one per-file slice for `resolve_mapped`; `FileDiagnostic::new` and `OriginMap::locate_or`; one scope lookup; member-bookkeeping helpers; one initialiser, aggregate and array-size lowering; one counter bump and one generic memo in `Db`; vector literals read with qc-lexer''s reader'
-  - 'Commit for qc-sema: Public items changed: `qc_sema::{FileId, DefId, ModuleIndex, RawDecl, FileDiagnostic, top_level_kind}`; dependent crates touched: qc-engines (src/check.rs), qs-tests (diagnostics_unified.rs, deep_nesting.rs) and xtask (sema_corpus.rs, fteqcc_profile.rs, oracles/builtins.rs)'
-  - 'Commit for qc-engines: crates/qc-engines: the findings qc-engines/1 to qc-engines/4 of docs/audits/conv-17-l0-l3.md. `qc_sema::FileDiagnostic` in place of qc-engines'' copy; `Engine::builtin_named` in place of the private `Key`, so a name lookup no longer rebuilds the merged table; `missing_builtins` taking `(FileId, &Parse)` pairs; `From<&qc_builtins::Builtin>` in place of `vanilla`'
-  - 'Commit for qc-engines: Public items changed: `qc_engines::FileDiagnostic` (removed), `missing_builtins`; no dependent outside qc-engines'
+  - '.github/workflows/readiness.yml: the `mutation` job''s matrix becomes (crate, shard), with a shard count per crate roughly proportional to its mutant count, each job running `cargo xtask readiness mutation --shard k/n` and uploading its own artifact; the 3 GiB data limit and the core-file settings stay as they are'
+  - 'xtask/src/readiness.rs: `cargo xtask readiness mutation` takes `--shard k/n` and passes it to cargo mutants as `--shard k/n`, recording the shard in the measurement'
+  - 'xtask/src/ratchet.rs: the ratchet merges each crate''s shard measurements into one score (the mutant counts add; a timed-out mutant counts as caught and an unviable one does not count, as today), refusing a shard measured twice or a set with a shard missing'
+  - 'docs/testing.md and docs/ci.md: the mutation job described as sharded'
   acceptance:
-  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
-  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
-  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  - 'A Readiness run of the L2 crates finishes in well under an hour with the same per-crate scores an unsharded run would give'
+  - 'The ratchet job reads the sharded artifacts and reports one score per crate'
+  - 'xtask tests cover the `--shard` argument, its validation and the merge of shard outcomes'
   verify:
-  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
-- key: P2-84
-  title: The FTEQCC parser rejects `enum __class` and misreads `__set` accessor members
+  - cargo test -p xtask readiness
+  - 'A workflow_dispatch Readiness run on the branch with crates="qc-lexer qc-project" showing sharded mutation jobs and a merged score per crate'
+- key: P2-137
+  title: Kill the four qc-preproc mutants the L2 measurement left
   labels:
   - L2-syntax
   - area:language
-  - type:bug
+  - type:test
   size: S
   reqs:
-  - LANG-5
-  depends:
-  - P2-81
+  - TEST-2
   summary: |
-    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-syntax/2 and "Defects found on the way"). Under `Dialect::Fteqcc`, `enum class X { A };` parses, but `enum __class X { A };` gives E0204 "expected {, found X": `at_enum_body` (crates/qc-syntax/src/parser/fte.rs:556) accepts `__class` through `fte_word`, while `enum_head_and_body` (crates/qc-syntax/src/parser/mod.rs:763) tests `at_word("class")`, so `__class` is read as the enum's name. By reading the code, `__get`, `__set` and `__inline` are accepted by the parser as accessor-member words (fte.rs:599-600, :684-688) but `ast::AccessorMember::name` and `is_set` (crates/qc-syntax/src/ast.rs:945-958) compare the exact text, so `__set` is returned as the member's name and `is_set` is false. FTEF-15.1 (docs/spec/dialect-fteqcc.md) says `QCC_PR_CheckKeyword` "matches any keyword written with `__` whether or not it is enabled". Fixed in the P2-82 PR, in a commit of its own.
-  environment: |
-    main at 2a48d73; reproduced with a scratch binary calling `qc_syntax::parse_with(b"enum __class X { A };", Dialect::Fteqcc)`
-  deliverable:
-  - 'crates/qc-syntax/src/parser/fte.rs, src/parser/mod.rs and src/ast.rs: `__class` after `enum` or `enumflags`, and `__get`, `__set` and `__inline` in an accessor, read as FTEQCC reads them, from `QCC_PR_ParseEnum` and the accessor parsing in qcc_pr_comp.c and `QCC_PR_CheckKeyword` in qcc_pr_lex.c (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e); the parser and the `ast` accessors agree on each spelling'
-  - 'docs/spec/dialect-fteqcc.md: a statement for the spellings each of those places accepts, quoting FTEQCC'
-  acceptance:
-  - 'A test citing the new statement parses `enum __class X { A };` and an accessor with `__set` and `__get` members, and shows each read as FTEQCC reads it (the member names and `is_set` included), and fails before the fix'
-  - 'The FTEQCC differential has a case for each spelling, agreeing with the pinned FTEQCC'
-  verify:
-  - cargo test -p qc-syntax; cargo xtask oracles
-- key: P2-85
-  title: A backslash then CR at the end of input reports E0101 twice
-  labels:
-  - L2-syntax
-  - area:language
-  - type:bug
-  size: S
-  reqs:
-  - LANG-5
+    The L2 readiness measurement on main (Readiness run 40332289531, commit cc91093) left four surviving mutants in qc-preproc, which hold P2-R2 below ADR-0009's mutation threshold. All four are in code P2-122 (#558) added for the casts and the target's extern check: `TargetFormat::undefined_word_size` replaced with `false`, `TargetFormat::supports_extern` replaced with `true` and with `false` (crates/qc-preproc/src/fte_tables.rs), and the `Code::W0229` arm deleted from `FteWarning::of_code` (crates/qc-preproc/src/fte_warning.rs). Each is covered by a spec statement (FTEF-22.4, FTEF-22.5 and FTEF-22.1) whose citing tests live in qc-sema, so no qc-preproc test fails when the method lies.
   depends:
-  - P2-81
-  summary: |
-    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-lexer/4 and "Defects found on the way"). Under `Dialect::Fteqcc`, lexing `"a\` followed by CR and the end of input gives two identical diagnostics, `E0101 "EOF inside quote"` with span 0..4: `fte_escape` reports one when the byte after the CR is missing (crates/qc-lexer/src/fte_string.rs:295), and `cooked_string`'s loop then finds the end of input and reports another (:157-158). FTEQCC stops at its first `QCC_PR_ParseError`, so it reports one. Fixed in the P2-82 PR, in a commit of its own.
-  environment: |
-    main at 2a48d73; reproduced with a scratch binary calling `qc_lexer::lex_with(b"\"a\\\r", Dialect::Fteqcc)`
+  - P2-121
+  - P2-130
   deliverable:
-  - 'crates/qc-lexer/src/fte_string.rs: an unterminated string that ends in `\` and CR reports E0101 once (QCD-2.1)'
-  - 'docs/spec/dialect-fteqcc.md: a statement beside FTEF-13.11 for a string that ends after a `\` and CR, quoting `QCC_PR_LexEscapedCodepoint` and stating what this profile reports there'
+  - 'crates/qc-preproc/src/tests/flags.rs: tests that `TargetFormat::undefined_word_size` is true for `Darkplaces` and false for every other format, and that `TargetFormat::supports_extern` is true for `Fte`, `FteDebug` and `Fteh2` and false for every other format, each citing its statement (FTEF-22.4, FTEF-22.5)'
+  - 'crates/qc-preproc/src/tests/warnings.rs: the `of_code` table test extended with `W0229` as `WARN_DEBUGGING`, citing FTEF-22.1'
   acceptance:
-  - 'A test citing the new statement and QCD-2.1 lexes `"a\` CR at the end of input and gets exactly one E0101, and fails before the fix'
+  - 'cargo mutants -p qc-preproc --profile mutants -F ''undefined_word_size|supports_extern|of_code'' reports the four mutants caught, with the command and result recorded in the PR'
+  - 'No file outside crates/qc-preproc changes'
   verify:
-  - cargo test -p qc-lexer
+  - cargo test -p qc-preproc
+  - cargo mutants -p qc-preproc --profile mutants -F 'undefined_word_size|supports_extern|of_code'
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1669,8 +1679,59 @@ issues:
   - P2-82
   - P2-83
   - P2-84
-  - P2-85
+  - P2-86
+  - P2-87
+  - P2-139
+  - P2-140
+  - P2-141
+  - P2-142
+  - P2-143
+  - P2-144
   - P4-29
+  - P2-88
+  - P2-89
+  - P2-90
+  - P2-91
+  - P2-92
+  - P2-93
+  - P2-94
+  - P2-95
+  - P2-96
+  - P2-97
+  - P2-98
+  - P2-99
+  - P2-100
+  - P2-101
+  - P2-102
+  - P2-103
+  - P2-104
+  - P2-105
+  - P2-106
+  - P2-107
+  - P2-108
+  - P2-109
+  - P2-110
+  - P2-111
+  - P2-112
+  - P2-113
+  - P2-114
+  - P2-115
+  - P2-116
+  - P2-117
+  - P2-118
+  - P2-119
+  - P2-121
+  - P2-122
+  - P2-123
+  - P2-124
+  - P2-127
+  - P2-130
+  - P2-131
+  - P2-132
+  - P2-133
+  - P2-134
+  - P2-135
+  - P2-137
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -1678,3 +1739,1099 @@ issues:
   - 'No stragglers: every issue in the phase milestone on GitHub is closed, including follow-ups filed during the phase, none was deferred to a later phase, and no PR linked to the phase is open'
   verify:
   - The gate report merged with `Closes`, linking the CI runs; the reviewer's closing comment lists the phase's issues, all closed
+- key: P2-88
+  title: Fix the defects the codebase mapping found in the L0 format crates
+  labels:
+  - L0-formats
+  - area:preview
+  - type:bug
+  size: S
+  reqs:
+  - ENG-16
+  - MAP-6
+  - FND-6
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of the L0 crates) and confirmed by reading the code:
+    1. Two readers size an allocation by a count the file gives, with no bound from the input. `Md5Anim::frame` allocates from an unchecked count. `Md5Anim::read` reads `numAnimatedComponents` as an unchecked `u64` (crates/qs-mdl/src/md5.rs:637-638) and accepts a tiny file with `numJoints 0` and no `frame` blocks; `frame(0)` then runs `vec![0.0; len]` with that count (md5.rs:693-701), which aborts on allocation failure or panics on capacity overflow. MD5-3.6 says a frame never given is all zero and sets no bound on the count. Neither the proptest (crates/qs-mdl/src/md5/tests.rs:736-743) nor the fuzz target (fuzz/fuzz_targets/qs_mdl.rs, which calls `pose` but not `frame`) reaches it. In the same class, `Bsp::leaf_pvs` sizes the PVS row from model 0's `visleafs` (crates/qs-bsp/src/lib.rs:1699-1721), so a small BSP with `visleafs` near `i32::MAX` makes every call allocate about 268 MB; it is bounded and does not panic, and the fuzz target checks PVS only for rows of at most 65,536 bits (fuzz/fuzz_targets/qs_bsp.rs:50-54).
+    2. The qs-map `DuplicateKey` diagnostic says "qbsp and the game use the first, ericw-tools the last" (crates/qs-map/src/check.rs:36-37, :82). MAP-2.5 says qbsp "looks a key up by its last occurrence", as `QbspEntity::value_for_key` does (crates/qs-map/src/qbsp.rs:196-204), and MAP-2.6 says the game sees the first occurrence of a map qbsp compiled. The qbsp half of the message is wrong.
+    3. The qc-lno property `reading_arbitrary_bytes_never_panics` cannot fail: it asserts `matches!(.., Ok(_) | Err(_))`, which always holds (crates/qc-lno/src/tests.rs:214). Its neighbour `an_accepted_file_round_trips_byte_for_byte` rereads the input bytes rather than the written ones, contrary to its comment (tests.rs:195-197); the assertion before it (tests.rs:194) already pins the round trip, so the reread is only redundant.
+  environment: |
+    main at c706ef0; found by reading the code (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qs-mdl/src/md5.rs and docs/spec/md5.md: a statement that bounds what `numAnimatedComponents` may make `Md5Anim::read` or `frame` allocate (by the input''s size or a named limit), implemented so a small file cannot abort or panic the process; fuzz/fuzz_targets/qs_mdl.rs calls `frame` on every animation it reads'
+  - 'crates/qs-bsp/src/lib.rs and docs/spec/bsp.md: `leaf_pvs`''s allocation bounded the same way, or a statement that records why a row sized by `visleafs` is id''s behaviour and the bound the caller relies on; fuzz/fuzz_targets/qs_bsp.rs checks PVS rows of any size it can afford'
+  - 'crates/qs-map/src/check.rs: the `DuplicateKey` message and rustdoc say what MAP-2.5 and MAP-2.6 say'
+  - 'crates/qc-lno/src/tests.rs: the never-panics property asserts something about the result that can fail (for an accepted file, that its counts match its tables), and the round-trip property drops its redundant reread or rereads what `write` returned'
+  acceptance:
+  - 'A test citing the new MD5 statement reads an animation of a few bytes with `numJoints 0` and `numAnimatedComponents` near `u64::MAX`, and `read` and `frame(0)` give the stated error or a bounded result; the test aborts or panics before the fix'
+  - 'A test citing MAP-2.5 and MAP-2.6 pins the `DuplicateKey` message'
+  - 'A test citing the BSP statement shows `leaf_pvs` on a small file with a huge `visleafs` stays within the stated bound'
+  - 'The rewritten never-panics property fails against a deliberately broken `LnoFile::read`, recorded in the PR'
+  - 'cargo xtask fuzz qs-mdl --time 10m and cargo xtask fuzz qs-bsp --time 10m run clean, recorded in the PR'
+  verify:
+  - cargo test -p qs-mdl -p qs-bsp -p qs-map -p qc-lno; cargo xtask fuzz qs-mdl --time 10m; cargo xtask fuzz qs-bsp --time 10m
+- key: P2-89
+  title: Keep the call depth after a host error and fix the differential host's departures from id
+  labels:
+  - L1-vm
+  - area:vm
+  - type:bug
+  size: M
+  reqs:
+  - FND-3
+  - FND-5
+  - FND-8
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of the L1 crates and qs-differential), each checked against id's source at id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d:
+    1. Host errors reset the call depth. id's `PF_error` (WinQuake/pr_cmds.c) prints and calls `Host_Error ("Program error");` directly; only `PR_RunError` (WinQuake/pr_exec.c) first sets `pr_depth = 0;` ("dump the stack so host_error can shutdown functions"). BUILTIN-3.2 says a host error does not reset the depth, and DIFF-8.4 that the shutdown's `ClientDisconnect` runs start at it, so after `error` 30 calls deep the first QC call fails with `stack overflow`; the oracle scenario at xtask/src/oracles/scenarios/errors.rs:294 pins that. QuakeC Studio collapses every `BuiltinError` into `ErrorKind::Builtin` (`to_run_error`, crates/qc-builtins/src/dispatch.rs:648-657) and `qc_vm::exec::execute` clears the call stack after every error (crates/qc-vm/src/exec.rs:214-237), so its shutdown runs at depth 0 and would diverge from the oracle on any scenario that reaches this. The same holds for VM-2.1: id's `PR_ExecuteProgram` raises `Host_Error ("PR_ExecuteProgram: NULL function");` (WinQuake/pr_exec.c), not `PR_RunError`, and DIFF-8.4 names VM-2.1 beside BUILTIN-3.2, but `execute` clears the stack after `ErrorKind::NullRunFunction` too.
+    2. The map spawner reports a full edict array as `ED_ParseEdict: parse error` (crates/qs-differential/src/host/spawner.rs:44-48). id's `ED_Alloc` calls `Sys_Error ("ED_Alloc: no free edicts");` (WinQuake/pr_edict.c), the error EDICT-6.2 and DIFF-8.1 name, and a fatal error ends the scenario with no shutdown (DIFF-8.6).
+    3. The spawner stores `atoi(value)` for an `ev_entity` key (crates/qs-differential/src/edict8.rs:298-302); id's `ED_ParseEpair` stores `*(int *)d = EDICT_TO_PROG(EDICT_NUM(atoi (s)));` (WinQuake/pr_edict.c). The two agree only for 0, and id's `EDICT_NUM` raises `Sys_Error ("EDICT_NUM: bad number %i", n);` for a number below 0 or from `sv.max_edicts` on (EDICT-1.7), a fatal error the spawner does not raise.
+    4. DIFF-11.2 counts statement coverage over "only the records before the first divergence"; `records_up_to` counts up to and including the diverging change-carrying record (crates/qs-differential/src/suite.rs:202-216), and the test pins the including count (crates/qs-differential/src/suite/tests.rs:208-215).
+    5. The test `message_dest_variants` cannot fail: it asserts `dest == dest` for each `MessageDest` under a DIFF-6.6 citation (crates/qc-builtins/src/tests.rs:1530-1548).
+  environment: |
+    main at c706ef0; found by reading the code and id's source (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qc-builtins (`to_run_error`) and crates/qc-vm (exec.rs, error.rs): a host error a builtin raises reaches the VM as a host error, and after every host error, VM-2.1''s `PR_ExecuteProgram: NULL function` included, the outermost run leaves the call depth where the error left it (BUILTIN-3.2, VM-2.1); a runtime error still resets it (VM-19.1)'
+  - 'crates/qs-differential/src/host.rs: after a host error the shutdown''s `ClientDisconnect` runs start at that depth (DIFF-8.4)'
+  - 'crates/qs-differential/src/host/spawner.rs: a full edict array while the map spawns is `ED_Alloc: no free edicts`, a fatal error with no shutdown (EDICT-6.2, DIFF-8.1, DIFF-8.6)'
+  - 'crates/qs-differential/src/edict8.rs: an `ev_entity` key stores the entity value of edict `atoi(value)`, as `ED_ParseEpair` does (EDICT-8.2), and a number out of range is the fatal `EDICT_NUM: bad number` error (EDICT-1.7, DIFF-8.6)'
+  - 'crates/qs-differential/src/suite.rs, or docs/spec/differential.md with DIFF-11.2 withdrawn and replaced (docs/spec/README.md): the coverage count and the statement agree on the diverging record'
+  - 'crates/qc-builtins/src/tests.rs: the `dest == dest` loop of `message_dest_variants` replaced by an assertion that can fail, keeping its BUILTIN-4.4 `EngineOnly` message assertion'
+  acceptance:
+  - 'A test citing BUILTIN-3.2 and DIFF-8.4 runs `error` 30 calls deep with one entered client and shows the shutdown''s first QC call fail with `stack overflow`, as the oracle scenario does, and a test citing VM-2.1 shows the same after a NULL-function run started 30 calls deep; both fail before the fix; a test citing VM-19.1 still shows depth 0 after a runtime error'
+  - 'Tests citing EDICT-6.2 and EDICT-8.2 pin the spawner''s error text and an `ev_entity` key of `1` and of `-1`, each failing before the fix'
+  - 'A test citing DIFF-11.2 pins the boundary the statement states'
+  - '`cargo xtask differential --fast` still reports zero divergences, recorded in the PR'
+  verify:
+  - cargo test -p qc-vm -p qc-builtins -p qs-differential; cargo xtask oracles; cargo xtask differential --fast
+- key: P2-90
+  title: Fix the defects the codebase mapping found in the repository checks and corpus tooling
+  labels:
+  - repo
+  - area:process
+  - type:bug
+  size: L
+  reqs:
+  - QA-1
+  - TEST-3
+  - LIC-7
+  - PM-6
+  summary: |
+    Found by the codebase mapping at c706ef0 (the per-file sweep of qs-tests, xtask and plan/) and confirmed by reading the code:
+    1. The spec-citation ratchet counts every line whose first non-blank text is `// spec ` in any `.rs` file under `crates/`, `apps/` and `xtask/` (crates/qs-tests/tests/it/spec_coverage.rs:137-157), and so does the per-crate spec check of `cargo xtask readiness` (xtask/src/readiness.rs:876, :1132). TEST-3 asks that every statement "has a test citing it" (docs/testing.md:33). Such lines exist outside tests, for example crates/qs-differential/src/scenario.rs:670 and :688, crates/qc-edict/src/store.rs:296 and crates/qc-builtins/src/dispatch.rs:251, so a statement can count as cited with no test.
+    2. License rule H4 requires each cited upstream's copyright line to come before any other Copyright line (xtask/src/ported.rs:141-151), so a file citing both id-Software/Quake and fte-team/fteqw, which ADR-0017 allows, can never pass: the second upstream's line always follows the first's.
+    3. plan/check.py records an unknown milestone as a problem and then raises `ValueError` from `PHASE_ORDER.index` (plan/check.py:196), so the user gets a traceback instead of the problem list.
+    4. `cargo xtask sema-corpus` checks that every listed difference was used once per module (xtask/src/sema_corpus.rs:115-121, :375-381), so a codebase with several modules fails every module a listed difference does not belong to.
+    5. The corpus cache check is lexical: `dest.starts_with(root)` after joining the current directory, without resolving `..` or symlinks (xtask/src/corpus.rs:172-184), so a `--dest` that reaches the tree through `..` or a symlink passes LIC-7's rule that the corpus is never kept in the source tree.
+    6. `corpus fetch` checks each archive member with `safe_member` just before writing it (xtask/src/corpus/fetch.rs:195-202), so the files written before an unsafe member stay on disk when it aborts.
+    7. `cargo xtask ratchet` reads every past version of ratchets.toml with `git show` and treats a failure as the file being absent (`.ok()`, xtask/src/ratchet.rs:322), so a version it cannot read silently skips the history check for that commit.
+  environment: |
+    main at c706ef0; found by reading the code (the codebase mapping), not by a failing run
+  depends: []
+  deliverable:
+  - 'crates/qs-tests/tests/it/spec_coverage.rs and xtask/src/readiness.rs: a `// spec` line outside test code in `crates/` (outside `#[cfg(test)]` modules and `tests` directories and files, as in crates/qc-vm/src/ops.rs, crates/qc-edict/src/store.rs, crates/qc-builtins/src/dispatch.rs and crates/qs-differential/src/scenario.rs) no longer counts; xtask''s oracle scenarios (xtask/src/oracles/scenarios/), which are differential tests, and test vector modules keep counting; the rule is written in docs/spec/README.md; each statement left without a citation gets a test citing it, and those `// spec` comments become plain comments'
+  - 'xtask/src/ported.rs: H4 accepts a header that carries the copyright line of every cited upstream above ours, in the order of the `Ported from` lines, and docs/porting.md shows such a header'
+  - 'plan/check.py: an unknown milestone is reported in the problem list and the run exits 1 without a traceback'
+  - 'xtask/src/sema_corpus.rs: listed differences are counted across a codebase''s modules'
+  - 'xtask/src/corpus.rs and xtask/src/corpus/fetch.rs: the cache check resolves the path through its nearest existing ancestor before comparing, so a cache that does not exist yet is still accepted, and an archive is checked in full before any file of it is written'
+  - 'xtask/src/ratchet.rs: a `git show` failure for a commit that touched ratchets.toml is an error, not an absent file'
+  acceptance:
+  - 'A test shows a `// spec` line in non-test code no longer counts, and the ratchet passes with docs/spec/coverage-baseline.tsv not grown'
+  - 'A licenses test passes a header citing id-Software/Quake and fte-team/fteqw with both copyright lines, and fails it with either missing'
+  - 'A test in plan/test_check.py shows an unknown milestone reported as a problem, with no exception'
+  - 'Tests show a two-module codebase with a difference listed for one module passes sema-corpus, a cache path through `..` or a symlink into the tree is refused, an archive with an unsafe member writes no file, and an unreadable ratchets.toml version fails `cargo xtask ratchet`; each fails before the fix'
+  verify:
+  - cargo test -p qs-tests -p xtask; python3 plan/check.py; (cd plan && python3 -m unittest discover -p 'test_*.py')
+- key: P2-91
+  title: Bring the docs, specs and READMEs back in line with the code and the ADRs
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: M
+  reqs:
+  - PM-3
+  - CONV-13
+  - QA-8
+  depends: []
+  deliverable:
+  - 'ADRs: ADR-0004''s Links say it is partly overridden by ADR-0005, whose engine oracle is id''s engine, not the pinned QuakeSpasm of docs/adr/0004-preview-host-base.md:128-129 and :163 (as ADR-0002:56 does for its own override); the vkQuake pin of ADR-0016 (`27789d73`) against ADR-0012:105 (`47726d89`), and ADR-0015:98 against ADR-0016:194 on ENGT-3.8, reconciled or explained'
+  - 'docs/ci.md:184 and docs/porting.md:211-212 state the VM differential''s bar as ADR-0013 and docs/testing.md:36 do: zero divergences, coverage reported and not gated'
+  - 'docs/spec/: the "every statement is in coverage-baseline.tsv until ... cites it" prose of limits.md:13-16, progs.md:17-20, vm.md:17-19, edicts.md:20-22, builtins.md:33-34, lno.md:26-27 and differential.md:33-35; sibling specs named by plan key as if unwritten (progs.md:18-19, vm.md:17, limits.md:132 and :146-150, trace.md:18, engine-targets.md); ENGT-4.5 and ENGT-4.6 citing the withdrawn ENGT-4.10 (engine-targets.md:280, :287) and FTEF-18.19 and FTEF-18.22 citing the withdrawn FTEF-18.4 (dialect-fteqcc.md:1042, :1084), withdrawn and replaced as docs/spec/README.md says; the "Codegen (later)" prose of dialect-fteqcc.md:24-27 against its active codegen statements; the plan requirements wad2.md:10-11 (MAP-5, MAP-23) and bsp.md:1264-1266 (MAP-6) cite, named as plan requirements; filesystem.md:278-280 and :328-330 updated with the P1-30 (#277) runs; PAK-5''s QuakeSpasm links pinned to the commit bsp.md uses'
+  - 'READMEs and rustdoc: xtask/README.md (13 of the 26 commands main.rs routes, an old `ci` step list); crates/qs-tests/README.md (3 of its 8 modules); crates/qc-lexer/README.md:33 ("depends on no other crate"; it depends on qc-diag), crates/qc-lexer/Cargo.toml:3 and src/lib.rs:3, crates/qc-syntax/Cargo.toml:3 and src/lib.rs:2 ("vanilla" for crates that read FTEQCC too); crates/qc-trace/README.md:19-21; crates/qc-edict/README.md:41-45; crates/qs-differential/README.md:20-21 (fuzz/fuzz_targets/qc_vm.rs uses `qs_differential::generate`); crates/qc-preproc/README.md:64 (`src/tests.rs`; the tests are in `src/tests/`); crates/qs-vfs/README.md:40-48 (omits the `game directory:` line walk.rs:181 prints); crates/qs-mdl/Cargo.toml:3 (omits alias models); crates/qs-bsp/src/lib.rs:10 (BSP-1 to BSP-19; the README says BSP-20); crates/qc-builtins/README.md:41 and src/lib.rs:23 (claim BUILTIN-17, which no code or test cites); crates/qs-install/src/lib.rs:144 (cites FS-6.4 for missing files; the statement is FS-6.5); crates/qc-diag/src/code.rs:160-161 (`ALL` is "every code, in order" but E040x follow E05xx)'
+  - 'Port headers: crates/qc-lexer/src/fte_string.rs:6-8 and crates/qc-syntax/src/ast.rs:11-14 say fteqw is not a porting upstream, which ADR-0017 changed: each takes the ADR-0017 header as crates/qc-preproc/src/fte_macro.rs has, or says it is read for facts only; crates/qc-progs/src/opcode.rs:5 names only `OP_DONE` and crates/qc-progs/src/limits.rs has no header for the values it takes from id; crates/qc-edict/src/lib.rs:5-6 cites `ED_FindField` and `ED_FindGlobal`, which qc-edict does not implement'
+  - 'Agent and process files: the label table of .claude/rules/commits-and-issues.md gains `type:bug` (plan/backlog/_meta.yaml:57); the crate column of .claude/rules/layering.md lists every crate layers.toml maps; the conditionals on landed work in .claude/agents/implementer.md ("from #9"), .claude/skills/work-issue/SKILL.md ("once #9 lands", "Once #2 lands"), AGENTS.md:26-27, .claude/hooks/session-setup.sh:63 and docs/agents/README.md:74 removed; the plan-test commands of CLAUDE.md, .claude/rules/branching.md:38 and .claude/skills/plan-change/SKILL.md:16 run every plan/test_*.py as cargo xtask ci does; .kiro/steering/guardrails.md:72-74, .kiro/hooks/session-setup.json and .kiro/steering/kiro-powers.md:74-79 agree on whether the SessionStart setup runs; the .kiro pointers carry the code-review self-review, the watch intervals and the scheduled-run check of their .claude sources'
+  - 'Top-level docs: docs/roadmap.md:99-105 ("where we are"); docs/design/README.md (design doc revision, UI framework); docs/adr/README.md:35-37 (reserved ADRs); docs/scope.md:41; docs/layers.md:78 (the tests layer also holds qs-bench and qs-differential); docs/conventions.md:362 (calls docs/ an mdBook, with no book.toml); CONTRIBUTING.md:26-30 (the `ci` step list); ratchets.toml''s stale comments (lines 47-53, 64-66, 76-77, 87-88, 98-100, 110-116 and 224-229 say "a later review adds the minimums" above tables that have them; lines 245-246, 278-279, 287-288 and 300-301 name P1-R1 for P2-R1), comments only; plan/requirements.yaml:3 ("backlog.yaml") and CONV-13 (six rule files; .claude/rules/ has seven)'
+  acceptance:
+  - 'Each item is fixed, or where it is a spec statement withdrawn and replaced; the PR lists each with the commit that fixed it'
+  - 'A search for each quoted stale phrase above finds nothing, recorded in the PR'
+  - 'cargo xtask ci passes, the spec-citation ratchet, adr, licenses and plan steps included'
+  verify:
+  - cargo xtask ci
+- key: P2-92
+  title: Strengthen the weak and misattributed tests the codebase mapping found
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: M
+  reqs:
+  - CONV-11
+  - TEST-3
+  depends: []
+  deliverable:
+  - 'qc-vm: `error_resets_depth_but_not_localstack` cites VM-19.3 and asserts only `is_err()` (crates/qc-vm/src/tests.rs:111-117); the adversarial test at src/tests/adversarial.rs:192-215 does not reuse the machine it aborted; src/tests/harness.rs:59 panics on an unknown opcode name; `StubBuiltins` is written twice (src/tests.rs, src/tests/vectors.rs)'
+  - 'qc-edict: near-duplicate too-many-fields tests (crates/qc-edict/src/tests.rs:527-537, :616-625) and an unfinished comment (:500-501)'
+  - 'qc-builtins: `CALL_TARGET_SLOT` 60 lies inside `v_forward` (crates/qc-builtins/src/tests.rs:694); `movetogoal_holds_at_delta_315` asserts that the entity steps (tests.rs:2805-2825)'
+  - 'qc-trace, qc-types, qc-diag, qc-syntax, qs-vfs: tests with no citation: crates/qc-trace/src/tests.rs:1019 (`errors_display`); crates/qc-types/src/tests.rs:212-248; crates/qc-diag/src/tests.rs (`span_helpers`); crates/qc-syntax/src/tests/mod.rs:177-190 and tests/ast_view.rs; crates/qs-vfs/src/tests.rs:614, :648, :694'
+  - 'qc-diag and qc-lexer: `reserved_codes_are_absent` calls E0207 and E0403 to E0405 withdrawn, though QCD-3.7 and QCD-5.3 to QCD-5.5 are active, and E0501 to E0509 warnings, though they are errors (crates/qc-diag/src/tests.rs:53-62); crates/qc-lexer/src/tests.rs:559-560 repeats `// spec QCD-1.1`, and qc-diag''s QCD-1.1 and QCD-1.2 are cited from qc-lexer''s tests rather than qc-diag''s'
+  - 'qc-sema: crates/qc-sema/src/tests/incremental.rs has no citation on its 7 tests and subtracts counters unchecked (:58-61); `types.rs::malformed_type_is_unknown` accepts either shape; crates/qc-sema/src/tests/expansion.rs:88-95 asserts a disjunction; the factories take strings rather than spec structs (CONV-11)'
+  - 'qc-preproc and qs-install: `fs_loader_picks_the_least_case_variant` skips itself on case-insensitive hosts (crates/qc-preproc/src/tests/mod.rs:885-891); `finding_on_this_machine_does_not_fail` reads the developer''s real stores and asserts nothing (crates/qs-install/src/tests.rs:516-518)'
+  - 'qs-differential: host tests that assert only `Ended::Normally` (crates/qs-differential/src/host/tests.rs:121-152, :290-319); no test of EDICT-8.3''s short vectors, the `light` rename, the trailing-space key trim or the `ev_entity` value in src/edict8/tests.rs; the runner tests'' fake oracle reruns the runner, so they prove plumbing only; src/generate.rs:24, :91, :204, :209 and :443 cite VM-17, VM-11.4, VM-11.1 and VM-6.1/VM-7.3 for behaviour those statements do not describe, and :74 and :81 say one server frame where `FRAMES` is 4'
+  - 'xtask, fuzz and plan: xtask/src/engines/tests.rs:140, :278-297 and :325-348 hard-code counts of the live crates/qc-engines/sources.toml; xtask/src/readiness/tests.rs:150-162 match readiness.yml''s text; xtask/src/bench/tests.rs:443-449 fails on a non-Windows host with `PROCESSOR_IDENTIFIER` set; `NOT_RECORDED` (xtask/src/oracles/scenarios/tests.rs:21-31) must equal the cases record.py drops, in another language; the qc-sema fuzz target''s incremental check only copies the first file''s text (fuzz/fuzz_targets/qc_sema.rs:85-92); plan/test_check.py asserts on real issue keys and risk rows'
+  acceptance:
+  - 'Each test named above asserts what its name and citation say and fails when the behaviour it pins is broken, shown per test by a deliberate break or a mutant recorded in the PR'
+  - 'Each test without a citation cites the statement it pins, or says in a comment why none applies (process tests and tooling with no spec)'
+  - 'No ratchet is lowered and docs/spec/coverage-baseline.tsv does not grow; cargo xtask ci passes'
+  verify:
+  - cargo xtask ci
+- key: P2-93
+  title: Finish the P2-90 and P2-91 fixes in the crates other work held
+  labels:
+  - repo
+  - area:docs
+  - type:chore
+  size: S
+  reqs:
+  - PM-3
+  - TEST-3
+  depends:
+  - P2-90
+  - P2-91
+  deliverable:
+  - 'Shipped-code citations (P2-90): the `// spec` lines outside test code in crates/qc-vm/src/ops.rs (19 lines, from :207) and crates/qc-builtins/src/dispatch.rs:251, which the spec-citation ratchet no longer counts, become plain comments naming the statement (`// VM-4.1: ...`), as P2-90 did for qc-lno, qc-edict and qs-differential; then the spec-citation ratchet (crates/qs-tests/tests/it/spec_coverage.rs) and the spec check of `cargo xtask readiness` report a `// spec` line outside test code as an error, so one cannot come back unnoticed'
+  - 'Statements citing withdrawn ones (P2-91): ENGT-4.5 and ENGT-4.6 cite the withdrawn ENGT-4.10 (docs/spec/engine-targets.md) and FTEF-18.19 and FTEF-18.22 cite the withdrawn FTEF-18.4 (docs/spec/dialect-fteqcc.md); each is withdrawn and replaced as docs/spec/README.md says, the statements and test-vector rows that refer to them follow the replacements, and the tests that cite them (crates/qc-engines/src/tests.rs; crates/qc-sema/src/tests/dialect_statements.rs; crates/qc-syntax/src/tests/dialect_edges.rs, dialect_errors.rs, dialect_statements.rs; crates/qc-preproc/src/tests/fteqcc.rs) cite the replacements'
+  - 'Crate descriptions and rustdoc (P2-91): crates/qc-lexer/Cargo.toml:3 and src/lib.rs:3, crates/qc-syntax/Cargo.toml:3 and src/lib.rs:2 stop calling crates that read FTEQCC too "vanilla"; crates/qc-builtins/src/lib.rs:23 stops claiming BUILTIN-17, as its README now does'
+  - 'Port headers (P2-91): crates/qc-lexer/src/fte_string.rs:6-8 and crates/qc-syntax/src/ast.rs:11-14 say fteqw is not a porting upstream, which ADR-0017 changed: each takes the ADR-0017 header, as crates/qc-preproc/src/fte_macro.rs has, or says it is read for facts only'
+  acceptance:
+  - 'No `// spec` line outside test code remains in crates/ (the test-code rule of docs/spec/README.md); a test shows the ratchet fails on one; and the spec-citation ratchet passes with docs/spec/coverage-baseline.tsv not grown'
+  - 'No active statement cites a withdrawn one, and no test cites a withdrawn statement; the replacements are in docs/spec/requirements.tsv'
+  - 'A search for "vanilla" in the four descriptions named, for BUILTIN-17 in crates/qc-builtins/src/lib.rs and for "not a porting upstream" or "not a registered" in the two port headers finds nothing; cargo xtask ci passes, licenses included'
+  verify:
+  - cargo xtask ci
+- key: P2-94
+  title: End every FTEQCC directive's line where `QCC_PR_SkipToEndOfLine` ends it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-81
+  deliverable:
+  - 'crates/qc-preproc (`directive_end`, `continues`) and docs/spec/dialect-fteqcc.md (FTEF-14.30 withdrawn for a new statement): `QCC_PR_SkipToEndOfLine` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) goes on past a `\` and line break in a `//` comment (`else if (*pr_file_p == ''\\'' && pr_file_p[1] == ''\n'')` is read whatever `handleccomments` is), which the profile follows only for `#define` and `#append` (FTEF-14.24): the pinned FTEQCC (`-Tid`) passes over `zz zz zz` after `#undef X // c \` and after `#ifdef X // c \` and a line break, where the profile reads it as code and refuses it. Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile every directive''s line ends where `QCC_PR_SkipToEndOfLine` ends it, `#undef`, `#ifdef`, `#if`, `#include`, `#pragma` and the others, recorded against the pinned FTEQCC (cases of `cargo xtask oracles builtins` with 0 unexplained differences); the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-95
+  title: Give the semantic model each file's name as `progs.src` wrote it
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-project (`GraphFile`) and crates/qc-sema (`ModuleInput`, `expand.rs`): FTEQCC names a compiled file by its `progs.src` entry as written (`QCC_FindBestInclude(qcc_token, compilingrootfile, 2)` joined by `QCC_JoinPaths`, qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), which `__FILE__` writes and an `#include` is joined to (FTEF-14.32). The preprocessor takes the name as its caller gives the path, and the semantic model gives it the path the database holds for the file, which for a project is the graph''s resolved path, so `__FILE__` and the names of included files differ from FTEQCC''s where the resolved path is not the entry. Found by the self-review of P2-87'
+  acceptance:
+  - 'Through `Db::analyze_module` under the FTEQCC profile `__FILE__` in a listed file and in a file it includes is the name FTEQCC gives for the same project, an entry in a subdirectory and one with `\` separators included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-sema
+  - cargo test -p qc-project
+- key: P2-96
+  title: Find an FTEQCC `#include` beside the file being compiled
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-preproc (`include`) and crates/qc-project (the graph''s includes), with docs/spec/dialect-fteqcc.md and docs/spec/project-file.md: `QCC_FindBestInclude(msg, compilingfile, false)` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) resolves an `#include` against the file being compiled, not the file the directive is in, and then against each `#includedir`; the profile resolves it beside the including file (QC-9.2). The pinned FTEQCC (`-Tid`), compiling `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, reads `src/c.qh` where the profile reads `src/x/c.qh`. Found by the self-review of P2-87'
+  acceptance:
+  - 'Under the FTEQCC profile a nested `#include` reads the file the pinned FTEQCC reads, recorded against it for a project with subdirectories; the vanilla dialect keeps QC-9.2; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-project
+- key: P2-97
+  title: Run the directives FTEQCC finds inside a macro's arguments and expansion
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-80
+  deliverable:
+  - 'crates/qc-preproc (`fte_macro.rs`) and docs/spec/dialect-fteqcc.md: FTEQCC''s `QCC_PR_LexWhitespace(false)`, which skips the white space before a macro''s argument after its `(` and each `,`, calls `QCC_PR_NewLine (false)` at each line break, which runs a directive at the start of the next line (`else if (QCC_PR_Precompiler())`); and a body that continues onto a line starting with `#` keeps the line break ("#define hacks however, require that it becomes foo\nbar\nmoo", `QCC_PR_PreProcessor_Define`), so the expansion holds a directive line (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e). The profile reads the arguments and the expansion as text only and runs no directive in them. Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile a directive on its own line after a use''s `(` or `,`, and one a stored body holds on a line of its own, run as the pinned FTEQCC runs them, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-98
+  title: Read FTEQCC's directive names and macro names as `QCC_PR_Precompiler` does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-81
+  deliverable:
+  - 'crates/qc-preproc (`directive`, `fte_define`) and docs/spec/dialect-fteqcc.md: `QCC_PR_Precompiler` matches a directive by its first bytes (`if (!strncmp(directive, "define", 6))`), so `#defined N 5` defines `N`, where the profile reports an unknown directive; and `QCC_PR_DefineName` refuses a macro name of 64 bytes or more (`if (strlen(name) >= MAXCONSTANTNAMELENGTH || !*name) QCC_PR_ParseError(ERR_NAMETOOLONG, "Compiler constant name length is too long or short");`, `#define MAXCONSTANTNAMELENGTH 64`), which the profile defines (qcc_pr_lex.c and qcc.h, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e). Found by the self-review of P2-80 to P2-84'
+  acceptance:
+  - 'Under the FTEQCC profile directive names and macro names of every length are read as the pinned FTEQCC reads them, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); the vanilla dialect is unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-99
+  title: Number FTEQCC's lines from a `#pragma line`
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-87
+  deliverable:
+  - 'crates/qc-preproc (the pragmas) and docs/spec/dialect-fteqcc.md: `#pragma line(N)` sets the line FTEQCC is reading (`pr_source_line = strtoul(m, &m, 0)-1;`, qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), which `__LINE__` and `__LINESTR__` write (FTEF-14.27) and FTEQCC''s diagnostics report; the profile accepts the pragma and keeps its own line. Found by the self-review of P2-87, beside `#pragma file` (FTEF-14.32)'
+  acceptance:
+  - 'Under the FTEQCC profile `__LINE__` after a `#pragma line` is the line the pinned FTEQCC writes, recorded against it (cases of `cargo xtask oracles builtins` with 0 unexplained differences); each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-100
+  title: Refuse to land a PR whose body names an issue after a closing verb in a negated sentence
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - CONV-10
+  - CONV-13
+  depends: []
+  deliverable:
+  - '.claude/skills/work-issue/scripts/check-pr-body.sh, run by .claude/skills/work-issue/scripts/land.sh on the PR body before it waits for CI and again before it queues the PR: GitHub closes an issue named after a closing keyword (close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved; "Linking a pull request to an issue", docs.github.com) whatever the sentence says, so the bodies of PRs 477 and 514, which said they left issues 84 and 444 open, closed them on merge. The script refuses a sentence holding a keyword reference and a negation or hedge word, prints it and suggests "Refs #N"'
+  - 'Its tests in xtask/src/ci/pr_body_tests.rs; the rule (write "Refs #N", never a closing verb next to an issue reference) in the Pull requests section of .claude/rules/commits-and-issues.md and in .kiro/steering/rules.md'
+  acceptance:
+  - 'A test shows each keyword, in any case and with a colon, refused after each negation and hedge word, in a sentence wrapped over lines, for a same-repository, other-repository and URL reference; the refusal prints the sentence and a "Refs" suggestion; ordinary bodies, "Closes #N" among them, are accepted'
+  - 'The bodies of PRs 477 and 514 are refused, recorded in the PR; shellcheck and shfmt -i 2 -d pass on the scripts; cargo xtask ci passes'
+  verify:
+  - cargo test -p xtask pr_body
+  - shellcheck .claude/skills/work-issue/scripts/*.sh
+- key: P2-101
+  title: Read an FTEQCC module's graph directives with the preprocessor's directive reader
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-3
+  - LANG-5
+  depends:
+  - P2-94
+  - P2-96
+  deliverable:
+  - 'crates/qc-project/src/graph.rs, through a public reader in crates/qc-preproc (fte_directive): under the FTEQCC profile the graph reads the directives that decide which files are read as `QCC_PR_Precompiler` does (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e), with the reader the preprocessor uses (FTEF-14.33 to FTEF-14.47): names matched by their first bytes (`#defined`, `#includes`), lines ended where `QCC_PR_SkipToEndOfLine` ends them (a `//` comment ending in `\` carries the next line), false sides skipped by `QCC_PR_FalsePreProcessorIf` with one count of open sides from file to file, `#pragma DONT_COMPILE_THIS_FILE` and `#eof` ending the reading, and directives on the lines of an `#includelist`. The graph reads them with its own line reader (PRJ-5.1), so an FTEQCC module whose `#include` stands after such a line lists other files than FTEQCC compiles. Found by the self-review of P2-94 to P2-99'
+  acceptance:
+  - 'Under the FTEQCC profile the graph lists the files the pinned FTEQCC compiles for programs whose `#include` and `#includelist` lines follow each directive form of FTEF-14.34 to FTEF-14.44, recorded against it; the vanilla dialect keeps PRJ-5; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+  - cargo xtask project-corpus
+- key: P2-102
+  title: Group an FTEQCC directive's line in the syntax tree where FTEQCC ends it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-94
+  deliverable:
+  - 'crates/qc-syntax/src/input.rs: under the FTEQCC profile a directive piece of the lossless tree starts where `QCC_PR_NewLine` reads a `#` (FTEF-14.34: after a line ending and spaces and tabs, never after a `/* */` comment on its line) and ends where `QCC_PR_SkipToEndOfLine` ends its line (FTEF-14.35: on past a `\` and line break in a `//` comment, and over a `/* */` comment that spans lines), with the end the preprocessor uses, so the editor shows as directive the text FTEQCC reads as one. The tree closes a directive at the first line break after its `#`, as the vanilla dialect does. Found by the self-review of P2-94 to P2-99'
+  acceptance:
+  - 'Under the FTEQCC profile the directive pieces of a file match the directive ends of the preprocessor for each case of FTEF-14.34 and FTEF-14.35; the vanilla dialect keeps its pieces; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-103
+  title: The semantic model drops a `#` the preprocessor leaves at the start of a line
+  labels:
+  - L3-semantics
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  summary: |
+    qc-sema renders a compiled file's tokens a source line to a rendered line (crates/qc-sema/src/expand.rs) and parses the rendering with qc_syntax::parse_with, whose input groups a `#` and a name at a line's start as a directive line and skips it (crates/qc-syntax/src/input.rs). A `#` the preprocessor leaves as code first on its line, such as `/* c */#foo` under the vanilla dialect, is then dropped without a word: the vanilla profile reports nothing for `/* c */#foo` and `void() f = #5;`, where id's qcc reports '"#" is not a type'. Under FTEQCC the preprocessor reports such a `#` itself (FTEF-14.34), which the vanilla dialect does not.
+  environment: |
+    feat/507-fteqcc-directives; found while checking the directive family of P2-94 to P2-99 against id's qcc, by a test of Db::analyze_module
+  depends:
+  - P2-94
+  deliverable:
+  - 'crates/qc-sema (expand.rs, and qc-syntax where its parse of a rendering needs it): a rendered file holds no directive lines, so a `#` the preprocessor leaves is parsed as the token it is under both dialects, and the FTEQCC preprocessor''s own report of a first-on-its-line `#NAME` (FTEF-14.34) is no longer needed and is removed'
+  acceptance:
+  - 'Through Db::analyze_module the vanilla profile refuses `/* c */#foo` and `void() f = #5;` as id''s qcc does, and the FTEQCC profile as the pinned FTEQCC does, with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-sema
+- key: P2-104
+  title: The vanilla preprocessor finds an include in the module's include directories
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    The project graph finds an `#include` beside the file that holds it and then in the module's include directories (PRJ-5.2), and the FTEQCC and GMQCC preprocessors are given those directories (qc_preproc::Preprocessor::with_include_dirs, FTEF-14.49), but the vanilla preprocessor's `#include` (crates/qc-preproc/src/lib.rs, `include`) looks only beside the file (QC-9.2). A vanilla module whose quakec.toml gives include_dirs therefore opens in the graph and fails in Db::analyze_module with E0111 for each file only an include directory holds.
+  environment: |
+    feat/507-fteqcc-directives; found while giving FTEQCC's -I to the preprocessor for Rad-Therapy (P2-96)
+  depends:
+  - P2-96
+  deliverable:
+  - 'crates/qc-preproc (lib.rs, `include`): under the vanilla dialect an `#include` not found beside the file holding it is looked for in the include directories with_include_dirs gives, in order, as PRJ-5.2 says; docs/spec/language.md QC-9.2 says so, or names the statement that does'
+  acceptance:
+  - 'A vanilla module whose included file is only in an include directory preprocesses with no E0111 through Db::analyze_module, and one beside the including file is still preferred, each with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-sema
+- key: P2-105
+  title: The FTEQCC preprocessor reads a directive after a `\` that ends a line of code
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  summary: |
+    In code, FTEQCC's `QCC_PR_LexPunctuation` (engine/qclib/qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) passes over a `\` and the line break after it (`pr_file_p+=2;`) without calling `QCC_PR_NewLine`, so a `#` at the start of the next line is no directive: the pinned FTEQCC refuses `float g; \`, a line break and `#define N 1` with "Explicit precompiler usage when not defined define". The FTEQCC preprocessor (crates/qc-preproc/src/lib.rs, `fte_file_directive` with `fte_directive::starts_line`) takes that `#` to start a line and runs the directive, and so does the project graph, which reads code with the same lexer (PRJ-5.13).
+  environment: |
+    feat/518-graph-fte-directives; found by the self-review of P2-101 against the pinned FTEQCC
+  depends:
+  - P2-101
+  deliverable:
+  - 'crates/qc-preproc (and qc-lexer where its tokens need it): under an FTEQCC dialect a `#` after a `\` and a line break in code starts no directive, for the preprocessor and the graph reader alike; docs/spec/dialect-fteqcc.md states it'
+  acceptance:
+  - 'The builtin differential holds `float g; \` before `#define`, `#undef` and `#include` lines, and the profile and the project graph agree with the recorded FTEQCC on each, with a test citing the statement it pins; a regression test fails before the fix'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p xtask
+- key: P2-106
+  title: The GMQCC graph and preprocessor read directives the same way
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: M
+  reqs:
+  - LANG-3
+  - LANG-5
+  summary: |
+    Under the GMQCC dialect the preprocessor reads directives with FTEQCC's reader and defines `FTEQCC` and `__FTEQCC__` (Dialect::has_fteqcc_extensions, FTEF-14.48), but the project graph reads them with its PRJ-5 line reader and defines neither (crates/qc-project/src/graph.rs, which uses the FTEQCC reader only for Dialect::Fteqcc, PRJ-5.13). A GMQCC module with `#ifdef FTEQCC` before an `#include`, or an `#include` on a line a `// c \` comment carries, therefore lists other files in its graph than the preprocessor reads. GMQCC's own `ftepp` reads neither as FTEQCC does, and Xonotic, the GMQCC corpus, builds with the C preprocessor.
+  environment: |
+    feat/518-graph-fte-directives; found by the self-review of P2-101
+  depends:
+  - P2-101
+  deliverable:
+  - 'crates/qc-project/src/graph.rs and crates/qc-preproc: under the GMQCC dialect the graph and the preprocessor follow one reading of the directives, the one PRJ-5.12 and a new statement in docs/spec/project-file.md give, checked against GMQCC''s ftepp or the C preprocessor Xonotic builds with'
+  acceptance:
+  - 'Under GMQCC a module with `#ifdef FTEQCC` and a carried line before an `#include` lists the files the preprocessor reads, with a test citing the statement it pins; Xonotic still opens with the graph `cargo xtask project-corpus` checks'
+  verify:
+  - cargo test -p qc-project
+  - cargo xtask project-corpus
+- key: P2-107
+  title: Read an FTEQCC source file's bytes as FTEQCC's file loader gives them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (the FTEQCC file reader in `fte_directive.rs`, `byte_at`, and the graph reader in `fte_directive/graph.rs`), qc-lexer where its tokens need it, and a new statement in docs/spec/dialect-fteqcc.md beside FTEF-14.52: under an FTEQCC dialect a source file is the text FTEQCC''s `QCC_LoadFile` (qcc_cmdlib.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) hands the lexer. `QCC_SanitizeCharSet` decodes a file that starts with a UTF-32LE, UTF-32BE, UTF-16LE or UTF-16BE byte order mark to UTF-8 and skips a UTF-8 one (`mem += 3;`), and every NUL byte left is a space (`else if (!mem[check])`, the warning "file contains null bytes", then `mem[check] = '' '';`). The profile reads a NUL as the end of the text (`byte_at`: "`None` at its end, which a NUL is", the vanilla rule of QC-1.1) and does not skip a UTF-8 byte order mark before the first directive, though the project graph does (PRJ-5.1). The fifth P2-R2 review compared the profile at commit 6f12aef with the pinned FTEQCC (`-Tid`, as cases of `cargo xtask oracles builtins`): FTEQCC refuses `void() f = #5;`, a line break, a NUL and `zz zz zz` ("\"zz\" is not a type"), which the profile binds as builtin 5; refuses `#define N #5`, a NUL, `zz`, a line break and `void() f = N;`, which the profile accepts; binds `#ifdef Q`, a line break, `zz`, a NUL, a line break, `#endif` and `void() f = #5;` as builtin 5, which the profile refuses; binds `#define N #5` and `void() f = N;` after a UTF-8 byte order mark, with and without two spaces before the `#`, as builtin 5, which the profile refuses; and compiles `void() f = #5;` written as UTF-16LE after its byte order mark, binding builtin 5'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above preprocesses and binds as the pinned FTEQCC does, the cases added to the directive family of `cargo xtask oracles builtins` (the UTF-16 and UTF-32 ones as files written as bytes) with 0 unexplained differences; the project graph lists the files FTEQCC reads past a NUL and after a byte order mark; the vanilla dialect keeps QC-1.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo test -p qc-project
+  - cargo xtask oracles builtins
+- key: P2-108
+  title: Read an FTEQCC `#if` value as FTEQCC's `int` from C's `atoi`
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (`cond::atoi` as the FTEQCC `#if` reader uses it) and docs/spec/dialect-fteqcc.md FTEF-14.33 (or a new statement beside FTEF-14.50): `ParsePrecompilerIf` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) keeps each value in `int eval` from `eval = atoi(pr_token);` or `eval = atoi(c->value);`, and compares and negates those `int`s. C''s `atoi` is the host''s: on an LP64 host (64-bit Linux and macOS) it is `(int)strtol(s, NULL, 10)`, which saturates at `LONG_MAX` and `LONG_MIN` (2^63 - 1 and -2^63) before the low 32 bits are kept, and it passes over only the bytes the C locale''s `isspace` takes (space, tab, LF, VT, FF, CR). The profile''s `cond::atoi` returns an `i64` that saturates at `i64::MAX` and `-i64::MAX` and passes over Unicode white space (`str::trim_start`). The fifth P2-R2 review compared the profile at commit 6f12aef with the pinned FTEQCC on macOS arm64 (`-Tid`, as cases of `cargo xtask oracles builtins`, each `#if` before or around `void() f = #5;`): FTEQCC takes `#if 4294967296`, `#if -99999999999999999999`, `#define X 4294967296` then `#if X`, and `#if` or a `#define X` body of U+00A0, U+3000 or U+0085 before `1` as false, which the profile takes as true; and takes `#if 4294967297 == 1`, `#if 2147483648 < 0`, `#if -2147483649 > 0` and `#if 99999999999999999999 == -1` as true, which the profile takes as false. Where `long` is 32 bits (LLP64, 64-bit Windows) `strtol` saturates at 2^31 - 1, so the statement names the host the profile follows, as FTEF-14.50 does for `strtoul`'
+  acceptance:
+  - 'Under the FTEQCC dialect each case above is read as the pinned FTEQCC reads it on an LP64 host, the cases added to the directive family of `cargo xtask oracles builtins` with 0 unexplained differences and any case an LLP64 `strtol` reads otherwise listed as expected there; the vanilla dialect''s PRJ-5.5 expressions are unchanged; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask oracles builtins
+- key: P2-109
+  title: Measure qc-preproc's mutation score in the Readiness workflow after the FTEQCC directive port
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - LANG-5
+  - TEST-2
+  - TEST-10
+  depends:
+  - P2-86
+  deliverable:
+  - 'crates/qc-preproc (its tests, or the code a mutant turns into an unbounded loop) and, if the cause is the measurement, xtask/src/readiness.rs: the L2 Readiness run 39561186189 on main at 6f12aef measured qc-lexer''s mutation score (325 of 325) and then lost its runner during qc-preproc''s, twice: attempt 1 at 07:57:13 UTC, 31 min 25 s after qc-lexer''s score was printed, and attempt 2, rerun with `gh run rerun --failed`, at 08:57:39 UTC, 32 min 3 s after it ("The runner has received a shutdown signal", exit code 143), so neither qc-preproc, qc-syntax nor qc-project has a mutation score and `cargo xtask ratchet` failed. qc-preproc has 1087 mutants at 6f12aef (`cargo mutants --list`), 357 of them in src/fte_directive.rs and src/fte_directive/graph.rs, which #516 to #527 added; its last measured run, 39455878689 at 2a48d73, had 556 and finished. The same point in both attempts, under `--no-shuffle`, points at one mutant that makes a test take the runner''s memory or disk before the mutant''s timeout ends it, such as a reader loop that stops advancing while it pushes to a `Vec`. Find the mutant from cargo-mutants'' `mutants.out` log of a run that reaches it, and make it caught without ending the runner: a test that fails fast on the input that loop reads, a bound in the code that keeps the loop finite, or a per-test memory limit in the mutation job, which would be a measurement change for its own review'
+  acceptance:
+  - 'A Readiness run on main for qc-lexer, qc-preproc, qc-syntax and qc-project finishes its mutation job, and every crate meets the bar and its ratchets.toml minimum with no unlisted survivor and no lowered ratchet; the run is linked in the PR'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo xtask readiness mutation qc-preproc
+- key: P2-110
+  title: Read an FTEQCC file's syntax tree from the text FTEQCC's file loader gives
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-syntax (`input.rs`) and docs/spec/dialect-fteqcc.md FTEF-14.51: under an FTEQCC dialect the syntax tree makes a directive node of the text the preprocessor reads as one directive (FTEF-14.51), but it reads the file''s bytes, where the preprocessor and the project graph read the text FTEQCC''s `QCC_LoadFile` hands its lexer (FTEF-14.54, P2-107): the tree lexes only to the first NUL (`until_nul` in `input.rs`, QC-1.1), where FTEQCC makes each NUL a space and reads on, and `qc_preproc::fte_directive_end` sees a UTF-8 byte order mark before the first line''s `#`, so `#define N 1` on the first line after one is no directive node, though the preprocessor runs it. The tree stays lossless (a NUL and the mark are trivia of the file as written), and a UTF-16 or UTF-32 file, which the preprocessor decodes, is shown as the semantic model decides'
+  acceptance:
+  - 'Under the FTEQCC dialect the syntax tree of a file with a NUL before a directive line, and of one whose first line is a directive after a UTF-8 byte order mark, makes the directive nodes the preprocessor runs, and stays lossless; the vanilla dialect keeps QC-1.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-syntax
+- key: P2-111
+  title: Refuse an FTEQCC frame macro whose number is negative as an unknown one
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-105
+  deliverable:
+  - 'crates/qc-preproc (`Preprocessor::find_frame` and the frame macro reference) and docs/spec/dialect-fteqcc.md FTEF-18.16 (or a new statement beside it): FTEQCC''s `QCC_PR_FindMacro` (qcc_pr_lex.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) returns a frame macro''s value, and `-1` for a name with none, and `QCC_PR_ExpandMacro` refuses any negative result (`if (i < 0) QCC_PR_ParseError (ERR_BADFRAMEMACRO, "Unknown frame macro $%s", pr_token);`), so a frame macro numbered below 0 by `$framevalue` is unknown where it is used. While working P2-107 and P2-108 the pinned FTEQCC (`-Tid`, macOS arm64) refused `$framevalue -99999999999` and `$framevalue 2147483648`, each then `$frame a` and `x = $a;` in a function, with "Unknown frame macro $a" (`atoi` gives -1215752191 and -2147483648, FTEF-14.55), where this profile numbers the frame from the negative value and accepts the program'
+  acceptance:
+  - 'Under the FTEQCC dialect a frame macro reference whose macro is numbered below 0 is "Unknown frame macro", as the pinned FTEQCC refuses it; `$framerestore` of such a macro is checked against FTEQCC the same way; each with a test citing the statement it pins and the cases recorded as the pinned FTEQCC compiles them'
+  verify:
+  - cargo test -p qc-preproc
+- key: P2-112
+  title: Read an FTEQCC module's progs.src as FTEQCC's file loader gives it
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-107
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `source_form` and the list-form `Cursor`) and docs/spec/project-file.md PRJ-4.1 or PRJ-5.13: FTEQCC loads `progs.src` itself with `QCC_LoadFile` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)`), so it is decoded from UTF-16 or UTF-32 after a byte order mark and its NUL bytes are spaces (FTEF-14.54, P2-107), before `QCC_COM_Parse` reads its first word and its `#` test picks the source or the list form. The project graph reads `progs.src` as its bytes past a UTF-8 byte order mark only (`source_form`, `Cursor::new`), so under an FTEQCC dialect a UTF-16LE source-form `progs.src` is read as a list of words, and a NUL in a list-form one splits its words otherwise than FTEQCC does. The code review of #532 found this'
+  acceptance:
+  - 'Under an FTEQCC dialect the project graph reads a `progs.src` written as UTF-16 or UTF-32 after its mark, and one with NUL bytes, in the form and with the words the pinned FTEQCC reads, recorded as cases of `cargo xtask oracles builtins` or of the project graph''s differential; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-113
+  title: End a vanilla progs.src at its first NUL byte as id's qcc does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    Under the vanilla dialect the project graph (crates/qc-project/src/graph.rs) reads a list-form `progs.src` past a NUL byte, as white space between two words, where id's qcc ends its text there: `progs.dat`, a NUL, `a.qc` and a line break lists `a.qc` in the graph and no file in id's qcc.
+  environment: |
+    feat/534-fteqcc-loader-followups; found while writing the PRJ-4.6 tests of P2-112 (crates/qc-project/src/tests/forms.rs)
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `progs_text`, `source_form` and the list-form `Cursor`) and docs/spec/language.md QC-23 or docs/spec/project-file.md PRJ-4: id''s qcc reads `progs.src` with `LoadFile` (`qcc/cmdlib.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: `buffer = SafeMalloc (length+1); ((byte *)buffer)[length] = 0;`) and splits it with `COM_Parse`, which stops at a NUL (`if (c == 0) { com_eof = true; return NULL; }`), so its list ends at the first NUL byte. Under the vanilla dialect the project graph reads on past one: while working P2-112, `progs.dat`, a NUL and `a.qc` listed `a.qc`'
+  acceptance:
+  - 'Under the vanilla dialect the project graph tells the form of, and reads the list of, a `progs.src` only to its first NUL byte, as id''s qcc does, recorded as a case of the vanilla graph''s differential or a recorded run of id''s qcc; the FTEQCC dialect keeps PRJ-4.6; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-114
+  title: 'Pass over a progs.src first line that starts with #! as FTEQCC does'
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'crates/qc-project (`graph.rs`), crates/qc-preproc (the compiled root of a source-form module) and docs/spec/project-file.md PRJ-4: FTEQCC''s `QCC_main` (qccmain.c, fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e) passes over the first line of the module''s source when it starts with `#!` (`if (qccmsrc[0] == ''#'' && qccmsrc[1] == ''!'') qccmsrc = strchr(qccmsrc, ''\n'');`, "ignore the first line if it starts with a #! for unix scripts"), before `QCC_COM_Parse` reads the first word that picks the form. The project graph reads that line''s `#` as the start of the source form and the preprocessor reads it as code'
+  acceptance:
+  - 'Under the FTEQCC dialect a `progs.src` whose first line starts with `#!` is read in the form, and with the files, the pinned FTEQCC reads it in, list form and source form alike, recorded as cases of `cargo xtask oracles builtins`; the vanilla dialect keeps PRJ-4.1; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+  - cargo test -p qc-preproc
+- key: P2-115
+  title: Split a vanilla progs.src word at a byte of 0x80 or more as id's qcc does
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-1
+  summary: |
+    Under the vanilla dialect the project graph (crates/qc-project/src/graph.rs, `com_parse_words` and `com_parse_end`) keeps a byte of 0x80 to 0xFF inside a list-form `progs.src` word, where id's qcc reads it as white space that ends the word: on the pinned id qcc, `progs.dat`, a line break and `b.qh` 0xE9 `x.qc` compiles `b.qh` and `x.qc`, while the graph lists one file named `b.qh` 0xE9 `x.qc`. A project with a non-ASCII byte in a listed name, such as a UTF-8 `café.qc`, gets a graph that lists a file id's qcc never opens.
+  environment: |
+    fix/538-progs-src-nul-and-script-line; found by the code review of P2-113's PR, confirmed with the pinned id qcc built by `cargo xtask oracles build` on macOS arm64, where `char` is signed as on the x86 build
+  depends:
+  - P2-113
+  deliverable:
+  - 'crates/qc-project (`graph.rs`: `com_parse_words`, `com_parse_end`) and docs/spec/language.md QC-23: id''s `COM_Parse` (`qcc/cmdlib.c`, id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73) reads its text through `char *data` into `int c`, and tests `while ( (c = *data) <= '' '')` and `} while (c>32);`, so on the x86 build, where `char` is signed, a byte of 0x80 or more is below the space, as QC-1.3 says of the lexer'
+  acceptance:
+  - 'Under the vanilla dialect the project graph splits a list-form `progs.src` word at a byte of 0x80 to 0xFF, and skips such bytes between words, as the pinned id qcc does, recorded as vanilla graph cases of `cargo xtask oracles builtins`; the FTEQCC dialect keeps its own reading; each with a test citing the statement it pins'
+  verify:
+  - cargo test -p qc-project
+- key: P2-116
+  title: Port every function on FTEQCC's and id qcc's path from progs.src to tokens
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-1
+  - LANG-5
+  depends:
+  - P2-112
+  deliverable:
+  - 'docs/spec/inventory-l2.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/`: qcc.c, cmdlib.c, pr_lex.c) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/`: qccmain.c, qcc_cmdlib.c, qcc_pr_lex.c and what they call) runs from opening `progs.src` or a compiled file to handing a token to the parser, including the C library calls whose behaviour matters (atoi, strtol, strtoul, strtod, isspace and similar). It is built from the lineage. The doc first records, quoted from the sources, whether FTEQCC''s compiler descends from id''s qcc: fteqw''s first commit of engine/qclib (7c00f2b1, Spoike, 2004-08-23, "Initial Checkin") has `QCC_PR_LexName` and `QCC_PR_LexPunctuation` with bodies identical to id''s `PR_LexName` and `PR_LexPunctuation` but for white space, and qcc_cmdlib.c''s `DefaultExtension`, `DefaultPath`, `StripFilename`, `StripExtension`, `ExtractFilePath`, `ExtractFileBase`, `ExtractFileExtension` and `ParseNum` match id''s cmdlib.c line for line, so it does. GMQCC (graphitemaster/gmqcc, MIT, first commit 48a95ec by Dale Weiler, 2012-04-09) uses none of id''s function names or globals (`COM_Parse`, `PR_Lex`, `pr_file_p`, `LoadFile`), so it was written independently; the doc records that too, with the evidence. Then: (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_LexString` with `QCC_PR_LexString`, `COM_Parse` with `QCC_COM_Parse`, `LoadFile` with `QCC_LoadFile`), whose content is the behavioural difference between the two bodies, which is what the FTEQCC profile adds on top of our id qcc port; (2) the FTEQCC-only functions on the path (`QCC_PR_ConditionCompilation`, `QCC_PR_LexOctal`, `QCC_PR_IncludeChunk` and the rest), all of whose behaviour is new; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-lexer, crates/qc-preproc, crates/qc-syntax and crates/qc-project, with spec statements in docs/spec/, citing tests and cases of `cargo xtask oracles builtins` (or the graph''s differential), in one PR. Rows that #533 (P2-109) and #541 (P2-113, P2-114) cover count once they merge'
+  acceptance:
+  - 'docs/spec/inventory-l2.md records the lineage evidence, quoted, for FTEQCC and GMQCC, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-lexer -p qc-preproc -p qc-syntax -p qc-project
+  - cargo xtask oracles builtins
+- key: P2-117
+  title: Port every function on FTEQCC's and id qcc's path from tokens to definitions
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: L
+  reqs:
+  - LANG-4
+  - LANG-5
+  depends:
+  - P2-26
+  deliverable:
+  - 'docs/spec/inventory-l3.md: the inventory of every function id''s qcc (id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73 `qcc/pr_comp.c` and the pr_lex.c parsing helpers it calls: `PR_ParseName`, `PR_FindType`, `PR_ParseType`, `PR_Expect`, `PR_Check`, `PR_ParseError`) and FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e `engine/qclib/qcc_pr_comp.c` and what it calls) runs from a token to a definition and a diagnostic, as far as qc-sema models them today: declarations, types, resolution, initialisers and the diagnostics the profiles report. Codegen (P2-06 onward) is out of scope. It is built from the lineage, as P2-116''s inventory-l2.md records it (FTEQCC''s qcc_pr_comp.c descends from id''s pr_comp.c: fteqw 7c00f2b1 has `QCC_PR_ParseImmediate`, `QCC_PrecacheSound` and `QCC_PrecacheFile` grown from id''s bodies; GMQCC was written independently): (1) a row per id function on the path paired with its FTEQCC counterpart (`PR_ParseDefs` with `QCC_PR_ParseDefs`, `PR_GetDef` with `QCC_PR_GetDef`), whose content is the behavioural difference between the two bodies; (2) the FTEQCC-only functions on the path; (3) the id functions FTEQCC dropped or replaced. Each row gives the function, file, our Rust counterpart (or "unported"), the spec statement IDs and the differential cases'
+  - 'The ports: every unported or partly ported behaviour in the inventory, in crates/qc-sema (and crates/qc-engines where a row reaches it), with spec statements in docs/spec/, citing tests and differential cases, in one PR'
+  acceptance:
+  - 'docs/spec/inventory-l3.md maps the path from the lineage, and no row is unported or unproven: each names its Rust counterpart, the statements it implements and the differential cases that prove it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-sema -p qc-engines
+  - cargo xtask oracles builtins
+- key: P2-118
+  title: Honour FTEQCC's warning settings and lexer flags on the definitions path
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-4
+  - LANG-5
+  summary: |
+    What the L2 port (P2-116, #547) and the L3 port (P2-117, #546) left on the L3 side, since #546 merged before #547:
+    1. The definition warnings W0207 to W0226 and W0314 do not pass through FTEQCC's warning settings (`-W` flags, `#pragma warning`, `-Werror`): they need `FteWarning::of_code` entries and `WarningSettings::reported_code`, as the L2 warnings have.
+    2. `Db::parse` does not call `qc_syntax::parse_module_source`, so a module's source-form root is not read past a `#!` line (PRJ-4.10).
+    3. `fteqcc_string_bytes` lexes a string with the default lexer flags, not the file's (`FileOutput::lex_flags`), so under `utf8`, or with `qcfuncs` off, a string's value differs.
+    4. The parser reads `@` (a `qccx` unary in `QCC_PR_Term`) and `^^` as no operator.
+    5. The `assumeint`, `assumedouble` and `caseinsensitive` flags (FTEF-12.14) do not change the types and keywords the semantic model reads.
+  depends:
+  - P2-116
+  - P2-117
+  deliverable:
+  - 'crates/qc-sema (and crates/qc-syntax where the parser reads a term): items 1 to 5 ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, with spec statements in docs/spec/, citing tests and differential cases, in one PR'
+  - 'docs/spec/inventory-l3.md: a row for each item, naming its Rust counterpart, statements and differential cases'
+  acceptance:
+  - 'Each item has a statement and a citing test; a definition warning disabled with `-Wno-...` or `#pragma warning disable`, or made an error with `-Werror`, is reported as FTEQCC reports it'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences, and every behaviour deliberately not modelled is a spec statement with its reason'
+  verify:
+  - cargo test -p qc-sema -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-119
+  title: Read FTEQCC's keyword flags in the parser
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-118 (#549). FTEQCC's keywords are flags of `compiler_flag[]` (`keyword_class`, `keyword_for`, `keyword_long` and about 70 more, `qccmain.c`), which `#pragma keyword`, `#pragma flag` and the `-K` and `-F` options turn on and off, and which `-std=` sets as a group. A disabled keyword is a name to `QCC_PR_CheckKeyword` and `QCC_PR_ParseStatement`, and its `__` spelling still a keyword. The preprocessor already tracks them (`qc_preproc::FlagSettings`, FTEF-12.11), but the parser reads FTEQCC's default keywords everywhere (FTEF-2.7, FTEF-19.1, FTEF-12.15), so a program that turns a keyword on or off is read as if it had not.
+  depends:
+  - P2-116
+  deliverable:
+  - 'crates/qc-preproc: the keyword flags marked by token in `FileOutput`, as `lex_flags` are; crates/qc-syntax: the parser reads each keyword with the flags in force at its token (declarations, statements, qualifiers, the C type words of `c_scalar`), ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, with spec statements replacing FTEF-12.15''s keyword clause'
+  acceptance:
+  - 'A statement per keyword group and a citing test; `#pragma keyword enable long` makes `long x;` a definition and `#pragma keyword disable for` makes `for` a name, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases that turn keywords on and off'
+  verify:
+  - cargo test -p qc-preproc -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-121
+  title: Read FTEQCC's extern "C" and extern "QC" blocks
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-119 (#554). `QCC_PR_ParseDefs` reads `extern` followed by a string, as its first qualifier, as a block of definitions (`extern "C" { ... }`) or one definition (`extern "C" float x;`), and for `"C"` (in any case) turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and `subscope` on until the block ends, and for `"QC"` turns `qcfuncs` on, restoring them after (`//this C++ism is for parsing types`). The pinned FTEQCC compiles `extern "C" { float x; }`; the profile's parser reads the string as no type. The flags change how the tokens inside are lexed (FTEF-12.12) and how definitions are made (FTEF-19.3), so the parser needs to lex the block again with them, which the preprocessor's marks cannot say, as the block is the parser's.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax and crates/qc-sema: `extern "C"` and `extern "QC"` blocks and single definitions parsed, the tokens inside lexed and the definitions made with the flags they set, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_PR_ParseDefs`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l3.md: a row for the `extern` string branch of `QCC_PR_ParseDefs`'
+  acceptance:
+  - 'A statement and a citing test for each flag the block sets; `extern "C" { float x = 5; }` makes `x` a variable of an integer value and `extern "QC" { ... }` reads its strings with `qcfuncs` on, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of both blocks'
+  verify:
+  - cargo test -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-122
+  title: Read FTEQCC's cast flags in the semantic model's casts
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-121 (#556), whose inventory of the places FTEQCC changes its flags mid-file (`docs/spec/inventory-l2.md`, "Where the flags change") lists the flags only the semantic model's casts read, off the L2 path. `#pragma flag` and the `-F` options set `lax`, `typeexplicit` and `qccx`, and `#pragma TARGET` sets `flag_undefwordsize` through `QCC_OPCodeSetTarget`, and each changes the implicit casts of `QCC_TryEvaluateCast`, `QCC_EvaluateCast` and `QCC_SupplyConversion`: `lax` makes a refused cast the warning `WARN_LAXCAST`, `typeexplicit` refuses implicit conversions, `qccx` allows float to entity and string casts and back, and `flag_undefwordsize` refuses pointer and string casts. The semantic model's initialiser casts (FTEF-19.2) read none of them (FTEF-21.15, FTEF-19.30).
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-sema (and crates/qc-preproc, whose `CompilerFlags` keeps the flags the semantic model reads): the casts of FTEF-19.2 read `lax`, `typeexplicit`, `qccx` and the target''s `flag_undefwordsize` where the initialiser stands, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`, `QCC_OPCodeSetTarget`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l2.md: the rows of the four flags made `ported`'
+  acceptance:
+  - 'A statement and a citing test for each flag, its casts as the pinned FTEQCC makes them where `#pragma flag` or the command line turns it on and off'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of each flag'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-123
+  title: Apply the mutation measurement's memory limit in xtask on every host
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - TEST-10
+  summary: |
+    Found while working P2-109 (#531). The Readiness mutation job limits each test binary to 3 GiB of data memory and writes no core files, so a mutant that stops a reader advancing aborts its test instead of ending the runner. The limit is set in .github/workflows/readiness.yml as `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --`, so a local `cargo xtask readiness mutation` or an arm64 Linux runner gets none, and the limit also reaches the cargo, rustc, clang and linker processes that xtask's own tests start when xtask is the crate measured.
+  depends:
+  - P2-109
+  deliverable:
+  - 'xtask/src/readiness.rs `mutation()`: the per-test-binary data limit and the core-file setting, for the host''s target triple as cargo reports it, on every host that enforces them, with a test, and the workflow''s copy removed; docs/testing.md to match. The programs xtask''s own tests start (`cargo metadata`, git, bash, one clang compile and link of a one-line program) stay under the limit: prlimit''s single value sets the hard limit too, so only a wrapper at every spawn site could lift it, and none of them comes near 3 GiB'
+  acceptance:
+  - 'A test of `mutation()` shows the runner it sets for each host triple, the data limit for Linux and none for macOS and Windows'
+  verify:
+  - cargo test -p xtask readiness
+- key: P2-124
+  title: The qc-sema fuzz target no longer builds after ResolveOptions grew fields
+  labels:
+  - repo
+  - area:process
+  - type:bug
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The nightly Fuzz workflow on main (run 39751193549, at 5026fa25) fails to build: `error[E0063]: missing fields case_insensitive and qcfuncs_off in initializer of ResolveOptions` in fuzz/fuzz_targets/qc_sema.rs, then "could not compile qs-fuzz (bin qc-sema)". PR #552 (860fa54) added the two fields; the target builds `ResolveOptions` with every field named, and pull-request CI does not build the fuzz crate, so nothing caught it before the nightly run.
+  environment: |
+    main at 5026fa25; the nightly Fuzz workflow, run 39751193549
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/qc_sema.rs: `ResolveOptions` built with a struct update from its `Default`, so a new field does not break the build; the leading byte''s bits 2 and 3 turn on `-Fcaseinsens` (FTEF-19.29) and `-Fno-qcfuncs` (FTEF-19.28), on the command line and in the resolver''s options, so the two new paths are fuzzed'
+  - 'fuzz/Cargo.lock: current with the workspace crates the targets build'
+  acceptance:
+  - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR'
+  verify:
+  - cargo xtask fuzz --time 30
+- key: P2-127
+  title: Build the cargo-fuzz targets in cargo xtask ci so a broken target fails PR CI
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The cargo-fuzz crate (fuzz/) is outside the workspace with its own lock file, so the clippy and test steps of `cargo xtask ci` never build it. A struct or API change that breaks a fuzz target goes unnoticed until the nightly Fuzz workflow: that happened on 2026-10-22 (run 39751193549), when a new ResolveOptions field broke fuzz/fuzz_targets/qc_sema.rs (P2-124, fixed in #563). A build-only check of the fuzz crate on the pinned stable toolchain was measured at about 5 seconds, so it is a step in the existing `cargo xtask ci` rather than a new CI job. `cargo check` catches the missing-field class of error (it is a type error) without the sanitizer instrumentation `cargo xtask fuzz` needs nightly for; the step does not run the fuzzers.
+  depends:
+  - P2-124
+  deliverable:
+  - 'xtask/src/ci.rs: a `fuzz-build` step in STEPS running `cargo check --manifest-path fuzz/Cargo.toml --locked`, with the two step-enumerating tests (ci_runs_every_check_the_issue_names, every_step_has_its_own_name) updated to match'
+  - 'docs/ci.md: the fuzz-build step listed in the cargo xtask ci step table with its command and job'
+  acceptance:
+  - 'cargo xtask ci runs the fuzz-build step; reintroducing a missing struct field in a fuzz target makes the step fail (recorded in the PR), and the clean tree passes'
+  - 'cargo test -p xtask is green with the updated step tests'
+  verify:
+  - cargo test -p xtask
+  - cargo xtask ci
+- key: P2-130
+  title: Read an FTEQCC extern block as QCC_PR_ParseDefs reads it, nested to any depth
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  - QA-2
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`). `QCC_PR_ParseDefs` reads an `extern` block (`qcc_pr_comp.c`, the branch `if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`) by comparing `pr_token` with `strcasecmp(pr_token, "C")` and `"QC"`, then `if (!QCC_PR_CheckToken ("{")) QCC_PR_ParseDefs(NULL, false); else for(;;) { if (QCC_PR_CheckToken("}")) break; if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; } QCC_PR_ParseDefs(NULL, false); }`, and `QCC_PR_ParseDefs` starts with `while (QCC_PR_CheckToken(";"))` and then reads a type. The profile's parser (`Parser::extern_block`, `crates/qc-syntax/src/parser/mod.rs`) differs in three ways. (1) It recurses with no nesting level: `extern_block` calls `block_item`, which calls `item` or `extern_block` again, and never `Parser::enter`, so 5000 nested `extern "C" { ` blocks overflow a 2 MiB test thread's stack (`fatal runtime error: stack overflow`), as do 100000 of the unbraced `extern "C" extern "C" ... float x;` at file level and in a body, and 500 report no "nesting too deep" (QC-27.15, FTEF-18.26). (2) It takes a block with no definition where FTEQCC reads one: `extern "C"`, `extern "C";`, `extern "C" ;;;` and `extern "C" "QC"` at the end of a file, which FTEQCC refuses with `"" is not a type`, and `extern "C" { ; }`, which it refuses with `"}" is not a type`, all accepted with no error. (3) It compares more of the string than `strcasecmp` does: `pr_token` ends at its first NUL, so `extern "C\x00x" { ... }` and, under `#pragma flag enable qccx`, `extern "C":"x" { ... }` are `"C"` blocks to FTEQCC (it refuses `string s = "\9";` in them, "Bad character code \9"), and it is the one string token the lexer read, so with `#define C "C"` FTEQCC reads `extern C C { ... }` as the block `"C"` and the definition `"C" ...`, `"C" is not a type`, where the profile joins the two strings. Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64, where the profile accepted it and FTEQCC refused it.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-syntax (`parser/mod.rs`, `Parser::extern_block` and `block_item`) and docs/spec/dialect-fteqcc.md FTEF-21.2 and FTEF-18.26: each `extern` block one nesting level (`Parser::enter` and `leave`), so no nesting of blocks, braced or not, at file level or in a body, exhausts the stack; the block''s definitions read as `QCC_PR_ParseDefs` reads one, its `;`s skipped and then a definition required, so a block or a one-definition `extern "STRING"` that reaches the end of the file or a `}` with no definition is the error FTEQCC gives; and the linkage compared as `strcasecmp` compares `pr_token`, up to its first NUL and over only the string token the lexer joined, not a string from another macro expansion; each a spec statement and a citing test'
+  acceptance:
+  - 'Under the FTEQCC profile 100000 nested `extern "C" { `, closed and unclosed, and 100000 unbraced `extern "C" ` before a definition, at file level and in a body, parse on a 2 MiB thread with E0509 "nesting too deep", every byte kept and the tree within the depth the other nesting tests allow'
+  - '`extern "C"`, `extern "C";` and `extern "C" "QC"` at the end of a file and `extern "C" { ; }` are errors; `extern "C\x00x" { string s = "\9"; }`, the same under `qccx` with `"C":"x"`, and `#define C "C"` then `extern C C { string s = "\9"; }` are refused as the pinned FTEQCC refuses them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-131
+  title: Read a type name written in another case as a type in a body under caseinsens
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`). Under `-Fcaseinsens` FTEQCC searches its name tables in any case (`qccmain.c`: `if (flag_caseinsensitive) { ... pHash_Get = &Hash_GetInsensitive; ...`), so `QCC_TypeForName` (`pHash_Get(&typedeftable, name)`), with which `QCC_PR_ParseStatement` starts a definition of locals, finds `float` for `Float` and `__int` for `__Int` (FTEF-19.29: "a type name is found in any case"; FTEF-20.6). The profile's parser reads a statement that starts with such a word as an expression (`Parser::fte_looks_like_local`, `crates/qc-syntax/src/parser/fte.rs`, which tests `CScalar::named` and the type keywords exactly): under `-Fcaseinsens` FTEQCC compiles `void() g = { Float x; };`, `{ VECTOR v; }`, `{ Entity e; }`, `{ String s; }`, `{ FLOAT x; x = 1; }`, `{ __Int x; }`, `{ Float; }` and `{ for (Float i = 0; i < 1; i++) {} }`, where the parser reports "expected ;, found x" (E0204) and the semantic model "Unknown value" for each; and FTEQCC refuses `float Float; void() g = { Float = 1; };` (`"=" - not a name`) where the parser reads an assignment. At file level `Float x;` agrees. Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax (`parser/fte.rs`, `fte_looks_like_local` and every other place the parser tests a registered type name or a type keyword at a statement''s or a `for` initialiser''s start) and docs/spec/dialect-fteqcc.md FTEF-20.6: with `caseinsens` in force at the token (the keyword marks carry it, FTEF-20.1), a name that is a type FTEQCC registers or the program defines in any case starts a definition of locals, as `QCC_TypeForName` finds it; a spec statement and a citing test'
+  acceptance:
+  - 'Under `-Fcaseinsens` each body above parses as the pinned FTEQCC reads it, a definition of locals or the error it gives, and with `caseinsens` off each is read as now; each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases, compiled with `-Fcaseinsens`, with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-132
+  title: Start FTEQCC's second autoprototyping pass as FTEQCC does in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), on the L3 path the builtin differential runs. (1) `#pragma autoproto` is taken while no global has been allocated (`qcc_pr_lex.c`: `if (numpr_globals != RESERVED_OFS) QCC_PR_ParseWarning(WARN_BADPRAGMA, "#pragma autoproto must appear before any definitions"); else autoprototype = ...`), and FTEQCC compiles twice, with no warning, `void() f = #5;`, `float x;` or `typedef float t;` before the pragma and then `void() k = { h(); }; void() h = {};`; `crates/qc-sema/src/expand.rs` (`run`) takes the pragma only before the first token of any compiled file, so it warns W0108 and reports `Unknown value "h"`. (2) The preprocessor marks the second pass's first token with the flags the first pass ended with (FTEF-12.11), but the semantic model does not read `assumevar` from it: after `#pragma autoproto`, `float x = 5; float y = x;` followed by `#pragma flag enable assumevar` compiles in FTEQCC (F329 "Redeclaration of x would change to non-const"), where the profile reports E0214 "initializer for 'y' is not constant". (3) Under `-Fcaseinsens` FTEQCC compiles `Void() h = #6;` (FTEF-19.29, `Hash_GetInsensitive`), where the semantic model reports E0203 "\"Void\" is not a type". Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-sema (`expand.rs` and the definitions the semantic model makes) and docs/spec/dialect-fteqcc.md FTEF-12.10, FTEF-21.1 and FTEF-19.29: `#pragma autoproto` taken while FTEQCC has allocated no global, as `numpr_globals != RESERVED_OFS` decides; the second pass''s definitions made with the flags its first token is marked with; and a type name found in any case under `caseinsens` where a declaration''s type is read; each a spec statement and a citing test'
+  acceptance:
+  - 'The three groups of programs above compile, or are refused, as the pinned FTEQCC compiles them, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-133
+  title: Read FTEQCC's struct, union, class and typedef declarations as its parser reads them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  - QA-2
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), with over 1000 more programs in four batches of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64). The profile's parser reads `struct`, `union`, `class` and `typedef` as one declaration each, a narrower grammar than `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` (`qcc_pr_lex.c`, `qcc_pr_comp.c`). FTEQCC compiles each of these and the profile reports an error in the parser (the code is in brackets): (1) a class or struct named as C names it, `class C; class C x;`, `class C { float a; }; class C x;`, `void() g = { class C x; };` and `class float x;` (E0203 "is not a type"; `QCC_PR_ParseType` calls `QCC_PR_ParseEntClass`, which returns the type of a `class NAME` with no `{`, and the declarators follow); (2) a struct body's access labels and nested declarations, `struct S { public: float a; private: float b; protected: float c; };`, `struct S { struct T { float a; }; };`, `struct S { enum { A }; float a; };` and the anonymous members `struct S { struct { float a; }; float b; };` and `struct S { union { float a; vector v; }; float A; };` (E0201 "not a name"; `QCC_PR_ParseStruct` reads `public`, `private` and `protected` with `QCC_PR_CheckKeyword(1, ...)` and then `QCC_PR_ParseType` for the member, which makes the type of a nested `struct`, `union` or `enum` whether or not a declarator follows); (3) a `typedef` with a declarator list, `typedef float t, u;`, `typedef float t, *u;`, `typedef void() fn, fn2;`, `typedef struct S { float a; } T, *PT;`, `typedef class C { float a; } CC;` and `typedef typedef float tt;` (E0204 and E0203; `QCC_PR_ParseDefs` loops over its declarators after `typedef` as it does after any type); (4) in a body, an unnamed struct for a local, `struct { float a; } x; x.a = 1;` and `local struct { float a; } x;`, and a cast to a named struct's pointer, `(struct S *)0;` (E0301 "Unknown value", E0204; both compile at file level). The profile accepts, and FTEQCC refuses, the forms that need what follows the name: `struct S : P;` and `class D : C;` ("expected {": `QCC_PR_Expect("{")` after a parent), `union U : P { float b; };` (a union takes no parent, `if (structtype == ev_struct && QCC_PR_CheckToken(":"))`), `class C { float a = 1; };` ("expected function arg list"), a second access label in a class, `class C { private: float a; protected: float b; };` ("expected :, found float": `QCC_PR_ParseEntClass` reads a label only where `firstkeyword` is set) and `float (x);` ("expected function arg list"). FTEF-6.1 says "the anonymous `struct { ... }` define[s] an aggregate" and FTEF-15.6 that `struct { ... } a[4], *p;` declares variables, and neither states the forms above.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-syntax (`parser/fte.rs`, `struct_decl`, `struct_type` and the declaration parser in `parser/mod.rs`) and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-7, FTEF-9 and FTEF-15.6: the declarations above read as `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` read them, at file level, in a body and in a member list, and the forms FTEQCC refuses refused, each a spec statement quoting the source and a citing test; the tree keeps every byte, the nesting limit of QC-27.15 counts every new construct that nests, and the fuzz target `parser` and the property tests cover them'
+  acceptance:
+  - 'Each program above is read as the pinned FTEQCC reads it under the FTEQCC profile (a definition, or the error it gives), and with `-Fcaseinsens` where a type name is involved, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  - 'The qc-syntax ratchets in `ratchets.toml` hold (lines, branches, mutation, spec citations)'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-134
+  title: Check the declarations and statements FTEQCC refuses in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), on the L3 path the builtin differential runs (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64); the parser reports nothing for any of them. The semantic model accepts where FTEQCC refuses: (1) `break;` and `continue;` outside a loop, `void() g = { break; };` ("g: function contains illegal breaks"; also `BREAK;` and `Continue;` under `-Fcaseinsens`); (2) a struct defined twice with different members, `struct S { float a; }; struct S { float b; };` ("redeclared differently"), a typedef redeclared as another type, `typedef float t; typedef vector T;` under `-Fcaseinsens`, a struct, union or enum with no members, `struct s {}; struct S {};`, `enum E { };`, and a repeated enumerator, `enum E { A, A };`; (3) an undefined parent, `class D : E { float b; };` ("Parent class E was not yet defined"), `struct S : P { float b; };`, and a pointer from the child to the parent, `struct P { float a; }; struct S : P { float b; }; void() g = { S s; local P *p = &s; };`; (4) a bitfield on a float, `struct S { float a : 3; };` ("bitfields must be integer types"), and a struct called as a function, `S s; s = S(1);`; (5) a name in the wrong case without `caseinsens`: `enum E { Alpha, Beta }; float x = e::Alpha;` (E is a type, e is not); (6) a union with members `a` and `A`, `union U { float a; float A; }; void() g = { U s; s.A = 1; };` under `-Fcaseinsens` (`QCC_PR_FindStructMember` finds two); (7) inside `extern "C"`: `float x[2]; float y = x[1];` ("initializer is not constant") and `typedef float (*fp)(float); fp x;` ("function x has no body"); (8) a class member `void() m = { a = 1; }` that names a member, `class C { float a; void() m = { a = 1; }; };`, `class C { void() m; void() n = {}; };` and a state in a member, `class C { float() m = [1, m] { return 1; }; };`. FTEQCC accepts and the semantic model refuses a state's next function in another case: `$frame run`, `void() g = [$RUN, G] {};` under `-Fcaseinsens` compiles in FTEQCC and the semantic model reports E0211 for `G`, which `Hash_GetInsensitive` finds as `g`. `-Facc` and `-std=reacc`'s type names are not in this list (FTEF-19.30, FTEF-20.13 state them outside the profile); FTEQCC's crash on a redefinition or `#undef` of a macro with an upper case letter under `-Fcaseinsens` (exit 139 from `Hash_Remove`) is its own defect, not a divergence to match.
+  depends:
+  - P2-132
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs` and the checks beside it) and docs/spec/dialect-fteqcc.md FTEF-19, FTEF-20 and FTEF-21: each refusal and acceptance above made as the pinned FTEQCC makes it, or the program named in a spec statement as outside the profile with its reason; each a spec statement quoting the source and a citing test'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-139
+  title: Refactor the L0 format crates to CONV-17
+  labels:
+  - L0-formats
+  - area:process
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-60
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-diag, qc-types, qc-progs, qs-bsp, qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav, qs-log and qs-paths, qs-install and qs-vfs, qs-map. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-diag: crates/qc-diag/src/lib.rs: the findings qc-diag/2 to qc-diag/4 of docs/audits/conv-17-l0-l3.md. `Span::covers` (from qc-sema''s free `covers`, crates/qc-sema/src/nav.rs:76), `Span::to` (the span join written out at crates/qc-preproc/src/lib.rs:920, :1056, :1716 and crates/qc-sema/src/expand.rs:89), and `Span::len` and `Span::is_empty` (crates/qc-lexer/src/lib.rs:992, :1051, :1060), each used at those sites'
+  - 'Commit for qc-diag: Public items changed: new methods on `qc_diag::Span` only; dependent crates touched: qc-lexer, qc-preproc, qc-sema'
+  - 'Commit for qc-types: crates/qc-types/src/lib.rs: the findings qc-types/1 and qc-types/2 of docs/audits/conv-17-l0-l3.md. `StringRef`, `EntityRef`, `FieldRef`, `FunctionRef`, `PointerRef` and `Slot` get private fields with `from_bits` and `bits` (and `Slot::ZERO`), and conversions between a reference and a `Slot` replace `Slot::from_i32(world.0)` and the like'
+  - 'Commit for qc-types: Public items changed: the fields of those six types; dependent crates touched: qc-vm, qc-edict, qc-builtins, qc-progs (tests), qs-differential, qs-tests and xtask'
+  - 'Commit for qc-progs: crates/qc-progs: the findings cross/1 (its part) and qc-progs/1 to qc-progs/4 of docs/audits/conv-17-l0-l3.md. `Slot`''s decode reads through `read_array`; `Record::encode` on the sealed trait replaces `encode_statement`, `encode_def` and `encode_function`; `Format::secondary_version` serves both the writer and the reader; one table-offset lookup in `write`'
+  - 'Commit for qc-progs: Public items changed: none'
+  - 'Commit for qs-bsp: crates/qs-bsp: the findings qs-bsp/1 to qs-bsp/8 of docs/audits/conv-17-l0-l3.md. One little-endian reader returning `Option`, with today''s 0 kept by `.unwrap_or_default()` where callers get it; a `LumpId` enum in place of `BSP_LUMP_*` and `lump_name`; `AnimationSet`; exhaustive `match` in `BspLoader::fitz` and `Reader::bsp2`; a `PathId` newtype carrying the doubling rule now only in crates/qs-vfs/examples/walk.rs; one `leaf_of` citing BSP-7.2; the miptex header read through `qs_wad::MipTexHeader`; `calc_surface_extents` returning its values'
+  - 'Commit for qs-bsp: Public items changed: `BSP_LUMP_*`, `lump_name`, the lump fields of `BspError`, the path-ID parameters of `lit.rs`, and possibly the miptex constants; dependent crates touched: qs-vfs (examples/walk.rs); a new dependency of qs-bsp on qs-wad (both L0)'
+  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: crates/qc-lno, crates/qs-mdl, crates/qs-pak, crates/qs-wad and crates/qs-wav: the findings cross/1 (their part), qc-lno/1, qs-mdl/1 to qs-mdl/3, qs-pak/1, qs-wad/1 and qs-wav/1 of docs/audits/conv-17-l0-l3.md. Each crate keeps one generic `read_array<const N>` reader in the qc-progs shape, with today''s result past the end of the input kept at every caller (0 or `None`, as listed in cross/1); qs-mdl shares one cursor between `mdl.rs` and `spr.rs`, with the interval-reading loop as one of its methods'
+  - 'Commit for qc-lno, qs-mdl, qs-pak, qs-wad and qs-wav: Public items changed: none'
+  - 'Commit for qs-log and qs-paths: crates/qs-log and crates/qs-paths: the findings qs-log/1 to qs-log/3 and qs-paths/1 and qs-paths/2 of docs/audits/conv-17-l0-l3.md. `LogError::Directives` keeps the `tracing_subscriber` parse error as its `source` in place of `reason: String`; the panic location is formatted once; `payload_len` is inlined; `Platform::is_absolute`; one `absolute_var` and one `join_all` in qs-paths'
+  - 'Commit for qs-log and qs-paths: Public items changed: `qs_log::LogError::Directives` (no dependent outside qs-log)'
+  - 'Commit for qs-install and qs-vfs: crates/qs-vfs and crates/qs-install: the findings qs-install/1 to qs-install/3, qs-vfs/1 and qs-vfs/2 of docs/audits/conv-17-l0-l3.md. One public `find_entry` in qs-vfs for the FS-3.7 directory-entry match, used by qs-vfs''s `resolve` and qs-install''s `Finder::child` (which keeps its fallback for links); `FileRef` and `Location` with private fields and accessors; `parse_block` without its redundant bool; one canonical-path dedupe and one child-text read in qs-install'
+  - 'Commit for qs-install and qs-vfs: Public items changed: `qs_vfs::FileRef`, `qs_vfs::Location`, and the new `qs_vfs::find_entry`; dependent crates touched: qs-install, and crates/qs-vfs/examples/walk.rs'
+  - 'Commit for qs-map: crates/qs-map: the findings qs-map/1 to qs-map/9 of docs/audits/conv-17-l0-l3.md. A `TokenLimit` enum (or two named constructors) for `Lexer::new`; `next` and `same_line` in place of `Reader::get(crossline)`; the texture-vector and on-plane functions and the dot product written once, generic over the float type, with `qbsp_plane` and `plane` kept apart (MAP-3.6); one `to_f32`; the MAP-2.4, MAP-2.10 and MAP-4.6 limit predicates shared by the checker and the reader; one `WAD_KEYS` and one line-break-aware token read; `Parser::number` without its out-parameter; `Entity::check_pairs`; a named struct from `MapFile::brush_models`'
+  - 'Commit for qs-map: Public items changed: `qs_map::Lexer::new`, the geometry functions, `MapFile::brush_models`; no dependent outside qs-map uses them'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-140
+  title: Refactor the L1 VM crates to CONV-17
+  labels:
+  - L1-vm
+  - area:vm
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-139
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-edict, qc-vm, qc-builtins, qc-trace. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-edict: crates/qc-edict: the findings qc-edict/1 to qc-edict/5 of docs/audits/conv-17-l0-l3.md. Typed system globals and fields in `qc_edict::system` (constants or `SysGlobal` and `SysField` enums with `const fn slot()`), the tables built from them, used in place of the 53 name lookups in crates/qc-builtins/src/dispatch.rs and the slot numbers hard-coded in crates/qc-vm/src/ops.rs and crates/qc-edict/src/store.rs; `EdictStore::is_client`; `set_field` returning a `#[must_use]` `Result`; the EDICT-1.6 pointer inversion as a method beside `EdictLayout::pointer_value`; an `EdictNumber` newtype with a private field'
+  - 'Commit for qc-edict: Public items changed: new items in `qc_edict::system`, `EdictStore::set_field`, the edict-number parameters of `EdictStore` and `EdictLayout`; dependent crates touched: qc-vm, qc-builtins, qs-differential'
+  - 'Commit for qc-vm: crates/qc-vm: the findings qc-vm/1 to qc-vm/8 of docs/audits/conv-17-l0-l3.md. A `Divergence` enum with one variant per VM rule, `const fn statement()` and a `Display` that writes today''s text byte for byte, in place of `ErrorKind::Divergence { statement: &str, detail: String }`, with one builder in place of six; `read_slot` for the 28 `global_error` wrappers; enums or the `Opcode` in place of the `equal`, `and` and `on_nonzero` bools; one set of float and integer conversions shared with qc-builtins, whose duplicates, `*_public` wrappers and duplicate constant go; `execute` folded into `Machine::execute_program` and `run_error` a method; one function-by-index helper; the dead `trace_flag` removed or justified and the misplaced `set_global_test` rustdoc fixed'
+  - 'Commit for qc-vm: Public items changed: `qc_vm::ErrorKind::Divergence`, `qc_builtins::math::{float_to_int, f64_to_f32_public, int_to_f32_public}`; dependent crates touched: qc-builtins'
+  - 'Commit for qc-builtins: crates/qc-builtins: the findings qc-builtins/1 to qc-builtins/10 and qc-builtins/12 of docs/audits/conv-17-l0-l3.md. `int_to_f64`, `eq_f32` and `exact_eq` inlined, with the float comparisons under `#[expect(clippy::float_cmp, reason = "spec ...")]`; one NaN and infinity text; one `whole_degrees`; slot-level parameter, field and return helpers; `write_bytes` for every `SZ_GetSpace` overflow, one `b_write`, one `precache`, a shared `set_size`; one mock precache helper; the mock''s overflow results as `#[must_use]` `Result`s; `BuiltinError::Runtime` and `Fatal` as variants per error with a `Display` that keeps id''s bytes (DIFF-8.2), `Host(String)` kept; the `0..3` axis loops as array operations; the unused `_header`, `Engine::has_world`, the unreachable `EngineOnly` arm and the generic `MockBuiltins<E>` removed or justified in their rustdoc'
+  - 'Commit for qc-builtins: Public items changed: `qc_builtins::BuiltinError`, the mock''s precache and append functions, and possibly `Engine` and `MockBuiltins`; dependent crates touched: qs-differential, qs-tests'
+  - 'Commit for qc-trace: crates/qc-trace: the finding qc-trace/1 of docs/audits/conv-17-l0-l3.md. A `JsonFault` enum with `Display` in place of `TraceError::Json { reason: String }`'
+  - 'Commit for qc-trace: Public items changed: `qc_trace::TraceError::Json` (`#[non_exhaustive]`; no dependent matches it)'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  - 'The trace error records the VM writes are byte for byte the same, shown by the existing trace and differential tests'
+  - 'The builtin error text the differential compares (DIFF-8.2) is byte for byte the same, shown by the existing differential tests'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-141
+  title: Refactor the L2 syntax crates to CONV-17
+  labels:
+  - L2-syntax
+  - area:language
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  - LANG-5
+  - TEST-4
+  - TEST-5
+  depends:
+  - P2-140
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-lexer, qc-preproc, qc-project, qc-syntax. The fix of P2-144 comes before the qc-lexer commit and the fix of P2-143 before the qc-syntax commit, each in a commit of its own, and the PR closes both. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-lexer: crates/qc-lexer: the findings qc-lexer/1 to qc-lexer/8 of docs/audits/conv-17-l0-l3.md, the qc-lexer side. `Directive` and `Pragma` enums with `from_word`, used at crates/qc-lexer/src/lib.rs:884; a private `DollarCommand` enum; `Prefix` as `Raw` or `Cooked(Output)`; `fte_escape` and `character` returning `Option` in place of searching the diagnostics; public `is_name_start` and `is_name_char`, `fte_white` (moved from qc-preproc), one integer-to-`f32` function, `latin1` and the vector-literal reader, for the crates above to use'
+  - 'Commit for qc-lexer: Public items changed: new public enums and functions in qc-lexer only; the qc-preproc, qc-project and qc-syntax commits and P2-142 adopt them'
+  - 'Commit for qc-preproc: crates/qc-preproc: the findings qc-preproc/1 to qc-preproc/9 and qc-preproc/11 to qc-preproc/13 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1 and qc-lexer/5 to qc-lexer/7. qc-lexer''s `Directive` and `Pragma` matched exhaustively in `directive`, `fteqcc_conditional` and `fteqcc_directive`; one enum-based conditional stack in `qc_preproc::cond`, keeping the vanilla `#else` (QC-9.6, E0109) and FTEQCC''s; `normalize` made public; a `Level` enum and a `CmpOp` table in `cond.rs`; `collect_args`, `fte_substitute` and `stringified` returning their results; no `literal_next` carried between passes; `FrameMacros` and expansion-guard enums chosen once from `Dialect`; an enum in place of `carry_frame`''s `force`; one whitespace skip; a `DirectiveLine` built once; `FileId` and `ExpansionId` with private fields'
+  - 'Commit for qc-preproc: Public items changed: `qc_preproc::{FileId, ExpansionId}` fields (no dependent uses them), a new public conditional stack in `qc_preproc::cond`, `qc_preproc::normalize`'
+  - 'Commit for qc-project: crates/qc-project: the findings qc-project/1 to qc-project/5 of docs/audits/conv-17-l0-l3.md, with its part of qc-lexer/1, qc-lexer/5, qc-preproc/1 and qc-preproc/2. A `ManifestError` enum in `ProjectError::Manifest` in place of the message `String`; `source_form` returning `Option<Form>`; `FileGraph::is_program_list`; one comment-skip step; a `GraphIndex` newtype for `GraphFile.parent`; qc-lexer''s `Directive`, `Pragma` and name-byte functions and qc-preproc''s conditional stack used in `Builder::directive`; `normalize` re-exported from qc-preproc in place of the copy'
+  - 'Commit for qc-project: Public items changed: `qc_project::ProjectError::Manifest`, `GraphFile::parent`; dependent crates touched: qc-sema (tests), xtask only if it names them'
+  - 'Commit for qc-syntax: crates/qc-syntax: the findings qc-syntax/1 to qc-syntax/5, qc-syntax/8 to qc-syntax/12, qc-syntax/14, qc-syntax/15, qc-syntax/17, qc-syntax/18 and its part of qc-lexer/8 of docs/audits/conv-17-l0-l3.md. `RecoveryFault` and `DeletionFailure` in place of `Result<usize, String>` and `DeletionReport::failures: Vec<String>`; one `Keyword` enum with `from_word` applying FTEF-15.1 once, in place of the string sets and `at_word` sites, with keyword words bumped as their own `SyntaxKind` so that the `ast` accessors read kinds; `ast::Item` and `SourceFile::items` used by recovery and by qc-sema''s `lower_file`; `Scope` and `BlockKind` enums for the recovery and block bools; a `LinePosition` enum; one paren lookahead, star skip, error skip and nesting guard; `TypeShape` constants; `FieldExpr::operator`; `SyntaxKind::from_token_kind`; `ast::Type::params` and `ast::Builtin::binding` used by qc-sema and qc-engines; qc-lexer''s `latin1`'
+  - 'Commit for qc-syntax: Public items changed: `qc_syntax::recovery::DeletionReport`, `SyntaxKind` (new variants), `ast::AccessorMember`, `ast::EnumDecl`, new `ast::Item`, `ast::Type::params`, `ast::Builtin::binding`; dependent crates touched: qc-sema, qc-engines, qs-tests and xtask (parse_corpus.rs and every exhaustive match on `SyntaxKind`)'
+  - 'Commit for the FTEQCC grammar differential (approved by Justin, 2026-10-20): a generator in xtask that writes random FTEQCC programs from the grammar of docs/spec/dialect-fteqcc.md and docs/spec/dialect-fteqcc-rerelease.md, covering every declaration form, every keyword and qualifier spelling including the `__`-prefixed ones (FTEF-15.1), class and accessor member forms, statements and enums, and compares, for each program, whether the FTEQCC profile and the pinned FTEQCC accept or reject it, and the diagnostic code where both reject. It runs as part of the oracle differential (`cargo xtask oracles builtins` or a sibling `cargo xtask oracles` check run by the same CI workflow), so that valid FTEQCC input the profile rejects, or input it accepts that FTEQCC rejects, fails the run unless an expected difference names the spec statement that explains it. A seeded corpus of the generated programs and the oracle''s outcomes is recorded as a fixture under xtask/fixtures/oracles/ (as builtin-outcomes.json is), so that `cargo test -p xtask` replays it without the oracle'
+  - 'Commit for the duplicate-diagnostic invariant (approved by Justin, 2026-10-20): a statement in docs/spec/language-diagnostics.md that the lexer, preprocessor and parser never report two diagnostics with the same code at the same span, checked in the `parser` and `qc-preproc` fuzz targets (fuzz/fuzz_targets/parser.rs, qc_preproc.rs) and in the qc-lexer, qc-preproc and qc-syntax property tests'
+  - 'A difference the grammar differential finds is fixed in a commit of its own with the spec statement and a test that cites it, as P2-143 and P2-144 are, or named as an expected difference with the statement that explains it; the refactor commits themselves change no behaviour'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  - 'The spellings each place accepts are those of P2-143''s fix, and the lossless round trip of the corpus is unchanged (`cargo xtask parse-corpus` or the qs-tests corpus case)'
+  - 'The grammar differential runs in CI over a case count stated in the PR and in the generator''s rustdoc, and reports 0 differences that no expected difference explains; the recorded corpus replays in `cargo test -p xtask` without the oracle'
+  - 'The duplicate-diagnostic invariant holds in the property tests and in a fuzz run of the `parser` and `qc-preproc` targets whose length and result are recorded in the PR (the 24-hour TEST-5 run stays with the readiness review), and catches P2-144: with P2-144''s fix reverted the invariant fails on its double E0101, recorded in the PR'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+  - 'cargo xtask oracles (the grammar differential); cargo xtask fuzz parser --time 10m and cargo xtask fuzz qc-preproc --time 10m'
+- key: P2-142
+  title: Refactor the L3 semantics crates to CONV-17
+  labels:
+  - L3-semantics
+  - area:language
+  - type:chore
+  size: L
+  reqs:
+  - CONV-17
+  depends:
+  - P2-141
+  deliverable:
+  - 'One PR with one commit per crate group, in this order: qc-sema, qc-engines. The findings each commit fixes are listed by their IDs in docs/audits/conv-17-l0-l3.md'
+  - 'Commit for qc-sema: crates/qc-sema: the findings qc-sema/1 to qc-sema/22 of docs/audits/conv-17-l0-l3.md. `Dialect` in place of `fte: bool` in lower.rs and `fteqcc: bool` in the resolver; a `Qualifier` enum read through qc-syntax''s `Keyword`; `FileId` and `DefId` with private fields (`FileId::new` and `index` public, `DefId`''s constructor `pub(crate)`); `ModuleIndex` with private fields and slice accessors; `RawDecl` without the dead `local`, with `RawInit` and `RawDeclKind` in place of its initialiser and type-name flags; `Type::component`, `DefKind::of_top_level` or `Type::top_level_kind`, `Type::compatible_in`, `Type::function`; an `Init` enum and an `Origin` enum in the resolver; one per-file slice for `resolve_mapped`; `FileDiagnostic::new` and `OriginMap::locate_or`; one scope lookup; member-bookkeeping helpers; one initialiser, aggregate and array-size lowering; one counter bump and one generic memo in `Db`; vector literals read with qc-lexer''s reader'
+  - 'Commit for qc-sema: Public items changed: `qc_sema::{FileId, DefId, ModuleIndex, RawDecl, FileDiagnostic, top_level_kind}`; dependent crates touched: qc-engines (src/check.rs), qs-tests (diagnostics_unified.rs, deep_nesting.rs) and xtask (sema_corpus.rs, fteqcc_profile.rs, oracles/builtins.rs)'
+  - 'Commit for qc-engines: crates/qc-engines: the findings qc-engines/1 to qc-engines/4 of docs/audits/conv-17-l0-l3.md. `qc_sema::FileDiagnostic` in place of qc-engines'' copy; `Engine::builtin_named` in place of the private `Key`, so a name lookup no longer rebuilds the merged table; `missing_builtins` taking `(FileId, &Parse)` pairs; `From<&qc_builtins::Builtin>` in place of `vanilla`'
+  - 'Commit for qc-engines: Public items changed: `qc_engines::FileDiagnostic` (removed), `missing_builtins`; no dependent outside qc-engines'
+  acceptance:
+  - 'Behaviour is unchanged: the existing tests pass without changing what they assert (a test changes only to name a new type, variant or method in place of a bool, string or free function), and `cargo xtask ci` passes'
+  - 'Every ratchet is kept for each crate touched: spec citations, line and branch coverage, mutation score, fuzz and differential results in ratchets.toml are not lowered, and no exception or equivalent mutant is added'
+  - 'CONV-17 is met for each finding the issue lists: the code takes the shape docs/conventions.md, "Type design (CONV-17)", asks for, or the PR says why another shape meets it; docs/audits/conv-17-l0-l3.md names the PR against each finding'
+  verify:
+  - 'cargo xtask ci; the Readiness workflow (cargo xtask ratchet) on the PR branch; review of the diff against docs/audits/conv-17-l0-l3.md'
+- key: P2-143
+  title: The FTEQCC parser rejects `enum __class` and misreads `__set` accessor members
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-140
+  summary: |
+    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-syntax/2 and "Defects found on the way"). Under `Dialect::Fteqcc`, `enum class X { A };` parses, but `enum __class X { A };` gives E0204 "expected {, found X": `at_enum_body` (crates/qc-syntax/src/parser/fte.rs:556) accepts `__class` through `fte_word`, while `enum_head_and_body` (crates/qc-syntax/src/parser/mod.rs:763) tests `at_word("class")`, so `__class` is read as the enum's name. By reading the code, `__get`, `__set` and `__inline` are accepted by the parser as accessor-member words (fte.rs:599-600, :684-688) but `ast::AccessorMember::name` and `is_set` (crates/qc-syntax/src/ast.rs:945-958) compare the exact text, so `__set` is returned as the member's name and `is_set` is false. FTEF-15.1 (docs/spec/dialect-fteqcc.md) says `QCC_PR_CheckKeyword` "matches any keyword written with `__` whether or not it is enabled". Fixed in the P2-141 PR, in a commit of its own.
+  environment: |
+    main at 2a48d73; reproduced with a scratch binary calling `qc_syntax::parse_with(b"enum __class X { A };", Dialect::Fteqcc)`
+  deliverable:
+  - 'crates/qc-syntax/src/parser/fte.rs, src/parser/mod.rs and src/ast.rs: `__class` after `enum` or `enumflags`, and `__get`, `__set` and `__inline` in an accessor, read as FTEQCC reads them, from `QCC_PR_ParseEnum` and the accessor parsing in qcc_pr_comp.c and `QCC_PR_CheckKeyword` in qcc_pr_lex.c (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e); the parser and the `ast` accessors agree on each spelling'
+  - 'docs/spec/dialect-fteqcc.md: a statement for the spellings each of those places accepts, quoting FTEQCC'
+  acceptance:
+  - 'A test citing the new statement parses `enum __class X { A };` and an accessor with `__set` and `__get` members, and shows each read as FTEQCC reads it (the member names and `is_set` included), and fails before the fix'
+  - 'The FTEQCC differential has a case for each spelling, agreeing with the pinned FTEQCC'
+  verify:
+  - cargo test -p qc-syntax; cargo xtask oracles
+- key: P2-144
+  title: A backslash then CR at the end of input reports E0101 twice
+  labels:
+  - L2-syntax
+  - area:language
+  - type:bug
+  size: S
+  reqs:
+  - LANG-5
+  depends:
+  - P2-140
+  summary: |
+    Found by the CONV-17 audit (docs/audits/conv-17-l0-l3.md, qc-lexer/4 and "Defects found on the way"). Under `Dialect::Fteqcc`, lexing `"a\` followed by CR and the end of input gives two identical diagnostics, `E0101 "EOF inside quote"` with span 0..4: `fte_escape` reports one when the byte after the CR is missing (crates/qc-lexer/src/fte_string.rs:295), and `cooked_string`'s loop then finds the end of input and reports another (:157-158). FTEQCC stops at its first `QCC_PR_ParseError`, so it reports one. Fixed in the P2-141 PR, in a commit of its own.
+  environment: |
+    main at 2a48d73; reproduced with a scratch binary calling `qc_lexer::lex_with(b"\"a\\\r", Dialect::Fteqcc)`
+  deliverable:
+  - 'crates/qc-lexer/src/fte_string.rs: an unterminated string that ends in `\` and CR reports E0101 once (QCD-2.1)'
+  - 'docs/spec/dialect-fteqcc.md: a statement beside FTEF-13.11 for a string that ends after a `\` and CR, quoting `QCC_PR_LexEscapedCodepoint` and stating what this profile reports there'
+  acceptance:
+  - 'A test citing the new statement and QCD-2.1 lexes `"a\` CR at the end of input and gets exactly one E0101, and fails before the fix'
+  verify:
+  - cargo test -p qc-lexer

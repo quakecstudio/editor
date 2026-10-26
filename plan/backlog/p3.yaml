@@ -369,11 +369,12 @@ issues:
   - P3-23
   deliverable:
   - 'docs/perf-budgets.md: new budget rows, each measured by `cargo xtask bench` (crates/qs-bench): frame time at p99 on scripted routes through heavy maps (id1 e1m1, the rerelease''s mg1 and mg3 maps, and an Arcane Dimensions map) on macOS, Windows and Linux; server-frame time and QuakeC (qc-vm) time per frame on the same routes; and map load time'
-  - 'Each budget compared with a pinned QuakeSpasm running the same map and route on the same machine: ADR-0004 says the engine oracle "is a pinned QuakeSpasm built in `oracles/`"'
-  - 'Note: P3-23''s deliverable builds id''s WinQuake as the engine oracle, while ADR-0004 says a pinned QuakeSpasm; the two need reconciling before this issue''s comparison runs, and this issue does not decide which'
+  - 'QuakeSpasm, built at a commit pinned in docs/perf-budgets.md, runs only by hand on the reference machines, on the same maps and routes (ENG-17), and its numbers are recorded in docs/perf-budgets.md as fixed budgets with the machine, date and commit they came from: a performance reference only, since QuakeSpasm is one of the engines players run exported mods on (ADR-0005, Decision); the engine oracle is id''s engine (ADR-0005, P3-23)'
+  - 'CI never builds or runs QuakeSpasm, as ADR-0005 (Options, A) says, "no outside engine is used even in CI": `cargo xtask bench` measures our engine and checks it against the fixed budgets. Decided by Justin Plock on 2026-10-20 (#444)'
   acceptance:
   - 'Each new budget is active with a number, run on the reference machines and recorded in the bench history'
-  - 'Frame time at p99 is no worse than QuakeSpasm''s on the same route and machine, within a margin stated in docs/perf-budgets.md'
+  - 'docs/perf-budgets.md records QuakeSpasm''s hand-run numbers per route and machine as fixed budgets, with the pinned commit, and states the margin our engine is allowed'
+  - 'Frame time at p99 is no worse than QuakeSpasm''s recorded budget on the same route and machine, within that margin, checked by `cargo xtask bench`; no CI job builds or runs QuakeSpasm'
   verify:
   - cargo xtask bench on the reference machines; the bench history
 - key: P3-18
@@ -456,8 +457,8 @@ issues:
   depends:
   - P0-12
   deliverable:
-  - 'docs/adr/00NN-quakespasm-lineage-porting-upstreams.md, a draft ADR deciding whether rows for sezero/quakespasm, andrei-drexler/ironwail and Novum/vkQuake, each pinned by commit with the copyright line its files carry, are added to the upstream table in docs/porting.md, which would make their code portable rather than only describable'
-  - 'What the ADR starts from: docs/porting.md already says adding an upstream "(FTEQCC, ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after checking that its license allows use under GPL-3.0-or-later"; ADR-0004''s table records all three as GPL-2.0-or-later; ADR-0004 already makes QuakeSpasm the reference for the rerelease and modern-mod behaviour; and porting code is distinct from the fact-only sources of ADR-0016 (P4-29), which take only builtin facts'
+  - 'docs/adr/0018-quakespasm-lineage-porting-upstreams.md, the ADR deciding whether rows for sezero/quakespasm, andrei-drexler/ironwail and Novum/vkQuake, each pinned by commit with the copyright lines its files carry, are added to the upstream table in docs/porting.md, which makes their code portable rather than only describable. Decided by Justin Plock on 2026-10-20: they are porting upstreams for the preview host under ADR-0017''s clean-port policy, and id''s engine stays the oracle (ADR-0005)'
+  - 'What the ADR started from: docs/porting.md said, before ADR-0018, that adding an upstream "(ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after checking that its license allows use under GPL-3.0-or-later"; ADR-0004''s table records all three as GPL-2.0-or-later; ADR-0004 already makes QuakeSpasm the reference for the rerelease and modern-mod behaviour; and porting code is distinct from the fact-only sources of ADR-0016 (P4-29), which take only builtin facts'
   - Settled before P3-22 specifies the engine, so the spec knows which upstreams it may port from
   acceptance:
   - The ADR is Accepted, and if it adds any upstream, docs/porting.md has its row with the pinned commit and copyright line
@@ -479,7 +480,7 @@ issues:
   - P5-01
   - P3-30
   deliverable:
-  - 'docs/spec/engine/: the server frame and physics (sv_phys.c), movement and collision (world.c, sv_move.c, sv_user.c), the engine side of the builtins (pr_cmds.c), client state, view and temporary entities (cl_*.c, view.c), lightstyles, particles and sound, and the rerelease''s engine behaviour (QuakeSpasm''s rerelease support: builtins, messages, localization), each citing id''s or QuakeSpasm''s file and function'
+  - 'docs/spec/engine/: the server frame and physics (sv_phys.c), movement and collision (world.c, sv_move.c, sv_user.c), the engine side of the builtins (pr_cmds.c), client state, view and temporary entities (cl_*.c, view.c), lightstyles, particles and sound, and the rerelease''s engine behaviour (QuakeSpasm''s rerelease support: builtins, messages, localization), each citing id''s file and function, or, where id''s engine has no source for it, the file and function of QuakeSpasm, Ironwail or vkQuake at the commit pinned in docs/porting.md, which ADR-0018 makes porting upstreams'
   - Named constants for every limit and tuning value (gravity, step height, friction, edict limits) with their citations
   acceptance:
   - Every subsystem that P3-24, P3-26 and P3-27 implement has a section with normative statements tests can cite

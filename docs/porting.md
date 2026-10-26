@@ -24,6 +24,19 @@ a ported file must keep.
 | [`id-Software/Quake`](https://github.com/id-Software/Quake) | `bf4ac424ce754894ac8f1dae6a3981954bc9852d` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
 | [`id-Software/Quake-Tools`](https://github.com/id-Software/Quake-Tools), `qcc/` only | `c0d1b91c74eb654365ac7755bc837e497caaca73` | GPL-2.0-or-later (file headers) | `Copyright (C) 1996-1997 Id Software, Inc.` |
 | [`fte-team/fteqw`](https://github.com/fte-team/fteqw), `engine/qclib/` only ([ADR-0017](adr/0017-port-fteqcc.md)) | `f937b9d88f71fc4429db5fe56c6a98d922711b2e` | GPL-2.0: `README.md` "FTEQW is supplied to you under the terms of the same license as the original Quake sources, the GNU General Public License Version 2.", `engine/qclib/LICENSE` the GPL-2.0 text; the `qcc_*.c` files carry no notice, so a ported file keeps the README's line | `Copyright (c) 2004-2025 FTE's team and its contributors` |
+| [`sezero/quakespasm`](https://github.com/sezero/quakespasm), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `c9c8ee9895961669c4674e8f8ca8c64cc43e38b5` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers` |
+| [`andrei-drexler/ironwail`](https://github.com/andrei-drexler/ironwail), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `08d578136ff43d7d1ef38e636dfbfd3e844be7cd` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2022 A. Drexler` |
+| [`Novum/vkQuake`](https://github.com/Novum/vkQuake), for the preview host ([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)) | `27789d7333a46674474d871137bb71e056719628` | GPL-2.0-or-later: a file's own header must say "either version 2 of the License, or (at your option) any later version"; `LICENSE.txt` is the GPL-2.0 text | `Copyright (C) 1996-2001 Id Software, Inc.`, `Copyright (C) 2002-2009 John Fitzgibbons and others`, `Copyright (C) 2010-2014 QuakeSpasm developers`, `Copyright (C) 2016 Spike`, `Copyright (C) 2016 Axel Gneiting`, `Copyright (C) 1996-1997 Id Software, Inc.` |
+
+The QuakeSpasm lineage's files carry different sets of copyright lines, so their rows list the
+lines most of them carry. A file ported from one of them keeps every `Copyright` line of the
+header of each upstream file it ports, in that file's order, including lines the row does not
+list (`Copyright (C) 2007-2008 Kristian Duske`, ...); rule H4 checks that at least one of the
+row's lines is there and that the header's first `Copyright` line is one of them, and review
+checks the rest against the cited file. An upstream file whose first `Copyright` line is not in
+the row (vkQuake's files that carry only `Copyright (C) 2023 Axel Gneiting`, say) needs that
+line added to the row before it is ported. Bundled third-party files (`lodepng.c`, `miniz.c`,
+`strlcpy.c`, ...) and files with no notice are not portable.
 
 **Not yet portable:** `Quake-Tools/qutils/` (qbsp, vis, light and the other map tools). Its
 files carry no license notice and its `COPYING` is GPL-2.0 with no "or later" grant, so it is
@@ -32,12 +45,15 @@ review ([#133](https://github.com/quakecstudio/editor/issues/133), P4-22) rules 
 Phase 6 ports the map tools. Until then the map tools may be read and used as oracles, not
 ported.
 
-Adding an upstream (ericw-tools, QuakeSpasm, ...) is a PR that adds a row here after
-checking that its license allows use under GPL-3.0-or-later, and records the copyright line its
+Adding an upstream (ericw-tools, GMQCC, ...) is a PR that adds a row here after
+checking that its license allows use under GPL-3.0-or-later, and records the copyright lines its
 files carry. FTEQW was added by Justin Plock's decision of 2026-10-20 (ADR-0017); the licence
-compliance review (P4-22) confirms how its version 2 terms combine with ours.
+compliance review (P4-22) confirms how its version 2 terms combine with ours. QuakeSpasm,
+Ironwail and vkQuake were added by his decision of the same day (ADR-0018), as porting sources
+for the preview host; id's engine stays its oracle ([ADR-0005](adr/0005-default-preview-target.md)),
+and none of the three is built or run in CI.
 
-### Porting FTEQCC: behaviour, not structure
+### Porting FTEQCC and the QuakeSpasm lineage: behaviour, not structure
 
 FTEQCC is ported under a clean-port policy ([ADR-0017](adr/0017-port-fteqcc.md)), so the
 FTEQCC dialect stays one supportable implementation, not an amalgamation of two compilers:
@@ -49,6 +65,13 @@ FTEQCC dialect stays one supportable implementation, not an amalgamation of two 
 - no globals and no transliterated control flow, and [CONV-17](conventions.md) throughout;
 - one implementation with dialect profiles, never a parallel compiler;
 - the oracle differentials (`cargo xtask oracles`) stay as the proof.
+
+QuakeSpasm, Ironwail and vkQuake are ported under the same policy
+([ADR-0018](adr/0018-quakespasm-lineage-porting-upstreams.md)): their behaviour, cited function
+by function, written fresh inside the preview host's own design. id's code stays the first
+source; a port from them is for behaviour id's engine lacks (the rerelease's engine support) or
+an improvement L-13 adopts, and each place the host departs from id's engine is a spec statement
+with its reason and an expected difference in the engine differential against id's engine.
 
 ## Which source is authoritative
 
@@ -96,8 +119,35 @@ A file containing ported code has this header, in this order:
 - One `Ported from` line per upstream file:
   `Ported from <owner>/<repo>@<40-hex commit>: <path>, <Function>[, <Function>...]`.
   A file ported from several id files has several lines.
-- The upstream's copyright line, copied from the upstream table, comes right after the SPDX
-  line and above ours.
+- The upstream's copyright lines, copied from the upstream file and listed in the upstream
+  table, come right after the SPDX line and above ours. A file ported from two upstreams, such as an ADR-0017 port that also
+  follows id's code, keeps both lines, in the order of its `Ported from` lines:
+
+```rust
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (c) 2004-2025 FTE's team and its contributors
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_lex.c, PR_LexString
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_LexString
+```
+
+- A file ported from QuakeSpasm, Ironwail or vkQuake keeps every `Copyright` line of the
+  upstream file's own header, in that file's order, whether or not the table lists it. A port
+  of a function from QuakeSpasm's `Quake/world.c`, whose header has four lines:
+
+```rust
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-2001 Id Software, Inc.
+// Copyright (C) 2002-2009 John Fitzgibbons and others
+// Copyright (C) 2007-2008 Kristian Duske
+// Copyright (C) 2010-2014 QuakeSpasm developers
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from sezero/quakespasm@c9c8ee9895961669c4674e8f8ca8c64cc43e38b5: Quake/world.c, SV_LinkEdict
+```
+
 - The item that holds the port also names id's function in its rustdoc and links its spec
   section (`Implements EXAMPLE-1`).
 
@@ -113,16 +163,26 @@ block for C), ending at the first line that is blank or not a comment.
 2. **H2.** Every header line containing `ported from` (any case) matches
    `^(//|#|\s*\*)?\s*Ported from [\w.-]+/[\w.-]+@[0-9a-f]{40}: \S+, \w+(, \w+)*$`.
 3. **H3.** A ported file has at least one line that passes H2.
-4. **H4.** For each upstream named in an H2 line, the header contains that upstream's
-   copyright line from the table above (for `id-Software/*`:
-   `Copyright (C) 1996-1997 Id Software, Inc.`, compared with runs of spaces collapsed), and
-   it appears before any other `Copyright` line.
+4. **H4.** For each upstream named in an H2 line, the header contains one of that upstream's
+   copyright lines from the table above (for `id-Software/*`, its only line,
+   `Copyright (C) 1996-1997 Id Software, Inc.`), compared with runs of spaces collapsed;
+   upstreams whose rows list the same lines (`id-Software/Quake` and
+   `id-Software/Quake-Tools`) count once.
+   - When every upstream named has a one-line row (id's, FTEQW's), those lines, each once, are
+     the header's first `Copyright` lines, in the order the `Ported from` lines first name
+     their upstreams, so every upstream's line is above ours.
+   - When one has a row of several lines (the QuakeSpasm lineage), the header's first
+     `Copyright` line is one of the first-named upstream's; each later upstream's first line
+     is found searching on from the earlier upstream's, so the upstreams come in the order
+     their `Ported from` lines name them and may share lines; other lines the upstream files
+     carry may sit among them; and no line a named upstream's row lists is below ours, the
+     line naming `QuakeC Studio contributors`.
 5. **H5.** An upstream named in an H2 line must be in the table above.
 
 The error names the file, the rule and what is missing. These headers are the fixtures for
 the check's tests:
 
-Passes: the header above.
+Passes: the three headers above.
 
 Fails H4, ported from id but without id's copyright line:
 
@@ -209,7 +269,9 @@ agree. Together they must cover:
 - **Breadth.** The corpus (id 1.01 and rerelease QuakeC, public mods) and, for parsers and
   the VM, fuzz-generated input.
 - **The bar** in [`testing.md`](testing.md) (TEST-6): zero divergences, and at least 90% of the
-  oracle's statements or code paths exercised.
+  oracle's statements or code paths exercised; for the id VM differential suite, zero
+  divergences, with statement coverage measured and reported but not gated
+  ([ADR-0013](adr/0013-differential-coverage-bar.md)).
 - **Sensitivity.** A deliberately broken port fails the differential test. cargo-mutants on
   the port finds no surviving mutant that the differential test should catch.
 

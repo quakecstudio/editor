@@ -49,7 +49,7 @@ and a failed `Classify the change` job are all full. Renames count both paths.
 | --- | --- |
 | `docs/**`, except `docs/spec/**` | read by `cargo xtask` `adr`, `conventions`, `licenses` (and `docs/porting.md` through it), `attribution` and `contrast` (`docs/design/tokens.toml`), and by xtask's tests: the same checks on the repository, the porting-header rules and the benchmark budgets (`docs/perf-budgets.md`) |
 | `plan/**` | read by the `plan` and `plan-tests` steps of `cargo xtask ci`, and by xtask's ratchet tests (`plan/backlog/readiness.yaml`) |
-| `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test |
+| `.claude/**`, `.kiro/**` | read only by `cargo xtask licenses` and its test, and by xtask's tests of `.claude/skills/work-issue/scripts/check-pr-body.sh` |
 | `*.md` at the root (`README.md`, `CLAUDE.md`, `AGENTS.md`, `ATTRIBUTION.md`, ...) | read only by `cargo xtask licenses` and `attribution` and their tests |
 
 Never light, whatever directory they are in:
@@ -141,6 +141,7 @@ there the `cargo xtask ci` job runs fmt and deny itself.
 | `clippy-fixtures` | `cargo xtask clippy-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
 | `deny` | `cargo deny --locked --all-features check advisories bans licenses sources` | `cargo-deny` | `cargo xtask ci` |
 | `deny-fixtures` | `cargo xtask deny-fixtures` | `cargo xtask ci` | `cargo xtask ci` |
+| `fuzz-build` | `cargo check --manifest-path fuzz/Cargo.toml --locked` | `cargo xtask ci` | `cargo xtask ci` |
 | `differential` | `cargo xtask differential --fast` | `Test Assets (linux)` | `Test Assets (linux)` |
 
 The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. An xtask test
@@ -148,6 +149,14 @@ The skipped steps are the `SKIP` value of the `cargo xtask ci` job in `ci.yml`. 
 `run:` line of `ci.yml` with the step's exact command, and `cargo xtask ci --skip` fails on a
 name no step has. Every job here is a required check, so a skipped step still has to pass
 before a change merges.
+
+The `fuzz-build` step builds the cargo-fuzz targets in [`fuzz/`](../fuzz) with `cargo check`
+on the pinned stable toolchain, without running them. The fuzz crate is outside the workspace
+with its own lock file, so the `clippy` and `test` steps never build it, and a struct or API
+change can break a target unnoticed until the nightly `Fuzz` run (it did on 2026-10-22, when a
+new `ResolveOptions` field broke `fuzz/fuzz_targets/qc_sema.rs`). `cargo check` catches that
+class of error, a type error, without the sanitizer instrumentation `cargo xtask fuzz` needs
+nightly for.
 
 [`.github/workflows/secure_workflows.yml`](../.github/workflows/secure_workflows.yml):
 
@@ -181,7 +190,7 @@ divergences) runs on every change in the `Test Assets (linux)` job above.
 
 | Check | Runs on | What it does |
 | --- | --- | --- |
-| `Differential` | Linux | `cargo xtask differential --full`: builds the oracles, compiles the rerelease with FTEQCC, builds the corpus progs, then runs every oracle-built codebase (id 1.01 and the six rerelease codebases) in the VM oracle and QuakeC Studio's runner, comparing traces (DIFF-9) and measuring statement coverage (DIFF-11); enforces zero divergences and the 90% statement-coverage bar (TEST-6) |
+| `Differential` | Linux | `cargo xtask differential --full`: builds the oracles, compiles the rerelease with FTEQCC, builds the corpus progs, then runs every oracle-built codebase (id 1.01 and the six rerelease codebases) in the VM oracle and QuakeC Studio's runner, comparing traces (DIFF-9) and measuring statement coverage (DIFF-11); enforces zero divergences, and reports statement coverage without gating on it ([ADR-0013](adr/0013-differential-coverage-bar.md), TEST-6) |
 
 [`.github/workflows/readiness.yml`](../.github/workflows/readiness.yml) runs only on demand
 (`workflow_dispatch`, with the crates to measure as its `crates` input), never on pull requests,
@@ -191,9 +200,9 @@ reviewer runs it and links the run in the report ([testing.md](testing.md#measur
 | Check | Runs on | What it does |
 | --- | --- | --- |
 | `Readiness coverage` | Linux | `cargo xtask readiness lines` (cargo-llvm-cov, stable) and `branches` (cargo-llvm-cov `--branch`, date-pinned nightly) |
-| `Readiness mutation` | Linux | `cargo xtask readiness mutation` (a full cargo-mutants run per crate) |
+| `Readiness mutation (<crate> <k/n>)` | Linux | `cargo xtask readiness mutation --shard k/n` (one shard of a cargo-mutants run of one crate, one job per shard, the shard count per crate from the table in the `crates` job; xtask limits each test binary to 3 GiB of data memory on Linux) |
 | `Readiness flakes (linux)`, `(macos)`, `(windows)` | each OS | `cargo xtask readiness flakes`: each crate's tests 20 times |
-| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement, `ratchets.toml` and its history; uploads the `readiness` artifact |
+| `Readiness ratchet` | Linux | `cargo xtask readiness spec`, then `cargo xtask ratchet` over every measurement (a crate's mutation shards added into one score), `ratchets.toml` and its history; uploads the `readiness` artifact |
 
 Every action is pinned to a commit SHA with its version in a comment, every job has
 least-privilege `permissions`, and every checkout sets `persist-credentials: false`.

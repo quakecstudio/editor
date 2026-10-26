@@ -60,8 +60,8 @@ distilled from `CLAUDE.md` ("What not to do") and `.claude/rules/`.
 10. **Diagnostics are read-only, and three strikes then re-diagnose.** Inspect with read
     forms (`git config --get`, not a write), never diagnose with a command that writes, and
     after three identical failures stop retrying and re-check the diagnosis from scratch.
-    Watch CI with `gh pr checks <pr> --watch --fail-fast` or `gh run watch <id> --exit-status`,
-    never a long `sleep`. See `.claude/rules/development-discipline.md`.
+    Watch CI with `gh pr checks <pr> --watch --fail-fast --interval 30` or
+    `gh run watch <id> --exit-status --interval 60`, never a long `sleep`. See `.claude/rules/development-discipline.md`.
 
 11. **Never push to `main` or edit an issue body on GitHub.** `main` takes changes only
     through the merge queue; work on a `<type>/<issue>-<slug>` branch and open a PR with
@@ -69,10 +69,13 @@ distilled from `CLAUDE.md` ("What not to do") and `.claude/rules/`.
     `plan-change` skill, not the GitHub UI. See `.claude/rules/branching.md` and
     `.claude/rules/commits-and-issues.md`.
 
-12. **Run session setup before any build, test, lint, plan or git work.** Kiro does not fire
-    this repo's `SessionStart` hook (it lives in a subdirectory, not the workspace root), so
-    at the start of each session run the authoritative setup script once, as your first
-    action: `bash .claude/hooks/session-setup.sh` (idempotent, Linux-only, always exits 0).
+12. **Run session setup before any build, test, lint, plan or git work.** When Kiro opens
+    this repository as its workspace, `.kiro/hooks/session-setup.json` runs the setup at
+    session start and the `implementer` and `reviewer` agents run it on `agentSpawn`. When
+    the repository is a subdirectory of the workspace, Kiro does not load that hook, so run
+    the authoritative setup script once, as your first action:
+    `bash .claude/hooks/session-setup.sh` (idempotent, Linux-only, always exits 0, so running
+    it again is safe).
     It installs rustup, `prek`, `uv` and the git hooks. Where system PyYAML is unavailable,
     run `plan/` with uv: `uv run --no-project --with pyyaml python3 plan/check.py`.
     See `.claude/hooks/session-setup.sh`, `AGENTS.md` ("Environment setup") and

@@ -8,13 +8,14 @@
 #![expect(
     clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "test code: a failed unwrap or index is a failed test"
+    clippy::arithmetic_side_effects,
+    reason = "test code: a failed unwrap, index or overflow is a failed test"
 )]
 
 use proptest::prelude::*;
 
 use crate::fixtures::{header, push_i32_table};
-use crate::{LNO_HEADER_SIZE, LNO_MAGIC, LNO_VERSION, LnoFile};
+use crate::{LNO_HEADER_SIZE, LNO_MAGIC, LNO_VERSION, LnoFile, ReadError};
 
 // spec LNO-2.3: the four counts are copied from the progs; the reader keeps them and the
 // writer writes them back as given.
@@ -185,16 +186,48 @@ fn arbitrary_lno_bytes() -> impl Strategy<Value = Vec<u8>> {
     })
 }
 
+/// Bytes that pass or just miss each check of LNO-5.6: the magic or four other bytes, version
+/// 1 or another, any three counts, a small or any `numstatements`, and a tail of any bytes, cut
+/// to any length so the header itself may be short.
+fn near_lno_bytes() -> impl Strategy<Value = Vec<u8>> {
+    let magic = prop_oneof![3 => Just(LNO_MAGIC), 1 => any::<[u8; 4]>()];
+    let version = prop_oneof![3 => Just(LNO_VERSION), 1 => any::<u32>()];
+    let numstatements = prop_oneof![3 => 0_u32..8, 1 => any::<u32>()];
+    let tail = prop::collection::vec(any::<u8>(), 0..80usize);
+    (
+        magic,
+        version,
+        any::<[u32; 3]>(),
+        numstatements,
+        tail,
+        any::<prop::sample::Index>(),
+    )
+        .prop_map(|(magic, version, counts, numstatements, tail, cut)| {
+            let mut bytes = magic.to_vec();
+            for word in [version, counts[0], counts[1], counts[2], numstatements] {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes.extend_from_slice(&tail);
+            let keep = if cut.index(4) == 0 {
+                cut.index(bytes.len() + 1)
+            } else {
+                bytes.len()
+            };
+            bytes.truncate(keep);
+            bytes
+        })
+}
+
 proptest! {
     // spec LNO-6.2: a file the reader accepts is written back byte for byte, and reading what
     // the writer wrote gives back a file that writes to the same bytes.
     #[test]
     fn an_accepted_file_round_trips_byte_for_byte(bytes in arbitrary_lno_bytes()) {
         let lno = LnoFile::read(&bytes).unwrap();
-        prop_assert_eq!(lno.write().unwrap(), bytes.clone());
-        // Reading the written bytes gives an equal file that writes the same bytes again.
-        let reread = LnoFile::read(&bytes).unwrap();
-        prop_assert_eq!(&reread, &lno);
+        let written = lno.write().unwrap();
+        prop_assert_eq!(&written, &bytes);
+        // Reading the written bytes gives an equal file.
+        prop_assert_eq!(&LnoFile::read(&written).unwrap(), &lno);
     }
 
     // spec LNO-6.2: a file the writer produces reads back to the same counts, tables and
@@ -207,11 +240,58 @@ proptest! {
         prop_assert_eq!(read.write().unwrap(), bytes);
     }
 
-    // spec LNO-5.7: reading never panics and never fails on the values for any bytes.
+    // spec LNO-5.7: reading never panics and never fails on the values for any bytes: an
+    // accepted file keeps the header's counts, its tables hold numstatements values each, and
+    // header, tables and trailing bytes account for every byte; a refused one fails the first
+    // check of LNO-5.6 that its bytes fail.
     #[test]
-    fn reading_arbitrary_bytes_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..128usize)) {
-        // The call returns (it does not panic); either outcome is accepted.
-        prop_assert!(matches!(LnoFile::read(&bytes), Ok(_) | Err(_)));
+    fn reading_arbitrary_bytes_never_panics(
+        bytes in prop_oneof![
+            prop::collection::vec(any::<u8>(), 0..128usize),
+            near_lno_bytes(),
+        ]
+    ) {
+        let word = |at: usize| {
+            bytes
+                .get(at..at + 4)
+                .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+        };
+        match LnoFile::read(&bytes) {
+            Ok(lno) => {
+                prop_assert_eq!(bytes.get(..4), Some(LNO_MAGIC.as_slice()));
+                prop_assert_eq!(word(4), Some(LNO_VERSION));
+                prop_assert_eq!(
+                    (Some(lno.numglobaldefs), Some(lno.numglobals), Some(lno.numfielddefs)),
+                    (word(8), word(12), word(16))
+                );
+                prop_assert_eq!(Some(lno.numstatements()), word(20));
+                let n = lno.lines.len();
+                let columns = lno.columns.as_ref().map_or(0, Vec::len);
+                prop_assert!(columns == 0 || columns == n);
+                prop_assert_eq!(
+                    LNO_HEADER_SIZE + 4 * n + 4 * columns + lno.trailing.len(),
+                    bytes.len()
+                );
+            }
+            Err(ReadError::TooShort(len)) => {
+                prop_assert_eq!(len, bytes.len());
+                prop_assert!(len < LNO_HEADER_SIZE);
+            }
+            Err(ReadError::BadMagic(magic)) => {
+                prop_assert!(bytes.len() >= LNO_HEADER_SIZE);
+                prop_assert_ne!(magic, LNO_MAGIC);
+            }
+            Err(ReadError::UnsupportedVersion(version)) => {
+                prop_assert_eq!(bytes.get(..4), Some(LNO_MAGIC.as_slice()));
+                prop_assert_eq!(Some(version), word(4));
+                prop_assert_ne!(version, LNO_VERSION);
+            }
+            Err(ReadError::LineTableTruncated { numstatements, len }) => {
+                prop_assert_eq!(Some(numstatements), word(20));
+                prop_assert_eq!(len, bytes.len());
+                prop_assert!(u64::from(numstatements) * 4 + LNO_HEADER_SIZE as u64 > len as u64);
+            }
+        }
     }
 }
 

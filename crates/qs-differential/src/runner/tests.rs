@@ -2,6 +2,12 @@
 
 //! Tests for the end-to-end runner (DIFF-1, DIFF-9, DIFF-11), with a fake oracle so the
 //! per-codebase loop and the report are exercised without the C oracle.
+//!
+//! The fake oracle answers with QuakeC Studio's own trace of the scenario file it is given,
+//! changed where a test wants a divergence. So these tests prove the loop: that each scenario
+//! is written, handed to the oracle once, compared with the runner's trace, and counted in the
+//! report. That the two VMs agree is proved against id's C by the oracle suite
+//! (`cargo xtask oracles`), not here.
 
 #![expect(
     clippy::expect_used,
@@ -79,53 +85,66 @@ fn every_codebase_has_scenarios() {
     }
 }
 
-// spec DIFF-1.1: a scenario runs in both runners and the two traces are compared; an oracle
-// that returns the same trace agrees (DIFF-9.1), so a codebase with a matching oracle has zero
+/// QuakeC Studio's trace of the scenario file at `scenario`, read as the oracle reads it.
+fn own_trace(scenario: &Path) -> qc_trace::Trace {
+    let scn = read_file(scenario).expect("the scenario reads");
+    let case = scenario.parent().expect("a case directory");
+    let progs_bytes = std::fs::read(case.join("progs.dat")).expect("progs");
+    let entities = std::fs::read(case.join("map.ent")).unwrap_or_default();
+    run_scenario(&scn, &progs_bytes, &entities)
+        .expect("runs")
+        .trace
+}
+
+// spec DIFF-1.1: each scenario is written once and run in both runners, and the two traces are
+// compared; an oracle trace equal to the runner's agrees (DIFF-9.1), so the codebase has zero
 // divergences.
 #[test]
 fn a_codebase_with_a_matching_oracle_has_no_divergences() {
     let progs = runnable_progs();
     let dir = work("matching");
-    // The fake oracle re-runs QuakeC Studio's runner on the written scenario and returns its
-    // trace, so the two traces are identical and agree (a stand-in for the real C oracle).
+    let mut asked: Vec<PathBuf> = Vec::new();
     let mut oracle = |scenario: &Path, trace: &Path| {
-        let scn = read_file(scenario).expect("the scenario reads");
-        let case = scenario.parent().expect("a case directory");
-        let progs_bytes = std::fs::read(case.join("progs.dat")).expect("progs");
-        let entities = std::fs::read(case.join("map.ent")).unwrap_or_default();
-        let output = run_scenario(&scn, &progs_bytes, &entities).expect("runs");
-        let bytes = encode(&output.trace);
+        asked.push(scenario.to_path_buf());
+        let bytes = encode(&own_trace(scenario));
         std::fs::write(trace, &bytes).expect("write trace");
         Ok(bytes)
     };
     let report = run_codebase("id-1.01", &progs, &dir, &mut oracle).expect("the codebase runs");
-    assert!(report.scenarios > 0);
     assert_eq!(report.divergences, 0, "a matching oracle agrees");
+    // The oracle was asked once for each scenario of the codebase, each its own case file.
+    let names: Vec<&str> = scenarios("id-1.01").iter().map(|spec| spec.name).collect();
+    assert_eq!(report.scenarios, names.len());
+    let cases: Vec<PathBuf> = names
+        .iter()
+        .map(|name| dir.join("id-1.01").join(name).join("case.scn"))
+        .collect();
+    assert_eq!(asked, cases);
     // The report prints and passes the differential bar (zero divergences, ADR-0013).
     assert!(report_line(&report));
 }
 
-// spec DIFF-9.6: a divergence the readings leave is a failure; an oracle whose trace is one
-// record shorter diverges (DIFF-9.5), so every scenario of the codebase fails.
+// spec DIFF-9.5, DIFF-9.6: an oracle trace one record shorter diverges, and a divergence no
+// reading accepts is a failure, counted for its own scenario only.
 #[test]
 fn a_codebase_with_a_diverging_oracle_reports_divergences() {
     let progs = runnable_progs();
     let dir = work("diverging");
+    let mut calls = 0_usize;
     let mut oracle = |scenario: &Path, trace: &Path| {
-        let scn = read_file(scenario).expect("the scenario reads");
-        let case = scenario.parent().expect("a case directory");
-        let progs_bytes = std::fs::read(case.join("progs.dat")).expect("progs");
-        let entities = std::fs::read(case.join("map.ent")).unwrap_or_default();
-        let output = run_scenario(&scn, &progs_bytes, &entities).expect("runs");
-        // Drop the last record so the oracle's trace is shorter (DIFF-9.5).
-        let mut short = output.trace;
-        short.records.pop();
-        let bytes = encode(&short);
+        let mut data = own_trace(scenario);
+        // Only the first scenario's oracle trace is short (DIFF-9.5).
+        if calls == 0 {
+            data.records.pop();
+        }
+        calls += 1;
+        let bytes = encode(&data);
         std::fs::write(trace, &bytes).expect("write trace");
         Ok(bytes)
     };
     let report = run_codebase("id-1.01", &progs, &dir, &mut oracle).expect("the codebase runs");
-    assert!(report.divergences > 0, "a shorter oracle trace diverges");
+    assert!(report.scenarios > 1, "{}", report.scenarios);
+    assert_eq!(report.divergences, 1, "only the short trace diverges");
     assert!(!report_line(&report), "divergences fail the report");
 }
 

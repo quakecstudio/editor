@@ -6,7 +6,7 @@
 //! trees and resolved through the semantic model's references (QC-12.5), so a call reaches the
 //! diagnostic only when its callee name means a global builtin function. A builtin is keyed by
 //! its number, the one the dialect's compiler binds (ENGT-4.12, ENGT-4.13), or, under an
-//! FTEQCC dialect, by the engine name of `#0:NAME` (ENGT-4.5), `#"NAME"` or `:NAME`
+//! FTEQCC dialect, by the engine name of `#0:NAME` (ENGT-4.17), `#"NAME"` or `:NAME`
 //! (ENGT-4.14), read as FTEQCC reads it (ENGT-4.15, ENGT-4.16).
 
 use std::collections::{HashMap, HashSet};
@@ -101,7 +101,7 @@ pub fn missing_builtins(
 }
 
 /// `NAME is builtin #N, which ENGINE does not have` (ENGT-4.1), or `#0:ENGINE_NAME` for a
-/// builtin looked up by name (ENGT-4.5), with the extensions of the first engine whose table
+/// builtin looked up by name (ENGT-4.17), with the extensions of the first engine whose table
 /// for `kind` lists the key with some (ENGT-4.8).
 fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
     let shown = match key {
@@ -127,7 +127,7 @@ fn message(name: &str, key: &Key, engine: Engine, kind: ModuleKind) -> String {
 
 /// Each global name's builtin key: the number of its first `#N` initialiser in compilation
 /// order (ENGT-4.12), or for a name with none, the engine name of its first `#0:NAME`,
-/// `#"NAME"` or `:NAME` initialiser (ENGT-4.5, ENGT-4.14).
+/// `#"NAME"` or `:NAME` initialiser (ENGT-4.17, ENGT-4.14).
 fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
     let mut numbers: HashMap<String, u32> = HashMap::new();
     let mut names: HashMap<String, String> = HashMap::new();
@@ -146,7 +146,11 @@ fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
                 let literal = builtin.number().map(|t| t.text_lossless());
                 if let Some(number) = literal.as_deref().and_then(|l| builtin_number(l, dialect)) {
                     numbers.entry(name.text_lossless()).or_insert(number);
-                } else if let Some(engine_name) = engine_name(&builtin, literal.as_deref()) {
+                } else if let Some(engine_name) = engine_name(
+                    &builtin,
+                    literal.as_deref(),
+                    parse.lex_flags_at(builtin.syntax().span().start),
+                ) {
                     names.entry(name.text_lossless()).or_insert(engine_name);
                 }
             }
@@ -163,11 +167,16 @@ fn builtin_keys(parses: &[Parse], dialect: Dialect) -> HashMap<String, Key> {
 }
 
 /// The engine name of a builtin initialiser whose number literal, if it has one, is `literal`
-/// (ENGT-4.5): the name of `#0:NAME` when the literal is zero as FTEQCC reads it, any number
+/// (ENGT-4.17): the name of `#0:NAME` when the literal is zero as FTEQCC reads it, any number
 /// form whose value is 0 (`0`, `00`, `.0`, `0x0`, `0i`), and the name of `#"NAME"`, `:"NAME"`
 /// and `:NAME`, which have no number (ENGT-4.14): the strings joined, or after empty ones the
-/// name after `:`, kept to 255 bytes (ENGT-4.16).
-fn engine_name(builtin: &ast::Builtin, literal: Option<&str>) -> Option<String> {
+/// name after `:`, kept to 255 bytes (ENGT-4.16), read with the compiler flags `flags` they were
+/// lexed with (FTEF-19.23).
+fn engine_name(
+    builtin: &ast::Builtin,
+    literal: Option<&str>,
+    flags: qc_lexer::LexFlags,
+) -> Option<String> {
     // ENGT-4.9: `#` takes the literal as `binum` 0 whenever FTEQCC reads its value as 0; a name
     // is in the initialiser only under FTEQCC, so it is read so. ENGT-4.14: FTEQCC leaves
     // `binum` 0 when it reads the name in place of the number.
@@ -175,7 +184,7 @@ fn engine_name(builtin: &ast::Builtin, literal: Option<&str>) -> Option<String> 
     {
         return None;
     }
-    builtin.engine_name()
+    builtin.engine_name(flags)
 }
 
 /// The number of a builtin number literal in `dialect` (ENGT-4.12): the `binum` the dialect's

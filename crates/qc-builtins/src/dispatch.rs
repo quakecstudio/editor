@@ -248,7 +248,7 @@ impl MockBuiltins<MockEngine> {
     }
 
     fn b_traceon(&mut self, _context: &mut Context<'_, '_>) -> Result<(), BuiltinError> {
-        // spec BUILTIN-16.4, DIFF-6.7: the trace flag change is not observable in the trace.
+        // BUILTIN-16.4, DIFF-6.7: the trace flag change is not observable in the trace.
         Ok(())
     }
 
@@ -647,13 +647,20 @@ fn exact_eq(a: f32, b: f32) -> bool {
 
 /// Turns a [`BuiltinError`] into the [`RunError`] the VM carries (BUILTIN-3, DIFF-8.2).
 ///
-/// Every kind becomes a runtime error with its verbatim message (the trace compares the bytes,
-/// DIFF-6.6, DIFF-8.2); the host and fatal distinctions (BUILTIN-3.2, BUILTIN-3.3) are kept in
-/// [`BuiltinError`] for a caller that needs them and collapse to the message here.
+/// Each kind keeps its class, with its verbatim message (the trace compares the bytes, DIFF-6.6,
+/// DIFF-8.2): a runtime error, and an engine-only builtin (BUILTIN-4.4), become
+/// [`ErrorKind::Builtin`], which resets the call depth (BUILTIN-3.1, VM-19.1); a host error
+/// becomes [`ErrorKind::Host`], which keeps it (BUILTIN-3.2, DIFF-8.4); a fatal error becomes
+/// [`ErrorKind::Fatal`], after which a host runs no shutdown (BUILTIN-3.3, DIFF-8.6).
 fn to_run_error(context: &Context<'_, '_>, error: BuiltinError) -> RunError {
-    context.run_error(ErrorKind::Builtin {
-        message: error.message(),
-    })
+    let kind = match error {
+        BuiltinError::Host(message) => ErrorKind::Host { message },
+        BuiltinError::Fatal(message) => ErrorKind::Fatal { message },
+        BuiltinError::Runtime(_) | BuiltinError::EngineOnly { .. } => ErrorKind::Builtin {
+            message: error.message(),
+        },
+    };
+    context.run_error(kind)
 }
 
 // ===== class pure: entities (BUILTIN-8) =====

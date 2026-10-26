@@ -17,18 +17,13 @@ use super::super::testing::{args, fake_oracles, fresh_dir, last_arg};
 use super::*;
 use crate::exec::{Fake, Reply};
 
-/// The cases whose traces are too long to record (`record.py`, `MAX_SCENARIO_TRACE`).
-const NOT_RECORDED: [&str; 9] = [
-    "buffers-emptied",
-    "datagram-overflow",
-    "large-trace",
-    "message-to-one",
-    "no-free-edicts",
-    "reliable-overflow",
-    "runaway-loop",
-    "signon-overflow",
-    "sound-dropped",
-];
+/// `xtask/fixtures/oracles/scenario-unrecorded.json`: the cases `record.py` left out because
+/// their traces are longer than its `MAX_SCENARIO_TRACE`, as it wrote them.
+fn unrecorded_cases() -> Vec<String> {
+    let path =
+        super::super::testing::root().join("xtask/fixtures/oracles/scenario-unrecorded.json");
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
 
 fn unhex(value: &serde_json::Value) -> Option<Vec<u8>> {
     let hex = value.as_str()?;
@@ -110,7 +105,7 @@ fn every_case_passes_on_what_the_oracle_gave() {
         unrecorded.retain(|name| !name.ends_with("trace-to-a-full-device"));
     }
     unrecorded.sort();
-    assert_eq!(unrecorded, NOT_RECORDED);
+    assert_eq!(unrecorded, unrecorded_cases());
 }
 
 #[test]

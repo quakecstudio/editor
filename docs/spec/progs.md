@@ -11,13 +11,13 @@ id's compiler writes it in `qcc/qcc.c` (`WriteData`, `PR_WriteProgdefs`). Source
 [id-Software/Quake-Tools](https://github.com/id-Software/Quake-Tools) at commit
 `c0d1b91c74eb654365ac7755bc837e497caaca73`. Where the two disagree the engine wins
 ([`../porting.md`](../porting.md#which-source-is-authoritative)). The FTE version 7 extension
-(PROGS-19 to PROGS-21) has no id source and is described from FTEQW, which is cited for
-description only and is not a registered upstream for porting.
+(PROGS-19 to PROGS-21) has no id source and is described from FTEQW, which is cited here for
+description only; nothing in this file is ported from it.
 
 Implemented by `qc-types` (PROGS-16 to PROGS-18) and `qc-progs` (the rest). Limits are named in
-[`limits.md`](limits.md); opcode semantics are in `vm.md` (P1-02); the system globals and
-fields and the entity layout are in `edicts.md` (P1-03). Every statement in this file is in
-[`coverage-baseline.tsv`](coverage-baseline.tsv) until those crates cite it.
+[`limits.md`](limits.md); opcode semantics are in [`vm.md`](vm.md); the system globals and
+fields and the entity layout are in [`edicts.md`](edicts.md). A statement no test cites yet
+is listed in [`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)).
 
 All offsets and sizes are in bytes unless a statement says slots. A **slot** is one 4-byte
 cell of the globals or of an entity's fields. `i32`, `u16` and so on are little-endian
@@ -374,7 +374,7 @@ save and load games; execution never reads them.
 - **PROGS-13.2** qcc counts one slot per non-vector field and three per vector field, in
   declaration order; a field's slot index is the count before it.
 - **PROGS-13.3** The engine does not check `entityfields` against the field definitions;
-  `edicts.md` (P1-03) covers the system fields that must come first.
+  [`edicts.md`](edicts.md) covers the system fields that must come first.
 
 ## PROGS-14 Load results
 

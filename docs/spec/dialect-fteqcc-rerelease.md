@@ -753,21 +753,17 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   an empty `N` leaves `#N #5` as `#5`; and `# N`, `#N!` (the word is `N!`), `#M` with no `(`
   and `#U` with no macro `U` are `E0209`. The preprocessor (`qc-preproc`) drops such a `#` and
   expands the macro; the vanilla `#` is punctuation (FTE-23.1) and stays.
-- **FTE-23.11** This profile checks no types, so a `#` before a macro that stands for a number,
-  `#define N 5` and `void() f = #N;`, initialises `f` with `5` and is no error, where FTEQCC
-  reports "Cannot cast from float to void()". A string (`#define N "ex_a"`) FTEQCC casts with
-  the warning "Implicit cast from string to void()" (F314) and makes no builtin function, as
-  this profile makes none. The type of a value initialiser is the compiler's to check (L-01);
-  until then `cargo xtask oracles builtins` counts such a case as differing as this statement
-  says: an FTEQCC case that defines a macro or uses a built-in constant (`#__LINE__` is the
-  line number), refused by FTEQCC and accepted here with no error, whose `f` is initialised
-  with a number or a vector.
+- **FTE-23.11** **Withdrawn** (P2-117, #545): it said this profile checks no types, but it now
+  casts a literal initialiser as FTEQCC does (`dialect-fteqcc.md` FTEF-19.2). Replaced by
+  FTE-23.16.
 - **FTE-23.12** **Withdrawn** (P2-75 to P2-77, #480 to #482): it described the cross product
   before it had the character-constant, macro-word, label and macro-argument cases. Replaced by
   FTE-23.13.
 - **FTE-23.13** **Withdrawn** (P2-78, P2-79, #484, #485): it described the cross product before it
   had the paste, string, recursion and argument-list cases. Replaced by FTE-23.14.
-- **FTE-23.14** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on Linux,
+- **FTE-23.14** **Withdrawn** (P2-94 to P2-99, #507 to #512): it described the cross product
+  before it had the directive family and projects of several files. Replaced by FTE-23.15.
+- **FTE-23.15** `cargo xtask oracles builtins` (and `cargo xtask oracles`, which CI runs on Linux,
   macOS and Windows) compiles every builtin initialiser of a cross product with the pinned FTEQCC
   under the FTEQCC profile and with id's `qcc` under the vanilla profile, and compares each
   outcome with the profile's: the builtin number and engine name of `f`'s function in the
@@ -802,17 +798,56 @@ if (QCC_PR_CheckToken ("#") || QCC_PR_CheckToken (":"))
   FTE-23.1, FTE-23.4); 102 initialisers a macro writes: `##` with each side empty or not, at each
   place in the body, with and without spaces, three in a row and in an object-like macro
   (FTEF-14.14, FTEF-14.16), `#` before each kind of argument, before no parameter and at the
-  body's end (FTEF-14.15), empty arguments and variadic macros given none, nested and recursive
+  body's end (FTEF-14.31), empty arguments and variadic macros given none, nested and recursive
   macros (FTEF-14.17), and uses whose `(` or arguments are past a line break, a comment, the end
-  of an expansion or the end of the file (FTEF-14.18), arguments beside `##` and built-in
-  constants in arguments (FTEF-14.14, FTEF-14.20); and 18 statements of `g` that a paste, a
-  string, a nested or an unfinished macro writes; and in both dialects names of 62, 63, 70, 254,
-  255 and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7). Numbers outside
+  of an expansion or the end of the file (FTEF-14.29), arguments beside `##` and built-in
+  constants in arguments (FTEF-14.14, FTEF-14.20); 18 statements of `g` that a paste, a
+  string, a nested or an unfinished macro writes; 188 programs of the macro-text family, whose
+  macros FTEQCC reads as text where a token model would not: a `,`, `(` or `)` in an argument's
+  character constant, `/* */` or `//` comment or string, against 15 uses each, strings that end in
+  `\`, and line breaks and `\` in arguments (FTEF-14.22); built-in constants an argument copies
+  after white space, comments and line breaks, and `__LINESTR__` read in nested and multi-line
+  expansions (FTEF-14.27); a function-like macro's name and `(` across 15 gaps a stored body
+  drops, and bodies with escaped quotes before a `//`, comments and continuations
+  (FTEF-14.24); strings and numbers after `#` and `##` (FTEF-14.25); parameter lists with
+  duplicate, empty, spaced and misplaced names (FTEF-14.23); `__VA_COUNT__`, `,##__VA_ARGS__`
+  and empty variadic arguments (FTEF-14.26); functions with no body, `noref` or not and
+  referred to or not (FTEF-17.11); declarators ended by a `,` (FTEF-15.8); and `__FILE__` under
+  12 `#pragma file` names, through two macros and after three pragmas whose text holds a
+  comment, a string or a `\` (FTEF-14.74); in both dialects names of 62, 63, 70, 254, 255
+  and 300 bytes after `#5:` and as a builtin's own name (QC-3.3, FTEF-15.7); and under FTEQCC
+  1351 programs of the directive family (`xtask/src/oracles/builtins/directives.rs`), every
+  directive and pragma FTEQCC's `QCC_PR_Precompiler` knows read where FTEQCC reads one: 18
+  directives each ending its line under 9 tails, and `#includelist` under them, before a line it
+  hides or none (FTEF-14.35); 55 directive names matched by their first bytes, with their
+  operands, and macro names of 1, 62, 63, 64 and 65 bytes (FTEF-14.52, FTEF-14.57, FTEF-14.38,
+  FTEF-14.39, FTEF-14.42); 48 conditionals whose skipped sides nest by prefix, end their lines,
+  and take an `#elif` or `#else`, `#if` expressions FTEQCC refuses and its predefined macros
+  (FTEF-14.33, FTEF-14.37, FTEF-14.48); 37 directive and pragma forms each at a line's start,
+  after spaces and tabs, a
+  `//` comment's line and a `/* */` comment, in the middle of a line, in a skipped side, after a
+  use's `(` and `,` and in the middle of an argument (FTEF-14.45), in a macro's body (FTEF-14.46),
+  in an `#includelist` (FTEF-14.41), after `DONT_COMPILE_THIS_FILE` and on the first line of an
+  included file with and without spaces before it (FTEF-14.52); 10 bodies with directive lines
+  under 11 settings of F303 (FTEF-14.46); `#pragma line` in 17 forms, with `__LINE__` and
+  `__LINESTR__` (FTEF-14.43), and 36 other pragmas (FTEF-14.70); 12 programs whose code a `\`
+  joins to a line holding a directive's text, as code and as a macro's argument, and after a
+  `//` comment's `\` or a blank line (FTEF-14.53); and 101 projects of several
+  files, whose `#include`s are found beside the compiled file and in include directories
+  (FTEF-14.40), where a case is the file `progs.src` lists, by a name that may hold a directory,
+  with the files beside it. Numbers outside
   -2^31 to 2^31 - 1 are left out, since C leaves their conversion to `int` undefined (QC-13.10).
   Under FTEQCC the profile's binding is read from qc-sema's lowering of the text the preprocessor
   makes. The oracles' outcomes are recorded in `xtask/fixtures/oracles/builtin-outcomes.json`,
-  which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-20
-  (macOS arm64) made 11291 cases: 11208 agree; 68 differ as QC-27.9 says, the vanilla profile
+  which `cargo test -p xtask` checks the profile against on every host. The run of 2026-10-21
+  (macOS arm64) made 12788 cases: 12674 agree; 68 differ as QC-27.9 says, the vanilla profile
   refusing `#0`, `#-0`, `#0.0` and `#-5`, which id's `qcc` takes (QC-13.4), alone or given twice;
-  13 as FTE-23.11 says, a macro or `#__LINE__` giving `f` a number; and 2 as FTEF-13.8 says, the
-  two strings FTEQCC never finishes.
+  31 as FTEF-14.47 says, an `#eof` after a file's first byte, where FTEQCC crashes, and `#merge`
+  and `#datafile`, whose files FTEQCC opens; 13 as FTE-23.11 says, a macro or `#__LINE__` giving
+  `f` a number; and 2 as FTEF-13.8 says, the two strings FTEQCC never finishes.
+- **FTE-23.16** A `#` before a macro that stands for a number, `#define N 5` and `void() f =
+  #N;`, initialises `f` with `5`, which FTEQCC cannot cast to a function: the error `E0213`
+  "Cannot cast from float to void()" (`dialect-fteqcc.md` FTEF-19.31), as for `#__LINE__`, the
+  line number. A string (`#define N "ex_a"`) FTEQCC casts with the warning `W0220` "Implicit
+  cast from string to void()" and makes no builtin function, as this profile makes none; the
+  differential reads that as accepted with no builtin number.

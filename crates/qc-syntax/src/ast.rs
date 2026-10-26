@@ -4,6 +4,10 @@
 //!
 //! Each type wraps a [`SyntaxNode`] of one kind and names its parts. Every accessor returns
 //! an `Option` or an iterator: the tree of a file with errors may lack any part.
+//!
+//! The FTEQCC limits quoted here, such as the length of a builtin's engine name (FTE-23.6), are
+//! read from fte-team/fteqw for facts only: no function of it is ported into this file, so it
+//! carries no `Ported from` header (ADR-0017).
 
 use crate::kind::SyntaxKind as K;
 use crate::tree::{SyntaxElement, SyntaxNode, SyntaxToken};
@@ -310,6 +314,58 @@ ast_node!(
     /// `sizeof` and a type or an expression (FTEF-18.12).
     SizeofExpr
 );
+ast_node!(
+    /// `loop s` (FTEF-20.5).
+    LoopStmt
+);
+ast_node!(
+    /// `thinktime e : t;` (FTEF-20.5).
+    ThinktimeStmt
+);
+ast_node!(
+    /// `state [frame, next];` (FTEF-20.5).
+    StateStmt
+);
+ast_node!(
+    /// `using (names) s` or `using names;` (FTEF-20.5).
+    UsingStmt
+);
+ast_node!(
+    /// One name of a `using` and its alias (FTEF-20.5).
+    UsingAlias
+);
+ast_node!(
+    /// `__exit;` (FTEF-20.5).
+    ExitStmt
+);
+ast_node!(
+    /// `asm` and an instruction or a block of them (FTEF-20.5).
+    AsmStmt
+);
+ast_node!(
+    /// `extern` and a string, and a `{ }` block of definitions or one definition (FTEF-21.17).
+    ExternBlock
+);
+ast_node!(
+    /// `[N]` or `[]` after a declared name or a parameter's (FTE-13.1, FTEF-15.3).
+    ArraySuffix
+);
+
+impl ArraySuffix {
+    /// Whether it is `[]`, with no size.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.children().next().is_none()
+    }
+}
+ast_node!(
+    /// `[[ ... ]]` among a declaration's qualifiers (FTEF-21.9).
+    AttributeList
+);
+ast_node!(
+    /// One attribute of an [`AttributeList`] (FTEF-21.9).
+    Attribute
+);
 
 ast_enum!(
     /// A type (QC-10).
@@ -354,6 +410,20 @@ ast_enum!(
         Label(LabelStmt),
         /// `goto name;` (FTEF-18.23).
         Goto(GotoStmt),
+        /// `loop s` (FTEF-20.5).
+        Loop(LoopStmt),
+        /// `thinktime e : t;` (FTEF-20.5).
+        Thinktime(ThinktimeStmt),
+        /// `state [frame, next];` (FTEF-20.5).
+        State(StateStmt),
+        /// `using (names) s` or `using names;` (FTEF-20.5).
+        Using(UsingStmt),
+        /// `__exit;` (FTEF-20.5).
+        Exit(ExitStmt),
+        /// `asm` and its instructions (FTEF-20.5).
+        Asm(AsmStmt),
+        /// `extern "C" { ... }` and its local definitions (FTEF-21.17).
+        Extern(ExternBlock),
         /// `e;`.
         Expr(ExprStmt),
     }
@@ -407,15 +477,71 @@ ast_enum!(
     }
 );
 
+/// Pushes the children of `node` onto `out`, those of each `extern` block in its place.
+fn flatten_externs(node: &SyntaxNode, out: &mut Vec<SyntaxNode>) {
+    for child in node.children() {
+        if child.kind() == K::ExternBlock {
+            flatten_externs(&child, out);
+        } else {
+            out.push(child);
+        }
+    }
+}
+
+impl ExternBlock {
+    /// What the block holds, in order: each node a definition is, a nested block's in its place
+    /// (FTEF-21.17).
+    #[must_use]
+    pub fn items(&self) -> Vec<SyntaxNode> {
+        let mut items = Vec::new();
+        flatten_externs(&self.0, &mut items);
+        items
+    }
+}
+
+impl AttributeList {
+    /// The attributes, in order.
+    pub fn attributes(&self) -> impl Iterator<Item = Attribute> {
+        children(&self.0)
+    }
+}
+
+impl Attribute {
+    /// The attribute's name: its first token.
+    #[must_use]
+    pub fn name(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().find(|t| !t.kind().is_trivia())
+    }
+
+    /// The tokens after the name, up to the attribute's end, trivia aside: an argument list
+    /// `( ... )` for `alias` and `__deprecated`.
+    pub fn arguments(&self) -> impl Iterator<Item = SyntaxToken> {
+        self.0
+            .child_tokens()
+            .filter(|t| !t.kind().is_trivia())
+            .skip(1)
+    }
+}
+
 /// What a declaration's members are, shared by [`Declaration`] and [`LocalDecl`].
 fn decl_type(node: &SyntaxNode) -> Option<Type> {
     child(node)
 }
 
 impl SourceFile {
-    /// The file-level declarations, in order.
+    /// The file-level declarations, in order, those of an `extern` block among them in its
+    /// place (FTEF-21.17).
     pub fn declarations(&self) -> impl Iterator<Item = Declaration> {
-        children(&self.0)
+        self.items().into_iter().filter_map(Declaration::cast)
+    }
+
+    /// The file-level items, in order: each node a definition is, the items of an `extern`
+    /// block in its place rather than the block (FTEF-21.17).
+    #[must_use]
+    pub fn items(&self) -> Vec<SyntaxNode> {
+        let mut items = Vec::new();
+        flatten_externs(&self.0, &mut items);
+        items
     }
 
     /// The directive lines between declarations.
@@ -489,14 +615,24 @@ impl Declarator {
         scope_of(&self.0)
     }
 
-    /// How many `*` come before the name: `T *p` declares a pointer (FTEF-4.1).
+    /// How many `*` come before the name and any `(`: `T *p` declares a pointer (FTEF-4.1).
     #[must_use]
     pub fn pointer_depth(&self) -> usize {
-        self.0
-            .child_tokens()
-            .take_while(|t| t.kind() != K::Name)
-            .filter(|t| t.kind() == K::Star)
-            .count()
+        head_stars(&self.0)
+    }
+
+    /// The parameter lists before the name, each a function returning the type so far
+    /// (FTEF-21.7).
+    #[must_use]
+    pub fn prefix_params(&self) -> Vec<ParamList> {
+        prefix_lists(&self.0, self.name().as_ref())
+    }
+
+    /// For C's function pointer `(*name)(params)`, how many `*` the parentheses hold before the
+    /// name (FTEF-21.7); `None` for any other declarator.
+    #[must_use]
+    pub fn pointer_form(&self) -> Option<usize> {
+        pointer_form(&self.0)
     }
 
     /// The array suffixes after the name (FTE-13.1, FTEF-5).
@@ -512,11 +648,54 @@ impl Declarator {
     }
 
     /// The parameters of an FTEQCC C-style function declarator `rettype name(params)`
-    /// (FTE-17.1); `None` for every other declarator.
+    /// (FTE-17.1), or of C's function pointer `(*name)(params)` (FTEF-21.7): the list after the
+    /// name; `None` for every other declarator.
     #[must_use]
     pub fn params(&self) -> Option<ParamList> {
-        child(&self.0)
+        suffix_list(&self.0, self.name().as_ref())
     }
+}
+
+/// How many `*` tokens of `node` come before its first name and `(` (FTEF-4.1, FTEF-21.7).
+fn head_stars(node: &SyntaxNode) -> usize {
+    node.child_tokens()
+        .take_while(|t| !matches!(t.kind(), K::Name | K::LParen))
+        .filter(|t| t.kind() == K::Star)
+        .count()
+}
+
+/// The `ParamList` children of `node` before the token `name` (FTEF-21.7).
+fn prefix_lists(node: &SyntaxNode, name: Option<&SyntaxToken>) -> Vec<ParamList> {
+    let end = name.map_or(0, |t| t.span().start);
+    node.children()
+        .filter(|n| n.span().end <= end)
+        .filter_map(ParamList::cast)
+        .collect()
+}
+
+/// The first `ParamList` child of `node` after the token `name`.
+fn suffix_list(node: &SyntaxNode, name: Option<&SyntaxToken>) -> Option<ParamList> {
+    let start = name?.span().end;
+    node.children()
+        .filter(|n| n.span().start >= start)
+        .find_map(ParamList::cast)
+}
+
+/// For C's function pointer `(*name)`, the `*` tokens between the `(` and the name; `None` when
+/// no `(` token of `node` comes before its first name (FTEF-21.7).
+fn pointer_form(node: &SyntaxNode) -> Option<usize> {
+    let mut tokens = node
+        .child_tokens()
+        .skip_while(|t| t.kind() != K::LParen && t.kind() != K::Name);
+    if tokens.next()?.kind() != K::LParen {
+        return None;
+    }
+    Some(
+        tokens
+            .take_while(|t| t.kind() != K::Name)
+            .filter(|t| t.kind() == K::Star)
+            .count(),
+    )
 }
 
 /// The five simple types (QC-10.1).
@@ -610,6 +789,12 @@ impl Param {
         child(&self.0)
     }
 
+    /// The array suffixes after its name (FTEF-15.3), in order.
+    #[must_use]
+    pub fn array_suffixes(&self) -> Vec<ArraySuffix> {
+        children(&self.0).collect()
+    }
+
     /// The parameter's name.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
@@ -639,7 +824,7 @@ impl State {
     }
 
     /// The next think function's name, when it is written as a name (QC-13.6). An FTEQCC
-    /// frame cycle (FTEF-18.4) has none, and a next function written as another expression
+    /// frame cycle (FTEF-18.28) has none, and a next function written as another expression
     /// (FTEF-18.3) is among [`State::exprs`].
     #[must_use]
     pub fn next(&self) -> Option<SyntaxToken> {
@@ -650,14 +835,14 @@ impl State {
     }
 
     /// Whether this is an FTEQCC frame cycle, `[++ first .. last]` or `[-- first .. last]`
-    /// (FTEF-18.4).
+    /// (FTEF-18.28).
     #[must_use]
     pub fn is_cycle(&self) -> bool {
         self.0.token_of(K::DotDot).is_some()
     }
 
     /// The expressions of the header: the frame and, unless it is a name, the next function
-    /// (FTEF-18.3); or a cycle's first and last frames (FTEF-18.4).
+    /// (FTEF-18.3); or a cycle's first and last frames (FTEF-18.28).
     pub fn exprs(&self) -> impl Iterator<Item = Expr> {
         children(&self.0)
     }
@@ -677,16 +862,23 @@ impl Builtin {
     /// as FTEQCC's lexer joins adjacent strings and their escapes read as it reads them
     /// (FTE-23.5), up to the first NUL byte; an empty string names nothing, so the name after it
     /// is the one. The name is kept to the 255 bytes of FTEQCC's `fname` (FTE-23.6), each byte
-    /// one `char` (Latin-1), as FTEQCC compares names byte for byte.
+    /// one `char` (Latin-1), as FTEQCC compares names byte for byte. The strings are read with
+    /// `flags`, the compiler flags they were lexed with (FTEF-12.12, FTEF-19.23).
     #[must_use]
-    pub fn engine_name(&self) -> Option<String> {
+    pub fn engine_name(&self, flags: qc_lexer::LexFlags) -> Option<String> {
         let mut joined = Vec::new();
         let mut name = None;
         for token in self.0.child_tokens() {
             match token.kind() {
                 // FTEF-13.7: a part may have a prefix, an `L` among them after another part.
                 K::StringLit => {
-                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(token.text()) {
+                    // FTEF-14.56: a NUL byte of the file is a space in the loader's text.
+                    let text: Vec<u8> = token
+                        .text()
+                        .iter()
+                        .map(|&byte| if byte == 0 { b' ' } else { byte })
+                        .collect();
+                    if let Some(bytes) = qc_lexer::fteqcc_string_bytes(&text, flags) {
                         joined.extend_from_slice(&bytes);
                     }
                 }
@@ -792,6 +984,64 @@ impl GotoStmt {
     #[must_use]
     pub fn label(&self) -> Option<SyntaxToken> {
         self.0.token_of(K::Name)
+    }
+}
+
+impl AsmStmt {
+    /// The `local` declarations among its instructions (FTEF-20.5).
+    pub fn locals(&self) -> impl Iterator<Item = LocalDecl> {
+        children(&self.0)
+    }
+}
+
+impl LoopStmt {
+    /// The loop body (FTEF-20.5).
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl ThinktimeStmt {
+    /// The entity, then the time, in order (FTEF-20.5).
+    pub fn operands(&self) -> impl Iterator<Item = Expr> {
+        children(&self.0)
+    }
+}
+
+impl StateStmt {
+    /// The `[frame, next]` it runs (FTEF-20.5).
+    #[must_use]
+    pub fn state(&self) -> Option<State> {
+        child(&self.0)
+    }
+}
+
+impl UsingStmt {
+    /// The names it aliases, in order (FTEF-20.5).
+    pub fn aliases(&self) -> impl Iterator<Item = UsingAlias> {
+        children(&self.0)
+    }
+
+    /// The statement the aliases are made for, when the names are in parentheses; without, they
+    /// hold to the end of the scope.
+    #[must_use]
+    pub fn body(&self) -> Option<Stmt> {
+        child(&self.0)
+    }
+}
+
+impl UsingAlias {
+    /// The name of the definition aliased (FTEF-20.5).
+    #[must_use]
+    pub fn target(&self) -> Option<SyntaxToken> {
+        self.0.token_of(K::Name)
+    }
+
+    /// The alias's name: the one after `=`, else the definition's own.
+    #[must_use]
+    pub fn alias(&self) -> Option<SyntaxToken> {
+        self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
     }
 }
 
@@ -939,22 +1189,50 @@ impl AccessorDecl {
 }
 
 impl AccessorMember {
+    /// The words before the type, `inline` and `get` or `set`, as the parser took them, in
+    /// any case and in a class with a `__` (FTEF-20.11), and the names after them.
+    fn words(&self) -> (Vec<SyntaxToken>, Vec<SyntaxToken>) {
+        let names: Vec<SyntaxToken> = self
+            .0
+            .child_tokens()
+            .filter(|t| t.kind() == K::Name)
+            .collect();
+        let is = |token: &SyntaxToken, word: &str| {
+            let text = token.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case(word)
+        };
+        let mut lead = 0_usize;
+        if names.first().is_some_and(|t| is(t, "inline")) {
+            lead = 1;
+        }
+        if names
+            .get(lead)
+            .is_some_and(|t| is(t, "get") || is(t, "set"))
+        {
+            lead = lead.saturating_add(1);
+        }
+        let (words, rest) = names.split_at(lead.min(names.len()));
+        (words.to_vec(), rest.to_vec())
+    }
+
     /// The member's name, if it has one: the name after `inline`, `get` or `set` and the
     /// type.
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
-        self.0
-            .child_tokens()
-            .filter(|t| t.kind() == K::Name)
-            .find(|t| !matches!(t.text_lossless().as_str(), "inline" | "get" | "set"))
+        self.words().1.into_iter().next()
     }
 
     /// Whether it is a `set` member.
     #[must_use]
     pub fn is_set(&self) -> bool {
-        self.0
-            .child_tokens()
-            .any(|t| t.kind() == K::Name && t.text_lossless() == "set")
+        self.words().0.last().is_some_and(|t| {
+            let text = t.text_lossless();
+            text.strip_prefix("__")
+                .unwrap_or(&text)
+                .eq_ignore_ascii_case("set")
+        })
     }
 
     /// The index parameter's name in `[Type name]`, if any.
@@ -1058,6 +1336,12 @@ pub enum BinaryOp {
     ShrAssign,
     /// `,` (FTEQCC, FTEF-18.5): both sides evaluated, the right one kept.
     Comma,
+    /// `*^`, or `**` under FTEQCC's `ssp` flag (FTEQCC, FTEF-13.24): a power.
+    Pow,
+    /// `><` (FTEQCC, FTEF-13.24): a vector cross product.
+    Cross,
+    /// `<=>` (FTEQCC, FTEF-13.24): a three-way comparison.
+    Spaceship,
 }
 
 impl BinaryOp {
@@ -1093,6 +1377,9 @@ impl BinaryOp {
             K::ShlEq => Self::ShlAssign,
             K::ShrEq => Self::ShrAssign,
             K::Comma => Self::Comma,
+            K::StarCaret => Self::Pow,
+            K::Cross => Self::Cross,
+            K::Spaceship => Self::Spaceship,
             _ => return None,
         })
     }
@@ -1344,6 +1631,31 @@ impl TypedefDecl {
     #[must_use]
     pub fn name(&self) -> Option<SyntaxToken> {
         self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
+    }
+
+    /// How many `*` come before the name and any `(` (FTEF-7.1, FTEF-21.7).
+    #[must_use]
+    pub fn pointer_depth(&self) -> usize {
+        head_stars(&self.0)
+    }
+
+    /// The parameter lists before the name (FTEF-21.7).
+    #[must_use]
+    pub fn prefix_params(&self) -> Vec<ParamList> {
+        prefix_lists(&self.0, self.name().as_ref())
+    }
+
+    /// For C's function pointer `typedef T (*name)(params)`, how many `*` the parentheses hold
+    /// before the name (FTEF-21.7); `None` for any other.
+    #[must_use]
+    pub fn pointer_form(&self) -> Option<usize> {
+        pointer_form(&self.0)
+    }
+
+    /// The parameter list after the name, of C's function pointer (FTEF-21.7).
+    #[must_use]
+    pub fn params(&self) -> Option<ParamList> {
+        suffix_list(&self.0, self.name().as_ref())
     }
 }
 

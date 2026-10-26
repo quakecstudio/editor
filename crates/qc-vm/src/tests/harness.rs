@@ -15,6 +15,41 @@
 )]
 
 use qc_progs::opcode::Opcode;
+use qc_types::Slot;
+
+use crate::RunError;
+use crate::exec::{Builtins, Context};
+
+/// The stub builtins the vectors' README describes, shared by the vectors and the nested-run
+/// tests: builtin 2 runs a nested `PR_ExecuteProgram` of the function whose index is in
+/// `OFS_PARM0`; every other number writes the argument count as a float to slot 1 and copies
+/// slot 4 to slot 2.
+pub(crate) struct StubBuiltins;
+
+impl Builtins for StubBuiltins {
+    fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), RunError> {
+        if number == 2 {
+            let function = context.machine().globals()[4].as_i32();
+            context.execute_program(self, function)?;
+            return Ok(());
+        }
+        let argc = context.machine().argc();
+        let parm0 = context.machine().globals()[4];
+        let argc_float = match u16::try_from(argc) {
+            Ok(n) => f32::from(n),
+            Err(_) => 0.0,
+        };
+        context
+            .machine()
+            .set_global_test(1, Slot::from_f32(argc_float));
+        context.machine().set_global_test(2, parm0);
+        Ok(())
+    }
+
+    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
+        None
+    }
+}
 
 /// One statement, written as an opcode name (resolved to its number) or a raw number.
 #[derive(Clone, Copy, Debug)]
@@ -26,9 +61,13 @@ pub(crate) struct Stmt {
 }
 
 impl Stmt {
-    /// A statement with an opcode name, e.g. `op("ADD_F", 100, 101, 102)`.
+    /// A statement with an opcode name, e.g. `op("ADD_F", 100, 101, 102)`. A name that is no
+    /// vanilla opcode fails the test at the caller's line, naming it.
+    #[track_caller]
     pub(crate) fn op(name: &str, a: i16, b: i16, c: i16) -> Self {
-        let op = opcode_number(name);
+        let Some(op) = opcode_number(name) else {
+            panic!("`{name}` is not a vanilla opcode name");
+        };
         Self { op, a, b, c }
     }
 
@@ -52,12 +91,12 @@ pub(crate) struct Func {
     pub(crate) s_file: i32,
 }
 
-/// The opcode number for a vanilla opcode name, from `qc-progs`.
-pub(crate) fn opcode_number(name: &str) -> u16 {
-    match Opcode::ALL.into_iter().find(|op| op.name() == name) {
-        Some(op) => op.number(),
-        None => panic!("unknown opcode name {name}"),
-    }
+/// The opcode number for a vanilla opcode name, from `qc-progs`; `None` for any other name.
+pub(crate) fn opcode_number(name: &str) -> Option<u16> {
+    Opcode::ALL
+        .into_iter()
+        .find(|op| op.name() == name)
+        .map(Opcode::number)
 }
 
 /// Builds a version 6 progs.dat from raw tables, laid out as qc-progs's fixtures do.

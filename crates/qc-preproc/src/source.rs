@@ -7,6 +7,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use qc_lexer::{LineIndex, Span};
 
@@ -28,10 +29,55 @@ pub struct FileSpan {
 pub struct SourceFile {
     /// Its path, as resolved (QC-9.2).
     pub path: PathBuf,
-    /// Its bytes.
-    pub text: Vec<u8>,
+    /// Its text, the bytes the preprocessor reads, shared with the preprocessor's readers of it.
+    pub text: Rc<[u8]>,
     /// Its line starts (QC-1.2).
     pub lines: LineIndex,
+    /// Where its text stands in the file's bytes.
+    pub origin: TextOrigin,
+}
+
+/// Where the text of a [`SourceFile`], which the preprocessor reads, stands in the file's bytes:
+/// under an FTEQCC dialect FTEQCC's file loader may skip or decode some, and writes a line feed
+/// after them (FTEF-14.64).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum TextOrigin {
+    /// The file's bytes, one byte of the text for each: the vanilla dialect's text (QC-1.1).
+    #[default]
+    Bytes,
+    /// The file's bytes from this offset on, past the UTF-8 byte order mark FTEQCC skips or from
+    /// the start, one byte of the text for each, and then the line feed FTEQCC's loader writes
+    /// after them, which stands at the file's end.
+    Shifted(usize),
+    /// Decoded from UTF-16 or UTF-32: for each byte of the text, the loader's line feed at its
+    /// end included, and then for its end, the offset in the file of the code unit it came from.
+    Decoded(Vec<usize>),
+}
+
+impl SourceFile {
+    /// The bytes of the file that `span`, a span of its text, came from.
+    #[must_use]
+    pub fn file_span(&self, span: Span) -> Span {
+        Span::new(self.file_offset(span.start), self.file_offset(span.end))
+    }
+
+    /// The offset in the file of the byte at `offset` of the text; past the text's end, the
+    /// offset after the last code unit read.
+    fn file_offset(&self, offset: usize) -> usize {
+        match &self.origin {
+            TextOrigin::Bytes => offset,
+            // The loader's line feed, the text's last byte, and the text's end stand at the
+            // file's end.
+            TextOrigin::Shifted(skipped) => offset
+                .min(self.text.len().saturating_sub(1))
+                .saturating_add(*skipped),
+            TextOrigin::Decoded(offsets) => offsets
+                .get(offset)
+                .or_else(|| offsets.last())
+                .copied()
+                .unwrap_or_default(),
+        }
+    }
 }
 
 /// Every file read while preprocessing a project, in the order read. A file included twice
@@ -42,11 +88,17 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
-    /// Adds a file and returns its id.
-    pub fn add(&mut self, path: PathBuf, text: Vec<u8>) -> FileId {
+    /// Adds a file whose text stands in its bytes as `origin` says, and returns its id.
+    pub fn add(&mut self, path: PathBuf, text: Vec<u8>, origin: TextOrigin) -> FileId {
         let id = FileId(u32::try_from(self.files.len()).unwrap_or(u32::MAX));
         let lines = LineIndex::new(&text);
-        self.files.push(SourceFile { path, text, lines });
+        let text = Rc::from(text);
+        self.files.push(SourceFile {
+            path,
+            text,
+            lines,
+            origin,
+        });
         id
     }
 
@@ -120,20 +172,28 @@ impl Loader for FsLoader {
             .parent()
             .filter(|d| !d.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let mut folded: Vec<OsString> = Vec::new();
-        for entry in fs::read_dir(dir).ok()?.filter_map(Result::ok) {
-            let entry = entry.file_name();
-            if entry == name {
-                return Some(entry);
-            }
-            if same_ignoring_case(&entry, name) {
-                folded.push(entry);
-            }
-        }
-        // The directory may list two entries that differ only in case; `read_dir` does not
-        // order them, so take the least to be the same on every run (PRJ-7.2).
-        folded.into_iter().min()
+        let entries = fs::read_dir(dir).ok()?.filter_map(Result::ok);
+        stored_entry(name, entries.map(|entry| entry.file_name()))
     }
+}
+
+/// Of a directory's `entries`, the one named `name`, or else the least of those whose names
+/// differ from it only in case (PRJ-7.2): a directory may list two such entries, in no order,
+/// so the least is the same on every run.
+pub(crate) fn stored_entry(
+    name: &OsStr,
+    entries: impl IntoIterator<Item = OsString>,
+) -> Option<OsString> {
+    let mut folded: Vec<OsString> = Vec::new();
+    for entry in entries {
+        if entry == name {
+            return Some(entry);
+        }
+        if same_ignoring_case(&entry, name) {
+            folded.push(entry);
+        }
+    }
+    folded.into_iter().min()
 }
 
 /// Reads files from memory: for tests, and for editor buffers not yet saved.

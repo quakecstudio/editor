@@ -204,7 +204,7 @@ fn float_binop(
 ) -> Result<Control, RunError> {
     let a = read_float(machine, progs, st.a)?;
     let b = read_float(machine, progs, st.b)?;
-    // spec VM-4.1: IEEE 754 single precision; +, -, * and / on two f32 round once to f32.
+    // VM-4.1: IEEE 754 single precision; +, -, * and / on two f32 round once to f32.
     let c = f(a, b);
     write_float(machine, progs, st.c, c)?;
     Ok(NEXT)
@@ -225,7 +225,7 @@ fn vector_binop(
     for i in 0..3_i32 {
         let a = read_float(machine, progs, add_operand(machine, progs, st.a, i)?)?;
         let b = read_float(machine, progs, add_operand(machine, progs, st.b, i)?)?;
-        // spec VM-5.1: each component is one f32 add or subtract (VM-4.1).
+        // VM-5.1: each component is one f32 add or subtract (VM-4.1).
         let c = f(a, b);
         write_float(machine, progs, add_operand(machine, progs, st.c, i)?, c)?;
     }
@@ -236,7 +236,7 @@ fn vector_binop(
 fn mul_v(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Control, RunError> {
     let a = read_vec(machine, progs, st.a)?;
     let b = read_vec(machine, progs, st.b)?;
-    // spec VM-5.2: (a0*b0 + a1*b1) + a2*b2, each product and sum rounded to f32, left to right,
+    // VM-5.2: (a0*b0 + a1*b1) + a2*b2, each product and sum rounded to f32, left to right,
     // no fused multiply-add.
     let c = (a[0] * b[0] + a[1] * b[1]) + a[2] * b[2];
     write_float(machine, progs, st.c, c)?;
@@ -248,7 +248,7 @@ fn mul_fv(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Co
     for i in 0..3_i32 {
         let a = read_float(machine, progs, st.a)?;
         let b = read_float(machine, progs, add_operand(machine, progs, st.b, i)?)?;
-        // spec VM-5.3: id's C f32 multiply, the scalar reread each component.
+        // VM-5.3: id's C f32 multiply, the scalar reread each component.
         let c = a * b;
         write_float(machine, progs, add_operand(machine, progs, st.c, i)?, c)?;
     }
@@ -260,7 +260,7 @@ fn mul_vf(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Co
     for i in 0..3_i32 {
         let a = read_float(machine, progs, add_operand(machine, progs, st.a, i)?)?;
         let b = read_float(machine, progs, st.b)?;
-        // spec VM-5.4: id's C f32 multiply, the scalar reread each component.
+        // VM-5.4: id's C f32 multiply, the scalar reread each component.
         let c = b * a;
         write_float(machine, progs, add_operand(machine, progs, st.c, i)?, c)?;
     }
@@ -303,7 +303,7 @@ fn float_cmp(
     let a = read_float(machine, progs, st.a)?;
     let b = read_float(machine, progs, st.b)?;
     let result = match cmp {
-        // spec VM-6.1, VM-6.2: EQ_F and NE_F are IEEE 754 == and !=; NaN is unordered, so
+        // VM-6.1, VM-6.2: EQ_F and NE_F are IEEE 754 == and !=; NaN is unordered, so
         // == is false and != true when either operand is a NaN, and -0 equals +0.
         Cmp::Eq => {
             #[expect(
@@ -341,7 +341,7 @@ fn vector_cmp(
 ) -> Result<Control, RunError> {
     let a = read_vec(machine, progs, st.a)?;
     let b = read_vec(machine, progs, st.b)?;
-    // spec VM-6.3: EQ_V is 1.0 when every component is equal as VM-6.2, NE_V is 1.0 when any
+    // VM-6.3: EQ_V is 1.0 when every component is equal as VM-6.2, NE_V is 1.0 when any
     // is unequal; a NaN component makes EQ_V 0.0 and NE_V 1.0.
     #[expect(
         clippy::float_cmp,
@@ -364,7 +364,7 @@ fn vector_cmp(
 /// value is resolved against the engine-allocated strings the [`Builtins`] dispatch owns
 /// (EDICT-13.3), id's `PR_GetString` reading `pr_strings + value` for both. Only a value that
 /// is neither a table offset nor an engine string names memory outside both, which is
-/// undefined in C; this spec fails it with the VM-19.4 runtime error.
+/// undefined in C; this spec fails it with the VM-19.7 runtime error.
 fn resolve_string<'a>(
     progs: &'a Progs<'_>,
     builtins: &'a dyn Builtins,
@@ -464,7 +464,7 @@ fn bits_cmp(
     let b = machine
         .global(st.b)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    // spec VM-7.4: EQ_E compares bits; a NaN pattern equals itself, -0 and +0 differ.
+    // VM-7.4: EQ_E compares bits; a NaN pattern equals itself, -0 and +0 differ.
     let same = a.0 == b.0;
     let result = if equal { same } else { !same };
     write_slot(machine, progs, st.c, bool_slot(result))?;
@@ -495,7 +495,7 @@ fn not_float(
     st: &Statement,
 ) -> Result<Control, RunError> {
     let a = read_float(machine, progs, st.a)?;
-    // spec VM-8.1: NOT_F writes 1.0 when a == 0.0, so for +0 and -0; NaN gives 0.0.
+    // VM-8.1: NOT_F writes 1.0 when a == 0.0, so for +0 and -0; NaN gives 0.0.
     let is_zero = a == 0.0;
     write_slot(machine, progs, st.c, bool_slot(is_zero))?;
     Ok(NEXT)
@@ -508,7 +508,7 @@ fn not_vector(
     st: &Statement,
 ) -> Result<Control, RunError> {
     let a = read_vec(machine, progs, st.a)?;
-    // spec VM-8.2: NOT_V writes 1.0 when every component equals 0.0.
+    // VM-8.2: NOT_V writes 1.0 when every component equals 0.0.
     let all_zero = a[0] == 0.0 && a[1] == 0.0 && a[2] == 0.0;
     write_slot(machine, progs, st.c, bool_slot(all_zero))?;
     Ok(NEXT)
@@ -530,7 +530,7 @@ fn not_string(
         .as_i32();
     let bytes = resolve_string(progs, builtins, value)
         .map_err(|()| string_divergence(machine, progs, value))?;
-    // spec VM-8.3: NOT_S writes 1.0 when the value is 0 or the first byte is NUL.
+    // VM-8.3: NOT_S writes 1.0 when the value is 0 or the first byte is NUL.
     let empty = bytes.first().copied().unwrap_or(0) == 0;
     write_slot(machine, progs, st.c, bool_slot(empty))?;
     Ok(NEXT)
@@ -541,7 +541,7 @@ fn not_bits(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<
     let a = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    // spec VM-8.4, VM-8.5: NOT_ENT and NOT_FNC write 1.0 when the value's bits are 0.
+    // VM-8.4, VM-8.5: NOT_ENT and NOT_FNC write 1.0 when the value's bits are 0.
     write_slot(machine, progs, st.c, bool_slot(a.0 == 0))?;
     Ok(NEXT)
 }
@@ -555,7 +555,7 @@ fn logical(
 ) -> Result<Control, RunError> {
     let a = read_float(machine, progs, st.a)?;
     let b = read_float(machine, progs, st.b)?;
-    // spec VM-8.6: AND is 1.0 when both floats are non-zero, OR when either is; a NaN is
+    // VM-8.6: AND is 1.0 when both floats are non-zero, OR when either is; a NaN is
     // non-zero and -0 is zero. Both operands are always read.
     let (ta, tb) = (a != 0.0, b != 0.0);
     let result = if and { ta && tb } else { ta || tb };
@@ -578,7 +578,7 @@ fn bitwise(
     let a = float_to_int(read_float(machine, progs, st.a)?);
     let b = float_to_int(read_float(machine, progs, st.b)?);
     let result = if and { a & b } else { a | b };
-    // spec VM-9.1: the integer result is converted back to float, rounded to nearest even.
+    // VM-9.1: the integer result is converted back to float, rounded to nearest even.
     write_float(machine, progs, st.c, int_to_float(result))?;
     Ok(NEXT)
 }
@@ -586,7 +586,7 @@ fn bitwise(
 /// `(int)value` by truncation toward zero, id's C cast (VM-9.1), with the x86 "integer
 /// indefinite" result for a NaN, infinity or out-of-range value (VM-9.2).
 fn float_to_int(value: f32) -> i32 {
-    // spec VM-9.2: a NaN, infinity or value whose truncation is outside -2^31..2^31-1 converts
+    // VM-9.2: a NaN, infinity or value whose truncation is outside -2^31..2^31-1 converts
     // to VM_FLOAT_TO_INT_INVALID (-2147483648), the x86 cvttss2si result.
     if value.is_nan() {
         return VM_FLOAT_TO_INT_INVALID;
@@ -596,7 +596,7 @@ fn float_to_int(value: f32) -> i32 {
     if truncated >= TWO_POW_31 || truncated < NEG_TWO_POW_31 {
         return VM_FLOAT_TO_INT_INVALID;
     }
-    // spec VM-9.1: truncation toward zero is exact here, so the cast does not lose a value in
+    // VM-9.1: truncation toward zero is exact here, so the cast does not lose a value in
     // range; the bounds above make it safe.
     #[expect(
         clippy::cast_possible_truncation,
@@ -639,7 +639,7 @@ fn store_scalar(
     let value = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    // spec VM-10.1, VM-10.3: a bit-exact copy, every NaN pattern and -0.0 included.
+    // VM-10.1, VM-10.3: a bit-exact copy, every NaN pattern and -0.0 included.
     write_slot(machine, progs, st.b, value)?;
     Ok(NEXT)
 }
@@ -937,7 +937,7 @@ fn branch(
     let value = machine
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
-    // spec VM-13.3: the test is on the 32-bit pattern, so -0.0 and every NaN are true.
+    // VM-13.3: the test is on the 32-bit pattern, so -0.0 and every NaN are true.
     let nonzero = value.0 != 0;
     let jump = if on_nonzero { nonzero } else { !nonzero };
     if jump {
@@ -1066,7 +1066,7 @@ fn state(machine: &mut Machine, progs: &Progs<'_>, st: &Statement) -> Result<Con
         .global(st.a)
         .map_err(|e| exec::global_error(machine, progs, e))?;
     let frame_now = machine.edicts.field(number, FIELD_FRAME).unwrap_or(Slot(0));
-    // spec VM-17.2: set frame only when the new float is not equal to the current frame; -0
+    // VM-17.2: set frame only when the new float is not equal to the current frame; -0
     // equals +0, a NaN new value is not equal to anything so it is written.
     #[expect(
         clippy::float_cmp,

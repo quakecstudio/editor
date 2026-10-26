@@ -12,8 +12,8 @@ constant with the file and identifier it comes from, and what happens at the lim
 
 Code uses these names, never the bare numbers. Implemented by `qc-progs` (LIMIT-1), `qc-vm`
 (LIMIT-2 to LIMIT-4), `qc-edict` and `qc-builtins` (LIMIT-5 and LIMIT-6) and our compiler
-(LIMIT-7). Every statement is in [`coverage-baseline.tsv`](coverage-baseline.tsv) until
-those crates cite it. Constants that describe the format's structure rather than a limit
+(LIMIT-7). A statement no test cites yet is listed in
+[`coverage-baseline.tsv`](coverage-baseline.tsv) ([`README.md`](README.md)). Constants that describe the format's structure rather than a limit
 (header size, record sizes, reserved slots) are in [`progs.md`](progs.md).
 
 ## LIMIT-1 progs.dat format limits
@@ -129,7 +129,7 @@ those crates cite it. Constants that describe the format's structure rather than
 - **LIMIT-6.1** A server has at most 600 edicts, counting the world and the client edicts.
   When none can be reused and 600 are in use, allocating one (`spawn`, or an entity of the
   map being loaded) fails with `ED_Alloc: no free edicts`.
-  Reuse rules are in `edicts.md` (P1-03).
+  Reuse rules are in [`edicts.md`](edicts.md) (EDICT-6).
 - **LIMIT-6.2** The sound and model precache lists have 256 entries each, and entry 0 is
   always the empty string. Precaching a name already in the list does nothing; precaching a new
   name when all 256 entries are used fails with `PF_precache_sound: overflow` or
@@ -143,11 +143,11 @@ those crates cite it. Constants that describe the format's structure rather than
 | `LIMIT_MAX_EDICTS` | 600 | `WinQuake/quakedef.h`, `MAX_EDICTS` |
 | `LIMIT_MAX_MODELS` | 256 | `WinQuake/quakedef.h`, `MAX_MODELS` |
 | `LIMIT_MAX_SOUNDS` | 256 | `WinQuake/quakedef.h`, `MAX_SOUNDS` |
-| `LIMIT_MAX_LIGHTSTYLES` | 64 | `WinQuake/quakedef.h`, `MAX_LIGHTSTYLES`; `PF_lightstyle` does not check it (P1-04) |
+| `LIMIT_MAX_LIGHTSTYLES` | 64 | `WinQuake/quakedef.h`, `MAX_LIGHTSTYLES`; `PF_lightstyle` does not check it ([`builtins.md`](builtins.md) BUILTIN-12.6) |
 | `LIMIT_MAX_QPATH` | 64 | `WinQuake/quakedef.h`, `MAX_QPATH`: the longest game path, NUL included |
-| `LIMIT_MAX_MSGLEN` | 8000 | `WinQuake/quakedef.h`, `MAX_MSGLEN`: "max length of a reliable message"; which buffer each `Write*` builtin fills is in P1-04 |
-| `LIMIT_MAX_DATAGRAM` | 1024 | `WinQuake/quakedef.h`, `MAX_DATAGRAM`: "max length of unreliable message" (P1-04) |
-| `LIMIT_MAX_ENT_LEAFS` | 16 | `WinQuake/progs.h`, `MAX_ENT_LEAFS`: BSP leaves an edict is linked into (P1-03) |
+| `LIMIT_MAX_MSGLEN` | 8000 | `WinQuake/quakedef.h`, `MAX_MSGLEN`: "max length of a reliable message"; which buffer each `Write*` builtin fills is in [`builtins.md`](builtins.md) BUILTIN-13 |
+| `LIMIT_MAX_DATAGRAM` | 1024 | `WinQuake/quakedef.h`, `MAX_DATAGRAM`: "max length of unreliable message" ([`builtins.md`](builtins.md) BUILTIN-12.2, BUILTIN-13) |
+| `LIMIT_MAX_ENT_LEAFS` | 16 | `WinQuake/progs.h`, `MAX_ENT_LEAFS`: BSP leaves an edict is linked into ([`edicts.md`](edicts.md) EDICT-1.2) |
 
 ## LIMIT-7 id qcc limits
 

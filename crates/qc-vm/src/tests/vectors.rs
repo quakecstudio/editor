@@ -25,42 +25,10 @@ use qc_trace::Record;
 use qc_types::{EntityRef, PointerRef, Slot};
 
 use crate::Machine;
-use crate::exec::{Builtins, Context, ServerState};
+use crate::exec::ServerState;
 use crate::trace::Trace;
 
-use super::harness::{Func, ProgsBuilder, Stmt};
-
-/// The stub builtins the vectors' README describes: builtin 2 runs a nested `PR_ExecuteProgram`
-/// of the function whose index is in `OFS_PARM0`; every other number writes the argument count
-/// as a float to slot 1 and copies slot 4 to slot 2.
-struct StubBuiltins;
-
-impl Builtins for StubBuiltins {
-    fn call(&mut self, number: u32, context: &mut Context<'_, '_>) -> Result<(), crate::RunError> {
-        if number == 2 {
-            // Builtin 2: a nested run of the function in OFS_PARM0 (slot 4).
-            let function = context.machine().globals()[4].as_i32();
-            context.execute_program(self, function)?;
-            return Ok(());
-        }
-        // Every other number: write argc to slot 1, copy slot 4 to slot 2.
-        let argc = context.machine().argc();
-        let parm0 = context.machine().globals()[4];
-        let argc_float = match u16::try_from(argc) {
-            Ok(n) => f32::from(n),
-            Err(_) => 0.0,
-        };
-        context
-            .machine()
-            .set_global_test(1, Slot::from_f32(argc_float));
-        context.machine().set_global_test(2, parm0);
-        Ok(())
-    }
-
-    fn engine_string(&self, _value: i32) -> Option<&[u8]> {
-        None
-    }
-}
+use super::harness::{Func, ProgsBuilder, Stmt, StubBuiltins, opcode_number};
 
 /// A parsed vector.
 #[derive(Debug, Default)]
@@ -180,10 +148,30 @@ fn parse_statement(body: &str) -> Stmt {
     let a = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let b = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
     let c = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    match op.parse::<u16>() {
-        Ok(number) => Stmt::raw(number, a, b, c),
-        Err(_) => Stmt::op(op, a, b, c),
-    }
+    let number = match op.parse::<u16>() {
+        Ok(number) => number,
+        Err(_) => match opcode_number(op) {
+            Some(number) => number,
+            None => panic!("statement `{body}`: `{op}` is not a vanilla opcode name or number"),
+        },
+    };
+    Stmt::raw(number, a, b, c)
+}
+
+// No spec statement: this pins the vector reader, so that a misspelt opcode in a vector file
+// fails naming the statement instead of running some other opcode.
+#[test]
+fn a_statement_names_its_opcode_by_name_or_number() {
+    let add = parse_statement("ADD_F 1 2 3");
+    assert_eq!((add.op, add.a, add.b, add.c), (6, 1, 2, 3));
+    assert_eq!(parse_statement("66").op, 66);
+    assert_eq!(opcode_number("ADD_X"), None);
+}
+
+#[test]
+#[should_panic(expected = "statement `ADD_X 1 2 3`: `ADD_X` is not a vanilla opcode name")]
+fn a_misspelt_opcode_fails_naming_the_statement() {
+    parse_statement("ADD_X 1 2 3");
 }
 
 fn parse_function_line(v: &mut Vector, body: &str) {
@@ -697,7 +685,7 @@ fn check_event(
 // spec VM-16.1, VM-16.2, VM-16.3, VM-16.4, VM-16.5, VM-16.6: returning.
 // spec VM-17.1, VM-17.2, VM-17.3, VM-17.4: STATE.
 // spec VM-18.1, VM-18.2, VM-18.3, VM-18.4: nested runs.
-// spec VM-19.1, VM-19.2, VM-19.3, VM-19.4, VM-19.5: errors.
+// spec VM-19.1, VM-19.2, VM-19.6, VM-19.7, VM-19.5: errors.
 // spec LIMIT-2.1, LIMIT-2.2, LIMIT-2.3: QC call depth.
 // spec LIMIT-3.1: the local stack.
 // spec LIMIT-4.1, LIMIT-4.2: the runaway loop guard.

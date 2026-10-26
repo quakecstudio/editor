@@ -16,11 +16,46 @@ import yaml
 import check
 
 
+def first_key(issues: list[dict], what: str, pred) -> str:
+    """The key of the first issue `pred` accepts, so a test names an issue by its role in the
+    plan rather than by a key the plan may change."""
+    for issue in issues:
+        if pred(issue):
+            return issue["key"]
+    raise AssertionError(f"the plan has no {what}")
+
+
+def labelled(label: str):
+    return lambda issue: label in issue.get("labels", [])
+
+
 class CheckRules(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.reqs = check.load_requirements()
         cls.meta, cls.issues = check.load_backlog()
+        issues = cls.issues
+        by_key = {i["key"]: i for i in issues}
+        cls.some = issues[0]["key"]
+        cls.earlier = first_key(issues, f"issue in {check.PHASE_ORDER[1]}",
+                                lambda i: i["milestone"] == check.PHASE_ORDER[1])
+        cls.later = first_key(issues, f"issue in {check.PHASE_ORDER[2]}",
+                              lambda i: i["milestone"] == check.PHASE_ORDER[2])
+        depended = {d for i in issues for d in i.get("depends", [])}
+        # An issue with dependencies that others depend on, so both sides of the phase
+        # comparison meet it.
+        cls.middle = first_key(issues, "issue in the middle of a dependency chain",
+                               lambda i: i.get("depends") and i["key"] in depended
+                               and i["milestone"] in check.PHASE_ORDER)
+        cls.repo = first_key(issues, "issue in the repo layer",
+                             lambda i: [l for l in i["labels"] if l in check.LAYER_RANK or l == "repo"] == ["repo"])
+        cls.dependent = first_key(issues, "issue with a dependency", lambda i: i.get("depends"))
+        cls.dependency = by_key[cls.dependent]["depends"][0]
+        cls.gate = first_key(issues, "gate", labelled("type:gate"))
+        cls.gated = next(d for d in by_key[cls.gate]["depends"]
+                         if by_key[d]["milestone"] == by_key[cls.gate]["milestone"])
+        cls.bug = first_key(issues, "bug", labelled("type:bug"))
+        cls.decision = first_key(issues, "decision", labelled("type:decision"))
 
     def run_with(self, mutate):
         reqs, issues = copy.deepcopy(self.reqs), copy.deepcopy(self.issues)
@@ -40,38 +75,46 @@ class CheckRules(unittest.TestCase):
                           "X-1: requirement not covered")
 
     def test_missing_acceptance(self):
-        self.assert_flags(lambda r, k, i: k["P0-01"].update(acceptance=[]), "P0-01: missing acceptance")
+        self.assert_flags(lambda r, k, i: k[self.some].update(acceptance=[]), f"{self.some}: missing acceptance")
 
     def test_missing_deliverable(self):
-        self.assert_flags(lambda r, k, i: k["P0-01"].update(deliverable=[]), "P0-01: missing deliverable")
+        self.assert_flags(lambda r, k, i: k[self.some].update(deliverable=[]), f"{self.some}: missing deliverable")
 
     def test_missing_verification(self):
-        self.assert_flags(lambda r, k, i: k["P0-01"].pop("verify"), "P0-01: missing verify")
+        self.assert_flags(lambda r, k, i: k[self.some].pop("verify"), f"{self.some}: missing verify")
 
     def test_unknown_requirement(self):
-        self.assert_flags(lambda r, k, i: k["P0-01"]["reqs"].append("NOPE-1"), "P0-01: unknown requirement NOPE-1")
+        self.assert_flags(lambda r, k, i: k[self.some]["reqs"].append("NOPE-1"),
+                          f"{self.some}: unknown requirement NOPE-1")
 
     def test_later_phase_dependency(self):
-        self.assert_flags(lambda r, k, i: k["P1-10"]["depends"].append("P2-06"), "from a later phase")
+        self.assert_flags(lambda r, k, i: k[self.earlier].setdefault("depends", []).append(self.later),
+                          "from a later phase")
+
+    def test_unknown_milestone_is_a_problem_not_an_exception(self):
+        for milestone in ("P9", "Phase 1", None):
+            self.assert_flags(lambda r, k, i, m=milestone: k[self.middle].update(milestone=m),
+                              f"{self.middle}: unknown milestone {milestone}")
 
     def test_layer_label(self):
-        self.assert_flags(lambda r, k, i: k["P0-06"]["labels"].remove("repo"),
-                          "P0-06: needs exactly one layer label, has []")
-        self.assert_flags(lambda r, k, i: k["P0-06"]["labels"].append("L1-vm"),
-                          "P0-06: needs exactly one layer label, has ['repo', 'L1-vm']")
+        self.assert_flags(lambda r, k, i: k[self.repo]["labels"].remove("repo"),
+                          f"{self.repo}: needs exactly one layer label, has []")
+        self.assert_flags(lambda r, k, i: k[self.repo]["labels"].append("L1-vm"),
+                          f"{self.repo}: needs exactly one layer label, has ['repo', 'L1-vm']")
 
     def test_cycle(self):
-        self.assert_flags(lambda r, k, i: k["P0-01"].setdefault("depends", []).append("P0-02"), "dependency cycle")
+        self.assert_flags(lambda r, k, i: k[self.dependency].setdefault("depends", []).append(self.dependent),
+                          "dependency cycle")
 
     def test_gate_incomplete(self):
-        self.assert_flags(lambda r, k, i: k["P1-25"]["depends"].remove("P1-15"), "gate does not depend")
+        self.assert_flags(lambda r, k, i: k[self.gate]["depends"].remove(self.gated), "gate does not depend")
 
     def test_bug_without_template_fields(self):
-        self.assert_flags(lambda r, k, i: k["P1-52"].pop("summary"), "P1-52: a bug needs summary")
-        self.assert_flags(lambda r, k, i: k["P1-52"].pop("environment"), "P1-52: a bug needs environment")
+        self.assert_flags(lambda r, k, i: k[self.bug].pop("summary"), f"{self.bug}: a bug needs summary")
+        self.assert_flags(lambda r, k, i: k[self.bug].pop("environment"), f"{self.bug}: a bug needs environment")
 
     def test_decision_without_needs_human(self):
-        self.assert_flags(lambda r, k, i: k["P0-08"]["labels"].remove("needs:human"), "decisions need a person")
+        self.assert_flags(lambda r, k, i: k[self.decision]["labels"].remove("needs:human"), "decisions need a person")
 
     def test_label_description_too_long(self):
         meta = copy.deepcopy(self.meta)
@@ -80,13 +123,15 @@ class CheckRules(unittest.TestCase):
         self.assertTrue(any("100-character limit" in e for e in errors), errors[:5])
 
     def test_decision_without_adr(self):
-        self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["a decision"]), "must name a docs/adr/")
+        self.assert_flags(lambda r, k, i: k[self.decision].update(deliverable=["a decision"]), "must name a docs/adr/")
 
     def test_decision_naming_only_the_adr_directory(self):
-        self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["an entry in docs/adr/"]), "must name a docs/adr/")
+        self.assert_flags(lambda r, k, i: k[self.decision].update(deliverable=["an entry in docs/adr/"]),
+                          "must name a docs/adr/")
 
     def test_decision_naming_the_template(self):
-        self.assert_flags(lambda r, k, i: k["P0-08"].update(deliverable=["docs/adr/0000-template.md"]), "must name a docs/adr/")
+        self.assert_flags(lambda r, k, i: k[self.decision].update(deliverable=["docs/adr/0000-template.md"]),
+                          "must name a docs/adr/")
 
     def test_decision_adr_file_patterns(self):
         for ok in ["docs/adr/0012-ui.md: the answer", "docs/adr/00NN-license-review.md"]:
@@ -94,20 +139,32 @@ class CheckRules(unittest.TestCase):
         for bad in ["docs/adr/12-ui.md", "docs/adr/0012-UI.md", "docs/adr/0012.md", "docs/adr/README.md"]:
             self.assertFalse(check.ADR_FILE.search(bad), bad)
 
+
+def built(key: str, layer: str, depends: tuple[str, ...] = (), kind: str = "type:feature") -> dict:
+    """A minimal issue of `kind` in `layer` and phase P1, for the readiness rule's tests."""
+    return {"key": key, "milestone": "P1", "labels": [kind, layer], "depends": list(depends)}
+
+
+class ReadinessRule(unittest.TestCase):
+    """Building on a lower layer waits for that layer's readiness (docs/testing.md)."""
+
     def test_readiness_injected(self):
-        # qc-edict (L1) builds on qc-progs (L0), so it must wait for L0 readiness in Phase 1.
-        self.assertIn("P1-R0", {i["key"]: i for i in self.issues}["P1-09"]["depends"])
+        issues = [built("D", "L0-formats"), built("R", "L0-formats", kind="type:readiness"),
+                  built("X", "L1-vm", ("D",)), built("S", "L1-vm", ("X",)),
+                  built("G", "repo", kind="type:gate")]
+        check.add_readiness_dependencies(issues)
+        by_key = {i["key"]: i for i in issues}
+        # X builds on a lower layer and waits for its readiness; S builds on its own layer.
+        self.assertEqual(by_key["X"]["depends"], ["D", "R"])
+        self.assertEqual(by_key["S"]["depends"], ["X"])
+        # The phase's gate waits for every readiness issue in the phase.
+        self.assertEqual(by_key["G"]["depends"], ["R"])
 
     def test_missing_readiness_flagged(self):
-        reqs = copy.deepcopy(self.reqs)
-        meta, issues = check.load_backlog()
-        issues = [i for i in issues if i["key"] != "P1-R0"]
-        for i in issues:
-            i["depends"] = [d for d in i.get("depends", []) if d != "P1-R0"]
-            i.pop("_errors", None)
+        issues = [built("D", "L0-formats"), built("X", "L1-vm", ("D",))]
         check.add_readiness_dependencies(issues)
-        errors = check.check(reqs, meta, issues)
-        self.assertTrue(any("no readiness issue exists" in e for e in errors))
+        errors = issues[1].get("_errors", [])
+        self.assertTrue(any("no readiness issue exists" in e for e in errors), errors)
 
 
 class ScopeRule(unittest.TestCase):
@@ -117,6 +174,10 @@ class ScopeRule(unittest.TestCase):
     def setUpClass(cls):
         _, cls.issues = check.load_backlog()
         cls.text = check.SCOPE.read_text()
+        later = [i["key"] for i in cls.issues if i["milestone"] == "LATER"]
+        if len(later) < 2:
+            raise AssertionError(f"the plan needs two LATER issues for these tests: {later}")
+        cls.unlinked, cls.mentioned = later[0], later[1]
 
     def scope_errors(self, text):
         with tempfile.TemporaryDirectory() as d:
@@ -128,13 +189,15 @@ class ScopeRule(unittest.TestCase):
         self.assertEqual(check.check_scope(self.issues), [])
 
     def test_later_key_missing(self):
-        errors = self.scope_errors(re.sub(r"\[L-04\]\([^)]*\)", "", self.text))
-        self.assertEqual(errors, ["L-04: LATER issue not linked from docs/scope.md as [L-04](<issue URL>)"])
+        key = self.unlinked
+        errors = self.scope_errors(re.sub(rf"\[{re.escape(key)}\]\([^)]*\)", "", self.text))
+        self.assertEqual(errors, [f"{key}: LATER issue not linked from docs/scope.md as [{key}](<issue URL>)"])
 
     def test_later_key_mentioned_but_not_linked(self):
-        errors = self.scope_errors(re.sub(r"\[L-06\]\([^)]*\)", "L-06", self.text))
+        key = self.mentioned
+        errors = self.scope_errors(re.sub(rf"\[{re.escape(key)}\]\([^)]*\)", key, self.text))
         self.assertEqual(len(errors), 1)
-        self.assertIn("L-06", errors[0])
+        self.assertIn(key, errors[0])
 
     def test_key_prefix_does_not_count(self):
         # L-1 must not be satisfied by a link to L-10.
@@ -159,6 +222,11 @@ class RiskRule(unittest.TestCase):
         cls.meta, _ = check.load_backlog()
         cls.risks = check.RISKS.read_text()
         cls.design = check.DESIGN_DOC.read_text()
+        # The register's first row, which the tests change one cell of: id, risk, impact,
+        # mitigation, owner, linked issues, status.
+        cls.row = next(l for l in cls.risks.splitlines() if l.startswith("| R-"))
+        cls.cells = [c.strip() for c in cls.row.strip().strip("|").split("|")]
+        cls.rid, cls.title = cls.cells[0], cls.cells[1]
 
     def risk_errors(self, risks=None, design=None):
         with tempfile.TemporaryDirectory() as d:
@@ -167,47 +235,48 @@ class RiskRule(unittest.TestCase):
             dp.write_text(self.design if design is None else design)
             return check.check_risks(self.meta, rp, dp)
 
+    def with_cell(self, index: int, value: str) -> str:
+        """The register with cell `index` of the first row set to `value`."""
+        cells = list(self.cells)
+        cells[index] = value
+        return self.risks.replace(self.row, "| " + " | ".join(cells) + " |")
+
     def test_register_matches_design_doc(self):
         self.assertEqual(check.check_risks(self.meta), [])
 
     def test_risk_missing_from_register(self):
-        risks = "\n".join(l for l in self.risks.splitlines() if not l.startswith("| R-8 |"))
+        risks = "\n".join(l for l in self.risks.splitlines() if l != self.row)
         self.assertEqual(self.risk_errors(risks),
-                         ["docs/risks.md: design-doc risk missing from the register: Small audience"])
+                         [f"docs/risks.md: design-doc risk missing from the register: {self.title}"])
 
     def test_new_design_risk_flagged(self):
-        design = self.design.replace("| Small audience |", "| Engine bugs | Crashes | Report upstream |\n| Small audience |")
+        design = self.design.replace(f"| {self.title} |",
+                                     f"| Engine bugs | Crashes | Report upstream |\n| {self.title} |", 1)
         self.assertEqual(self.risk_errors(design=design),
                          ["docs/risks.md: design-doc risk missing from the register: Engine bugs"])
 
     def test_risk_not_in_design_doc(self):
-        risks = self.risks.replace("| R-8 | Small audience |", "| R-8 | Tiny audience |")
-        errors = self.risk_errors(risks)
-        self.assertIn("R-8: risk not in the design doc's risk table: Tiny audience", errors)
+        errors = self.risk_errors(self.with_cell(1, "Tiny audience"))
+        self.assertIn(f"{self.rid}: risk not in the design doc's risk table: Tiny audience", errors)
 
     def test_mitigation_drift(self):
-        risks = self.risks.replace("`muda` menus; P2-17", "`muda` menus only; P2-17")
-        self.assertEqual(self.risk_errors(risks), ["R-7: impact or mitigation differs from the design doc"])
+        errors = self.risk_errors(self.with_cell(3, self.cells[3] + " only"))
+        self.assertEqual(errors, [f"{self.rid}: impact or mitigation differs from the design doc"])
 
     def test_owner_must_be_area(self):
-        risks = self.risks.replace("| area:agent |", "| nobody |")
-        self.assertEqual(self.risk_errors(risks), ["R-9: owner must be an area:* label, got 'nobody'"])
+        errors = self.risk_errors(self.with_cell(4, "nobody"))
+        self.assertEqual(errors, [f"{self.rid}: owner must be an area:* label, got 'nobody'"])
 
     def test_linked_issue_required(self):
-        row = next(l for l in self.risks.splitlines() if l.startswith("| R-2 |"))
-        cells = row.split("|")
-        cells[6] = " none yet "
-        self.assertEqual(self.risk_errors(self.risks.replace(row, "|".join(cells))), ["R-2: no linked issue"])
+        self.assertEqual(self.risk_errors(self.with_cell(5, "none yet")), [f"{self.rid}: no linked issue"])
 
     def test_unknown_status(self):
-        row = next(l for l in self.risks.splitlines() if l.startswith("| R-7 |"))
-        errors = self.risk_errors(self.risks.replace(row, row.rsplit("|", 2)[0] + "| Done |"))
+        errors = self.risk_errors(self.with_cell(6, "Done"))
         self.assertEqual(len(errors), 1)
-        self.assertTrue(errors[0].startswith("R-7: status must be one of"))
+        self.assertTrue(errors[0].startswith(f"{self.rid}: status must be one of"))
 
     def test_malformed_row(self):
-        row = next(l for l in self.risks.splitlines() if l.startswith("| R-1 |"))
-        errors = self.risk_errors(self.risks.replace(row, row.rsplit("|", 2)[0] + "|"))
+        errors = self.risk_errors(self.risks.replace(self.row, "| " + " | ".join(self.cells[:6]) + " |"))
         self.assertTrue(any(e.startswith("docs/risks.md: register row needs 7 cells") for e in errors))
 
     def test_missing_register_file(self):
@@ -286,7 +355,8 @@ class CoverageRule(unittest.TestCase):
             return check.check_coverage(self.expected, path)
 
     def test_stale_coverage_flagged(self):
-        stale = self.expected.replace("| GOAL-1 |", "| GOAL-1x |")
+        first = next(iter(check.load_requirements()))
+        stale = self.expected.replace(f"| {first} |", f"| {first}x |")
         self.assertEqual(self.coverage_errors(stale),
                          ["coverage.md: out of date; run python3 plan/check.py --write-coverage"])
 

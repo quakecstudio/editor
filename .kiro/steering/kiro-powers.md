@@ -75,8 +75,10 @@ The setup script is referenced in place, not copied. In Claude Code it runs from
 `.claude/settings.json` `SessionStart`; in Kiro the `implementer` and `reviewer` agents run
 it on `agentSpawn`, and `.kiro/hooks/session-setup.json` runs it at the start of a plain
 Kiro session too, so an interactive session in a cloud sandbox gets the same prep (rustup,
-prek, uv for the plan checks, git hooks). It is Linux-only, idempotent and always exits 0,
-so running it under either tool, and more than once, is safe.
+prek, uv for the plan checks, git hooks). That hook fires only when this repository is
+Kiro's workspace root; when it is a subdirectory of the workspace, run the script yourself
+first, as `.kiro/steering/guardrails.md` (rule 12) says. It is Linux-only, idempotent and
+always exits 0, so running it under either tool, and more than once, is safe.
 
 `.kiro/hooks/kiro-pointer-guard.json` is Kiro-only: it has no `.claude/` counterpart because
 it exists to protect this pointer scheme, warning when a `.kiro/` skill or agent is edited

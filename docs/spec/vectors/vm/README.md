@@ -77,7 +77,7 @@ host:                                optional: one host action per line (below)
 steps: <count>                       optional: total statements executed
 after: depth=<d> localstack=<n>      optional: call depth and local stack slots in use at the end
 datagram: <byte> ...                 optional: the unreliable datagram's bytes at the end, decimal
-oracle: no                           optional: the answer is this spec's, not id's (VM-19.4)
+oracle: no                           optional: the answer is this spec's, not id's (VM-19.7)
 code:
   <OP> <a> <b> <c>                   one statement per line, from statement 1; missing operands are 0
 expect:

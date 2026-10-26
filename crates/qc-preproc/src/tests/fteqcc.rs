@@ -5,7 +5,8 @@
 use std::path::Path;
 
 use super::{codes, one, one_fte, tokens};
-use crate::{Code, MemoryLoader, Preprocessor, TokenKind};
+use crate::fte_directive::join_paths;
+use crate::{Code, CompilerFlags, Dialect, MemoryLoader, PragmaDefault, Preprocessor, TokenKind};
 
 /// The tokens of `text` preprocessed under the FTEQCC dialect, and its diagnostic codes.
 fn fte(text: &str) -> (String, Vec<Code>) {
@@ -25,17 +26,29 @@ fn if_takes_a_side_by_its_expression() {
     assert_eq!(toks, "yes");
 }
 
-// spec FTEF-14.11: the preprocessor reads `#if` as FTEQCC's `ParsePrecompilerIf` does, `||` and
-// `&&` at one level grouped to the right, from the bytes as written.
+// spec FTEF-14.33: the preprocessor reads `#if` as FTEQCC's `ParsePrecompilerIf` does, `||` and
+// `&&` at one level grouped to the right, from the bytes as written, within the line: a `\`
+// ends the expression, and the rest of the line is junk
 #[test]
 fn if_follows_fteqcc_precedence() {
-    let side = |cond: &str| fte(&format!("#if {cond}\nyes\n#else\nno\n#endif\n")).0;
-    assert_eq!(side("1 || 0 && 0"), "yes");
-    assert_eq!(side("0 && 0 || 1"), "no");
-    assert_eq!(side("1 < 2 == 1"), "no");
+    let side = |cond: &str| fte(&format!("#if {cond}\nyes\n#else\nno\n#endif\n"));
+    assert_eq!(side("1 || 0 && 0").0, "yes");
+    assert_eq!(side("0 && 0 || 1").0, "no");
+    assert_eq!(side("1 < 2 == 1").0, "no");
     // `1||0` is one word, read with atoi.
-    assert_eq!(side("0||1"), "no");
-    assert_eq!(side("1 \\\n|| 0"), "yes");
+    assert_eq!(side("0||1").0, "no");
+    assert_eq!(side("1 \\\n|| 0"), ("yes".to_owned(), vec![Code::E0121]));
+    assert_eq!(side("0 \\\n|| 1"), ("no".to_owned(), vec![Code::E0121]));
+    // The errors FTEQCC reports are reported, and the expression is false.
+    for cond in ["(1", "defined(A", ""] {
+        assert_eq!(side(cond), ("no".to_owned(), vec![Code::E0121]), "{cond:?}");
+    }
+    assert_eq!(side("1 2"), ("yes".to_owned(), vec![Code::E0121]));
+    let (_, out) = one_fte("#if (1\n#endif\n");
+    assert_eq!(out.diagnostics[0].message, "unclosed bracket condition");
+    // One nested past the limit is only false.
+    let deep = format!("{}1{}", "(".repeat(70), ")".repeat(70));
+    assert_eq!(side(&deep), ("no".to_owned(), vec![]));
 }
 
 // spec FTEF-14.1: the first true `#elif`, `#elifdef` or `#elifndef` is taken, or the `#else`,
@@ -69,8 +82,10 @@ fn vanilla_has_no_if() {
     assert_eq!(tokens(&out), "b");
 }
 
-// spec FTEF-14.2: a directive goes on past a break after `\`, or one inside a `/* */` comment,
-// and a `//` comment ends it.
+// spec FTEF-14.35: a directive goes on past a break after `\`, or one inside a `/* */`
+// comment, and a `//` comment ends its text
+// spec FTEF-14.24: and the line a `#define` ends on goes on past a `\` and line break in that
+// `//` comment, as `QCC_PR_SkipToEndOfLine` reads it, so the next line is not read
 #[test]
 fn directives_continue_after_a_backslash() {
     let (toks, errs) = fte("#define F(a) {\\\n\tg(a);\\\n}\nF(x)\n");
@@ -78,6 +93,8 @@ fn directives_continue_after_a_backslash() {
     let (toks, _) = fte("#define G 1 /* a\ncomment */ 2\nG\n");
     assert_eq!(toks, "1 2");
     let (toks, _) = fte("#define H 1 // c \\\n2\nH\n");
+    assert_eq!(toks, "1");
+    let (toks, _) = fte("#define H 1 // c\n2\nH\n");
     assert_eq!(toks, "2 1");
     let (toks, _) = fte("#define K 1\r\n2\nK\n");
     assert_eq!(toks, "2 1");
@@ -89,28 +106,64 @@ fn directives_continue_after_a_backslash() {
 }
 
 // spec QCD-7.20, QCD-8.11: `#warning` is W0103 and `#error` E0118, with FTEQCC's texts.
-// spec FTEF-14.3: `#warning` and `#error` report their raw text on a taken side; `#message`
-// reports nothing; a skipped side reports neither.
+// spec FTEF-14.38: their text is the bytes right after the name, its space included, to the line
+// break, `#error`'s to a tab too and `#warning`'s to a CR; `#message` reports nothing; a skipped
+// side reports neither
 #[test]
 fn warning_error_and_message() {
     let (_, out) = one_fte("#warning Toggle doesn't work\n#error stop 'here\n#message hi\nx\n");
     assert_eq!(codes(&out), vec![Code::W0103, Code::E0118]);
-    assert_eq!(out.diagnostics[0].message, "#warning: Toggle doesn't work");
-    assert_eq!(out.diagnostics[1].message, "#Error: stop 'here");
+    assert_eq!(out.diagnostics[0].message, "#warning:  Toggle doesn't work");
+    assert_eq!(out.diagnostics[1].message, "#Error:  stop 'here");
     assert_eq!(tokens(&out), "x");
     let (_, out) = one_fte("#if 0\n#warning no\n#error no\n#endif\n#warning\n");
     assert_eq!(codes(&out), vec![Code::W0103]);
     assert_eq!(out.diagnostics[0].message, "#warning: ");
+    let (_, out) = one_fte("#error a\tb\n#warning c\td\r\n#warningx\n#errorx\n");
+    let messages: Vec<&str> = out.diagnostics.iter().map(|d| d.message.as_str()).collect();
+    assert_eq!(
+        messages,
+        ["#Error:  a", "#warning:  c\td", "#warning: x", "#Error: x"]
+    );
+    // At most 1023 bytes of the text are kept.
+    let (_, out) = one_fte(&format!("#warning{}\n", "w".repeat(2000)));
+    assert_eq!(out.diagnostics[0].message.len(), "#warning: ".len() + 1023);
 }
 
-// spec FTEF-14.4: an `#includelist` produces no tokens to its `#endlist`, whose lines are the
-// graph's to compile; a stray `#endlist` is accepted; a list open at the end is closed there.
+// spec FTEF-14.41: an `#includelist` produces no tokens to its `#endlist`, whose words are the
+// graph's to compile, and runs the directives at its lines' starts; `#endlist` outside a list is
+// no directive; a list open at the end is E0406
 #[test]
 fn includelists_produce_no_tokens() {
     let (toks, errs) = fte("a\n#includelist\nb.qc 'odd\n#ifdef X\nc.qc\n#endif\n#endlist\nd\n");
     assert_eq!((toks.as_str(), errs), ("a d", vec![]));
-    assert_eq!(fte("#endlist\nx\n"), ("x".to_owned(), vec![]));
-    assert_eq!(fte("#includelist\nb.qc\n"), (String::new(), vec![]));
+    let (toks, errs) = fte("#includelist\n#define N 5\nb.qc, (c.qc)\n#endlist\nN\n");
+    assert_eq!((toks.as_str(), errs), ("5", vec![]));
+    // The line break after a word is white space, so the `#` after it starts a directive.
+    let (toks, errs) = fte("#includelist\nb.qc\n#define N 5\n#endlist\nN\n");
+    assert_eq!((toks.as_str(), errs), ("5", vec![]));
+    // The words on the line are junk; the list starts after it.
+    assert_eq!(
+        fte("#includelist b.qc #endlist\nx\n"),
+        (String::new(), vec![Code::E0121, Code::E0406])
+    );
+    assert_eq!(
+        fte("#includelist\nb.qc #endlist // c\nx\n"),
+        ("x".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("#includelist\nb.qc #endlist x\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    assert_eq!(fte("#endlist\nx\n"), ("# endlist x".to_owned(), vec![]));
+    assert_eq!(
+        fte("#includelist\nb.qc\n"),
+        (String::new(), vec![Code::E0406])
+    );
+    assert_eq!(
+        fte("#includelist\n#eof\nb.qc\n"),
+        (String::new(), vec![Code::E0406])
+    );
 }
 
 // spec FTEF-14.5: `...` makes a macro variadic; `__VA_ARGS__` is the arguments after the named
@@ -138,7 +191,7 @@ fn variadic_macros() {
     assert_eq!(codes(&out), vec![Code::E0115]);
 }
 
-// spec FTEF-14.14, FTEF-14.15: `#param` is the argument as a string and `a ## b` one token;
+// spec FTEF-14.14, FTEF-14.31: `#param` is the argument as a string and `a ## b` one token;
 // a `#` before a word that is no parameter stays.
 #[test]
 fn stringify_and_paste() {
@@ -177,8 +230,9 @@ fn builtin_constants() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("0i"));
 }
 
-// spec FTEF-14.8: `#append` adds to a body, or defines; `#eof` ends the file; the build
-// directives are accepted.
+// spec FTEF-14.39: `#append` adds to a body, or defines; `#eof` and `#package` end the text; the
+// build directives read their lines as FTEQCC does, `#forcecrc` and `#pack` the byte after
+// their name whatever it is
 #[test]
 fn append_eof_and_build_directives() {
     let (toks, _) = fte("#define A 1\n#append A 2\nA\n");
@@ -187,8 +241,46 @@ fn append_eof_and_build_directives() {
     assert_eq!(toks, "3");
     let (toks, errs) = fte("x\n#eof\ny 'bad\n");
     assert_eq!((toks.as_str(), errs), ("x", vec![]));
-    let directives = "#output \"p.dat\"\n#forcecrc 1\n#copyright \"c\"\n#pack 1\n#package x\n#merge \"m\"\n#datafile \"d\"\nz\n";
+    let (toks, errs) = fte("x\n#eof zz\ny\n");
+    assert_eq!((toks.as_str(), errs), ("x", vec![]));
+    let directives = "#output \"p.dat\"\n#forcecrc 1\n#copyright \"c\"\n#pack 1 \n#merge \"m\"\n#datafile \"d\" x\n#message m\nz\n";
     assert_eq!(fte(directives), ("z".to_owned(), vec![]));
+    assert_eq!(fte("x\n#package\ny\n"), ("x".to_owned(), vec![]));
+    assert_eq!(
+        fte("x\n#package y\nz\n"),
+        ("x".to_owned(), vec![Code::E0121])
+    );
+    // `#forcecrc` and `#pack` at a line's end take its break and read the next line as theirs.
+    assert_eq!(
+        fte("#forcecrc\nzz zz\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    assert_eq!(fte("#forcecrc\n5\ny\n"), ("y".to_owned(), vec![]));
+    // Its number takes a `.` but one before another `.` (`c == '.'&&pr_file_p[1]!='.'`), so
+    // `1.5` is all number and `1..` leaves `..` on the line.
+    assert_eq!(fte("#forcecrc 1.5\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc 1..\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    // A `0x` where the number starts is taken whole, and only there: `#forcecrc0x1f` is all
+    // number, and the `x` of `#forcecrc1x5` ends it.
+    assert_eq!(fte("#forcecrc0x1f\ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(
+        fte("#forcecrc1x5\ny\n"),
+        ("y".to_owned(), vec![Code::E0121])
+    );
+    assert_eq!(fte("#pack\nzz\ny\n"), ("y".to_owned(), vec![Code::E0121]));
+    assert_eq!(fte("#packid\ny\n"), (String::new(), vec![Code::E0121]));
+    assert_eq!(fte("#pack id\ny\n"), ("y".to_owned(), vec![Code::E0121]));
+    assert_eq!(fte("#pack 6 \ny\n"), ("y".to_owned(), vec![Code::E0121]));
+    assert_eq!(fte("#pack 5 \ny\n"), ("y".to_owned(), vec![]));
+    assert_eq!(fte("#output zz\ny\n"), ("y".to_owned(), vec![Code::E0121]));
+    assert_eq!(fte("#datafile\ny\nz\n"), ("z".to_owned(), vec![]));
+    assert_eq!(
+        fte("#datafile \"d\" /* \n */ y\n"),
+        ("* / y".to_owned(), vec![])
+    );
     let (_, out) = one("#output \"p.dat\"\n");
     assert_eq!(codes(&out), vec![Code::E0108]);
 }
@@ -208,20 +300,27 @@ fn one_extra_macro_argument_is_accepted() {
     assert_eq!(codes(&out), vec![Code::E0116]);
 }
 
-// spec FTEF-14.4: an included file's list is skipped too, and its lexical diagnostics are not
-// reported.
+// spec FTEF-14.41: an included file's list is skipped too, and its lexical diagnostics are not
+// reported; one the file leaves open is E0406
 #[test]
 fn an_included_list_is_skipped() {
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#include \"l.src\"\nafter\n".as_bytes());
-    loader.insert("l.src", "#includelist\nx.qc 'y\n".as_bytes());
+    loader.insert("l.src", "#includelist\nx.qc 'y\n#endlist\n".as_bytes());
+    loader.insert("b.qc", "#include \"m.src\"\nafter\n".as_bytes());
+    loader.insert("m.src", "#includelist\nx.qc 'y\n".as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
     let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
     assert_eq!((tokens(&out), codes(&out)), ("after".to_owned(), vec![]));
+    let out = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    assert_eq!(
+        (tokens(&out), codes(&out)),
+        ("after".to_owned(), vec![Code::E0406])
+    );
 }
 
-// spec FTEF-14.10: a block left open on a taken side is closed at the end of the file without
-// a word; one left open while a side is skipped is reported; vanilla reports both.
+// spec FTEF-14.37: a block left open on a taken side is not reported, and an `#endif` in a file
+// read after it closes it; one left open while a side is skipped is E0110; vanilla reports both
 #[test]
 fn open_blocks_at_the_end_of_a_file() {
     assert_eq!(fte("#ifndef NOPE\nx\n"), ("x".to_owned(), vec![]));
@@ -229,22 +328,86 @@ fn open_blocks_at_the_end_of_a_file() {
     assert_eq!(fte("#if 1\n#else\nx\n").1, vec![Code::E0110]);
     let (_, out) = one("#ifndef NOPE\nx\n");
     assert_eq!(codes(&out), vec![Code::E0110]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", "#if 1\na\n".as_bytes());
+    loader.insert("b.qc", "#endif\nb\n#endif\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let a = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let b = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    assert_eq!((tokens(&a), codes(&a)), ("a".to_owned(), vec![]));
+    assert_eq!((tokens(&b), codes(&b)), ("b".to_owned(), vec![Code::E0109]));
+}
+
+/// Each mark of `out` that sets the pragma default `default`, with the token it holds from and
+/// what it sets.
+fn default_marks(out: &crate::FileOutput, default: PragmaDefault) -> Vec<(usize, bool)> {
+    out.flags
+        .iter()
+        .skip(1)
+        .filter_map(|&(at, edit)| {
+            let on = edit.apply(CompilerFlags::default()).default_on(default);
+            let off = edit
+                .apply(CompilerFlags::default().with_default(default, true))
+                .default_on(default);
+            (on == off).then_some((at, on))
+        })
+        .collect()
 }
 
 // spec FTEF-12.6: `#pragma noref N` is recorded at the token it precedes, so the definitions
-// after it are `noref` or not.
+// after it are `noref` or not
+// spec FTEF-14.70: its text is read with `atoi`, so one with no number, or a `(`, is 0
+// spec FTEF-21.14: `#pragma nosave N` and `#pragma defaultstatic N` are recorded alike
 #[test]
 fn noref_pragmas_are_recorded() {
-    let (_, out) = one_fte("a\n#pragma noref 1\nb c\n#pragma noref 0\nd\n#pragma noref\n");
-    assert_eq!(out.noref, vec![(1, true), (3, false)]);
+    let (_, out) = one_fte(
+        "a\n#pragma noref 1\nb c\n#pragma noref 0\nd\n#pragma noref\ne\n#pragma noref(1)\n",
+    );
+    assert_eq!(
+        default_marks(&out, PragmaDefault::Noref),
+        vec![(1, true), (3, false), (4, false), (5, false)]
+    );
+    let (_, out) = one_fte("#pragma nosave 1\na\n#pragma defaultstatic 1\nb\n");
+    assert_eq!(default_marks(&out, PragmaDefault::Nosave), vec![(0, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Static), vec![(1, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Noref), vec![]);
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#pragma noref 1\n".as_bytes());
     let mut pp = Preprocessor::new(loader);
     let vanilla = pp.preprocess_file(Path::new("a.qc")).unwrap();
-    assert!(vanilla.noref.is_empty());
+    assert!(vanilla.flags.is_empty());
 }
 
-// spec FTEF-12.10: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
+// spec FTEF-21.14: the defaults hold from one file to the next, and the second pass starts with
+// `defaultstatic` off and `noref` and `nosave` as they were
+#[test]
+fn pragma_defaults_carry_over() {
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "a.qc",
+        "#pragma noref 1\n#pragma nosave 1\n#pragma defaultstatic 1\n".as_bytes(),
+    );
+    loader.insert("b.qc", "x\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(Dialect::Fteqcc);
+    pp.preprocess_file(Path::new("a.qc")).unwrap();
+    let b = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    let first = b.flags[0].1.apply(CompilerFlags::default());
+    for default in [
+        PragmaDefault::Static,
+        PragmaDefault::Noref,
+        PragmaDefault::Nosave,
+    ] {
+        assert!(first.default_on(default), "{default:?}");
+    }
+    pp.restart();
+    let again = pp.preprocess_file(Path::new("b.qc")).unwrap();
+    let first = again.flags[0].1.apply(CompilerFlags::default());
+    assert!(!first.default_on(PragmaDefault::Static));
+    assert!(first.default_on(PragmaDefault::Noref));
+    assert!(first.default_on(PragmaDefault::Nosave));
+}
+
+// spec FTEF-12.18: each `#pragma autoproto [N]` is recorded with whether it asks for autoprototyping, its name in any case
 #[test]
 fn autoproto_pragmas_are_recorded() {
     let (_, out) = one_fte("#pragma autoproto\na\n#pragma AutoProto 0\n#pragma autoproto 2\n");
@@ -252,9 +415,11 @@ fn autoproto_pragmas_are_recorded() {
     assert_eq!(pragmas, vec![(0, true), (1, false), (1, true)]);
     let starts: Vec<usize> = out.autoproto.iter().map(|p| p.2.span.start).collect();
     assert_eq!(starts, vec![0, 20, 40]);
-    assert!(out.noref.is_empty());
+    assert!(default_marks(&out, PragmaDefault::Noref).is_empty());
+    // A directive's name is matched as written, so `#PRAGMA` is none, and its words are code.
     let (_, out) = one_fte("#PRAGMA noref 1\n#pragma NOREF 1\nx");
-    assert_eq!(out.noref, vec![(0, true)]);
+    assert_eq!(default_marks(&out, PragmaDefault::Noref), vec![(4, true)]);
+    assert_eq!(codes(&out), vec![]);
     let mut loader = MemoryLoader::new();
     loader.insert("a.qc", "#pragma autoproto\n".as_bytes());
     let mut pp = Preprocessor::new(loader);
@@ -293,8 +458,8 @@ fn frame_commands_number_frames() {
     // `$modelname NAME`: a name with no macro numbers from -1, the earlier model name becomes
     // a macro of the number reached, and a model name that is a macro numbers from it.
     assert_eq!(
-        frames("$modelname m1\n$frame a b\n$modelname m2\nx = $a + $m1;"),
-        ("x = -1 + 1 ;".to_owned(), vec![])
+        frames("$modelname m1\n$frame a b c\n$modelname m2\nx = $b + $m1;"),
+        ("x = 0 + 2 ;".to_owned(), vec![])
     );
     assert_eq!(
         frames("$frame m2 q r\n$modelname m2\n$frame s\nx = $s;"),
@@ -342,18 +507,21 @@ fn frame_macros_limit_is_the_program() {
     assert_eq!(fte(&full).1, vec![Code::E0504]);
 }
 
-// spec FTEF-12.2, FTEF-12.3, FTEF-12.4, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are
-// accepted and produce no tokens.
+// spec FTEF-12.2, FTEF-12.3, FTEF-12.5, FTEF-12.7: FTEQCC's other pragmas are accepted and
+// produce no tokens
+// spec FTEF-12.11: an unknown one is the Q120 warning "Unknown pragma 'NAME'"
 #[test]
 fn other_pragmas_are_accepted() {
     let pragmas = "#pragma TARGET FTE\n#pragma PROGS_DAT \"../progs.dat\"\n\
                    #pragma progs_dat \"x\"\n#pragma sourcefile client/progs.src\n\
                    #pragma flag enable assumeint\n#pragma forcecrc 54730\n#pragma once\n\
                    #pragma optimise 2\n#pragma unknown thing\nz\n";
-    assert_eq!(fte(pragmas), ("z".to_owned(), vec![]));
+    assert_eq!(fte(pragmas), ("z".to_owned(), vec![Code::W0113]));
+    let (_, out) = one_fte("#pragma unknown thing\n");
+    assert_eq!(out.diagnostics[0].message, "Unknown pragma 'unknown'");
 }
 
-// spec FTEF-18.22: a frame macro another reading of a file defined (an earlier file, an
+// spec FTEF-18.29: a frame macro another reading of a file defined (an earlier file, an
 // `#include`d one, the file that includes this one, or a macro's expansion) is "Stale macro
 // used"; one this reading defined is not.
 // spec QCD-7.25: W0105 "Stale macro used (NAME, defined in FILE)"
@@ -386,7 +554,7 @@ fn a_frame_macro_from_another_reading_is_stale() {
     assert_eq!(codes(&outputs[1]), [Code::W0104, Code::W0105]);
 }
 
-// spec FTEF-18.22: a frame name the same reading of a file defined before is "Duplicate macro
+// spec FTEF-18.29: a frame name the same reading of a file defined before is "Duplicate macro
 // defined" and keeps its first number; another reading's definition is replaced silently, and
 // so is the model name `$modelname` defines.
 // spec QCD-7.26: W0106 "Duplicate macro defined (NAME). Rename it."
@@ -412,7 +580,7 @@ fn a_frame_name_defined_twice_in_one_reading_is_a_duplicate() {
     );
 }
 
-// spec FTEF-18.22: a new frame name of 64 bytes or more is "Name for frame macro NAME is too
+// spec FTEF-18.29: a new frame name of 64 bytes or more is "Name for frame macro NAME is too
 // long", an error, and is not defined; 63 bytes are kept.
 // spec QCD-2.8: E0119 "Name for frame macro NAME is too long"
 #[test]
@@ -438,14 +606,14 @@ fn a_frame_name_of_64_bytes_is_too_long() {
     assert_eq!(errors, [Code::E0119, Code::E0106]);
 }
 
-// spec FTEF-18.22: a `$modelname` of 64 bytes or more is cut to 63 with the warning
+// spec FTEF-18.29: a `$modelname` of 64 bytes or more is cut to 63 with the warning
 // "$modelname name too long"; one of 63 is kept whole.
 // spec QCD-7.27: W0107 "$modelname name too long"
 #[test]
 fn a_long_model_name_is_cut() {
     let fits = "m".repeat(63);
-    let text = format!("$modelname {fits}\n$modelname next\nx = ${fits};");
-    assert_eq!(fte(&text), ("x = -1 ;".to_owned(), vec![]));
+    let text = format!("$modelname {fits}\n$frame a\n$modelname next\nx = ${fits};");
+    assert_eq!(fte(&text), ("x = 0 ;".to_owned(), vec![]));
     let cut = "n".repeat(63);
     let text = format!("$modelname {cut}x\n$frame a\n$modelname next\ny = ${cut};");
     let (_, out) = one_fte(&text);
@@ -454,16 +622,23 @@ fn a_long_model_name_is_cut() {
     assert!(!Code::W0107.is_error());
 }
 
-// spec QCD-7.2: a redefinition that differs only in its parameter list warns
-// spec FTEF-14.5: and so does one that differs only in being variadic
+// spec FTEF-14.58: a redefinition with the same body is F316's "Identical precompiler
+// definition", ignored unless a pragma says otherwise, whatever its parameters, variadic or not
+// spec FTEF-14.5: a variadic list is a parameter list as any other there
 #[test]
 fn a_redefinition_with_other_parameters_warns() {
-    assert_eq!(fte("#define A 1\n#define A() 1\n").1, vec![Code::W0102]);
+    assert_eq!(fte("#define A 1\n#define A() 1\n").1, vec![]);
+    assert_eq!(fte("#define V(a, ...) x\n#define V(a) x\n").1, vec![]);
     assert_eq!(
-        fte("#define V(a, ...) x\n#define V(a) x\n").1,
-        vec![Code::W0102]
+        fte("#define V(a, ...) x\n#define V(a, ...) y\n").1,
+        vec![Code::W0115]
     );
-    assert_eq!(fte("#define V(a, ...) x\n#define V(a, ...) x\n").1, vec![]);
+    let (_, out) = one_fte("#pragma warning enable F316\n#define V(a, ...) x\n#define V(a) x\n");
+    assert_eq!(codes(&out), vec![Code::W0116]);
+    assert_eq!(
+        out.diagnostics[0].message,
+        "Identical precompiler definition of V"
+    );
 }
 
 // spec FTEF-14.14: a pasted text that lexes as one token is that token, a number or an
@@ -487,7 +662,7 @@ fn a_paste_is_lexed_again() {
     assert_eq!(out.tokens[0].spelling.as_deref(), Some("12"));
 }
 
-// spec FTEF-14.15: `#param` is a string literal whose spelling escapes `"` and `\`
+// spec FTEF-14.31: `#param` is a string literal whose spelling escapes `"` and `\`
 #[test]
 fn a_stringified_argument_is_escaped() {
     let (_, out) = one_fte("#define Q(a) #a\nQ(say \"a\\\\b\")\n");
@@ -501,27 +676,221 @@ fn a_stringified_argument_is_escaped() {
     );
 }
 
-// spec FTEF-14.7: `__FILE__` is the path as a string literal, a line break in it spelled `\n`
-#[test]
-fn file_constant_escapes_its_path() {
+/// The first token of `text` as the file `path`, preprocessed under FTEQCC.
+fn first_token_in(path: &str, text: &str) -> crate::PpToken {
     let mut loader = MemoryLoader::new();
-    loader.insert("a\nb.qc", "__FILE__\n".as_bytes());
+    loader.insert(path, text.as_bytes());
     let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
-    let out = pp.preprocess_file(Path::new("a\nb.qc")).unwrap();
-    assert_eq!(out.tokens[0].kind, TokenKind::String(b"a\nb.qc".to_vec()));
-    assert_eq!(out.tokens[0].spelling.as_deref(), Some(r#""a\nb.qc""#));
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    out.tokens[0].clone()
 }
 
-// spec FTEF-18.16: `$framevalue N` past an `int` numbers from the nearest one
+/// The tokens and codes of `text` in the file `path` under FTEQCC.
+fn fte_in(path: &str, text: &str) -> (Vec<TokenKind>, Vec<Code>) {
+    let mut loader = MemoryLoader::new();
+    loader.insert(path, text.as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new(path)).unwrap();
+    let kinds = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    (kinds, codes(&out))
+}
+
+// spec FTEF-14.74: `__FILE__` is `"` and the file's name as given, kept to 255 bytes, ended at
+// its first `:`, and `"`, read as a string literal with nothing in the name escaped
 #[test]
-fn a_frame_value_past_an_int_is_held() {
+fn file_constant_is_fteqcc_s_text() {
+    let string = |bytes: &[u8]| TokenKind::String(bytes.to_vec());
     assert_eq!(
-        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
-        ("x = 2147483600 ;".to_owned(), vec![])
+        fte_in("a.qc", "__FILE__\n"),
+        (vec![string(b"a.qc")], vec![])
+    );
+    assert_eq!(fte_in("c:a.qc", "__FILE__\n"), (vec![string(b"c")], vec![]));
+    let bell =
+        qc_lexer::fteqcc_string_bytes(b"\"a\\b.qc\"", qc_lexer::LexFlags::default()).unwrap();
+    assert_eq!(
+        fte_in("a\\b.qc", "__FILE__\n"),
+        (vec![string(&bell)], vec![])
+    );
+    // The line break ends the string, and the rest of the name opens another.
+    assert_eq!(
+        fte_in("a\nb.qc", "__FILE__\n").1,
+        vec![Code::E0102, Code::E0101]
+    );
+    let (kinds, errors) = fte_in("a\"b.qc", "__FILE__\n");
+    assert_eq!(kinds.first(), Some(&string(b"a")));
+    assert!(errors.iter().any(|c| c.is_error()), "{errors:?}");
+    // 253 bytes fit with both quotes; one more leaves the string open.
+    let fits = "n".repeat(253);
+    assert_eq!(
+        fte_in(&fits, "__FILE__\n"),
+        (vec![string(fits.as_bytes())], vec![])
+    );
+    assert_eq!(fte_in(&"n".repeat(254), "__FILE__\n").1, vec![Code::E0101]);
+    // The spelling of the string reads back as its bytes.
+    assert_eq!(
+        first_token_in("a.qc", "__FILE__\n").spelling.as_deref(),
+        Some("\"a.qc\"")
+    );
+}
+
+// spec FTEF-14.74: an argument copies `__FILE__` as its text, which a `#` then writes into a
+// string as it stands
+#[test]
+fn a_stringified_file_constant_holds_its_text() {
+    let tok = first_token_in("dx.qc", "#define S(a) #a\n#define T(b) S(b)\nT(__FILE__)\n");
+    assert_eq!(tok.kind, TokenKind::String(br#""dx.qc""#.to_vec()));
+}
+
+// spec FTEF-14.74: an included file is named by the bytes between its quotes joined to the
+// compiled file's name after its last `/` or `\`, also when another included file includes it,
+// and alone when it starts with `/`; in a macro's chunk the name is the file's
+#[test]
+fn an_included_file_is_named_beside_the_compiled_file() {
+    let mut loader = MemoryLoader::new();
+    loader.insert(
+        "src/a.qc",
+        "#include \"x/b.qh\"\n#define F __FILE__\nF\n".as_bytes(),
+    );
+    loader.insert("src/x/b.qh", "__FILE__\n#include \"c.qh\"\n".as_bytes());
+    loader.insert("src/c.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader).with_dialect(qc_lexer::Dialect::Fteqcc);
+    let out = pp.preprocess_file(Path::new("src/a.qc")).unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+            TokenKind::String(b"src/c.qh".to_vec()),
+            TokenKind::String(b"src/a.qc".to_vec()),
+        ]
+    );
+    assert_eq!(join_paths(b"/abs.qh", b"src\\a.qc"), b"/abs.qh");
+    assert_eq!(join_paths(b"b.qh", b"src\\a.qc"), b"src\\b.qh");
+    assert_eq!(join_paths(b"b.qh", b"a.qc"), b"b.qh");
+}
+
+// spec FTEF-14.75: a file is opened at its path and named by its name, which `__FILE__`
+// writes and an `#include` is joined to, the joined name opened in the working directory; a
+// file given by its path alone is named by it and opened as it is
+#[test]
+fn names_are_opened_in_the_working_directory() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("/w/src/a.qc", "__FILE__\n#include \"x/b.qh\"\n".as_bytes());
+    loader.insert("/w/src/x/b.qh", "__FILE__\n".as_bytes());
+    let mut pp = Preprocessor::new(loader)
+        .with_dialect(qc_lexer::Dialect::Fteqcc)
+        .with_working_dir(Path::new("/w"));
+    let out = pp
+        .preprocess_file_named(Path::new("/w/src/a.qc"), b"src/a.qc")
+        .unwrap();
+    let kinds: Vec<TokenKind> = out.tokens.iter().map(|t| t.kind.clone()).collect();
+    assert_eq!(
+        kinds,
+        [
+            TokenKind::String(b"src/a.qc".to_vec()),
+            TokenKind::String(b"src/x/b.qh".to_vec()),
+        ]
+    );
+    assert!(out.diagnostics.is_empty(), "{:?}", out.diagnostics);
+    assert!(pp.preprocess_file(Path::new("src/a.qc")).is_err());
+    let out = pp
+        .preprocess_source_named(Path::new("/w/src/x/b.qh"), b"progs.src")
+        .unwrap();
+    assert_eq!(out.tokens[0].kind, TokenKind::String(b"progs.src".to_vec()));
+    let out = pp.preprocess_file(Path::new("/w/src/x/b.qh")).unwrap();
+    assert_eq!(
+        out.tokens[0].kind,
+        TokenKind::String(b"/w/src/x/b.qh".to_vec())
+    );
+}
+
+// spec FTEF-14.70: `QCC_PR_AddIncludePath` names an empty directory `.` and puts a `/` after a
+// name unless it ends in `/` or `\`
+#[test]
+fn include_directory_names() {
+    assert_eq!(crate::include_dir_name(b""), b"./");
+    assert_eq!(crate::include_dir_name(b"inc"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc/"), b"inc/");
+    assert_eq!(crate::include_dir_name(b"inc\\"), b"inc\\");
+    assert_eq!(crate::pragma_include_dir(b"y", b"src/a.qc"), b"src/y/");
+    assert_eq!(crate::pragma_include_dir(b"y\\", b"src/a.qc"), b"src/y\\");
+    assert_eq!(crate::pragma_include_dir(b"", b"src/a.qc"), b"src/");
+}
+
+// spec FTEF-14.74: `#pragma file(NAME)` and `#pragma file NAME` name the file from there, any
+// case of `file`; a byte other than a space, tab or `(` after `file` makes another pragma
+#[test]
+fn pragma_file_names_the_file() {
+    let names = |text: &str| -> Vec<TokenKind> { fte_in("t.qc", text).0 };
+    let string = |bytes: &[u8]| TokenKind::String(bytes.to_vec());
+    assert_eq!(
+        names("__FILE__\n#pragma file(ex_a.qc) junk\n__FILE__\n"),
+        [string(b"t.qc"), string(b"ex_a.qc")]
+    );
+    assert_eq!(names("#pragma FILE  x y \n__FILE__\n"), [string(b" x y")]);
+    assert_eq!(names("#pragma file(n:m)\n__FILE__\n"), [string(b"n")]);
+    assert_eq!(names("#pragma file(open\n__FILE__\n"), [string(b"open")]);
+    assert_eq!(names("#pragma file\n__FILE__\n"), [string(b"")]);
+    assert_eq!(names("#pragma file:x\n__FILE__\n"), [string(b"t.qc")]);
+    // A pragma's text is bytes, so its `\` is no lexical error; the string FTEQCC then reads
+    // takes `\\` as `\`.
+    assert_eq!(
+        fte_in("t.qc", "#pragma file(e\\\\x)\n__FILE__\n"),
+        (vec![string(b"e\\x")], vec![])
+    );
+    // FTEF-14.63: the text is no lexical error, but `'` is no warning state FTEQCC knows.
+    assert_eq!(fte_in("t.qc", "#pragma warning 'x\n").1, vec![Code::W0113]);
+    assert_eq!(
+        names("#pragma file(n)\n#define F __FILE__\nF\n"),
+        [string(b"n")]
+    );
+}
+
+// spec FTEF-14.74: a pragma's text runs to its line's break whatever a comment, a string or a
+// `\` in it would run across, and reading goes on there
+#[test]
+fn a_pragma_s_text_ends_at_its_line_s_break() {
+    for pragma in [
+        "#pragma message x /* y\n",
+        "#pragma message x \"y\n",
+        "#pragma message x \\\n",
+        "#pragma message x /* y */ z\n",
+    ] {
+        // `message` is no pragma FTEQCC knows (FTEF-12.11).
+        let source = format!("{pragma}float f;\n");
+        assert_eq!(
+            fte(&source),
+            ("float f ;".to_owned(), vec![Code::W0113]),
+            "{source:?}"
+        );
+    }
+    assert_eq!(fte("#pragma x /* a\nb */ float f;\n").0, "b * / float f ;");
+    assert_eq!(fte("float g;\n#pragma x").0, "float g ;");
+}
+
+// spec FTEF-14.17: a built-in constant's text is a chunk of its own, so a function-like macro's
+// name in it reads no `(` from the text after the constant
+#[test]
+fn a_name_in_a_built_in_constant_reads_on_in_its_text() {
+    let (text, _) = fte("#pragma file(x\"M)\n#define M(a) a a\n__FILE__(7);\n");
+    assert_eq!(text, "\"x\" M \"\" ( 7 ) ;");
+}
+
+// spec FTEF-18.16: `$framevalue N` numbers from `atoi`'s `int`, the low 32 bits of a 64-bit
+// `strtol` (FTEF-14.55), as the pinned FTEQCC gives `x` 5, 1215752192 and 2147483648
+#[test]
+fn a_frame_value_past_an_int_keeps_its_low_32_bits() {
+    assert_eq!(
+        fte("$framevalue 4294967301\n$frame a\nx = $a;"),
+        ("x = 5 ;".to_owned(), vec![])
     );
     assert_eq!(
-        fte("$framevalue -99999999999\n$frame a\nx = $a;"),
-        ("x = -2147483600 ;".to_owned(), vec![])
+        fte("$framevalue 99999999999\n$frame a\nx = $a;"),
+        ("x = 1215752200 ;".to_owned(), vec![])
+    );
+    assert_eq!(
+        fte("$framevalue -2147483649\n$frame a\nx = $a;"),
+        ("x = 2147483600 ;".to_owned(), vec![])
     );
     assert_eq!(
         fte("$framevalue -2\n$frame a b c\nx = $c;"),
@@ -529,7 +898,55 @@ fn a_frame_value_past_an_int_is_held() {
     );
 }
 
-// spec FTEF-14.2: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
+// spec FTEF-18.30: a frame macro numbered below 0 is "Unknown frame macro" where a reference or a
+// `$framerestore` expands it, as the pinned FTEQCC refuses `$framevalue -99999999999` and
+// `$framevalue 2147483648` before `$frame a` and `x = $a;`
+#[test]
+fn a_negative_frame_macro_is_unknown_where_it_is_expanded() {
+    let unknown = |text: &str| fte(text).1;
+    for value in ["-1", "-5", "-99999999999", "2147483648", "-2147483648"] {
+        assert_eq!(
+            unknown(&format!("$framevalue {value}\n$frame a\nx = $a;")),
+            vec![Code::E0106],
+            "{value}"
+        );
+    }
+    let (_, out) = one_fte("$framevalue -3\n$frame a\nx = $a;");
+    assert_eq!(tokens(&out), "x = $a ;");
+    assert_eq!(out.diagnostics[0].message, "Unknown frame macro $a");
+    // 0 and above expand; the names after a negative one count up to them.
+    assert_eq!(
+        fte("$framevalue -2\n$frame a b c\nx = $c; y = $b;"),
+        ("x = 0 ; y = $b ;".to_owned(), vec![Code::E0106])
+    );
+    // `$framerestore` of a negative macro is unknown and leaves the numbering as it was.
+    assert_eq!(
+        fte("$framevalue -4\n$frame a\n$framevalue 7\n$framerestore a\n$frame d\nx = $d;"),
+        ("x = 7 ;".to_owned(), vec![Code::E0106])
+    );
+    // A `$modelname` lookup is `QCC_PR_FindMacro`'s alone, so a negative macro numbers from it.
+    assert_eq!(
+        fte("$framevalue -4\n$frame m\n$framevalue 3\n$modelname m\n$frame d e f g h\nx = $h;"),
+        ("x = 0 ;".to_owned(), vec![])
+    );
+    // The lookup's warnings come before the refusal, as `QCC_PR_FindMacro` gives them.
+    let (_, out) = one_fte("$framevalue -1\n$frame A\nx = $a;");
+    assert_eq!(codes(&out), [Code::W0104, Code::E0106]);
+}
+
+// spec QC-8.5: the vanilla profile numbers frames from 0 and has no `$framevalue`, so no
+// frame macro is negative
+#[test]
+fn vanilla_frame_macros_are_never_negative() {
+    let mut loader = MemoryLoader::new();
+    loader.insert("a.qc", "$frame a b\nx = $b;\n".as_bytes());
+    let mut pp = Preprocessor::new(loader);
+    let out = pp.preprocess_file(Path::new("a.qc")).unwrap();
+    assert_eq!(tokens(&out), "x = 1 ;");
+    assert_eq!(codes(&out), vec![]);
+}
+
+// spec FTEF-14.35: a directive goes on past a break inside a `/* */` comment, a `*` or `/` in
 // the comment not ending it
 #[test]
 fn a_comment_with_stars_and_slashes_continues_a_directive() {
@@ -542,7 +959,7 @@ fn a_comment_with_stars_and_slashes_continues_a_directive() {
 }
 
 // spec FTEF-14.1: an `#elif` with no block is reported at the whole directive
-// spec FTEF-14.10: and a block left open while a side is skipped at its `#if` line
+// spec FTEF-14.37: and a block left open while a side is skipped at its `#if` line
 #[test]
 fn conditional_errors_span_the_directive() {
     let (_, out) = one_fte("x\n#elif 1\n");
@@ -553,7 +970,7 @@ fn conditional_errors_span_the_directive() {
     assert_eq!(out.diagnostics[0].span.span, qc_lexer::Span::new(2, 7));
 }
 
-// spec FTEF-14.11: (P2-R2 review) `||` and `&&` group to the right, so a chain of either is
+// spec FTEF-14.33: (P2-R2 review) `||` and `&&` group to the right, so a chain of either is
 // read to its end with its value, and a chain or a run of `!` far longer than any real
 // condition still takes one side, without exhausting the stack
 #[test]
@@ -572,7 +989,7 @@ fn reviewer_long_logical_chains() {
     }
 }
 
-// spec FTEF-14.10: of three blocks left open at the end of a file, the FTEQCC profile reports
+// spec FTEF-14.37: of three blocks left open at the end of a file, the FTEQCC profile reports
 // only the one whose side is being skipped, where the vanilla profile reports each (QC-9.12)
 #[test]
 fn reviewer_open_blocks_at_the_end_of_a_file() {

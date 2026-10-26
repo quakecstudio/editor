@@ -96,6 +96,7 @@ mod fteqcc_coverage;
 mod fteqcc_full_coverage;
 mod fteqcc_profile;
 mod fuzz;
+mod host;
 mod layers;
 mod lex_corpus;
 mod licenses;
@@ -108,6 +109,7 @@ mod ratchet;
 mod readiness;
 mod repo;
 mod sema_corpus;
+mod test_code;
 #[cfg(test)]
 mod test_dirs;
 

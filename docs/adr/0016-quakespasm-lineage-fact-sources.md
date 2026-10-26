@@ -211,6 +211,10 @@ This is not legal advice; the license compliance review before the first public 
 
 ## Links
 
+- Two vkQuake commits: this ADR pins `Novum/vkQuake@27789d73` as a fact source of the
+  engine-target database. [ADR-0012](0012-bsp-loader-default.md) cites `47726d89` only as
+  the commit whose `Quake/gl_model.c` was read when choosing the BSP loader default; it is
+  not a pin anything is built or extracted from, so the two do not conflict.
 - Issue [#410](https://github.com/quakecstudio/editor/issues/410), Justin's decision comment
   of 2026-10-19, and the pull request that merged this ADR.
 - Related ADRs: [ADR-0014](0014-engine-fact-sources.md) and

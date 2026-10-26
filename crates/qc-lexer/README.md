@@ -24,14 +24,18 @@ numbers, each kept as a float of its value (FTEF-3, FTEF-13.5), a hex number wit
 read as C's `atof` reads a hexadecimal float (FTE-23.2); the `..` token (FTEF-18.18);
 and FTEQCC's frame macro words, which end at more bytes than id's (FTEF-18.13), with
 `$framesave` and the further `$` commands as tokens of their own (FTEF-18.14, FTEF-18.16).
-Every other rule, and the vanilla output byte for byte, is unchanged.
+Its punctuation is FTEQCC's `pr_punctuation[]` in its order, with `<=>`, `*^`, `><`, `@` and
+`^^` (FTEF-13.24). `lex_flagged(source, dialect, flags, macros)` lexes with FTEQCC's compiler
+flags (`LexFlags`, FTEF-12.12): `qcfuncs` off for C's octal escapes, `qccx`, `utf8`, `ILP32`,
+`ssp`, `assumeint`, and `macroinstrings`, whose `#NAME` in a string reads the macro text
+`macros` gives. Every other rule, and the vanilla output byte for byte, is unchanged.
 
 Written from [`docs/spec/language.md`](../../docs/spec/language.md), not ported; the spec's
 test vectors were recorded against id's `qcc` at the pinned commit, and the tests here check
 them.
 
-- **Layer:** L2 syntax. It depends on no other crate; `qc-preproc` and `qc-syntax` build on
-  it.
+- **Layer:** L2 syntax. It depends only on `qc-diag` (L0), for its diagnostics;
+  `qc-preproc` and `qc-syntax` build on it.
 - **Spec sections:** QC-2, QC-4, QC-5, QC-6 and QC-8 in
   [`language.md`](../../docs/spec/language.md); the codes QCD-2 and QCD-6 of
   [`language-diagnostics.md`](../../docs/spec/language-diagnostics.md). The lexer implements

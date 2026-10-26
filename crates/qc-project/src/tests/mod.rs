@@ -11,6 +11,7 @@ mod case;
 mod directives;
 mod forms;
 mod manifest;
+mod names;
 mod open;
 mod properties;
 
@@ -28,7 +29,7 @@ struct GraphSpec<'a> {
     include_dirs: &'a [&'a str],
     /// Whether the files are on a file system that ignores case.
     ignore_case: bool,
-    /// The module's dialect, which decides how an `#if` reads (FTEF-14.11).
+    /// The module's dialect, which decides how an `#if` reads (FTEF-14.33).
     dialect: qc_lexer::Dialect,
 }
 

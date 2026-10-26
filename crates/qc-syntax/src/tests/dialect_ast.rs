@@ -5,7 +5,7 @@
 
 use super::sexpr;
 use crate::ast::{self, AstNode as _, BinaryOp};
-use crate::{Code, Dialect, Parse, SyntaxKind, parse_with};
+use crate::{Code, Dialect, Keyword, Keywords, Parse, SyntaxKind, parse_with};
 
 /// Parses `source` under the FTEQCC dialect.
 fn fte(source: &str) -> Parse {
@@ -205,22 +205,42 @@ fn enum_view() {
     assert!(anonymous.name().is_none());
 }
 
-// spec FTE-2.1, FTE-3.1, FTE-4.1: `for`, `switch`, `break` and `continue` are statements only
-// in their own shape, so a value named like one is still an expression.
+// spec FTEF-20.5: with their keywords on, `for`, `switch` and `continue` start their statements
+// whatever follows, as the pinned FTEQCC reads `for = 1;` as a `for` missing its `(`; a `break`
+// before `(` is a call of the function `break`, and with the keyword off each is a name.
 #[test]
-fn statement_words_are_names_elsewhere() {
-    let source = "float for, switch, continue;\nvoid() break = #6;\n\
-                  void() f =\n{\n\tfor = 1;\n\tswitch = for;\n\tbreak();\n\tcontinue = 2;\n};\n";
-    let parsed = fte(source);
-    assert_eq!(
-        parsed.errors().map(|d| d.code).collect::<Vec<_>>(),
-        Vec::<Code>::new()
-    );
-    assert!(
-        statements(&parsed)
-            .iter()
-            .all(|s| matches!(s, ast::Stmt::Expr(_)))
-    );
+fn statement_words_start_their_statements() {
+    // The first error, where the pinned FTEQCC stops.
+    let errors = |body: &str| -> Vec<Code> {
+        let source = format!(
+            "float for, switch, continue;\nvoid() break = #6;\n{}",
+            in_body(body)
+        );
+        fte(&source).errors().map(|d| d.code).take(1).collect()
+    };
+    assert_eq!(errors("for = 1;"), [Code::E0204]);
+    assert_eq!(errors("switch = for;"), [Code::E0204]);
+    assert_eq!(errors("continue = 2;"), [Code::E0204]);
+    assert_eq!(errors("break();"), []);
+    let source = "void() break = #6;\nvoid() f =\n{\n\tbreak();\n};\n";
+    assert!(matches!(
+        statements(&fte(source)).as_slice(),
+        [ast::Stmt::Expr(_)]
+    ));
+    for (word, keyword) in [
+        ("for", Keyword::For),
+        ("switch", Keyword::Switch),
+        ("continue", Keyword::Continue),
+        ("break", Keyword::Break),
+    ] {
+        let source = format!("float {word};\nvoid() f =\n{{\n\t{word} = 1;\n}};\n");
+        let parsed = super::fte_with(&source, Keywords::default().with(keyword, false));
+        assert_eq!(parsed.errors().count(), 0, "{word}");
+        assert!(
+            matches!(statements(&parsed).as_slice(), [ast::Stmt::Expr(_)]),
+            "{word}"
+        );
+    }
 }
 
 // spec FTE-21.1: a reserved word followed by a name is not a declaration of a user type, and

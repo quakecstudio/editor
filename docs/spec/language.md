@@ -332,8 +332,9 @@ dialect features (P2-01, P2-03).
   and a name, because a vanilla `#` is always followed by a number (QC-13.3), so the
   preprocessor changes nothing for vanilla code.
 - **QC-9.2** `#include "path"` replaces the directive with the contents of the named file,
-  resolved relative to the directory of the file containing the directive. Diagnostics and
-  statements in the included text carry the included file's name and lines.
+  resolved relative to the directory of the file containing the directive, or, when no file is
+  there, as QC-9.20 says. Diagnostics and statements in the included text carry the included
+  file's name and lines.
 - **QC-9.3** `#define NAME` and `#define NAME text` define an object-like macro whose body is
   the rest of the line, trimmed. `#define NAME(a, b) text`, with the `(` directly after the
   name, defines a function-like macro. A later identical `#define` of the same name is
@@ -380,7 +381,7 @@ dialect features (P2-01, P2-03).
   whether two tokens touch then reads a macro's tokens as it reads the source: under FTEQCC
   `#define B #5` then `void() f = B;` is the builtin 5 (FTE-23.1), and `#define L lbl:` used as a
   statement is a label (FTEF-18.23). Under FTEQCC a token a `##` paste or a `#` string made is
-  written into the expansion as text (FTEF-14.14, FTEF-14.15), and touches as that text stands:
+  written into the expansion as text (FTEF-14.14, FTEF-14.31), and touches as that text stands:
   with `#define P(a,b) a##b:`, `P(l,bl)` is the label `lbl:`; a built-in constant's value is a
   chunk of its own and touches nothing (FTEF-14.17). In the vanilla dialect an argument's tokens
   are apart from the body's. FTEQCC reads an expansion as text (`qcc_pr_lex.c`,
@@ -425,7 +426,36 @@ dialect features (P2-01, P2-03).
   with `SIGSEGV` at 100000. Expanding every chain to its end is a deliberate divergence from that
   crash, which depends on the host's stack, not on the program. id's `qcc` has no macros (QC-9).
   In the vanilla dialect the rule against self-expansion is QC-9.4's; under FTEQCC it is FTEQCC's
-  (`dialect-fteqcc.md` FTEF-14.17), with this profile's bound on the work (FTEF-14.19).
+  (`dialect-fteqcc.md` FTEF-14.17), with this profile's bound on the work (FTEF-14.28).
+- **QC-9.18** The preprocessor makes at most `FTE_MAX_EXPANSIONS` = 2^20 macro expansions in one
+  file and writes at most `FTE_MAX_EXPANDED_TOKENS` = 2^22 tokens with them, under the vanilla
+  dialect as under FTEQCC (`dialect-fteqcc.md` FTEF-14.28), an expansion's tokens counted before
+  it is written, each body token one and each parameter its argument's: a function-like macro
+  whose body names its parameter `n` times writes its argument `n` times, so one expansion alone
+  could write the square of its file's length (a 32018-byte file of `#define D(x)`, 8000 `x` and
+  `D(` given 8000 tokens, 64000000 tokens). The first use past
+  either bound is "macro expansion too large" (`E0120`, QCD-8.13), reported once, and it and later
+  uses are left as written. id's `qcc` has no macros (QC-9), so the bound is this project's own,
+  that no file exhausts the memory of the semantic model, which preprocesses on every edit.
+- **QC-9.19** The semantic model parses the preprocessor's output as text with no directive lines
+  (`qc_syntax::parse_preprocessed`): every directive has run, so a `#` left in the output is the
+  `#` token in both dialects, first on its line too, as one after a `/* */` comment at a line's
+  start (QC-9.1) or one a macro's body writes. id's `qcc`, which has no preprocessor, reads such a
+  `#` as any other: `/* c */#foo` at the top level is `"#" is not a type` (`E0203`), `void() f =`
+  before `/* c */#foo;` on the next line is "Bad builtin immediate" (`E0209`), and
+  `void() f =` before `/* c */#5;` is builtin 5. The vanilla profile reports the same. Under
+  FTEQCC, whose preprocessor leaves `#foo` when `foo` names no macro (`dialect-fteqcc.md`
+  FTEF-14.52), the pinned FTEQCC refuses the first two ("Explicit precompiler usage when not
+  defined foo") and takes the third, and so does the profile, with the parser's errors. The tree
+  of a file as written keeps its directive lines (QC-9.1).
+- **QC-9.20** An `#include` whose path names no readable file beside the file containing it is
+  looked for in the module's include directories (`include_dirs`, PRJ-5.2), in order, as the
+  project graph finds it, and the first that names a readable file is read; a path that is not
+  relative is looked for only where it names. When none is readable it is QC-9.11's error, which
+  names the path beside the including file. So a module whose `quakec.toml` gives
+  `include_dirs = ["lib"]` reads `lib/inc.qh` for `#include "inc.qh"` in `src/main.qc`, and
+  `src/inc.qh` when that exists. id's `qcc` has no `#include` (QC-9), and FTEQCC's own search is
+  `dialect-fteqcc.md` FTEF-14.40 and FTEF-14.49.
 
 ## QC-10 Types
 
@@ -527,6 +557,21 @@ functions to be prototyped before their definition."
   and QC-11.3. A local initialiser is stored once in the progs' global area, like a global
   constant; it is not executed on each call, and later literals of the same value reuse the
   local (QC-20.2).
+- **QC-11.11** A vector's initialiser does not initialise its components: `PR_ParseDefs` sets
+  `def->initialized = 1;` on the vector's definition only, and `PR_GetDef` made the components
+  as definitions of their own. So `vector v = '1 2 3'; float v_x = 2;` compiles, and writes 2
+  over the vector's first word.
+- **QC-11.12** A `.vector` field's components are made with `qcc`'s own `type_floatfield`
+  (`PR_GetDef (&type_floatfield, element, scope, true);`), a type `PR_FindType` never returns,
+  since `pr.types` holds only `type_function` and the types it interned (`InitData`: `pr.types
+  = &type_function;`). So a component and a `.float` written in the source are of different
+  types, in either order: `.vector fv; .float fv_x;` and `.float fv_x; .vector fv;` are "Type
+  mismatch on redeclaration of fv_x". A `float` or a `void()` is the same type however made:
+  `type_float` and `type_function` are the ones the parser gives.
+- **QC-11.13** A local's initialiser initialises the definition the local is, and that
+  definition may be initialised once (QC-11.5): `local float y = 1; local float y = 2;` is "y
+  redeclared", and so is a local initialised where its name is an initialised global, or a
+  global an earlier function's local initialised (QC-12.3).
 
 ### Test vectors
 
@@ -543,6 +588,10 @@ functions to be prototyped before their definition."
 | `void() f;` | `function f was not defined`, then fatal `compilation errors` | QC-11.8 |
 | `void() f = { local .float g; };` | `Fields and functions must be global` | QC-11.9 |
 | `float a;\nvoid() f = { local float l = 5; a = 5; };` | `STORE_F l, a`: the literal 5 is the local `l` | QC-11.10 |
+| `vector v = '1 2 3';\nfloat v_x = 2;` | compiles | QC-11.11 |
+| `.vector fv;\n.float fv_x;` | `Type mismatch on redeclaration of fv_x` | QC-11.12 |
+| `float x = 1;\nvoid() g = { local float x = 2; };` | `x redeclared` | QC-11.13 |
+| `float x;\nvoid() g = { local float x = 2; };\nvoid() h = { local float x = 3; };` | `x redeclared` | QC-11.13 |
 
 ## QC-12 Scopes and name lookup
 
@@ -1050,7 +1099,7 @@ A summary for code generation; the sections cited hold the rules.
 
 ## QC-23 `progs.src`
 
-**Source:** `qcc/qcc.c`, `main`; `qcc/cmdlib.c`, `COM_Parse`
+**Source:** `qcc/qcc.c`, `main`; `qcc/cmdlib.c`, `COM_Parse` and `LoadFile`
 (id-Software/Quake-Tools@`c0d1b91c74eb654365ac7755bc837e497caaca73`).
 
 ### Behaviour
@@ -1071,6 +1120,29 @@ A summary for code generation; the sections cited hold the rules.
   (with two spaces). A source file that cannot be opened is fatal.
 - **QC-23.6** Files that are in the source directory but not in `progs.src` are not part of
   the program (id 1.01 ships `amtest.qc`, `jctest.qc`, `models.qc` and `sprites.qc` this way).
+- **QC-23.7** The list ends at its first NUL byte outside a quoted token. `LoadFile` writes a
+  NUL after the file's bytes (`buffer = SafeMalloc (length+1); ((byte *)buffer)[length] = 0;`),
+  and `COM_Parse` takes any NUL for that end: one it meets between tokens (`if (c == 0) {
+  com_eof = true; return NULL; }`), one that ends a word (`while (c>32)`) or a `//` comment
+  (`while (*data && *data != '\n')`), each then met between tokens. So `progs.dat`, a NUL and
+  `a.qc` list no file, and a word after the NUL is never read. A quoted token's loop tests only
+  for the closing quote (`if (c=='\"')`), so it reads on past a NUL in it; the token is then a C
+  string, and the name `main` opens is its text up to that NUL: `"a.qc` NUL `x" b.qc` lists
+  `a.qc` and `b.qc`. The vanilla graph cases of `cargo xtask oracles builtins` hold these
+  (`project-file.md` PRJ-4.11).
+- **QC-23.8** `COM_Parse` reads its text through `char *data` into `int c` and tests
+  `while ( (c = *data) <= ' ')` and `} while (c>32);`, so on the x86 build, where `char` is
+  signed, a byte of 0x80 to 0xFF is below the space, as QC-1.3 says of the lexer: it is white
+  space between words and ends a word, and is kept only in a quoted word. So `progs.dat`, a line
+  break and `b.qh` 0xE9 `x.qc` list `b.qh` and `x.qc`, and a UTF-8 `café.qc` is the word `caf`
+  and then `.qc`. The vanilla graph cases of `cargo xtask oracles builtins` (`VANILLA_PROGS`)
+  hold one, and the pinned id `qcc` compiles both files.
+- **QC-23.9** A quoted word's loop stops only at its closing quote (`if (c=='\"')`), so the word
+  runs across line breaks, which it keeps: `"a.qc`, a line break and `b.qc"` is one name, which
+  id's `qcc` fails to open. A quote the text ends in has no end: the loop reads on past
+  `LoadFile`'s NUL and past the buffer, and the pinned build crashes (exit -10). This profile
+  ends the list there with error `E0101` "EOF inside quote" at the line the quote opens on, a
+  deliberate divergence. The vanilla graph cases (`VANILLA_PROGS`) hold both.
 
 ## QC-24 Errors and recovery
 

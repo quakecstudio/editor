@@ -38,7 +38,7 @@ v1; where a later issue exists it is linked.
 | --- | --- | --- |
 | Quake 2 and Quake 3 map formats, and writing Half-Life's | Not planned. The map editor reads and writes Quake .map (standard and Valve 220) and writes BSP29, BSP2 and .lit only. Reading Half-Life's BSP version 30 and WAD3 is planned for Phase 5, after the MVP (MAP-24) | [Design doc: Non-goals for v1](design/design-doc.md#summary-and-goals), [Map editor](design/design-doc.md#map-editor) |
 | GMQCC-only syntax | Planned after the MVP | [L-10](https://github.com/quakecstudio/editor/issues/194) spec, [L-02](https://github.com/quakecstudio/editor/issues/186) implementation |
-| A web/WASM build | Revisited after the UI framework decision | [L-07](https://github.com/quakecstudio/editor/issues/191), decided by the spike in [#10](https://github.com/quakecstudio/editor/issues/10) |
+| A web/WASM build | Planned after the MVP; the UI framework, egui, supports it ([ADR-0003](adr/0003-ui-framework.md)) | [L-07](https://github.com/quakecstudio/editor/issues/191) |
 | Quake 2 or Quake 3 game code | Not planned. QuakeC Studio targets QuakeC (progs.dat, csprogs.dat, menu.dat) only | [Design doc: Non-goals for v1](design/design-doc.md#summary-and-goals) |
 
 ## MVP

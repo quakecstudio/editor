@@ -3,11 +3,14 @@
 //! The spec-citation ratchet (CONV-11, TEST-3).
 //!
 //! Every normative statement in `docs/spec/*.md` (a list item starting `- **PREFIX-n.m**`) must
-//! be cited by a `// spec PREFIX-n.m` comment in a Rust file under `crates/`, `apps/` or
-//! `xtask/` (outside `xtask/fixtures/`), or be listed in `docs/spec/coverage-baseline.tsv`. The ratchet only turns one way: a statement
-//! that loses its last citation fails, and a baseline entry that gains a citation fails until
-//! it is removed from the baseline. `docs/spec/requirements.tsv` is the index of every
-//! statement and must match the spec files. The format is in `docs/spec/README.md`.
+//! be cited by a `// spec PREFIX-n.m` comment in the test code of a Rust file under `crates/`,
+//! `apps/` or `xtask/` (outside `xtask/fixtures/`), or be listed in
+//! `docs/spec/coverage-baseline.tsv`. Test code is what [`test_code`] says it is: a `// spec`
+//! line in shipped code cites nothing, so the ratchet reports it as an error. The ratchet only
+//! turns one way: a statement that loses its last citation fails, and a baseline entry that
+//! gains a citation fails until it is removed from the baseline. `docs/spec/requirements.tsv`
+//! is the index of every statement and must match the spec files. The format is in
+//! `docs/spec/README.md`.
 
 #![expect(
     clippy::expect_used,
@@ -18,6 +21,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+// `cargo xtask readiness` reads citations with the same module; qs-tests may not depend on
+// xtask (`docs/layers.md`), so it is included by path rather than copied.
+#[path = "../../../../xtask/src/test_code.rs"]
+mod test_code;
+
+use test_code::{FIXTURES, TestCode, shipped_citation, test_code};
 
 const REQUIREMENTS_HEADER: &str = "id\tspec\tsection\tstatus\tstatement";
 const BASELINE_HEADER: &str = "id";
@@ -132,14 +142,19 @@ fn parse_spec(spec: &str, text: &str) -> Result<Vec<Statement>, String> {
     Ok(statements)
 }
 
-/// Parses the citations in one Rust file: lines whose first non-blank text is `// spec `,
-/// followed by comma-separated statement IDs and an optional `: paraphrase`.
-fn parse_citations(file: &str, text: &str) -> Result<Vec<Citation>, String> {
+/// Parses the citations in one Rust file: lines of its test `code` whose first non-blank text
+/// is `// spec `, followed by comma-separated statement IDs and an optional `: paraphrase`.
+/// A `// spec` line outside test code is an error: it cites nothing, so it would look like
+/// coverage that the ratchet does not count (`docs/spec/README.md`).
+fn parse_citations(file: &str, text: &str, code: &TestCode) -> Result<Vec<Citation>, String> {
     let mut citations = Vec::new();
     for (line, number) in text.lines().zip(1_u32..) {
         let Some(rest) = line.trim_start().strip_prefix("// spec ") else {
             continue;
         };
+        if !code.contains(number) {
+            return Err(shipped_citation(file, number, rest));
+        }
         let ids = rest.split_once(':').map_or(rest, |(ids, _)| ids);
         for id in ids.split(',').map(str::trim) {
             if !is_statement_id(id) {
@@ -314,19 +329,30 @@ fn citing_files() -> Vec<PathBuf> {
     for dir in ["crates", "apps", "xtask"] {
         rust_files(&repo_root().join(dir), &mut files);
     }
-    let fixtures = repo_root().join("xtask/fixtures");
+    let fixtures = repo_root().join(FIXTURES);
     files.retain(|path| !path.starts_with(&fixtures));
     files.sort();
     files
 }
 
+/// Each citing file's path relative to the repository and its text, as [`test_code`] takes
+/// them.
+fn repo_files() -> Vec<(PathBuf, String)> {
+    citing_files()
+        .iter()
+        .map(|path| {
+            let text = fs::read_to_string(path).expect("Rust file is readable");
+            (PathBuf::from(relative(path)), text)
+        })
+        .collect()
+}
+
 fn repo_citations() -> Vec<Citation> {
-    let files = citing_files();
+    let files = repo_files();
     let mut citations = Vec::new();
-    for path in files {
-        let text = fs::read_to_string(&path).expect("Rust file is readable");
-        citations
-            .extend(parse_citations(&relative(&path), &text).unwrap_or_else(|e| panic!("{e}")));
+    for ((path, text), code) in files.iter().zip(test_code(&files)) {
+        let file = path.to_string_lossy();
+        citations.extend(parse_citations(&file, text, &code).unwrap_or_else(|e| panic!("{e}")));
     }
     citations
 }
@@ -461,7 +487,7 @@ fn parse_spec_rejects_statements_outside_their_section() {
 #[test]
 fn parse_citations_reads_lists_and_rejects_malformed_ids() {
     let text = "fn a() {}\n    // spec T-1.1, T-1.2: paraphrase\n// spec T-2.1\n/// spec T-9.9 in rustdoc is not a citation\n";
-    let citations = parse_citations("x.rs", text).expect("parses");
+    let citations = parse_citations("x.rs", text, &TestCode::File).expect("parses");
     let found: Vec<(&str, &str)> = citations
         .iter()
         .map(|c| (c.id.as_str(), c.location.as_str()))
@@ -474,7 +500,61 @@ fn parse_citations_reads_lists_and_rejects_malformed_ids() {
             ("T-2.1", "x.rs:3")
         ]
     );
-    assert!(parse_citations("x.rs", "// spec T-1: section only\n").is_err());
+    assert!(parse_citations("x.rs", "// spec T-1: section only\n", &TestCode::File).is_err());
+}
+
+#[test]
+fn a_citation_in_shipped_code_is_an_error() {
+    let text = "fn f() {\n    // spec T-1.1: shipped code\n}\n#[cfg(test)]\nmod tests {\n    // spec T-1.2: a test\n}\n";
+    let files = [(PathBuf::from("crates/a/src/ops.rs"), text.to_owned())];
+    let code = test_code(&files);
+    let code = code.first().expect("one file");
+    let error = parse_citations("crates/a/src/ops.rs", text, code)
+        .expect_err("a shipped-code citation is an error");
+    assert!(
+        error.starts_with("crates/a/src/ops.rs:2: ") && error.contains("outside test code"),
+        "{error}"
+    );
+    let tests_only = "#[cfg(test)]\nmod tests {\n    // spec T-1.2: a test\n}\n";
+    let files = [(PathBuf::from("crates/a/src/ops.rs"), tests_only.to_owned())];
+    let code = test_code(&files);
+    let code = code.first().expect("one file");
+    let citations = parse_citations("crates/a/src/ops.rs", tests_only, code).expect("parses");
+    let ids: Vec<&str> = citations.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, ["T-1.2"]);
+}
+
+#[test]
+fn a_plain_comment_naming_a_statement_in_shipped_code_is_not_a_citation() {
+    let text = "fn f() {\n    // T-1.1: shipped code names the statement it follows\n}\n";
+    let files = [(PathBuf::from("crates/a/src/ops.rs"), text.to_owned())];
+    let code = test_code(&files);
+    let code = code.first().expect("one file");
+    assert_eq!(
+        parse_citations("crates/a/src/ops.rs", text, code),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn oracle_scenarios_and_test_vector_modules_count_as_tests() {
+    let wanted = [
+        "xtask/src/oracles/scenarios/cases.rs",
+        "crates/qc-lno/src/vectors.rs",
+        "crates/qs-bsp/src/fitz_tests.rs",
+    ];
+    let files = repo_files();
+    let code = test_code(&files);
+    for want in wanted {
+        let found = files
+            .iter()
+            .zip(&code)
+            .find(|((path, _), _)| path == Path::new(want));
+        assert!(
+            found.is_some_and(|(_, code)| *code == TestCode::File),
+            "{want} is test code"
+        );
+    }
 }
 
 #[test]

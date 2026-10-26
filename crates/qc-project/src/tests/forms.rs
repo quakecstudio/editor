@@ -3,13 +3,15 @@
 //! The two forms of `progs.src` and the shape of the graph (PRJ-4, PRJ-6, QC-23).
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use qc_lexer::Dialect;
 
 use super::{GraphSpec, build, diags, names, source, vias};
-use crate::{Form, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via};
+use crate::{Form, MemoryLoader, PRJ_MAX_DEPTH, PRJ_MAX_FILES, Via, build_graph};
 
 // spec QC-23.1: the first token names the output, each later one a source file
-// spec PRJ-4.3: in list form the output and the files are resolved against the progs.src's directory
+// spec PRJ-4.12: in list form the output and the files are resolved against the progs.src's directory
 #[test]
 fn list_form_names_output_then_files() {
     let graph = build(&GraphSpec {
@@ -65,7 +67,7 @@ fn list_order_and_repeats() {
 
 // spec QC-23.5: an empty progs.src is fatal "No destination filename.  qcc -help for info."
 // spec QCD-5.1: E0401 when progs.src has no tokens
-// spec PRJ-4.3: a list with no token is E0401
+// spec PRJ-4.12: a list with no token is E0401
 // spec PRJ-6.5: a diagnostic about the whole source is at line 0
 #[test]
 fn empty_progs_src_is_e0401() {
@@ -154,6 +156,313 @@ fn form_comes_from_the_first_token() {
             assert_eq!(graph.form, form, "{src}: {text:?}");
         }
     }
+}
+
+/// The graph of a module whose `progs.src` is `progs`, beside an empty `a.qc` and `b.qc`, in
+/// `dialect`.
+fn loaded_graph(progs: &[u8], dialect: Dialect) -> crate::FileGraph {
+    let mut loader = MemoryLoader::new();
+    loader.insert("progs.src", progs);
+    loader.insert("a.qc", b"".as_slice());
+    loader.insert("b.qc", b"".as_slice());
+    build_graph(&mut loader, Path::new("progs.src"), &[], &[], dialect)
+}
+
+/// `text` as UTF-16LE, UTF-16BE, UTF-32LE and UTF-32BE, each after its byte order mark.
+fn wide(text: &str) -> [Vec<u8>; 4] {
+    let utf16 = || text.encode_utf16();
+    let utf32 = || text.chars().map(u32::from);
+    [
+        [0xff, 0xfe]
+            .into_iter()
+            .chain(utf16().flat_map(u16::to_le_bytes))
+            .collect(),
+        [0xfe, 0xff]
+            .into_iter()
+            .chain(utf16().flat_map(u16::to_be_bytes))
+            .collect(),
+        [0xff, 0xfe, 0, 0]
+            .into_iter()
+            .chain(utf32().flat_map(u32::to_le_bytes))
+            .collect(),
+        [0, 0, 0xfe, 0xff]
+            .into_iter()
+            .chain(utf32().flat_map(u32::to_be_bytes))
+            .collect(),
+    ]
+}
+
+// spec PRJ-4.6: under FTEQCC a `progs.src` written as UTF-16 or UTF-32 after its mark is decoded
+// before its form is told and its words are read
+#[test]
+fn an_fteqcc_progs_src_is_decoded() {
+    for dialect in [Dialect::Fteqcc, Dialect::Gmqcc] {
+        for bytes in wide("#include \"b.qc\"\n") {
+            let graph = loaded_graph(&bytes, dialect);
+            assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+            assert_eq!(names(&graph), ["progs.src", "b.qc"]);
+            assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+        }
+        for bytes in wide("progs.dat\na.qc b.qc\n") {
+            let graph = loaded_graph(&bytes, dialect);
+            assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+            assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+            assert_eq!(names(&graph), ["a.qc", "b.qc"]);
+            assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+        }
+    }
+}
+
+// spec PRJ-4.6: under FTEQCC each NUL byte of a `progs.src` is a space that splits two words, and
+// one UTF-8 byte order mark is skipped
+#[test]
+fn an_fteqcc_progs_src_reads_a_nul_as_a_space() {
+    let fte = |bytes: &[u8]| loaded_graph(bytes, Dialect::Fteqcc);
+    let graph = fte(b"progs.dat\na.qc\0b.qc\n");
+    assert_eq!(names(&graph), ["a.qc", "b.qc"]);
+    assert!(graph.diagnostics.is_empty(), "{:?}", graph.diagnostics);
+    let graph = fte(b"progs.dat\0a.qc\n");
+    assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+    assert_eq!(names(&graph), ["a.qc"]);
+    let graph = fte(b"\0#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    assert_eq!(names(&graph), ["progs.src", "b.qc"]);
+    let graph = fte(b"\xef\xbb\xbfprogs.dat\na.qc\n");
+    assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+    assert_eq!(names(&graph), ["a.qc"]);
+    let graph = fte(b"\xef\xbb\xbf#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    // A second mark is not skipped: the first word is not `#`'s.
+    let graph = fte(b"\xef\xbb\xbf\xef\xbb\xbf#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::List));
+}
+
+// spec PRJ-4.1: the vanilla dialect reads `progs.src` as its bytes past a UTF-8 byte order mark,
+// so a wide one is not decoded: its words are its bytes as `COM_Parse` splits them
+// spec QC-23.8: a byte of 0x80 or more is white space to `COM_Parse`, so a UTF-16LE mark is
+// passed over and the first word is the `#` before the first NUL
+#[test]
+fn a_vanilla_progs_src_is_its_bytes() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    let graph = vanilla(b"\xef\xbb\xbfprogs.dat\na.qc\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    let [le16, be16, le32, be32] = wide("#include \"b.qc\"\n");
+    assert_eq!(vanilla(&le16).form, Some(Form::Source));
+    // The source form's text ends at its first NUL, so it brings in nothing.
+    assert_eq!(names(&vanilla(&le16)), ["progs.src"]);
+    for bytes in [be16, le32, be32] {
+        let graph = vanilla(&bytes);
+        assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+        assert_eq!(diags(&graph), ["E0401 progs.src:0"], "{bytes:?}");
+    }
+}
+
+// spec QC-23.7: id's qcc ends the list at the first NUL between words or that ends a word or a
+// `//` comment, and reads on past one in quotes, the name ending at it
+// spec PRJ-4.11: under the vanilla dialect the graph tells the form of, and reads the list of, a
+// `progs.src` only to that NUL
+#[test]
+fn a_vanilla_progs_src_ends_at_a_nul() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    for (bytes, files) in [
+        (&b"progs.dat\0a.qc\n"[..], &[][..]),
+        (b"progs.dat\na.qc\0b.qc\n", &["a.qc"]),
+        (b"progs.dat\na.qc\n\0b.qc\n", &["a.qc"]),
+        (b"progs.dat\na.qc \0 b.qc\n", &["a.qc"]),
+        (b"progs.dat\n// c\0\nb.qc\n", &[]),
+        (b"progs.dat\n// \"\0\nb.qc\n", &[]),
+        (b"progs.dat\n\"a.qc\0x\" b.qc\n", &["a.qc", "b.qc"]),
+        (b"progs.dat\n\"a.qc\0\nb.qc\" b.qc\n", &["a.qc", "b.qc"]),
+        (b"\xef\xbb\xbfprogs.dat\na.qc\0b.qc\n", &["a.qc"]),
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+        assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+        assert_eq!(names(&graph), files, "{bytes:?}");
+        assert!(graph.diagnostics.is_empty(), "{bytes:?}");
+    }
+    // A word that ends at a `(` or holds a `"` is followed by the NUL that ends the list: each
+    // names one file more, which is missing.
+    for (bytes, missing) in [
+        (&b"progs.dat\na.qc(\0b.qc\n"[..], "("),
+        (b"progs.dat\na.qc a\"b\0\" b.qc\n", "a\"b"),
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(names(&graph), ["a.qc"], "{bytes:?}");
+        let messages: Vec<&str> = graph
+            .diagnostics
+            .iter()
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(messages.len(), 1, "{bytes:?}");
+        assert!(messages[0].contains(missing), "{messages:?}");
+    }
+    // A source that starts with a NUL is a list with no token, `#include` after it unread.
+    for bytes in [
+        &b"\0progs.dat\na.qc\n"[..],
+        b"\0#include \"b.qc\"\n",
+        b"  \0",
+    ] {
+        let graph = vanilla(bytes);
+        assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+        assert_eq!(diags(&graph), ["E0401 progs.src:0"], "{bytes:?}");
+    }
+    // The source form is told from the text before the NUL, and read only to it, as the lexer
+    // reads it (QC-1.1).
+    let graph = vanilla(b"#include \"a.qc\"\0\n#include \"b.qc\"\n");
+    assert_eq!(graph.form, Some(Form::Source));
+    assert_eq!(names(&graph), ["progs.src", "a.qc"]);
+    // Under FTEQCC the NUL is a space (PRJ-4.6).
+    assert_eq!(
+        names(&loaded_graph(b"progs.dat\0a.qc\n", Dialect::Fteqcc)),
+        ["a.qc"]
+    );
+}
+
+// spec QC-1.1: a vanilla file the graph reads ends at its first NUL, so a directive after it is
+// not followed
+// spec PRJ-5.16: under FTEQCC the NUL is a space and the directive is followed
+#[test]
+fn a_vanilla_file_ends_at_its_first_nul() {
+    let graph = loaded_graph(b"#include \"a.qc\"\n", Dialect::Vanilla);
+    assert_eq!(names(&graph), ["progs.src", "a.qc"]);
+    let mut loader = MemoryLoader::new();
+    loader.insert("progs.src", b"progs.dat\na.qc\n".as_slice());
+    loader.insert("a.qc", b"float x;\0\n#include \"b.qc\"\n".as_slice());
+    loader.insert("b.qc", b"float y;\n".as_slice());
+    let graph = build_graph(
+        &mut loader,
+        Path::new("progs.src"),
+        &[],
+        &[],
+        Dialect::Vanilla,
+    );
+    assert_eq!(names(&graph), ["a.qc"]);
+    let graph = build_graph(
+        &mut loader,
+        Path::new("progs.src"),
+        &[],
+        &[],
+        Dialect::Fteqcc,
+    );
+    assert_eq!(names(&graph), ["a.qc", "b.qc"]);
+}
+
+// spec QC-23.8: id's `COM_Parse` reads a byte of 0x80 or more as white space, between words and
+// at a word's end
+#[test]
+fn a_vanilla_list_splits_at_a_high_byte() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    assert_eq!(
+        names(&vanilla(b"progs.dat\na.qc\xe9b.qc\n")),
+        ["a.qc", "b.qc"]
+    );
+    assert_eq!(
+        names(&vanilla("progs.dat\n\u{e9}a.qc\u{e9}\n".as_bytes())),
+        ["a.qc"]
+    );
+    assert_eq!(
+        vanilla(b"progs.dat\xffa.qc\n").declared_output,
+        Some(PathBuf::from("progs.dat"))
+    );
+    // A quoted word keeps its high bytes.
+    let graph = vanilla(b"progs.dat\n\"a\xe9.qc\"\n");
+    assert_eq!(diags(&graph).len(), 1);
+    // FTEQCC reads a high byte as part of the word.
+    let graph = loaded_graph(b"progs.dat\na.qc\xe9b.qc\n", Dialect::Fteqcc);
+    assert_eq!(diags(&graph).len(), 1);
+}
+
+// spec QC-23.9: a quoted word of a vanilla list runs on to its closing quote across lines, and
+// one the text ends in is error E0101 at the line it opened on, where id's qcc reads past its
+// buffer
+#[test]
+fn a_vanilla_quoted_word_runs_across_lines() {
+    let vanilla = |bytes: &[u8]| loaded_graph(bytes, Dialect::Vanilla);
+    let graph = vanilla(b"progs.dat\n\"a.qc\nb.qc\" a.qc\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    let missing: Vec<&str> = graph
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(missing.len(), 1);
+    assert!(missing[0].contains("a.qc\nb.qc"), "{missing:?}");
+    // A CRLF line keeps its CR in the name.
+    let graph = vanilla(b"progs.dat\r\n\"a.qc\r\nb.qc\" a.qc\r\n");
+    let missing: Vec<&str> = graph
+        .diagnostics
+        .iter()
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(missing[0].contains("a.qc\r\nb.qc"), "{missing:?}");
+    // A `#` line inside the quote is part of the name, no directive.
+    let graph = vanilla(b"progs.dat\n\"a.qc\n#include \"b.qc\"\n");
+    assert!(names(&graph).is_empty());
+    let graph = vanilla(b"progs.dat\na.qc \"b.qc\n\nx\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    assert_eq!(diags(&graph), ["E0101 progs.src:2"]);
+}
+
+// spec PRJ-4.10: under FTEQCC and GMQCC a `#!` first line of a `progs.src` is passed over before
+// its form is told, in either form, after a UTF-8 mark and in a wide encoding, with whatever it
+// holds; a blank or a NUL before it, or the vanilla dialect, leaves it to be read
+#[test]
+fn an_fteqcc_progs_src_passes_over_a_script_line() {
+    for dialect in [Dialect::Fteqcc, Dialect::Gmqcc] {
+        let fte = |bytes: &[u8]| loaded_graph(bytes, dialect);
+        for first in [
+            "#!/usr/bin/fteqcc",
+            "#!x \\",
+            "#!x /*",
+            "#!x \"",
+            "#!",
+            "#!b.qc",
+        ] {
+            let list = format!("{first}\nprogs.dat\na.qc\n");
+            let source = format!("{first}\n#include \"b.qc\"\n");
+            let lists = [
+                list.as_bytes().to_vec(),
+                format!("\u{feff}{list}").into_bytes(),
+                list.replace('\n', "\r\n").into_bytes(),
+            ];
+            for bytes in lists.into_iter().chain(wide(&list)) {
+                let graph = fte(&bytes);
+                assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+                assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+                assert_eq!(names(&graph), ["a.qc"], "{bytes:?}");
+            }
+            let sources = [
+                source.as_bytes().to_vec(),
+                format!("\u{feff}{source}").into_bytes(),
+            ];
+            for bytes in sources.into_iter().chain(wide(&source)) {
+                let graph = fte(&bytes);
+                assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+                assert_eq!(names(&graph), ["progs.src", "b.qc"], "{bytes:?}");
+            }
+        }
+        // The `#include` keeps its line, the second.
+        let graph = fte(b"#!x\n#include \"missing.qc\"\n");
+        assert_eq!(graph.diagnostics.first().map(|d| d.line), Some(2));
+        // A source of that line alone is a list with no word: no output, no file, no error.
+        for bytes in [&b"#!progs.dat a.qc"[..], b"#!x\n", b"#!x\n\n// c\n"] {
+            let graph = fte(bytes);
+            assert_eq!(graph.form, Some(Form::List), "{bytes:?}");
+            assert!(graph.diagnostics.is_empty(), "{bytes:?}");
+            assert!(graph.files.is_empty() && graph.declared_output.is_none());
+        }
+        // Only at the very start: after a blank or a NUL the line's `#` makes the source form.
+        for bytes in [&b" #!x\nprogs.dat\na.qc\n"[..], b"\0#!x\nprogs.dat\na.qc\n"] {
+            let graph = fte(bytes);
+            assert_eq!(graph.form, Some(Form::Source), "{bytes:?}");
+            assert_eq!(names(&graph), ["progs.src"], "{bytes:?}");
+        }
+    }
+    // PRJ-4.1: the vanilla dialect reads the line, whose first token starts with `#`.
+    let graph = loaded_graph(b"#!x\nprogs.dat\na.qc\n", Dialect::Vanilla);
+    assert_eq!(graph.form, Some(Form::Source));
+    assert_eq!(names(&graph), ["progs.src"]);
 }
 
 // spec PRJ-4.2: in list form, /* */ comments are skipped and # lines are directives
@@ -325,4 +634,103 @@ fn diagnostics_name_file_and_line() {
         &[("inc.qh", "// one\n#include \"gone.qh\"\n")],
     );
     assert_eq!(diags(&graph), ["E0111 inc.qh:2"]);
+}
+
+/// The graph of an FTEQCC module whose `progs.src` is `progs`, beside `a.qc` and `b.qc`, and
+/// the messages of its diagnostics.
+fn fte_list(progs: &[u8]) -> (crate::FileGraph, Vec<String>) {
+    let graph = loaded_graph(progs, Dialect::Fteqcc);
+    let messages = graph
+        .diagnostics
+        .iter()
+        .map(|d| format!("{:?} {} @{}", d.code, d.message, d.line))
+        .collect();
+    (graph, messages)
+}
+
+// spec PRJ-4.9: FTEQCC reads a list's output with `QCC_PR_SimpleGetToken`, which stops at `,`,
+// `;`, `(`, `)` and `]`, and each later word with `QCC_COM_Parse`, to which `,` is a word of its
+// own and `"` ends a word; the pinned FTEQCC fails each of these at the file the word names
+#[test]
+fn an_fteqcc_list_reads_its_words_as_fteqcc_does() {
+    let (graph, _) = fte_list(b",a.qc\n");
+    assert!(graph.declared_output.is_none());
+    assert_eq!(diags(&graph), ["E0402 progs.src:1"]);
+    let (graph, messages) = fte_list(b"progs.dat,a.qc\n");
+    assert_eq!(graph.declared_output, Some(PathBuf::from("progs.dat")));
+    assert!(messages[0].contains("Error opening ,"), "{messages:?}");
+    assert_eq!(names(&graph), ["a.qc"]);
+    let (graph, messages) = fte_list(b"progs.dat;x\na.qc\n");
+    assert!(messages[0].contains("Error opening ;x"), "{messages:?}");
+    assert_eq!(names(&graph), ["a.qc"]);
+    let (graph, _) = fte_list(b"progs.dat\n\"a.qc\" /* c */ b.qc a.qc\"b.qc\"\n");
+    assert_eq!(names(&graph), ["a.qc", "b.qc", "a.qc", "b.qc"]);
+    assert!(graph.diagnostics.is_empty());
+    // A quoted word takes `\"`, `\\`, `\n`, `\r` and `\t`.
+    let (_, messages) = fte_list(b"progs.dat\n\"a\\\".qc\"\n");
+    assert!(messages[0].contains("Error opening a\".qc"), "{messages:?}");
+    // A `//` comment runs to the line's end.
+    let (graph, _) = fte_list(b"progs.dat\na.qc // b.qc\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+}
+
+// spec PRJ-4.9: the directives at the starts of an FTEQCC list's lines are run, as
+// `QCC_PR_LexWhitespace(false)` before each word runs them
+#[test]
+fn an_fteqcc_list_runs_its_directives() {
+    let (graph, _) = fte_list(b"progs.dat\n#define X\n#ifdef X\na.qc\n#else\nb.qc\n#endif\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    let (graph, _) = fte_list(b"progs.dat\n#include \"b.qc\"\na.qc\n");
+    assert_eq!(names(&graph), ["b.qc", "a.qc"]);
+}
+
+// spec PRJ-4.9: an FTEQCC list with no word has no output and no file, and no error, as the
+// pinned FTEQCC writes nothing ("nothing to write") and exits 0
+#[test]
+fn an_empty_fteqcc_list_is_no_error() {
+    for progs in [&b""[..], b"\n", b"// c\n", b"/* c */\n"] {
+        let (graph, messages) = fte_list(progs);
+        assert_eq!(graph.form, Some(Form::List), "{progs:?}");
+        assert!(messages.is_empty() && graph.files.is_empty(), "{progs:?}");
+        assert!(graph.declared_output.is_none(), "{progs:?}");
+    }
+    // The vanilla dialect keeps id's error.
+    let graph = loaded_graph(b"", Dialect::Vanilla);
+    assert_eq!(diags(&graph), ["E0401 progs.src:0"]);
+}
+
+// spec FTEF-14.67: a `/* */` comment an FTEQCC list ends in is "EOF inside comment" at its line
+// spec FTEF-14.66: an output past 1023 bytes is FTEQCC's "token exceeds 1023 chars"
+#[test]
+fn an_fteqcc_list_s_errors() {
+    let (graph, messages) = fte_list(b"progs.dat\na.qc /* open\n\n");
+    assert_eq!(names(&graph), ["a.qc"]);
+    assert_eq!(messages, ["E0501 EOF inside comment @2"]);
+    let long = format!("{}\na.qc\n", "p".repeat(1024));
+    let (graph, messages) = fte_list(long.as_bytes());
+    assert_eq!(messages, ["E0121 token exceeds 1023 chars @1"]);
+    assert!(graph.files.is_empty());
+    let fits = format!("{}\na.qc\n", "p".repeat(1023));
+    assert_eq!(names(&fte_list(fits.as_bytes()).0), ["a.qc"]);
+    // A word `QCC_COM_Parse` reads keeps 1023 bytes, the rest dropped.
+    let word = format!("progs.dat\n{}\n", "w".repeat(1030));
+    let (_, messages) = fte_list(word.as_bytes());
+    let opened = format!("Error opening {} ", "w".repeat(1023));
+    assert!(messages[0].contains(opened.trim_end()), "{messages:?}");
+    assert!(!messages[0].contains(&"w".repeat(1024)), "{messages:?}");
+}
+
+// spec PRJ-6.6: the graph reports each file it cannot open and reads on, where both compilers
+// stop at the first
+#[test]
+fn every_missing_file_is_reported() {
+    for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
+        let graph = loaded_graph(b"progs.dat\nx.qc\na.qc\ny.qc\nb.qc\n", dialect);
+        assert_eq!(names(&graph), ["a.qc", "b.qc"], "{dialect:?}");
+        assert_eq!(
+            diags(&graph),
+            ["E0402 progs.src:2", "E0402 progs.src:4"],
+            "{dialect:?}"
+        );
+    }
 }

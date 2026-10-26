@@ -80,7 +80,7 @@ fn text(token: Option<SyntaxToken>) -> String {
 }
 
 // spec FTEF-15.1: `const`, `var` and `nosave` before a declaration are qualifiers of their own
-// kinds, the other qualifiers names, at file level and in a body
+// kinds, the other qualifiers names, at file level and in a body after `local` (FTEF-19.1)
 #[test]
 fn qualifier_tokens_have_their_kinds() {
     for (source, kind) in [
@@ -92,7 +92,7 @@ fn qualifier_tokens_have_their_kinds() {
         let qualifier = first_node(source, SyntaxKind::Qualifier);
         assert_eq!(token_kinds(&qualifier), [kind], "{source}");
     }
-    let local = first_node(&in_body("nosave float x;"), SyntaxKind::LocalDecl);
+    let local = first_node(&in_body("local nosave float x;"), SyntaxKind::LocalDecl);
     let qualifier = local
         .children()
         .find(|n| n.kind() == SyntaxKind::Qualifier)
@@ -499,7 +499,7 @@ fn cast_shapes() {
     assert!(!cast("a = (Thing(Other o {)) b;"));
 }
 
-// spec FTEF-18.19: a cycle whose two constant frames are equal runs either way
+// spec FTEF-18.28: a cycle whose two constant frames are equal runs either way
 // spec QCD-3.12: E0212 only for a range against the cycle's direction
 #[test]
 fn equal_frame_cycles_are_no_error() {

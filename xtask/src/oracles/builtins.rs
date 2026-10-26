@@ -33,11 +33,23 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use qc_preproc::CommandLine;
+use qc_preproc::cond::fte_atoi;
 use qc_progs::{Progs, ReadOptions};
 use qc_sema::{Db, FileId, ModuleInput};
 use qc_syntax::{Code, Dialect, ast};
 
 use super::Oracles;
+
+mod caseinsens;
+mod casts;
+mod declarations;
+mod defs;
+mod directives;
+mod flags;
+mod keywords;
+mod lexical;
+mod passes;
 
 /// The recorded outcomes of the oracles, relative to the repository.
 pub(crate) const FIXTURE: &str = "xtask/fixtures/oracles/builtin-outcomes.json";
@@ -94,13 +106,176 @@ impl Outcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Case {
     pub(crate) dialect: Dialect,
+    /// The text of the file `progs.src` lists.
     pub(crate) source: String,
+    /// How that file's text is written as bytes.
+    pub(crate) encoding: Encoding,
+    /// The files around it, or `None` for `t.qc` alone.
+    pub(crate) project: Option<Project>,
+    /// The `-W`, `-F` and `-K` options FTEQCC and the profile are both given, which set the
+    /// warnings and compiler flags (FTEF-14.72, FTEF-19.22); under [`WERROR_OPTIONS`] a warning
+    /// either compiler gives alone changes the outcome.
+    pub(crate) options: Vec<String>,
 }
 
+/// The options under which every warning is an error, but Q208, "no end_sys_fields defined",
+/// which every program without system definitions gets.
+pub(crate) const WERROR_OPTIONS: [&str; 2] = ["-Werror", "-Wno-Q208"];
+
+/// How a case's source is written to its file: as UTF-8, or after the byte order mark of a wide
+/// encoding FTEQCC's file loader decodes (FTEF-14.64).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Encoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+    Utf32Le,
+    Utf32Be,
+    /// Each char of the text, all below U+0100, as the one byte of its code: for bytes no UTF-8
+    /// text holds (FTEF-13.16, FTEF-13.21).
+    Latin1,
+}
+
+impl Encoding {
+    /// `text` written in this encoding, after its byte order mark for a wide one.
+    fn bytes(self, text: &str) -> Vec<u8> {
+        let utf16 = || text.encode_utf16();
+        let utf32 = || text.chars().map(u32::from);
+        match self {
+            Self::Utf8 => text.as_bytes().to_vec(),
+            Self::Latin1 => text
+                .chars()
+                .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+                .collect(),
+            Self::Utf16Le => [0xff, 0xfe]
+                .into_iter()
+                .chain(utf16().flat_map(u16::to_le_bytes))
+                .collect(),
+            Self::Utf16Be => [0xfe, 0xff]
+                .into_iter()
+                .chain(utf16().flat_map(u16::to_be_bytes))
+                .collect(),
+            Self::Utf32Le => [0xff, 0xfe, 0, 0]
+                .into_iter()
+                .chain(utf32().flat_map(u32::to_le_bytes))
+                .collect(),
+            Self::Utf32Be => [0, 0, 0xfe, 0xff]
+                .into_iter()
+                .chain(utf32().flat_map(u32::to_be_bytes))
+                .collect(),
+        }
+    }
+
+    /// The name a case's key gives a wide encoding; none for UTF-8.
+    fn name(self) -> Option<&'static str> {
+        match self {
+            Self::Utf8 => None,
+            Self::Utf16Le => Some("utf-16le"),
+            Self::Utf16Be => Some("utf-16be"),
+            Self::Utf32Le => Some("utf-32le"),
+            Self::Utf32Be => Some("utf-32be"),
+            Self::Latin1 => Some("latin-1"),
+        }
+    }
+}
+
+/// A program of more than one file: the file `progs.src` lists and the others.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Project {
+    /// The name `progs.src` lists the source by, which may name a directory.
+    pub(crate) compiled: String,
+    /// The other files, each by its name from `progs.src`'s directory, in order.
+    pub(crate) files: Vec<(String, String)>,
+    /// The include directories FTEQCC is given, `-I`, each by its name from `progs.src`'s
+    /// directory (FTEF-14.49).
+    pub(crate) include_dirs: Vec<String>,
+    /// `progs.src` itself, or `None` for the list of `progs.dat` and [`Self::compiled`].
+    pub(crate) progs: Option<ProgsSrc>,
+}
+
+/// A `progs.src` of a case's own, which FTEQCC's file loader reads (PRJ-4.6, FTEF-14.64): its
+/// text and how that is written as bytes. Its compiled file is `t.qc`, which it need not list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProgsSrc {
+    pub(crate) text: String,
+    pub(crate) encoding: Encoding,
+}
+
+/// The name a case's source has when it has no [`Project`].
+const SOURCE_NAME: &str = "t.qc";
+
 impl Case {
+    /// The case of `source` alone, as `t.qc`.
+    pub(crate) fn new(dialect: Dialect, source: String) -> Self {
+        Self {
+            dialect,
+            source,
+            encoding: Encoding::Utf8,
+            project: None,
+            options: Vec::new(),
+        }
+    }
+
+    /// The bytes of the file `progs.src` lists.
+    fn source_bytes(&self) -> Vec<u8> {
+        self.encoding.bytes(&self.source)
+    }
+
+    /// The bytes of `progs.src`: the case's own, or the list of `progs.dat` and the compiled
+    /// file.
+    fn progs_src_bytes(&self) -> Vec<u8> {
+        match self.project.as_ref().and_then(|p| p.progs.as_ref()) {
+            Some(progs) => progs.encoding.bytes(&progs.text),
+            None => format!("progs.dat\n{}\n", self.compiled()).into_bytes(),
+        }
+    }
+
     /// The case's key in [`FIXTURE`].
     fn key(&self) -> String {
-        format!("{}|{}", dialect_name(self.dialect), self.source)
+        let mut key = format!("{}|", dialect_name(self.dialect));
+        if let Some(project) = &self.project {
+            key.push_str(&project.compiled);
+            key.push('|');
+        }
+        key.push_str(&self.source);
+        for (name, text) in self.project.iter().flat_map(|p| &p.files) {
+            key.push_str(&format!("|{name}={text}"));
+        }
+        for dir in self.include_dirs() {
+            key.push_str(&format!("|-I{dir}"));
+        }
+        if let Some(name) = self.encoding.name() {
+            key.push_str(&format!("|{name}"));
+        }
+        if let Some(progs) = self.project.as_ref().and_then(|p| p.progs.as_ref()) {
+            key.push_str(&format!("|progs.src={}", progs.text));
+            if let Some(name) = progs.encoding.name() {
+                key.push_str(&format!("|progs.src {name}"));
+            }
+        }
+        if !self.options.is_empty() {
+            key.push('|');
+            key.push_str(&self.options.join(" "));
+        }
+        key
+    }
+
+    /// The text of every file of the case, the source's first.
+    fn texts(&self) -> impl Iterator<Item = &str> {
+        let others = self.project.iter().flat_map(|p| &p.files);
+        std::iter::once(self.source.as_str()).chain(others.map(|(_, text)| text.as_str()))
+    }
+
+    /// The include directories FTEQCC is given (FTEF-14.49).
+    fn include_dirs(&self) -> impl Iterator<Item = &String> {
+        self.project.iter().flat_map(|p| &p.include_dirs)
+    }
+
+    /// The name `progs.src` lists the source by.
+    fn compiled(&self) -> &str {
+        self.project
+            .as_ref()
+            .map_or(SOURCE_NAME, |project| project.compiled.as_str())
     }
 }
 
@@ -636,6 +811,289 @@ const EXPANSION_STATEMENTS: &[(&str, &str)] = &[
     ("#define K(x) x", "K(__LINE__:) goto lbl;"),
 ];
 
+/// The bytes that end an argument where FTEQCC's argument scanner finds them (FTEF-14.22).
+const SEPARATORS: [&str; 3] = [",", ")", "("];
+
+/// What stands between a function-like macro's name and its `(` in another macro's body
+/// (FTEF-14.24): white space, comments and line continuations, which the stored body drops.
+const BODY_GAPS: &[&str] = &[
+    " ", "\t", " \t ", "/**/", " /**/ ", "/**/ ", " /**/", "/* x */", "/*\n*/", "\\\n", " \\\n",
+    "\\\n ", " \\\n ", "\\\r\n", "/**/\\\n",
+];
+
+/// A macro case: the definitions and the use that initialises `f`.
+type MacroUse = (String, String);
+
+/// `(define, use)` pairs written as [`MacroUse`]s.
+fn macro_uses(pairs: &[(&str, &str)]) -> Vec<MacroUse> {
+    pairs
+        .iter()
+        .map(|&(define, use_)| (define.to_owned(), use_.to_owned()))
+        .collect()
+}
+
+/// Arguments as FTEQCC's argument scanner finds them (FTEF-14.22): a `,`, `(` or `)` in a
+/// character constant, a comment or a string, against 15 uses each; strings that end in `\`; a
+/// `\` and line break in an argument; and a lexical error in arguments a chunk's macro takes.
+fn argument_uses() -> Vec<MacroUse> {
+    let mut uses = Vec::new();
+    for sep in SEPARATORS {
+        for (define, use_) in [
+            ("#define E(n) :n", format!("E('{sep}')")),
+            ("#define E(n) #n", format!("E('{sep}')")),
+            ("#define M(x) x", format!("M(#5 /* {sep} */)")),
+            ("#define M(x) x", format!("M(#5 // {sep}\n)")),
+            ("#define M(x) x", format!("M(/* {sep} */ #5)")),
+            ("#define M(x) x", format!("M(// {sep}\n#5)")),
+            ("#define M(x, y) x", format!("M(#5, /* {sep} */)")),
+            ("#define M(x, y) x", format!("M(#5, /* {sep} */ 6)")),
+            ("#define M(x, y) y", format!("M(/* {sep} */, #5)")),
+            ("#define E(n) :n", format!("E(\"ex{sep}a\")")),
+            ("#define E(n, m) n m", format!("E(#5, :\"a{sep}b\")")),
+            ("#define S(a) #a", format!(":S(e'{sep}')")),
+            ("#define S(a) #a", format!(":S(\"{sep}\")")),
+            ("#define S(a) #a", format!(":S(e/*{sep}*/x)")),
+            ("#define V(...) __VA_ARGS__", format!("V(#5:'{sep}')")),
+        ] {
+            uses.push((define.to_owned(), use_));
+        }
+    }
+    for arg in [
+        ":\"ex\\\\\"",
+        ":\"ex\\\\\") \")\"",
+        ":\"e\\\"x\"",
+        ":\"e\\\\\\\"x\"",
+        ":\"ex\\\\\" \")\"",
+        "#5:ex_a\\\n",
+        "#5:\"ex_a\"\\\n",
+        "#5:ex\\\n_a",
+    ] {
+        uses.push(("#define E(n) n".to_owned(), format!("E({arg})")));
+    }
+    uses.extend(macro_uses(&[
+        ("#define S(a) #a", ":S(e'x)"),
+        ("#define S(a) #a", ":S(e\\\"x)"),
+        ("#define M(x) x", "M(// c\r#5)"),
+        ("#define M(x) x", "M(// c\r\n#5)"),
+        ("#define M(a) #5\n#define K M('x)", "K"),
+        ("#define K(x) x(#5)\n#define M(y) y", "K(M)"),
+    ]));
+    uses
+}
+
+/// `QCC_COM_Parse2`'s tokens in a body and an argument (FTEF-14.25): strings after `#` and `##`,
+/// numbers and the words written right after them.
+fn parse2_uses() -> Vec<MacroUse> {
+    macro_uses(&[
+        ("#define S(a) #\"5\"", "S(x)"),
+        ("#define S(a) #\"5\"x a", "S(:ex_a)"),
+        ("#define S(a) #\"5\" a", "S(:ex_a)"),
+        ("#define P(a) a##\"5\"", "P(#)"),
+        ("#define P(a) a##\"5\"x:ex_a", "P(#)"),
+        ("#define E(a) #5a", "E(:ex_a)"),
+        ("#define E(a) #5.a", "E(:ex_a)"),
+        ("#define E(a) #0x5a", "E(:ex_a)"),
+        ("#define E(a) #05a", "E(:ex_a)"),
+        ("#define E(a) #0x1F a", "E(:ex_a)"),
+        ("#define E(n) n", "E(#16)"),
+        ("#define J(a) a##b", "J(#5:e)"),
+    ])
+}
+
+/// Built-in constants an argument copies, after white space, comments and line breaks, and
+/// `__LINESTR__` read in nested and multi-line expansions (FTEF-14.20, FTEF-14.27).
+fn line_uses() -> Vec<MacroUse> {
+    let mut uses = Vec::new();
+    for arg in [
+        "# __LINE__",
+        "#\t__LINE__",
+        "#//\n__LINE__",
+        "#\n__LINE__",
+        "#/**/__LINE__",
+        "#__LINE__ ",
+        "#__LINE__\n",
+        "\n#__LINE__",
+        "#__LINE__/**/",
+        ":__LINESTR__",
+        ":\n__LINESTR__",
+        ": __LINESTR__",
+        "\n:__LINESTR__",
+        ":__LINESTR__\n",
+    ] {
+        uses.push(("#define E(n) n".to_owned(), format!("E({arg})")));
+    }
+    uses.extend(macro_uses(&[
+        ("#define K(x) x##5", "K(# __LINE__)"),
+        ("#define K(x) #x", "#5:K(__LINE__)"),
+        ("#define L :__LINESTR__", "\nL"),
+        ("#define L :__LINESTR__\n#define M L", "M"),
+        ("#define L :__LINESTR__\n#define M(x) L x", "M(\n)"),
+        ("#define M(x) :__LINESTR__ x", "M(\n)"),
+        ("#define K(x) x\n#define M K(:__LINESTR__)", "M"),
+        ("#define K(x) x\n#define M(y) K(y)", "M(\n:__LINESTR__)"),
+        ("#define K(x) x\n#define M(y) K(y)", "M(:\n__LINESTR__)"),
+        ("#define K(x) x\n#define M(y) K(\\\n:__LINESTR__ y)", "M()"),
+        (
+            "#define L __LINESTR__\n#define V(...) __VA_ARGS__ L",
+            "V(:\n\n)",
+        ),
+        (
+            "#define L __LINESTR__\n#define V(...) __VA_ARGS__ L",
+            "V(:)",
+        ),
+    ]));
+    uses
+}
+
+/// Bodies as `QCC_PR_PreProcessor_Define` stores them (FTEF-14.24): a function-like macro's name
+/// and `(` across 15 gaps a stored body drops, escaped quotes before a `//`, comments and
+/// continuations, and a body stored again.
+fn body_uses() -> Vec<MacroUse> {
+    let mut uses = Vec::new();
+    for gap in BODY_GAPS {
+        let define = format!("#define M(x) x\n#define K M{gap}(#5)");
+        uses.push((define, "K".to_owned()));
+    }
+    for body in [
+        ":\"ex\\\"_a//\"",
+        ":\"ex\\\\\"_a//\"",
+        ":\"e//x\"",
+        ":\"ex\\\" /* c */ _a\"",
+        "#5 // c \\\n:ex_a",
+        "#5 /* c \\\n */ :ex_a",
+        "#5 :ex\\\n_a",
+        "#5 :ex/**/_a",
+        "#5 :\"ex /* c */ a\"",
+        "#5 \\\n\\\n:ex_a",
+        "#5 // c \\\nzz zz",
+    ] {
+        uses.push((format!("#define N {body}"), "N".to_owned()));
+    }
+    uses.extend(macro_uses(&[("#define A #5\n#define A #6", "A")]));
+    uses
+}
+
+/// Parameter lists (FTEF-14.23): duplicate, empty, spaced and misplaced names, and 32 and 33
+/// arguments to 32 parameters.
+fn parameter_uses() -> Vec<MacroUse> {
+    let mut uses = macro_uses(&[
+        ("#define E(n, n) n", "E(#5, 6)"),
+        ("#define E(n,n) n", "E(#5, 6)"),
+        ("#define E(a, b, a) a", "E(#5, 6, 7)"),
+        ("#define E( n ) n", "E(#5)"),
+        ("#define E(n ,m) n", "E(#5, 6)"),
+        ("#define E(n\t, m\t) m", "E(6, #5)"),
+        ("#define E(a,) a", "E(#5)"),
+        ("#define E(a,b) b", "E(6,#5)"),
+        ("#define E() #5", "E(1, 2)"),
+        ("#define E() #5", "E(1, 2, 3)"),
+        ("#define E(a b) #5", "E(1)"),
+        ("#define E(..., a) a", "E(#5)"),
+        ("#define E(a, ..., b) a", "E(#5)"),
+        ("#define E(a, ...) a", "E(#5, 1, 2)"),
+    ]);
+    let params: Vec<String> = (0..32).map(|i| format!("p{i}")).collect();
+    for more in [31, 32] {
+        let define = format!("#define E({}) p0", params.join(", "));
+        uses.push((define, format!("E(#5{})", ", 1".repeat(more))));
+    }
+    uses
+}
+
+/// `__VA_COUNT__`, `,##__VA_ARGS__` and empty variadic arguments (FTEF-14.26).
+fn variadic_uses() -> Vec<MacroUse> {
+    macro_uses(&[
+        ("#define V(...) :__VA_COUNT__", "V()"),
+        ("#define V(...) :__VA_COUNT__", "V(a)"),
+        ("#define V(...) :__VA_COUNT__", "V(a, b)"),
+        ("#define V(...) :__VA_COUNT__", "V(a, b, c)"),
+        ("#define V(...) :__VA_COUNT__", "V(,)"),
+        ("#define V(a, ...) #5:__VA_COUNT__", "V(a)"),
+        ("#define V(a, ...) #5:__VA_COUNT__", "V(a, b)"),
+        ("#define V(a, ...) #__VA_COUNT__:ex_a", "V(a, b, c)"),
+        ("#define V(a) #5:__VA_COUNT__", "V(a)"),
+        ("#define V(a, ...) a,##__VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a , ## __VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a,##__VA_ARGS__", "V(#5, :ex_a)"),
+        ("#define V(a, ...) a##__VA_ARGS__", "V(#5)"),
+        ("#define V(a, ...) a,__VA_ARGS__", "V(#5)"),
+        ("#define E(...) #5 __VA_ARGS__", "E(, )"),
+        ("#define E(...) #5 __VA_ARGS__", "E(,)"),
+        ("#define E(...) #5 __VA_ARGS__", "E( , , )"),
+        ("#define E(...) #5 __VA_ARGS__", "E(:ex_a, )"),
+    ])
+}
+
+/// `__FILE__`, the name `progs.src` lists or a `#pragma file` gives, as FTEQCC writes it
+/// (FTEF-14.74), under 12 pragmas and through two macros, and after three pragmas whose text
+/// holds a comment, a string or a `\` that would run across their line break.
+fn file_sources() -> Vec<String> {
+    let long = format!("#pragma file({})\n", "n".repeat(260));
+    let mut sources: Vec<String> = [
+        "",
+        "#pragma file(ex_a:b)\n",
+        "#pragma file ex_b\n",
+        "#pragma FILE(e\\\\x)\n",
+        "#pragma file(e\\x)\n",
+        "#pragma file(e\\\"x)\n",
+        "#pragma file(e\"x)\n",
+        "#pragma file\n",
+        "#pragma file(sub/ex_c)\n",
+        "#pragma file( ex_d )\n",
+        "#pragma file:x\n",
+        &long,
+        "#pragma message x /* y\n",
+        "#pragma message x \"y\n",
+        "#pragma message x \\\n",
+    ]
+    .iter()
+    .map(|pragma| format!("{pragma}void() f = :__FILE__;\n"))
+    .collect();
+    sources.push("#define F :__FILE__\n#pragma file(ex_c)\nvoid() f = F;\n".to_owned());
+    sources.push("#define E(n) n\n#pragma file(ex_d)\nvoid() f = E(:__FILE__);\n".to_owned());
+    sources
+}
+
+/// Functions with no body, `noref` or not and referred to or not, plain and as macros write them
+/// (FTEF-17.11), and declarators ended by a `,` (FTEF-15.8).
+const DECLARATION_SOURCES: &[&str] = &[
+    "void() f = #5;\nvoid() g;\n",
+    "void() f = #5, g;\n",
+    "void() f = #5;\nnoref void() g;\n",
+    "void() f = #5;\nvoid() g;\nvoid() h = {g();};\n",
+    "void() f = #5;\nnoref void() g;\nvoid() h = {g();};\n",
+    "void() f = #5;\n#pragma noref 1\nvoid() g;\n",
+    "void() f = #5;\n#pragma noref 1\nvoid() g;\n#pragma noref 0\nvoid() h = {g();};\n",
+    "#define V(a, ...) a,##__VA_ARGS__\nvoid() f = V(#5, g);\n",
+    "#define V(a, ...) a __VA_ARGS__\nvoid() f = V(#5, :ex_a, b);\n",
+    "void() f = #5, ;\n",
+    "void() f = #5,;\n",
+    "void() f = #5, , ;\n",
+    "void() g, f = #5, ;\n",
+];
+
+/// The macro-text family (FTEF-14.22 to FTEF-14.27, FTEF-14.74, P2-80 to P2-84 and P2-87, from
+/// the fourth P2-R2 review): programs whose macros FTEQCC reads as text where a token model
+/// would not, and the declarations they write. Each is a whole program.
+fn macro_text_cases() -> Vec<String> {
+    let uses = [
+        argument_uses(),
+        parse2_uses(),
+        line_uses(),
+        body_uses(),
+        parameter_uses(),
+        variadic_uses(),
+    ];
+    let mut sources: Vec<String> = uses
+        .into_iter()
+        .flatten()
+        .map(|(define, use_)| format!("{define}\nvoid() f = {use_};\n"))
+        .collect();
+    sources.extend(file_sources());
+    sources.extend(DECLARATION_SOURCES.iter().map(|&source| source.to_owned()));
+    sources
+}
+
 /// The lengths of the long names given after `#5:` and as a builtin's own name: about id's
 /// limit and FTEQCC's (QC-3.3, FTEF-15.7).
 const NAME_LENGTHS: [usize; 6] = [62, 63, 70, 254, 255, 300];
@@ -672,10 +1130,7 @@ pub(crate) fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for source in &sources {
-            cases.push(Case {
-                dialect,
-                source: source.clone(),
-            });
+            cases.push(Case::new(dialect, source.clone()));
         }
         let paired: Vec<&str> = PAIRED
             .iter()
@@ -690,16 +1145,13 @@ pub(crate) fn cases() -> Vec<Case> {
                         source.push_str(&format!("void() g = {first};\n"));
                     }
                     source.push_str(&format!("void() f = {first};\nvoid() f = {second};\n"));
-                    cases.push(Case { dialect, source });
+                    cases.push(Case::new(dialect, source));
                 }
             }
         }
     }
     // FTE-23.10: id's qcc has no preprocessor, so the macro cases are FTEQCC's only.
-    let fte = |source: String| Case {
-        dialect: Dialect::Fteqcc,
-        source,
-    };
+    let fte = |source: String| Case::new(Dialect::Fteqcc, source);
     for body in MACRO_BODIES {
         for use_ in MACRO_USES {
             cases.push(fte(format!("#define N {body}\nvoid() f = {use_};\n")));
@@ -741,6 +1193,9 @@ pub(crate) fn cases() -> Vec<Case> {
     for (define, statement) in EXPANSION_STATEMENTS {
         cases.push(fte(with_body(define, statement)));
     }
+    for source in macro_text_cases() {
+        cases.push(fte(source));
+    }
     for dialect in [Dialect::Vanilla, Dialect::Fteqcc] {
         for length in NAME_LENGTHS {
             let name = "n".repeat(length);
@@ -748,55 +1203,345 @@ pub(crate) fn cases() -> Vec<Case> {
                 format!("void() f = #5:{name};\n"),
                 format!("void() {name} = #5;\n"),
             ] {
-                cases.push(Case { dialect, source });
+                cases.push(Case::new(dialect, source));
             }
         }
     }
+    cases.extend(directives::cases());
+    cases.extend(lexical::cases());
+    cases.extend(declarations::cases());
+    cases.extend(keywords::cases());
+    cases.extend(flags::cases());
+    cases.extend(passes::cases());
+    cases.extend(caseinsens::cases());
+    cases.extend(casts::cases());
+    cases.extend(defs::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
     cases
 }
 
+/// How wide C's `long` and `unsigned long` are where an oracle ran, which decides where FTEQCC's
+/// `strtoul` (FTEF-14.50) and its `atoi`'s `strtol` (FTEF-14.55) saturate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ULong {
+    /// 32 bits: an LLP64 host, 64-bit Windows.
+    Bits32,
+    /// 64 bits: an LP64 host, 64-bit Linux and macOS, as the profile models and [`FIXTURE`]
+    /// records.
+    Bits64,
+}
+
+impl ULong {
+    /// The host's, which the oracles are compiled for.
+    pub(crate) const HOST: Self = if size_of::<std::ffi::c_ulong>() == size_of::<u32>() {
+        Self::Bits32
+    } else {
+        Self::Bits64
+    };
+
+    /// Whether an oracle on a host of this width may read `case` otherwise than the profile
+    /// does: a `#pragma line` number (FTEF-14.50) or a number of a directive's line `atoi`
+    /// may read (FTEF-14.55) whose 32-bit reading differs from the 64-bit one.
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self.line_reads_otherwise(case) || self.atoi_reads_otherwise(case)
+    }
+
+    /// Whether `case` has a `#pragma line` number whose low 32 bits a 32-bit `strtoul` reads
+    /// otherwise than a 64-bit one, on a host of this width (FTEF-14.50).
+    fn line_reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Bits32
+            && case.texts().any(|text| {
+                text.lines().filter_map(line_pragma_text).any(|number| {
+                    low_32_bits(c_strtoul(number, u64::MAX))
+                        != low_32_bits(c_strtoul(number, u64::from(u32::MAX)))
+                })
+            })
+    }
+
+    /// Whether `case` has, on the line of a directive that reads a number with `atoi`, a number
+    /// that `atoi` reads otherwise where `long` is 32 bits than where it is 64, on a host of this
+    /// width (FTEF-14.55).
+    fn atoi_reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Bits32
+            && case.texts().any(|text| {
+                text.lines()
+                    .filter(|line| atoi_directive(line))
+                    .flat_map(numbers)
+                    .any(|number| fte_atoi(number.as_bytes()) != llp64_atoi(number))
+            })
+    }
+}
+
+/// Whether the oracle's build stops when a `#pragma` overruns FTEQCC's `char msg[1024]`, which
+/// is undefined behaviour (FTEF-14.66).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Overrun {
+    /// The build stops at the overrun: on macOS, where [`FIXTURE`] is recorded, and on Windows,
+    /// as the profile models.
+    Caught,
+    /// The build reads on past an overrun of a few bytes and compiles the program: on Linux,
+    /// where the CI build does so for texts of 1024 and 1025 bytes.
+    Unseen,
+}
+
+impl Overrun {
+    /// The host's, which the oracles are built for.
+    pub(crate) const HOST: Self = if cfg!(target_os = "linux") {
+        Self::Unseen
+    } else {
+        Self::Caught
+    };
+
+    /// Whether an oracle on such a host may compile `case`, which the profile refuses: a
+    /// `#pragma` whose name or text runs past FTEQCC's `msg[1024]` (FTEF-14.66).
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self == Self::Unseen
+            && case.dialect.has_fteqcc_extensions()
+            && case.texts().any(|text| text.lines().any(overruns_msg))
+    }
+}
+
+/// Whether `line` is a `#pragma` whose name or text, as `QCC_PR_Precompiler` copies them into
+/// `msg` (the name to the first space, tab or `(`, the text after it with a `(` kept), is 1024
+/// bytes or more, which with the NUL after it runs past `msg[1024]` (FTEF-14.66).
+fn overruns_msg(line: &str) -> bool {
+    let Some(rest) = line.trim_start_matches([' ', '\t']).strip_prefix("#pragma") else {
+        return false;
+    };
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let (name, text) = match rest.find([' ', '\t', '(']) {
+        Some(at) => {
+            let (name, text) = rest.split_at(at);
+            let text = text.strip_prefix([' ', '\t']).unwrap_or(text);
+            (name, text)
+        }
+        None => (rest, ""),
+    };
+    name.len() >= 1024 || text.len() >= 1024
+}
+
+/// Where an oracle ran: how wide its `unsigned long` is and whether its build stops at an overrun.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Host {
+    pub(crate) ulong: ULong,
+    pub(crate) overrun: Overrun,
+}
+
+impl Host {
+    /// The host's.
+    pub(crate) const HOST: Self = Self {
+        ulong: ULong::HOST,
+        overrun: Overrun::HOST,
+    };
+
+    /// Whether an oracle here may give `case` an outcome other than [`FIXTURE`]'s, which a host
+    /// of 64-bit `unsigned long` that stops at an overrun records (FTEF-14.50, FTEF-14.55,
+    /// FTEF-14.66).
+    fn reads_otherwise(self, case: &Case) -> bool {
+        self.ulong.reads_otherwise(case) || self.overrun.reads_otherwise(case)
+    }
+}
+
+impl From<ULong> for Host {
+    /// A host of `ulong` whose build stops at an overrun.
+    fn from(ulong: ULong) -> Self {
+        Self {
+            ulong,
+            overrun: Overrun::Caught,
+        }
+    }
+}
+
+/// Whether `line` is a directive whose number FTEQCC reads with `atoi`, or a `#define` whose
+/// body an `#if` may read (FTEF-14.55): `#if`, `#elif`, `#define` or `#pack`, matched by their
+/// first bytes as FTEQCC matches a directive's name (FTEF-14.52), or a `$framevalue`. The
+/// `noref` and `autoproto` pragmas read one too, but change no outcome.
+fn atoi_directive(line: &str) -> bool {
+    let line = line.trim_start_matches([' ', '\t']);
+    if line.starts_with("$framevalue") {
+        return true;
+    }
+    let Some(rest) = line.strip_prefix('#') else {
+        return false;
+    };
+    let name = rest.trim_start_matches([' ', '\t']);
+    ["if", "elif", "define", "pack"]
+        .iter()
+        .any(|directive| name.starts_with(directive))
+}
+
+/// Each place of `line` a number starts a word, a sign before its digits included, and the rest
+/// of the line from there.
+fn numbers(line: &str) -> impl Iterator<Item = &str> {
+    let bytes = line.as_bytes();
+    (0..bytes.len()).filter_map(move |at| {
+        let in_word = at
+            .checked_sub(1)
+            .and_then(|before| bytes.get(before))
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'+'));
+        let digits = match bytes.get(at) {
+            Some(b'-' | b'+') => at.saturating_add(1),
+            _ => at,
+        };
+        let starts = !in_word && bytes.get(digits).is_some_and(u8::is_ascii_digit);
+        starts.then(|| line.get(at..)).flatten()
+    })
+}
+
+/// C's `atoi` where `long` is 32 bits (LLP64): `(int)strtol(text, NULL, 10)`, which passes over
+/// the C locale's white space, reads a sign and decimal digits, and holds a value past an `int`
+/// at `INT_MAX` or `INT_MIN`.
+fn llp64_atoi(text: &str) -> i32 {
+    let text = text.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let (negative, digits) = match text.as_bytes().first() {
+        Some(b'-') => (true, text.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, text.get(1..).unwrap_or_default()),
+        _ => (false, text),
+    };
+    let mut value = 0_i64;
+    for digit in digits.chars().map_while(|c| c.to_digit(10)) {
+        value = value
+            .saturating_mul(10)
+            .saturating_add(i64::from(digit))
+            .min(i64::from(i32::MAX).saturating_add(1));
+    }
+    let value = if negative {
+        value.saturating_neg()
+    } else {
+        value
+    };
+    i32::try_from(value.clamp(i64::from(i32::MIN), i64::from(i32::MAX))).unwrap_or_default()
+}
+
+/// The text a `#pragma line` on `line` gives `strtoul` (FTEF-14.43): after the name, matched in
+/// any case and ending at a space, tab or `(`, and after a `(` the text starts with.
+fn line_pragma_text(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('#')?;
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let pragma = rest
+        .get(..6)
+        .is_some_and(|name| name.eq_ignore_ascii_case("pragma"));
+    let rest = rest.get(6..).filter(|_| pragma)?;
+    let rest = rest.trim_start_matches([' ', '\t']);
+    let end = rest.find([' ', '\t', '(']).unwrap_or(rest.len());
+    let (name, text) = rest.split_at(end);
+    let text = text.trim_start_matches([' ', '\t']);
+    name.eq_ignore_ascii_case("line")
+        .then(|| text.strip_prefix('(').unwrap_or(text))
+}
+
+/// C's `strtoul(text, &end, 0)` where `unsigned long` holds at most `max`: white space, a sign,
+/// then `0x` and hex digits, `0` and octal digits, or decimal digits; a value past `max` is
+/// `max`, and a `-` negates the value modulo `max + 1`.
+fn c_strtoul(text: &str, max: u64) -> u64 {
+    let text = text.trim_start_matches([' ', '\t', '\n', '\r', '\x0b', '\x0c']);
+    let (negative, text) = match text.as_bytes().first() {
+        Some(b'-') => (true, text.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, text.get(1..).unwrap_or_default()),
+        _ => (false, text),
+    };
+    let bytes = text.as_bytes();
+    let hex = matches!(bytes, [b'0', b'x' | b'X', digit, ..] if digit.is_ascii_hexdigit());
+    let (radix, digits) = if hex {
+        (16, text.get(2..).unwrap_or_default())
+    } else if bytes.first() == Some(&b'0') {
+        (8, text)
+    } else {
+        (10, text)
+    };
+    let mut value = 0_u64;
+    for digit in digits.chars().map_while(|c| c.to_digit(radix)) {
+        match value
+            .checked_mul(u64::from(radix))
+            .and_then(|v| v.checked_add(u64::from(digit)))
+            .filter(|&v| v <= max)
+        {
+            Some(next) => value = next,
+            None => return max,
+        }
+    }
+    if negative {
+        value.wrapping_neg() & max
+    } else {
+        value
+    }
+}
+
+/// The low 32 bits of `value`, which FTEQCC's `int` keeps (FTEF-14.43).
+fn low_32_bits(value: u64) -> u64 {
+    value & u64::from(u32::MAX)
+}
+
 /// The spec statement that says why the profile's outcome `ours` for `case`, with the error
-/// codes `errors`, may differ from `oracle`'s, if one does (FTE-23.14).
+/// codes `errors`, may differ from `oracle`'s, an oracle that ran where `unsigned long` is
+/// `ulong` wide, if one does (FTE-23.15).
 pub(crate) fn expected_difference(
     case: &Case,
     ours: &Outcome,
     errors: &[Code],
     oracle: &Outcome,
+    host: impl Into<Host>,
 ) -> Option<&'static str> {
+    let Host { ulong, overrun } = host.into();
     let vanilla = !case.dialect.has_fteqcc_extensions();
     if !vanilla {
+        // FTEF-14.50: the profile reads a `#pragma line` number as a 64-bit `strtoul` does, so
+        // only the line `__LINESTR__` names may differ.
+        let same_number = matches!(
+            (ours, oracle),
+            (Outcome::Bound { number: a, .. }, Outcome::Bound { number: b, .. }) if a == b
+        );
+        if same_number && ulong.line_reads_otherwise(case) {
+            return Some("FTEF-14.50");
+        }
+        // FTEF-14.55: the profile reads a directive's number as an LP64 `atoi` does.
+        if ulong.atoi_reads_otherwise(case) {
+            return Some("FTEF-14.55");
+        }
+        // FTEF-14.66: a build that reads on past a pragma's overrun of `msg[1024]` compiles what
+        // the profile refuses.
+        if *ours == Outcome::Rejected && overrun.reads_otherwise(case) {
+            return Some("FTEF-14.66");
+        }
         // FTEF-13.8: FTEQCC never finishes writing a code of 0x80000000 or more.
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
         }
-        // FTE-23.11: a macro after `#` may leave `f` initialised with a number, which FTEQCC
-        // cannot cast to a function and this profile, which checks no types, accepts.
-        let uncast = *oracle == Outcome::Rejected
-            && *ours == Outcome::Accepted
-            && errors.is_empty()
-            && value_initialiser(case);
-        return uncast.then_some("FTE-23.11");
+        // FTEF-14.47: an `#eof` that is not a file's first line ends the text here, where the
+        // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`
+        // open no file here, where FTEQCC refuses a missing one.
+        let refused_here_only = *oracle == Outcome::Rejected && errors.is_empty();
+        let crashed_at_eof = case.texts().any(eof_past_first_line);
+        let opened_a_file = case
+            .texts()
+            .any(|t| t.contains("#merge") || t.contains("#datafile"));
+        return (refused_here_only && (crashed_at_eof || opened_a_file)).then_some("FTEF-14.47");
     }
     // QC-27.9: the vanilla profile makes `#0` and negative numbers errors, which id's qcc
-    // accepts with no builtin number (QC-13.4). Only that error may differ: without it the
-    // profile's outcome must be the oracle's.
-    if !errors.contains(&Code::E0507) {
-        return None;
-    }
+    // accepts with no builtin number (QC-13.4); QC-27.8: and an initialiser that is no
+    // literal, which id's qcc reads as the last literal it lexed (QC-11.4). Only those errors
+    // may differ: without them the profile's outcome must be the oracle's.
+    let divergences = [(Code::E0506, "QC-27.8"), (Code::E0507, "QC-27.9")];
+    let statement = divergences
+        .iter()
+        .find(|(code, _)| errors.contains(code))
+        .map(|(_, statement)| *statement)?;
     let rest: Vec<Code> = errors
         .iter()
         .copied()
-        .filter(|code| *code != Code::E0507)
+        .filter(|code| divergences.iter().all(|(divergence, _)| divergence != code))
         .collect();
-    let without = if rest.is_empty() {
+    let without = if !rest.is_empty() {
+        refusal(case, &rest)
+    } else if errors.contains(&Code::E0507) {
         Outcome::Accepted
     } else {
-        refusal(case, &rest)
+        let (mut db, _) = analysed(case);
+        binding(&mut db, case).unwrap_or(Outcome::Accepted)
     };
-    (without == *oracle).then_some("QC-27.9")
+    (without == *oracle).then_some(statement)
 }
 
 /// The profile's outcome for `case`, and the codes of its errors in the order of their place.
@@ -810,27 +1555,91 @@ pub(crate) fn profile(case: &Case) -> (Outcome, Vec<Code>) {
     (refusal(case, &errors), errors)
 }
 
+/// The directory the profile reads an FTEQCC case's files from, where the graph finds them, so
+/// that the database holds each file by its path in it, as the editor's does, and the
+/// preprocessor is given the graph's name for it (FTEF-14.75, PRJ-6.7).
+const PROFILE_DIR: &str = "/oracle/project";
+
 /// `case` as the compiler reads it, through the preprocessor (`Db::analyze_module`): the
 /// database, and each error's place and code.
 fn analysed(case: &Case) -> (Db, Vec<(usize, Code)>) {
     let mut db = Db::new();
     db.set_dialect(case.dialect);
-    db.set_file(
-        FileId(0),
-        PathBuf::from("t.qc"),
-        case.source.as_bytes().to_vec(),
-    );
-    let analysis = db.analyze_module(&ModuleInput {
-        prelude: Vec::new(),
-        compiled: vec![FileId(0)],
-        autoproto: None,
-    });
+    let has_progs = case.project.as_ref().is_some_and(|p| p.progs.is_some());
+    let input = if case.dialect == Dialect::Fteqcc && !has_progs {
+        graph_input(&mut db, case)
+    } else {
+        db.set_file(
+            FileId(0),
+            PathBuf::from(case.compiled()),
+            case.source_bytes(),
+        );
+        // The other files are the preprocessor's to `#include` (PRJ-5.2, FTEF-14.40).
+        for (index, (name, text)) in case.project.iter().flat_map(|p| &p.files).enumerate() {
+            let id = FileId(index.saturating_add(1));
+            db.set_file(id, PathBuf::from(name), text.as_bytes().to_vec());
+        }
+        ModuleInput {
+            compiled: vec![FileId(0)],
+            include_dirs: case.include_dirs().map(PathBuf::from).collect(),
+            command_line: CommandLine::new(&case.options),
+            ..ModuleInput::default()
+        }
+    };
+    let analysis = db.analyze_module(&input);
     let errors = analysis
         .diagnostics()
         .filter(|d| d.diagnostic.code.is_error())
         .map(|d| (d.diagnostic.span.start, d.diagnostic.code))
         .collect();
     (db, errors)
+}
+
+/// The module input of the FTEQCC `case` as the editor opens it: the project graph of its
+/// `progs.src` in [`PROFILE_DIR`] (PRJ-6), each file of the graph put in `db` by its path at its
+/// index, and every other file of the case after them, for the preprocessor to `#include`.
+fn graph_input(db: &mut Db, case: &Case) -> ModuleInput {
+    let dir = Path::new(PROFILE_DIR);
+    let at = |name: &str| qc_project::normalize(&dir.join(name));
+    let mut texts = vec![(at(case.compiled()), case.source_bytes())];
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        texts.push((at(name), text.as_bytes().to_vec()));
+    }
+    let mut loader = qc_project::MemoryLoader::new();
+    loader.insert(at("progs.src"), case.progs_src_bytes());
+    for (path, text) in &texts {
+        loader.insert(path.clone(), text.clone());
+    }
+    let include_dirs: Vec<PathBuf> = case.include_dirs().map(PathBuf::from).collect();
+    let graph = qc_project::build_graph(
+        &mut loader,
+        &at("progs.src"),
+        &[],
+        &include_dirs,
+        case.dialect,
+    );
+    let text_of = |path: &Path| {
+        texts
+            .iter()
+            .find(|(known, _)| known == path)
+            .map(|(_, text)| text.clone())
+            .unwrap_or_default()
+    };
+    for (index, file) in graph.files.iter().enumerate() {
+        db.set_file(FileId(index), file.path.clone(), text_of(&file.path));
+    }
+    let mut next = graph.files.len();
+    for (path, text) in &texts {
+        if graph.files.iter().all(|file| file.path != *path) {
+            db.set_file(FileId(next), path.clone(), text.clone());
+            next = next.saturating_add(1);
+        }
+    }
+    ModuleInput {
+        include_dirs,
+        command_line: CommandLine::new(&case.options),
+        ..ModuleInput::from_graph(&graph)
+    }
 }
 
 /// How the profile refuses `case` with the errors `errors`, in the order of their place.
@@ -905,17 +1714,14 @@ fn function_name(case: &Case) -> &str {
         .unwrap_or("f")
 }
 
-/// Whether the FTEQCC `case`, which uses a macro or a built-in constant (FTEF-14.7), initialises
-/// its function with a number or a vector once preprocessed, such as the number a macro after
-/// `#` stands for (FTE-23.11).
-fn value_initialiser(case: &Case) -> bool {
-    let uses_macros = case.source.contains("#define") || case.source.contains("#__");
-    let (db, _) = analysed(case);
-    uses_macros
-        && matches!(
-            expanded_literal(&db, function_name(case)),
-            Some(qc_sema::LiteralValue::Float(_) | qc_sema::LiteralValue::Vector(_))
-        )
+/// Whether `text` has an `#eof` that FTEQCC would run past its first line: one that starts a
+/// line after spaces and tabs (FTEF-14.52, FTEF-14.47). A line of a skipped side matches too, as
+/// the text alone does not say which sides FTEQCC skips; FTEQCC accepts those, and only a
+/// refusal is matched.
+fn eof_past_first_line(text: &str) -> bool {
+    text.split(['\n', '\r'])
+        .skip(1)
+        .any(|line| line.trim_start_matches([' ', '\t']).starts_with("#eof"))
 }
 
 /// Whether the first builtin of the vanilla `case` is a number whose value is 0, read from the
@@ -933,14 +1739,31 @@ fn vanilla_zero(case: &Case) -> bool {
     number.parse::<f64>().is_ok_and(|value| value == 0.0)
 }
 
-/// The oracle's outcome for `case`, compiled in `dir`.
+/// The oracle's outcome for `case`, compiled in `dir`, or for a case of a [`Project`] in a
+/// directory of its own in `dir`, made afresh, so that no file of another case is there.
 fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String> {
+    let fresh = dir.join("project");
+    let dir = if case.project.is_some() {
+        if fresh.exists() {
+            fs::remove_dir_all(&fresh).map_err(|e| format!("{}: {e}", fresh.display()))?;
+        }
+        fresh.as_path()
+    } else {
+        dir
+    };
     let write = |name: &str, text: &[u8]| {
         let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
         fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))
     };
-    write("progs.src", b"progs.dat\nt.qc\n")?;
-    write("t.qc", case.source.as_bytes())?;
+    let compiled = case.compiled();
+    write("progs.src", &case.progs_src_bytes())?;
+    write(compiled, &case.source_bytes())?;
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        write(name, text.as_bytes())?;
+    }
     let progs = dir.join("progs.dat");
     if progs.exists() {
         fs::remove_file(&progs).map_err(|e| format!("{}: {e}", progs.display()))?;
@@ -949,6 +1772,8 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
     let mut command = if fteqcc {
         let mut command = Command::new(&oracles.fteqcc);
         command.arg("-Tid");
+        command.args(&case.options);
+        command.args(case.include_dirs().map(|dir| format!("-I{dir}")));
         command
     } else {
         Command::new(&oracles.qcc)
@@ -977,7 +1802,7 @@ fn oracle(oracles: &Oracles, dir: &Path, case: &Case) -> Result<Outcome, String>
             Outcome::Rejected
         });
     }
-    // FTE-23.11: FTEQCC writes no progs when it has made nothing to write, as for a function
+    // FTE-23.16: FTEQCC writes no progs when it has made nothing to write, as for a function
     // initialised with 0 a macro gave.
     if fteqcc && !progs.exists() && text.contains("nothing to write") {
         return Ok(Outcome::Accepted);
@@ -1029,10 +1854,13 @@ fn bound(progs: &Progs, case: &Case) -> Option<Outcome> {
         1
     };
     let Some(function) = progs.functions().get(index) else {
-        // FTE-23.11: FTEQCC makes no function for `f` initialised with a string a macro gave,
-        // which it casts with a warning.
+        // FTE-23.16: FTEQCC makes no function for `f` initialised with a string a macro gave,
+        // which it casts with a warning. PRJ-4.11: id's qcc makes none when its own `progs.src`
+        // does not list the file that binds `f`.
         let fteqcc = case.dialect.has_fteqcc_extensions();
-        return (fteqcc && progs.functions().len() == index).then_some(Outcome::Accepted);
+        let own_progs = case.project.as_ref().is_some_and(|p| p.progs.is_some());
+        let none = (fteqcc || own_progs) && progs.functions().len() == index;
+        return none.then_some(Outcome::Accepted);
     };
     // FTEQCC writes every builtin's `first_statement` as `-binum`, a negative number's
     // included (`qccmain.c`, `if (functions[i].code == -1) funcs[i].first_statement =
@@ -1064,9 +1892,14 @@ pub(crate) fn read_fixture(root: &Path) -> Result<BTreeMap<String, Outcome>, Str
         .collect()
 }
 
-/// Compares the profile with `recorded`, the oracles' outcomes; prints each disagreement and
-/// returns how many cases agree and how many do not.
-pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> Tally {
+/// Compares the profile with `recorded`, the outcomes of oracles that ran on `host`; prints each
+/// disagreement and returns how many cases agree and how many do not.
+pub(crate) fn compare(
+    cases: &[Case],
+    recorded: &BTreeMap<String, Outcome>,
+    host: impl Into<Host>,
+) -> Tally {
+    let host = host.into();
     let mut tally = Tally::default();
     for case in cases {
         let Some(oracle) = recorded.get(&case.key()) else {
@@ -1077,7 +1910,7 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> T
         let (ours, errors) = profile(case);
         if ours == *oracle {
             tally.agree = tally.agree.saturating_add(1);
-        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle) {
+        } else if let Some(statement) = expected_difference(case, &ours, &errors, oracle, host) {
             let count = tally.expected.entry(statement).or_default();
             *count = count.saturating_add(1);
         } else {
@@ -1086,6 +1919,85 @@ pub(crate) fn compare(cases: &[Case], recorded: &BTreeMap<String, Outcome>) -> T
         }
     }
     tally
+}
+
+/// What the project graph of `case`, a graph case of the directive family, makes of the
+/// `progs.src` the oracle reads, under the case's dialect (PRJ-4.11, PRJ-5.13): whether it lists a
+/// file that binds `f`, and whether it reports an error.
+fn graph_reads(case: &Case) -> (bool, bool) {
+    let mut loader = qc_project::MemoryLoader::new();
+    let compiled = case.compiled();
+    loader.insert("progs.src", case.progs_src_bytes());
+    loader.insert(compiled, case.source_bytes());
+    let mut binding = Vec::new();
+    for (name, text) in case.project.iter().flat_map(|p| &p.files) {
+        loader.insert(name.as_str(), text.as_bytes());
+        if text == directives::BIND {
+            binding.push(PathBuf::from(name));
+        }
+    }
+    let dirs: Vec<PathBuf> = case.include_dirs().map(PathBuf::from).collect();
+    let graph = qc_project::build_graph(
+        &mut loader,
+        Path::new("progs.src"),
+        &[],
+        &dirs,
+        case.dialect,
+    );
+    let binds = graph.files.iter().any(|file| binding.contains(&file.path));
+    let errs = graph.diagnostics.iter().any(|d| d.code.is_error());
+    (binds, errs)
+}
+
+/// The project graph's cases (PRJ-5.13): programs whose one file that binds `f` FTEQCC reads,
+/// binding `f` to `#5`, or does not, accepting the program with no `f`. The preprocessor reads no
+/// `#includelist`, so the profile is not compared on them.
+pub(crate) fn graph_cases() -> Vec<Case> {
+    directives::graph_cases()
+}
+
+/// The graph cases whose project graph lists the file that binds `f` where `outcomes`, of
+/// oracles that ran where `long` is `ulong` wide, say the oracle did not read it, or the other way
+/// round; whose oracle rejected the program where the graph reports no error, as each compiler
+/// stops at the error the graph reports (PRJ-6.6); or whose oracle neither bound `f` to `#5`, nor
+/// accepted nor rejected the program, so that the case says nothing of what it read (PRJ-5.13).
+/// Where `long` is 32 bits a case whose directive holds a number `atoi` reads otherwise may read
+/// the other file (FTEF-14.55).
+pub(crate) fn graph_differences(outcomes: &BTreeMap<String, Outcome>, ulong: ULong) -> Vec<String> {
+    let mut differ = Vec::new();
+    for case in graph_cases() {
+        let read = match outcomes.get(&case.key()) {
+            Some(Outcome::Bound { number: 5, .. }) => true,
+            Some(Outcome::Accepted) => false,
+            Some(Outcome::Rejected) => {
+                if !graph_reads(&case).1 {
+                    let why = "oracle rejected, the graph reports no error";
+                    differ.push(format!("{}: {why}", show(&case)));
+                }
+                continue;
+            }
+            Some(oracle) => {
+                differ.push(format!(
+                    "{}: oracle {oracle}, which reads no file",
+                    show(&case)
+                ));
+                continue;
+            }
+            None => {
+                differ.push(format!("{}: not recorded in {FIXTURE}", show(&case)));
+                continue;
+            }
+        };
+        if graph_reads(&case).0 != read && !ulong.atoi_reads_otherwise(&case) {
+            let which = if read {
+                "the oracle reads the file, the graph does not"
+            } else {
+                "the oracle does not read the file, the graph does"
+            };
+            differ.push(format!("{}: {which}", show(&case)));
+        }
+    }
+    differ
 }
 
 /// How the cases of [`compare`] came out.
@@ -1110,17 +2022,63 @@ impl fmt::Display for Tally {
 }
 
 fn show(case: &Case) -> String {
-    format!("{} {:?}", dialect_name(case.dialect), case.source)
+    let dialect = match case.encoding.name() {
+        Some(encoding) => format!("{} {encoding}", dialect_name(case.dialect)),
+        None => dialect_name(case.dialect).to_owned(),
+    };
+    let dialect = if case.options.is_empty() {
+        dialect
+    } else {
+        format!("{dialect} {}", case.options.join(" "))
+    };
+    match &case.project {
+        None => format!("{dialect} {:?}", case.source),
+        Some(project) => {
+            let progs = project.progs.as_ref().map_or_else(String::new, |progs| {
+                let encoding = progs.encoding.name().unwrap_or("utf-8");
+                format!(", progs.src {encoding} {:?}", progs.text)
+            });
+            format!(
+                "{dialect} {}: {:?}, with {:?}{progs}",
+                project.compiled, case.source, project.files
+            )
+        }
+    }
 }
 
 /// Runs every case through the oracles; checks them against [`FIXTURE`] (or, with `record`,
 /// writes it) and the profile against them.
 pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool, String> {
+    check_where(root, oracles, record, Host::HOST)
+}
+
+/// [`check`] with oracles that run on `host`, which records nothing unless its `unsigned long`
+/// is 64 bits (FTEF-14.50). A host whose build reads on past a pragma's overrun records, for each
+/// case that overrun may change, the outcome [`FIXTURE`] holds, a stopping build's (FTEF-14.66).
+fn check_where(
+    root: &Path,
+    oracles: &Oracles,
+    record: bool,
+    host: impl Into<Host>,
+) -> Result<bool, String> {
+    let host = host.into();
+    let ulong = host.ulong;
+    if record && ulong != ULong::Bits64 {
+        return Err(format!(
+            "{FIXTURE} records the outcomes where `unsigned long` is 64 bits (FTEF-14.50); \
+             record it on Linux or macOS"
+        ));
+    }
     let work = oracles.work.join("builtins");
     fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
     let cases = cases();
+    let graph_cases = graph_cases();
     let mut outcomes = BTreeMap::new();
-    for case in &cases {
+    for case in cases.iter().chain(&graph_cases) {
+        // A graph case may be a case of the cross product too.
+        if outcomes.contains_key(&case.key()) {
+            continue;
+        }
         match oracle(oracles, &work, case) {
             Ok(outcome) => outcomes.insert(case.key(), outcome),
             Err(problem) => {
@@ -1132,6 +2090,15 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
     }
     let mut ok = true;
     if record {
+        if host.overrun != Overrun::Caught {
+            let held = read_fixture(root).unwrap_or_default();
+            for case in cases.iter().chain(&graph_cases) {
+                let key = case.key();
+                if let Some(outcome) = held.get(&key).filter(|_| host.reads_otherwise(case)) {
+                    outcomes.insert(key, outcome.clone());
+                }
+            }
+        }
         let raw: BTreeMap<&String, String> =
             outcomes.iter().map(|(k, v)| (k, v.to_string())).collect();
         let text = serde_json::to_string_pretty(&raw).map_err(|e| e.to_string())?;
@@ -1143,9 +2110,15 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
         );
     } else {
         let recorded = read_fixture(root)?;
-        // A changed cross product is recorded again with `--record` once it is right.
-        for (key, outcome) in &outcomes {
-            if recorded.get(key) != Some(outcome) {
+        // A changed cross product is recorded again with `--record` once it is right. Where
+        // `long` is 32 bits a wide `#pragma line` or `#if` number may read otherwise
+        // (FTEF-14.50, FTEF-14.55).
+        for case in cases.iter().chain(&graph_cases) {
+            let key = case.key();
+            let Some(outcome) = outcomes.get(&key) else {
+                continue;
+            };
+            if recorded.get(&key) != Some(outcome) && !host.reads_otherwise(case) {
                 ok = false;
                 println!(
                     "FAIL  {key:?}: the oracle gives {outcome}, not as {FIXTURE} records (--record)"
@@ -1157,12 +2130,21 @@ pub(crate) fn check(root: &Path, oracles: &Oracles, record: bool) -> Result<bool
             println!("FAIL  {FIXTURE} records cases the cross product does not make (--record)");
         }
     }
-    let tally = compare(&cases, &outcomes);
+    let tally = compare(&cases, &outcomes, host);
     println!(
         "oracles: {} builtin initialiser cases: {tally}",
         cases.len()
     );
-    Ok(ok && tally.differ == 0)
+    let graph = graph_differences(&outcomes, ulong);
+    for problem in &graph {
+        println!("FAIL  project graph: {problem}");
+    }
+    println!(
+        "oracles: {} project graph cases, {} differ",
+        graph_cases.len(),
+        graph.len()
+    );
+    Ok(ok && tally.differ == 0 && graph.is_empty())
 }
 
 #[cfg(test)]

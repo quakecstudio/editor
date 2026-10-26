@@ -29,15 +29,19 @@
 //! (the issue's second acceptance criterion).
 
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use qc_diag::Diagnostic;
+use qc_diag::{Code, Diagnostic};
 use qc_syntax::Parse;
 
-use crate::expand::{Files, ModuleInput, OriginMap, preprocess};
+use crate::expand::{
+    Files, ModuleInput, OriginMap, Preprocessed, ProtoPlan, Rendered, preprocess, settings_at,
+};
 use crate::lower::{FileDecls, lower_file};
-use crate::resolve::{FileDiagnostic, ModuleIndex, ResolveOptions, resolve_mapped, resolve_module};
+use crate::resolve::{
+    FileDiagnostic, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
+};
 use crate::symbol::{FileId, Location};
 
 /// How many times each memoized query actually ran, as opposed to being served from cache.
@@ -74,10 +78,17 @@ impl ModuleAnalysis {
 }
 
 /// The parse and lowering of one compiled file's expansion, kept while the expansion's text
-/// is the same.
+/// and the lexer's flags in it are the same.
 #[derive(Clone, Debug)]
 struct ExpandedFile {
     text: Vec<u8>,
+    /// The pragmas' changes to the compiler flags, from each rendered offset (FTEF-21.1).
+    flags: Vec<(usize, qc_preproc::FlagEdit)>,
+    /// The pragmas' changes to the keywords, from each rendered offset (FTEF-20.1).
+    keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// The rendered offsets of the strings FTEQCC's lexer did not join to the one before them
+    /// (FTEF-21.17).
+    seams: Vec<usize>,
     parse: Parse,
     decls: FileDecls,
 }
@@ -118,14 +129,18 @@ pub struct Db {
     files: HashMap<FileId, InputFile>,
     /// Memoized per-file parses.
     parses: HashMap<FileId, Memo<Parse>>,
+    /// The files that are a module's source in source form, a `progs.src` whose own text
+    /// FTEQCC compiles, parsed past a first `#!` line (PRJ-4.10, FTEF-19.27).
+    module_sources: HashSet<FileId>,
     /// Memoized per-file lowerings.
     lowerings: HashMap<FileId, Memo<FileDecls>>,
     /// The memoized module index over an ordered list of files.
     module: Option<Memo<(Vec<FileId>, ModuleIndex)>>,
     /// Each file's path, for the preprocessor (QC-9.2).
     paths: HashMap<FileId, PathBuf>,
-    /// The parse and lowering of each compiled file's last expansion.
-    expanded: HashMap<FileId, ExpandedFile>,
+    /// The parse and lowering of each compiled file's last expansion, by the pass it is of:
+    /// `true` for FTEQCC's first pass when a second follows.
+    expanded: HashMap<(FileId, bool), ExpandedFile>,
     /// The memoized analysis of a module read through the preprocessor.
     analysis: Option<Memo<(ModuleInput, ModuleAnalysis)>>,
     /// Query-run counters.
@@ -259,7 +274,11 @@ impl Db {
             return memo.value.clone();
         }
         self.bump_parse();
-        let value = qc_syntax::parse_with(self.file_text(file), self.dialect);
+        let value = if self.module_sources.contains(&file) {
+            qc_syntax::parse_module_source(self.file_text(file), self.dialect)
+        } else {
+            qc_syntax::parse_with(self.file_text(file), self.dialect)
+        };
         self.parses.insert(
             file,
             Memo {
@@ -316,6 +335,9 @@ impl Db {
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: self.autoproto,
+            case_insensitive: false,
+            qcfuncs_off: false,
+            target: None,
         };
         let index = resolve_module(&lowered, options);
         self.module = Some(Memo {
@@ -346,6 +368,17 @@ impl Db {
         {
             return memo.value.1.clone();
         }
+        // FTEF-19.27: the prelude's files are the source form's `progs.src`, parsed as a
+        // module's source; a file that is one no longer, or newly, is parsed again.
+        let sources: HashSet<FileId> = input.prelude.iter().copied().collect();
+        if sources != self.module_sources {
+            for file in sources.symmetric_difference(&self.module_sources) {
+                self.parses.remove(file);
+                self.lowerings.remove(file);
+            }
+            self.module = None;
+            self.module_sources = sources;
+        }
         self.bump_preprocess();
         let preprocessed = {
             let mut files = Files {
@@ -363,28 +396,118 @@ impl Db {
             }
             preprocess(&files, input, self.dialect, self.autoproto)
         };
-        let mut syntax = preprocessed.diagnostics;
+        let mut syntax = preprocessed.diagnostics.clone();
         let mut decls = Vec::with_capacity(input.compiled.len());
+        let mut keywords = Vec::with_capacity(input.compiled.len());
+        let mut relexed = Vec::new();
+        let preprocessor_count = syntax.len();
         for (&id, rendered) in input.compiled.iter().zip(&preprocessed.files) {
-            let file = self.expanded_file(id, &rendered.text);
-            for d in file.parse.diagnostics() {
-                syntax.push(locate_diagnostic(&rendered.origins, id, d));
-            }
+            let file = self.expanded_file(id, rendered, false);
+            keywords.push(file.parse.keywords().to_vec());
+            // FTEF-21.17: the tokens an `extern` block lexed with other flags have the parser's
+            // lexical errors and warnings, not the preprocessor's.
+            relexed.extend(
+                file.parse
+                    .relexed()
+                    .iter()
+                    .filter_map(|&span| rendered.origins.locate(span)),
+            );
+            // FTEF-12.19: a single pass that prototypes part of the module skips those
+            // initialisers as the first of two does.
+            let skipped = match (&preprocessed.plan, preprocessed.autoproto) {
+                (Some(plan), false) => prototyped_initialisers(&file.parse, plan, decls.len()),
+                (Some(_) | None, _) => Vec::new(),
+            };
+            syntax.extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
             decls.push(file.decls);
         }
+        let FirstRead {
+            decls: first_decls,
+            keywords: first_keywords,
+            relexed: first_relexed,
+            syntax: first_syntax,
+        } = self.read_first_pass(input, &preprocessed);
+        if !relexed.is_empty() {
+            let mut index = 0_usize;
+            syntax.retain(|d| {
+                let from_preprocessor = index < preprocessor_count;
+                index = index.saturating_add(1);
+                let lexical = lexer_code(d.diagnostic.code);
+                let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
+                !(from_preprocessor
+                    && lexical
+                    && relexed
+                        .iter()
+                        .any(|l| l.file == d.file && l.span.contains(at)))
+            });
+        }
+        // The first pass found its own, which the second finds again unless its flags differ.
+        for d in first_syntax {
+            let at = qc_diag::Span::new(d.diagnostic.span.start, d.diagnostic.span.start);
+            let relexed_there = lexer_code(d.diagnostic.code)
+                && first_relexed
+                    .iter()
+                    .any(|l| l.file == d.file && l.span.contains(at));
+            if !relexed_there && !syntax.contains(&d) {
+                syntax.push(d);
+            }
+        }
         let maps: Vec<&OriginMap> = preprocessed.files.iter().map(|r| &r.origins).collect();
-        let noref: Vec<&[(usize, bool)]> = preprocessed
+        // FTEF-19.7: FTEQCC keeps a function's first declaration against one in a file named
+        // `*extensions.qc`.
+        let extensions = self
+            .paths
+            .iter()
+            .filter(|(_, path)| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.to_ascii_lowercase().ends_with("extensions.qc"))
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        let warnings: Vec<&[(usize, qc_preproc::WarningSettings)]> = preprocessed
             .files
             .iter()
-            .map(|r| r.noref.as_slice())
+            .map(|r| r.warnings.as_slice())
             .collect();
+        let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
+            keywords.iter().map(Vec::as_slice).collect();
+        let first_maps: Vec<&OriginMap> = preprocessed.first.iter().map(|r| &r.origins).collect();
+        let first_warnings: Vec<&[(usize, qc_preproc::WarningSettings)]> = preprocessed
+            .first
+            .iter()
+            .map(|r| r.warnings.as_slice())
+            .collect();
+        let first_keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
+            first_keywords.iter().map(Vec::as_slice).collect();
+        let sources = Sources {
+            maps: &maps,
+            warnings: &warnings,
+            keywords: &keywords,
+            extensions,
+            plan: preprocessed.plan.as_ref(),
+            first: preprocessed.autoproto.then_some(FirstPass {
+                files: &first_decls,
+                maps: &first_maps,
+                warnings: &first_warnings,
+                keywords: &first_keywords,
+            }),
+        };
         self.bump_module_index();
+        let command_line_flags = input
+            .command_line
+            .flags(qc_preproc::FlagSettings::default());
         let options = ResolveOptions {
             dialect: self.dialect,
             autoproto: preprocessed.autoproto,
+            // FTEF-19.33, FTEF-19.28: only the command line sets `caseinsens`, and `qcfuncs`
+            // before the core types are named.
+            case_insensitive: command_line_flags.is_on(qc_preproc::FteFlag::Caseinsensitive),
+            qcfuncs_off: !command_line_flags.is_on(qc_preproc::FteFlag::Qcfuncs),
+            target: Some(preprocessed.target),
         };
         let analysis = ModuleAnalysis {
-            index: resolve_mapped(&decls, &maps, &noref, options),
+            index: resolve_mapped(&decls, &sources, options),
             syntax,
         };
         self.analysis = Some(Memo {
@@ -394,34 +517,178 @@ impl Db {
         analysis
     }
 
+    /// FTEF-12.18: the first pass of a two-pass compile, read with its own flags, warning
+    /// settings and keywords: each compiled file's declarations and keywords, the spans its
+    /// `extern` blocks lexed otherwise, and the diagnostics the second pass may not find again.
+    fn read_first_pass(&mut self, input: &ModuleInput, preprocessed: &Preprocessed) -> FirstRead {
+        if preprocessed.first.is_empty() {
+            self.expanded.retain(|(_, first), _| !*first);
+        }
+        let mut read = FirstRead {
+            syntax: preprocessed
+                .first_diagnostics
+                .iter()
+                .filter(|d| lexer_code(d.diagnostic.code))
+                .cloned()
+                .collect(),
+            ..FirstRead::default()
+        };
+        for (&id, rendered) in input.compiled.iter().zip(&preprocessed.first) {
+            let file = self.expanded_file(id, rendered, true);
+            read.keywords.push(file.parse.keywords().to_vec());
+            read.relexed.extend(
+                file.parse
+                    .relexed()
+                    .iter()
+                    .filter_map(|&span| rendered.origins.locate(span)),
+            );
+            // FTEF-12.19: what the first pass skips over, FTEQCC's parser does not read.
+            let skipped = preprocessed
+                .plan
+                .as_ref()
+                .map(|plan| prototyped_initialisers(&file.parse, plan, read.decls.len()))
+                .unwrap_or_default();
+            read.syntax
+                .extend(parse_diagnostics(&file.parse, rendered, id, &skipped));
+            read.decls.push(file.decls);
+        }
+        read
+    }
+
     /// The lowered declarations of compiled file `file` as [`Db::analyze_module`] last read
     /// it, from its expansion (QC-9.7, QC-9.16); `None` before a module that compiles it has
     /// been analysed.
     #[must_use]
     pub fn expanded_decls(&self, file: FileId) -> Option<&FileDecls> {
-        self.expanded.get(&file).map(|expanded| &expanded.decls)
+        self.expanded
+            .get(&(file, false))
+            .map(|expanded| &expanded.decls)
     }
 
-    /// The parse and lowering of compiled file `file` whose expansion is `text`: the cached
-    /// ones when the expansion is unchanged, otherwise parsed and lowered again.
-    fn expanded_file(&mut self, file: FileId, text: &[u8]) -> ExpandedFile {
-        if let Some(cached) = self.expanded.get(&file)
+    /// The parse and lowering of compiled file `file` whose expansion is `rendered`: the cached
+    /// ones when the expansion and the lexer's flags and keywords in it are unchanged, otherwise
+    /// parsed and lowered again.
+    fn expanded_file(&mut self, file: FileId, rendered: &Rendered, first: bool) -> ExpandedFile {
+        let text = rendered.text.as_slice();
+        // The first pass read as the second was, with the same text, flags and keywords, is
+        // that parse again.
+        if first
+            && let Some(second) = self.expanded.get(&(file, false))
+            && second.text == text
+            && second.flags == rendered.flags
+            && second.keywords == rendered.keywords
+        {
+            return second.clone();
+        }
+        if let Some(cached) = self.expanded.get(&(file, first))
             && cached.text == text
+            && cached.flags == rendered.flags
+            && cached.keywords == rendered.keywords
+            && cached.seams == rendered.seams
         {
             return cached.clone();
         }
         self.bump_parse();
-        let parse = qc_syntax::parse_with(text, self.dialect);
+        let parse = qc_syntax::parse_preprocessed_flagged(
+            text,
+            self.dialect,
+            &rendered.flags,
+            &rendered.keywords,
+            &rendered.seams,
+        );
         self.bump_lower();
         let decls = lower_file(&parse, self.dialect);
         let value = ExpandedFile {
             text: text.to_vec(),
+            flags: rendered.flags.clone(),
+            keywords: rendered.keywords.clone(),
+            seams: rendered.seams.clone(),
             parse,
             decls,
         };
-        self.expanded.insert(file, value.clone());
+        self.expanded.insert((file, first), value.clone());
         value
     }
+}
+
+/// Whether the lexer gives `code` as it lexes a token's text, which lexing the token again with
+/// other flags gives again or not (QCD-2, FTEF-12.12, FTEF-21.17): the lexical errors and the
+/// lexer's own warnings, not the preprocessor's, such as a stale macro or a macro in a string.
+const fn lexer_code(code: Code) -> bool {
+    matches!(
+        code,
+        Code::E0101
+            | Code::E0102
+            | Code::E0103
+            | Code::E0104
+            | Code::E0105
+            | Code::E0123
+            | Code::E0124
+            | Code::W0110
+            | Code::W0111
+            | Code::W0112
+            | Code::W0118
+            | Code::W0119
+            | Code::W0120
+            | Code::W0121
+            | Code::W0123
+    )
+}
+
+/// What [`Db::read_first_pass`] reads of the first pass.
+#[derive(Default)]
+struct FirstRead {
+    /// Each compiled file's declarations.
+    decls: Vec<FileDecls>,
+    /// Each compiled file's keywords at each offset.
+    keywords: Vec<Vec<(usize, qc_syntax::Keywords)>>,
+    /// The spans its `extern` blocks lexed with other flags.
+    relexed: Vec<Location>,
+    /// Its diagnostics.
+    syntax: Vec<FileDiagnostic>,
+}
+
+/// The diagnostics of the parse of compiled file `id`, whose expansion is `rendered`, at their
+/// source spans (QC-9.7), each warning as the settings where it stands report it (FTEF-19.22).
+fn parse_diagnostics<'a>(
+    parse: &'a Parse,
+    rendered: &'a Rendered,
+    id: FileId,
+    skipped: &'a [qc_diag::Span],
+) -> impl Iterator<Item = FileDiagnostic> + 'a {
+    parse.diagnostics().iter().filter_map(move |d| {
+        if skipped.iter().any(|s| s.contains(d.span)) {
+            return None;
+        }
+        let settings = settings_at(&rendered.warnings, d.span.start);
+        let code = settings.map_or(Some(d.code), |s| s.reported_code(d.code))?;
+        let d = Diagnostic {
+            code,
+            message: d.message.clone(),
+            span: d.span,
+        };
+        Some(locate_diagnostic(&rendered.origins, id, &d))
+    })
+}
+
+/// The spans of the initialisers, function bodies among them, of the declarations that FTEQCC's
+/// first pass reads with `autoprototype` on, in compiled file number `file` (FTEF-12.19): it
+/// skips over them.
+fn prototyped_initialisers(parse: &Parse, plan: &ProtoPlan, file: usize) -> Vec<qc_diag::Span> {
+    use qc_syntax::ast::AstNode;
+
+    let Some(tree) = parse.tree() else {
+        return Vec::new();
+    };
+    tree.declarations()
+        .flat_map(|declaration| declaration.declarators().collect::<Vec<_>>())
+        .filter_map(|declarator| {
+            let start = declarator.name()?.span().start;
+            let initialiser = declarator.initializer()?;
+            plan.proto_at(file, start)
+                .then(|| initialiser.syntax().span())
+        })
+        .collect()
 }
 
 /// A parser diagnostic of a file's expansion, at the source span it came from (QC-9.7).

@@ -1,4 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 1996-1997 Id Software, Inc.
+// Copyright (C) 2026 QuakeC Studio contributors
+//
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_comp.h, dstatement_t, ddef_t
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_exec.c, MAX_STACK_DEPTH, LOCALSTACK_SIZE, PR_ExecuteProgram
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/pr_cmds.c, pr_numbuiltins
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/quakedef.h, MAX_EDICTS, MAX_MODELS, MAX_SOUNDS, MAX_LIGHTSTYLES, MAX_QPATH, MAX_MSGLEN, MAX_DATAGRAM
+// Ported from id-Software/Quake@bf4ac424ce754894ac8f1dae6a3981954bc9852d: WinQuake/progs.h, MAX_ENT_LEAFS
+// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/qcc.h, MAX_STRINGS, MAX_STATEMENTS, MAX_FUNCTIONS, MAX_GLOBALS, MAX_FIELDS, MAX_REGS, MAX_NAME, MAX_SOUNDS, MAX_MODELS, MAX_FILES, MAX_DATA_PATH, MAX_ERRORS
+// Ported from id-Software/Quake-Tools@c0d1b91c74eb654365ac7755bc837e497caaca73: qcc/pr_lex.c, MAX_FRAMES
 
 //! Every limit in `docs/spec/limits.md` as a named constant.
 //!

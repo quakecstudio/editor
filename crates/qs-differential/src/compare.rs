@@ -171,7 +171,7 @@ pub enum Comparison {
 ///
 /// Returns [`Comparison::Equal`] when the traces agree, or [`Comparison::Failure`] with the
 /// first divergence (DIFF-9.5). The expected divergences of DIFF-10.1 that this comparator can
-/// see are not treated specially: the VM's own undefined cases (VM-19.4) end QuakeC Studio's
+/// see are not treated specially: the VM's own undefined cases (VM-19.7) end QuakeC Studio's
 /// trace with an error record, and DIFF-9.2 compares that record's message, so an agreeing
 /// error record compares equal and nothing after it exists to compare (DIFF-9.5, DIFF-10.1); the
 /// NaN, edict layout and engine string readings of DIFF-10.2 are handled inside

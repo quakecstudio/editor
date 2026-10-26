@@ -2,7 +2,8 @@
 
 //! Feeds arbitrary bytes to the project graph (P1-23) as a module's source and the one file
 //! it may bring in, split at the first NUL, under the vanilla and the FTEQCC profiles, whose
-//! `#if` readers differ (PRJ-5.5, FTEF-14.11). Fails on a panic or a graph that breaks PRJ-6.1
+//! `#if` readers differ (PRJ-5.5, FTEF-14.11) and whose files the FTEQCC profile reads with the
+//! preprocessor's directive reader (PRJ-5.13). Fails on a panic or a graph that breaks PRJ-6.1
 //! or PRJ-6.4.
 
 #![no_main]

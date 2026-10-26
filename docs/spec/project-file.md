@@ -122,11 +122,22 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
 - **PRJ-3.2** A module's output path is its `output` when `quakec.toml` gives one, and
   otherwise `build/<mod>/<file>` with the file name of its kind: `PRJ_SSQC_OUTPUT`,
   `PRJ_CSQC_OUTPUT` or `PRJ_MENUQC_OUTPUT`. The output the `progs.src` itself declares
-  (PRJ-4.3, PRJ-5.6) is kept as the module's declared output and does not change where the
+  (PRJ-4.12, PRJ-5.6) is kept as the module's declared output and does not change where the
   IDE writes (ADR-0008: nothing is written outside the project).
 - **PRJ-3.3** In a bare project a module's kind is `csqc` when the file name of its declared
   output is `csprogs.dat`, `menuqc` when it is `menu.dat`, compared without regard to ASCII
   case, and `ssqc` otherwise, including when it declares none.
+- **PRJ-3.4** A module is compiled as id's `qcc` is run with no option in the directory of its
+  source (`qcc/qcc.c`, `main`), and as `fteqcc -Tid` there with a `-I` for each of its include
+  directories and a `-D` for each of its defines (FTEF-14.48, FTEF-14.49); `-srcfile`, which names
+  the source as the module's `src` does, changes nothing else. `quakec.toml` gives no other
+  option, so the rest of each command line is not modelled: id's `-src`, `-asm`, `-copy`, `-pak`,
+  `-bspmodels` and `-help` (`CheckParm`), and FTEQCC's other options (`QCC_CheckParm`,
+  `QCC_ReadParm`), among them `-o`, the `-F` flags and `-K` keywords, the `-W` warning settings,
+  `-qc`, `-E` and `-Facc`, with which FTEQCC compiles every `.qc` file of the directory when there
+  is no `progs.src` (`QCC_FindQCFiles`). What each compiler sets up for code generation before its
+  first file, id's `PR_BeginCompilation` among it, has no part in reading the files and is the
+  compiler's (L-01).
 
 ### Constants
 
@@ -140,8 +151,9 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
 
 ## PRJ-4 The two forms of progs.src
 
-**Source:** `qcc/qcc.c`, `main`, and `qcc/cmdlib.c`, `COM_Parse` (Quake-Tools); FTEQCC
-`QCC_main` (the `*qcc_token == '#'` test), `QCC_ContinueCompile` and `QCC_COM_Parse`.
+**Source:** `qcc/qcc.c`, `main`, and `qcc/cmdlib.c`, `COM_Parse` and `LoadFile` (Quake-Tools);
+FTEQCC `QCC_main` (the `#!` and `*qcc_token == '#'` tests, after `QCC_LoadFile`),
+`QCC_ContinueCompile` and `QCC_COM_Parse`.
 
 ### Behaviour
 
@@ -152,16 +164,89 @@ output file names are the ones FTE loads for each module, from the corpus: `prog
   comments are skipped and a line whose first non-blank byte is `#` followed by a name is a
   directive (PRJ-5), not tokens. Neither changes a list id's `qcc` accepts: no such list has
   a `/*` or a line starting `#` and a name, because each would be a file name it cannot open.
-- **PRJ-4.3** In list form the first token is the declared output, resolved against the
-  directory of the `progs.src`, and every later token is a source file, resolved against the
-  same directory and compiled in the order listed (QC-23.3). The `progs.src` itself is not
-  compiled. A list with no token is error `E0401` (QCD-5.1).
+- **PRJ-4.3** **Withdrawn** (P2-116, #544): it made a list with no token error `E0401` under
+  every dialect, but FTEQCC reads one with no error (PRJ-4.9). Replaced by PRJ-4.12.
 - **PRJ-4.4** In source form the file is itself the first file compiled: its text is
   QuakeC, and the files it brings in with `#include` and `#includelist` are compiled where
   they appear. It declares its output with `#output` or `#pragma progs_dat` (PRJ-5.6), or
   not at all.
 - **PRJ-4.5** A module's source that cannot be read is error `E0402` (QCD-5.2) and the
   module has no files.
+- **PRJ-4.6** Under the FTEQCC and GMQCC dialects a module's source is read as the text FTEQCC's
+  `QCC_LoadFile` gives it (`dialect-fteqcc.md` FTEF-14.64): FTEQCC's `QCC_main` loads it with
+  `if (QCC_LoadFile (qccmprogsdat, (void *)&qccmsrc) == -1)` before `pr_file_p =
+  QCC_COM_Parse(qccmsrc);` reads its first word and `if (*qcc_token == '#')` picks the source
+  form (`qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`). So a source
+  that starts with a UTF-16 or UTF-32 byte order mark is decoded before PRJ-4.1 tells its form
+  and before a list's words are read, a UTF-8 mark is skipped once, and each NUL byte is a space
+  that splits two words; the source form is then read as PRJ-5.13 says. The graph cases of the
+  directive family of `cargo xtask oracles builtins` with a `progs.src` of their own (`progs_cases`
+  in `xtask/src/oracles/builtins/directives.rs`) hold each form in each wide encoding and with
+  NULs and marks, and the graph lists the file that binds `f` exactly when the pinned FTEQCC binds
+  it. The GMQCC dialect reads its source so too, as it reads every file with FTEQCC's reader
+  (PRJ-5.15): GMQCC's own reading is not quoted here and waits for its dialect profile, as
+  PRJ-5.15 says. Under the vanilla dialect the source is read as PRJ-4.11 says.
+- **PRJ-4.7** **Withdrawn** (P2-116, #544): it ended a quoted word at its line's end, but id's
+  `COM_Parse` reads it on to its closing quote across lines (QC-23.9). Replaced by PRJ-4.11.
+- **PRJ-4.8** **Withdrawn** (P2-116, #544): it made a source of only a `#!` line error `E0401`,
+  but FTEQCC reads it as a list with no word, which is no error (PRJ-4.9). Replaced by PRJ-4.10.
+- **PRJ-4.9** Under the FTEQCC and GMQCC dialects a list-form source is read as FTEQCC's
+  `QCC_main` and `QCC_ContinueCompile` read it (`qccmain.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`), by the graph's reader of PRJ-5.13
+  (`qc_preproc::FteFileReader::progs`). Its form is that of the first word
+  `QCC_COM_Parse` reads (`if (*qcc_token == '#')`). Then `QCC_PR_LexWhitespace(false)` reads the
+  white space and comments, and runs each directive at a line's start (FTEF-14.45, FTEF-14.52),
+  before the output and before each later word. The output is the word `QCC_PR_SimpleGetToken`
+  reads, which ends at white space, `,`, `;`, `(`, `)`, `]` or `//` and may be empty, naming no
+  output. Each later word is `QCC_COM_Parse`'s (`qc_preproc::com_parse`): `,`, `{`, `}`, `(`,
+  `)`, `'` and `:` are each a word of their own and `"` ends a word; a quoted word takes `\"`,
+  `\\`, `\n`, `\r` and `\t` and ends at its closing quote, at a line break after an escaped quote
+  and at the end of the text; a word keeps at most 1023 bytes (FTEF-14.66). Each names a file
+  found as `QCC_FindBestInclude(qcc_token, compilingrootfile, 2)` finds it, joined to the
+  source's directory and then to each include directory. So `progs.dat,a.qc` names the file `,`,
+  which the pinned FTEQCC fails at ("Couldn't open file ,"), `progs.dat;x` names `;x` and
+  `a.qc(b.qc)` names `(`. A list with no word, an empty source or one of only white space,
+  comments or a `#!` line (PRJ-4.10), has no output and no file and is no error:
+  `if (!qccmsrc) QCC_Error (ERR_NOOUTPUT, ...)` follows `qccmsrc = pr_file_p;`, which is never
+  null, and the pinned FTEQCC writes nothing ("nothing to write") and exits 0. An output past
+  1023 bytes is "token exceeds 1023 chars" (`E0121`, FTEF-14.66) and a comment the text ends in
+  "EOF inside comment" (`E0501`, FTEF-14.67), after which the graph reads no more of the list.
+- **PRJ-4.10** Under the FTEQCC and GMQCC dialects a module's source whose text, as PRJ-4.6 gives
+  it, starts with the two bytes `#!` has its first line passed over before PRJ-4.1 tells its form,
+  before a list's words are read and before the source form is read as PRJ-5.13 says and as the
+  preprocessor reads it: FTEQCC's `QCC_main` (`qccmain.c`,
+  fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`) runs `if (qccmsrc[0] == '#' &&
+  qccmsrc[1] == '!') qccmsrc = strchr(qccmsrc, '\n');` ("ignore the first line if it starts with
+  a #! for unix scripts") after `QCC_LoadFile` and before `pr_file_p = QCC_COM_Parse(qccmsrc);`.
+  The line is passed over whatever it holds: a `\` at its end joins nothing to the next line,
+  and a `/*` or `"` in it opens nothing. The test is of the first two bytes of that text, so it
+  holds after a UTF-8 mark that is skipped and in a decoded UTF-16 or UTF-32 source, and not
+  after a blank or a NUL. A source of one such line with no line feed is all passed over, since
+  `QCC_LoadFile` writes a line feed after the text, and is a list with no word, which is no error
+  (PRJ-4.9), as an empty source is. The line keeps
+  its place, so the lines after it keep their numbers. The vanilla dialect reads a `#!` line as
+  PRJ-4.1 and PRJ-4.11 say. The graph cases of the directive family of
+  `cargo xtask oracles builtins` with a `progs.src` of their own hold a `#!` first line before a
+  list and before a source form, after a UTF-8 mark and in each wide encoding, and with a `\`,
+  a `/*` and a `"` in it, and the graph lists the file that binds `f` exactly when the pinned
+  FTEQCC binds it. The GMQCC dialect reads its source so too, as PRJ-4.6 says.
+- **PRJ-4.11** Under the vanilla dialect a module's form is told from, and a list's words are read
+  from, its bytes past a UTF-8 byte order mark (PRJ-5.1) up to the NUL byte where id's `qcc` ends
+  its list (QC-23.7): the first NUL between words, or that ends a word or a `//` comment. A quoted
+  word runs on past a NUL in it, to its closing quote, across lines
+  (QC-23.9), and names the file
+  of its text up to that NUL. So `progs.dat`, a NUL and `a.qc` list no file, and a source that
+  starts with a NUL is a list with no token, error `E0401`. A source in source form is then read
+  as its bytes (PRJ-5.1), as before. The vanilla graph cases of the directive family of
+  `cargo xtask oracles builtins` with a `progs.src` of their own (`VANILLA_PROGS` in
+  `xtask/src/oracles/builtins/directives.rs`) hold a NUL between words, in and after a word, in a
+  `//` comment and in a quoted word, and the graph lists the file that binds `f` exactly when the
+  pinned id `qcc` binds it.
+- **PRJ-4.12** In list form the first token is the declared output, resolved against the
+  directory of the `progs.src`, and every later token is a source file, resolved against the
+  same directory and compiled in the order listed (QC-23.3). The `progs.src` itself is not
+  compiled. Under the vanilla dialect a list with no token is error `E0401` (QCD-5.1); under the
+  FTEQCC and GMQCC dialects it is no error (PRJ-4.9).
 
 ## PRJ-5 Directives the graph follows
 
@@ -223,6 +308,96 @@ malformed directive without a diagnostic.
   most `MAX_DEPTH` = 64 levels (`qc-preproc`'s `cond.rs`), the value itself one, so no input
   can exhaust its stack. `&&`, `||` and the comparisons chain without nesting. Under an
   FTEQCC profile the limit is FTEF-14.12's.
+- **PRJ-5.11** Under the FTEQCC dialect (GMQCC's is PRJ-5.12) the file being compiled, FTEQCC's
+  `compilingfile`, stands where PRJ-5.2, PRJ-5.3, PRJ-5.8 and PRJ-5.9 say the file holding the
+  directive: an `#include` and an `#includelist` entry are resolved against its directory
+  (`QCC_FindBestInclude(msg, compilingfile, ...)`, `dialect-fteqcc.md` FTEF-14.40), a `#pragma
+  includedir` path is joined to it, and `#pragma once` marks it. The file being compiled is the
+  source of the source form, an entry of a list-form `progs.src` or of an `#includelist`, never an
+  `#include`d file, which is read for the file that includes it. So with `progs.src` listing
+  `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the graph reads `src/c.qh`, as the
+  pinned FTEQCC does.
+- **PRJ-5.12** Under the GMQCC dialect an `#include` is found beside the file holding it, then
+  beside the file being compiled, then in the module's include directories (PRJ-5.2), which GMQCC
+  itself has none of: its `ftepp_include_find` tries `ftepp_include_find_path(file,
+  ftepp->includename)` and then `ftepp_include_find_path(file, ftepp->itemname)`, and
+  `ftepp_directive_include` sets `ftepp->includename = filename;` to the included file while it
+  reads it (graphitemaster/gmqcc@b2a319efb41069b9a250e76991dbe505ff8d030d, `ftepp.cpp`). GMQCC's
+  preprocessor has no `#includelist` and passes `#pragma` lines to its compiler (`ftepp_out(ftepp,
+  "#", false);`), so it is silent on them; this dialect keeps PRJ-5.3, PRJ-5.8 and PRJ-5.9 for an
+  `#includelist` entry, `#pragma includedir` and `#pragma once`, the file holding the directive, as
+  the C preprocessor Xonotic is read with marks the header that holds `#pragma once`, and the
+  preprocessor does the same. So with `progs.src` listing `src/a.qc`, which includes `x/b.qh`, which
+  includes `c.qh`, the graph reads `src/x/c.qh`, and `src/c.qh` when that is missing. Xonotic, which
+  the C preprocessor reads before GMQCC compiles it, relies on the first of these.
+- **PRJ-5.13** Under the FTEQCC dialect the graph reads each QuakeC file, the source of the source
+  form, each list entry, each `#includelist` entry and each `#include`d file, with the
+  preprocessor's directive reader (`qc_preproc::FteFileReader`) in place of the lines of PRJ-5.1
+  and the reading of PRJ-5.3 to PRJ-5.5, as FTEQCC's `QCC_PR_Precompiler` reads it
+  (`engine/qclib/qcc_pr_lex.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`;
+  `dialect-fteqcc.md` FTEF-14.33 to FTEF-14.48, FTEF-14.52). A directive is at a `#` that
+  `QCC_PR_NewLine` reaches, at a compiled file's start after spaces and tabs and at an included file's first byte
+  (FTEF-14.52), its name matched by its first bytes, so `#defined N 1` defines `N` and `#iffy`
+  opens no block; its line ends where `QCC_PR_SkipToEndOfLine` ends it (FTEF-14.35), so after
+  `#undef N // c \` the next line, an `#include` too, is the directive's; `#if` and `#elif` read
+  as FTEF-14.33 says; a side that is not taken is skipped by `QCC_PR_FalsePreProcessorIf`
+  (FTEF-14.37), whose one count of open sides runs from file to file, so a side an included file
+  leaves open is closed, or ended by an `#else`, in the file that included it, and QC-9.12 does
+  not hold; `#eof` and `#package` end the file, and `#pragma DONT_COMPILE_THIS_FILE` passes over
+  the rest of it with the directives at its lines' starts still run (FTEF-14.39, FTEF-14.70); an
+  `#includelist`'s words, and the directives on its lines, are read as FTEF-14.41 says, so a
+  word in quotes names a file with the quotes in its name; and `FTEQCC` and `__FTEQCC__` are
+  defined before the module's `defines` (FTEF-14.48). Between directives the code is read as the
+  preprocessor reads it, a token of its lexer at a time, a `#` token that starts a line as
+  FTEF-14.52 says being a directive's, so no string, raw string `R"d(...)d"`, character constant
+  or comment starts one, and the graph meets a directive where the preprocessor does. A list-form
+  `progs.src` is still read as PRJ-5.1 and QC-23 say, in the text PRJ-4.6 gives.
+  So the graph lists the files the pinned FTEQCC compiles for a program that brings a file in, by
+  an `#include` or an `#includelist`, after or around each directive form of FTEF-14.35 to
+  FTEF-14.70 and FTEF-14.52: the graph cases of the directive family of `cargo xtask oracles builtins`, whose
+  one file that binds `f` FTEQCC binds it from exactly when the graph lists it.
+- **PRJ-5.14** Deliberate divergences of PRJ-5.13, as the graph expands no macro: a directive a
+  macro's body or arguments hold is run where it stands in the file's text, not where the
+  expansion is read (FTEF-14.45, FTEF-14.46); an `#include` in the text `#pragma
+  DONT_COMPILE_THIS_FILE` passes over, in an `#includelist` there too, brings in no file and runs
+  none of its directives, where FTEQCC passes over that file's text too, running its directives,
+  so a macro it defines or a list it holds is FTEQCC's and not the graph's; the conditionals of a
+  list-form `progs.src` are its own, as PRJ-5.5 and QC-9.12 say, where FTEQCC's one count of open
+  sides runs through it too; an `#include` among an `#includelist`'s lines brings its file in
+  as an `#include`, where FTEQCC reads that file's words as the list's (FTEF-14.47); a program
+  FTEQCC stops at an error, such as an `#error` or "unexpected tokens at end of line", is read on
+  to its end; and an `#includelist` or `DONT_COMPILE_THIS_FILE` met while 64 others are open in
+  one file ends that file, as the preprocessor's bound on nested directives does (FTEF-14.47), so
+  that no file exhausts the graph's memory.
+- **PRJ-5.15** Under the GMQCC dialect the graph reads each QuakeC file as PRJ-5.13 and PRJ-5.14
+  say, with the preprocessor's directive reader, which the preprocessor reads a GMQCC file with too,
+  so the two meet the same directives and list the same files; PRJ-5.12 still says where an
+  `#include`, an `#includelist` entry, `#pragma includedir` and `#pragma once` are resolved. Neither
+  defines `FTEQCC` or `__FTEQCC__`: GMQCC's `ftepp_create` defines `GMQCC` and, by the standard
+  chosen, `__STD_FTEQCC__`, `__STD_GMQCC__`, `__STD_QCCX__` or `__STD_QCC__`, never `FTEQCC`
+  (`ftepp_add_define(ftepp, nullptr, "GMQCC");`,
+  graphitemaster/gmqcc@b2a319efb41069b9a250e76991dbe505ff8d030d, `ftepp.cpp`), and the C
+  preprocessor Xonotic is read with (`CPP := cc -xc -E`, Xonotic's `qcsrc/Makefile`) defines
+  neither, so `#ifdef FTEQCC` is false and Xonotic's `server/progs.inc` skips its `#pragma target`.
+  A `\` that ends a directive's `//` comment carries the next line, an `#include` too, into the
+  directive (FTEF-14.35), as the C preprocessor does, whose line splicing comes before comments are
+  replaced ("Whenever backslash appears at the end of a line (immediately followed by the newline
+  character), both backslash and newline are deleted", phase 2, before phase 3's "Each comment is
+  replaced by one space character", https://en.cppreference.com/w/c/language/translation_phases,
+  read 2026-10-21). GMQCC's own lexer ends a `//` comment at its line break (`while (ch != EOF && ch
+  != '\n')`, `lex_skipwhite`, `lexer.cpp` at the same commit), so the comment does not carry the
+  next line: a deliberate divergence from `ftepp`, since Xonotic, the GMQCC corpus, is built with
+  the C preprocessor. The rest of the reading is FTEQCC's too, where `ftepp` and the C
+  preprocessor read otherwise: a `//` comment of code that ends in a `\` carries nothing, so an
+  `#include` on the next line is read (FTEF-14.52), where the C preprocessor's splicing hides it;
+  directive names match by their first bytes (`#defined Q 1` defines `Q`); and an `#include`d
+  file's first line is a directive's only at its first byte. The GMQCC dialect's own reading
+  waits for its dialect profile. GMQCC's own macros are a module's `defines` (PRJ-5.4), as
+  Xonotic's `quakec.toml` gives `GMQCC`.
+- **PRJ-5.16** Under the vanilla dialect the graph reads each QuakeC file, a source-form source
+  among them, only to its first NUL byte, as id's `LoadFile` and the lexer end its text (QC-1.1),
+  so a directive after the NUL is not followed. Under the FTEQCC and GMQCC dialects a NUL is a
+  space (FTEF-14.64).
 
 ## PRJ-6 The file graph
 
@@ -248,6 +423,45 @@ malformed directive without a diagnostic.
 - **PRJ-6.5** Every diagnostic names the file and the 1-based line of the directive or list
   entry that raised it, or line 0 when it is about the whole source: one that cannot be read
   or has no token.
+- **PRJ-6.6** A file that cannot be opened, a listed one (`E0402`) or an included one (`E0111`),
+  is fatal to both compilers: id's `SafeOpenRead` calls `Error`, which exits, and FTEQCC's
+  `QCC_FindBestInclude` calls `QCC_Error`, so neither compiles a file after it nor writes its
+  output. The graph reports each such file and reads on, so every file a module names is
+  listed. This is a deliberate divergence: the compile's outcome, an error, is the same, and
+  the IDE shows every missing file at once rather than one a build.
+- **PRJ-6.7** Under the FTEQCC dialect each entry also records the file's name, relative to the
+  graph's directory, the source's own (FTEQCC run there, as `cargo xtask oracles builtins` runs
+  it): the source is named by its file name, `compilingrootfile` (`QC_strlcpy(compilingrootfile,
+  qccmprogsdat, sizeof(compilingrootfile));` after `QC_snprintfz (qccmprogsdat,
+  sizeof(qccmprogsdat), "%s%s", qccmsourcedir, sourcefileslist[currentsourcefile++]);`,
+  `qccmain.c`, fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`); a list entry is
+  `QCC_FindBestInclude(qcc_token, compilingrootfile, 2);`, an `#includelist` entry
+  `QCC_FindBestInclude(pr_token, compilingfile, true);` and an `#include`
+  `QCC_FindBestInclude(msg, compilingfile, false);` (`qcc_pr_lex.c`), each the word joined by
+  `QCC_JoinPaths(fullname, sizeof(fullname), newfile, currentfile);` after the last `/` or `\`
+  of the name of the file it is found beside, or alone when it starts with one (`if (*newfile ==
+  '/' || *newfile == '\\')`), or joined so to the name of the include directory it is found in.
+  An include directory is named as `QCC_PR_AddIncludePath` keeps it: as given, `.` when empty,
+  with a `/` after it unless it ends in `/` or `\` (`if (*e != '/' && *e != '\\')`); a `#pragma
+  includedir` one is its token with that `/`, joined to the name of the file being compiled
+  (`QCC_JoinPaths(newinc, sizeof(newinc), qcc_token, compilingfile);`). The beside file is the
+  one PRJ-5.2 and PRJ-5.11 say. A name is not normalized: `src/./a.qc` stays so. Under the
+  vanilla and GMQCC dialects an entry has no name, as how their compilers name a file is not
+  quoted here. So with `progs.src` listing
+  `src/a.qc`, which includes `x/b.qh`, which includes `c.qh`, the names are `src/a.qc`,
+  `src/x/b.qh` and `src/c.qh`, and with it listing `sub\top.qc`, which includes `tab.qh`,
+  `sub\top.qc` and `sub\tab.qh`.
+- **PRJ-6.8** Under the FTEQCC dialect the file a name brings in is the file of that name in the
+  graph's directory, as FTEQCC opens it there: `QCC_FileSize` and `QCC_ReadFile` (`qcctui.c`)
+  open the name with `f = fopen(fname, "rb");`, and `QCC_FindBestInclude` takes the first name
+  for which `if (qccprogfuncs->funcs.parms->FileSize(fullname) == -1)` is false. So `\` in a name separates directories only where
+  the host's separator does, and an include directory given relative is in the graph's
+  directory. `#pragma once` marks the name of the file being compiled (FTEF-14.70) and a name
+  found is skipped when it is marked (`if (!strcmp(onced->name, fullname))`, then `return;`), so a list
+  that names `a.qc`, which holds `#pragma once`, then `./a.qc`, compiles it twice. An include
+  directory's file is the word in the directory's path, the directory given relative in the
+  graph's directory. The vanilla and GMQCC dialects find files as PRJ-5.2 and PRJ-5.12 say and
+  mark the file itself.
 
 ### Constants
 
@@ -345,7 +559,7 @@ that ignores case (macOS and Windows by default) and fails on one that does not 
 
 ### Behaviour
 
-- **PRJ-7.1** A name that brings a file into the graph (a list entry, PRJ-4.3; an
+- **PRJ-7.1** A name that brings a file into the graph (a list entry, PRJ-4.12; an
   `#include`, PRJ-5.2; an `#includelist` entry, PRJ-5.3), once resolved, is opened as the
   host file system opens that path, as both compilers do: exactly where the file system
   matches case, and ignoring case where it does not. The entry's path is the resolved name

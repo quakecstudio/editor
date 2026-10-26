@@ -135,6 +135,14 @@ impl SpawnHost for RecordingHost {
             Ok(self.allocated)
         }
     }
+    fn edict_value(&self, number: i32) -> Result<i32, SpawnError> {
+        // EDICT-1.5, EDICT-1.7 with 105 field slots: an edict is 516 bytes, 600 of them.
+        if (0..600).contains(&number) {
+            Ok(number * 516)
+        } else {
+            Err(SpawnError::BadEdictNumber { number })
+        }
+    }
     fn find_field(&self, name: &[u8]) -> Option<FieldDef> {
         self.fields
             .iter()
@@ -287,4 +295,97 @@ fn an_inhibited_entity_is_freed() {
     load_from_file(&mut host, data, true, 0).expect("loads");
     assert_eq!(host.spawned, vec![0]);
     assert_eq!(host.freed, vec![1]);
+}
+
+/// A host that knows `worldspawn` and `fields`, after loading `data` with deathmatch off.
+fn loaded(data: &[u8], fields: Vec<(&'static [u8], usize, Etype)>) -> RecordingHost {
+    let mut host = RecordingHost {
+        functions: vec![(b"worldspawn", 1)],
+        fields,
+        ..RecordingHost::default()
+    };
+    load_from_file(&mut host, data, false, 0).expect("loads");
+    host
+}
+
+/// The `(field, value)` writes of `host` other than the classname's (slot 28).
+fn non_classname_writes(host: &RecordingHost) -> Vec<(usize, Slot)> {
+    host.writes
+        .iter()
+        .filter(|(_, field, _)| *field != 28)
+        .map(|&(_, field, value)| (field, value))
+        .collect()
+}
+
+// spec EDICT-8.3: a vector value with fewer than three components gets 0 for the missing ones.
+#[test]
+fn a_short_vector_value_reads_zero_for_the_missing_components() {
+    for (value, want) in [
+        ("1 2", [1.0, 2.0, 0.0]),
+        ("5", [5.0, 0.0, 0.0]),
+        ("", [0.0, 0.0, 0.0]),
+    ] {
+        let data = format!("{{\n\"classname\" \"worldspawn\"\n\"origin\" \"{value}\"\n}}\n");
+        let fields = vec![
+            (b"classname".as_slice(), 28, Etype::String),
+            (b"origin".as_slice(), 10, Etype::Vector),
+        ];
+        let host = loaded(data.as_bytes(), fields);
+        let got: Vec<(usize, f32)> = non_classname_writes(&host)
+            .iter()
+            .map(|&(field, value)| (field, value.as_f32()))
+            .collect();
+        assert_eq!(
+            got,
+            [(10, want[0]), (11, want[1]), (12, want[2])],
+            "{value:?}"
+        );
+    }
+}
+
+// spec EDICT-8.2: the `light` key is renamed `light_lev`.
+#[test]
+fn light_key_is_renamed_light_lev() {
+    let fields = vec![
+        (b"classname".as_slice(), 28, Etype::String),
+        (b"light".as_slice(), 100, Etype::Float),
+        (b"light_lev".as_slice(), 101, Etype::Float),
+    ];
+    let host = loaded(
+        b"{\n\"classname\" \"worldspawn\"\n\"light\" \"300\"\n}\n",
+        fields,
+    );
+    assert_eq!(non_classname_writes(&host), [(101, Slot::from_f32(300.0))]);
+}
+
+// spec EDICT-8.2: trailing spaces are removed from a key, so `"health  "` names `health` and
+// `"classname "` the classname that finds the spawn function.
+#[test]
+fn trailing_spaces_are_trimmed_from_a_key() {
+    let fields = vec![
+        (b"classname".as_slice(), 28, Etype::String),
+        (b"health".as_slice(), 48, Etype::Float),
+    ];
+    let host = loaded(
+        b"{\n\"classname \" \"worldspawn\"\n\"health  \" \"25\"\n}\n",
+        fields,
+    );
+    assert_eq!(non_classname_writes(&host), [(48, Slot::from_f32(25.0))]);
+    assert_eq!(host.spawned, vec![0]);
+}
+
+// spec EDICT-8.2: an entity key's value is the entity value of edict atoi(value), not the
+// number itself (EDICT-1.5).
+#[test]
+fn an_entity_key_stores_the_entity_value() {
+    let fields = vec![
+        (b"classname".as_slice(), 28, Etype::String),
+        (b"owner".as_slice(), 95, Etype::Entity),
+    ];
+    let host = loaded(
+        b"{\n\"classname\" \"worldspawn\"\n\"owner\" \"3\"\n}\n",
+        fields,
+    );
+    // RecordingHost's edicts are 516 bytes (EDICT-1.1 with 105 fields).
+    assert_eq!(non_classname_writes(&host), [(95, Slot::from_i32(3 * 516))]);
 }

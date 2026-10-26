@@ -12,6 +12,7 @@
 
 mod ast_view;
 mod declarations;
+mod defs;
 mod dialect;
 mod dialect_ast;
 mod dialect_builtins;
@@ -21,6 +22,9 @@ mod dialect_full;
 mod dialect_rerelease;
 mod dialect_statements;
 mod expressions;
+mod flags;
+mod fte_directives;
+mod keywords;
 mod lossless;
 mod nesting;
 mod recovery;
@@ -29,6 +33,18 @@ mod statements;
 mod tree_api;
 
 use std::fmt::Write as _;
+
+use qc_preproc::{CompilerFlags, FlagEdit, FteFlag};
+
+/// The edit a file's first mark makes: FTEQCC's default flags with `set` set (FTEF-21.1).
+fn whole(set: &[(FteFlag, bool)]) -> FlagEdit {
+    let flags = set
+        .iter()
+        .fold(CompilerFlags::default(), |flags, &(flag, on)| {
+            flags.with(flag, on)
+        });
+    FlagEdit::whole(flags)
+}
 
 use crate::ast;
 use crate::{Code, Parse, SyntaxKind, parse};
@@ -66,6 +82,18 @@ impl Program<'_> {
     fn parse(&self) -> Parse {
         parse(self.source().as_bytes())
     }
+}
+
+/// Parses `source` under the FTEQCC profile with the keywords `keywords` in force from its first
+/// byte, as the preprocessor marks them (FTEF-20.1).
+fn fte_with(source: &str, keywords: crate::Keywords) -> Parse {
+    crate::parse_preprocessed_flagged(
+        source.as_bytes(),
+        crate::Dialect::Fteqcc,
+        &[],
+        &[(0, crate::KeywordEdit::whole(keywords))],
+        &[],
+    )
 }
 
 /// Parses a function body made of `body`.
@@ -174,6 +202,9 @@ fn kinds(parsed: &Parse) -> Vec<SyntaxKind> {
     parsed.syntax().descendants().map(|n| n.kind()).collect()
 }
 
+// No spec statement: a lossless tree with no errors for the sample is LANG-2's requirement
+// (plan/requirements.yaml), not an engine behaviour; the grammar is pinned by the tests
+// citing QC-10 to QC-15.
 #[test]
 fn sample_parses_without_errors() {
     let parsed = parse(SAMPLE.as_bytes());
@@ -182,6 +213,8 @@ fn sample_parses_without_errors() {
     assert!(parsed.tree().is_some());
 }
 
+// No spec statement: as above, LANG-2's lossless tree, for the FTEQCC sample; the FTEQCC
+// grammar is pinned by the tests citing FTE and FTEF statements.
 #[test]
 fn fteqcc_sample_parses_without_errors() {
     let parsed = crate::parse_with(SAMPLE_FTEQCC.as_bytes(), crate::Dialect::Fteqcc);

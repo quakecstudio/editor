@@ -5,6 +5,7 @@
 mod builtins;
 mod deep_nesting;
 mod diagnostics_unified;
+mod inventory;
 mod map_entities;
 mod paths;
 mod scenario_numbers;

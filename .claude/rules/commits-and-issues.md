@@ -48,6 +48,11 @@ of `xtask`, `plan`, `adr`, `spec`, `agents`, `deps`.
 
 - The body says what the code does now and how each acceptance criterion is met, then
   `Closes #<issue>`. It describes only what is in the diff, not earlier attempts.
+- For an issue the PR must leave open, write `Refs #N`. Never put a closing verb (close,
+  fix, resolve, in any form) next to `#N` in any phrasing: GitHub reads "does not close #84"
+  as `close #84` and closes the issue on merge. `land.sh` refuses to queue a body that has a
+  closing keyword and an issue in a negated or hedged sentence
+  (`.claude/skills/work-issue/scripts/check-pr-body.sh`).
 - A port lists `Spec:` IDs and the upstream commit ([`porting.md`](porting.md)).
 - The checklist in `.github/pull_request_template.md` is the definition of done; tick what
   is met and say why any item does not apply.
@@ -76,7 +81,7 @@ From `plan/backlog/_meta.yaml`, created by `plan/apply.py`:
 
 | Kind | Labels |
 | --- | --- |
-| Type (one) | `type:feature`, `type:spec`, `type:decision`, `type:spike`, `type:test`, `type:chore`, `type:gate`, `type:readiness` |
+| Type (one) | `type:feature`, `type:spec`, `type:decision`, `type:spike`, `type:test`, `type:chore`, `type:gate`, `type:readiness`, `type:bug` |
 | Layer | `L0-formats` to `L7-ui`, `apps`, `c-tools`, `repo` |
 | Area | `area:compiler`, `area:vm`, `area:language`, `area:preview`, `area:agent`, `area:editor`, `area:map`, `area:release`, `area:docs`, `area:legal`, `area:process` |
 | Size | `size:S` (up to 2 days), `size:M` (up to a week), `size:L` (up to two weeks) |

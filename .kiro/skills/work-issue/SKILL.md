@@ -25,7 +25,10 @@ it step by step. This file only records the Kiro-specific translations.
 
 The shape of the work, unchanged from the source: read the issue and confirm every
 dependency is closed; build exactly the deliverable on a `<type>/<issue>-<slug>` branch;
-meet every acceptance criterion with a test or a recorded result; run the checks (`make ci`
-once it exists, else `python3 plan/check.py` and the tests you touched); commit with
-Conventional Commits and open a PR with `Closes #<issue>`; land it; confirm the issue
-closed and report the PR and any follow-up issues.
+meet every acceptance criterion with a test or a recorded result; run the checks (`make ci`);
+commit with Conventional Commits and open a PR with `Closes #<issue>`; review the PR's diff
+yourself with the `code-review` skill at high effort and append a "Code review" section to
+the PR body giving each finding and whether it was fixed or answered; land it, watching CI
+with `gh pr checks <pr> --watch --fail-fast --interval 30` or
+`gh run watch <run-id> --exit-status --interval 60`, never a long `sleep`; confirm the issue
+closed and report the PR, the code review's outcome and any follow-up issues.

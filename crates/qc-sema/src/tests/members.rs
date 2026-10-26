@@ -5,6 +5,8 @@
 //! read, and which class a member access is resolved in when two classes have a member of the
 //! same name.
 
+use qc_diag::Code;
+
 use super::fte_index_of;
 use crate::resolve::ModuleIndex;
 use crate::symbol::{DefId, DefKind};
@@ -115,7 +117,7 @@ fn a_scoped_base_is_not_the_global_of_its_name() {
 }
 
 // spec FTEF-16.4: `super::member` is the member of the parent of the function's class, and a
-// scope that is no class and names nothing is "Unknown value".
+// scope that is no class and names no type is "is not a type" (FTEF-19.33).
 #[test]
 fn super_names_the_parent_member() {
     let source = "\
@@ -126,7 +128,8 @@ void Q::Go(void) { super::Go(); };
 void() f = { Nope::thing(); };
 ";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), ["Unknown value \"Nope::thing\""]);
+    // FTEF-19.33: the scope of `Scope::name` is read as a type name.
+    assert_eq!(messages(&index), ["\"Nope\" is not a type"]);
     let parent = member(&index, "P", "Go");
     assert_eq!(target_of(&index, source, "super::Go", 0), Some(parent));
 }
@@ -247,7 +250,25 @@ fn a_scoped_definition_adds_a_member_or_a_global() {
                   void A::Extra(void);\nvoid A::Extra(void) { extra = 1; };\n\
                   float Other::g = 1;\nvoid() f = { local float n = Other::g; };\n";
     let index = fte_index_of(source);
-    assert_eq!(messages(&index), Vec::<String>::new());
+    // FTEF-19.15: a member the class does not declare is a warning, and a scope that is no
+    // class an error, after which the global is still recorded.
+    assert_eq!(
+        messages(&index),
+        ["Other is not a class", "\"Other\" is not a type"]
+    );
+    let warnings: Vec<&str> = index
+        .diagnostics
+        .iter()
+        .filter(|d| d.diagnostic.code == Code::W0216)
+        .map(|d| d.diagnostic.message.as_str())
+        .collect();
+    assert_eq!(
+        warnings,
+        [
+            "A::extra is not part of class A",
+            "A::Extra is not part of class A"
+        ]
+    );
     let extra = member(&index, "A", "extra");
     assert_eq!(index.defs[extra.0].kind, DefKind::Field);
     assert!(!index.defs[extra.0].initialized);
@@ -267,11 +288,8 @@ fn a_scoped_definition_adds_a_member_or_a_global() {
         None,
         "the definition"
     );
-    assert_eq!(
-        target_of(&index, source, "Other::g", 1),
-        Some(global),
-        "the use"
-    );
+    // FTEF-19.33: the use's scope is no type, so the use names nothing.
+    assert_eq!(target_of(&index, source, "Other::g", 1), None, "the use");
 }
 
 // spec FTEF-16.4: `Scope::name` whose scope is no class, as an enum's, names the global `name`;

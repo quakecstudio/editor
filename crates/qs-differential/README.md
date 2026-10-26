@@ -15,10 +15,11 @@ all the same (no panics, every value checked), because the differential suite is
 
 ## Layer
 
-Tests. It builds on the L1 VM crates (`qc-vm`, `qc-edict`, `qc-builtins`), the L0 formats
-below them (`qc-progs`, `qc-trace`, `qc-types`) and the L1 porting example
-(`qs-porting-example`, for the EXAMPLE-1 string escapes EDICT-8.2 reuses), and nothing depends
-on it (`layers.toml`).
+Tests. It builds on the L1 crates (`qc-vm`, `qc-edict`, `qc-builtins`, `qc-trace`), the L0
+formats below them (`qc-progs`, `qc-types`) and the L1 porting example
+(`qs-porting-example`, for the EXAMPLE-1 string escapes EDICT-8.2 reuses). No workspace crate
+depends on it (`layers.toml`); outside the workspace, the `qc_vm` fuzz target
+(`fuzz/fuzz_targets/qc_vm.rs`) uses `qs_differential::generate`, `run_scenario` and `compare`.
 
 ## Spec sections
 

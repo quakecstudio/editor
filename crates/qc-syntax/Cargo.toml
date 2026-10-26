@@ -1,6 +1,6 @@
 [package]
 name = "qc-syntax"
-description = "The vanilla QuakeC parser: a lossless, error-tolerant concrete syntax tree and a typed AST view"
+description = "The QuakeC parser, for id's qcc and the FTEQCC dialects: a lossless, error-tolerant concrete syntax tree and a typed AST view"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 qc-lexer = { workspace = true }
+qc-preproc = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true, features = ["std"] }

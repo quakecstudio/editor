@@ -146,12 +146,37 @@ fn a_real_crate_is_measured_for_spec_citations() {
     assert_eq!(score, self::score(7, 7));
 }
 
+/// The values the workflow text gives the key `NIGHTLY`: each line, outside a comment, whose
+/// key is `NIGHTLY`, with any quotes around its value removed.
+fn nightly_definitions(workflow: &str) -> Vec<String> {
+    workflow
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("NIGHTLY:"))
+        .map(|value| {
+            let value = value.split(" #").next().unwrap_or_default().trim();
+            value.trim_matches(|c| c == '"' || c == '\'').to_owned()
+        })
+        .collect()
+}
+
+// No spec statement: this pins that the Readiness workflow installs the nightly that
+// `cargo xtask readiness` runs llvm-cov on.
 #[test]
 fn the_workflow_installs_the_pinned_nightly() {
     let workflow = fs::read_to_string(root().join(".github/workflows/readiness.yml")).unwrap();
+    assert_eq!(
+        nightly_definitions(&workflow),
+        [NIGHTLY],
+        "the Readiness workflow must define NIGHTLY once, as {NIGHTLY}"
+    );
     assert!(
-        workflow.contains(&format!("NIGHTLY: {NIGHTLY}\n")),
-        "the Readiness workflow must pin NIGHTLY: {NIGHTLY}"
+        workflow.contains("rustup toolchain install \"$NIGHTLY\""),
+        "the Readiness workflow installs $NIGHTLY"
+    );
+    // The reading does not depend on the line's formatting.
+    assert_eq!(
+        nightly_definitions("  # NIGHTLY: old\n  NIGHTLY: \"n-1\" # pinned\nNIGHTLY: 'n-2'\n"),
+        ["n-1", "n-2"]
     );
     let date = NIGHTLY.strip_prefix("nightly-").unwrap();
     assert_eq!(date.len(), 10);
@@ -263,7 +288,51 @@ fn spec_sections_come_from_the_readme_line() {
 fn citations_are_comment_lines_naming_statements() {
     let text =
         "    // spec VM-1.1, VM-1.2: what it does\n// spec VM-2.1\nlet x = 1; // spec VM-3.1\n";
-    assert_eq!(citations(text), ["VM-1.1", "VM-1.2", "VM-2.1"]);
+    assert_eq!(
+        citations(Path::new("x.rs"), text, &TestCode::File).unwrap(),
+        ["VM-1.1", "VM-1.2", "VM-2.1"]
+    );
+}
+
+/// TEST-3 asks for a test citing each statement, so a `// spec` line outside
+/// test code cites nothing and is reported rather than silently dropped.
+#[test]
+fn a_citation_outside_test_code_is_an_error() {
+    let path = Path::new("crates/a/src/lib.rs");
+    let text = "// spec VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
+    let code = test_code(&[(path.to_path_buf(), text.to_owned())]);
+    let error = citations(path, text, code.first().unwrap()).unwrap_err();
+    assert!(
+        error.starts_with("crates/a/src/lib.rs:1: ") && error.contains("outside test code"),
+        "{error}"
+    );
+    let plain = "// VM-1.1: shipped code\n#[cfg(test)]\nmod tests {\n    // spec VM-1.2\n}\n";
+    let code = test_code(&[(path.to_path_buf(), plain.to_owned())]);
+    assert_eq!(
+        citations(path, plain, code.first().unwrap()).unwrap(),
+        ["VM-1.2"]
+    );
+}
+
+/// The spec check reports a `// spec` line in a crate's shipped code, end to end: the spec
+/// fixture with one added to `first` is an error naming the line, not a score.
+#[test]
+fn the_spec_check_fails_on_a_shipped_citation() {
+    let repo = fresh("readiness/spec-shipped").join("repo");
+    copy_dir(&root().join(FIXTURES).join("spec"), &repo);
+    let lib = repo.join("crates/fx-spec/src/lib.rs");
+    let text = fs::read_to_string(&lib).unwrap();
+    let shipped = text.replace(
+        "    // FX-1.2: not a test\n",
+        "    // spec FX-1.2: not a test\n",
+    );
+    assert_ne!(shipped, text);
+    fs::write(&lib, shipped).unwrap();
+    let error = spec(&repo.join("crates/fx-spec")).unwrap_err();
+    assert!(
+        error.starts_with("crates/fx-spec/src/lib.rs:7: ") && error.contains("outside test code"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -501,6 +570,7 @@ fn the_command_line_names_a_check_an_output_and_crates() {
             check: Check::Flakes,
             out: PathBuf::from("m.json"),
             os: "linux".to_owned(),
+            shard: None,
             crates: vec!["a".to_owned(), "b".to_owned()],
         }
     );
@@ -635,6 +705,7 @@ fn the_oracles_have_no_mutation_score_and_say_why() {
             &root(),
             Check::Mutation,
             &target,
+            None,
             &tools(&fake, "oracles-no-mutation")
         )
         .unwrap(),
@@ -668,19 +739,22 @@ fn the_oracles_spec_sections_come_from_their_readme() {
         );
     }
     let fake = Fake::new(|_: &Command| Reply::exit(0));
-    let score = measure(&root(), Check::Spec, &target, &tools(&fake, "oracles-spec"))
-        .unwrap()
-        .unwrap();
+    let score = measure(
+        &root(),
+        Check::Spec,
+        &target,
+        None,
+        &tools(&fake, "oracles-spec"),
+    )
+    .unwrap()
+    .unwrap();
     assert!(score.total > 0, "{score:?}");
 }
 
 #[test]
 fn citations_are_read_from_xtask_too() {
     assert_eq!(CITING_TREES, ["crates", "apps", "xtask"]);
-    let mut cited = BTreeSet::new();
-    for file in rust_files(&root().join("xtask").join("src")).unwrap() {
-        cited.extend(citations(&fs::read_to_string(file).unwrap()));
-    }
+    let cited = cited_in_tests(&root()).unwrap();
     assert!(cited.contains("PROGS-22.1"), "{cited:?}");
 }
 
@@ -697,6 +771,44 @@ fn after(command: &Command, flag: &str) -> Option<PathBuf> {
 
 fn has_arg(command: &Command, arg: &str) -> bool {
     command.get_args().any(|a| a == arg)
+}
+
+/// What `mutation()` runs: `cargo -vV`, answered with `host`, then
+/// `cargo mutants`, which exits with `code` after writing `outcomes`.
+fn mutants_reply(command: &Command, host: &str, code: i32, outcomes: &str) -> Reply {
+    if has_arg(command, "-vV") {
+        return Reply {
+            stdout: format!("cargo 1.99.0 (abc 2026-09-01)\nhost: {host}\n"),
+            ..Reply::default()
+        };
+    }
+    Reply {
+        code,
+        files: vec![(
+            after(command, "--output")
+                .unwrap()
+                .join("mutants.out/outcomes.json"),
+            outcomes.to_owned().into_bytes(),
+        )],
+        ..Reply::default()
+    }
+}
+
+/// The `CARGO_TARGET_*_RUNNER` variables `command` sets, in order.
+fn runner_envs(command: &Command) -> Vec<(String, Option<String>)> {
+    command
+        .get_envs()
+        .filter(|(key, _)| {
+            let key = key.to_string_lossy();
+            key.starts_with("CARGO_TARGET_") && key.ends_with("_RUNNER")
+        })
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.map(|value| value.to_string_lossy().into_owned()),
+            )
+        })
+        .collect()
 }
 
 fn fixture(check: &str) -> Target {
@@ -809,19 +921,13 @@ fn mutation_keeps_proptests_random_seed() {
     let outcomes = recorded("mutation", "outcomes.json");
     let envs = std::cell::RefCell::new(None);
     let fake = Fake::new(|command: &Command| {
-        envs.replace(Some(proptest_envs(command)));
-        Reply {
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
+        if !has_arg(command, "-vV") {
+            envs.replace(Some(proptest_envs(command)));
         }
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let tools = tools(&fake, "mutation-random-seed");
-    mutation(&root(), &fixture("mutation"), &tools).unwrap();
+    mutation(&root(), &fixture("mutation"), None, &tools).unwrap();
     assert_eq!(envs.borrow().as_ref(), Some(&BTreeMap::new()));
 }
 
@@ -873,23 +979,14 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
     let outcomes = recorded("mutation", "outcomes.json");
     let reply = |code: i32| {
         let outcomes = outcomes.clone();
-        move |command: &Command| Reply {
-            code,
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
-        }
+        move |command: &Command| mutants_reply(command, "x86_64-unknown-linux-gnu", code, &outcomes)
     };
     let target = fixture("mutation");
     for code in [0, 2, 3] {
         let fake = Fake::new(reply(code));
-        let score = mutation(&root(), &target, &tools(&fake, "mutation-reads")).unwrap();
+        let score = mutation(&root(), &target, None, &tools(&fake, "mutation-reads")).unwrap();
         assert_eq!(score.total, 2);
-        let line = fake.seen.borrow()[0].clone();
+        let line = fake.seen.borrow()[1].clone();
         assert!(line.contains("--copy-vcs=true"), "{line}");
         assert!(line.contains("--jobs "), "{line}");
         // The fixture is its own workspace, without the `mutants` profile.
@@ -897,7 +994,7 @@ fn mutation_reads_the_outcomes_cargo_mutants_writes() {
         assert!(!line.contains("--minimum-test-timeout"), "{line}");
     }
     let failed = Fake::new(reply(4));
-    let error = mutation(&root(), &target, &tools(&failed, "mutation-reads")).unwrap_err();
+    let error = mutation(&root(), &target, None, &tools(&failed, "mutation-reads")).unwrap_err();
     assert!(error.contains("cargo mutants failed"), "{error}");
 }
 
@@ -906,29 +1003,96 @@ fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
     let outcomes = recorded("mutation", "outcomes.json");
     let incremental = std::cell::RefCell::new(None);
     let fake = Fake::new(|command: &Command| {
-        incremental.replace(
-            command
-                .get_envs()
-                .find(|(key, _)| *key == "CARGO_INCREMENTAL")
-                .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
-        );
-        Reply {
-            files: vec![(
-                after(command, "--output")
-                    .unwrap()
-                    .join("mutants.out/outcomes.json"),
-                outcomes.clone().into_bytes(),
-            )],
-            ..Reply::default()
+        if !has_arg(command, "-vV") {
+            incremental.replace(
+                command
+                    .get_envs()
+                    .find(|(key, _)| *key == "CARGO_INCREMENTAL")
+                    .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned())),
+            );
         }
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
     });
     let target = resolve(&root(), "qs-porting-example").unwrap();
-    mutation(&root(), &target, &tools(&fake, "mutation-member")).unwrap();
-    let line = fake.seen.borrow()[0].clone();
+    mutation(&root(), &target, None, &tools(&fake, "mutation-member")).unwrap();
+    let line = fake.seen.borrow()[1].clone();
     assert!(line.contains("--profile mutants "), "{line}");
     assert!(line.contains("--minimum-test-timeout 10 "), "{line}");
     // Without incremental builds, every mutant rebuilds the crate in full.
     assert_eq!(incremental.borrow().as_deref(), Some("1"));
+}
+
+#[test]
+fn the_mutant_runner_limits_data_memory_on_linux_hosts_only() {
+    let limit = "prlimit --data=3221225472 --core=0 --".to_owned();
+    assert_eq!(
+        mutant_runner("x86_64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit.clone()
+        ))
+    );
+    assert_eq!(
+        mutant_runner("aarch64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit
+        ))
+    );
+    assert_eq!(mutant_runner("aarch64-apple-darwin"), None);
+    assert_eq!(mutant_runner("x86_64-pc-windows-msvc"), None);
+}
+
+#[test]
+fn mutation_sets_the_runner_for_the_host_triple() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let limit = "prlimit --data=3221225472 --core=0 --".to_owned();
+    // Whatever this test runs on, the host cargo reports decides the runner:
+    // the data limit on a Linux host, named by its triple, and none elsewhere.
+    for (host, expected) in [
+        (
+            "x86_64-unknown-linux-gnu",
+            vec![(
+                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+                Some(limit.clone()),
+            )],
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            vec![(
+                "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+                Some(limit.clone()),
+            )],
+        ),
+        ("aarch64-apple-darwin", Vec::new()),
+        ("x86_64-pc-windows-msvc", Vec::new()),
+    ] {
+        let runners = std::cell::RefCell::new(None);
+        let fake = Fake::new(|command: &Command| {
+            if !has_arg(command, "-vV") {
+                runners.replace(Some(runner_envs(command)));
+            }
+            mutants_reply(command, host, 0, &outcomes)
+        });
+        mutation(
+            &root(),
+            &fixture("mutation"),
+            None,
+            &tools(&fake, "mutation-runner"),
+        )
+        .unwrap();
+        assert_eq!(runners.borrow().as_ref(), Some(&expected), "{host}");
+    }
+    // Without the host, the limit cannot be named, so there is no measurement.
+    let no_host = Fake::new(|_: &Command| Reply::exit(0));
+    let error = mutation(
+        &root(),
+        &fixture("mutation"),
+        None,
+        &tools(&no_host, "mutation-runner"),
+    )
+    .unwrap_err();
+    assert!(error.contains("no host line"), "{error}");
 }
 
 #[test]
@@ -1076,4 +1240,119 @@ fn a_measurement_runs_the_check_for_each_crate_named() {
         serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
     assert_eq!(measurement.crates.len(), 2);
     assert_eq!(measurement.crates["oracles"].passed, FLAKE_RUNS);
+}
+
+#[test]
+fn a_shard_is_k_of_n_with_k_below_n() {
+    let shard = Shard::parse("1/4").unwrap();
+    assert_eq!((shard.index(), shard.count()), (1, 4));
+    assert_eq!(shard.to_string(), "1/4");
+    assert_eq!(Shard::parse("0/1").unwrap(), Shard::new(0, 1).unwrap());
+    assert_eq!(Shard::parse("9/10").unwrap(), Shard::new(9, 10).unwrap());
+    assert!(Shard::new(0, 1).unwrap() < Shard::new(1, 2).unwrap());
+    for bad in [
+        "", "1", "1/", "/4", "a/4", "1/b", "-1/4", "1/2/3", "4/4", "5/4", "0/0", "1/0",
+    ] {
+        let error = Shard::parse(bad).unwrap_err();
+        assert!(error.contains("shard"), "{bad:?}: {error}");
+    }
+    assert!(
+        Shard::new(4, 4)
+            .unwrap_err()
+            .contains("less than the count")
+    );
+    assert!(Shard::new(0, 0).unwrap_err().contains("at least 1"));
+}
+
+#[test]
+fn a_shard_is_written_in_json_as_its_text() {
+    let shard = Shard::new(2, 8).unwrap();
+    let json = serde_json::to_string(&shard).unwrap();
+    assert_eq!(json, "\"2/8\"");
+    assert_eq!(serde_json::from_str::<Shard>(&json).unwrap(), shard);
+    assert!(serde_json::from_str::<Shard>("\"8/8\"").is_err());
+    assert!(serde_json::from_str::<Shard>("2").is_err());
+    // A measurement before sharding, with no shard field, still reads.
+    let whole: Measurement =
+        serde_json::from_str(r#"{"check":"mutation","os":"linux","crates":{}}"#).unwrap();
+    assert_eq!(whole.shard, None);
+    assert!(!serde_json::to_string(&whole).unwrap().contains("shard"));
+    let sharded = Measurement {
+        shard: Some(shard),
+        ..whole
+    };
+    let text = serde_json::to_string(&sharded).unwrap();
+    assert!(text.contains(r#""shard":"2/8""#), "{text}");
+    assert_eq!(serde_json::from_str::<Measurement>(&text).unwrap(), sharded);
+}
+
+#[test]
+fn the_command_line_takes_a_shard_for_the_mutation_check_only() {
+    let options = parse_args(&args("mutation --shard 1/4 --out m.json a")).unwrap();
+    assert_eq!(options.shard, Some(Shard::new(1, 4).unwrap()));
+    assert_eq!(options.check, Check::Mutation);
+    assert_eq!(
+        parse_args(&args("mutation --out m.json a")).unwrap().shard,
+        None
+    );
+    for bad in [
+        "mutation --shard --out m.json a",
+        "mutation --shard 4/4 --out m.json a",
+        "mutation --shard four --out m.json a",
+        "lines --shard 0/4 --out m.json a",
+        "flakes --shard 0/1 --out m.json a",
+    ] {
+        let error = parse_args(&args(bad)).unwrap_err();
+        assert!(error.contains("shard"), "{bad:?}: {error}");
+    }
+    let error = parse_args(&args("lines --shard 0/4 --out m.json a")).unwrap_err();
+    assert!(error.contains("only the mutation check"), "{error}");
+}
+
+#[test]
+fn a_shard_is_passed_to_cargo_mutants_dealt_round_robin() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let fake = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    let target = fixture("mutation");
+    let score = mutation(
+        &root(),
+        &target,
+        Some(Shard::new(3, 10).unwrap()),
+        &tools(&fake, "mutation-shard"),
+    )
+    .unwrap();
+    assert_eq!(score.total, 2);
+    let line = fake.seen.borrow()[1].clone();
+    assert!(line.contains(" --shard 3/10 "), "{line}");
+    assert!(line.contains(" --sharding round-robin "), "{line}");
+    assert!(line.contains(" --no-shuffle "), "{line}");
+    assert!(
+        line.contains("mutants-fx-mutation-3-of-10"),
+        "a shard writes in its own directory: {line}"
+    );
+    let whole = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    mutation(&root(), &target, None, &tools(&whole, "mutation-shard")).unwrap();
+    let line = whole.seen.borrow()[1].clone();
+    assert!(!line.contains("--shard"), "{line}");
+}
+
+#[test]
+fn a_sharded_measurement_records_its_shard() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let out = fresh("readiness/run-shard").join("mutation-2.json");
+    let fake = Fake::new(|command: &Command| {
+        mutants_reply(command, "x86_64-unknown-linux-gnu", 0, &outcomes)
+    });
+    let mut command = args("mutation --os linux --shard 2/3 --out");
+    command.push(out.display().to_string());
+    command.push(format!("{FIXTURES}/mutation"));
+    assert!(run_check(&root(), &command, &tools(&fake, "run-shard")).unwrap());
+    let measurement: Measurement =
+        serde_json::from_str(&fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(measurement.shard, Some(Shard::new(2, 3).unwrap()));
+    assert_eq!(measurement.crates["fx-mutation"].total, 2);
 }
