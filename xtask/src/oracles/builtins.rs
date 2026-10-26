@@ -32,6 +32,7 @@ use std::fs;
 use std::num::NonZero;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -1901,39 +1902,60 @@ fn threads() -> NonZero<usize> {
     thread::available_parallelism().unwrap_or(NonZero::<usize>::MIN)
 }
 
-/// Runs `work` on each of `items` across `threads` threads and gives the results in the items'
-/// order, whichever thread finished first. `work` gets the number of its thread, from 0, so
-/// that each thread can have files of its own. A thread that panics is an error.
+/// Runs `work` on each of `items` on `threads` threads, at most one per item, each thread
+/// taking the next item no thread has taken, and gives the results in the items' order. `work`
+/// gets the number of its thread, from 0, so that each thread can have files of its own. The
+/// first error stops every thread and is the result; a thread that panics is an error too.
 fn across_cores<T: Sync, R: Send>(
     items: &[T],
     threads: NonZero<usize>,
-    work: impl Fn(usize, &T) -> R + Sync,
+    work: impl Fn(usize, &T) -> Result<R, String> + Sync,
 ) -> Result<Vec<R>, String> {
-    // Each thread takes one run of consecutive items, so the results come back in order.
-    let each = items.len().div_ceil(threads.get()).max(1);
+    let next = &AtomicUsize::new(0);
+    let stop = &AtomicBool::new(false);
     let work = &work;
-    thread::scope(|scope| {
-        let handles: Vec<_> = items
-            .chunks(each)
-            .enumerate()
-            .map(|(thread, items)| {
+    let joined = thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads.get().min(items.len()))
+            .map(|thread| {
                 scope.spawn(move || {
-                    items
-                        .iter()
-                        .map(|item| work(thread, item))
-                        .collect::<Vec<R>>()
+                    let mut done = Vec::new();
+                    while !stop.load(Ordering::SeqCst) {
+                        let index = next.fetch_add(1, Ordering::SeqCst);
+                        let Some(item) = items.get(index) else {
+                            break;
+                        };
+                        match work(thread, item) {
+                            Ok(result) => done.push((index, result)),
+                            Err(problem) => {
+                                stop.store(true, Ordering::SeqCst);
+                                return Err(problem);
+                            }
+                        }
+                    }
+                    Ok(done)
                 })
             })
             .collect();
-        let mut results = Vec::with_capacity(items.len());
-        for handle in handles {
-            let thread = handle
-                .join()
-                .map_err(|_| "a thread of the builtin differential panicked".to_owned())?;
-            results.extend(thread);
+        // Every handle is joined here, so that no panic is left for the scope to raise again.
+        handles
+            .into_iter()
+            .map(thread::ScopedJoinHandle::join)
+            .collect::<Vec<_>>()
+    });
+    let mut slots: Vec<Option<R>> = (0..items.len()).map(|_| None).collect();
+    for outcome in joined {
+        let done =
+            outcome.map_err(|_| "a thread of the builtin differential panicked".to_owned())?;
+        for (index, result) in done? {
+            if let Some(slot) = slots.get_mut(index) {
+                *slot = Some(result);
+            }
         }
-        Ok(results)
-    })
+    }
+    slots
+        .into_iter()
+        .collect::<Option<Vec<R>>>()
+        .ok_or_else(|| "a thread of the builtin differential left an item undone".to_owned())
 }
 
 /// Compares the profile with `recorded`, the outcomes of oracles that ran on `host`; prints each
@@ -1957,9 +1979,12 @@ fn compare_on(
 ) -> Result<Tally, String> {
     let host = host.into();
     let mut tally = Tally::default();
-    let profiled = across_cores(cases, threads, |_, case| profile(case))?;
-    for (case, (ours, errors)) in cases.iter().zip(profiled) {
-        let Some(oracle) = recorded.get(&case.key()) else {
+    // A case not recorded is reported, not profiled.
+    let profiled = across_cores(cases, threads, |_, case| {
+        Ok(recorded.contains_key(&case.key()).then(|| profile(case)))
+    })?;
+    for (case, profiled) in cases.iter().zip(profiled) {
+        let (Some(oracle), Some((ours, errors))) = (recorded.get(&case.key()), profiled) else {
             tally.differ = tally.differ.saturating_add(1);
             println!("FAIL  {}: not recorded in {FIXTURE}", show(case));
             continue;
@@ -2134,9 +2159,9 @@ fn check_where(
     check_on(root, oracles, record, host, threads())
 }
 
-/// [`check_where`] with the oracles and the profile on `threads` threads, each oracle in a work
-/// directory of its own, so that no two share a `progs.src` or a `progs.dat`; what it prints and
-/// records does not depend on how many.
+/// [`check_where`] with the oracles and the profile on `threads` threads, each thread's oracle
+/// in a work directory of its own, so that no two share a `progs.src` or a `progs.dat`; what it
+/// prints and records does not depend on how many.
 fn check_on(
     root: &Path,
     oracles: &Oracles,
@@ -2165,18 +2190,18 @@ fn check_on(
         .collect();
     let ran = across_cores(&unique, threads, |thread, case| {
         oracle(oracles, &work.join(format!("thread{thread}")), case)
-    })?;
-    let mut outcomes = BTreeMap::new();
-    for (case, outcome) in unique.iter().zip(ran) {
-        match outcome {
-            Ok(outcome) => outcomes.insert(case.key(), outcome),
-            Err(problem) => {
-                // An oracle that misbehaves on one case says nothing about the profile.
-                println!("FAIL  builtin differential: {problem}");
-                return Ok(false);
-            }
-        };
-    }
+    });
+    let ran = match ran {
+        Ok(ran) => ran,
+        Err(problem) => {
+            // An oracle that misbehaves on one case says nothing about the profile.
+            println!("FAIL  builtin differential: {problem}");
+            return Ok(false);
+        }
+    };
+    let outcomes: BTreeMap<String, Outcome> =
+        unique.iter().map(|case| case.key()).zip(ran).collect();
+    let mut outcomes = outcomes;
     let mut ok = true;
     if record {
         if host.overrun != Overrun::Caught {
