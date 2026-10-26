@@ -1007,6 +1007,10 @@ fn an_array_of_functions_needs_no_body() {
 fn arrays_of_functions_are_checked() {
     assert_eq!(errors("void() x[2];", &[]), [Code::E0211]);
     assert_eq!(
+        errors("#pragma flag disable qcfuncs\nfloat (*x[2])(float);", &[]),
+        []
+    );
+    assert_eq!(
         errors("void() h = {}; void() g[2][2] = { h, h, h, h };", &[]),
         [Code::E0204]
     );

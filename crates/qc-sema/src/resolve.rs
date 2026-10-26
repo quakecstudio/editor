@@ -2023,7 +2023,12 @@ impl<'a> Resolver<'a> {
             self.report(Code::E0204, location, format!("expected {{, found {first}"));
             return true;
         }
-        if decl.array.is_some() && !decl.initialized && self.resolved(&decl.ty).is_function() {
+        // C's `float (*x[2])(float);` is an array of pointers to functions, a `var` (FTEF-21.7).
+        if decl.array.is_some()
+            && !decl.initialized
+            && !decl.pointer_var
+            && self.resolved(&decl.ty).is_function()
+        {
             self.report(
                 Code::E0211,
                 location,
