@@ -1624,11 +1624,14 @@ impl<'a> Parser<'a> {
             name = format!("{name}::{}", self.found());
             self.name();
         }
-        // FTEQCC array suffix `[N]` or `[]` after the declared name (FTE-13.1). Vanilla uses
-        // `[` only in a state header `=[frame, think]`, after `=`, so this does not change
-        // vanilla; after a function declarator a `[` is its state header (FTE-17.2).
-        while self.fteqcc() && !ty.function && self.at(K::LBracket) {
+        // FTEQCC array suffix `[N]` or `[]` after the declared name (FTE-13.1), for every type:
+        // `if (!arraysize && QCC_PR_CheckToken ("["))` comes before a function's `[` state
+        // header is looked for (FTE-17.7). Vanilla uses `[` only in a state header
+        // `=[frame, think]`, after `=`, so this does not change vanilla.
+        let mut array = false;
+        while self.fteqcc() && self.at(K::LBracket) {
             self.array_suffix();
+            array = true;
         }
         // FTE-17.1: the C-style function declarator `rettype name(params)`, which the
         // rerelease uses beside the vanilla `rettype(params) name`, and FTEF-5.3: `T
@@ -1641,13 +1644,19 @@ impl<'a> Parser<'a> {
         }
         if self.in_typedef {
             // FTEF-7.3: a `typedef`'s declarator defines the type `name`, a function type when
-            // the type or the declarator's parameter lists make one (FTEF-7.5).
+            // the type or the declarator's parameter lists make one (FTEF-7.5); an array of
+            // functions is no function.
             if named {
-                self.declare_type_shaped(name, ty.function);
+                self.declare_type_shaped(name, ty.function && !array);
             }
             // `if (istypedef) { ...; def = NULL; continue; }`: no initialiser or body is read.
             self.finish_node();
             return ty.function;
+        }
+        // FTE-17.7: an array of functions is initialised as an array, by an aggregate, not by
+        // a body.
+        if array {
+            ty.function = false;
         }
         if site != Site::Member {
             self.define(&name, ty.function);

@@ -1282,7 +1282,10 @@ impl<'a> Resolver<'a> {
         }
         // FTE-11, FTEF-15.5: a `var` of function type holds a function; it defines none.
         let resolved_ty = self.resolved(&decl.ty);
-        let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var) && resolved_ty.is_function() {
+        // FTE-17.7: an array of functions is a global holding functions, no function.
+        let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var || decl.array.is_some())
+            && resolved_ty.is_function()
+        {
             DefKind::Global
         } else {
             top_level_kind(&resolved_ty)

@@ -985,3 +985,17 @@ fn a_typedef_function_type_carries_its_parameters_and_members() {
         [Code::E0301]
     );
 }
+
+// spec FTE-17.7: an array of functions is a global holding functions, with no body of its
+// own, and an element may be called
+#[test]
+fn an_array_of_functions_needs_no_body() {
+    for source in [
+        "void() h = {}; void() g[2] = { h, h }; void() k = { g[0](); };",
+        "void() h = {}; typedef void() fn; typedef fn fns[2]; fns g = { h, h };",
+        "void() h = {}; var void() g[2] = { h, h };",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+        assert_eq!(errors(source, &["-Fcaseinsens"]), [], "{source}");
+    }
+}

@@ -433,3 +433,27 @@ fn a_typedef_of_a_function_type_defines_functions() {
     ]);
     assert_ne!(errors("typedef void() fn; fn g = { 1 };"), []);
 }
+
+// spec FTE-17.7: a `[` right after a function declarator's name is its array suffix, so an
+// array of functions is declared and initialised as an array, and a state header needs `=`
+#[test]
+fn an_array_of_functions_is_an_array() {
+    accepts(&[
+        "void() h = {}; void() g[2] = { h, h };",
+        "void() h = {}; void() g[] = { h, h };",
+        "void() h = {}; void() g[2][2] = { h, h, h, h };",
+        "void() h = {}; void() *g[2] = { h, h };",
+        "void(float a) h = {}; void(float a) g[2] = { h, h };",
+        "void() h = {}; static void() g[2] = { h, h };",
+        "void() h = {}; void() g[2] = { h, h }, i = {};",
+        "void() h = {}; typedef void() fn; fn g[2] = { h, h };",
+        "void() h = {}; typedef void() fn; typedef fn fns[2]; fns g = { h, h };",
+        "void() h = {}; void() g[2] = { h, h }; void() k = { g[0](); };",
+        "void() g = [1, g] {};",
+        "void() g { };",
+        "void() g : 6;",
+    ]);
+    for source in ["void() g [1, g] {};", "$frame a1\nvoid() g [$a1, g] { };"] {
+        assert_ne!(errors(source), [], "{source}");
+    }
+}

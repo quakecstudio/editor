@@ -115,18 +115,20 @@ fn c_style_function_declarators_parse() {
     );
 }
 
-// spec FTE-17.2: a function's body may follow its declarator without `=`, in either order.
+// spec FTE-17.7: a function's body may follow its declarator without `=`, in either order; a
+// `[` right after the name is the array suffix, so a state header there needs `=`.
 #[test]
 fn function_bodies_need_no_equals() {
     for source in [
         "void InitLightStyles() { }\n",
         "void(entity e) remove { remove_real(e); }\nvoid(entity e) remove_real = #15;\n",
-        "void() think [1, think] { }\n",
+        "void() think = [1, think] { }\n",
     ] {
         let parsed = fte_ok(source);
         let init = first_declarator(&parsed).initializer();
         assert!(matches!(init, Some(ast::Initializer::Body(_))), "{source}");
     }
+    assert_ne!(fte_codes("void() think [1, think] { }\n"), []);
     assert_eq!(vanilla_errors("void() g { };"), [Code::E0204]);
 }
 
