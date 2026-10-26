@@ -275,6 +275,85 @@ inheritance, bitfields and nested members.
 - **FTEF-6.6** Codegen (later): struct and union layout, and which need version 7, are fixed by
   L-01.
 
+- **FTEF-6.7** `QCC_PR_ParseStruct` reads a body's members in a loop, and this profile reads them
+  so: a `}` ends it, with "missing semi-colon" when a member's type is still open (`if (newparm)
+  QCC_PR_ParseError(ERR_EXPECTED, "missing semi-colon");`); a `;` closes the open type (`newparm =
+  NULL;`); a `,` goes on with the same type and is "element missing type" when none is open; any
+  other token starts a new type, which is "missing semi-colon" while one is open, and begins with
+  `public`, `private` or `protected` and `QCC_PR_Expect(":")` (`QCC_PR_CheckKeyword(1, "public")`,
+  then `continue`), or `static` or `virtual`, then `QCC_PR_ParseType(false, false, true)`, which
+  makes the type of a nested `struct`, `union`, `enum` or `class` whether or not a declarator
+  follows, then any `*`, then either a `;` (`//annonymous structs do weird scope stuff`: a member
+  of the name "", a warning "declaration does not declare anything" unless its type is a struct or
+  union) or `(` and an optional `*` and a name and `)`, or a name, then `[` array dimensions, `(`
+  and a parameter list (else "expected function arg list"), `:` and a width, and `=` and a default
+  value. A body is `struct S { public: float a; private: float b; };`, `struct S { struct T {
+  float a; }; float b; };`, `struct S { enum { A }; float a; };`, `struct S { struct { float a; };
+  float b; };`, `struct S { float; };` and `struct S { float a, *b; };`. A member written at
+  column 0 is a member (FTEF-18.34). A `static` member is a global, not counted among the members
+  (`numparms`), and a body with none is "struct %s has no members" (`QCC_PR_ParseError
+  (ERR_NOTANAME, "%s %s has no members", ...)`), as `struct S { };`, `struct S { ;; };` and `union
+  U { };` are, and so is a body whose every member the parent has with the name and type (`oldparm
+  = QCC_PR_FindStructMember(newt, parmname, &ofs, &bitofs)`, which is then the parent's), `struct
+  P { float a; }; struct S : P { float a; };`. A member whose type takes a `(` with `*` after it,
+  `float (*fp)(float);` with `qcfuncs` on, is "expected function arg list": `QCC_PR_ParseType`
+  took the `(`. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseStruct`.
+- **FTEF-6.8** After `struct` or `union`, `QCC_PR_ParseStruct` reads `{` for an anonymous type
+  (`<struct>`, `<union>`), else the tag with `QCC_PR_ParseName`, so `struct *p;` is "not a name";
+  a struct (`structtype == ev_struct`) then reads `:` and a parent, which a union does not, so
+  `union U : P { float b; };` is an error at the `:`; a parent needs the body (`if (parenttype)
+  QCC_PR_Expect("{");`), so `struct S : P;` is "expected {"; with no parent a tag without `{`
+  names the type and returns (`else if (!QCC_PR_CheckToken("{")) return newt;`), so `struct S x;`
+  is a variable of the type, and `struct S;` declares it; the type is the one
+  `QCC_TypeForName(tname)` finds, so `struct float x = 1;` is a `float`. A named union is an
+  `ev_struct` type like a struct. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseStruct`.
+- **FTEF-6.9** A member's `:` is followed by `QCC_PR_IntConstExpr()`; "too many bits" for more
+  than 64; the type must be `ev_integer`, `ev_uint`, `ev_int64` or `ev_uint64`, else
+  `QCC_PR_ParseWarning(ERR_BADNOTTYPE, "bitfields must be integer types")`, an error, so `struct S
+  { float a : 3; };`, a `char`, a `short` and a `string` field are refused and `int a : 3;`,
+  `unsigned a : 3;` and `long a : 3;` and `int a : 40;` (promoted to 64 bits) are not. The width's
+  names are values (`int a : b;` with no `b` is "Unknown value"), a literal with a fraction is
+  "Value is not an integer constant" (`int a : 1.5;`), and `(1 + 2)` is a width. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseStruct`.
+- **FTEF-6.10** `QCC_TypeForName(tname)` finds the type of a struct's name; a struct given a body
+  when the name is a type with a size (`if (newt->size)`: a struct defined, or `float`, a class,
+  an enum, a typedef) is a new type compared with the old after its members (`typecmp_strict(newt,
+  oldtype)`), "struct %s redeclared differently" when they differ in a name, type, array size, bit
+  width or order of a member, and the same members are accepted: `struct S { float a; }; struct S
+  { float a; };`, but not `struct S { float b; };`, nor `struct float { float a; };`. A parent
+  that is not yet a type is "Parent type %s was not yet defined", one that is no struct "Parent
+  type %s is not a struct" (a typedef of a struct is the struct, `typedef struct P { float a; }
+  PP; struct S : PP { float b; };`), and a struct that has a parent or a size given another is
+  "Redeclaration of struct with different parent type". A direct member whose type is the struct
+  itself, or a struct with no body so far, is "type %s not fully defined yet" (`if (type == newt
+  || ((type->type == ev_struct || type->type == ev_union) && !type->size))`,
+  `QCC_PR_ParseWarning(ERR_NOTANAME, ...)`). A struct written in a function's body is compared with the struct of its name as any is, and its tag is a type from there on (FTEQCC drops it at the block's end, which this profile does not follow). The struct's own name is no parent of it (`newt = QCC_TypeForName(tname)` comes after the parent is found): `struct S : S { float a; };` is "Parent type S was not yet defined", and `struct S; struct S : S { float a; };` never ends in FTEQCC. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseStruct`.
+- **FTEF-6.11** The member after `.` of a struct is `QCC_PR_FindStructMember`'s: the members of
+  the struct are searched, with `stricmp` under `-Fcaseinsens` and `STRCMP` otherwise, those of an
+  anonymous struct member too, and more than one found is "multiple members found matching %s.%s";
+  a member declared again with its name, type and size is one; none found in the struct goes on to
+  its parent. `union U { float a; float A; }; U x; ... x.A = 1;` is refused under `-Fcaseinsens`
+  and accepted otherwise; a name no struct of the chain has is `QCC_PR_ParseWarning(ERR_BADMEMBER, "%s is not a member of %s", ...)`, an error, `S s; s.b = 1;` after `struct S { float a; };`; a struct's name is no scope of its members or of a nested enum's values, `float y = S::A;` after `struct S { enum { A }; float a; };` is "Unknown value"; and
+  an array takes `.length` and no other member, "expected length, found a" for `S x[2]; x.a = 1;`.
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_FindStructMember`.
+- **FTEF-6.12** A struct or union is cast to and from nothing but itself: `QCC_TryEvaluateCast`
+  takes a cast of a type to itself (`if (!typecmp(src.cast, cast))`) and a constant 0 to any type
+  but a struct or union (`else if (QCC_SRef_IsNull(src) && totype != ev_struct && totype !=
+  ev_union)`), and has no case for a struct, so `QCC_EvaluateCast` ends in `QCC_PR_ParseError(0,
+  "Cannot cast from %s to %s", ...)`: `struct S { float a; }; S s = 1;`, `S s = 0;`, `S s; float x
+  = s;` and `(struct S)0` in a body are "Cannot cast from float to struct S" and "from struct S to
+  float". A struct's initialiser is an aggregate, `S s = { 1 };` (`else if ((type->type ==
+  ev_struct || type->type == ev_union) && QCC_PR_CheckToken("{"))` in
+  `QCC_PR_ParseInitializerType_Internal`), or a value of the same type, `S t = s;`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_PR_ParseInitializerType_Internal`.
+
 ## FTEF-7 `typedef` of any type
 
 **Source:** `qcc_pr_lex.c`, `QCC_TypeForName` and the typedef path (`ev_typedef`,
@@ -296,6 +375,19 @@ dialect aliases any type.
   pointer or array.
 - **FTEF-7.3** Codegen (later): a typedef is a front-end alias and emits nothing of its own
   (its underlying type's codegen applies); confirmed by L-01.
+
+- **FTEF-7.4** `QCC_PR_ParseDefs` loops over its declarators after `typedef` as it does after any
+  type (`do { ... } while (QCC_PR_CheckToken (","));`), each one defining a type, with its `*`s,
+  parameter lists, `(*name)(params)` and array dimensions, and no initialiser or body (`if
+  (istypedef) { ...; def = NULL; continue; }`): `typedef float t, u;`, `typedef float t, *u;`,
+  `typedef void() fn, fn2;`, `typedef struct S { float a; } T, *PT;` and `typedef enum { A } E,
+  F;` define two types each. `typedef` is read among the qualifiers (`istypedef=true;` in the loop
+  of storage classes) before or after the others and any number of times, so `typedef typedef
+  float tt;` defines `tt`, and `local typedef float t;` in a body defines `t` there. After
+  `typedef` the declarators are those of any definition: `typedef class C { float a; } CC;` is
+  `QCC_PR_ParseEntClass`'s type (FTEF-9.8). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
 
 ## FTEF-8 `enum`, `enumflags` and typed or scoped enums
 
@@ -327,6 +419,15 @@ full dialect also uses `enumflags`.
   (`qcc_pr_comp.c`, `QCC_PR_ParseEnum`). So `enum colour_e c;` and `typedef enum colour_e C;`
   are "expected {" errors; an enum is named elsewhere by its type name alone (FTE-15.4),
   `colour_e c;`.
+- **FTEF-8.5** `enum class` needs its base type: after `strictenum = QCC_PR_CheckName("class");`
+  and the name, `QCC_PR_ParseEnum` reads `:` and the type, `else if (strictenum)
+  QCC_PR_Expect(":");`, so `enum class E { A };`, `enum class { A };` and `enum class E;` are
+  "expected :, found {" (or `;`), and `enum class E : float { A };` is an enum; FTE-15.2's `enum
+  class` names are those of an enum with a base type. The declarators follow the body as they
+  follow any type (FTEF-15.6): `enum E { A } x;` is `E x`, `enum { A } x;` a `float x` (the
+  base), and `enum class E : float { A } x;` an `E x` that no float takes (FTEF-19.10). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
 
 ## FTEF-9 Classes
 
@@ -375,6 +476,72 @@ heavily class-based (547 `class` declarations across the three mods).
   NAME" (`if (redeclaration && fieldtype != newt->parentclass)`). Under `-Fcaseinsens` the
   parent is found in any case (FTEF-19.33), so `class D : c` after `class C` is a class of `C`.
 
+- **FTEF-9.8** `QCC_PR_ParseType` reads `class` with `qcfuncs` on as the type
+  `QCC_PR_ParseEntClass` makes (`if (flag_qcfuncs && QCC_PR_CheckKeyword (keyword_class, "class"))
+  type = QCC_PR_ParseEntClass();`), wherever a type stands, and the declarators follow it as they
+  follow any type. `class Name` with no `{` returns the type, a forward declaration
+  (`forwarddeclaration = !QCC_PR_CheckToken("{")`), so `class C; class C x;`, `class C { float a;
+  } x;`, `void() g = { class C x; };`, `class C *p;` and `void(class C x) h = #6;` define a
+  variable; a parent needs the body (`QCC_PR_Expect("{")`), so `class D : C;` is "expected {"; a
+  name `QCC_TypeForName` finds is that type, `class float x;` a `float` named x; and the name
+  `QCC_PR_ParseName` reads must be one. A class given a body in a function's body is "Declaration
+  of class %s%s%s within function". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+- **FTEF-9.9** In `QCC_PR_ParseEntClass`'s loop over a member's keywords `public:` and `private:`
+  read one `:`, and `protected:` reads two (`QCC_PR_Expect(":"); ... QCC_PR_Expect(":");`), so
+  `protected: float b;` is "expected :, found float" and `protected: : float b;` is a label;
+  `virtual` and `nonvirtual` are labels only when a `:` follows (`firstkeyword &&
+  QCC_PR_CheckToken(":")`); a label is followed by the member (`basetype = QCC_PR_ParseType(false,
+  false, false)` is "In class %s, expected type"), so a label at the `}` is "is not a type"; and a
+  `;` where a member starts is "is not a type". A first token `,` is "member missing name".
+  Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+- **FTEF-9.10** A member given a value with `=` is read as a function's body or value (`havebody =
+  true`); "Can only initialise member functions" when it is not of function type and not `static`
+  (`const` makes a member static), unless the value is `0` or `0i` (`isnull`): `class C { float a
+  = 1; };` is refused, `class C { float a = 0; };`, `class C { static float a = 1; };` and `class
+  C { const float a = 1; };` are not, and `var` does not make one static. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+- **FTEF-9.11** A member whose type is a `struct` or `union` is "Struct or union in class %s" (`if
+  (basetype->type == ev_struct || basetype->type == ev_union)`), a pointer to one is not. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+- **FTEF-9.12** `QCC_PR_ParseEntClass` finds the class's name with `QCC_TypeForName(classname)`: a
+  type with members (`if (newt && newt->num_parms != 0) redeclaration = true;`), a struct or union
+  among them, is a redeclaration, "Parent class changed on redeclaration of %s" when its parent is
+  not the one given (`if (redeclaration && fieldtype != newt->parentclass)`): `struct S { float a;
+  }; class S { float b; };`. Another type with a size, `float`, a typedef or an enum, is taken as
+  the class (`if (!newt)` makes none) and given the members, and its `spawnfunc_NAME` is declared
+  (`QCC_PR_GetDef(type_function, membername, NULL, true, 0, GDF_CONST)`) and, the type being no
+  entity, never given a body, "function spawnfunc_float has no body" (FTEF-17.11): `class float {
+  float a; };`, `typedef float T; class T { float b; };` and `enum E { A }; class E { float b; };`
+  are refused, which this profile reports at the class's name as "Parent class changed on
+  redeclaration of NAME" (`E0242`), the program being refused either way. A class given its
+  members again in another case under `-Fcaseinsens` is the class (FTEF-19.33), whose members are
+  compared (FTEF-9.7): `class C { float a; }; class c { float b; };` is "Incompatible redeclaration
+  of class c. b differs." with it and two classes without. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+- **FTEF-9.13** A class given its body again is compared with the first, member by member in order
+  (`if (newt->params[i].arraysize != parms[i].arraysize || typecmp(newt->params[i].type,
+  parms[i].type) || strcmp(newt->params[i].paramname, parms[i].paramname))`), "Incompatible
+  redeclaration of class %s. %s differs." at the first that differs in name, type or array size,
+  and "Incompatible redeclaration of class %s." when the count differs (`if (newt->num_parms !=
+  numparms)`): `class C { float a; }; class C { float b; };` and `class C { float a; }; class C {
+  };` are refused, `class C { float a; }; class C { float a; };` and a forward `class C;` before
+  either are not; under `-Fcaseinsens` `class c { float b; }` after `class C { float a; }` is the
+  class given again (FTEF-9.12). A member's type is a type (`basetype = QCC_PR_ParseType(false,
+  false, false)`, "is not a type"), and a struct or union by its name is "Struct or union in
+  class" as by its keyword (FTEF-9.11): `class O { T x; };` with no type `T`, and `struct S {
+  float a; }; class O { S x; };`, are refused. A `nonvirtual`, `static` or `ignore` member is a global of the class's or nothing, not among the members compared (`continue` before `parms[numparms]` is filled), and a member's array size is compared (`newt->params[i].arraysize != parms[i].arraysize`): `class C { float a; }; class C { float a[2]; };` and `class C { float a; }; class C { ignore float a; };` are refused. The
+  constructor is the member named exactly as the class (`!strcmp(parmname, classname)`), under
+  `-Fcaseinsens` too: `class c { C(); };` is "function c::c has no body" with it, the name `C`
+  being the class's type there and no constructor. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseEntClass`.
+
 ## FTEF-10 Accessors
 
 **Source:** `qcc_pr_comp.c`, `QCC_PR_ParseAccessorMember` and the `accessor` branch of
@@ -403,6 +570,27 @@ others).
   are not supported", "static accessors are not supported").
 - **FTEF-10.4** Codegen (later): an accessor read or write lowers to its getter or setter call;
   fixed by L-01.
+
+- **FTEF-10.5** `QCC_PR_ParseType` reads `accessor` among the types (`QCC_PR_CheckKeyword
+  (keyword_accessor, "accessor")`), wherever a type stands: `typedef accessor B : float;`, `static
+  accessor A : float;` and `accessor A : float x;` define or declare with the declarators that
+  follow. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_lex.c`, `QCC_PR_ParseType`.
+- **FTEF-10.6** `accessor Name : Base` reads the base with `QCC_PR_ParseType(false, false,
+  false)`, "is not a type" when it is none, and `QCC_PR_ParseError(ERR_NOTANAME, "Accessor %s
+  cannot be based upon %s", ...)` when it is a struct or union (`if (!type || type->type ==
+  ev_struct || type->type == ev_union)`): `accessor A : struct S { float a; };` and `struct S {
+  float a; }; accessor A : S;` are refused, `accessor A : float *;` is not. A name that is another
+  type is "Type %s cannot be redefined as an accessor" (`if (newt && newt->type != ev_accessor)`),
+  `typedef float A; accessor A : float;`, while a variable's name is free, `float A; accessor A :
+  float;`. A later `accessor A : Base` with another base is "Accessor %s basic type mismatch (%s,
+  expected %s)" (`else if (type != newt->parentclass)`), `accessor A : float; accessor A :
+  vector;`, and with the same base is accepted; under `-Fcaseinsens` `a x;` after it is a variable
+  of the accessor (FTEF-19.33). An accessor declared with its base where a class member's type stands, `class O { accessor A : float x; };`, ends FTEQCC too, which this profile reports as "Accessor A declared with its base in class O" (`E0258`). An accessor with no `:`, `accessor A;` or `accessor A : float; accessor A;`, reads the null `type` (`newt->size=type->size;`, `TypeName(type, ...)`) and ends
+  FTEQCC, which the oracle records as refused; this profile reports "Accessor A cannot be based
+  upon ??", the message of the path where `parentname` is "??". Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseType`.
 
 ## FTEF-11 The `__variant` type
 
@@ -1754,8 +1942,7 @@ declares parameters without names or with `optional` and `__out`.
   function pointer `(*name)(params)`, or nothing, since `else if (pr_token_type == tt_name) name =
   QCC_PR_ParseName ();` takes a name only when there is one; array suffixes; and a default value.
   A lone unnamed `void` is no parameter (`else if (paramlist[numparms].type->type == ev_void)
-  break; //float(void) has no actual args`). `...` ends the list, after a type or alone, and may
-  be followed by the name of the argument count.
+  break; //float(void) has no actual args`). `...` ends the list, after a type or alone, and may be followed by the name of the argument count. A `*` after a function type makes a pointer to it, `void(void() *a) h = #6;`.
 - **FTEF-15.4** A function type has at most `MAX_PARMS+MAX_EXTRA_PARMS` parameters ("Too many
   parameters. Sorry. (limit is %i)"), with `#define MAX_EXTRA_PARMS 128` and id's
   `MAX_PARMS` of 8 (`LIMIT_MAX_PARMS`, QC-27.7): 136 under this profile, not 8.
@@ -1825,8 +2012,7 @@ The corpus writes locals of class and pointer types, casts to classes (`(ncPlaye
 - **FTEF-16.8** Adjacent string literals are one string: `QCC_PR_LexString` reads strings in a
   loop that skips whitespace and comments and ends only where no `"` follows
   (`else if (first) ... else break;`).
-- **FTEF-16.9** A clause of a `for` header may hold several expressions separated by `,`, and the
-  first clause a declaration after them (`v = 0, int i = 1`).
+- **FTEF-16.9** A clause of a `for` header may hold several expressions separated by `,`, and the first clause a declaration after them (`v = 0, int i = 1`). `QCC_PR_ParseStatement_For` reads the first clause with `type = QCC_PR_ParseType (false, true, false)`, so any type starts a declaration there, `for (accessor A : float i; ; )` and `for (enumflags E { A } i; ; )` among them, which a statement's `accessor` and `enumflags` do not (FTEF-20.14).
 - **FTEF-16.10** A call's result may be assigned to, as in the chain `a = f() = b` the corpus
   writes; FTEQCC reports no error there, so neither does this profile.
 - **FTEF-16.11** An aggregate initialiser may name the member each value initialises,
@@ -1848,12 +2034,7 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
 - **FTEF-17.1** A class, struct, union, typedef, enum or accessor names a type, and its name may
   be used where a value is (`spawn(ncTimer)`, `sizeof(graphNode_t)`). A type's name may be
   declared again: a class forward and then with its body, a typedef in two headers.
-- **FTEF-17.2** A class's members are found through the class and its parents
-  (`QCC_PR_ParseEntClass` keeps each class's members, with `newt->parentclass`). `Class::member`
-  defines the member the class or a parent declares, or adds one, and its name refers to the
-  member's declaration. In a member function's body a name is the function's own local or
-  parameter, then a member of its class or a parent (`assumeclass`), then a global; a class's
-  own name there is the class, as `spawn(Thing)` takes it, not its constructor.
+- **FTEF-17.2** **Withdrawn** (P2-133, #574): it said a name in a member function's body is found among the members of its class, but `QCC_PR_ParseValue` reaches a field as `this.field` through the global `self`, without which FTEQCC ends; replaced by FTEF-17.14.
 - **FTEF-17.3** The name after `.` or `->` is a member of the class of what the access is made
   on, when that is known from a name's declared type, `this`, a cast or a call's return type;
   else an entity field the name defines; else a member of any class with the name. A vector's
@@ -1916,6 +2097,14 @@ fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`. Rerelease subset:
   `float *a; float a;` is the error "Type mismatch on redeclaration of a. float, should
   be float*" (`E0205`), `float *a; float *a;` none, and `float *a; string *a;` one. So
   `typedef float t; t x; float x;` is no mismatch and `typedef float t; t x; vector x;` is one.
+
+- **FTEF-17.14** A class's members are found through the class and its parents
+  (`QCC_PR_ParseEntClass` keeps each class's members, with `newt->parentclass`). `Class::member`
+  defines the member the class or a parent declares, or adds one, and its name refers to the
+  member's declaration. In a member function's body a name is the function's own local or parameter, then a member of its class or a parent, then a global. A field, a `virtual` function among them, is read as `this.field` (`if (pr_classtype && expandmemberfields && d.cast->type == ev_field)`), `this` being made from the global `self` (`QCC_PR_DummyDef(pr_classtype, "this", pr_scope, 0, QCC_PR_GetDef(NULL, "self", NULL, true, 0, false), ...)`), so `entity self; class C { float a; void() m = { a = 1; }; };` and `void() C::m = { a = 1; };` after it compile; with no `self` defined FTEQCC ends in that `QCC_PR_GetDef` (the oracle records the program as refused), which this profile reports as "Unknown value" at the name. `this.a = 1;` needs no `self`, and `m()` calls a nonvirtual `m`. A
+  class's own name there is the class, as `spawn(Thing)` takes it, not its constructor. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseValue`.
 
 ## FTEF-18 Further statements, terms and frame macros
 
@@ -2108,17 +2297,9 @@ FTEF-18.5.
 - **FTEF-18.26** **Withdrawn** (P2-130, #567): it counted the operators, casts, `sizeof`, `*`s
   and parameter lists but not an `extern` block, whose `QCC_PR_ParseDefs` recursion nested
   without a limit. Replaced by FTEF-18.32.
-- **FTEF-18.27** This profile's error recovery (QCD-1.4) treats the full dialect's bodies as a
-  function body: a struct's fields, a class's members and an accessor's members end at a
-  declaration line, a token at column 0 that has a declaration's shape or is one of `typedef`,
-  `class`, `accessor`, `enum`, `enumflags`, `struct` and `union`, as well as at their `}`; and
-  a class member's recovery stops at the `}` that closes the class. So a body that lost its
-  `}` damages no declaration after the next. FTEQCC reads each body to its `}`; a field or
-  member written at column 0 in the shape of a declaration therefore ends its body here, as a
-  statement at column 0 ends a function body, and none of the codebases the corpus job
-  resolves under this profile writes one.
-
-  Under the vanilla profile none of this is reported.
+- **FTEF-18.27** **Withdrawn** (P2-133, #574): it ended a struct's, class's or accessor's body at
+  any declaration line, but FTEQCC reads each body to its `}`, so a member at column 0 was
+  refused; replaced by FTEF-18.34.
 - **FTEF-18.28** A frame cycle, `[++ first .. last]` or `[-- first .. last]`
   (`if ((isinc=QCC_PR_CheckToken("++")) || QCC_PR_CheckToken("--"))`), has `first` and `last`
   as expressions separated by `QCC_PR_Expect("..")`; `(w)` or `(W)` after the `++` or `--`
@@ -2199,6 +2380,20 @@ against FTEQCC.
   vanilla: a prefix `++` or `--` it unwinds through is read as no postfix one, a type or a
   declarator takes no further `*` or parameter list, and a block past the limit is one error token, its `extern`. FTEQCC has no such limit. The tests parse every construct that nests, repeated,
   under both profiles, so that no recursive entry of the parser is without its level.
+
+- **FTEF-18.33** The body of a `switch` is any statement: after `QCC_PR_Expect (")")`, `oldst =
+  numstatements; QCC_PR_ParseStatement ();` reads one, so `switch (1) ;` and `switch (1) break;`
+  are read, and the labels of its block are those of the statement. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseStatement`.
+- **FTEF-18.34** This profile's error recovery (QCD-1.4) ends the body of a struct, class,
+  accessor, `switch` or function at a declaration line, a token at column 0 that has a
+  declaration's shape or is one of `typedef`, `class`, `accessor`, `enum`, `enumflags`, `struct`
+  and `union`, only when no `}` stands ahead to close it, since FTEQCC reads each body to its `}`
+  and a member or a local at column 0 is one. So a body that lost its `}` damages no
+  declaration after the next, and a body that has its `}` is read whole whatever its columns.
+  Under the vanilla profile a function's statements end at a declaration line as before, where a
+  declaration needs `local`.
 
 ## FTEF-19 Definitions as FTEQCC makes them
 
@@ -2573,6 +2768,77 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   error `"Scope" is not a type` (`ERR_NOTATYPE`), as for `Nope::thing()`, `Other::g` after
   `float Other::g = 1;` ("Other is not a class", FTEF-19.15) and `e::A` after `enum E {A, B};`.
   `super` is a class's parent and no type name.
+
+- **FTEF-19.35** A definition's type is read by `QCC_PR_ParseType` even when no declarator follows
+  (`if (QCC_PR_CheckToken (";")) ... return;` comes after the type), so `float (x);` with
+  `qcfuncs` on is `ParseType`'s function type `float(x)` whose parameter `x` is no type, "expected
+  function arg list" (`if (!t) { if (!flag_qcfuncs) t = type_integer; else return NULL; }`), and
+  `S2 (x);` and `void() g = { local float (x); };` likewise; with `qcfuncs` off the parameter is
+  an `int` named x. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`.
+- **FTEF-19.36** An enumerator given again in a named enum's body with another value is "%s::%s
+  already declared": `enum E { A, A };` (the second is 1), while `enum E { A = 1, A = 1 };` and an
+  anonymous `enum { A, A };` are not, a name given to the enum in an earlier `enum E {` being the
+  base type there (FTEF-19.10) and keeping no names under it. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
+- **FTEF-19.37** An enum's body holds at least one enumerator: `QCC_PR_ParseEnum` reads a name
+  with `QCC_PR_ParseName` before it looks for the `}` (`while(1) { name = QCC_PR_ParseName(); ...
+  if (QCC_PR_CheckToken("}")) break; QCC_PR_Expect(","); if (QCC_PR_CheckToken("}")) break; }`),
+  so `enum E { };` and `enum { , };` are "not a name", and `enum { A, };` is not. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
+- **FTEF-19.38** A type's name is no value: `QCC_PR_ParseValue` finds no definition by the name of
+  a struct, union, class, enum, typedef or accessor, "Unknown value" for `S(1)`, `x = S;` and
+  `local float q = C;`; the operand of `sizeof` is tried as a type first and `spawn(Thing)` takes
+  a class by its name (FTEF-17.1), and `S` in `sizeof(S)` is the type. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefTerm`, `QCC_PR_ParseValue`.
+- **FTEF-19.39** An element of a variable, `x[1]`, is no constant initialiser: "initializer for
+  'y' is not constant" for `float x[2]; float y = x[1];`, with `qcfuncs` on or off. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseInitializerDef`.
+- **FTEF-19.40** A call of a name whose type is a float, vector, string, entity or struct is "not
+  a function". Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`.
+- **FTEF-19.41** A function with no body is an error (FTEF-17.11) whether it is a global or a
+  member function a class declares and no `Class::member` defines, a `virtual` one included:
+  `class C { void() m; };` and `class C { virtual void() m; };` are "function %s has no body",
+  `class C { void() m; }; void C::m(void) { };` is not. A function whose type a typedef names is
+  one, `typedef float fn(float); fn x;`, and so is C's function pointer typedef (FTEF-21.7)
+  `extern "C" { typedef float (*fp)(float); fp x; }`, a function type with no `*`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_FinaliseFunction`, `QCC_PR_ParseDefs`.
+- **FTEF-19.42** A state header in a member function names its next function among the members
+  declared before it, and one that is no `void()` is "Type mismatch: %s, should be void()": `class
+  C { float() m = [1, m] { return 1; }; };` and `class C { void() m = [1, n] {}; void() n = {};
+  };` (`n` a function the header declares) are refused, `class C { void() m = [1, m] {}; };` is
+  not. A next function in another case is the function under `-Fcaseinsens` (FTEF-19.33): `$frame
+  run`, `void() g = [$RUN, G] {};`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseState`.
+- **FTEF-19.43** A cast's type and `sizeof`'s are read with `QCC_PR_ParseType(false, true,
+  false)`, `silentfail`, so a name that is no type makes no cast and no type: `(T *)0`, `(T)0`,
+  `sizeof(T *)` and `sizeof(T)` with no type `T` are a parenthesised expression and an operand,
+  "Unknown value \"T\""; `sizeof(s)` after `struct S` is the type under `-Fcaseinsens`
+  (FTEF-19.33) and "Unknown value" without, and `(struct s *)0` is a pointer to the struct `s`, a
+  tag, in either case (FTEF-6.8). This profile's parser reads the shapes `(name)` and `(name *)`
+  before an operand, and `sizeof(name *)`, as a type, and the semantic model reports the name as
+  no type, "\"T\" is not a type" (`E0203`): the program is refused either way, and `sizeof(name)`
+  tries the name as a type first (FTEF-19.38). Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_RefTerm`.
+- **FTEF-19.44** `QCC_PR_ParseEnum`'s legacy form reads any type's name before the `{` as the base
+  type (`type = QCC_PR_ParseType(false, true, false)`), a class's or struct's among them, and a
+  base after `:` may be one too; an enumerator of such a base has no number to take (`else
+  QCC_PR_ParseError(ERR_NOTANUMBER, "values for enums of this type must be initialised");` after
+  the `ev_integer`, `ev_uint`, `ev_int64`, `ev_uint64`, `ev_float` and `ev_double` cases) and one
+  given a value is an implicit cast to the class, an error: `class E { float e; }; enum E { A };`,
+  `class E; enum E { A = 1 };`, `struct E { float a; }; enum E { A };` and `struct S { float a; };
+  enum E : S { A };` are refused, which this profile reports as "values for enums of this type
+  must be initialised" (`E0229`) at the first enumerator. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseEnum`.
 
 ## FTEF-20 Keywords
 
@@ -2970,6 +3236,17 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
+
+- **FTEF-21.19** A `break` that no loop or `switch` holds, a `continue` that no loop holds, and a
+  `case` or `default` label that no `switch` holds, are counted (`num_breaks`, `num_continues`,
+  `num_cases`) and left over at the function's end: "%s: function contains illegal breaks", "%s:
+  function contains illegal continues" and "%s: function contains illegal cases"
+  (`QCC_PR_ParseImmediateStatements`): `void() g = { break; };`, `{ continue; }`, `{ switch (1) {
+  case 1: continue; } }`, `{ while (1) { } break; }`, `BREAK;` under `-Fcaseinsens`, `{ case 1: ;
+  }`, `{ default: ; }`, `{ if (1) { case 1: ; } }` and `{ switch (1) { case 1: ; } case 2: ; }`
+  are errors, a `break` in a `switch`, `loop` or `until`, a `continue` in a loop and a label in a
+  `switch` are not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement`.
 
 ## FTEF-22 The flags and the target the casts read
 
