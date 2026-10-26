@@ -15,6 +15,7 @@ use std::process::Command;
 use cc::Build;
 
 use crate::exec::Exec;
+use crate::host::host_triple;
 
 /// The flags every file is compiled with, recorded in the build stamp.
 pub(crate) const GNU_FLAGS: [&str; 5] = [
@@ -87,20 +88,6 @@ pub(crate) struct Unit<'a> {
     pub(crate) includes: &'a [PathBuf],
     pub(crate) defines: &'a [&'a str],
     pub(crate) forced_include: Option<&'a Path>,
-}
-
-/// The target triple of the host xtask runs on, for the `cc` crate.
-fn host_triple() -> Result<&'static str, String> {
-    let triple = match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("macos", "aarch64") => "aarch64-apple-darwin",
-        ("macos", "x86_64") => "x86_64-apple-darwin",
-        ("linux", "x86_64") => "x86_64-unknown-linux-gnu",
-        ("linux", "aarch64") => "aarch64-unknown-linux-gnu",
-        ("windows", "x86_64") => "x86_64-pc-windows-msvc",
-        ("windows", "aarch64") => "aarch64-pc-windows-msvc",
-        (os, arch) => return Err(format!("no C compiler setup for {arch} {os}")),
-    };
-    Ok(triple)
 }
 
 /// Refuses `instrument` unless the compiler at `path` is clang (`is_clang`): coverage and
@@ -466,6 +453,5 @@ mod tests {
         compiler.link(&[object], &program).unwrap();
         assert!(Command::new(&program).status().unwrap().success());
         assert!(Compiler::executable("x").starts_with('x'));
-        assert!(host_triple().is_ok());
     }
 }

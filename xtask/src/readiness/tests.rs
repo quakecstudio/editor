@@ -998,6 +998,73 @@ fn mutation_builds_a_member_incrementally_with_the_mutants_profile() {
 }
 
 #[test]
+fn the_mutant_runner_limits_data_memory_on_linux_hosts_only() {
+    let limit = "prlimit --data=3221225472 --core=0 --".to_owned();
+    assert_eq!(
+        mutant_runner("x86_64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit.clone()
+        ))
+    );
+    assert_eq!(
+        mutant_runner("aarch64-unknown-linux-gnu"),
+        Some((
+            "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER".to_owned(),
+            limit
+        ))
+    );
+    assert_eq!(mutant_runner("aarch64-apple-darwin"), None);
+    assert_eq!(mutant_runner("x86_64-pc-windows-msvc"), None);
+}
+
+#[test]
+fn mutation_sets_the_runner_for_the_host_triple() {
+    let outcomes = recorded("mutation", "outcomes.json");
+    let runners = std::cell::RefCell::new(Vec::new());
+    let fake = Fake::new(|command: &Command| {
+        runners.replace(
+            command
+                .get_envs()
+                .filter(|(key, _)| {
+                    let key = key.to_string_lossy();
+                    key.starts_with("CARGO_TARGET_") && key.ends_with("_RUNNER")
+                })
+                .map(|(key, value)| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.map(|value| value.to_string_lossy().into_owned()),
+                    )
+                })
+                .collect(),
+        );
+        Reply {
+            files: vec![(
+                after(command, "--output")
+                    .unwrap()
+                    .join("mutants.out/outcomes.json"),
+                outcomes.clone().into_bytes(),
+            )],
+            ..Reply::default()
+        }
+    });
+    mutation(
+        &root(),
+        &fixture("mutation"),
+        &tools(&fake, "mutation-runner"),
+    )
+    .unwrap();
+    // On Linux the runner is the data limit for this host's triple; elsewhere
+    // no runner is set, so the test binaries run as cargo runs them.
+    let expected: Vec<_> = mutant_runner(host_triple().unwrap())
+        .map(|(name, value)| (name, Some(value)))
+        .into_iter()
+        .collect();
+    assert_eq!(*runners.borrow(), expected);
+    assert_eq!(expected.is_empty(), std::env::consts::OS != "linux");
+}
+
+#[test]
 fn flakes_build_once_then_run_the_tests_twenty_times() {
     let runs = std::cell::Cell::new(0_u32);
     let fake = Fake::new(|command: &Command| {
