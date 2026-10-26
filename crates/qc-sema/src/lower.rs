@@ -74,6 +74,9 @@ pub struct RawDecl {
     pub enum_item: Option<EnumItem>,
     /// For a `typedef`'s name, the type it names (FTEF-19.9).
     pub typedef: Option<Type>,
+    /// For a `typedef` of a function type, its named parameters, which a definition of the
+    /// type takes as its own (FTEF-7.5).
+    pub typedef_params: Vec<RawParam>,
     /// The compiler flags and pragma defaults where the declaration starts, which
     /// `QCC_PR_ParseDefs` reads first (FTEF-21.1, FTEF-21.14).
     pub flags: CompilerFlags,
@@ -287,6 +290,7 @@ impl RawDecl {
             params: Vec::new(),
             enum_item: None,
             typedef: None,
+            typedef_params: Vec::new(),
             flags: CompilerFlags::default(),
             assumevar: false,
             skipped_init: false,
@@ -664,6 +668,9 @@ pub struct RawMember {
     /// Whether `static` or `ignore` qualifies it: a global of the class's, or nothing, and in
     /// neither case a member compared on redeclaration (FTEF-9.13).
     pub is_global: bool,
+    /// Whether it is virtual, by `virtual` or the class's default (FTEF-9.3), which makes a
+    /// function member a field of the instance.
+    pub is_virtual: bool,
     /// The text of its first array suffix, compared on redeclaration (FTEF-9.13).
     pub array: Option<String>,
 }
@@ -1703,6 +1710,25 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
             continue;
         };
         let mut decl = RawDecl::type_name(&token, TypeKind::Typedef);
+        // FTEF-7.5: the parameters of a function type, from the type's list or the
+        // declarator's, for the bodies of the type's definitions.
+        let list = match &node {
+            Some(ast::Type::Function(func)) => func.params(),
+            _ => None,
+        }
+        .or_else(|| declarator.params())
+        .or_else(|| declarator.prefix_params().into_iter().next());
+        if let Some(list) = list {
+            for param in list.params() {
+                if let Some(name_token) = param.name() {
+                    decl.typedef_params.push(RawParam {
+                        name: name_token.text_lossless(),
+                        span: name_token.span(),
+                        ty: param.ty().map_or(Type::Unknown, |t| cx.ty(&t)),
+                    });
+                }
+            }
+        }
         // FTEF-19.9: the type it names, which a typedef of the same name must name again. An
         // array typedef names a type the model does not follow.
         let array = declarator.array_suffixes().next().is_some();
@@ -1979,6 +2005,7 @@ fn lower_member(
             bad_init,
             is_var: has("var"),
             is_global: has("static") || has("ignore"),
+            is_virtual: virtual_,
             array: declarator
                 .array_suffixes()
                 .next()
@@ -2005,6 +2032,7 @@ fn lower_member(
             bad_init: false,
             is_var: false,
             is_global: false,
+            is_virtual: false,
             array: None,
         });
     }

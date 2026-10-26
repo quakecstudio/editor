@@ -39,8 +39,9 @@ use crate::cast::{Cast, ConstType, Kind, Source, Supply};
 use crate::expand::{OriginMap, ProtoPlan, settings_at};
 use crate::lower::{
     ArrayDim, BuiltinFunction, EnumItem, ExternBase, FileDecls, LiteralValue, MemberBase,
-    MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParamInfo, RawStruct,
-    RawUse, RawValue, StatePart, StructMember, TypeKind, UseKind, ValueKind, top_level_kind,
+    MemberKind, Qualifier, RawAlias, RawBody, RawClass, RawDecl, RawLocal, RawParam, RawParamInfo,
+    RawStruct, RawUse, RawValue, StatePart, StructMember, TypeKind, UseKind, ValueKind,
+    top_level_kind,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, SimpleType, Type};
@@ -254,6 +255,7 @@ pub(crate) fn resolve_mapped(
         body_typedefs: Vec::new(),
         var_members: HashSet::new(),
         accessor_bases: HashMap::new(),
+        typedef_params: HashMap::new(),
         redefinable: HashSet::new(),
         unused: HashSet::new(),
         bodies: HashSet::new(),
@@ -335,6 +337,10 @@ struct ClassInfo {
     /// body was (FTEF-9.13).
     shape: Option<Vec<(String, Type, Option<String>)>>,
 }
+
+/// A struct member as `typecmp_strict` compares it on redeclaration (FTEF-6.10): its name,
+/// type, array suffixes and bitfield width.
+type ComparedMember = (String, Type, Vec<String>, Option<Option<u32>>);
 
 /// What `QCC_PR_FindStructMember` finds for a member access on a struct value (FTEF-6.11).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -467,6 +473,9 @@ struct Resolver<'a> {
     var_members: HashSet<(DefId, String)>,
     /// The base type of each accessor (FTEF-10.6).
     accessor_bases: HashMap<String, Type>,
+    /// The named parameters of each typedef of a function type, by the type's key, which a
+    /// definition of the type takes as its body's (FTEF-7.5).
+    typedef_params: HashMap<String, Vec<RawParam>>,
     /// The base type of each `enum class`, whose values are of its own type (FTEF-19.10).
     strict_enums: HashMap<String, Type>,
     /// The definitions whose last initialiser was `weak` or that are `accumulate`, which the
@@ -2173,6 +2182,19 @@ impl<'a> Resolver<'a> {
                     self.report(Code::E0219, location, message);
                     return;
                 }
+                // FTEF-7.5: the parameters a definition of the type takes, the typedef's own
+                // or those of the typedef it names.
+                let params = if decl.typedef_params.is_empty() {
+                    decl.typedef
+                        .as_ref()
+                        .and_then(Type::type_name)
+                        .and_then(|n| self.typedef_params.get(&self.type_key(n)).cloned())
+                        .unwrap_or_default()
+                } else {
+                    decl.typedef_params.clone()
+                };
+                let key = self.type_key(&decl.name);
+                self.typedef_params.entry(key).or_insert(params);
                 match self.named(&self.typedefs, &decl.name) {
                     Some(old) if !old.fteqcc_same(&ty) => {
                         let message = format!(
@@ -2662,14 +2684,26 @@ impl<'a> Resolver<'a> {
             if member.is_var {
                 self.var_members.insert((def, member.name.clone()));
             }
-            if member.bad_init {
+            // FTEF-7.5: a member of a typedef'd function type is a member function.
+            let typedef_function =
+                member.kind == MemberKind::Field && self.resolved(&member.ty).is_function();
+            let member_kind = if typedef_function {
+                if member.is_virtual {
+                    MemberKind::Virtual
+                } else {
+                    MemberKind::Method
+                }
+            } else {
+                member.kind
+            };
+            if member.bad_init && !typedef_function {
                 self.report(
                     Code::E0257,
                     location,
                     "Can only initialise member functions".to_owned(),
                 );
             }
-            let kind = match member.kind {
+            let kind = match member_kind {
                 MemberKind::Field | MemberKind::Virtual => DefKind::Field,
                 MemberKind::Method => DefKind::Function,
             };
@@ -2873,13 +2907,16 @@ impl<'a> Resolver<'a> {
         let owned: Vec<StructMember> = st.members.clone();
         // `if (STRCMP(a->name, b->name)) return 1;`: the tags are compared exactly, so under
         // `-Fcaseinsens` a body given again under another spelling of the tag differs.
+        // A `static` member is a global, among the members compared no more than counted.
+        let compared = |members: &[StructMember]| -> Vec<ComparedMember> {
+            members
+                .iter()
+                .filter(|m| !m.is_static)
+                .map(|m| (m.name.clone(), m.ty.clone(), m.array.clone(), m.bits))
+                .collect()
+        };
         let same = |old: &StructDef| {
-            old.name == name.unwrap_or_default()
-                && old.members.len() == owned.len()
-                && old.members.iter().zip(&owned).all(|(a, b)| {
-                    (&a.name, &a.ty, &a.array, a.bits, a.is_static)
-                        == (&b.name, &b.ty, &b.array, b.bits, b.is_static)
-                })
+            old.name == name.unwrap_or_default() && compared(&old.members) == compared(&owned)
         };
         if sized
             && let Some(old) = known.as_ref()
@@ -3341,6 +3378,24 @@ impl<'a> Resolver<'a> {
         let found = self
             .lookup_global(name)
             .or_else(|| self.lookup_any_case(None, name));
+        // FTEF-7.5: a next function declared through a typedef has the typedef's type, which
+        // must be a `void()` (FTEF-19.42).
+        if let Some(d) = found.and_then(|d| self.index.def(d))
+            && let Type::Named(_) = &d.ty
+        {
+            let resolved = self.resolved(&d.ty);
+            if resolved.is_function() && !resolved.fteqcc_same(&void_fn) {
+                self.report(
+                    Code::E0309,
+                    location,
+                    format!(
+                        "Type mismatch: {}, should be void()",
+                        resolved.fteqcc_name()
+                    ),
+                );
+                return;
+            }
+        }
         let name = found
             .and_then(|d| self.index.def(d))
             .map_or_else(|| name.to_owned(), |d| d.name.clone());
@@ -3493,7 +3548,13 @@ impl<'a> Resolver<'a> {
             }
         }
         let mut previous: Option<DefId> = None;
-        for param in &body.params {
+        // FTEF-7.5: a definition of a typedef'd function type has the typedef's parameters.
+        let typedef_params = decl
+            .filter(|_| body.params.is_empty())
+            .and_then(|d| d.ty.type_name())
+            .and_then(|n| self.typedef_params.get(&self.type_key(n)).cloned())
+            .unwrap_or_default();
+        for param in body.params.iter().chain(&typedef_params) {
             self.settle(param.span.start);
             let location = self.at(file, param.span);
             let def = self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);

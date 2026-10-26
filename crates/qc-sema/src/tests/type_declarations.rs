@@ -957,3 +957,31 @@ fn a_typedef_with_a_parenthesised_name_is_refused() {
         []
     );
 }
+
+// spec FTEF-7.5: a definition of a typedef'd function type takes the typedef's parameters, a
+// class member of one is a member function, a static struct member of one is no member
+// compared, and a state's next function through one is checked as a `void()`
+#[test]
+fn a_typedef_function_type_carries_its_parameters_and_members() {
+    for source in [
+        "typedef void(float a) fn; fn g = { a = 1; };",
+        "typedef void(float a) fn; typedef fn fn2; fn2 g = { a = 1; };",
+        "typedef void() fn; class C { fn m = { return; }; };",
+        "typedef void() fn; class C { virtual fn m = { return; }; };",
+        "struct S { float a; }; typedef void() fn; struct S { float a; static fn m = { return; }; };",
+        "typedef void() fn; fn g = [1, g] {};",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+    assert_eq!(
+        errors(
+            "#pragma flag disable qcfuncs\ntypedef void() fn; fn g = [1, g] {};",
+            &[]
+        ),
+        [Code::E0309]
+    );
+    assert_eq!(
+        errors("typedef void(float a) fn; fn g = { b = 1; };", &[]),
+        [Code::E0301]
+    );
+}
