@@ -384,6 +384,8 @@ fn warning_settings_hold_from_the_pragma_on() {
 
 // spec FTEF-14.63: each warning code of this profile is reported as the setting of the FTEQCC
 // warning it stands for
+// spec FTEF-22.1: W0229 "Implicit lax cast" is warning 0, `WARN_DEBUGGING`
+// spec FTEF-22.3: W0230 is `WARN_LAXCAST`, F314
 #[test]
 fn each_warning_code_stands_for_its_fteqcc_warning() {
     for (code, warning) in [
@@ -434,9 +436,7 @@ fn each_warning_code_stands_for_its_fteqcc_warning() {
         (Code::W0225, FteWarning::EnumflagsNotInteger),
         (Code::W0227, FteWarning::UnaryNotScope),
         (Code::W0228, FteWarning::GmqccSpecific),
-        // spec FTEF-22.1: W0229 "Implicit lax cast" is warning 0, `WARN_DEBUGGING`
         (Code::W0229, FteWarning::Debugging),
-        // spec FTEF-22.3: W0230 is `WARN_LAXCAST`, F314
         (Code::W0230, FteWarning::LaxCast),
         (Code::W0312, FteWarning::DuplicateLabel),
         (Code::W0314, FteWarning::DeprecatedVariable),

@@ -8,6 +8,7 @@ use std::path::Path;
 use qc_lexer::Dialect;
 
 use super::{codes, one_fte, tokens};
+use crate::fte_tables::TARGETS;
 use crate::{
     Code, CommandLine, CompilerFlags, FileOutput, FteFlag, Keyword, KeywordEdit, Keywords,
     MemoryLoader, Preprocessor, Priorities, TargetFormat,
@@ -411,42 +412,71 @@ fn the_built_in_macros_are_not_found_in_any_case() {
     assert_eq!(tokens(&out), "5");
 }
 
-/// Every output format of `targets[]`.
-const EVERY_TARGET: [TargetFormat; 10] = [
-    TargetFormat::Standard,
-    TargetFormat::Qss,
-    TargetFormat::Hexen2,
-    TargetFormat::Uhexen2,
-    TargetFormat::Kk7,
-    TargetFormat::Fte,
-    TargetFormat::Fteh2,
-    TargetFormat::FteDebug,
-    TargetFormat::Darkplaces,
-    TargetFormat::Qtest,
-];
+/// Every output format `targets[]` names, each with the `flag_undefwordsize`
+/// `QCC_OPCodeSetTarget` sets for it and whether `QCC_PR_FinishCompilation` lets a function be
+/// `extern` under it: the match is exhaustive, so a new format must be given both.
+fn every_target() -> impl Iterator<Item = (TargetFormat, bool, bool)> {
+    TARGETS.iter().map(|&(_, format, _)| {
+        let (undefined_word_size, supports_extern) = match format {
+            TargetFormat::Standard
+            | TargetFormat::Qss
+            | TargetFormat::Hexen2
+            | TargetFormat::Uhexen2
+            | TargetFormat::Kk7
+            | TargetFormat::Qtest => (false, false),
+            TargetFormat::Fte | TargetFormat::Fteh2 | TargetFormat::FteDebug => (false, true),
+            TargetFormat::Darkplaces => (true, false),
+        };
+        (format, undefined_word_size, supports_extern)
+    })
+}
 
 // spec FTEF-22.4: `QCC_OPCodeSetTarget` sets `flag_undefwordsize` to true for `QCF_DARKPLACES`
 // only and to false for every other format
 #[test]
 fn only_the_darkplaces_target_has_an_undefined_word_size() {
-    for format in EVERY_TARGET {
+    for (format, undefined_word_size, _) in every_target() {
         assert_eq!(
             format.undefined_word_size(),
-            format == TargetFormat::Darkplaces,
+            undefined_word_size,
             "{format:?}"
         );
     }
+}
+
+// spec FTEF-22.4: each `-TNAME` and each `#pragma TARGET` that names a target runs
+// `QCC_OPCodeSetTarget`, in order, so `-Tdp -Tfte` and `-Fundefwordsize -Tid` leave
+// `undefwordsize` off and `-Tdp` and `#pragma target dp` turn it on at the token after
+#[test]
+fn a_darkplaces_target_turns_undefwordsize_on() {
+    for (args, on) in [
+        (&["-Tdp"][..], true),
+        (&["-Tdarkplaces"], true),
+        (&["-Tdp_1"], true),
+        (&["-Fundefwordsize", "-Tdp"], true),
+        (&["-Tdp", "-Tfte"], false),
+        (&["-Fundefwordsize", "-Tid"], false),
+        (&["-Tfte"], false),
+        (&[], false),
+    ] {
+        let out = one_with("a\n", args);
+        let (_, flags) = flag_states(&out)[0];
+        assert_eq!(flags.has(FteFlag::Undefwordsize), on, "{args:?}");
+    }
+    let out = one_with("a\n#pragma target dp\nb\n#pragma target id\nc\n", &[]);
+    let on: Vec<bool> = flag_states(&out)
+        .iter()
+        .map(|(_, flags)| flags.has(FteFlag::Undefwordsize))
+        .collect();
+    assert_eq!(on, [false, true, false]);
+    assert_eq!(flag_states(&out)[1].0, 1);
 }
 
 // spec FTEF-22.5: an `extern` function is the error unless the target is `QCF_FTE`,
 // `QCF_FTEDEBUG` or `QCF_FTEH2`
 #[test]
 fn only_the_fte_targets_support_extern() {
-    for format in EVERY_TARGET {
-        let fte = matches!(
-            format,
-            TargetFormat::Fte | TargetFormat::FteDebug | TargetFormat::Fteh2
-        );
-        assert_eq!(format.supports_extern(), fte, "{format:?}");
+    for (format, _, supports_extern) in every_target() {
+        assert_eq!(format.supports_extern(), supports_extern, "{format:?}");
     }
 }
