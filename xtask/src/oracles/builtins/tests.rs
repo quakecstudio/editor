@@ -42,6 +42,8 @@ fn bound_as(number: i32, name: &str) -> Outcome {
 // pinned FTEQCC's or id's qcc's, or differs only as QC-27.8, QC-27.9, FTEF-13.8 and
 // FTEF-14.47 say
 // spec FTEF-19.18: the definitions family is recorded and agrees but for QC-27.8
+// spec FTEF-21.16: the flag family is recorded and agrees on every case
+// spec FTEF-22.7: the cast family is recorded and agrees on every case
 #[test]
 fn the_profile_agrees_with_the_recorded_oracles() {
     let recorded = read_fixture(&root()).unwrap();
@@ -562,7 +564,7 @@ fn the_cross_product_holds_the_directive_family() {
     for case in &family {
         assert!(cases.contains(case), "{case:?}");
     }
-    assert_eq!(family.len(), 1445);
+    assert_eq!(family.len(), 1454);
     for source in [
         "float g; \\\n#define N 1\nvoid() f = #5;\n",
         "#define M(x) x\nvoid() f = M(#5 \\\n#define Y 6\n);\n",
@@ -1024,7 +1026,8 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
         let (source, encoding) = decoded(&fs::read(dir.join(compiled)).unwrap());
         let mut files = Vec::new();
         written(&dir, &dir, &mut files);
-        files.retain(|(name, _)| name != "progs.src" && name != compiled);
+        // A listed name may hold a `./` the file's own name has not (PRJ-6.7).
+        files.retain(|(name, _)| name != "progs.src" && Path::new(name) != Path::new(compiled));
         files.sort();
         let project = (dir.ends_with("project")).then(|| Project {
             compiled: compiled.to_owned(),
@@ -1032,13 +1035,23 @@ fn answering(recorded: BTreeMap<String, Outcome>) -> impl Fn(&Command) -> Reply 
             include_dirs,
             progs,
         });
-        let case = Case {
+        let mut case = Case {
             dialect,
             source,
             encoding,
             project,
             options,
         };
+        // Where `\` is a separator, a named project's `sub\tab.qh` is read back as `sub/tab.qh`
+        // (PRJ-6.8): its other files are named with the `\` its listed name has.
+        if !recorded.contains_key(&case.key())
+            && let Some(project) = &mut case.project
+            && project.compiled.contains('\\')
+        {
+            for (name, _) in &mut project.files {
+                *name = name.replace('/', "\\");
+            }
+        }
         reply(&dir, fteqcc, &case, &recorded[&case.key()])
     }
 }

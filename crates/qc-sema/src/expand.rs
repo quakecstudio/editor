@@ -12,7 +12,7 @@
 //! origins, so every definition, reference and diagnostic is reported at a span of a source
 //! file, while the lossless tree of the file as written stays the editing view.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -36,21 +36,30 @@ pub struct ModuleInput {
     pub prelude: Vec<FileId>,
     /// The files compiled, in compilation order (QC-23.3).
     pub compiled: Vec<FileId>,
-    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.10), which the
+    /// What a `#pragma autoproto` of a list-form `progs.src` asks for (FTEF-12.18), which the
     /// graph reads, since that file is not preprocessed here.
     pub autoproto: Option<bool>,
     /// The module's include directories (PRJ-5.2), FTEQCC's `-I` options (FTEF-14.49).
     pub include_dirs: Vec<PathBuf>,
     /// FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and compiler
-    /// flags the module is read with (FTEF-14.71); none by default.
+    /// flags the module is read with (FTEF-14.72); none by default.
     pub command_line: CommandLine,
+    /// The name the compiler is given each file of [`Self::prelude`] and [`Self::compiled`] by,
+    /// the graph's under FTEQCC (PRJ-6.7), which `__FILE__` writes and an `#include` is joined
+    /// to (FTEF-14.74, FTEF-14.75). A file with none is named by its path.
+    pub names: BTreeMap<FileId, String>,
+    /// The directory the name an `#include` is joined to is the file of, FTEQCC's working
+    /// directory, the graph's when it names its files (PRJ-6.8); empty by default, so a name is
+    /// the file of that path.
+    pub dir: PathBuf,
 }
 
 impl ModuleInput {
     /// The input for a module's file graph, each file named by its index in
     /// `graph.files` (as [`Location::file`] is): the root `progs.src` of the source form is
     /// the prelude, and every file the graph lists but did not reach by `#include` is
-    /// compiled, in the graph's order.
+    /// compiled, in the graph's order, by the graph's name for it, in the graph's directory
+    /// (FTEF-14.75).
     #[must_use]
     pub fn from_graph(graph: &FileGraph) -> Self {
         let mut input = Self {
@@ -60,10 +69,16 @@ impl ModuleInput {
         for (index, file) in graph.files.iter().enumerate() {
             let id = FileId(index);
             match file.via {
-                Via::Include => {}
+                Via::Include => continue,
                 Via::Root if graph.form == Some(Form::Source) => input.prelude.push(id),
                 Via::Root | Via::Listed | Via::IncludeList => input.compiled.push(id),
             }
+            if let Some(name) = &file.name {
+                input.names.insert(id, name.clone());
+            }
+        }
+        if !input.names.is_empty() {
+            input.dir.clone_from(&graph.dir);
         }
         input
     }
@@ -131,15 +146,71 @@ pub(crate) struct Rendered {
     /// The rendered offset each token starts at, every token's, in order: the preprocessor
     /// marks pragmas by token index, and a token with no source location has no origin.
     pub(crate) starts: Vec<usize>,
-    /// Each `#pragma noref N` of the file: the rendered offset from which it holds, and its
-    /// setting (FTEF-12.6).
-    pub(crate) noref: Vec<(usize, bool)>,
-    /// The compiler flags FTEQCC's lexer read: the rendered offset from which each holds, and the
-    /// flags (FTEF-12.12).
-    pub(crate) lex_flags: Vec<(usize, qc_lexer::LexFlags)>,
+    /// Under FTEQCC, the changes to the compiler flags the pragmas make: the rendered offset
+    /// from which each holds, and the change (FTEF-12.12, FTEF-21.1); empty under the vanilla
+    /// dialect.
+    pub(crate) flags: Vec<(usize, qc_preproc::FlagEdit)>,
     /// Under FTEQCC, the warning settings: the rendered offset from which each holds, and the
     /// settings (FTEF-14.63, FTEF-19.22); empty under the vanilla dialect.
     pub(crate) warnings: Vec<(usize, WarningSettings)>,
+    /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
+    /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
+    pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
+    /// Under FTEQCC, each `#pragma autoproto` of the file: the rendered offset from which it
+    /// holds and the setting it makes (FTEF-12.18); empty under the vanilla dialect.
+    pub(crate) pragmas: Vec<(usize, bool)>,
+    /// The rendered offset of each string token that follows a string token it does not make
+    /// one string with: FTEQCC's lexer joins the parts of a string written in one text, not a
+    /// macro's string and the one beside it (FTEF-21.17).
+    pub(crate) seams: Vec<usize>,
+}
+
+/// FTEQCC's `autoprototype` flag over the first pass: whether it is on where each compiled file
+/// starts and from which rendered offset each `#pragma autoproto` of the file sets it
+/// (FTEF-12.18). A declaration read while it is on is only prototyped, with no body and no
+/// value (FTEF-12.18).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ProtoPlan {
+    /// For each compiled file, in order: the flag where the file starts, and its changes.
+    files: Vec<(bool, Vec<(usize, bool)>)>,
+    /// The flag after the last file, which decides whether FTEQCC makes a second pass.
+    last: bool,
+}
+
+impl ProtoPlan {
+    /// The plan for `initial`, the flag before the first file, and the first pass's `files`.
+    fn new(initial: bool, files: &[Rendered]) -> Self {
+        let mut state = initial;
+        let mut plan = Vec::with_capacity(files.len());
+        for file in files {
+            plan.push((state, file.pragmas.clone()));
+            state = file.pragmas.last().map_or(state, |&(_, on)| on);
+        }
+        Self {
+            files: plan,
+            last: state,
+        }
+    }
+
+    /// Whether FTEQCC prototypes what it reads at the rendered offset `at` of compiled file
+    /// `file`: the flag as the last pragma that holds from at or before `at` set it.
+    pub(crate) fn proto_at(&self, file: usize, at: usize) -> bool {
+        let Some((start, pragmas)) = self.files.get(file) else {
+            return false;
+        };
+        let held = pragmas.partition_point(|&(from, _)| from <= at);
+        held.checked_sub(1)
+            .and_then(|i| pragmas.get(i))
+            .map_or(*start, |&(_, on)| on)
+    }
+
+    /// Whether any token of `files` is read while the flag is on.
+    fn any_proto(&self, files: &[Rendered]) -> bool {
+        files
+            .iter()
+            .enumerate()
+            .any(|(index, file)| file.starts.iter().any(|&start| self.proto_at(index, start)))
+    }
 }
 
 /// The settings among `warnings`, each the offset it holds from, in force at `at`: the last
@@ -164,9 +235,19 @@ pub(crate) struct Preprocessed {
     pub(crate) files: Vec<Rendered>,
     /// Lexical and preprocessor diagnostics.
     pub(crate) diagnostics: Vec<FileDiagnostic>,
-    /// Whether the module was read with FTEQCC's autoprototyping (FTE-22.3): asked for by the
-    /// caller, or by a `#pragma autoproto` before any definition (FTEF-12.10).
+    /// Whether FTEQCC makes a second pass (FTE-22.3): `autoprototype` is on when the first pass
+    /// ends, by the caller or by the last `#pragma autoproto` of the module (FTEF-12.18). Then
+    /// [`Self::files`] is the second pass's rendering and [`Self::first`] the first's.
     pub(crate) autoproto: bool,
+    /// With a second pass, the first pass's rendering of the compiled files.
+    pub(crate) first: Vec<Rendered>,
+    /// With a second pass, the first pass's lexical and preprocessor diagnostics.
+    pub(crate) first_diagnostics: Vec<FileDiagnostic>,
+    /// What the first pass prototypes (FTEF-12.18), when it prototypes anything or a second
+    /// pass follows it; `None` for a single pass that prototypes nothing.
+    pub(crate) plan: Option<ProtoPlan>,
+    /// The output format once the last file is read (FTEF-22.5).
+    pub(crate) target: qc_preproc::TargetFormat,
 }
 
 /// Reads files out of the database by path, so the preprocessor sees the editor's buffers
@@ -196,10 +277,10 @@ pub(crate) struct Files<'a> {
 
 /// Preprocesses the module `input` in `dialect` (QC-9, QC-23.3), and with FTEQCC's
 /// autoprototyping twice, as FTEQCC reads the files twice (FTE-22.3, FTE-22.4).
-/// Autoprototyping is `autoproto`, FTEQCC's `-Fautoproto`, unless a `#pragma autoproto`
-/// before any definition of the module says otherwise (FTEF-12.10). A later one is the
-/// warning of FTEF-12.10, given once: FTEQCC's second pass skips the pragma
-/// (`if (!autoprototyped)`).
+/// `autoproto` is FTEQCC's `-Fautoproto`, the flag `autoprototype` starts with. A `#pragma
+/// autoproto` anywhere in the first pass sets it from there on, since `numpr_globals` is
+/// `RESERVED_OFS` until the compile ends, and FTEQCC makes the second pass when it is on at the
+/// end of the first (FTEF-12.18). The second pass skips the pragma (`if (!autoprototyped)`).
 pub(crate) fn preprocess(
     files: &Files<'_>,
     input: &ModuleInput,
@@ -212,32 +293,41 @@ pub(crate) fn preprocess(
     let mut pp = Preprocessor::new(loader)
         .with_dialect(dialect)
         .with_command_line(input.command_line.clone())
-        .with_include_dirs(&input.include_dirs);
-    let (mut first, pragma, late) = run(&mut pp, files, input);
-    if !pragma.or(input.autoproto).unwrap_or(autoproto) {
-        first.diagnostics.extend(late);
-        return first;
+        .with_include_dirs(&input.include_dirs)
+        .with_working_dir(&input.dir);
+    let (mut pass, prelude) = run(&mut pp, files, input);
+    // FTEF-14.72: the command line's `-Fautoproto` sets `autoprototype` before the first pass.
+    let flagged = dialect.has_fteqcc_extensions()
+        && input
+            .command_line
+            .flags(qc_preproc::FlagSettings::default())
+            .is_on(qc_preproc::FteFlag::Autoprototype);
+    let initial = prelude.or(input.autoproto).unwrap_or(autoproto || flagged);
+    let plan = ProtoPlan::new(initial, &pass.files);
+    if !plan.last {
+        if plan.any_proto(&pass.files) {
+            pass.plan = Some(plan);
+        }
+        return pass;
     }
     pp.restart();
-    let (mut second, _, _) = run(&mut pp, files, input);
-    second.autoproto = true;
-    second.diagnostics.extend(late);
-    second
+    let (mut again, _) = run(&mut pp, files, input);
+    again.autoproto = true;
+    again.first = pass.files;
+    again.first_diagnostics = pass.diagnostics;
+    again.plan = Some(plan);
+    again
 }
 
-/// One pass over the prelude and the compiled files, the setting of the last
-/// `#pragma autoproto` that comes before any definition (FTEF-12.10): one in the prelude, or
-/// one in a compiled file before the first token of any compiled file; and the warning for
-/// each later one.
+/// One pass over the prelude and the compiled files, and the setting of the last `#pragma
+/// autoproto` of the prelude, which holds before the first compiled file (FTEF-12.18).
 fn run<L: Loader>(
     pp: &mut Preprocessor<L>,
     files: &Files<'_>,
     input: &ModuleInput,
-) -> (Preprocessed, Option<bool>, Vec<FileDiagnostic>) {
+) -> (Preprocessed, Option<bool>) {
     let mut out = Preprocessed::default();
-    let mut late = Vec::new();
     let mut pragma = None;
-    let mut defined = false;
     let listed = input
         .prelude
         .iter()
@@ -246,11 +336,13 @@ fn run<L: Loader>(
     for (id, compiled) in listed {
         let read = match files.paths.get(id) {
             Some(path) => {
+                // FTEF-14.75: the preprocessor is given the file's name where the input has one.
                 // PRJ-4.10: the prelude is the module's source, read as `QCC_main` reads it.
-                let output = if compiled {
-                    pp.preprocess_file(path)
-                } else {
-                    pp.preprocess_source(path)
+                let output = match (input.names.get(id), compiled) {
+                    (Some(name), true) => pp.preprocess_file_named(path, name.as_bytes()),
+                    (Some(name), false) => pp.preprocess_source_named(path, name.as_bytes()),
+                    (None, true) => pp.preprocess_file(path),
+                    (None, false) => pp.preprocess_source(path),
                 };
                 output.map_err(|err| format!("{}: {err}", path.display()))
             }
@@ -274,26 +366,12 @@ fn run<L: Loader>(
                 continue;
             }
         };
-        for &(at, on, span) in &output.autoproto {
-            if !compiled || (!defined && at == 0) {
-                pragma = Some(on);
-            } else if let Some(location) = source_location(pp, files, span) {
-                // `if (numpr_globals != RESERVED_OFS) QCC_PR_ParseWarning(WARN_BADPRAGMA,
-                // "#pragma autoproto must appear before any definitions");`
-                late.push(FileDiagnostic {
-                    file: location.file,
-                    diagnostic: Diagnostic {
-                        code: Code::W0108,
-                        message: "#pragma autoproto must appear before any definitions".to_owned(),
-                        span: location.span,
-                    },
-                });
-            }
-        }
         if !compiled {
+            if let Some(&(_, on, _)) = output.autoproto.last() {
+                pragma = Some(on);
+            }
             continue;
         }
-        defined |= !output.tokens.is_empty();
         for d in output.diagnostics {
             let Some(location) = source_location(pp, files, d.span) else {
                 continue;
@@ -315,13 +393,8 @@ fn run<L: Loader>(
                 .copied()
                 .unwrap_or(rendered.text.len())
         };
-        rendered.noref = output
-            .noref
-            .iter()
-            .map(|&(token, on)| (offset_of(&rendered, token), on))
-            .collect();
-        rendered.lex_flags = output
-            .lex_flags
+        rendered.flags = output
+            .flags
             .iter()
             .map(|&(token, flags)| (offset_of(&rendered, token), flags))
             .collect();
@@ -330,9 +403,20 @@ fn run<L: Loader>(
             .iter()
             .map(|&(token, settings)| (offset_of(&rendered, token), settings))
             .collect();
+        rendered.keywords = output
+            .keywords
+            .iter()
+            .map(|&(token, edit)| (offset_of(&rendered, token), edit))
+            .collect();
+        rendered.pragmas = output
+            .autoproto
+            .iter()
+            .map(|&(token, on, _)| (offset_of(&rendered, token), on))
+            .collect();
         out.files.push(rendered);
     }
-    (out, pragma, late)
+    out.target = pp.target();
+    (out, pragma)
 }
 
 /// The database location of a preprocessor span: the database file with the same path, and the
@@ -376,6 +460,9 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
             out.text.push(b' ');
         }
         last_line = line;
+        if last.is_some_and(|last| unjoined_strings(last, token)) {
+            out.seams.push(out.text.len());
+        }
         last = Some(token);
         out.starts.push(out.text.len());
         if let Some(location) = source_location(pp, files, origin) {
@@ -395,6 +482,18 @@ fn render<L: Loader>(pp: &Preprocessor<L>, files: &Files<'_>, tokens: &[PpToken]
         }
     }
     out
+}
+
+/// Whether `last` and `next` are strings that `QCC_PR_LexString` does not read into one: it
+/// joins the parts written in the text it is reading, a macro's text or a file's, so strings of
+/// two expansions, or of an expansion and the source, or of two files, are two tokens.
+fn unjoined_strings(last: &PpToken, next: &PpToken) -> bool {
+    matches!(last.kind, TokenKind::String(_))
+        && matches!(next.kind, TokenKind::String(_))
+        && match (last.expansion, next.expansion) {
+            (None, None) => last.span.file != next.span.file,
+            (from, to) => from != to,
+        }
 }
 
 /// Whether `next` comes right after `last` in the text the compiler reads, both rendered as

@@ -13,10 +13,12 @@
 //! project's own definition; FTEQCC's pragmas come with the dialect profiles. In an FTEQCC
 //! dialect the preprocessor reads FTEQCC's directives as FTEQCC's `QCC_PR_Precompiler` does,
 //! as bytes, wherever FTEQCC meets one (`docs/spec/dialect-fteqcc.md`, FTEF-14.33 to FTEF-14.47,
-//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.32, `fte_macro`).
+//! `fte_directive`), and its macros as text (FTEF-14.13 to FTEF-14.74, `fte_macro`).
 
+mod compiler_flags;
 pub mod cond;
 mod fte_directive;
+mod fte_keywords;
 mod fte_line;
 mod fte_macro;
 mod fte_options;
@@ -28,14 +30,16 @@ mod source;
 #[cfg(test)]
 mod tests;
 
+pub use compiler_flags::{CompilerFlags, FlagEdit, PragmaDefault, Priorities};
 pub use fte_directive::{
-    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, qcc_load_as, qcc_load_file,
-    qcc_load_in_place, skip_script_line,
+    FileStart, FteEvent, FteFileReader, ModuleState, com_parse, include_dir_name, join_paths,
+    pragma_include_dir, qcc_load_as, qcc_load_file, qcc_load_in_place, skip_script_line,
 };
+pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
-pub use fte_tables::FteFlag;
+pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};
 pub use fte_warning::{FteWarning, WarningAction, WarningSettings};
 pub use source::{
     FileId, FileSpan, FsLoader, Loader, MemoryLoader, SourceFile, SourceMap, TextOrigin,
@@ -43,6 +47,7 @@ pub use source::{
 
 use fte_directive::{Bytes, FteState, Position, Resume, TextStart, first_nul};
 use fte_macro::{ChunkReader, Text, ends_word};
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
@@ -141,22 +146,110 @@ pub struct FileOutput {
     pub tokens: Vec<PpToken>,
     /// Lexical and preprocessor diagnostics.
     pub diagnostics: Vec<Diagnostic>,
-    /// In an FTEQCC dialect, each `#pragma noref N` in the file: the index of the first token
-    /// after it, and whether the definitions from there on are `noref` (FTEF-12.6).
-    pub noref: Vec<(usize, bool)>,
     /// In an FTEQCC dialect, each `#pragma autoproto [N]` in the file: the index of the first
     /// token after it, whether it asks for autoprototyping, and the directive's span
-    /// (FTEF-12.10).
+    /// (FTEF-12.18).
     pub autoproto: Vec<(usize, bool, FileSpan)>,
     /// In an FTEQCC dialect, FTEQCC's warning settings where the file starts, at token 0, and
     /// after each `#pragma warning` that changes them: the index of the first token after it and
     /// the settings from there on (FTEF-14.63), for the warnings the parser and the semantic
     /// model report.
     pub warnings: Vec<(usize, WarningSettings)>,
-    /// In an FTEQCC dialect, the compiler flags the lexer reads where the file starts, at token
-    /// 0, and after each `#pragma flag` that changes them: the index of the first token after it
-    /// and the flags from there on (FTEF-12.12), for a reader that lexes the tokens' text again.
-    pub lex_flags: Vec<(usize, LexFlags)>,
+    /// In an FTEQCC dialect, the compiler flags the lexer, the parser and the semantic model read
+    /// where the file starts, at token 0, and each change a `#pragma flag`, `noref`, `nosave` or
+    /// `defaultstatic` makes to them: the index of the first token after it and the change, which
+    /// sets only what the pragma names (FTEF-12.6, FTEF-12.12, FTEF-21.1, FTEF-21.14), for a
+    /// parser that lexes the tokens' text again.
+    pub flags: Vec<(usize, FlagEdit)>,
+    /// In an FTEQCC dialect, the keywords the parser reads where the file starts, at token 0, and
+    /// each change a `#pragma keyword`, `#pragma flag` or `#pragma TARGET` makes to them: the
+    /// index of the first token after it and the change, which sets only what the pragma names
+    /// (FTEF-20.1).
+    pub keywords: Vec<(usize, KeywordEdit)>,
+}
+
+/// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
+/// name as written, or under `-Fcaseinsens` in any case.
+#[derive(Debug, Default)]
+struct MacroTable {
+    /// Each macro under its name, in lower case when the table is searched in any case, with the
+    /// spelling it was defined with.
+    entries: HashMap<String, (String, Rc<Macro>)>,
+    any_case: bool,
+}
+
+impl MacroTable {
+    /// Searches the table in any case from now on, or not (`pHash_Get`). The built-in macros
+    /// were added before the search was switched, to the buckets of the name as written, which
+    /// the search in any case does not reach: none is found then (FTEF-14.73).
+    fn set_any_case(&mut self, on: bool) {
+        self.any_case = on;
+        if on {
+            self.entries.clear();
+        }
+    }
+
+    /// Defines a built-in macro, which `QCC_PR_BeginCompilation` adds with the search of the name
+    /// as written: not found once the table is searched in any case.
+    fn insert_builtin(&mut self, name: &str, mac: Rc<Macro>) {
+        if !self.any_case {
+            self.insert(name.to_owned(), mac);
+        }
+    }
+
+    fn key<'n>(&self, name: &'n str) -> Cow<'n, str> {
+        if self.any_case && name.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(name.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(name)
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&Rc<Macro>> {
+        self.entries.get(&*self.key(name)).map(|(_, mac)| mac)
+    }
+
+    fn contains_key(&self, name: &str) -> bool {
+        self.entries.contains_key(&*self.key(name))
+    }
+
+    /// Defines `name`, replacing the macro a name of any case in the search named.
+    fn insert(&mut self, name: String, mac: Rc<Macro>) {
+        self.entries
+            .insert(self.key(&name).into_owned(), (name, mac));
+    }
+
+    /// `#undef`: whether the table has the macro, and whether `name` is its spelling, which removes it.
+    /// `QCC_PR_UndefineName` finds it with `pHash_Get` but removes it with `Hash_Remove`, which
+    /// compares the name exactly and hashes it as written; a macro written in another case is
+    /// kept, and one with an upper case letter is looked for in a bucket it is not in
+    /// (FTEF-14.73).
+    fn remove(&mut self, name: &str) -> Undef {
+        let key = self.key(name).into_owned();
+        match self.entries.get(&key) {
+            None => Undef::Absent,
+            Some((spelling, _)) if spelling != name => Undef::Kept,
+            Some(_) => {
+                self.entries.remove(&key);
+                Undef::Removed
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+/// What `#undef` did to the macro table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Undef {
+    /// No macro has the name.
+    Absent,
+    /// A macro has it in another spelling, which `Hash_Remove` does not match.
+    Kept,
+    /// The macro was removed.
+    Removed,
 }
 
 #[derive(Debug)]
@@ -241,7 +334,7 @@ fn hidden(live: &HashMap<String, Live>, hide: &Hide, name: &str) -> bool {
     let Some(mut node) = hide.as_deref() else {
         return false;
     };
-    let Some(count) = live.get(name).filter(|count| count.get() > 0) else {
+    let Some(count) = live.get(name).filter(|count| count.get() != 0) else {
         return false;
     };
     loop {
@@ -281,7 +374,7 @@ enum Place {
     /// An expansion's chunk, the token ending at this offset in its text.
     Chunk(usize),
     /// A built-in constant's text, a chunk of its own that holds nothing a macro's name in it
-    /// could read on in (FTEF-14.17, FTEF-14.32).
+    /// could read on in (FTEF-14.17, FTEF-14.74).
     Builtin,
 }
 
@@ -312,7 +405,7 @@ struct TokenStream {
 pub(crate) struct Lexing<'a> {
     dialect: Dialect,
     flags: LexFlags,
-    macros: Option<&'a HashMap<String, Rc<Macro>>>,
+    macros: Option<&'a MacroTable>,
     /// How many times the macros have changed, which matters under `macroinstrings` only.
     edits: u64,
 }
@@ -351,7 +444,7 @@ impl Lexing<'_> {
     fn lex(self, text: &[u8]) -> qc_lexer::Lexed {
         let macros = self.macros;
         let lookup = move |name: &[u8]| {
-            let mac = macros?.get(&*String::from_utf8_lossy(name))?;
+            let mac = macros?.get(&String::from_utf8_lossy(name))?;
             Some(
                 mac.text()
                     .map(|text| text.bytes().to_vec())
@@ -477,9 +570,9 @@ impl TokenStream {
         // A change of the macros alone matters only to a string with a `#` in it.
         let macros_only = key.flags == self.key.flags;
         self.key = key;
-        let hashed = |t: &Token| {
-            matches!(t.kind, TokenKind::String(_))
-                && text.get(t.span.range()).is_some_and(|b| b.contains(&b'#'))
+        let hashed = |t: &Token| match t.kind {
+            TokenKind::String(_) => text.get(t.span.range()).is_some_and(|b| b.contains(&b'#')),
+            _ => false,
         };
         if macros_only
             && !self
@@ -492,11 +585,11 @@ impl TokenStream {
             return;
         }
         let offset = self.read_offset().min(text.len());
-        let next = self.tokens.partition_point(|t| t.span.start < offset);
         let rest = shifted(lex_from(text, offset..text.len(), lexing), offset);
-        self.tokens.truncate(next);
+        // The tokens not read yet are those from `pos`, which start at or after where reading
+        // stands, so they are the ones lexed again.
+        self.tokens.truncate(self.pos);
         self.tokens.extend(rest.tokens);
-        self.pos = next;
         self.diagnostics.retain(|d| d.span.start < offset);
         self.diagnostics.extend(rest.diagnostics);
     }
@@ -686,7 +779,7 @@ struct Cursor {
     file: FileId,
     path: PathBuf,
     /// Under FTEQCC, the file's name as FTEQCC has it, `s_filen`, which `__FILE__` writes
-    /// (FTEF-14.32): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
+    /// (FTEF-14.74): as its `progs.src` or `#include` wrote it, or as a `#pragma file` gave it.
     name: Vec<u8>,
     /// The file's name as it was read, which no `#pragma file` changes: what a GMQCC
     /// `#include` and `#pragma` in it are joined to (PRJ-5.12).
@@ -717,7 +810,7 @@ impl Cursor {
 #[derive(Default)]
 struct Run {
     /// The name of the source file of `progs.src` being preprocessed, as the caller gave it:
-    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.32).
+    /// FTEQCC's `compilingfile`, which an `#include`d file's name is joined to (FTEF-14.74).
     unit: Vec<u8>,
     cursors: Vec<Cursor>,
     pending: Vec<Item>,
@@ -857,7 +950,7 @@ pub struct Preprocessor<L> {
     loader: L,
     dialect: Dialect,
     sources: SourceMap,
-    macros: HashMap<String, Rc<Macro>>,
+    macros: MacroTable,
     expansions: Vec<Expansion>,
     /// In an FTEQCC dialect, every frame macro defined so far (FTE-22.4).
     carried_frames: HashMap<String, CarriedFrame>,
@@ -872,11 +965,14 @@ pub struct Preprocessor<L> {
     /// them, as bytes.
     command_line_dirs: Vec<Vec<u8>>,
     /// In an FTEQCC dialect, the command line's options that set the warnings and the compiler
-    /// flags, read again each time the settings are reset (FTEF-14.71).
+    /// flags, read again each time the settings are reset (FTEF-14.72).
     command_line: CommandLine,
     /// The same directories as given, where the vanilla dialect looks for an `#include`
     /// (QC-9.20).
     include_dirs: Vec<PathBuf>,
+    /// The directory the name an `#include` is joined to is opened in, FTEQCC's working
+    /// directory (PRJ-6.8); empty by default, so a name is opened as it is.
+    working_dir: PathBuf,
     /// How many times a macro has been defined or undefined, so a text lexed under
     /// `macroinstrings` is lexed again after it (FTEF-12.12).
     macro_edits: u64,
@@ -913,7 +1009,7 @@ impl<L: Loader> Preprocessor<L> {
             loader,
             dialect: Dialect::Vanilla,
             sources: SourceMap::default(),
-            macros: HashMap::new(),
+            macros: MacroTable::default(),
             expansions: Vec::new(),
             carried_frames: HashMap::new(),
             model_name: String::new(),
@@ -922,6 +1018,7 @@ impl<L: Loader> Preprocessor<L> {
             command_line_dirs: Vec::new(),
             command_line: CommandLine::default(),
             include_dirs: Vec::new(),
+            working_dir: PathBuf::new(),
             macro_edits: 0,
         }
     }
@@ -961,6 +1058,14 @@ impl<L: Loader> Preprocessor<L> {
         }
     }
 
+    /// `qcc_targetformat` as the files read so far leave it: the command line's, then each
+    /// `#pragma TARGET`'s (FTEF-20.4), which `QCC_PR_FinishCompilation` reads once every file is
+    /// compiled (FTEF-22.5).
+    #[must_use]
+    pub const fn target(&self) -> TargetFormat {
+        self.fte.target
+    }
+
     /// Sets the dialect this preprocessor accepts (PRJ-2.8). In an FTEQCC dialect the
     /// FTEQCC `#pragma` directive (FTE-16) is accepted rather than reported as an unknown
     /// directive (QC-9.9), and under FTEQCC, not GMQCC, `FTEQCC` and `__FTEQCC__` are defined
@@ -975,7 +1080,7 @@ impl<L: Loader> Preprocessor<L> {
     }
 
     /// Gives FTEQCC's command line, whose `-W`, `-F` and `-K` options set the warnings and the
-    /// compiler flags (FTEF-14.71), after the dialect: they hold from the first file, and are
+    /// compiler flags (FTEF-14.72), after the dialect: they hold from the first file, and are
     /// read again each time `QCC_SetDefaultProperties` resets the settings. Under the vanilla
     /// dialect they change nothing.
     #[must_use]
@@ -984,6 +1089,13 @@ impl<L: Loader> Preprocessor<L> {
         if self.dialect.has_fteqcc_extensions() {
             self.fte.warnings = self.command_line.warnings(WarningSettings::default());
             self.fte.flags = self.command_line.flags(self.fte.flags);
+            // FTEF-14.73: `pHash_Get = &Hash_GetInsensitive;` searches the macro table in any case.
+            self.macros
+                .set_any_case(self.fte.flags.is_on(FteFlag::Caseinsensitive));
+            // FTEF-21.4: `QCC_PR_BeginCompilation` calls `QCC_PrioritiseOpcodes` once the
+            // command line is read.
+            self.fte.flags.prioritise();
+            self.fte.target = self.command_line.target();
         }
         self
     }
@@ -1007,6 +1119,23 @@ impl<L: Loader> Preprocessor<L> {
             }
         }
         self
+    }
+
+    /// Gives the directory the name of an `#include`d file is opened in, FTEQCC's working
+    /// directory (PRJ-6.8): FTEQCC opens a name with `fopen(fname, "rb")` (`QCC_FileSize`,
+    /// `qcctui.c`), so a relative name is the file of that name in the directory it runs in, `\`
+    /// a separator only where the host's is. The name `__FILE__` writes is still the name as
+    /// joined (FTEF-14.74). Empty by default, so a name is opened as it is.
+    #[must_use]
+    pub fn with_working_dir(mut self, dir: &Path) -> Self {
+        self.working_dir = dir.to_path_buf();
+        self
+    }
+
+    /// The path of the file named `name`: in the working directory, normalized
+    /// ([`Self::with_working_dir`], FTEF-14.75).
+    pub(crate) fn open_path(&self, name: &Path) -> PathBuf {
+        normalize(&self.working_dir.join(name))
     }
 
     /// Every file read so far.
@@ -1054,10 +1183,21 @@ impl<L: Loader> Preprocessor<L> {
     /// The loader's error when the file itself cannot be read; a project reports that as
     /// QCD-5.2. Every other problem is a diagnostic in the output.
     ///
-    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.32), is `path` as given,
+    /// Under FTEQCC the file's name, which `__FILE__` writes (FTEF-14.74), is `path` as given,
     /// so a caller gives it as `progs.src` wrote it.
     pub fn preprocess_file(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Compiled)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Compiled)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path` named `name`, the name FTEQCC gives it,
+    /// which `__FILE__` writes and an `#include` is joined to (FTEF-14.74, FTEF-14.75).
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_file_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Compiled)
     }
 
     /// Preprocesses a module's source in source form, the `progs.src` that is itself QuakeC
@@ -1068,12 +1208,28 @@ impl<L: Loader> Preprocessor<L> {
     ///
     /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
     pub fn preprocess_source(&mut self, path: &Path) -> io::Result<FileOutput> {
-        self.preprocess(path, FileStart::Source)
+        let name = path.as_os_str().as_encoded_bytes().to_vec();
+        self.preprocess(path, name, FileStart::Source)
     }
 
-    /// [`Self::preprocess_file`] of a file that starts as `start` says.
-    fn preprocess(&mut self, path: &Path, start: FileStart) -> io::Result<FileOutput> {
-        let name = path.as_os_str().as_encoded_bytes().to_vec();
+    /// [`Self::preprocess_source`] of the source at `path` named `name`, as
+    /// [`Self::preprocess_file_named`] names a file.
+    ///
+    /// # Errors
+    ///
+    /// The loader's error when the file itself cannot be read, as [`Self::preprocess_file`].
+    pub fn preprocess_source_named(&mut self, path: &Path, name: &[u8]) -> io::Result<FileOutput> {
+        self.preprocess(path, name.to_vec(), FileStart::Source)
+    }
+
+    /// [`Self::preprocess_file`] of the file at `path`, named `name`, that starts as `start`
+    /// says.
+    fn preprocess(
+        &mut self,
+        path: &Path,
+        name: Vec<u8>,
+        start: FileStart,
+    ) -> io::Result<FileOutput> {
         let path = normalize(path);
         let bytes = self.loader.load(&path)?;
         let warnings = self
@@ -1087,7 +1243,12 @@ impl<L: Loader> Preprocessor<L> {
         };
         run.out.warnings.extend(warnings.map(|w| (0, w)));
         if self.dialect.has_fteqcc_extensions() {
-            run.out.lex_flags.push((0, self.fte.flags.lex_flags()));
+            run.out
+                .flags
+                .push((0, FlagEdit::whole(self.fte.flags.compiler_flags())));
+            run.out
+                .keywords
+                .push((0, KeywordEdit::whole(self.fte.keywords())));
         }
         let file = self.add_source(&mut run, path.clone(), bytes, start);
         let cursor = self.cursor(file, path, name, start.text_start());
@@ -2101,7 +2262,7 @@ fn parse_params(line: &[Token], start: usize) -> Option<(Vec<Vec<u8>>, usize)> {
 }
 
 /// `bytes` as a QuakeC string literal, the spelling of a string an FTEQCC expansion made
-/// (QC-9.16, FTEF-14.31, FTEF-14.32): `"`, `\`, a line break and a carriage return escaped,
+/// (QC-9.16, FTEF-14.31, FTEF-14.74): `"`, `\`, a line break and a carriage return escaped,
 /// and a byte of 0x80 or more written as `\x` and its two hex digits, which an FTEQCC string
 /// reads back as that byte (FTEF-13.11), so the spelling is UTF-8 and reads back as `bytes`.
 fn quote_bytes(bytes: &[u8]) -> String {

@@ -273,7 +273,7 @@ fn the_words_that_start_a_local_definition() {
     assert_eq!(fte("void() g = { typedef float t; t x; };\n"), []);
 }
 
-// spec FTEF-19.2: a literal is cast as `QCC_TryEvaluateCast` casts it, a null to any type
+// spec FTEF-19.31: a literal is cast as `QCC_TryEvaluateCast` casts it, a null to any type
 // spec QCD-3.13: E0213 "Cannot cast from TYPE to TYPE", at the value
 // spec QCD-7.46: W0220 "Implicit cast from TYPE to TYPE"
 #[test]
@@ -323,7 +323,7 @@ fn literal_initialisers_are_cast() {
     );
 }
 
-// spec FTEF-19.2: a name is cast as its definition's type, and in a member function a field's
+// spec FTEF-19.31: a name is cast as its definition's type, and in a member function a field's
 // name is the field's value
 // spec QCD-3.32: E0232 "_() intrinsic accepts only a string immediate"
 #[test]
@@ -545,7 +545,7 @@ fn default_values() {
 // spec QCD-7.36: W0211 "Type redeclaration of TYPE NAME replaces existing variable"
 #[test]
 fn redeclarations_of_another_type() {
-    // A C type word is the type it names, in any order (FTEF-17.12, FTEF-19.2).
+    // A C type word is the type it names, in any order (FTEF-17.12, FTEF-19.31).
     assert_eq!(fte("int x;\nfloat x;\n"), [Code::E0205]);
     assert_eq!(fte("int x;\ninteger x;\n"), []);
     assert_eq!(
@@ -707,7 +707,7 @@ fn array_sizes_of_redeclarations() {
 
 // spec FTEF-19.9: a typedef names its type again, a typedef's name is its type, a storage
 // qualifier is an error and a typedef with no name a warning
-// spec FTEF-17.12: a redeclaration reads a typedef's name as the type it names
+// spec FTEF-17.13: a redeclaration reads a typedef's name as the type it names
 // spec QCD-3.19: E0219 "Cannot redeclare typedef NAME from TYPE to TYPE"
 // spec QCD-3.24: E0224 "bad combination of modifiers with typedef (defining NAME)"
 // spec QCD-7.40: W0215 "typedef defines no types"
@@ -1163,7 +1163,7 @@ fn qualifiers_are_read() {
     );
 }
 
-// spec FTEF-19.2: a character constant is a float, `_` a translation only when it is the callee
+// spec FTEF-19.31: a character constant is a float, `_` a translation only when it is the callee
 #[test]
 fn character_constants_and_calls() {
     assert_eq!(fte("float f = 'a';\n"), []);
@@ -1238,10 +1238,13 @@ fn a_vector_parameter_below_the_one_before() {
 }
 
 // spec FTEF-19.10: an enum's value after `=` is of the base's kind and a constant with a value
+// spec FTEF-22.3: a float converts to a vector, an integer not
 #[test]
 fn enum_values_of_other_bases() {
     assert_eq!(fte("enum : vector { A = '1 2 3' };\n"), []);
-    assert_eq!(fte("enum : vector { A = 1 };\n"), [Code::E0227]);
+    assert_eq!(fte("enum : vector { A = 1 };\n"), []);
+    assert_eq!(fte("enum : vector { A = 1i };\n"), [Code::E0227]);
+    assert_eq!(fte("enum : string { A = 1 };\n"), [Code::E0227]);
     assert_eq!(fte("enum : string { A = '1 2 3' };\n"), [Code::E0227]);
     assert_eq!(fte("const float y;\nenum { A = y };\n"), [Code::E0228]);
     assert_eq!(fte("enum : float { A };\n"), []);
@@ -1266,9 +1269,10 @@ fn extern_and_static_on_a_variable() {
     );
 }
 
-// spec FTEF-19.17: an initialiser that is an expression is compared by its text and not typed,
-// an `extern` function is no error whatever the target, and an attribute before the type is
-// refused, as the pinned FTEQCC refuses it
+// spec FTEF-19.32: an initialiser that is an expression is compared by its text and not typed,
+// and an attribute before the type is refused, as the pinned FTEQCC refuses it
+// spec FTEF-22.5: a module resolved without its preprocessing has no target, and its `extern`
+// functions are not checked
 #[test]
 fn what_the_profile_does_not_model() {
     assert_eq!(fte("float x = 1 + 1;\nfloat x = 2;\n"), [Code::E0206]);
@@ -1287,7 +1291,7 @@ fn what_the_profile_does_not_model() {
 // spec QCD-4.12: E0312 "class NAME has no super"
 // spec QCD-3.30: E0230 "accumulate applies only to functions, not NAME"
 // spec QCD-7.38: W0213 "Autocvar ..."
-// spec QCD-7.47: W0221 "\"NAME\" keyword used as variable name - coexisting"
+// spec QCD-7.67: W0221 "\"NAME\" keyword used as variable name - coexisting"
 #[test]
 fn intrinsics_autocvars_keywords_and_qualifiers() {
     let messages = |source: &str| -> Vec<String> {

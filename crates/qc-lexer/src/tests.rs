@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use proptest::prelude::*;
 
 use super::{Code, LineIndex, Punct, QC_MAX_TOKEN, Span, TokenKind, atof, lex};
-use super::{Dialect, lex_with};
+use super::{Dialect, FTEQCC_MAX_WORD, lex_with};
 
 /// The token kinds a dialect lexer produces.
 fn kinds_in(source: &[u8], dialect: Dialect) -> Vec<TokenKind> {
@@ -1698,6 +1698,23 @@ fn frame_names_and_slashes() {
     assert_eq!(fte_kinds(b"$frame a // b c\nd")[1..], [name("d")]);
 }
 
+// spec FTEF-14.55: C's `atoi` reads white space, a sign and decimal digits
+#[test]
+fn c_atoi_reads_white_space_a_sign_and_digits() {
+    assert_eq!(super::c_atoi(b" \t+12x"), 12);
+    assert_eq!(super::c_atoi(b"\n-7"), -7);
+    assert_eq!(super::c_atoi(b"+-1"), 0);
+}
+
+// spec FTEF-14.66: `QCC_PR_LexMacroName` stops the compile at a name's 1024th byte, so a frame
+// name of 1023 bytes is read and one of 1024 is "token exceeds 1023 chars"
+#[test]
+fn a_frame_name_of_1024_bytes_is_too_long() {
+    let frame = |len: usize| fte_codes(format!("$frame {}", "a".repeat(len)).as_bytes());
+    assert!(!frame(FTEQCC_MAX_WORD).contains(&Code::E0502));
+    assert!(frame(FTEQCC_MAX_WORD + 1).contains(&Code::E0502));
+}
+
 fn string(bytes: &[u8]) -> TokenKind {
     TokenKind::String(bytes.to_vec())
 }
@@ -1762,6 +1779,9 @@ fn each_prefix_writes_its_bytes() {
     assert_eq!(one(b"Q\"\xf4\x90\x80\x80\""), b"\xf4\x90\x80\x80");
     // `\u` and `\U` are UTF-8 even in a plain string, whatever the code.
     assert_eq!(one(br#""\U0010FFFF""#), b"\xf4\x8f\xbf\xbf");
+    // Only a code above U+10FFFF is F301 "Bad unicode character code".
+    assert!(!fte_string(br#""\U0010FFFF""#).1.contains(&Code::W0119));
+    assert!(fte_string(br#""\U00110000""#).1.contains(&Code::W0119));
     assert_eq!(one(br#""\U00110000""#), b"\xf4\x90\x80\x80");
     assert_eq!(one(br#""\uD800""#), b"\xed\xa0\x80");
     assert_eq!(one(br#""\U7FFFFFFF""#), b"\xfd\xbf\xbf\xbf\xbf\xbf");
@@ -2085,6 +2105,8 @@ fn fteqcc_comments_end_as_its_readers_end_them() {
         kinds_in(b"a\n// c\rb\nd", Dialect::Fteqcc),
         vec![name("a"), name("b"), name("d")]
     );
+    // Or the end of the text.
+    assert_eq!(kinds_in(b"a\n// c", Dialect::Fteqcc), vec![name("a")]);
     // The next line's comment is `QCC_PR_LexWhitespace`'s, as `QCC_PR_NewLine` passed over its
     // spaces and tabs and no other white space reset `nl`; after a VT it is read to its LF too.
     assert_eq!(
@@ -2237,6 +2259,14 @@ fn fteqcc_token_limits() {
     assert_eq!(over.diagnostics.len(), 1);
     assert_eq!(over.diagnostics[0].message, "String length exceeds 8191");
     assert_eq!(over.diagnostics[0].span.start, 4011);
+    // Only the part that passes 8191 is the error, not the parts after it.
+    let three = format!("{} {} {}", string(8000), string(500), string(5));
+    assert_eq!(
+        lex_with(three.as_bytes(), Dialect::Fteqcc)
+            .diagnostics
+            .len(),
+        1
+    );
     assert_eq!(
         fte_diagnostics(format!("{} x {}", string(4000), string(4192)).as_bytes()),
         Vec::new()

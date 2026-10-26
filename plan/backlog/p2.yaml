@@ -1545,6 +1545,55 @@ issues:
   - 'Under the FTEQCC profile `__FILE__` is the string FTEQCC gives for the same project on every host, a `\` and a `:` in the name included, recorded against the pinned FTEQCC; each with a test citing the statement it pins'
   verify:
   - cargo test -p qc-preproc
+- key: P2-135
+  title: Shard the readiness mutation job across runners
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - TEST-10
+  summary: |
+    The Readiness workflow's mutation job runs one crate per runner, so a run takes the slowest crate's whole cargo-mutants run: on the L2 run 40094712627 (2026-10-24) qc-preproc took 3 h 40 min and qc-syntax 1 h 47 min on one 4-core runner each, while qc-lexer and qc-project took about 12 minutes. cargo-mutants 27.1.0 runs one shard of the generated mutants with `--shard k/n` (`cargo mutants --help`: "Run only one shard of all generated mutants: specify as e.g. 1/4"), so a crate's mutants can be spread over several runners and the per-crate score put back together by the ratchet.
+  depends:
+  - P2-123
+  deliverable:
+  - '.github/workflows/readiness.yml: the `mutation` job''s matrix becomes (crate, shard), with a shard count per crate roughly proportional to its mutant count, each job running `cargo xtask readiness mutation --shard k/n` and uploading its own artifact; the 3 GiB data limit and the core-file settings stay as they are'
+  - 'xtask/src/readiness.rs: `cargo xtask readiness mutation` takes `--shard k/n` and passes it to cargo mutants as `--shard k/n`, recording the shard in the measurement'
+  - 'xtask/src/ratchet.rs: the ratchet merges each crate''s shard measurements into one score (the mutant counts add; a timed-out mutant counts as caught and an unviable one does not count, as today), refusing a shard measured twice or a set with a shard missing'
+  - 'docs/testing.md and docs/ci.md: the mutation job described as sharded'
+  acceptance:
+  - 'A Readiness run of the L2 crates finishes in well under an hour with the same per-crate scores an unsharded run would give'
+  - 'The ratchet job reads the sharded artifacts and reports one score per crate'
+  - 'xtask tests cover the `--shard` argument, its validation and the merge of shard outcomes'
+  verify:
+  - cargo test -p xtask readiness
+  - 'A workflow_dispatch Readiness run on the branch with crates="qc-lexer qc-project" showing sharded mutation jobs and a merged score per crate'
+- key: P2-137
+  title: Kill the four qc-preproc mutants the L2 measurement left
+  labels:
+  - L2-syntax
+  - area:language
+  - type:test
+  size: S
+  reqs:
+  - TEST-2
+  summary: |
+    The L2 readiness measurement on main (Readiness run 40332289531, commit cc91093) left four surviving mutants in qc-preproc, which hold P2-R2 below ADR-0009's mutation threshold. All four are in code P2-122 (#558) added for the casts and the target's extern check: `TargetFormat::undefined_word_size` replaced with `false`, `TargetFormat::supports_extern` replaced with `true` and with `false` (crates/qc-preproc/src/fte_tables.rs), and the `Code::W0229` arm deleted from `FteWarning::of_code` (crates/qc-preproc/src/fte_warning.rs). Each is covered by a spec statement (FTEF-22.4, FTEF-22.5 and FTEF-22.1) whose citing tests live in qc-sema, so no qc-preproc test fails when the method lies.
+  depends:
+  - P2-121
+  - P2-130
+  deliverable:
+  - 'crates/qc-preproc/src/tests/flags.rs: tests that `TargetFormat::undefined_word_size` is true for `Darkplaces` and false for every other format, and that `TargetFormat::supports_extern` is true for `Fte`, `FteDebug` and `Fteh2` and false for every other format, each citing its statement (FTEF-22.4, FTEF-22.5)'
+  - 'crates/qc-preproc/src/tests/warnings.rs: the `of_code` table test extended with `W0229` as `WARN_DEBUGGING`, citing FTEF-22.1'
+  acceptance:
+  - 'cargo mutants -p qc-preproc --profile mutants -F ''undefined_word_size|supports_extern|of_code'' reports the four mutants caught, with the command and result recorded in the PR'
+  - 'No file outside crates/qc-preproc changes'
+  verify:
+  - cargo test -p qc-preproc
+  - cargo mutants -p qc-preproc --profile mutants -F 'undefined_word_size|supports_extern|of_code'
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1667,8 +1716,20 @@ issues:
   - P2-117
   - P2-118
   - P2-119
+  - P2-121
+  - P2-122
+  - P2-123
+  - P2-124
   - P2-125
   - P2-126
+  - P2-127
+  - P2-130
+  - P2-131
+  - P2-132
+  - P2-133
+  - P2-134
+  - P2-135
+  - P2-137
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2428,3 +2489,219 @@ issues:
   - A qs-log test that a config with another file name writes and rotates that file, and an apps/lsp test of the config the server builds
   verify:
   - cargo test -p qs-log -p quakec-lsp
+- key: P2-121
+  title: Read FTEQCC's extern "C" and extern "QC" blocks
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-119 (#554). `QCC_PR_ParseDefs` reads `extern` followed by a string, as its first qualifier, as a block of definitions (`extern "C" { ... }`) or one definition (`extern "C" float x;`), and for `"C"` (in any case) turns `qcfuncs` off and `cpriority`, `assumeint`, `assumevar` and `subscope` on until the block ends, and for `"QC"` turns `qcfuncs` on, restoring them after (`//this C++ism is for parsing types`). The pinned FTEQCC compiles `extern "C" { float x; }`; the profile's parser reads the string as no type. The flags change how the tokens inside are lexed (FTEF-12.12) and how definitions are made (FTEF-19.3), so the parser needs to lex the block again with them, which the preprocessor's marks cannot say, as the block is the parser's.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax and crates/qc-sema: `extern "C"` and `extern "QC"` blocks and single definitions parsed, the tokens inside lexed and the definitions made with the flags they set, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_PR_ParseDefs`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l3.md: a row for the `extern` string branch of `QCC_PR_ParseDefs`'
+  acceptance:
+  - 'A statement and a citing test for each flag the block sets; `extern "C" { float x = 5; }` makes `x` a variable of an integer value and `extern "QC" { ... }` reads its strings with `qcfuncs` on, as the pinned FTEQCC reads them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of both blocks'
+  verify:
+  - cargo test -p qc-syntax -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-122
+  title: Read FTEQCC's cast flags in the semantic model's casts
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found while working P2-121 (#556), whose inventory of the places FTEQCC changes its flags mid-file (`docs/spec/inventory-l2.md`, "Where the flags change") lists the flags only the semantic model's casts read, off the L2 path. `#pragma flag` and the `-F` options set `lax`, `typeexplicit` and `qccx`, and `#pragma TARGET` sets `flag_undefwordsize` through `QCC_OPCodeSetTarget`, and each changes the implicit casts of `QCC_TryEvaluateCast`, `QCC_EvaluateCast` and `QCC_SupplyConversion`: `lax` makes a refused cast the warning `WARN_LAXCAST`, `typeexplicit` refuses implicit conversions, `qccx` allows float to entity and string casts and back, and `flag_undefwordsize` refuses pointer and string casts. The semantic model's initialiser casts (FTEF-19.2) read none of them (FTEF-21.15, FTEF-19.30).
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-sema (and crates/qc-preproc, whose `CompilerFlags` keeps the flags the semantic model reads): the casts of FTEF-19.2 read `lax`, `typeexplicit`, `qccx` and the target''s `flag_undefwordsize` where the initialiser stands, ported from FTEQCC at fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e (`QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_SupplyConversion`, `QCC_OPCodeSetTarget`), with spec statements in docs/spec/dialect-fteqcc.md, citing tests and differential cases'
+  - 'docs/spec/inventory-l2.md: the rows of the four flags made `ported`'
+  acceptance:
+  - 'A statement and a citing test for each flag, its casts as the pinned FTEQCC makes them where `#pragma flag` or the command line turns it on and off'
+  - 'The builtin differential (`cargo xtask oracles builtins`) shows 0 unexplained differences with cases of each flag'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-123
+  title: Apply the mutation measurement's memory limit in xtask on every host
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-2
+  - TEST-10
+  summary: |
+    Found while working P2-109 (#531). The Readiness mutation job limits each test binary to 3 GiB of data memory and writes no core files, so a mutant that stops a reader advancing aborts its test instead of ending the runner. The limit is set in .github/workflows/readiness.yml as `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: prlimit --data=3221225472 --core=0 --`, so a local `cargo xtask readiness mutation` or an arm64 Linux runner gets none, and the limit also reaches the cargo, rustc, clang and linker processes that xtask's own tests start when xtask is the crate measured.
+  depends:
+  - P2-109
+  deliverable:
+  - 'xtask/src/readiness.rs `mutation()`: the per-test-binary data limit and the core-file setting, for the host''s target triple as cargo reports it, on every host that enforces them, with a test, and the workflow''s copy removed; docs/testing.md to match. The programs xtask''s own tests start (`cargo metadata`, git, bash, one clang compile and link of a one-line program) stay under the limit: prlimit''s single value sets the hard limit too, so only a wrapper at every spawn site could lift it, and none of them comes near 3 GiB'
+  acceptance:
+  - 'A test of `mutation()` shows the runner it sets for each host triple, the data limit for Linux and none for macOS and Windows'
+  verify:
+  - cargo test -p xtask readiness
+- key: P2-124
+  title: The qc-sema fuzz target no longer builds after ResolveOptions grew fields
+  labels:
+  - repo
+  - area:process
+  - type:bug
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The nightly Fuzz workflow on main (run 39751193549, at 5026fa25) fails to build: `error[E0063]: missing fields case_insensitive and qcfuncs_off in initializer of ResolveOptions` in fuzz/fuzz_targets/qc_sema.rs, then "could not compile qs-fuzz (bin qc-sema)". PR #552 (860fa54) added the two fields; the target builds `ResolveOptions` with every field named, and pull-request CI does not build the fuzz crate, so nothing caught it before the nightly run.
+  environment: |
+    main at 5026fa25; the nightly Fuzz workflow, run 39751193549
+  depends: []
+  deliverable:
+  - 'fuzz/fuzz_targets/qc_sema.rs: `ResolveOptions` built with a struct update from its `Default`, so a new field does not break the build; the leading byte''s bits 2 and 3 turn on `-Fcaseinsens` (FTEF-19.29) and `-Fno-qcfuncs` (FTEF-19.28), on the command line and in the resolver''s options, so the two new paths are fuzzed'
+  - 'fuzz/Cargo.lock: current with the workspace crates the targets build'
+  acceptance:
+  - 'cargo xtask fuzz --time 30 builds and runs every target in fuzz/ clean, recorded in the PR'
+  verify:
+  - cargo xtask fuzz --time 30
+- key: P2-127
+  title: Build the cargo-fuzz targets in cargo xtask ci so a broken target fails PR CI
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - TEST-5
+  summary: |
+    The cargo-fuzz crate (fuzz/) is outside the workspace with its own lock file, so the clippy and test steps of `cargo xtask ci` never build it. A struct or API change that breaks a fuzz target goes unnoticed until the nightly Fuzz workflow: that happened on 2026-10-22 (run 39751193549), when a new ResolveOptions field broke fuzz/fuzz_targets/qc_sema.rs (P2-124, fixed in #563). A build-only check of the fuzz crate on the pinned stable toolchain was measured at about 5 seconds, so it is a step in the existing `cargo xtask ci` rather than a new CI job. `cargo check` catches the missing-field class of error (it is a type error) without the sanitizer instrumentation `cargo xtask fuzz` needs nightly for; the step does not run the fuzzers.
+  depends:
+  - P2-124
+  deliverable:
+  - 'xtask/src/ci.rs: a `fuzz-build` step in STEPS running `cargo check --manifest-path fuzz/Cargo.toml --locked`, with the two step-enumerating tests (ci_runs_every_check_the_issue_names, every_step_has_its_own_name) updated to match'
+  - 'docs/ci.md: the fuzz-build step listed in the cargo xtask ci step table with its command and job'
+  acceptance:
+  - 'cargo xtask ci runs the fuzz-build step; reintroducing a missing struct field in a fuzz target makes the step fail (recorded in the PR), and the clean tree passes'
+  - 'cargo test -p xtask is green with the updated step tests'
+  verify:
+  - cargo test -p xtask
+  - cargo xtask ci
+- key: P2-130
+  title: Read an FTEQCC extern block as QCC_PR_ParseDefs reads it, nested to any depth
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  - QA-2
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`). `QCC_PR_ParseDefs` reads an `extern` block (`qcc_pr_comp.c`, the branch `if (!hadmodifier && pr_token_type == tt_immediate && pr_immediate_type==type_string)`) by comparing `pr_token` with `strcasecmp(pr_token, "C")` and `"QC"`, then `if (!QCC_PR_CheckToken ("{")) QCC_PR_ParseDefs(NULL, false); else for(;;) { if (QCC_PR_CheckToken("}")) break; if (pr_token_type == tt_eof) { QCC_PR_Expect ("}"); break; } QCC_PR_ParseDefs(NULL, false); }`, and `QCC_PR_ParseDefs` starts with `while (QCC_PR_CheckToken(";"))` and then reads a type. The profile's parser (`Parser::extern_block`, `crates/qc-syntax/src/parser/mod.rs`) differs in three ways. (1) It recurses with no nesting level: `extern_block` calls `block_item`, which calls `item` or `extern_block` again, and never `Parser::enter`, so 5000 nested `extern "C" { ` blocks overflow a 2 MiB test thread's stack (`fatal runtime error: stack overflow`), as do 100000 of the unbraced `extern "C" extern "C" ... float x;` at file level and in a body, and 500 report no "nesting too deep" (QC-27.15, FTEF-18.26). (2) It takes a block with no definition where FTEQCC reads one: `extern "C"`, `extern "C";`, `extern "C" ;;;` and `extern "C" "QC"` at the end of a file, which FTEQCC refuses with `"" is not a type`, and `extern "C" { ; }`, which it refuses with `"}" is not a type`, all accepted with no error. (3) It compares more of the string than `strcasecmp` does: `pr_token` ends at its first NUL, so `extern "C\x00x" { ... }` and, under `#pragma flag enable qccx`, `extern "C":"x" { ... }` are `"C"` blocks to FTEQCC (it refuses `string s = "\9";` in them, "Bad character code \9"), and it is the one string token the lexer read, so with `#define C "C"` FTEQCC reads `extern C C { ... }` as the block `"C"` and the definition `"C" ...`, `"C" is not a type`, where the profile joins the two strings. Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64, where the profile accepted it and FTEQCC refused it.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-syntax (`parser/mod.rs`, `Parser::extern_block` and `block_item`) and docs/spec/dialect-fteqcc.md FTEF-21.2 and FTEF-18.26: each `extern` block one nesting level (`Parser::enter` and `leave`), so no nesting of blocks, braced or not, at file level or in a body, exhausts the stack; the block''s definitions read as `QCC_PR_ParseDefs` reads one, its `;`s skipped and then a definition required, so a block or a one-definition `extern "STRING"` that reaches the end of the file or a `}` with no definition is the error FTEQCC gives; and the linkage compared as `strcasecmp` compares `pr_token`, up to its first NUL and over only the string token the lexer joined, not a string from another macro expansion; each a spec statement and a citing test'
+  acceptance:
+  - 'Under the FTEQCC profile 100000 nested `extern "C" { `, closed and unclosed, and 100000 unbraced `extern "C" ` before a definition, at file level and in a body, parse on a 2 MiB thread with E0509 "nesting too deep", every byte kept and the tree within the depth the other nesting tests allow'
+  - '`extern "C"`, `extern "C";` and `extern "C" "QC"` at the end of a file and `extern "C" { ; }` are errors; `extern "C\x00x" { string s = "\9"; }`, the same under `qccx` with `"C":"x"`, and `#define C "C"` then `extern C C { string s = "\9"; }` are refused as the pinned FTEQCC refuses them'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-131
+  title: Read a type name written in another case as a type in a body under caseinsens
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`). Under `-Fcaseinsens` FTEQCC searches its name tables in any case (`qccmain.c`: `if (flag_caseinsensitive) { ... pHash_Get = &Hash_GetInsensitive; ...`), so `QCC_TypeForName` (`pHash_Get(&typedeftable, name)`), with which `QCC_PR_ParseStatement` starts a definition of locals, finds `float` for `Float` and `__int` for `__Int` (FTEF-19.29: "a type name is found in any case"; FTEF-20.6). The profile's parser reads a statement that starts with such a word as an expression (`Parser::fte_looks_like_local`, `crates/qc-syntax/src/parser/fte.rs`, which tests `CScalar::named` and the type keywords exactly): under `-Fcaseinsens` FTEQCC compiles `void() g = { Float x; };`, `{ VECTOR v; }`, `{ Entity e; }`, `{ String s; }`, `{ FLOAT x; x = 1; }`, `{ __Int x; }`, `{ Float; }` and `{ for (Float i = 0; i < 1; i++) {} }`, where the parser reports "expected ;, found x" (E0204) and the semantic model "Unknown value" for each; and FTEQCC refuses `float Float; void() g = { Float = 1; };` (`"=" - not a name`) where the parser reads an assignment. At file level `Float x;` agrees. Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64.
+  depends:
+  - P2-119
+  deliverable:
+  - 'crates/qc-syntax (`parser/fte.rs`, `fte_looks_like_local` and every other place the parser tests a registered type name or a type keyword at a statement''s or a `for` initialiser''s start) and docs/spec/dialect-fteqcc.md FTEF-20.6: with `caseinsens` in force at the token (the keyword marks carry it, FTEF-20.1), a name that is a type FTEQCC registers or the program defines in any case starts a definition of locals, as `QCC_TypeForName` finds it; a spec statement and a citing test'
+  acceptance:
+  - 'Under `-Fcaseinsens` each body above parses as the pinned FTEQCC reads it, a definition of locals or the error it gives, and with `caseinsens` off each is read as now; each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases, compiled with `-Fcaseinsens`, with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-132
+  title: Start FTEQCC's second autoprototyping pass as FTEQCC does in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: S
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the fifth P2-R2 readiness review (docs/readiness/p2-r2.md), at commit 40f42b0, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), on the L3 path the builtin differential runs. (1) `#pragma autoproto` is taken while no global has been allocated (`qcc_pr_lex.c`: `if (numpr_globals != RESERVED_OFS) QCC_PR_ParseWarning(WARN_BADPRAGMA, "#pragma autoproto must appear before any definitions"); else autoprototype = ...`), and FTEQCC compiles twice, with no warning, `void() f = #5;`, `float x;` or `typedef float t;` before the pragma and then `void() k = { h(); }; void() h = {};`; `crates/qc-sema/src/expand.rs` (`run`) takes the pragma only before the first token of any compiled file, so it warns W0108 and reports `Unknown value "h"`. (2) The preprocessor marks the second pass's first token with the flags the first pass ended with (FTEF-12.11), but the semantic model does not read `assumevar` from it: after `#pragma autoproto`, `float x = 5; float y = x;` followed by `#pragma flag enable assumevar` compiles in FTEQCC (F329 "Redeclaration of x would change to non-const"), where the profile reports E0214 "initializer for 'y' is not constant". (3) Under `-Fcaseinsens` FTEQCC compiles `Void() h = #6;` (FTEF-19.29, `Hash_GetInsensitive`), where the semantic model reports E0203 "\"Void\" is not a type". Each program was a case of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases) on macOS arm64.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-sema (`expand.rs` and the definitions the semantic model makes) and docs/spec/dialect-fteqcc.md FTEF-12.10, FTEF-21.1 and FTEF-19.29: `#pragma autoproto` taken while FTEQCC has allocated no global, as `numpr_globals != RESERVED_OFS` decides; the second pass''s definitions made with the flags its first token is marked with; and a type name found in any case under `caseinsens` where a declaration''s type is read; each a spec statement and a citing test'
+  acceptance:
+  - 'The three groups of programs above compile, or are refused, as the pinned FTEQCC compiles them, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins
+- key: P2-133
+  title: Read FTEQCC's struct, union, class and typedef declarations as its parser reads them
+  labels:
+  - L2-syntax
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  - QA-2
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), with over 1000 more programs in four batches of the builtin differential (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64). The profile's parser reads `struct`, `union`, `class` and `typedef` as one declaration each, a narrower grammar than `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` (`qcc_pr_lex.c`, `qcc_pr_comp.c`). FTEQCC compiles each of these and the profile reports an error in the parser (the code is in brackets): (1) a class or struct named as C names it, `class C; class C x;`, `class C { float a; }; class C x;`, `void() g = { class C x; };` and `class float x;` (E0203 "is not a type"; `QCC_PR_ParseType` calls `QCC_PR_ParseEntClass`, which returns the type of a `class NAME` with no `{`, and the declarators follow); (2) a struct body's access labels and nested declarations, `struct S { public: float a; private: float b; protected: float c; };`, `struct S { struct T { float a; }; };`, `struct S { enum { A }; float a; };` and the anonymous members `struct S { struct { float a; }; float b; };` and `struct S { union { float a; vector v; }; float A; };` (E0201 "not a name"; `QCC_PR_ParseStruct` reads `public`, `private` and `protected` with `QCC_PR_CheckKeyword(1, ...)` and then `QCC_PR_ParseType` for the member, which makes the type of a nested `struct`, `union` or `enum` whether or not a declarator follows); (3) a `typedef` with a declarator list, `typedef float t, u;`, `typedef float t, *u;`, `typedef void() fn, fn2;`, `typedef struct S { float a; } T, *PT;`, `typedef class C { float a; } CC;` and `typedef typedef float tt;` (E0204 and E0203; `QCC_PR_ParseDefs` loops over its declarators after `typedef` as it does after any type); (4) in a body, an unnamed struct for a local, `struct { float a; } x; x.a = 1;` and `local struct { float a; } x;`, and a cast to a named struct's pointer, `(struct S *)0;` (E0301 "Unknown value", E0204; both compile at file level). The profile accepts, and FTEQCC refuses, the forms that need what follows the name: `struct S : P;` and `class D : C;` ("expected {": `QCC_PR_Expect("{")` after a parent), `union U : P { float b; };` (a union takes no parent, `if (structtype == ev_struct && QCC_PR_CheckToken(":"))`), `class C { float a = 1; };` ("expected function arg list"), a second access label in a class, `class C { private: float a; protected: float b; };` ("expected :, found float": `QCC_PR_ParseEntClass` reads a label only where `firstkeyword` is set) and `float (x);` ("expected function arg list"). FTEF-6.1 says "the anonymous `struct { ... }` define[s] an aggregate" and FTEF-15.6 that `struct { ... } a[4], *p;` declares variables, and neither states the forms above.
+  depends:
+  - P2-121
+  deliverable:
+  - 'crates/qc-syntax (`parser/fte.rs`, `struct_decl`, `struct_type` and the declaration parser in `parser/mod.rs`) and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-7, FTEF-9 and FTEF-15.6: the declarations above read as `QCC_PR_ParseType`, `QCC_PR_ParseStruct`, `QCC_PR_ParseEntClass` and `QCC_PR_ParseDefs` read them, at file level, in a body and in a member list, and the forms FTEQCC refuses refused, each a spec statement quoting the source and a citing test; the tree keeps every byte, the nesting limit of QC-27.15 counts every new construct that nests, and the fuzz target `parser` and the property tests cover them'
+  acceptance:
+  - 'Each program above is read as the pinned FTEQCC reads it under the FTEQCC profile (a definition, or the error it gives), and with `-Fcaseinsens` where a type name is involved, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  - 'The qc-syntax ratchets in `ratchets.toml` hold (lines, branches, mutation, spec citations)'
+  verify:
+  - cargo test -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-134
+  title: Check the declarations and statements FTEQCC refuses in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the seventh P2-R2 readiness review (docs/readiness/p2-r2.md), at commit dc0e5fd, against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`), on the L3 path the builtin differential runs (`cargo xtask oracles builtins --record` with the review's cases, macOS arm64); the parser reports nothing for any of them. The semantic model accepts where FTEQCC refuses: (1) `break;` and `continue;` outside a loop, `void() g = { break; };` ("g: function contains illegal breaks"; also `BREAK;` and `Continue;` under `-Fcaseinsens`); (2) a struct defined twice with different members, `struct S { float a; }; struct S { float b; };` ("redeclared differently"), a typedef redeclared as another type, `typedef float t; typedef vector T;` under `-Fcaseinsens`, a struct, union or enum with no members, `struct s {}; struct S {};`, `enum E { };`, and a repeated enumerator, `enum E { A, A };`; (3) an undefined parent, `class D : E { float b; };` ("Parent class E was not yet defined"), `struct S : P { float b; };`, and a pointer from the child to the parent, `struct P { float a; }; struct S : P { float b; }; void() g = { S s; local P *p = &s; };`; (4) a bitfield on a float, `struct S { float a : 3; };` ("bitfields must be integer types"), and a struct called as a function, `S s; s = S(1);`; (5) a name in the wrong case without `caseinsens`: `enum E { Alpha, Beta }; float x = e::Alpha;` (E is a type, e is not); (6) a union with members `a` and `A`, `union U { float a; float A; }; void() g = { U s; s.A = 1; };` under `-Fcaseinsens` (`QCC_PR_FindStructMember` finds two); (7) inside `extern "C"`: `float x[2]; float y = x[1];` ("initializer is not constant") and `typedef float (*fp)(float); fp x;` ("function x has no body"); (8) a class member `void() m = { a = 1; }` that names a member, `class C { float a; void() m = { a = 1; }; };`, `class C { void() m; void() n = {}; };` and a state in a member, `class C { float() m = [1, m] { return 1; }; };`. FTEQCC accepts and the semantic model refuses a state's next function in another case: `$frame run`, `void() g = [$RUN, G] {};` under `-Fcaseinsens` compiles in FTEQCC and the semantic model reports E0211 for `G`, which `Hash_GetInsensitive` finds as `g`. `-Facc` and `-std=reacc`'s type names are not in this list (FTEF-19.30, FTEF-20.13 state them outside the profile); FTEQCC's crash on a redefinition or `#undef` of a macro with an upper case letter under `-Fcaseinsens` (exit 139 from `Hash_Remove`) is its own defect, not a divergence to match.
+  depends:
+  - P2-132
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs` and the checks beside it) and docs/spec/dialect-fteqcc.md FTEF-19, FTEF-20 and FTEF-21: each refusal and acceptance above made as the pinned FTEQCC makes it, or the program named in a spec statement as outside the profile with its reason; each a spec statement quoting the source and a citing test'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins

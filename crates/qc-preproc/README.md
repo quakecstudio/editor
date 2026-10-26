@@ -30,8 +30,13 @@ skips a false side as FTEQCC does, with one count of open sides from file to fil
 `once`, `includedir`, `noref`, `autoproto`, `warning` (F303) and `DONT_COMPILE_THIS_FILE`
 (FTEF-14.33 to FTEF-14.47); a `#` after a `\` that joins a line of code to the next starts
 none (FTEF-14.53). FTEQCC's command line, `CommandLine` (`fte_options.rs`, ported from
-`QCC_PR_CommandLinePrecompilerOptions`), sets the warnings and compiler flags with its `-W`, `-F`
-and `-K` options, read again each time the settings are reset (FTEF-14.71). Under GMQCC an `#include` is tried beside the file that holds it first
+`QCC_PR_CommandLinePrecompilerOptions`), sets the warnings, compiler flags, keywords and target with its
+`-W`, `-F`, `-K`, `-std=` and `-T` options, read again each time the settings are reset, a Hexen
+II target turning on its keywords after them (FTEF-14.72, FTEF-20.3). FTEQCC's keywords
+(`Keywords`, `fte_keywords.rs`, ported from `QCC_PR_CheckKeyword`, `QCC_PR_CheckName` and
+`QCC_PR_DummyDef`'s `KEYWORD` list) are marked by token in `FileOutput::keywords`, each
+`#pragma keyword`, `#pragma flag` and `#pragma TARGET` setting only what it names, for the parser
+to read each keyword with the flags in force at its token (FTEF-20.1, FTEF-20.2, FTEF-20.4). Under GMQCC an `#include` is tried beside the file that holds it first
 (PRJ-5.12), and `FTEQCC` and `__FTEQCC__` are not defined (PRJ-5.15). In the vanilla dialect
 an `#include` not beside the file that holds it is looked for in the module's include
 directories (QC-9.20). `fte_directive/graph.rs` gives the
@@ -49,10 +54,15 @@ offsets (FTEF-14.56). The project graph reads an FTEQCC module's `progs.src` wit
 place, a first line that starts with `#!`, as FTEQCC's `QCC_main` does (PRJ-4.10). `#if` and `#elif` use
 the project graph's evaluator, in `cond`, so both take the same sides (FTEF-14.33, nesting at most
 64 levels, FTEF-14.12 and PRJ-5.10), each FTEQCC value an `int` from an LP64 host's `atoi`
-(`cond::fte_atoi`, FTEF-14.55). `#pragma noref` and `#pragma autoproto` are recorded for the
-semantic model (FTEF-12.6, FTEF-12.10). `#pragma flag` sets FTEQCC's compiler flags
-(`FlagSettings`, FTEF-12.11): the text from there on is lexed again with the flags the lexer
-reads (`Lexing`, FTEF-12.12), each change marked in `FileOutput::lex_flags`, and `hashonly` and
+(`cond::fte_atoi`, FTEF-14.55). `#pragma autoproto` is recorded for the semantic model
+(FTEF-12.18). `#pragma flag` sets FTEQCC's compiler flags (`FlagSettings`, FTEF-12.11): the text
+from there on is lexed again with the flags the lexer reads (`Lexing`, FTEF-12.12), and each
+change to the flags the lexer, the parser and the semantic model read, the operator priorities
+a pragma that names `cpriority` sets among them (`Priorities`, FTEF-21.4), and to the defaults
+`#pragma noref`, `nosave` and `defaultstatic` set (FTEF-21.14) is marked in `FileOutput::flags`
+as a `FlagEdit` of `CompilerFlags` that sets only what it names (FTEF-21.1), the casts' flags
+among them, with `flag_undefwordsize` as `#pragma TARGET` and `-T` set it, and the target at the
+end is `Preprocessor::target` (FTEF-22.4, FTEF-22.5), and `hashonly` and
 `nofileline` change the preprocessor's own reading (FTEF-12.13). A word or string of a directive
 past FTEQCC's 1023 bytes, a pragma past its `msg[1024]` and a comment the text ends in are FTEQCC's
 errors (FTEF-14.66, FTEF-14.67). The graph's reader also reads a list-form `progs.src`
@@ -77,8 +87,13 @@ macro's body as the text the `#define` reader stored, finds a use's arguments by
 text after its `(`, writes the expansion as text, each byte with where it came from, and lexes
 that text as a chunk of its own, read until reading goes past its last token: `##` pastes, `#`
 strings, `__VA_COUNT__`, built-in constants with FTEQCC's lines and `__FILE__` names, the
-chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.32). Under both dialects the
-expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
+chunks' recursion and their argument lists (FTEF-14.13 to FTEF-14.31, FTEF-14.74). Under both
+dialects the expansions of one file write at most 2^22 tokens (FTEF-14.28, QC-9.18).
+A file is named as its caller gives it (`preprocess_file_named`), which `__FILE__` writes and
+an `#include` is joined to, and the joined name is opened in the working directory
+`with_working_dir` gives (FTEF-14.75, PRJ-6.8); `join_paths`, `include_dir_name` and
+`pragma_include_dir` are FTEQCC's `QCC_JoinPaths`, the name `QCC_PR_AddIncludePath` keeps and
+the directory `#pragma includedir` adds, which the project graph names its files with (PRJ-6.7).
 `fte_directive_end` gives, for a reader that runs no directive, where an FTEQCC directive's text
 ends, as the preprocessor reads on after it, and `relex_from` lexes the text from there again as
 the preprocessor does; the syntax tree groups its directive lines with them (`fte_line.rs`,

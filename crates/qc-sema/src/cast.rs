@@ -2,20 +2,22 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_TryEvaluateCast, QCC_EvaluateCast, QCC_SRef_IsNull
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_TryEvaluateCast, QCC_EvaluateCast, QCC_SRef_IsNull, QCC_SupplyConversion, QCC_ShouldConvert
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_cmdlib.c, basictypenames
 // Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_lex.c, QCC_PR_LexNumber, TypeName
 
 //! The types of constants and FTEQCC's implicit casts.
 //!
 //! A literal initialiser has a type, which FTEQCC's `QCC_PR_LexNumber` gives a number by its
 //! digits and suffix (FTEF-3), and `QCC_EvaluateCast` casts it, or a named constant, to the
-//! type it initialises, or refuses with "Cannot cast from A to B" (FTEF-19.2). This module
+//! type it initialises, or refuses with "Cannot cast from A to B" (FTEF-19.31). This module
 //! holds those types, the cast rule of `QCC_TryEvaluateCast` with `implicit` set, and the
 //! spelling of a type in FTEQCC's messages. Written as a clean port: the rule is one table of
 //! the types' kinds, not the C's chain of conditions.
 
 use qc_lexer::{LexFlag, LexFlags};
-use qc_syntax::c_scalar::{CScalar, CWords};
+use qc_preproc::{CompilerFlags, FteFlag};
+use qc_syntax::c_scalar::CScalar;
 
 use crate::ty::{SimpleType, Type};
 
@@ -46,7 +48,7 @@ pub struct Literal {
     /// Its type.
     pub ty: ConstType,
     /// Whether it is null: `QCC_SRef_IsNull` holds for an integer, unsigned or float constant
-    /// whose word is 0 (FTEF-19.2).
+    /// whose word is 0 (FTEF-19.31).
     pub null: bool,
 }
 
@@ -156,7 +158,7 @@ impl Literal {
 }
 
 /// The kind of a type, FTEQCC's `etype_t`, as its cast rule and redeclaration checks read it;
-/// `Opaque` for a type the semantic model does not follow (FTEF-17.12), on which no check is
+/// `Opaque` for a type the semantic model does not follow (FTEF-17.13), on which no check is
 /// made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -190,11 +192,10 @@ pub enum Kind {
     Opaque,
 }
 
-/// The scalar the C type words `words` make, when the loop takes all of them (FTEF-2.8).
-fn c_scalar(words: &str) -> Option<CScalar> {
-    let count = words.split(' ').count();
-    let (taken, ty) = CWords::read(words.split(' '));
-    ty.filter(|_| taken == count).map(|t| t.scalar)
+/// The scalar a [`Type::Named`] names: one FTEQCC registers by that name, as lowering names
+/// the type C type words make (FTEF-2.8, FTEF-20.9).
+fn c_scalar(name: &str) -> Option<CScalar> {
+    CScalar::named(name)
 }
 
 impl Kind {
@@ -216,10 +217,10 @@ impl Kind {
         }
     }
 
-    /// The kind the C type words `words` name, as the parser took them (FTEF-2.8), or
-    /// `Opaque` when they are not all taken.
-    fn of_c_words(words: &str) -> Self {
-        let Some(scalar) = c_scalar(words) else {
+    /// The kind the registered type name `name` names (FTEF-2.8), or `Opaque` when it names
+    /// none.
+    fn of_c_words(name: &str) -> Self {
+        let Some(scalar) = c_scalar(name) else {
             return Self::Opaque;
         };
         match scalar {
@@ -229,9 +230,12 @@ impl Kind {
             CScalar::Uint => Self::Uint,
             CScalar::Int64 => Self::Int64,
             CScalar::Uint64 => Self::Uint64,
-            CScalar::Int16 | CScalar::Uint16 | CScalar::Int8 | CScalar::Uint8 | CScalar::Bool => {
-                Self::Opaque
-            }
+            CScalar::Int16
+            | CScalar::Uint16
+            | CScalar::Int8
+            | CScalar::Uint8
+            | CScalar::Bool
+            | CScalar::BFloat => Self::Opaque,
         }
     }
 
@@ -278,22 +282,102 @@ impl Kind {
         }
     }
 
-    /// Whether `QCC_TryEvaluateCast`, `implicit` set and `flag_qccx` off, casts a value of a
-    /// different type of kind `self` to one of kind `to`: the numeric conversions, a float or
-    /// an integer to a vector (with a warning), and the casts among pointers, strings,
-    /// integers and functions and between integers and entities, "acceptable but probably an
-    /// error".
-    fn casts_to(self, to: Self) -> bool {
-        use Kind::{Entity, Float, Function, Integer, Pointer, String, Uint};
-        let wordish = |k: Self| matches!(k, Pointer | String | Integer | Uint | Function);
-        (self.is_numeric() && to.is_numeric())
-            || (to == Self::Vector && matches!(self, Float | Integer))
-            || (to == Entity && self == Entity)
-            || (to == Pointer && self == Pointer)
-            || (wordish(self) && wordish(to))
-            || (to == Entity && self == Integer)
-            || (to == Integer && self == Entity)
+    /// The name `basictypenames` gives this kind, which `QCC_SupplyConversion`'s messages write
+    /// (FTEF-22.3): `integer`, `uint`, `long`, `ulong`, `double`; `variant` for a type the model
+    /// does not follow.
+    #[must_use]
+    pub fn basic_name(self) -> &'static str {
+        match self {
+            Self::Void => "void",
+            Self::String => "string",
+            Self::Float => "float",
+            Self::Vector => "vector",
+            Self::Entity => "entity",
+            Self::Field => "field",
+            Self::Function => "function",
+            Self::Pointer => "pointer",
+            Self::Integer => "integer",
+            Self::Uint => "uint",
+            Self::Int64 => "long",
+            Self::Uint64 => "ulong",
+            Self::Double => "double",
+            Self::Opaque => "variant",
+        }
     }
+
+    /// `QCC_ShouldConvert(from, wanted)` of a value of this kind that is no pointer: none needed
+    /// for the same kind, among the 32-bit and among the 64-bit integers, and from an integer to
+    /// a function or a pointer; a conversion among the numbers but between a double and a
+    /// 32-bit integer, and from a float to a vector; else none possible.
+    fn conversion_to(self, wanted: Self) -> Conversion {
+        use Kind::{Double, Float, Function, Int64, Integer, Pointer, Uint, Uint64, Vector};
+        let int32 = |k: Self| matches!(k, Integer | Uint);
+        let int64 = |k: Self| matches!(k, Int64 | Uint64);
+        if self == wanted
+            || (self == Integer && matches!(wanted, Function | Pointer))
+            || (int32(self) && int32(wanted))
+            || (int64(self) && int64(wanted))
+        {
+            return Conversion::None;
+        }
+        let converts = matches!(
+            (self, wanted),
+            (Float, Integer | Uint | Int64 | Uint64 | Double | Vector)
+                | (Integer | Uint | Int64 | Uint64 | Double, Float)
+                | (Int64 | Uint64, Integer | Uint | Double)
+                | (Integer | Uint | Double, Int64 | Uint64)
+        );
+        if converts {
+            Conversion::Op
+        } else {
+            Conversion::Impossible
+        }
+    }
+}
+
+/// What `QCC_ShouldConvert` finds for a value and a wanted kind (FTEF-22.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Conversion {
+    /// 0: the value is of the kind already, or needs no instruction to be.
+    None,
+    /// An opcode converts it.
+    Op,
+    /// -1: nothing converts it.
+    Impossible,
+}
+
+/// What `QCC_EvaluateCast(src, type, true)` makes of a value cast to a type (FTEF-19.31,
+/// FTEF-22.1, FTEF-22.2, FTEF-22.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cast {
+    /// Made, with no word; also a cast between types the model does not follow.
+    Silent,
+    /// Made, with the warning `W0220` "Implicit cast from A to B" (`WARN_LAXCAST`).
+    Implicit,
+    /// Made, with the non-fatal error `E0237` "pointer<->string casts were disabled."
+    /// (`ERR_BADEXTENSION`): a string to a pointer under `flag_undefwordsize`.
+    StringPointerDisabled,
+    /// Refused by `QCC_TryEvaluateCast` and made under `lax`, with the warning `W0229`
+    /// "Implicit lax cast from A to B" (warning 0, `WARN_DEBUGGING`).
+    Lax,
+    /// Refused: the error `E0213` "Cannot cast from A to B".
+    Refused,
+}
+
+/// What `QCC_SupplyConversion(var, wanted, true)` makes of an enum's value or a state frame
+/// converted to a number (FTEF-22.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Supply {
+    /// The value is converted, or needs no conversion.
+    Converted,
+    /// The fatal error `E0236` "Automatic type conversions disabled. Needed A, got B." under
+    /// `typeexplicit`, for any value that is not of the kind already.
+    Explicit,
+    /// Under `lax`, the warning `W0230` "Implicit type mismatch. Needed A, got B."
+    /// (`WARN_LAXCAST`), and the value kept unconverted.
+    Lax,
+    /// The fatal error `E0227` "Implicit type mismatch. Needed A, got B.".
+    Mismatch,
 }
 
 /// What a value being cast is: a literal, or a named definition of a type.
@@ -305,66 +389,175 @@ pub enum Source<'a> {
     Typed(&'a Type),
 }
 
-impl Source<'_> {
-    /// Whether FTEQCC's implicit cast of this value to `to` fails: "Cannot cast from A to B"
-    /// (FTEF-19.2). `false` when it succeeds, or when either type is one the model does not
-    /// follow.
-    #[must_use]
-    pub fn refused(self, to: &Type) -> bool {
-        let to_kind = Kind::of(to);
-        let (from_kind, null) = match self {
-            Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null),
-            Source::Typed(ty) => {
-                // `typecmp`: a type casts to itself. A redeclaration compares types structurally
-                // (QC-10.6), and so does this.
-                if ty == to {
-                    return false;
-                }
-                (Kind::of(ty), false)
-            }
+/// Whether two pointers' targets `a` and `b` are one type to `typecmp_lax`, which follows
+/// pointers to what they point to: a pointer and a pointer agree by their targets, anything
+/// else as [`Type::fteqcc_same`] says.
+fn pointees_agree(a: &Type, b: &Type) -> bool {
+    match (a, b) {
+        (Type::Pointer(a), Type::Pointer(b)) => pointees_agree(a, b),
+        (Type::Pointer(_), other) | (other, Type::Pointer(_)) => {
+            other.fteqcc_kind() == Kind::Opaque
+        }
+        _ => a.fteqcc_same(b),
+    }
+}
+
+/// What a pointer type points to, as `QCC_TryEvaluateCast` tells pointers apart (FTEF-22.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pointee {
+    /// `void`: any pointer, function and string casts to and from a pointer to it.
+    Void,
+    /// An 8-bit integer, `__int8` or `__uint8`: a string casts to and from a pointer to it,
+    /// "string and char* are the same type".
+    Byte,
+    /// Anything else.
+    Other,
+}
+
+impl Pointee {
+    /// What `ty` points to, `None` when it is no pointer.
+    fn of(ty: &Type) -> Option<Self> {
+        let Type::Pointer(inner) = ty else {
+            return None;
         };
-        if from_kind == Kind::Opaque || to_kind == Kind::Opaque {
-            return false;
+        Some(match &**inner {
+            Type::Simple(SimpleType::Void) => Self::Void,
+            Type::Named(_)
+                if matches!(inner.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Uint8)) =>
+            {
+                Self::Byte
+            }
+            Type::Unknown
+            | Type::Simple(_)
+            | Type::Field(_)
+            | Type::Function(_)
+            | Type::Pointer(_)
+            | Type::Named(_) => Self::Other,
+        })
+    }
+}
+
+impl Source<'_> {
+    /// `QCC_EvaluateCast(src, to, true)` with the flags `flags` where the value stands
+    /// (FTEF-19.31, FTEF-22): `QCC_TryEvaluateCast`'s cast, or when it refuses, under `lax` the
+    /// value taken as of the type with a warning, else "Cannot cast".
+    #[must_use]
+    pub fn cast(self, to: &Type, flags: CompilerFlags) -> Cast {
+        match self.try_cast(to, flags) {
+            Some(cast) => cast,
+            None if flags.has(FteFlag::Laxcasts) => Cast::Lax,
+            None => Cast::Refused,
         }
-        if from_kind == to_kind && !matches!(from_kind, Kind::Field) {
-            return false;
-        }
-        // A null casts to any type but a struct or union, which are opaque here.
-        if null {
-            return false;
-        }
-        !from_kind.casts_to(to_kind)
     }
 
-    /// Whether FTEQCC makes the implicit cast of this value to `to` with its warning
-    /// "Implicit cast from A to B" (`WARN_LAXCAST`, FTEF-19.2): a float or an integer to a
-    /// vector, and the casts "acceptable but probably an error" among pointers, strings,
-    /// integers and functions and between integers and entities, a null excepted. `false` for
-    /// a cast refused or made with no warning, and for a type the model does not follow.
-    #[must_use]
-    pub fn warns(self, to: &Type) -> bool {
-        use Kind::{Entity, Function, Integer, Pointer, String, Uint, Vector};
+    /// `QCC_TryEvaluateCast(src, to, true)`, its branches in order; `None` when it fails.
+    /// `qccx` adds a float to an entity or a string and back to the casts "acceptable but
+    /// probably an error"; `flag_undefwordsize` makes a string to a pointer the error of
+    /// [`Cast::StringPointerDisabled`], before the `char*` and `void*` branches.
+    fn try_cast(self, to: &Type, flags: CompilerFlags) -> Option<Cast> {
+        use Kind::{Entity, Field, Float, Function, Integer, Pointer, String, Uint, Vector};
         let to_kind = Kind::of(to);
-        let (from_kind, null, same) = match self {
-            Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null, false),
-            Source::Typed(ty) => (Kind::of(ty), false, ty == to),
+        let (from_kind, null, from_ty) = match self {
+            Source::Literal(literal) => (Kind::of_const(literal.ty), literal.null, None),
+            Source::Typed(ty) => (Kind::of(ty), false, Some(ty)),
         };
-        if same || null || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
-            return false;
+        // `typecmp`: a type casts to itself. A redeclaration compares types structurally
+        // (QC-10.6), and so does this. A type the model does not follow is not checked.
+        if from_ty == Some(to) || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
+            return Some(Cast::Silent);
         }
-        // A literal of the type's own kind is the type; two functions differ in their signatures.
-        if from_kind == to_kind && from_kind != Function {
-            return false;
+        // A literal of the type's own kind is the type, and so is a definition of a simple
+        // type's kind; fields, functions and pointers differ in what they hold.
+        if from_kind == to_kind && !matches!(from_kind, Field | Function | Pointer) {
+            return Some(Cast::Silent);
         }
-        if self.refused(to) {
-            return false;
+        // A null casts to any type but a struct or union, which are opaque here; the numbers
+        // convert among themselves.
+        if null || (from_kind.is_numeric() && to_kind.is_numeric()) {
+            return Some(Cast::Silent);
+        }
+        if to_kind == Vector && matches!(from_kind, Float | Integer) {
+            return Some(Cast::Implicit);
+        }
+        if flags.has(FteFlag::Undefwordsize) && to_kind == Pointer && from_kind == String {
+            return Some(Cast::StringPointerDisabled);
+        }
+        let from_pointee = from_ty.and_then(Pointee::of);
+        let to_pointee = Pointee::of(to);
+        let pointerish = |k: Kind| matches!(k, Pointer | Function | String);
+        if (to_pointee == Some(Pointee::Byte) && from_kind == String)
+            || (to_kind == String && from_pointee == Some(Pointee::Byte))
+            || (to_pointee == Some(Pointee::Void) && pointerish(from_kind))
+            || (from_pointee == Some(Pointee::Void) && pointerish(to_kind))
+        {
+            return Some(Cast::Silent);
+        }
+        if let (Type::Pointer(to_inner), Some(Type::Pointer(from_inner))) = (to, from_ty) {
+            // `typecmp_lax` of what they point to, a type the model does not follow agreeing.
+            return Some(if pointees_agree(from_inner, to_inner) {
+                Cast::Silent
+            } else {
+                Cast::Implicit
+            });
+        }
+        // `typecmp` of two functions: the same type part by part is a cast to itself.
+        if let (Type::Function(_), Some(from @ Type::Function(_))) = (to, from_ty)
+            && from.fteqcc_same(to)
+        {
+            return Some(Cast::Silent);
         }
         let wordish = |k: Kind| matches!(k, Pointer | String | Integer | Uint | Function);
-        let integer = |k: Kind| matches!(k, Integer | Uint);
-        (to_kind == Vector && matches!(from_kind, Kind::Float | Integer))
-            || (wordish(from_kind) && wordish(to_kind) && !(integer(from_kind) && integer(to_kind)))
+        let qccx = flags.has(FteFlag::Qccx);
+        let acceptable = (wordish(from_kind) && wordish(to_kind))
             || (to_kind == Entity && from_kind == Integer)
             || (to_kind == Integer && from_kind == Entity)
+            || (qccx
+                && matches!(
+                    (from_kind, to_kind),
+                    (Float, Entity | String) | (Entity | String, Float)
+                ));
+        // `typecmp_lax` differs for two kinds, and for two functions of different types; the
+        // two integer kinds were cast above.
+        acceptable.then_some(Cast::Implicit)
+    }
+
+    /// `QCC_SupplyConversion(var, wanted, true)` of this value with the flags where it stands
+    /// (FTEF-22.3): no conversion needed, or else under `typeexplicit` the error of
+    /// [`Supply::Explicit`]; one that `QCC_ShouldConvert` finds none for is under `lax` a
+    /// warning and else "Implicit type mismatch"; a type the model does not follow is not
+    /// checked. A pointer converts only to an integer or a float by what it points to.
+    #[must_use]
+    pub fn supply(self, wanted: Kind, flags: CompilerFlags) -> Supply {
+        let conversion = match self {
+            Source::Literal(literal) => Kind::of_const(literal.ty).conversion_to(wanted),
+            Source::Typed(Type::Pointer(inner)) => match (Kind::of(inner), wanted) {
+                (_, Kind::Pointer) => Conversion::None,
+                (Kind::Float, Kind::Integer) | (Kind::Integer, Kind::Float) => Conversion::Op,
+                _ => Conversion::Impossible,
+            },
+            Source::Typed(ty) => Kind::of(ty).conversion_to(wanted),
+        };
+        if self.kind() == Kind::Opaque || wanted == Kind::Opaque {
+            return Supply::Converted;
+        }
+        match conversion {
+            Conversion::None => Supply::Converted,
+            Conversion::Op | Conversion::Impossible if flags.has(FteFlag::Typeexplicit) => {
+                Supply::Explicit
+            }
+            Conversion::Op => Supply::Converted,
+            Conversion::Impossible if flags.has(FteFlag::Laxcasts) => Supply::Lax,
+            Conversion::Impossible => Supply::Mismatch,
+        }
+    }
+
+    /// The kind of this value's type.
+    #[must_use]
+    pub fn kind(self) -> Kind {
+        match self {
+            Source::Literal(literal) => Kind::of_const(literal.ty),
+            Source::Typed(ty) => Kind::of(ty),
+        }
     }
 
     /// The name of this value's type in a message.
@@ -442,8 +635,8 @@ impl Type {
     }
 
     /// Whether a redeclaration with type `other` declares the same type as this one under
-    /// FTEQCC's `typecmp` (FTEF-17.12): equal, a C type word compared by the kind it names, a
-    /// field or function compared part by part, and any type the model does not follow
+    /// FTEQCC's `typecmp` (FTEF-17.13): equal, a C type word compared by the kind it names, a
+    /// field, function or pointer compared part by part, and any type the model does not follow
     /// agreeing with any other.
     #[must_use]
     pub fn fteqcc_same(&self, other: &Self) -> bool {
@@ -461,12 +654,13 @@ impl Type {
                         .zip(&b.params)
                         .all(|(x, y)| x.fteqcc_same(y))
             }
+            // FTEF-17.13: two pointers are the same when what they point to is.
+            (Self::Pointer(a), Self::Pointer(b)) => a.fteqcc_same(b),
             _ => {
-                // A pointer and a type a program names are not followed, so they agree with
-                // anything; the rest agree when they are of one kind, as `int` and `integer`.
-                let unfollowed = |k: Kind| matches!(k, Kind::Opaque | Kind::Pointer);
+                // A type a program names is not followed, so it agrees with anything, a pointer
+                // included; the rest agree when they are of one kind, as `int` and `integer`.
                 let (a, b) = (self.fteqcc_kind(), other.fteqcc_kind());
-                unfollowed(a) || unfollowed(b) || a == b
+                a == Kind::Opaque || b == Kind::Opaque || a == b
             }
         }
     }

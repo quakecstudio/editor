@@ -10,10 +10,12 @@
 //! ([`FlagSettings`]), and `optimise`, `opcode` and `TARGET`, which change only the build, each
 //! with the warnings FTEQCC gives for what it does not know.
 
-use qc_lexer::{LexFlag, LexFlags};
+use qc_lexer::LexFlags;
 
+use crate::compiler_flags::{CompilerFlags, PragmaDefault, Priorities};
 use crate::cond::fte_atoi;
 use crate::fte_directive::com_parse;
+use crate::fte_keywords::{Keyword, Keywords};
 use crate::fte_tables::{
     DP_MAX_REVISION, FLAGS, FTE_MAX_REVISION, FteFlag, OPCODES, OPTIMISATIONS, QSS_MAX_REVISION,
     REAL_OPCODES, TARGETS, TargetFormat,
@@ -63,13 +65,18 @@ pub struct FlagSettings {
     /// What the preprocessor reads for every token, kept as the flags change so the table is
     /// not searched for it each time: the lexer's flags, `hashonly` and `nofileline`.
     read: Read,
+    /// The operator priorities `QCC_PrioritiseOpcodes` set last (FTEF-21.4).
+    priorities: Priorities,
+    /// The defaults `#pragma noref`, `nosave` and `defaultstatic` set (FTEF-21.14), the other
+    /// bits clear.
+    pragma_defaults: CompilerFlags,
 }
 
 /// The flags of [`FlagSettings`] the preprocessor reads for every token (FTEF-12.12,
 /// FTEF-12.13).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Read {
-    lex: LexFlags,
+    compiler: CompilerFlags,
     hash_only: bool,
     no_file_line: bool,
 }
@@ -81,6 +88,8 @@ impl Default for FlagSettings {
         let mut settings = Self {
             on: [false; FLAGS.len()],
             read: Read::default(),
+            priorities: Priorities::Qc,
+            pragma_defaults: CompilerFlags::default().with(FteFlag::Qcfuncs, false),
         };
         for row in FLAGS {
             settings.set(row.flag, row.default);
@@ -103,8 +112,66 @@ impl FlagSettings {
 
     /// The flags among these that the lexer reads (FTEF-12.12).
     #[must_use]
-    pub const fn lex_flags(&self) -> LexFlags {
-        self.read.lex
+    pub fn lex_flags(&self) -> LexFlags {
+        self.read.compiler.lex()
+    }
+
+    /// The flags among these that the lexer, the parser and the semantic model read, with the
+    /// operator priorities (FTEF-21.1).
+    #[must_use]
+    pub fn compiler_flags(&self) -> CompilerFlags {
+        [
+            PragmaDefault::Static,
+            PragmaDefault::Noref,
+            PragmaDefault::Nosave,
+        ]
+        .into_iter()
+        .fold(
+            self.read.compiler.with_priorities(self.priorities),
+            |flags, default| flags.with_default(default, self.pragma_defaults.default_on(default)),
+        )
+    }
+
+    /// Sets the default `default` that `#pragma noref`, `nosave` or `defaultstatic` sets
+    /// (FTEF-12.6, FTEF-21.14).
+    pub(crate) const fn set_default(&mut self, default: PragmaDefault, on: bool) {
+        self.pragma_defaults = self.pragma_defaults.with_default(default, on);
+    }
+
+    /// The operator priorities (FTEF-21.4).
+    #[must_use]
+    pub const fn priorities(&self) -> Priorities {
+        self.priorities
+    }
+
+    /// `QCC_PrioritiseOpcodes`: the operator priorities by `cpriority` as it is now (FTEF-21.4),
+    /// which a compile does once the command line is read and a `#pragma flag` that names
+    /// `cpriority` does again.
+    pub(crate) fn prioritise(&mut self) {
+        self.priorities = if self.is_on(FteFlag::Cpriority) {
+            Priorities::C
+        } else {
+            Priorities::Qc
+        };
+    }
+
+    /// These settings with the operator priorities `priorities`, which no setting of a flag
+    /// changes (FTEF-21.4).
+    pub(crate) const fn with_priorities(mut self, priorities: Priorities) -> Self {
+        self.priorities = priorities;
+        self
+    }
+
+    /// The keywords on, with `kce` and `caseinsens`, under the standard target (FTEF-20.1).
+    #[must_use]
+    pub fn keywords(&self) -> Keywords {
+        Keyword::ALL
+            .into_iter()
+            .fold(Keywords::NONE, |keywords, keyword| {
+                keywords.with(keyword, self.is_on(keyword.flag()))
+            })
+            .with_coexist(self.is_on(FteFlag::KeywordsCoexist))
+            .with_case_insensitive(self.is_on(FteFlag::Caseinsensitive))
     }
 
     /// Whether `hashonly` is on, under which only a name after a `#` is a macro's (FTEF-12.13).
@@ -118,45 +185,36 @@ impl FlagSettings {
         self.read.no_file_line
     }
 
-    /// [`Self::lex_flags`] from the table.
-    fn read_lex_flags(&self) -> LexFlags {
-        [
-            (FteFlag::Qcfuncs, LexFlag::QcFuncs),
-            (FteFlag::Qccx, LexFlag::Qccx),
-            (FteFlag::Utf8strings, LexFlag::Utf8Strings),
-            (FteFlag::Ilp32, LexFlag::Ilp32),
-            (FteFlag::Dblstarexp, LexFlag::Ssp),
-            (FteFlag::AssumeInteger, LexFlag::AssumeInt),
-            (FteFlag::Macroinstrings, LexFlag::MacroInStrings),
-            (FteFlag::AssumeDouble, LexFlag::AssumeDouble),
-        ]
-        .into_iter()
-        .fold(LexFlags::NONE, |flags, (fte, lex)| {
-            flags.with(lex, self.is_on(fte))
-        })
+    /// [`Self::compiler_flags`] from the table, the priorities aside.
+    fn read_compiler_flags(&self) -> CompilerFlags {
+        FLAGS.iter().zip(self.on).fold(
+            CompilerFlags::default().with(FteFlag::Qcfuncs, false),
+            |flags, (row, on)| flags.with(row.flag, on),
+        )
     }
 
     /// Sets the first row of `compiler_flag[]` whose abbreviation is `name` in any case, as a
     /// command-line option does, whether or not it may change mid-compile; nothing when no row
-    /// is so named (FTEF-14.71).
-    pub(crate) fn set_named(&mut self, name: &[u8], on: bool) {
-        if let Some(row) = FLAGS
+    /// is so named (FTEF-14.72). Returns whether a row is.
+    pub(crate) fn set_named(&mut self, name: &[u8], on: bool) -> bool {
+        let row = FLAGS
             .iter()
-            .find(|row| row.name.as_bytes().eq_ignore_ascii_case(name))
-        {
+            .find(|row| row.name.as_bytes().eq_ignore_ascii_case(name));
+        if let Some(row) = row {
             self.set(row.flag, on);
         }
+        row.is_some()
     }
 
     /// Sets `flag`, in every row that names it.
-    fn set(&mut self, flag: FteFlag, on: bool) {
+    pub(crate) fn set(&mut self, flag: FteFlag, on: bool) {
         for (row, slot) in FLAGS.iter().zip(self.on.iter_mut()) {
             if row.flag == flag {
                 *slot = on;
             }
         }
         self.read = Read {
-            lex: self.read_lex_flags(),
+            compiler: self.read_compiler_flags(),
             hash_only: self.is_on(FteFlag::Hashonly),
             no_file_line: self.is_on(FteFlag::Nopragmafileline),
         };
@@ -166,9 +224,11 @@ impl FlagSettings {
     /// `on` sets each flag, `disable` or `off` clears it, any other STATE is "compiler flag state
     /// not recognised"; each NAME is the first row of `compiler_flag[]` whose name it is in any
     /// case, "keyword/flag NAME not recognised" when none, and "Cannot enable/disable
-    /// keyword/flag via a pragma" when its row lacks `FLAG_MIDCOMPILE`. Returns the warnings.
-    pub(crate) fn apply_pragma(&mut self, message: &[u8]) -> Vec<String> {
+    /// keyword/flag via a pragma" when its row lacks `FLAG_MIDCOMPILE`. Returns the warnings
+    /// and the flags it set, in order.
+    pub(crate) fn apply_pragma(&mut self, message: &[u8]) -> (Vec<String>, Vec<FteFlag>) {
         let mut warnings = Vec::new();
+        let mut set = Vec::new();
         let state = com_parse(message, 0).and_then(|(state, at)| {
             let on = match state.to_ascii_lowercase().as_slice() {
                 b"enable" | b"on" => true,
@@ -179,7 +239,7 @@ impl FlagSettings {
         });
         let Some((on, mut at)) = state else {
             warnings.push("compiler flag state not recognised".to_owned());
-            return warnings;
+            return (warnings, set);
         };
         while let Some((name, next)) = com_parse(message, at) {
             at = next;
@@ -187,14 +247,22 @@ impl FlagSettings {
                 .iter()
                 .find(|row| row.name.as_bytes().eq_ignore_ascii_case(&name))
             {
-                Some(row) if row.mid_compile => self.set(row.flag, on),
+                Some(row) if row.mid_compile => {
+                    self.set(row.flag, on);
+                    // FTEF-21.4: `if (compiler_flag[f].enabled == &flag_cpriority)
+                    // QCC_PrioritiseOpcodes();`
+                    if row.flag == FteFlag::Cpriority {
+                        self.prioritise();
+                    }
+                    set.push(row.flag);
+                }
                 Some(_) => {
                     warnings.push("Cannot enable/disable keyword/flag via a pragma".to_owned());
                 }
                 None => warnings.push(format!("keyword/flag {} not recognised", lossy(&name))),
             }
         }
-        warnings
+        (warnings, set)
     }
 }
 
@@ -271,27 +339,38 @@ pub(crate) fn opcode_warnings(message: &[u8]) -> Vec<String> {
 /// is "Unknown target 'NAME'. Ignored." with FTEQCC's list, and a revision past the format's
 /// highest "target revision N is unknown, assuming revision M". The switch to or from a Hexen II
 /// format after the first statement, which FTEQCC refuses, is the compiler's to see. Returns the
-/// warnings, which have no name.
-pub(crate) fn target_warnings(message: &[u8]) -> Vec<String> {
+/// format it sets, if any, and the warnings, which have no name.
+pub(crate) fn target_warnings(message: &[u8]) -> (Option<TargetFormat>, Vec<String>) {
     let name = com_parse(message, 0)
         .map(|(name, _)| name)
         .unwrap_or_default();
+    match target_named(&name) {
+        Some((format, warning)) => (Some(format), warning.into_iter().collect()),
+        None => (
+            None,
+            vec![format!(
+                "Unknown target '{}'. Ignored.\nValid targets are: ID, HEXEN2, FTE, FTEH2, KK7, DP(patched)",
+                lossy(&name)
+            )],
+        ),
+    }
+}
+
+/// `QCC_OPCodeSetTargetName(name)`: the format of the row of `targets[]` that `name` names in any
+/// case, with an optional `_` and revision after it (`fte_24`), and the warning "target revision N
+/// is unknown, assuming revision M" for a revision past the format's highest; `None` when no row
+/// is so named.
+pub(crate) fn target_named(name: &[u8]) -> Option<(TargetFormat, Option<String>)> {
     let (base, revision) = match name.iter().position(|&b| b == b'_') {
         Some(at) => (
             name.get(..at).unwrap_or_default(),
             name.get(at.saturating_add(1)..),
         ),
-        None => (name.as_slice(), None),
+        None => (name, None),
     };
-    let Some(&(_, format, default)) = TARGETS
+    let &(_, format, default) = TARGETS
         .iter()
-        .find(|(target, _, _)| target.as_bytes().eq_ignore_ascii_case(base))
-    else {
-        return vec![format!(
-            "Unknown target '{}'. Ignored.\nValid targets are: ID, HEXEN2, FTE, FTEH2, KK7, DP(patched)",
-            lossy(&name)
-        )];
-    };
+        .find(|(target, _, _)| target.as_bytes().eq_ignore_ascii_case(base))?;
     // `ver?atoi(ver):targets[i].defaultrev`, kept as an `unsigned int`.
     let revision = revision.map_or(default, |text| {
         u32::from_le_bytes(fte_atoi(text).to_le_bytes())
@@ -306,13 +385,9 @@ pub(crate) fn target_warnings(message: &[u8]) -> Vec<String> {
         | TargetFormat::Kk7
         | TargetFormat::Qtest => 0,
     };
-    if revision > max && revision != u32::MAX {
-        vec![format!(
-            "target revision {revision} is unknown, assuming revision {max}"
-        )]
-    } else {
-        Vec::new()
-    }
+    let warning = (revision > max && revision != u32::MAX)
+        .then(|| format!("target revision {revision} is unknown, assuming revision {max}"));
+    Some((format, warning))
 }
 
 /// `bytes` as text, each byte that is no UTF-8 replaced.
