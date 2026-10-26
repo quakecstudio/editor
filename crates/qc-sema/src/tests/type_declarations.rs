@@ -933,3 +933,27 @@ fn an_enumerator_in_another_case_is_another_name() {
 fn a_negative_width_is_accepted() {
     assert_eq!(errors("struct S { int a : -1; };", &[]), []);
 }
+
+// spec FTEF-7.5, FTEF-19.35: a typedef's declarator `(name)` is a parameter that names no type
+#[test]
+fn a_typedef_with_a_parenthesised_name_is_refused() {
+    assert_eq!(errors("typedef float (t);", &[]), [Code::E0203]);
+    assert_eq!(
+        errors("typedef float t; typedef t (u);", &[]),
+        [Code::E0203]
+    );
+    for source in [
+        "typedef void() fn; fn g = { return; };",
+        "typedef void() fn; fn g = #6;",
+        "typedef void() fn; typedef fn fn2; fn2 g = { return; };",
+        "typedef void() fn; fn g = [1, g] {};",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+        assert_eq!(errors(source, &["-Fcaseinsens"]), [], "{source}");
+    }
+    // Through a macro; under `-Fcaseinsens` the macro `FN` takes `fn` too (dc0e5fd).
+    assert_eq!(
+        errors("#define FN void()\ntypedef FN fn; fn g = { return; };", &[]),
+        []
+    );
+}

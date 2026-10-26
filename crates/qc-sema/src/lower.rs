@@ -1690,6 +1690,14 @@ fn lower_typedef(td: &ast::TypedefDecl, cx: Cx<'_>, out: &mut FileDecls) {
             .syntax()
             .children()
             .all(|n| !matches!(n.kind(), SyntaxKind::StructType | SyntaxKind::EnumDecl));
+    // FTEF-19.35: `typedef float (t);` is `float(t)`, whose parameter `t` names no type.
+    if td.declarators().next().is_none()
+        && let Some(t) = &node
+    {
+        let mut raw = RawDecl::new(String::new(), t.syntax().span(), cx.ty(t));
+        raw.type_only = true;
+        out.decls.push(raw);
+    }
     for declarator in td.declarators() {
         let Some(token) = declarator.name() else {
             continue;

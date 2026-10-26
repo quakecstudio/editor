@@ -235,7 +235,7 @@ impl Parser<'_> {
                 && (self.type_word(n).is_some()
                     || self.scalar_name(n).is_some()
                     || REGISTERED_TYPES.iter().any(|name| named(name))
-                    || self.types.iter().any(|(name, _)| named(name)))
+                    || self.types.iter().any(|t| named(&t.name)))
         })
     }
 
@@ -610,7 +610,7 @@ impl Parser<'_> {
         // FTEF-21.7: `if (flag_qcfuncs && QCC_PR_CheckToken ("("))`, at the token after the
         // type's words and `*`s.
         let qcfuncs = self.flag_ahead(0, FteFlag::Qcfuncs);
-        let function = qcfuncs && self.at_function_params();
+        let function = (qcfuncs && self.at_function_params()) || self.type_function;
         // FTEF-18.15: `QCC_PR_ParseDefs` loops `while(QCC_PR_CheckToken ("("))`, so each
         // further parameter list makes a function returning the type so far.
         while function && self.at_function_params() {
@@ -695,6 +695,7 @@ impl Parser<'_> {
     /// words, `struct`/`union` and a tag, or a type name. False, consuming nothing, when the
     /// token starts none. Each keyword is read with the keywords in force (FTEF-20.8).
     fn fte_base_type(&mut self) -> bool {
+        self.type_function = false;
         let Some(tok) = self.current() else {
             return false;
         };
@@ -791,6 +792,9 @@ impl Parser<'_> {
         if !self.fte_type_name(0) {
             return false;
         }
+        // FTEF-7.5: a typedef of a function type is one (`type->type == ev_function` after
+        // `QCC_TypeForName`), so a body, state or builtin may follow its declarator.
+        self.type_function = self.declared_function(0);
         self.start_node(K::SimpleType);
         self.bump();
         self.finish_node();

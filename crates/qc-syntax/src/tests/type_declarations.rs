@@ -385,3 +385,39 @@ fn many_declaration_lines_in_one_block_parse_quickly() {
     assert_eq!(parsed.syntax().text(), source.as_bytes());
     assert!(started.elapsed().as_secs() < 5);
 }
+
+// spec FTEF-7.5: a definition whose type is a typedef of a function type takes a body, a state
+// header or a builtin, as any function does, through a chain of typedefs too, and a typedef
+// whose declarator is `(name)` is refused as any such type is
+#[test]
+fn a_typedef_of_a_function_type_defines_functions() {
+    accepts(&[
+        "typedef void() fn; fn g = { return; };",
+        "typedef void() fn; fn g = { ; };",
+        "typedef void() fn; fn g = { float x; };",
+        "typedef void() fn; fn g = { 1; };",
+        "typedef void() fn; fn g = { g(); };",
+        "typedef void() fn; fn g = #6;",
+        "typedef void() fn; fn g : 6;",
+        "typedef void() fn; fn g = [1, g] {};",
+        "typedef void() fn; fn g = [$a1, g] {};",
+        "typedef float(float) fn; fn g = { return 1; };",
+        "typedef void(float a) fn; fn g = { a = 1; };",
+        "typedef void() fn; static fn g = { return; };",
+        "typedef void() fn; var fn g = { return; };",
+        "typedef void() fn; fn g = {}, h = { return; };",
+        "typedef void() fn; void() g = { fn h = { return; }; };",
+        "typedef void() fn; void() g = { local fn h = { return; }; };",
+        "typedef void() fn; class C { fn m = { return; }; };",
+        "typedef void() fn; class C { virtual fn m = { return; }; };",
+        "typedef void() fn; class C { static fn m = { return; }; };",
+        "typedef void() fn; class C { fn m; }; fn C::m = { return; };",
+        "typedef void() fn; struct S { float a; static fn m = { return; }; };",
+        "typedef void() fn; extern \"C\" { fn g = { return; }; }",
+        "typedef void() fn; extern \"QC\" { fn g = { return; }; }",
+        "typedef void() fn; typedef fn fn2; fn2 g = { return; };",
+        "void() g = { typedef void() fn; fn h = { return; }; };",
+        "typedef void() fn; fn g = {};",
+    ]);
+    assert_ne!(errors("typedef void() fn; fn g = { 1 };"), []);
+}

@@ -256,6 +256,16 @@ struct TypeShape {
     qcfuncs: bool,
 }
 
+/// A type the program declared (FTEF-20.14, FTEF-7.5).
+#[derive(Clone, Debug)]
+struct DeclaredType {
+    name: String,
+    /// Whether a function's body declared it, which only that body sees.
+    local: bool,
+    /// Whether it is a function type: a typedef of one, or of C's function pointer.
+    function: bool,
+}
+
 /// What a parsed expression is, for the checks on assignments and initialisers.
 #[derive(Clone, Copy, Debug)]
 struct Expr {
@@ -322,8 +332,11 @@ pub(crate) struct Parser<'a> {
     flags: Vec<(usize, CompilerFlags)>,
     /// The types the program defined so far, each with whether a function's body defined it,
     /// which only that body sees: `QCC_TypeForName` finds a typedef in the scope it was made
-    /// in (FTEF-20.14).
-    types: Vec<(String, bool)>,
+    /// in (FTEF-20.14), and whether it is a function type, whose definitions take a body
+    /// (FTEF-7.5).
+    types: Vec<DeclaredType>,
+    /// Whether the base type last read is a declared type of function type (FTEF-7.5).
+    type_function: bool,
     /// The `extern` blocks read, in the order they ended (FTEF-21.17).
     blocks: Vec<Block>,
     /// The bytes, in increasing order, strings start at that FTEQCC's lexer did not read into
@@ -425,6 +438,7 @@ impl<'a> Parser<'a> {
             after_bitfield: false,
             member_global: false,
             member_function: false,
+            type_function: false,
             class_name: None,
             brace_close,
         };
@@ -1590,10 +1604,7 @@ impl<'a> Parser<'a> {
         let mut ty = ty;
         let pointer = self.declarator_head(&mut ty, first);
         let mut name = self.found();
-        if self.name() && self.in_typedef {
-            // FTEF-7.3: a `typedef`'s declarator defines the type `name`.
-            self.declare_type(name.clone());
-        }
+        let named = self.name();
         if pointer {
             // `name = QCC_PR_ParseName (); if (QCC_PR_CheckToken ("[")) { ... } QCC_PR_Expect
             // (")"); ... if (QCC_PR_CheckToken ("(")) type = QCC_PR_ParseFunctionType(...)`
@@ -1629,6 +1640,11 @@ impl<'a> Parser<'a> {
             ty.function = true;
         }
         if self.in_typedef {
+            // FTEF-7.3: a `typedef`'s declarator defines the type `name`, a function type when
+            // the type or the declarator's parameter lists make one (FTEF-7.5).
+            if named {
+                self.declare_type_shaped(name, ty.function);
+            }
             // `if (istypedef) { ...; def = NULL; continue; }`: no initialiser or body is read.
             self.finish_node();
             return ty.function;
@@ -2080,14 +2096,43 @@ impl<'a> Parser<'a> {
         if function {
             self.bodies = self.bodies.saturating_sub(1);
             if self.bodies == 0 {
-                self.types.retain(|(_, local)| !local);
+                self.types.retain(|t| !t.local);
             }
         }
     }
 
     /// Records that the program defined the type `name` here (FTEF-20.14).
     fn declare_type(&mut self, name: String) {
-        self.types.push((name, self.bodies > 0));
+        self.declare_type_shaped(name, false);
+    }
+
+    /// Records that the program defined the type `name` here, a function type when `function`
+    /// (FTEF-7.5).
+    fn declare_type_shaped(&mut self, name: String, function: bool) {
+        self.types.push(DeclaredType {
+            name,
+            local: self.bodies > 0,
+            function,
+        });
+    }
+
+    /// Whether the token `n` ahead names a declared type of function type, in any case under
+    /// `caseinsens` (FTEF-7.5, FTEF-19.33): the last declaration of the name counts.
+    fn declared_function(&self, n: usize) -> bool {
+        let any_case = self.any_case(n);
+        self.nth(n).is_some_and(|tok| {
+            self.types
+                .iter()
+                .rev()
+                .find(|t| {
+                    if any_case {
+                        t.name.eq_ignore_ascii_case(&tok.text)
+                    } else {
+                        t.name == tok.text
+                    }
+                })
+                .is_some_and(|t| t.function)
+        })
     }
 
     fn block_inner(&mut self, function: bool) {

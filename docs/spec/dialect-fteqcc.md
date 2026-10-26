@@ -388,6 +388,22 @@ dialect aliases any type.
   `QCC_PR_ParseEntClass`'s type (FTEF-9.8). Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_PR_ParseDefs`.
+- **FTEF-7.5** A definition whose type is a typedef of a function type is a function:
+  `QCC_PR_ParseDefs` reads the type with `QCC_PR_ParseType`, which finds the typedef's type
+  (`QCC_TypeForName`), and then tests the type, not its spelling (`type->type == ev_function`), so
+  `{`, `[` and `#` after the declarator are the function's body, state header and builtin, and `=
+  {` its body: `typedef void() fn; fn g = { return; };`, `fn g = #6;`, `fn g : 6;`, `fn g = [1, g]
+  {};`, `typedef float(float) fn; fn g = { return 1; };`, `typedef void(float a) fn; fn g = { a =
+  1; };`, with `static` or `var`, in a body, as a class member or a struct's `static` or `virtual`
+  member, in `extern "C"` and `extern "QC"` blocks, through a chain `typedef fn fn2;`, through a
+  macro, and from a typedef a body makes, under no option, `-Fcaseinsens` and `qcfuncs` off; `fn g
+  = { 1 };` is a body missing a `;`. The typedef's declarator may be C's `(*name)(params)`
+  (FTEF-21.7) or `name(params)`, which make the function type. A typedef whose declarator is
+  `(name)` is a function type whose parameter `name` is no type, "expected function arg list" as
+  `T (name);` is (FTEF-19.35): `typedef float (t);` and `typedef float t; typedef t (u);` are
+  refused. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseDefs`; `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseType`.
 
 ## FTEF-8 `enum`, `enumflags` and typed or scoped enums
 
