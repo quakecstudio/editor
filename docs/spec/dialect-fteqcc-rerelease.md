@@ -400,11 +400,9 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   `if (QCC_PR_CheckToken("("))` ... `type = QCC_PR_ParseFunctionType(false, type);`. The type is
   the one `rettype(params) name` declares, so a C-style definition and a vanilla prototype
   (`void() InitLightStyles;` in `rerelease-mg3/world.qc`) are the same function (QC-11.5).
-- **FTE-17.2** A function declarator's body may follow it without `=`:
-  `isinitialised = QCC_PR_CheckToken ("=") || ((type->type == ev_function) && (pr_token[0] ==
-  '{' || pr_token[0] == '[' || pr_token[0] == ':'));`. This holds for both orders,
-  `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
-  (`rerelease-mg1/defs.qc`).
+- **FTE-17.2** **Withdrawn** (P2-133, #574): it let a `[` right after a function declarator's
+  name be its state header, but `QCC_PR_ParseDefs` reads the array suffix there first, for every
+  type, so an array of functions was refused; replaced by FTE-17.7.
 - **FTE-17.3** The `;` after a function declaration is optional: `QCC_PR_ParseDefs` ends with
   `if (type->type == ev_function) QCC_PR_CheckTokenComment (";", ...)`, which takes a `;` if
   there is one. A `;` before a definition is skipped (`while (QCC_PR_CheckToken(";")) ;` at the
@@ -447,6 +445,20 @@ builtins by name, `void localsound( entity client, string sample ) = #0:ex_local
   `#0x1000001i` as 16777217 and `#4294967313i` as 17, and rejects `#16u`, `#16l` and `#16ll`;
   built for arm64 it binds `#2147483648` as 2147483647, where the x86 result of VM-9.2 is the
   rule.
+- **FTE-17.7** A function declarator's body, state header or builtin may follow it without `=`
+  once its array suffixes are read: after the name `QCC_PR_ParseDefs` runs `if (!arraysize &&
+  QCC_PR_CheckToken ("[")) { dynlength = QCC_PR_ParseDefArray(&type, name, istypedef,
+  istypedef||isstatic);` for every type, and only then `isinitialised = QCC_PR_CheckToken ("=") ||
+  ((type->type == ev_function) && (pr_token[0] == '{' || pr_token[0] == '[' || pr_token[0] ==
+  ':'));`. So a `[` right after the name is the array suffix: `void() h = {}; void() g[2] = { h, h
+  };` declares an array of two functions, as do `g[]`, `*g[2]`, `void(float a) g[2]`, with `static`, `var` or `const`, with `{ h }` or `{}`, a two-dimensional one with braces per dimension (`g[2][2] = { { h, h }, { h, h } }`, and `{ h, h, h, h }` is "expected {, found h", FTEF-19.8), through a typedef
+  (`typedef void() fn; fn g[2] = { h, h };`, `fn *g[2]`, `typedef fn fns[2]; fns g = { h, h };`),
+  and `g[0]()` calls an element; one with no initialiser, `void() x[2];`, holds functions with no body ("function x has no body", FTEF-17.11); `void() g [1, g] {};` and `$frame a1 void() g [$a1, g] { };` are
+  refused, `1, g` being no array size. With no suffix the body, state header and builtin follow as
+  before, in both orders, `void InitLightStyles() { ... }` and `void(entity e) remove { ... }`
+  (`rerelease-mg1/defs.qc`), `void() g = [1, g] {};`, `void() g { };` and `void() g : 6;`. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
+  `QCC_PR_ParseDefs`.
 
 ## FTE-18 Parameter lists
 

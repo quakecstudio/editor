@@ -269,7 +269,8 @@ fn c_type_words_name_registered_types() {
 // spec FTEF-20.11: a class's member words are read in any case and after `__`
 #[test]
 fn class_member_words_lower_as_the_parser_read_them() {
-    let class = "class C { virtual: __STATIC void() m; float x; };\nvoid() C::m = { x = 1; };\n";
+    let class =
+        "class C { virtual: __STATIC void() m; float x; };\nvoid() C::m = { this.x = 1; };\n";
     assert_eq!(errors(class, &[]), []);
     let label = "class C { __VIRTUAL: void() m; };\nvoid() C::m = {};\n";
     assert_eq!(errors(label, &[]), []);

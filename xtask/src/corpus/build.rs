@@ -239,7 +239,7 @@ mod tests {
         );
         let kept = std::fs::read(dest.join("progs/id-1.01/progs.dat")).unwrap();
         assert_eq!(kept, progs);
-        assert_eq!(qcc.seen.borrow().as_slice(), ["qcc"]);
+        assert_eq!(qcc.seen.lock().unwrap().as_slice(), ["qcc"]);
     }
 
     #[test]

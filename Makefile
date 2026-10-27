@@ -22,7 +22,7 @@ check: ## Type-check every target
 	$(CARGO) check --locked --workspace --all-targets --all-features
 
 test: ## Run every test
-	$(CARGO) test --locked --workspace --all-features
+	$(CARGO) nextest run --locked --workspace --all-features
 
 test-integration: ## Run the cross-crate integration tests (qs-tests)
 	$(CARGO) test --locked --package qs-tests

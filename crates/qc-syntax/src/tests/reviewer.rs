@@ -6,7 +6,7 @@
 
 use super::{Program, errors};
 use crate::QC_MAX_NESTING;
-use crate::ast::{AstNode as _, Builtin};
+use crate::ast::{AstNode, Builtin, Declarator};
 use crate::kind::SyntaxKind as K;
 use crate::{Code, Dialect, SyntaxNode, parse_with};
 
@@ -477,4 +477,563 @@ fn reviewer_nested_extern_blocks_stop_at_the_limit_on_a_small_stack() {
             );
         }
     }
+}
+
+// The eighth P2-R2 review's tests (TEST-9). Each program was run through the pinned FTEQCC
+// first (`cargo xtask oracles builtins --record`, a scratch family, macOS arm64) and the test
+// asserts what FTEQCC did: the first list of each test compiles there, the second does not.
+
+/// The codes of the errors `source` gets under the FTEQCC profile, after checking that the
+/// tree gives back every byte.
+fn fte_codes(source: &str) -> Vec<Code> {
+    let parsed = parse_with(source.as_bytes(), Dialect::Fteqcc);
+    assert_eq!(parsed.syntax().text(), source.as_bytes(), "{source}");
+    parsed.errors().map(|d| d.code).collect()
+}
+
+// spec FTEF-18.34: a struct, class, enum or function body that has its `}` is read whole
+// whatever its columns, so a member or a local at column 0 is one and the declaration after
+// the `}` is the file's; a body that lost its `}` ends at the next declaration line with an
+// error. The pinned FTEQCC compiles the closed forms and refuses the open ones
+#[test]
+fn reviewer_a_closed_body_keeps_its_column_0_members() {
+    for source in [
+        "struct S {\nfloat a;\n\nfloat x;\n};\nfloat y;\n",
+        "class C {\nfloat a;\nvoid() m = {\nfloat b;\nthis.a = b;\n};\n};\nfloat x;\n",
+        "enum E {\nA,\nB\n};\nfloat x;\n",
+        "void() g = {\nstruct S {\nfloat a;\n} x;\nx.a = 1;\n};\n",
+        "void() g = {\n{\n{\nfloat a;\n}\n}\n};\n\nfloat y;\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "struct S {\nfloat a;\n\nfloat x;\n",
+        "struct S {\nfloat a;\n\nvoid() g = {};\n",
+        "class C {\nfloat a;\n\nfloat x;\n",
+        "void() g = {\n\tfloat a = 1;\n\nvoid() h = {\n\tfloat a = 2;\n};\n",
+    ] {
+        assert_eq!(fte_codes(source), [Code::E0204], "{source}");
+    }
+}
+
+// spec FTEF-20.14: `struct`, `union`, `class`, `typedef`, `enum`, a struct body's labels and
+// its `static` and `virtual` are keywords `QCC_PR_CheckKeyword` finds in any case under
+// `caseinsens` and names without it. The pinned FTEQCC compiles each under `-Fcaseinsens`
+// and refuses each without
+#[test]
+fn reviewer_type_keywords_and_labels_are_found_in_any_case_under_caseinsens() {
+    for source in [
+        "STRUCT S { float a; };\n",
+        "Struct S { float a; };\n",
+        "UNION U { float a; };\n",
+        "CLASS C { float a; };\n",
+        "TYPEDEF float t;\n",
+        "Typedef float t; t x;\n",
+        "ENUM E { A };\n",
+        "struct S { PUBLIC: float a; };\n",
+        "struct S { Private: float a; };\n",
+        "class C { PUBLIC: float a; };\n",
+        "class C { Protected: : float a; };\n",
+        "class C { VIRTUAL void() m = {}; };\n",
+        "class C { Static float a; };\n",
+        "struct S { STATIC float a; float b; };\n",
+        "struct S { Virtual void() m = {}; float b; };\n",
+        "struct P { float a; }; STRUCT S : P { float b; };\n",
+    ] {
+        assert_eq!(errors(&fte_case(source, true)), vec![], "{source}");
+        assert!(
+            fte_case(source, false).errors().next().is_some(),
+            "{source}"
+        );
+    }
+}
+
+// spec FTEF-6.7: a struct body's member may be a nested class, struct, union, enum or
+// accessor, with or without a declarator, to any depth, a pointer to the struct itself and a
+// bitfield after a `,` or with an expression's width; a class in a class, a typedef in a
+// struct, a width with no name and a `,` after a width are refused. The pinned FTEQCC agrees
+#[test]
+fn reviewer_nested_types_are_members_as_parse_struct_reads_them() {
+    for source in [
+        "struct S { class C { float a; } c; };\n",
+        "struct S { class C { float a; }; };\n",
+        "class C { struct S { float a; } *p; };\n",
+        "struct S { struct T { struct U { float a; } u; } t; };\n",
+        "struct S { struct T { struct U { float a; }; }; };\n",
+        "struct S { struct { struct { float a; }; }; };\n",
+        "struct S { union { struct { float a; float b; }; vector v; }; };\n",
+        "struct S { struct T { float a; } t[2]; };\n",
+        "struct S { struct T { float a; } *t, u; };\n",
+        "struct S { struct S *next; };\n",
+        "struct S { S *next; };\n",
+        "struct S { enum E { A } e; };\n",
+        "struct S { accessor A : float; };\n",
+        "struct S { int a, b : 3; };\n",
+        "struct S { int a : (1 + 2); };\n",
+        "struct S { int a : 1 + 2; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "class C { class D { float a; }; };\n",
+        "struct S { typedef float t; t x; };\n",
+        "struct S { int : 3; };\n",
+        "struct S { int a : 3, b; };\n",
+        "struct S { float a : 3 = 1; };\n",
+        "class C { ;; };\n",
+        "class C { float a;; float b; };\n",
+        "struct {};\n",
+        "struct;\n",
+        "struct S;;\n",
+        "struct S { float a; };;\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}
+
+// spec FTEF-7.4: a typedef's declarators are any definition's, through chains, arrays, fields
+// and enums, and `typedef` is read any number of times; a name may be both a type and a
+// variable or be defined twice as one type; the forms `QCC_PR_ParseDefs` refuses are refused.
+// The pinned FTEQCC agrees on each
+#[test]
+fn reviewer_typedef_declarators_are_any_definition_s() {
+    for source in [
+        "typedef float t; typedef t u; typedef u v; v x = 1;\n",
+        "typedef float t[2]; typedef t u[3]; u x;\n",
+        "typedef typedef typedef float tt; tt x;\n",
+        "typedef float t; t t;\n",
+        "typedef float t; typedef t t;\n",
+        "typedef float t, t;\n",
+        "typedef float T, t;\n",
+        "typedef float t,;\n",
+        "typedef float t typedef;\n",
+        "typedef struct S { float a; } S; S x;\n",
+        "typedef struct S { float a; } s; s x; S y;\n",
+        "typedef .float ft; .ft f2;\n",
+        "typedef float t; .t f2;\n",
+        "typedef enum { A } E, *PE;\n",
+        "typedef enum E : int { A } T;\n",
+        "typedef enumflags { A } E;\n",
+        "typedef enum class E : float { A } T; T x = E::A;\n",
+        "typedef accessor A : float { get float x = { return 1; } } B;\n",
+        "void() g = { if (1) typedef float t; };\n",
+        "void() g = { while (0) typedef float t; };\n",
+        "typedef float t\nfloat x;\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "typedef, float t;\n",
+        "typedef float, t;\n",
+        "typedef float t, , u;\n",
+        "typedef float t u;\n",
+        "typedef float t = 1, u;\n",
+        "typedef float typedef t;\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}
+
+// spec FTEF-9.8, FTEF-6.8: a struct's or class's name, with or without its keyword, stands
+// before a field's `.` and as a function's return type; after a body `x = { 1 }, y = { 2 }`
+// and `x[2] = { { 1 }, { 2 } }` are its declarators; a constructor is the member named exactly
+// as the class, and a `~` or a `= {}` on it is refused; a `}` with no `;` before a declaration
+// is refused and a definition's missing `;` before a line is not. The pinned FTEQCC agrees
+#[test]
+fn reviewer_a_type_name_stands_before_fields_functions_and_initialisers() {
+    for source in [
+        "struct S { float a; }; .S f2;\n",
+        "struct S { float a; }; .struct S f2;\n",
+        "class C { float a; }; .C f2;\n",
+        "class C { float a; }; .class C f2;\n",
+        "struct S { float a; }; S() h = #6;\n",
+        "struct S { float a; }; S *() h = #6;\n",
+        "class C { float a; }; C() h = #6;\n",
+        "class C { float a; }; class C() h = #6;\n",
+        "struct P { float a; }; void(struct S : P { float b; } x) h = #6;\n",
+        "struct P { float a; }; struct S : P { float b; } x;\n",
+        "struct S { float a; } x = { 1 }, y = { 2 };\n",
+        "struct S { float a; } x[2] = { { 1 }, { 2 } };\n",
+        "struct S { float a; } x\nfloat b;\n",
+        "struct S { float a; }; S S;\n",
+        "class C { float a; } C;\n",
+        "class C { float C; };\n",
+        "class C { void() C = {}; };\n",
+        "struct { float a; };\n",
+        "union { float a; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [], "{source}");
+    }
+    for source in [
+        "class C { ~C(); };\n",
+        "class C { void() ~C; };\n",
+        "class C { C() = {}; };\n",
+        "struct S { float a; }\nfloat b;\n",
+        "struct S { float a; } float b;\n",
+        "class C { float a; }\nfloat b;\n",
+        "enum E { A }\nfloat b;\n",
+        "struct S { float a; } x, struct T { float b; } y;\n",
+        "struct P { float a; }; struct : P { float b; } x;\n",
+        "struct P { float a; }; typedef struct : P { float b; } T;\n",
+        "struct P { float a; }; struct S : struct P { float b; };\n",
+    ] {
+        assert_ne!(fte_codes(source), [], "{source}");
+    }
+}
+
+// The eighth review's tests for the mutants the qc-syntax measurement of `60e4985` left
+// (Readiness run 40421258086): each pins a branch the earlier tests reached but did not check.
+
+/// Parses `source` under the FTEQCC profile.
+fn eighth(source: &str) -> crate::Parse {
+    parse_with(source.as_bytes(), Dialect::Fteqcc)
+}
+
+/// The codes of every error of `source` under the FTEQCC profile.
+fn eighth_codes(source: &str) -> Vec<Code> {
+    eighth(source).errors().map(|d| d.code).collect()
+}
+
+/// The first node of kind `N` in `source` under the FTEQCC profile.
+fn eighth_first<N: AstNode>(source: &str) -> N {
+    eighth(source)
+        .syntax()
+        .descendants()
+        .find_map(N::cast)
+        .unwrap()
+}
+
+/// Parses `source` under the FTEQCC profile with `qcfuncs` off from its first byte.
+fn qcfuncs_off(source: &str) -> crate::Parse {
+    let edit = qc_preproc::FlagEdit::of_flags(
+        &[qc_preproc::FteFlag::Qcfuncs],
+        qc_preproc::CompilerFlags::default().with(qc_preproc::FteFlag::Qcfuncs, false),
+    );
+    crate::parse_preprocessed_flagged(source.as_bytes(), Dialect::Fteqcc, &[(0, edit)], &[], &[])
+}
+
+/// The names of `declarators`.
+fn names(declarators: impl Iterator<Item = Declarator>) -> Vec<String> {
+    declarators
+        .map(|d| String::from_utf8_lossy(d.name().unwrap().text()).into_owned())
+        .collect()
+}
+
+// spec FTEF-15.6: a class, enum or accessor declaration declares the variables after its body,
+// and the view gives each one
+#[test]
+fn reviewer_eighth_class_enum_and_accessor_views_give_their_declarators() {
+    use crate::ast::{AccessorDecl, ClassDecl, EnumDecl};
+    let class: ClassDecl = eighth_first("class C { float a; } c1, c2;");
+    assert_eq!(names(class.declarators()), ["c1", "c2"]);
+    let r#enum: EnumDecl = eighth_first("enum { A, B } e1, *e2;");
+    assert_eq!(names(r#enum.declarators()), ["e1", "e2"]);
+    let accessor: AccessorDecl = eighth_first("accessor A : float { get float x = f; } a1;");
+    assert_eq!(names(accessor.declarators()), ["a1"]);
+}
+
+// spec FTEF-18.33: `switch` takes any statement as its body under FTEQCC, and the view gives
+// the statement, or the block when the body is one
+#[test]
+fn reviewer_eighth_switch_view_gives_its_statement_or_block() {
+    use crate::ast::SwitchStmt;
+    let source = "float a;\nvoid() f = { switch (a) return; };";
+    assert_eq!(eighth_codes(source), []);
+    let switch: SwitchStmt = eighth_first(source);
+    assert_eq!(
+        switch.statement().map(|s| s.syntax().kind()),
+        Some(K::ReturnStmt)
+    );
+    assert!(switch.block().is_none());
+    let source = "float a;\nvoid() f = { switch (a) { case 1: break; } };";
+    assert_eq!(eighth_codes(source), []);
+    let switch: SwitchStmt = eighth_first(source);
+    assert!(switch.block().is_some());
+    assert_eq!(
+        switch.statement().map(|s| s.syntax().kind()),
+        Some(K::Block)
+    );
+    // Vanilla reads only a `{` body: with none the switch holds an empty block and the
+    // statement after it is the function's.
+    let vanilla = "float a;\nvoid() f = { switch (a) return; };";
+    let parsed = parse_with(vanilla.as_bytes(), Dialect::Vanilla);
+    let switch = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == K::SwitchStmt)
+        .unwrap();
+    assert_eq!(
+        switch.children().map(|n| n.kind()).collect::<Vec<_>>(),
+        [K::NameRef, K::Block]
+    );
+    assert_eq!(
+        switch
+            .descendants()
+            .filter(|n| n.kind() == K::ReturnStmt)
+            .count(),
+        0
+    );
+}
+
+// spec FTEF-21.7: `(*name)` is C's function pointer form and the view counts its `*`s, after
+// any `*`s of the type and before the name, and no `(` means no form
+#[test]
+fn reviewer_eighth_pointer_form_counts_the_stars_inside_the_parentheses() {
+    use crate::ast::StructDecl;
+    let source = "struct S { float a; } *(*x)(float), (**y)(float), *p;";
+    let parsed = qcfuncs_off(source);
+    assert_eq!(parsed.errors().count(), 0);
+    let decl = parsed
+        .syntax()
+        .descendants()
+        .find_map(StructDecl::cast)
+        .unwrap();
+    assert_eq!(
+        decl.declarators()
+            .map(|d| d.pointer_form())
+            .collect::<Vec<_>>(),
+        [Some(1), Some(2), None]
+    );
+}
+
+// spec FTEF-6.7: a `static` or `virtual` member of function type takes a body or a state
+// header after `=`, any other member an expression; a member with neither reads on
+#[test]
+fn reviewer_eighth_static_members_take_a_body_only_when_functions() {
+    let function =
+        "struct S { float a; static void() m = { return; }; static void() n = [1, n] {}; };";
+    assert_eq!(eighth_codes(function), []);
+    let value = "struct S { float a; static float c = 1; static vector v = '1 2 3'; };";
+    assert_eq!(eighth_codes(value), []);
+    // A `{` after `=` of a member of another type is read as an expression, which it is not,
+    // never as a body.
+    let braces = "struct S { float a; static vector v = { 1, 2, 3 }; };";
+    assert_eq!(eighth_codes(braces), [Code::E0201]);
+    let bare = "struct S { float a; static float b { 1 }; };";
+    assert_eq!(eighth_codes(bare), [Code::E0204]);
+    let statements = "struct S { float a; static float b { return; }; };";
+    assert_eq!(eighth_codes(statements), [Code::E0204]);
+    let bodyless = "struct S { float a; static void() m { return; }; };";
+    assert_eq!(eighth_codes(bodyless), []);
+}
+
+// spec FTEF-8.5: `enum class` with no `:` after its name is "expected :" and the body is not
+// read as enumerators
+#[test]
+fn reviewer_eighth_a_strict_enum_without_a_colon_reads_no_enumerators() {
+    let parsed = eighth("enum class E { A, B };");
+    assert_eq!(
+        parsed.errors().map(|d| d.code).collect::<Vec<_>>(),
+        [Code::E0204]
+    );
+    assert!(
+        !parsed
+            .syntax()
+            .descendants()
+            .any(|n| n.kind() == K::Enumerator)
+    );
+    let parsed = eighth("enum class E : int { A, B };");
+    assert_eq!(parsed.errors().count(), 0);
+    assert_eq!(
+        parsed
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::Enumerator)
+            .count(),
+        2
+    );
+}
+
+// spec FTEF-16.9: a `for` initialiser that starts with `const`, `volatile`, a class keyword or
+// a tagged type declares a local, each word on its own
+#[test]
+fn reviewer_eighth_each_type_form_starts_a_for_initialiser() {
+    for init in [
+        "const float i = 0",
+        "class C i",
+        "struct S i",
+        "union U i",
+        "accessor A i",
+    ] {
+        let source = format!(
+            "class C {{ float a; }}; struct S {{ float a; }}; union U {{ float a; }};\n\
+             accessor A : float {{ get float x = f; }};\n\
+             void() f = {{ for ({init}; 0; ) {{ }} }};"
+        );
+        let parsed = eighth(&source);
+        assert_eq!(
+            parsed.errors().map(|d| d.code).collect::<Vec<_>>(),
+            [],
+            "{init}"
+        );
+        assert!(
+            parsed
+                .syntax()
+                .descendants()
+                .any(|n| n.kind() == K::LocalDecl),
+            "{init}: no local"
+        );
+    }
+    // `volatile` starts a declaration there too, which the local's reader then refuses as a
+    // qualifier it does not take; an expression would be refused otherwise.
+    let volatile = "void() f = { for (volatile float i = 0; 0; ) { } };";
+    assert_eq!(eighth_codes(volatile), [Code::E0204, Code::E0201]);
+    // In a cast and after `sizeof` each word on its own names a type too (FTEF-2.11: the
+    // `const` is ignored); `volatile` is read as a type form and then refused in the cast.
+    assert_eq!(
+        eighth_codes("void() f = { float x; x = (const float) 1; x = sizeof(const float); };"),
+        []
+    );
+    assert_eq!(
+        eighth_codes("void() f = { float x; x = (volatile float) 1; };"),
+        [Code::E0204]
+    );
+}
+
+// spec FTEF-9.9: `public`, `private`, `protected` and `virtual:` are labels, `virtual` without
+// a `:` a qualifier; labels before the class's `}` are "is not a type"
+#[test]
+fn reviewer_eighth_class_labels_and_members() {
+    assert_eq!(
+        eighth_codes(
+            "class C { public: float a; private: float b; protected: : float c; virtual: float d; nonvirtual: float e; virtual void() m; };"
+        ),
+        []
+    );
+    let labels = |source: &str| {
+        eighth(source)
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::AccessLabel)
+            .count()
+    };
+    assert_eq!(
+        labels(
+            "class C { public: float a; private: float b; protected: : float c; virtual: float d; nonvirtual: float e; virtual void() m; };"
+        ),
+        5
+    );
+    assert_eq!(eighth_codes("class C { public: };"), [Code::E0203]);
+    assert_eq!(
+        eighth("class C { public: };")
+            .syntax()
+            .descendants()
+            .map(|n| n.kind())
+            .collect::<Vec<_>>(),
+        [K::SourceFile, K::ClassDecl, K::AccessLabel]
+    );
+    assert_eq!(eighth_codes("class C { public: private: };"), [Code::E0203]);
+    assert_eq!(eighth_codes("class C { };"), []);
+    assert_eq!(eighth_codes("class C { float a; };"), []);
+}
+
+// spec FTEF-9.4, FTEF-6.8, FTEF-10.6: a constructor is the class's own name before `(void);`,
+// `struct float` is `float`, a pointer to a struct is no "Struct or union in class", and an
+// accessor with its base where a member's type stands is refused
+#[test]
+fn reviewer_eighth_class_member_types() {
+    assert_eq!(eighth_codes("class C { C(); };"), []);
+    assert_eq!(eighth_codes("class C { D(); };"), [Code::E0203]);
+    assert_eq!(
+        eighth_codes("struct S { float a; }; class C { struct S s; };"),
+        [Code::E0254]
+    );
+    assert_eq!(
+        eighth_codes("struct S { float a; }; class C { struct S *p; };"),
+        []
+    );
+    assert_eq!(
+        eighth_codes("class C { struct float a; struct int b; float *p; float c; };"),
+        []
+    );
+    assert_eq!(
+        eighth_codes("class C { accessor A : float x; };"),
+        [Code::E0258]
+    );
+    assert_eq!(
+        eighth_codes("accessor A : float { get float x = f; }; class C { accessor A x; };"),
+        []
+    );
+    // get and set members, inline or not, are accessor members, not declarations
+    assert_eq!(
+        eighth_codes(
+            "class C { get float x = f; set float y = g; inline get float z = h; inline set float w = k; };"
+        ),
+        []
+    );
+}
+
+// spec FTEF-18.34: a construct keyword at column 0 ends a body that lost its `}`; a plain name
+// at column 0 is a statement, and under the vanilla profile every name is
+#[test]
+fn reviewer_eighth_only_construct_words_end_a_lost_body() {
+    let statement = "float x;\nvoid() f = {\n\tfloat y;\nx = 1;\n};\n";
+    assert_eq!(eighth_codes(statement), []);
+    // With no `}` at all the statement is still the body's, and only the end of the text is
+    // missing.
+    let unclosed = "float x;\nvoid() f = {\n\tfloat y;\nx = 1;\n";
+    assert_eq!(eighth_codes(unclosed), [Code::E0201]);
+    assert_eq!(
+        eighth(unclosed)
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::FunctionBody)
+            .count(),
+        1
+    );
+    let lost = "struct S {\n\tfloat a;\ntypedef float t;\nfloat z;\n";
+    assert!(
+        eighth_codes(lost).contains(&Code::E0204),
+        "{:?}",
+        eighth_codes(lost)
+    );
+    let vanilla = "float class;\nvoid() f = {\n\tlocal float y;\nclass = 1;\n};\n";
+    assert_eq!(
+        parse_with(vanilla.as_bytes(), Dialect::Vanilla)
+            .errors()
+            .map(|d| d.code)
+            .collect::<Vec<_>>(),
+        []
+    );
+}
+
+// spec FTEF-15.1: at file level a type word alone, with no declarator, is read as a
+// declaration and its missing name reported, not as "is not a type"
+#[test]
+fn reviewer_eighth_a_bare_type_word_is_a_declaration() {
+    assert_eq!(eighth_codes("float = 1;"), [Code::E0201]);
+    assert_eq!(eighth_codes("float 1;"), [Code::E0201]);
+    assert_eq!(eighth_codes("[1, f] void() g = {};"), [Code::E0203]);
+}
+
+// spec FTEF-6.7: a `,` with no type before it is "element missing type"; `static` members do
+// not count towards "has no members"
+#[test]
+fn reviewer_eighth_struct_member_counting() {
+    assert_eq!(
+        eighth_codes("struct S { , float a; };"),
+        [Code::E0201, Code::E0203]
+    );
+    assert_eq!(eighth_codes("struct S { float a, b; };"), []);
+    assert_eq!(eighth_codes("struct S { static float a; };"), [Code::E0243]);
+    assert_eq!(
+        eighth_codes("struct S { static float a, b; };"),
+        [Code::E0243]
+    );
+    assert_eq!(eighth_codes("struct S { static float a; float b; };"), []);
+    assert_eq!(eighth_codes("struct S { float a; };"), []);
+}
+
+// spec FTEF-6.8, FTEF-21.7: with `qcfuncs` on a member `(*name)(params)` is "expected function
+// arg list", `(name)(params)` and `**name` are not; with it off `(*name)` is C's form
+#[test]
+fn reviewer_eighth_qcfuncs_decides_the_member_pointer_form() {
+    assert_eq!(
+        eighth_codes("struct S { float (*fp)(float); };"),
+        [Code::E0204]
+    );
+    assert_eq!(eighth_codes("struct S { float (fp)(float); };"), []);
+    assert_eq!(eighth_codes("struct S { float **pp; float *p; };"), []);
+    let parsed = qcfuncs_off("struct S { float (*fp)(float); };");
+    assert_eq!(parsed.errors().map(|d| d.code).collect::<Vec<_>>(), []);
 }

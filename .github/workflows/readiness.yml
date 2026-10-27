@@ -180,7 +180,10 @@ jobs:
     permissions:
       contents: read
     strategy:
-      fail-fast: false
+      # One OS failing to measure ends the run: the ratchet needs all three.
+      # The mutation shards above keep fail-fast off, since each shard is an
+      # independent measurement the ratchet judges on its own.
+      fail-fast: true
       matrix:
         include:
           - name: linux

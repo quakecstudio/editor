@@ -64,7 +64,7 @@ const TWO_CLASSES: &str = "\
 entity self;
 class A { float m; };
 class B { float m; nonvirtual void Touch(void); };
-class C { A inner; static A Get(void); };
+class C { A inner; static A Get(void) = #5; };
 B b;
 B *pb;
 B inner;
@@ -186,7 +186,7 @@ fn a_constructor_is_a_member_named_after_its_class() {
 // names are the class's members, and a name that is none is "Unknown value".
 #[test]
 fn an_inline_member_body_resolves_in_its_class() {
-    let source = "class M { float count; nonvirtual void Bump(void) = { count = count + 1; \
+    let source = "class M { float count; nonvirtual void Bump(void) = { this.count = this.count + 1; \
                   nope = 2; }; };\n";
     let index = fte_index_of(source);
     assert_eq!(messages(&index), ["Unknown value \"nope\""]);
@@ -240,14 +240,14 @@ fn an_accessor_member_may_name_its_function() {
     assert!(!initialized("box::set_size"));
 }
 
-// spec FTEF-17.2: `Class::member` declares a member the class does not, of the kind its type
+// spec FTEF-17.14: `Class::member` declares a member the class does not, of the kind its type
 // gives, and a later `Class::member` refers to it; a scope that is no class names the global
 // `Scope::member`.
 #[test]
 fn a_scoped_definition_adds_a_member_or_a_global() {
     let source = "class A { float x; };\n\
                   float A::extra;\nfloat A::extra;\n\
-                  void A::Extra(void);\nvoid A::Extra(void) { extra = 1; };\n\
+                  void A::Extra(void);\nvoid A::Extra(void) { this.extra = 1; };\n\
                   float Other::g = 1;\nvoid() f = { local float n = Other::g; };\n";
     let index = fte_index_of(source);
     // FTEF-19.15: a member the class does not declare is a warning, and a scope that is no

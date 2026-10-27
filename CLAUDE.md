@@ -249,6 +249,15 @@ after its `code-review` self-review is recorded in the PR body (`work-issue`), e
 | Agent rules, skills, subagents, hooks | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/` |
 | Issue and PR templates | `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md` |
 
+## Knowledge base
+
+`../quakecstudio-kb` (the `quakecstudio/kb` repository) holds decisions, dead ends, gotchas,
+runbooks and conventions distilled from past sessions across the project's repositories. Read
+it before designing or debugging, starting at its `index.md` and the directory indexes, with
+`rg` over its markdown for a term; [`docs/agents/README.md`](docs/agents/README.md#the-knowledge-base)
+has the queries. It is read-only from this repository (`.claude/settings.json` denies Edit and
+Write there); it is refreshed by its own skill and pull requests.
+
 ## Specifications
 
 Cached in `specs/`, byte-identical to their origins (`specs/README.md`); grep there before

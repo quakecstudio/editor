@@ -983,7 +983,7 @@ mod tests {
         );
     }
 
-    // spec FTE-17.2: a body after `)` or after a vanilla type's name, with no `=`; a vanilla
+    // spec FTE-17.7: a body after `)` or after a vanilla type's name, with no `=`; a vanilla
     // `= {` body and a `typedef struct {` are not.
     #[test]
     fn a_body_without_eq_is_classified() {

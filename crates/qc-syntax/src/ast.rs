@@ -1152,6 +1152,12 @@ impl ClassDecl {
     pub fn accessor_members(&self) -> impl Iterator<Item = AccessorMember> {
         children(&self.0)
     }
+
+    /// The variables declared with the class as their type, `class C { ... } a, *b;`
+    /// (FTEF-9.8).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
+        children(&self.0)
+    }
 }
 
 impl StructDecl {
@@ -1184,6 +1190,11 @@ impl AccessorDecl {
 
     /// The members, in order.
     pub fn members(&self) -> impl Iterator<Item = AccessorMember> {
+        children(&self.0)
+    }
+
+    /// The variables declared with the accessor as their type (FTEF-10.1).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
         children(&self.0)
     }
 }
@@ -1489,6 +1500,12 @@ impl SwitchStmt {
     pub fn block(&self) -> Option<Block> {
         child(&self.0)
     }
+
+    /// The body when it is no block, `switch (e) statement` (FTEF-18.33).
+    #[must_use]
+    pub fn statement(&self) -> Option<Stmt> {
+        self.0.children().find_map(Stmt::cast)
+    }
 }
 
 impl CaseLabel {
@@ -1627,35 +1644,9 @@ impl AggregateInit {
 }
 
 impl TypedefDecl {
-    /// The type's name (FTE-14.1): the last name token in the declaration.
-    #[must_use]
-    pub fn name(&self) -> Option<SyntaxToken> {
-        self.0.child_tokens().filter(|t| t.kind() == K::Name).last()
-    }
-
-    /// How many `*` come before the name and any `(` (FTEF-7.1, FTEF-21.7).
-    #[must_use]
-    pub fn pointer_depth(&self) -> usize {
-        head_stars(&self.0)
-    }
-
-    /// The parameter lists before the name (FTEF-21.7).
-    #[must_use]
-    pub fn prefix_params(&self) -> Vec<ParamList> {
-        prefix_lists(&self.0, self.name().as_ref())
-    }
-
-    /// For C's function pointer `typedef T (*name)(params)`, how many `*` the parentheses hold
-    /// before the name (FTEF-21.7); `None` for any other.
-    #[must_use]
-    pub fn pointer_form(&self) -> Option<usize> {
-        pointer_form(&self.0)
-    }
-
-    /// The parameter list after the name, of C's function pointer (FTEF-21.7).
-    #[must_use]
-    pub fn params(&self) -> Option<ParamList> {
-        suffix_list(&self.0, self.name().as_ref())
+    /// The declarators, in order: each defines a type (FTEF-7.3).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
+        children(&self.0)
     }
 }
 
@@ -1675,5 +1666,10 @@ impl EnumDecl {
     /// The enumerators, in order (FTE-15.1).
     pub fn enumerators(&self) -> impl Iterator<Item = SyntaxNode> {
         self.0.children().filter(|n| n.kind() == K::Enumerator)
+    }
+
+    /// The variables `enum E { ... } a, *b;` declares at file level (FTEF-8.5).
+    pub fn declarators(&self) -> impl Iterator<Item = Declarator> {
+        children(&self.0)
     }
 }

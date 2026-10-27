@@ -1592,6 +1592,29 @@ issues:
   verify:
   - cargo test -p qc-preproc
   - cargo mutants -p qc-preproc --profile mutants -F 'undefined_word_size|supports_extern|of_code'
+- key: P2-138
+  title: Run the builtin differential's cases across the cores
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  - TEST-6
+  summary: |
+    The builtin differential (`cargo xtask oracles builtins`) grew to 76,487 cases with P2-133 (#581), and `xtask/src/oracles/builtins.rs` runs them one at a time: `check_where` loops over `cases()` calling `oracle` for each, which writes a project directory, spawns fteqcc or qcc through `Exec::output_within` and reads the `progs.dat`, and `compare` walks every case through the profile the same way. On that PR CI's "Run cargo test --workspace" step went from 11 to 22 minutes to 64 minutes on Linux and "Build and check the oracles" from 6 to 9 minutes to 33, on 4-core runners whose other three cores sat idle. The xtask test `the_profile_agrees_with_the_recorded_oracles` runs `compare` on every host.
+  depends:
+  - P2-133
+  deliverable:
+  - 'xtask/src/oracles/builtins.rs: the oracle loop of `check_where` and `compare` run their cases on `std::thread::available_parallelism()` threads under `std::thread::scope`, with no new dependency; each worker compiles in a work directory of its own, so no two runs share a `progs.src` or `progs.dat`; the results are collected in case order into the same map and tally, so the printed lines, the FAIL lines and the recorded fixture are byte for byte those of the serial run'
+  - 'xtask/src/exec.rs: `Exec` is `Sync`, so an `Oracles` can be shared by the workers, and the test `Fake` keeps what it saw behind a `Mutex`'
+  acceptance:
+  - 'The xtask tests with the canned `answering` fake pass unchanged, and a test shows the parallel `compare` gives the tally of a serial walk and the parallel oracle loop records the fixture a serial walk records'
+  - 'The PR records `cargo test -p xtask the_profile_agrees_with_the_recorded_oracles` timed before and after on the same host, and the time of `cargo xtask oracles builtins` where the oracles are built'
+  verify:
+  - cargo test -p xtask
+  - cargo xtask oracles builtins
 - key: P2-24
   title: Phase 2 gate review
   labels:
@@ -1731,7 +1754,11 @@ issues:
   - P2-133
   - P2-134
   - P2-135
+  - P2-136
   - P2-137
+  - P2-138
+  - P2-146
+  - P2-145
   deliverable:
   - docs/gates/p2.md with conformance results, compiler differential results, benchmark history, updated risk register
   acceptance:
@@ -2835,3 +2862,72 @@ issues:
   - 'A test citing the new statement and QCD-2.1 lexes `"a\` CR at the end of input and gets exactly one E0101, and fails before the fix'
   verify:
   - cargo test -p qc-lexer
+- key: P2-136
+  title: Check struct values, member accesses and C function forms as FTEQCC does
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found while making P2-133's type declaration family of the builtin differential (`xtask/src/oracles/builtins/types.rs`), against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`, macOS arm64). The semantic model accepts programs FTEQCC refuses, each about a value's type or an operator rather than a declaration, so P2-133 left them out of its cases: (1) the address of a struct, `struct S { float a; }; S x, *p = &x;`, `void() g = { S s; local S *p = &s; p.a = 1; };`, `p->a`, `(*p).a` and a parent's pointer to a child, `struct P { float a; }; struct S : P { float b; }; void() g = { S s; local P *p = &s; };` ("Address-of operator is not supported in this form without extensions"); (2) a bitfield read or written under the id target, `struct S { int a : 3; }; void() g = { S s; s.a = 1; };` ("BitandInt function not defined: cannot emulate int&int"); (3) a struct member called, `S s; s.a();` ("not a function"), and a struct assigned a value of another struct, `S s; T t; t = s;` ("Cannot cast from struct S to struct T"); (4) an aggregate with more elements than the array or struct has, `float x[2] = {1, 2, 3};` and `struct S { float a; }; S x = {1, 2};` (read as "Missing semicolon at end of definition" and ""2" is not a type"); (5) a label written twice, `void() g = { l: ; l: ; };` ("Duplicate label l", then "invalid label name ";""), a second `default:`, `switch (1) { default: default: ; }` ("Duplicated default case"), a `case` of another type than the switch's, `switch (1) { case "a": ; }` ("Implicit type mismatch. Needed float, got string."), and two parameters of one name, `void(float a, float a) g = { };` ("Duplicate definition of a."); (6) the names of an anonymous union member under `-Fcaseinsens`, `struct S { union { float a; vector v; }; float A; }; S x; void() g = { x.a = 1; x.A = 2; };` ("multiple members found matching", FTEF-6.11 names the anonymous member's names as not followed); (7) an accessor's `set` member with a parameter list, `accessor A : float { get float x = {}; set void(float v) y = {}; };` ("expected =, found ("); and (8) with `qcfuncs` off, C's function definitions and pointers in a body, `void() g = { void x() {} };`, `void() g = { float x(float) { return 1; } };`, `void() g = { float (*x)(float); x(1); };`, `void() g = { entity (*x)(); };` and `float (*x)(float)(float);`, which FTEQCC accepts and the parser refuses, and `const float (*x)(float);`, which FTEQCC refuses ("Conflicting constness", "function x has no body") and the model accepts.
+  depends:
+  - P2-133
+  - P2-134
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs`, `lower.rs`), crates/qc-syntax for group 8, and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-16, FTEF-18, FTEF-19 and FTEF-21: each program above compiled or refused as the pinned FTEQCC does, or named in a spec statement as outside the profile with its reason, each a spec statement quoting the source and a citing test; the programs back in `types.rs` as cases'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema -p qc-syntax
+  - cargo xtask oracles builtins
+- key: P2-146
+  title: Stop CI at the first failing test
+  labels:
+  - repo
+  - area:process
+  - type:chore
+  size: S
+  reqs:
+  - QA-1
+  summary: |
+    A CI run with one failing unit test runs every other test to the end on all three operating systems before it reports, and a failing build target lets the other targets build on. The run's verdict is known at the first failure; what follows only holds runners that other pull requests and the merge queue are waiting for.
+  depends:
+  - P2-123
+  deliverable:
+  - '.github/workflows/ci.yml: `fail-fast: true` on the Unit Tests and Build matrices, so the first failing OS or target cancels its siblings; the workspace tests and the light path''s xtask tests run with cargo-nextest (`cargo nextest run --locked --workspace --all-features`, a pinned version through the existing taiki-e/install-action step) with its fail-fast default, so a job stops scheduling tests after the first failure; doc tests kept with `cargo test --doc` only if the workspace has any'
+  - '.github/workflows/readiness.yml: `fail-fast: true` on the flakes matrix; the mutation shards stay at `fail-fast: false`, since each shard is an independent measurement'
+  - 'xtask/src/ci.rs and docs/ci.md: the test step and the skip name mirror the workflow''s command; a `.config/nextest.toml` only if the defaults need changing'
+  acceptance:
+  - 'The Unit Tests, Build and Readiness flakes matrices set `fail-fast: true` and the Readiness mutation matrix keeps `fail-fast: false`'
+  - 'The Unit Tests job runs the workspace tests with cargo-nextest at a pinned version, and the xtask test `every_step_ci_skips_runs_in_another_job_with_the_same_command` holds the `cargo xtask ci` test step to the same command'
+  - 'actionlint and zizmor pass on both workflows'
+  verify:
+  - cargo test -p xtask ci::
+  - actionlint .github/workflows/ci.yml .github/workflows/readiness.yml
+  - zizmor .github/workflows/
+- key: P2-145
+  title: Check struct, class and typedef uses as FTEQCC does in the semantic model
+  labels:
+  - L3-semantics
+  - area:language
+  - type:feature
+  size: M
+  reqs:
+  - LANG-5
+  summary: |
+    Found by the eighth P2-R2 readiness review (docs/readiness/p2-r2.md) on PR #581's branch (9aefebc), against the pinned FTEQCC (fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `fteqcc -Tid`, macOS arm64), with about 2,300 programs of the review's own around the `types` family of the builtin differential (`cargo xtask oracles builtins --record`, a scratch family); the parser reports nothing for any of them, so they are the semantic model's, beside P2-134 and P2-136. The model accepts where FTEQCC refuses: (1) a struct's array member sized by zero or by a name, `struct S { float a[0]; };`, `struct S { float a[A]; };`; (2) a typedef, struct or enum made in a body used after it or in an enclosing block, `void() g = { typedef struct S { float a; } T; }; S y;`, `void() g = { typedef enum { A } E; }; float x = A;`, `void() g = { { typedef float t; } t x; };`; (3) a class given its body again without its parent, `class C { float a; }; class D : C { float b; }; class D { float b; };`, a `virtual` override of a member the parent declared without `virtual`, `class C { void() m = {}; }; class D : C { virtual void() m = {}; };`, a member defined with another function type than declared, `class C { void(float x) m; }; void() C::m = {};` and `void(vector x) C::m = {};`, and a constructor defined with the class as its return type, `class C { C(); }; C() C::C = {};`; (4) a class member read as a constant initialiser or through the class, `class C { float a; }; float x = C::a;`, `class C { static float a; }; float x = C::a;` (and with `= 1`), `local float x = c::a;` under `-Fcaseinsens`; a member named before its declaration in a member function, `class C { void() m = { n(); }; void() n = {}; };`, `this.n()` and `this.a = 1;` before `float a;`; (5) a class member initialised with a value other than the literal `0`, `class C { float a = 0.0; };` and `float a = -0;` (FTEQCC refuses, "Can only initialise member functions": `QCC_SRef_IsNull` is false for them), while `vector v = '0 0 0';` is accepted by FTEQCC and refused by the model; (6) a class's field member or array member assigned as a value, `class C { .float f; }; ... c.f = 1;`, `class C { float a[2]; }; ... c.a = 1;`, a class value as a float, `local float x = c;`, and a class with the parent `vector`, `string` or `void` under `-Fcaseinsens`; (7) a struct's member reached through a pointer, a double pointer, an index or a cast, `local S *p = 0; p->a`, `p.a`, `(*p).a`, `p[0].a`, `*p`, `p[0]`, `(**pp).a`, `(*pp)->a`, `pp->a`, `pp[0][0].a`, pointer arithmetic `p + 1`, `p++`, the address of a member or a local `&x.a`, `&x`, `&x[0]`, `&p` and the casts `(S *)&y`, `(S *)&x.a`, `(float *)&x`, `(S *)1`, `(S *)1.5`, `(S *)'1 2 3'`, `(entity)p` and `(float)p` ("Address-of operator is not supported in this form without extensions" and "Cannot cast", the class P2-136 (1) names, here through every operator); (8) a struct compared, `if (x == y)`, passed where a float is taken or a float where a struct is, `void(float a) h; h(x);`, `void(S s) h; h(1);`, and an aggregate with more values than the struct, its parent's members included, or its array has, `struct S : P { float b; } x = { 1, 2 };`, `struct T { S s; } x = { 1 };`, `{ 1, 2, 3 }` for two members, `{ 1, 1, 2, 3 }` for a float and a vector, `struct S { float a[2]; } x = { 1, 2 };`; (9) a bitfield written, `struct S { int a : 3; } x; ... x.a = 1;` (P2-136 (2), at file level); (10) a call of a call, `typedef void() fn; fn(fn a) h = { return a; }; void() g = { h(g)(); };`, and the address of a function, `fn *p; ... p = &g;`. The model refuses where FTEQCC accepts: a struct's static member through its name, `struct S { static float a; float b; }; void() g = { S::a = 1; };`; a struct made in a body beside a typedef used in the same body, `void() g = { typedef struct S { float a; } T; T x; S y; };`; a vector member's suffix on a class, `class C { vector v; }; ... c.v_x = 1;`, `c.v_y`; `.length` on an array of structs, `S x[2]; ... x.length`; and, with `qcfuncs` off, a struct parameter's member written, `void(S s) h = { s.a = 1; }; ... h(x);`, and a typedef'd function type as a parameter or a return type, `void(fn callback) h = { callback(); }`, `fn(fn a) h = { return a; };`. On #581's fixed commit (4cd591d) the model also refuses a typedef whose declarator is `(name)` after a type that took its parameter list, `typedef void() (fn);` and `typedef float() (fn); fn g = { return 1; };`, which FTEQCC compiles (FTEF-19.35's "expected function arg list" is for a type that has not read a list yet), and accepts `typedef float() fn; fn g = { return 1; }; float x = g();`, which FTEQCC refuses ("initializer is not constant").
+  depends:
+  - P2-134
+  - P2-136
+  deliverable:
+  - 'crates/qc-sema (`resolve.rs`, `lower.rs`) and docs/spec/dialect-fteqcc.md FTEF-6, FTEF-7, FTEF-9, FTEF-17, FTEF-19 and FTEF-21: each program above compiled or refused as the pinned FTEQCC does, or named in a spec statement as outside the profile with its reason, each a spec statement quoting the source and a citing test; the programs in `xtask/src/oracles/builtins/types.rs` as cases'
+  acceptance:
+  - 'Each group of programs above compiles, or is refused, as the pinned FTEQCC compiles it, or is a stated divergence with its reason, each with a test citing the statement it pins'
+  - 'The builtin differential (`cargo xtask oracles builtins`) holds these programs as cases with 0 unexplained differences'
+  verify:
+  - cargo test -p qc-sema
+  - cargo xtask oracles builtins

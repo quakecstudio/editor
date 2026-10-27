@@ -126,6 +126,55 @@ on every case but those the statements QC-27.8, QC-27.9, FTEF-13.8 and FTEF-14.4
 | `PR_FindType`, the `COMPLEX TYPE` definition it makes | `QCC_PR_FindType` makes none | none: no name a program sees | QC-10.6 |
 | `PR_CompileFile`, the recovery point set after the first token | Set before it | `qc_syntax` (QC-27.1) | QC-24.7, QC-27.1 |
 
+## 4. The type declaration region (P2-133, P2-134)
+
+The checks FTEQCC makes on the types and statements of [`inventory-l2.md`](inventory-l2.md)'s
+last section, each as a row, with the source's own words where they decide it. They are the
+`types` family of the builtin differential (`xtask/src/oracles/builtins/types.rs`) and the unit
+tests of `crates/qc-sema/src/tests/type_declarations.rs`. A row is **ported** or **not
+modelled**, the second with the statement that says why.
+
+| FTEQCC function | Behaviour | Rust | Statements | Differential | Status |
+| --- | --- | --- | --- | --- | --- |
+| `QCC_PR_ParseStruct` | `QCC_PR_ParseError(ERR_NOTANAME, "Parent type %s was not yet defined", parentname)` and "Parent type %s is not a struct" | `Resolver::declare_struct` | FTEF-6.10, QCD-3.45, QCD-3.46 | `HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `else if (parenttype && newt->parentclass != parenttype) QCC_PR_ParseError(ERR_NOTANAME, "Redeclaration of struct with different parent type");` | `Resolver::declare_struct` | FTEF-6.10, QCD-3.47 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `if (type == newt \|\| ((type->type == ev_struct \|\| type->type == ev_union) && !type->size)) QCC_PR_ParseWarning(ERR_NOTANAME, "type %s not fully defined yet", type->name);` | `Resolver::incomplete_struct` | FTEF-6.10, QCD-3.52 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `bits > 64`: "too many bits"; a type that is no `ev_integer`, `ev_uint`, `ev_int64` or `ev_uint64`: "bitfields must be integer types" | `Resolver::check_struct_members`, `Resolver::bitfield_type` | FTEF-6.9, QCD-3.48 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `if (typecmp_strict(newt, oldtype)) QCC_PR_ParseError(ERR_NOTANAME, "%s %s redeclared differently", ...)`, the old type any with a size | `Resolver::declare_struct`, `Resolver::sized_type_named` | FTEF-6.10, QCD-3.44 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | a struct written in a function lasts to the block's end (`typedefed` cleared) | not modelled: FTEF-6.10 (a struct a body writes is not compared, its scope is the block's) | FTEF-6.10 | none: not compared | not modelled |
+| `QCC_PR_FindStructMember` | `if (r) break; ... "multiple members found matching %s.%s"`, `stricmp` under `flag_caseinsensitive`, anonymous members searched, the parent chained | `Resolver::struct_matches` | FTEF-6.11, QCD-4.16 | `PROGRAMS` | ported |
+| `QCC_PR_FindStructMember` | the members of an anonymous struct or union member | not modelled: FTEF-6.11 (only a struct's own members are searched; an anonymous member's are names for any struct) | FTEF-6.11 | none: not compared | not modelled |
+| `QCC_PR_ParseEntClass` | `if (QCC_PR_CheckToken("=")) havebody = true;` ... `QCC_Error(ERR_INTERNAL, "Can only initialise member functions");` unless `isnull` | `Resolver::declare_class` | FTEF-9.10, QCD-3.53 | `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseEntClass` | `QCC_PR_ParseError(ERR_NOTANAME, "Parent class %s was not yet defined"` and "is not a class/entity", "Parent class changed on redeclaration" | `Resolver::check_parent` | FTEF-9.7, QCD-3.40, QCD-3.41, QCD-3.42 | `CLASS_HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | a member function with no body: "function %s has no body" | `Resolver::check_undefined_functions` | FTEF-19.41, FTEF-17.11 | `CLASS_MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseValue` | a name of a type is no value: "Unknown value" | `Resolver::resolve_value`, `UseKind::TypeOrValue` | FTEF-19.38, FTEF-17.1 | `PROGRAMS` | ported |
+| `QCC_PR_ParseValue` | in a member function a field is `this.field`, a nonvirtual member function its bare name | `Resolver::lookup_in_scope_exactly` | FTEF-17.14 | `CLASS_MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseFunctionCall` | "not a function" for a float, vector, string, entity or struct callee | `Resolver::not_callable` | FTEF-19.40, QCD-4.17 | `PROGRAMS` | ported |
+| `QCC_PR_ParseFunctionCall` | the type of a call's arguments and result, "type mismatch on parm" | not modelled: FTEF-19.32 (an expression's type is the compiler's) | FTEF-19.32 | none: not compared | not modelled |
+| `QCC_PR_ParseEnum` | `QCC_PR_ParseError(ERR_TOOMANYINITIALISERS, "%s::%s already declared", enumtype->name, name)` for a value that differs | `Resolver::declare_enum_item` | FTEF-19.36, QCD-3.49 | `PROGRAMS` | ported |
+| `QCC_PR_ParseEnum` | the name read as the base type when it names a type already | `Resolver::declare_type_name` | FTEF-19.10 | `PROGRAMS` | ported |
+| `QCC_PR_ParseInitializerDef` | "initializer for 'y' is not constant" for an element of a variable | `Resolver::check_value` | FTEF-19.39 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `Cannot redeclare typedef %s from %s to %s` in any case under `caseinsens` | `Resolver::declare_type_name` | FTEF-19.9, FTEF-19.33 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | a type with no declarator is still read: "expected function arg list", "is not a type" | `Resolver::check_type_names` | FTEF-19.35 | `PROGRAMS` | ported |
+| `QCC_PR_ParseDefs` | `QCC_PR_FinaliseFunction` "function %s has no body" for a type a typedef names, C's function pointer typedef among them | `Resolver::declare_top_level` | FTEF-19.41 | `PROGRAMS` | ported |
+| `QCC_PR_ParseState` | a state in a member names a member function declared before it; one that is no `void()` is a type mismatch; in another case under `caseinsens` | `Resolver::declare_next_think` | FTEF-19.42 | `PROGRAMS` | ported |
+| `QCC_PR_ParseImmediateStatements` | `if (num_breaks) ... "%s: function contains illegal breaks"`, and `continues`, `cases` | `lower::illegal_jump`, `lower::lower_block` | FTEF-21.19, QCD-4.14, QCD-4.15, QCD-4.18 | `PROGRAMS` | ported |
+| `QCC_TryEvaluateCast`, `QCC_EvaluateCast` | a struct or union cast to or from another type, a constant 0 included: "Cannot cast from %s to %s"; an aggregate `{ ... }` initialises one | `Resolver::check_value`, `UseKind::CastTo` | FTEF-6.12, QCD-3.13 | `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | `if (newt && newt->num_parms != 0) redeclaration = true;` for a struct's name, "Parent class changed"; another sized type's name takes the members and its `spawnfunc_` has no body | `Resolver::declare_class`, `Resolver::sized_type_named` | FTEF-9.12, QCD-3.42 | `CLASS_HEADS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseType` | an accessor's base: "Accessor %s cannot be based upon %s" for none, a struct or a union, "basic type mismatch" for another than the first, "Type %s cannot be redefined as an accessor" | `Resolver::declare_accessor`, `lower::accessor_base` | FTEF-10.6, QCD-3.54 | `PROGRAMS` | ported |
+| `QCC_PR_RefTerm` | a cast's or `sizeof`'s type read with `silentfail`, so a name that is no type is a value, "Unknown value" | `Resolver::check_type_names`, `UseKind::TypeName` | FTEF-19.43 | `TYPE_POSITIONS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | `if (redeclaration) { ... "Incompatible redeclaration of class %s. %s differs." ... "Incompatible redeclaration of class %s." }`, fields and virtual functions compared by name, type and array size | `Resolver::declare_class`, `ClassInfo::shape` | FTEF-9.13, QCD-3.55 | `CLASS_HEADS`, `CLASS_MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseEntClass` | `basetype = QCC_PR_ParseType(false, false, false)`: a member's type names a type; a struct by its name is "Struct or union in class" | `Resolver::declare_class` | FTEF-9.13, FTEF-9.11 | `CLASS_MEMBERS`, `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseEnum` | `else QCC_PR_ParseError(ERR_NOTANUMBER, "values for enums of this type must be initialised")` for a class or struct base, the legacy form's among them | `Resolver::declare_enum_item`, `Resolver::declare_type_name` | FTEF-19.44, QCD-3.29 | `HEADS`, `MEMBERS`, `TYPE_POSITIONS` | ported |
+| `QCC_PR_ParseDefs` | "Cannot redeclare typedef %s from %s to %s" for a typedef named as a struct, class, accessor or enum, in any case under `caseinsens` | `Resolver::other_type_named` | FTEF-19.9, FTEF-19.33 | `TYPE_POSITIONS`, `PROGRAMS` | ported |
+| `QCC_PR_FindStructMember`, `QCC_PR_ParseField` | `"%s is not a member of %s"` for a name no struct of the chain has; `QCC_PR_Expect("length")` after an array's `.` | `Resolver::resolve_member`, `StructMatch` | FTEF-6.11, QCD-4.19 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | `QCC_PR_IntConstExpr()`: the width's names are values and its literal an integer, "Value is not an integer constant" | `Resolver::check_struct_members` | FTEF-6.9, QCD-3.56 | `MEMBERS`, `PROGRAMS` | ported |
+| `QCC_PR_ParseStruct` | a `virtual` function member is `Struct::member`, "function %s has no body" without one; a `static` or `virtual` member takes a body | `Resolver::check_struct_members`, `Parser::struct_declarator` | FTEF-6.7, FTEF-19.41 | `MEMBERS` | ported |
+| `QCC_PR_ParseType` | an accessor declared with its base as a class member's type, and one with no base anywhere, end FTEQCC | `lower::lower_file` (nested declarations), `Parser::class_member` | FTEF-10.6, QCD-3.54 | `TYPE_POSITIONS`, `CLASS_MEMBERS` | ported |
+| `QCC_PR_ParseStatement` | `break` and `continue` in `do`, `while`, `for`, `loop`, `until`; a `break` in `switch`; the counts a loop consumes | `lower::Flow` | FTEF-21.19 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement` | `goto` with no label, a label twice, `case` outside a `switch` | `lower::lower_stmt`, `Parser::goto_stmt` | FTEF-18.23, FTEF-18.24 | `PROGRAMS` | ported |
+| `QCC_PR_ParseStatement` | locals: a type's name starts a definition, `local` and a duplicate local | `lower::lower_local`, `Resolver::declare_scoped` | FTEF-20.14, FTEF-19.1 | `PROGRAMS` | ported |
+
 ## Functions of the two files off this path
 
 `pr_comp.c`'s `PR_Statement`, `PR_ParseFunctionCall`, `PR_Term`, `PR_Expression` and

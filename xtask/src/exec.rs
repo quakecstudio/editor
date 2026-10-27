@@ -9,8 +9,8 @@ use std::process::{Command, ExitStatus, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Runs a command.
-pub(crate) trait Exec {
+/// Runs a command. `Sync`, so that the oracles can run on several threads at once.
+pub(crate) trait Exec: Sync {
     /// Runs `command` to the end and returns its status and what it wrote.
     fn output(&self, command: &mut Command) -> io::Result<Output>;
 
@@ -103,11 +103,11 @@ pub(crate) use fake::{Fake, Reply};
 
 #[cfg(test)]
 mod fake {
-    use std::cell::RefCell;
     use std::fs;
     use std::io;
     use std::path::PathBuf;
     use std::process::{Command, ExitStatus, Output};
+    use std::sync::{Mutex, PoisonError};
     use std::time::Duration;
 
     use super::Exec;
@@ -138,17 +138,18 @@ mod fake {
     }
 
     /// A stand-in for every program a test runs: `answer` sees each command and says what it
-    /// does. The command lines it saw are kept, in order.
-    pub(crate) struct Fake<F: Fn(&Command) -> Reply> {
+    /// does. The command lines it saw are kept, in order, behind a lock, since a command may
+    /// run on any thread.
+    pub(crate) struct Fake<F: Fn(&Command) -> Reply + Sync> {
         answer: F,
-        pub(crate) seen: RefCell<Vec<String>>,
+        pub(crate) seen: Mutex<Vec<String>>,
     }
 
-    impl<F: Fn(&Command) -> Reply> Fake<F> {
+    impl<F: Fn(&Command) -> Reply + Sync> Fake<F> {
         pub(crate) fn new(answer: F) -> Self {
             Self {
                 answer,
-                seen: RefCell::new(Vec::new()),
+                seen: Mutex::new(Vec::new()),
             }
         }
 
@@ -158,7 +159,10 @@ mod fake {
                 line.push(' ');
                 line.push_str(&arg.to_string_lossy());
             }
-            self.seen.borrow_mut().push(line);
+            self.seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(line);
             let reply = (self.answer)(command);
             if reply.cannot_run {
                 return Err(io::Error::new(io::ErrorKind::NotFound, "no such program"));
@@ -173,7 +177,7 @@ mod fake {
         }
     }
 
-    impl<F: Fn(&Command) -> Reply> Exec for Fake<F> {
+    impl<F: Fn(&Command) -> Reply + Sync> Exec for Fake<F> {
         fn output(&self, command: &mut Command) -> io::Result<Output> {
             let (status, reply) = self.run(command)?;
             Ok(Output {
@@ -282,7 +286,7 @@ mod tests {
             Some(3)
         );
         assert!(fake.output(&mut Command::new("tool")).is_err());
-        assert_eq!(*fake.seen.borrow(), ["tool a b", "tool c", "tool"]);
+        assert_eq!(*fake.seen.lock().unwrap(), ["tool a b", "tool c", "tool"]);
         assert_eq!(Reply::exit(4).code, 4);
     }
 
