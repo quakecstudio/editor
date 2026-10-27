@@ -893,19 +893,21 @@ fn a_bodys_struct_ends_with_the_body() {
     );
 }
 
-// spec FTEF-9.10: the value that makes no "Can only initialise member functions" is the
-// constant 0 however it is written
+// spec FTEF-9.10: the value that makes no "Can only initialise member functions" is `0` or
+// `0i`, as written (FTEF-9.17)
 #[test]
 fn a_null_member_value_is_the_constant_zero() {
+    for source in ["class C { float a = 0; };", "class C { float a = 0i; };"] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
     for source in [
         "class C { float a = 0.0; };",
         "class C { float a = 00; };",
         "class C { float a = 0x0; };",
-        "class C { float a = 0i; };",
+        "class C { float a = 0.5; };",
     ] {
-        assert_eq!(errors(source, &[]), [], "{source}");
+        assert_eq!(errors(source, &[]), [Code::E0257], "{source}");
     }
-    assert_eq!(errors("class C { float a = 0.5; };", &[]), [Code::E0257]);
 }
 
 // spec FTEF-21.7: a struct member written as C's `(*name)(params)` with `qcfuncs` off is a

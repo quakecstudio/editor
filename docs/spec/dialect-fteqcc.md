@@ -370,6 +370,21 @@ inheritance, bitfields and nested members.
   a struct whose array sizes and widths are numbers. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseStruct`; `engine/qclib/qccmain.c`, `QCC_PR_NewType`, `type_size`.
+- **FTEF-6.15** A bitfield member (`int a : N`, FTEF-6.13) narrower than 32 bits is `ev_bitfld`
+  with its bit offset in its word, `bitofs`, as the layout places it. Read, its word is read and
+  extended (`QCC_BitfieldToDef`, `OP_BITEXTEND_I` for an `int`, `OP_BITEXTEND_U` for a `uint`,
+  with `QCC_MakeUIntConst((bitofs<<8)|bits)`, which on a target without them is a left and a
+  right shift, FTEF-27.7). Stored, but through a pointer, the word is read and the value packed
+  into it (`QCC_PR_Statement_BitCopy`): `OP_BITCOPY_I` as a plain statement when the target has
+  it, else `OP_BITAND_I` of the word with `~(((1u<<bits)-1u)<<bitofs)`, `OP_BITAND_I` of the
+  value with `(1u<<bits)-1u`, `OP_LSHIFT_I` by `bitofs` and `OP_BITOR_I`, each folded or
+  emulated as any: on the id target `x.a = 1;` for `struct S { int a : 3; } x;` is the two
+  refused opcodes `BITAND_I` and `BITOR_I`, and `x.b = i;` for a second member at bit 3 also the
+  `MUL_I` of the shift. Through a pointer it is loaded by its width (`QCC_LoadFromPointer`):
+  `OP_LOADP_I8` or `OP_LOADP_U8` for 8 bits, the 16-bit loads for 16, and any other width the
+  fatal error `E0353` "ptr-to-bitfld has unsupported bit depth". A pointer to `__int8`,
+  `__uint8`, `__int16` or `__uint16` is read by the same loads (FTEF-27.10), its index made an
+  integer first and 0 when there is none.
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -621,6 +636,18 @@ heavily class-based (547 `class` declarations across the three mods).
   (`if (isvirt+isnonvirt+isstatic != 1)`). A member function, virtual or not, that nothing
   defines is "function CLASS::NAME has no body" (FTEF-19.41), by the name it is defined as; an
   array of member functions is an array of fields and is not reported.
+- **FTEF-9.18** A `static` or `const` data member is the global `CLASS::NAME` of its type, no
+  field, a `const` one a constant (`GDF_CONST`), and `CLASS::NAME` names a member through the
+  class (`QCC_PR_GetDef` of `CLASS::NAME`): a data member that is no global is the field, of
+  type `.TYPE`, and a function, `virtual` or not, the function `CLASS::NAME`, a constant. So
+  `float x = C::a;` is "Cannot cast from .float to float" for `float a`, "initializer for 'x' is
+  not constant" for `static float a`, and accepted for `const float a = 1`; `void() x = C::m;` is
+  accepted for any member function `m`.
+- **FTEF-9.17** The `0` or `0i` a member that is no function may be given (FTEF-9.10) is the
+  token's text (`QCC_PR_CheckImmediate("0") || QCC_PR_CheckImmediate("0i")`, a `STRCMP` with
+  `pr_token`), not its value: `0x0`, `00`, `0.0` and `-0` are "Can only initialise member
+  functions". A vector immediate is lexed component by component into `pr_token`, which keeps
+  the last component's text, so `'1 0 0'` and `'0 0 0'` are taken and `'0 0 1'` is refused.
 
 ## FTEF-10 Accessors
 
@@ -3701,7 +3728,8 @@ the statements it would emit are code generation's.
   before the function, found by name in the function's scope or the globals (`AddInt`, `SubInt`,
   `MulInt`, `DivInt`, `BitandInt`, `BitorInt`, `ModVec`, `powf` then `pow`, and for `~int`
   `SubInt`); with none it is the warning `W0235` "NAME function not defined: cannot emulate WHAT"
-  and refused (FTEF-27.5). A mixed integer and float opcode converts its integer operand
+  and refused (FTEF-27.5), a power's naming `pow` ("pow function not defined: cannot emulate
+  int*^int"). A mixed integer and float opcode converts its integer operand
   (`OP_CONV_ITOF`) and emits the float opcode; an integer comparison converts its left operand
   and emits the mixed one; `==` and `!=` of integers and fields are `OP_EQ_FNC` and `OP_NE_FNC`.
   The unsigned opcodes are the signed ones, the 64-bit unsigned the 64-bit signed; `OP_EQ_I64`
@@ -3725,8 +3753,12 @@ the statements it would emit are code generation's.
   F313, an error by default, or for `OP_CONV_UF` `W0238` "utof emulation: will break if NAME is
   big". `%` with no `mod` (or `ModInt`) function is expanded into division, `|`, multiplication
   and subtraction; `^` into `~`, `&` and `|`; `v / f` into `1 / f` and `OP_MUL_VF`. An integer
-  shift with no `LShiftInt`, `RShiftInt` or `RShiftUInt` is a product or quotient by `1 << n`, or
-  by `2 *^ n` for a variable `n`. A float shift is the integer one on converted operands when the
+  shift with no `LShiftInt`, `RShiftInt` or `RShiftUInt` is a product or quotient by the constant
+  `QCC_MakeIntConst(1<<n)`, so a shift by 0 folds away, or by `2 *^ n` for a variable `n`; `>>`
+  of an integer tests the sign (`OP_LT_I` against `QCC_MakeFloatConst(0)`), divides the
+  complement (`OP_BITNOT_I`, the division, `OP_BITNOT_I`) and then divides the value itself as a
+  `QCC_PR_SimpleStatement`, which refuses a division the target lacks with the fatal error
+  `E0320` (FTEF-6.14): `i >> 2` ends with "Opcode \"/|DIV_I\" not valid for target". A float shift is the integer one on converted operands when the
   target has it, else `floor(a * pow(2, b))` when `powf` or `pow` and `floor` are defined, else
   `bitshift`, else "bitshift function not defined: cannot emulate OP_LSHIFT_F*" and refused.
 - **FTEF-27.5** An opcode FTEQCC does not emulate is refused, `badopcode`: the error `E0320`

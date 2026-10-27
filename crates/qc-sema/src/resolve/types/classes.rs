@@ -14,7 +14,8 @@ use std::rc::Rc;
 use crate::cast::Kind;
 use crate::lower::ArrayDim;
 use crate::lower::{
-    MemberBase, MemberKind, Qualification, RawClass, RawDecl, RawMember, RawUse, top_level_kind,
+    MemberBase, MemberKind, MemberStorage, Qualification, RawClass, RawDecl, RawMember, RawUse,
+    top_level_kind,
 };
 use crate::resolve::{ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
@@ -209,6 +210,8 @@ impl<'a> Resolver<'a> {
                 continue;
             };
             let kind = match member_kind {
+                // FTEF-9.18: a `static` or `const` data member is the global `CLASS::NAME`.
+                MemberKind::Field if member.storage.is_static() => DefKind::Global,
                 MemberKind::Field | MemberKind::Virtual => DefKind::Field,
                 MemberKind::Method => DefKind::Function,
             };
@@ -237,6 +240,16 @@ impl<'a> Resolver<'a> {
                 });
                 if let Some(info) = self.classes.get_mut(&def) {
                     info.members.insert(member.name.clone(), id);
+                }
+                // FTEF-9.18: a `const` data member and a nonvirtual function are constants
+                // (`GDF_CONST`).
+                let constant = match kind {
+                    DefKind::Global => member.storage == MemberStorage::Const,
+                    DefKind::Function => true,
+                    DefKind::Field | DefKind::Param | DefKind::Local => false,
+                };
+                if constant && let Some(facts) = self.facts.get_mut(id.0) {
+                    facts.constant = true;
                 }
                 // FTEF-31.2: a member array is an array of fields, indexed by its length.
                 if let Some(size) = &member.array
@@ -383,7 +396,7 @@ impl<'a> Resolver<'a> {
         let mut warnings = Vec::new();
         if member.name == class {
             let token = &member.follow;
-            if member.is_static {
+            if member.storage.is_static() {
                 warnings.push(format!(
                     "Constructor {class}::{token} should not be static."
                 ));

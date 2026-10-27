@@ -272,6 +272,7 @@ impl Checker<'_> {
             self.env.report(Code::W0241, span, message);
         }
         self.store_mismatch(&stored, &lhs, &target, span)?;
+        let stored = self.bit_copy(&stored, &lhs, span)?;
         self.store_reference(&lhs, &stored, span)?;
         if lhs.is_array_head() {
             let message = format!(
@@ -287,6 +288,38 @@ impl Checker<'_> {
             postinc: false,
             ..stored
         })
+    }
+
+    /// FTEF-6.15: a store to a bitfield, but through a pointer, reads the word that holds it and
+    /// packs the value into it (`QCC_PR_Statement_BitCopy`): by `OP_BITCOPY_I` when the target
+    /// has it, a plain statement, else the word's bits cleared by `OP_BITAND_I`, the value's
+    /// masked by `OP_BITAND_I` and shifted by `OP_LSHIFT_I`, and the two joined by `OP_BITOR_I`.
+    fn bit_copy(&mut self, value: &Value, lhs: &Value, span: Span) -> Checked {
+        let Some(bitfield) = lhs.bitfield else {
+            return Ok(value.clone());
+        };
+        if matches!(lhs.reference, Reference::Pointer(_)) {
+            return Ok(value.clone());
+        }
+        let word = Value {
+            bitfield: None,
+            ..lhs.clone()
+        };
+        let old = self.read(word, span)?;
+        if self.env.target_at(span.start).valid(Op::BitcopyI) {
+            self.simple_statement(Op::BitcopyI, span)?;
+            return Ok(old);
+        }
+        let mask = |bits: u32| Value::constant(Constant::uint(bits));
+        // `(1u<<bits)-1u`, and `~(((1u<<bits)-1u)<<bitofs)` to clear the word's bits.
+        let width = 1_u32
+            .checked_shl(bitfield.bits)
+            .map_or(u32::MAX, |b| b.wrapping_sub(1));
+        let placed = width.checked_shl(bitfield.offset).unwrap_or(0);
+        let cleared = self.emit(Op::BitandI, &old, &mask(!placed), span)?;
+        let masked = self.emit(Op::BitandI, value, &mask(width), span)?;
+        let shifted = self.emit(Op::LshiftI, &masked, &mask(bitfield.offset), span)?;
+        self.emit(Op::BitorI, &cleared, &shifted, span)
     }
 
     /// FTEF-29.2: a compound assignment's opcode, the first of `ops` whose operands are the

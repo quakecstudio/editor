@@ -316,6 +316,8 @@ pub enum Code {
     E0351,
     /// A `switch` with a second `default` (FTEF-34.10).
     E0352,
+    /// A bitfield read through a pointer that is not 8 or 16 bits wide (FTEF-6.15).
+    E0353,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -562,7 +564,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 248] = [
+    pub const ALL: [Self; 249] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -702,6 +704,7 @@ impl Code {
         Self::E0350,
         Self::E0351,
         Self::E0352,
+        Self::E0353,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1042,6 +1045,7 @@ impl Code {
             Self::E0350 => "E0350",
             Self::E0351 => "E0351",
             Self::E0352 => "E0352",
+            Self::E0353 => "E0353",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1321,6 +1325,7 @@ impl Code {
             | Self::E0350
             | Self::E0351
             | Self::E0352
+            | Self::E0353
             | Self::E0408 => true,
         }
     }

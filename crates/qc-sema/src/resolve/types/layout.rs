@@ -108,6 +108,25 @@ impl Resolver<'_> {
     /// alignment, any other to a word), a union's all at 0; then the tail padded to the largest
     /// alignment.
     fn struct_layout(&self, ty: &Type, depth: usize) -> Option<Layout> {
+        self.struct_placement(ty, depth, None)
+            .map(|(layout, _)| layout)
+    }
+
+    /// The bit a struct or union member `name` starts at from the struct's start, through the
+    /// parents, as [`Self::struct_layout`] places it.
+    pub(in crate::resolve) fn member_position(&self, ty: &Type, name: &str) -> Option<u32> {
+        self.struct_placement(&self.resolved(ty), MAX_CLASS_DEPTH, Some(name))
+            .and_then(|(_, at)| at)
+    }
+
+    /// [`Self::struct_layout`], and where the member `find` starts, in bits from the struct's
+    /// start, when it names one.
+    fn struct_placement(
+        &self,
+        ty: &Type,
+        depth: usize,
+        find: Option<&str>,
+    ) -> Option<(Layout, Option<u32>)> {
         let Type::Named(name) = ty else {
             return None;
         };
@@ -116,9 +135,15 @@ impl Resolver<'_> {
         if !def.defined {
             return None;
         }
-        let parent = match &def.parent {
-            Some(parent) => self.layout_at(&Type::Named(parent.as_str().into()), depth)?,
-            None => Layout::words(0),
+        let (parent, mut found) = match &def.parent {
+            Some(parent) => {
+                let parent = Type::Named(parent.as_str().into());
+                match find {
+                    Some(_) => self.struct_placement(&parent, depth, find)?,
+                    None => (self.layout_at(&parent, depth)?, None),
+                }
+            }
+            None => (Layout::words(0), None),
         };
         let mut bitsize = parent.words.checked_mul(WORD_BITS)?;
         let mut bitalign = 0;
@@ -143,7 +168,12 @@ impl Resolver<'_> {
             } else {
                 layout.bits.checked_mul(count)?
             };
+            let wanted =
+                found.is_none() && find.is_some_and(|n| self.same_member_name(&member.name, n));
             if def.union {
+                if wanted {
+                    found = Some(parent.words.checked_mul(WORD_BITS)?);
+                }
                 bitsize = bitsize.max(span);
                 continue;
             }
@@ -158,12 +188,15 @@ impl Resolver<'_> {
             } else {
                 bitsize = align_up(bitsize, layout.align)?;
             }
+            if wanted {
+                found = Some(bitsize);
+            }
             bitsize = bitsize.checked_add(span)?;
         }
         if bitalign != 0 {
             bitsize = align_up(bitsize, bitalign)?;
         }
-        Some(Layout {
+        let layout = Layout {
             words: bitsize.checked_add(WORD_MASK)? >> WORD_SHIFT,
             bits: if bitalign & WORD_MASK == 0 {
                 0
@@ -171,7 +204,8 @@ impl Resolver<'_> {
                 bitsize
             },
             align: bitalign,
-        })
+        };
+        Some((layout, found))
     }
 
     /// A member's type's layout, a bitfield's `ev_bitfld` of its width: the size and alignment

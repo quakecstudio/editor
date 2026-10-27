@@ -14,6 +14,8 @@ use qc_syntax::SyntaxKind;
 use qc_syntax::ast::{self, AstNode as _};
 
 use crate::cast::ConstType;
+use qc_syntax::c_scalar::CScalar;
+
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
@@ -38,6 +40,35 @@ impl Checker<'_> {
     pub(super) fn read(&mut self, value: Value, span: Span) -> Checked {
         if value.ty == Type::Unknown || !self.env.fteqcc() {
             return Ok(value);
+        }
+        // FTEF-6.15: a bitfield's word is read, then its bits by `OP_BITEXTEND_*`
+        // (`QCC_BitfieldToDef`); through a pointer it is loaded by its width.
+        if let Some(bitfield) = value.bitfield
+            && !matches!(value.reference, Reference::Pointer(_))
+        {
+            let word = self.read(
+                Value {
+                    bitfield: None,
+                    ..value
+                },
+                span,
+            )?;
+            let op = if bitfield.signed {
+                Op::BitextendI
+            } else {
+                Op::BitextendU
+            };
+            // `QCC_MakeUIntConst((bitofs<<8)|bits)`.
+            let mask = bitfield
+                .offset
+                .checked_shl(8)
+                .map_or(bitfield.bits, |high| high | bitfield.bits);
+            let mask = Value::constant(Constant::uint(mask));
+            let extended = self.emit(op, &word, &mask, span)?;
+            return Ok(Value {
+                ty: word.ty,
+                ..extended
+            });
         }
         match value.reference.clone() {
             Reference::Global => Ok(value),
@@ -73,12 +104,13 @@ impl Checker<'_> {
                 })
             }
             Reference::Pointer(pointer) => {
-                if let Some(index) = &pointer.index
-                    && self.etype_of(&index.ty) != Some(Etype::Integer)
-                {
-                    self.converted(index, Etype::Integer, span)?;
-                }
-                let index = pointer.index.clone();
+                // `QCC_SupplyConversion(ref->index, ev_integer, true)`.
+                let index = match &pointer.index {
+                    Some(index) if self.etype_of(&index.ty) != Some(Etype::Integer) => {
+                        Some(self.converted(index, Etype::Integer, span)?)
+                    }
+                    index => index.clone(),
+                };
                 self.load_from_pointer(value, index.as_ref(), span)
             }
             Reference::Character { float_index } => {
@@ -131,6 +163,38 @@ impl Checker<'_> {
     /// FTEF-31.3: `QCC_LoadFromPointer`: the index made an integer, then the load of the
     /// pointee's type; a struct or union word by word (FTEF-6.14).
     fn load_from_pointer(&mut self, value: Value, index: Option<&Value>, span: Span) -> Checked {
+        // FTEF-6.15, FTEF-27.10: a bitfield and an 8- or 16-bit integer by `OP_LOADP_I8`,
+        // `OP_LOADP_U8` and the 16-bit loads, the index 0 when there is none.
+        let narrow = match value.bitfield {
+            Some(bitfield) => Some((bitfield.bits, bitfield.signed)),
+            None => match value.ty.fteqcc_scalar() {
+                Some(CScalar::Int8) => Some((8, true)),
+                Some(CScalar::Uint8) => Some((8, false)),
+                Some(CScalar::Int16) => Some((16, true)),
+                Some(CScalar::Uint16) => Some((16, false)),
+                _ => None,
+            },
+        };
+        if let Some(narrow) = narrow {
+            let op = match narrow {
+                (8, true) => Op::LoadpI8,
+                (8, false) => Op::LoadpU8,
+                (16, true) => Op::LoadpI16,
+                (16, false) => Op::LoadpU16,
+                _ => {
+                    let message = "ptr-to-bitfld has unsupported bit depth".to_owned();
+                    return self.fatal(Code::E0353, span, message);
+                }
+            };
+            let pointer = Value::of(Type::Pointer(value.ty.clone().into()));
+            let zero = Value::constant(Constant::uint(0));
+            let loaded = self.emit(op, &pointer, index.unwrap_or(&zero), span)?;
+            return Ok(Value {
+                ty: value.ty,
+                bitfield: None,
+                ..loaded
+            });
+        }
         let Some(etype) = self.etype_of(&value.ty) else {
             return Ok(value);
         };

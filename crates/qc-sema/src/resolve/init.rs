@@ -17,7 +17,7 @@ use qc_syntax::c_scalar::CScalar;
 use crate::cast::{Cast, ConstType, Kind, Source, Supply};
 use crate::lower::{ArrayDim, LiteralValue, Qualifier, RawDecl, RawValue, ValueKind};
 use crate::resolve::{Facts, Fatal, Holder, MAX_TYPEDEF_DEPTH, REPLACEABLE_BUILTINS, Resolver};
-use crate::symbol::{DefId, FileId, Location};
+use crate::symbol::{DefId, DefKind, FileId, Location};
 use crate::ty::{SimpleType, Type};
 
 impl Resolver<'_> {
@@ -365,7 +365,12 @@ impl Resolver<'_> {
         };
         // `Scope::name`: the definition of that name, or for a scope that is no class the
         // plain name, as a named enum's values are (FTEF-19.10).
-        let found = lookup(source_name).or_else(|| {
+        // FTEF-9.18: `Class::name` is the class's member, a field of the entity or a global.
+        let class_member = source_name.split_once("::").and_then(|(prefix, bare)| {
+            let class = self.named(&self.class_names, prefix).copied()?;
+            self.member_in(class, bare)
+        });
+        let found = class_member.or_else(|| lookup(source_name)).or_else(|| {
             let (prefix, bare) = source_name.split_once("::")?;
             (!self.has_name_key(&self.class_names, prefix)
                 && !self.struct_defs.contains_key(&self.type_key(prefix)))
@@ -375,7 +380,17 @@ impl Resolver<'_> {
         let Some(source) = found else {
             return Ok(None);
         };
-        let Some(source_ty) = self.index.def(source).map(|d| d.ty.clone()) else {
+        let Some(source_ty) = self.index.def(source).map(|d| match d.kind {
+            // A data member named through its class is the field.
+            DefKind::Field if class_member.is_some() && !d.ty.is_function() => {
+                Type::Field(d.ty.clone().into())
+            }
+            DefKind::Global
+            | DefKind::Function
+            | DefKind::Field
+            | DefKind::Param
+            | DefKind::Local => d.ty.clone(),
+        }) else {
             return Ok(None);
         };
         // FTEF-19.31: in a member function a field's name is `this.field`, of the field's type
@@ -422,7 +437,9 @@ impl Resolver<'_> {
         if matches!(holder, Holder::Local(_)) {
             return Ok(None);
         }
-        let constant = self.facts.get(source.0).is_some_and(|f| f.constant);
+        // FTEF-9.18: `Class::function` is the function `Class::function`, virtual or not.
+        let constant = self.facts.get(source.0).is_some_and(|f| f.constant)
+            || (class_member.is_some() && source_ty.is_function());
         if !constant {
             if matches!(holder, Holder::Global | Holder::Static(_)) {
                 self.report(

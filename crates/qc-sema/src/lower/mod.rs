@@ -21,7 +21,8 @@ pub use decl::{
 };
 pub use expr::{MemberBase, RawUse, UseKind};
 pub use types::{
-    EnumItem, MemberKind, Qualification, RawClass, RawMember, RawStruct, StructMember, TypeKind,
+    EnumItem, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
+    StructMember, TypeKind,
 };
 
 use qc_diag::{Diagnostic, Span};

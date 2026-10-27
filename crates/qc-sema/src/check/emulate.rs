@@ -33,7 +33,7 @@ enum Emulation {
     /// Convert the left operand with the first opcode, then emit the second.
     ConvertLeft(Op, Op),
     /// Call the helper the program defines with one of these names, else warn "NAME function
-    /// not defined: cannot emulate WHAT" and refuse the opcode.
+    /// not defined: cannot emulate WHAT", NAME the first, and refuse the opcode.
     Helper(&'static [&'static str], &'static str),
     /// Emit these opcodes on the operands in turn, the last giving the value; each is emitted
     /// or emulated in turn. For `%` when no `mod` function is defined (FTEF-27.4).
@@ -344,18 +344,24 @@ impl Checker<'_> {
                 if self.env.defines(helper) {
                     return Ok(result);
                 }
-                // A shift by a constant is a product or quotient by `1 << n`; by a variable,
-                // by `2 *^ n`.
-                let factor = if rhs.known().is_some() {
-                    Value::of(rhs.ty.clone())
-                } else {
-                    self.emit(Op::PowI, &Value::unknown(), rhs, span)?
+                // A shift by a constant is a product or quotient by `QCC_MakeIntConst(1<<n)`; by
+                // a variable, by `2 *^ n`.
+                let factor = match rhs.known() {
+                    Some(shift) => {
+                        let power = 1_i32.checked_shl(shift.u()).unwrap_or(0);
+                        Value::constant(Constant::int(power))
+                    }
+                    None => self.emit(Op::PowI, &Value::unknown(), rhs, span)?,
                 };
                 if op == Op::RshiftI {
-                    self.emit(Op::LtI, lhs, &Value::unknown(), span)?;
+                    // `OP_LT_I` against `QCC_MakeFloatConst(0)`, the negative form by `~`, and
+                    // the positive form a plain statement of the division.
+                    let zero = Value::constant(Constant::float(0.0));
+                    self.emit(Op::LtI, lhs, &zero, span)?;
                     let flipped = self.emit(Op::BitnotI, lhs, &Value::unknown(), span)?;
                     let shifted = self.emit(divide, &flipped, &factor, span)?;
                     self.emit(Op::BitnotI, &shifted, &Value::unknown(), span)?;
+                    self.simple_statement(divide, span)?;
                 } else {
                     self.emit(divide, lhs, &factor, span)?;
                 }
@@ -612,10 +618,10 @@ const fn emulation(op: Op) -> Emulation {
         Op::MulI => Helper(&["MulInt"], "int*int"),
         Op::DivI => Helper(&["DivInt"], "int/int"),
         Op::ModV => Helper(&["ModVec"], "vector%vector"),
-        Op::PowF => Helper(&["powf", "pow"], "float*^float"),
-        Op::PowI => Helper(&["powf", "pow"], "int*^int"),
-        Op::PowFi => Helper(&["powf", "pow"], "float*^int"),
-        Op::PowIf => Helper(&["powf", "pow"], "int*^float"),
+        Op::PowF => Helper(&["pow", "powf"], "float*^float"),
+        Op::PowI => Helper(&["pow", "powf"], "int*^int"),
+        Op::PowFi => Helper(&["pow", "powf"], "float*^int"),
+        Op::PowIf => Helper(&["pow", "powf"], "int*^float"),
         Op::ModF => Expand(&[Op::DivF, Op::BitorF, Op::MulF, Op::SubF]),
         Op::ModI => Expand(&[Op::DivI, Op::MulI, Op::SubI]),
         Op::ModU => Expand(&[Op::DivU, Op::MulU, Op::SubU]),

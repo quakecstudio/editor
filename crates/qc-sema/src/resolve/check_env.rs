@@ -13,7 +13,7 @@ use qc_syntax::CompilerFlags;
 use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::etype::Etype;
-use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape};
+use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape, StructMemberFacts};
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
@@ -421,7 +421,7 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.type_name(ty)
     }
 
-    fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)> {
+    fn struct_member(&self, ty: &Type, name: &str) -> Option<StructMemberFacts> {
         self.resolver.struct_member(ty, name)
     }
 

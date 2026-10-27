@@ -8,6 +8,7 @@
 
 use qc_diag::Code;
 
+use crate::check::StructMemberFacts;
 use crate::lower::{MemberBase, RawStruct, StructMember};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
@@ -399,7 +400,11 @@ impl<'a> Resolver<'a> {
 impl Resolver<'_> {
     /// The type of the member `name` of the struct or union `ty`, found in it or its parents
     /// as `QCC_PR_FindStructMember` finds it (FTEF-6.11), and whether the member is an array.
-    pub(in crate::resolve) fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)> {
+    pub(in crate::resolve) fn struct_member(
+        &self,
+        ty: &Type,
+        name: &str,
+    ) -> Option<StructMemberFacts> {
         let Type::Named(type_name) = self.resolved(ty) else {
             return None;
         };
@@ -412,7 +417,13 @@ impl Resolver<'_> {
                 .iter()
                 .find(|m| self.same_member_name(&m.name, name))
             {
-                return Some((member.ty.clone(), !member.array.is_empty()));
+                let bits = member.bits.flatten();
+                return Some(StructMemberFacts {
+                    ty: member.ty.clone(),
+                    array: !member.array.is_empty(),
+                    bits,
+                    position: self.member_position(ty, name),
+                });
             }
             key.clone_from(&st.parent);
         }
@@ -421,7 +432,7 @@ impl Resolver<'_> {
 
     /// Whether a struct member named `member` is the one an access names `name`, in any case
     /// under `-Fcaseinsens` (FTEF-6.11).
-    fn same_member_name(&self, member: &str, name: &str) -> bool {
+    pub(in crate::resolve) fn same_member_name(&self, member: &str, name: &str) -> bool {
         if self.profile.case_insensitive() {
             member.eq_ignore_ascii_case(name)
         } else {

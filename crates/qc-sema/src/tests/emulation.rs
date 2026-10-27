@@ -439,3 +439,152 @@ fn struct_reads_through_a_pointer() {
         []
     );
 }
+
+const BITAND_I: &str =
+    "Opcode \"&|BITAND_I\" not valid for target. Consider the use of: #pragma target fte";
+const BITOR_I: &str =
+    "Opcode \"||BITOR_I\" not valid for target. Consider the use of: #pragma target fte";
+const DIV_I: &str =
+    "Opcode \"/|DIV_I\" not valid for target. Consider the use of: #pragma target fte";
+const SUB_I: &str =
+    "Opcode \"-|SUB_I\" not valid for target. Consider the use of: #pragma target fte";
+const MUL_I: &str =
+    "Opcode \"*|MUL_I\" not valid for target. Consider the use of: #pragma target fte";
+
+fn helper(name: &str, what: &str) -> (Code, String) {
+    d(
+        Code::W0235,
+        &format!("{name} function not defined: cannot emulate {what}"),
+    )
+}
+
+// spec FTEF-6.15: a bitfield store reads its word and packs the value in by `&`, `<<` and `|`,
+// the shift by the member's bit offset
+#[test]
+fn a_bitfield_store_packs_its_word() {
+    let pack = [
+        helper("BitandInt", "int&int"),
+        d(Code::E0320, BITAND_I),
+        helper("BitorInt", "int|int"),
+        d(Code::E0320, BITOR_I),
+    ];
+    assert_eq!(
+        diags("struct S { int a : 3; } x; void() g = { x.a = 1; };\n"),
+        pack
+    );
+    assert_eq!(
+        diags("struct S { int a : 3; }; void() g = { S s; s.a = 1; };\n"),
+        pack
+    );
+    assert_eq!(
+        diags("struct S { int a : 3; int b : 3; } x; int i; void() g = { x.b = i; };\n"),
+        [
+            helper("BitandInt", "int&int"),
+            d(Code::E0320, BITAND_I),
+            helper("BitandInt", "int&int"),
+            d(Code::E0320, BITAND_I),
+            helper("MulInt", "int*int"),
+            d(Code::E0320, MUL_I),
+            helper("BitorInt", "int|int"),
+            d(Code::E0320, BITOR_I),
+        ]
+    );
+    assert_eq!(
+        diags("struct S { int a : 32; } x; void() g = { x.a = 1; local int i = x.a; };\n"),
+        []
+    );
+    assert_eq!(
+        diags("#pragma target fte\nstruct S { int a : 3; } x; void() g = { x.a = 1; };\n"),
+        []
+    );
+}
+
+// spec FTEF-6.15: a bitfield read is extended from its word, and through a pointer loaded by its
+// width, any width but 8 and 16 refused
+// spec QCD-4.57: E0353 "ptr-to-bitfld has unsupported bit depth"
+#[test]
+fn a_bitfield_read_is_extended() {
+    let extended = [
+        helper("MulInt", "int*int"),
+        d(Code::E0320, MUL_I),
+        d(Code::E0125, "itof emulation: denormals are unsafe __int32"),
+        helper("SubInt", "~int"),
+        d(Code::E0320, SUB_I),
+        helper("DivInt", "int/int"),
+        d(Code::E0320, DIV_I),
+        helper("SubInt", "~int"),
+        d(Code::E0320, SUB_I),
+        d(Code::E0320, DIV_I),
+    ];
+    assert_eq!(
+        diags("struct S { int a : 3; } x; void() g = { local float f = x.a; };\n"),
+        extended
+    );
+    let mut loaded = vec![d(Code::W0235, MEMGETVAL), loadp("LOADP_I")];
+    loaded.extend(extended.iter().cloned());
+    assert_eq!(
+        diags("struct S { int a : 8; }; void() g = { local S *p = 0; local int i = p->a; };\n"),
+        loaded
+    );
+    assert_eq!(
+        diags("__int8 *q; void() g = { local int i = *q; };\n"),
+        loaded
+    );
+    assert_eq!(
+        diags("struct S { int a : 3; }; void() g = { local S *p = 0; local int i = p->a; };\n"),
+        [d(Code::E0353, "ptr-to-bitfld has unsupported bit depth")]
+    );
+}
+
+// spec FTEF-27.4: a constant shift is by `1 << n`, so a shift by 0 folds, and `>>` ends with the
+// division as a plain statement
+#[test]
+fn constant_shifts_fold_by_their_power() {
+    assert_eq!(diags(&body("i = i << 0;")), []);
+    assert_eq!(
+        diags(&body("i = i << 2;")),
+        [helper("MulInt", "int*int"), d(Code::E0320, MUL_I)]
+    );
+    assert_eq!(
+        diags(&body("i = i >> 0;")),
+        [
+            d(Code::E0125, "itof emulation: denormals are unsafe i"),
+            helper("SubInt", "~int"),
+            d(Code::E0320, SUB_I),
+            helper("SubInt", "~int"),
+            d(Code::E0320, SUB_I),
+            d(Code::E0320, DIV_I),
+        ]
+    );
+    let uint16 = |index: &str| {
+        diags(&format!(
+            "__uint16 *q; void() g = {{ local int i = q[{index}]; }};\n"
+        ))
+    };
+    let tail = [
+        d(
+            Code::W0235,
+            "OP_DIV_U emulation: assuming the high bit is not set...",
+        ),
+        helper("DivInt", "int/int"),
+        d(Code::E0320, DIV_I),
+    ];
+    let mut one = vec![d(Code::W0235, MEMGETVAL), loadp("LOADP_I")];
+    one.extend(tail.iter().cloned());
+    assert_eq!(uint16("1"), one);
+    let mut zero = vec![
+        d(Code::W0235, MEMGETVAL),
+        loadp("LOADP_I"),
+        helper("MulInt", "int*int"),
+        d(Code::E0320, MUL_I),
+    ];
+    zero.extend(tail.iter().cloned());
+    assert_eq!(uint16("0"), zero);
+}
+
+// spec FTEF-27.2: a power's helper is named `pow` in the warning
+#[test]
+fn a_power_warns_of_pow() {
+    let found = diags(&body("i = i >> i;"));
+    assert_eq!(found.first(), Some(&helper("pow", "int*^int")));
+}

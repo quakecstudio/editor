@@ -69,6 +69,25 @@ pub enum Qualification {
     Conflicting,
 }
 
+/// Where a class member is kept (FTEF-9.18).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemberStorage {
+    /// In each instance: a field, or a function.
+    Instance,
+    /// `static`: the global `CLASS::NAME`.
+    Static,
+    /// `const`: the constant `CLASS::NAME`, static too.
+    Const,
+}
+
+impl MemberStorage {
+    /// Whether `static` or `const` makes it a global of the class's (`isstatic`).
+    #[must_use]
+    pub fn is_static(self) -> bool {
+        self != Self::Instance
+    }
+}
+
 /// An FTEQCC class's parent and members (FTEF-9).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct RawClass {
@@ -110,8 +129,8 @@ pub struct RawMember {
     pub array: Option<String>,
     /// Its `virtual`, `nonvirtual` and `static` words (FTEF-9.16).
     pub qualification: Qualification,
-    /// Whether `static` or `const` qualifies it (FTEF-9.16).
-    pub is_static: bool,
+    /// Whether it belongs to each instance or is a global of the class's (FTEF-9.16, FTEF-9.18).
+    pub storage: MemberStorage,
     /// The token after its name and array suffixes, which a constructor's warnings name as
     /// the member, `pr_token` (FTEF-9.16).
     pub follow: String,
@@ -795,17 +814,21 @@ fn lower_member(
             }
             _ => None,
         };
-        // `QCC_SRef_IsNull`: the constant's value is 0, however it is written.
+        // FTEF-9.10: `QCC_PR_CheckImmediate("0") || QCC_PR_CheckImmediate("0i")` reads the
+        // token's text, which a vector immediate leaves as its last component's.
         let null = match &init {
-            Some(ast::Initializer::Value(expr)) => {
-                LiteralValue::of_literal(
-                    expr,
-                    Dialect::Fteqcc,
-                    cx.lex_flags_at(expr.syntax().span().start),
-                )
-                .is_some_and(
-                    |v| matches!(v, LiteralValue::Float(bits) if f32::from_bits(bits) == 0.0),
-                ) || matches!(token_text(expr.syntax()).as_str(), "0i")
+            Some(ast::Initializer::Value(ast::Expr::Literal(literal))) => {
+                let text = token_text(literal.syntax());
+                let last = match text.strip_prefix('\'') {
+                    Some(inner) => inner
+                        .trim_end_matches('\'')
+                        .split_whitespace()
+                        .last()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    None => text,
+                };
+                matches!(last.as_str(), "0" | "0i")
             }
             _ => false,
         };
@@ -823,7 +846,13 @@ fn lower_member(
             is_global: has("static") || has("ignore"),
             is_virtual: virtual_,
             qualification,
-            is_static: has("static") || has("const"),
+            storage: if has("const") {
+                MemberStorage::Const
+            } else if has("static") {
+                MemberStorage::Static
+            } else {
+                MemberStorage::Instance
+            },
             follow,
             array: declarator
                 .array_suffixes()
@@ -862,7 +891,7 @@ fn lower_member(
             is_virtual: false,
             array: None,
             qualification: Qualification::Qualified,
-            is_static: false,
+            storage: MemberStorage::Instance,
             follow: String::new(),
         });
     }

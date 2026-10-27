@@ -116,9 +116,9 @@ pub(crate) trait Env {
     fn typecmp(&self, a: &Type, b: &Type) -> bool;
     /// `ty` as FTEQCC's messages print it, `TypeName` (FTEF-24.7).
     fn type_name(&self, ty: &Type) -> String;
-    /// The type of the member `name` of the struct or union `ty`, through its parents, and
-    /// whether the member is an array (`QCC_PR_FindStructMember`, FTEF-6.11).
-    fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)>;
+    /// The member `name` of the struct or union `ty`, through its parents
+    /// (`QCC_PR_FindStructMember`, FTEF-6.11).
+    fn struct_member(&self, ty: &Type, name: &str) -> Option<StructMemberFacts>;
     /// FTEQCC's implicit cast of `source` to `to` at `span` (`QCC_EvaluateCast(src, to, true)`,
     /// FTEF-19.31), reported there; whether it is refused, "Cannot cast", a fatal error.
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool;
@@ -185,6 +185,8 @@ pub(crate) struct Value {
     /// A string constant's text, its quotes and adjacent parts' quotes removed, which a format
     /// string's check reads (FTEF-33.1).
     pub(crate) text: Option<Rc<str>>,
+    /// The bitfield it is, read and stored by its bits (FTEF-6.15).
+    pub(crate) bitfield: Option<Bitfield>,
 }
 
 /// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.1).
@@ -229,6 +231,7 @@ impl Value {
             reference: Reference::Global,
             postinc: false,
             text: None,
+            bitfield: None,
         }
     }
 
@@ -326,6 +329,32 @@ pub(crate) struct ParamFacts {
     pub(crate) optional: bool,
     /// Whether it is an `out` parameter, stored back after the call.
     pub(crate) out: bool,
+}
+
+/// A struct or union member as the checks read it (FTEF-6.11, FTEF-6.15).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StructMemberFacts {
+    /// Its type, a bitfield's being its base integer type.
+    pub(crate) ty: Type,
+    /// Whether it is an array.
+    pub(crate) array: bool,
+    /// A bitfield's width in bits, when the model knows it.
+    pub(crate) bits: Option<u32>,
+    /// The bit it starts at from the struct's start, when the model lays the struct out.
+    pub(crate) position: Option<u32>,
+}
+
+/// A bitfield a value is (`ev_bitfld`, FTEF-6.15): its width and whether its base is signed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Bitfield {
+    /// The width in bits.
+    pub(crate) bits: u32,
+    /// The bit it starts at within its word, `bitofs`.
+    pub(crate) offset: u32,
+    /// The word it is in, from the struct's start.
+    pub(crate) word: u32,
+    /// Whether its base is `int`, read by `OP_BITEXTEND_I`; `uint` is `OP_BITEXTEND_U`.
+    pub(crate) signed: bool,
 }
 
 /// What a value refers to, as FTEQCC's references are of kinds (`QCC_ref_t::type`). The kinds

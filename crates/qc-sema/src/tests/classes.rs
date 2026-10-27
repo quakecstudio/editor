@@ -266,3 +266,53 @@ fn a_member_defined_with_another_type_is_refused() {
         assert_eq!(messages(source), [], "{source}");
     }
 }
+
+// spec FTEF-9.17: a member's `0` is its token's text, a vector's being its last component's
+#[test]
+fn a_member_zero_is_its_token_text() {
+    let refused = |value: &str| {
+        messages(&format!("class C {{ float a = {value}; }};"))
+            .iter()
+            .any(|(code, _)| *code == Code::E0257)
+    };
+    for value in ["0", "0i"] {
+        assert!(!refused(value), "{value}");
+    }
+    for value in ["0x0", "00", "0.0", "-0", "1"] {
+        assert!(refused(value), "{value}");
+    }
+    let vector = |value: &str| messages(&format!("class C {{ vector v = {value}; }};"));
+    assert_eq!(vector("'0 0 0'"), []);
+    assert_eq!(vector("'1 0 0'"), []);
+    assert_eq!(
+        vector("'0 0 1'"),
+        one(Code::E0257, "Can only initialise member functions")
+    );
+    assert_eq!(messages("class C { string s = 0; };"), []);
+}
+
+// spec FTEF-9.18: `Class::name` names the member through the class: a field, a static global or
+// constant, or the member function
+#[test]
+fn a_scoped_member_name_is_the_member() {
+    assert_eq!(
+        messages("class C { float a; }; float x = C::a;"),
+        one(Code::E0213, "Cannot cast from .float to float")
+    );
+    for member in ["static float a;", "static float a = 1;"] {
+        assert_eq!(
+            messages(&format!("class C {{ {member} }}; float x = C::a;")),
+            one(Code::E0214, "initializer for 'x' is not constant"),
+            "{member}"
+        );
+    }
+    for source in [
+        "class C { const float a = 1; }; float x = C::a;",
+        "class C { nonvirtual void() m = {}; }; void() x = C::m;",
+        "class C { virtual void() m = {}; }; void() x = C::m;",
+        "class C { virtual void() m; }; void() x = C::m; void() C::m = {};",
+        "class C { static float a; }; void() g = { local float x = C::a; C::a = 2; };",
+    ] {
+        assert_eq!(messages(source), [], "{source}");
+    }
+}

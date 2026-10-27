@@ -15,7 +15,7 @@ use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::reference::expected_after;
-use crate::check::{Constness, Reference, Value};
+use crate::check::{Bitfield, Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -257,12 +257,23 @@ impl Checker<'_> {
         let Some((name, _)) = selector_name(selector) else {
             return Value::unknown();
         };
-        match self.env.struct_member(ty, &name) {
-            Some((member, false)) => Value {
-                readonly: false,
-                ..Value::of(member)
-            },
-            Some((_, true)) | None => Value::unknown(),
+        let Some(member) = self.env.struct_member(ty, &name).filter(|m| !m.array) else {
+            return Value::unknown();
+        };
+        // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits.
+        let bitfield = match (member.bits, member.position) {
+            (Some(bits), Some(position)) if bits != 32 => Some(Bitfield {
+                bits,
+                offset: position & 31,
+                word: position >> 5,
+                signed: self.etype_of(&member.ty) != Some(Etype::Uint),
+            }),
+            _ => None,
+        };
+        Value {
+            readonly: false,
+            bitfield,
+            ..Value::of(member.ty)
         }
     }
 
@@ -273,11 +284,19 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         match self.env.shape(pointee).map(|s| s.etype) {
-            // FTEF-6.14: read through the pointer at the member's offset.
-            Some(Etype::Struct | Etype::Union) => Ok(Value {
-                reference: Reference::pointer(base.label(), Some(member_offset())),
-                ..self.struct_member(pointee, selector)
-            }),
+            // FTEF-6.14: read through the pointer at the member's offset, a bitfield's after
+            // `bitofs / bits` more (FTEF-6.15).
+            Some(Etype::Struct | Etype::Union) => {
+                let member = self.struct_member(pointee, selector);
+                let offset = member.bitfield.map(|bitfield| {
+                    let element = bitfield.offset.checked_div(bitfield.bits).unwrap_or(0);
+                    bitfield.word.saturating_add(element)
+                });
+                Ok(Value {
+                    reference: Reference::pointer(base.label(), Some(member_offset(offset))),
+                    ..member
+                })
+            }
             None => Ok(Value::unknown()),
             Some(_) => {
                 let span = selector.syntax().span();
@@ -328,11 +347,14 @@ fn intrinsic_value(name: &str) -> Option<&str> {
     }
 }
 
-/// A member's offset in its struct, `QCC_MakeIntConst(ofs)`: an integer constant, whose value
-/// no check reads.
-fn member_offset() -> Value {
-    Value {
-        constness: Constness::Opaque,
-        ..Value::constant(Constant::int(0))
+/// A member's offset in its struct, `QCC_MakeIntConst(ofs)`: a bitfield's, whose narrow load
+/// folds by its value, else an integer constant whose value no check reads.
+fn member_offset(offset: Option<u32>) -> Value {
+    match offset.and_then(|offset| i32::try_from(offset).ok()) {
+        Some(offset) => Value::constant(Constant::int(offset)),
+        None => Value {
+            constness: Constness::Opaque,
+            ..Value::constant(Constant::int(0))
+        },
     }
 }
