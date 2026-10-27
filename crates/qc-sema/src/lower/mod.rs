@@ -21,7 +21,7 @@ pub use decl::{
 };
 pub use expr::{MemberBase, RawUse, UseKind};
 pub use types::{
-    EnumItem, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
+    EnumItem, IntConst, MemberKind, MemberStorage, Qualification, RawClass, RawMember, RawStruct,
     StructMember, TypeKind,
 };
 
@@ -223,7 +223,9 @@ pub fn lower_file(parse: &Parse, dialect: Dialect) -> FileDecls {
             qc_syntax::SyntaxElement::Token(t) if t.kind() == SyntaxKind::Name => Some(t),
             qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
         });
-        if let Some(tag) = tag {
+        // FTEF-20.15: a body's struct is a type to its block's end, recorded with the body.
+        let in_body = node.ancestors().any(|a| a.kind() == SyntaxKind::Block);
+        if let Some(tag) = tag.filter(|_| !in_body) {
             out.struct_tags
                 .push((tag.text_lossless(), tag.span().start));
         }

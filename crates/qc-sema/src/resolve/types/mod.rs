@@ -16,7 +16,7 @@ mod structs;
 
 pub(crate) use layout::Layout;
 
-use qc_diag::Code;
+use qc_diag::{Code, Span};
 use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
 
 use crate::cast::Kind;
@@ -214,7 +214,7 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn check_type_names(
         &mut self,
         ty: &Type,
-        typedefs: &[(String, usize)],
+        typedefs: &[(String, Span)],
         at: usize,
         location: Location,
     ) -> bool {
@@ -232,12 +232,14 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn is_type_name(
         &self,
         name: &str,
-        typedefs: &[(String, usize)],
+        typedefs: &[(String, Span)],
         at: usize,
     ) -> bool {
         let exact = REGISTERED_TYPES.contains(&name)
             || self.type_names.contains(name)
-            || typedefs.iter().any(|(t, start)| t == name && *start < at);
+            || typedefs
+                .iter()
+                .any(|(t, seen)| t == name && seen.start < at && at < seen.end);
         exact
             || (self.profile.case_insensitive()
                 && (REGISTERED_TYPES
@@ -249,9 +251,9 @@ impl Resolver<'_> {
                             .iter()
                             .any(|t| t.eq_ignore_ascii_case(name)))
                     || self.type_names.iter().any(|t| t.eq_ignore_ascii_case(name))
-                    || typedefs
-                        .iter()
-                        .any(|(t, start)| t.eq_ignore_ascii_case(name) && *start < at)))
+                    || typedefs.iter().any(|(t, seen)| {
+                        t.eq_ignore_ascii_case(name) && seen.start < at && at < seen.end
+                    })))
     }
 
     /// The first name in `ty` that names no type: none of the C type words FTEF-2.8 reads, a
@@ -261,7 +263,7 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn unknown_type_name<'t>(
         &self,
         ty: &'t Type,
-        typedefs: &[(String, usize)],
+        typedefs: &[(String, Span)],
         at: usize,
     ) -> Option<&'t str> {
         match ty {

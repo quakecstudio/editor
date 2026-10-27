@@ -198,6 +198,73 @@ pub struct StructMember {
     /// Whether the width is an integer constant: a literal with no fraction, or an
     /// expression; "Value is not an integer constant" otherwise (FTEF-6.9).
     pub width_integer: bool,
+    /// The width's value as `QCC_PR_IntConstExpr` reads it, when it is a bitfield (FTEF-6.9).
+    pub width_const: Option<IntConst>,
+    /// Each array suffix's size as `QCC_PR_IntConstExpr` reads it (FTEF-6.17).
+    pub sizes: Vec<IntConst>,
+}
+
+/// Each array suffix's size of the struct member `field` (FTEF-6.17).
+fn array_sizes(field: &SyntaxNode, cx: Cx<'_>) -> Vec<IntConst> {
+    field
+        .children()
+        .filter(|n| n.kind() == SyntaxKind::ArraySuffix)
+        .map(|n| {
+            n.children()
+                .find_map(ast::Expr::cast)
+                .map_or(IntConst::Unfolded, |e| IntConst::of(&e, cx))
+        })
+        .collect()
+}
+
+/// What `QCC_PR_IntConstExpr` reads of an expression, as far as the model follows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IntConst {
+    /// A literal number with no fraction.
+    Integer(i64),
+    /// A literal that is no integer: a fraction, a vector or a string.
+    NotInteger,
+    /// A name, a constant if the module defines it.
+    Name(String),
+    /// Another expression, which the model does not fold.
+    Unfolded,
+}
+
+impl IntConst {
+    /// The constant `expr` is.
+    pub(super) fn of(expr: &ast::Expr, cx: Cx<'_>) -> Self {
+        match expr {
+            ast::Expr::Literal(_) => {
+                let flags = cx.lex_flags_at(expr.syntax().span().start);
+                match LiteralValue::of_literal(expr, Dialect::Fteqcc, flags) {
+                    Some(LiteralValue::Float(bits)) => {
+                        let number = f64::from(f32::from_bits(bits));
+                        if number.fract() == 0.0 && number.abs() < 9.0e15 {
+                            #[expect(
+                                clippy::cast_possible_truncation,
+                                reason = "spec FTEF-6.17: an integral float below 2^53 is exact"
+                            )]
+                            let integer = number as i64;
+                            Self::Integer(integer)
+                        } else {
+                            Self::NotInteger
+                        }
+                    }
+                    Some(
+                        LiteralValue::Vector(_)
+                        | LiteralValue::String(_)
+                        | LiteralValue::Builtin { .. }
+                        | LiteralValue::Text(_),
+                    ) => Self::NotInteger,
+                    None => Self::Unfolded,
+                }
+            }
+            ast::Expr::Name(name) if name.scope().is_none() => name
+                .name()
+                .map_or(Self::Unfolded, |t| Self::Name(t.text_lossless())),
+            _ => Self::Unfolded,
+        }
+    }
 }
 
 /// The [`RawStruct`] of a `StructType` node.
@@ -332,6 +399,8 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                 .filter(|n| n.kind() == SyntaxKind::ArraySuffix)
                 .map(|n| token_text(&n))
                 .collect(),
+            sizes: array_sizes(&field, cx),
+            width_const: width.as_ref().map(|e| IntConst::of(e, cx)),
             bits,
             is_static,
         });

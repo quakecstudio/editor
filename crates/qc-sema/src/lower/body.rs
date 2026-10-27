@@ -40,9 +40,9 @@ pub struct RawBody {
     /// What lowering found wrong in the body that resolution does not see: a `typedef` that
     /// defines no type or has storage qualifiers (FTEF-19.9).
     pub diagnostics: Vec<Diagnostic>,
-    /// The names the body's `typedef`s define, each with where it stands; a local's type may
-    /// be one defined before it (FTEF-19.20).
-    pub typedefs: Vec<(String, usize)>,
+    /// The names the body's `typedef`s define, each from where it stands to the end of its block;
+    /// a local's type may be one defined before it there (FTEF-19.20, FTEF-20.15).
+    pub typedefs: Vec<(String, Span)>,
     /// The next think functions the body's `state` statements name, each with its span, which
     /// `QCC_PR_ParseState` declares as a header's (FTEF-20.5).
     pub next_thinks: Vec<(String, Span)>,
@@ -353,15 +353,38 @@ pub(super) fn lower_block(block: &ast::Block, cx: Cx<'_>, body: &mut RawBody, fl
             local.scope_end.get_or_insert(end);
         }
     }
+    // FTEF-20.15: a struct a block's statements define is a type from its tag to the block's
+    // end.
+    for tag in block_struct_tags(block.syntax()) {
+        let seen = Span::new(tag.span().start, block.syntax().span().end);
+        body.typedefs.push((tag.text_lossless(), seen));
+    }
     // FTEF-19.9: a `typedef` in a body is checked as one at file level.
     for td in block_typedefs(block.syntax()) {
         body.diagnostics
             .extend(typedef_diagnostics(&td, cx, TypedefScope::Body));
         for name in td.declarators().filter_map(|d| d.name()) {
-            body.typedefs
-                .push((name.text_lossless(), name.span().start));
+            let seen = Span::new(name.span().start, block.syntax().span().end);
+            body.typedefs.push((name.text_lossless(), seen));
         }
     }
+}
+
+/// The tags of the structs and unions a block's statements define, not those of blocks inside.
+fn block_struct_tags(node: &SyntaxNode) -> Vec<qc_syntax::SyntaxToken> {
+    let mut found = Vec::new();
+    for child in node.children() {
+        if child.kind() == SyntaxKind::Block {
+            continue;
+        }
+        if child.kind() == SyntaxKind::StructType
+            && let Some(tag) = child.child_tokens().find(|t| t.kind() == SyntaxKind::Name)
+        {
+            found.push(tag);
+        }
+        found.extend(block_struct_tags(&child));
+    }
+    found
 }
 
 /// The `typedef`s of a block's statements, those of the `extern` blocks among them

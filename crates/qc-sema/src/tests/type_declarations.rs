@@ -684,7 +684,10 @@ fn a_missing_member_and_an_arrays_member_are_refused() {
 // spec FTEF-6.9, QCD-3.56: a width's names are values and its literal is an integer
 #[test]
 fn a_bitfields_width_is_an_integer_constant() {
-    assert_eq!(errors("struct S { int a : b; };", &[]), [Code::E0301]);
+    assert_eq!(
+        errors("struct S { int a : b; };", &[]),
+        [Code::E0301, Code::E0262]
+    );
     assert_eq!(errors("struct S { int a : 1.5; };", &[]), [Code::E0262]);
     assert_eq!(errors("float b = 2; struct S { int a : b; };", &[]), []);
     assert_eq!(errors("struct S { int a : (1 + 2); };", &[]), []);
@@ -1040,4 +1043,44 @@ fn arrays_of_functions_are_checked() {
 fn a_parenthesised_name_needs_qcfuncs() {
     assert_eq!(errors("typedef void() (fn); fn g;", &[]), [Code::E0211]);
     assert!(!errors("#pragma flag disable qcfuncs\ntypedef void() (fn);", &[]).is_empty());
+}
+
+// spec FTEF-20.15: a body's typedefs and struct tags last to their block's end and are no type
+// after the body; its enum is declared as one at file level, divergently
+#[test]
+fn a_bodys_types_last_to_their_block() {
+    for source in [
+        "void() g = { { typedef float t; t x; } };",
+        "void() g = { struct S { float a; }; S x; };",
+        "void() g = { typedef struct S { float a; } T; T x; S y; };",
+        "void() g = { enum E { A }; E e = A; };",
+    ] {
+        assert_eq!(errors(source, &[]), [], "{source}");
+    }
+    assert!(!errors("void() g = { { typedef float t; } t x; };", &[]).is_empty());
+    assert_eq!(
+        errors("void() g = { { struct S { float a; }; } S x; };", &[]),
+        [Code::E0203]
+    );
+    for source in [
+        "void() g = { typedef struct S { float a; } T; }; S y;",
+        "void() g = { struct S { float a; }; }; S y;",
+    ] {
+        assert_eq!(errors(source, &[]), [Code::E0203], "{source}");
+    }
+    assert_eq!(errors("void() g = { enum { A }; }; float x = A;", &[]), []);
+}
+
+// spec FTEF-19.48: a global initialised with an unknown name is no constant, but for a scoped one
+#[test]
+fn an_unknown_initialiser_is_no_constant() {
+    assert_eq!(errors("float y = B;", &[]), [Code::E0214, Code::E0301]);
+    assert_eq!(
+        errors("void() g = { static float x = B; };", &[]),
+        [Code::E0214, Code::E0301]
+    );
+    assert_eq!(
+        errors("void() g = { local float x = B; };", &[]),
+        [Code::E0301]
+    );
 }

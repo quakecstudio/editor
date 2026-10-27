@@ -833,7 +833,7 @@ fn enum_values() {
     );
     assert_eq!(
         fte("enum class E : float { A };\nfloat x = A;\n"),
-        [Code::E0301]
+        [Code::E0214, Code::E0301]
     );
 }
 

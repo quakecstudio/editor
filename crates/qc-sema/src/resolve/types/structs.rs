@@ -9,7 +9,7 @@
 use qc_diag::Code;
 
 use crate::check::StructMemberFacts;
-use crate::lower::{MemberBase, RawStruct, StructMember, top_level_kind};
+use crate::lower::{IntConst, MemberBase, RawStruct, StructMember, top_level_kind};
 use crate::resolve::{ComparedMember, MAX_CLASS_DEPTH, Resolver, Scope, StructDef, StructMatch};
 use crate::symbol::{FileId, Location};
 use crate::ty::Type;
@@ -250,12 +250,20 @@ impl<'a> Resolver<'a> {
             // FTEF-6.9: the width is `QCC_PR_IntConstExpr()`'s, whose names are values and
             // whose literal is an integer ("Value is not an integer constant").
             self.resolve_uses(file, None, &member.width_uses);
-            if !member.width_integer {
+            // An unknown name is no constant either.
+            let unknown_width = matches!(
+                &member.width_const,
+                Some(IntConst::Name(name)) if self.lookup_global(name).is_none()
+            );
+            if !member.width_integer || unknown_width {
                 self.report(
                     Code::E0262,
                     location,
                     "Value is not an integer constant".to_owned(),
                 );
+                return;
+            }
+            if self.check_member_sizes(location, &member.sizes) {
                 return;
             }
             // FTEF-19.41: a `virtual` function member is `Struct::member`, a function with no
@@ -287,6 +295,34 @@ impl<'a> Resolver<'a> {
                 return;
             }
         }
+    }
+
+    /// FTEF-6.17: each array size of a struct member, `QCC_PR_IntConstExpr()`, is an integer
+    /// constant, a name the module defines among them, and no 0. Returns whether one was
+    /// reported, a fatal error.
+    fn check_member_sizes(&mut self, location: Location, sizes: &[IntConst]) -> bool {
+        for size in sizes {
+            match size {
+                IntConst::Integer(0) => {
+                    let message = "cannot cope with 0-sized arrays".to_owned();
+                    self.report(Code::E0356, location, message);
+                    return true;
+                }
+                IntConst::NotInteger => {
+                    let message = "Value is not an integer constant".to_owned();
+                    self.report(Code::E0262, location, message);
+                    return true;
+                }
+                IntConst::Name(name) if self.lookup_global(name).is_none() => {
+                    self.report(Code::E0301, location, format!("Unknown value \"{name}\"."));
+                    let message = "Value is not an integer constant".to_owned();
+                    self.report(Code::E0262, location, message);
+                    return true;
+                }
+                IntConst::Integer(_) | IntConst::Name(_) | IntConst::Unfolded => {}
+            }
+        }
+        false
     }
 
     /// Whether `ty` is a struct or union a member cannot hold yet, one with no body so far or

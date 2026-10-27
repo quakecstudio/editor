@@ -206,6 +206,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   profile, a struct with a parent initialised by position (FTEF-19.47).
 - **QCD-3.60** `E0355` "member U.M was already ininitialised": under an FTEQCC profile, a union
   given a second element (FTEF-19.47).
+- **QCD-3.61** `E0356` "cannot cope with 0-sized arrays": under an FTEQCC profile, a struct
+  member array of size 0 (FTEF-6.17).
 - **QCD-3.58** `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN.": under an FTEQCC
   profile, a member function with more than one of `virtual`, `nonvirtual` and `static`
   (FTEF-9.16).

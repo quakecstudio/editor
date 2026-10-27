@@ -391,6 +391,13 @@ inheritance, bitfields and nested members.
   is "initializer for 'x' is not constant", and `S::b` of an instance member is "Unknown value
   \"S::b\"". An array's only member is `length` (FTE-13), its elements' struct's members none, so
   `x.length` of an array of structs is its length and `x.a` "expected length, found a".
+- **FTEF-6.17** A struct member's array sizes are each `QCC_PR_IntConstExpr()` (`QCC_PR_ParseArrayType`),
+  an integer constant, and a 0 is the fatal error `E0356` "cannot cope with 0-sized arrays":
+  `float a[0]`, `a[0x0]` and `a[2][0]` are refused, `a[2.0]` and `a[-1]` are not, `a[1.5]` is
+  `E0262` "Value is not an integer constant", and a name the module does not define, there or
+  as a bitfield's width (FTEF-6.9), is "Unknown value \"A\"." and then that error. A defined
+  name is taken as a constant; an expression of more than a literal or a name is not folded
+  (FTEF-19.46).
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -3050,6 +3057,9 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   not do anything" and "expected ;, found }". So `float x[2] = {1, 2, 3};`, `S x = {1, 2};` for a
   one-member `S` and `float x[2][2] = {{1, 2, 3}, {3, 4}};` are refused, and `float x[2] = {1,
   2,};` and fewer elements than members are not.
+- **FTEF-19.48** An initialiser of a global or `static` naming no definition is "Unknown value
+  \"NAME\"." where it is used and then `E0214` "initializer for 'X' is not constant"; an unknown
+  `Scope::name` is the first alone.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and
@@ -3225,6 +3235,14 @@ and compares the outcome with the pinned FTEQCC's.
   while a name it finds nothing for is the first item of an expression. In `sizeof (NAME)` and
   a cast's parentheses such a name is a type, and with `caseinsens` off the same name in
   another case is a value, "Unknown value".
+- **FTEF-20.15** A `typedef` and a struct's or union's tag a function's body declares last to
+  the end of its block, and are no type after it: `{ { typedef float t; } t x; }` reads `t` as
+  no type, `{ struct S { float a; }; S x; }` defines `x`, and `S y;` after the body is "\"S\" is
+  not a type". An enum a body declares makes its values constants of the function in FTEQCC, not
+  seen after the body (`float x = A;` there is "Unknown value \"A\"."); this profile divergently
+  declares a body's enum as one at file level, its values and name seen after the body too,
+  since the file's enum checks (the legacy base form, a name another type has, FTEF-19.10) read
+  it there.
 
 ## FTEF-21 Flags that change in the middle of a file
 

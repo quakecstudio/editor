@@ -378,6 +378,15 @@ impl Resolver<'_> {
             .flatten()
         });
         let Some(source) = found else {
+            // FTEF-19.48: the unknown name, reported where it is used, is then no constant; an
+            // unknown `Scope::name` ends the definition.
+            if self.profile.fteqcc_diagnostics()
+                && matches!(holder, Holder::Global | Holder::Static(_))
+                && !source_name.contains("::")
+            {
+                let message = format!("initializer for '{name}' is not constant");
+                self.report(Code::E0214, location, message);
+            }
             return Ok(None);
         };
         let Some(source_ty) = self.index.def(source).map(|d| match d.kind {

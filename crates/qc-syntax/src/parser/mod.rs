@@ -260,8 +260,9 @@ struct TypeShape {
 #[derive(Clone, Debug)]
 struct DeclaredType {
     name: String,
-    /// Whether a function's body declared it, which only that body sees.
-    local: bool,
+    /// The blocks it was declared in, 0 at file level: a body's type is seen to the end of its
+    /// block (FTEF-20.15).
+    depth: usize,
     /// Whether it is a function type: a typedef of one, or of C's function pointer.
     function: bool,
 }
@@ -315,6 +316,8 @@ pub(crate) struct Parser<'a> {
     gotos: Vec<(String, Span)>,
     /// How many function bodies the current token is in, `pr_scope` set when one is.
     bodies: usize,
+    /// How many blocks the current token is in.
+    block_depth: usize,
     /// The names of the parameters of the last parameter list read, each with whether its type
     /// is a function's, which `QCC_PR_ParseImmediateStatements` defines when a body follows
     /// (FTEF-20.4).
@@ -423,6 +426,7 @@ impl<'a> Parser<'a> {
             depth: 0,
             too_deep: false,
             bodies: 0,
+            block_depth: 0,
             params: Vec::new(),
             keywords: Keywords::default(),
             edits: edits.to_vec(),
@@ -2115,12 +2119,13 @@ impl<'a> Parser<'a> {
         if function {
             self.bodies = self.bodies.saturating_add(1);
         }
+        self.block_depth = self.block_depth.saturating_add(1);
         self.block_inner(function);
+        self.block_depth = self.block_depth.saturating_sub(1);
+        let depth = self.block_depth;
+        self.types.retain(|t| t.depth <= depth);
         if function {
             self.bodies = self.bodies.saturating_sub(1);
-            if self.bodies == 0 {
-                self.types.retain(|t| !t.local);
-            }
         }
     }
 
@@ -2134,7 +2139,7 @@ impl<'a> Parser<'a> {
     fn declare_type_shaped(&mut self, name: String, function: bool) {
         self.types.push(DeclaredType {
             name,
-            local: self.bodies > 0,
+            depth: self.block_depth,
             function,
         });
     }

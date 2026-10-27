@@ -193,3 +193,32 @@ fn a_struct_static_member_is_a_global() {
         [d(Code::E0204, "expected length, found a")]
     );
 }
+
+// spec FTEF-6.17: a struct member's array size is an integer constant and no 0
+// spec QCD-3.61: E0356 "cannot cope with 0-sized arrays"
+#[test]
+fn a_member_array_size_is_a_nonzero_integer() {
+    let zero = [d(Code::E0356, "cannot cope with 0-sized arrays")];
+    for size in ["[0]", "[0x0]", "[2][0]"] {
+        assert_eq!(
+            messages(&format!("struct S {{ float a{size}; }};")),
+            zero,
+            "{size}"
+        );
+    }
+    let not_integer = d(Code::E0262, "Value is not an integer constant");
+    assert_eq!(
+        messages("struct S { float a[1.5]; };"),
+        std::slice::from_ref(&not_integer)
+    );
+    let unknown = [d(Code::E0301, "Unknown value \"A\"."), not_integer];
+    assert_eq!(messages("struct S { float a[A]; };"), unknown);
+    assert_eq!(messages("struct S { int a : A; };"), unknown);
+    for source in [
+        "float A = 2; struct S { float a[A]; };",
+        "struct S { float a[2.0]; };",
+        "struct S { float a[-1]; };",
+    ] {
+        assert_eq!(messages(source), [], "{source}");
+    }
+}

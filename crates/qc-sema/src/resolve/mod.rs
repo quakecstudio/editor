@@ -30,7 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use qc_diag::{Code, Diagnostic};
+use qc_diag::{Code, Diagnostic, Span};
 use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
@@ -527,7 +527,7 @@ struct Resolver<'a> {
     /// The definitions that stand for a type's name, which are no values (FTEF-19.38).
     type_defs: HashSet<DefId>,
     /// The `typedef`s of the body being resolved, each with where it stands (FTEF-19.20).
-    body_typedefs: Vec<(String, usize)>,
+    body_typedefs: Vec<(String, Span)>,
     /// The `var` members of each class, by the class and the member's name (FTEF-19.41).
     var_members: HashSet<(DefId, String)>,
     /// The base type of each accessor (FTEF-10.6).
