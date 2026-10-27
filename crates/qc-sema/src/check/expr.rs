@@ -14,11 +14,10 @@ use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::check::constant::Constant;
 use crate::check::convert::{Choice, Operand, choose_opcode};
+use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
-use qc_preproc::Op;
 
-use crate::check::fold::{Folded, fold};
 use crate::check::{Constness, Env, TypedBody, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -213,6 +212,7 @@ impl<'e> Checker<'e> {
         Value {
             array,
             constness,
+            name: Some(token.text_lossless()),
             ..Value::of(ty)
         }
     }
@@ -279,43 +279,19 @@ impl<'e> Checker<'e> {
                 Constness::Opaque
             }
         };
-        let operands = [constness(lhs, left, a), constness(rhs, right, b)];
-        Ok(Some(self.fold(choice.op(), lhs, rhs, operands, c, span)))
-    }
-
-    /// The value of the opcode `op` of `lhs` and `rhs`, folded as `QCC_PR_StatementFlags`
-    /// folds its constant operands (FTEF-26), with the warnings folding gives at `span`;
-    /// `result` is the opcode's result type when nothing is folded.
-    fn fold(
-        &mut self,
-        op: Op,
-        lhs: &Value,
-        rhs: &Value,
-        operands: [Constness; 2],
-        result: OpType,
-        span: Span,
-    ) -> Value {
-        let known = |constness: Constness| match constness {
-            Constness::Known(constant) => Some(constant),
-            Constness::Variable | Constness::Opaque => None,
+        let lhs = Value {
+            constness: constness(lhs, left, a),
+            ..lhs.clone()
         };
-        if operands.contains(&Constness::Opaque) {
-            return Value {
-                constness: Constness::Opaque,
-                ..Value::of(result.value_type())
-            };
-        }
-        let mut notices = Vec::new();
-        let folded = fold(op, known(operands[0]), known(operands[1]), &mut notices);
-        for notice in notices {
-            self.env.report(notice.code, span, notice.message);
-        }
-        match folded {
-            Some(Folded::Constant(constant)) => Value::constant(constant),
-            Some(Folded::Left) => lhs.clone(),
-            Some(Folded::Right) => rhs.clone(),
-            None => Value::of(result.value_type()),
-        }
+        let rhs = Value {
+            constness: constness(rhs, right, b),
+            ..rhs.clone()
+        };
+        let value = self.emit(choice.op(), &lhs, &rhs, span)?;
+        Ok(Some(Value {
+            ty: c.value_type(),
+            ..value
+        }))
     }
 
     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with
@@ -344,6 +320,12 @@ impl<'e> Checker<'e> {
         }
         if self.env.cast(value.source(), &row.value_type(), span) {
             return Err(Fatal);
+        }
+        // FTEF-27.8: the cast emits its conversion opcodes, which are folded, emitted or
+        // emulated in turn.
+        let mut converted = value.clone();
+        for &conv in conversion_opcodes(operand.etype, row.etype()) {
+            converted = self.emit(conv, &converted, &Value::unknown(), span)?;
         }
         Ok(())
     }

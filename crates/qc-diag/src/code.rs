@@ -226,6 +226,11 @@ pub enum Code {
     E0318,
     /// "Unknown field \"NAME\" in class \"CLASS\"" (QCD-4.25).
     E0319,
+    /// "Opcode \"OP|NAME\" not valid for target. Consider the use of: #pragma target fte" and its
+    /// two variants (QCD-4.26).
+    E0320,
+    /// "strcmp function not defined: cannot emulate string<=>string" (QCD-4.27).
+    E0321,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -379,6 +384,17 @@ pub enum Code {
     /// "Numerical overflow. F will be rounded to N", "Numerical truncation of A to B." and
     /// "Constant float operand F will be truncated to N" (QCD-7.76).
     W0234,
+    /// "NAME function not defined: cannot emulate OP" and the other notes of an emulation
+    /// (QCD-7.77).
+    W0235,
+    /// "OP_ADD_SF: string+float may be unsafe" and "OP_ADD_SI: string+int may be unsafe"
+    /// (QCD-7.78).
+    W0236,
+    /// "itof emulation: denormals are unsafe NAME", "ftoi emulation: denormals are unsafe" and the
+    /// other denormal warnings of an emulation (QCD-7.79).
+    W0237,
+    /// "utof emulation: will break if NAME is big" (QCD-7.80).
+    W0238,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -393,7 +409,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 179] = [
+    pub const ALL: [Self; 185] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -495,6 +511,8 @@ impl Code {
         Self::E0317,
         Self::E0318,
         Self::E0319,
+        Self::E0320,
+        Self::E0321,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -568,6 +586,10 @@ impl Code {
         Self::W0232,
         Self::W0233,
         Self::W0234,
+        Self::W0235,
+        Self::W0236,
+        Self::W0237,
+        Self::W0238,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -710,6 +732,10 @@ impl Code {
             Self::W0232 => "W0232",
             Self::W0233 => "W0233",
             Self::W0234 => "W0234",
+            Self::W0235 => "W0235",
+            Self::W0236 => "W0236",
+            Self::W0237 => "W0237",
+            Self::W0238 => "W0238",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -735,6 +761,8 @@ impl Code {
             Self::E0317 => "E0317",
             Self::E0318 => "E0318",
             Self::E0319 => "E0319",
+            Self::E0320 => "E0320",
+            Self::E0321 => "E0321",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -827,6 +855,10 @@ impl Code {
             | Self::W0232
             | Self::W0233
             | Self::W0234
+            | Self::W0235
+            | Self::W0236
+            | Self::W0237
+            | Self::W0238
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -945,6 +977,8 @@ impl Code {
             | Self::E0317
             | Self::E0318
             | Self::E0319
+            | Self::E0320
+            | Self::E0321
             | Self::E0408 => true,
         }
     }

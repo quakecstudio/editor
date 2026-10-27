@@ -11,6 +11,7 @@
 
 pub(crate) mod constant;
 pub(crate) mod convert;
+mod emulate;
 pub(crate) mod etype;
 mod expr;
 pub(crate) mod fold;
@@ -54,6 +55,9 @@ pub(crate) trait Env {
     fn lex_flags_at(&self, at: usize) -> LexFlags;
     /// The output target and the opcodes it has at offset `at` (FTEF-25).
     fn target_at(&self, at: usize) -> OpcodeTarget;
+    /// Whether a definition named `name` is visible where the body is, as
+    /// `QCC_PR_GetSRef(NULL, name, pr_scope, false, ...)` finds an emulation's helper.
+    fn defines(&self, name: &str) -> bool;
     /// Whether the body is a member function's (`pr_classtype`).
     fn in_class(&self) -> bool;
     /// Whether the module follows FTEQCC (PRJ-2.8).
@@ -92,6 +96,8 @@ pub(crate) struct Value {
     pub(crate) constness: Constness,
     /// Whether it names an array, whose type is its elements' (`REF_ARRAYHEAD`).
     pub(crate) array: bool,
+    /// The name of the definition it is, which FTEQCC's messages print (`sym->name`).
+    pub(crate) name: Option<String>,
 }
 
 impl Value {
@@ -101,6 +107,7 @@ impl Value {
             ty,
             constness: Constness::Variable,
             array: false,
+            name: None,
         }
     }
 
@@ -135,6 +142,12 @@ impl Value {
             }),
             Some(_) | None => Source::Typed(&self.ty),
         }
+    }
+
+    /// The name FTEQCC prints for it: its definition's, or for a value the compiler made a
+    /// temporary's, whose number the model does not follow (FTEF-27.4).
+    pub(crate) fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or("temp")
     }
 
     /// The value of an expression the checker does not follow, on which nothing is reported.

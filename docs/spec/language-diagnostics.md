@@ -264,6 +264,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.25** `E0319` "Unknown field \"NAME\" in class \"CLASS\"": under an FTEQCC profile, an
   entity's member in a body that no definition has, CLASS `entity` or the class of the base, at
   the member; not a fatal error (FTEF-24.6).
+- **QCD-4.26** `E0320` "Opcode \"OP|NAME\" not valid for target. Consider the use of: #pragma
+  target fte", "... #pragma target fte_6614" when only the newest FTE revision has it, and
+  "Opcode \"OP|NAME\" is not supported." otherwise: under an FTEQCC profile, an opcode the target
+  lacks and FTEQCC cannot emulate (FTEF-27.5), at the operator; not a fatal error.
+- **QCD-4.27** `E0321` "strcmp function not defined: cannot emulate string<=>string": `<=>` of
+  strings when the target lacks it and no `strcmp` is defined (FTEF-27.3); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -545,6 +551,18 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   rounded to N. This is probably not what you want.", "Numerical truncation of A to B." and
   "Constant float operand F will be truncated to N": under an FTEQCC profile, a constant folding
   converts with a loss (FTEF-26.2, FTEF-26.3), at the operator. `WARN_OVERFLOW`, F312.
+- **QCD-7.77** `W0235` "NAME function not defined: cannot emulate WHAT", "bitshift function not
+  defined: cannot emulate OP_LSHIFT_F*" (and `RSHIFT`), "the nextent builtin is not defined" and
+  "qccx entity offsets are unsafe": under an FTEQCC profile, an opcode the target lacks whose
+  emulation needs a helper the program does not define (FTEF-27.2, FTEF-27.3), at the operator.
+  Warning 0, which no name sets.
+- **QCD-7.78** `W0236` "OP_ADD_SF: string+float may be unsafe" and "OP_ADD_SI: string+int may be
+  unsafe": a string offset the target lacks (FTEF-27.3). `WARN_STRINGOFFSET`, which no name sets.
+- **QCD-7.79** `W0237` "itof emulation: denormals are unsafe NAME", "ftoi emulation: denormals are
+  unsafe" and "OP_ADD_EF: qccx entity offsets are unsafe, and denormals are unsafe": a conversion
+  the target lacks with no helper (FTEF-27.4). `WARN_DENORMAL`, F313, an error by default.
+- **QCD-7.80** `W0238` "utof emulation: will break if NAME is big": an unsigned to float conversion
+  the target lacks with no helper (FTEF-27.4). `WARN_NOTSTANDARDBEHAVIOUR`, F317.
 
 ## QCD-8 Preprocessor errors
 

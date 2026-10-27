@@ -3532,6 +3532,69 @@ saturates, as on the arm64 build the differential is recorded on.
   false right operand of `&&` is 0. `||` never folds here: `QCC_Eval_Truth(eval_a, ...)` reads
   the absent left constant, which is false.
 - **FTEF-26.5** A value is a constant when it is a literal, a folded result, or a definition
-  that is constant and initialised (`QCC_SRef_EvalConst`). A constant whose value the semantic
-  model does not keep (an integer constant's initialiser, kept as text) decides nothing it
-  checks: no folding, no emulation.
+  that is constant and initialised (`QCC_SRef_EvalConst`), an enum's item and a `length` among
+  them. A constant whose value the semantic model does not keep (an integer constant's
+  initialiser, kept as text, an enum's item, a `length`) decides nothing it checks: no folding,
+  no emulation.
+
+## FTEF-27 Opcodes the target lacks
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its `if (!QCC_OPCodeValid(op))` switch and
+`badopcode`), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+When the opcode an operator is given (FTEF-23) is not folded (FTEF-26) and the target lacks it
+(FTEF-25), `QCC_PR_StatementFlags` emulates it. Each opcode an emulation emits goes through
+`QCC_PR_StatementFlags` in turn, so it is folded, emitted or emulated as well. The semantic
+model follows each emulation as far as its diagnostics (`crates/qc-sema/src/check/emulate.rs`);
+the statements it would emit are code generation's.
+
+### Behaviour
+
+- **FTEF-27.1** An opcode the target has is emitted with no diagnostic: on the FTE target the
+  integer and string opcodes, on the standard target id's.
+- **FTEF-27.2** An integer, power or vector remainder opcode calls a helper the program defines
+  before the function, found by name in the function's scope or the globals (`AddInt`, `SubInt`,
+  `MulInt`, `DivInt`, `BitandInt`, `BitorInt`, `ModVec`, `powf` then `pow`, and for `~int`
+  `SubInt`); with none it is the warning `W0235` "NAME function not defined: cannot emulate WHAT"
+  and refused (FTEF-27.5). A mixed integer and float opcode converts its integer operand
+  (`OP_CONV_ITOF`) and emits the float opcode; an integer comparison converts its left operand
+  and emits the mixed one; `==` and `!=` of integers and fields are `OP_EQ_FNC` and `OP_NE_FNC`.
+  The unsigned opcodes are the signed ones, the 64-bit unsigned the 64-bit signed; `OP_EQ_I64`
+  and `OP_NE_I64` compare the two words; the 64-bit bitwise opcodes and loads are emitted as
+  statements of the 32-bit ones with no check of the target.
+- **FTEF-27.3** `OP_ADD_SF` calls `AddStringFloat` when defined; else, for a string that is no
+  constant, it is the warning `W0236` "OP_ADD_SF: string+float may be unsafe", then the float is
+  converted to an integer and added with `OP_ADD_I`. `OP_ADD_SI` and `OP_ADD_IS` warn "OP_ADD_SI:
+  string+int may be unsafe" and add with `OP_ADD_I`. An entity plus a float, unless `qccx` is on,
+  converts the float and adds with `OP_ADD_EI`, which needs the `nextent` builtin ("the nextent
+  builtin is not defined" and refused) and then subtracts with `OP_SUB_I` (`(op ==
+  &pr_opcodes[OP_ADD_EF]) ? OP_ADD_I : OP_SUB_I`, never `OP_ADD_EF` there). `<=>` of strings needs
+  `strcmp`, else the fatal error `E0321`.
+- **FTEF-27.4** A conversion folds a constant (FTEF-26.3); else it calls `itof`, `ftoi`, or for
+  `OP_CONV_UF` `utof`, `quake_utof`, `itof` or `quake_itof`, when defined; else it is the warning
+  `W0237` "itof emulation: denormals are unsafe NAME" (NAME the value's definition, a temporary's
+  `temp_N` whose number the model does not follow) or "ftoi emulation: denormals are unsafe",
+  F313, an error by default, or for `OP_CONV_UF` `W0238` "utof emulation: will break if NAME is
+  big". `%` with no `mod` (or `ModInt`) function is expanded into division, `|`, multiplication
+  and subtraction; `^` into `~`, `&` and `|`; `v / f` into `1 / f` and `OP_MUL_VF`. An integer
+  shift with no `LShiftInt`, `RShiftInt` or `RShiftUInt` is a product or quotient by `1 << n`, or
+  by `2 *^ n` for a variable `n`. A float shift is the integer one on converted operands when the
+  target has it, else `floor(a * pow(2, b))` when `powf` or `pow` and `floor` are defined, else
+  `bitshift`, else "bitshift function not defined: cannot emulate OP_LSHIFT_F*" and refused.
+- **FTEF-27.5** An opcode FTEQCC does not emulate is refused, `badopcode`: the error `E0320`
+  "Opcode \"OP|NAME\" not valid for target. Consider the use of: #pragma target fte" when the FTE
+  target at its default revision (5768) has it, "... #pragma target fte_6614" when only the
+  newest revision has it, else "Opcode \"OP|NAME\" is not supported.", OP the operator and NAME
+  the opcode's `opname`. It is reported with `QCC_PR_ParseWarning(ERR_BADEXTENSION, ...)` and does
+  not end the statement.
+- **FTEF-27.6** `&&` and `||` are `OP_AND_F` and `OP_OR_F` when the target has no other logic
+  opcode for their operands.
+- **FTEF-27.8** A cast of an operand to its opcode's type (FTEF-23.5) emits the conversion
+  opcodes `QCC_TryEvaluateCast` names for the pair of types, in order: `OP_CONV_UF` for an
+  unsigned value made a float, `OP_CONV_ITOF` for an integer, `OP_CONV_FTOI` back, the double and
+  64-bit conversions, two of them for a double and a 32-bit integer; each is folded, emitted or
+  emulated in turn. With no `utof`, `quake_utof`, `itof` or `quake_itof`, `OP_CONV_UF` is
+  `OP_CONV_ITOF`, with its warning, then "utof emulation: will break if NAME is big".
+
+The statements an emulation emits are code generation's; the semantic model follows them only
+as far as they report.

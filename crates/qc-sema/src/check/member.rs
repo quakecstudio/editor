@@ -27,7 +27,7 @@ impl Checker<'_> {
         // other (FTE-13).
         if base.array {
             return Ok(match selector_name(&selector) {
-                Some((name, _)) if name == "length" => Value::of(Type::Named("__int32".into())),
+                Some((name, _)) if name == "length" => length(),
                 Some(_) | None => Value::unknown(),
             });
         }
@@ -173,7 +173,7 @@ impl Checker<'_> {
         if base.constness == Constness::Variable {
             return self.fatal(Code::E0316, span, "not a constant".to_owned());
         }
-        Ok(Value::of(Type::Named("__int32".into())))
+        Ok(length())
     }
 
     /// FTEF-24.4: a struct's or union's member, found in it or its parents. One it does not
@@ -223,4 +223,13 @@ fn selector_name(selector: &ast::Expr) -> Option<(String, Span)> {
     };
     let token = name.name()?;
     Some((token.text_lossless(), token.span()))
+}
+
+/// FTEF-24.8: a `length`, an `int` constant (`QCC_MakeIntConst`) whose value the model does not
+/// keep (FTEF-26.5).
+fn length() -> Value {
+    Value {
+        constness: Constness::Opaque,
+        ..Value::of(Type::Named("__int32".into()))
+    }
 }

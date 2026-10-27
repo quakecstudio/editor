@@ -63,6 +63,10 @@ impl Env for BodyEnv<'_, '_> {
             }
             Some(LiteralValue::String(text)) => Constness::Known(Constant::string(text == "\"\"")),
             Some(LiteralValue::Builtin { .. } | LiteralValue::Text(_)) => Constness::Opaque,
+            // An enum's item and any other initialised constant whose value is not kept.
+            None if self.resolver.index.def(def).is_some_and(|d| d.initialized) => {
+                Constness::Opaque
+            }
             None => Constness::Variable,
         }
     }
@@ -98,6 +102,10 @@ impl Env for BodyEnv<'_, '_> {
             .or_else(|| marks.first())
             .map(|&(_, target)| target)
             .unwrap_or_default()
+    }
+
+    fn defines(&self, name: &str) -> bool {
+        self.resolver.lookup_global(name).is_some()
     }
 
     fn in_class(&self) -> bool {
