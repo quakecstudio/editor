@@ -76,6 +76,38 @@ When the run stops on `WAITING ON PEOPLE`, the issues it lists have a draft ADR 
 | 4 | Autonomous through signing (#23: the secrets are set; agents build the signing workflow) and release, then the license review, the demo and the MVP gate. |
 | 5-7 | The map editor, the same pattern. |
 
+## The knowledge base
+
+A sibling checkout, `../quakecstudio-kb` (the `quakecstudio/kb` repository), holds durable
+knowledge distilled from past sessions across the editor, site, infra, tree-sitter-quakec and
+.github repositories: decisions and their rationale, rejected alternatives, dead ends, user
+corrections, gotchas with their fixes, runbooks, integration quirks, testing and readiness
+knowledge. It is an Open Knowledge Format v0.2 bundle: one markdown concept per file with YAML
+frontmatter, in `architecture/`, `decisions/`, `conventions/`, `gotchas/`, `runbooks/`,
+`integrations/`, `testing/` and `references/`.
+
+**Read-only from here.** `.claude/settings.json` allows reading `../quakecstudio-kb` and denies
+Edit and Write there (#577). Nothing in this repository writes to it: the base is refreshed from
+session transcripts by its own `/quakecstudio-kb-refresh` skill, run by hand in that checkout,
+and every change lands there through a pull request.
+
+Query it before designing, debugging a tool or CI failure, or repeating a decision:
+
+```bash
+KB=../quakecstudio-kb
+cat $KB/index.md                              # the bundle map: one line per directory
+cat $KB/gotchas/index.md                      # a directory's concepts, one line each with its summary
+rg -il 'merge queue|land.sh' $KB --glob '*.md' # concepts that mention a term (the frontmatter is searchable too)
+rg -l '^- editor' $KB/decisions                # concepts scoped to this repository (the first tag is the scope)
+rg -n '^title:|^description:' $KB/testing/*.md # titles and summaries of a directory
+```
+
+Open a concept file only once its index line looks relevant; the `sources` list in its
+frontmatter names the transcript or artifact to re-check a fact against. A concept with
+`status: deprecated` names its replacement in `superseded_by`; one with `stale_after` in the
+past is a claim to re-verify, not to repeat. When a session shows a concept to be wrong, say so
+in the hand-back or the PR so the next refresh corrects it; do not edit the base from here.
+
 ## Cost
 
 What a run spends tokens on, and the rules that keep it down (`.claude/skills/run-phase`, `work-issue`, `readiness-review` and the agent definitions carry them):
