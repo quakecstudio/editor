@@ -13,6 +13,7 @@ use qc_syntax::ast::{self, AstNode as _};
 
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::reference::expected_after;
 use crate::check::{Constness, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -75,6 +76,10 @@ impl Checker<'_> {
                 Value::of(Type::Field(member.ty.into()))
             }
             Etype::Pointer => self.pointer_member(&base, &selector)?,
+            // FTEF-24.10: a value of a type with no members ends the expression before the
+            // `.`: the statement goes on with the value, and the `.` is then "expected ;, found
+            // ."; inside parentheses, a call's arguments or an index the construct expects its
+            // own token at once.
             Etype::Void
             | Etype::Float
             | Etype::Field
@@ -84,9 +89,20 @@ impl Checker<'_> {
             | Etype::Int64
             | Etype::Uint64
             | Etype::Double
-            | Etype::Variant
             | Etype::Enum
-            | Etype::Boolean => Value::unknown(),
+            | Etype::Boolean
+            | Etype::Variant => {
+                let expected = expected_after(field.syntax());
+                let message = format!("expected {expected}, found .");
+                let span = field.syntax().span();
+                if expected != ";" {
+                    return self.fatal(Code::E0204, span, message);
+                }
+                if self.pending.is_none() {
+                    self.pending = Some((message, span));
+                }
+                return Ok(base);
+            }
         })
     }
 

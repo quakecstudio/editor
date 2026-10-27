@@ -276,7 +276,7 @@ impl Checker<'_> {
                 })
             }
             _ => {
-                let expected = expected_after(index);
+                let expected = expected_after(index.syntax());
                 let message = format!("expected {expected}, found [");
                 self.fatal(Code::E0204, span, message)
             }
@@ -528,8 +528,8 @@ impl Checker<'_> {
 
 /// The token FTEQCC's parser expects where a `[` stands after what is no array: `)` inside
 /// parentheses or a call's arguments, `]` inside an index, `;` otherwise.
-fn expected_after(index: &ast::IndexExpr) -> &'static str {
-    for node in index.syntax().ancestors() {
+pub(super) fn expected_after(node: &qc_syntax::SyntaxNode) -> &'static str {
+    for node in node.ancestors() {
         match node.kind() {
             SyntaxKind::ParenExpr | SyntaxKind::ArgList => return ")",
             SyntaxKind::IndexExpr => return "]",

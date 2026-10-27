@@ -544,3 +544,37 @@ fn an_unknown_keyword_name() {
         ]
     );
 }
+
+// spec FTEF-24.10: a `.` after a value of a type with no members ends the expression: the
+// statement goes on with the value, then the `.` is "expected ;, found ."
+#[test]
+fn a_dot_after_a_value_with_no_members() {
+    let cases = [
+        (
+            "float a, b; void() g = { b = a.nope; };",
+            vec![d(Code::E0204, "expected ;, found .")],
+        ),
+        (
+            "float a, b; void() g = { b = a.x + 1; };",
+            vec![d(Code::E0204, "expected ;, found .")],
+        ),
+        (
+            "float a, b; void(float x) f = {}; void() g = { f(a.x); };",
+            vec![d(Code::E0204, "expected ), found .")],
+        ),
+        (
+            ".float fl; float b; void() g = { b = fl.x; };",
+            vec![d(Code::E0213, "Cannot cast from .float to float")],
+        ),
+        (
+            "int i; float b; void() g = { b = i.x; };",
+            vec![
+                d(Code::E0125, "itof emulation: denormals are unsafe i"),
+                d(Code::E0204, "expected ;, found ."),
+            ],
+        ),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(diags(&format!("{source}\n")), expected, "{source}");
+    }
+}

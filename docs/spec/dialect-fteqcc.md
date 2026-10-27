@@ -3531,6 +3531,13 @@ statement's checks (FTEF-23.6).
   an intrinsic (`randomv`, `alloca`, `entnum`, `autocvar`, `used_model`, `used_sound`, `va_arg`,
   `_`, `random`) or `nil`, is that value and no field: the fatal error `E0318` "NAME is not a
   field", `nil` printed as its constant's name, "IMMEDIATE is not a field".
+- **FTEF-24.10** `QCC_PR_ParseField` reads `.` only after an entity, a value of a type with
+  accessor members, a vector, a `.vector` field, a string, a struct or union, a pointer or a class;
+  after a value of any other type the expression ends before the `.`. The statement goes on with
+  the value it has, `b = a` of `b = a.x + 1` stored with its casts and conversions, and then the
+  `.` is the fatal error `E0204` "expected ;, found ."; inside parentheses, a call's arguments or
+  an index the construct expects its own token at once, "expected ), found .". A fatal error
+  before it, as "Cannot cast from .float to float" for `b = fl.x`, is reported instead.
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and

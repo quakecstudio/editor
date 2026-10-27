@@ -45,6 +45,9 @@ pub(super) struct Checker<'e> {
     /// Whether the checker reads an initialiser at global scope, where no statement may be
     /// generated (`!pr_scope`, FTEF-34.9).
     pub(super) global: bool,
+    /// A token the statement does not take, found where an expression ended early, reported
+    /// once the statement has read the expression it has (FTEF-24.10).
+    pub(super) pending: Option<(String, qc_diag::Span)>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -67,6 +70,7 @@ impl<'e> Checker<'e> {
             layout: Layout::default(),
             emitted: 0,
             global: false,
+            pending: None,
         }
     }
 

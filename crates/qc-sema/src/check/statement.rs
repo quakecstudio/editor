@@ -34,7 +34,13 @@ struct Case {
 impl Checker<'_> {
     /// Checks `stmt`; a fatal error in one of its expressions ends its checks (FTEF-23.6).
     pub(super) fn statement(&mut self, stmt: &ast::Stmt) {
-        let _ended: Result<(), Fatal> = self.statement_parts(stmt);
+        let ended = self.statement_parts(stmt);
+        // FTEF-24.10: a fatal error before the token ends the statement first.
+        if let Some((message, span)) = self.pending.take()
+            && ended.is_ok()
+        {
+            self.env.report(Code::E0204, span, message);
+        }
     }
 
     fn statement_of(&mut self, stmt: Option<ast::Stmt>) {
@@ -641,20 +647,26 @@ impl Checker<'_> {
 
     /// FTEF-34.9: the initialiser `expr` of the global `name` of type `ty`, read at global scope.
     pub(super) fn initialiser(&mut self, expr: &ast::Expr, ty: &Type, name: &str) {
-        let Ok(value) = self.value(Some(expr.clone())) else {
-            return;
-        };
+        let checked = self.initialiser_value(expr, ty, name);
+        if let Some((message, span)) = self.pending.take()
+            && checked.is_ok()
+        {
+            self.env.report(Code::E0204, span, message);
+        }
+    }
+
+    fn initialiser_value(&mut self, expr: &ast::Expr, ty: &Type, name: &str) -> Result<(), Fatal> {
+        let value = self.value(Some(expr.clone()))?;
         if value.ty == Type::Unknown {
-            return;
+            return Ok(());
         }
         let span = expr.syntax().span();
-        let Ok(value) = self.cast_to(&value, ty, span) else {
-            return;
-        };
+        let value = self.cast_to(&value, ty, span)?;
         if value.constness == Constness::Variable {
             let message = format!("initializer for '{name}' is not constant");
             self.env.report(Code::E0214, span, message);
         }
+        Ok(())
     }
 
     /// Whether the function returns a type larger than a vector, through a pointer its caller

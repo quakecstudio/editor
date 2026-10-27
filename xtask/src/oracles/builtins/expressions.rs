@@ -274,6 +274,10 @@ const PROGRAMS: &[&str] = &[
      void() g = { a = h.nope; };\n",
     "accessor H : string; H h; float b;\nvoid() g = { b = h; };\n",
     "accessor H : float; H h; float b;\nvoid() g = { b = h; h = b; };\n",
+    // FTEF-24.10: a `.` after a value with no members.
+    "float a, b; void() g = { b = a.nope; };\n",
+    "float a, b; void(float x) f = {}; void() g = { f(a.x); };\n",
+    ".float fl; float b; void() g = { b = fl.x; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused
