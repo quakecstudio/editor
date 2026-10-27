@@ -12,11 +12,11 @@ use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
 
-use crate::check::Value;
 use crate::check::constant::Constant;
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::{Sym, Value};
 use crate::ty::Type;
 
 /// Which of FTEQCC's tests of a value is made.
@@ -169,21 +169,58 @@ impl Checker<'_> {
         let (kept, kept_null) = match middle {
             None => {
                 let null = condition.known().is_some_and(Constant::null);
+                // `(r.cast->size>=3)?OP_STORE_V:OP_STORE_F`, after the `IFNOT`.
+                let words = self.env.layout(&condition.ty).map_or(1, |l| l.words);
+                let op = if words >= 3 { Op::StoreV } else { Op::StoreF };
+                self.arm_store(Some(op), &condition, self.emitted, span)?;
                 (condition, null)
             }
             Some(middle) => {
+                let before = self.emitted;
                 let value = self.value(Some(middle))?;
                 let value = self.stored_arm(value, span)?;
                 let null = value.known().is_some_and(Constant::null);
+                // `switch(r.cast->size)`: the first arm is stored by its size.
+                let words = self.env.layout(&value.ty).map_or(1, |l| l.words);
+                let op = match words {
+                    3 => Some(Op::StoreV),
+                    2 => Some(Op::StoreI64),
+                    _ => Some(Op::StoreF),
+                };
+                self.arm_store(op, &value, before, span)?;
                 (value, null)
             }
         };
-        self.generate(Self::store_op(self.etype_of(&kept.ty)), span);
         self.generate(Op::Goto, span);
+        let before = self.emitted;
         let other = self.value(last)?;
         let other = self.stored_arm(other, span)?;
-        self.generate(Self::store_op(self.etype_of(&other.ty)), span);
+        // `QCC_StoreToSRef` by the last arm's type, a double's, struct's or enum's word by word
+        // with plain statements.
+        let op = match self.etype_of(&other.ty) {
+            Some(Etype::Double | Etype::Struct | Etype::Union | Etype::Enum) => None,
+            etype => Some(Self::store_op(etype)),
+        };
+        self.arm_store(op, &other, before, span)?;
         self.arms(kept, kept_null, other, span)
+    }
+
+    /// FTEF-30.3: an arm's store, `op` through `QCC_PR_StatementFlags`, which folds it into the
+    /// statement that made the arm's temporary when the arm made one since `before` emitted
+    /// statements (`opt_assignments`).
+    fn arm_store(
+        &mut self,
+        op: Option<Op>,
+        value: &Value,
+        before: usize,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        let folded = value.sym == Sym::Temp && self.emitted > before;
+        if let Some(op) = op.filter(|_| !folded && value.ty != Type::Unknown) {
+            let operand = Value::of(value.ty.clone());
+            self.emit(op, &operand, &operand, span)?;
+        }
+        Ok(())
     }
 
     /// FTEF-30.3: the type of `?:` from its arms, `kept` the condition or middle arm and

@@ -737,6 +737,8 @@ const fn emulation(op: Op) -> Emulation {
         Op::NeU64 => Instead(Op::NeI64),
         Op::EqI64 => Expand(&[Op::EqI, Op::AndI]),
         Op::NeI64 => Expand(&[Op::NeI, Op::OrI]),
+        // `case OP_STORE_I64:` its two words by `OP_STORE_FLD`.
+        Op::StoreI64 => Expand(&[Op::StoreFld, Op::StoreFld]),
         // `QCC_PR_SimpleStatement`, which emits with no check of the target.
         Op::LoadI64
         | Op::BitandI64
@@ -744,7 +746,6 @@ const fn emulation(op: Op) -> Emulation {
         | Op::BitxorI64
         | Op::BitandV
         | Op::BitorV
-        | Op::StoreI64
         | Op::LoadaStruct => Emitted,
         _ => Refuse,
     }
@@ -865,3 +866,6 @@ pub(super) fn conversion_opcodes(from: Etype, to: Etype) -> &'static [Op] {
 fn replaced(op: Op) -> Value {
     row(op).map_or_else(Value::unknown, |r| Value::of(r.types[2].value_type()))
 }
+
+#[cfg(test)]
+mod tests;

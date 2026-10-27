@@ -4300,7 +4300,10 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   OPNAME the opcode's: an operator's that is not folded, `LOADF_F` and the like for an entity's
   field, `STORE_F` for each component of a vector built, the stores of a call's arguments (by
   their words, `STORE_V`, `STORE_I64` or `STORE_F`) and `CALLn`, `IFNOT`, `STORE_*`, `GOTO` and
-  `STORE_*` for `?:`, and the `DIV_F` or `MUL_F` of an int conversion's emulation. The value is
+  `STORE_*` for `?:` (the first arm stored by its size, `STORE_V`, `STORE_I64` or `STORE_F`,
+  the last by its type as `QCC_StoreToSRef` stores it, a double's with plain statements that
+  report nothing, an `OP_STORE_I64` two `STORE_FLD`s on a target without it, and a store of a
+  temporary the arm's last statement made folded into it, `opt_assignments`), and the `DIV_F` or `MUL_F` of an int conversion's emulation. The value is
   then cast to the global's type, and a value that is no constant is `E0214` "initializer for
   'NAME' is not constant". So `float b = a + 1;` gives both, `float b = 1 + 2;` neither, and
   `const vector v = [19, 20];` is a constant.

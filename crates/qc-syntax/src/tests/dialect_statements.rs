@@ -593,7 +593,7 @@ fn statement_forms_are_named_by_the_view() {
     assert_eq!(untils, [true, false, true, false]);
 }
 
-// spec FTEF-18.6: a `for` header's three clauses are each the view's, and an empty one is none
+// spec FTEF-16.9: a `for` header's three clauses are each the view's, and an empty one is none
 #[test]
 fn for_clauses_are_named_by_the_view() {
     let parsed = fte_ok(&in_body(

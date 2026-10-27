@@ -588,3 +588,58 @@ fn a_power_warns_of_pow() {
     let found = diags(&body("i = i >> i;"));
     assert_eq!(found.first(), Some(&helper("pow", "int*^int")));
 }
+
+// spec FTEF-34.9: a global's `?:` stores its first arm by its size and its last by its type,
+// each a statement at global scope, an `OP_STORE_I64` two `OP_STORE_FLD`s, and a double's last
+// arm word by word with no statement reported
+#[test]
+fn a_global_ternary_stores_each_arm() {
+    let scope = |ops: &[&str]| -> Vec<(Code, String)> {
+        let mut found: Vec<(Code, String)> = ops
+            .iter()
+            .map(|op| {
+                d(
+                    Code::E0345,
+                    &format!("Unable to generate statements at global scope ({op})."),
+                )
+            })
+            .collect();
+        found.push(d(Code::E0214, "initializer for 'x' is not constant"));
+        found
+    };
+    for (ty, first, last) in [
+        ("vector", "STORE_V", "STORE_V"),
+        ("string", "STORE_F", "STORE_S"),
+        ("entity", "STORE_F", "STORE_ENT"),
+        (".float", "STORE_F", "STORE_FLD"),
+        ("void()", "STORE_F", "STORE_FNC"),
+        ("float*", "STORE_F", "STORE_F"),
+    ] {
+        let source = format!("float c; var {ty} a, b; {ty} x = c ? a : b;\n");
+        assert_eq!(
+            diags(&source),
+            scope(&["IFNOT", first, "GOTO", last]),
+            "{ty}"
+        );
+    }
+    assert_eq!(
+        diags("float c; __int64 a, b; __int64 x = c ? a : b;\n"),
+        scope(&[
+            "IFNOT",
+            "STORE_FLD",
+            "STORE_FLD",
+            "GOTO",
+            "STORE_FLD",
+            "STORE_FLD"
+        ])
+    );
+    assert_eq!(
+        diags("float c; __double a, b; __double x = c ? a : b;\n"),
+        scope(&["IFNOT", "STORE_FLD", "STORE_FLD", "GOTO"])
+    );
+    // An arm the statement before made is stored by that statement.
+    assert_eq!(
+        diags("float c, a, b; float x = c ? a + 1 : b;\n"),
+        scope(&["IFNOT", "ADD_F", "GOTO", "STORE_F"])
+    );
+}
