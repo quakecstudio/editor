@@ -2426,7 +2426,7 @@ function-by-function inventory is [`inventory-l3.md`](inventory-l3.md).
 FTEQCC's compiler descends from id's `qcc` (`inventory-l2.md`), and its `QCC_PR_ParseDefs` and
 `QCC_PR_GetDef` grew from id's `PR_ParseDefs` and `PR_GetDef` (QC-11, QC-12). These statements
 are what the FTEQCC profile adds on top of them, ported into `qc-sema`'s resolver
-(`crates/qc-sema/src/resolve.rs`, `crates/qc-sema/src/cast.rs`) and proven by the definitions
+(`crates/qc-sema/src/resolve/`, `crates/qc-sema/src/cast.rs`) and proven by the definitions
 family of `cargo xtask oracles builtins` (FTEF-19.18). Where a statement names a warning, the
 pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties` turns off
 (`qccwarningaction[i] = WA_WARN;`, FTEF-18).

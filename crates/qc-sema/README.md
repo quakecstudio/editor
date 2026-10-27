@@ -92,7 +92,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   sections are the parser's (`qc-syntax`) or the compiler's (L4): the type rules of
   expressions, operator checks and code generation. The definitions are ported from id's
   `qcc/pr_comp.c` and FTEQCC's `engine/qclib/qcc_pr_comp.c` and `qcc_pr_lex.c`, each function
-  cited in the headers of `src/resolve.rs` and `src/cast.rs`
+  cited in the headers of the `src/resolve/` modules and `src/cast.rs`
   ([`inventory-l3.md`](../../docs/spec/inventory-l3.md)).
 - **Shipped:** yes.
 
@@ -121,7 +121,7 @@ The definitions themselves follow id's `PR_ParseDefs` and `PR_GetDef` and FTEQCC
 profile a literal initialiser has the definition's type (QC-11.3), parameters keep their order
 in the global area (QC-13.5), a vector's components are not initialised with it (QC-11.11), a
 field's components are of a type of their own (QC-11.12) and a local is initialised once
-(QC-11.13). Under FTEQCC (FTEF-19, in `src/cast.rs` and `src/resolve.rs`) an initialiser or a
+(QC-11.13). Under FTEQCC (FTEF-19, in `src/cast.rs` and `src/resolve/`) an initialiser or a
 default value is cast to its definition's type as `QCC_TryEvaluateCast` casts it, a name that
 initialises a global must be a constant, whose value the redeclaration comparison then reads,
 a parameter given twice is an error, a duplicate local or a local hiding a global a warning,
