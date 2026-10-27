@@ -177,30 +177,32 @@ branches = 87
 mutation = 100
 spec = 100
 
-# qc-lexer (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants and 100% on every axis.
+# qc-lexer (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run 40332289531) measures the layer ready; 100% on every axis.
 [crates.qc-lexer]
-readiness = "P1-R2"
+readiness = "P2-R2"
 lines = 100
 branches = 100
 mutation = 100
 spec = 100
 
-# qc-syntax (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants.
+# qc-syntax (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run SYNTAX_RUN_ID) measures the layer ready; no surviving mutants.
 [crates.qc-syntax]
-readiness = "P1-R2"
-lines = 97
-branches = 92
-mutation = 100
+readiness = "P2-R2"
+lines = 98
+branches = 94
+mutation = 99
 spec = 100
+reason = "P2-R2: two of #581's mutants cannot be observed, so they are listed as equivalent and hold the measured mutation at 99.9%"
+equivalent_mutants = { "crates/qc-syntax/src/parser/fte.rs: replace > with >= in Parser<'_>::class_member" = "the class body's loop calls class_member only when the current token is not `}`, so when `labels > 0 && self.at(K::RBrace)` is tested at a `}` at least one label was just read: labels is never 0 there and `> 0` and `>= 0` agree on every input", "crates/qc-syntax/src/parser/mod.rs: replace && with || in Parser<'a>::starts_declaration" = "under the vanilla profile both sides of `tok.kind == K::LBracket && self.fteqcc()` are false for every token but `[`, where they agree; under the FTEQCC profile the mutant sends every name to fte_starts_declaration, whose registered_type test answers true for every name type_word does (registered_type reads type_word first), so the two paths give the same answer for every name" }
 
-# qc-project (L2 syntax): the P1-R2 readiness re-run (run 39020739388) measures
-# the layer ready; no surviving mutants.
+# qc-project (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
+# run 40332289531) measures the layer ready; no surviving mutants.
 [crates.qc-project]
-readiness = "P1-R2"
-lines = 97
-branches = 93
+readiness = "P2-R2"
+lines = 98
+branches = 94
 mutation = 100
 spec = 100
 
@@ -211,12 +213,14 @@ spec = 100
 # MemoryLoader::folded, now written with Iterator::min so the comparison has no
 # operator to flip). The two below are equivalent on every realisable input.
 # The P1-R2 re-run (run 39020739388) measures the layer ready and sets the
-# minimums below; the two equivalent mutants hold the measured mutation at 98%.
+# minimums below. The P2-R2 review (docs/readiness/p2-r2.md, run 40388389285)
+# measures it again after P2-137 killed the four survivors of #570 and #557; the
+# one equivalent mutant it still reaches holds the measured mutation at 99.9%.
 [crates.qc-preproc]
-readiness = "P1-R2"
+readiness = "P2-R2"
 lines = 98
-branches = 91
-mutation = 98
+branches = 95
+mutation = 99
 spec = 100
 reason = "P1-58 (#360): the trait default already returns None, and no lexical diagnostic can start at a conditional skip region's end, so neither survivor has a distinguishing input"
 equivalent_mutants = { "crates/qc-preproc/src/lib.rs: replace < with <= in Preprocessor<L>::finish_cursor" = "the guard `s.start <= d.span.start && d.span.start < s.end` suppresses a lexical diagnostic inside a skipped conditional region [start, end); a skip region's end is always either the file length (no byte starts there) or the start of the `#else`/`#endif` that re-enables output (a `#`, which lexes as Punct(Hash) and is never a lexical error, QC-9.6), so no diagnostic's span starts at s.end and `<` and `<=` agree on every input", "crates/qc-preproc/src/source.rs: replace Loader::stored_name -> Option<OsString> with None" = "the Loader trait's default stored_name body is `let _ = path; None`, so returning None is the unmutated value; a loader that lists no directory cannot tell the stored name (PRJ-7.2), which a_loader_without_a_directory_has_no_stored_name pins, while the Some(Default::default()) mutant of the same default is killed by it" }

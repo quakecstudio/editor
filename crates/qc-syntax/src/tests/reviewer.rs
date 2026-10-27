@@ -753,13 +753,25 @@ fn reviewer_eighth_switch_view_gives_its_statement_or_block() {
         switch.statement().map(|s| s.syntax().kind()),
         Some(K::Block)
     );
-    // Vanilla reads only a `{` body (FTE-5.1 in the rerelease spec: the block form).
+    // Vanilla reads only a `{` body: with none the switch holds an empty block and the
+    // statement after it is the function's.
     let vanilla = "float a;\nvoid() f = { switch (a) return; };";
-    assert!(
-        parse_with(vanilla.as_bytes(), Dialect::Vanilla)
-            .errors()
-            .count()
-            > 0
+    let parsed = parse_with(vanilla.as_bytes(), Dialect::Vanilla);
+    let switch = parsed
+        .syntax()
+        .descendants()
+        .find(|n| n.kind() == K::SwitchStmt)
+        .unwrap();
+    assert_eq!(
+        switch.children().map(|n| n.kind()).collect::<Vec<_>>(),
+        [K::NameRef, K::Block]
+    );
+    assert_eq!(
+        switch
+            .descendants()
+            .filter(|n| n.kind() == K::ReturnStmt)
+            .count(),
+        0
     );
 }
 
@@ -799,6 +811,8 @@ fn reviewer_eighth_static_members_take_a_body_only_when_functions() {
     assert_eq!(eighth_codes(braces), [Code::E0201]);
     let bare = "struct S { float a; static float b { 1 }; };";
     assert_eq!(eighth_codes(bare), [Code::E0204]);
+    let statements = "struct S { float a; static float b { return; }; };";
+    assert_eq!(eighth_codes(statements), [Code::E0204]);
     let bodyless = "struct S { float a; static void() m { return; }; };";
     assert_eq!(eighth_codes(bodyless), []);
 }
@@ -864,6 +878,16 @@ fn reviewer_eighth_each_type_form_starts_a_for_initialiser() {
     // qualifier it does not take; an expression would be refused otherwise.
     let volatile = "void() f = { for (volatile float i = 0; 0; ) { } };";
     assert_eq!(eighth_codes(volatile), [Code::E0204, Code::E0201]);
+    // In a cast and after `sizeof` each word on its own names a type too (FTEF-2.11: the
+    // `const` is ignored); `volatile` is read as a type form and then refused in the cast.
+    assert_eq!(
+        eighth_codes("void() f = { float x; x = (const float) 1; x = sizeof(const float); };"),
+        []
+    );
+    assert_eq!(
+        eighth_codes("void() f = { float x; x = (volatile float) 1; };"),
+        [Code::E0204]
+    );
 }
 
 // spec FTEF-9.9: `public`, `private`, `protected` and `virtual:` are labels, `virtual` without
@@ -890,6 +914,14 @@ fn reviewer_eighth_class_labels_and_members() {
         5
     );
     assert_eq!(eighth_codes("class C { public: };"), [Code::E0203]);
+    assert_eq!(
+        eighth("class C { public: };")
+            .syntax()
+            .descendants()
+            .map(|n| n.kind())
+            .collect::<Vec<_>>(),
+        [K::SourceFile, K::ClassDecl, K::AccessLabel]
+    );
     assert_eq!(eighth_codes("class C { public: private: };"), [Code::E0203]);
     assert_eq!(eighth_codes("class C { };"), []);
     assert_eq!(eighth_codes("class C { float a; };"), []);
@@ -937,6 +969,18 @@ fn reviewer_eighth_class_member_types() {
 fn reviewer_eighth_only_construct_words_end_a_lost_body() {
     let statement = "float x;\nvoid() f = {\n\tfloat y;\nx = 1;\n};\n";
     assert_eq!(eighth_codes(statement), []);
+    // With no `}` at all the statement is still the body's, and only the end of the text is
+    // missing.
+    let unclosed = "float x;\nvoid() f = {\n\tfloat y;\nx = 1;\n";
+    assert_eq!(eighth_codes(unclosed), [Code::E0201]);
+    assert_eq!(
+        eighth(unclosed)
+            .syntax()
+            .descendants()
+            .filter(|n| n.kind() == K::FunctionBody)
+            .count(),
+        1
+    );
     let lost = "struct S {\n\tfloat a;\ntypedef float t;\nfloat z;\n";
     assert!(
         eighth_codes(lost).contains(&Code::E0204),
