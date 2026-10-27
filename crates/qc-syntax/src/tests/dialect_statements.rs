@@ -553,3 +553,122 @@ fn an_accessor_member_takes_no_parameter_list() {
     }
     assert!(fte_codes("accessor A : float { set float y = {}; };\n").is_empty());
 }
+
+// spec FTEF-18.7: `return = e;` sets the value without returning, and `return e;` does not
+// spec FTEF-18.8: `if !(e)` and `if not (e)` negate the condition, a plain `if` none
+// spec FTEF-18.31: `until` loops while the condition is false
+#[test]
+fn statement_forms_are_named_by_the_view() {
+    let parsed = fte_ok(&in_body(
+        "return = 1;\nreturn 2;\nif !(a) {}\nif not (a) {}\nif (a) {}\n__until (a) {}\nwhile (a) {}\ndo {} __until (a);\ndo {} while (a);",
+    ));
+    let stmts = statements(&parsed);
+    let sets: Vec<bool> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::Return(r) => Some(r.sets()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sets, [true, false]);
+    let negations: Vec<Option<ast::Negation>> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::If(i) => Some(i.negation()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        negations,
+        [Some(ast::Negation::Bang), Some(ast::Negation::Not), None]
+    );
+    let untils: Vec<bool> = stmts
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::While(w) => Some(w.until()),
+            ast::Stmt::Do(d) => Some(d.until()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(untils, [true, false, true, false]);
+}
+
+// spec FTEF-18.6: a `for` header's three clauses are each the view's, and an empty one is none
+#[test]
+fn for_clauses_are_named_by_the_view() {
+    let parsed = fte_ok(&in_body(
+        "for (a = 1; a < 2; a++) {}\nfor (;;) {}\nfor (; a;) {}\nfor (;; a++) {}\nfor (a = 1;;) {}",
+    ));
+    let clauses: Vec<(bool, bool, bool)> = statements(&parsed)
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::For(f) => Some((
+                f.init().is_some(),
+                f.condition().is_some(),
+                f.step().is_some(),
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        clauses,
+        [
+            (true, true, true),
+            (false, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, false, false),
+        ]
+    );
+    let text: Vec<String> = statements(&parsed)
+        .iter()
+        .filter_map(|s| match s {
+            ast::Stmt::For(f) if f.init().is_some() && f.condition().is_some() => Some(
+                [f.init(), f.condition(), f.step()]
+                    .iter()
+                    .map(|c| {
+                        String::from_utf8_lossy(&c.as_ref().unwrap().text())
+                            .trim()
+                            .to_owned()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("|"),
+            ),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, ["a = 1|a < 2|a++"]);
+}
+
+// spec FTEF-10.2: an accessor member's type and its index's type are the view's
+#[test]
+fn accessor_member_types_are_named_by_the_view() {
+    let parsed =
+        fte_ok("accessor A : float { get float x[float i] = { return i; }; set float y = {}; };\n");
+    let members: Vec<(Option<String>, Option<String>)> = parsed
+        .tree()
+        .unwrap()
+        .syntax()
+        .descendants()
+        .find_map(ast::AccessorDecl::cast)
+        .unwrap()
+        .members()
+        .map(|m| {
+            let text = |t: Option<ast::Type>| {
+                t.map(|t| {
+                    String::from_utf8_lossy(&t.syntax().text())
+                        .trim()
+                        .to_owned()
+                })
+            };
+            (text(m.ty()), text(m.index_ty()))
+        })
+        .collect();
+    assert_eq!(
+        members,
+        [
+            (Some("float".to_owned()), Some("float".to_owned())),
+            (Some("float".to_owned()), None),
+        ]
+    );
+}

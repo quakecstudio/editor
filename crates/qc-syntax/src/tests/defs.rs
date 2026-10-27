@@ -370,3 +370,18 @@ fn a_registered_name_alone_is_a_definition() {
         assert_ne!(codes(&fte(&source)), [], "{source}");
     }
 }
+
+// spec FTEF-19.26: under `qccx` `@e` is a unary expression, `e` read as a string
+#[test]
+fn at_is_the_as_string_operator_under_qccx() {
+    let qccx = [(0, whole(&[(FteFlag::Qccx, true)]))];
+    let source = b"float a;\nvoid() f = { local string s = @a; };\n";
+    let parsed = parse_preprocessed_flagged(source, Dialect::Fteqcc, &qccx, &[], &[]);
+    let ops: Vec<_> = parsed
+        .syntax()
+        .descendants()
+        .filter_map(<crate::ast::UnaryExpr as crate::ast::AstNode>::cast)
+        .map(|u| u.op())
+        .collect();
+    assert_eq!(ops, [Some(crate::ast::UnaryOp::AsString)]);
+}
