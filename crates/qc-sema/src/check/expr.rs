@@ -21,11 +21,11 @@ use crate::ty::{SimpleType, Type};
 
 /// The checker of one body.
 pub(super) struct Checker<'e> {
-    env: &'e mut dyn Env,
+    pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
     /// Whether a fatal error ended the statement being checked: FTEQCC's `QCC_PR_ParseError`,
     /// after which nothing more of the statement is checked (FTEF-23.6).
-    aborted: bool,
+    pub(super) aborted: bool,
 }
 
 impl<'e> Checker<'e> {
@@ -110,7 +110,7 @@ impl<'e> Checker<'e> {
     }
 
     /// The value of `expr`, its type recorded.
-    fn expr(&mut self, expr: &ast::Expr) -> Value {
+    pub(super) fn expr(&mut self, expr: &ast::Expr) -> Value {
         if self.aborted {
             return Value::unknown();
         }
@@ -121,8 +121,8 @@ impl<'e> Checker<'e> {
                 .expr()
                 .map_or_else(Value::unknown, |inner| self.expr(&inner)),
             ast::Expr::Binary(binary) => self.binary(binary),
+            ast::Expr::Field(field) => self.member(field),
             ast::Expr::Not(_)
-            | ast::Expr::Field(_)
             | ast::Expr::Call(_)
             | ast::Expr::Postfix(_)
             | ast::Expr::Ternary(_)
@@ -153,20 +153,20 @@ impl<'e> Checker<'e> {
         };
         match literal.kind() {
             Some(ast::LiteralKind::String) => Value {
-                ty: Type::Simple(SimpleType::String),
                 literal: Some(Literal::of(ConstType::String)),
+                ..Value::of(Type::Simple(SimpleType::String))
             },
             Some(ast::LiteralKind::Vector) => Value {
-                ty: Type::Simple(SimpleType::Vector),
                 literal: Some(Literal::of(ConstType::Vector)),
+                ..Value::of(Type::Simple(SimpleType::Vector))
             },
             Some(ast::LiteralKind::FrameRef) => Value::of(Type::Simple(SimpleType::Float)),
             Some(ast::LiteralKind::Float) if self.env.fteqcc() => {
                 let flags = self.env.lex_flags_at(token.span().start);
                 let number = Literal::of_fteqcc_number(&token.text_lossless(), flags);
                 Value {
-                    ty: const_type(number.ty),
                     literal: Some(number),
+                    ..Value::of(const_type(number.ty))
                 }
             }
             Some(ast::LiteralKind::Float) => Value::of(Type::Simple(SimpleType::Float)),
@@ -178,19 +178,22 @@ impl<'e> Checker<'e> {
         let Some(token) = name.name() else {
             return Value::unknown();
         };
-        let Some(ty) = self
-            .env
-            .reference(token.span().start)
-            .and_then(|def| self.env.definition(def))
-            .map(|def| def.ty.clone())
-        else {
+        let Some(def) = self.env.reference(token.span().start) else {
+            return Value::unknown();
+        };
+        let array = self.env.is_array(def);
+        let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
             return Value::unknown();
         };
         // FTEF-17.14: in a member function's body a field named bare is `this.field`, the
         // value it holds (`QCC_PR_ParseRefValue`, `pr_classtype && expandmemberfields`).
-        match ty {
-            Type::Field(held) if self.env.in_class() => Value::of(held.as_ref().clone()),
-            ty => Value::of(ty),
+        let ty = match ty {
+            Type::Field(held) if self.env.in_class() => held.as_ref().clone(),
+            ty => ty,
+        };
+        Value {
+            array,
+            ..Value::of(ty)
         }
     }
 
@@ -205,7 +208,13 @@ impl<'e> Checker<'e> {
         let Some(spelling) = binary_spelling(op) else {
             return Value::unknown();
         };
-        if !self.env.fteqcc() || lhs.ty == Type::Unknown || rhs.ty == Type::Unknown {
+        // An array named bare is its head, a pointer (`REF_ARRAYHEAD`), which is not followed.
+        if !self.env.fteqcc()
+            || lhs.ty == Type::Unknown
+            || rhs.ty == Type::Unknown
+            || lhs.array
+            || rhs.array
+        {
             return Value::unknown();
         }
         let (Some(left), Some(right)) = (self.operand(&lhs, &rhs), self.operand(&rhs, &lhs)) else {
@@ -277,8 +286,8 @@ impl<'e> Checker<'e> {
         let code = if lax { Code::W0231 } else { Code::E0302 };
         let message = format!(
             "type mismatch for {spelling} ({} and {})",
-            lhs.ty.fteqcc_name(),
-            rhs.ty.fteqcc_name()
+            self.env.type_name(&lhs.ty),
+            self.env.type_name(&rhs.ty)
         );
         self.env.report(code, span, message);
     }

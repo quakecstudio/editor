@@ -48,14 +48,14 @@ fn operands_an_opcode_takes() {
         "v = v + v;",
         "a = v * v;",
         "v = a * v;",
-        "i = i + i;",
-        "a = a + i;",
-        "a = s == s;",
-        "a = e == e;",
         "a = a && s;",
-        "s = s + a;",
     ] {
         assert_eq!(diags(&body(statement)), [], "{statement}");
+    }
+    // The integer and string opcodes are the FTE target's (FTEF-12).
+    for statement in ["i = i + i;", "a = a + i;", "s = s + a;"] {
+        let fte = format!("#pragma target fte\n{}", body(statement));
+        assert_eq!(diags(&fte), [], "{statement}");
     }
 }
 

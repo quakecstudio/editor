@@ -91,12 +91,17 @@ fn a_member_selector_references_a_known_field() {
     assert_eq!(refs_to(&index, "health"), 2);
 }
 
-// spec FTE-9.1: a selector that is no field, vector member, `.length` or struct field is an
-// unknown value.
+// spec FTEF-24.6: an entity's member no definition has is "Unknown field" (the pinned FTEQCC,
+// 2026-10-27)
 #[test]
 fn a_member_selector_reports_an_unknown_name() {
     let index = fte_index_of("entity e;\nvoid() f = { e.nofield = 1; };\n");
-    assert_eq!(unknown(&index), ["Unknown value \"nofield\""]);
+    let errors: Vec<&str> = index
+        .diagnostics
+        .iter()
+        .map(|d| d.diagnostic.message.as_str())
+        .collect();
+    assert_eq!(errors, ["Unknown field \"nofield\" in class \"entity\""]);
 }
 
 // spec FTE-9.1: `.x`, `.y` and `.z` of a vector name no definition, so they are neither

@@ -249,6 +249,21 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `default` label that no `switch` holds (FTEF-21.19).
 - **QCD-4.19** `E0261` "NAME is not a member of STRUCT": under an FTEQCC profile, a member access
   on a struct value that names no member of the struct or its parents (FTEF-6.11).
+- **QCD-4.20** `E0314` "unsupported vector swizzle '.NAME'": under an FTEQCC profile, a member of
+  a vector or a `.vector` field other than `x`, `y`, `z`, `r`, `g` and `b`, at the name
+  (FTEF-24.2).
+- **QCD-4.21** `E0315` "unsupported string method NAME": a member of a string other than
+  `length`, at the name (FTEF-24.3).
+- **QCD-4.22** `E0316` "not a constant": the `length` of a string that is no constant, at
+  `length` (FTEF-24.3).
+- **QCD-4.23** `E0317` "indirection in TYPE - not a struct or union": a member through a pointer
+  to a type that is neither, at the member (FTEF-24.5).
+- **QCD-4.24** `E0318` "NAME is not a field", on a class's value "NAME is not a field of class
+  CLASS": an entity's member that names a definition that is no field, at the member
+  (FTEF-24.1).
+- **QCD-4.25** `E0319` "Unknown field \"NAME\" in class \"CLASS\"": under an FTEQCC profile, an
+  entity's member in a body that no definition has, CLASS `entity` or the class of the base, at
+  the member; not a fatal error (FTEF-24.6).
 
 ## QCD-5 Project, limit and fatal errors
 

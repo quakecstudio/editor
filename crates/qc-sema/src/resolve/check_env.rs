@@ -39,6 +39,13 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.index.def(def)
     }
 
+    fn is_array(&self, def: DefId) -> bool {
+        self.resolver
+            .facts
+            .get(def.0)
+            .is_some_and(|f| f.array.is_some())
+    }
+
     fn shape(&self, ty: &Type) -> Option<Shape> {
         self.resolver.shape(ty)
     }
@@ -68,6 +75,18 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
         self.resolver.report(code, location, message);
+    }
+
+    fn class_member(&self, ty: &Type, name: &str) -> Option<DefId> {
+        self.resolver.class_member(ty, name)
+    }
+
+    fn type_name(&self, ty: &Type) -> String {
+        self.resolver.type_name(ty)
+    }
+
+    fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)> {
+        self.resolver.struct_member(ty, name)
     }
 
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {

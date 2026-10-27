@@ -562,3 +562,18 @@ impl<'a> Resolver<'a> {
         }
     }
 }
+
+impl Resolver<'_> {
+    /// The member `name` of the class `ty` names, in it or its parents (FTEF-24.6).
+    pub(in crate::resolve) fn class_member(&self, ty: &Type, name: &str) -> Option<DefId> {
+        let mut class = self.class_of(ty);
+        for _ in 0..MAX_CLASS_DEPTH {
+            let current = class?;
+            if let Some(member) = self.member_in(current, name) {
+                return Some(member);
+            }
+            class = self.parent_of(current);
+        }
+        None
+    }
+}

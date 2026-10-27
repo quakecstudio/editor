@@ -28,6 +28,7 @@ mod flags;
 mod incremental;
 mod initialiser_uses;
 mod keywords;
+mod member_access;
 mod members;
 mod names;
 mod navigation;

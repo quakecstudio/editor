@@ -395,3 +395,37 @@ impl<'a> Resolver<'a> {
         StructMatch::None(bare.to_owned())
     }
 }
+
+impl Resolver<'_> {
+    /// The type of the member `name` of the struct or union `ty`, found in it or its parents
+    /// as `QCC_PR_FindStructMember` finds it (FTEF-6.11), and whether the member is an array.
+    pub(in crate::resolve) fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)> {
+        let Type::Named(type_name) = self.resolved(ty) else {
+            return None;
+        };
+        let bare = self.struct_type_name(&type_name)?;
+        let mut key = Some(self.type_key(bare));
+        for _ in 0..MAX_CLASS_DEPTH {
+            let st = self.struct_defs.get(key.as_deref()?)?;
+            if let Some(member) = st
+                .members
+                .iter()
+                .find(|m| self.same_member_name(&m.name, name))
+            {
+                return Some((member.ty.clone(), !member.array.is_empty()));
+            }
+            key.clone_from(&st.parent);
+        }
+        None
+    }
+
+    /// Whether a struct member named `member` is the one an access names `name`, in any case
+    /// under `-Fcaseinsens` (FTEF-6.11).
+    fn same_member_name(&self, member: &str, name: &str) -> bool {
+        if self.profile.case_insensitive() {
+            member.eq_ignore_ascii_case(name)
+        } else {
+            member == name
+        }
+    }
+}

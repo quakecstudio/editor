@@ -87,7 +87,13 @@ void() user = {
 #[test]
 fn a_member_access_resolves_in_the_class_of_its_base() {
     let index = fte_index_of(TWO_CLASSES);
-    assert_eq!(messages(&index), Vec::<String>::new());
+    // spec FTEF-24.5: a member through a pointer to a class is no struct's (the pinned FTEQCC,
+    // 2026-10-27: line 15, `pb->m`)
+    // spec FTEF-24.7: the class prints as `class B`
+    assert_eq!(
+        messages(&index),
+        ["indirection in class B - not a struct or union"]
+    );
     let b_m = member(&index, "B", "m");
     for needle in ["this.m", "b.m", "self).m", "make_b().m", "pb->m"] {
         assert_eq!(

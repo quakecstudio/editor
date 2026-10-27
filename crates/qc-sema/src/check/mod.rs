@@ -12,6 +12,7 @@
 pub(crate) mod convert;
 pub(crate) mod etype;
 mod expr;
+mod member;
 pub(crate) mod opcodes;
 
 #[cfg(test)]
@@ -36,6 +37,8 @@ pub(crate) trait Env {
     fn reference(&self, at: usize) -> Option<DefId>;
     /// A definition of the module.
     fn definition(&self, def: DefId) -> Option<&Definition>;
+    /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
+    fn is_array(&self, def: DefId) -> bool;
     /// What `ty` is at bottom, through typedefs, enums, accessors and truth values; `None` for
     /// a type the model does not follow, on which nothing is checked.
     fn shape(&self, ty: &Type) -> Option<Shape>;
@@ -50,6 +53,14 @@ pub(crate) trait Env {
     /// Reports a diagnostic at `span` of the body's text, under the warning settings in force
     /// there.
     fn report(&mut self, code: Code, span: Span, message: String);
+    /// The member `name` of the class `ty` names, found in it or its parents (`CLASS::NAME`,
+    /// FTEF-24.6); `None` when `ty` is no class or none has the member.
+    fn class_member(&self, ty: &Type, name: &str) -> Option<DefId>;
+    /// `ty` as FTEQCC's messages print it, `TypeName` (FTEF-24.7).
+    fn type_name(&self, ty: &Type) -> String;
+    /// The type of the member `name` of the struct or union `ty`, through its parents, and
+    /// whether the member is an array (`QCC_PR_FindStructMember`, FTEF-6.11).
+    fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)>;
     /// FTEQCC's implicit cast of `source` to `to` at `span` (`QCC_EvaluateCast(src, to, true)`,
     /// FTEF-19.31), reported there; whether it is refused, "Cannot cast", a fatal error.
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool;
@@ -71,12 +82,18 @@ pub(crate) struct Value {
     pub(crate) ty: Type,
     /// The literal it is, which a cast reads (`QCC_SRef_IsNull`, FTEF-19.31).
     pub(crate) literal: Option<Literal>,
+    /// Whether it names an array, whose type is its elements' (`REF_ARRAYHEAD`).
+    pub(crate) array: bool,
 }
 
 impl Value {
     /// A value of `ty` that is no literal.
     pub(crate) const fn of(ty: Type) -> Self {
-        Self { ty, literal: None }
+        Self {
+            ty,
+            literal: None,
+            array: false,
+        }
     }
 
     /// Whether it is a constant 0 of an integer, float or pointer type (`QCC_SRef_IsNull`).

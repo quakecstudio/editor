@@ -204,8 +204,7 @@ fn bare_and_function_locals_resolve() {
 #[test]
 fn locals_shadow_globals() {
     let source = "void() light = { };\n\
-                  void(vector org, float light) launch = { if (light) org_x = 0; };\n\
-                  .string target;\nvoid(entity target) use = { target.target = \"\"; };\n";
+                  void(vector org, float light) launch = { if (light) org_x = 0; };\n";
     let index = fte_index_of(source);
     assert_eq!(all_codes(&index), Vec::<Code>::new());
     let param = index
@@ -220,7 +219,7 @@ fn locals_shadow_globals() {
         .unwrap();
     assert_eq!(use_of_light.def.0, param);
     // Vanilla reuses the global, so another type is a type mismatch (QC-12.3).
-    assert_eq!(error_codes(&index_of(source)), [Code::E0205, Code::E0205]);
+    assert_eq!(error_codes(&index_of(source)), [Code::E0205]);
     // A second declaration in one function is still that definition, or a mismatch.
     let twice = fte_index_of("void() f = { local float x; local string x; };\n");
     assert_eq!(error_codes(&twice), [Code::E0205]);
@@ -357,4 +356,14 @@ fn shadowing_vectors_have_components() {
         .find(|r| index.defs[r.def.0].name == "org_x")
         .unwrap();
     assert_eq!(index.defs[used.def.0].kind, DefKind::Param);
+}
+
+// spec FTEF-24.1: the selector is looked up as a value, so a local of its name hides the field:
+// `target.target` with a parameter `entity target` is "target is not a field" (the pinned
+// FTEQCC, 2026-10-27)
+#[test]
+fn a_local_hides_a_field_of_its_name_after_a_dot() {
+    let index =
+        fte_index_of(".string target;\nvoid(entity target) use = { target.target = \"\"; };\n");
+    assert_eq!(all_codes(&index), [Code::E0318]);
 }

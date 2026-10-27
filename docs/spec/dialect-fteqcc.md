@@ -3406,3 +3406,51 @@ opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
   next `;` at file level and reads on from there as declarations. The semantic model, which
   recovers on its own (QCD-1.4), stops checking the statement and checks the next one; the
   module fails to compile either way.
+
+## FTEF-24 Member access as FTEQCC types it
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseField` and `QCC_PR_ParseRefArrayPointer`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+FTEQCC reads `a.b` and `a->b` by the type of `a`: `QCC_PR_ParseField` for an entity (or a
+type with accessors), `QCC_PR_ParseRefArrayPointer` for the rest. The semantic model types each
+(`crates/qc-sema/src/check/member.rs`). Each error here is `QCC_PR_ParseError`, which ends the
+statement's checks (FTEF-23.6).
+
+### Behaviour
+
+- **FTEF-24.1** On an entity the selector is read as a value with no member expansion
+  (`QCC_PR_ParseRefValue(..., expandmemberfields false)`), or the expression in parentheses
+  after `.`: a field's member is the value it holds, a `variant`'s a `variant`; any other
+  definition is the error `E0318` "NAME is not a field", or "NAME is not a field of class CLASS"
+  when the entity's type is a class (`t->parentclass`).
+- **FTEF-24.2** On a vector `x`, `y` and `z`, or `r`, `g` and `b`, are its components, floats;
+  on a `.vector` field they are `.float` fields (`type_floatfield`). `w` and `a` need a fourth
+  component a vector does not have (`t->size >= 4`), and any other name is the error `E0314`
+  "unsupported vector swizzle '.NAME'".
+- **FTEF-24.3** On a string, `length` is the string's length, an `int`, when the string is a
+  constant, else the error `E0316` "not a constant"; any other name is `E0315` "unsupported
+  string method NAME".
+- **FTEF-24.4** On a struct or union, and on a field of one, the member found in it or its
+  parents (`QCC_PR_FindStructMember`, FTEF-6.11); on a field the member is a field of the
+  member's type (`QCC_PR_FieldType`).
+- **FTEF-24.5** Through a pointer, the member of the struct or union it points at; a pointer to
+  any other type is the error `E0317` "indirection in TYPE - not a struct or union".
+- **FTEF-24.6** On an entity in a body, a member no definition has is made by
+  `QCC_PR_GetSRef(type_variant, name, pr_scope, true, ...)`, a `variant`, and reported with
+  `QCC_PR_ParseWarning(ERR_UNKNOWNVALUE, ...)`, an error that does not end the statement:
+  `E0319` "Unknown field \"NAME\" in class \"CLASS\"", CLASS `entity` for a plain entity and the
+  class for a class's value. The member's value is a `variant`. A class's member is looked up
+  as `CLASS::NAME` in the base's class and its parents, so it is a field of the member's type
+  on a value of the class or one derived from it, and unknown on any other entity: `e.m_a` for
+  a plain `entity e` and a member `m_a` of a class is "Unknown field \"m_a\" in class
+  \"entity\"", whatever the resolver's name lookup (FTEF-17.3) offers for navigation.
+- **FTEF-24.7** Messages print a type as `TypeName` (`qcc_pr_lex.c`) does: a class `class NAME`
+  (an entity type with a `parentclass`), and a field of a class too, the class branch writing
+  over the field's `.`; a struct or union `struct NAME` or `union NAME`; a strict enum `enum
+  NAME:BASE`; a pointer `T*`; a field `.T`; any other type by its name. A function type prints
+  its parameters' types; FTEQCC also prints their names and default values, which the semantic
+  model's function types do not keep.
+- **FTEF-24.8** An array's only member is `length`, an `int`, the array's size (`QCC_PR_Expect
+  ("length")` after an array's `.`, FTE-13); `LightStyles.length` for an array of strings is the
+  array's length, not the string's.

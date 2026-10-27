@@ -214,6 +214,18 @@ pub enum Code {
     E0312,
     /// "NAME is not defined" (QCD-4.13).
     E0313,
+    /// "unsupported vector swizzle '.NAME'" (QCD-4.20).
+    E0314,
+    /// "unsupported string method NAME" (QCD-4.21).
+    E0315,
+    /// "not a constant": the `length` of a string that is no constant (QCD-4.22).
+    E0316,
+    /// "indirection in TYPE - not a struct or union" (QCD-4.23).
+    E0317,
+    /// "NAME is not a field", "NAME is not a field of class CLASS" (QCD-4.24).
+    E0318,
+    /// "Unknown field \"NAME\" in class \"CLASS\"" (QCD-4.25).
+    E0319,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -375,7 +387,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 171] = [
+    pub const ALL: [Self; 177] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -471,6 +483,12 @@ impl Code {
         Self::E0311,
         Self::E0312,
         Self::E0313,
+        Self::E0314,
+        Self::E0315,
+        Self::E0316,
+        Self::E0317,
+        Self::E0318,
+        Self::E0319,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -701,6 +719,12 @@ impl Code {
             Self::W0207 => "W0207",
             Self::E0404 => "E0404",
             Self::E0313 => "E0313",
+            Self::E0314 => "E0314",
+            Self::E0315 => "E0315",
+            Self::E0316 => "E0316",
+            Self::E0317 => "E0317",
+            Self::E0318 => "E0318",
+            Self::E0319 => "E0319",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -903,6 +927,12 @@ impl Code {
             | Self::E0511
             | Self::E0404
             | Self::E0302
+            | Self::E0314
+            | Self::E0315
+            | Self::E0316
+            | Self::E0317
+            | Self::E0318
+            | Self::E0319
             | Self::E0408 => true,
         }
     }

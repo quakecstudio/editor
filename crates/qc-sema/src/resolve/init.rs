@@ -567,10 +567,14 @@ impl Resolver<'_> {
                 return false;
             }
         };
+        let from = match source {
+            Source::Typed(ty) => self.type_name(ty),
+            Source::Literal(_) => source.name(),
+        };
         self.report(
             code,
             location,
-            format!("{verb} from {} to {}", source.name(), to.fteqcc_name()),
+            format!("{verb} from {from} to {}", self.type_name(to)),
         );
         code == Code::E0213
     }

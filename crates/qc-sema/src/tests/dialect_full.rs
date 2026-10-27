@@ -150,14 +150,22 @@ fn member_access_follows_the_base_type() {
     assert!(targets(&index, CLASSES, "health").contains(&health));
 }
 
-// spec FTEF-17.3: an unknown member is reported; a vector member, `.length` and a struct field
-// are no definitions, and a member of a class not known from the base resolves by name.
+// spec FTEF-17.3: a member of a class not known from the base resolves by name, for navigation
+// spec FTEF-24.6: an entity's member no definition has, or a class's member on a plain entity,
+// is "Unknown field" (the pinned FTEQCC, 2026-10-27: both lines of this program)
+// spec QCD-4.25: E0319 "Unknown field \"NAME\" in class \"CLASS\""
 #[test]
 fn unknown_members_are_reported() {
     let index = fte_index_of(
         "class A { float m_a; };\nentity e;\nvoid() f = { e.m_a = 1; e.nothing = 2; };\n",
     );
-    assert_eq!(messages(&index), ["Unknown value \"nothing\""]);
+    assert_eq!(
+        messages(&index),
+        [
+            "Unknown field \"m_a\" in class \"entity\"",
+            "Unknown field \"nothing\" in class \"entity\""
+        ]
+    );
     let m_a = defs_named(&index, "m_a")[0];
     assert_eq!(index.refs.iter().filter(|r| r.def == m_a).count(), 1);
 }

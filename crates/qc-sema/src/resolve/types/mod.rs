@@ -360,3 +360,51 @@ impl Resolver<'_> {
         None
     }
 }
+
+impl Resolver<'_> {
+    /// `TypeName`: a type as FTEQCC's messages print it (FTEF-24.7): a class `class NAME`, a
+    /// struct or union `struct NAME` or `union NAME`, a strict enum `enum NAME:BASE`, a pointer
+    /// `T*`, a field `.T`, and every other type by its name.
+    pub(in crate::resolve) fn type_name(&self, ty: &Type) -> String {
+        match ty {
+            Type::Pointer(inner) => format!("{}*", self.type_name(inner)),
+            // `*ret++ = '.'`, which the class branch then overwrites with `class NAME`.
+            Type::Field(inner) => match self.class_type_name(inner) {
+                Some(class) => class,
+                None => format!(".{}", self.type_name(inner)),
+            },
+            Type::Named(name) => {
+                if let Some(class) = self.class_type_name(ty) {
+                    return class;
+                }
+                if let Some(base) = self.named(&self.strict_enums, name) {
+                    return format!("enum {name}:{}", self.type_name(base));
+                }
+                if let Some(bare) = self.struct_type_name(name) {
+                    let union = self
+                        .struct_defs
+                        .get(&self.type_key(bare))
+                        .is_some_and(|st| st.union);
+                    let kind = if union { "union" } else { "struct" };
+                    return format!("{kind} {bare}");
+                }
+                let resolved = self.resolved(ty);
+                if &resolved == ty {
+                    ty.fteqcc_name()
+                } else {
+                    self.type_name(&resolved)
+                }
+            }
+            Type::Unknown | Type::Simple(_) | Type::Function(_) => ty.fteqcc_name(),
+        }
+    }
+
+    /// `class NAME` when `ty` names a class.
+    fn class_type_name(&self, ty: &Type) -> Option<String> {
+        let Type::Named(name) = ty else {
+            return None;
+        };
+        self.has_name_key(&self.class_names, name)
+            .then(|| format!("class {name}"))
+    }
+}

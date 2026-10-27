@@ -453,6 +453,20 @@ impl<'a> Resolver<'a> {
                 }
                 (_, UseKind::Member) => self.resolve_member(scope, use_),
             };
+            // FTEF-24.1: in a body, what a member names when it is no field is the check
+            // stage's to judge from the base's type, as is a member no definition has
+            // (`QCC_PR_ParseField`); the definition is passed on, with no reference made.
+            let found = match (found, scope) {
+                (Found::Nothing | Found::Unknown, Some(at))
+                    if use_.kind == UseKind::Member && self.profile.name_use_checks() =>
+                {
+                    if let Some(def) = self.lookup_in_scope(at, &use_.name) {
+                        self.use_defs.insert(use_.span.start, def);
+                    }
+                    Found::Nothing
+                }
+                (found, _) => found,
+            };
             match found {
                 Found::Def(def) => {
                     if let Some(f) = self.fact_mut(def) {
