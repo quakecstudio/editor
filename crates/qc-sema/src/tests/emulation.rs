@@ -643,3 +643,31 @@ fn a_global_ternary_stores_each_arm() {
         scope(&["IFNOT", "ADD_F", "GOTO", "STORE_F"])
     );
 }
+
+// spec FTEF-29.2: each compound assignment is its operator's opcode, emulated as the operator's
+// spec FTEF-27.4: `^` of integers is `(a & ~b) | (b & ~a)`
+#[test]
+fn compound_assignments_emulate_their_operator() {
+    for (op, first) in [
+        ("-=", helper("SubInt", "int-int")),
+        ("/=", helper("DivInt", "int/int")),
+        ("|=", helper("BitorInt", "int|int")),
+        ("&=", helper("BitandInt", "int&int")),
+        ("&~=", helper("BitandInt", "int&int")),
+        ("^=", helper("SubInt", "~int")),
+        ("<<=", helper("pow", "int*^int")),
+        (">>=", helper("pow", "int*^int")),
+    ] {
+        let found = diags(&format!("int i, j; void() g = {{ i {op} j; }};\n"));
+        assert_eq!(found.first(), Some(&first), "{op}");
+    }
+    let not = [helper("SubInt", "~int"), d(Code::E0320, SUB_I)];
+    let and = [helper("BitandInt", "int&int"), d(Code::E0320, BITAND_I)];
+    let or = [helper("BitorInt", "int|int"), d(Code::E0320, BITOR_I)];
+    let xor: Vec<(Code, String)> = [&not[..], &and[..], &not[..], &and[..], &or[..]].concat();
+    assert_eq!(diags("int i, j; void() g = { i ^= j; };\n"), xor);
+    assert_eq!(
+        diags("int i, j; void() g = { i >>= j; };\n").len(),
+        diags("int i, j; void() g = { i = i >> j; };\n").len()
+    );
+}

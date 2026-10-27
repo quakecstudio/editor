@@ -44,7 +44,10 @@ const EMULATED: &[(Op, &str)] = &[
     (Op::IfS, "Special"),
     (Op::NotI, "Special"),
     (Op::DivVf, "Expand([DivF, MulVf])"),
-    (Op::BitxorI, "Expand([BitnotI, BitandI, BitorI])"),
+    (
+        Op::BitxorI,
+        "Expand([BitnotI, BitandI, BitnotI, BitandI, BitorI])",
+    ),
     (Op::RshiftI, "Special"),
     (Op::LshiftI, "Special"),
     (Op::AddPiw, "Special"),
@@ -162,7 +165,10 @@ const EMULATED: &[(Op, &str)] = &[
     (Op::ModFi, "Expand([DivFi, BitorF, MulIf, SubF])"),
     (Op::ModIf, "Expand([DivIf, BitorF, MulF, SubIf])"),
     (Op::ModV, "Helper([\"ModVec\"], \"vector%vector\")"),
-    (Op::BitxorF, "Expand([BitnotF, BitandF, BitorF])"),
+    (
+        Op::BitxorF,
+        "Expand([BitnotF, BitandF, BitnotF, BitandF, BitorF])",
+    ),
     (Op::RshiftF, "Special"),
     (Op::LshiftF, "Special"),
     (Op::RshiftIf, "ConvertRight(ConvFtoi, RshiftI)"),

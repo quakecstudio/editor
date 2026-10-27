@@ -256,3 +256,6 @@ pub(crate) fn unquoted(text: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

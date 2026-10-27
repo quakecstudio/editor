@@ -595,6 +595,10 @@ impl Checker<'_> {
 }
 
 /// FTEF-27.2: how `QCC_PR_StatementFlags`'s switch emulates `op`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one arm per case of QCC_PR_StatementFlags's switch, read against it in order"
+)]
 const fn emulation(op: Op) -> Emulation {
     use Emulation::{
         Conversion, ConvertLeft, ConvertRight, Emitted, Expand, Helper, Instead, Refuse, Special,
@@ -627,8 +631,21 @@ const fn emulation(op: Op) -> Emulation {
         Op::ModU => Expand(&[Op::DivU, Op::MulU, Op::SubU]),
         Op::ModFi => Expand(&[Op::DivFi, Op::BitorF, Op::MulIf, Op::SubF]),
         Op::ModIf => Expand(&[Op::DivIf, Op::BitorF, Op::MulF, Op::SubIf]),
-        Op::BitxorF => Expand(&[Op::BitnotF, Op::BitandF, Op::BitorF]),
-        Op::BitxorI => Expand(&[Op::BitnotI, Op::BitandI, Op::BitorI]),
+        // `(a & ~b) | (b & ~a)`.
+        Op::BitxorF => Expand(&[
+            Op::BitnotF,
+            Op::BitandF,
+            Op::BitnotF,
+            Op::BitandF,
+            Op::BitorF,
+        ]),
+        Op::BitxorI => Expand(&[
+            Op::BitnotI,
+            Op::BitandI,
+            Op::BitnotI,
+            Op::BitandI,
+            Op::BitorI,
+        ]),
         Op::DivVf => Expand(&[Op::DivF, Op::MulVf]),
         Op::CrossV | Op::SpaceshipF => Expand(&[Op::MulF, Op::SubF]),
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
