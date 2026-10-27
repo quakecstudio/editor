@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use super::{codes, one_fte, tokens};
+use crate::Op;
 use crate::fte_directive::FteState;
-use crate::fte_tables::{OPCODES, REAL_OPCODES};
 use crate::{
     Code, FileOutput, FteFlag, FteWarning, MemoryLoader, Preprocessor, WarningAction,
     WarningSettings,
@@ -93,7 +93,7 @@ fn build_pragmas_warn_against_fteqcc_s_tables() {
         one(Code::W0113, "opcode foo not recognised")
     );
     // `OP_NUMREALOPS` and the rows after it are internal.
-    let internal = OPCODES[REAL_OPCODES];
+    let internal = Op::Numrealops.name();
     // An `asm` instruction's name is a row's `opname`, compared exactly (FTEF-20.5).
     assert!(crate::is_opcode_name("STORE_F"));
     assert!(!crate::is_opcode_name("store_f"));

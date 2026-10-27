@@ -153,6 +153,9 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, the warning settings: the rendered offset from which each holds, and the
     /// settings (FTEF-14.63, FTEF-19.22); empty under the vanilla dialect.
     pub(crate) warnings: Vec<(usize, WarningSettings)>,
+    /// Under FTEQCC, the output target and the opcodes it has: the rendered offset from which
+    /// each holds, and the target (FTEF-25); empty under the vanilla dialect.
+    pub(crate) targets: Vec<(usize, qc_preproc::OpcodeTarget)>,
     /// Under FTEQCC, the changes to the keywords the pragmas make: the rendered offset from
     /// which each holds, and the change (FTEF-20.1); empty under the vanilla dialect.
     pub(crate) keywords: Vec<(usize, qc_preproc::KeywordEdit)>,
@@ -402,6 +405,11 @@ fn run<L: Loader>(
             .warnings
             .iter()
             .map(|&(token, settings)| (offset_of(&rendered, token), settings))
+            .collect();
+        rendered.targets = output
+            .targets
+            .iter()
+            .map(|&(token, target)| (offset_of(&rendered, token), target))
             .collect();
         rendered.keywords = output
             .keywords

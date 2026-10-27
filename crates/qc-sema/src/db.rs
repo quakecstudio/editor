@@ -465,25 +465,19 @@ impl Db {
             })
             .map(|(&id, _)| id)
             .collect();
-        let warnings: Vec<&[(usize, qc_preproc::WarningSettings)]> = preprocessed
-            .files
-            .iter()
-            .map(|r| r.warnings.as_slice())
-            .collect();
+        let warnings = each_file(&preprocessed.files, |r| r.warnings.as_slice());
         let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
             keywords.iter().map(Vec::as_slice).collect();
+        let targets = each_file(&preprocessed.files, |r| r.targets.as_slice());
         let first_maps: Vec<&OriginMap> = preprocessed.first.iter().map(|r| &r.origins).collect();
-        let first_warnings: Vec<&[(usize, qc_preproc::WarningSettings)]> = preprocessed
-            .first
-            .iter()
-            .map(|r| r.warnings.as_slice())
-            .collect();
+        let first_warnings = each_file(&preprocessed.first, |r| r.warnings.as_slice());
         let first_keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
             first_keywords.iter().map(Vec::as_slice).collect();
         let sources = Sources {
             maps: &maps,
             warnings: &warnings,
             keywords: &keywords,
+            targets: &targets,
             extensions,
             plan: preprocessed.plan.as_ref(),
             first: preprocessed.autoproto.then_some(FirstPass {
@@ -704,4 +698,9 @@ fn locate_diagnostic(origins: &OriginMap, file: FileId, d: &Diagnostic) -> FileD
             span: location.span,
         },
     }
+}
+
+/// What `get` reads of each of `files`, in order.
+fn each_file<'r, T>(files: &'r [Rendered], get: impl Fn(&'r Rendered) -> &'r [T]) -> Vec<&'r [T]> {
+    files.iter().map(get).collect()
 }

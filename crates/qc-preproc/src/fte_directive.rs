@@ -1989,8 +1989,8 @@ impl<L: Loader> Preprocessor<L> {
             }
             // FTEF-25.3: `pr_opcodes[f].flags |= OPF_VALID` or `&= ~OPF_VALID`, in order.
             if !edits.is_empty() {
-                for (index, on) in edits {
-                    self.fte.opcodes.set(index, on);
+                for (op, on) in edits {
+                    self.fte.opcodes.set(op, on);
                 }
                 run.out
                     .targets

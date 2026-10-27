@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use qc_diag::{Code, Diagnostic};
-use qc_preproc::{TargetFormat, WarningSettings};
+use qc_preproc::{OpcodeTarget, TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
 use crate::check::TypedBody;
@@ -141,6 +141,9 @@ pub(crate) struct Sources<'a> {
     /// For each entry, the keywords its parser read each token with, from each offset
     /// (FTEF-20.1).
     pub(crate) keywords: &'a [&'a [(usize, Keywords)]],
+    /// For each entry, under FTEQCC, the output target and the opcodes it has, and the offsets
+    /// they hold from (FTEF-25).
+    pub(crate) targets: &'a [&'a [(usize, OpcodeTarget)]],
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
@@ -235,6 +238,7 @@ pub(crate) fn resolve_mapped(
         settings: None,
         keyword_marks: sources.keywords,
         keywords: Keywords::default(),
+        targets: sources.targets,
         extensions: &sources.extensions,
         profile,
         use_defs: HashMap::new(),
@@ -427,6 +431,8 @@ struct Resolver<'a> {
     keyword_marks: &'a [&'a [(usize, Keywords)]],
     /// The keywords in force where the resolver reads (FTEF-20.1).
     keywords: Keywords,
+    /// For each compiled file, the output target and the opcodes it has (FTEF-25).
+    targets: &'a [&'a [(usize, OpcodeTarget)]],
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
     /// The dialect profile and its rules.

@@ -8,7 +8,9 @@
 //! need, and the one needing fewest (FTEF-23.2 to FTEF-23.4).
 
 use crate::check::etype::Etype;
-use crate::check::opcodes::{Assoc, OPCODES, OpType, Opcode};
+use qc_preproc::Op;
+
+use crate::check::opcodes::{Assoc, OpType, Opcode, row};
 
 /// What the choice of an opcode reads of an operand: its basic type after accessors and
 /// truth values are taken for their underlying type, the basic type a field holds, and
@@ -96,49 +98,53 @@ impl OpType {
     }
 }
 
-/// `QCC_canConv`: the cost of converting `from` to `to`, `None` when it cannot be
-/// (FTEF-23.3). `in_class` is `pr_classtype`, set inside a member function's body.
-pub(crate) fn conversion_cost(from: Operand, to: Etype, in_class: bool) -> Option<i32> {
-    if from.etype == to {
-        return Some(0);
-    }
-    if in_class && from.etype == Etype::Field && from.holds == Some(to) {
-        return Some(1);
-    }
-    if from.null {
-        return Some(2);
-    }
-    if let (Some(from_rank), Some(to_rank)) = (from.etype.numeric_ranking(), to.numeric_ranking()) {
-        return Some(if to_rank >= from_rank {
-            3_i32.saturating_add(to_rank.saturating_sub(from_rank))
-        } else {
-            150_i32.saturating_add(from_rank.saturating_sub(to_rank))
-        });
-    }
-    match (from.etype, to) {
-        (_, Etype::Variant) => Some(9),
-        (Etype::Variant, _) => Some(10),
-        (Etype::Float, Etype::Vector) => Some(200),
-        (Etype::Vector, Etype::Float) => Some(201),
-        _ => None,
+impl Operand {
+    /// `QCC_canConv`: the cost of converting the operand to `to`, `None` when it cannot be
+    /// (FTEF-23.3). `in_class` is `pr_classtype`, set inside a member function's body.
+    pub(crate) fn cost_to(self, to: Etype, in_class: bool) -> Option<i32> {
+        if self.etype == to {
+            return Some(0);
+        }
+        if in_class && self.etype == Etype::Field && self.holds == Some(to) {
+            return Some(1);
+        }
+        if self.null {
+            return Some(2);
+        }
+        if let (Some(from_rank), Some(to_rank)) =
+            (self.etype.numeric_ranking(), to.numeric_ranking())
+        {
+            return Some(if to_rank >= from_rank {
+                3_i32.saturating_add(to_rank.saturating_sub(from_rank))
+            } else {
+                150_i32.saturating_add(from_rank.saturating_sub(to_rank))
+            });
+        }
+        match (self.etype, to) {
+            (_, Etype::Variant) => Some(9),
+            (Etype::Variant, _) => Some(10),
+            (Etype::Float, Etype::Vector) => Some(200),
+            (Etype::Vector, Etype::Float) => Some(201),
+            _ => None,
+        }
     }
 }
 
 /// The opcode an operator is given for its operands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Choice {
-    /// The candidate needing fewest conversions, by its `OP_*` number.
-    Opcode(usize),
+    /// The candidate needing fewest conversions.
+    Opcode(Op),
     /// None can take the operands: "type mismatch for OP (A and B)" (FTEF-23.4). FTEQCC then
     /// emits the first candidate anyway.
-    Mismatch(usize),
+    Mismatch(Op),
 }
 
 impl Choice {
     /// The opcode emitted either way.
-    pub(crate) const fn index(self) -> usize {
+    pub(crate) const fn op(self) -> Op {
         match self {
-            Self::Opcode(index) | Self::Mismatch(index) => index,
+            Self::Opcode(op) | Self::Mismatch(op) => op,
         }
     }
 }
@@ -147,55 +153,56 @@ impl Choice {
 /// priority class in table order (FTEF-23.1), for `lhs` and `rhs` (FTEF-23.4). The first
 /// candidate needing no conversion is taken; otherwise the first needing fewest.
 pub(crate) fn choose_opcode(
-    candidates: &[usize],
+    candidates: &[Op],
     lhs: Operand,
     rhs: Operand,
     in_class: bool,
 ) -> Option<Choice> {
     let first = *candidates.first()?;
-    let field_result = OPCODES
-        .get(first)
-        .filter(|op| op.name.starts_with('.'))
+    let field_result = row(first)
+        .filter(|row| row.name.starts_with('.'))
         .map(|_| rhs.holds);
-    let mut best: Option<(usize, i32)> = None;
-    for &index in candidates {
-        let Some(op) = OPCODES.get(index) else {
+    let mut best: Option<(Op, i32)> = None;
+    for &op in candidates {
+        let Some(candidate) = row(op) else {
             continue;
         };
         if let Some(holds) = field_result
-            && holds != Some(op.types[2].etype())
+            && holds != Some(candidate.types[2].etype())
         {
             continue;
         }
-        let Some(cost) = candidate_cost(op, lhs, rhs, in_class) else {
+        let Some(cost) = candidate.cost(lhs, rhs, in_class) else {
             continue;
         };
         if best.is_none_or(|(_, least)| cost < least) {
-            best = Some((index, cost));
+            best = Some((op, cost));
             if cost == 0 {
                 break;
             }
         }
     }
-    Some(best.map_or(Choice::Mismatch(first), |(index, _)| Choice::Opcode(index)))
+    Some(best.map_or(Choice::Mismatch(first), |(op, _)| Choice::Opcode(op)))
 }
 
-/// The conversions `op` needs for `lhs` and `rhs`, `None` when it cannot take them
-/// (FTEF-23.4).
-fn candidate_cost(op: &Opcode, lhs: Operand, rhs: Operand, in_class: bool) -> Option<i32> {
-    let [a, b, _] = op.types;
-    if op.assoc == Assoc::Left {
-        let left = conversion_cost(lhs, a.etype(), in_class)?;
-        let right = conversion_cost(rhs, b.etype(), in_class)?;
-        return Some(left.max(right));
+impl Opcode {
+    /// The conversions the row needs for `lhs` and `rhs`, `None` when it cannot take them
+    /// (FTEF-23.4).
+    fn cost(&self, lhs: Operand, rhs: Operand, in_class: bool) -> Option<i32> {
+        let [a, b, _] = self.types;
+        if self.assoc == Assoc::Left {
+            let left = lhs.cost_to(a.etype(), in_class)?;
+            let right = rhs.cost_to(b.etype(), in_class)?;
+            return Some(left.max(right));
+        }
+        // An assignment: the value is converted, the target never changes type.
+        let cost = rhs.cost_to(b.etype(), in_class)?;
+        if lhs.etype != a.etype() {
+            return None;
+        }
+        if a.etype() == Etype::Pointer && lhs.holds != a.pointee() {
+            return None;
+        }
+        Some(cost)
     }
-    // An assignment: the value is converted, the target never changes type.
-    let cost = conversion_cost(rhs, b.etype(), in_class)?;
-    if lhs.etype != a.etype() {
-        return None;
-    }
-    if a.etype() == Etype::Pointer && lhs.holds != a.pointee() {
-        return None;
-    }
-    Some(cost)
 }

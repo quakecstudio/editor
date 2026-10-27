@@ -13,9 +13,9 @@ use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::cast::{ConstType, Literal};
-use crate::check::convert::{Choice, Operand, choose_opcode, conversion_cost};
+use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::etype::Etype;
-use crate::check::opcodes::{OPCODES, OpType, candidates};
+use crate::check::opcodes::{OpType, candidates, row};
 use crate::check::{Env, TypedBody, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -23,17 +23,21 @@ use crate::ty::{SimpleType, Type};
 pub(super) struct Checker<'e> {
     pub(super) env: &'e mut dyn Env,
     types: HashMap<(usize, usize), Type>,
-    /// Whether a fatal error ended the statement being checked: FTEQCC's `QCC_PR_ParseError`,
-    /// after which nothing more of the statement is checked (FTEF-23.6).
-    pub(super) aborted: bool,
 }
+
+/// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
+/// statement is checked (FTEF-23.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Fatal;
+
+/// The value of an expression, or the fatal error that ended its statement.
+pub(super) type Checked = Result<Value, Fatal>;
 
 impl<'e> Checker<'e> {
     pub(super) fn new(env: &'e mut dyn Env) -> Self {
         Self {
             env,
             types: HashMap::new(),
-            aborted: false,
         }
     }
 
@@ -47,36 +51,40 @@ impl<'e> Checker<'e> {
         }
     }
 
+    /// Checks `stmt`; a fatal error in one of its expressions ends its checks (FTEF-23.6).
     fn statement(&mut self, stmt: &ast::Stmt) {
-        self.aborted = false;
+        let _ended: Result<(), Fatal> = self.statement_parts(stmt);
+    }
+
+    fn statement_parts(&mut self, stmt: &ast::Stmt) -> Result<(), Fatal> {
         match stmt {
             ast::Stmt::Block(block) => self.block(block),
-            ast::Stmt::Expr(s) => self.value_of(s.expr()),
-            ast::Stmt::Return(s) => self.value_of(s.value()),
+            ast::Stmt::Expr(s) => self.value_of(s.expr())?,
+            ast::Stmt::Return(s) => self.value_of(s.value())?,
             ast::Stmt::If(s) => {
-                self.value_of(s.condition());
+                self.value_of(s.condition())?;
                 self.statement_of(s.then_branch());
                 self.statement_of(s.else_branch());
             }
             ast::Stmt::While(s) => {
-                self.value_of(s.condition());
+                self.value_of(s.condition())?;
                 self.statement_of(s.body());
             }
             ast::Stmt::Do(s) => {
                 self.statement_of(s.body());
-                self.value_of(s.condition());
+                self.value_of(s.condition())?;
             }
             ast::Stmt::Loop(s) => self.statement_of(s.body()),
             ast::Stmt::For(s) => {
                 for clause in s.clauses() {
                     for expr in clause.children().filter_map(ast::Expr::cast) {
-                        self.expr(&expr);
+                        self.expr(&expr)?;
                     }
                 }
                 self.statement_of(s.body());
             }
             ast::Stmt::Switch(s) => {
-                self.value_of(s.scrutinee());
+                self.value_of(s.scrutinee())?;
                 if let Some(block) = s.block() {
                     self.block(&block);
                 }
@@ -95,6 +103,7 @@ impl<'e> Checker<'e> {
             | ast::Stmt::Asm(_)
             | ast::Stmt::Extern(_) => {}
         }
+        Ok(())
     }
 
     fn statement_of(&mut self, stmt: Option<ast::Stmt>) {
@@ -103,25 +112,26 @@ impl<'e> Checker<'e> {
         }
     }
 
-    fn value_of(&mut self, expr: Option<ast::Expr>) {
+    fn value_of(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
         if let Some(expr) = expr {
-            self.expr(&expr);
+            self.expr(&expr)?;
         }
+        Ok(())
+    }
+
+    /// The value of `expr`, if it is there.
+    pub(super) fn expr_of(&mut self, expr: Option<ast::Expr>) -> Checked {
+        expr.map_or_else(|| Ok(Value::unknown()), |e| self.expr(&e))
     }
 
     /// The value of `expr`, its type recorded.
-    pub(super) fn expr(&mut self, expr: &ast::Expr) -> Value {
-        if self.aborted {
-            return Value::unknown();
-        }
+    pub(super) fn expr(&mut self, expr: &ast::Expr) -> Checked {
         let value = match expr {
             ast::Expr::Literal(literal) => self.literal(literal),
             ast::Expr::Name(name) => self.name(name),
-            ast::Expr::Paren(paren) => paren
-                .expr()
-                .map_or_else(Value::unknown, |inner| self.expr(&inner)),
-            ast::Expr::Binary(binary) => self.binary(binary),
-            ast::Expr::Field(field) => self.member(field),
+            ast::Expr::Paren(paren) => self.expr_of(paren.expr())?,
+            ast::Expr::Binary(binary) => self.binary(binary)?,
+            ast::Expr::Field(field) => self.member(field)?,
             ast::Expr::Not(_)
             | ast::Expr::Call(_)
             | ast::Expr::Postfix(_)
@@ -131,20 +141,21 @@ impl<'e> Checker<'e> {
             | ast::Expr::Cast(_)
             | ast::Expr::Vector(_)
             | ast::Expr::Sizeof(_) => {
-                self.children(expr);
+                self.children(expr)?;
                 Value::unknown()
             }
         };
         let span = expr.syntax().span();
         self.types.insert((span.start, span.end), value.ty.clone());
-        value
+        Ok(value)
     }
 
     /// Checks the expressions inside `expr`, a term the checker does not type yet.
-    fn children(&mut self, expr: &ast::Expr) {
+    fn children(&mut self, expr: &ast::Expr) -> Result<(), Fatal> {
         for child in expr.syntax().children().filter_map(ast::Expr::cast) {
-            self.expr(&child);
+            self.expr(&child)?;
         }
+        Ok(())
     }
 
     fn literal(&mut self, literal: &ast::Literal) -> Value {
@@ -166,7 +177,7 @@ impl<'e> Checker<'e> {
                 let number = Literal::of_fteqcc_number(&token.text_lossless(), flags);
                 Value {
                     literal: Some(number),
-                    ..Value::of(const_type(number.ty))
+                    ..Value::of(number.ty.value_type())
                 }
             }
             Some(ast::LiteralKind::Float) => Value::of(Type::Simple(SimpleType::Float)),
@@ -199,14 +210,27 @@ impl<'e> Checker<'e> {
 
     /// A binary operator: the opcode `QCC_PR_ChooseOpcode` picks for its operands gives its type
     /// (FTEF-23.4).
-    fn binary(&mut self, binary: &ast::BinaryExpr) -> Value {
-        let lhs = binary.lhs().map_or_else(Value::unknown, |e| self.expr(&e));
-        let rhs = binary.rhs().map_or_else(Value::unknown, |e| self.expr(&e));
+    fn binary(&mut self, binary: &ast::BinaryExpr) -> Checked {
+        let lhs = self.expr_of(binary.lhs())?;
+        let rhs = self.expr_of(binary.rhs())?;
+        Ok(self
+            .operator(binary, &lhs, &rhs)?
+            .unwrap_or_else(Value::unknown))
+    }
+
+    /// The value of the binary operator `binary` of `lhs` and `rhs`; `None` when it is not
+    /// followed: an assignment, an operand of a type the model does not follow, or an array.
+    fn operator(
+        &mut self,
+        binary: &ast::BinaryExpr,
+        lhs: &Value,
+        rhs: &Value,
+    ) -> Result<Option<Value>, Fatal> {
         let Some(op) = binary.op() else {
-            return Value::unknown();
+            return Ok(None);
         };
         let Some(spelling) = binary_spelling(op) else {
-            return Value::unknown();
+            return Ok(None);
         };
         // An array named bare is its head, a pointer (`REF_ARRAYHEAD`), which is not followed.
         if !self.env.fteqcc()
@@ -215,42 +239,46 @@ impl<'e> Checker<'e> {
             || lhs.array
             || rhs.array
         {
-            return Value::unknown();
+            return Ok(None);
         }
-        let (Some(left), Some(right)) = (self.operand(&lhs, &rhs), self.operand(&rhs, &lhs)) else {
-            return Value::unknown();
+        let (Some(left), Some(right)) = (self.operand(lhs, rhs), self.operand(rhs, lhs)) else {
+            return Ok(None);
         };
         let in_class = self.env.in_class();
         let Some(choice) = choose_opcode(&candidates(spelling), left, right, in_class) else {
-            return Value::unknown();
+            return Ok(None);
         };
-        let Some(opcode) = OPCODES.get(choice.index()) else {
-            return Value::unknown();
+        let Some(opcode) = row(choice.op()) else {
+            return Ok(None);
         };
         let span = binary
             .op_token()
             .map_or_else(|| binary.syntax().span(), |t| t.span());
         if let Choice::Mismatch(_) = choice {
-            self.mismatch(spelling, &lhs, &rhs, span);
+            self.mismatch(spelling, lhs, rhs, span);
         }
         let [a, b, c] = opcode.types;
-        for (value, operand, row) in [(&lhs, left, a), (&rhs, right, b)] {
-            if !self.convert(value, operand, row, span) {
-                self.aborted = true;
-                return Value::unknown();
-            }
+        for (value, operand, row) in [(lhs, left, a), (rhs, right, b)] {
+            self.convert(value, operand, row, span)?;
         }
-        Value::of(result_type(c))
+        Ok(Some(Value::of(c.value_type())))
     }
 
     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with
     /// the warning "Implicit conversion" when the conversion is costly (FTEF-23.5) and the
-    /// implicit cast's own diagnostics; `false` when the cast is refused, a fatal error.
-    fn convert(&mut self, value: &Value, operand: Operand, row: OpType, span: Span) -> bool {
+    /// implicit cast's own diagnostics; a refused cast is a fatal error.
+    fn convert(
+        &mut self,
+        value: &Value,
+        operand: Operand,
+        row: OpType,
+        span: Span,
+    ) -> Result<(), Fatal> {
         if row.etype() == operand.etype || row == OpType::Variant {
-            return true;
+            return Ok(());
         }
-        let costly = conversion_cost(operand, row.etype(), self.env.in_class())
+        let costly = operand
+            .cost_to(row.etype(), self.env.in_class())
             .is_some_and(|cost| cost >= 100);
         if costly {
             let message = format!(
@@ -260,7 +288,10 @@ impl<'e> Checker<'e> {
             );
             self.env.report(Code::W0232, span, message);
         }
-        !self.env.cast(value.source(), &result_type(row), span)
+        if self.env.cast(value.source(), &row.value_type(), span) {
+            return Err(Fatal);
+        }
+        Ok(())
     }
 
     /// The operand `value` as `QCC_PR_ChooseOpcode` reads it beside `other`: a truth value as
@@ -331,39 +362,4 @@ const fn binary_spelling(op: BinaryOp) -> Option<&'static str> {
         | BinaryOp::ShrAssign
         | BinaryOp::Comma => return None,
     })
-}
-
-/// The type a literal of `ty` has.
-fn const_type(ty: ConstType) -> Type {
-    match ty {
-        ConstType::Float => Type::Simple(SimpleType::Float),
-        ConstType::Vector => Type::Simple(SimpleType::Vector),
-        ConstType::String => Type::Simple(SimpleType::String),
-        ConstType::Integer => Type::Named("__int32".into()),
-        ConstType::Uint => Type::Named("__uint32".into()),
-        ConstType::Int64 => Type::Named("__int64".into()),
-        ConstType::Uint64 => Type::Named("__uint64".into()),
-        ConstType::Double => Type::Named("__double".into()),
-    }
-}
-
-/// The type an opcode's `type_c` gives its result.
-fn result_type(ty: OpType) -> Type {
-    match ty {
-        OpType::None | OpType::Void => Type::Simple(SimpleType::Void),
-        OpType::Float | OpType::BoolFloat => Type::Simple(SimpleType::Float),
-        OpType::Vector => Type::Simple(SimpleType::Vector),
-        OpType::String => Type::Simple(SimpleType::String),
-        OpType::Entity => Type::Simple(SimpleType::Entity),
-        OpType::Integer | OpType::BoolInt => Type::Named("__int32".into()),
-        OpType::Uint => Type::Named("__uint32".into()),
-        OpType::Int64 => Type::Named("__int64".into()),
-        OpType::Uint64 => Type::Named("__uint64".into()),
-        OpType::Double => Type::Named("__double".into()),
-        OpType::Variant => Type::Named("__variant".into()),
-        OpType::Field | OpType::Function => Type::Unknown,
-        OpType::Pointer => Type::Pointer(Type::Simple(SimpleType::Float).into()),
-        OpType::FloatPointer => Type::Pointer(Type::Simple(SimpleType::Float).into()),
-        OpType::IntPointer => Type::Pointer(Type::Named("__int32".into()).into()),
-    }
 }

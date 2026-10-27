@@ -486,9 +486,8 @@ fn only_the_fte_targets_support_extern() {
 // spec FTEF-25.3: a `#pragma opcode` holds from the token after it
 #[test]
 fn opcode_targets_hold_from_the_token_after_their_pragma() {
+    use crate::Op;
     use crate::OpcodeTarget;
-    use crate::fte_tables::OPCODES;
-    let add_i = OPCODES.iter().position(|&op| op == "ADD_I").unwrap();
     let (_, out) = one_fte(
         "float a;\n#pragma opcode enable ADD_I\nfloat b;\n#pragma target fte\nfloat c;\n\
          #pragma target id\nfloat d;\n",
@@ -496,7 +495,7 @@ fn opcode_targets_hold_from_the_token_after_their_pragma() {
     let marks: Vec<(usize, bool, TargetFormat)> = out
         .targets
         .iter()
-        .map(|(at, target)| (*at, target.valid(add_i), target.format()))
+        .map(|(at, target)| (*at, target.valid(Op::AddI), target.format()))
         .collect();
     assert_eq!(
         marks,

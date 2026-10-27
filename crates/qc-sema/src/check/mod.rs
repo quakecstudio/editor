@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
+use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 use qc_syntax::ast;
 
@@ -46,6 +47,8 @@ pub(crate) trait Env {
     fn flags_at(&self, at: usize) -> CompilerFlags;
     /// The lexer's flags in force at offset `at` (FTEF-12.12).
     fn lex_flags_at(&self, at: usize) -> LexFlags;
+    /// The output target and the opcodes it has at offset `at` (FTEF-25).
+    fn target_at(&self, at: usize) -> OpcodeTarget;
     /// Whether the body is a member function's (`pr_classtype`).
     fn in_class(&self) -> bool;
     /// Whether the module follows FTEQCC (PRJ-2.8).

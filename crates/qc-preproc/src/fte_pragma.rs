@@ -16,9 +16,10 @@ use crate::compiler_flags::{CompilerFlags, PragmaDefault, Priorities};
 use crate::cond::fte_atoi;
 use crate::fte_directive::com_parse;
 use crate::fte_keywords::{Keyword, Keywords};
+use crate::fte_ops::Op;
 use crate::fte_tables::{
-    DP_MAX_REVISION, FLAGS, FTE_MAX_REVISION, FteFlag, OPCODES, OPTIMISATIONS, QSS_MAX_REVISION,
-    REAL_OPCODES, TARGETS, TargetFormat,
+    DP_MAX_REVISION, FLAGS, FTE_MAX_REVISION, FteFlag, OPTIMISATIONS, QSS_MAX_REVISION, TARGETS,
+    TargetFormat,
 };
 
 /// The pragmas `QCC_PR_Precompiler` knows; any other is "Unknown pragma" (FTEF-12.11).
@@ -306,9 +307,8 @@ pub(crate) fn optimise_warnings(name: &[u8], message: &[u8]) -> Vec<String> {
 /// `#pragma opcode STATE NAME ...` with the text `message`: STATE `enable`, `on`, `disable` or
 /// `off`, else "opcode state not recognised"; each NAME an `opname` of `pr_opcodes[]` in any case,
 /// "opcode NAME is internal" past `OP_NUMREALOPS` and "opcode NAME not recognised" when none.
-/// Returns each opcode it turns on or off, by its number, in order (FTEF-25.3), and the
-/// warnings.
-pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(usize, bool)>, Vec<String>) {
+/// Returns each opcode it turns on or off, in order (FTEF-25.3), and the warnings.
+pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(Op, bool)>, Vec<String>) {
     let state =
         com_parse(message, 0).and_then(|(state, at)| match state.to_ascii_lowercase().as_slice() {
             b"enable" | b"on" => Some((true, at)),
@@ -322,14 +322,11 @@ pub(crate) fn opcode_pragma(message: &[u8]) -> (Vec<(usize, bool)>, Vec<String>)
     let mut warnings = Vec::new();
     while let Some((name, next)) = com_parse(message, at) {
         at = next;
-        match OPCODES
-            .iter()
-            .position(|op| op.as_bytes().eq_ignore_ascii_case(&name))
-        {
-            Some(index) if index >= REAL_OPCODES => {
+        match Op::named_in_any_case(&name) {
+            Some(op) if op.is_internal() => {
                 warnings.push(format!("opcode {} is internal", lossy(&name)));
             }
-            Some(index) => edits.push((index, on)),
+            Some(op) => edits.push((op, on)),
             None => warnings.push(format!("opcode {} not recognised", lossy(&name))),
         }
     }

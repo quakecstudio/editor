@@ -571,6 +571,20 @@ impl Source<'_> {
 }
 
 impl ConstType {
+    /// The type a literal of this type has.
+    pub(crate) fn value_type(self) -> Type {
+        match self {
+            Self::Float => Type::Simple(SimpleType::Float),
+            Self::Vector => Type::Simple(SimpleType::Vector),
+            Self::String => Type::Simple(SimpleType::String),
+            Self::Integer => Type::Named("__int32".into()),
+            Self::Uint => Type::Named("__uint32".into()),
+            Self::Int64 => Type::Named("__int64".into()),
+            Self::Uint64 => Type::Named("__uint64".into()),
+            Self::Double => Type::Named("__double".into()),
+        }
+    }
+
     /// The name FTEQCC's `TypeName` gives this type.
     #[must_use]
     pub fn name(self) -> &'static str {

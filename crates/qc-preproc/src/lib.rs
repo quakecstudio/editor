@@ -22,6 +22,7 @@ mod fte_keywords;
 mod fte_line;
 mod fte_macro;
 mod fte_opcodes;
+mod fte_ops;
 mod fte_options;
 mod fte_pragma;
 pub(crate) mod fte_tables;
@@ -39,6 +40,7 @@ pub use fte_directive::{
 pub use fte_keywords::{Enabled, Keyword, KeywordEdit, Keywords};
 pub use fte_line::{fte_directive_end, relex_from};
 pub use fte_opcodes::OpcodeTarget;
+pub use fte_ops::Op;
 pub use fte_options::CommandLine;
 pub use fte_pragma::FlagSettings;
 pub use fte_tables::{FteFlag, TargetFormat, is_opcode_name};

@@ -6,11 +6,11 @@
     reason = "test code: fixtures are known"
 )]
 
-use qc_preproc::is_opcode_name;
+use qc_preproc::Op;
 
-use crate::check::convert::{Choice, Operand, choose_opcode, conversion_cost};
+use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::etype::Etype;
-use crate::check::opcodes::{OPCODES, candidates, index_of};
+use crate::check::opcodes::{OPCODES, candidates};
 
 fn value(etype: Etype) -> Operand {
     Operand {
@@ -25,19 +25,18 @@ fn chosen(spelling: &str, lhs: Operand, rhs: Operand) -> Choice {
 }
 
 fn opname(choice: Choice) -> &'static str {
-    OPCODES[choice.index()].opname
+    choice.op().name()
 }
 
-// spec FTEF-23.1: the table is pr_opcodes[] in order, 413 rows, each opname one #pragma opcode
-// takes
+// spec FTEF-23.1: the table is pr_opcodes[] in order, 413 rows, each the row of its opcode
 #[test]
 fn the_table_is_fteqccs_in_order() {
     assert_eq!(OPCODES.len(), 413);
-    assert!(OPCODES.iter().all(|op| is_opcode_name(op.opname)));
-    assert_eq!(index_of("DONE"), Some(0));
-    assert_eq!(index_of("MUL_F"), Some(1));
-    assert_eq!(index_of("ADD_F"), Some(6));
-    assert_eq!(index_of("EQ_F"), Some(10));
+    for (number, row) in OPCODES.iter().enumerate() {
+        assert_eq!(row.op.number(), number);
+    }
+    assert_eq!(OPCODES[Op::AddF.number()].name, "+");
+    assert_eq!(OPCODES[Op::EqF.number()].name, "==");
 }
 
 // spec FTEF-23.1: an operator's candidates are its spelling's rows of a binary class, in table
@@ -45,10 +44,10 @@ fn the_table_is_fteqccs_in_order() {
 #[test]
 fn candidates_are_the_spellings_rows_in_order() {
     let plus = candidates("+");
-    assert_eq!(OPCODES[plus[0]].opname, "ADD_F");
-    assert_eq!(OPCODES[plus[1]].opname, "ADD_V");
+    assert_eq!(plus[0], Op::AddF);
+    assert_eq!(plus[1], Op::AddV);
     assert!(plus.windows(2).all(|w| w[0] < w[1]));
-    assert!(plus.iter().all(|&i| OPCODES[i].name == "+"));
+    assert!(plus.iter().all(|&op| OPCODES[op.number()].name == "+"));
     assert!(candidates("=").is_empty());
     assert!(candidates("nope").is_empty());
 }
@@ -77,14 +76,14 @@ fn numeric_ranking() {
 // ranking, variant 9 and 10, float to vector 200, vector to float 201, else none
 #[test]
 fn conversion_costs() {
-    let cost = |from: Operand, to| conversion_cost(from, to, false);
+    let cost = |from: Operand, to| from.cost_to(to, false);
     assert_eq!(cost(value(Etype::Float), Etype::Float), Some(0));
     let field = Operand {
         holds: Some(Etype::Float),
         ..value(Etype::Field)
     };
-    assert_eq!(conversion_cost(field, Etype::Float, true), Some(1));
-    assert_eq!(conversion_cost(field, Etype::Float, false), None);
+    assert_eq!(field.cost_to(Etype::Float, true), Some(1));
+    assert_eq!(field.cost_to(Etype::Float, false), None);
     let null = Operand {
         null: true,
         ..value(Etype::Integer)

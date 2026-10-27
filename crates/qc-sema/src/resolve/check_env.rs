@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
+use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 
 use crate::cast::Source;
@@ -60,6 +61,22 @@ impl Env for BodyEnv<'_, '_> {
             .checked_sub(1)
             .and_then(|i| self.lex.get(i))
             .map(|&(_, flags)| flags)
+            .unwrap_or_default()
+    }
+
+    fn target_at(&self, at: usize) -> OpcodeTarget {
+        let marks = self
+            .resolver
+            .targets
+            .get(self.resolver.unit.0)
+            .copied()
+            .unwrap_or_default();
+        let index = marks.partition_point(|&(from, _)| from <= at);
+        index
+            .checked_sub(1)
+            .and_then(|i| marks.get(i))
+            .or_else(|| marks.first())
+            .map(|&(_, target)| target)
             .unwrap_or_default()
     }
 
