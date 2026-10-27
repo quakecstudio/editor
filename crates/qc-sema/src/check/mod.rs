@@ -9,9 +9,11 @@
 //! one-pass compilers. It reads them through [`Env`], which the resolver implements; the check
 //! knows nothing else of resolution.
 
+pub(crate) mod constant;
 pub(crate) mod convert;
 pub(crate) mod etype;
 mod expr;
+pub(crate) mod fold;
 mod member;
 pub(crate) mod opcodes;
 
@@ -29,6 +31,7 @@ use qc_syntax::ast;
 use crate::cast::{Literal, Source};
 use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
+use constant::Constant;
 
 use etype::Etype;
 
@@ -40,6 +43,8 @@ pub(crate) trait Env {
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
     fn is_array(&self, def: DefId) -> bool;
+    /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
+    fn constness(&self, def: DefId) -> Constness;
     /// What `ty` is at bottom, through typedefs, enums, accessors and truth values; `None` for
     /// a type the model does not follow, on which nothing is checked.
     fn shape(&self, ty: &Type) -> Option<Shape>;
@@ -83,8 +88,8 @@ pub(crate) struct Shape {
 pub(crate) struct Value {
     /// Its type; [`Type::Unknown`] after an error, on which no further error is reported.
     pub(crate) ty: Type,
-    /// The literal it is, which a cast reads (`QCC_SRef_IsNull`, FTEF-19.31).
-    pub(crate) literal: Option<Literal>,
+    /// Whether it is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26).
+    pub(crate) constness: Constness,
     /// Whether it names an array, whose type is its elements' (`REF_ARRAYHEAD`).
     pub(crate) array: bool,
 }
@@ -94,26 +99,60 @@ impl Value {
     pub(crate) const fn of(ty: Type) -> Self {
         Self {
             ty,
-            literal: None,
+            constness: Constness::Variable,
             array: false,
+        }
+    }
+
+    /// The constant `constant`, of its own type.
+    pub(crate) fn constant(constant: Constant) -> Self {
+        Self {
+            constness: Constness::Known(constant),
+            ..Self::of(constant.ty.value_type())
+        }
+    }
+
+    /// Its value, when it is a constant the model knows the value of.
+    pub(crate) const fn known(&self) -> Option<Constant> {
+        match self.constness {
+            Constness::Known(constant) => Some(constant),
+            Constness::Variable | Constness::Opaque => None,
         }
     }
 
     /// Whether it is a constant 0 of an integer, float or pointer type (`QCC_SRef_IsNull`).
     pub(crate) fn null(&self) -> bool {
-        self.literal.is_some_and(|l| l.null)
+        self.known().is_some_and(Constant::null)
     }
 
-    /// What a cast reads of it.
+    /// What a cast reads of it: a constant of its own type as a literal, whose nullness the cast
+    /// reads (FTEF-19.31), anything else by its type.
     pub(crate) fn source(&self) -> Source<'_> {
-        self.literal
-            .map_or(Source::Typed(&self.ty), Source::Literal)
+        match self.known() {
+            Some(constant) if constant.ty.value_type() == self.ty => Source::Literal(Literal {
+                ty: constant.ty,
+                null: constant.null(),
+            }),
+            Some(_) | None => Source::Typed(&self.ty),
+        }
     }
 
     /// The value of an expression the checker does not follow, on which nothing is reported.
     pub(crate) const fn unknown() -> Self {
         Self::of(Type::Unknown)
     }
+}
+
+/// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Constness {
+    /// Not a constant: no folding reads it.
+    Variable,
+    /// A constant the model knows the value of.
+    Known(Constant),
+    /// A constant whose value the model does not follow; nothing that its value decides, folding
+    /// or emulation, is checked.
+    Opaque,
 }
 
 /// A checked function body: the type of each expression, by where it starts and ends in the

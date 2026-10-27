@@ -11,9 +11,9 @@
 use qc_diag::{Code, Span};
 use qc_syntax::ast::{self, AstNode as _};
 
-use crate::check::Value;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::{Constness, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -170,7 +170,7 @@ impl Checker<'_> {
                 format!("unsupported string method {name}"),
             );
         }
-        if base.literal.is_none() {
+        if base.constness == Constness::Variable {
             return self.fatal(Code::E0316, span, "not a constant".to_owned());
         }
         Ok(Value::of(Type::Named("__int32".into())))

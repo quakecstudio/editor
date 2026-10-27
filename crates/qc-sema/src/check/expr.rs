@@ -12,11 +12,14 @@ use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
-use crate::cast::{ConstType, Literal};
+use crate::check::constant::Constant;
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
-use crate::check::{Env, TypedBody, Value};
+use qc_preproc::Op;
+
+use crate::check::fold::{Folded, fold};
+use crate::check::{Constness, Env, TypedBody, Value};
 use crate::ty::{SimpleType, Type};
 
 /// The checker of one body.
@@ -163,22 +166,26 @@ impl<'e> Checker<'e> {
             return Value::unknown();
         };
         match literal.kind() {
-            Some(ast::LiteralKind::String) => Value {
-                literal: Some(Literal::of(ConstType::String)),
-                ..Value::of(Type::Simple(SimpleType::String))
-            },
-            Some(ast::LiteralKind::Vector) => Value {
-                literal: Some(Literal::of(ConstType::Vector)),
-                ..Value::of(Type::Simple(SimpleType::Vector))
-            },
+            Some(ast::LiteralKind::String) => {
+                Value::constant(Constant::string(token.text_lossless() == "\"\""))
+            }
+            Some(ast::LiteralKind::Vector) => {
+                let flags = self.env.lex_flags_at(token.span().start);
+                let lexed = qc_lexer::lex_flagged(
+                    token.text_lossless().as_bytes(),
+                    qc_lexer::Dialect::Fteqcc,
+                    flags,
+                    &|_| None,
+                );
+                match lexed.tokens.first().map(|t| &t.kind) {
+                    Some(qc_lexer::TokenKind::Vector(v)) => Value::constant(Constant::vector(*v)),
+                    Some(_) | None => Value::of(Type::Simple(SimpleType::Vector)),
+                }
+            }
             Some(ast::LiteralKind::FrameRef) => Value::of(Type::Simple(SimpleType::Float)),
             Some(ast::LiteralKind::Float) if self.env.fteqcc() => {
                 let flags = self.env.lex_flags_at(token.span().start);
-                let number = Literal::of_fteqcc_number(&token.text_lossless(), flags);
-                Value {
-                    literal: Some(number),
-                    ..Value::of(number.ty.value_type())
-                }
+                Value::constant(Constant::of_number(&token.text_lossless(), flags))
             }
             Some(ast::LiteralKind::Float) => Value::of(Type::Simple(SimpleType::Float)),
             None => Value::unknown(),
@@ -193,6 +200,7 @@ impl<'e> Checker<'e> {
             return Value::unknown();
         };
         let array = self.env.is_array(def);
+        let constness = self.env.constness(def);
         let Some(ty) = self.env.definition(def).map(|def| def.ty.clone()) else {
             return Value::unknown();
         };
@@ -204,6 +212,7 @@ impl<'e> Checker<'e> {
         };
         Value {
             array,
+            constness,
             ..Value::of(ty)
         }
     }
@@ -261,7 +270,52 @@ impl<'e> Checker<'e> {
         for (value, operand, row) in [(lhs, left, a), (rhs, right, b)] {
             self.convert(value, operand, row, span)?;
         }
-        Ok(Some(Value::of(c.value_type())))
+        // A constant converted to the row's type is folded by FTEQCC's conversion, which the
+        // model does not follow: its value no longer decides anything (FTEF-26.5).
+        let constness = |value: &Value, operand: Operand, row: OpType| {
+            if row.etype() == operand.etype || value.constness == Constness::Variable {
+                value.constness
+            } else {
+                Constness::Opaque
+            }
+        };
+        let operands = [constness(lhs, left, a), constness(rhs, right, b)];
+        Ok(Some(self.fold(choice.op(), lhs, rhs, operands, c, span)))
+    }
+
+    /// The value of the opcode `op` of `lhs` and `rhs`, folded as `QCC_PR_StatementFlags`
+    /// folds its constant operands (FTEF-26), with the warnings folding gives at `span`;
+    /// `result` is the opcode's result type when nothing is folded.
+    fn fold(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        operands: [Constness; 2],
+        result: OpType,
+        span: Span,
+    ) -> Value {
+        let known = |constness: Constness| match constness {
+            Constness::Known(constant) => Some(constant),
+            Constness::Variable | Constness::Opaque => None,
+        };
+        if operands.contains(&Constness::Opaque) {
+            return Value {
+                constness: Constness::Opaque,
+                ..Value::of(result.value_type())
+            };
+        }
+        let mut notices = Vec::new();
+        let folded = fold(op, known(operands[0]), known(operands[1]), &mut notices);
+        for notice in notices {
+            self.env.report(notice.code, span, notice.message);
+        }
+        match folded {
+            Some(Folded::Constant(constant)) => Value::constant(constant),
+            Some(Folded::Left) => lhs.clone(),
+            Some(Folded::Right) => rhs.clone(),
+            None => Value::of(result.value_type()),
+        }
     }
 
     /// Converts the operand `value` to the opcode's type `row` for it, if it is another, with

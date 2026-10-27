@@ -25,6 +25,7 @@ mod dialect_resolution;
 mod dialect_statements;
 mod expansion;
 mod flags;
+mod folding;
 mod incremental;
 mod initialiser_uses;
 mod keywords;

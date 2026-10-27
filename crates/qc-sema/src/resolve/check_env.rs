@@ -11,7 +11,9 @@ use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 
 use crate::cast::Source;
-use crate::check::{Env, Shape};
+use crate::check::constant::Constant;
+use crate::check::{Constness, Env, Shape};
+use crate::lower::LiteralValue;
 use crate::resolve::Resolver;
 use crate::symbol::{DefId, Definition, FileId};
 use crate::ty::Type;
@@ -45,6 +47,24 @@ impl Env for BodyEnv<'_, '_> {
             .facts
             .get(def.0)
             .is_some_and(|f| f.array.is_some())
+    }
+
+    fn constness(&self, def: DefId) -> Constness {
+        let constant = self.resolver.facts.get(def.0).is_some_and(|f| f.constant);
+        if !constant {
+            return Constness::Variable;
+        }
+        match self.resolver.literals.get(&def) {
+            Some(LiteralValue::Float(bits)) => {
+                Constness::Known(Constant::float(f32::from_bits(*bits)))
+            }
+            Some(LiteralValue::Vector(bits)) => {
+                Constness::Known(Constant::vector(bits.map(f32::from_bits)))
+            }
+            Some(LiteralValue::String(text)) => Constness::Known(Constant::string(text == "\"\"")),
+            Some(LiteralValue::Builtin { .. } | LiteralValue::Text(_)) => Constness::Opaque,
+            None => Constness::Variable,
+        }
     }
 
     fn shape(&self, ty: &Type) -> Option<Shape> {

@@ -537,6 +537,14 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   number down the ranking, at the operator, first the left operand's then the right's
   (FTEF-23.5). `WARN_IMPLICITCONVERSION`, which `warningnames[]` does not name, so no
   `#pragma warning` sets it.
+- **QCD-7.75** `W0233` "Division of N by 0", "Division by constant 0", "Signed overflow on division
+  by -1" and "Division by 0": under an FTEQCC profile, a constant division folding meets
+  (FTEF-26.2, FTEF-26.4), at the operator. `WARN_DIVISIONBY0`, F332, ignored unless a `#pragma
+  warning` or the command line turns it on.
+- **QCD-7.76** `W0234` "Numerical overflow. F will be rounded to N", "Denormalized float F will be
+  rounded to N. This is probably not what you want.", "Numerical truncation of A to B." and
+  "Constant float operand F will be truncated to N": under an FTEQCC profile, a constant folding
+  converts with a loss (FTEF-26.2, FTEF-26.3), at the operator. `WARN_OVERFLOW`, F312.
 
 ## QCD-8 Preprocessor errors
 

@@ -373,6 +373,12 @@ pub enum Code {
     W0231,
     /// "Implicit conversion from A to B" (QCD-7.74).
     W0232,
+    /// "Division of N by 0", "Division by constant 0", "Signed overflow on division by -1" and
+    /// "Division by 0" (QCD-7.75).
+    W0233,
+    /// "Numerical overflow. F will be rounded to N", "Numerical truncation of A to B." and
+    /// "Constant float operand F will be truncated to N" (QCD-7.76).
+    W0234,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -387,7 +393,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 177] = [
+    pub const ALL: [Self; 179] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -560,6 +566,8 @@ impl Code {
         Self::W0230,
         Self::W0231,
         Self::W0232,
+        Self::W0233,
+        Self::W0234,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -700,6 +708,8 @@ impl Code {
             Self::W0230 => "W0230",
             Self::W0231 => "W0231",
             Self::W0232 => "W0232",
+            Self::W0233 => "W0233",
+            Self::W0234 => "W0234",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -815,6 +825,8 @@ impl Code {
             | Self::W0314
             | Self::W0231
             | Self::W0232
+            | Self::W0233
+            | Self::W0234
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102

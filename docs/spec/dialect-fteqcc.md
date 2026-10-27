@@ -3492,3 +3492,46 @@ refused (`QCC_PR_StatementFlags`).
   `disable` (or `off`) not, in order, the names an `opname` in any case; an internal one is "opcode
   NAME is internal" and changes nothing, and an unknown one "opcode NAME not recognised"
   (FTEF-12). The change holds from the token after the pragma.
+
+## FTEF-26 Constant arithmetic
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (its folding before it emits),
+`QCC_SRef_EvalConst`, `QCC_SRef_IsNull`, `QCC_Eval_Truth` and `QCC_PR_RoundFloatConst`;
+`qcc_pr_lex.c`, `QCC_PR_LexNumber`; `qccmain.c`, `optimisations[]` (`constantarithmatic`),
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Before it emits an opcode, `QCC_PR_StatementFlags` folds what it can of its constant operands,
+with `opt_constantarithmatic` on (`FLAG_ASDEFAULT`, so unless the command line turns it off) or
+outside a function. What it folds is never emitted, so an opcode the target lacks is not
+emulated or refused there (FTEF-25). The semantic model folds the same opcodes
+(`crates/qc-sema/src/check/fold.rs`), its constants FTEQCC's `QCC_eval_t` words with the type
+they were made with (`crates/qc-sema/src/check/constant.rs`). C's arithmetic is written out:
+integers wrap, shift counts are the low bits of the count, and a float out of an integer's range
+saturates, as on the arm64 build the differential is recorded on.
+
+### Behaviour
+
+- **FTEF-26.1** A number literal's value is `QCC_PR_LexNumber`'s: its digits accumulated in a
+  64-bit integer that wraps, the sign applied, then held to the literal's type (FTEF-3); a
+  fraction read with `atof`.
+- **FTEF-26.2** With both operands constant, the logic, bitwise, shift, arithmetic, comparison
+  and 64-bit opcodes fold to a constant of the opcode's result, reading each operand's words as
+  the opcode's operand type (a float's word read as an `int` is its bits). A float division by 0
+  is "Division of %g by 0" (an `int` dividend "%d"), an integer one "Division by constant 0" and
+  0, `INT_MIN / -1` "Signed overflow on division by -1" and `INT_MAX`; a remainder by 0 is not
+  folded. A float operand of a bitwise or shift opcode that is not a whole number is "Constant
+  float operand %f will be truncated to %i".
+- **FTEF-26.3** With only the left operand constant: the unary opcodes and conversions fold, a
+  conversion that loses the value being "Numerical overflow. %f will be rounded to %i", for a
+  float with a zero exponent "Denormalized float %g will be rounded to %i. This is probably not
+  what you want.", or "Numerical truncation of %#x to %#x."; `0 + b`, `0 | b` and `1 * b` are
+  `b`; `0 & b` and a shift of 0 are 0; a false left operand of `&&` is 0 and a true one of `||`
+  1, as floats.
+- **FTEF-26.4** With only the right operand constant: `a + 0`, `a - 0`, `a | 0`, `a * 1` and
+  `a / 1` are `a`, and `a & ~0` for integers; a division by a constant 0 is "Division by 0"; a
+  false right operand of `&&` is 0. `||` never folds here: `QCC_Eval_Truth(eval_a, ...)` reads
+  the absent left constant, which is false.
+- **FTEF-26.5** A value is a constant when it is a literal, a folded result, or a definition
+  that is constant and initialised (`QCC_SRef_EvalConst`). A constant whose value the semantic
+  model does not keep (an integer constant's initialiser, kept as text) decides nothing it
+  checks: no folding, no emulation.
