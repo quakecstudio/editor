@@ -358,8 +358,8 @@ impl Checker<'_> {
             Op::LtU | Op::LeU | Op::DivU | Op::BitextendI | Op::BitextendU => {
                 self.unsigned(op, lhs, rhs, span, result)
             }
-            Op::BitandD | Op::BitorD | Op::BitxorV | Op::BitxorD => {
-                self.bitwise(op, lhs, rhs, span)
+            Op::BitandD | Op::BitorD | Op::BitxorV | Op::BitxorD | Op::BitnotI => {
+                self.bitwise(op, lhs, rhs, span, result)
             }
             Op::IfF | Op::IfnotF | Op::IfS | Op::IfnotS | Op::NotI => self.truth(op, lhs, span),
             _ => {
@@ -427,10 +427,29 @@ impl Checker<'_> {
         }
     }
 
-    /// FTEF-27.7: the bitwise opcodes of doubles, by 64-bit integers, and `^` of vectors and
-    /// doubles, as `(a & ~b) | (b & ~a)`.
-    fn bitwise(&mut self, op: Op, lhs: &Value, rhs: &Value, span: Span) -> Result<Value, Fatal> {
+    /// FTEF-27.7: the bitwise opcodes of doubles, by 64-bit integers; `^` of vectors and
+    /// doubles, as `(a & ~b) | (b & ~a)`; and `~` of an integer, `-1 - a` (FTEF-27.2).
+    fn bitwise(
+        &mut self,
+        op: Op,
+        lhs: &Value,
+        rhs: &Value,
+        span: Span,
+        result: Value,
+    ) -> Result<Value, Fatal> {
         match op {
+            Op::BitnotI => {
+                // `-1 - a`, `op` already `OP_SUB_I` when it is refused.
+                if self.env.target_at(span.start).valid(Op::SubI) {
+                    return Ok(replaced(Op::SubI));
+                }
+                if !self.env.defines("SubInt") {
+                    let message = "SubInt function not defined: cannot emulate ~int";
+                    self.env.report(Code::W0235, span, message.to_owned());
+                    self.refuse(Op::SubI, span);
+                }
+                Ok(result)
+            }
             Op::BitandD | Op::BitorD => {
                 let lhs = self.emit(Op::ConvDi64, lhs, &Value::unknown(), span)?;
                 let rhs = self.emit(Op::ConvDi64, rhs, &Value::unknown(), span)?;
@@ -546,7 +565,6 @@ const fn emulation(op: Op) -> Emulation {
         Op::CrossV | Op::SpaceshipF => Expand(&[Op::MulF, Op::SubF]),
         Op::ConvItof | Op::StoreIf | Op::ConvFtoi | Op::StoreFi | Op::ConvUf => Conversion,
         Op::ConvFu => Instead(Op::ConvFtoi),
-        Op::BitnotI => Helper(&["SubInt"], "~int"),
         Op::LshiftDi => ConvertLeft(Op::ConvDi64, Op::LshiftI64i),
         Op::RshiftDi => ConvertLeft(Op::ConvDi64, Op::RshiftI64i),
         Op::AddPf
@@ -583,7 +601,8 @@ const fn emulation(op: Op) -> Emulation {
         | Op::IfnotF
         | Op::IfS
         | Op::IfnotS
-        | Op::NotI => Special,
+        | Op::NotI
+        | Op::BitnotI => Special,
         Op::LshiftIf => ConvertRight(Op::ConvFtoi, Op::LshiftI),
         Op::RshiftIf => ConvertRight(Op::ConvFtoi, Op::RshiftI),
         Op::LshiftFi => ConvertLeft(Op::ConvFtoi, Op::LshiftI),

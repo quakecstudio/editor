@@ -43,6 +43,7 @@ mod recovery;
 mod resolution;
 mod reviewer;
 mod settings;
+mod terms;
 mod type_declarations;
 mod types;
 

@@ -211,7 +211,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.2** `E0302` "type mismatch for OP": no row of the operator table matches the
   operand types (QC-16.2, QC-16.4); `OP` is the operator's spelling. Under an FTEQCC profile
   "type mismatch for OP (A and B)", the operands' type names, when no opcode of the spelling
-  takes them (FTEF-23.4).
+  takes them (FTEF-23.4), and "type mismatch for -" or "+" for a prefix `-` or `+` of a type it
+  does not take (FTEF-30.4).
 - **QCD-4.3** `E0303` "not a function": a call of something that is not a function
   (QC-18.1).
 - **QCD-4.4** `E0304` "too many parameters": more arguments than a fixed parameter list
@@ -282,9 +283,22 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   array named bare (FTEF-29.3); not a fatal error.
 - **QCD-4.32** `E0326` "void* maths was disabled.", "pointer* maths was disabled on this type.",
   "pointer sizes were marked as undefined." and "Making assumptions about pointer sizes was
-  blocked.": pointer arithmetic under `undefwordsize` (FTEF-27.10); not a fatal error.
+  blocked.": pointer arithmetic under `undefwordsize` (FTEF-27.10); and "sizeof was disabled, use
+  array.length instead." and "sizeof was disabled." (FTEF-30.8); not a fatal error.
 - **QCD-4.33** `E0327` "incompatible pointer types": the difference of pointers of different
   types (FTEF-27.10); a fatal error.
+- **QCD-4.34** `E0328` "Type mismatch: !TYPE" and "Type mismatch: ~TYPE": `!` or `~` of a type
+  with no opcode for it (FTEF-30.1); a fatal error.
+- **QCD-4.35** `E0329` "++ operator on read-only value", "-- operator on read-only value" and "++
+  operator on unsupported type": a prefix `++` or `--` refused (FTEF-30.4); a fatal error.
+- **QCD-4.36** `E0330` "Unable to dereference non-pointer type.", "attempt to dereference
+  function type." and "'@' operator only functions on floats and ints. go figure.": `*` or `@` of
+  a value it does not take (FTEF-30.5); a fatal error.
+- **QCD-4.37** `E0332` "Ternary operator with mismatching types": arms of `?:` that `typecmp` tells
+  apart and `typecmp_lax` does not (FTEF-30.3); a fatal error.
+- **QCD-4.38** `E0334` "_length(string) requires an initialised constant" and "_length()
+  unsupported argument type for intrinsic": `_length` of a value it does not measure
+  (FTEF-30.8); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -595,6 +609,17 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.85** `W0243` "Implicit type mismatch on assignment to NAME. Needed A, got B." under
   `lax`: a compound assignment's result the target cannot hold (FTEF-29.4). `WARN_LAXCAST`,
   F314.
+- **QCD-7.86** `W0244` "Type mismatch on ternary operator: A vs B": arms of `?:` that
+  `typecmp_lax` tells apart (FTEF-30.3). Warning 0, which no name sets.
+- **QCD-7.87** `W0245` "if (string) tests for null, not empty": a string condition (FTEF-30.2).
+  `WARN_IFSTRING_USED`, F322, off by default.
+- **QCD-7.88** `W0246` "if (vector) tests only the first element with the current compiler
+  flags": a vector condition with `ifvector` off (FTEF-30.2). `WARN_IFVECTOR_DISABLED`, which
+  has no name.
+- **QCD-7.89** `W0247` "conditional type mismatch: TYPE": a condition of a type with no test
+  (FTEF-30.2). `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
+- **QCD-7.90** `W0248` "Type mismatch: !void" and the other tests of a `void` value, under `lax`
+  (FTEF-30.1). `WARN_LAXCAST`, F314.
 
 ## QCD-8 Preprocessor errors
 

@@ -1602,7 +1602,7 @@ impl IndexExpr {
     }
 }
 
-/// A prefix operator of FTEQCC (FTE-19.4).
+/// A prefix operator of FTEQCC (FTE-19.4, FTEF-16.7, FTEF-19.26).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum UnaryOp {
     /// `-`: negation.
@@ -1611,6 +1611,16 @@ pub enum UnaryOp {
     Plus,
     /// `~`: bitwise not.
     BitNot,
+    /// `++e`: the operand incremented and stored (FTEF-16.7).
+    PreIncrement,
+    /// `--e`: the operand decremented and stored (FTEF-16.7).
+    PreDecrement,
+    /// `&e`: the operand's address (FTEF-16.7).
+    AddressOf,
+    /// `*e`: what the operand points at (FTEF-16.7).
+    Deref,
+    /// `@e` under `qccx`: the operand read as a string (FTEF-19.26).
+    AsString,
 }
 
 impl UnaryExpr {
@@ -1621,6 +1631,11 @@ impl UnaryExpr {
             K::Minus => Some(UnaryOp::Neg),
             K::Plus => Some(UnaryOp::Plus),
             K::Tilde => Some(UnaryOp::BitNot),
+            K::PlusPlus => Some(UnaryOp::PreIncrement),
+            K::MinusMinus => Some(UnaryOp::PreDecrement),
+            K::Amp => Some(UnaryOp::AddressOf),
+            K::Star => Some(UnaryOp::Deref),
+            K::At => Some(UnaryOp::AsString),
             _ => None,
         })
     }

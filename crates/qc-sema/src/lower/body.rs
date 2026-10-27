@@ -57,6 +57,9 @@ pub struct RawBody {
     pub flags: Vec<(usize, CompilerFlags)>,
     /// The lexer's flags in force in the body, from each offset on (FTEF-12.12).
     pub lex_flags: Vec<(usize, LexFlags)>,
+    /// The types the body's casts and `sizeof`s write, each by the offset where it starts,
+    /// which the check stage reads (FTEF-30).
+    pub written_types: Vec<(usize, Type)>,
 }
 
 /// One alias a `using` statement makes (FTEF-20.5): `QCC_PR_GetDef (NULL, name, pr_scope,
@@ -187,6 +190,15 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
     if let Some(block) = fn_body.block() {
         lower_block(&block, cx, &mut body, Flow::default());
     }
+    for node in fn_body.syntax().descendants() {
+        let written = ast::CastExpr::cast(node.clone())
+            .and_then(|cast| cast.ty())
+            .or_else(|| ast::SizeofExpr::cast(node).and_then(|sizeof| sizeof.ty()));
+        if let Some(ty) = written {
+            body.written_types
+                .push((ty.syntax().span().start, cx.ty(&ty)));
+        }
+    }
     body
 }
 
@@ -254,7 +266,7 @@ fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
 }
 
 /// Which loops and `switch`es a statement is in, which `break` and `continue` find their target
-/// in (FTEF-21.18).
+/// in (FTEF-21.20).
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Flow {
     loops: usize,

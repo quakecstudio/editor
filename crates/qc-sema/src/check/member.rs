@@ -242,7 +242,7 @@ fn selector_name(selector: &ast::Expr) -> Option<(String, Span)> {
 
 /// FTEF-24.8: a `length`, an `int` constant (`QCC_MakeIntConst`) whose value the model does not
 /// keep (FTEF-26.5).
-fn length() -> Value {
+pub(super) fn length() -> Value {
     Value {
         constness: Constness::Opaque,
         ..Value::of(Type::Named("__int32".into()))

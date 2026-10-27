@@ -147,36 +147,59 @@ impl<'e> Checker<'e> {
 
     /// The value of `expr`, its type recorded.
     pub(super) fn expr(&mut self, expr: &ast::Expr) -> Checked {
-        let value = match expr {
-            ast::Expr::Literal(literal) => self.literal(literal),
-            ast::Expr::Name(name) => self.name(name),
-            ast::Expr::Paren(paren) => {
-                let in_condition = std::mem::replace(&mut self.in_condition, false);
-                let value = self.expr_of(paren.expr());
-                self.in_condition = in_condition;
-                value?
-            }
-            ast::Expr::Binary(binary) => match binary.op() {
-                Some(op) if assign_spelling(op).is_some() => self.assign(binary, op)?,
-                Some(_) | None => self.binary(binary)?,
-            },
-            ast::Expr::Postfix(postfix) => self.postfix(postfix)?,
-            ast::Expr::Field(field) => self.member(field)?,
-            ast::Expr::Not(_)
-            | ast::Expr::Call(_)
-            | ast::Expr::Ternary(_)
-            | ast::Expr::Index(_)
-            | ast::Expr::Unary(_)
-            | ast::Expr::Cast(_)
-            | ast::Expr::Vector(_)
-            | ast::Expr::Sizeof(_) => {
-                self.children(expr)?;
-                Value::unknown()
-            }
-        };
+        let value = self.term(expr)?;
         let span = expr.syntax().span();
         self.types.insert((span.start, span.end), value.ty.clone());
         Ok(value)
+    }
+
+    /// The value of `expr` by its kind. Each kind is its own method, so that the frame a nested
+    /// expression adds stays small (QC-27.16).
+    fn term(&mut self, expr: &ast::Expr) -> Checked {
+        match expr {
+            ast::Expr::Literal(literal) => Ok(self.literal(literal)),
+            ast::Expr::Name(name) => Ok(self.name(name)),
+            ast::Expr::Paren(paren) => self.paren(paren),
+            ast::Expr::Binary(binary) => match binary.op() {
+                Some(op) if assign_spelling(op).is_some() => self.assign(binary, op),
+                Some(_) | None => self.binary(binary),
+            },
+            ast::Expr::Postfix(postfix) => self.postfix(postfix),
+            ast::Expr::Field(field) => self.member(field),
+            ast::Expr::Not(not) => self.not(not),
+            ast::Expr::Ternary(ternary) => self.ternary(ternary),
+            ast::Expr::Unary(unary) => self.unary(unary),
+            ast::Expr::Cast(cast) => self.cast(cast),
+            ast::Expr::Vector(vector) => self.vector_expr(vector),
+            ast::Expr::Sizeof(sizeof) => self.sizeof(sizeof),
+            ast::Expr::Call(call) if self.is_length(call) => {
+                let operand = call.args().and_then(|args| args.args().next());
+                self.length(operand, call.syntax().span())
+            }
+            ast::Expr::Call(_) | ast::Expr::Index(_) => {
+                self.children(expr)?;
+                Ok(Value::unknown())
+            }
+        }
+    }
+
+    /// `(e)`: the value inside, which is no condition's whole.
+    fn paren(&mut self, paren: &ast::ParenExpr) -> Checked {
+        let in_condition = std::mem::replace(&mut self.in_condition, false);
+        let value = self.expr_of(paren.expr());
+        self.in_condition = in_condition;
+        value
+    }
+
+    /// Whether `call` is the intrinsic `_length(e)`: its callee the name `_length` with no
+    /// definition (FTEF-30.8).
+    fn is_length(&self, call: &ast::CallExpr) -> bool {
+        let Some(ast::Expr::Name(name)) = call.callee() else {
+            return false;
+        };
+        name.name().is_some_and(|token| {
+            token.text_lossless() == "_length" && self.env.reference(token.span().start).is_none()
+        })
     }
 
     /// Checks the expressions inside `expr`, a term the checker does not type yet.

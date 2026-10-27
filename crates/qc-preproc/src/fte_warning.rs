@@ -176,6 +176,10 @@ pub enum FteWarning {
     NotConstant,
     /// `WARN_KEYWORDDISABLED`, which has no name.
     KeywordDisabled,
+    /// `WARN_IFVECTOR_DISABLED`, which has no name.
+    IfvectorDisabled,
+    /// `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
+    ConditionalTypeMismatch,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -248,7 +252,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 73] = [
+const ALL: [FteWarning; 75] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -322,6 +326,8 @@ const ALL: [FteWarning; 73] = [
     FteWarning::NotStandardBehaviour,
     FteWarning::NotConstant,
     FteWarning::KeywordDisabled,
+    FteWarning::IfvectorDisabled,
+    FteWarning::ConditionalTypeMismatch,
 ];
 
 impl FteWarning {
@@ -392,6 +398,8 @@ impl FteWarning {
             | Self::DeprecatedSyntax
             | Self::RedeclarationMismatch
             | Self::ArgumentCheck
+            | Self::IfvectorDisabled
+            | Self::ConditionalTypeMismatch
             | Self::MissingMemberQualifier
             | Self::MemberNotDefined
             | Self::NotReferencedField
@@ -454,11 +462,14 @@ impl FteWarning {
             Code::W0217 | Code::W0238 => Self::NotStandardBehaviour,
             Code::W0218 => Self::GmqccSpecific,
             Code::W0219 => Self::NotConstant,
-            Code::W0220 | Code::W0231 | Code::W0243 => Self::LaxCast,
+            Code::W0220 | Code::W0231 | Code::W0243 | Code::W0248 => Self::LaxCast,
             Code::W0233 => Self::DivisionBy0,
             Code::W0239 => Self::ConstantComparison,
             Code::W0241 => Self::AssignmentToConstant,
             Code::W0242 => Self::AssignmentInConditional,
+            Code::W0245 => Self::IfstringUsed,
+            Code::W0246 => Self::IfvectorDisabled,
+            Code::W0247 => Self::ConditionalTypeMismatch,
             Code::W0240 => Self::StrictTypeMismatch,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,

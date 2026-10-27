@@ -403,7 +403,7 @@ impl Checker<'_> {
         target: &Type,
         span: Span,
     ) -> Result<(), Fatal> {
-        if value.known().is_some_and(Constant::null) || self.env.lax_same(&value.ty, target) {
+        if value.known().is_some_and(Constant::null) || self.env.typecmp_lax(&value.ty, target) {
             return Ok(());
         }
         let (Some(from), Some(to)) = (self.env.shape(&value.ty), self.env.shape(target)) else {

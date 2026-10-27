@@ -20,6 +20,8 @@ pub(crate) mod fold;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
+mod term;
+mod truth;
 
 #[cfg(test)]
 mod tests;
@@ -43,6 +45,8 @@ use etype::Etype;
 pub(crate) trait Env {
     /// The definition the name written at offset `at` of the body's text resolved to.
     fn reference(&self, at: usize) -> Option<DefId>;
+    /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
+    fn written_type(&self, at: usize) -> Option<Type>;
     /// A definition of the module.
     fn definition(&self, def: DefId) -> Option<&Definition>;
     /// Whether a definition is an array (`def->arraysize`, FTEF-19.8).
@@ -77,6 +81,11 @@ pub(crate) trait Env {
     /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
     /// the other (FTEF-28.2).
     fn lax_same(&self, a: &Type, b: &Type) -> bool;
+    /// Whether `a` and `b` are one type by FTEQCC's `typecmp_lax`, comparing what fields,
+    /// pointers and functions hold (FTEF-30.3).
+    fn typecmp_lax(&self, a: &Type, b: &Type) -> bool;
+    /// Whether `a` and `b` are one type by FTEQCC's `typecmp` of values' types (FTEF-30.3).
+    fn typecmp(&self, a: &Type, b: &Type) -> bool;
     /// `ty` as FTEQCC's messages print it, `TypeName` (FTEF-24.7).
     fn type_name(&self, ty: &Type) -> String;
     /// The type of the member `name` of the struct or union `ty`, through its parents, and
@@ -85,6 +94,9 @@ pub(crate) trait Env {
     /// FTEQCC's implicit cast of `source` to `to` at `span` (`QCC_EvaluateCast(src, to, true)`,
     /// FTEF-19.31), reported there; whether it is refused, "Cannot cast", a fatal error.
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool;
+    /// A cast the program writes, `QCC_EvaluateCast(src, to, false)` (FTEF-30.6), reported at
+    /// `span`; whether it is refused, "Cannot cast", a fatal error.
+    fn explicit_cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool;
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.

@@ -259,6 +259,7 @@ impl<'a> Resolver<'a> {
                 uses: &uses,
                 flags: &body.flags,
                 lex: &body.lex_flags,
+                written: &body.written_types,
             };
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);

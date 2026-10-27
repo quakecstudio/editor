@@ -421,4 +421,87 @@ impl Resolver<'_> {
         };
         sa.etype == sb.etype || sa.etype == Etype::Variant || sb.etype == Etype::Variant
     }
+
+    /// `typecmp_lax` (`qcc_pr_lex.c`), whether `a` and `b` are one type to a conditional's arms
+    /// and a store (FTEF-30.3, FTEF-29.7): of one basic type and size, or one a `variant` with
+    /// nothing held, and what a field, a pointer or a function holds the same in turn; a
+    /// function's parameters of one basic type pairwise, a class or struct parameter by name,
+    /// as many on each side, and both variadic or neither. Class names are not compared, so two
+    /// classes are one. A type the model does not follow is any.
+    pub(in crate::resolve) fn typecmp_lax(&self, a: &Type, b: &Type) -> bool {
+        let (a, b) = (self.resolved(a), self.resolved(b));
+        let (Some(sa), Some(sb)) = (self.shape(&a), self.shape(&b)) else {
+            return true;
+        };
+        let variant = sa.etype == Etype::Variant || sb.etype == Etype::Variant;
+        if sa.etype != sb.etype && !variant {
+            return false;
+        }
+        if sa.etype == sb.etype && a.word_size() != b.word_size() {
+            return false;
+        }
+        match (&a, &b) {
+            (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
+                self.typecmp_lax(x, y)
+            }
+            (Type::Function(x), Type::Function(y)) => {
+                x.variadic == y.variadic
+                    && x.params.len() == y.params.len()
+                    && self.typecmp_lax(&x.ret, &y.ret)
+                    && x.params
+                        .iter()
+                        .zip(&y.params)
+                        .all(|(p, q)| self.same_param(p, q))
+            }
+            // What one holds against nothing the other holds.
+            (Type::Field(_) | Type::Pointer(_) | Type::Function(_), _)
+            | (_, Type::Field(_) | Type::Pointer(_) | Type::Function(_)) => false,
+            _ => true,
+        }
+    }
+
+    /// `typecmp` of two values' types (FTEF-30.3): the same type object, so one C type word or
+    /// typedef of it, two classes or structs by name, and what fields, pointers and functions
+    /// hold in turn. A type the model does not follow is any.
+    pub(in crate::resolve) fn typecmp(&self, a: &Type, b: &Type) -> bool {
+        let (a, b) = (self.resolved(a), self.resolved(b));
+        if a == b {
+            return true;
+        }
+        match (&a, &b) {
+            (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
+                self.typecmp(x, y)
+            }
+            (Type::Function(x), Type::Function(y)) => {
+                x.variadic == y.variadic
+                    && x.params.len() == y.params.len()
+                    && self.typecmp(&x.ret, &y.ret)
+                    && x.params
+                        .iter()
+                        .zip(&y.params)
+                        .all(|(p, q)| self.typecmp(p, q))
+            }
+            (Type::Unknown, _) | (_, Type::Unknown) => true,
+            _ => match (a.fteqcc_kind(), b.fteqcc_kind()) {
+                (Kind::Opaque, Kind::Opaque) => a.fteqcc_name() == b.fteqcc_name(),
+                (x, y) => x == y,
+            },
+        }
+    }
+
+    /// `typecmp_lax`'s test of a pair of parameters: one basic type, and an entity, struct or
+    /// union by its name, anything else as [`Self::typecmp_lax`] says.
+    fn same_param(&self, p: &Type, q: &Type) -> bool {
+        let (p, q) = (self.resolved(p), self.resolved(q));
+        let (Some(sp), Some(sq)) = (self.shape(&p), self.shape(&q)) else {
+            return true;
+        };
+        if sp.etype != sq.etype {
+            return false;
+        }
+        match sp.etype {
+            Etype::Entity | Etype::Struct | Etype::Union => p.fteqcc_name() == q.fteqcc_name(),
+            _ => self.typecmp_lax(&p, &q),
+        }
+    }
 }

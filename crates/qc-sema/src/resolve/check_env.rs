@@ -10,11 +10,11 @@ use qc_lexer::LexFlags;
 use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 
-use crate::cast::Source;
+use crate::cast::{Cast, Source};
 use crate::check::constant::Constant;
 use crate::check::{Constness, Env, Shape};
 use crate::lower::LiteralValue;
-use crate::resolve::Resolver;
+use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, Definition, FileId};
 use crate::ty::Type;
 
@@ -31,11 +31,20 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) flags: &'r [(usize, CompilerFlags)],
     /// The lexer's flags in force in the body, from each offset on.
     pub(in crate::resolve) lex: &'r [(usize, LexFlags)],
+    /// The types the body's casts and `sizeof`s write, by where each starts.
+    pub(in crate::resolve) written: &'r [(usize, Type)],
 }
 
 impl Env for BodyEnv<'_, '_> {
     fn reference(&self, at: usize) -> Option<DefId> {
         self.uses.get(&at).copied()
+    }
+
+    fn written_type(&self, at: usize) -> Option<Type> {
+        self.written
+            .iter()
+            .find(|(start, _)| *start == at)
+            .map(|(_, ty)| self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH))
     }
 
     fn definition(&self, def: DefId) -> Option<&Definition> {
@@ -133,12 +142,55 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.lax_same_value(a, b)
     }
 
+    fn typecmp_lax(&self, a: &Type, b: &Type) -> bool {
+        self.resolver.typecmp_lax(a, b)
+    }
+
+    fn typecmp(&self, a: &Type, b: &Type) -> bool {
+        self.resolver.typecmp(a, b)
+    }
+
     fn type_name(&self, ty: &Type) -> String {
         self.resolver.type_name(ty)
     }
 
     fn struct_member(&self, ty: &Type, name: &str) -> Option<(Type, bool)> {
         self.resolver.struct_member(ty, name)
+    }
+
+    fn explicit_cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
+        self.resolver.settle(span.start);
+        let location = self.resolver.at(self.file, span);
+        let flags = CompilerFlags::at(self.flags, span.start);
+        let to = self.resolver.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        let typed;
+        let source = match source {
+            Source::Typed(ty) => {
+                typed = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                Source::Typed(&typed)
+            }
+            Source::Literal(_) => source,
+        };
+        match source.cast_explicit(&to, flags) {
+            Cast::Refused => {
+                let from = match source {
+                    Source::Typed(ty) => self.resolver.type_name(ty),
+                    Source::Literal(_) => source.name(),
+                };
+                let message = format!(
+                    "Cannot cast from {from} to {}",
+                    self.resolver.type_name(&to)
+                );
+                self.resolver.report(Code::E0213, location, message);
+                true
+            }
+            Cast::StringPointerDisabled => {
+                let message = "pointer<->string casts were disabled.".to_owned();
+                self.resolver.report(Code::E0237, location, message);
+                false
+            }
+            Cast::Silent | Cast::Implicit | Cast::Lax => false,
+        }
     }
 
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {

@@ -278,10 +278,10 @@ fn pointer_types_parse() {
 #[test]
 fn pointer_operators_parse() {
     assert_eq!(first_expr("a = (__variant *)b;"), "(= a (cast b))");
-    assert_eq!(first_expr("a = &b;"), "(= a (unary None b))");
-    assert_eq!(first_expr("a = *b;"), "(= a (unary None b))");
-    assert_eq!(first_expr("++a;"), "(unary None a)");
-    assert_eq!(first_expr("--a;"), "(unary None a)");
+    assert_eq!(first_expr("a = &b;"), "(= a (unary Some(AddressOf) b))");
+    assert_eq!(first_expr("a = *b;"), "(= a (unary Some(Deref) b))");
+    assert_eq!(first_expr("++a;"), "(unary Some(PreIncrement) a)");
+    assert_eq!(first_expr("--a;"), "(unary Some(PreDecrement) a)");
 }
 
 // spec FTEF-4.3: `p->m` selects a member through a pointer.

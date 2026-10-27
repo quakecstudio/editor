@@ -77,6 +77,30 @@ const STATEMENTS: &[&str] = &[
     "a++ = 3;",
     "(a = 2) = 3;",
     "1 = a;",
+    // FTEF-30: terms.
+    "a = !e; a = !s; a = !v; a = ~s;",
+    "a = ~e;",
+    "a = -s;",
+    "a = +s;",
+    "a = -i;",
+    "a = ~i;",
+    "a = ++a; a = --a;",
+    "a = --glob;",
+    "a = ++s;",
+    "e = *e;",
+    "a = s ? 1 : 2; a = v ? 1 : 2; a = a ?: 2;",
+    "a = a ? s : 2;",
+    "a = a ? i : 2;",
+    "a = (float)s;",
+    "e = (entity)a;",
+    "a = (float)i; i = (int)a;",
+    "v = [a, s, 1];",
+    "v = [i, a, 1]; v = [1, 2, 3];",
+    "a = sizeof(float); a = sizeof(v); a = _length(\"ab\");",
+    "a = _length(s);",
+    "a = _length(a);",
+    "a = !(void)a;",
+    "a = (void)a ? 1 : 2;",
 ];
 
 /// Programs that stand alone.
@@ -117,6 +141,16 @@ const PROGRAMS: &[&str] = &[
     ".float fld; .vector fv;\nvoid() g = { fld = fv; };\n",
     "void() vf = { };\nvoid() g = { vf = vf; };\n",
     "void() g = { local float arr[4]; local float *p; arr = p; };\n",
+    // FTEF-30: terms under flags and types.
+    "#pragma flag enable lax\nvoid() g = { local float a; a = !(void)a; };\n",
+    "#pragma flag disable ifvector\nvoid() g = { local float a; local vector v; a = v ? 1 : 2; };\n",
+    "#pragma warning enable F322\nvoid() g = { local float a; local string s; a = s ? 1 : 2; };\n",
+    "#pragma flag enable undefwordsize\nvoid() g = { local float a; a = sizeof(float); };\n",
+    "void() f1 = {}; void(float) f2 = {};\n\
+     void() g = { local float a; local void() h; h = a ? f1 : f2; };\n",
+    "class A {}; class B {};\n\
+     void() g = { local float a; local A x; local B y; local entity e; e = a ? x : y; };\n",
+    "const float k = 3;\nvoid() g = { local float a; a = --k; };\n",
     "#pragma flag enable lax\n.float fl; entity self;\n\
      void() g = { local float a; local vector v; a *= v; self.fl *= v; };\n",
 ];

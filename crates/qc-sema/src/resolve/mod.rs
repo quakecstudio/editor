@@ -515,7 +515,7 @@ const COMPONENTS: [&str; 3] = ["_x", "_y", "_z"];
 const MAX_CLASS_DEPTH: usize = 64;
 
 /// The deepest chain of typedefs followed (FTEF-19.9).
-const MAX_TYPEDEF_DEPTH: usize = 64;
+pub(in crate::resolve) const MAX_TYPEDEF_DEPTH: usize = 64;
 
 /// The builtins FTEQCC keeps the first declaration of when a later one gives another type,
 /// with a warning (FTEF-19.7): `QCC_PR_GetDef`'s "selfish lazy hack".

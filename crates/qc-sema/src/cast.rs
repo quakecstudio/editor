@@ -450,6 +450,31 @@ impl Source<'_> {
         }
     }
 
+    /// `QCC_EvaluateCast(src, to, false)`, a cast the program writes (FTEF-30.6): no warning;
+    /// what an implicit cast takes, and also an entity and a float either way, two types of one
+    /// kind (`!typecmp_lax`) and any type to `void`; under `lax` anything, silently; else
+    /// "Cannot cast".
+    #[must_use]
+    pub fn cast_explicit(self, to: &Type, flags: CompilerFlags) -> Cast {
+        let (from_kind, to_kind) = (self.kind(), Kind::of(to));
+        let entity_float = matches!(
+            (from_kind, to_kind),
+            (Kind::Entity, Kind::Float) | (Kind::Float, Kind::Entity)
+        );
+        match self.try_cast(to, flags) {
+            Some(Cast::StringPointerDisabled) => Cast::StringPointerDisabled,
+            Some(_) => Cast::Silent,
+            None if entity_float
+                || from_kind == to_kind
+                || to_kind == Kind::Void
+                || flags.has(FteFlag::Laxcasts) =>
+            {
+                Cast::Silent
+            }
+            None => Cast::Refused,
+        }
+    }
+
     /// `QCC_TryEvaluateCast(src, to, true)`, its branches in order; `None` when it fails.
     /// `qccx` adds a float to an entity or a string and back to the casts "acceptable but
     /// probably an error"; `flag_undefwordsize` makes a string to a pointer the error of

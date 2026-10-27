@@ -3066,8 +3066,8 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   (before the token is lexed), a block's start (before `QCC_PR_Lex` lexes the token after its
   string), then the pragmas in the white space before the token, which `QCC_PR_Lex` runs as it
   lexes it. The flags kept are those the lexer reads (FTEF-12.12), `cpriority`, `assumevar`,
-  `subscope` and `attributes`, with the operator priorities (FTEF-21.4) and the defaults of
-  FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.18's.
+  `subscope`, `attributes`, `ifvector` and `vectorlogic` (FTEF-30.2), with the operator
+  priorities (FTEF-21.4) and the defaults of FTEF-21.14; a pragma that names none of them marks nothing, and the others are FTEF-21.20's.
   A flag read while the parser looks at a token, as FTEQCC reads one after it has lexed the token
   after what it read, is the flag at that token: `subscope` at a block's end is read at the token
   after its `}`. The token after an `extern` block is lexed with the block's flags and read with
@@ -3238,11 +3238,23 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   one level of nesting (FTEF-18.32). The parser lexes the text again with the blocks it read, and
   reports the lexical errors and warnings of the tokens they lex otherwise, in place of the
   preprocessor's.
-- **FTEF-21.18** The flags a pragma may set mid-compile that no token, tree, definition or cast
+- **FTEF-21.18** **Withdrawn** (P2-06, #587): it listed `ifvector` and `vectorlogic` among the
+  flags the semantic model does not read, but a condition's test reads them (FTEF-30.2).
+  Replaced by FTEF-21.20.
+- **FTEF-21.19** A `break` that no loop or `switch` holds, a `continue` that no loop holds, and a
+  `case` or `default` label that no `switch` holds, are counted (`num_breaks`, `num_continues`,
+  `num_cases`) and left over at the function's end: "%s: function contains illegal breaks", "%s:
+  function contains illegal continues" and "%s: function contains illegal cases"
+  (`QCC_PR_ParseImmediateStatements`): `void() g = { break; };`, `{ continue; }`, `{ switch (1) {
+  case 1: continue; } }`, `{ while (1) { } break; }`, `BREAK;` under `-Fcaseinsens`, `{ case 1: ;
+  }`, `{ default: ; }`, `{ if (1) { case 1: ; } }` and `{ switch (1) { case 1: ; } case 2: ; }`
+  are errors, a `break` in a `switch`, `loop` or `until`, a `continue` in a loop and a label in a
+  `switch` are not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
+  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement`.
+- **FTEF-21.20** The flags a pragma may set mid-compile that no token, tree, definition or cast
   of the semantic model reads are not modelled, each for its reason: `nosave`'s default but for
-  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `ifvector`, `vectorlogic`,
-  `nullemptystr`, `boundchecks`, `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`,
-  `omitinternals`, `embedsrc`, `dumpfilenames`, `annotate`, `brokenarray`, `rootconstructor`
+  a typedef, and `optimise`, `opcode`, `iffloat`, `ifstring`, `nullemptystr`, `boundchecks`,
+  `fastarrays`, `lo`, `reciprocal-math`, `allowuninit`, `omitinternals`, `embedsrc`, `dumpfilenames`, `annotate`, `brokenarray`, `rootconstructor`
   and `pythonlogic`, which the compiler's output reads (P2-06 onward); `msvcstyle`,
   `debugmacros` and `verbose`, which change only what FTEQCC prints; the target's
   `flag_pointerrelocs`, which `#pragma TARGET` sets with `QCC_OPCodeSetTarget` and only an
@@ -3258,17 +3270,6 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
-
-- **FTEF-21.19** A `break` that no loop or `switch` holds, a `continue` that no loop holds, and a
-  `case` or `default` label that no `switch` holds, are counted (`num_breaks`, `num_continues`,
-  `num_cases`) and left over at the function's end: "%s: function contains illegal breaks", "%s:
-  function contains illegal continues" and "%s: function contains illegal cases"
-  (`QCC_PR_ParseImmediateStatements`): `void() g = { break; };`, `{ continue; }`, `{ switch (1) {
-  case 1: continue; } }`, `{ while (1) { } break; }`, `BREAK;` under `-Fcaseinsens`, `{ case 1: ;
-  }`, `{ default: ; }`, `{ if (1) { case 1: ; } }` and `{ switch (1) { case 1: ; } case 2: ; }`
-  are errors, a `break` in a `switch`, `loop` or `until`, a `continue` in a loop and a label in a
-  `switch` are not. Source: fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e,
-  `engine/qclib/qcc_pr_comp.c`, `QCC_PR_ParseImmediateStatements`, `QCC_PR_ParseStatement`.
 
 ## FTEF-22 The flags and the target the casts read
 
@@ -3581,9 +3582,11 @@ the statements it would emit are code generation's.
   `strcmp`, else the fatal error `E0321`.
 - **FTEF-27.4** A conversion folds a constant (FTEF-26.3); else it calls `itof`, `ftoi`, or for
   `OP_CONV_UF` `utof`, `quake_utof`, `itof` or `quake_itof`, when defined; else it is the warning
-  `W0237` "itof emulation: denormals are unsafe NAME" (NAME as `QCC_GetSRefName` gives it: the
-  value's definition, `IMMEDIATE` for an immediate, a temporary's type name for a temporary, as
-  `__int32`) or "ftoi emulation: denormals are unsafe",
+  `W0237` "itof emulation: denormals are unsafe NAME" (NAME the symbol's, `var_a.sym->name`: the
+  value's definition, `IMMEDIATE` for an immediate, and for a temporary `temp_N`, N its slot in
+  `QCC_GetTemp`'s temporaries, which `opt_overlaptemps` reuses; the semantic model does not follow
+  the slots and prints the temporary's type name, `__int32`, where FTEQCC prints `temp_0`) or
+  "ftoi emulation: denormals are unsafe",
   F313, an error by default, or for `OP_CONV_UF` `W0238` "utof emulation: will break if NAME is
   big". `%` with no `mod` (or `ModInt`) function is expanded into division, `|`, multiplication
   and subtraction; `^` into `~`, `&` and `|`; `v / f` into `1 / f` and `OP_MUL_VF`. An integer
@@ -3718,3 +3721,79 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   NAME to B TARGET", TARGET `base.field` for a field. A cast, `lax` included, gives the value the
   left side's type first, so only a compound assignment's result kept under `lax` (FTEF-29.4)
   reaches the warning: `a *= v` is "type mismatch: vector vector to float a".
+
+## FTEF-30 Terms
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_RefTerm`, `QCC_PR_GenerateLogicalTruth`,
+`QCC_PR_GenerateLogicalNot`, `QCC_PR_GenerateBitwiseNot`, `QCC_Generate_OP_IFNOT`,
+`QCC_Generate_OP_IF`, `QCC_PR_GenerateVector`, `QCC_EvaluateCast`, `QCC_PR_RefExpression` (the
+conditional operator), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+A term is what FTEQCC reads before an operator: a prefix operator and its operand, a cast, a
+vector constructor, `sizeof`, `_length`, and the conditional operator, which `QCC_PR_RefExpression`
+reads at its priority. The semantic model checks them in `crates/qc-sema/src/check/term.rs` and
+`crates/qc-sema/src/check/truth.rs`; the address-of operator, indexing and the read of a
+reference are FTEF-31's.
+
+### Behaviour
+
+- **FTEF-30.1** `!`, `~` and a value made a truth value emit the opcode of the value's basic type
+  (a truth value taken for its parent's): `!` `OP_NOT_F`, `OP_NOT_S`, `OP_NOT_ENT`, `OP_NOT_V`,
+  `OP_NOT_FNC` and `OP_NOT_I` (for integers and pointers), and `== 0` for a double or 64-bit
+  value; `~` `OP_BITNOT_F`, `OP_NOT_S`, `OP_BITNOT_V`, `OP_BITNOT_I` and the 64-bit and double
+  ones, but nothing for an entity or a function; the truth `!= 0` of each. Each is folded,
+  emitted or emulated (FTEF-27). A `void` value is under `lax` the warning `W0248` with the
+  message and `OP_NOT_F`, else, like any type with no opcode, the fatal error `E0328` "Type
+  mismatch: !TYPE" or "Type mismatch: ~TYPE": `~e` of an entity and `!(void)a`.
+- **FTEF-30.2** A condition is tested by `QCC_Generate_OP_IFNOT`, or `QCC_Generate_OP_IF` for a
+  jump taken when it is true: integers, entities, fields, functions, pointers and truth values
+  as integers; a string warns `W0245` "if (string) tests for null, not empty" (with a full stop
+  for `QCC_Generate_OP_IF`), F322, off by default; a vector is `!v` under `ifvector`, on by
+  default, else `W0246` "if (vector) tests only the first element with the current compiler
+  flags"; a double or 64-bit value is compared with 0; a `variant`, struct, union or `void`
+  warns `W0247` "conditional type mismatch: TYPE", TYPE from `basictypenames[]`. The flags
+  `ifvector` and `vectorlogic` are kept for it (FTEF-21.1). The conditional operator's test is
+  checked; the statements' (FTEF-18) are the statement checks'.
+- **FTEF-30.3** `c ? a : b` tests `c` (FTEF-30.2); `c ?: b` takes `c` as the first arm. An
+  integer arm is made a float when the target has no `OP_STORE_IF`. An integer and a float are a
+  float, the integer converted; an integer and an unsigned value unsigned, and so for 64 bits.
+  Arms whose types `typecmp` tells apart, a truth value taken for its parent's, are then
+  reconciled: a null arm takes the other's type when they are of one size; else arms
+  `typecmp_lax` tells apart (it compares what fields, pointers and functions hold, and
+  parameters, but no class names) warn `W0244` "Type mismatch on ternary operator: A vs B",
+  warning 0, and arms it takes as one, two classes, are the fatal error `E0332` "Ternary
+  operator with mismatching types". `a ? s : 2` warns and the store then refuses the string.
+- **FTEF-30.4** `-e` is `0 - e` of the operand's type (`OP_SUB_F`, `OP_SUB_D`, `OP_SUB_V`,
+  `OP_SUB_I`, `OP_SUB_U` and the 64-bit ones), `+e` the operand; any other type is the fatal
+  error `E0302` "type mismatch for -" or "type mismatch for +". `++e` and `--e` of a read-only
+  value are the fatal error `E0329` "++ operator on read-only value" (or `--`), and of a type
+  with no `+` `E0329` "++ operator on unsupported type"; otherwise the `+` of 1 or -1 of the
+  operand's type, a pointer's by `OP_ADD_PIW`, is emitted and stored, and the value is the
+  operand stored to, read-only, so `itof` of `--i` names `i`.
+- **FTEF-30.5** `*e` of a pointer is what it points at, which may be assigned to; of a string
+  its first character, an integer; under `qccx` of a float or integer an entity; of a function
+  the function, or under `qcfuncs`, on by default, the fatal error `E0330` "attempt to
+  dereference function type."; of anything else `E0330` "Unable to dereference non-pointer
+  type.". Under `qccx`, `@e` of a float or integer is a string, of anything else `E0330`
+  "'@' operator only functions on floats and ints. go figure.".
+- **FTEF-30.6** A cast the program writes, `(TYPE)e`, is `QCC_EvaluateCast(e, TYPE, false)`:
+  it warns of nothing, takes what an implicit cast takes (FTEF-19.31) and also an entity and a
+  float either way (`OP_CONV_ITOF`, `OP_CONV_FTOI`), two types of one basic type and any type to
+  `void`, and under `lax` anything; else it is "Cannot cast from A to B" (`E0213`), a fatal
+  error. Its conversion opcodes are emitted (FTEF-27.8): `(entity)a` is "ftoi emulation:
+  denormals are unsafe" on the standard target.
+- **FTEF-30.7** The vector constructor `[x, y, z]`, and `(vector){x, y, z}`, casts each
+  component that is no float or integer to a float (`QCC_EvaluateCast(x, type_float, true)`,
+  "Cannot cast" for a string or an entity); three constants are a vector constant; else each
+  integer component is stored with `OP_STORE_IF`, which on the standard target is "itof
+  emulation". Its "Argument not a single numeric value in vector constructor" is not reachable:
+  the cast before it gives every component a float's type or fails.
+- **FTEF-30.8** `sizeof(TYPE)` and `sizeof e` are unsigned constants: a string immediate's length
+  with its NUL, a type's bytes, `bits / 8` for an 8- or 16-bit type and 4 per word for any other,
+  an array's times its length; under `undefwordsize` `sizeof` of a type is the error `E0326`
+  "sizeof was disabled, use array.length instead." and of an expression "sizeof was disabled.".
+  `_length(e)` (or `_length e`) is an integer constant: an array's length, a constant string's
+  without its NUL, a vector's 3; a string that is no constant is the fatal error `E0334`
+  "_length(string) requires an initialised constant", any other type "_length() unsupported
+  argument type for intrinsic". The model does not keep an array's length or a struct's layout,
+  so those sizes are no known constants.

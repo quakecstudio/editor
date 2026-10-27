@@ -45,6 +45,30 @@ pub(crate) enum Etype {
 }
 
 impl Etype {
+    /// Its name in `basictypenames[]`, which some messages print.
+    pub(crate) const fn basic_name(self) -> &'static str {
+        match self {
+            Self::Void => "void",
+            Self::String => "string",
+            Self::Float => "float",
+            Self::Vector => "vector",
+            Self::Entity => "entity",
+            Self::Field => "field",
+            Self::Function => "function",
+            Self::Pointer => "pointer",
+            Self::Integer => "integer",
+            Self::Uint => "uint",
+            Self::Int64 => "long",
+            Self::Uint64 => "ulong",
+            Self::Double => "double",
+            Self::Variant => "variant",
+            Self::Struct => "struct",
+            Self::Union => "union",
+            Self::Enum => "enum",
+            Self::Boolean => "bool",
+        }
+    }
+
     /// `QCC_NumericTypeRanking`: how far up the numeric types a type is, `None` for one that is
     /// not numeric (FTEF-23.2).
     pub(crate) const fn numeric_ranking(self) -> Option<i32> {
