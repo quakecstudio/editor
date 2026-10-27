@@ -353,6 +353,23 @@ inheritance, bitfields and nested members.
   `QCC_PR_ParseInitializerType_Internal`), or a value of the same type, `S t = s;`. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_comp.c`,
   `QCC_TryEvaluateCast`, `QCC_EvaluateCast`, `QCC_PR_ParseInitializerType_Internal`.
+- **FTEF-6.13** A type has a size in words, `size`, and in bits, `bits`, with an alignment in
+  bits, `align` (`QCC_PR_NewType`: `type_size[]` words, aligned to 32): one word for a float, a
+  string, an entity, a field, a function, a pointer and a 32-bit integer, two for a 64-bit
+  integer and a double, three for a vector and a `variant`; `__int8` and `__uint8` take 8 bits
+  aligned to 8, `__int16` and `__uint16` 16 aligned to 16. `QCC_PR_ParseStruct` lays out a
+  struct's members bit by bit after its parent's words, skipping a `static` member and one the
+  parent has with the same name, size and type: a member with bits is aligned to its alignment,
+  a bitfield (`int x : N`, of an integer's size and alignment, an `int` wider than 32 bits made
+  64) only where it would cross it, any other member to a word, and each takes its bits, or 32
+  a word, times its array's elements. A union's members all start at 0 and it takes the
+  largest. The tail is padded to the largest alignment, the size is the bits rounded up to
+  words, and the type keeps its bits when that alignment is no whole word. `sizeof` is the bits
+  over 8 when they are no whole words, else 4 bytes a word: `struct { __int8 a[3]; }` is 3,
+  `struct { __int8 a; __int16 b; }` 4, `struct { int a : 30; int b : 5; }` 8. The model lays out
+  a struct whose array sizes and widths are numbers. Source:
+  fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
+  `QCC_PR_ParseStruct`; `engine/qclib/qccmain.c`, `QCC_PR_NewType`, `type_size`.
 
 ## FTEF-7 `typedef` of any type
 
@@ -4020,3 +4037,11 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   not: the second test follows the first `return`.
 - **FTEF-34.7** `thinktime e : t;` reads `e`, makes `t` a float (`QCC_SupplyConversion`), and is
   the fatal error `E0344` "thinktime type mismatch" unless `e` is an entity and `t` a float.
+- **FTEF-34.8** A function returning a type larger than a vector (FTEF-6.13) is passed a pointer
+  to the value by its caller: its body starts by storing it with `OP_STORE_P`, which a target
+  without it refuses ("Opcode \"=|STORE_P\" not valid for target", FTEF-27.5, a fatal error that
+  ends the function's checks), so `return;` "'NAME' returned nothing, expected TYPE" and
+  `return =` "'NAME' not supported when returning TYPE" are the fatal error `E0341`, and the
+  finished function warns `W0262` "Function NAME returns (large) TYPE. This is inefficient."
+  (`WARN_SLOW_LARGERETURN`). The return messages of FTEF-34.1 name a type by its own name,
+  `type->name` (`s` for `struct s`), and this one by `TypeName`.

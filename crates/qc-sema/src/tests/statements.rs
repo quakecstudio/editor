@@ -367,3 +367,43 @@ fn autoprototyping_drops_named_defaults() {
         []
     );
 }
+
+// spec FTEF-34.1: `return;` and `return =` in a function returning a type larger than a vector
+// are fatal errors
+// spec FTEF-34.8: such a function needs `OP_STORE_P`, and warns that it is inefficient
+// spec QCD-4.50: E0341 for `return;` or `return =` of a type larger than a vector
+// spec QCD-7.104: W0262 for a function returning a type larger than a vector
+#[test]
+fn large_returns() {
+    let source = |target: &str, body: &str| {
+        format!("{target}struct s {{float a, b, c, d;}};\ns() g = {{ {body} }};\n")
+    };
+    let fte = "#pragma target fte\n";
+    assert_eq!(
+        diags(&source("", "return;")),
+        [d(
+            Code::E0320,
+            "Opcode \"=|STORE_P\" not valid for target. Consider the use of: #pragma target fte"
+        )]
+    );
+    assert_eq!(
+        diags(&source(fte, "return;")),
+        [d(Code::E0341, "'g' returned nothing, expected s")]
+    );
+    assert_eq!(
+        diags(&source(fte, "return = 1;")),
+        [d(Code::E0341, "'g' not supported when returning s")]
+    );
+    assert_eq!(
+        diags(&source(fte, "local s x; return x;")),
+        [d(
+            Code::W0262,
+            "Function g returns (large) struct s. This is inefficient."
+        )]
+    );
+    // A struct of no more words than a vector returns as a value does.
+    assert_eq!(
+        diags("struct s {float a, b;};\ns() g = { return; };\n"),
+        [d(Code::W0256, "'g' returned nothing, expected s")]
+    );
+}

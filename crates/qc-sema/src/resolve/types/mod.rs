@@ -11,7 +11,10 @@
 
 mod classes;
 mod enums;
+mod layout;
 mod structs;
+
+pub(crate) use layout::Layout;
 
 use qc_diag::Code;
 use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};

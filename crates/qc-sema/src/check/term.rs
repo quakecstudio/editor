@@ -10,7 +10,6 @@
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
 use qc_syntax::ast::{self, AstNode as _, UnaryOp};
-use qc_syntax::c_scalar::CScalar;
 
 use crate::cast::ConstType;
 use crate::check::constant::Constant;
@@ -323,22 +322,17 @@ impl Checker<'_> {
         Ok(self.size_of(&value.ty))
     }
 
-    /// The bytes a value of `ty` takes as `sizeof` counts them: `bits / 8` for a type narrower
-    /// than a word, else `VMWORDSIZE` per word; a struct's, whose layout the model does not
-    /// follow, is no known constant.
+    /// The bytes a value of `ty` takes as `sizeof` counts them: `bits / 8` for a type whose bits
+    /// are no whole words, else `VMWORDSIZE` per word (FTEF-6.13); a type whose layout the model
+    /// does not follow is no known constant.
     fn size_of(&self, ty: &Type) -> Value {
-        let bytes = match ty.fteqcc_scalar() {
-            Some(CScalar::Int8 | CScalar::Uint8) => Some(1),
-            Some(CScalar::Int16 | CScalar::Uint16) => Some(2),
-            _ => match self.etype_of(ty) {
-                Some(Etype::Vector) => Some(3_u32.saturating_mul(WORD_BYTES)),
-                Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => {
-                    Some(2_u32.saturating_mul(WORD_BYTES))
-                }
-                Some(Etype::Struct | Etype::Union) | None => None,
-                Some(_) => Some(WORD_BYTES),
-            },
-        };
+        let bytes = self.env.layout(ty).and_then(|layout| {
+            if layout.bits & 31 == 0 {
+                layout.words.checked_mul(WORD_BYTES)
+            } else {
+                Some(layout.bits >> 3)
+            }
+        });
         bytes.map_or_else(opaque_uint, |bytes| Value::constant(Constant::uint(bytes)))
     }
 

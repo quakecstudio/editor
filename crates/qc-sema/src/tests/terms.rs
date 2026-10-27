@@ -333,3 +333,28 @@ fn a_void_condition() {
         [d(Code::W0247, "conditional type mismatch: void")]
     );
 }
+
+// spec FTEF-6.13: a struct's members are laid out bit by bit, each aligned to its type, a
+// bitfield only where it would cross its alignment, a union's all at 0, the tail padded to the
+// largest alignment; `sizeof` is the bits over 8 when they are no whole words, else 4 a word
+#[test]
+fn struct_layouts() {
+    for (st, size) in [
+        ("struct s {float a; vector b;}", 16),
+        ("struct s {__int8 a; __int8 b; float c;}", 8),
+        ("struct s {__int8 a; __int16 b;}", 4),
+        ("struct s {int a:3; int b:5;}", 4),
+        ("struct s {int a:30; int b:5;}", 8),
+        ("union s {float a; vector b;}", 12),
+        ("struct s {float a[4]; __int8 c[3];}", 20),
+        ("struct s {int a:40;}", 8),
+        ("struct s {__int16 a; int b:20;}", 8),
+        ("struct s {__int8 a; int b:20;}", 4),
+        ("struct s {__int8 a[3];}", 3),
+    ] {
+        let source =
+            format!("{st}; float arr[1]; void() g = {{ local float n; n = arr[sizeof(s)]; }};\n");
+        let message = format!("(constant) array index out of bounds (0 <= {size} < 1)");
+        assert_eq!(diags(&source), [d(Code::W0249, &message)], "{st}");
+    }
+}

@@ -54,6 +54,8 @@ mod report;
 mod scope;
 mod types;
 
+pub(crate) use types::Layout;
+
 /// A diagnostic and the file it is in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileDiagnostic {

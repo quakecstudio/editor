@@ -14,7 +14,7 @@ use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
 use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape};
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
-use crate::resolve::{AccessorFacts, MAX_TYPEDEF_DEPTH, Resolver};
+use crate::resolve::{AccessorFacts, Layout, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::Type;
 
@@ -69,6 +69,10 @@ impl Env for BodyEnv<'_, '_> {
             .facts
             .get(def.0)
             .is_some_and(|f| f.array.is_some())
+    }
+
+    fn layout(&self, ty: &Type) -> Option<Layout> {
+        self.resolver.layout(ty)
     }
 
     fn failed(&self) -> bool {

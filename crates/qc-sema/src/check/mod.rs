@@ -41,7 +41,7 @@ use qc_syntax::CompilerFlags;
 use qc_syntax::ast::{self, AstNode as _};
 
 use crate::cast::{Literal, Source};
-use crate::resolve::AccessorFacts;
+use crate::resolve::{AccessorFacts, Layout};
 use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
 use constant::Constant;
@@ -127,6 +127,9 @@ pub(crate) trait Env {
     fn function(&self) -> FunctionFacts;
     /// The line of offset `span.start`, counted from 1, as `pr_source_line` holds it.
     fn line(&self, span: Span) -> u32;
+    /// The size of `ty` as FTEQCC lays it out (FTEF-6.13), `None` when the model does not follow
+    /// it.
+    fn layout(&self, ty: &Type) -> Option<Layout>;
     /// Whether an error, which ends FTEQCC's parse of the function (`QCC_PR_ParseError`), was
     /// reported in the body; a warning made an error is none.
     fn failed(&self) -> bool;
@@ -420,7 +423,9 @@ impl TypedBody {
 /// Checks `body`, reporting through `env`, and returns its types.
 pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBody {
     let mut checker = expr::Checker::new(env);
-    if let Some(block) = body.block() {
+    if let Some(block) = body.block()
+        && checker.start_function(block.syntax().span())
+    {
         checker.block(&block);
         let end = block
             .syntax()

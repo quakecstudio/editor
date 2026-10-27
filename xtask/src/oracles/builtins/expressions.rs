@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The expression family of the builtin differential: programs whose outcome the semantic
-//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-23 to FTEF-34): the opcode
+//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-6.13, FTEF-23 to FTEF-34): the opcode
 //! an operator is given and its conversions; member access on entities, classes, vectors,
 //! strings, arrays, structs and pointers; constant folding; the emulation of opcodes the target
 //! lacks; the comparison warnings; assignments, terms, references and calls; and statements.
@@ -227,6 +227,15 @@ const PROGRAMS: &[&str] = &[
     "entity self; float a;\nvoid() g = { __thinktime a : 1; __thinktime self : 1; };\n",
     "#pragma warning enable F311\nfloat a;\nvoid() g = { if !(a) a = 1; if not(a) a = 2; };\n",
     "__variant w; float a;\nvoid() g = { if (w) a = 1; while (w) a = 2; };\n",
+    // FTEF-6.13, FTEF-34.8: struct layouts and large returns.
+    "struct s {__int8 a; __int16 b;}; float arr[1];\n\
+     void() g = { local float n; n = arr[sizeof(s)]; };\n",
+    "struct s {int a:30; int b:5;}; float arr[2];\n\
+     void() g = { local float n; n = arr[sizeof(s)]; };\n",
+    "struct s {__int8 a[3];}; float arr[3];\nvoid() g = { local float n; n = arr[sizeof(s)]; };\n",
+    "struct s {float a, b, c, d;};\ns() g = { local s x; return x; };\n",
+    "#pragma target fte\nstruct s {float a, b, c, d;};\ns() g = { local s x; return x; };\n",
+    "#pragma target fte\nstruct s {float a, b, c, d;};\ns() g = { return; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

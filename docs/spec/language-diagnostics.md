@@ -326,6 +326,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   `OP_SWITCH_*` (FTEF-34.5); a fatal error.
 - **QCD-4.49** `E0344` "thinktime type mismatch": a `thinktime` of no entity or no float
   (FTEF-34.7); a fatal error.
+- **QCD-4.50** `E0341` "'NAME' returned nothing, expected TYPE" and "'NAME' not supported when
+  returning TYPE": `return;` and `return =` in a function returning a type larger than a vector
+  (FTEF-34.8); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -678,6 +681,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   `WARN_SWITCHTYPEMISMATCH`, which has no name.
 - **QCD-7.103** `W0261` "if !() is specific to fteqcc" and "if not() is specific to fteqcc or
   hexen2" (FTEF-34.2). `WARN_FTE_SPECIFIC`, F311, off by default.
+- **QCD-7.104** `W0262` "Function NAME returns (large) TYPE. This is inefficient." (FTEF-34.8).
+  `WARN_SLOW_LARGERETURN`, largereturn.
 
 ## QCD-8 Preprocessor errors
 

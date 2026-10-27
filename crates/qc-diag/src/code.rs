@@ -277,6 +277,10 @@ pub enum Code {
     /// "_() intrinsic accepts only a string immediate", "type mismatch on parm N" of an intrinsic
     /// and "Argument to used_sound intrinsic was not a string immediate." (QCD-4.46).
     E0340,
+    /// FTEQCC: "'NAME' returned nothing, expected TYPE" and "'NAME' not supported when returning
+    /// TYPE", a bare `return;` or `return =` in a function returning a type larger than a vector
+    /// (`ERR_BADEXTENSION`).
+    E0341,
     /// FTEQCC: "Case statements may not use formulas", a `case` value that generates code.
     E0342,
     /// FTEQCC: "Bad switch type", a `switch` on a value no comparison takes.
@@ -503,6 +507,9 @@ pub enum Code {
     /// FTEQCC: "if !() is specific to fteqcc" and "if not() is specific to fteqcc or hexen2"
     /// (`WARN_FTE_SPECIFIC`).
     W0261,
+    /// FTEQCC: "Function NAME returns (large) TYPE. This is inefficient.", a function with a body
+    /// returning a type larger than a vector (`WARN_SLOW_LARGERETURN`, largereturn).
+    W0262,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -517,7 +524,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 230] = [
+    pub const ALL: [Self; 232] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -640,6 +647,7 @@ impl Code {
         Self::E0338,
         Self::E0339,
         Self::E0340,
+        Self::E0341,
         Self::E0342,
         Self::E0343,
         Self::E0344,
@@ -743,6 +751,7 @@ impl Code {
         Self::W0259,
         Self::W0260,
         Self::W0261,
+        Self::W0262,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -912,6 +921,7 @@ impl Code {
             Self::W0259 => "W0259",
             Self::W0260 => "W0260",
             Self::W0261 => "W0261",
+            Self::W0262 => "W0262",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -958,6 +968,7 @@ impl Code {
             Self::E0338 => "E0338",
             Self::E0339 => "E0339",
             Self::E0340 => "E0340",
+            Self::E0341 => "E0341",
             Self::E0342 => "E0342",
             Self::E0343 => "E0343",
             Self::E0344 => "E0344",
@@ -1080,6 +1091,7 @@ impl Code {
             | Self::W0259
             | Self::W0260
             | Self::W0261
+            | Self::W0262
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -1222,6 +1234,7 @@ impl Code {
             | Self::E0342
             | Self::E0343
             | Self::E0344
+            | Self::E0341
             | Self::E0408 => true,
         }
     }

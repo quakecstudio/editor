@@ -19,6 +19,9 @@ use crate::check::flow::{Finding, Step};
 use crate::check::truth::{Jump, Test};
 use crate::ty::{SimpleType, Type};
 
+/// The words of a vector, `type_vector->size`.
+const VECTOR_WORDS: u32 = 3;
+
 /// A `case` of a `switch`: its value, the end of its range, where it is and the statement it
 /// jumps to (`pr_casesref`, `pr_casesref2`, `pr_cases`).
 struct Case {
@@ -102,8 +105,15 @@ impl Checker<'_> {
         let ret = self.function.ret.clone();
         let void = self.etype_of(&ret) == Some(Etype::Void);
         let name = self.function.name.clone();
-        let ret_name = self.env.type_name(&ret);
+        let ret_name = own_name(&self.env.type_name(&ret));
+        // A type larger than a vector is returned through a pointer, which `return;` and
+        // `return =` do not handle.
+        let large = self.returns_large();
         if s.sets() {
+            if large {
+                let message = format!("'{name}' not supported when returning {ret_name}");
+                return self.fatal(Code::E0341, span, message).map(drop);
+            }
             self.returned = true;
             self.layout.push(Step::Other, None, line);
             self.value(s.value())?;
@@ -112,6 +122,9 @@ impl Checker<'_> {
         let Some(expr) = s.value() else {
             if !void && ret != Type::Unknown && self.env.fteqcc() {
                 let message = format!("'{name}' returned nothing, expected {ret_name}");
+                if large {
+                    return self.fatal(Code::E0341, span, message).map(drop);
+                }
                 if !self.function.accumulate && !self.returned {
                     self.env.report(Code::W0256, span, message);
                 }
@@ -133,7 +146,7 @@ impl Checker<'_> {
         if void {
             let message = format!(
                 "'{name}' returned {}, expected {ret_name}",
-                self.env.type_name(&value.ty)
+                own_name(&self.env.type_name(&value.ty))
             );
             self.env.report(Code::W0257, value_span, message);
             return Ok(());
@@ -586,6 +599,28 @@ impl Checker<'_> {
         Ok(())
     }
 
+    /// Whether the function returns a type larger than a vector, through a pointer its caller
+    /// passes.
+    fn returns_large(&self) -> bool {
+        self.env
+            .layout(&self.function.ret)
+            .is_some_and(|l| l.words > VECTOR_WORDS)
+    }
+
+    /// FTEF-34.8: the start of a function returning a type larger than a vector stores the
+    /// pointer its caller passed with `OP_STORE_P`, which a target without it refuses, a fatal
+    /// error that ends the function's checks; whether they go on.
+    pub(super) fn start_function(&mut self, span: Span) -> bool {
+        if !self.env.fteqcc() || !self.returns_large() {
+            return true;
+        }
+        if self.env.target_at(span.start).valid(Op::StoreP) {
+            return true;
+        }
+        self.refuse(Op::StoreP, span);
+        false
+    }
+
     /// FTEF-34.6: the checks of the finished function, at the end of its body `span`: "not all
     /// control paths return a value", and "contains unreachable code".
     pub(super) fn finish_function(&mut self, span: Span) {
@@ -595,6 +630,15 @@ impl Checker<'_> {
             || self.env.failed()
         {
             return;
+        }
+        if self.returns_large() {
+            // FTEF-34.8: `QCC_PR_ParseInitializerType` once the body is read.
+            let message = format!(
+                "Function {} returns (large) {}. This is inefficient.",
+                self.function.name,
+                self.env.type_name(&self.function.ret)
+            );
+            self.env.report(Code::W0262, span, message);
         }
         let void = self.etype_of(&self.function.ret) == Some(Etype::Void);
         let line = self.env.line(span);
@@ -622,5 +666,19 @@ fn generates(expr: &ast::Expr) -> bool {
         ast::Expr::Name(_) | ast::Expr::Literal(_) => false,
         ast::Expr::Paren(paren) => paren.expr().as_ref().is_some_and(generates),
         _ => true,
+    }
+}
+
+/// A type's own name, `type->name`, from its `TypeName`: a struct's, union's, class's or enum's
+/// without its keyword or base.
+fn own_name(type_name: &str) -> String {
+    for keyword in ["struct ", "union ", "class "] {
+        if let Some(name) = type_name.strip_prefix(keyword) {
+            return name.to_owned();
+        }
+    }
+    match type_name.strip_prefix("enum ") {
+        Some(name) => name.split(':').next().unwrap_or(name).to_owned(),
+        None => type_name.to_owned(),
     }
 }
