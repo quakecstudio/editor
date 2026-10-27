@@ -9,6 +9,7 @@
 use qc_preproc::FteFlag;
 
 use super::{fte_with, whole};
+use crate::ast::{self, AstNode};
 use crate::kind::SyntaxKind as K;
 use crate::{Code, Dialect, Keywords, Parse, parse_preprocessed_flagged, parse_with};
 
@@ -380,8 +381,8 @@ fn at_is_the_as_string_operator_under_qccx() {
     let ops: Vec<_> = parsed
         .syntax()
         .descendants()
-        .filter_map(<crate::ast::UnaryExpr as crate::ast::AstNode>::cast)
+        .filter_map(<ast::UnaryExpr as AstNode>::cast)
         .map(|u| u.op())
         .collect();
-    assert_eq!(ops, [Some(crate::ast::UnaryOp::AsString)]);
+    assert_eq!(ops, [Some(ast::UnaryOp::AsString)]);
 }
