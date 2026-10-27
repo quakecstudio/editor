@@ -9,9 +9,11 @@ use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::{CScalar, CWords};
 use qc_syntax::{Dialect, Keyword, SyntaxKind, SyntaxNode};
 
-use crate::ty::{SimpleType, Type};
+use std::rc::Rc;
 
-use super::body::{Flow, RawBody, RawParam, lower_block, lower_body, next_think_of};
+use crate::ty::{FunctionType, SimpleType, Type};
+
+use super::body::{RawBody, RawParam, lower_body, next_think_of};
 use super::decl::{
     LiteralValue, Qualifier, RawDecl, RawValue, decl_base, declarator_type, lower_declarators,
     no_function, qualifiers, qualifiers_of, raw_value,
@@ -914,6 +916,7 @@ fn raw_accessor(member: &ast::AccessorMember, owner: &str, cx: Cx<'_>) -> RawAcc
             .map_or_else(String::new, |t| t.text_lossless()),
         ty: member.ty().map_or(Type::Unknown, |t| cx.ty(&t)),
         set: member.is_set(),
+        indexer: member.index_ty().map(|t| cx.ty(&t)),
     }
 }
 
@@ -935,24 +938,45 @@ fn lower_accessor_body(
     let name = format!("{owner}::{}_{field}", if set { "set" } else { "get" });
     let mut decl = RawDecl::new(name, span, Type::Unknown);
     if let Some(fn_body) = member.body() {
-        let mut body = RawBody::default();
-        for param in ["this", "value"] {
+        // FTEF-10.8: the function `QCC_PR_GenFunctionType` makes: `this` of the accessor's
+        // type, the index of its indexer's, and for `set` the value of the member's; `get`
+        // returns the member's type.
+        let member_ty = member.ty().map_or(Type::Unknown, |t| cx.ty(&t));
+        let index_ty = member.index_ty().map(|t| cx.ty(&t));
+        let this = Type::Named(owner.into());
+        // The accessor's own type is no type name yet where its members are declared.
+        let mut params = vec![Type::Unknown];
+        params.extend(index_ty.clone());
+        if set {
+            params.push(member_ty.clone());
+        }
+        let ret = if set {
+            Type::Simple(SimpleType::Void)
+        } else {
+            member_ty.clone()
+        };
+        let fn_ty = Type::Function(Rc::new(FunctionType {
+            ret,
+            params,
+            variadic: false,
+        }));
+        let mut body = lower_body(&fn_body, &fn_ty, cx);
+        body.params.clear();
+        for (param, ty) in [("this", this), ("value", member_ty)] {
             body.params.push(RawParam {
                 name: param.to_owned(),
                 span: Span::new(span.start, span.start),
-                ty: Type::Unknown,
+                ty,
             });
         }
         if let Some(index) = member.index_name() {
             body.params.push(RawParam {
                 name: index.text_lossless(),
                 span: index.span(),
-                ty: Type::Unknown,
+                ty: index_ty.unwrap_or(Type::Unknown),
             });
         }
-        if let Some(block) = fn_body.block() {
-            lower_block(&block, cx, &mut body, Flow::default());
-        }
+        decl.ty = fn_ty;
         decl.body = Some(body);
         decl.initialized = true;
     } else if let Some(value) = member.value() {

@@ -70,6 +70,8 @@ pub struct RawAccessor {
     pub ty: Type,
     /// Whether it is a `set` member.
     pub set: bool,
+    /// The type of its index, `[Type name]`, when it has one.
+    pub indexer: Option<Type>,
 }
 
 /// What lowering reads besides the tree: whether the dialect is FTEQCC's, the compiler flags

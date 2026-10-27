@@ -161,7 +161,7 @@ impl Checker<'_> {
     /// FTEF-34.9: the statements a call generates, each argument stored to its parameter by its
     /// words, `OP_STORE_V`, `OP_STORE_I64` where the target has it, else `OP_STORE_F`, then
     /// `OP_CALLn`; only at global scope do they matter.
-    fn generate_call(&mut self, values: &[Value], span: Span) {
+    pub(super) fn generate_call(&mut self, values: &[Value], span: Span) {
         if !self.global {
             return;
         }

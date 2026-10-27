@@ -335,6 +335,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   fatal error.
 - **QCD-4.53** `E0347` "the nextent builtin is not defined": `entnum` with no `nextent`
   (FTEF-32.2); a fatal error.
+- **QCD-4.54** `E0348` "Accessor NAME has no get function" (FTEF-10.7); a fatal error.
+- **QCD-4.55** `E0349` "Accessor has no set function" (FTEF-10.7); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -691,6 +693,8 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   `WARN_SLOW_LARGERETURN`, largereturn.
 - **QCD-7.105** `W0263` "ENUM::ITEM not part of switch": an item of a strict enum no case of its
   `switch` covers (FTEF-34.5). The warning of code 0.
+- **QCD-7.106** `W0264` "Implicit cast from A to B" between an accessor type and its base
+  (FTEF-10.8). The warning of code 0.
 
 ## QCD-8 Preprocessor errors
 

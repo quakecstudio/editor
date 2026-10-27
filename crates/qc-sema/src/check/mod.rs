@@ -9,6 +9,7 @@
 //! one-pass compilers. It reads them through [`Env`], which the resolver implements; the check
 //! knows nothing else of resolution.
 
+mod accessor;
 mod assign;
 mod call;
 mod compare;
@@ -57,6 +58,9 @@ pub(crate) trait Env {
     /// The accessor member `member` (empty for the indexer) of the accessor or class `ty`
     /// names, through a class's parents (FTEF-10.3).
     fn accessor(&self, ty: &Type, member: &str) -> Option<AccessorFacts>;
+    /// Whether the type `ty` names declares accessor members, `t->accessors`, through a class's
+    /// parents.
+    fn has_accessors(&self, ty: &Type) -> bool;
     /// The type of the local whose name starts at offset `at`, through typedefs.
     fn local_type(&self, at: usize) -> Option<Type>;
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
@@ -289,7 +293,8 @@ impl Value {
             Reference::Global
             | Reference::ArrayHead
             | Reference::Pointer(_)
-            | Reference::Character { .. } => self.label(),
+            | Reference::Character { .. }
+            | Reference::Accessor(_) => self.label(),
         }
     }
 
@@ -342,6 +347,19 @@ pub(crate) enum Reference {
         /// Whether the index is a float.
         float_index: bool,
     },
+    /// An accessor's member, read and stored through its functions (`REF_ACCESSOR`, FTEF-10.7).
+    Accessor(Box<AccessorRef>),
+}
+
+/// An accessor's member: what it is, its name and its index.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AccessorRef {
+    /// The member, as its accessor declares it.
+    pub(crate) facts: AccessorFacts,
+    /// Its name, empty for the indexer.
+    pub(crate) name: String,
+    /// Its index, when it takes one and one was given.
+    pub(crate) index: Option<Value>,
 }
 
 /// An entity's field: the labels of the entity and of the field.
@@ -390,6 +408,11 @@ impl Reference {
             index,
             vector,
         }))
+    }
+
+    /// The accessor member `name`, described by `facts`, at `index`.
+    pub(crate) fn accessor(facts: AccessorFacts, name: String, index: Option<Value>) -> Self {
+        Self::Accessor(Box::new(AccessorRef { facts, name, index }))
     }
 
     /// What the pointer labelled `base` points at, at `index`.

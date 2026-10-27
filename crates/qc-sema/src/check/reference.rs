@@ -41,6 +41,7 @@ impl Checker<'_> {
         }
         match value.reference.clone() {
             Reference::Global => Ok(value),
+            Reference::Accessor(accessor) => self.accessor_get(&value, &accessor, span),
             Reference::Field(_) => {
                 // FTEF-34.9: an entity's field is loaded by `OP_LOAD_*` of its type.
                 let load = match self.etype_of(&value.ty) {
@@ -186,8 +187,8 @@ impl Checker<'_> {
             }
         });
         let label = base.label();
-        // FTEF-10.3: an accessor's indexer, `get T[index]`.
-        if let Some(element) = self.accessor_value(&base, "") {
+        // FTEF-10.7: an accessor member's index, or an accessor's indexer, `get T[index]`.
+        if let Some(element) = self.accessor_index(&base, &at) {
             return Ok(element);
         }
         // An array of fields, `this.arr[i]`: the field the index selects, loaded from the array
@@ -354,7 +355,7 @@ impl Checker<'_> {
     pub(super) fn address_of(&mut self, value: Value, span: Span) -> Checked {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
-            Reference::Field(_) => Ok(pointer_to(&value.ty)),
+            Reference::Field(_) | Reference::Accessor(_) => Ok(pointer_to(&value.ty)),
             Reference::Global | Reference::ArrayHead | Reference::Element(_) => {
                 if !self.env.target_at(span.start).valid(Op::Globaladdress) {
                     let suggestion = if value.is_array_head() {
@@ -476,6 +477,7 @@ impl Checker<'_> {
                 Ok(())
             }
             Reference::Character { .. } => self.store_character(stored, span),
+            Reference::Accessor(accessor) => self.accessor_set(lhs, accessor, stored, span),
             Reference::Global
             | Reference::Field(_)
             | Reference::ArrayHead

@@ -349,6 +349,28 @@ impl Env for BodyEnv<'_, '_> {
         None
     }
 
+    fn has_accessors(&self, ty: &Type) -> bool {
+        let mut current = self.resolver.resolved(ty);
+        for _ in 0..MAX_TYPEDEF_DEPTH {
+            let Type::Named(name) = &current else {
+                return false;
+            };
+            if self
+                .resolver
+                .accessors
+                .keys()
+                .any(|(owner, _)| owner == name.as_ref())
+            {
+                return true;
+            }
+            let Some(parent) = self.resolver.class_parent_type(&current) else {
+                return false;
+            };
+            current = parent;
+        }
+        false
+    }
+
     fn defines(&self, name: &str) -> bool {
         self.resolver.lookup_global(name).is_some()
     }

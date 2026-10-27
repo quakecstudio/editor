@@ -9,7 +9,13 @@ use qc_diag::Code;
 
 use super::fte_index_of;
 use crate::resolve::ModuleIndex;
-use crate::symbol::{DefId, DefKind};
+use std::path::PathBuf;
+
+use qc_syntax::Dialect;
+
+use crate::db::Db;
+use crate::expand::ModuleInput;
+use crate::symbol::{DefId, DefKind, FileId};
 
 /// The messages of an index's errors.
 fn messages(index: &ModuleIndex) -> Vec<String> {
@@ -314,4 +320,89 @@ fn a_scope_that_is_no_class_names_a_global() {
         .map(DefId)
         .unwrap();
     assert_eq!(target_of(&index, source, "E::GREEN", 0), Some(green));
+}
+
+// spec FTEF-10.7: an accessor member is read by its `get` and stored by its `set`, its index
+// made the indexer's type and the stored value the `set` member's
+// spec QCD-4.54: E0348 for a read with no `get`
+// spec QCD-4.55: E0349 for a store with no `set`
+// spec FTEF-10.8: an accessor type and its base cast with a warning, and a member's body is
+// checked with `this` of the accessor's type
+// spec QCD-7.106: W0264 for a cast between an accessor type and its base
+#[test]
+fn accessor_reads_and_stores() {
+    let defs = "string(float b, float i) bufstr_get = #0; \
+                void(float b, float i, string s) bufstr_set = #0;\n\
+                accessor strbuf : float { inline get string at[float idx] = \
+                { return bufstr_get(this, idx); }; inline set string at[float idx] = \
+                { bufstr_set(this, idx, value); }; get float size = { return 1; }; \
+                set float only = { }; };\n\
+                strbuf h; float a; string s;\n";
+    let fte_messages = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        let file = FileId(0);
+        db.set_file(file, PathBuf::from("t.qc"), source.as_bytes().to_vec());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![file],
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    let body = |statement: &str| {
+        let messages = fte_messages(&format!("{defs}void() g = {{ {statement} }};\n"));
+        // The accessor's own bodies warn of `this` passed as its base.
+        messages
+            .into_iter()
+            .filter(|m| m != "Implicit cast from strbuf to float")
+            .collect::<Vec<_>>()
+    };
+    for quiet in ["s = h.at[1];", "h.at[1] = s;", "a = h.size;"] {
+        assert_eq!(body(quiet), Vec::<String>::new(), "{quiet}");
+    }
+    let cases = [
+        ("h.at[1] = a;", vec!["Cannot cast from float to string"]),
+        ("a = h.at[1];", vec!["Cannot cast from string to float"]),
+        ("h.size = 2;", vec!["Accessor has no set function"]),
+        ("a = h.only;", vec!["Accessor only has no get function"]),
+        (
+            "a = h.nope;",
+            vec![
+                "nope is not a member of strbuf",
+                "Cannot cast from void to float",
+            ],
+        ),
+        (
+            "s = h.at[\"x\"];",
+            vec!["Implicit type mismatch. Needed float, got string."],
+        ),
+        (
+            "h.at[1] += \"x\";",
+            vec!["Type mismatch on assignment. string += string is not supported"],
+        ),
+    ];
+    for (statement, expected) in cases {
+        assert_eq!(body(statement), expected, "{statement}");
+    }
+    assert_eq!(
+        fte_messages(&format!("{defs}void() g = {{}};\n"))
+            .iter()
+            .filter(|m| *m == "Implicit cast from strbuf to float")
+            .count(),
+        2
+    );
+    let casts = "accessor H : float; H h; float b;\nvoid() g = { b = h; h = b; };\n";
+    assert_eq!(
+        fte_messages(casts),
+        [
+            "Implicit cast from H to float",
+            "Implicit cast from float to H"
+        ]
+    );
+    assert_eq!(
+        fte_messages("accessor H : string; H h; float b;\nvoid() g = { b = h; };\n"),
+        ["Cannot cast from string to float"]
+    );
 }

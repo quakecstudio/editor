@@ -33,9 +33,22 @@ impl Checker<'_> {
         }
         // FTEF-10.3: an accessor's member, read or stored through its functions.
         if let Some((name, _)) = selector_name(&selector)
-            && let Some(accessor) = self.accessor_value(&base, &name)
+            && let Some(accessor) = self.accessor_member(&base, &name)
         {
             return Ok(accessor);
+        }
+        // FTEF-10.7: a member an accessor type does not have, but on an entity's, is "NAME is
+        // not a member of TYPE", an error that leaves a `void` 0.
+        if let Some((name, span)) = selector_name(&selector)
+            && self.env.has_accessors(&base.ty)
+            && self.etype_of(&base.ty) != Some(Etype::Entity)
+        {
+            let message = format!("{name} is not a member of {}", base.ty.fteqcc_name());
+            self.env.report(Code::E0261, span, message);
+            return Ok(Value {
+                readonly: false,
+                ..Value::of(Type::Simple(SimpleType::Void))
+            });
         }
         let Some(shape) = self.env.shape(&base.ty) else {
             self.expr(&selector)?;
@@ -94,7 +107,7 @@ impl Checker<'_> {
                 {
                     return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));
                 }
-                if let Some(accessor) = self.accessor_value(base, &name) {
+                if let Some(accessor) = self.accessor_member(base, &name) {
                     return Ok(accessor);
                 }
                 let found = self.env.reference(token.span().start).and_then(|id| {
@@ -155,16 +168,6 @@ impl Checker<'_> {
                 self.fatal(Code::E0318, span, message)
             }
         }
-    }
-
-    /// FTEF-10.3: an accessor member `NAME` of an accessor or class: the getter's type,
-    /// read-only with no setter. Reads and writes through it call its functions.
-    pub(super) fn accessor_value(&self, base: &Value, name: &str) -> Option<Value> {
-        let facts = self.env.accessor(&base.ty, name)?;
-        Some(Value {
-            readonly: !facts.set,
-            ..Value::of(facts.ty)
-        })
     }
 
     /// FTEF-24.6: a member no definition has is made a `variant` definition by

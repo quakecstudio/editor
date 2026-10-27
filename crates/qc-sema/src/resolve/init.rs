@@ -304,9 +304,17 @@ impl Resolver<'_> {
                     other => other,
                 };
                 // A pointer casts to any type (`QCC_SRef_IsNull`'s 0 keeps the cast's type),
-                // which the model does not follow further.
+                // which the model does not follow further; an accessor's base is its type there
+                // (FTEF-10.8).
+                let base = match &source {
+                    Type::Named(n) => self
+                        .named(&self.accessor_bases, &self.type_key(n))
+                        .map(|b| self.resolved(b)),
+                    _ => None,
+                };
                 if source != ty
                     && !matches!(source, Type::Pointer(_))
+                    && !matches!(base, Some(Type::Pointer(_)))
                     && self.cast_value(Source::Typed(&source), &ty, location, value.cast_flags)
                 {
                     return Err(Fatal);
@@ -537,6 +545,20 @@ impl Resolver<'_> {
     /// (FTEF-19.31, FTEF-22): "Cannot cast", an error, "Implicit cast" or "Implicit lax cast",
     /// warnings, "pointer<->string casts were disabled.", a non-fatal error, or none. Returns
     /// whether the cast is refused.
+    /// Whether one of `a` and `b` is an accessor type whose base is the other.
+    pub(in crate::resolve) fn accessor_of(&self, a: &Type, b: &Type) -> bool {
+        let base_of = |ty: &Type| match self.resolved(ty) {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(&name))
+                .cloned(),
+            _ => None,
+        };
+        let is_accessor = |ty: &Type| base_of(ty).is_some();
+        let resolved = |ty: &Type| self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+        base_of(a).is_some_and(|base| !is_accessor(b) && resolved(&base) == resolved(b))
+            || base_of(b).is_some_and(|base| !is_accessor(a) && resolved(&base) == resolved(a))
+    }
+
     pub(in crate::resolve) fn cast_value(
         &mut self,
         source: Source<'_>,
@@ -544,16 +566,39 @@ impl Resolver<'_> {
         location: Location,
         flags: CompilerFlags,
     ) -> bool {
+        // FTEF-10.8: an accessor and its base cast either way with a warning
+        // (`QCC_EvaluateCast`'s `cast->parentclass == src.cast`).
+        if let Source::Typed(from) = source
+            && self.accessor_of(from, to)
+        {
+            let message = format!(
+                "Implicit cast from {} to {}",
+                self.type_name(from),
+                self.type_name(to)
+            );
+            self.report(Code::W0264, location, message);
+            return false;
+        }
         let to = &self.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        // FTEF-10.8: a value of an accessor type is cast as its base's, and a cast to one is
+        // checked against its base (`for (tmp = cast; tmp->type == ev_accessor; ...)`).
+        let base_of = |ty: &Type| match ty {
+            Type::Named(name) => self
+                .named(&self.accessor_bases, &self.type_key(name))
+                .map(|base| self.resolved_deep(base, MAX_TYPEDEF_DEPTH)),
+            _ => None,
+        };
+        let to_checked = base_of(to).unwrap_or_else(|| to.clone());
         let typed;
         let source = match source {
             Source::Typed(ty) => {
-                typed = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                let ty = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                typed = base_of(&ty).unwrap_or(ty);
                 Source::Typed(&typed)
             }
             Source::Literal(_) => source,
         };
-        let (code, verb) = match source.cast(to, flags) {
+        let (code, verb) = match source.cast(&to_checked, flags) {
             Cast::Silent => return false,
             Cast::Implicit => (Code::W0220, "Implicit cast"),
             Cast::Lax => (Code::W0229, "Implicit lax cast"),

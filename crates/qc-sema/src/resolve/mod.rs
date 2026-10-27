@@ -162,12 +162,16 @@ pub(crate) struct Sources<'a> {
 /// An accessor member as the check stage reads it (FTEF-10.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AccessorFacts {
-    /// The member's type, its getter's.
+    /// The member's type, `acc->type`: the type of the member declared first.
     pub(crate) ty: Type,
+    /// The type its setter stores, its `set` member's.
+    pub(crate) set_ty: Type,
     /// Whether it has a `get` member.
     pub(crate) get: bool,
     /// Whether it has a `set` member.
     pub(crate) set: bool,
+    /// The type of its index, `indexertype`, when it takes one.
+    pub(crate) indexer: Option<Type>,
 }
 
 /// A source file's name as a message prints it, `s_filen`, and the offsets its lines start at.
@@ -672,14 +676,19 @@ impl<'a> Resolver<'a> {
                     .entry((accessor.owner.clone(), accessor.name.clone()))
                     .or_insert_with(|| AccessorFacts {
                         ty: accessor.ty.clone(),
+                        set_ty: accessor.ty.clone(),
                         get: false,
                         set: false,
+                        indexer: accessor.indexer.clone(),
                     });
+                if facts.indexer.is_none() {
+                    facts.indexer.clone_from(&accessor.indexer);
+                }
                 if accessor.set {
                     facts.set = true;
+                    facts.set_ty = accessor.ty.clone();
                 } else {
                     facts.get = true;
-                    facts.ty = accessor.ty.clone();
                 }
             }
             let protos = prototyped.get(index);

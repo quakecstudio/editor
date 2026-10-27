@@ -1290,6 +1290,15 @@ impl AccessorMember {
         })
     }
 
+    /// The index parameter's type in `[Type name]`, if any.
+    #[must_use]
+    pub fn index_ty(&self) -> Option<Type> {
+        self.0
+            .children()
+            .find(|n| n.kind() == K::ArraySuffix)
+            .and_then(|n| n.children().find_map(Type::cast))
+    }
+
     /// The index parameter's name in `[Type name]`, if any.
     #[must_use]
     pub fn index_name(&self) -> Option<SyntaxToken> {

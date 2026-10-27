@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The expression family of the builtin differential: programs whose outcome the semantic
-//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-6.13, FTEF-23 to FTEF-34): the opcode
+//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-6.13, FTEF-10.7, FTEF-10.8, FTEF-23 to FTEF-34): the opcode
 //! an operator is given and its conversions; member access on entities, classes, vectors,
 //! strings, arrays, structs and pointers; constant folding; the emulation of opcodes the target
 //! lacks; the comparison warnings; assignments, terms, references and calls; and statements.
@@ -261,6 +261,19 @@ const PROGRAMS: &[&str] = &[
     "entity e; float a; void() g = { a = e.entnum; };\n",
     "float y; void() g = { y = autocvar_x; };\n",
     "float c; void() g = { c = local; };\n",
+    // FTEF-10.7, FTEF-10.8: accessors.
+    "string(float b, float i) bufstr_get = #0; void(float b, float i, string s) bufstr_set = #0;\n\
+     accessor strbuf : float { inline get string at[float idx] = { return bufstr_get(this, idx); }; \
+     inline set string at[float idx] = { bufstr_set(this, idx, value); }; \
+     get float size = { return 1; }; };\n\
+     strbuf h; float a; string s;\n\
+     void() g = { s = h.at[1]; h.at[1] = s; a = h.size; };\n",
+    "accessor strbuf : float { get float size = { return 1; }; }; strbuf h;\n\
+     void() g = { h.size = 2; };\n",
+    "accessor strbuf : float { get float size = { return 1; }; }; strbuf h; float a;\n\
+     void() g = { a = h.nope; };\n",
+    "accessor H : string; H h; float b;\nvoid() g = { b = h; };\n",
+    "accessor H : float; H h; float b;\nvoid() g = { b = h; h = b; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

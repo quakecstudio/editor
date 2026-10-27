@@ -601,8 +601,8 @@ others).
   that class (`QCC_PR_ParseEntClass` dispatches `isget`/`isset` to
   `QCC_PR_ParseAccessorMember`). Virtual and static accessors are rejected ("virtual accessors
   are not supported", "static accessors are not supported").
-- **FTEF-10.4** Codegen (later): an accessor read or write lowers to its getter or setter call;
-  fixed by L-01.
+- **FTEF-10.4** **Withdrawn** (P2-136, #587): it left an accessor's reads and writes to code
+  generation; the check stage reads them. Replaced by FTEF-10.7.
 
 - **FTEF-10.5** `QCC_PR_ParseType` reads `accessor` among the types (`QCC_PR_CheckKeyword
   (keyword_accessor, "accessor")`), wherever a type stands: `typedef accessor B : float;`, `static
@@ -625,6 +625,27 @@ others).
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseType`.
 
+- **FTEF-10.7** A member of a value whose type has accessor members, by name
+  (`QCC_PR_ParseField`), is a reference to it (`QCC_PR_BuildAccessorRef`, `REF_ACCESSOR`), of the
+  type of the member declared first, read-only as the value is; a member that takes an index is
+  given one by `[...]`, and an accessor's nameless indexer by `value[...]`. A read calls its `get`
+  function with the value and the index, made the indexer's type (`QCC_SupplyConversion`,
+  "Implicit type mismatch. Needed float, got string.") or an integer 0 with none; with no `get` it
+  is the fatal error `E0348` "Accessor NAME has no get function". A store calls its `set`
+  function with the value, the index and the stored value, which is cast to the `set` member's
+  type as an argument is ("Cannot cast from float to string"); with no `set` it is the fatal error
+  `E0349` "Accessor has no set function". A name no member of the type has, on a type that is no
+  entity, is `E0261` "NAME is not a member of TYPE" (`QCC_PR_ParseWarning(ERR_BADMEMBER, ...)`,
+  so the read goes on), and the member is a `void` 0: `a = h.nope;` is then "Cannot cast from
+  void to float".
+- **FTEF-10.8** An accessor type and its base cast to each other with the warning `W0264`
+  "Implicit cast from A to B" (`QCC_EvaluateCast`, `cast->parentclass == src.cast`, the warning of
+  code 0); a value of an accessor type is otherwise cast as its base's, and a cast to one is
+  checked against its base, "Cannot cast from string to float" for an `accessor H : string`. A
+  member's body is a function (`QCC_PR_GenFunctionType`) whose `this` is of the accessor's type,
+  whose index is of its indexer's and whose `value`, for `set`, is of the member's, and is
+  checked as any function's body is: `bufstr_get(this, idx)` with a `float` parameter warns
+  "Implicit cast from strbuf to float".
 ## FTEF-11 The `__variant` type
 
 **Source:** `qcc_pr_lex.c`/`qccmain.c`, `type_variant` (`QCC_PR_NewType("__variant",
