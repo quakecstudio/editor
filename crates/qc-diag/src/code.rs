@@ -254,11 +254,22 @@ pub enum Code {
     /// "Unable to dereference non-pointer type.", "attempt to dereference function type." and "'@'
     /// operator only functions on floats and ints. go figure." (QCD-4.36).
     E0330,
+    /// "Address-of operator is not supported in this form without extensions. Consider the use of:
+    /// #pragma target fte" and the variant naming brokenarray (QCD-4.39).
+    E0331,
     /// "Ternary operator with mismatching types" (QCD-4.37).
     E0332,
+    /// "(vector) array index out of bounds" and "(.vector) array index out of bounds" (QCD-4.40).
+    E0333,
     /// "_length(string) requires an initialised constant" and "_length() unsupported argument type
     /// for intrinsic" (QCD-4.38).
     E0334,
+    /// "Address-of temp on line FILE:LINE" (QCD-4.41).
+    E0335,
+    /// "ptr-to-variants must be cast to a different type before being read" (QCD-4.42).
+    E0336,
+    /// "Type mismatch on indexed assignment of NAME: A VALUE, needed B." (QCD-4.43).
+    E0337,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -445,6 +456,11 @@ pub enum Code {
     /// "Type mismatch: !void", "Type mismatch: ~void" and the other tests of a void value under lax
     /// (QCD-7.90).
     W0248,
+    /// "(constant) array index out of bounds (0 <= I < N)" (QCD-7.91).
+    W0249,
+    /// "Address-of operator on local TYPE NAME is unsafe if recursing (and still bloated when not).
+    /// Consider use of 'static' or 'auto'." (QCD-7.92).
+    W0250,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -459,7 +475,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 206] = [
+    pub const ALL: [Self; 213] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -572,8 +588,13 @@ impl Code {
         Self::E0328,
         Self::E0329,
         Self::E0330,
+        Self::E0331,
         Self::E0332,
+        Self::E0333,
         Self::E0334,
+        Self::E0335,
+        Self::E0336,
+        Self::E0337,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -661,6 +682,8 @@ impl Code {
         Self::W0246,
         Self::W0247,
         Self::W0248,
+        Self::W0249,
+        Self::W0250,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -817,6 +840,8 @@ impl Code {
             Self::W0246 => "W0246",
             Self::W0247 => "W0247",
             Self::W0248 => "W0248",
+            Self::W0249 => "W0249",
+            Self::W0250 => "W0250",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -853,8 +878,13 @@ impl Code {
             Self::E0328 => "E0328",
             Self::E0329 => "E0329",
             Self::E0330 => "E0330",
+            Self::E0331 => "E0331",
             Self::E0332 => "E0332",
+            Self::E0333 => "E0333",
             Self::E0334 => "E0334",
+            Self::E0335 => "E0335",
+            Self::E0336 => "E0336",
+            Self::E0337 => "E0337",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -961,6 +991,8 @@ impl Code {
             | Self::W0246
             | Self::W0247
             | Self::W0248
+            | Self::W0249
+            | Self::W0250
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -1092,6 +1124,11 @@ impl Code {
             | Self::E0330
             | Self::E0332
             | Self::E0334
+            | Self::E0331
+            | Self::E0333
+            | Self::E0335
+            | Self::E0336
+            | Self::E0337
             | Self::E0408 => true,
         }
     }

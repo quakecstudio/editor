@@ -163,7 +163,7 @@ impl Checker<'_> {
     /// "Ternary operator with mismatching types".
     pub(super) fn ternary(&mut self, ternary: &ast::TernaryExpr) -> Checked {
         let span = ternary.syntax().span();
-        let condition = self.expr_of(ternary.condition())?;
+        let condition = self.value(ternary.condition())?;
         self.branch(&condition, Jump::IfNot, span)?;
         let (middle, last) = ternary.arms();
         let (kept, kept_null) = match middle {
@@ -172,13 +172,13 @@ impl Checker<'_> {
                 (condition, null)
             }
             Some(middle) => {
-                let value = self.expr(&middle)?;
+                let value = self.value(Some(middle))?;
                 let value = self.stored_arm(value, span)?;
                 let null = value.known().is_some_and(Constant::null);
                 (value, null)
             }
         };
-        let other = self.expr_of(last)?;
+        let other = self.value(last)?;
         let other = self.stored_arm(other, span)?;
         self.arms(kept, kept_null, other, span)
     }

@@ -40,7 +40,8 @@ use crate::expand::{
 };
 use crate::lower::{FileDecls, lower_file};
 use crate::resolve::{
-    FileDiagnostic, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped, resolve_module,
+    FileDiagnostic, FilePlace, FirstPass, ModuleIndex, ResolveOptions, Sources, resolve_mapped,
+    resolve_module,
 };
 use crate::symbol::{FileId, Location};
 
@@ -347,6 +348,26 @@ impl Db {
         index
     }
 
+    /// FTEF-31.4: each file's name and lines, which "Address-of temp on line" prints.
+    fn places(&self) -> HashMap<FileId, FilePlace> {
+        self.paths
+            .iter()
+            .map(|(&id, path)| {
+                let text = self.files.get(&id).map_or(&[][..], |f| f.text.as_slice());
+                let lines = std::iter::once(0)
+                    .chain(
+                        text.iter()
+                            .enumerate()
+                            .filter(|&(_, &b)| b == b'\n')
+                            .map(|(at, _)| at.saturating_add(1)),
+                    )
+                    .collect();
+                let name = path.to_string_lossy().into_owned();
+                (id, FilePlace { name, lines })
+            })
+            .collect()
+    }
+
     /// The module `input` read as the compiler reads it, memoized: its files preprocessed in
     /// compilation order (QC-9, QC-23.3; twice with autoprototyping, FTE-22.4), each file's
     /// expansion parsed and lowered, and the module resolved, with every definition,
@@ -465,6 +486,7 @@ impl Db {
             })
             .map(|(&id, _)| id)
             .collect();
+        let places = self.places();
         let warnings = each_file(&preprocessed.files, |r| r.warnings.as_slice());
         let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
             keywords.iter().map(Vec::as_slice).collect();
@@ -479,6 +501,7 @@ impl Db {
             keywords: &keywords,
             targets: &targets,
             extensions,
+            places,
             plan: preprocessed.plan.as_ref(),
             first: preprocessed.autoproto.then_some(FirstPass {
                 files: &first_decls,

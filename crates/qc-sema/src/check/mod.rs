@@ -20,6 +20,7 @@ pub(crate) mod fold;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
+mod reference;
 mod term;
 mod truth;
 
@@ -53,6 +54,12 @@ pub(crate) trait Env {
     fn is_array(&self, def: DefId) -> bool;
     /// Whether a definition is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26.5).
     fn constness(&self, def: DefId) -> Constness;
+    /// `FILE:LINE` of offset `span.start`, as `s_filen` and `pr_source_line` print it.
+    fn file_line(&self, span: Span) -> String;
+    /// The length of an array definition, when the model reads it (`def->arraysize`).
+    fn array_length(&self, def: DefId) -> Option<u32>;
+    /// Whether a definition is a function's local or parameter (`sym->scope`).
+    fn is_local(&self, def: DefId) -> bool;
     /// Whether FTEQCC made a definition constant (`def->constant`, FTEF-19.3), which makes it
     /// read-only to an assignment (FTEF-29.1) whether or not its value is known.
     fn constant(&self, def: DefId) -> bool;
@@ -115,8 +122,6 @@ pub(crate) struct Value {
     pub(crate) ty: Type,
     /// Whether it is a constant, and its value (`QCC_SRef_EvalConst`, FTEF-26).
     pub(crate) constness: Constness,
-    /// Whether it names an array, whose type is its elements' (`REF_ARRAYHEAD`).
-    pub(crate) array: bool,
     /// The name of the definition it is, which FTEQCC's messages print (`sym->name`).
     pub(crate) name: Option<String>,
     /// The symbol that holds it, which the comparison warnings read (FTEF-28).
@@ -141,6 +146,14 @@ pub(crate) enum Sym {
 }
 
 impl Sym {
+    /// The definition it is, if any.
+    pub(crate) const fn def(self) -> Option<DefId> {
+        match self {
+            Self::Def(def, _) => Some(def),
+            Self::Temp | Self::Immediate(_) => None,
+        }
+    }
+
     /// Whether it is constant and no temporary (`sym->constant && !sym->temp`).
     pub(crate) const fn constant(self) -> bool {
         match self {
@@ -157,7 +170,6 @@ impl Value {
         Self {
             ty,
             constness: Constness::Variable,
-            array: false,
             name: None,
             sym: Sym::Temp,
             readonly: true,
@@ -216,21 +228,36 @@ impl Value {
     }
 
     /// How FTEQCC names it as the target of a store (`QCC_GetRefName`): `base.field` for a
-    /// field, else its label.
+    /// field, `base[index]` for an element at an index that is no immediate, else its label.
     pub(crate) fn place(&self) -> String {
         match &self.reference {
-            Reference::Field { base, field } => format!("{base}.{field}"),
-            Reference::Global => self.label(),
+            Reference::Field { base, field, .. } => format!("{base}.{field}"),
+            // `base[index]`, but for an immediate index, which names no symbol.
+            Reference::Element { base, index, .. } if !matches!(index.sym, Sym::Immediate(_)) => {
+                format!("{base}[{}]", index.label())
+            }
+            Reference::Element { base, .. } => base.clone(),
+            Reference::Global
+            | Reference::ArrayHead
+            | Reference::Pointer { .. }
+            | Reference::Character { .. } => self.label(),
         }
     }
 
-    /// The field `field` of the entity `base`, holding a `ty`, which may be assigned to.
-    pub(crate) fn field_of(base: &Self, field: String, ty: Type) -> Self {
+    /// Whether it is an array named bare (`REF_ARRAYHEAD`).
+    pub(crate) const fn is_array_head(&self) -> bool {
+        matches!(self.reference, Reference::ArrayHead)
+    }
+
+    /// The field `field` of the entity `base`, holding a `ty`, which may be assigned to; `def`
+    /// the field's definition.
+    pub(crate) fn field_of(base: &Self, field: String, ty: Type, def: Option<DefId>) -> Self {
         Self {
             readonly: false,
             reference: Reference::Field {
                 base: base.label(),
                 field,
+                def,
             },
             ..Self::of(ty)
         }
@@ -248,6 +275,34 @@ pub(crate) enum Reference {
         base: String,
         /// The field's label.
         field: String,
+        /// The field's definition, when it is one; an array of fields is indexed (FTEF-31.2).
+        def: Option<DefId>,
+    },
+    /// An array named bare, whose type is its elements' (`REF_ARRAYHEAD`): reading it takes its
+    /// address (FTEF-31.4).
+    ArrayHead,
+    /// A word of a definition at an index (`REF_ARRAY`, `REF_GLOBAL` with an index): an array's
+    /// element or a vector's component; the index is the model's to read only when it is no
+    /// constant (FTEF-31.2).
+    Element {
+        /// The definition's label.
+        base: String,
+        /// The index.
+        index: Box<Value>,
+        /// Whether the definition is a vector, indexed by component.
+        vector: bool,
+    },
+    /// What a pointer points at (`REF_POINTER`), at an index or not (FTEF-31.3).
+    Pointer {
+        /// The pointer's label.
+        base: String,
+        /// The index, an element's.
+        index: Option<Box<Value>>,
+    },
+    /// A string's character (`REF_STRING`), indexed by a float or an integer (FTEF-31.2).
+    Character {
+        /// Whether the index is a float.
+        float_index: bool,
     },
 }
 

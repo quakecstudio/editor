@@ -25,7 +25,7 @@ impl Checker<'_> {
         };
         // FTEF-24.8: an array's only member is `length`, an `int`; the resolver reports any
         // other (FTE-13).
-        if base.array {
+        if base.is_array_head() {
             return Ok(match selector_name(&selector) {
                 Some((name, _)) if name == "length" => length(),
                 Some(_) | None => Value::unknown(),
@@ -36,7 +36,11 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         };
         Ok(match shape.etype {
-            Etype::Entity => self.entity_field(&base, &selector)?,
+            // `QCC_PR_ParseField` reads the entity to select its field.
+            Etype::Entity => {
+                let entity = self.read(base, field.syntax().span())?;
+                self.entity_field(&entity, &selector)?
+            }
             Etype::Vector => self.swizzle(&selector, Type::Simple(SimpleType::Float))?,
             Etype::Field if shape.holds == Some(Etype::Vector) => self.swizzle(
                 &selector,
@@ -82,17 +86,18 @@ impl Checker<'_> {
                 if let Some(member) = self.env.class_member(&base.ty, &name)
                     && let Some(def) = self.env.definition(member)
                 {
-                    return Ok(Value::field_of(base, name, def.ty.clone()));
+                    return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));
                 }
-                let Some(def) = self
-                    .env
-                    .reference(token.span().start)
-                    .and_then(|def| self.env.definition(def))
-                    .filter(|def| def.member_of.is_none())
-                else {
+                let found = self.env.reference(token.span().start).and_then(|id| {
+                    self.env
+                        .definition(id)
+                        .filter(|def| def.member_of.is_none())
+                        .map(|def| (id, def.ty.clone()))
+                });
+                let Some((id, ty)) = found else {
                     return Ok(self.unknown_field(base, &name, token.span()));
                 };
-                (def.ty.clone(), name.clone(), name, token.span())
+                (ty, name.clone(), name, token.span(), Some(id))
             }
             ast::Expr::Paren(paren) => {
                 let value = self.expr_of(paren.expr())?;
@@ -103,6 +108,7 @@ impl Checker<'_> {
                     String::from_utf8_lossy(&selector.syntax().text()).into_owned(),
                     label,
                     span,
+                    value.sym.def(),
                 )
             }
             other => {
@@ -110,19 +116,20 @@ impl Checker<'_> {
                 return Ok(Value::unknown());
             }
         };
-        let (ty, name, label, span) = field;
+        let (ty, name, label, span, def) = field;
         match self.env.shape(&ty).map(|s| s.etype) {
             Some(Etype::Field) => {
                 let held = match ty {
                     Type::Field(held) => held.as_ref().clone(),
                     other => other,
                 };
-                Ok(Value::field_of(base, label, held))
+                Ok(Value::field_of(base, label, held, def))
             }
             Some(Etype::Variant) => Ok(Value::field_of(
                 base,
                 label,
                 Type::Named("__variant".into()),
+                def,
             )),
             None => Ok(Value::unknown()),
             Some(_) => {
@@ -146,7 +153,7 @@ impl Checker<'_> {
         };
         let message = format!("Unknown field \"{name}\" in class \"{class}\"");
         self.env.report(Code::E0319, span, message);
-        Value::field_of(base, name.to_owned(), Type::Named("__variant".into()))
+        Value::field_of(base, name.to_owned(), Type::Named("__variant".into()), None)
     }
 
     /// FTEF-24.2: a vector's single-channel swizzle, `x`, `y` or `z` (or `r`, `g`, `b`), is a

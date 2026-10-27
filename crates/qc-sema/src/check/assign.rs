@@ -243,7 +243,7 @@ impl Checker<'_> {
             self.env
                 .report(Code::W0241, span, "Assignment to const".to_owned());
         }
-        let rhs = self.expr_of(binary.rhs())?;
+        let rhs = self.value(binary.rhs())?;
         if in_condition {
             let message = "suggest parenthesis for assignment used as truth value".to_owned();
             self.env.report(Code::W0242, span, message);
@@ -252,7 +252,7 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         // An array named bare is a pointer to its elements (`REF_ARRAYHEAD`).
-        let target = if lhs.array {
+        let target = if lhs.is_array_head() {
             Type::Pointer(lhs.ty.clone().into())
         } else {
             lhs.ty.clone()
@@ -272,7 +272,8 @@ impl Checker<'_> {
             self.env.report(Code::W0241, span, message);
         }
         self.store_mismatch(&stored, &lhs, &target, span)?;
-        if lhs.array {
+        self.store_reference(&lhs, &stored, span)?;
+        if lhs.is_array_head() {
             let message = format!(
                 "left operand must be an l-value (did you mean {}[0]?)",
                 lhs.label()
@@ -316,6 +317,8 @@ impl Checker<'_> {
         if matches!(lhs.reference, Reference::Field { .. }) && updates_in_place {
             return Ok(None);
         }
+        // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read.
+        self.read(lhs.clone(), span)?;
         let find = |from: Etype| {
             ops.iter().copied().find(|&op| {
                 row(op).is_some_and(|r| r.types[1].etype() == from && r.types[0].etype() == to)
@@ -483,13 +486,15 @@ impl Checker<'_> {
             {
                 let variable = Value {
                     constness: Constness::Variable,
-                    ..operand.clone()
+                    ..self.read(operand.clone(), span)?
                 };
-                self.emit(op, &variable, &one, span)?;
+                let updated = self.emit(op, &variable, &one, span)?;
+                self.store_reference(&operand, &updated, span)?;
             }
         }
         Ok(Value {
             postinc: true,
+            reference: Reference::Global,
             ..operand
         })
     }

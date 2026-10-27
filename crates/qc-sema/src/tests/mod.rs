@@ -40,6 +40,7 @@ mod operators;
 mod passes;
 mod properties;
 mod recovery;
+mod references;
 mod resolution;
 mod reviewer;
 mod settings;

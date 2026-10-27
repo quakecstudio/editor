@@ -19,7 +19,7 @@ use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
 use crate::check::member;
 use crate::check::truth::Test;
-use crate::check::{Constness, Value};
+use crate::check::{Constness, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
 /// `VMWORDSIZE`: the bytes of a word, by which `sizeof` counts a type of whole words.
@@ -37,6 +37,17 @@ impl Checker<'_> {
         if operand.ty == Type::Unknown || !self.env.fteqcc() {
             return Ok(Value::unknown());
         }
+        // `++`, `--`, `&` and `@` take the reference; the rest read it (`QCC_PR_Expression`).
+        let operand = match op {
+            UnaryOp::PreIncrement
+            | UnaryOp::PreDecrement
+            | UnaryOp::AddressOf
+            | UnaryOp::AsString => operand,
+            UnaryOp::BitNot | UnaryOp::Neg | UnaryOp::Plus | UnaryOp::Deref => {
+                let operand_span = unary.operand().map_or(span, |e| e.syntax().span());
+                self.read(operand, operand_span)?
+            }
+        };
         match op {
             UnaryOp::BitNot => self.test(Test::BitNot, &operand, span, "Type mismatch: ~%s"),
             UnaryOp::Neg => self.negate(&operand, span),
@@ -63,14 +74,13 @@ impl Checker<'_> {
                 let message = "'@' operator only functions on floats and ints. go figure.";
                 self.fatal(Code::E0330, span, message.to_owned())
             }
-            // The address of a reference, with its arrays (FTEF-31).
-            UnaryOp::AddressOf => Ok(Value::unknown()),
+            UnaryOp::AddressOf => self.address_term(operand, span),
         }
     }
 
     /// `!e`, which `ast::NotExpr` holds: `QCC_PR_GenerateLogicalNot(e, "Type mismatch: !%s")`.
     pub(super) fn not(&mut self, not: &ast::NotExpr) -> Checked {
-        let operand = self.expr_of(not.operand())?;
+        let operand = self.value(not.operand())?;
         if operand.ty == Type::Unknown || !self.env.fteqcc() {
             return Ok(Value::unknown());
         }
@@ -126,12 +136,14 @@ impl Checker<'_> {
         };
         let variable = Value {
             constness: Constness::Variable,
-            ..operand.clone()
+            ..self.read(operand.clone(), span)?
         };
-        self.emit(op, &variable, &Value::constant(by), span)?;
+        let updated = self.emit(op, &variable, &Value::constant(by), span)?;
+        self.store_reference(operand, &updated, span)?;
         // `QCC_StoreSRefToRef` folds the store into the operand, which is the value, read-only.
         Ok(Value {
             readonly: true,
+            reference: Reference::Global,
             ..variable
         })
     }
@@ -152,6 +164,10 @@ impl Checker<'_> {
         match (etype, &operand.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => Ok(Value {
                 readonly: false,
+                reference: Reference::Pointer {
+                    base: operand.label(),
+                    index: None,
+                },
                 name: operand.name,
                 ..Value::of(pointee.as_ref().clone())
             }),
@@ -186,7 +202,7 @@ impl Checker<'_> {
             .filter_map(ast::AggregateInit::cast)
             .flat_map(|init| init.elements().collect::<Vec<_>>())
             .collect();
-        let operand = self.expr_of(cast.operand())?;
+        let operand = self.value(cast.operand())?;
         if !elements.is_empty() {
             if to.as_ref().and_then(|ty| self.etype_of(ty)) == Some(Etype::Vector) {
                 return self.vector(&elements, span);
@@ -232,7 +248,7 @@ impl Checker<'_> {
         let float = Type::Simple(SimpleType::Float);
         let mut components = Vec::new();
         for element in elements {
-            let value = self.expr(element)?;
+            let value = self.value(Some(element.clone()))?;
             if value.ty == Type::Unknown || !self.env.fteqcc() {
                 components.push(None);
                 continue;
@@ -304,7 +320,7 @@ impl Checker<'_> {
                 .report(Code::E0326, span, "sizeof was disabled.".to_owned());
         }
         // An array's length the model does not keep, so its size is no known constant.
-        if value.ty == Type::Unknown || value.array {
+        if value.ty == Type::Unknown || value.is_array_head() {
             return Ok(opaque_uint());
         }
         Ok(self.size_of(&value.ty))
@@ -340,7 +356,7 @@ impl Checker<'_> {
             return Ok(Value::unknown());
         }
         let length = |n: usize| Value::constant(Constant::int(i32::try_from(n).unwrap_or(0)));
-        if value.array {
+        if value.is_array_head() {
             return Ok(member::length());
         }
         match self.etype_of(&value.ty) {

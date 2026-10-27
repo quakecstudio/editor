@@ -78,7 +78,8 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   (QC-3.3).
 - **QCD-3.3** `E0203` "\"TOKEN\" is not a type": a type was required (QC-10, QC-10.4).
 - **QCD-3.4** `E0204` "expected X, found Y": the parser required the token X (QC-11.2,
-  QC-14.6, QC-14.7, QC-4.2).
+  QC-14.6, QC-14.7, QC-4.2); under an FTEQCC profile also "expected ;, found [" (or `)` or `]`)
+  for an index of what is no array, where FTEQCC's parser stops (FTEF-31.2).
 - **QCD-3.5** `E0205` "Type mismatch on redeclaration of NAME": a name redeclared with
   another type (QC-11.5, QC-12.3, QC-13.6).
 - **QCD-3.6** `E0206` "NAME redeclared": a definition initialised twice (QC-11.5).
@@ -299,6 +300,19 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.38** `E0334` "_length(string) requires an initialised constant" and "_length()
   unsupported argument type for intrinsic": `_length` of a value it does not measure
   (FTEF-30.8); a fatal error.
+- **QCD-4.39** `E0331` "Address-of operator is not supported in this form without extensions.
+  Consider the use of: #pragma target fte", and "... Consider the use of either '#pragma target
+  fte' or '#pragma flag enable brokenarray'" for an array: the address of a definition, element
+  or array on a target without `OP_GLOBALADDRESS` (FTEF-31.4); a fatal error.
+- **QCD-4.40** `E0333` "(vector) array index out of bounds" and "(.vector) array index out of
+  bounds": a constant index past a vector's or a `.vector` field's third component (FTEF-31.2);
+  a fatal error.
+- **QCD-4.41** `E0335` "Address-of temp on line FILE:LINE": `&` of a temporary (FTEF-31.4); not
+  a fatal error.
+- **QCD-4.42** `E0336` "ptr-to-variants must be cast to a different type before being read": a
+  read through a pointer to `void` or `variant` (FTEF-31.3); a fatal error.
+- **QCD-4.43** `E0337` "Type mismatch on indexed assignment of NAME: A VALUE, needed B.": a value
+  of another type stored by `ArraySet` (FTEF-31.5); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -591,7 +605,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   unsafe": a string offset the target lacks (FTEF-27.3). `WARN_STRINGOFFSET`, which no name sets.
 - **QCD-7.79** `W0237` "itof emulation: denormals are unsafe NAME", "ftoi emulation: denormals are
   unsafe" and "OP_ADD_EF: qccx entity offsets are unsafe, and denormals are unsafe": a conversion
-  the target lacks with no helper (FTEF-27.4). `WARN_DENORMAL`, F313, an error by default.
+  the target lacks with no helper (FTEF-27.4); and under `qccx` "string offsetting emulation:
+  denormals are unsafe" for a string's float index (FTEF-31.2). `WARN_DENORMAL`, F313, an error
+  by default.
 - **QCD-7.80** `W0238` "utof emulation: will break if NAME is big": an unsigned to float conversion
   the target lacks with no helper (FTEF-27.4). `WARN_NOTSTANDARDBEHAVIOUR`, F317.
 - **QCD-7.81** `W0239` "Result of comparison is constant", "Parameter offsets for && are the same"
@@ -620,6 +636,11 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   (FTEF-30.2). `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
 - **QCD-7.90** `W0248` "Type mismatch: !void" and the other tests of a `void` value, under `lax`
   (FTEF-30.1). `WARN_LAXCAST`, F314.
+- **QCD-7.91** `W0249` "(constant) array index out of bounds (0 <= I < N)": a constant index past
+  an array's end (FTEF-31.2). `WARN_BOUNDS`, `bounds`.
+- **QCD-7.92** `W0250` "Address-of operator on local TYPE NAME is unsafe if recursing (and still
+  bloated when not). Consider use of 'static' or 'auto'.": the address of a local, once per
+  local (FTEF-31.4). `WARN_UNSAFELOCALPOINTER`, `localptr`, off by default.
 
 ## QCD-8 Preprocessor errors
 

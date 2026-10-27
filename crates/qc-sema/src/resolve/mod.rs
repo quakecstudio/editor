@@ -147,12 +147,31 @@ pub(crate) struct Sources<'a> {
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
+    /// Each source file's name as a message prints it, and where its lines start (FTEF-31.4).
+    pub(crate) places: HashMap<FileId, FilePlace>,
     /// What the first pass prototypes (FTEF-12.18): with a second pass the first pass's
     /// [`Self::first`], else the only pass. `None` when it prototypes nothing.
     pub(crate) plan: Option<&'a ProtoPlan>,
     /// With a second pass, the first pass's files, as it read them. Without it the first pass
     /// is the files themselves, all prototyped.
     pub(crate) first: Option<FirstPass<'a>>,
+}
+
+/// A source file's name as a message prints it, `s_filen`, and the offsets its lines start at.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FilePlace {
+    /// The file's name.
+    pub(crate) name: String,
+    /// The offset each line starts at, the first 0.
+    pub(crate) lines: Vec<usize>,
+}
+
+impl FilePlace {
+    /// `NAME:LINE` of offset `at` of the file, the line counted from 1.
+    pub(crate) fn of(&self, at: usize) -> String {
+        let line = self.lines.partition_point(|&start| start <= at);
+        format!("{}:{line}", self.name)
+    }
 }
 
 /// The first pass of a two-pass compile, read with the flags, warning settings and keywords
@@ -234,6 +253,7 @@ pub(crate) fn resolve_mapped(
     let mut r = Resolver {
         index: ModuleIndex::default(),
         maps: sources.maps,
+        places: &sources.places,
         warnings: sources.warnings,
         settings: None,
         keyword_marks: sources.keywords,
@@ -422,6 +442,8 @@ struct Resolver<'a> {
     /// Where the spans of each file's rendered text came from; empty when the files were
     /// parsed as written.
     maps: &'a [&'a OriginMap],
+    /// Each source file's name and lines.
+    places: &'a HashMap<FileId, FilePlace>,
     /// For each compiled file, the warning settings and the offsets they hold from
     /// (FTEF-19.22).
     warnings: &'a [&'a [(usize, WarningSettings)]],

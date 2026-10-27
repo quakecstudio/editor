@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::cast::Kind;
+use crate::lower::ArrayDim;
 use crate::lower::{MemberBase, MemberKind, RawClass, RawDecl, RawUse, top_level_kind};
 use crate::resolve::{ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
@@ -250,6 +251,16 @@ impl<'a> Resolver<'a> {
                 });
                 if let Some(info) = self.classes.get_mut(&def) {
                     info.members.insert(member.name.clone(), id);
+                }
+                // FTEF-31.2: a member array is an array of fields, indexed by its length.
+                if let Some(size) = &member.array
+                    && let Some(facts) = self.facts.get_mut(id.0)
+                {
+                    facts.array = Some(
+                        size.trim()
+                            .parse()
+                            .map_or(ArrayDim::Unknown, ArrayDim::Sized),
+                    );
                 }
                 self.any_member.entry(member.name.clone()).or_insert(id);
                 id

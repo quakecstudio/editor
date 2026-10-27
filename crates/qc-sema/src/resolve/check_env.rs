@@ -13,9 +13,9 @@ use qc_syntax::CompilerFlags;
 use crate::cast::{Cast, Source};
 use crate::check::constant::Constant;
 use crate::check::{Constness, Env, Shape};
-use crate::lower::LiteralValue;
+use crate::lower::{ArrayDim, LiteralValue};
 use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver};
-use crate::symbol::{DefId, Definition, FileId};
+use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::Type;
 
 /// One body being checked.
@@ -56,6 +56,28 @@ impl Env for BodyEnv<'_, '_> {
             .facts
             .get(def.0)
             .is_some_and(|f| f.array.is_some())
+    }
+
+    fn file_line(&self, span: Span) -> String {
+        let location = self.resolver.at(self.file, span);
+        self.resolver
+            .places
+            .get(&location.file)
+            .map_or_else(String::new, |place| place.of(location.span.start))
+    }
+
+    fn array_length(&self, def: DefId) -> Option<u32> {
+        match self.resolver.facts.get(def.0)?.array.as_ref()? {
+            ArrayDim::Sized(length) => Some(*length),
+            ArrayDim::Unsized | ArrayDim::Unknown => None,
+        }
+    }
+
+    fn is_local(&self, def: DefId) -> bool {
+        self.resolver
+            .index
+            .def(def)
+            .is_some_and(|d| matches!(d.kind, DefKind::Local | DefKind::Param))
     }
 
     fn constant(&self, def: DefId) -> bool {

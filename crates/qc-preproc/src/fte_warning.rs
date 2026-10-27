@@ -468,6 +468,8 @@ impl FteWarning {
             Code::W0241 => Self::AssignmentToConstant,
             Code::W0242 => Self::AssignmentInConditional,
             Code::W0245 => Self::IfstringUsed,
+            Code::W0249 => Self::Bounds,
+            Code::W0250 => Self::UnsafeLocalPointer,
             Code::W0246 => Self::IfvectorDisabled,
             Code::W0247 => Self::ConditionalTypeMismatch,
             Code::W0240 => Self::StrictTypeMismatch,

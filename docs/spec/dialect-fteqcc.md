@@ -3797,3 +3797,73 @@ reference are FTEF-31's.
   "_length(string) requires an initialised constant", any other type "_length() unsupported
   argument type for intrinsic". The model does not keep an array's length or a struct's layout,
   so those sizes are no known constants.
+
+## FTEF-31 References
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseRefArrayPointer`, `QCC_RefToDef`,
+`QCC_PR_GenerateAddressOf`, `QCC_LoadFromArray`, `QCC_LoadFromPointer`, `QCC_StoreToArray`,
+`QCC_StoreToPointer`, `QCC_PR_Statement_SmallStore`, `QCC_StoreSRefToRef`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+FTEQCC parses a term into a reference (`QCC_ref_t`): a definition (`REF_GLOBAL`), an entity's
+field (`REF_FIELD`), an array named bare (`REF_ARRAYHEAD`), a word of a definition at an index
+(`REF_ARRAY`), what a pointer points at (`REF_POINTER`) and a string's character
+(`REF_STRING`). Where it needs the value it reads the reference (`QCC_RefToDef`), which emits the
+loads; an assignment stores to it. The semantic model keeps the kind of each value's reference
+(`crates/qc-sema/src/check/reference.rs`) and reads it where FTEQCC does: operator operands,
+conditions, `?:`'s arms, casts, vector components, an assignment's value and a compound one's
+left side, the operand of `!`, `~`, `-`, `+`, `*`, `++` and `--`, an index, an entity before
+its field, and an expression statement; the left side of `=`, the operand of `&` and `@`,
+`sizeof`'s, an index's base and a parenthesised expression are references.
+
+### Behaviour
+
+- **FTEF-31.1** A reference read: a definition or field is the value; an array named bare is
+  its address (FTEF-31.4); an element at an index that is no constant is loaded (FTEF-31.2);
+  what a pointer points at by `OP_LOADP_*` (FTEF-31.3); a string's character by `OP_LOADP_C` for
+  a float index, else `OP_LOADP_U8`.
+- **FTEF-31.2** `base[index]`: of an array, its element, a constant index past its end the
+  warning `W0249` "(constant) array index out of bounds (0 <= I < N)", an index into an element
+  of more than one word scaled by its size (`OP_MUL_F` for a float index, else `OP_MUL_I`); of a
+  class's array member or an array of fields, the field the index selects, the index read as an
+  element's once, when it is parsed, so `arr[i] = 0i` converts `i` once; of a pointer, what it
+  points at; of a string, its character, under `qccx` the string offset (`OP_ADD_I`, or `OP_ADD_F`
+  with "string offsetting emulation: denormals are unsafe" for a float index); of a vector or an
+  entity's `.vector` field, its component, a constant index past 2 the fatal error `E0333`
+  "(vector) array index out of bounds" or "(.vector) array index out of bounds"; anything else
+  is no array, where FTEQCC's parser stops at the `[`: `E0204` "expected ;, found [", `)` inside
+  parentheses or a call's arguments and `]` inside an index. An element at a variable index is
+  read by `OP_LOADA_*` or `OP_GLOAD_*` with the index made an integer when the target has them,
+  by `OP_FETCH_GBL_*` with it made a float for a global array when the target has that, and else
+  by the generated `ArrayGet` function, the index made a float (a vector's divided by 3): on the
+  standard target `arr[i]` of an integer `i` is "itof emulation: denormals are unsafe i".
+- **FTEF-31.3** What a pointer points at is read with the index made an integer, by
+  `OP_LOADP_F`, `OP_LOADP_S`, `OP_LOADP_V`, `OP_LOADP_ENT`, `OP_LOADP_FLD`, `OP_LOADP_FNC`,
+  `OP_LOADP_I` (integers, and pointers when the target has no `OP_LOADP_P`) or `OP_LOADP_I64`,
+  each emulated or refused (FTEF-27.10); a struct, union or double word by word with no check;
+  a `void` or `variant` is the fatal error `E0336` "ptr-to-variants must be cast to a different
+  type before being read". A store through a pointer is by offset, which needs no emulation on
+  the standard target.
+- **FTEF-31.4** `&e`: under `qccx` a float is a pointer to a float, and a string, field, entity
+  or function a float; a temporary not reached through a pointer is the error `E0335` "Address-of
+  temp on line FILE:LINE", FILE the file's path as the module names it and LINE its line, and
+  stays the value it is; else its address: a field's by `OP_ADDRESS`; a pointer's element's by
+  `OP_ADD_PIW`; a definition's, an element's or an array's by `OP_GLOBALADDRESS`, which a target
+  without it refuses, the fatal error `E0331` "Address-of operator is not supported in this form
+  without extensions. Consider the use of: #pragma target fte", and for an array "Consider the
+  use of either '#pragma target fte' or '#pragma flag enable brokenarray'"; reading an array
+  named bare takes its address, so `arr = arr` and `arr += 1` are that error on the standard
+  target. The address of a local warns `W0250` "Address-of operator on local TYPE NAME is unsafe
+  if recursing (and still bloated when not). Consider use of 'static' or 'auto'.", once per
+  local, off by default; the model counts parameters as locals and does not tell a `static`
+  local. FTEQCC's FILE and LINE follow `#pragma file` and `#pragma line`, which the model does
+  not.
+- **FTEF-31.5** A store to an element at an index that is no constant is by its address when the
+  target has `OP_GLOBALADDRESS` or `OP_GSTOREP_F`, the index made an integer, else by the
+  generated `ArraySet` function, the index made a float (a vector's divided by 3); a value of
+  another type than the element's, which only a compound assignment's result under `lax`
+  leaves, is the fatal error `E0337` "Type mismatch on indexed assignment of NAME: A VALUE,
+  needed B.". An element is named `base[index]` in the store's messages, but for an immediate
+  index. A string's character is stored by `OP_STOREP_C` for a float when the target has it,
+  else `OP_STOREP_I8`, emulated as the word's load (`OP_LOADP_I`), the byte masked out
+  (`OP_BITAND_I`) and the value or-ed in (`OP_BITOR_I`).

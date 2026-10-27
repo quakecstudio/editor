@@ -6,7 +6,7 @@
 
 //! The type of each expression of a body: terms and operators (FTEF-23).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use qc_diag::{Code, Span};
 use qc_preproc::FteFlag;
@@ -19,7 +19,8 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
 
-use crate::check::{Constness, Env, Sym, TypedBody, Value};
+use crate::check::{Constness, Env, Reference, Sym, TypedBody, Value};
+use crate::symbol::{DefId, DefKind};
 use crate::ty::{SimpleType, Type};
 
 /// The checker of one body.
@@ -29,6 +30,8 @@ pub(super) struct Checker<'e> {
     /// Whether the checker is in a condition of `if`, `while` or `do`, outside parentheses
     /// (FTEQCC's `conditional`).
     pub(super) in_condition: bool,
+    /// The locals whose address was taken, each warned of once (`addressedwarned`).
+    pub(super) addressed: HashSet<DefId>,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -45,6 +48,7 @@ impl<'e> Checker<'e> {
             env,
             types: HashMap::new(),
             in_condition: false,
+            addressed: HashSet::new(),
         }
     }
 
@@ -134,10 +138,7 @@ impl<'e> Checker<'e> {
     }
 
     fn value_of(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
-        if let Some(expr) = expr {
-            self.expr(&expr)?;
-        }
-        Ok(())
+        self.value(expr).map(|_| ())
     }
 
     /// The value of `expr`, if it is there.
@@ -176,7 +177,8 @@ impl<'e> Checker<'e> {
                 let operand = call.args().and_then(|args| args.args().next());
                 self.length(operand, call.syntax().span())
             }
-            ast::Expr::Call(_) | ast::Expr::Index(_) => {
+            ast::Expr::Index(index) => self.index(index),
+            ast::Expr::Call(_) => {
                 self.children(expr)?;
                 Ok(Value::unknown())
             }
@@ -255,18 +257,32 @@ impl<'e> Checker<'e> {
         };
         let name = token.text_lossless();
         // FTEF-17.14: in a member function's body a field named bare is `this.field`, the
-        // value it holds (`QCC_PR_ParseRefValue`, `pr_classtype && expandmemberfields`).
-        if let Type::Field(held) = &ty
+        // value it holds (`QCC_PR_ParseRefValue`, `pr_classtype && expandmemberfields`), and so
+        // is a class's member field, which holds its own type.
+        let member_field = self
+            .env
+            .definition(def)
+            .is_some_and(|d| d.member_of.is_some() && d.kind == DefKind::Field);
+        let held = match &ty {
+            Type::Field(held) => Some(held.as_ref().clone()),
+            _ if member_field => Some(ty.clone()),
+            _ => None,
+        };
+        if let Some(held) = held
             && self.env.in_class()
         {
             let this = Value {
                 name: Some("this".to_owned()),
                 ..Value::unknown()
             };
-            return Value::field_of(&this, name, held.as_ref().clone());
+            return Value::field_of(&this, name, held, Some(def));
         }
         Value {
-            array,
+            reference: if array {
+                Reference::ArrayHead
+            } else {
+                Reference::Global
+            },
             constness,
             name: Some(name),
             // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
@@ -281,8 +297,8 @@ impl<'e> Checker<'e> {
     /// A binary operator: the opcode `QCC_PR_ChooseOpcode` picks for its operands gives its type
     /// (FTEF-23.4).
     fn binary(&mut self, binary: &ast::BinaryExpr) -> Checked {
-        let lhs = self.expr_of(binary.lhs())?;
-        let rhs = self.expr_of(binary.rhs())?;
+        let lhs = self.value(binary.lhs())?;
+        let rhs = self.value(binary.rhs())?;
         Ok(self
             .operator(binary, &lhs, &rhs)?
             .unwrap_or_else(Value::unknown))
@@ -306,8 +322,8 @@ impl<'e> Checker<'e> {
         if !self.env.fteqcc()
             || lhs.ty == Type::Unknown
             || rhs.ty == Type::Unknown
-            || lhs.array
-            || rhs.array
+            || lhs.is_array_head()
+            || rhs.is_array_head()
         {
             return Ok(None);
         }

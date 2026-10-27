@@ -141,6 +141,31 @@ const PROGRAMS: &[&str] = &[
     ".float fld; .vector fv;\nvoid() g = { fld = fv; };\n",
     "void() vf = { };\nvoid() g = { vf = vf; };\n",
     "void() g = { local float arr[4]; local float *p; arr = p; };\n",
+    // FTEF-31: references.
+    "void() g = { local float a, arr[4]; local vector v, varr[4]; local int i; \
+     a = arr[1]; a = v[1]; v = varr[1]; a = v[a]; };\n",
+    "void() g = { local float a, arr[4]; a = arr[5]; };\n",
+    "void() g = { local float a; local vector v; a = v[3]; };\n",
+    "void() g = { local float a, arr[4]; local int i; a = arr[i]; arr[i] = 1; };\n",
+    "void() g = { local float arr[4]; local int i; arr[i] += 1; arr[i]++; };\n",
+    "void() g = { local vector v, varr[4]; local int i; v = varr[i]; };\n",
+    "void() g = { local float a; a = a[1]; };\n",
+    "void() g = { local float a; a = (a[1]); };\n",
+    "void() g = { local float a; local float *p; a = *p; };\n",
+    "void() g = { local float *p; local int *q; local int i; p[1] = 2; *q = 1; p[i] = 2; };\n",
+    "void() g = { local float a; local string s; a = s[1]; };\n",
+    "void() g = { local string s; s[1] = 65; };\n",
+    "void() g = { local float a; local float *p; p = &a; };\n",
+    "void() g = { local float arr[4]; local float *p; p = &arr; };\n",
+    "void() g = { local float arr[4]; arr = arr; };\n",
+    "entity e; .float fl;\nvoid() g = { local float *p; p = &e.fl; p = &p[1]; };\n",
+    "#pragma target fte\n#pragma warning enable localptr\n\
+     void() g = { local float a, arr[4]; local float *p; p = &a; p = &arr; p = &(a+a); };\n",
+    "void() g = { local void *w; local float a; a = *w; };\n",
+    "entity self;\nclass C { int arr[4]; nonvirtual void() m; };\n\
+     void() C::m = { local int i; arr[i] = 0i; arr[1] = 0i; };\n",
+    "#pragma flag enable lax\n\
+     void() g = { local float arr[4]; local vector v; local int i; arr[i] *= v; };\n",
     // FTEF-30: terms under flags and types.
     "#pragma flag enable lax\nvoid() g = { local float a; a = !(void)a; };\n",
     "#pragma flag disable ifvector\nvoid() g = { local float a; local vector v; a = v ? 1 : 2; };\n",
