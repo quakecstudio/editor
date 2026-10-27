@@ -11,10 +11,10 @@ use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 
 use crate::cast::{Cast, Source};
-use crate::check::constant::Constant;
-use crate::check::{Constness, Env, Shape};
-use crate::lower::{ArrayDim, LiteralValue};
-use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver};
+use crate::check::constant::{Constant, unquoted};
+use crate::check::{Constness, Env, ParamFacts, Shape};
+use crate::lower::{ArrayDim, LiteralValue, RawLocal};
+use crate::resolve::{AccessorFacts, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
 use crate::ty::Type;
 
@@ -33,11 +33,20 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) lex: &'r [(usize, LexFlags)],
     /// The types the body's casts and `sizeof`s write, by where each starts.
     pub(in crate::resolve) written: &'r [(usize, Type)],
+    /// The body's locals.
+    pub(in crate::resolve) locals: &'r [RawLocal],
 }
 
 impl Env for BodyEnv<'_, '_> {
     fn reference(&self, at: usize) -> Option<DefId> {
         self.uses.get(&at).copied()
+    }
+
+    fn local_type(&self, at: usize) -> Option<Type> {
+        self.locals
+            .iter()
+            .find(|local| local.span.start == at)
+            .map(|local| self.resolver.resolved_deep(&local.ty, MAX_TYPEDEF_DEPTH))
     }
 
     fn written_type(&self, at: usize) -> Option<Type> {
@@ -64,6 +73,25 @@ impl Env for BodyEnv<'_, '_> {
             .places
             .get(&location.file)
             .map_or_else(String::new, |place| place.of(location.span.start))
+    }
+
+    fn params(&self, def: DefId) -> Option<Vec<ParamFacts>> {
+        let facts = self.resolver.facts.get(def.0)?;
+        if facts.params.is_empty() {
+            return None;
+        }
+        Some(
+            facts
+                .params
+                .iter()
+                .map(|p| ParamFacts {
+                    name: p.name.clone(),
+                    has_default: p.default.is_some(),
+                    optional: p.optional,
+                    out: p.out,
+                })
+                .collect(),
+        )
     }
 
     fn array_length(&self, def: DefId) -> Option<u32> {
@@ -136,6 +164,35 @@ impl Env for BodyEnv<'_, '_> {
             .or_else(|| marks.first())
             .map(|&(_, target)| target)
             .unwrap_or_default()
+    }
+
+    fn string_text(&self, def: DefId) -> Option<String> {
+        if !self.constant(def) {
+            return None;
+        }
+        match self.resolver.literals.get(&def) {
+            Some(LiteralValue::String(text)) => Some(unquoted(text)),
+            _ => None,
+        }
+    }
+
+    fn accessor(&self, ty: &Type, member: &str) -> Option<AccessorFacts> {
+        let mut current = self.resolver.resolved(ty);
+        for _ in 0..MAX_TYPEDEF_DEPTH {
+            let Type::Named(name) = &current else {
+                return None;
+            };
+            if let Some(facts) = self
+                .resolver
+                .accessors
+                .get(&(name.to_string(), member.to_owned()))
+            {
+                return Some(facts.clone());
+            }
+            let parent = self.resolver.class_parent_type(&current)?;
+            current = parent;
+        }
+        None
     }
 
     fn defines(&self, name: &str) -> bool {

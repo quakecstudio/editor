@@ -17,7 +17,7 @@ use crate::cast::ConstType;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::{Reference, Sym, Value};
+use crate::check::{ElementRef, Reference, Sym, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -40,14 +40,14 @@ impl Checker<'_> {
             return Ok(value);
         }
         match value.reference.clone() {
-            Reference::Global | Reference::Field { .. } => Ok(value),
+            Reference::Global | Reference::Field(_) => Ok(value),
             Reference::ArrayHead => {
                 let address = self.address_of(value, span)?;
                 Ok(address)
             }
-            Reference::Element { index, vector, .. } => {
-                if index.known().is_none() {
-                    self.load_from_array(&value, &index, vector, span)?;
+            Reference::Element(element) => {
+                if element.index.known().is_none() {
+                    self.load_from_array(&value, &element.index, element.vector, span)?;
                 }
                 Ok(Value {
                     reference: Reference::Global,
@@ -55,11 +55,11 @@ impl Checker<'_> {
                     ..value
                 })
             }
-            Reference::Pointer { index, .. } => {
-                if let Some(index) = index
+            Reference::Pointer(pointer) => {
+                if let Some(index) = &pointer.index
                     && self.etype_of(&index.ty) != Some(Etype::Integer)
                 {
-                    self.converted(&index, Etype::Integer, span)?;
+                    self.converted(index, Etype::Integer, span)?;
                 }
                 self.load_from_pointer(value, span)
             }
@@ -170,16 +170,21 @@ impl Checker<'_> {
             }
         });
         let label = base.label();
+        // FTEF-10.3: an accessor's indexer, `get T[index]`.
+        if let Some(element) = self.accessor_value(&base, "") {
+            return Ok(element);
+        }
         // An array of fields, `this.arr[i]`: the field the index selects, loaded from the array
         // of fields as the index is read, an entity's field to read or store.
-        if let Reference::Field { def: Some(def), .. } = &base.reference
-            && self.env.is_array(*def)
+        if let Reference::Field(field) = &base.reference
+            && let Some(def) = field.def
+            && self.env.is_array(def)
         {
-            let length = self.env.array_length(*def);
+            let length = self.env.array_length(def);
             self.bounds(constant, length, span);
             if at.known().is_none() {
                 let field = Value {
-                    sym: Sym::Def(*def, false),
+                    sym: Sym::Def(def, false),
                     ..Value::of(base.ty.clone())
                 };
                 self.load_from_array(&field, &at, false, span)?;
@@ -191,11 +196,7 @@ impl Checker<'_> {
             self.bounds(constant, length, span);
             let at = self.scaled_index(&base.ty, at, span)?;
             return Ok(Value {
-                reference: Reference::Element {
-                    base: label,
-                    index: Box::new(at),
-                    vector: false,
-                },
+                reference: Reference::element(label, at, false),
                 ..base
             });
         }
@@ -205,10 +206,7 @@ impl Checker<'_> {
                 Ok(Value {
                     readonly: false,
                     name: pointer.name.or(Some(label.clone())),
-                    reference: Reference::Pointer {
-                        base: label,
-                        index: Some(Box::new(at)),
-                    },
+                    reference: Reference::pointer(label, Some(at)),
                     ..Value::of(pointee.as_ref().clone())
                 })
             }
@@ -217,17 +215,13 @@ impl Checker<'_> {
                 self.string_index(string, at, span)
             }
             // An entity's `.vector` field indexed is the field's component, `e.(fv[i])`.
-            (Some(Etype::Vector), _) if matches!(base.reference, Reference::Field { .. }) => {
+            (Some(Etype::Vector), _) if matches!(base.reference, Reference::Field(_)) => {
                 if constant.is_some_and(|i| u32::from_le_bytes(i.to_le_bytes()) >= 3) {
                     let message = "(.vector) array index out of bounds".to_owned();
                     return self.fatal(Code::E0333, span, message);
                 }
                 Ok(Value {
-                    reference: Reference::Element {
-                        base: label,
-                        index: Box::new(at),
-                        vector: false,
-                    },
+                    reference: Reference::element(label, at, false),
                     readonly: base.readonly,
                     ..Value::of(Type::Simple(SimpleType::Float))
                 })
@@ -238,11 +232,7 @@ impl Checker<'_> {
                     return self.fatal(Code::E0333, span, message);
                 }
                 Ok(Value {
-                    reference: Reference::Element {
-                        base: label,
-                        index: Box::new(at),
-                        vector: true,
-                    },
+                    reference: Reference::element(label, at, true),
                     ..Value {
                         name: base.name,
                         sym: base.sym,
@@ -259,11 +249,7 @@ impl Checker<'_> {
                     return self.fatal(Code::E0333, span, message);
                 }
                 Ok(Value {
-                    reference: Reference::Element {
-                        base: label,
-                        index: Box::new(at),
-                        vector: false,
-                    },
+                    reference: Reference::element(label, at, false),
                     ..Value {
                         name: base.name,
                         sym: base.sym,
@@ -352,8 +338,8 @@ impl Checker<'_> {
     pub(super) fn address_of(&mut self, value: Value, span: Span) -> Checked {
         let pointer_to = |ty: &Type| Value::of(Type::Pointer(ty.clone().into()));
         match value.reference.clone() {
-            Reference::Field { .. } => Ok(pointer_to(&value.ty)),
-            Reference::Global | Reference::ArrayHead | Reference::Element { .. } => {
+            Reference::Field(_) => Ok(pointer_to(&value.ty)),
+            Reference::Global | Reference::ArrayHead | Reference::Element(_) => {
                 if !self.env.target_at(span.start).valid(Op::Globaladdress) {
                     let suggestion = if value.is_array_head() {
                         "either '#pragma target fte' or '#pragma flag enable brokenarray'"
@@ -379,19 +365,19 @@ impl Checker<'_> {
                     );
                     self.env.report(Code::W0250, span, message);
                 }
-                if let Reference::Element { index, .. } = &value.reference
-                    && index.known().is_none()
+                if let Reference::Element(element) = &value.reference
+                    && element.index.known().is_none()
                 {
-                    self.converted(index, Etype::Integer, span)?;
+                    self.converted(&element.index, Etype::Integer, span)?;
                 }
                 Ok(pointer_to(&value.ty))
             }
-            Reference::Pointer { index, .. } => {
+            Reference::Pointer(pointer) => {
                 // `&p[i]` is `p + i`, by `OP_ADD_PIW`.
-                if let Some(index) = index
+                if let Some(index) = &pointer.index
                     && index.known().is_none_or(|c| c.i() != 0)
                 {
-                    let index = self.converted(&index, Etype::Integer, span)?;
+                    let index = self.converted(index, Etype::Integer, span)?;
                     let pointer = pointer_to(&value.ty);
                     self.emit(Op::AddPiw, &pointer, &index, span)?;
                 }
@@ -443,11 +429,12 @@ impl Checker<'_> {
         span: Span,
     ) -> Result<(), Fatal> {
         match &lhs.reference {
-            Reference::Element {
-                base,
-                index,
-                vector,
-            } if index.known().is_none() => {
+            Reference::Element(element) if element.index.known().is_none() => {
+                let ElementRef {
+                    base,
+                    index,
+                    vector,
+                } = element.as_ref();
                 let target = self.env.target_at(span.start);
                 if target.valid(Op::Globaladdress) || target.valid(Op::GstorepF) {
                     if self.etype_of(&index.ty) != Some(Etype::Integer) {
@@ -474,10 +461,10 @@ impl Checker<'_> {
             }
             Reference::Character { .. } => self.store_character(stored, span),
             Reference::Global
-            | Reference::Field { .. }
+            | Reference::Field(_)
             | Reference::ArrayHead
-            | Reference::Element { .. }
-            | Reference::Pointer { .. } => Ok(()),
+            | Reference::Element(_)
+            | Reference::Pointer(_) => Ok(()),
         }
     }
 

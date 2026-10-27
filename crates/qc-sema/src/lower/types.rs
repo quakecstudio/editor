@@ -17,7 +17,7 @@ use super::decl::{
     no_function, qualifiers, qualifiers_of, raw_value,
 };
 use super::expr::{RawUse, lower_expr};
-use super::{Cx, FileDecls, first_word, token_text};
+use super::{Cx, FileDecls, RawAccessor, first_word, token_text};
 
 /// How an enum's name gets its value (FTEF-19.10).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -682,6 +682,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
             SyntaxKind::AccessorMember => {
                 if let Some(member) = ast::AccessorMember::cast(node) {
                     out.members.extend(member.name().map(|t| t.text_lossless()));
+                    out.accessors.push(raw_accessor(&member, &class_name, cx));
                     lower_accessor_body(&member, &class_name, cx, &mut out.decls);
                 }
             }
@@ -828,6 +829,7 @@ pub(super) fn lower_accessor(acc: &ast::AccessorDecl, cx: Cx<'_>, out: &mut File
     out.decls.push(type_decl);
     for member in acc.members() {
         out.members.extend(member.name().map(|t| t.text_lossless()));
+        out.accessors.push(raw_accessor(&member, &accessor, cx));
         lower_accessor_body(&member, &accessor, cx, &mut out.decls);
     }
     let base = decl_base(
@@ -901,6 +903,18 @@ fn enum_type(en: &ast::EnumDecl, cx: Cx<'_>) -> Type {
         return Type::Named(std::rc::Rc::from(CScalar::Integer.name()));
     }
     Type::Simple(SimpleType::Float)
+}
+
+/// An accessor member of `owner`, as a read or a store through it sees it (FTEF-10.3).
+fn raw_accessor(member: &ast::AccessorMember, owner: &str, cx: Cx<'_>) -> RawAccessor {
+    RawAccessor {
+        owner: owner.to_owned(),
+        name: member
+            .name()
+            .map_or_else(String::new, |t| t.text_lossless()),
+        ty: member.ty().map_or(Type::Unknown, |t| cx.ty(&t)),
+        set: member.is_set(),
+    }
 }
 
 /// The body of an accessor member, as a function whose parameters are `this`, `value` and the

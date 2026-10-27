@@ -164,10 +164,7 @@ impl Checker<'_> {
         match (etype, &operand.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => Ok(Value {
                 readonly: false,
-                reference: Reference::Pointer {
-                    base: operand.label(),
-                    index: None,
-                },
+                reference: Reference::pointer(operand.label(), None),
                 name: operand.name,
                 ..Value::of(pointee.as_ref().clone())
             }),

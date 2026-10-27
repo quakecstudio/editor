@@ -477,6 +477,13 @@ impl<'a> Resolver<'a> {
             .and_then(|p| self.named(&self.class_names, p).copied())
     }
 
+    /// The parent of the class `ty` names, as a type, if it has one.
+    pub(in crate::resolve) fn class_parent_type(&self, ty: &Type) -> Option<Type> {
+        let parent = self.parent_of(self.class_of(ty)?)?;
+        let name = self.index.def(parent)?.name.clone();
+        Some(Type::Named(name.as_str().into()))
+    }
+
     /// The class a type names, if it names one (FTEF-17.3).
     pub(in crate::resolve) fn class_of(&self, ty: &Type) -> Option<DefId> {
         self.named(&self.class_names, ty.type_name()?).copied()

@@ -31,6 +31,12 @@ impl Checker<'_> {
                 Some(_) | None => Value::unknown(),
             });
         }
+        // FTEF-10.3: an accessor's member, read or stored through its functions.
+        if let Some((name, _)) = selector_name(&selector)
+            && let Some(accessor) = self.accessor_value(&base, &name)
+        {
+            return Ok(accessor);
+        }
         let Some(shape) = self.env.shape(&base.ty) else {
             self.expr(&selector)?;
             return Ok(Value::unknown());
@@ -88,6 +94,9 @@ impl Checker<'_> {
                 {
                     return Ok(Value::field_of(base, name, def.ty.clone(), Some(member)));
                 }
+                if let Some(accessor) = self.accessor_value(base, &name) {
+                    return Ok(accessor);
+                }
                 let found = self.env.reference(token.span().start).and_then(|id| {
                     self.env
                         .definition(id)
@@ -140,6 +149,16 @@ impl Checker<'_> {
                 self.fatal(Code::E0318, span, message)
             }
         }
+    }
+
+    /// FTEF-10.3: an accessor member `NAME` of an accessor or class: the getter's type,
+    /// read-only with no setter. Reads and writes through it call its functions.
+    pub(super) fn accessor_value(&self, base: &Value, name: &str) -> Option<Value> {
+        let facts = self.env.accessor(&base.ty, name)?;
+        Some(Value {
+            readonly: !facts.set,
+            ..Value::of(facts.ty)
+        })
     }
 
     /// FTEF-24.6: a member no definition has is made a `variant` definition by

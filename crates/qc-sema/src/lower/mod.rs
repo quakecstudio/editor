@@ -54,6 +54,22 @@ pub struct FileDecls {
     /// Every `struct` and `union` the file writes, nested ones too, in source order
     /// (FTEF-6.7).
     pub structs: Vec<RawStruct>,
+    /// The members of every accessor and class accessor the file writes (FTEF-10.3).
+    pub accessors: Vec<RawAccessor>,
+}
+
+/// A `get` or `set` member of an accessor or a class (FTEF-10.3): reading or storing the member
+/// calls the function its body or value gives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawAccessor {
+    /// The accessor's or class's name.
+    pub owner: String,
+    /// The member's name, empty for the indexer `get T[index]`.
+    pub name: String,
+    /// The member's type.
+    pub ty: Type,
+    /// Whether it is a `set` member.
+    pub set: bool,
 }
 
 /// What lowering reads besides the tree: whether the dialect is FTEQCC's, the compiler flags

@@ -1235,6 +1235,12 @@ impl AccessorMember {
         self.words().1.into_iter().next()
     }
 
+    /// The member's type, before its name (FTEF-10.3).
+    #[must_use]
+    pub fn ty(&self) -> Option<Type> {
+        child(&self.0)
+    }
+
     /// Whether it is a `set` member.
     #[must_use]
     pub fn is_set(&self) -> bool {

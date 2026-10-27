@@ -525,6 +525,15 @@ impl Source<'_> {
                 Cast::Implicit
             });
         }
+        // A field of a `variant` casts to and from any field, silently.
+        if let (Type::Field(to_inner), Some(Type::Field(from_inner))) = (to, from_ty)
+            && (Kind::of(to_inner) == Kind::Opaque
+                || Kind::of(from_inner) == Kind::Opaque
+                || to_inner.fteqcc_name() == "__variant"
+                || from_inner.fteqcc_name() == "__variant")
+        {
+            return Some(Cast::Silent);
+        }
         // `typecmp` of two functions: the same type part by part is a cast to itself.
         if let (Type::Function(_), Some(from @ Type::Function(_))) = (to, from_ty)
             && from.fteqcc_same(to)

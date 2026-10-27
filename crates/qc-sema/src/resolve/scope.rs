@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::resolve::{Found, Resolver, Scope, component_type, is_intrinsic};
 use crate::symbol::{DefId, DefKind};
-use crate::ty::{SimpleType, Type};
+use crate::ty::Type;
 
 impl Resolver<'_> {
     /// Looks up a global name: the first global definition with that name (QC-12.2). Under
@@ -99,28 +99,6 @@ impl Resolver<'_> {
                 b.name == format!("{}_x", d.name) && component_type(&d.ty).is_some()
             });
         !x_component
-    }
-
-    /// Whether a value of type `ty` cannot be called (`not a function`, FTEF-19.40): a float,
-    /// vector, string, entity or struct.
-    pub(in crate::resolve) fn not_callable(&self, ty: &Type) -> bool {
-        match self.resolved(ty) {
-            Type::Simple(
-                SimpleType::Float | SimpleType::Vector | SimpleType::String | SimpleType::Entity,
-            ) => true,
-            Type::Named(name) => {
-                let bare = name
-                    .strip_prefix("struct ")
-                    .or_else(|| name.strip_prefix("union "))
-                    .unwrap_or(&name);
-                self.struct_defs.contains_key(&self.type_key(bare))
-            }
-            Type::Simple(_)
-            | Type::Field(_)
-            | Type::Function(_)
-            | Type::Pointer(_)
-            | Type::Unknown => false,
-        }
     }
 
     /// A plain name used as a value: the function's own, then in a member function the

@@ -235,6 +235,8 @@ pub enum ArrayDim {
 /// (FTEF-19.6, FTEF-19.7).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RawParamInfo {
+    /// Its name, which a call with too few arguments names (FTEF-32.3).
+    pub name: Option<String>,
     /// Its type.
     pub ty: Type,
     /// Whether `optional` marks it.
@@ -593,6 +595,7 @@ fn param_infos(list: &ast::ParamList, cx: Cx<'_>) -> Vec<RawParamInfo> {
         let default = param.default_value();
         let default_literal = default.as_ref().and_then(|e| LiteralValue::of_expr(e, cx));
         out.push(RawParamInfo {
+            name: param.name().map(|t| t.text_lossless()),
             ty,
             optional: words.iter().any(|w| w == "optional"),
             out: words.iter().any(|w| w == "out" || w == "inout")

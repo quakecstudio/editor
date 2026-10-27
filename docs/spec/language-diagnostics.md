@@ -313,6 +313,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   read through a pointer to `void` or `variant` (FTEF-31.3); a fatal error.
 - **QCD-4.43** `E0337` "Type mismatch on indexed assignment of NAME: A VALUE, needed B.": a value
   of another type stored by `ArraySet` (FTEF-31.5); a fatal error.
+- **QCD-4.44** `E0338` "More than 136 parameters": a call of more arguments than FTEQCC passes
+  (FTEF-32.3); a fatal error.
+- **QCD-4.45** `E0339` "Unable to write to read-only out argument": a read-only `out` argument
+  (FTEF-32.6); not a fatal error.
+- **QCD-4.46** `E0340` "_() intrinsic accepts only a string immediate", "type mismatch on parm N"
+  and "Argument to used_sound intrinsic was not a string immediate.": an intrinsic's argument
+  refused (FTEF-32.2); fatal but for the last.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -641,6 +648,18 @@ differs from what it appears to say, most of them listed by id itself in the `qc
 - **QCD-7.92** `W0250` "Address-of operator on local TYPE NAME is unsafe if recursing (and still
   bloated when not). Consider use of 'static' or 'auto'.": the address of a local, once per
   local (FTEF-31.4). `WARN_UNSAFELOCALPOINTER`, `localptr`, off by default.
+- **QCD-7.93** `W0251` "More than 8 parameters on varargs function" (FTEF-32.3).
+  `WARN_TOOMANYPARAMETERSVARARGS`, which has no name.
+- **QCD-7.94** `W0252` "too many parameters on call to NAME, argument ARG will be ignored"
+  (FTEF-32.3). `WARN_TOOMANYPARAMETERSFORFUNC`, which has no name.
+- **QCD-7.95** `W0253` "too few parameters on call to NAME, PARAM will be UNDEFINED" and "too few
+  parameters on call to NAME" (FTEF-32.3). `WARN_TOOFEWPARAMS`, Q105.
+- **QCD-7.96** `W0254` "NAME: DIRECTIVE requires TYPE at arg N (got TYPE)", "NAME: surplus
+  trailing TYPE argument(s) for format ...", "NAME: invalid format string: ..." and the other
+  format string warnings: `sprintf` with a constant format (FTEF-33.1). `WARN_FORMATSTRING`,
+  F324.
+- **QCD-7.97** `W0255` the builtin argument checks of `cvar`, `setviewprop`, `addstat` and
+  `sendevent` (FTEF-33.2). `WARN_ARGUMENTCHECK`, F333.
 
 ## QCD-8 Preprocessor errors
 

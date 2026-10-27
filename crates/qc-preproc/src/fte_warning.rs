@@ -180,6 +180,10 @@ pub enum FteWarning {
     IfvectorDisabled,
     /// `WARN_CONDITIONALTYPEMISMATCH`, which has no name.
     ConditionalTypeMismatch,
+    /// `WARN_TOOMANYPARAMETERSFORFUNC`, which has no name.
+    TooManyParametersForFunc,
+    /// `WARN_TOOMANYPARAMETERSVARARGS`, which has no name.
+    TooManyParametersVarargs,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -252,7 +256,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 75] = [
+const ALL: [FteWarning; 77] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -328,6 +332,8 @@ const ALL: [FteWarning; 75] = [
     FteWarning::KeywordDisabled,
     FteWarning::IfvectorDisabled,
     FteWarning::ConditionalTypeMismatch,
+    FteWarning::TooManyParametersForFunc,
+    FteWarning::TooManyParametersVarargs,
 ];
 
 impl FteWarning {
@@ -400,6 +406,8 @@ impl FteWarning {
             | Self::ArgumentCheck
             | Self::IfvectorDisabled
             | Self::ConditionalTypeMismatch
+            | Self::TooManyParametersForFunc
+            | Self::TooManyParametersVarargs
             | Self::MissingMemberQualifier
             | Self::MemberNotDefined
             | Self::NotReferencedField
@@ -469,6 +477,11 @@ impl FteWarning {
             Code::W0242 => Self::AssignmentInConditional,
             Code::W0245 => Self::IfstringUsed,
             Code::W0249 => Self::Bounds,
+            Code::W0251 => Self::TooManyParametersVarargs,
+            Code::W0252 => Self::TooManyParametersForFunc,
+            Code::W0253 => Self::TooFewParams,
+            Code::W0254 => Self::FormatString,
+            Code::W0255 => Self::ArgumentCheck,
             Code::W0250 => Self::UnsafeLocalPointer,
             Code::W0246 => Self::IfvectorDisabled,
             Code::W0247 => Self::ConditionalTypeMismatch,

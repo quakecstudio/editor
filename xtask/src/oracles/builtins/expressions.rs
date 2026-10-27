@@ -141,6 +141,33 @@ const PROGRAMS: &[&str] = &[
     ".float fld; .vector fv;\nvoid() g = { fld = fv; };\n",
     "void() vf = { };\nvoid() g = { vf = vf; };\n",
     "void() g = { local float arr[4]; local float *p; arr = p; };\n",
+    // FTEF-32: calls.
+    "float() random = #7; void(float x) f1 = {}; void(float x, float y = 2) d = {};\n\
+     void(float x, optional float y) o = {}; void(...) va = {}; void() vf = {};\n\
+     void() g = { local float a; local string s; local int i; d(1); o(1); a = random(1, 2); };\n",
+    "void() g = { local float a; a = a(); };\n",
+    "void(float x) f1 = {};\nvoid() g = { f1(1, 2); };\n",
+    "void(float x) f1 = {};\nvoid() g = { f1(); };\n",
+    "void(float x) f1 = {};\nvoid() g = { local string s; f1(s); };\n",
+    "void(float x) f1 = {};\nvoid() g = { local int i; f1(i); };\n",
+    "void(...) va = {};\nvoid() g = { va(1,2,3,4,5,6,7,8,9); };\n",
+    "float() random = #7;\nvoid() g = { local float a; local string s; a = random(s); };\n",
+    "void() g = { local string s; s = _(\"x\"); s = _(s); };\n",
+    "void() vf = {};\nvoid() g = { local float a; a = vf(); };\n",
+    "void() g = { local float a; local int i; local float y = i; };\n",
+    "void() g = { local float a; local string s; local float y = a + s; };\n",
+    "const float k = 3; void(__out float x) of = { x = 1; };\n\
+     void() g = { local float a; of(a); of(1); };\n",
+    "entity self, world; .float entnum; .string targetname;\n\
+     entity(entity s, .__variant f, __variant m) findfloat = #98;\n\
+     entity(entity s, .string f, string m) find = #18;\n\
+     class C { nonvirtual void() m; };\n\
+     void() C::m = { local entity x; x = find(world, ::targetname, \"a\"); \
+     x = findfloat(world, ::entnum, 1); };\n",
+    "entity self, world; .string targetname;\n\
+     entity(entity s, .string f, string m) find = #18;\n\
+     class C { nonvirtual void() m; };\n\
+     void() C::m = { local entity x; x = find(world, targetname, \"a\"); };\n",
     // FTEF-31: references.
     "void() g = { local float a, arr[4]; local vector v, varr[4]; local int i; \
      a = arr[1]; a = v[1]; v = varr[1]; a = v[a]; };\n",

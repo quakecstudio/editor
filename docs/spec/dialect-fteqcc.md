@@ -3867,3 +3867,87 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   index. A string's character is stored by `OP_STOREP_C` for a float when the target has it,
   else `OP_STOREP_I8`, emulated as the word's load (`OP_LOADP_I`), the byte masked out
   (`OP_BITAND_I`) and the value or-ed in (`OP_BITOR_I`).
+
+## FTEF-32 Calls
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseFunctionCall`, `QCC_PR_GenerateFunctionCallRef`,
+`QCC_PR_ParseDefs` (a local's initialiser), `QCC_PR_ParseRefValue` (`expandmemberfields`),
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
+
+### Behaviour
+
+- **FTEF-32.1** The callee is read (FTEF-31.1); a value of a type that is no function or
+  `variant` is the fatal error `E0256` "not a function" (FTEF-19.40), whatever names it. A
+  `variant` takes any arguments.
+- **FTEF-32.2** A call of a function with no parameters, not variadic and not a method, is an
+  intrinsic when its name is one, and a name no definition has is called as one (FTEQCC declares
+  them on demand): `_` takes only a string immediate, else the fatal error `E0340` "_() intrinsic
+  accepts only a string immediate"; `random` and `randomv` make their arguments floats
+  (`QCC_SupplyConversion`, the fatal error `E0227` "Implicit type mismatch. Needed float, got
+  TYPE." for a type with no conversion); `alloca` makes its size an integer; `used_sound` and
+  `used_model` take a string immediate, else the error `E0340` "Argument to used_sound intrinsic
+  was not a string immediate.".
+- **FTEF-32.3** Each argument is read and, when `typecmp` tells its type from its parameter's,
+  cast to it as an assignment's value is (FTEF-29.2), its conversion emitted: `f1(i)` of an
+  integer is "itof emulation". An argument past the last parameter of a function that is not
+  variadic warns `W0252` "too many parameters on call to NAME, argument ARG will be ignored", ARG
+  as `QCC_GetRefName` names it; past the eighth of a variadic one `W0251` "More than 8 parameters
+  on varargs function"; past the 136th (`MAX_PARMS + MAX_EXTRA_PARMS`) the fatal error `E0338`
+  "More than 136 parameters". Missing arguments take their parameters' defaults; an `optional`
+  parameter ends the count; else the warning `W0253` "too few parameters on call to NAME, PARAM
+  will be UNDEFINED" (Q105), "too few parameters on call to NAME" for a parameter with no name.
+  The value is the function's return type.
+- **FTEF-32.4** A local's initialiser is the local's first store: read, converted to the local's
+  type, and its cast reported here for an expression the resolver's initialiser check does not
+  cast itself (a literal, `_()`, a name, a cast of a literal or an element, FTEF-19.31).
+- **FTEF-32.5** In a member function a field named bare is `this.field` (FTEF-17.14), and so is
+  a class's member field, which holds its own type; `::name` and `Scope::name` are the field
+  itself (`expandmemberfields = false;`, "::classname is always usable for eg: the find
+  builtin"), so `find(world, ::targetname, s)` passes the field and `find(world, targetname, s)`
+  is "Cannot cast from string to .string". A field held as a `variant` casts to and from any
+  field type silently.
+- **FTEF-32.6** An `out` argument is stored back after the call (FTEF-29.3); a read-only one,
+  a constant or an immediate, is the error `E0339` "Unable to write to read-only out argument",
+  not fatal.
+
+## FTEF-33 Builtin argument checks
+
+**Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,
+`QCC_VerifyArgs_setviewprop`, `QCC_VerifyArgs_cvar`, `QCC_VerifyArgs_MatchingFieldType`, called
+from `QCC_PR_GenerateFunctionCallRef` by the callee's name,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Each argument is checked as it is passed: of its parameter's type when it was cast to one
+(FTEF-32.3), else of its own. A string's text is known for a literal and a constant initialised
+with one. The semantic model checks them in `crates/qc-sema/src/check/format.rs`; FTEQCC's notes
+after the warnings ("use %s or %S for strings") are not reported.
+
+### Behaviour
+
+- **FTEF-33.1** `sprintf` with a constant format string reads it directive by directive (`%%`
+  is none): an argument position `N$`, flags, a width (`*` takes an argument, `*N$` the Nth, which
+  must be a float, "width modifier requires float at arg N"), a precision (the same, "precision
+  modifier ..."; a `.` with neither is "invalid format string: REST"), length modifiers (`h` a
+  float, `l` and `L` an integer, `q` 64 bits; `j`, `z` and `t` warn "length modifier C is a
+  placeholder"), and a conversion. A conversion assumes a float unless `%i`, `%p` or a modifier
+  says otherwise: `d i c o u x p e f g` and their capitals require a float (a double with `q`),
+  or with `l` an integer ("DIRECTIVE requires int at arg N (got TYPE)", warned twice, an entity
+  taken for `%i`), `%p` a pointer; `%v` a vector, or with `l` "intvector"; `%s` a string; a
+  `variant` is taken by any; another conversion is "invalid format string: REST", which ends the
+  check. Each mismatch warns `W0254` "NAME: DIRECTIVE requires TYPE at arg N (got TYPE)", an
+  argument past the last a `void`. Arguments past the last taken warn "NAME: surplus trailing
+  TYPE argument(s) for format \"FORMAT\"". F324, `WARN_FORMATSTRING`.
+- **FTEF-33.2** `cvar("vid_conwidth")` and `cvar("vid_conheight")` warn that they are
+  deprecated; `setviewprop` and `setproperty` with a constant property check its values' basic
+  types against FTEQCC's table ("NAME(PROPERTY, ...): expected TYPE, got TYPE", then `X, ` and
+  `X, Y, ` for the second and third) and warn "NAME: unknown argument N" for a number not in it;
+  `addstat` and `clientstat` with three arguments compare a constant type number with the
+  field's basic type ("indicated type ev_TYPE does not match passed field type .TYPE", or "is
+  not a basic type"), a field of a `variant` taking any; `sendevent` with a constant type list
+  checks each argument after the second against its letter (`s f F i I u U v e`), "arg type list
+  longer than args", "'C' is not a recognised arg type", "'C' specified, but was passed TYPE",
+  and "cannot pass more than 8 args to a builtin.". Each warns `W0255`, F333,
+  `WARN_ARGUMENTCHECK`.
+

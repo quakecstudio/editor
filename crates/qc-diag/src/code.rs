@@ -270,6 +270,13 @@ pub enum Code {
     E0336,
     /// "Type mismatch on indexed assignment of NAME: A VALUE, needed B." (QCD-4.43).
     E0337,
+    /// "More than N parameters": a call of more arguments than any function takes (QCD-4.44).
+    E0338,
+    /// "Unable to write to read-only out argument" (QCD-4.45).
+    E0339,
+    /// "_() intrinsic accepts only a string immediate", "type mismatch on parm N" of an intrinsic
+    /// and "Argument to used_sound intrinsic was not a string immediate." (QCD-4.46).
+    E0340,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -461,6 +468,20 @@ pub enum Code {
     /// "Address-of operator on local TYPE NAME is unsafe if recursing (and still bloated when not).
     /// Consider use of 'static' or 'auto'." (QCD-7.92).
     W0250,
+    /// "More than 8 parameters on varargs function" (QCD-7.93).
+    W0251,
+    /// "too many parameters on call to NAME, argument ARG will be ignored" (QCD-7.94).
+    W0252,
+    /// "too few parameters on call to NAME, PARAM will be UNDEFINED" and "too few parameters on
+    /// call to NAME" (QCD-7.95).
+    W0253,
+    /// "NAME: surplus trailing TYPE argument(s) for format ...", "NAME: invalid format string:
+    /// ...", "NAME: DIRECTIVE requires TYPE at arg N (got TYPE)" and the other format string
+    /// warnings (QCD-7.96).
+    W0254,
+    /// "NAME: arg type list longer than args", "NAME(PROPERTY, ...): expected TYPE, got TYPE", the
+    /// deprecated cvar warning and the other builtin argument checks (QCD-7.97).
+    W0255,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -475,7 +496,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 213] = [
+    pub const ALL: [Self; 221] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -595,6 +616,9 @@ impl Code {
         Self::E0335,
         Self::E0336,
         Self::E0337,
+        Self::E0338,
+        Self::E0339,
+        Self::E0340,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -684,6 +708,11 @@ impl Code {
         Self::W0248,
         Self::W0249,
         Self::W0250,
+        Self::W0251,
+        Self::W0252,
+        Self::W0253,
+        Self::W0254,
+        Self::W0255,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -842,6 +871,11 @@ impl Code {
             Self::W0248 => "W0248",
             Self::W0249 => "W0249",
             Self::W0250 => "W0250",
+            Self::W0251 => "W0251",
+            Self::W0252 => "W0252",
+            Self::W0253 => "W0253",
+            Self::W0254 => "W0254",
+            Self::W0255 => "W0255",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -885,6 +919,9 @@ impl Code {
             Self::E0335 => "E0335",
             Self::E0336 => "E0336",
             Self::E0337 => "E0337",
+            Self::E0338 => "E0338",
+            Self::E0339 => "E0339",
+            Self::E0340 => "E0340",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -993,6 +1030,11 @@ impl Code {
             | Self::W0248
             | Self::W0249
             | Self::W0250
+            | Self::W0251
+            | Self::W0252
+            | Self::W0253
+            | Self::W0254
+            | Self::W0255
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -1129,6 +1171,9 @@ impl Code {
             | Self::E0335
             | Self::E0336
             | Self::E0337
+            | Self::E0338
+            | Self::E0339
+            | Self::E0340
             | Self::E0408 => true,
         }
     }

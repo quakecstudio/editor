@@ -157,6 +157,17 @@ pub(crate) struct Sources<'a> {
     pub(crate) first: Option<FirstPass<'a>>,
 }
 
+/// An accessor member as the check stage reads it (FTEF-10.3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AccessorFacts {
+    /// The member's type, its getter's.
+    pub(crate) ty: Type,
+    /// Whether it has a `get` member.
+    pub(crate) get: bool,
+    /// Whether it has a `set` member.
+    pub(crate) set: bool,
+}
+
 /// A source file's name as a message prints it, `s_filen`, and the offsets its lines start at.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FilePlace {
@@ -287,6 +298,7 @@ pub(crate) fn resolve_mapped(
         body_typedefs: Vec::new(),
         var_members: HashSet::new(),
         accessor_bases: HashMap::new(),
+        accessors: HashMap::new(),
         typedef_params: HashMap::new(),
         redefinable: HashSet::new(),
         unused: HashSet::new(),
@@ -508,6 +520,9 @@ struct Resolver<'a> {
     var_members: HashSet<(DefId, String)>,
     /// The base type of each accessor (FTEF-10.6).
     accessor_bases: HashMap<String, Type>,
+    /// Each accessor's and class's `get` and `set` members, by the owner and the member's name
+    /// (FTEF-10.3): the member's type, and whether it has each.
+    accessors: HashMap<(String, String), AccessorFacts>,
     /// The named parameters of each typedef of a function type, by the type's key, which a
     /// definition of the type takes as its body's (FTEF-7.5).
     typedef_params: HashMap<String, Vec<RawParam>>,
@@ -643,6 +658,22 @@ impl<'a> Resolver<'a> {
                     self.settle(d.span.start);
                     let location = self.at(file_id, d.span);
                     self.report(d.code, location, d.message.clone());
+                }
+            }
+            for accessor in &file.accessors {
+                let facts = self
+                    .accessors
+                    .entry((accessor.owner.clone(), accessor.name.clone()))
+                    .or_insert_with(|| AccessorFacts {
+                        ty: accessor.ty.clone(),
+                        get: false,
+                        set: false,
+                    });
+                if accessor.set {
+                    facts.set = true;
+                } else {
+                    facts.get = true;
+                    facts.ty = accessor.ty.clone();
                 }
             }
             let protos = prototyped.get(index);

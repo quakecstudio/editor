@@ -10,6 +10,7 @@
 //! knows nothing else of resolution.
 
 mod assign;
+mod call;
 mod compare;
 pub(crate) mod constant;
 pub(crate) mod convert;
@@ -17,6 +18,7 @@ mod emulate;
 pub(crate) mod etype;
 mod expr;
 pub(crate) mod fold;
+mod format;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
@@ -28,6 +30,7 @@ mod truth;
 mod tests;
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
@@ -36,6 +39,7 @@ use qc_syntax::CompilerFlags;
 use qc_syntax::ast;
 
 use crate::cast::{Literal, Source};
+use crate::resolve::AccessorFacts;
 use crate::symbol::{DefId, Definition};
 use crate::ty::Type;
 use constant::Constant;
@@ -46,6 +50,13 @@ use etype::Etype;
 pub(crate) trait Env {
     /// The definition the name written at offset `at` of the body's text resolved to.
     fn reference(&self, at: usize) -> Option<DefId>;
+    /// The text of a string constant definition, its quotes removed (FTEF-33.1).
+    fn string_text(&self, def: DefId) -> Option<String>;
+    /// The accessor member `member` (empty for the indexer) of the accessor or class `ty`
+    /// names, through a class's parents (FTEF-10.3).
+    fn accessor(&self, ty: &Type, member: &str) -> Option<AccessorFacts>;
+    /// The type of the local whose name starts at offset `at`, through typedefs.
+    fn local_type(&self, at: usize) -> Option<Type>;
     /// The type a cast or `sizeof` writes starting at offset `at`, through typedefs.
     fn written_type(&self, at: usize) -> Option<Type>;
     /// A definition of the module.
@@ -56,6 +67,9 @@ pub(crate) trait Env {
     fn constness(&self, def: DefId) -> Constness;
     /// `FILE:LINE` of offset `span.start`, as `s_filen` and `pr_source_line` print it.
     fn file_line(&self, span: Span) -> String;
+    /// The parameters of a function definition as a call reads them (FTEF-32), `None` for a
+    /// definition with none recorded.
+    fn params(&self, def: DefId) -> Option<Vec<ParamFacts>>;
     /// The length of an array definition, when the model reads it (`def->arraysize`).
     fn array_length(&self, def: DefId) -> Option<u32>;
     /// Whether a definition is a function's local or parameter (`sym->scope`).
@@ -132,6 +146,9 @@ pub(crate) struct Value {
     pub(crate) reference: Reference,
     /// Whether it is the operand of a postfix `++` or `--` (`ref->postinc`).
     pub(crate) postinc: bool,
+    /// A string constant's text, its quotes and adjacent parts' quotes removed, which a format
+    /// string's check reads (FTEF-33.1).
+    pub(crate) text: Option<Rc<str>>,
 }
 
 /// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.1).
@@ -175,6 +192,7 @@ impl Value {
             readonly: true,
             reference: Reference::Global,
             postinc: false,
+            text: None,
         }
     }
 
@@ -231,15 +249,15 @@ impl Value {
     /// field, `base[index]` for an element at an index that is no immediate, else its label.
     pub(crate) fn place(&self) -> String {
         match &self.reference {
-            Reference::Field { base, field, .. } => format!("{base}.{field}"),
+            Reference::Field(field) => format!("{}.{}", field.base, field.field),
             // `base[index]`, but for an immediate index, which names no symbol.
-            Reference::Element { base, index, .. } if !matches!(index.sym, Sym::Immediate(_)) => {
-                format!("{base}[{}]", index.label())
+            Reference::Element(element) if !matches!(element.index.sym, Sym::Immediate(_)) => {
+                format!("{}[{}]", element.base, element.index.label())
             }
-            Reference::Element { base, .. } => base.clone(),
+            Reference::Element(element) => element.base.clone(),
             Reference::Global
             | Reference::ArrayHead
-            | Reference::Pointer { .. }
+            | Reference::Pointer(_)
             | Reference::Character { .. } => self.label(),
         }
     }
@@ -254,56 +272,99 @@ impl Value {
     pub(crate) fn field_of(base: &Self, field: String, ty: Type, def: Option<DefId>) -> Self {
         Self {
             readonly: false,
-            reference: Reference::Field {
-                base: base.label(),
-                field,
-                def,
-            },
+            reference: Reference::field(base.label(), field, def),
             ..Self::of(ty)
         }
     }
 }
 
-/// What a value refers to, as FTEQCC's references are of kinds (`QCC_ref_t::type`).
+/// What a call reads of a parameter of the function it calls (`QCC_typeparam_s`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ParamFacts {
+    /// Its name, `paramname`.
+    pub(crate) name: Option<String>,
+    /// Whether it has a default value, `defltvalue`.
+    pub(crate) has_default: bool,
+    /// Whether `optional` marks it.
+    pub(crate) optional: bool,
+    /// Whether it is an `out` parameter, stored back after the call.
+    pub(crate) out: bool,
+}
+
+/// What a value refers to, as FTEQCC's references are of kinds (`QCC_ref_t::type`). The kinds
+/// that carry names are boxed, so that a value stays small on the checker's stack.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Reference {
     /// A definition, temporary or immediate, read directly (`REF_GLOBAL`).
     Global,
-    /// An entity's field (`REF_FIELD`): the labels of the entity and of the field.
-    Field {
-        /// The entity's label.
-        base: String,
-        /// The field's label.
-        field: String,
-        /// The field's definition, when it is one; an array of fields is indexed (FTEF-31.2).
-        def: Option<DefId>,
-    },
+    /// An entity's field (`REF_FIELD`).
+    Field(Box<FieldRef>),
     /// An array named bare, whose type is its elements' (`REF_ARRAYHEAD`): reading it takes its
     /// address (FTEF-31.4).
     ArrayHead,
-    /// A word of a definition at an index (`REF_ARRAY`, `REF_GLOBAL` with an index): an array's
-    /// element or a vector's component; the index is the model's to read only when it is no
-    /// constant (FTEF-31.2).
-    Element {
-        /// The definition's label.
-        base: String,
-        /// The index.
-        index: Box<Value>,
-        /// Whether the definition is a vector, indexed by component.
-        vector: bool,
-    },
+    /// A word of a definition at an index (`REF_ARRAY`, `REF_GLOBAL` with an index).
+    Element(Box<ElementRef>),
     /// What a pointer points at (`REF_POINTER`), at an index or not (FTEF-31.3).
-    Pointer {
-        /// The pointer's label.
-        base: String,
-        /// The index, an element's.
-        index: Option<Box<Value>>,
-    },
+    Pointer(Box<PointerRef>),
     /// A string's character (`REF_STRING`), indexed by a float or an integer (FTEF-31.2).
     Character {
         /// Whether the index is a float.
         float_index: bool,
     },
+}
+
+/// An entity's field: the labels of the entity and of the field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FieldRef {
+    /// The entity's label.
+    pub(crate) base: String,
+    /// The field's label.
+    pub(crate) field: String,
+    /// The field's definition, when it is one; an array of fields is indexed (FTEF-31.2).
+    pub(crate) def: Option<DefId>,
+}
+
+/// An array's element or a vector's component; the index is the model's to read only when it is
+/// no constant (FTEF-31.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ElementRef {
+    /// The definition's label.
+    pub(crate) base: String,
+    /// The index.
+    pub(crate) index: Value,
+    /// Whether the definition is a vector, indexed by component.
+    pub(crate) vector: bool,
+}
+
+/// What a pointer points at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PointerRef {
+    /// The pointer's label.
+    pub(crate) base: String,
+    /// The index, an element's.
+    pub(crate) index: Option<Value>,
+}
+
+impl Reference {
+    /// The field `field` of the entity labelled `base`, `def` its definition.
+    pub(crate) fn field(base: String, field: String, def: Option<DefId>) -> Self {
+        Self::Field(Box::new(FieldRef { base, field, def }))
+    }
+
+    /// The element at `index` of the definition labelled `base`, a vector's component when
+    /// `vector`.
+    pub(crate) fn element(base: String, index: Value, vector: bool) -> Self {
+        Self::Element(Box::new(ElementRef {
+            base,
+            index,
+            vector,
+        }))
+    }
+
+    /// What the pointer labelled `base` points at, at `index`.
+    pub(crate) fn pointer(base: String, index: Option<Value>) -> Self {
+        Self::Pointer(Box::new(PointerRef { base, index }))
+    }
 }
 
 /// Whether a value is a constant (`QCC_SRef_EvalConst`, FTEF-26.5).

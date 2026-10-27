@@ -314,7 +314,7 @@ impl Checker<'_> {
                         && r.types[2].etype() == to
                 })
         });
-        if matches!(lhs.reference, Reference::Field { .. }) && updates_in_place {
+        if matches!(lhs.reference, Reference::Field(_)) && updates_in_place {
             return Ok(None);
         }
         // `lhsd = QCC_RefToDef(lhsr, false)`: the left side read.
@@ -372,7 +372,7 @@ impl Checker<'_> {
     /// `QCC_EvaluateCast(value, to, true)`: the implicit cast's diagnostics, a refusal fatal,
     /// then the conversion opcodes it emits (FTEF-27.8); the value cast is a `to`, under `lax`
     /// too.
-    fn cast_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
+    pub(super) fn cast_to(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
         if self.env.cast(value.source(), to, span) {
             return Err(Fatal);
         }
@@ -502,5 +502,45 @@ impl Checker<'_> {
     /// The basic type of `ty`, if the model follows it.
     fn etype(&self, ty: &Type) -> Option<Etype> {
         self.env.shape(ty).map(|s| s.etype)
+    }
+}
+
+impl Checker<'_> {
+    /// FTEF-32.4: a local's initialiser, `QCC_PR_ParseDefs`'s store to the new local: the value
+    /// read and converted to the local's type, its cast reported here for an expression the
+    /// resolver's initialiser check does not read (a literal, `_()`, a name, a cast of a
+    /// literal or an element it reports itself, FTEF-19.31).
+    pub(super) fn local(&mut self, local: &ast::LocalDecl) -> Result<(), Fatal> {
+        for declarator in local.declarators() {
+            let Some(ast::Initializer::Value(init)) = declarator.initializer() else {
+                continue;
+            };
+            let value = self.value(Some(init.clone()))?;
+            let Some(ty) = declarator
+                .name()
+                .and_then(|name| self.env.local_type(name.span().start))
+            else {
+                continue;
+            };
+            if value.ty == Type::Unknown || !self.env.fteqcc() {
+                continue;
+            }
+            let span = init.syntax().span();
+            let resolver_casts = match &init {
+                ast::Expr::Literal(_) | ast::Expr::Name(_) | ast::Expr::Index(_) => true,
+                ast::Expr::Cast(cast) => matches!(cast.operand(), Some(ast::Expr::Literal(_))),
+                ast::Expr::Call(call) => matches!(
+                    call.callee(),
+                    Some(ast::Expr::Name(name)) if name.name().is_some_and(|t| t.text_lossless() == "_")
+                ),
+                _ => false,
+            };
+            if resolver_casts {
+                self.convert_to(&value, &ty, span)?;
+            } else {
+                self.cast_to(&value, &ty, span)?;
+            }
+        }
+        Ok(())
     }
 }

@@ -13,7 +13,7 @@ use qc_preproc::FteFlag;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
 
 use crate::check::assign::assign_spelling;
-use crate::check::constant::Constant;
+use crate::check::constant::{Constant, unquoted};
 use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
@@ -106,8 +106,8 @@ impl<'e> Checker<'e> {
                 }
                 self.statement_of(s.statement());
             }
-            ast::Stmt::Local(_)
-            | ast::Stmt::Break(_)
+            ast::Stmt::Local(local) => self.local(local)?,
+            ast::Stmt::Break(_)
             | ast::Stmt::Continue(_)
             | ast::Stmt::Empty(_)
             | ast::Stmt::Label(_)
@@ -178,10 +178,7 @@ impl<'e> Checker<'e> {
                 self.length(operand, call.syntax().span())
             }
             ast::Expr::Index(index) => self.index(index),
-            ast::Expr::Call(_) => {
-                self.children(expr)?;
-                Ok(Value::unknown())
-            }
+            ast::Expr::Call(call) => self.call(call),
         }
     }
 
@@ -204,21 +201,18 @@ impl<'e> Checker<'e> {
         })
     }
 
-    /// Checks the expressions inside `expr`, a term the checker does not type yet.
-    fn children(&mut self, expr: &ast::Expr) -> Result<(), Fatal> {
-        for child in expr.syntax().children().filter_map(ast::Expr::cast) {
-            self.expr(&child)?;
-        }
-        Ok(())
-    }
-
     fn literal(&mut self, literal: &ast::Literal) -> Value {
         let Some(token) = literal.token() else {
             return Value::unknown();
         };
         match literal.kind() {
             Some(ast::LiteralKind::String) => {
-                Value::constant(Constant::string(token.text_lossless() == "\"\""))
+                let written = String::from_utf8_lossy(&literal.syntax().text()).into_owned();
+                let text = unquoted(&written);
+                Value {
+                    text: Some(text.as_str().into()),
+                    ..Value::constant(Constant::string(text.is_empty()))
+                }
             }
             Some(ast::LiteralKind::Vector) => {
                 let flags = self.env.lex_flags_at(token.span().start);
@@ -244,6 +238,11 @@ impl<'e> Checker<'e> {
     }
 
     fn name(&mut self, name: &ast::NameRef) -> Value {
+        // `::name` and `Scope::name` both hold a `::`.
+        let scoped = name
+            .syntax()
+            .child_tokens()
+            .any(|t| t.kind() == qc_syntax::SyntaxKind::ColonColon);
         let Some(token) = name.name() else {
             return Value::unknown();
         };
@@ -268,8 +267,11 @@ impl<'e> Checker<'e> {
             _ if member_field => Some(ty.clone()),
             _ => None,
         };
+        // `::name` and `this::name` keep the field itself, for the `find` builtin and the like
+        // (`expandmemberfields = false;`).
         if let Some(held) = held
             && self.env.in_class()
+            && !scoped
         {
             let this = Value {
                 name: Some("this".to_owned()),
@@ -290,6 +292,7 @@ impl<'e> Checker<'e> {
             sym: Sym::Def(def, constness != Constness::Variable && !ty.is_function()),
             // `QCC_DefToRef`: `!!def.sym->constant || def.sym->temp`.
             readonly: self.env.constant(def),
+            text: self.env.string_text(def).map(|t| t.as_str().into()),
             ..Value::of(ty)
         }
     }

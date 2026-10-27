@@ -260,6 +260,7 @@ impl<'a> Resolver<'a> {
                 flags: &body.flags,
                 lex: &body.lex_flags,
                 written: &body.written_types,
+                locals: &body.locals,
             };
             let typed = check_body(&mut env, syntax);
             self.index.bodies.insert(owner, typed);
@@ -472,16 +473,6 @@ impl<'a> Resolver<'a> {
                 Found::Def(def) => {
                     if let Some(f) = self.fact_mut(def) {
                         f.referenced = true;
-                    }
-                    // FTEF-19.40: a call of a name whose type is a value's, not a function's.
-                    if self.profile.name_use_checks()
-                        && use_.called
-                        && self
-                            .index
-                            .def(def)
-                            .is_some_and(|d| self.not_callable(&d.ty))
-                    {
-                        self.report(Code::E0256, location, "not a function".to_owned());
                     }
                     if self.profile.name_use_checks()
                         && let Some(reason) =

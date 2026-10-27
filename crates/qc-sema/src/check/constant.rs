@@ -231,3 +231,28 @@ const fn i64_to_f32(value: i64) -> f32 {
 const fn i64_to_f64(value: i64) -> f64 {
     value as f64
 }
+
+/// The text of string literal parts, each part's quotes removed and the parts joined.
+pub(crate) fn unquoted(text: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    let mut escaped = false;
+    for c in text.chars() {
+        if inside {
+            if escaped {
+                escaped = false;
+                out.push(c);
+            } else if c == '\\' {
+                escaped = true;
+                out.push(c);
+            } else if c == '"' {
+                inside = false;
+            } else {
+                out.push(c);
+            }
+        } else if c == '"' {
+            inside = true;
+        }
+    }
+    out
+}
