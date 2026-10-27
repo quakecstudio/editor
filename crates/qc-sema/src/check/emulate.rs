@@ -63,6 +63,10 @@ impl Checker<'_> {
     ) -> Result<Value, Fatal> {
         let result = row(op).map_or_else(Value::unknown, |r| Value::of(r.types[2].value_type()));
         if lhs.constness == Constness::Opaque || rhs.constness == Constness::Opaque {
+            // Its value decides no folding or emulation; the comparison warnings read no value.
+            if self.env.target_at(span.start).valid(op) {
+                self.compare(op, lhs, rhs, span);
+            }
             return Ok(Value {
                 constness: Constness::Opaque,
                 ..result
@@ -81,6 +85,7 @@ impl Checker<'_> {
         }
         let target = self.env.target_at(span.start);
         if target.valid(op) {
+            self.compare(op, lhs, rhs, span);
             return Ok(result);
         }
         self.emulate(op, lhs, rhs, span, result)

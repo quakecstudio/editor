@@ -456,6 +456,8 @@ impl FteWarning {
             Code::W0219 => Self::NotConstant,
             Code::W0220 | Code::W0231 => Self::LaxCast,
             Code::W0233 => Self::DivisionBy0,
+            Code::W0239 => Self::ConstantComparison,
+            Code::W0240 => Self::StrictTypeMismatch,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,
             Code::W0224 => Self::DeprecatedSyntax,

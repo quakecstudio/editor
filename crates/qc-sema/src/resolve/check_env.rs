@@ -126,6 +126,10 @@ impl Env for BodyEnv<'_, '_> {
         self.resolver.class_member(ty, name)
     }
 
+    fn lax_same(&self, a: &Type, b: &Type) -> bool {
+        self.resolver.lax_same_value(a, b)
+    }
+
     fn type_name(&self, ty: &Type) -> String {
         self.resolver.type_name(ty)
     }

@@ -3598,3 +3598,28 @@ the statements it would emit are code generation's.
 
 The statements an emulation emits are code generation's; the semantic model follows them only
 as far as they report.
+
+## FTEF-28 The warnings of an emitted comparison
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_StatementFlags` (the switch after the emulation),
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+Once an opcode is emitted (not folded, FTEF-26, and not emulated, FTEF-27),
+`QCC_PR_StatementFlags` warns of what its operands show: the symbol (`sym`) that holds each, and
+whether it is constant (`sym->constant`, an immediate or a constant definition, not a
+temporary). The semantic model keeps each value's symbol (`crates/qc-sema/src/check/compare.rs`).
+
+### Behaviour
+
+- **FTEF-28.1** `OP_AND_F` with one symbol on both sides is "Parameter offsets for && are the
+  same", and with both constant "Result of comparison is constant"; `OP_OR_F` with one symbol is
+  "Parameters for || are the same", and with either constant "Result of comparison is constant".
+  A comparison with both operands constant, or, unless it is a float or vector equality, `<=` or
+  `>=`, with one symbol on both sides, is "Result of comparison is constant": `s == s`, `e == e`,
+  `a < a` and `"x" == "y"` are, `a == a` is not, and two constants of a float comparison fold
+  first (FTEF-26.2). A function's definition is no constant symbol (`ff != vf` of two functions
+  gives nothing, `ff == ff` the warning); an operand converted for the opcode is a temporary.
+- **FTEF-28.2** A comparison whose operands' types differ by `typecmp_lax`, with neither's parent
+  the other's, is "'OP' type mismatch: A with B". `typecmp_lax` compares no names, so two classes
+  are the same, and a truth value is its parent's type. The semantic model compares basic types
+  only: the pinned FTEQCC gives no warning for `.float == .vector` or `float() != void()`.

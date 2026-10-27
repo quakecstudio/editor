@@ -9,6 +9,7 @@
 //! one-pass compilers. It reads them through [`Env`], which the resolver implements; the check
 //! knows nothing else of resolution.
 
+mod compare;
 pub(crate) mod constant;
 pub(crate) mod convert;
 mod emulate;
@@ -68,6 +69,9 @@ pub(crate) trait Env {
     /// The member `name` of the class `ty` names, found in it or its parents (`CLASS::NAME`,
     /// FTEF-24.6); `None` when `ty` is no class or none has the member.
     fn class_member(&self, ty: &Type, name: &str) -> Option<DefId>;
+    /// Whether `a` and `b` are the same type by FTEQCC's `typecmp_lax`, or one is a truth value of
+    /// the other (FTEF-28.2).
+    fn lax_same(&self, a: &Type, b: &Type) -> bool;
     /// `ty` as FTEQCC's messages print it, `TypeName` (FTEF-24.7).
     fn type_name(&self, ty: &Type) -> String;
     /// The type of the member `name` of the struct or union `ty`, through its parents, and
@@ -98,6 +102,30 @@ pub(crate) struct Value {
     pub(crate) array: bool,
     /// The name of the definition it is, which FTEQCC's messages print (`sym->name`).
     pub(crate) name: Option<String>,
+    /// The symbol that holds it, which the comparison warnings read (FTEF-28).
+    pub(crate) sym: Sym,
+}
+
+/// What holds a value, `QCC_sref_t`'s `sym` as the comparison warnings read it (FTEF-28.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sym {
+    /// A temporary the compiler made.
+    Temp,
+    /// A definition, and whether it is constant (`sym->constant`).
+    Def(DefId, bool),
+    /// An immediate constant, which FTEQCC shares among equal values.
+    Immediate(Constant),
+}
+
+impl Sym {
+    /// Whether it is constant and no temporary (`sym->constant && !sym->temp`).
+    pub(crate) const fn constant(self) -> bool {
+        match self {
+            Self::Temp => false,
+            Self::Def(_, constant) => constant,
+            Self::Immediate(_) => true,
+        }
+    }
 }
 
 impl Value {
@@ -108,6 +136,7 @@ impl Value {
             constness: Constness::Variable,
             array: false,
             name: None,
+            sym: Sym::Temp,
         }
     }
 
@@ -115,6 +144,7 @@ impl Value {
     pub(crate) fn constant(constant: Constant) -> Self {
         Self {
             constness: Constness::Known(constant),
+            sym: Sym::Immediate(constant),
             ..Self::of(constant.ty.value_type())
         }
     }

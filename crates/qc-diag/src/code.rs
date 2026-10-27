@@ -395,6 +395,11 @@ pub enum Code {
     W0237,
     /// "utof emulation: will break if NAME is big" (QCD-7.80).
     W0238,
+    /// "Result of comparison is constant", "Parameter offsets for && are the same" and "Parameters
+    /// for || are the same" (QCD-7.81).
+    W0239,
+    /// "'OP' type mismatch: A with B" (QCD-7.82).
+    W0240,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -409,7 +414,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 185] = [
+    pub const ALL: [Self; 187] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -590,6 +595,8 @@ impl Code {
         Self::W0236,
         Self::W0237,
         Self::W0238,
+        Self::W0239,
+        Self::W0240,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -736,6 +743,8 @@ impl Code {
             Self::W0236 => "W0236",
             Self::W0237 => "W0237",
             Self::W0238 => "W0238",
+            Self::W0239 => "W0239",
+            Self::W0240 => "W0240",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -859,6 +868,8 @@ impl Code {
             | Self::W0236
             | Self::W0237
             | Self::W0238
+            | Self::W0239
+            | Self::W0240
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102

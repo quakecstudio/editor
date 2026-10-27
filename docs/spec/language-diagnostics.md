@@ -563,6 +563,12 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   the target lacks with no helper (FTEF-27.4). `WARN_DENORMAL`, F313, an error by default.
 - **QCD-7.80** `W0238` "utof emulation: will break if NAME is big": an unsigned to float conversion
   the target lacks with no helper (FTEF-27.4). `WARN_NOTSTANDARDBEHAVIOUR`, F317.
+- **QCD-7.81** `W0239` "Result of comparison is constant", "Parameter offsets for && are the same"
+  and "Parameters for || are the same": under an FTEQCC profile, a comparison or logic opcode
+  emitted on constants or on one operand twice (FTEF-28.1), at the operator.
+  `WARN_CONSTANTCOMPARISON`, F319.
+- **QCD-7.82** `W0240` "'OP' type mismatch: A with B": a comparison emitted on operands of
+  different basic types (FTEF-28.2). `WARN_STRICTTYPEMISMATCH`, F307.
 
 ## QCD-8 Preprocessor errors
 

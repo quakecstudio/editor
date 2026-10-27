@@ -17,6 +17,7 @@
 )]
 
 mod casts;
+mod comparisons;
 mod definitions;
 mod dialect;
 mod dialect_builtins;

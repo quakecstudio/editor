@@ -18,7 +18,7 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
 
-use crate::check::{Constness, Env, TypedBody, Value};
+use crate::check::{Constness, Env, Sym, TypedBody, Value};
 use crate::ty::{SimpleType, Type};
 
 /// The checker of one body.
@@ -213,6 +213,9 @@ impl<'e> Checker<'e> {
             array,
             constness,
             name: Some(token.text_lossless()),
+            // A function's definition is no constant symbol to the comparison warnings: `ff != vf`
+            // of two functions gives none (FTEF-28.1).
+            sym: Sym::Def(def, constness != Constness::Variable && !ty.is_function()),
             ..Value::of(ty)
         }
     }
@@ -279,14 +282,18 @@ impl<'e> Checker<'e> {
                 Constness::Opaque
             }
         };
-        let lhs = Value {
-            constness: constness(lhs, left, a),
-            ..lhs.clone()
+        // A converted operand is a temporary the conversion made.
+        let converted = |value: &Value, operand: Operand, row: OpType| Value {
+            constness: constness(value, operand, row),
+            sym: if row.etype() == operand.etype || row == OpType::Variant {
+                value.sym
+            } else {
+                Sym::Temp
+            },
+            ..value.clone()
         };
-        let rhs = Value {
-            constness: constness(rhs, right, b),
-            ..rhs.clone()
-        };
+        let lhs = converted(lhs, left, a);
+        let rhs = converted(rhs, right, b);
         let value = self.emit(choice.op(), &lhs, &rhs, span)?;
         Ok(Some(Value {
             ty: c.value_type(),
