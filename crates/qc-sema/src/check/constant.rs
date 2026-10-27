@@ -194,9 +194,7 @@ impl Constant {
         match ty {
             ConstType::Float if fraction => Self::float(atof(text.as_bytes())),
             ConstType::Double if fraction => {
-                let end = text
-                    .find(['d', 'D', 'f', 'F'])
-                    .unwrap_or(text.len());
+                let end = text.find(['d', 'D', 'f', 'F']).unwrap_or(text.len());
                 Self::double(text.get(..end).and_then(|t| t.parse().ok()).unwrap_or(0.0))
             }
             ConstType::Float => Self::float(i64_to_f32(signed)),

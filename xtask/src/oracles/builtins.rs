@@ -49,6 +49,7 @@ mod casts;
 mod declarations;
 mod defs;
 mod directives;
+mod expressions;
 mod flags;
 mod keywords;
 mod lexical;
@@ -1221,6 +1222,7 @@ pub(crate) fn cases() -> Vec<Case> {
     cases.extend(casts::cases());
     cases.extend(defs::cases());
     cases.extend(types::cases());
+    cases.extend(expressions::cases());
     // `# :ex_b` is both `# ` before nothing and `#` before ` :ex_b`.
     let mut seen = HashSet::new();
     cases.retain(|case| seen.insert(case.key()));
