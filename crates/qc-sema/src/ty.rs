@@ -3,7 +3,7 @@
 //! Semantic types.
 //!
 //! Implements QC-10 of `docs/spec/language.md`: the five simple types, field types, and
-//! function types, and the structural equality `qcc`'s `PR_FindType` gives them (QC-10.6).
+//! function types, and the structural equality `qcc`'s `PR_FindType` gives them (QC-10.10).
 //! A [`Type`] is a small, cloneable, hashable value, so the resolver compares two types by
 //! value. Field and function types nest an inner [`Type`] in an [`std::rc::Rc`] so that a
 //! deeply nested type stays cheap to clone.
@@ -22,7 +22,7 @@ thread_local! {
 
 /// A QuakeC type (QC-10).
 ///
-/// Two values are equal exactly when `qcc` would intern them as one type (QC-10.6):
+/// Two values are equal exactly when `qcc` would intern them as one type (QC-10.10):
 /// function and field types compare structurally, parameter names excluded (QC-10.3).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -83,7 +83,7 @@ impl Default for TypeContext {
 /// A function type: a return type, parameter types and whether it is variadic (QC-10.3).
 ///
 /// Parameter names are not part of the type (QC-10.3): two function types with different
-/// parameter names are equal (QC-10.6). FTEQCC's messages print them, so they are kept beside
+/// parameter names are equal (QC-10.10). FTEQCC's messages print them, so they are kept beside
 /// the types as [`ParamLabels`], which no comparison reads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionType {
@@ -129,6 +129,21 @@ impl std::hash::Hash for ParamLabels {
 }
 
 impl Type {
+    /// Whether this type is, or holds, a variadic function type, which id's `PR_FindType` never
+    /// finds again, so that no other type is ever the same as it (QC-10.10).
+    #[must_use]
+    pub fn holds_variadic(&self) -> bool {
+        match self {
+            Type::Function(func) => {
+                func.variadic
+                    || func.ret.holds_variadic()
+                    || func.params.iter().any(Type::holds_variadic)
+            }
+            Type::Field(inner) | Type::Pointer(inner) => inner.holds_variadic(),
+            Type::Simple(_) | Type::Named(_) | Type::Unknown => false,
+        }
+    }
+
     /// The number of words a value of this type occupies (`QC_TYPE_SIZE`, QC-10.1).
     ///
     /// A vector is three words; every other type, [`Type::Unknown`] included, is one.

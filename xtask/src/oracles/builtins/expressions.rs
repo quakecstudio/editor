@@ -302,5 +302,31 @@ pub(super) fn cases() -> Vec<Case> {
             ..Case::new(Dialect::Fteqcc, source)
         });
     }
+    // QC-16, QC-18: id's `qcc`'s expression checks.
+    for program in VANILLA {
+        cases.push(Case::new(Dialect::Vanilla, format!("{BIND}{program}")));
+    }
     cases
 }
+
+/// Programs for id's `qcc`, each with an expression it checks.
+const VANILLA: &[&str] = &[
+    "float a; vector v; void() g = { v = v / 2; };\n",
+    "float a; vector v; void() g = { a = v < v; };\n",
+    ".float fl; float a; void() g = { a = fl == fl; };\n",
+    "entity e; float a; void() g = { if (e && a) a = 1; };\n",
+    "float a; string s; void() g = { a = s; };\n",
+    ".float fl; float a; void() g = { a = !fl; };\n",
+    "entity e; .float fl; string s; void() g = { e.fl = s; };\n",
+    "entity e; float a; void() g = { a = e.a; };\n",
+    "float a; void(float x) f1 = {}; void() g = { a = f1 == g; f1(); };\n",
+    "string s; void(float x) f1 = {}; void() g = { f1(s); };\n",
+    "void(float x) f1 = {}; void() g = { f1(1, 2); };\n",
+    "void(float x, float y) f2 = {}; void() g = { f2(1); };\n",
+    "float a; void() g = { a(); };\n",
+    "void(...) va = {}; void() g = { va(1, 2, 3, 4, 5, 6, 7, 8, 9); };\n",
+    "float(...) va; float(...) va;\n",
+    "void(...) va = {}; void(void(...) f) h = {}; void() g = { h(va); };\n",
+    "float a; vector v; string s; entity e; .float fl; void() g = { a = v * v; v = v * a; \
+     a = s == \"x\"; a = !s; a = !e; a = !v; e.fl = a; a = e.fl + 1; };\n",
+];

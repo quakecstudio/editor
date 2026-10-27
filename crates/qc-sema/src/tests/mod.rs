@@ -50,6 +50,7 @@ mod statements;
 mod terms;
 mod type_declarations;
 mod types;
+mod vanilla_checks;
 
 use crate::db::Db;
 use crate::resolve::ModuleIndex;

@@ -2964,7 +2964,7 @@ impl<'a> Parser<'a> {
         Some(expr)
     }
 
-    /// `( args )` (QC-18.1).
+    /// `( args )` (QC-18.8).
     fn arg_list(&mut self) {
         self.start_node(K::ArgList);
         self.bump();

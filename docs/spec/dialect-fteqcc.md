@@ -3524,7 +3524,7 @@ statement's checks (FTEF-23.6).
   each parameter as `[inout ][optional ]TYPE[ NAME][ = DEFAULT]`, then `...` when it is
   variadic: the default as `QCC_VarAtOffset` prints the constant, a float `%gf` (`2f`, `0.5f`), an
   integer `%#xi` (`0x3i`), a vector `'%g %g %g'`, a string quoted. The names are kept beside the
-  types for messages and never tell two types apart (QC-10.6).
+  types for messages and never tell two types apart (QC-10.10).
 - **FTEF-24.8** An array's only member is `length`, an `int`, the array's size (`QCC_PR_Expect
   ("length")` after an array's `.`, FTE-13); `LightStyles.length` for an array of strings is the
   array's length, not the string's.

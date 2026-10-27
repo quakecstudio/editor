@@ -487,7 +487,7 @@ impl Source<'_> {
             Source::Typed(ty) => (Kind::of(ty), false, Some(ty)),
         };
         // `typecmp`: a type casts to itself. A redeclaration compares types structurally
-        // (QC-10.6), and so does this. A type the model does not follow is not checked.
+        // (QC-10.10), and so does this. A type the model does not follow is not checked.
         if from_ty == Some(to) || from_kind == Kind::Opaque || to_kind == Kind::Opaque {
             return Some(Cast::Silent);
         }

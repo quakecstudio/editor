@@ -64,7 +64,7 @@ a state header's next-think name is declared as a global `void()` if new (QC-13.
   (the full dialect's name resolution) in
   [`dialect-fteqcc.md`](../../docs/spec/dialect-fteqcc.md).
 - **Spec statements:** of [`language.md`](../../docs/spec/language.md), the semantic parts of
-  types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.6 and QC-10.7; of declarations, QC-11.1,
+  types, QC-10.1, QC-10.2, QC-10.3, QC-10.4, QC-10.10 and QC-10.7; of declarations, QC-11.1,
   QC-11.3, QC-11.5, QC-11.7, QC-11.8, QC-11.9 and QC-11.11 to QC-11.13; the parameter order of
   QC-13.5; the state-header name, QC-13.6; and the spacing of an expansion as the parser reads
   it, QC-9.16. Of
@@ -148,7 +148,7 @@ the member's name, and the values of `enumflags` and other constants are not com
 - `ModuleInput` and `OriginMap` (`expand`): which files a module preprocesses and compiles,
   and where each span of an expansion came from.
 - `Type`, `SimpleType`, `FunctionType` (`ty`): QC-10 types with the structural equality
-  `qcc` gives them (QC-10.6).
+  `qcc` gives them (QC-10.10).
 - `Definition`, `Reference`, `DefId`, `DefKind`, `Location`, `FileId` (`symbol`): the symbols
   a module declares and the uses of them.
 - `ModuleIndex`, `FileDiagnostic` and `resolve_module` (`resolve`): a module's resolved

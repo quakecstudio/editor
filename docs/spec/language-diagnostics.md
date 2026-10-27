@@ -215,13 +215,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   takes them (FTEF-23.4), and "type mismatch for -" or "+" for a prefix `-` or `+` of a type it
   does not take (FTEF-30.4).
 - **QCD-4.3** `E0303` "not a function": a call of something that is not a function
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.4** `E0304` "too many parameters": more arguments than a fixed parameter list
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.5** `E0305` "too few parameters": fewer arguments than a fixed parameter list
-  (QC-18.1).
+  (QC-18.8).
 - **QCD-4.6** `E0306` "type mismatch on parm N": argument N, counting from 0, has the wrong
-  type (QC-18.1).
+  type (QC-18.8).
 - **QCD-4.8** `E0308` "Goto statement with no matching label "NAME"": under an FTEQCC
   profile, a `goto` whose label is not among those read since the last function's end by the
   end of its function, at the label name, FTEQCC's error of the same text

@@ -108,7 +108,8 @@ impl<'a> Resolver<'a> {
         if self.profile.redeclaration_by_typecmp() {
             self.resolved(old).fteqcc_same(&self.resolved(ty))
         } else {
-            old == ty || *old == Type::Unknown || *ty == Type::Unknown
+            // QC-10.10: a variadic type is never the same as another.
+            (old == ty && !old.holds_variadic()) || *old == Type::Unknown || *ty == Type::Unknown
         }
     }
 

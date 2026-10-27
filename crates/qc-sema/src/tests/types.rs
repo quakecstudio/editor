@@ -89,7 +89,7 @@ fn function_type_lowers() {
     );
 }
 
-// spec QC-10.6: two function types are equal when return type, parameter count and
+// spec QC-10.10: two function types are equal when return type, parameter count and
 // parameter types match; parameter names do not matter.
 #[test]
 fn function_types_equal_ignoring_param_names() {
@@ -98,7 +98,7 @@ fn function_types_equal_ignoring_param_names() {
     assert_eq!(a, b);
 }
 
-// spec QC-10.6: a different parameter type makes a different type.
+// spec QC-10.10: a different parameter type makes a different type.
 #[test]
 fn function_types_differ_by_param_type() {
     let a = first_decl_type("void(float p) f;");

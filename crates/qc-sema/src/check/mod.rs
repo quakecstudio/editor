@@ -28,6 +28,7 @@ mod reference;
 mod statement;
 mod term;
 mod truth;
+mod vanilla;
 
 #[cfg(test)]
 mod tests;
@@ -458,6 +459,9 @@ pub(crate) fn check_initialiser(env: &mut dyn Env, expr: &ast::Expr, ty: &Type, 
 
 /// Checks `body`, reporting through `env`, and returns its types.
 pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBody {
+    if !env.fteqcc() {
+        return vanilla::check_body(env, body);
+    }
     let mut checker = expr::Checker::new(env);
     if let Some(block) = body.block()
         && checker.start_function(block.syntax().span())
