@@ -187,7 +187,7 @@ mutation = 100
 spec = 100
 
 # qc-syntax (L2 syntax): the P2-R2 readiness review (docs/readiness/p2-r2.md,
-# run SYNTAX_RUN_ID) measures the layer ready; no surviving mutants.
+# run 40429148034) measures the layer ready; no surviving mutants.
 [crates.qc-syntax]
 readiness = "P2-R2"
 lines = 98
