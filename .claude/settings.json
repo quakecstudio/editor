@@ -33,8 +33,7 @@
       "Read(//Users/jplock/envs/git/quakecstudio-kb/**)"
     ],
     "deny": [
-      "Edit(//Users/jplock/envs/git/quakecstudio-kb/**)",
-      "Write(//Users/jplock/envs/git/quakecstudio-kb/**)"
+      "Edit(//Users/jplock/envs/git/quakecstudio-kb/**)"
     ]
   }
 }
