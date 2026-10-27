@@ -31,7 +31,7 @@ impl Resolver<'_> {
         decl: &RawDecl,
         location: Location,
     ) {
-        if !self.fteqcc {
+        if !self.profile.type_declarations() {
             return;
         }
         match kind {
@@ -123,7 +123,7 @@ impl Resolver<'_> {
     /// The key `name` is found by in the type tables: itself, or in lower case under
     /// `-Fcaseinsens` (FTEF-19.33).
     pub(in crate::resolve) fn type_key(&self, name: &str) -> String {
-        if self.case_insensitive {
+        if self.profile.case_insensitive() {
             name.to_ascii_lowercase()
         } else {
             name.to_owned()
@@ -145,7 +145,7 @@ impl Resolver<'_> {
     /// class, an enum or a typedef.
     pub(in crate::resolve) fn other_sized_type_named(&self, name: &str) -> bool {
         let same = |other: &str| {
-            if self.case_insensitive {
+            if self.profile.case_insensitive() {
                 other.eq_ignore_ascii_case(name)
             } else {
                 other == name
@@ -172,7 +172,7 @@ impl Resolver<'_> {
             return Some(name.to_owned());
         }
         let same = |other: &String| {
-            if self.case_insensitive {
+            if self.profile.case_insensitive() {
                 other.eq_ignore_ascii_case(name)
             } else {
                 other == name
@@ -234,12 +234,12 @@ impl Resolver<'_> {
             || self.type_names.contains(name)
             || typedefs.iter().any(|(t, start)| t == name && *start < at);
         exact
-            || (self.case_insensitive
+            || (self.profile.case_insensitive()
                 && (REGISTERED_TYPES
                     .iter()
                     .chain(&TABLE_TYPES)
                     .any(|t| t.eq_ignore_ascii_case(name))
-                    || (!self.qcfuncs_off
+                    || (!self.profile.qcfuncs_off()
                         && ["string", "vector", "entity"]
                             .iter()
                             .any(|t| t.eq_ignore_ascii_case(name)))
@@ -270,7 +270,7 @@ impl Resolver<'_> {
             // ...)`, and so `vector` and `entity`.
             Type::Simple(
                 simple @ (SimpleType::String | SimpleType::Vector | SimpleType::Entity),
-            ) if self.qcfuncs_off && !self.is_type_name(simple.as_str(), typedefs, at) => {
+            ) if self.profile.qcfuncs_off() && !self.is_type_name(simple.as_str(), typedefs, at) => {
                 Some(simple.as_str())
             }
             Type::Field(inner) | Type::Pointer(inner) => {

@@ -28,7 +28,7 @@ impl Resolver<'_> {
     /// warning they ignore is not reported, and one they make an error is `E0125`.
     pub(in crate::resolve) fn report(&mut self, code: Code, location: Location, message: String) {
         let code = match self.settings {
-            Some(settings) if self.fteqcc => match settings.reported_code(code) {
+            Some(settings) if self.profile.fteqcc_diagnostics() => match settings.reported_code(code) {
                 Some(code) => code,
                 None => return,
             },

@@ -25,7 +25,7 @@ impl Resolver<'_> {
     pub(in crate::resolve) fn lookup_global(&self, name: &str) -> Option<DefId> {
         let defs = self.globals.get(name)?;
         defs.iter().copied().find(|def| {
-            !self.fteqcc
+            !self.profile.qualifiers()
                 || self
                     .facts
                     .get(def.0)
@@ -42,7 +42,7 @@ impl Resolver<'_> {
         name: &str,
     ) -> Option<&'t V> {
         table.get(name).or_else(|| {
-            if !self.case_insensitive {
+            if !self.profile.case_insensitive() {
                 return None;
             }
             table
@@ -68,7 +68,7 @@ impl Resolver<'_> {
         if let Some(exact) = self.type_names.get(name) {
             return Some(exact.as_str());
         }
-        if !self.case_insensitive {
+        if !self.profile.case_insensitive() {
             return None;
         }
         self.type_names
@@ -81,7 +81,7 @@ impl Resolver<'_> {
     /// Whether `set` holds `name`, in any case under `-Fcaseinsens` (FTEF-19.33).
     pub(in crate::resolve) fn has_name(&self, set: &HashSet<String>, name: &str) -> bool {
         set.contains(name)
-            || (self.case_insensitive && set.iter().any(|t| t.eq_ignore_ascii_case(name)))
+            || (self.profile.case_insensitive() && set.iter().any(|t| t.eq_ignore_ascii_case(name)))
     }
 
     /// Whether the global `def` lies below `before` in `qcc`'s global area (QC-13.5): the
@@ -139,12 +139,12 @@ impl Resolver<'_> {
         if let Some(def) = def {
             // FTEF-19.38: a type's name is no value; `QCC_PR_ParseValue` finds no definition by
             // it.
-            if self.fteqcc && !type_ok && self.type_defs.contains(&def) {
+            if self.profile.name_use_checks() && !type_ok && self.type_defs.contains(&def) {
                 return Found::Unknown;
             }
             return Found::Def(def);
         }
-        if !self.fteqcc || !is_intrinsic(name) {
+        if !self.profile.name_use_checks() || !is_intrinsic(name) {
             return Found::Unknown;
         }
         // FTEF-20.11: `keyword_class && !strcmp(name, "this")`, and `super` so.
@@ -290,7 +290,7 @@ impl Resolver<'_> {
         scope: Option<Scope>,
         name: &str,
     ) -> Option<DefId> {
-        if !self.case_insensitive {
+        if !self.profile.case_insensitive() {
             return None;
         }
         let local = scope.and_then(|scope| {
@@ -322,7 +322,7 @@ impl Resolver<'_> {
         scope: Scope,
         name: &str,
     ) -> Option<DefId> {
-        if self.fteqcc {
+        if self.profile.type_declarations() {
             // A class's name is the type, not its constructor member (FTEF-17.14).
             // FTEF-17.14: a field named bare is `this.field`, reached through the global
             // `self` (`QCC_PR_GetDef(NULL, "self", NULL, true, 0, false)`), without which

@@ -153,7 +153,7 @@ impl<'a> Resolver<'a> {
             let location = self.at(file, d.span);
             self.report(d.code, location, d.message.clone());
         }
-        if self.fteqcc {
+        if self.profile.body_checks() {
             let function = self
                 .index
                 .def(owner)
@@ -182,7 +182,7 @@ impl<'a> Resolver<'a> {
             let def = self.declare_scoped(scope, &param.name, &param.ty, DefKind::Param, location);
             // QC-13.5: `PR_ParseImmediateStatements` stops at a parameter whose global lies
             // below the one before it, "bad parm order".
-            if !self.fteqcc
+            if self.profile.checks_parameter_order()
                 && let (Some(def), Some(before)) = (def, previous)
                 && self.below(def, before)
             {
@@ -192,7 +192,7 @@ impl<'a> Resolver<'a> {
         }
         // FTEF-19.14: the state header's frame is read before its next function is declared.
         self.resolve_uses(file, Some(scope), &body.state_uses);
-        if self.fteqcc {
+        if self.profile.body_checks() {
             self.check_state_literals(file, body);
         }
         if let Some(decl) = decl
@@ -223,7 +223,7 @@ impl<'a> Resolver<'a> {
                 continue;
             }
             // FTEF-19.20: a type name no type has is "not a type", and no local is made.
-            if self.fteqcc
+            if self.profile.type_declarations()
                 && self.check_type_names(&local.ty, &body.typedefs, local.span.start, location)
             {
                 continue;
@@ -416,7 +416,7 @@ impl<'a> Resolver<'a> {
             });
             let found = match (&use_.scope, use_.kind) {
                 (Some(prefix), UseKind::Value | UseKind::Member | UseKind::TypeOrValue)
-                    if self.fteqcc =>
+                    if self.profile.name_use_checks() =>
                 {
                     self.resolve_scoped(scope, prefix, &use_.name)
                 }
@@ -443,7 +443,7 @@ impl<'a> Resolver<'a> {
                         f.referenced = true;
                     }
                     // FTEF-19.40: a call of a name whose type is a value's, not a function's.
-                    if self.fteqcc
+                    if self.profile.name_use_checks()
                         && use_.called
                         && self
                             .index
@@ -452,7 +452,7 @@ impl<'a> Resolver<'a> {
                     {
                         self.report(Code::E0256, location, "not a function".to_owned());
                     }
-                    if self.fteqcc
+                    if self.profile.name_use_checks()
                         && let Some(reason) =
                             self.facts.get(def.0).and_then(|f| f.deprecated.clone())
                     {
@@ -489,7 +489,7 @@ impl<'a> Resolver<'a> {
         local: &RawLocal,
         location: Location,
     ) {
-        if self.fteqcc && local.name.starts_with("autocvar_") {
+        if self.profile.qualifiers() && local.name.starts_with("autocvar_") {
             self.report(
                 Code::W0213,
                 location,
@@ -503,13 +503,13 @@ impl<'a> Resolver<'a> {
             self.declare_global(&local.name, &local.ty, kind, location, init);
             return;
         }
-        if self.fteqcc && local.global_function {
+        if self.profile.body_checks() && local.global_function {
             // FTEF-21.10: a C function declared in a body is a global constant, its body
             // elsewhere.
             self.declare_global(&local.name, &local.ty, DefKind::Function, location, None);
             return;
         }
-        if self.fteqcc
+        if self.profile.qualifiers()
             && let Some(target) = local.qualifiers.iter().find_map(|q| match q {
                 Qualifier::Alias(name) => Some(name.as_str()),
                 _ => None,
@@ -525,10 +525,10 @@ impl<'a> Resolver<'a> {
             );
             return;
         }
-        let statics = self.fteqcc && local.is_static();
-        let constant = self.fteqcc && local.has(&Qualifier::Const);
+        let statics = self.profile.qualifiers() && local.is_static();
+        let constant = self.profile.qualifiers() && local.has(&Qualifier::Const);
         let compared = constant || statics;
-        let holder = if !self.fteqcc {
+        let holder = if !self.profile.qualifiers() {
             Holder::Local(scope)
         } else if statics {
             Holder::Static(scope)
@@ -549,7 +549,7 @@ impl<'a> Resolver<'a> {
                 component: false,
                 array: local.array,
                 statics,
-                subscope: self.fteqcc && local.flags.has(FteFlag::PrSubscopedlocals),
+                subscope: self.profile.body_checks() && local.flags.has(FteFlag::PrSubscopedlocals),
             },
         );
         let Some(def) = def else {
@@ -566,11 +566,11 @@ impl<'a> Resolver<'a> {
         // constant's or static's second initialiser as a global's (FTE-22.5), and keeps no
         // other local initialised.
         let initialised_before = self.index.def(def).is_some_and(|d| d.initialized);
-        if !self.fteqcc && initialised_before {
+        if !self.profile.reinitialise_with_same_value() && initialised_before {
             self.report(Code::E0206, location, format!("{} redeclared", local.name));
             return;
         }
-        if self.fteqcc && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
+        if self.profile.definition_checks() && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
         {
             return;
         }
@@ -580,7 +580,7 @@ impl<'a> Resolver<'a> {
             return;
         };
         let literal = value.or_else(|| local.literal.clone());
-        let tracked = !self.fteqcc || compared;
+        let tracked = !self.profile.reinitialise_with_same_value() || compared;
         if !tracked {
             return;
         }
@@ -631,7 +631,7 @@ impl<'a> Resolver<'a> {
         facts: ScopedFacts,
     ) -> Option<DefId> {
         let existing = self.lookup_local(scope, name).or_else(|| {
-            if self.fteqcc {
+            if self.profile.locals_shadow_globals() {
                 None
             } else {
                 self.lookup_global(name)
@@ -658,7 +658,7 @@ impl<'a> Resolver<'a> {
                 self.mismatch(name, location, &old, ty);
                 return None;
             }
-            if self.fteqcc && !facts.component {
+            if self.profile.redeclaration_by_typecmp() && !facts.component {
                 let redeclaration = Redeclaration {
                     existing,
                     name,
@@ -686,7 +686,7 @@ impl<'a> Resolver<'a> {
                     };
                     self.report(Code::W0207, location, message);
                 }
-            } else if self.fteqcc && kind == DefKind::Param {
+            } else if self.profile.components_initialised() && kind == DefKind::Param {
                 // A parameter's vector components are made with no lookup (FTEF-19.1).
                 return Some(existing);
             }
@@ -705,7 +705,7 @@ impl<'a> Resolver<'a> {
             });
             return Some(existing);
         }
-        if self.fteqcc
+        if self.profile.locals_shadow_globals()
             && !facts.component
             && let Some(global) = self.lookup_global(name)
             && self.index.def(global).is_some_and(|g| {

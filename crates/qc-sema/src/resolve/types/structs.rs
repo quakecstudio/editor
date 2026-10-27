@@ -42,7 +42,7 @@ impl<'a> Resolver<'a> {
     /// members. A struct a function's body writes lasts to the block's end and is not followed
     /// here.
     pub(in crate::resolve) fn declare_struct(&mut self, file: FileId, st: &RawStruct) {
-        if !self.fteqcc {
+        if !self.profile.type_declarations() {
             return;
         }
         let location = self.at(file, st.span);
@@ -202,7 +202,7 @@ impl<'a> Resolver<'a> {
                 return false;
             };
             if def.members.iter().any(|m| {
-                let same_name = if self.case_insensitive {
+                let same_name = if self.profile.case_insensitive() {
                     m.name.eq_ignore_ascii_case(&member.name)
                 } else {
                     m.name == member.name
@@ -330,7 +330,7 @@ impl<'a> Resolver<'a> {
         base: &MemberBase,
         name: &str,
     ) -> StructMatch {
-        if !self.fteqcc {
+        if !self.profile.type_declarations() {
             return StructMatch::NotStruct;
         }
         let MemberBase::Name(base) = base else {
@@ -363,7 +363,7 @@ impl<'a> Resolver<'a> {
             // (`oldparm && oldparm->arraysize == arraysize && !typecmp_lax`).
             let mut distinct: Vec<(&str, &Type, &[String])> = Vec::new();
             for m in &def.members {
-                let same_name = if self.case_insensitive {
+                let same_name = if self.profile.case_insensitive() {
                     m.name.eq_ignore_ascii_case(name)
                 } else {
                     m.name == name

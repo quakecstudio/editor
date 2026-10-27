@@ -37,7 +37,7 @@ impl<'a> Resolver<'a> {
         // FTEF-20.4: `QCC_PR_DummyDef` warns of a definition named as a keyword that is on,
         // which keeps its meaning beside it with `kce` on and is turned off with it off.
         // A class's members are made by `QCC_PR_ParseEntClass`, not as definitions named so.
-        if self.fteqcc
+        if self.profile.warns_keyword_names()
             && def.member_of.is_none()
             && self
                 .keywords
@@ -104,7 +104,7 @@ impl<'a> Resolver<'a> {
     /// Whether a redeclaration's type `ty` matches the earlier `old` (QC-11.5): equal, or
     /// either unknown; under FTEQCC also when the model does not follow either (FTEF-17.13).
     pub(in crate::resolve) fn same_type(&self, old: &Type, ty: &Type) -> bool {
-        if self.fteqcc {
+        if self.profile.redeclaration_by_typecmp() {
             self.resolved(old).fteqcc_same(&self.resolved(ty))
         } else {
             old == ty || *old == Type::Unknown || *ty == Type::Unknown
@@ -216,7 +216,7 @@ impl<'a> Resolver<'a> {
         });
         let constant = decl.constant;
         let statics = decl.statics;
-        let field_component = decl.component && !self.fteqcc && kind == DefKind::Field;
+        let field_component = decl.component && self.profile.field_components_typed_apart() && kind == DefKind::Field;
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = constant;
             facts.array = decl.array;
@@ -246,7 +246,7 @@ impl<'a> Resolver<'a> {
                 let word = words
                     .and_then(|w| w.get(index).copied())
                     .map(LiteralValue::Float);
-                let component_init = if self.fteqcc {
+                let component_init = if self.profile.components_initialised() {
                     init.map(|_| word.as_ref())
                 } else {
                     None
@@ -257,7 +257,7 @@ impl<'a> Resolver<'a> {
                     statics,
                     ..DeclFacts::default()
                 };
-                if self.fteqcc && self.lookup_global(&component_name).is_some() {
+                if self.profile.components_initialised() && self.lookup_global(&component_name).is_some() {
                     // FTEF-19.5: FTEQCC makes the components with `QCC_PR_DummyDef`, which
                     // looks for no earlier definition, so an earlier one of the name stays.
                     continue;
@@ -297,15 +297,15 @@ impl<'a> Resolver<'a> {
         let lax = Self::lax_same(&resolved_old, params, &resolved_ty, r.params);
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
-        if !self.fteqcc && field_component != component && kind == DefKind::Field {
+        if self.profile.field_components_typed_apart() && field_component != component && kind == DefKind::Field {
             self.mismatch(r.name, r.location, &old, r.ty);
             return TypeCheck::Mismatch;
         }
-        let same = self.same_type(&old, r.ty) && (!self.fteqcc || defaults_ok);
+        let same = self.same_type(&old, r.ty) && (!self.profile.redeclaration_by_typecmp() || defaults_ok);
         if same {
             return TypeCheck::Same;
         }
-        if !self.fteqcc {
+        if !self.profile.redeclaration_by_typecmp() {
             self.mismatch(r.name, r.location, &old, r.ty);
             return TypeCheck::Mismatch;
         }
@@ -396,7 +396,7 @@ impl<'a> Resolver<'a> {
         ty: &Type,
     ) {
         // QCD-3.5: `PR_GetDef` finds the earlier definition with another type.
-        let message = if self.fteqcc {
+        let message = if self.profile.fteqcc_diagnostics() {
             format!(
                 "Type mismatch on redeclaration of {name}. {}, should be {}",
                 ty.fteqcc_name(),
@@ -413,7 +413,7 @@ impl<'a> Resolver<'a> {
     /// arraysize>=0`. An unsized definition takes the size. `local` spaces its message as
     /// FTEQCC's local branch does. Returns whether the sizes differ, a fatal error.
     pub(in crate::resolve) fn check_array(&mut self, r: &Redeclaration<'_>, local: bool) -> bool {
-        if !self.fteqcc {
+        if !self.profile.definition_checks() {
             return false;
         }
         let size = |dim: Option<ArrayDim>| match dim {
@@ -462,10 +462,10 @@ impl<'a> Resolver<'a> {
             // FTE-22.5: FTEQCC compares a second initialiser with the first and accepts it
             // when the two are the same value; FTEF-17.8: it does not compare them when the
             // first is `noref`.
-            let same = self.fteqcc
+            let same = self.profile.reinitialise_with_same_value()
                 && (literal.is_some_and(|literal| self.same_value(existing, name, literal))
                     || self.unused.contains(&existing));
-            if !same && self.fteqcc && self.parseentitydata(existing, name) {
+            if !same && self.profile.reinitialise_with_same_value() && self.parseentitydata(existing, name) {
                 self.report(
                     Code::W0223,
                     r.location,
@@ -592,22 +592,22 @@ impl<'a> Resolver<'a> {
             self.check_type_names(&decl.ty, &[], decl.span.start, location);
             return Special::Declared(Vec::new());
         }
-        if self.fteqcc
+        if self.profile.type_declarations()
             && let Some(item) = &decl.enum_item
         {
             self.declare_enum_item(file, decl, item, location);
             return Special::Declared(Vec::new());
         }
-        if self.fteqcc && self.check_type_names(&decl.ty, &[], decl.span.start, location) {
+        if self.profile.type_declarations() && self.check_type_names(&decl.ty, &[], decl.span.start, location) {
             return Special::Declared(Vec::new());
         }
-        let qualifier_fatal = self.fteqcc && self.warn_qualifiers(decl, location);
+        let qualifier_fatal = self.profile.qualifiers() && self.warn_qualifiers(decl, location);
         if let Some(scope) = &decl.scope
-            && self.fteqcc
+            && self.profile.type_declarations()
         {
             return Special::Declared(self.define_member(file, scope, decl, location));
         }
-        if self.fteqcc
+        if self.profile.qualifiers()
             && let Some(target) = decl.alias()
         {
             self.declare_alias_def(
@@ -635,12 +635,12 @@ impl<'a> Resolver<'a> {
             Special::Declared(pending) => return pending,
             Special::Plain { qualifier_fatal } => qualifier_fatal,
         };
-        if self.fteqcc {
+        if self.profile.qualifiers() {
             self.warn_autocvar(decl, location);
         }
         // FTEF-6.10: a field whose type is a struct with no body so far reads the struct's size
         // that is not there ("type NAME not fully defined yet").
-        if self.fteqcc
+        if self.profile.type_declarations()
             && let Type::Field(inner) = &decl.ty
             && self.incomplete_struct(inner, None)
         {
@@ -665,7 +665,7 @@ impl<'a> Resolver<'a> {
                 .unwrap_or_default()
         };
         // FTEF-19.6: the default values are read with the type, before the name.
-        let mut aborted = self.fteqcc && self.check_defaults(file, decl);
+        let mut aborted = self.profile.definition_checks() && self.check_defaults(file, decl);
         let existing = match self.find_existing(decl, location) {
             Ok(existing) => existing,
             Err(found) => return pending(found),
@@ -673,7 +673,7 @@ impl<'a> Resolver<'a> {
         aborted |= qualifier_fatal;
         // FTEF-19.12: `static` on a name another file defined is "can't redefine non-static
         // as static".
-        if self.fteqcc
+        if self.profile.qualifiers()
             && decl.is_static()
             && let Some(existing) = existing
             && self
@@ -690,17 +690,17 @@ impl<'a> Resolver<'a> {
         }
         let was_initialized =
             existing.is_some_and(|d| self.index.def(d).is_some_and(|d| d.initialized));
-        if self.fteqcc && !aborted {
+        if self.profile.definition_checks() && !aborted {
             aborted |= self.check_initialisation(decl, existing, location);
         }
-        if self.fteqcc && !aborted {
+        if self.profile.definition_checks() && !aborted {
             aborted |= self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref());
         }
-        if self.fteqcc && !aborted {
+        if self.profile.definition_checks() && !aborted {
             aborted |= self.check_array_declaration(file, decl, location);
         }
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
-        let value = if aborted || (!self.fteqcc && was_initialized && decl.initialized) {
+        let value = if aborted || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized) {
             Ok(None)
         } else {
             self.check_value(
@@ -725,7 +725,7 @@ impl<'a> Resolver<'a> {
             decl.redefinable() || existing.is_some_and(|d| self.redefinable.contains(&d));
         let external = self.is_extern(decl) && self.resolved(&decl.ty).is_function();
         let shared = decl.has(&Qualifier::Shared);
-        let initialized = decl.initialized || external || (self.fteqcc && shared);
+        let initialized = decl.initialized || external || (self.profile.qualifiers() && shared);
         let marks_only = (external || shared) && !decl.initialized;
         let init = if aborted || (replaces && existing.is_some()) || marks_only {
             None
@@ -734,7 +734,7 @@ impl<'a> Resolver<'a> {
         };
         // FTEF-17.9: a builtin given for a function that has a body is a warning, and the
         // function keeps its body.
-        if self.fteqcc
+        if self.profile.definition_checks()
             && !aborted
             && decl.builtin
             && let Some(existing) = existing
@@ -749,7 +749,7 @@ impl<'a> Resolver<'a> {
             );
             return Vec::new();
         }
-        let statics = (self.fteqcc && decl.is_static()).then_some(self.unit);
+        let statics = (self.profile.qualifiers() && decl.is_static()).then_some(self.unit);
         let facts = DeclFacts {
             component: false,
             checked: true,
@@ -763,7 +763,7 @@ impl<'a> Resolver<'a> {
         // FTEF-22.5: `if (externfnc && !pr_scope) { ... def->isextern = true; }`.
         // `QCC_PR_FinishCompilation` checks the constant ones, every function but a `var` one.
         let constant = !decl.has(&Qualifier::Var) && !decl.pointer_var;
-        if self.fteqcc && external && constant && !aborted {
+        if self.profile.qualifiers() && external && constant && !aborted {
             self.externs.insert(def);
         }
         if let Some(f) = self.fact_mut(def) {
@@ -949,7 +949,7 @@ impl<'a> Resolver<'a> {
     /// which a module with errors never reaches, it is reported whatever else was (QCD-1.4).
     pub(in crate::resolve) fn check_undefined_functions(&mut self) {
         let used: HashSet<DefId> = self.index.refs.iter().map(|r| r.def).collect();
-        let externs_refused = self.target.is_some_and(|target| !target.supports_extern());
+        let externs_refused = self.profile.target().is_some_and(|target| !target.supports_extern());
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for (index, def) in self.index.defs.iter().enumerate() {
             let id = DefId(index);
@@ -961,7 +961,7 @@ impl<'a> Resolver<'a> {
                     "extern is not supported with this target format".to_owned(),
                 ));
             }
-            let skipped = self.fteqcc && self.unused.contains(&id) && !used.contains(&id);
+            let skipped = self.profile.qualifiers() && self.unused.contains(&id) && !used.contains(&id);
             // FTEF-19.41: a member function a class declares and nothing defines has no body
             // either, a virtual one among them, which is a field of function type.
             let var_member = def

@@ -271,7 +271,7 @@ impl<'a> Resolver<'a> {
             return;
         };
         let found = self.named(&self.class_names, parent).copied();
-        let entity = parent == "__entity" || (parent == "entity" && !self.qcfuncs_off);
+        let entity = parent == "__entity" || (parent == "entity" && !self.profile.qcfuncs_off());
         if found.is_none() && !entity {
             let parent_type = Type::Named(parent.as_str().into());
             if self.unknown_type_name(&parent_type, &[], 0).is_some()
@@ -481,7 +481,7 @@ impl<'a> Resolver<'a> {
         let name = use_.name.as_str();
         // FTE-13: an array takes `.length` and no other member (`QCC_PR_Expect("length")`
         // after an array's `.`: "expected length, found NAME").
-        if self.fteqcc
+        if self.profile.name_use_checks()
             && name != "length"
             && let MemberBase::Name(base) = &use_.base
             && let Some(def) = match scope {
@@ -535,7 +535,7 @@ impl<'a> Resolver<'a> {
         scope: Option<Scope>,
         base: &MemberBase,
     ) -> Option<DefId> {
-        if !self.fteqcc {
+        if !self.profile.type_declarations() {
             return None;
         }
         match base {

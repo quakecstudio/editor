@@ -42,9 +42,12 @@ use crate::lower::{
 use crate::symbol::{DefId, Definition, FileId, Location, Reference};
 use crate::ty::{SimpleType, Type};
 
+use profile::Profile;
+
 mod body;
 mod global;
 mod init;
+mod profile;
 mod report;
 mod scope;
 mod types;
@@ -202,10 +205,10 @@ pub(crate) fn resolve_mapped(
     sources: &Sources<'_>,
     options: ResolveOptions,
 ) -> ModuleIndex {
-    let fteqcc = options.dialect.has_fteqcc_extensions();
-    let two = fteqcc && options.autoproto;
+    let profile = Profile::new(options);
+    let two = profile.two_passes();
     let plan = match sources.plan {
-        Some(plan) if fteqcc => Prototyping::Plan(plan),
+        Some(plan) if profile.reads_autoproto_pragmas() => Prototyping::Plan(plan),
         Some(_) | None => Prototyping::Off,
     };
     // The first pass of two is the files themselves, all prototyped, unless the preprocessor
@@ -229,11 +232,8 @@ pub(crate) fn resolve_mapped(
         keyword_marks: sources.keywords,
         keywords: Keywords::default(),
         extensions: &sources.extensions,
-        fteqcc,
+        profile,
         autoproto: false,
-        case_insensitive: fteqcc && options.case_insensitive,
-        qcfuncs_off: fteqcc && options.qcfuncs_off,
-        target: options.target.filter(|_| fteqcc),
         externs: HashSet::new(),
         unit: FileId(0),
         facts: Vec::new(),
@@ -422,16 +422,10 @@ struct Resolver<'a> {
     keywords: Keywords,
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
-    /// Whether an FTEQCC profile is in force (FTE-22).
-    fteqcc: bool,
-    /// Whether FTEQCC autoprototypes the module (FTE-22.3).
+    /// The dialect profile and its rules.
+    profile: Profile,
+    /// Whether FTEQCC's `autoprototype` is on where the pass reads (FTE-22.3, FTEF-12.18).
     autoproto: bool,
-    /// Whether FTEQCC compiles without case sensitivity (FTEF-19.33).
-    case_insensitive: bool,
-    /// Whether FTEQCC named its core types with `qcfuncs` off (FTEF-19.28).
-    qcfuncs_off: bool,
-    /// Under FTEQCC, the output format `QCC_PR_FinishCompilation` reads (FTEF-22.5).
-    target: Option<TargetFormat>,
     /// The functions an `extern` at file level made, `def->isextern` (FTEF-22.5).
     externs: HashSet<DefId>,
     /// The compiled file, the unit a `static` is visible in (FTEF-19.12).

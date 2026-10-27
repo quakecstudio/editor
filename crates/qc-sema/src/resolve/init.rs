@@ -200,7 +200,7 @@ impl Resolver<'_> {
             return Ok(None);
         };
         let location = self.at(file, value.span);
-        if !self.fteqcc {
+        if !self.profile.initialisers_cast() {
             let ValueKind::Literal(literal) = &value.kind else {
                 return Ok(None);
             };
@@ -228,7 +228,7 @@ impl Resolver<'_> {
         let ty = self.resolved(ty);
         // FTEF-6.12: a struct is initialised by an aggregate only; a struct value is no other
         // type's, and neither is another type's a struct's: "Cannot cast from X to Y".
-        if self.fteqcc {
+        if self.profile.type_declarations() {
             let is_struct = |ty: &Type| self.is_struct_type(ty);
             let target_struct = is_struct(&ty);
             let from = match &value.kind {
