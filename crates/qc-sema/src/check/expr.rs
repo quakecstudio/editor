@@ -130,7 +130,21 @@ impl<'e> Checker<'e> {
         let in_condition = std::mem::replace(&mut self.in_condition, false);
         let value = self.expr_of(paren.expr());
         self.in_condition = in_condition;
-        value
+        let value = value?;
+        self.end_of_construct()?;
+        Ok(value)
+    }
+
+    /// FTEF-24.10: the end of a construct that expects its own token, `)` or `]`: a token an
+    /// expression in it ended before is the fatal error "expected TOKEN, found X".
+    pub(super) fn end_of_construct(&mut self) -> Result<(), Fatal> {
+        match self.pending.take() {
+            Some((message, span)) => {
+                self.env.report(Code::E0204, span, message);
+                Err(Fatal)
+            }
+            None => Ok(()),
+        }
     }
 
     /// Whether `call` is the intrinsic `_length(e)`: its callee the name `_length` with no

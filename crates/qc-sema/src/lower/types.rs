@@ -57,6 +57,18 @@ pub enum TypeKind {
     Accessor,
 }
 
+/// How a class member is qualified by `virtual`, `nonvirtual` and `static` (or `const`), which
+/// only a member function's checking reads (FTEF-9.16).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Qualification {
+    /// None of the words, and no `virtual:` or `nonvirtual:` label before it.
+    Unqualified,
+    /// One of the words, or none under a label that set the default.
+    Qualified,
+    /// More than one of the words.
+    Conflicting,
+}
+
 /// An FTEQCC class's parent and members (FTEF-9).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct RawClass {
@@ -96,6 +108,13 @@ pub struct RawMember {
     pub is_virtual: bool,
     /// The text of its first array suffix, compared on redeclaration (FTEF-9.13).
     pub array: Option<String>,
+    /// Its `virtual`, `nonvirtual` and `static` words (FTEF-9.16).
+    pub qualification: Qualification,
+    /// Whether `static` or `const` qualifies it (FTEF-9.16).
+    pub is_static: bool,
+    /// The token after its name and array suffixes, which a constructor's warnings name as
+    /// the member, `pr_token` (FTEF-9.16).
+    pub follow: String,
 }
 
 /// What a class member is (FTEF-9.2, FTEF-9.3).
@@ -664,16 +683,16 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
         members: Vec::new(),
     };
     // FTEF-9.2: `virtual:` and `nonvirtual:` set the kind of the member functions after them.
-    let mut assume_virtual = false;
+    let mut assume_virtual = None;
     for node in class.syntax().children() {
         match node.kind() {
             SyntaxKind::AccessLabel => {
                 // FTEF-20.11: the label's word, `__` and any case as the parser took it.
                 let word = first_word(&node).to_ascii_lowercase();
                 if word.ends_with("nonvirtual") {
-                    assume_virtual = false;
+                    assume_virtual = Some(false);
                 } else if word.ends_with("virtual") {
-                    assume_virtual = true;
+                    assume_virtual = Some(true);
                 }
             }
             SyntaxKind::Declaration => {
@@ -713,7 +732,7 @@ pub(super) fn lower_class(class: &ast::ClassDecl, cx: Cx<'_>, out: &mut FileDecl
 fn lower_member(
     decl: &ast::Declaration,
     class: &str,
-    assume_virtual: bool,
+    assume_virtual: Option<bool>,
     cx: Cx<'_>,
     out: &mut Vec<RawMember>,
 ) {
@@ -724,7 +743,18 @@ fn lower_member(
             .iter()
             .any(|w| w.trim_start_matches('_').eq_ignore_ascii_case(word))
     };
-    let virtual_ = has("virtual") || (assume_virtual && !has("nonvirtual") && !has("static"));
+    let virtual_ =
+        has("virtual") || (assume_virtual == Some(true) && !has("nonvirtual") && !has("static"));
+    let words_given = [
+        has("virtual"),
+        has("nonvirtual"),
+        has("static") || has("const"),
+    ];
+    let qualification = match words_given.iter().filter(|&&given| given).count() {
+        0 if assume_virtual.is_none() => Qualification::Unqualified,
+        0 | 1 => Qualification::Qualified,
+        _ => Qualification::Conflicting,
+    };
     let base = decl.ty().map_or(Type::Unknown, |t| cx.ty(&t));
     let mut declared = false;
     for declarator in decl.declarators() {
@@ -740,6 +770,19 @@ fn lower_member(
         } else {
             MemberKind::Method
         };
+        let name_end = declarator
+            .array_suffixes()
+            .last()
+            .map_or(name_token.span().end, |n| n.span().end);
+        let scope = decl
+            .syntax()
+            .parent()
+            .unwrap_or_else(|| decl.syntax().clone());
+        let follow = scope
+            .tokens()
+            .find(|t| !t.kind().is_trivia() && t.span().start >= name_end)
+            .map(|t| t.text_lossless())
+            .unwrap_or_default();
         let init = declarator.initializer();
         let body = match &init {
             Some(ast::Initializer::Body(fn_body)) => {
@@ -779,6 +822,9 @@ fn lower_member(
             is_var: has("var"),
             is_global: has("static") || has("ignore"),
             is_virtual: virtual_,
+            qualification,
+            is_static: has("static") || has("const"),
+            follow,
             array: declarator
                 .array_suffixes()
                 .next()
@@ -807,6 +853,9 @@ fn lower_member(
             is_global: false,
             is_virtual: false,
             array: None,
+            qualification: Qualification::Qualified,
+            is_static: false,
+            follow: String::new(),
         });
     }
 }

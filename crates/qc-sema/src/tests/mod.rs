@@ -20,6 +20,7 @@ mod assignments;
 mod builtin_arguments;
 mod calls;
 mod casts;
+mod classes;
 mod comparisons;
 mod definitions;
 mod dialect;

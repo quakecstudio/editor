@@ -200,6 +200,11 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   at the class's name (`dialect-fteqcc.md`, FTEF-9.13).
 - **QCD-3.56** `E0262` "Value is not an integer constant": under an FTEQCC profile, a bitfield
   whose width is a literal with a fraction, a vector or a string (FTEF-6.9).
+- **QCD-3.57** `E0350` "NAME defined as virtual in CLASS, but nonvirtual in PARENT": under an
+  FTEQCC profile, a virtual member function a parent class has as a nonvirtual one (FTEF-9.15).
+- **QCD-3.58** `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN.": under an FTEQCC
+  profile, a member function with more than one of `virtual`, `nonvirtual` and `static`
+  (FTEF-9.16).
 
 ## QCD-4 Expression and statement errors
 
@@ -695,6 +700,9 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   `switch` covers (FTEF-34.5). The warning of code 0.
 - **QCD-7.106** `W0264` "Implicit cast from A to B" between an accessor type and its base
   (FTEF-10.8). The warning of code 0.
+- **QCD-7.107** `W0265` "CLASS::NAME was not qualified. Assuming non-virtual." and a
+  constructor's "should not be static.", "does not return void." and "Constructor arguments are
+  not supported at this time" (FTEF-9.16). `WARN_MISSINGMEMBERQUALIFIER`, F334.
 
 ## QCD-8 Preprocessor errors
 

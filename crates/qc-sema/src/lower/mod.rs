@@ -20,7 +20,9 @@ pub use decl::{
     RawValue, ValueKind,
 };
 pub use expr::{MemberBase, RawUse, UseKind};
-pub use types::{EnumItem, MemberKind, RawClass, RawMember, RawStruct, StructMember, TypeKind};
+pub use types::{
+    EnumItem, MemberKind, Qualification, RawClass, RawMember, RawStruct, StructMember, TypeKind,
+};
 
 use qc_diag::{Diagnostic, Span};
 use qc_preproc::{Enabled, FteFlag};

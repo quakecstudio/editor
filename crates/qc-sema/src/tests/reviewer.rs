@@ -103,7 +103,7 @@ fn reviewer_file_paths_are_kept() {
 // members before a global of the same name
 #[test]
 fn reviewer_member_before_global() {
-    let source = "float hp;\nclass c { float hp; void() hurt = { this.hp = 1; }; };";
+    let source = "float hp;\nclass c { float hp; nonvirtual void() hurt = { this.hp = 1; }; };";
     let index = fte_index_of(source);
     assert!(index.diagnostics.is_empty(), "{:?}", index.diagnostics);
     let use_at = nth_offset(source, "hp", 2);

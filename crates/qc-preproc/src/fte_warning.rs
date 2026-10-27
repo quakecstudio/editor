@@ -496,6 +496,7 @@ impl FteWarning {
             Code::W0260 => Self::SwitchTypeMismatch,
             Code::W0261 => Self::FteSpecific,
             Code::W0262 => Self::SlowLargeReturn,
+            Code::W0265 => Self::MissingMemberQualifier,
             Code::W0240 => Self::StrictTypeMismatch,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,

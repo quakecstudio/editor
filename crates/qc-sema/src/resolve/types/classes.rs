@@ -13,7 +13,9 @@ use std::rc::Rc;
 
 use crate::cast::Kind;
 use crate::lower::ArrayDim;
-use crate::lower::{MemberBase, MemberKind, RawClass, RawDecl, RawUse, top_level_kind};
+use crate::lower::{
+    MemberBase, MemberKind, Qualification, RawClass, RawDecl, RawMember, RawUse, top_level_kind,
+};
 use crate::resolve::{ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
 use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
@@ -203,25 +205,9 @@ impl<'a> Resolver<'a> {
             if member.is_var {
                 self.var_members.insert((def, member.name.clone()));
             }
-            // FTEF-7.5: a member of a typedef'd function type is a member function.
-            let typedef_function =
-                member.kind == MemberKind::Field && self.resolved(&member.ty).is_function();
-            let member_kind = if typedef_function {
-                if member.is_virtual {
-                    MemberKind::Virtual
-                } else {
-                    MemberKind::Method
-                }
-            } else {
-                member.kind
+            let Some(member_kind) = self.member_kind(def, &name, member, location) else {
+                continue;
             };
-            if member.bad_init && !typedef_function {
-                self.report(
-                    Code::E0257,
-                    location,
-                    "Can only initialise member functions".to_owned(),
-                );
-            }
             let kind = match member_kind {
                 MemberKind::Field | MemberKind::Virtual => DefKind::Field,
                 MemberKind::Method => DefKind::Function,
@@ -276,6 +262,26 @@ impl<'a> Resolver<'a> {
     /// and the same one each time the class is given its members.
     pub(in crate::resolve) fn check_parent(&mut self, def: DefId, name: &str, class: &RawClass) {
         let Some(parent) = &class.parent else {
+            // A body with no parent is the entity's child (`fieldtype = type_entity;`), so a
+            // class that had a parent class changes it.
+            let class_def = self.named(&self.class_names, name).copied().unwrap_or(def);
+            let had_parent = self.classes.get(&class_def).is_some_and(|info| {
+                !info.members.is_empty()
+                    && info
+                        .parent
+                        .as_ref()
+                        .is_some_and(|p| self.named(&self.class_names, p).is_some())
+            });
+            if class.body
+                && had_parent
+                && let Some(location) = self.index.def(def).map(|d| d.location)
+            {
+                self.report(
+                    Code::E0242,
+                    location,
+                    format!("Parent class changed on redeclaration of {name}"),
+                );
+            }
             return;
         };
         let Some(location) = self.index.def(def).map(|d| d.location) else {
@@ -326,6 +332,114 @@ impl<'a> Resolver<'a> {
                 format!("Parent class changed on redeclaration of {name}"),
             );
         }
+    }
+
+    /// What the member `member` of the class `def`, named `class`, is, with its initialiser and
+    /// qualifiers checked; `None` when it is not defined.
+    fn member_kind(
+        &mut self,
+        def: DefId,
+        class: &str,
+        member: &RawMember,
+        location: Location,
+    ) -> Option<MemberKind> {
+        // FTEF-7.5: a member of a typedef'd function type is a member function.
+        let typedef_function =
+            member.kind == MemberKind::Field && self.resolved(&member.ty).is_function();
+        let member_kind = match (typedef_function, member.is_virtual) {
+            (true, true) => MemberKind::Virtual,
+            (true, false) => MemberKind::Method,
+            (false, _) => member.kind,
+        };
+        if member.bad_init && !typedef_function {
+            self.report(
+                Code::E0257,
+                location,
+                "Can only initialise member functions".to_owned(),
+            );
+        }
+        if member_kind != MemberKind::Field {
+            self.check_member_qualifiers(class, member, location);
+        }
+        // FTEF-9.15: a virtual member a parent has as a nonvirtual one, `PARENT::NAME`.
+        if member_kind == MemberKind::Virtual
+            && let Some(parent) = self.nonvirtual_in_parents(def, &member.name)
+        {
+            let message = format!(
+                "{} defined as virtual in {class}, but nonvirtual in {parent}",
+                member.name
+            );
+            self.report(Code::E0350, location, message);
+            return None;
+        }
+        Some(member_kind)
+    }
+
+    /// The qualifiers of the member function `member` of the class `class`
+    /// (`QCC_PR_ParseType`, FTEF-9.16): a constructor is warned of being static, returning a
+    /// value or taking arguments, any other function of having none of `virtual`,
+    /// `nonvirtual` and `static`, and an error is more than one of them.
+    fn check_member_qualifiers(&mut self, class: &str, member: &RawMember, location: Location) {
+        let mut warnings = Vec::new();
+        if member.name == class {
+            let token = &member.follow;
+            if member.is_static {
+                warnings.push(format!(
+                    "Constructor {class}::{token} should not be static."
+                ));
+            }
+            if let Type::Function(f) = self.resolved(&member.ty) {
+                if self.resolved(&f.ret) != Type::Simple(SimpleType::Void) {
+                    warnings.push(format!(
+                        "Constructor {class}::{token} does not return void."
+                    ));
+                }
+                if !f.params.is_empty() || f.variadic {
+                    warnings.push(format!(
+                        "Constructor arguments are not supported at this time {class}::{token}. \
+                         Use named fields instead."
+                    ));
+                }
+            }
+        } else {
+            match member.qualification {
+                Qualification::Qualified => {}
+                Qualification::Unqualified => warnings.push(format!(
+                    "{class}::{} was not qualified. Assuming non-virtual.",
+                    member.name
+                )),
+                Qualification::Conflicting => {
+                    let message = format!(
+                        "Multiple conflicting qualifiers on {class}::{}.",
+                        member.follow
+                    );
+                    self.report(Code::E0351, location, message);
+                }
+            }
+        }
+        for message in warnings {
+            self.report(Code::W0265, location, message);
+        }
+    }
+
+    /// The first parent of the class `def` that has a nonvirtual member function `name`.
+    fn nonvirtual_in_parents(&self, def: DefId, name: &str) -> Option<String> {
+        let mut parent = self.classes.get(&def)?.parent.clone();
+        for _ in 0..MAX_CLASS_DEPTH {
+            let parent_name = parent.take()?;
+            let parent_def = self.named(&self.class_names, &parent_name).copied()?;
+            let info = self.classes.get(&parent_def)?;
+            let nonvirtual = info.members.get(name).is_some_and(|member| {
+                self.index
+                    .def(*member)
+                    .is_some_and(|d| d.kind == DefKind::Function)
+            });
+            if nonvirtual {
+                return Some(parent_name);
+            }
+            parent = info.parent.clone();
+        }
+        None
     }
 
     /// FTEF-9.5: every class defines `spawnfunc_Name`, so maps can spawn it; FTEQCC writes its
@@ -476,6 +590,26 @@ impl<'a> Resolver<'a> {
             .parent
             .as_ref()
             .and_then(|p| self.named(&self.class_names, p).copied())
+    }
+
+    /// Whether `from`, an entity or a class, or a class it derives from, is `to` to
+    /// `typecmp_lax` (`QCC_TryEvaluateCast`, `t = t->parentclass`, FTEF-9.14): a class with no
+    /// parent class derives from the entity.
+    pub(in crate::resolve) fn derives_lax(&self, from: &Type, to: &Type) -> bool {
+        let entity = Type::Simple(SimpleType::Entity);
+        let mut current = from.clone();
+        for _ in 0..=MAX_CLASS_DEPTH {
+            if self.typecmp_lax(&current, to) {
+                return true;
+            }
+            if self.class_of(&current).is_none() {
+                return false;
+            }
+            current = self
+                .class_parent_type(&current)
+                .unwrap_or_else(|| entity.clone());
+        }
+        false
     }
 
     /// The parent of the class `ty` names, as a type, if it has one.

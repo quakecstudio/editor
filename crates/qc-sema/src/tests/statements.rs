@@ -563,6 +563,14 @@ fn a_dot_after_a_value_with_no_members() {
             vec![d(Code::E0204, "expected ), found .")],
         ),
         (
+            "float a, b; void() g = { b = (a.x); };",
+            vec![d(Code::E0204, "expected ), found .")],
+        ),
+        (
+            "float a, b; float c[2]; void() g = { b = c[a.x]; };",
+            vec![d(Code::E0204, "expected ], found .")],
+        ),
+        (
             ".float fl; float b; void() g = { b = fl.x; };",
             vec![d(Code::E0213, "Cannot cast from .float to float")],
         ),

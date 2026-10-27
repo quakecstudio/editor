@@ -201,6 +201,8 @@ pub struct RawValue {
     /// The expression as written, when it is [`ValueKind::Other`], which the check stage reads
     /// at global scope (FTEF-34.9).
     pub syntax: Option<ast::Expr>,
+    /// The types written in its casts and `sizeof`, by where each starts (FTEF-34.9).
+    pub written_types: Vec<(usize, Type)>,
 }
 
 /// The shape of a value initialiser (QC-11.3, FTEF-19.31).
@@ -454,6 +456,10 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         _ => None,
     };
     let syntax = matches!(kind, ValueKind::Other).then(|| expr.clone());
+    let written_types = match &syntax {
+        Some(expr) => super::body::written_types(expr.syntax(), cx),
+        None => Vec::new(),
+    };
     RawValue {
         span,
         kind,
@@ -461,6 +467,7 @@ pub(super) fn raw_value(expr: &ast::Expr, cx: Cx<'_>) -> RawValue {
         string_len,
         cast_flags: cx.next_flags(span.end),
         syntax,
+        written_types,
     }
 }
 

@@ -823,6 +823,27 @@ const PROGRAMS: &[&str] = &[
     "void() g = [1, g] {};",
     "void() g { };",
     "void() g : 6;",
+    "class C { float a; }; entity e; void() h = { C c = e; };",
+    "class C { float a; }; class D { string b; }; D d; void() h = { C c = d; };",
+    "class C { float a; }; class D : C { float b; }; C c; void() h = { D d = c; };",
+    "class C { .C next; }; class D { .C next; }; D d; void() h = { C c = d; };",
+    "class C { }; entity e; C c = (C)e;",
+    "float e; float c = (float)e;",
+    "class C { float a; }; class D { string b; }; C c; D d; float f; \
+     void() h = { local entity e = f ? c : d; };",
+    "class C { float a; }; class D { float b; }; C c; D d; float f; \
+     void() h = { local entity e = f ? c : d; };",
+    "class C { nonvirtual void() m = {}; }; class D : C { virtual void() m = {}; };",
+    "class C { void() m = {}; }; class D : C { virtual void() m = {}; };",
+    "class C { virtual static void() m = {}; };",
+    "class C { const nonvirtual void() m; };",
+    "class C { static float() C = { return 1; }; };",
+    "class C { nonvirtual void(float a) C = {}; };",
+    "class C { static void() C, n; };",
+    "class C { virtual void() n[2]; };",
+    "float() g = { return 1; }; void() h = { g()(); };",
+    "float() g = { return 1; }; void(float a) k = {}; void() h = { k(g()()); };",
+    "float a, b; float c[2]; void() g = { b = c[a.x]; };",
 ];
 
 /// Where a type, not a declaration, stands: `{}` is the type.

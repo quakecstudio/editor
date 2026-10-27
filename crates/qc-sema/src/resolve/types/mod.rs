@@ -23,7 +23,7 @@ use crate::cast::Kind;
 use crate::check::Shape;
 use crate::check::etype::Etype;
 use crate::lower::{RawDecl, TypeKind};
-use crate::resolve::{Resolver, TABLE_TYPES};
+use crate::resolve::{MAX_TYPEDEF_DEPTH, Resolver, TABLE_TYPES};
 use crate::symbol::Location;
 use crate::ty::{SimpleType, Type};
 
@@ -429,10 +429,24 @@ impl Resolver<'_> {
     /// and a store (FTEF-30.3, FTEF-29.7): of one basic type and size, or one a `variant` with
     /// nothing held, and what a field, a pointer or a function holds the same in turn; a
     /// function's parameters of one basic type pairwise, a class or struct parameter by name,
-    /// as many on each side, and both variadic or neither. Class names are not compared, so two
-    /// classes are one. A type the model does not follow is any.
+    /// as many on each side, and both variadic or neither. Class names are not compared; a
+    /// class's members are, as a function's parameters (FTEF-9.14), and an entity has none, so
+    /// two classes with the same members are one. A type the model does not follow is any.
     pub(in crate::resolve) fn typecmp_lax(&self, a: &Type, b: &Type) -> bool {
+        self.typecmp_lax_within(a, b, MAX_TYPEDEF_DEPTH)
+    }
+
+    /// [`Self::typecmp_lax`] of what `a` and `b` hold to `depth` levels: one type is itself
+    /// (`if (a == b) return 0;`), which ends a class holding its own type, and two types
+    /// compared no deeper are one.
+    fn typecmp_lax_within(&self, a: &Type, b: &Type, depth: usize) -> bool {
         let (a, b) = (self.resolved(a), self.resolved(b));
+        let Some(depth) = depth.checked_sub(1) else {
+            return true;
+        };
+        if a == b {
+            return true;
+        }
         let (Some(sa), Some(sb)) = (self.shape(&a), self.shape(&b)) else {
             return true;
         };
@@ -445,20 +459,24 @@ impl Resolver<'_> {
         }
         match (&a, &b) {
             (Type::Field(x), Type::Field(y)) | (Type::Pointer(x), Type::Pointer(y)) => {
-                self.typecmp_lax(x, y)
+                self.typecmp_lax_within(x, y, depth)
             }
             (Type::Function(x), Type::Function(y)) => {
                 x.variadic == y.variadic
                     && x.params.len() == y.params.len()
-                    && self.typecmp_lax(&x.ret, &y.ret)
+                    && self.typecmp_lax_within(&x.ret, &y.ret, depth)
                     && x.params
                         .iter()
                         .zip(&y.params)
-                        .all(|(p, q)| self.same_param(p, q))
+                        .all(|(p, q)| self.same_param(p, q, depth))
             }
             // What one holds against nothing the other holds.
             (Type::Field(_) | Type::Pointer(_) | Type::Function(_), _)
             | (_, Type::Field(_) | Type::Pointer(_) | Type::Function(_)) => false,
+            _ if sa.etype == Etype::Entity && sb.etype == Etype::Entity => {
+                let (x, y) = (self.compared_members(&a), self.compared_members(&b));
+                x.len() == y.len() && x.iter().zip(&y).all(|(p, q)| self.same_param(p, q, depth))
+            }
             _ => true,
         }
     }
@@ -492,9 +510,18 @@ impl Resolver<'_> {
         }
     }
 
+    /// The types of the members a class compares (FTEF-9.13, FTEF-9.14), its `params`: none for
+    /// an entity or a class given no body.
+    fn compared_members(&self, ty: &Type) -> Vec<Type> {
+        self.class_of(ty)
+            .and_then(|class| self.classes.get(&class)?.shape.as_ref())
+            .map(|shape| shape.iter().map(|(_, ty, _)| ty.clone()).collect())
+            .unwrap_or_default()
+    }
+
     /// `typecmp_lax`'s test of a pair of parameters: one basic type, and an entity, struct or
     /// union by its name, anything else as [`Self::typecmp_lax`] says.
-    fn same_param(&self, p: &Type, q: &Type) -> bool {
+    fn same_param(&self, p: &Type, q: &Type, depth: usize) -> bool {
         let (p, q) = (self.resolved(p), self.resolved(q));
         let (Some(sp), Some(sq)) = (self.shape(&p), self.shape(&q)) else {
             return true;
@@ -504,7 +531,7 @@ impl Resolver<'_> {
         }
         match sp.etype {
             Etype::Entity | Etype::Struct | Etype::Union => p.fteqcc_name() == q.fteqcc_name(),
-            _ => self.typecmp_lax(&p, &q),
+            _ => self.typecmp_lax_within(&p, &q, depth),
         }
     }
 }

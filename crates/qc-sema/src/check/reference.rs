@@ -176,6 +176,7 @@ impl Checker<'_> {
         let span = index.syntax().span();
         let base = self.expr_of(index.base())?;
         let at = self.value(index.index())?;
+        self.end_of_construct()?;
         if base.ty == Type::Unknown || at.ty == Type::Unknown || !self.env.fteqcc() {
             return Ok(Value::unknown());
         }

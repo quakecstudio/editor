@@ -574,6 +574,43 @@ heavily class-based (547 `class` declarations across the three mods).
   being the class's type there and no constructor. Source:
   fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e, `engine/qclib/qcc_pr_lex.c`,
   `QCC_PR_ParseEntClass`.
+- **FTEF-9.14** A class is an entity type (`QCC_PR_NewType(classname, ev_entity, ...)`), and an
+  implicit cast between two entity types, a class either side, is made
+  (`QCC_TryEvaluateCast`, `totype == ev_entity && src.cast->type == ev_entity`): with the warning
+  `W0220` "Implicit cast from A to B" when neither the value's type nor a class it derives from is
+  the target to `typecmp_lax` (`for (t = src.cast; t; t = t->parentclass) if
+  (!typecmp_lax(t, cast)) break;`), a class with no parent class deriving from the entity.
+  `typecmp_lax` compares no class names but a class's members, its `params`, as a function's
+  parameters: as many on each side (`if (!a->params[t].optional) return 1;` past the shorter),
+  each of one basic type, an entity or struct by its name and anything else by `typecmp_lax`; the
+  members are those a redeclaration compares (FTEF-9.13), the class's own, no parent's, no
+  `nonvirtual`, `static` or `ignore` one, and an entity has none. A type is itself (`if (a == b)
+  return 0;`), so a class with a member of its own type compares. So `C c = e;` for an entity `e`
+  warns "Implicit cast from entity to class C" when `C` has a member and not when it has none; a
+  class to `entity` never warns, its chain ending at the entity; `D d = c;` for a `C c` and `class
+  D : C` does not warn (`D`'s own members, `float b` against `C`'s `float a`, are one), and two
+  unrelated classes warn when their members differ, `class C { float a; }` from `class D { string
+  b; }` or from `class D { float a; nonvirtual void() m; }` with `C`'s `m` virtual. A cast
+  written out, `(C)e`, never warns. A global initialised with one of a variable, `C c = (C)e;`, is
+  no constant (FTEF-34.9).
+- **FTEF-9.15** A member function made `virtual` that a parent class has as a nonvirtual
+  function is the error `E0350` "NAME defined as virtual in CLASS, but nonvirtual in PARENT"
+  (`QCC_PR_ParseEntClass`, the first parent up the chain with a global `PARENT::NAME`), and the
+  member is not defined: `class C { nonvirtual void() m = {}; }; class D : C { virtual void() m =
+  {}; };` is refused.
+- **FTEF-9.16** A member function's qualifiers (`QCC_PR_ParseEntClass`): the member named exactly
+  as the class, the constructor, warns `W0265` "Constructor CLASS::TOKEN should not be static."
+  under `static` or `const`, "Constructor CLASS::TOKEN does not return void." when it returns a
+  value and "Constructor arguments are not supported at this time CLASS::TOKEN. Use named fields
+  instead." when it has parameters or `...`, TOKEN being the token after its name and array
+  suffix (`pr_token`, as `=`, `;` or `,`). Any other member function with none of `virtual`,
+  `nonvirtual`, `static` and `const`, and no `virtual:` or `nonvirtual:` label before it in the
+  class (`assumevirtual == 0`), warns `W0265` "CLASS::NAME was not qualified. Assuming
+  non-virtual." and is nonvirtual; one with more than one of `virtual`, `nonvirtual` and
+  `static` or `const` is the error `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN."
+  (`if (isvirt+isnonvirt+isstatic != 1)`). A member function, virtual or not, that nothing
+  defines is "function CLASS::NAME has no body" (FTEF-19.41), by the name it is defined as; an
+  array of member functions is an array of fields and is not reported.
 
 ## FTEF-10 Accessors
 
@@ -3833,9 +3870,9 @@ reference are FTEF-31's.
   Arms whose types `typecmp` tells apart, a truth value taken for its parent's, are then
   reconciled: a null arm takes the other's type when they are of one size; else arms
   `typecmp_lax` tells apart (it compares what fields, pointers and functions hold, and
-  parameters, but no class names) warn `W0244` "Type mismatch on ternary operator: A vs B",
-  warning 0, and arms it takes as one, two classes, are the fatal error `E0332` "Ternary
-  operator with mismatching types". `a ? s : 2` warns and the store then refuses the string.
+  parameters and a class's members, but no class names, FTEF-9.14) warn `W0244` "Type mismatch
+  on ternary operator: A vs B", warning 0, and arms it takes as one, two classes with the same
+  members, are the fatal error `E0332` "Ternary operator with mismatching types". `a ? s : 2` warns and the store then refuses the string.
 - **FTEF-30.4** `-e` is `0 - e` of the operand's type (`OP_SUB_F`, `OP_SUB_D`, `OP_SUB_V`,
   `OP_SUB_I`, `OP_SUB_U` and the 64-bit ones), `+e` the operand; any other type is the fatal
   error `E0302` "type mismatch for -" or "type mismatch for +". `++e` and `--e` of a read-only
@@ -3995,6 +4032,13 @@ The semantic model checks calls in `crates/qc-sema/src/check/call.rs`.
   (`QCC_SupplyConversion`, "Implicit type mismatch. Needed integer, got TYPE.") times 3; in a
   function with no `...`, which has no `__va_list`, it is the fatal error `E0346` "va_arg()
   intrinsic only works inside varadic functions". Its value is of TYPE.
+- **FTEF-32.8** A call's value is called no further: `QCC_PR_ParseFunctionCall` is reached from
+  a name, and after a call's `)` the expression is read on as a value, so the `(` after it ends
+  the expression. The construct around it then expects its own token: "expected ;, found (" at
+  the end of a statement, and "expected ), found (" in parentheses or a call's arguments, the
+  fatal error `E0204` (FTEF-24.10). `k(g()());` is "expected ), found (". An initialiser
+  `float x = g()();` in a body is FTEQCC's "Missing semicolon at end of definition" and then a
+  parse error; this profile reports "expected ;, found (" there, the same refusal.
 ## FTEF-33 Builtin argument checks
 
 **Source:** `qcc_pr_comp.c`, `QCC_VerifyFormatString`, `QCC_VerifyArgs_sendevent`,

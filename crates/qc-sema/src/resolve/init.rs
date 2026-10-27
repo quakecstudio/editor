@@ -588,15 +588,41 @@ impl Resolver<'_> {
                 .map(|base| self.resolved_deep(base, MAX_TYPEDEF_DEPTH)),
             _ => None,
         };
-        let to_checked = base_of(to).unwrap_or_else(|| to.clone());
+        // FTEF-9.14: a class is cast as an entity, with a warning when neither the value's
+        // class nor any it derives from has the members of the class it is cast to.
+        let class_of =
+            |ty: &Type| matches!(ty, Type::Named(n) if self.has_name_key(&self.class_names, n));
+        let entity = Type::Simple(SimpleType::Entity);
+        if let Source::Typed(from) = source {
+            let from = self.resolved_deep(from, MAX_TYPEDEF_DEPTH);
+            let entity_like = |ty: &Type| *ty == entity || class_of(ty);
+            if entity_like(&from) && entity_like(to) && (class_of(&from) || class_of(to)) {
+                if !self.derives_lax(&from, to) {
+                    let message = format!(
+                        "Implicit cast from {} to {}",
+                        self.type_name(&from),
+                        self.type_name(to)
+                    );
+                    self.report(Code::W0220, location, message);
+                }
+                return false;
+            }
+        }
+        let as_entity = |ty: Type| if class_of(&ty) { entity.clone() } else { ty };
+        let to_checked = as_entity(base_of(to).unwrap_or_else(|| to.clone()));
         let typed;
+        let shown;
         let source = match source {
             Source::Typed(ty) => {
                 let ty = self.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
-                typed = base_of(&ty).unwrap_or(ty);
+                shown = self.type_name(&base_of(&ty).unwrap_or_else(|| ty.clone()));
+                typed = as_entity(base_of(&ty).unwrap_or(ty));
                 Source::Typed(&typed)
             }
-            Source::Literal(_) => source,
+            Source::Literal(_) => {
+                shown = source.name();
+                source
+            }
         };
         let (code, verb) = match source.cast(&to_checked, flags) {
             Cast::Silent => return false,
@@ -612,14 +638,10 @@ impl Resolver<'_> {
                 return false;
             }
         };
-        let from = match source {
-            Source::Typed(ty) => self.type_name(ty),
-            Source::Literal(_) => source.name(),
-        };
         self.report(
             code,
             location,
-            format!("{verb} from {from} to {}", self.type_name(to)),
+            format!("{verb} from {shown} to {}", self.type_name(to)),
         );
         code == Code::E0213
     }

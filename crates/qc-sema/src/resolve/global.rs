@@ -987,8 +987,11 @@ impl<'a> Resolver<'a> {
             let var_member = def
                 .member_of
                 .is_some_and(|c| self.var_members.contains(&(c, def.name.clone())));
+            // An array of member functions is an array of fields, which no body defines.
+            let member_array = self.facts.get(id.0).is_some_and(|f| f.array.is_some());
             let member_function = def.member_of.is_some()
                 && !var_member
+                && !member_array
                 && (def.kind == DefKind::Function
                     || (def.kind == DefKind::Field && self.resolved(&def.ty).is_function()));
             let function =
@@ -997,7 +1000,12 @@ impl<'a> Resolver<'a> {
                 // FTEF-17.11: FTEQCC's `QCC_PR_Warning(ERR_NOFUNC, ..., "function %s has no
                 // body", d->name)`.
                 let message = if self.profile.fteqcc_diagnostics() {
-                    format!("function {} has no body", def.name)
+                    // A member function is named `CLASS::NAME`, as FTEQCC defines it.
+                    let class = def.member_of.and_then(|c| self.index.defs.get(c.0));
+                    match class {
+                        Some(class) => format!("function {}::{} has no body", class.name, def.name),
+                        None => format!("function {} has no body", def.name),
+                    }
                 } else {
                     format!("function {} was not defined", def.name)
                 };

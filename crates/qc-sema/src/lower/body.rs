@@ -190,15 +190,7 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
     if let Some(block) = fn_body.block() {
         lower_block(&block, cx, &mut body, Flow::default());
     }
-    for node in fn_body.syntax().descendants() {
-        let written = ast::CastExpr::cast(node.clone())
-            .and_then(|cast| cast.ty())
-            .or_else(|| ast::SizeofExpr::cast(node).and_then(|sizeof| sizeof.ty()));
-        if let Some(ty) = written {
-            body.written_types
-                .push((ty.syntax().span().start, cx.ty(&ty)));
-        }
-    }
+    body.written_types = written_types(fn_body.syntax(), cx);
     // FTEF-32.7: the type `va_arg(index, TYPE)` reads.
     for call in fn_body
         .syntax()
@@ -222,6 +214,21 @@ pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) 
         }
     }
     body
+}
+
+/// The types written in casts and `sizeof` under `node`, each by where it starts, which the
+/// check stage reads (FTEF-34.9).
+pub(super) fn written_types(node: &SyntaxNode, cx: Cx<'_>) -> Vec<(usize, Type)> {
+    let mut out = Vec::new();
+    for node in node.descendants() {
+        let written = ast::CastExpr::cast(node.clone())
+            .and_then(|cast| cast.ty())
+            .or_else(|| ast::SizeofExpr::cast(node).and_then(|sizeof| sizeof.ty()));
+        if let Some(ty) = written {
+            out.push((ty.syntax().span().start, cx.ty(&ty)));
+        }
+    }
+    out
 }
 
 /// The parameters named in the function type of the defining declaration (QC-13.2).

@@ -118,7 +118,7 @@ fn lax_makes_the_mismatch_a_warning() {
 // type the field holds
 #[test]
 fn a_bare_field_in_a_member_function_is_its_value() {
-    let class = "entity self;\nclass C { float x; void() m; };\n";
+    let class = "entity self;\nclass C { float x; nonvirtual void() m; };\n";
     assert_eq!(
         diags(&format!(
             "{class}void() C::m = {{ local float a; a = x + 1; }};\n"

@@ -333,7 +333,9 @@ fn named_initialisers_are_cast() {
     assert_eq!(fte(".float fl;\nfloat x = fl;\n"), [Code::E0213]);
     assert_eq!(fte(".float fl;\n.float g = fl;\n"), []);
     assert_eq!(
-        fte("class C { void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"),
+        fte(
+            "class C { nonvirtual void() m; };\n.vector origin;\nvoid() C::m = { vector v = origin; };\n"
+        ),
         []
     );
     assert_eq!(fte("string s = _(\"a\");\n"), []);
@@ -954,7 +956,10 @@ fn scoped_definitions() {
         fte_only("class C { float a; };\nvoid() C::b = {};\n"),
         (Code::W0216, "C::b is not part of class C".to_owned())
     );
-    assert_eq!(fte("class C { void() a; };\nvoid() C::a = {};\n"), []);
+    assert_eq!(
+        fte("class C { nonvirtual void() a; };\nvoid() C::a = {};\n"),
+        []
+    );
     assert_eq!(
         fte_only("struct S { float a; };\nfloat S::a;\n"),
         (Code::E0226, "S::a is not part of class S".to_owned())

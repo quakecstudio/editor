@@ -95,9 +95,6 @@ impl Checker<'_> {
                 let expected = expected_after(field.syntax());
                 let message = format!("expected {expected}, found .");
                 let span = field.syntax().span();
-                if expected != ";" {
-                    return self.fatal(Code::E0204, span, message);
-                }
                 if self.pending.is_none() {
                     self.pending = Some((message, span));
                 }

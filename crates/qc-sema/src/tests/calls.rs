@@ -295,3 +295,18 @@ fn an_unknown_autocvar_in_a_body() {
         ]
     );
 }
+
+// spec FTEF-32.8: a call's value is called no further; the `(` after it ends the expression,
+// and the construct around it expects its own token
+#[test]
+fn a_call_of_a_call_ends_the_expression() {
+    assert_eq!(body("ff(1)(2);"), [d(Code::E0204, "expected ;, found (")]);
+    assert_eq!(
+        body("a = (ff(1)(2));"),
+        [d(Code::E0204, "expected ), found (")]
+    );
+    assert_eq!(
+        body("f1(ff(1)(2));"),
+        [d(Code::E0204, "expected ), found (")]
+    );
+}

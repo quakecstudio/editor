@@ -278,9 +278,13 @@ impl<'a> Resolver<'a> {
         if !self.profile.fteqcc_diagnostics() || decl.body.is_some() {
             return;
         }
-        let Some(expr) = decl.value.as_ref().and_then(|v| v.syntax.clone()) else {
+        let Some(value) = decl.value.as_ref() else {
             return;
         };
+        let Some(expr) = value.syntax.clone() else {
+            return;
+        };
+        let written = value.written_types.clone();
         let Some(owner) = self.lookup_global(&decl.name) else {
             return;
         };
@@ -297,7 +301,7 @@ impl<'a> Resolver<'a> {
             uses: &uses,
             flags: &flags,
             lex: &[],
-            written: &[],
+            written: &written,
             locals: &[],
         };
         check_initialiser(&mut env, &expr, &ty, &decl.name);

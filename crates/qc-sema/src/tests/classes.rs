@@ -1,0 +1,230 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! FTEQCC classes as values and their member functions' qualifiers
+//! (`docs/spec/dialect-fteqcc.md` FTEF-9.14 to FTEF-9.16). Each program was read through the
+//! pinned FTEQCC first.
+
+#![expect(clippy::indexing_slicing, reason = "test code: fixed fixtures")]
+
+use std::path::PathBuf;
+
+use qc_diag::Code;
+use qc_preproc::CommandLine;
+use qc_syntax::Dialect;
+
+use crate::db::Db;
+use crate::expand::ModuleInput;
+use crate::symbol::FileId;
+
+/// Every diagnostic of the FTEQCC file `source`, its code and message, in order.
+fn messages(source: &str) -> Vec<(Code, String)> {
+    let mut db = Db::new();
+    db.set_dialect(Dialect::Fteqcc);
+    db.set_file(
+        FileId(0),
+        PathBuf::from("t.qc"),
+        format!("entity self;\n{source}\n").into_bytes(),
+    );
+    let analysis = db.analyze_module(&ModuleInput {
+        compiled: vec![FileId(0)],
+        command_line: CommandLine::new::<&str>(&[]),
+        ..ModuleInput::default()
+    });
+    analysis
+        .diagnostics()
+        .map(|d| (d.diagnostic.code, d.diagnostic.message.clone()))
+        .collect()
+}
+
+fn one(code: Code, message: &str) -> Vec<(Code, String)> {
+    vec![(code, message.to_owned())]
+}
+
+// spec FTEF-9.14: an implicit cast between entity types warns when neither the value's class nor
+// one it derives from has the target's members; a class with no parent derives from the entity
+#[test]
+fn a_class_cast_warns_when_no_class_in_the_chain_has_the_members() {
+    let warned = [
+        (
+            "class C { float a; }; entity e; void() h = { C c = e; };",
+            "Implicit cast from entity to class C",
+        ),
+        (
+            "class C { float a; }; class D { string b; }; D d; void(C c) k = {}; \
+             void() h = { k(d); };",
+            "Implicit cast from class D to class C",
+        ),
+        (
+            "class C { float a; }; class D { float a; string b; }; D d; void() h = { C c = d; };",
+            "Implicit cast from class D to class C",
+        ),
+        (
+            "class C { float a; virtual void() m; }; class D { float a; nonvirtual void() m; }; \
+             D d; void() h = { C c = d; };",
+            "Implicit cast from class D to class C",
+        ),
+    ];
+    for (source, message) in warned {
+        let found: Vec<_> = messages(source)
+            .into_iter()
+            .filter(|(code, _)| *code != Code::E0211)
+            .collect();
+        assert_eq!(found, one(Code::W0220, message), "{source}");
+    }
+    let silent = [
+        "class C { }; entity e; void(C c) k = {}; void() h = { k(e); C c2 = e; };",
+        "class C { float a; }; C c; void() h = { entity e = c; };",
+        "class C { float a; }; class D : C { float b; }; C c; void() h = { D d = c; };",
+        "class C { float a; static float s; }; class D { float a; }; D d; \
+         void() h = { C c = d; };",
+        "class B { string z; }; class C : B { float a; }; class D : B { float a; }; D d; \
+         void() h = { C c = d; };",
+        "class C { float a; }; entity e; void() h = { C c = (C)e; };",
+        "class C { .C next; }; class D { .C next; }; D d; void() h = { C c = d; };",
+    ];
+    for source in silent {
+        assert_eq!(messages(source), [], "{source}");
+    }
+}
+
+// spec FTEF-9.14: a global initialised with a cast of a variable is no constant
+// spec FTEF-34.9: the types a global initialiser's casts write are read as a body's
+#[test]
+fn a_global_initialised_with_a_cast_of_a_variable_is_no_constant() {
+    assert_eq!(
+        messages("class C { }; entity e; C c = (C)e;"),
+        one(Code::E0214, "initializer for 'c' is not constant")
+    );
+    assert_eq!(
+        messages("float e; float c = (float)e;"),
+        one(Code::E0214, "initializer for 'c' is not constant")
+    );
+    assert_eq!(messages("const float e = 2; float c = (float)e;"), []);
+    assert_eq!(messages("float c = (float)5;"), []);
+}
+
+// spec FTEF-30.3: two classes' members are compared on `?:`, by `typecmp_lax`
+#[test]
+fn ternary_arms_of_two_classes_compare_their_members() {
+    let program = |d: &str| {
+        format!(
+            "class C {{ float a; }}; class D {{ {d} }}; C c; D d; float f; \
+             void() h = {{ local entity e = f ? c : d; }};"
+        )
+    };
+    assert_eq!(
+        messages(&program("string b;")),
+        one(
+            Code::W0244,
+            "Type mismatch on ternary operator: class C vs class D"
+        )
+    );
+    assert_eq!(
+        messages(&program("float b;")),
+        one(Code::E0332, "Ternary operator with mismatching types")
+    );
+}
+
+// spec FTEF-9.15, QCD-3.57: a virtual member a parent has as a nonvirtual function is refused
+#[test]
+fn a_virtual_member_a_parent_has_as_nonvirtual_is_refused() {
+    assert_eq!(
+        messages("class C { nonvirtual void() m = {}; }; class D : C { virtual void() m = {}; };"),
+        one(
+            Code::E0350,
+            "m defined as virtual in D, but nonvirtual in C"
+        )
+    );
+    assert_eq!(
+        messages("class C { virtual void() m = {}; }; class D : C { virtual void() m = {}; };"),
+        []
+    );
+}
+
+// spec FTEF-9.16, QCD-7.107: an unqualified member function is assumed nonvirtual with a
+// warning, unless a `virtual:` or `nonvirtual:` label set the default
+#[test]
+fn an_unqualified_member_function_warns() {
+    assert_eq!(
+        messages("class C { void() m = {}; };"),
+        one(Code::W0265, "C::m was not qualified. Assuming non-virtual.")
+    );
+    for source in [
+        "class C { virtual: void() m = {}; };",
+        "class C { nonvirtual: void() m = {}; };",
+        "class C { static void() m = {}; };",
+        "class C { float a; };",
+    ] {
+        assert_eq!(messages(source), [], "{source}");
+    }
+}
+
+// spec FTEF-9.16, QCD-7.107: a constructor is warned of being static, returning a value and
+// taking arguments, each naming the token after its name
+#[test]
+fn a_constructor_is_warned_of_its_qualifiers_and_type() {
+    assert_eq!(
+        messages("class C { static float() C = { return 1; }; };"),
+        [
+            (
+                Code::W0265,
+                "Constructor C::= should not be static.".to_owned()
+            ),
+            (
+                Code::W0265,
+                "Constructor C::= does not return void.".to_owned()
+            ),
+        ]
+    );
+    assert_eq!(
+        messages("class C { nonvirtual void(float a) C = {}; };"),
+        one(
+            Code::W0265,
+            "Constructor arguments are not supported at this time C::=. Use named fields instead."
+        )
+    );
+    assert_eq!(
+        messages("class C { float() C[2]; };"),
+        one(Code::W0265, "Constructor C::; does not return void.")
+    );
+    assert_eq!(messages("class C { nonvirtual void() C = {}; };"), []);
+}
+
+// spec FTEF-9.16, QCD-3.58: more than one of `virtual`, `nonvirtual` and `static` or `const` is
+// refused
+#[test]
+fn conflicting_member_qualifiers_are_refused() {
+    assert_eq!(
+        messages("class C { virtual static void() m = {}; };"),
+        one(Code::E0351, "Multiple conflicting qualifiers on C::=.")
+    );
+    assert_eq!(
+        messages("class C { const nonvirtual void() m; };")[0],
+        (
+            Code::E0351,
+            "Multiple conflicting qualifiers on C::;.".to_owned()
+        )
+    );
+}
+
+// spec FTEF-9.16: a member function nothing defines is named by its class, and an array of member
+// functions is not reported
+#[test]
+fn a_member_function_with_no_body_is_named_by_its_class() {
+    assert_eq!(
+        messages("class C { virtual void() n; };"),
+        one(Code::E0211, "function C::n has no body")
+    );
+    assert_eq!(
+        messages("class C { static void() C, n; };"),
+        [
+            (
+                Code::W0265,
+                "Constructor C::, should not be static.".to_owned()
+            ),
+            (Code::E0211, "function C::C has no body".to_owned()),
+            (Code::E0211, "function C::n has no body".to_owned()),
+        ]
+    );
+    assert_eq!(messages("class C { virtual void() n[2]; };"), []);
+}

@@ -309,6 +309,11 @@ pub enum Code {
     E0348,
     /// FTEQCC: "Accessor has no set function", an accessor member stored with no `set`.
     E0349,
+    /// FTEQCC: "NAME defined as virtual in CLASS, but nonvirtual in PARENT", a virtual member a
+    /// parent has as a nonvirtual one.
+    E0350,
+    /// Multiple conflicting qualifiers on a class member function (FTEF-9.16).
+    E0351,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -538,6 +543,9 @@ pub enum Code {
     /// FTEQCC: "Implicit cast from A to B" between an accessor type and its base (the warning of
     /// code 0).
     W0264,
+    /// A class member function with no `virtual`, `nonvirtual` or `static`, assumed nonvirtual, or
+    /// a constructor that is static, returns a value or takes arguments (FTEF-9.16).
+    W0265,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -552,7 +560,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 244] = [
+    pub const ALL: [Self; 247] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -689,6 +697,8 @@ impl Code {
         Self::E0347,
         Self::E0348,
         Self::E0349,
+        Self::E0350,
+        Self::E0351,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -792,6 +802,7 @@ impl Code {
         Self::W0262,
         Self::W0263,
         Self::W0264,
+        Self::W0265,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -969,6 +980,7 @@ impl Code {
             Self::W0262 => "W0262",
             Self::W0263 => "W0263",
             Self::W0264 => "W0264",
+            Self::W0265 => "W0265",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -1024,6 +1036,8 @@ impl Code {
             Self::E0347 => "E0347",
             Self::E0348 => "E0348",
             Self::E0349 => "E0349",
+            Self::E0350 => "E0350",
+            Self::E0351 => "E0351",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1146,6 +1160,7 @@ impl Code {
             | Self::W0262
             | Self::W0263
             | Self::W0264
+            | Self::W0265
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -1299,6 +1314,8 @@ impl Code {
             | Self::E0305
             | Self::E0306
             | Self::E0307
+            | Self::E0350
+            | Self::E0351
             | Self::E0408 => true,
         }
     }

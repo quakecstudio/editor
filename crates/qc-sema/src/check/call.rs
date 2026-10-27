@@ -15,6 +15,7 @@ use qc_syntax::ast::{self, AstNode as _};
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
+use crate::check::reference::expected_after;
 use crate::check::{ParamFacts, Reference, Value};
 use crate::ty::{SimpleType, Type};
 
@@ -35,6 +36,16 @@ impl Checker<'_> {
             && self.env.fteqcc()
             && let Some(value) = self.intrinsic(&token.text_lossless(), &args, span)?
         {
+            return Ok(value);
+        }
+        // FTEF-32.8: a call's value is no callee; the expression ends before the `(`.
+        if let Some(ast::Expr::Call(inner)) = call.callee() {
+            let value = self.call(&inner)?;
+            let expected = expected_after(call.syntax());
+            let message = format!("expected {expected}, found (");
+            if self.pending.is_none() {
+                self.pending = Some((message, span));
+            }
             return Ok(value);
         }
         let callee = self.expr_of(call.callee())?;
@@ -117,6 +128,7 @@ impl Checker<'_> {
             }
             passed.push(reference);
             values.push(value);
+            self.end_of_construct()?;
         }
         let mut count = args.len();
         while count < params.len()
