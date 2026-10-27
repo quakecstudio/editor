@@ -10,9 +10,9 @@ use qc_lexer::LexFlags;
 use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
 
-use crate::cast::{Cast, Source};
+use crate::cast::{Cast, Kind, Source, Supply};
 use crate::check::constant::{Constant, unquoted};
-use crate::check::{Constness, Env, ParamFacts, Shape};
+use crate::check::{Constness, Env, FunctionFacts, ParamFacts, Shape};
 use crate::lower::{ArrayDim, LiteralValue, RawLocal};
 use crate::resolve::{AccessorFacts, MAX_TYPEDEF_DEPTH, Resolver};
 use crate::symbol::{DefId, DefKind, Definition, FileId};
@@ -23,6 +23,10 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) resolver: &'r mut Resolver<'a>,
     /// The file the body is in.
     pub(in crate::resolve) file: FileId,
+    /// The function whose body it is.
+    pub(in crate::resolve) owner: DefId,
+    /// The diagnostics reported before the body's own.
+    pub(in crate::resolve) reported: usize,
     /// Whether it is a member function's.
     pub(in crate::resolve) in_class: bool,
     /// The definition each name of the body resolved to, by where the name starts.
@@ -65,6 +69,66 @@ impl Env for BodyEnv<'_, '_> {
             .facts
             .get(def.0)
             .is_some_and(|f| f.array.is_some())
+    }
+
+    fn failed(&self) -> bool {
+        self.resolver
+            .index
+            .diagnostics
+            .get(self.reported..)
+            .is_some_and(|reported| {
+                reported
+                    .iter()
+                    .any(|d| d.diagnostic.is_error() && d.diagnostic.code != Code::E0125)
+            })
+    }
+
+    fn line(&self, span: Span) -> u32 {
+        let location = self.resolver.at(self.file, span);
+        self.resolver
+            .places
+            .get(&location.file)
+            .and_then(|place| u32::try_from(place.line(location.span.start)).ok())
+            .unwrap_or(0)
+    }
+
+    fn function(&self) -> FunctionFacts {
+        let def = self.resolver.index.def(self.owner);
+        let ret = match def.map(|d| self.resolver.resolved(&d.ty)) {
+            Some(Type::Function(function)) => function.ret.clone(),
+            Some(_) | None => Type::Unknown,
+        };
+        FunctionFacts {
+            name: def.map_or_else(String::new, |d| d.name.clone()),
+            ret,
+            accumulate: self
+                .resolver
+                .facts
+                .get(self.owner.0)
+                .is_some_and(|f| f.accumulate),
+        }
+    }
+
+    fn supply(&mut self, ty: &Type, wanted: &Type, span: Span) -> bool {
+        self.resolver.settle(span.start);
+        let location = self.resolver.at(self.file, span);
+        let flags = CompilerFlags::at(self.flags, span.start);
+        let ty = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+        let wanted = Kind::of(&self.resolver.resolved_deep(wanted, MAX_TYPEDEF_DEPTH));
+        let source = Source::Typed(&ty);
+        let (code, text) = match source.supply(wanted, flags) {
+            Supply::Converted => return false,
+            Supply::Explicit => (Code::E0236, "Automatic type conversions disabled."),
+            Supply::Lax => (Code::W0230, "Implicit type mismatch."),
+            Supply::Mismatch => (Code::E0227, "Implicit type mismatch."),
+        };
+        let message = format!(
+            "{text} Needed {}, got {}.",
+            wanted.basic_name(),
+            source.kind().basic_name()
+        );
+        self.resolver.report(code, location, message);
+        code != Code::W0230
     }
 
     fn file_line(&self, span: Span) -> String {

@@ -202,7 +202,7 @@ impl Kind {
     /// The kind of a type the model holds. C type words, and the type names FTEQCC registers,
     /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8); an 8- or 16-bit integer,
     /// `__bint` and a type a program names are opaque.
-    fn of(ty: &Type) -> Self {
+    pub(crate) fn of(ty: &Type) -> Self {
         match ty {
             Type::Simple(SimpleType::Void) => Self::Void,
             Type::Simple(SimpleType::String) => Self::String,

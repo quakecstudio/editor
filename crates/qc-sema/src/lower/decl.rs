@@ -290,9 +290,30 @@ impl RawDecl {
     /// its type are made, and the initialiser is skipped over, a function's body or a value, a
     /// builtin number or a `_(\"...\")`, as `QCC_PR_ParseDefs` does with `if (autoprototype ||
     /// ...) { /* ignore the code and stuff */ }`.
+    ///
+    /// A parameter's default that names a definition is dropped (FTEF-12.21): what it names is
+    /// not initialised in this pass, and `QCC_PR_ParseDefaultInitialiser` returns no default for
+    /// it `if (autoprototype)`.
     #[must_use]
     pub(crate) fn prototyped(&self) -> Self {
+        let params = self
+            .params
+            .iter()
+            .map(|param| match param.default.as_ref().map(|d| &d.kind) {
+                Some(ValueKind::Name(_) | ValueKind::Indexed(_) | ValueKind::Translate(_)) => {
+                    RawParamInfo {
+                        default: None,
+                        default_literal: None,
+                        ..param.clone()
+                    }
+                }
+                Some(ValueKind::Literal(_) | ValueKind::Cast(_) | ValueKind::Other) | None => {
+                    param.clone()
+                }
+            })
+            .collect();
         Self {
+            params,
             skipped_init: self.initialized,
             initialized: false,
             literal: None,

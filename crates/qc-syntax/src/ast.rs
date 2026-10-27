@@ -913,9 +913,35 @@ impl ReturnStmt {
     pub fn value(&self) -> Option<Expr> {
         child(&self.0)
     }
+
+    /// Whether it is FTEQCC's `return = e;`, which sets the value without returning
+    /// (FTEF-18.7).
+    #[must_use]
+    pub fn sets(&self) -> bool {
+        self.0.token_of(K::Eq).is_some()
+    }
+}
+
+/// How an `if` negates its condition (FTEF-16.5, FTEF-18.8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Negation {
+    /// `if not (e)`.
+    Not,
+    /// `if !(e)`.
+    Bang,
 }
 
 impl IfStmt {
+    /// How it negates its condition, if it does.
+    #[must_use]
+    pub fn negation(&self) -> Option<Negation> {
+        if self.0.token_of(K::Not).is_some() {
+            Some(Negation::Bang)
+        } else {
+            self.0.token_of(K::Name).map(|_| Negation::Not)
+        }
+    }
+
     /// The condition.
     #[must_use]
     pub fn condition(&self) -> Option<Expr> {
@@ -936,6 +962,12 @@ impl IfStmt {
 }
 
 impl WhileStmt {
+    /// Whether it is `until`, which loops while the condition is false (FTEF-18.31).
+    #[must_use]
+    pub fn until(&self) -> bool {
+        self.0.token_of(K::UntilKw).is_some()
+    }
+
     /// The condition.
     #[must_use]
     pub fn condition(&self) -> Option<Expr> {
@@ -950,6 +982,12 @@ impl WhileStmt {
 }
 
 impl DoStmt {
+    /// Whether it ends `until`, which loops while the condition is false (FTEF-18.31).
+    #[must_use]
+    pub fn until(&self) -> bool {
+        self.0.token_of(K::UntilKw).is_some()
+    }
+
     /// The loop body.
     #[must_use]
     pub fn body(&self) -> Option<Stmt> {
@@ -1487,17 +1525,34 @@ impl ForStmt {
         self.0.children().filter(|n| n.kind() == K::ForClause)
     }
 
+    /// The initialiser clause, before the header's first `;`; `None` when it is empty.
+    #[must_use]
+    pub fn init(&self) -> Option<SyntaxNode> {
+        self.clause(0)
+    }
+
     /// The condition clause, between the header's two `;`; `None` when it is empty.
     #[must_use]
     pub fn condition(&self) -> Option<SyntaxNode> {
-        let mut semicolons = 0_u8;
+        self.clause(1)
+    }
+
+    /// The step clause, after the header's second `;`; `None` when it is empty.
+    #[must_use]
+    pub fn step(&self) -> Option<SyntaxNode> {
+        self.clause(2)
+    }
+
+    /// The clause after `semicolons` of the header's `;`.
+    fn clause(&self, semicolons: u8) -> Option<SyntaxNode> {
+        let mut seen = 0_u8;
         for element in self.0.children_with_tokens() {
             match element {
                 SyntaxElement::Token(token) if token.kind() == K::Semicolon => {
-                    semicolons = semicolons.saturating_add(1);
+                    seen = seen.saturating_add(1);
                 }
                 SyntaxElement::Token(_) => {}
-                SyntaxElement::Node(node) if node.kind() == K::ForClause && semicolons == 1 => {
+                SyntaxElement::Node(node) if node.kind() == K::ForClause && seen == semicolons => {
                     return Some(node);
                 }
                 SyntaxElement::Node(_) => {}

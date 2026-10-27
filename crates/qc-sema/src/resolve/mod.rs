@@ -180,8 +180,12 @@ pub(crate) struct FilePlace {
 impl FilePlace {
     /// `NAME:LINE` of offset `at` of the file, the line counted from 1.
     pub(crate) fn of(&self, at: usize) -> String {
-        let line = self.lines.partition_point(|&start| start <= at);
-        format!("{}:{line}", self.name)
+        format!("{}:{}", self.name, self.line(at))
+    }
+
+    /// The line of offset `at`, counted from 1.
+    pub(crate) fn line(&self, at: usize) -> usize {
+        self.lines.partition_point(|&start| start <= at)
     }
 }
 
@@ -689,6 +693,14 @@ impl<'a> Resolver<'a> {
                 }
                 self.declare_structs_before(file_id, &mut structs, decl.span.end);
                 self.settle(decl.span.start);
+                // FTEF-12.6: `noref` marks a definition found again unused before its
+                // initialiser is read (`if (noref) def->unused = true;`), so no initialiser it had
+                // is compared with the new one.
+                if decl.is_noref()
+                    && let Some(def) = self.lookup_global(&decl.name)
+                {
+                    self.unused.insert(def);
+                }
                 let pending = self.declare_top_level(file_id, decl);
                 // FTEF-12.6: `#pragma noref` holds from where it stands to the next one,
                 // across files, as the definition's flags hold it.

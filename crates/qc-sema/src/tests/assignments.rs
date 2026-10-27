@@ -147,7 +147,7 @@ fn assignment_as_a_condition() {
         "if ((a = 1)) a = 2;",
         "a = (a = 1) ? 2 : 3;",
         "if (!(a = 1)) a = 2;",
-        "for (a = 1; ; a = 2) break;",
+        "for (a = 1; ; a = 2) a = 3;",
     ] {
         assert_eq!(body(quiet), [], "{quiet}");
     }

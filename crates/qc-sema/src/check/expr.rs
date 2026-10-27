@@ -19,7 +19,8 @@ use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::opcodes::{OpType, candidates, row};
 
-use crate::check::{Constness, Env, Reference, Sym, TypedBody, Value};
+use crate::check::flow::Layout;
+use crate::check::{Constness, Env, FunctionFacts, Reference, Sym, TypedBody, Value};
 use crate::symbol::{DefId, DefKind};
 use crate::ty::{SimpleType, Type};
 
@@ -32,6 +33,15 @@ pub(super) struct Checker<'e> {
     pub(super) in_condition: bool,
     /// The locals whose address was taken, each warned of once (`addressedwarned`).
     pub(super) addressed: HashSet<DefId>,
+    /// The function whose body it is.
+    pub(super) function: FunctionFacts,
+    /// Whether `return =` or a bare `return;` made the function its return value
+    /// (`pr_scope->returndef`).
+    pub(super) returned: bool,
+    /// The statements generated so far, as far as the checks of the finished function read them.
+    pub(super) layout: Layout,
+    /// The statements emitted so far, `numstatements`, which a `case` value may not change.
+    pub(super) emitted: usize,
 }
 
 /// A fatal error reported: FTEQCC's `QCC_PR_ParseError`, after which nothing more of the
@@ -45,10 +55,14 @@ pub(super) type Checked = Result<Value, Fatal>;
 impl<'e> Checker<'e> {
     pub(super) fn new(env: &'e mut dyn Env) -> Self {
         Self {
+            function: env.function(),
             env,
             types: HashMap::new(),
             in_condition: false,
             addressed: HashSet::new(),
+            returned: false,
+            layout: Layout::default(),
+            emitted: 0,
         }
     }
 
@@ -60,85 +74,6 @@ impl<'e> Checker<'e> {
         for stmt in block.statements() {
             self.statement(&stmt);
         }
-    }
-
-    /// Checks `stmt`; a fatal error in one of its expressions ends its checks (FTEF-23.6).
-    fn statement(&mut self, stmt: &ast::Stmt) {
-        let _ended: Result<(), Fatal> = self.statement_parts(stmt);
-    }
-
-    fn statement_parts(&mut self, stmt: &ast::Stmt) -> Result<(), Fatal> {
-        match stmt {
-            ast::Stmt::Block(block) => self.block(block),
-            ast::Stmt::Expr(s) => self.value_of(s.expr())?,
-            ast::Stmt::Return(s) => self.value_of(s.value())?,
-            ast::Stmt::If(s) => {
-                self.condition(s.condition())?;
-                self.statement_of(s.then_branch());
-                self.statement_of(s.else_branch());
-            }
-            ast::Stmt::While(s) => {
-                self.condition(s.condition())?;
-                self.statement_of(s.body());
-            }
-            ast::Stmt::Do(s) => {
-                self.statement_of(s.body());
-                self.condition(s.condition())?;
-            }
-            ast::Stmt::Loop(s) => self.statement_of(s.body()),
-            ast::Stmt::For(s) => {
-                let condition = s.condition();
-                for clause in s.clauses() {
-                    for expr in clause.children().filter_map(ast::Expr::cast) {
-                        if condition.as_ref() == Some(&clause) {
-                            self.condition(Some(expr))?;
-                        } else {
-                            self.expr(&expr)?;
-                        }
-                    }
-                }
-                self.statement_of(s.body());
-            }
-            ast::Stmt::Switch(s) => {
-                self.value_of(s.scrutinee())?;
-                if let Some(block) = s.block() {
-                    self.block(&block);
-                }
-                self.statement_of(s.statement());
-            }
-            ast::Stmt::Local(local) => self.local(local)?,
-            ast::Stmt::Break(_)
-            | ast::Stmt::Continue(_)
-            | ast::Stmt::Empty(_)
-            | ast::Stmt::Label(_)
-            | ast::Stmt::Goto(_)
-            | ast::Stmt::Thinktime(_)
-            | ast::Stmt::State(_)
-            | ast::Stmt::Using(_)
-            | ast::Stmt::Exit(_)
-            | ast::Stmt::Asm(_)
-            | ast::Stmt::Extern(_) => {}
-        }
-        Ok(())
-    }
-
-    fn statement_of(&mut self, stmt: Option<ast::Stmt>) {
-        if let Some(stmt) = stmt {
-            self.statement(&stmt);
-        }
-    }
-
-    /// A condition of `if`, `while`, `do` or `for`: an assignment at its top, outside
-    /// parentheses, is "suggest parenthesis" (FTEF-29.6).
-    fn condition(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
-        self.in_condition = true;
-        let checked = self.value_of(expr);
-        self.in_condition = false;
-        checked
-    }
-
-    fn value_of(&mut self, expr: Option<ast::Expr>) -> Result<(), Fatal> {
-        self.value(expr).map(|_| ())
     }
 
     /// The value of `expr`, if it is there.

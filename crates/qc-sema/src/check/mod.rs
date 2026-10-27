@@ -17,12 +17,14 @@ pub(crate) mod convert;
 mod emulate;
 pub(crate) mod etype;
 mod expr;
+mod flow;
 pub(crate) mod fold;
 mod format;
 mod member;
 pub(crate) mod opcodes;
 mod pointer;
 mod reference;
+mod statement;
 mod term;
 mod truth;
 
@@ -36,7 +38,7 @@ use qc_diag::{Code, Span};
 use qc_lexer::LexFlags;
 use qc_preproc::OpcodeTarget;
 use qc_syntax::CompilerFlags;
-use qc_syntax::ast;
+use qc_syntax::ast::{self, AstNode as _};
 
 use crate::cast::{Literal, Source};
 use crate::resolve::AccessorFacts;
@@ -118,6 +120,27 @@ pub(crate) trait Env {
     /// A cast the program writes, `QCC_EvaluateCast(src, to, false)` (FTEF-30.6), reported at
     /// `span`; whether it is refused, "Cannot cast", a fatal error.
     fn explicit_cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool;
+    /// `QCC_SupplyConversion(value, wanted, true)` of a value of type `ty` (FTEF-22.3),
+    /// reported at `span`; whether it is refused, a fatal error.
+    fn supply(&mut self, ty: &Type, wanted: &Type, span: Span) -> bool;
+    /// The function whose body is checked (`pr_scope`).
+    fn function(&self) -> FunctionFacts;
+    /// The line of offset `span.start`, counted from 1, as `pr_source_line` holds it.
+    fn line(&self, span: Span) -> u32;
+    /// Whether an error, which ends FTEQCC's parse of the function (`QCC_PR_ParseError`), was
+    /// reported in the body; a warning made an error is none.
+    fn failed(&self) -> bool;
+}
+
+/// What the checks of a body read of its function (`pr_scope`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FunctionFacts {
+    /// Its name, `pr_scope->name`.
+    pub(crate) name: String,
+    /// The type it returns, `pr_scope->type->aux_type`.
+    pub(crate) ret: Type,
+    /// Whether `accumulate` marks it, so that its parts are one function.
+    pub(crate) accumulate: bool,
 }
 
 /// What a type is at bottom, as FTEQCC's checker reads it.
@@ -399,6 +422,11 @@ pub(crate) fn check_body(env: &mut dyn Env, body: &ast::FunctionBody) -> TypedBo
     let mut checker = expr::Checker::new(env);
     if let Some(block) = body.block() {
         checker.block(&block);
+        let end = block
+            .syntax()
+            .token_of(qc_syntax::SyntaxKind::RBrace)
+            .map_or_else(|| block.syntax().span(), |brace| brace.span());
+        checker.finish_function(end);
     }
     checker.finish()
 }

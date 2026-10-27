@@ -820,6 +820,12 @@ FTE-16 covers `#pragma` in general and `#pragma warning` in particular. The corp
   constant", `string s = B;` after an enum of `float` names, with `assumeint` on at the end,
   reads `B` as an `__int32` (F314), and `[[eraseable]] float x;` before a last `#pragma flag
   enable attributes` is refused by the first pass, where `attributes` is off.
+- **FTEF-12.21** The first pass gives a parameter no default that names a definition:
+  `QCC_PR_ParseDefaultInitialiser` reads it, and of a value not initialised `if (autoprototype)
+  return nullsref;`, and the pass initialises no definition (FTEF-12.19). The definition keeps
+  the first pass's type, which the second pass's, with the default, matches (FTEF-19.7), so a
+  call that leaves the parameter out warns "too few parameters" (FTEF-32.3). A literal default
+  is initialised and stays. Copper's `T_RadiusDamage` takes `float dmgtype = DMGTYPE_EXPLOSION`.
 
 ## FTEF-13 Further tokens
 
@@ -3951,3 +3957,66 @@ after the warnings ("use %s or %S for strings") are not reported.
   and "cannot pass more than 8 args to a builtin.". Each warns `W0255`, F333,
   `WARN_ARGUMENTCHECK`.
 
+
+## FTEF-34 Statements
+
+**Source:** `qcc_pr_comp.c`, `QCC_PR_ParseStatement`, `QCC_PR_ParseStatement_For`,
+`QCC_PR_FinaliseFunction`, `QCC_CheckForDeadAndMissingReturns`; `qcc_pr_lex.c`
+(`QCC_PR_ParseDefaultInitialiser`, in `qcc_pr_comp.c`), fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+The semantic model checks statements in `crates/qc-sema/src/check/statement.rs`, and keeps the
+layout of the jumps they generate in `crates/qc-sema/src/check/flow.rs`: each statement as
+`OP_RETURN`, `OP_DONE`, `OP_GOTO`, a conditional jump or any other, with where each jump goes.
+An expression stands for the statements it generates by one, when it generates any: any but a
+name, a literal or a constant. The layout is FTEQCC's at its default optimisation level, without
+`compound_jumps` and `return_only`; `-O2` and `#pragma optimise` change only the build here
+(FTEF-12.7), and so do not change it.
+
+### Behaviour
+
+- **FTEF-34.1** `return;` in a function whose type is not `void` warns `W0256` "'NAME' returned
+  nothing, expected TYPE" (`WARN_MISSINGRETURNVALUE`, Q203), unless the function is marked
+  `accumulate` or `return =` or an earlier `return;` gave it its return value
+  (`pr_scope->returndef`), so it warns once. `return = e;` reads `e` and stores it with no type
+  check (`QCC_StoreSRefToRef`). `return e;` of `__NULL__` or a null constant returns from any
+  function; a value of another basic type than the function's is cast to it implicitly
+  (`QCC_EvaluateCast(e, type, true)`, FTEF-19.31), and from a `void` function warns `W0257`
+  "'NAME' returned TYPE, expected void" (`WARN_WRONGRETURNTYPE`, Q204) instead.
+- **FTEF-34.2** `if (e)` tests `e` with `QCC_Generate_OP_IFNOT` (FTEF-30.2), `if not (e)` and
+  `if !(e)` with `QCC_Generate_OP_IF`; `if !(e)` of a string or a float tests `!e`
+  (FTEF-30.1) with `QCC_Generate_OP_IFNOT` instead. `if !()` warns `W0261` "if !() is specific
+  to fteqcc", and `if not()` "if not() is specific to fteqcc or hexen2" but on the Hexen II
+  targets (`WARN_FTE_SPECIFIC`, F311, off by default). A constant condition generates no test,
+  and the branch it never takes generates nothing unless it defines a label.
+- **FTEF-34.3** `while (e)` tests `e` as `if` does, `until (e)` with `QCC_Generate_OP_IF`; a
+  constant float condition generates no test, or a `goto` past the loop when it never holds.
+  `do s while (e);` tests `e` with `QCC_Generate_OP_IF`, `do s until (e);` with
+  `QCC_Generate_OP_IFNOT`; a constant condition of any type generates no test, or a `goto` back
+  when it holds.
+- **FTEF-34.4** `for (init; e; step)` tests `e` with `OP_IFNOT_I` and no test of its type; the
+  step is checked before the body and generated after it.
+- **FTEF-34.5** `switch (e)` uses `OP_SWITCH_F`, `_E`, `_V`, `_S` or `_FNC` by `e`'s type when the
+  target has it. A `case` value may generate no code, else the fatal error `E0342` "Case
+  statements may not use formulas"; a read is not generated until the end of the switch, so a
+  field of an entity is a value. After the body each case value of another basic type is made
+  the switch's (`QCC_SupplyConversion`, FTEF-22.3), and without the opcode compared with `e`: by
+  `OP_EQ_F`, `_E`, `_V`, `_S`, `_FNC` (a function or a field), `_P`, `_I` (an integer or
+  unsigned), `_I64` or `_D`, which warn as any comparison does (FTEF-28), and a constant 0 by
+  testing `e` itself; any other type is the fatal error `E0343` "Bad switch type". A range
+  `case a .. b` is `e >= a && e <= b` of a float, a double or an integer of any width, and of
+  any other type warns `W0260` "switch caserange MUST be a float or integer"
+  (`WARN_SWITCHTYPEMISMATCH`, which has no name).
+- **FTEF-34.6** When a function is finished (`QCC_PR_FinaliseFunction`), a `return` of the value
+  `return =` set is added, then `OP_DONE`, and `QCC_CheckForDeadAndMissingReturns` reads the
+  layout: a function whose type is not `void` warns `W0258` "NAME: not all control paths return
+  a value" (`WARN_MISSINGRETURN`, Q206) when its last statement before `OP_DONE` is no `return`
+  and no backward `goto`, or when a conditional jump goes to that `OP_DONE`; a statement after a
+  `return` or a `goto` that is no `return`, `goto` or `OP_DONE` and that no jump reaches warns
+  `W0259` "NAME: contains unreachable code (line N)" (`WARN_UNREACHABLECODE`, F323), N its line.
+  The statement after a `return` or `goto` is not itself tested for a jump to the end. A function
+  whose body had an error, which ends FTEQCC's parse of it (`QCC_PR_ParseError`), is not checked,
+  nor is a function marked `accumulate`, whose parts are finished together. So `float() f = {
+  if (a) return 1; };` warns, and `float() f = { if (a < 0) return 1; if (a) return 1; };` does
+  not: the second test follows the first `return`.
+- **FTEF-34.7** `thinktime e : t;` reads `e`, makes `t` a float (`QCC_SupplyConversion`), and is
+  the fatal error `E0344` "thinktime type mismatch" unless `e` is an entity and `t` a float.

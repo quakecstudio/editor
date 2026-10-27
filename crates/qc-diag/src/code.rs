@@ -277,6 +277,12 @@ pub enum Code {
     /// "_() intrinsic accepts only a string immediate", "type mismatch on parm N" of an intrinsic
     /// and "Argument to used_sound intrinsic was not a string immediate." (QCD-4.46).
     E0340,
+    /// FTEQCC: "Case statements may not use formulas", a `case` value that generates code.
+    E0342,
+    /// FTEQCC: "Bad switch type", a `switch` on a value no comparison takes.
+    E0343,
+    /// FTEQCC: "thinktime type mismatch", a `thinktime` of no entity or no float.
+    E0344,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -482,6 +488,21 @@ pub enum Code {
     /// "NAME: arg type list longer than args", "NAME(PROPERTY, ...): expected TYPE, got TYPE", the
     /// deprecated cvar warning and the other builtin argument checks (QCD-7.97).
     W0255,
+    /// FTEQCC: "'NAME' returned nothing, expected TYPE", a bare `return;` in a function that
+    /// returns a value (`WARN_MISSINGRETURNVALUE`, Q203).
+    W0256,
+    /// FTEQCC: "'NAME' returned TYPE, expected void", a value returned from a `void` function
+    /// (`WARN_WRONGRETURNTYPE`, Q204).
+    W0257,
+    /// FTEQCC: "NAME: not all control paths return a value" (`WARN_MISSINGRETURN`, Q206).
+    W0258,
+    /// FTEQCC: "NAME: contains unreachable code (line N)" (`WARN_UNREACHABLECODE`, F323).
+    W0259,
+    /// FTEQCC: "switch caserange MUST be a float or integer" (`WARN_SWITCHTYPEMISMATCH`).
+    W0260,
+    /// FTEQCC: "if !() is specific to fteqcc" and "if not() is specific to fteqcc or hexen2"
+    /// (`WARN_FTE_SPECIFIC`).
+    W0261,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -496,7 +517,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 221] = [
+    pub const ALL: [Self; 230] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -619,6 +640,9 @@ impl Code {
         Self::E0338,
         Self::E0339,
         Self::E0340,
+        Self::E0342,
+        Self::E0343,
+        Self::E0344,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -713,6 +737,12 @@ impl Code {
         Self::W0253,
         Self::W0254,
         Self::W0255,
+        Self::W0256,
+        Self::W0257,
+        Self::W0258,
+        Self::W0259,
+        Self::W0260,
+        Self::W0261,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -876,6 +906,12 @@ impl Code {
             Self::W0253 => "W0253",
             Self::W0254 => "W0254",
             Self::W0255 => "W0255",
+            Self::W0256 => "W0256",
+            Self::W0257 => "W0257",
+            Self::W0258 => "W0258",
+            Self::W0259 => "W0259",
+            Self::W0260 => "W0260",
+            Self::W0261 => "W0261",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -922,6 +958,9 @@ impl Code {
             Self::E0338 => "E0338",
             Self::E0339 => "E0339",
             Self::E0340 => "E0340",
+            Self::E0342 => "E0342",
+            Self::E0343 => "E0343",
+            Self::E0344 => "E0344",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1035,6 +1074,12 @@ impl Code {
             | Self::W0253
             | Self::W0254
             | Self::W0255
+            | Self::W0256
+            | Self::W0257
+            | Self::W0258
+            | Self::W0259
+            | Self::W0260
+            | Self::W0261
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -1174,6 +1219,9 @@ impl Code {
             | Self::E0338
             | Self::E0339
             | Self::E0340
+            | Self::E0342
+            | Self::E0343
+            | Self::E0344
             | Self::E0408 => true,
         }
     }

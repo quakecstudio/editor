@@ -179,7 +179,11 @@ impl Checker<'_> {
             "random" | "randomv" => {
                 for (at, arg) in args.iter().take(2).enumerate() {
                     let value = self.value(Some(arg.clone()))?;
-                    self.supplied(&value, Etype::Float, arg.syntax().span())?;
+                    self.supplied(
+                        &value,
+                        &Type::Simple(SimpleType::Float),
+                        arg.syntax().span(),
+                    )?;
                     if self.etype_of(&value.ty).is_some_and(|e| e != Etype::Float)
                         && self.etype_of(&value.ty) != Some(Etype::Integer)
                     {
@@ -197,7 +201,7 @@ impl Checker<'_> {
             "alloca" => {
                 if let Some(arg) = args.first() {
                     let size = self.value(Some(arg.clone()))?;
-                    let size = self.supplied(&size, Etype::Integer, span)?;
+                    let size = self.supplied(&size, &Type::Named("__int32".into()), span)?;
                     let three = Value::constant(Constant::int(3));
                     let four = Value::constant(Constant::int(4));
                     let rounded = self.emit(qc_preproc::Op::AddI, &size, &three, span)?;
@@ -219,29 +223,24 @@ impl Checker<'_> {
         }
     }
 
-    /// `QCC_SupplyConversion(value, to, true)` of an argument (FTEF-22.3): its conversion, or
-    /// the fatal error "Implicit type mismatch. Needed A, got B." for a type with none.
-    fn supplied(&mut self, value: &Value, to: Etype, span: Span) -> Checked {
-        let Some(from) = self.etype_of(&value.ty) else {
+    /// `QCC_SupplyConversion(value, to, true)` (FTEF-22.3): `value` converted to the basic type
+    /// of `to`, or the fatal error "Implicit type mismatch. Needed A, got B." for a type with no
+    /// conversion.
+    pub(super) fn supplied(&mut self, value: &Value, to: &Type, span: Span) -> Checked {
+        if value.ty == Type::Unknown {
             return Ok(value.clone());
-        };
-        let convertible = from == to
-            || matches!(
-                (from, to),
-                (
-                    Etype::Integer | Etype::Uint | Etype::Float | Etype::Boolean,
-                    Etype::Float | Etype::Integer | Etype::Uint
-                )
-            );
-        if !convertible {
-            let message = format!(
-                "Implicit type mismatch. Needed {}, got {}.",
-                to.basic_name(),
-                from.basic_name()
-            );
-            return self.fatal(Code::E0227, span, message);
         }
-        self.converted(value, to, span)
+        if self.env.supply(&value.ty, to, span) {
+            return Err(Fatal);
+        }
+        let converted = match self.etype_of(to) {
+            Some(etype) => self.converted(value, etype, span)?,
+            None => value.clone(),
+        };
+        Ok(Value {
+            ty: to.clone(),
+            ..converted
+        })
     }
 }
 

@@ -184,6 +184,8 @@ pub enum FteWarning {
     TooManyParametersForFunc,
     /// `WARN_TOOMANYPARAMETERSVARARGS`, which has no name.
     TooManyParametersVarargs,
+    /// `WARN_SWITCHTYPEMISMATCH`, which has no name.
+    SwitchTypeMismatch,
 }
 
 /// `warningnames[]`, each name without its leading space, in FTEQCC's order: `QCC_WarningForName`
@@ -256,7 +258,7 @@ const NAMES: [(&str, FteWarning); 63] = [
 ];
 
 /// Every warning, for the settings' table.
-const ALL: [FteWarning; 77] = [
+const ALL: [FteWarning; 78] = [
     FteWarning::PrecompilerMessage,
     FteWarning::TooManyParams,
     FteWarning::TooFewParams,
@@ -334,6 +336,7 @@ const ALL: [FteWarning; 77] = [
     FteWarning::ConditionalTypeMismatch,
     FteWarning::TooManyParametersForFunc,
     FteWarning::TooManyParametersVarargs,
+    FteWarning::SwitchTypeMismatch,
 ];
 
 impl FteWarning {
@@ -408,6 +411,7 @@ impl FteWarning {
             | Self::ConditionalTypeMismatch
             | Self::TooManyParametersForFunc
             | Self::TooManyParametersVarargs
+            | Self::SwitchTypeMismatch
             | Self::MissingMemberQualifier
             | Self::MemberNotDefined
             | Self::NotReferencedField
@@ -485,6 +489,12 @@ impl FteWarning {
             Code::W0250 => Self::UnsafeLocalPointer,
             Code::W0246 => Self::IfvectorDisabled,
             Code::W0247 => Self::ConditionalTypeMismatch,
+            Code::W0256 => Self::MissingReturnValue,
+            Code::W0257 => Self::WrongReturnType,
+            Code::W0258 => Self::MissingReturn,
+            Code::W0259 => Self::UnreachableCode,
+            Code::W0260 => Self::SwitchTypeMismatch,
+            Code::W0261 => Self::FteSpecific,
             Code::W0240 => Self::StrictTypeMismatch,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The expression family of the builtin differential: programs whose outcome the semantic
-//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-23 to FTEF-29): the opcode
+//! model's check stage decides (`docs/spec/dialect-fteqcc.md` FTEF-23 to FTEF-34): the opcode
 //! an operator is given and its conversions; member access on entities, classes, vectors,
 //! strings, arrays, structs and pointers; constant folding; the emulation of opcodes the target
-//! lacks; the comparison warnings; and assignments. Each is compiled as it stands and with every
-//! warning an error, so a warning either compiler gives alone changes the outcome.
+//! lacks; the comparison warnings; assignments, terms, references and calls; and statements.
+//! Each is compiled as it stands and with every warning an error, so a warning either compiler
+//! gives alone changes the outcome.
 
 use qc_syntax::Dialect;
 
@@ -205,6 +206,27 @@ const PROGRAMS: &[&str] = &[
     "const float k = 3;\nvoid() g = { local float a; a = --k; };\n",
     "#pragma flag enable lax\n.float fl; entity self;\n\
      void() g = { local float a; local vector v; a *= v; self.fl *= v; };\n",
+    // FTEF-34: statements.
+    "float a;\nfloat() g = { return; };\n",
+    "float a;\nfloat() g = { return = 1; return; };\n",
+    "float a;\nvoid() g = { return 1; };\n",
+    "string s;\nfloat() g = { return s; };\n",
+    "float a;\nfloat() g = { if (a) return 1; };\n",
+    "float a;\nfloat() g = { if (a) return 1; else return 2; };\n",
+    "float a;\nfloat() g = { if (a < 0) return 1; if (a) return 1; };\n",
+    "float a;\nfloat() g = { while (a) { return 1; } };\n",
+    "float a;\nfloat() g = { do { return 1; } while (a); };\n",
+    "float a;\nfloat() g = { switch (a) { case 1: return 1; default: return 2; } };\n",
+    "float a;\nvoid() g = { return; a = 2; };\n",
+    "float a;\nvoid() g = { for (a = 1; ; a = 2) break; };\n",
+    "float a;\nvoid() g = { goto l; a = 1; l: a = 2; };\n",
+    "float a; string s;\nvoid() g = { switch (a) { case 1: break; case s: break; } };\n",
+    "float a;\nvoid() g = { switch (a) { case a+1: break; } };\n",
+    "string s;\nvoid() g = { switch (s) { case \"a\" .. \"b\": break; } };\n",
+    "__variant w;\nvoid() g = { switch (w) { case 1: break; } };\n",
+    "entity self; float a;\nvoid() g = { __thinktime a : 1; __thinktime self : 1; };\n",
+    "#pragma warning enable F311\nfloat a;\nvoid() g = { if !(a) a = 1; if not(a) a = 2; };\n",
+    "__variant w; float a;\nvoid() g = { if (w) a = 1; while (w) a = 2; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

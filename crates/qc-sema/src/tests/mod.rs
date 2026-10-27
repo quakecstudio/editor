@@ -46,6 +46,7 @@ mod references;
 mod resolution;
 mod reviewer;
 mod settings;
+mod statements;
 mod terms;
 mod type_declarations;
 mod types;

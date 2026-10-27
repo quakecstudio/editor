@@ -150,6 +150,7 @@ impl<'a> Resolver<'a> {
             class,
             at: 0,
         };
+        let reported = self.index.diagnostics.len();
         for d in &body.diagnostics {
             self.settle(d.span.start);
             let location = self.at(file, d.span);
@@ -255,6 +256,8 @@ impl<'a> Resolver<'a> {
             let mut env = BodyEnv {
                 resolver: self,
                 file,
+                owner,
+                reported,
                 in_class: class.is_some(),
                 uses: &uses,
                 flags: &body.flags,

@@ -79,6 +79,7 @@ impl Checker<'_> {
     ) -> Result<Value, Fatal> {
         let result = replaced(op);
         if lhs.constness == Constness::Opaque || rhs.constness == Constness::Opaque {
+            self.emitted = self.emitted.saturating_add(1);
             // Its value decides no folding or emulation; the comparison warnings read no value.
             if self.env.target_at(span.start).valid(op) {
                 self.compare(op, lhs, rhs, span);
@@ -99,6 +100,7 @@ impl Checker<'_> {
             Some(Folded::Right) => return Ok(rhs.clone()),
             None => {}
         }
+        self.emitted = self.emitted.saturating_add(1);
         let target = self.env.target_at(span.start);
         if target.valid(op) {
             self.compare(op, lhs, rhs, span);

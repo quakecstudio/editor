@@ -1081,7 +1081,9 @@ fn type_names_must_be_types() {
 #[test]
 fn a_for_statements_locals_leave_scope() {
     assert_eq!(
-        fte("void() g = { for (float i = 0;;) {} for (string i = \"\";;) { i = \"a\"; } };\n"),
+        fte(
+            "void() g = { for (float i = 0; i < 1;) {} for (string i = \"\";;) { i = \"a\"; } };\n"
+        ),
         []
     );
     let index = fte_index_of(

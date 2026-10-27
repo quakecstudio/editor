@@ -320,6 +320,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.46** `E0340` "_() intrinsic accepts only a string immediate", "type mismatch on parm N"
   and "Argument to used_sound intrinsic was not a string immediate.": an intrinsic's argument
   refused (FTEF-32.2); fatal but for the last.
+- **QCD-4.47** `E0342` "Case statements may not use formulas": a `case` value that generates
+  code (FTEF-34.5); a fatal error.
+- **QCD-4.48** `E0343` "Bad switch type": a `switch` of a type no comparison takes, without
+  `OP_SWITCH_*` (FTEF-34.5); a fatal error.
+- **QCD-4.49** `E0344` "thinktime type mismatch": a `thinktime` of no entity or no float
+  (FTEF-34.7); a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 
@@ -660,6 +666,18 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   F324.
 - **QCD-7.97** `W0255` the builtin argument checks of `cvar`, `setviewprop`, `addstat` and
   `sendevent` (FTEF-33.2). `WARN_ARGUMENTCHECK`, F333.
+- **QCD-7.98** `W0256` "'NAME' returned nothing, expected TYPE" (FTEF-34.1).
+  `WARN_MISSINGRETURNVALUE`, Q203.
+- **QCD-7.99** `W0257` "'NAME' returned TYPE, expected void" (FTEF-34.1). `WARN_WRONGRETURNTYPE`,
+  Q204.
+- **QCD-7.100** `W0258` "NAME: not all control paths return a value" (FTEF-34.6).
+  `WARN_MISSINGRETURN`, Q206.
+- **QCD-7.101** `W0259` "NAME: contains unreachable code (line N)" (FTEF-34.6).
+  `WARN_UNREACHABLECODE`, F323.
+- **QCD-7.102** `W0260` "switch caserange MUST be a float or integer" (FTEF-34.5).
+  `WARN_SWITCHTYPEMISMATCH`, which has no name.
+- **QCD-7.103** `W0261` "if !() is specific to fteqcc" and "if not() is specific to fteqcc or
+  hexen2" (FTEF-34.2). `WARN_FTE_SPECIFIC`, F311, off by default.
 
 ## QCD-8 Preprocessor errors
 
