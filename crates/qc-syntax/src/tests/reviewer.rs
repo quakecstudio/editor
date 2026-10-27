@@ -963,7 +963,7 @@ fn reviewer_eighth_class_member_types() {
     );
 }
 
-// spec FTEF-18.27: a construct keyword at column 0 ends a body that lost its `}`; a plain name
+// spec FTEF-18.34: a construct keyword at column 0 ends a body that lost its `}`; a plain name
 // at column 0 is a statement, and under the vanilla profile every name is
 #[test]
 fn reviewer_eighth_only_construct_words_end_a_lost_body() {
