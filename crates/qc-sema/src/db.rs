@@ -491,6 +491,7 @@ impl Db {
         let keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
             keywords.iter().map(Vec::as_slice).collect();
         let targets = each_file(&preprocessed.files, |r| r.targets.as_slice());
+        let message_places = each_file(&preprocessed.files, |r| r.places.as_slice());
         let first_maps: Vec<&OriginMap> = preprocessed.first.iter().map(|r| &r.origins).collect();
         let first_warnings = each_file(&preprocessed.first, |r| r.warnings.as_slice());
         let first_keywords: Vec<&[(usize, qc_syntax::Keywords)]> =
@@ -500,6 +501,7 @@ impl Db {
             warnings: &warnings,
             keywords: &keywords,
             targets: &targets,
+            message_places: &message_places,
             extensions,
             places,
             plan: preprocessed.plan.as_ref(),

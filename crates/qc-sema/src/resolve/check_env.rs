@@ -43,6 +43,26 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
 }
 
 impl BodyEnv<'_, '_> {
+    /// The file name and line FTEQCC's messages give for offset `span.start` of the body
+    /// (`s_filen`, `pr_source_line`): the source file's, as `#pragma file` and `#pragma line`
+    /// change them (FTEF-14.43).
+    fn message_place(&self, span: Span) -> Option<(String, u32)> {
+        let location = self.resolver.at(self.file, span);
+        let place = self.resolver.places.get(&location.file)?;
+        let line = i64::try_from(place.line(location.span.start)).ok()?;
+        let marks = self
+            .resolver
+            .message_places
+            .get(self.resolver.unit.0)
+            .copied()
+            .unwrap_or_default();
+        let index = marks.partition_point(|(from, _, _)| *from <= span.start);
+        let mark = index.checked_sub(1).and_then(|i| marks.get(i));
+        let name = mark.map_or_else(|| place.name.clone(), |(_, name, _)| name.clone());
+        let line = line.saturating_add(mark.map_or(0, |(_, _, delta)| *delta));
+        Some((name, u32::try_from(line).unwrap_or(0)))
+    }
+
     /// FTEF-6.12: a struct or union is cast to and from nothing but its own type, "Cannot cast
     /// from X to Y" reported at `span`; whether the cast is so refused.
     fn struct_cast_refused(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
@@ -150,12 +170,7 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn line(&self, span: Span) -> u32 {
-        let location = self.resolver.at(self.file, span);
-        self.resolver
-            .places
-            .get(&location.file)
-            .and_then(|place| u32::try_from(place.line(location.span.start)).ok())
-            .unwrap_or(0)
+        self.message_place(span).map_or(0, |(_, line)| line)
     }
 
     fn function(&self) -> FunctionFacts {
@@ -222,11 +237,8 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn file_line(&self, span: Span) -> String {
-        let location = self.resolver.at(self.file, span);
-        self.resolver
-            .places
-            .get(&location.file)
-            .map_or_else(String::new, |place| place.of(location.span.start))
+        self.message_place(span)
+            .map_or_else(String::new, |(name, line)| format!("{name}:{line}"))
     }
 
     fn params(&self, def: DefId) -> Option<Vec<ParamFacts>> {

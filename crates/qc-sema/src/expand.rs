@@ -162,6 +162,9 @@ pub(crate) struct Rendered {
     /// Under FTEQCC, each `#pragma autoproto` of the file: the rendered offset from which it
     /// holds and the setting it makes (FTEF-12.18); empty under the vanilla dialect.
     pub(crate) pragmas: Vec<(usize, bool)>,
+    /// Under FTEQCC, where FTEQCC's messages say the text is: from each rendered offset, the
+    /// file's name and how far its line numbers are from the source's (FTEF-14.43).
+    pub(crate) places: Vec<(usize, String, i64)>,
     /// The rendered offset of each string token that follows a string token it does not make
     /// one string with: FTEQCC's lexer joins the parts of a string written in one text, not a
     /// macro's string and the one beside it (FTEF-21.17).
@@ -420,6 +423,14 @@ fn run<L: Loader>(
             .autoproto
             .iter()
             .map(|&(token, on, _)| (offset_of(&rendered, token), on))
+            .collect();
+        rendered.places = output
+            .places
+            .iter()
+            .map(|(token, name, delta)| {
+                let name = String::from_utf8_lossy(name).into_owned();
+                (offset_of(&rendered, *token), name, *delta)
+            })
             .collect();
         out.files.push(rendered);
     }

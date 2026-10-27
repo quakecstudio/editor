@@ -578,3 +578,47 @@ fn a_dot_after_a_value_with_no_members() {
         assert_eq!(diags(&format!("{source}\n")), expected, "{source}");
     }
 }
+
+// spec FTEF-31.4: "Address-of temp on line FILE:LINE" names the file as the compiler was given it
+// and follows `#pragma file` and `#pragma line`
+// spec FTEF-34.6: the line of unreachable code follows `#pragma line`
+#[test]
+fn messages_name_the_file_and_line_fteqcc_has() {
+    let analyze = |source: &str| -> Vec<String> {
+        let mut db = Db::new();
+        db.set_dialect(Dialect::Fteqcc);
+        db.set_file(FILE, PathBuf::from("/x/y/t.qc"), source.as_bytes().to_vec());
+        let mut names = std::collections::BTreeMap::new();
+        names.insert(FILE, "t.qc".to_owned());
+        db.analyze_module(&ModuleInput {
+            compiled: vec![FILE],
+            names,
+            dir: PathBuf::from("/x/y"),
+            ..ModuleInput::default()
+        })
+        .diagnostics()
+        .map(|d| d.diagnostic.message.clone())
+        .collect()
+    };
+    let address = "float a; void() g = { local float *p; p = &(a+a); };\n";
+    assert_eq!(
+        analyze(&format!("#pragma target fte\n{address}")),
+        [
+            "Address-of temp on line t.qc:2",
+            "Cannot cast from float to float*"
+        ]
+    );
+    assert_eq!(
+        analyze(&format!(
+            "#pragma target fte\n#pragma file foo.qc\n#pragma line 40\n{address}"
+        )),
+        [
+            "Address-of temp on line foo.qc:40",
+            "Cannot cast from float to float*"
+        ]
+    );
+    assert_eq!(
+        analyze("#pragma line 40\nvoid() g = { return; g(); };\n"),
+        ["g: contains unreachable code (line 40)"]
+    );
+}

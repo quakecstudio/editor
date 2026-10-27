@@ -3931,8 +3931,9 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   target. The address of a local warns `W0250` "Address-of operator on local TYPE NAME is unsafe
   if recursing (and still bloated when not). Consider use of 'static' or 'auto'.", once per
   local, off by default; the model counts parameters as locals and does not tell a `static`
-  local. FTEQCC's FILE and LINE follow `#pragma file` and `#pragma line`, which the model does
-  not.
+  local. FILE is the file's name as the compiler was given it, `s_filen` (FTEF-14.32), and with
+  LINE follows `#pragma file` and `#pragma line` (FTEF-14.43): `Address-of temp on line
+  foo.qc:40` after `#pragma file foo.qc` and `#pragma line 40`.
 - **FTEF-31.5** A store to an element at an index that is no constant is by its address when the
   target has `OP_GLOBALADDRESS` or `OP_GSTOREP_F`, the index made an integer, else by the
   generated `ArraySet` function, the index made a float (a vector's divided by 3); a value of
@@ -4093,7 +4094,8 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   a value" (`WARN_MISSINGRETURN`, Q206) when its last statement before `OP_DONE` is no `return`
   and no backward `goto`, or when a conditional jump goes to that `OP_DONE`; a statement after a
   `return` or a `goto` that is no `return`, `goto` or `OP_DONE` and that no jump reaches warns
-  `W0259` "NAME: contains unreachable code (line N)" (`WARN_UNREACHABLECODE`, F323), N its line.
+  `W0259` "NAME: contains unreachable code (line N)" (`WARN_UNREACHABLECODE`, F323), N its line
+  as `pr_source_line` has it, which `#pragma line` changes.
   The statement after a `return` or `goto` is not itself tested for a jump to the end. A function
   whose body had an error, which ends FTEQCC's parse of it (`QCC_PR_ParseError`), is not checked,
   nor is a function marked `accumulate`, whose parts are finished together. So `float() f = {

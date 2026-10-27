@@ -524,3 +524,23 @@ fn the_command_lines_target_starts_the_file() {
         .map(|(_, target)| (target.format(), target.revision()));
     assert_eq!(first, Some((TargetFormat::Fte, 5744)));
 }
+
+// spec FTEF-14.43: the places FTEQCC's messages give hold from the token after a `#pragma file`
+// or `#pragma line`, each the file's name and how far its lines are from the source's
+#[test]
+fn message_places_follow_pragma_file_and_line() {
+    let (_, out) = one_fte("float a;\n#pragma file foo.qc\nfloat b;\n#pragma line 40\nfloat c;\n");
+    let marks: Vec<(usize, String, i64)> = out
+        .places
+        .iter()
+        .map(|(at, name, delta)| (*at, String::from_utf8_lossy(name).into_owned(), *delta))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (0, "a.qc".to_owned(), 0),
+            (3, "foo.qc".to_owned(), 0),
+            (6, "foo.qc".to_owned(), 35),
+        ]
+    );
+}

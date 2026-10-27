@@ -174,6 +174,10 @@ pub struct FileOutput {
     /// token 0, and after each `#pragma TARGET` and `#pragma opcode`: the index of the first token
     /// after it and the target from there on (FTEF-25), which the check stage reads.
     pub targets: Vec<(usize, OpcodeTarget)>,
+    /// In an FTEQCC dialect, where FTEQCC's messages say a token is: from the token at each
+    /// index on, the file's name, `s_filen`, and how far `pr_source_line` is from the token's
+    /// line, which `#pragma file` and `#pragma line` change (FTEF-14.32, FTEF-14.43).
+    pub places: Vec<(usize, Vec<u8>, i64)>,
 }
 
 /// The macros defined, searched by name as FTEQCC's `compconstantstable` is (FTEF-14.73): by the
@@ -2228,6 +2232,20 @@ impl<L: Loader> Preprocessor<L> {
             | TokenKind::Vector(_)
             | TokenKind::String(_)
             | TokenKind::Punct(_) => {}
+        }
+        if carry && tok.expansion.is_none() {
+            let at = tok.span.span.start;
+            let name = Self::fte_file_name(run).to_vec();
+            let line = i64::from(self.fte_line(run, tok.span.file, at));
+            let delta = line.saturating_sub(i64::from(self.line(tok.span.file, at)));
+            if run
+                .out
+                .places
+                .last()
+                .is_none_or(|(_, known, by)| *known != name || *by != delta)
+            {
+                run.out.places.push((run.out.tokens.len(), name, delta));
+            }
         }
         run.out.tokens.push(tok);
     }

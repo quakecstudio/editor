@@ -146,6 +146,9 @@ pub(crate) struct Sources<'a> {
     /// For each entry, under FTEQCC, the output target and the opcodes it has, and the offsets
     /// they hold from (FTEF-25).
     pub(crate) targets: &'a [&'a [(usize, OpcodeTarget)]],
+    /// For each entry, under FTEQCC, the file name and line offset FTEQCC's messages give, from
+    /// each offset (FTEF-14.43).
+    pub(crate) message_places: &'a [&'a [(usize, String, i64)]],
     /// The source files whose name ends in `extensions.qc`, where FTEQCC keeps a function's
     /// first declaration (FTEF-19.7).
     pub(crate) extensions: HashSet<FileId>,
@@ -184,11 +187,6 @@ pub(crate) struct FilePlace {
 }
 
 impl FilePlace {
-    /// `NAME:LINE` of offset `at` of the file, the line counted from 1.
-    pub(crate) fn of(&self, at: usize) -> String {
-        format!("{}:{}", self.name, self.line(at))
-    }
-
     /// The line of offset `at`, counted from 1.
     pub(crate) fn line(&self, at: usize) -> usize {
         self.lines.partition_point(|&start| start <= at)
@@ -280,6 +278,7 @@ pub(crate) fn resolve_mapped(
         keyword_marks: sources.keywords,
         keywords: Keywords::default(),
         targets: sources.targets,
+        message_places: sources.message_places,
         extensions: &sources.extensions,
         profile,
         use_defs: HashMap::new(),
@@ -477,6 +476,8 @@ struct Resolver<'a> {
     keywords: Keywords,
     /// For each compiled file, the output target and the opcodes it has (FTEF-25).
     targets: &'a [&'a [(usize, OpcodeTarget)]],
+    /// For each compiled file, the file name and line offset FTEQCC's messages give (FTEF-14.43).
+    message_places: &'a [&'a [(usize, String, i64)]],
     /// The source files named `*extensions.qc` (FTEF-19.7).
     extensions: &'a HashSet<FileId>,
     /// The dialect profile and its rules.
