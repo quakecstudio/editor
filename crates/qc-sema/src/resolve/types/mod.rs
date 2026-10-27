@@ -193,6 +193,13 @@ impl Resolver<'_> {
     /// ev_uint64`, FTEF-6.9): a type the model follows by its kind, a type a program names being
     /// one it does not follow.
     pub(in crate::resolve) fn bitfield_type(&self, ty: &Type) -> bool {
+        // An 8- or 16-bit integer is `ev_bitfld` itself, no integer type.
+        if matches!(
+            ty.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        ) {
+            return false;
+        }
         match ty.fteqcc_kind() {
             Kind::Integer | Kind::Uint | Kind::Int64 | Kind::Uint64 => true,
             Kind::Opaque => ty.fteqcc_scalar().is_none() && matches!(ty, Type::Named(_)),
@@ -342,6 +349,13 @@ impl Resolver<'_> {
         }
         if matches!(name, "__variant" | "variant") {
             return plain(Etype::Variant);
+        }
+        // FTEF-2.12: an 8- or 16-bit integer is `ev_bitfld`, read, stored and cast as its
+        // `parentclass`, `int` or `uint` (`QCC_TryEvaluateCast`, `QCC_LoadFromPointer`).
+        match ty.fteqcc_scalar() {
+            Some(CScalar::Int8 | CScalar::Int16) => return plain(Etype::Integer),
+            Some(CScalar::Uint8 | CScalar::Uint16) => return plain(Etype::Uint),
+            _ => {}
         }
         if let Some(base) = self.named(&self.strict_enums, name) {
             return Some(Shape {

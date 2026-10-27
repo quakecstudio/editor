@@ -657,3 +657,37 @@ fn a_second_default_is_refused() {
         )]
     );
 }
+
+// spec FTEF-24.11: a return names a type by its own name: a pointer `ptr`, a field `.T`, a
+// function `__function`
+// spec FTEF-34.1: "'NAME' returned TYPE, expected TYPE" and "'NAME' returned nothing, expected
+// TYPE"
+#[test]
+fn a_return_names_types_by_their_own_names() {
+    let defs = "#pragma target fte\nfloat *p; .float fa; void() h = {};\n";
+    let returned = |what: &str| d(Code::W0257, &format!("'g' returned {what}, expected void"));
+    assert_eq!(
+        diags(&format!(
+            "{defs}void() g = {{ return p; return fa; return h; return (float*)p; }};\n"
+        )),
+        [
+            returned("ptr"),
+            returned(".float"),
+            returned("__function"),
+            returned("ptr"),
+        ]
+    );
+    let nothing = |ret: &str| {
+        let message = format!("'g' returned nothing, expected {ret}");
+        let found = diags(&format!(
+            "{defs}{ret_type} g = {{ return; }};\n",
+            ret_type = match ret {
+                "ptr" => "float*()",
+                _ => "void()()",
+            }
+        ));
+        assert_eq!(found, [d(Code::W0256, &message)], "{ret}");
+    };
+    nothing("ptr");
+    nothing("__function");
+}

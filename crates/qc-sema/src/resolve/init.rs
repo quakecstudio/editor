@@ -552,13 +552,7 @@ impl Resolver<'_> {
         let (Some(_), Some(value)) = (array, value) else {
             return false;
         };
-        let string = matches!(
-            value.kind,
-            ValueKind::Literal(literal) if literal.ty == ConstType::String
-        );
-        // `def.cast->type == ev_bitfld && def.cast->bits == 8`: an 8-bit integer.
-        let chars = matches!(ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Uint8));
-        if string && chars {
+        if string_of_chars(array, ty, value) {
             if let (Some(ArrayDim::Sized(size)), Some(len)) = (array, value.string_len)
                 && len > size
             {
@@ -771,4 +765,16 @@ impl Resolver<'_> {
         self.report(code, location, message);
         supply
     }
+}
+
+/// FTEF-19.8: whether `value` is a string initialising an array of 8-bit integers, `def.cast->type
+/// == ev_bitfld && def.cast->bits == 8`, its characters each its element, with no cast.
+pub(in crate::resolve) fn string_of_chars(
+    array: Option<ArrayDim>,
+    ty: &Type,
+    value: &RawValue,
+) -> bool {
+    array.is_some()
+        && matches!(value.kind, ValueKind::Literal(literal) if literal.ty == ConstType::String)
+        && matches!(ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Uint8))
 }

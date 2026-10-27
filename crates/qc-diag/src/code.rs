@@ -241,8 +241,8 @@ pub enum Code {
     E0320,
     /// "strcmp function not defined: cannot emulate string<=>string" (QCD-4.27).
     E0321,
-    /// "Assignment to post-inc result", "postincrement: lhs is readonly" and "postdecrement: lhs is
-    /// readonly" (QCD-4.28).
+    /// "Assignment to post-inc result", "postincrement: lhs is readonly", "postdecrement: lhs is
+    /// readonly" and the postfix's other refusals (QCD-4.28).
     E0322,
     /// "Type mismatch on assignment. A OP B is not supported" (QCD-4.29).
     E0323,
@@ -325,6 +325,15 @@ pub enum Code {
     E0355,
     /// A struct member array of size 0 (FTEF-6.17).
     E0356,
+    /// "left operand (NAME) has a bit offset": a store through a pointer to a bitfield that does
+    /// not start its word (QCD-4.58).
+    E0357,
+    /// "QCC_PR_ExpandField: invalid field type TYPE": a field of an 8- or 16-bit integer read
+    /// (QCD-4.59).
+    E0358,
+    /// "Unable to evaluate to numeric constant": a store to a field of an 8- or 16-bit integer
+    /// (QCD-4.60).
+    E0359,
     /// "unterminated comment" (QCD-6.1).
     E0501,
     /// "token too long" (QCD-6.2).
@@ -571,7 +580,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 252] = [
+    pub const ALL: [Self; 255] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -715,6 +724,9 @@ impl Code {
         Self::E0354,
         Self::E0355,
         Self::E0356,
+        Self::E0357,
+        Self::E0358,
+        Self::E0359,
         Self::E0401,
         Self::E0402,
         Self::E0404,
@@ -1059,6 +1071,9 @@ impl Code {
             Self::E0354 => "E0354",
             Self::E0355 => "E0355",
             Self::E0356 => "E0356",
+            Self::E0357 => "E0357",
+            Self::E0358 => "E0358",
+            Self::E0359 => "E0359",
             Self::E0511 => "E0511",
             Self::E0312 => "E0312",
             Self::E0311 => "E0311",
@@ -1342,6 +1357,9 @@ impl Code {
             | Self::E0354
             | Self::E0355
             | Self::E0356
+            | Self::E0357
+            | Self::E0358
+            | Self::E0359
             | Self::E0408 => true,
         }
     }

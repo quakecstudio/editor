@@ -671,3 +671,105 @@ fn compound_assignments_emulate_their_operator() {
         diags("int i, j; void() g = { i = i >> j; };\n").len()
     );
 }
+
+fn postfix(target: &str, statement: &str) -> Vec<(Code, String)> {
+    diags(&format!(
+        "{target}\nfloat f, x; int i; string s; vector w; entity en; __double d; __uint u; \
+         __int64 l; float *p; void *v; __int16 *c; struct st {{ int a : 3; int b : 5; }}; st b; \
+         st *pb; __int8 c8;\nvoid() g = {{ {statement} }};\n"
+    ))
+}
+
+// spec FTEF-29.5: a postfix adds 1 or -1 by its type's opcode, `--` too: `OP_ADD_I` of an int
+// for an integer, a string and a pointer to a narrow type, `OP_ADD_U` for a uint, `OP_ADD_I64`,
+// `OP_ADD_D`, and a pointer to words by `OP_ADD_PIW`
+#[test]
+fn a_postfix_adds_by_its_types_opcode() {
+    let add = [helper("AddInt", "int+int"), d(Code::E0320, ADD_I)];
+    for statement in ["i++;", "i--;", "u++;", "p--;", "v++;", "c--;", "x = i--;"] {
+        let found = postfix("", statement);
+        assert_eq!(found.get(..2), Some(&add[..]), "{statement}");
+    }
+    assert_eq!(postfix("", "f++; f--;"), []);
+    let refused = |op: &str| {
+        d(
+            Code::E0320,
+            &format!(
+                "Opcode \"+|{op}\" not valid for target. Consider the use of: #pragma target fte"
+            ),
+        )
+    };
+    assert_eq!(postfix("", "l++;"), [refused("ADD_I64")]);
+    assert_eq!(postfix("", "x = d--;").first(), Some(&refused("ADD_D")));
+    assert_eq!(postfix("#pragma target fte", "p--; u++; l--; d++;"), []);
+}
+
+// spec FTEF-29.5: a string stepped by an integer warns of the store, a vector or an entity is
+// "post increment operator not supported with this type"
+// spec QCD-4.28: E0322 for a postfix of a type it does not step
+#[test]
+fn a_postfix_of_another_type_is_refused() {
+    let fte = |statement: &str| postfix("#pragma target fte", statement);
+    assert_eq!(
+        fte("s++;"),
+        [d(Code::W0240, "type mismatch: __int32 __int32 to string s")]
+    );
+    let unsupported = d(
+        Code::E0322,
+        "post increment operator not supported with this type",
+    );
+    for statement in ["w++;", "en--;", "x = w++;", "x = en++;"] {
+        assert_eq!(
+            fte(statement),
+            std::slice::from_ref(&unsupported),
+            "{statement}"
+        );
+    }
+}
+
+// spec FTEF-29.5: a bitfield not at its word's start is "post increment operator on bitfield";
+// one at it, and an 8- or 16-bit integer, steps only when its value is discarded
+// spec FTEF-2.12: an 8- or 16-bit integer is `ev_bitfld`
+#[test]
+fn a_postfix_of_a_bitfield() {
+    let fte = |statement: &str| postfix("#pragma target fte", statement);
+    let on_bitfield = d(Code::E0322, "post increment operator on bitfield");
+    assert_eq!(fte("b.b++;"), std::slice::from_ref(&on_bitfield));
+    assert_eq!(fte("x = b.b++;"), [on_bitfield]);
+    let unsupported = d(
+        Code::E0322,
+        "post increment operator not supported with this type",
+    );
+    assert_eq!(fte("b.a++;"), []);
+    assert_eq!(fte("c8--;"), []);
+    assert_eq!(fte("for (c8++; x; b.a--) {}"), []);
+    assert_eq!(fte("x = b.a--;"), std::slice::from_ref(&unsupported));
+    assert_eq!(fte("x = c8++;"), [unsupported]);
+    assert_eq!(
+        fte("pb->a++;"),
+        [d(Code::E0353, "ptr-to-bitfld has unsupported bit depth")]
+    );
+}
+
+// spec FTEF-29.5: under `undefwordsize` a narrow pointer's step whose value is used is "not
+// allowed to make assumptions about pointer sizes. sorry."; a discarded one steps
+// spec QCD-4.32: E0326 for pointer arithmetic under `undefwordsize`
+#[test]
+fn a_narrow_pointers_step_under_undefwordsize() {
+    let flag = "#pragma flag enable undefwordsize";
+    let sorry = d(
+        Code::E0322,
+        "not allowed to make assumptions about pointer sizes. sorry.",
+    );
+    assert_eq!(postfix(flag, "x = c--;"), std::slice::from_ref(&sorry));
+    assert_eq!(postfix(flag, "x = p[c++];"), [sorry]);
+    let add = [helper("AddInt", "int+int"), d(Code::E0320, ADD_I)];
+    for statement in ["c--;", "(c--);", "x = (c++, 1);", "x = 1, c++;"] {
+        assert_eq!(postfix(flag, statement), add, "{statement}");
+    }
+    let blocked = d(
+        Code::E0326,
+        "Making assumptions about pointer sizes was blocked.",
+    );
+    assert_eq!(postfix(flag, "v++;").first(), Some(&blocked));
+}

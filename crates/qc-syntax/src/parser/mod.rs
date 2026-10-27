@@ -796,6 +796,27 @@ impl<'a> Parser<'a> {
         self.error_at(code, message, span);
     }
 
+    /// `PR_ParseName`'s error at the current token: id's "not a name" (QCD-3.1); FTEQCC's
+    /// "\"TOKEN\" - not a name", or "unexpected EOF" at the end of the file (`QCC_PR_ParseName`,
+    /// QCD-3.62).
+    fn not_a_name(&mut self) {
+        let message = if self.fteqcc() && self.current().is_none() {
+            "unexpected EOF".to_owned()
+        } else {
+            self.not_a_name_message(&self.found())
+        };
+        self.error(Code::E0201, message);
+    }
+
+    /// The text of [`Self::not_a_name`] for the token `token`.
+    fn not_a_name_message(&self, token: &str) -> String {
+        if self.fteqcc() {
+            format!("\"{token}\" - not a name")
+        } else {
+            "not a name".to_owned()
+        }
+    }
+
     /// `PR_Expect`'s error: "expected X, found Y" (QCD-3.4).
     fn expected(&mut self, what: &str) {
         let message = format!("expected {what}, found {}", self.found());
@@ -1404,7 +1425,8 @@ impl<'a> Parser<'a> {
         while self.at(K::LBracket) {
             if self.nth(1).is_some_and(|t| t.kind == K::RBracket) {
                 // `QCC_PR_IntConstExpr()` reads the size, which `]` is none of.
-                self.error(Code::E0201, "not a name");
+                let message = self.not_a_name_message("]");
+                self.error(Code::E0201, message);
             }
             self.array_suffix();
         }
@@ -1763,11 +1785,11 @@ impl<'a> Parser<'a> {
     /// `PR_ParseName`: a name, at most `LIMIT_QCC_MAX_NAME - 2` bytes (QC-3.3).
     fn name(&mut self) -> bool {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return false;
         };
         if tok.kind != K::Name {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return false;
         }
         if self.too_long(&tok.text) {
@@ -2187,14 +2209,14 @@ impl<'a> Parser<'a> {
         loop {
             let Some(kind) = self.current().map(|t| t.kind) else {
                 // `PR_ParseStatement` reads the end of the file as an expression.
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 break;
             };
             if kind == K::RBrace {
                 // FTE-21.4: FTEQCC's `QCC_PR_ParseStatement` reads statements until the
                 // `}`, so its blocks may be empty.
                 if !function && count == 0 && !self.fteqcc() {
-                    self.error(Code::E0201, "not a name");
+                    self.not_a_name();
                 }
                 self.bump();
                 break;
@@ -2231,7 +2253,7 @@ impl<'a> Parser<'a> {
 
     fn statement_inner(&mut self) {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return;
         };
         match tok.kind {
@@ -2490,7 +2512,7 @@ impl<'a> Parser<'a> {
         }
         loop {
             let Some(kind) = self.current().map(|t| t.kind) else {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 break;
             };
             if kind == K::RBrace {
@@ -2567,7 +2589,7 @@ impl<'a> Parser<'a> {
             }
         } else if !keyword {
             if self.at(K::Dot) {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
             } else if let Some((text, span)) = self.nth(1).map(|t| (t.text.clone(), t.span)) {
                 self.error_at(Code::E0204, format!("expected ;, found {text}"), span);
             }
@@ -3028,7 +3050,7 @@ impl<'a> Parser<'a> {
     /// name (QC-15.7). Anything else is "not a name" (QC-4.5, QC-14.2).
     fn term(&mut self) -> Option<Expr> {
         let Some(tok) = self.current() else {
-            self.error(Code::E0201, "not a name");
+            self.not_a_name();
             return None;
         };
         let (kind, start, long) = (tok.kind, tok.span.start, self.too_long(&tok.text));
@@ -3126,7 +3148,7 @@ impl<'a> Parser<'a> {
                 (K::NameRef, true)
             }
             _ => {
-                self.error(Code::E0201, "not a name");
+                self.not_a_name();
                 let stop = matches!(
                     kind,
                     K::Semicolon | K::RParen | K::RBracket | K::RBrace | K::Comma | K::LBrace

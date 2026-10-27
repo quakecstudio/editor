@@ -208,6 +208,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   given a second element (FTEF-19.47).
 - **QCD-3.61** `E0356` "cannot cope with 0-sized arrays": under an FTEQCC profile, a struct
   member array of size 0 (FTEF-6.17).
+- **QCD-3.62** Under an FTEQCC profile `E0201` is FTEQCC's text, "\"TOKEN\" - not a name" for the
+  token found, or "unexpected EOF" at the end of the file (`qcc_pr_lex.c`, `QCC_PR_ParseName`:
+  `if (pr_token_type == tt_eof) QCC_PR_ParseError (ERR_EOF, "unexpected EOF");` and `else if
+  (strcmp(pr_token, "...")) QCC_PR_ParseError (ERR_NOTANAME, "\"%s%s%s\" - not a name",
+  col_name, pr_token, col_none);`, the colours empty in the oracle's output): `x = ;` is
+  "\";\" - not a name", `struct *p;` "\"*\" - not a name".
 - **QCD-3.58** `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN.": under an FTEQCC
   profile, a member function with more than one of `virtual`, `nonvirtual` and `static`
   (FTEF-9.16).
@@ -283,9 +289,12 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   lacks and FTEQCC cannot emulate (FTEF-27.5), at the operator; not a fatal error.
 - **QCD-4.27** `E0321` "strcmp function not defined: cannot emulate string<=>string": `<=>` of
   strings when the target lacks it and no `strcmp` is defined (FTEF-27.3); a fatal error.
-- **QCD-4.28** `E0322` "Assignment to post-inc result", "postincrement: lhs is readonly" and
-  "postdecrement: lhs is readonly": under an FTEQCC profile, an assignment to a postfix `++` or
-  `--`, or one of those of a read-only value (FTEF-29.1, FTEF-29.5); a fatal error.
+- **QCD-4.28** `E0322` "Assignment to post-inc result", "postincrement: lhs is readonly",
+  "postdecrement: lhs is readonly", "post increment operator not supported with this type", "post
+  increment operator on bitfield" and "not allowed to make assumptions about pointer sizes.
+  sorry.": under an FTEQCC profile, an assignment to a postfix `++` or `--`, or one of those of a
+  read-only value, a value of a type it does not step or a bitfield, or a narrow pointer's under
+  `undefwordsize` (FTEF-29.1, FTEF-29.5); a fatal error.
 - **QCD-4.29** `E0323` "Type mismatch on assignment. A OP B is not supported": a compound
   assignment with no opcode for its types (FTEF-29.2); a fatal error.
 - **QCD-4.30** `E0324` "Implicit type mismatch on assignment to NAME. Needed A, got B.": a
@@ -351,7 +360,13 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 - **QCD-4.56** `E0352` "Duplicated default case": a `switch` with a second `default`
   (FTEF-34.10); a fatal error.
 - **QCD-4.57** `E0353` "ptr-to-bitfld has unsupported bit depth": a bitfield neither 8 nor 16
-  bits wide read through a pointer (FTEF-6.15); a fatal error.
+  bits wide read or stored through a pointer (FTEF-6.15, FTEF-6.18); a fatal error.
+- **QCD-4.58** `E0357` "left operand (NAME) has a bit offset": a store through the pointer NAME
+  to a bitfield that does not start its word (FTEF-6.18); not a fatal error.
+- **QCD-4.59** `E0358` "QCC_PR_ExpandField: invalid field type TYPE": a field of an 8- or 16-bit
+  integer read (FTEF-2.12); a fatal error.
+- **QCD-4.60** `E0359` "Unable to evaluate to numeric constant": a store to a field of an 8- or
+  16-bit integer (FTEF-2.12); not a fatal error.
 
 ## QCD-5 Project, limit and fatal errors
 

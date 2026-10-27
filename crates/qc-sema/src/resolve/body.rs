@@ -21,6 +21,7 @@ use crate::lower::{
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
+use crate::resolve::init::string_of_chars;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Found, Holder, Pending, Redeclaration, Resolver, Scope, ScopedFacts,
     component_type,
@@ -692,9 +693,11 @@ impl<'a> Resolver<'a> {
         {
             return;
         }
-        let Ok(value) =
-            self.check_value(file, &local.name, &local.ty, local.value.as_ref(), holder)
-        else {
+        let value = local
+            .value
+            .as_ref()
+            .filter(|value| !string_of_chars(local.array, &local.ty, value));
+        let Ok(value) = self.check_value(file, &local.name, &local.ty, value, holder) else {
             return;
         };
         let literal = value.or_else(|| local.literal.clone());

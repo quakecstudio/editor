@@ -20,6 +20,7 @@ use crate::lower::{
     ArrayDim, ExternBase, LiteralValue, Qualifier, RawDecl, RawParamInfo, top_level_kind,
 };
 use crate::resolve::aggregate::{AggregateSite, Initialised};
+use crate::resolve::init::string_of_chars;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Facts, Fatal, FileDiagnostic, Holder, Init, MAX_TYPEDEF_DEPTH,
     MISDECLARED_BUILTINS, Pending, Redeclaration, Resolver, Special, TypeCheck, component_type,
@@ -747,13 +748,11 @@ impl<'a> Resolver<'a> {
         {
             Ok(None)
         } else {
-            self.check_value(
-                file,
-                &decl.name,
-                &decl.ty,
-                decl.value.as_ref(),
-                Holder::Global,
-            )
+            let value = decl
+                .value
+                .as_ref()
+                .filter(|value| !string_of_chars(decl.array, &decl.ty, value));
+            self.check_value(file, &decl.name, &decl.ty, value, Holder::Global)
         };
         let literal = match value {
             Ok(value) => value.or_else(|| decl.literal.clone()),

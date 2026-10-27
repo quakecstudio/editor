@@ -185,7 +185,7 @@ fn named_definitions_cast_by_their_type() {
 }
 
 // spec FTEF-19.31: C type words and registered type names are the type FTEF-2.8 makes, an 8-
-// or 16-bit integer none the model follows
+// or 16-bit integer cast as its parent, `int` or `uint`, and named by its own name
 #[test]
 fn c_words_name_their_kinds() {
     for (words, kind) in [
@@ -206,8 +206,8 @@ fn c_words_name_their_kinds() {
         ("__uint", Kind::Uint),
         ("__int64", Kind::Int64),
         ("__uint64", Kind::Uint64),
-        ("__char", Kind::Opaque),
-        ("__short", Kind::Opaque),
+        ("__char", Kind::Integer),
+        ("__short", Kind::Integer),
         ("_Bool", Kind::Opaque),
         ("int int", Kind::Opaque),
         ("long", Kind::Opaque),
@@ -218,6 +218,9 @@ fn c_words_name_their_kinds() {
     assert_eq!(named("unsigned __long").fteqcc_name(), "__uint64");
     assert_eq!(named("__long __double").fteqcc_name(), "__double");
     assert_eq!(named("Player").fteqcc_name(), "Player");
+    assert_eq!(named("__uint8").fteqcc_kind(), Kind::Uint);
+    assert_eq!(named("__char").fteqcc_name(), "__int8");
+    assert_eq!(named("unsigned __short").fteqcc_name(), "__uint16");
     assert!(Kind::Double.is_numeric());
     assert!(!Kind::Vector.is_numeric());
 }

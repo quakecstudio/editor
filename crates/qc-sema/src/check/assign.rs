@@ -10,14 +10,15 @@
 use qc_diag::{Code, Span};
 use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _, BinaryOp};
+use qc_syntax::c_scalar::CScalar;
+use qc_syntax::{SyntaxKind, SyntaxNode};
 
 use crate::cast::{Source, Supply};
 use crate::check::constant::Constant;
-use crate::check::convert::{Choice, Operand, choose_opcode};
 use crate::check::emulate::conversion_opcodes;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::opcodes::{candidates, row};
+use crate::check::opcodes::row;
 use crate::check::{Constness, Reference, Value};
 use crate::ty::Type;
 
@@ -260,7 +261,12 @@ impl Checker<'_> {
         let stored = match kind {
             Assign::Store => self.cast_to(&rhs, &target, span)?,
             Assign::Compound(spelling, ops, in_place) => {
-                match self.compound(&lhs, &rhs, spelling, ops, in_place, span)? {
+                // `lhsd = QCC_RefToDef(lhsr, false)`: an array named bare is read as its address.
+                let place = Value {
+                    ty: target.clone(),
+                    ..lhs.clone()
+                };
+                match self.compound(&place, &rhs, spelling, ops, in_place, span)? {
                     Some(value) => value,
                     None => return Ok(Value::of(lhs.ty)),
                 }
@@ -272,7 +278,10 @@ impl Checker<'_> {
             self.env.report(Code::W0241, span, message);
         }
         self.store_mismatch(&stored, &lhs, &target, span)?;
-        let stored = self.bit_copy(&stored, &lhs, span)?;
+        let packed = self
+            .narrow_bitfield(&lhs, span)
+            .unwrap_or_else(|| lhs.clone());
+        let stored = self.bit_copy(&stored, &packed, span)?;
         self.store_reference(&lhs, &stored, span)?;
         if lhs.is_array_head() {
             let message = format!(
@@ -362,10 +371,21 @@ impl Checker<'_> {
             None => {
                 let cast = self.cast_to(rhs, &lhs.ty, span)?;
                 let Some(op) = self.etype(&cast.ty).and_then(find) else {
+                    // FTEF-24.11: the types' own names. An array's address is `T*`
+                    // (`QCC_PR_PointerType`), and a cast to the type the value has already
+                    // leaves the value's.
+                    let left = if lhs.is_array_head() {
+                        self.env.type_name(&lhs.ty)
+                    } else {
+                        self.own_name(&lhs.ty)
+                    };
+                    let right = if rhs.ty == lhs.ty {
+                        self.own_name(&rhs.ty)
+                    } else {
+                        left.clone()
+                    };
                     let message = format!(
-                        "Type mismatch on assignment. {} {spelling} {} is not supported",
-                        lhs.ty.fteqcc_name(),
-                        cast.ty.fteqcc_name()
+                        "Type mismatch on assignment. {left} {spelling} {right} is not supported"
                     );
                     return self.fatal(Code::E0323, span, message).map(Some);
                 };
@@ -498,38 +518,82 @@ impl Checker<'_> {
         if let Some(etype) = self.etype(&operand.ty)
             && self.env.fteqcc()
         {
-            let one = if etype == Etype::Integer {
-                Value::constant(Constant::int(1))
-            } else {
-                Value::constant(Constant::float(1.0))
-            };
-            let spelling = if increment { "+" } else { "-" };
-            let left = Operand {
-                etype,
-                holds: None,
-                null: false,
-            };
-            let right = Operand {
-                etype: self.etype(&one.ty).unwrap_or(Etype::Float),
-                holds: None,
-                null: false,
-            };
-            if let Some(Choice::Opcode(op)) =
-                choose_opcode(&candidates(spelling), left, right, self.env.in_class())
-            {
-                let variable = Value {
-                    constness: Constness::Variable,
-                    ..self.read(operand.clone(), span)?
-                };
-                let updated = self.emit(op, &variable, &one, span)?;
-                self.store_reference(&operand, &updated, span)?;
-            }
+            let step = if increment { 1 } else { -1 };
+            self.step(&operand, etype, step, discarded(postfix.syntax()), span)?;
         }
+        // The value before the update, a temporary, named by its type (`QCC_GetSRefName`).
         Ok(Value {
             postinc: true,
             reference: Reference::Global,
+            name: None,
             ..operand
         })
+    }
+
+    /// FTEF-29.5: the update of a postfix's operand of basic type `etype` by `step`, one of its
+    /// type added by the opcode for it and stored back as an assignment is: `QCC_PR_DiscardRef`'s
+    /// when its value is `discarded`, else `QCC_RefToDef`'s.
+    fn step(
+        &mut self,
+        operand: &Value,
+        etype: Etype,
+        step: i8,
+        discarded: bool,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        if operand
+            .bitfield
+            .is_some_and(|bitfield| bitfield.offset != 0)
+        {
+            let message = "post increment operator on bitfield".to_owned();
+            return self.fatal(Code::E0322, span, message).map(drop);
+        }
+        let old = Value {
+            constness: Constness::Variable,
+            ..self.read(operand.clone(), span)?
+        };
+        // `switch(ref->cast->type)`: a bitfield, or an 8- or 16-bit integer, is `ev_bitfld`,
+        // which only a discarded value steps, by the type it is read as.
+        let narrow = matches!(
+            operand.ty.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16)
+        );
+        let etype = if (operand.bitfield.is_some() || narrow) && !discarded {
+            Etype::Void
+        } else {
+            etype
+        };
+        let by = |constant: Constant| Value::constant(constant);
+        let updated = match etype {
+            Etype::Float => self.emit(Op::AddF, &old, &by(Constant::float(step.into())), span)?,
+            Etype::Double => self.emit(Op::AddD, &old, &by(Constant::double(step.into())), span)?,
+            Etype::String | Etype::Integer => {
+                self.emit(Op::AddI, &old, &by(Constant::int(step.into())), span)?
+            }
+            Etype::Uint => self.emit(Op::AddU, &old, &by(Constant::int(step.into())), span)?,
+            Etype::Int64 => self.emit(Op::AddI64, &old, &by(Constant::int64(step.into())), span)?,
+            Etype::Uint64 => {
+                self.emit(Op::AddU64, &old, &by(Constant::int64(step.into())), span)?
+            }
+            Etype::Pointer => self.pointer_step(&old, step, discarded, span)?,
+            Etype::Void
+            | Etype::Vector
+            | Etype::Entity
+            | Etype::Field
+            | Etype::Function
+            | Etype::Variant
+            | Etype::Struct
+            | Etype::Union
+            | Etype::Enum
+            | Etype::Boolean => {
+                let message = "post increment operator not supported with this type".to_owned();
+                return self.fatal(Code::E0322, span, message).map(drop);
+            }
+        };
+        // `QCC_StoreSRefToRef`: an integer stepping a string warns of the store.
+        self.store_mismatch(&updated, operand, &operand.ty, span)?;
+        let updated = self.bit_copy(&updated, operand, span)?;
+        self.store_reference(operand, &updated, span)
     }
 
     /// The basic type of `ty`, if the model follows it.
@@ -568,12 +632,97 @@ impl Checker<'_> {
                 ),
                 _ => false,
             };
-            if resolver_casts {
-                self.convert_to(&value, &ty, span)?;
+            let value = if resolver_casts {
+                self.convert_to(&value, &ty, span)?
             } else {
-                self.cast_to(&value, &ty, span)?;
+                self.cast_to(&value, &ty, span)?
+            };
+            // FTEF-2.12: an 8- or 16-bit local is initialised as a bitfield at bit 0
+            // (`QCC_PR_GenerateInitializerType`), packed into its word; an array of 8-bit ones
+            // by a string, a character, then zeros, to each element.
+            let mut suffixes = declarator.array_suffixes();
+            match (suffixes.next(), string_bytes(&init)) {
+                (None, _) => {
+                    if let Some(local) = self.narrow_local(&ty, 0) {
+                        self.bit_copy(&value, &local, span)?;
+                    }
+                }
+                (Some(suffix), Some(bytes)) if self.narrow_local(&ty, 0).is_some() => {
+                    let size = array_size(&suffix).unwrap_or(bytes.len().saturating_add(1));
+                    let mut offset: u32 = 0;
+                    for at in 0..size {
+                        let byte = bytes.get(at).copied().unwrap_or(0);
+                        let character = Value::constant(Constant::int(i32::from(byte)));
+                        if let Some(element) = self.narrow_local(&ty, offset) {
+                            self.bit_copy(&character, &element, span)?;
+                        }
+                        offset = offset.wrapping_add(8);
+                    }
+                }
+                (Some(_), _) => {}
             }
         }
         Ok(())
     }
+}
+
+/// Whether the value of the postfix `node` is discarded (`QCC_PR_DiscardExpression`,
+/// `QCC_PR_DiscardRef`): it is a statement's expression, a `for` header's first or last clause,
+/// or a comma's left side, through parentheses and a comma's right side.
+fn discarded(node: &SyntaxNode) -> bool {
+    let mut node = node.clone();
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            SyntaxKind::ParenExpr => {}
+            SyntaxKind::BinaryExpr => {
+                let Some(binary) = ast::BinaryExpr::cast(parent.clone()) else {
+                    return false;
+                };
+                if binary.op() != Some(BinaryOp::Comma) {
+                    return false;
+                }
+                if binary.lhs().is_some_and(|lhs| *lhs.syntax() == node) {
+                    return true;
+                }
+            }
+            SyntaxKind::ExprStmt => return true,
+            SyntaxKind::ForClause => {
+                let Some(header) = parent.parent().and_then(ast::ForStmt::cast) else {
+                    return false;
+                };
+                return header.init().as_ref() == Some(&parent)
+                    || header.step().as_ref() == Some(&parent);
+            }
+            _ => return false,
+        }
+        node = parent;
+    }
+    false
+}
+
+/// The bytes of the string literal `expr` as FTEQCC's lexer reads them, `pr_immediate_string`.
+fn string_bytes(expr: &ast::Expr) -> Option<Vec<u8>> {
+    let ast::Expr::Literal(literal) = expr else {
+        return None;
+    };
+    if literal.kind() != Some(ast::LiteralKind::String) {
+        return None;
+    }
+    let text = literal.token()?.text_lossless();
+    let lexed = qc_lexer::lex_with(text.as_bytes(), qc_syntax::Dialect::Fteqcc);
+    match lexed.tokens.as_slice() {
+        [token] => match &token.kind {
+            qc_lexer::TokenKind::String(bytes) => Some(bytes.clone()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The size an array suffix `[N]` writes, when N is an integer literal.
+fn array_size(suffix: &SyntaxNode) -> Option<usize> {
+    let Some(ast::Expr::Literal(literal)) = suffix.children().find_map(ast::Expr::cast) else {
+        return None;
+    };
+    literal.token()?.text_lossless().parse().ok()
 }

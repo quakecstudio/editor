@@ -42,6 +42,7 @@ mod names;
 mod navigation;
 mod operators;
 mod passes;
+mod pointers;
 mod properties;
 mod recovery;
 mod references;

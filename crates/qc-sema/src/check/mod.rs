@@ -300,7 +300,7 @@ impl Value {
             Reference::Global
             | Reference::ArrayHead
             | Reference::Pointer(_)
-            | Reference::Character { .. }
+            | Reference::Character(_)
             | Reference::Accessor(_) => self.label(),
         }
     }
@@ -375,11 +375,8 @@ pub(crate) enum Reference {
     Element(Box<ElementRef>),
     /// What a pointer points at (`REF_POINTER`), at an index or not (FTEF-31.3).
     Pointer(Box<PointerRef>),
-    /// A string's character (`REF_STRING`), indexed by a float or an integer (FTEF-31.2).
-    Character {
-        /// Whether the index is a float.
-        float_index: bool,
-    },
+    /// A string's character (`REF_STRING`) at its index, a float or an integer (FTEF-31.2).
+    Character(Box<Value>),
     /// An accessor's member, read and stored through its functions (`REF_ACCESSOR`, FTEF-10.7).
     Accessor(Box<AccessorRef>),
 }

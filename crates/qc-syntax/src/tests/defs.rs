@@ -386,3 +386,22 @@ fn at_is_the_as_string_operator_under_qccx() {
         .collect();
     assert_eq!(ops, [Some(ast::UnaryOp::AsString)]);
 }
+
+// spec QCD-3.62: under FTEQCC "not a name" names the token found, and is "unexpected EOF" at the
+// end of the file
+// spec QCD-3.1: id's text is "not a name"
+#[test]
+fn not_a_name_names_the_token() {
+    let body = |statement: &str| format!("float x; void() g = {{ {statement} }};");
+    assert_eq!(messages(&fte(&body("x = ;"))), ["\";\" - not a name"]);
+    assert_eq!(messages(&fte(&body("x = );"))), ["\")\" - not a name"]);
+    assert_eq!(messages(&fte("struct *p;")), ["\"*\" - not a name"]);
+    assert_eq!(
+        messages(&fte("float x; void() g = { x = "))
+            .first()
+            .map(String::as_str),
+        Some("unexpected EOF")
+    );
+    let vanilla = parse_with(body("x = ;").as_bytes(), Dialect::Vanilla);
+    assert_eq!(messages(&vanilla), ["not a name"]);
+}

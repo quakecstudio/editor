@@ -275,3 +275,147 @@ fn functions_and_fields_are_read_only() {
     );
     assert_eq!(diags(&source("var_f = vf;")), []);
 }
+
+// spec FTEF-29.3: an assignment's result is read-only and carries the value stored, named
+// spec FTEF-29.5: a postfix's result is a temporary that messages name by its type
+#[test]
+fn an_assignments_value_is_read_only() {
+    let assigned = |inner: &str| diags(&format!("float a, b; void() g = {{ ({inner}) = 2; }};\n"));
+    let constant = |name: &str| {
+        of(&[
+            (Code::W0241, "Assignment to const"),
+            (Code::W0241, &format!("Assignment to constant {name}")),
+        ])
+    };
+    assert_eq!(assigned("a = b"), constant("b"));
+    assert_eq!(assigned("a = b++"), constant("float"));
+    assert_eq!(
+        assigned("a++"),
+        of(&[(Code::E0322, "Assignment to post-inc result")])
+    );
+}
+
+fn fte(statement: &str) -> Vec<(Code, String)> {
+    fte_with("", statement)
+}
+
+fn fte_lax(statement: &str) -> Vec<(Code, String)> {
+    fte_with("#pragma flag enable lax\n", statement)
+}
+
+fn fte_with(pragmas: &str, statement: &str) -> Vec<(Code, String)> {
+    diags(&format!(
+        "#pragma target fte\n{pragmas}.float f; .int fi; .vector fv; entity e;\n\
+         float *p; int *q; void *v; float arr[3]; string s; vector w; __variant x; int i;\n\
+         void() fn = {{}}; void() g = {{ {statement} }};\n"
+    ))
+}
+
+fn unsupported(left: &str, op: &str, right: &str) -> (Code, String) {
+    (
+        Code::E0323,
+        format!("Type mismatch on assignment. {left} {op} {right} is not supported"),
+    )
+}
+
+// spec FTEF-29.2: a compound assignment's types are named by their own names, the right side's
+// the left side's when the cast changed it
+// spec FTEF-24.11: a declared pointer is `ptr`, an array's address `T*`, a function
+// `__function`, a field `.T`
+#[test]
+fn a_compound_mismatch_names_the_types_own_names() {
+    let lax_cast = |from: &str, to: &str| {
+        (
+            Code::W0229,
+            format!("Implicit lax cast from {from} to {to}"),
+        )
+    };
+    let cast = |from: &str, to: &str| (Code::W0220, format!("Implicit cast from {from} to {to}"));
+    assert_eq!(
+        fte_lax("p *= w;"),
+        [
+            lax_cast("vector", "float*"),
+            unsupported("ptr", "*=", "ptr")
+        ]
+    );
+    assert_eq!(fte_lax("v += s;"), [unsupported("ptr", "+=", "ptr")]);
+    assert_eq!(
+        fte_lax("q += p;"),
+        [cast("float*", "__int32*"), unsupported("ptr", "+=", "ptr")]
+    );
+    assert_eq!(fte_lax("arr += p;"), [unsupported("float*", "+=", "ptr")]);
+    assert_eq!(
+        fte_lax("arr += \"a\";"),
+        [
+            cast("string", "float*"),
+            unsupported("float*", "+=", "float*")
+        ]
+    );
+    assert_eq!(
+        fte_lax("x += s;"),
+        [unsupported("__variant", "+=", "__variant")]
+    );
+    let assignment_to_const = (Code::W0241, "Assignment to const".to_owned());
+    assert_eq!(
+        fte_lax("fn += fn;"),
+        [
+            assignment_to_const.clone(),
+            unsupported("__function", "+=", "__function")
+        ]
+    );
+    assert_eq!(
+        fte_lax("f += f;"),
+        [assignment_to_const, unsupported(".float", "+=", ".float")]
+    );
+}
+
+// spec FTEF-29.2: an array named bare is its address in a compound assignment, which the store
+// then refuses as no l-value
+// spec FTEF-29.3: "left operand must be an l-value"
+#[test]
+fn a_compound_assignment_to_an_array_adds_to_its_address() {
+    assert_eq!(
+        fte("arr += 1;"),
+        of(&[(
+            Code::E0325,
+            "left operand must be an l-value (did you mean arr[0]?)"
+        )])
+    );
+}
+
+// spec FTEF-29.2: a field updated in place by an opcode of its types is checked no further; with
+// none for the value's type it is read, cast and stored
+#[test]
+fn a_field_is_updated_in_place_by_its_types_opcode() {
+    for statement in [
+        "e.f += 1;",
+        "e.fi += 1.0;",
+        "e.f += i;",
+        "e.fv *= i;",
+        "e.f |= i;",
+    ] {
+        assert_eq!(fte(statement), [], "{statement}");
+    }
+    assert_eq!(
+        fte("e.f += \"a\";"),
+        of(&[(Code::E0213, "Cannot cast from string to float")])
+    );
+    assert_eq!(
+        fte("e.fv += 1.0;"),
+        of(&[(Code::W0220, "Implicit cast from float to vector")])
+    );
+    // The standard target has no in-place opcode, so the field is read and added.
+    assert_eq!(
+        diags(".int fi; entity e; int i; void() g = { e.fi += i; };\n"),
+        of(&[
+            (
+                Code::W0235,
+                "AddInt function not defined: cannot emulate int+int"
+            ),
+            (
+                Code::E0320,
+                "Opcode \"+|ADD_I\" not valid for target. Consider the use of: #pragma target fte"
+            ),
+        ])
+    );
+}

@@ -2,7 +2,7 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseRefArrayPointer, QCC_RefToDef, QCC_PR_GenerateAddressOf, QCC_LoadFromArray, QCC_LoadFromPointer, QCC_StoreToArray, QCC_PR_Statement_SmallStore
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_ParseRefArrayPointer, QCC_RefToDef, QCC_PR_GenerateAddressOf, QCC_LoadFromArray, QCC_LoadFromPointer, QCC_StoreToArray, QCC_StoreSRefToRef
 
 //! References as FTEQCC builds, reads and stores them (FTEF-31): an index into an array, a
 //! vector, a pointer or a string; the read that loads what a reference names; the address of a
@@ -19,7 +19,8 @@ use qc_syntax::c_scalar::CScalar;
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
 use crate::check::expr::{Checked, Checker, Fatal};
-use crate::check::{ElementRef, Reference, Sym, Value};
+use crate::check::pointer::Pointee;
+use crate::check::{Bitfield, ElementRef, Reference, Sym, Value};
 use crate::ty::{SimpleType, Type};
 
 impl Checker<'_> {
@@ -71,9 +72,17 @@ impl Checker<'_> {
             });
         }
         match value.reference.clone() {
-            Reference::Global => Ok(value),
+            Reference::Global => self.extend_narrow(value, span),
             Reference::Accessor(accessor) => self.accessor_get(&value, &accessor, span),
             Reference::Field(_) => {
+                // FTEF-2.12: `QCC_PR_ExpandField` has no load of an 8- or 16-bit integer.
+                if narrow_bits(&value.ty).is_some() {
+                    let message = format!(
+                        "QCC_PR_ExpandField: invalid field type {}",
+                        self.env.type_name(&value.ty)
+                    );
+                    return self.fatal(Code::E0358, span, message);
+                }
                 // FTEF-34.9: an entity's field is loaded by `OP_LOAD_*` of its type.
                 let load = match self.etype_of(&value.ty) {
                     Some(Etype::Vector) => Op::LoadV,
@@ -94,6 +103,9 @@ impl Checker<'_> {
                 Ok(address)
             }
             Reference::Element(element) => {
+                if let Some(bits) = narrow_bits(&value.ty) {
+                    return self.narrow_element(value, &element.index, bits, span);
+                }
                 if element.index.known().is_none() {
                     self.load_from_array(&value, &element.index, element.vector, span)?;
                 }
@@ -113,7 +125,8 @@ impl Checker<'_> {
                 };
                 self.load_from_pointer(value, index.as_ref(), span)
             }
-            Reference::Character { float_index } => {
+            Reference::Character(index) => {
+                let float_index = self.etype_of(&index.ty) == Some(Etype::Float);
                 let op = if float_index { Op::LoadpC } else { Op::LoadpU8 };
                 let string = Value::of(Type::Simple(SimpleType::String));
                 let loaded = self.emit(op, &string, &Value::unknown(), span)?;
@@ -123,6 +136,113 @@ impl Checker<'_> {
                 })
             }
         }
+    }
+
+    /// FTEF-2.12: a definition of an 8- or 16-bit integer, `ev_bitfld`, read as a bitfield at bit
+    /// 0 is ([`Self::extend_bits`]).
+    fn extend_narrow(&mut self, value: Value, span: Span) -> Checked {
+        match narrow_bits(&value.ty) {
+            Some(bits) if value.sym.def().is_some() => self.extend_bits(value, 0, bits, span),
+            Some(_) | None => Ok(value),
+        }
+    }
+
+    /// FTEF-2.12: an element of an array of 8- or 16-bit integers: at a constant index the
+    /// bitfield `index * bits` bits in, its word's offset `& 31` (`ret.ofs += bitofs>>5`); at
+    /// another, read through its address (`QCC_PR_GenerateAddressOf`) by the narrow load.
+    fn narrow_element(&mut self, value: Value, index: &Value, bits: u32, span: Span) -> Checked {
+        if let Some(constant) = index.known() {
+            let at = if constant.ty == ConstType::Float {
+                f32_index(constant.f())
+            } else {
+                constant.i()
+            };
+            let at = u32::from_le_bytes(at.to_le_bytes());
+            let offset = at.wrapping_mul(bits) & 31;
+            return self.extend_bits(value, offset, bits, span);
+        }
+        self.address_of(value.clone(), span)?;
+        let narrow = Value {
+            reference: Reference::Global,
+            ..value
+        };
+        self.load_from_pointer(narrow, None, span)
+    }
+
+    /// FTEF-2.12: an element at a constant index of an array of 8- or 16-bit integers, or a
+    /// field of one, as a store packs it (`QCC_StoreSRefToRef`, `dest->cast->type ==
+    /// ev_bitfld`): a bitfield `index * bits` bits into its word, which is read as its
+    /// `parentclass`; a field's index is "Unable to evaluate to numeric constant", and 0.
+    pub(super) fn narrow_bitfield(&mut self, lhs: &Value, span: Span) -> Option<Value> {
+        let bits = narrow_bits(&lhs.ty)?;
+        let at = match &lhs.reference {
+            Reference::Element(element) => {
+                let constant = element.index.known()?;
+                if constant.ty == ConstType::Float {
+                    f32_index(constant.f())
+                } else {
+                    constant.i()
+                }
+            }
+            // `QCC_Eval_Int` of the field, which is no number.
+            Reference::Field(_) => {
+                let message = "Unable to evaluate to numeric constant".to_owned();
+                self.env.report(Code::E0359, span, message);
+                0
+            }
+            _ => return None,
+        };
+        let signed = matches!(lhs.ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Int16));
+        let parent = if signed { "__int32" } else { "__uint32" };
+        Some(Value {
+            ty: Type::Named(parent.into()),
+            bitfield: Some(Bitfield {
+                bits,
+                offset: u32::from_le_bytes(at.to_le_bytes()).wrapping_mul(bits) & 31,
+                word: 0,
+                signed,
+            }),
+            ..lhs.clone()
+        })
+    }
+
+    /// FTEF-2.12: a local of the 8- or 16-bit integer type `ty` as its initialiser packs it, a
+    /// bitfield `offset` bits into a word of its `parentclass`.
+    pub(super) fn narrow_local(&self, ty: &Type, offset: u32) -> Option<Value> {
+        let bits = narrow_bits(ty)?;
+        let signed = matches!(ty.fteqcc_scalar(), Some(CScalar::Int8 | CScalar::Int16));
+        let parent = if signed { "__int32" } else { "__uint32" };
+        Some(Value {
+            bitfield: Some(Bitfield {
+                bits,
+                offset: offset & 31,
+                word: 0,
+                signed,
+            }),
+            ..Value::of(Type::Named(parent.into()))
+        })
+    }
+
+    /// `QCC_BitfieldToDef`: a value of an 8- or 16-bit integer type `offset` bits into its word,
+    /// extended by `OP_BITEXTEND_I`, or `OP_BITEXTEND_U` for an unsigned one, with
+    /// `(offset<<8)|bits`, to its `parentclass`, `int` or `uint`.
+    fn extend_bits(&mut self, value: Value, offset: u32, bits: u32, span: Span) -> Checked {
+        let signed = matches!(
+            value.ty.fteqcc_scalar(),
+            Some(CScalar::Int8 | CScalar::Int16)
+        );
+        let (op, parent) = if signed {
+            (Op::BitextendI, "__int32")
+        } else {
+            (Op::BitextendU, "__uint32")
+        };
+        let mask = offset.checked_shl(8).map_or(bits, |high| high | bits);
+        let extended = self.emit(op, &value, &Value::constant(Constant::uint(mask)), span)?;
+        Ok(Value {
+            ty: Type::Named(parent.into()),
+            sym: Sym::Temp,
+            ..extended
+        })
     }
 
     /// FTEF-31.2: `QCC_LoadFromArray`'s index: as an integer by `OP_LOADA_*` when the target has
@@ -324,6 +444,7 @@ impl Checker<'_> {
         }
         match (self.etype_of(&base.ty), &base.ty) {
             (Some(Etype::Pointer), Type::Pointer(pointee)) => {
+                let at = self.scaled_index(pointee, at, span)?;
                 let pointer = self.read(base.clone(), span)?;
                 Ok(Value {
                     readonly: false,
@@ -399,18 +520,16 @@ impl Checker<'_> {
         }
     }
 
-    /// An array's index scaled to words when an element takes more than one: made an integer
-    /// when the target has `OP_ADD_I` and the index is one, then multiplied by the element's
-    /// size, `OP_MUL_F` for a float index and `OP_MUL_I` otherwise.
+    /// FTEF-31.7: an array's or a pointer's index scaled to words by the size of what it
+    /// selects (`t->size`) when that is more than one word, `OP_MUL_F` for a float index, else
+    /// the index made an integer and `OP_MUL_I`; an index of a narrow type (`t->bits`) is made an
+    /// integer and multiplied by one, which emits nothing.
     fn scaled_index(&mut self, element: &Type, at: Value, span: Span) -> Checked {
-        let words = match self.etype_of(element) {
-            Some(Etype::Vector) => 3,
-            Some(Etype::Int64 | Etype::Uint64 | Etype::Double) => 2,
-            _ => 1,
+        let words = match self.pointee(&Type::Pointer(element.clone().into())) {
+            Pointee::Bits(_) => return self.converted(&at, Etype::Integer, span),
+            Pointee::Words(Some(words)) if words > 1 => words,
+            Pointee::Void | Pointee::Words(_) => return Ok(at),
         };
-        if words == 1 {
-            return Ok(at);
-        }
         if self.etype_of(&at.ty) == Some(Etype::Float) {
             let size = Value::constant(Constant::float(int_f32(words)));
             return self.emit(Op::MulF, &at, &size, span);
@@ -447,7 +566,7 @@ impl Checker<'_> {
         Ok(Value {
             readonly: string.readonly,
             name: string.name,
-            reference: Reference::Character { float_index },
+            reference: Reference::Character(Box::new(at)),
             ..Value::of(ty)
         })
     }
@@ -505,7 +624,7 @@ impl Checker<'_> {
                 }
                 Ok(pointer_to(&value.ty))
             }
-            Reference::Character { .. } => Ok(Value::unknown()),
+            Reference::Character(_) => Ok(Value::unknown()),
         }
     }
 
@@ -581,22 +700,39 @@ impl Checker<'_> {
                 }
                 Ok(())
             }
-            Reference::Character { .. } => self.store_character(stored, span),
+            Reference::Character(index) => self.store_character(index, stored, span),
             Reference::Accessor(accessor) => self.accessor_set(lhs, accessor, stored, span),
-            Reference::Global
-            | Reference::Field(_)
-            | Reference::ArrayHead
-            | Reference::Element(_)
-            | Reference::Pointer(_) => Ok(()),
+            // FTEF-2.12: a field of an 8- or 16-bit integer is stored through its address.
+            Reference::Field(_) => match narrow_bits(&lhs.ty) {
+                Some(16) => self.small_store(Op::StorepI16, stored, None, span),
+                Some(_) => self.small_store(Op::StorepI8, stored, None, span),
+                None => Ok(()),
+            },
+            Reference::Global | Reference::ArrayHead | Reference::Element(_) => Ok(()),
+            Reference::Pointer(pointer) => {
+                // FTEF-6.15: a bitfield through a pointer stores no bit offset.
+                if lhs.bitfield.is_some_and(|bitfield| bitfield.offset != 0) {
+                    let message = format!("left operand ({}) has a bit offset", pointer.base);
+                    self.env.report(Code::E0357, span, message);
+                }
+                // `QCC_SupplyConversion(dest->index, ev_integer, true)`.
+                let index = match &pointer.index {
+                    Some(index) if self.etype_of(&index.ty) != Some(Etype::Integer) => {
+                        Some(self.converted(index, Etype::Integer, span)?)
+                    }
+                    index => index.clone(),
+                };
+                self.store_to_pointer(lhs, index.as_ref(), stored, span)
+            }
         }
     }
 
-    /// A string's character stored: `OP_STOREP_C` for a float when the target has it, else
-    /// `OP_STOREP_I8` when it has that, else `OP_STOREP_C` or `OP_STOREP_I8`; the value made a
-    /// float or an integer for it; a target without it emulates the store
-    /// (`QCC_PR_Statement_SmallStore`): the word loaded with `OP_LOADP_I`, the byte masked out
-    /// with `OP_BITAND_I` and the value or-ed in with `OP_BITOR_I`.
-    fn store_character(&mut self, stored: &Value, span: Span) -> Result<(), Fatal> {
+    /// A string's character at `index` stored (`QCC_StoreSRefToRef`, `case REF_STRING:`):
+    /// `OP_STOREP_C` for a float when the target has it, else `OP_STOREP_I8` when it has that,
+    /// else `OP_STOREP_C` or `OP_STOREP_I8`; the value made a float or an integer for it, and the
+    /// index an integer, added to the string by `OP_ADD_I` on a target whose stores take no
+    /// offset; then [`Self::small_store`].
+    fn store_character(&mut self, index: &Value, stored: &Value, span: Span) -> Result<(), Fatal> {
         let target = self.env.target_at(span.start);
         let float = self.etype_of(&stored.ty) == Some(Etype::Float);
         let op = if (float && target.valid(Op::StorepC))
@@ -612,22 +748,13 @@ impl Checker<'_> {
             Etype::Integer
         };
         let value = self.converted(stored, to, span)?;
-        if target.valid(op) {
-            return Ok(());
+        let index = self.converted(index, Etype::Integer, span)?;
+        if target.stores_at_offset() {
+            return self.small_store(op, &value, Some(&index), span);
         }
-        let value = if op == Op::StorepC {
-            self.converted(&value, Etype::Uint, span)?
-        } else {
-            value
-        };
-        let word = Value::of(Type::Named("__int32".into()));
-        let pointer = Value::of(Type::Pointer(word.ty.clone().into()));
-        let loaded = self.emit(Op::LoadpI, &pointer, &Value::unknown(), span)?;
-        let mask = Value::constant(Constant::uint(0xff));
-        let masked = self.emit(Op::BitandI, &value, &mask, span)?;
-        let cleared = self.emit(Op::BitandI, &loaded, &Value::unknown(), span)?;
-        self.emit(Op::BitorI, &cleared, &masked, span)?;
-        Ok(())
+        let string = Value::of(Type::Simple(SimpleType::String));
+        self.emit(Op::AddI, &string, &index, span)?;
+        self.small_store(op, &value, None, span)
     }
 }
 
@@ -661,4 +788,13 @@ const fn f32_index(value: f32) -> i32 {
 )]
 const fn int_f32(value: i32) -> f32 {
     value as f32
+}
+
+/// The bits of an 8- or 16-bit integer type, `ev_bitfld`'s `bits` (FTEF-2.12).
+fn narrow_bits(ty: &Type) -> Option<u32> {
+    match ty.fteqcc_scalar() {
+        Some(CScalar::Int8 | CScalar::Uint8) => Some(8),
+        Some(CScalar::Int16 | CScalar::Uint16) => Some(16),
+        _ => None,
+    }
 }

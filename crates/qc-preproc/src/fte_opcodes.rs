@@ -67,6 +67,25 @@ impl OpcodeTarget {
         self.valid.get(word).is_some_and(|w| w & mask != 0)
     }
 
+    /// `QCC_OPCode_StorePOffset`: whether a store through a pointer takes an offset, on FTE's
+    /// formats from revision 5712 (`QCTARGVER_FTE_STOREP_IDX`), on DarkPlaces' from 20241108
+    /// (`QCTARGVER_DP_STOREP_IDX`) and on every other format (FTEF-6.18).
+    #[must_use]
+    pub const fn stores_at_offset(&self) -> bool {
+        match self.format {
+            TargetFormat::Fte | TargetFormat::Fteh2 | TargetFormat::FteDebug => {
+                self.revision >= 5712
+            }
+            TargetFormat::Darkplaces => self.revision >= 20_241_108,
+            TargetFormat::Standard
+            | TargetFormat::Qss
+            | TargetFormat::Hexen2
+            | TargetFormat::Uhexen2
+            | TargetFormat::Kk7
+            | TargetFormat::Qtest => true,
+        }
+    }
+
     /// Marks `op` valid or not, as `#pragma opcode` does (FTEF-25.3).
     pub(crate) fn set(&mut self, op: Op, on: bool) {
         let (word, mask) = place(op);
@@ -385,6 +404,32 @@ mod tests {
         assert_eq!(past.revision(), 6614);
         assert!(past.valid(Op::Push));
         assert!(!past.valid(Op::Numrealops));
+    }
+
+    // spec FTEF-6.18: stores through a pointer take an offset from FTE's revision 5712 and
+    // DarkPlaces' 20241108, and on every other format
+    #[test]
+    fn stores_take_an_offset_from_their_revision() {
+        for format in [
+            TargetFormat::Fte,
+            TargetFormat::Fteh2,
+            TargetFormat::FteDebug,
+        ] {
+            assert!(OpcodeTarget::new(format, 5712).stores_at_offset());
+            assert!(!OpcodeTarget::new(format, 5711).stores_at_offset());
+        }
+        assert!(OpcodeTarget::new(TargetFormat::Darkplaces, 20_241_108).stores_at_offset());
+        assert!(!OpcodeTarget::new(TargetFormat::Darkplaces, 20_241_107).stores_at_offset());
+        for format in [
+            TargetFormat::Standard,
+            TargetFormat::Qss,
+            TargetFormat::Hexen2,
+            TargetFormat::Uhexen2,
+            TargetFormat::Kk7,
+            TargetFormat::Qtest,
+        ] {
+            assert!(OpcodeTarget::new(format, 0).stores_at_offset());
+        }
     }
 
     // spec FTEF-25.2: Hexen II, QSS and DarkPlaces have their own extended opcodes

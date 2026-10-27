@@ -9,7 +9,9 @@
 //! union's member.
 
 use qc_diag::{Code, Span};
+use qc_preproc::Op;
 use qc_syntax::ast::{self, AstNode as _};
+use qc_syntax::c_scalar::CScalar;
 
 use crate::check::constant::Constant;
 use crate::check::etype::Etype;
@@ -88,13 +90,17 @@ impl Checker<'_> {
             )?,
             Etype::String => self.string_method(&base, &selector)?,
             Etype::Struct | Etype::Union => {
-                let member = self.struct_member(&base.ty, &selector);
+                let (member, offset) = self.struct_member(&base.ty, &selector);
                 match &base.reference {
-                    // `(*p).a` and `p[0].a` are members through the pointer.
-                    Reference::Pointer(_) => Value {
-                        reference: base.reference.clone(),
-                        ..member
-                    },
+                    // `(*p).a` and `p[i].a` are members through the pointer.
+                    Reference::Pointer(pointer) => {
+                        let span = field.syntax().span();
+                        let index = self.member_index(pointer.index.as_ref(), offset, span)?;
+                        Value {
+                            reference: Reference::pointer(pointer.base.clone(), Some(index)),
+                            ..member
+                        }
+                    }
                     _ => member,
                 }
             }
@@ -102,13 +108,14 @@ impl Checker<'_> {
                 let Type::Field(held) = &base.ty else {
                     return Ok(Value::unknown());
                 };
-                let member = self.struct_member(held, &selector);
+                let (member, _) = self.struct_member(held, &selector);
                 Value::of(Type::Field(member.ty.into()))
             }
             // The pointer is read to select through it, as an entity is.
             Etype::Pointer => {
-                let pointer = self.read(base, field.syntax().span())?;
-                self.pointer_member(&pointer, &selector)?
+                let span = field.syntax().span();
+                let pointer = self.read(base, span)?;
+                self.pointer_member(&pointer, &selector, span)?
             }
             // FTEF-24.10: a value of a type with no members ends the expression before the
             // `.`: the statement goes on with the value, and the `.` is then "expected ;, found
@@ -271,14 +278,16 @@ impl Checker<'_> {
         Ok(length())
     }
 
-    /// FTEF-24.4: a struct's or union's member, found in it or its parents. One it does not
-    /// have is reported by the resolver (FTEF-6.11), and its value is not followed.
-    fn struct_member(&mut self, ty: &Type, selector: &ast::Expr) -> Value {
+    /// FTEF-24.4: a struct's or union's member, found in it or its parents, and its offset in
+    /// units of its alignment, with that alignment, when the model lays the struct out
+    /// (FTEF-6.19). One it does not have is reported by the resolver (FTEF-6.11), and its value
+    /// is not followed.
+    fn struct_member(&mut self, ty: &Type, selector: &ast::Expr) -> (Value, Option<(u32, u32)>) {
         let Some((name, _)) = selector_name(selector) else {
-            return Value::unknown();
+            return (Value::unknown(), None);
         };
         let Some(member) = self.env.struct_member(ty, &name).filter(|m| !m.array) else {
-            return Value::unknown();
+            return (Value::unknown(), None);
         };
         // FTEF-6.15: a bitfield of fewer than 32 bits is read and stored by its bits.
         let bitfield = match (member.bits, member.position) {
@@ -290,16 +299,96 @@ impl Checker<'_> {
             }),
             _ => None,
         };
-        Value {
+        // A bitfield's `bitofs / bits` more than its word; a narrow integer's in its own units,
+        // `ofs*(32/align) + (mbitofs>>3)`.
+        let align = alignment(&member.ty);
+        let offset = match bitfield {
+            Some(bitfield) => {
+                let element = bitfield.offset.checked_div(bitfield.bits).unwrap_or(0);
+                Some((bitfield.word.saturating_add(element), align))
+            }
+            None => member
+                .position
+                .and_then(|position| position.checked_div(align))
+                .map(|units| (units, align)),
+        };
+        let value = Value {
             readonly: false,
             bitfield,
             ..Value::of(member.ty)
+        };
+        (value, offset)
+    }
+
+    /// FTEF-6.19: the index of a member through a pointer (`QCC_PR_ParseRefArrayPointer`), its
+    /// `offset` in units of its alignment: an index before it, of words, multiplied by
+    /// `OP_MUL_I` into units of a narrower member's; with an index and an offset of 0 that
+    /// index; else the offset, `OP_ADD_I` of the index made an integer and it when the target
+    /// has `OP_ADD_I`, else `OP_ADD_F` of the index made a float and the offset as a float times
+    /// `32 / align`. An offset the model does not know is an integer constant no check reads.
+    fn member_index(
+        &mut self,
+        index: Option<&Value>,
+        offset: Option<(u32, u32)>,
+        span: Span,
+    ) -> Checked {
+        let Some((offset, align)) = offset else {
+            return Ok(Value {
+                constness: Constness::Opaque,
+                ..Value::constant(Constant::int(0))
+            });
+        };
+        let Ok(offset) = i32::try_from(offset) else {
+            return Ok(Value {
+                constness: Constness::Opaque,
+                ..Value::constant(Constant::int(0))
+            });
+        };
+        // `idx = OP_MUL_I(idx, t->align/p->type->align)`: an index of words counted in the
+        // member's narrower units.
+        let index = match index {
+            Some(index) if align != 32 => {
+                let index = self.converted(index, Etype::Integer, span)?;
+                let per_word = Value::constant(Constant::int(if align == 8 { 4 } else { 2 }));
+                Some(self.emit(Op::MulI, &index, &per_word, span)?)
+            }
+            index => index.cloned(),
+        };
+        let index = index.as_ref();
+        if offset == 0
+            && let Some(index) = index
+        {
+            return Ok(index.clone());
         }
+        if self.env.target_at(span.start).valid(Op::AddI) {
+            let offset = Value::constant(Constant::int(offset));
+            let Some(index) = index else {
+                return Ok(offset);
+            };
+            let index = self.converted(index, Etype::Integer, span)?;
+            return self.emit(Op::AddI, &index, &offset, span);
+        }
+        let per_word = match align {
+            8 => 4,
+            16 => 2,
+            _ => 1,
+        };
+        let scaled = offset.saturating_mul(per_word);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "spec FTEF-6.19: QCC_MakeFloatConst(ofs*(32/align)), C's int to float"
+        )]
+        let offset = Value::constant(Constant::float(scaled as f32));
+        let Some(index) = index else {
+            return Ok(offset);
+        };
+        let index = self.converted(index, Etype::Float, span)?;
+        self.emit(Op::AddF, &index, &offset, span)
     }
 
     /// FTEF-24.5: through a pointer, a member of the struct or union it points at; a pointer to
     /// anything else is "indirection in TYPE - not a struct or union".
-    fn pointer_member(&mut self, base: &Value, selector: &ast::Expr) -> Checked {
+    fn pointer_member(&mut self, base: &Value, selector: &ast::Expr, span: Span) -> Checked {
         let Type::Pointer(pointee) = &base.ty else {
             return Ok(Value::unknown());
         };
@@ -307,13 +396,10 @@ impl Checker<'_> {
             // FTEF-6.14: read through the pointer at the member's offset, a bitfield's after
             // `bitofs / bits` more (FTEF-6.15).
             Some(Etype::Struct | Etype::Union) => {
-                let member = self.struct_member(pointee, selector);
-                let offset = member.bitfield.map(|bitfield| {
-                    let element = bitfield.offset.checked_div(bitfield.bits).unwrap_or(0);
-                    bitfield.word.saturating_add(element)
-                });
+                let (member, offset) = self.struct_member(pointee, selector);
+                let index = self.member_index(None, offset, span)?;
                 Ok(Value {
-                    reference: Reference::pointer(base.label(), Some(member_offset(offset))),
+                    reference: Reference::pointer(base.label(), Some(index)),
                     ..member
                 })
             }
@@ -367,14 +453,12 @@ fn intrinsic_value(name: &str) -> Option<&str> {
     }
 }
 
-/// A member's offset in its struct, `QCC_MakeIntConst(ofs)`: a bitfield's, whose narrow load
-/// folds by its value, else an integer constant whose value no check reads.
-fn member_offset(offset: Option<u32>) -> Value {
-    match offset.and_then(|offset| i32::try_from(offset).ok()) {
-        Some(offset) => Value::constant(Constant::int(offset)),
-        None => Value {
-            constness: Constness::Opaque,
-            ..Value::constant(Constant::int(0))
-        },
+/// The bits a member of type `ty` is aligned to, `p->type->align`: 8 or 16 for a narrow
+/// integer, else a word's 32.
+fn alignment(ty: &Type) -> u32 {
+    match ty.fteqcc_scalar() {
+        Some(CScalar::Int8 | CScalar::Uint8) => 8,
+        Some(CScalar::Int16 | CScalar::Uint16) => 16,
+        _ => 32,
     }
 }

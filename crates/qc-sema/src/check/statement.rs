@@ -58,7 +58,8 @@ impl Checker<'_> {
                 if expr.as_ref().is_some_and(generates) {
                     self.layout.push(Step::Other, None, line);
                 }
-                self.value(expr)?;
+                // `QCC_PR_DiscardExpression`: the value is discarded, never read.
+                self.expr_of(expr)?;
             }
             ast::Stmt::Return(s) => self.return_stmt(s, line)?,
             ast::Stmt::If(s) => self.if_stmt(s, line)?,
@@ -111,7 +112,7 @@ impl Checker<'_> {
         let ret = self.function.ret.clone();
         let void = self.etype_of(&ret) == Some(Etype::Void);
         let name = self.function.name.clone();
-        let ret_name = own_name(&self.env.type_name(&ret));
+        let ret_name = self.own_name(&ret);
         // A type larger than a vector is returned through a pointer, which `return;` and
         // `return =` do not handle.
         let large = self.returns_large();
@@ -139,8 +140,9 @@ impl Checker<'_> {
             self.layout.push(Step::Return, None, line);
             return Ok(());
         };
+        let before = self.emitted;
         let value = self.value(Some(expr.clone()))?;
-        self.generated(&expr, &value, line);
+        self.generated(&expr, &value, line, before);
         self.layout.push(Step::Return, None, line);
         if value.ty == Type::Unknown || ret == Type::Unknown || !self.env.fteqcc() || value.null() {
             return Ok(());
@@ -152,7 +154,7 @@ impl Checker<'_> {
         if void {
             let message = format!(
                 "'{name}' returned {}, expected {ret_name}",
-                own_name(&self.env.type_name(&value.ty))
+                self.own_name(&value.ty)
             );
             self.env.report(Code::W0257, value_span, message);
             return Ok(());
@@ -165,18 +167,35 @@ impl Checker<'_> {
     /// parentheses, is "suggest parenthesis" (FTEF-29.6).
     fn condition(&mut self, expr: Option<ast::Expr>) -> Result<Value, Fatal> {
         self.in_condition = true;
+        let before = self.emitted;
         let checked = self.value(expr.clone());
         self.in_condition = false;
         let value = checked?;
         if let Some(expr) = &expr {
             let line = self.env.line(expr.syntax().span());
-            self.generated(expr, &value, line);
+            self.generated(expr, &value, line, before);
         }
         Ok(value)
     }
 
-    /// The statements an expression generates, if it generates any: one stands for them all.
-    fn generated(&mut self, expr: &ast::Expr, value: &Value, line: u32) {
+    /// The statements an expression generates, if it generates any: one stands for them all. A
+    /// cast of a name or a literal generates only the conversions it emitted since `before`, none
+    /// for a cast to the type it has.
+    fn generated(&mut self, expr: &ast::Expr, value: &Value, line: u32, before: usize) {
+        let mut plain = expr.clone();
+        while let ast::Expr::Paren(paren) = &plain {
+            let Some(inner) = paren.expr() else {
+                break;
+            };
+            plain = inner;
+        }
+        let converts_only = matches!(
+            &plain,
+            ast::Expr::Cast(cast) if cast.operand().is_some_and(|operand| !generates(&operand))
+        );
+        if converts_only && self.emitted == before {
+            return;
+        }
         if generates(expr) && value.known().is_none() {
             self.layout.push(Step::Other, None, line);
         }
@@ -500,10 +519,7 @@ impl Checker<'_> {
                     (Some(_), Some(_)) | (None, _) => false,
                 });
             if uncovered {
-                let message = format!(
-                    "{}::{item} not part of switch",
-                    own_name(&self.env.type_name(&value.ty))
-                );
+                let message = format!("{}::{item} not part of switch", self.own_name(&value.ty));
                 self.env.report(Code::W0263, span, message);
             }
         }
@@ -744,16 +760,27 @@ fn generates(expr: &ast::Expr) -> bool {
     }
 }
 
-/// A type's own name, `type->name`, from its `TypeName`: a struct's, union's, class's or enum's
-/// without its keyword or base.
-fn own_name(type_name: &str) -> String {
-    for keyword in ["struct ", "union ", "class "] {
-        if let Some(name) = type_name.strip_prefix(keyword) {
-            return name.to_owned();
+impl Checker<'_> {
+    /// FTEF-24.11: a type's own name, `type->name`: a pointer's `ptr` (`QCC_PointerTypeTo`), a
+    /// function's `__function` (`type_function->name`), a field's its type's after a `.`
+    /// (`QCC_PR_FieldType`), and a struct's, union's, class's or enum's its name without its
+    /// keyword or base.
+    pub(super) fn own_name(&self, ty: &Type) -> String {
+        match ty {
+            Type::Pointer(_) => return "ptr".to_owned(),
+            Type::Function(_) => return "__function".to_owned(),
+            Type::Field(inner) => return format!(".{}", self.own_name(inner)),
+            Type::Unknown | Type::Simple(_) | Type::Named(_) => {}
         }
-    }
-    match type_name.strip_prefix("enum ") {
-        Some(name) => name.split(':').next().unwrap_or(name).to_owned(),
-        None => type_name.to_owned(),
+        let type_name = self.env.type_name(ty);
+        for keyword in ["struct ", "union ", "class "] {
+            if let Some(name) = type_name.strip_prefix(keyword) {
+                return name.to_owned();
+            }
+        }
+        match type_name.strip_prefix("enum ") {
+            Some(name) => name.split(':').next().unwrap_or(name).to_owned(),
+            None => type_name,
+        }
     }
 }

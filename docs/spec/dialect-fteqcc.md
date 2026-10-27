@@ -163,6 +163,27 @@ corpus uses `int` heavily (3392 occurrences across the three mods) and `bool` (1
   (WARN_IGNOREDKEYWORD, "ignoring unsupported const keyword");`). A bare `volatile` is a name,
   so `void(volatile float v) f;` is an error. At file level `__volatile float v;` is a
   definition; in a body it is a value (FTEF-2.10). How `const` makes a constant is FTE-10.
+- **FTEF-2.12** An 8- or 16-bit integer, `__int8`, `__uint8`, `__int16` or `__uint16` (and the
+  C words that make one, `char` and `short`), is `ev_bitfld` with the `parentclass` `int` or
+  `uint` (`type_sint8 ->parentclass = type_integer;` and the others, `qccmain.c`). It is cast as
+  its parent (`QCC_TryEvaluateCast` follows `parentclass`), so `c = "a"` is "Implicit cast from
+  string to __int8" and `c = 3.5` "Numerical overflow. 3.500000 will be rounded to 3", and
+  messages name it by its own name; a definition of it is read as a bitfield at bit 0
+  (`QCC_BitfieldToDef`), extended by `OP_BITEXTEND_I`, or `OP_BITEXTEND_U` for an unsigned one,
+  with the mask of its bits, to a value of its parent's type; it is no bitfield's base ("bitfields
+  must be integer types"); and a string initialises an array of 8-bit integers with no cast, a
+  character to each element (FTEF-19.8). An element of an array of them at a constant index is
+  the bitfield `index * bits` bits in (`ret.ofs += bitofs>>5; bitofs&=31;`), read extended and
+  stored packed into its word (`QCC_PR_Statement_BitCopy`, FTEF-6.15); at another index it is
+  read through its address (`QCC_PR_GenerateAddressOf`, which the id target refuses) by the
+  narrow load of FTEF-27.10. A local of one is initialised packed at bit 0
+  (`QCC_PR_GenerateInitializerType`), and a local array of 8-bit ones from a string a character,
+  then zeros, to each element. A field of one has no load: read, it is the fatal error `E0358`
+  "QCC_PR_ExpandField: invalid field type __int8"; stored, its index is the error `E0359` "Unable
+  to evaluate to numeric constant" (`QCC_Eval_Int` of the field), and the value is packed at bit 0
+  and stored through its address (FTEF-6.18). FTEQCC prints "INTERNAL: over-freed refcount to
+  NAME" for such a local's initialiser, its own temporaries' bookkeeping, which the semantic model
+  does not report.
 
 ## FTEF-3 Integer, double and typed numeric literals
 
@@ -398,6 +419,39 @@ inheritance, bitfields and nested members.
   as a bitfield's width (FTEF-6.9), is "Unknown value \"A\"." and then that error. A defined
   name is taken as a constant; an expression of more than a literal or a name is not folded
   (FTEF-19.46).
+- **FTEF-6.18** A store through a pointer (`QCC_StoreToPointer`, the type the source's when the
+  pointer points at a `variant`): to an 8- or 16-bit integer or a bitfield by `OP_STOREP_I8` or
+  `OP_STOREP_I16`, any other width the fatal error `E0353` "ptr-to-bitfld has unsupported bit
+  depth", a bitfield that does not start its word first the error `E0357` "left operand (NAME)
+  has a bit offset" (not fatal). Otherwise, with an index on a target whose stores take no offset
+  (`QCC_OPCode_StorePOffset`: FTE's formats before revision 5712 and DarkPlaces' before 20241108)
+  the index is first added to the pointer by `OP_ADD_PIW`. A float, vector, entity, string,
+  function or field is stored by its `OP_STOREP_*`; an integer by `OP_STOREP_I`, or else
+  `OP_STOREP_FLD`; a 64-bit value by `OP_STOREP_I64`, or else two `OP_STOREP_FLD`, the second at
+  the index plus 1 by `OP_ADD_I`, or with no offset the pointer plus 1 by `OP_ADD_PIW`; a pointer
+  by `OP_STOREP_P`, `OP_STOREP_I` or else `OP_STOREP_FLD`. A struct or union (and any other type)
+  is stored word by word: where stores take an offset, `OP_STOREP_V` for each three words when
+  the target has it, then `OP_STOREP_I` (or else `OP_STOREP_F`) for each word left, each word's
+  offset added to an index by `OP_ADD_I`; else the pointer offset to each by `OP_ADD_PIW` and
+  `OP_STOREP_V` for each three, `OP_STOREP_I64` for each two when the target has it, and
+  `OP_STOREP_F`. Each store is a `QCC_PR_SimpleStatement`, an opcode the target lacks the fatal
+  error `E0320`. An 8- or 16-bit store the target lacks is emulated
+  (`QCC_PR_Statement_SmallStore`): for `OP_STOREP_C` the value made a `uint`; the index (0 when
+  there is none) split into the place in its word, `& 3` or `& 1`, and the word, `>> 2` or
+  `>> 1`; the word read by `OP_LOADP_I`; the value masked by `0xff` or `0xffff` and shifted by
+  `OP_LSHIFT_I` to its place (`OP_MUL_I` of the place by its bits), the mask shifted and
+  inverted (`OP_BITNOT_I`), the word's bits there cleared by `OP_BITAND_I` and the two joined by
+  `OP_BITOR_I`; and the word stored by `OP_STOREP_I`, or `OP_STOREP_F` when the target lacks it.
+  Each is folded or emulated as any opcode (FTEF-27): on the id target `*pc = c;` for an
+  `__int8 *pc` is the `memgetval` and `OP_LOADP_I` errors, two `OP_BITAND_I` and an `OP_BITOR_I`.
+- **FTEF-6.19** A member reached through a pointer is at an index (`QCC_PR_ParseRefArrayPointer`):
+  its offset in units of its alignment (a word, or a byte or two for an 8- or 16-bit integer),
+  with no index before it; with one, the index made an integer and multiplied by `OP_MUL_I` into
+  the member's units when it is narrower than a word, then, unless the offset is 0, `OP_ADD_I` of
+  it and the offset when the target has `OP_ADD_I`, else `OP_ADD_F` of it made a float and the
+  offset as a float (times `32/align`). On the id target `pt[i].v = w;` for a `struct { float f;
+  vector v; } *pt` is `OP_MUL_I` of `i` by 4 (FTEF-31.7), the index made a float for `OP_ADD_F`
+  ("itof emulation") and made an integer again for the store ("ftoi emulation").
 - **FTEF-6.14** A struct or union read through a pointer is read word by word
   (`QCC_LoadFromPointer`, `case ev_struct: case ev_union:`): `OP_LOADP_V` for each three of its
   words and `OP_LOADP_I` for each word after them, each a `QCC_PR_SimpleStatement`, which
@@ -3703,6 +3757,12 @@ statement's checks (FTEF-23.6).
   `.` is the fatal error `E0204` "expected ;, found ."; inside parentheses, a call's arguments or
   an index the construct expects its own token at once, "expected ), found .". A fatal error
   before it, as "Cannot cast from .float to float" for `b = fl.x`, is reported instead.
+- **FTEF-24.11** Some messages print a type by its own name, `type->name`, not by `TypeName`:
+  a pointer a declaration makes is `ptr` (`QCC_PointerTypeTo`), and an array's address `T*`
+  (`QCC_PR_PointerType`); a function `__function` (`type_function->name`); a field `.` and its
+  type's own name (`QCC_PR_FieldType`); a struct, union, class or enum its name with no keyword
+  or base (`s` for `struct s`); any other type by its name. `float *p; void() g = { return p; };`
+  is "'g' returned ptr, expected void".
 ## FTEF-25 The opcodes the target has
 
 **Source:** `qcc_pr_comp.c`, `QCC_OPCodeValidForTarget`, `QCC_OPCodeSetTarget` and
@@ -3935,9 +3995,12 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   FTEF-19.31), so a value of another type is "Cannot cast from A to B" (`E0213`), a fatal error,
   and an array named bare is a pointer to its elements: `arr = 1` is "Cannot cast from float to
   float*". A compound assignment takes the first opcode of its list (`opcodes_addstore` and the
-  others) whose operands are the left side's and the value's basic types; with none, the value is
-  cast to the left side's type and the list searched again; with none still it is the fatal error
-  `E0323` "Type mismatch on assignment. A OP B is not supported" (`s += s`). A field or pointer
+  others) whose operands are the left side's and the value's basic types, an array named bare its
+  address (`arr += 1` is `ADD_PF`, then FTEF-29.3's "left operand must be an l-value"); with none,
+  the value is cast to the left side's type and the list searched again; with none still it is the
+  fatal error `E0323` "Type mismatch on assignment. A OP B is not supported" (`s += s`), A and B
+  the types' own names (FTEF-24.11), B the left side's when the cast changed the value's type
+  (`ptr *= ptr` for `p *= v` under `lax`, `float* += ptr` for `arr += p`). A field or pointer
   updated by an in-place opcode the target has (`opcodes_addstorep` and the others) is checked no
   further.
 - **FTEF-29.3** The store (`QCC_StoreSRefToRef`) to a read-only reference warns `W0241`
@@ -3952,8 +4015,22 @@ whether it is the result of a postfix `++` or `--`. The semantic model checks as
   NAME. Needed A, got B." (under `typeexplicit` for any conversion), or under `lax` the warning
   `W0243`. `a *= v` of a float and a vector is the error: `OP_MUL_FV` gives a vector.
 - **FTEF-29.5** A postfix `++` or `--` of a read-only value is the fatal error `E0322`
-  "postincrement: lhs is readonly" or "postdecrement: lhs is readonly"; otherwise the operand
-  plus or minus 1 of its type is emitted (FTEF-27), and the result is marked as a postfix's.
+  "postincrement: lhs is readonly" or "postdecrement: lhs is readonly". Otherwise the result is
+  marked as a postfix's, a temporary that messages name by its type (`QCC_GetSRefName`), and the operand is read and
+  updated by adding 1 or -1 (`--` adds -1; `QCC_RefToDef`, or `QCC_PR_DiscardRef` for a value
+  discarded: a statement's expression, a `for` header's first or last clause, a comma's left
+  side), by its basic type: `OP_ADD_F` of a float, `OP_ADD_D` of a double, `OP_ADD_I` of an int
+  for an integer and for a string, `OP_ADD_U` for a uint, `OP_ADD_I64` and `OP_ADD_U64` of an
+  int64; a pointer by `OP_ADD_PIW` of the step times the size in words of what it points at (a
+  word for `void`), or for `__int8` and `__int16` (`aux_type->bits`) by `OP_ADD_I` of the step in
+  bytes, which under `undefwordsize` a value not discarded first makes the fatal error `E0322`
+  "not allowed to make assumptions about pointer sizes. sorry."; any other type (a vector, an
+  entity) is the fatal error `E0322` "post increment operator not supported with this type". A
+  bitfield that does not start its word is first "post increment operator on bitfield"; one that
+  does, and an 8- or 16-bit integer (FTEF-2.12), is read, then "not supported" when its value is
+  used (`ref->cast` is `ev_bitfld`) and stepped as the integer it is read as when discarded. Each
+  opcode is emitted as FTEF-27 says, and the sum stored back as an assignment's (FTEF-29.7,
+  FTEF-6.15): `s++` warns "type mismatch: __int32 __int32 to string s".
 - **FTEF-29.6** An assignment that is the whole condition of an `if`, `while`, `do` or `for`,
   not parenthesised (`a = 1 && a` is one, `a = (1 && a)`), warns `W0242` "suggest parenthesis for assignment used as truth value" after its
   right side is read; `if ((a = 1))` does not.
@@ -4116,8 +4193,15 @@ its field, and an expression statement; the left side of `=`, the operand of `&`
   leaves, is the fatal error `E0337` "Type mismatch on indexed assignment of NAME: A VALUE,
   needed B.". An element is named `base[index]` in the store's messages, but for an immediate
   index. A string's character is stored by `OP_STOREP_C` for a float when the target has it,
-  else `OP_STOREP_I8`, emulated as the word's load (`OP_LOADP_I`), the byte masked out
-  (`OP_BITAND_I`) and the value or-ed in (`OP_BITOR_I`).
+  else `OP_STOREP_I8` when it has that, else `OP_STOREP_C` or `OP_STOREP_I8`, the value made a
+  float or an integer for it and the index an integer, added to the string by `OP_ADD_I` on a
+  target whose stores take no offset; the store is emulated as FTEF-6.18 says.
+- **FTEF-31.7** An index on a pointer is scaled as an array's is (`QCC_PR_ParseRefArrayPointer`,
+  `t->size != 1`): by the size in words of what the pointer points at, a vector's 3, a 64-bit
+  value's 2, a struct's or union's its own, by `OP_MUL_F` for a float index, else the index
+  made an integer and multiplied by `OP_MUL_I`; an index of an 8- or 16-bit integer
+  (`t->bits`) is made an integer and multiplied by one, which emits nothing. `pv[i]` of a
+  `vector *pv` is `OP_MUL_I` of `i` by 3, which the id target emulates.
 
 ## FTEF-32 Calls
 
@@ -4291,8 +4375,8 @@ name, a literal or a constant. The layout is FTEQCC's at its default optimisatio
   ends the function's checks), so `return;` "'NAME' returned nothing, expected TYPE" and
   `return =` "'NAME' not supported when returning TYPE" are the fatal error `E0341`, and the
   finished function warns `W0262` "Function NAME returns (large) TYPE. This is inefficient."
-  (`WARN_SLOW_LARGERETURN`). The return messages of FTEF-34.1 name a type by its own name,
-  `type->name` (`s` for `struct s`), and this one by `TypeName`.
+  (`WARN_SLOW_LARGERETURN`). The return messages of FTEF-34.1 name a type by its own name
+  (FTEF-24.11), and this one by `TypeName`.
 - **FTEF-34.9** An initialiser of a global that is an expression, no literal, name, cast of a
   literal or `_()`, is read as a body's expression is at global scope (`pr_scope` null): each
   statement it generates is the error `E0345` "Unable to generate statements at global scope

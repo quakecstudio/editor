@@ -200,8 +200,8 @@ fn c_scalar(name: &str) -> Option<CScalar> {
 
 impl Kind {
     /// The kind of a type the model holds. C type words, and the type names FTEQCC registers,
-    /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8); an 8- or 16-bit integer,
-    /// `__bint` and a type a program names are opaque.
+    /// are the type `QCC_PR_ParseType` makes of them (FTEF-2.8), an 8- or 16-bit integer its
+    /// parent's (FTEF-2.12); `__bint` and a type a program names are opaque.
     pub(crate) fn of(ty: &Type) -> Self {
         match ty {
             Type::Simple(SimpleType::Void) => Self::Void,
@@ -230,12 +230,10 @@ impl Kind {
             CScalar::Uint => Self::Uint,
             CScalar::Int64 => Self::Int64,
             CScalar::Uint64 => Self::Uint64,
-            CScalar::Int16
-            | CScalar::Uint16
-            | CScalar::Int8
-            | CScalar::Uint8
-            | CScalar::Bool
-            | CScalar::BFloat => Self::Opaque,
+            // FTEF-2.12: `ev_bitfld`, cast as its `parentclass` (`QCC_TryEvaluateCast`).
+            CScalar::Int16 | CScalar::Int8 => Self::Integer,
+            CScalar::Uint16 | CScalar::Uint8 => Self::Uint,
+            CScalar::Bool | CScalar::BFloat => Self::Opaque,
         }
     }
 
@@ -669,9 +667,16 @@ impl Type {
             Type::Simple(simple) => simple.as_str().to_owned(),
             Type::Field(inner) => format!(".{}", name_of(inner)),
             Type::Pointer(inner) => format!("{}*", name_of(inner)),
-            Type::Named(name) => match Kind::of(ty) {
-                Kind::Opaque => name.to_string(),
-                kind => kind.name().to_owned(),
+            Type::Named(name) => match (Kind::of(ty), c_scalar(name)) {
+                (
+                    _,
+                    Some(
+                        narrow
+                        @ (CScalar::Int8 | CScalar::Uint8 | CScalar::Int16 | CScalar::Uint16),
+                    ),
+                ) => narrow.name().to_owned(),
+                (Kind::Opaque, _) => name.to_string(),
+                (kind, _) => kind.name().to_owned(),
             },
             Type::Function(func) => {
                 let mut params: Vec<String> = func

@@ -2,11 +2,11 @@
 // Copyright (c) 2004-2025 FTE's team and its contributors
 // Copyright (C) 2026 QuakeC Studio contributors
 //
-// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_StatementFlags, QCC_MakeIntConst
+// Ported from fte-team/fteqw@f937b9d88f71fc4429db5fe56c6a98d922711b2e: engine/qclib/qcc_pr_comp.c, QCC_PR_StatementFlags, QCC_MakeIntConst, QCC_StoreToPointer, QCC_PR_Statement_SmallStore
 
-//! Pointer arithmetic and loads through a pointer, as FTEQCC emulates them when the target
-//! lacks their opcodes (FTEF-27.10): an offset scaled by the size of what the pointer points
-//! at, and a load of fewer than 32 bits read from the word that holds it.
+//! Pointer arithmetic, loads and stores through a pointer, as FTEQCC emulates them when the
+//! target lacks their opcodes (FTEF-27.10, FTEF-6.18): an offset scaled by the size of what the
+//! pointer points at, and a load or store of fewer than 32 bits made on the word that holds it.
 
 use qc_diag::{Code, Span};
 use qc_preproc::{FteFlag, Op};
@@ -24,7 +24,7 @@ const WORD_BYTES: i32 = 4;
 
 /// What a pointer points at, as FTEQCC's pointer arithmetic sizes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Pointee {
+pub(super) enum Pointee {
     /// `void`, counted in bytes.
     Void,
     /// A type narrower than a word (`aux_type->bits`): `__int8`, `__int16` and their unsigned
@@ -133,6 +133,43 @@ impl Checker<'_> {
         self.emit(Op::DivI, &difference, &divisor, span)
     }
 
+    /// FTEF-29.5: a postfix's step of a pointer: for a narrow type (`aux_type->bits`) the step
+    /// in bytes added by `OP_ADD_I`, first, for a value not `discarded` (`QCC_RefToDef`), under
+    /// `undefwordsize` the fatal error "not allowed to make assumptions about pointer sizes.
+    /// sorry."; else the step in words, `inc * aux_type->size` (a word for `void`), added by
+    /// `OP_ADD_PIW`. The value keeps the pointer's type.
+    pub(super) fn pointer_step(
+        &mut self,
+        pointer: &Value,
+        step: i8,
+        discarded: bool,
+        span: Span,
+    ) -> Result<Value, Fatal> {
+        let typed = |value: Value| Value {
+            ty: pointer.ty.clone(),
+            ..value
+        };
+        let bytes = match self.pointee(&pointer.ty) {
+            Pointee::Bits(bits) => bits.wrapping_div(8),
+            // `type_size[ev_void]`, a word.
+            Pointee::Void => {
+                let step = int(i32::from(step));
+                return self.emit(Op::AddPiw, pointer, &step, span).map(typed);
+            }
+            Pointee::Words(words) => {
+                let step =
+                    words.map_or_else(opaque_int, |w| int(i32::from(step).saturating_mul(w)));
+                return self.emit(Op::AddPiw, pointer, &step, span).map(typed);
+            }
+        };
+        if !discarded && self.env.flags_at(span.start).has(FteFlag::Undefwordsize) {
+            let message = "not allowed to make assumptions about pointer sizes. sorry.";
+            return self.fatal(Code::E0322, span, message.to_owned());
+        }
+        let step = int(i32::from(step).saturating_mul(bytes));
+        self.emit(Op::AddI, pointer, &step, span).map(typed)
+    }
+
     /// `OP_ADD_PIW`: the offset in words made bytes, `VMWORDSIZE *` it, and added
     /// (FTEF-27.10).
     pub(super) fn word_offset(
@@ -222,7 +259,7 @@ impl Checker<'_> {
     }
 
     /// What the pointer type `ty` points at.
-    fn pointee(&self, ty: &Type) -> Pointee {
+    pub(super) fn pointee(&self, ty: &Type) -> Pointee {
         let Type::Pointer(inner) = ty else {
             return Pointee::Words(Some(1));
         };
@@ -258,6 +295,209 @@ impl Checker<'_> {
         let message = format!("Constant int operand {promoted} will be truncated to {negated}");
         self.env.report(Code::W0234, span, message);
         int(negated)
+    }
+
+    /// FTEF-6.18: a store of `source` to what a pointer points at, a `ty`, at `index`
+    /// (`QCC_StoreToPointer`). A narrow type or a bitfield is stored by `OP_STOREP_I8` or
+    /// `OP_STOREP_I16` ([`Self::small_store`]), any other width the fatal error `E0353`
+    /// "ptr-to-bitfld has unsupported bit depth". With an index on a target whose stores take no
+    /// offset, the index is added to the pointer by `OP_ADD_PIW`. A struct or union is stored
+    /// word by word, a word type by its `OP_STOREP_*` (`OP_STOREP_I` or else `OP_STOREP_FLD` for
+    /// an integer; `OP_STOREP_I64` or else two `OP_STOREP_FLD` for a 64-bit value; `OP_STOREP_P`,
+    /// `OP_STOREP_I` or else `OP_STOREP_FLD` for a pointer), each a `QCC_PR_SimpleStatement`.
+    pub(super) fn store_to_pointer(
+        &mut self,
+        lhs: &Value,
+        index: Option<&Value>,
+        source: &Value,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        // `if (type->type == ev_variant) type = source.cast;`
+        let ty = if self.env.shape(&lhs.ty).map(|s| s.etype) == Some(Etype::Variant) {
+            &source.ty
+        } else {
+            &lhs.ty
+        };
+        let narrow = lhs.bitfield.map(|bitfield| bitfield.bits).or_else(|| {
+            match self.pointee(&Type::Pointer(ty.clone().into())) {
+                Pointee::Bits(bits) => u32::try_from(bits).ok(),
+                Pointee::Void | Pointee::Words(_) => None,
+            }
+        });
+        if let Some(bits) = narrow {
+            let op = match bits {
+                8 => Op::StorepI8,
+                16 => Op::StorepI16,
+                _ => {
+                    let message = "ptr-to-bitfld has unsupported bit depth".to_owned();
+                    return self.fatal(Code::E0353, span, message).map(drop);
+                }
+            };
+            return self.small_store(op, source, index, span);
+        }
+        let target = self.env.target_at(span.start);
+        let pointer = Value::of(Type::Pointer(ty.clone().into()));
+        let offset = target.stores_at_offset();
+        let mut index = index.cloned();
+        if let Some(at) = index.take_if(|_| !offset) {
+            self.emit(Op::AddPiw, &pointer, &at, span)?;
+        }
+        let Some(etype) = self.env.shape(ty).map(|s| s.etype) else {
+            return Ok(());
+        };
+        let op = match etype {
+            Etype::Float => Op::StorepF,
+            Etype::Vector => Op::StorepV,
+            Etype::Entity => Op::StorepEnt,
+            Etype::String => Op::StorepS,
+            Etype::Function => Op::StorepFnc,
+            Etype::Field => Op::StorepFld,
+            Etype::Integer | Etype::Uint if target.valid(Op::StorepI) => Op::StorepI,
+            Etype::Integer | Etype::Uint => Op::StorepFld,
+            Etype::Double | Etype::Int64 | Etype::Uint64 if target.valid(Op::StorepI64) => {
+                Op::StorepI64
+            }
+            Etype::Double | Etype::Int64 | Etype::Uint64 => {
+                self.simple_statement(Op::StorepFld, span)?;
+                if !offset {
+                    self.emit(Op::AddPiw, &pointer, &int(1), span)?;
+                } else if let Some(at) = &index {
+                    self.emit(Op::AddI, at, &int(1), span)?;
+                }
+                Op::StorepFld
+            }
+            Etype::Pointer if target.valid(Op::StorepP) => Op::StorepP,
+            Etype::Pointer if target.valid(Op::StorepI) => Op::StorepI,
+            Etype::Pointer => Op::StorepFld,
+            Etype::Void
+            | Etype::Variant
+            | Etype::Struct
+            | Etype::Union
+            | Etype::Enum
+            | Etype::Boolean => {
+                let words = self.env.layout(ty).map_or(1, |layout| layout.words);
+                return self.store_words_to_pointer(&pointer, index.as_ref(), words, span);
+            }
+        };
+        self.simple_statement(op, span)
+    }
+
+    /// `QCC_StoreToPointer`'s `case ev_struct: case ev_union:` and its `default`: `words` words
+    /// stored. On a target whose stores take an offset, `OP_STOREP_V` for each three words when
+    /// it has it, then `OP_STOREP_I` (or else `OP_STOREP_F`) for each word left, each word's
+    /// offset added to the index by `OP_ADD_I`; on another, the pointer offset to each by
+    /// `OP_ADD_PIW` and stored by `OP_STOREP_V` for each three, `OP_STOREP_I64` for each two
+    /// when it has it, and `OP_STOREP_F`.
+    fn store_words_to_pointer(
+        &mut self,
+        pointer: &Value,
+        index: Option<&Value>,
+        words: u32,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        let target = self.env.target_at(span.start);
+        let word = |at: u32| int(i32::try_from(at).unwrap_or(i32::MAX));
+        let mut at: u32 = 0;
+        if target.stores_at_offset() {
+            let store = |checker: &mut Self, at: u32, op: Op| -> Result<(), Fatal> {
+                if let Some(index) = index {
+                    checker.emit(Op::AddI, index, &word(at), span)?;
+                }
+                checker.simple_statement(op, span)
+            };
+            if target.valid(Op::StorepV) {
+                while at.saturating_add(3) <= words {
+                    store(self, at, Op::StorepV)?;
+                    at = at.saturating_add(3);
+                }
+            }
+            // `for (; i+(32*2) <= type->size; i+=32*2)`: bits against words, so only a struct
+            // of 64 words or more stores by `OP_STOREP_I64`.
+            if target.valid(Op::StorepI64) {
+                while at.saturating_mul(32).saturating_add(64) <= words {
+                    store(self, at, Op::StorepI64)?;
+                    at = at.saturating_add(2);
+                }
+            }
+            let op = if target.valid(Op::StorepI) {
+                Op::StorepI
+            } else {
+                Op::StorepF
+            };
+            while at < words {
+                store(self, at, op)?;
+                at = at.saturating_add(1);
+            }
+            return Ok(());
+        }
+        let store = |checker: &mut Self, at: u32, op: Op| -> Result<(), Fatal> {
+            checker.emit(Op::AddPiw, pointer, &word(at), span)?;
+            checker.simple_statement(op, span)
+        };
+        while at.saturating_add(2) < words {
+            store(self, at, Op::StorepV)?;
+            at = at.saturating_add(3);
+        }
+        if target.valid(Op::StorepI64) {
+            while at.saturating_add(1) < words {
+                store(self, at, Op::StorepI64)?;
+                at = at.saturating_add(2);
+            }
+        }
+        while at < words {
+            store(self, at, Op::StorepF)?;
+            at = at.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// FTEF-6.18: `QCC_PR_Statement_SmallStore`, a store of 8 or 16 bits through a pointer:
+    /// `op` itself when the target has it; else, for `OP_STOREP_C` the value made a `uint`
+    /// first, the index (0 when there is none) split into the word, `>>` 2 or 1, and the place
+    /// in it, `& 3` or `& 1`; the word read by `OP_LOADP_I`, the value masked and shifted to its
+    /// place, the word's bits there cleared and the two or-ed, and the word stored by
+    /// `OP_STOREP_I`, or `OP_STOREP_F` when the target lacks it.
+    pub(super) fn small_store(
+        &mut self,
+        op: Op,
+        value: &Value,
+        index: Option<&Value>,
+        span: Span,
+    ) -> Result<(), Fatal> {
+        let target = self.env.target_at(span.start);
+        if target.valid(op) {
+            return Ok(());
+        }
+        let (bits, shift, place) = if op == Op::StorepI16 {
+            (16, 1, 1)
+        } else {
+            (8, 2, 3)
+        };
+        let value = if op == Op::StorepC {
+            self.converted(value, Etype::Uint, span)?
+        } else {
+            value.clone()
+        };
+        let zero = uint(0);
+        let index = index.unwrap_or(&zero);
+        let place = self.emit(Op::BitandI, index, &uint(place), span)?;
+        let word_index = self.emit(Op::RshiftI, index, &uint(shift), span)?;
+        let pointer = Value::of(Type::Pointer(Type::Named("__int32".into()).into()));
+        let word = self.emit(Op::LoadpI, &pointer, &word_index, span)?;
+        let bit = self.emit(Op::MulI, &place, &uint(bits), span)?;
+        let mask = uint(if bits == 16 { 0xffff } else { 0xff });
+        let value = self.emit(Op::BitandI, &value, &mask, span)?;
+        let value = self.emit(Op::LshiftI, &value, &bit, span)?;
+        let mask = self.emit(Op::LshiftI, &mask, &bit, span)?;
+        let mask = self.emit(Op::BitnotI, &mask, &Value::unknown(), span)?;
+        let word = self.emit(Op::BitandI, &word, &mask, span)?;
+        self.emit(Op::BitorI, &word, &value, span)?;
+        let store = if target.valid(Op::StorepI) {
+            Op::StorepI
+        } else {
+            Op::StorepF
+        };
+        self.simple_statement(store, span)
     }
 
     /// Under `undefwordsize`, the error that pointer arithmetic assumes a size it may not.
