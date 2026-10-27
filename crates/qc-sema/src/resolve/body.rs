@@ -444,7 +444,8 @@ impl<'a> Resolver<'a> {
                 (_, UseKind::Value) => self.resolve_value(scope, &use_.name, false),
                 (_, UseKind::TypeOrValue) => self.resolve_value(scope, &use_.name, true),
                 (_, UseKind::CastTo { from }) => {
-                    if self.struct_type_name(&use_.name).is_some() {
+                    // FTEF-6.12: in a body the check stage refuses the cast as it reads it.
+                    if scope.is_none() && self.struct_type_name(&use_.name).is_some() {
                         let message = format!("Cannot cast from {from} to struct {}", use_.name);
                         self.report(Code::E0213, location, message);
                     }

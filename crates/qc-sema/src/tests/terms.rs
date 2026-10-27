@@ -358,3 +358,38 @@ fn struct_layouts() {
         assert_eq!(diags(&source), [d(Code::W0249, &message)], "{st}");
     }
 }
+
+// spec FTEF-6.12: a struct is cast to and from nothing but itself, in a body as in an
+// initialiser: an operand, a value stored and a written cast
+// spec FTEF-30.2: a struct's test is "conditional type mismatch"
+#[test]
+fn struct_values_in_bodies() {
+    let source = |statement: &str| {
+        format!("float a; struct st {{float x, y;}}; st t;\nvoid() g = {{ {statement} }};\n")
+    };
+    let cannot = d(Code::E0213, "Cannot cast from struct st to float");
+    assert_eq!(
+        diags(&source("a = t + a;")),
+        [
+            d(Code::E0302, "type mismatch for + (struct st and float)"),
+            cannot.clone()
+        ]
+    );
+    assert_eq!(diags(&source("a = t;")), std::slice::from_ref(&cannot));
+    assert_eq!(
+        diags(&source("a = (float)t;")),
+        std::slice::from_ref(&cannot)
+    );
+    assert_eq!(
+        diags(&source("t = 0;")),
+        [d(Code::E0213, "Cannot cast from float to struct st")]
+    );
+    assert_eq!(diags(&source("local st u = t; u = t;")), []);
+    for test in ["a = (t ? 1 : 2);", "if (t) a = 1;", "while (t) a = 1;"] {
+        assert_eq!(
+            diags(&source(test)),
+            [d(Code::W0247, "conditional type mismatch: struct")],
+            "{test}"
+        );
+    }
+}

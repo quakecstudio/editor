@@ -240,6 +240,11 @@ const PROGRAMS: &[&str] = &[
     "enum class E : float {A, B}; E e;\n\
      void() g = { switch (e) { case E::A: break; case E::B: break; } };\n",
     "enum class E : float {A, B}; E e;\nvoid() g = { switch (e) { case 0: break; } };\n",
+    // FTEF-6.12: struct values in bodies.
+    "float a; struct st {float x, y;}; st t;\nvoid() g = { a = t + a; };\n",
+    "float a; struct st {float x, y;}; st t;\nvoid() g = { a = (float)t; };\n",
+    "float a; struct st {float x, y;}; st t;\nvoid() g = { if (t) a = 1; };\n",
+    "float a; struct st {float x, y;}; st t;\nvoid() g = { local st u = t; u = t; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused

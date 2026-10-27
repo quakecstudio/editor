@@ -42,6 +42,38 @@ pub(in crate::resolve) struct BodyEnv<'r, 'a> {
     pub(in crate::resolve) locals: &'r [RawLocal],
 }
 
+impl BodyEnv<'_, '_> {
+    /// FTEF-6.12: a struct or union is cast to and from nothing but its own type, "Cannot cast
+    /// from X to Y" reported at `span`; whether the cast is so refused.
+    fn struct_cast_refused(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
+        if !self.resolver.profile.type_declarations() {
+            return false;
+        }
+        let to = self.resolver.resolved_deep(to, MAX_TYPEDEF_DEPTH);
+        let from = match source {
+            Source::Typed(ty) => {
+                let ty = self.resolver.resolved_deep(ty, MAX_TYPEDEF_DEPTH);
+                let structs =
+                    self.resolver.is_struct_type(&ty) || self.resolver.is_struct_type(&to);
+                if !structs || self.resolver.typecmp(&ty, &to) {
+                    return false;
+                }
+                self.resolver.type_name(&ty)
+            }
+            Source::Literal(_) if self.resolver.is_struct_type(&to) => source.name(),
+            Source::Literal(_) => return false,
+        };
+        self.resolver.settle(span.start);
+        let location = self.resolver.at(self.file, span);
+        let message = format!(
+            "Cannot cast from {from} to {}",
+            self.resolver.type_name(&to)
+        );
+        self.resolver.report(Code::E0213, location, message);
+        true
+    }
+}
+
 impl Env for BodyEnv<'_, '_> {
     fn reference(&self, at: usize) -> Option<DefId> {
         self.uses.get(&at).copied()
@@ -359,6 +391,9 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn explicit_cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
+        if self.struct_cast_refused(source, to, span) {
+            return true;
+        }
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
@@ -394,6 +429,9 @@ impl Env for BodyEnv<'_, '_> {
     }
 
     fn cast(&mut self, source: Source<'_>, to: &Type, span: Span) -> bool {
+        if self.struct_cast_refused(source, to, span) {
+            return true;
+        }
         self.resolver.settle(span.start);
         let location = self.resolver.at(self.file, span);
         let flags = CompilerFlags::at(self.flags, span.start);
