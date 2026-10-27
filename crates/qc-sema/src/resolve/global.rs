@@ -96,6 +96,7 @@ impl<'a> Resolver<'a> {
                     .map(|p| self.resolved_deep(p, depth))
                     .collect(),
                 variadic: func.variadic,
+                labels: func.labels.clone(),
             })),
             Type::Unknown | Type::Simple(_) | Type::Named(_) => ty,
         }

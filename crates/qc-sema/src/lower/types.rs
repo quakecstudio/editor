@@ -11,7 +11,7 @@ use qc_syntax::{Dialect, Keyword, SyntaxKind, SyntaxNode};
 
 use std::rc::Rc;
 
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 use super::body::{RawBody, RawParam, lower_body, next_think_of};
 use super::decl::{
@@ -959,6 +959,7 @@ fn lower_accessor_body(
             ret,
             params,
             variadic: false,
+            labels: ParamLabels::default(),
         }));
         let mut body = lower_body(&fn_body, &fn_ty, cx);
         body.params.clear();

@@ -16,7 +16,7 @@ use crate::lower::ArrayDim;
 use crate::lower::{MemberBase, MemberKind, RawClass, RawDecl, RawUse, top_level_kind};
 use crate::resolve::{ClassInfo, Found, MAX_CLASS_DEPTH, Pending, Resolver, Scope, StructMatch};
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 impl<'a> Resolver<'a> {
     /// `accessor Name : Base` (FTEF-10.6): the base is a type and no struct or union, and the
@@ -342,6 +342,7 @@ impl<'a> Resolver<'a> {
             ret: Type::Simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         }));
         let id = self.push_def(Definition {
             name: spawnfunc,

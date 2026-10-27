@@ -10,7 +10,7 @@ use qc_syntax::{Dialect, QC_MAX_NESTING};
 
 use crate::db::Db;
 use crate::symbol::FileId;
-use crate::ty::{FROM_AST_CALLS, FunctionType, SimpleType, Type, TypeContext};
+use crate::ty::{FROM_AST_CALLS, FunctionType, ParamLabels, SimpleType, Type, TypeContext};
 
 /// Lowers the type of the first file-level declaration in `source`.
 fn first_decl_type(source: &str) -> Type {
@@ -84,6 +84,7 @@ fn function_type_lowers() {
                 Type::Simple(SimpleType::Vector),
             ],
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     );
 }

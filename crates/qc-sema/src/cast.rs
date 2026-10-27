@@ -651,8 +651,9 @@ impl ConstType {
 }
 
 impl Type {
-    /// This type as FTEQCC's `TypeName` writes it in a message, without parameter names, which
-    /// the model's types do not keep (QC-10.3): `.float`, `void(float, vector)`, `entity*`.
+    /// This type as FTEQCC's `TypeName` writes it in a message, a function's parameters with
+    /// their marks, names and defaults (FTEF-24.7): `.float`, `void(float x, vector v)`,
+    /// `entity*`.
     #[must_use]
     pub fn fteqcc_name(&self) -> String {
         let ty = self;
@@ -666,7 +667,34 @@ impl Type {
                 kind => kind.name().to_owned(),
             },
             Type::Function(func) => {
-                let mut params: Vec<String> = func.params.iter().map(Type::fteqcc_name).collect();
+                let mut params: Vec<String> = func
+                    .params
+                    .iter()
+                    .enumerate()
+                    .map(|(at, param)| {
+                        let ty = param.fteqcc_name();
+                        let Some(label) = func.labels.0.get(at) else {
+                            return ty;
+                        };
+                        let mut text = String::new();
+                        if label.out {
+                            text.push_str("inout ");
+                        }
+                        if label.optional {
+                            text.push_str("optional ");
+                        }
+                        text.push_str(&ty);
+                        if let Some(name) = label.name.as_deref().filter(|n| !n.is_empty()) {
+                            text.push(' ');
+                            text.push_str(name);
+                        }
+                        if let Some(default) = &label.default {
+                            text.push_str(" = ");
+                            text.push_str(default);
+                        }
+                        text
+                    })
+                    .collect();
                 if func.variadic {
                     params.push("...".to_owned());
                 }

@@ -11,7 +11,7 @@ use qc_lexer::{LexFlag, LexFlags};
 use qc_preproc::{CompilerFlags, FteFlag};
 
 use super::{Cast, ConstType, Kind, Literal, Source, Supply};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 fn simple(ty: SimpleType) -> Type {
     Type::Simple(ty)
@@ -113,6 +113,7 @@ fn a_float_casts_to_numbers_and_vectors() {
             ret: simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         })),
     ] {
         assert!(refused(literal("1"), &to), "{to:?}");
@@ -260,6 +261,7 @@ fn pointers_and_warnings() {
             ret: simple(SimpleType::Void),
             params: vec![simple(param)],
             variadic: false,
+            labels: ParamLabels::default(),
         }))
     };
     assert!(warns(
@@ -280,6 +282,7 @@ fn types_are_the_same_part_by_part() {
             ret,
             params,
             variadic,
+            labels: ParamLabels::default(),
         }))
     };
     let float = simple(SimpleType::Float);
@@ -319,6 +322,7 @@ fn type_names_are_fteqcc_spellings() {
         ret: simple(SimpleType::Void),
         params: vec![simple(SimpleType::Float)],
         variadic: true,
+        labels: ParamLabels::default(),
     }));
     assert_eq!(func.fteqcc_name(), "void(float, ...)");
     assert_eq!(

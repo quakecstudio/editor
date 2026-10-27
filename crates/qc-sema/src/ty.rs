@@ -82,8 +82,9 @@ impl Default for TypeContext {
 
 /// A function type: a return type, parameter types and whether it is variadic (QC-10.3).
 ///
-/// Parameter names are not part of the type (QC-10.3); only the types and the count are
-/// stored, so two function types with different parameter names are equal (QC-10.6).
+/// Parameter names are not part of the type (QC-10.3): two function types with different
+/// parameter names are equal (QC-10.6). FTEQCC's messages print them, so they are kept beside
+/// the types as [`ParamLabels`], which no comparison reads.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionType {
     /// The return type: a simple type in vanilla (QC-10.3), any type in FTEQCC (FTEF-15.2).
@@ -92,6 +93,39 @@ pub struct FunctionType {
     pub params: Vec<Type>,
     /// Whether the parameter list is `(...)` (QC-10.4).
     pub variadic: bool,
+    /// How each parameter is written, for messages only.
+    pub labels: ParamLabels,
+}
+
+/// How a parameter is written: its name, its `optional` and out marks and its default value as
+/// FTEQCC's `TypeName` prints them (FTEF-24.7).
+#[derive(Clone, Debug, Default)]
+pub struct ParamLabel {
+    /// Its name.
+    pub name: Option<String>,
+    /// Whether `optional` marks it.
+    pub optional: bool,
+    /// Whether an out mark (`__out`, `__inout`, `&`) marks it.
+    pub out: bool,
+    /// Its default value as `QCC_VarAtOffset` prints it.
+    pub default: Option<String>,
+}
+
+/// The parameters' labels of a function type; equal to any other, so they never tell two
+/// types apart.
+#[derive(Clone, Debug, Default)]
+pub struct ParamLabels(pub Rc<[ParamLabel]>);
+
+impl PartialEq for ParamLabels {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for ParamLabels {}
+
+impl std::hash::Hash for ParamLabels {
+    fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
 
 impl Type {
@@ -182,6 +216,7 @@ impl Type {
                             ret: ret.clone(),
                             params: Vec::new(),
                             variadic: false,
+                            labels: ParamLabels::default(),
                         }))
                     },
                     |list| Self::function_of(ret.clone(), &list, context),
@@ -202,10 +237,13 @@ impl Type {
     ) -> Self {
         let empty = list.params().next().is_none() && !list.is_variadic();
         let variadic = list.is_variadic() || (empty && !context(list.syntax().span().end).qcfuncs);
+        let params = Self::params_of(list, context);
+        let labels = Self::labels_of(list, &params);
         Self::Function(Rc::new(FunctionType {
             ret,
-            params: Self::params_of(list, context),
+            params,
             variadic,
+            labels,
         }))
     }
 
@@ -222,6 +260,39 @@ impl Type {
             },
             _ => Self::Named(Rc::from(words)),
         }
+    }
+
+    /// How each parameter of `list`, of types `params`, is written (FTEF-24.7).
+    fn labels_of(list: &ast::ParamList, params: &[Self]) -> ParamLabels {
+        let labels: Vec<ParamLabel> = list
+            .params()
+            .zip(params)
+            .map(|(param, ty)| {
+                let words: Vec<String> = param
+                    .syntax()
+                    .children()
+                    .filter(|n| n.kind() == qc_syntax::SyntaxKind::Qualifier)
+                    .filter_map(|n| {
+                        n.child_tokens().find(|t| !t.kind().is_trivia()).map(|t| {
+                            t.text_lossless()
+                                .trim_start_matches('_')
+                                .to_ascii_lowercase()
+                        })
+                    })
+                    .collect();
+                ParamLabel {
+                    name: param.name().map(|t| t.text_lossless()),
+                    optional: words.iter().any(|w| w == "optional"),
+                    out: words.iter().any(|w| w == "out" || w == "inout")
+                        || param
+                            .syntax()
+                            .child_tokens()
+                            .any(|t| t.kind() == qc_syntax::SyntaxKind::Amp),
+                    default: param.default_value().map(|value| default_text(&value, ty)),
+                }
+            })
+            .collect();
+        ParamLabels(labels.into())
     }
 
     /// The parameter types of a parameter list (QC-10.3). FTEQCC's `(void)`, one `void` with no
@@ -289,4 +360,62 @@ impl SimpleType {
             Self::Entity => "entity",
         }
     }
+}
+
+/// A default value as `QCC_VarAtOffset` prints the constant it is once cast to the parameter's
+/// type `ty`: a float `%gf`, an integer `%#xi`, a vector `'%g %g %g'`, a string quoted; any
+/// other expression as written.
+fn default_text(value: &ast::Expr, ty: &Type) -> String {
+    let written = String::from_utf8_lossy(&value.syntax().text())
+        .trim()
+        .to_owned();
+    let number = |text: &str| -> Option<f64> {
+        let text = text.trim();
+        let (negative, digits) = match text.strip_prefix('-') {
+            Some(rest) => (true, rest.trim()),
+            None => (false, text),
+        };
+        let parsed: f64 = digits.trim_end_matches(['f', 'i']).parse().ok()?;
+        Some(if negative { -parsed } else { parsed })
+    };
+    match ty {
+        Type::Simple(SimpleType::Float) => {
+            number(&written).map_or(written.clone(), |v| format!("{}f", format_g(v)))
+        }
+        Type::Simple(SimpleType::Vector) => {
+            let inner = written.trim_matches('\'');
+            let parts: Option<Vec<f64>> = inner.split_whitespace().map(number).collect();
+            match parts.as_deref() {
+                Some([x, y, z]) => {
+                    format!("'{} {} {}'", format_g(*x), format_g(*y), format_g(*z))
+                }
+                _ => written,
+            }
+        }
+        Type::Named(name) if name.as_ref() == "__int32" => written
+            .trim_end_matches('i')
+            .parse::<i64>()
+            .map_or(written.clone(), |v| format!("{v:#x}i")),
+        _ => written,
+    }
+}
+
+/// C's `%g`: six significant digits, trailing zeros dropped, an exponent outside 1e-4 to 1e6.
+fn format_g(value: f64) -> String {
+    let scientific = format!("{value:.5e}");
+    let (mantissa, exp) = scientific.split_once('e').unwrap_or((&scientific, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let trim = |text: &str| {
+        if text.contains('.') {
+            text.trim_end_matches('0').trim_end_matches('.').to_owned()
+        } else {
+            text.to_owned()
+        }
+    };
+    if !(-4..6).contains(&exp) {
+        let sign = if exp < 0 { '-' } else { '+' };
+        return format!("{}e{sign}{:02}", trim(mantissa), exp.unsigned_abs());
+    }
+    let decimals = usize::try_from(5_i32.saturating_sub(exp)).unwrap_or(0);
+    trim(&format!("{value:.decimals$}"))
 }

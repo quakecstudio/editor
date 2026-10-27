@@ -568,8 +568,8 @@ fn redeclarations_of_another_type() {
         fte_only("float(float a, optional float b) g;\nfloat(float a) g = #6;\n"),
         (
             Code::W0209,
-            "Optional arguments differ on redeclaration of g. float(float), should be \
-             float(float, float)"
+            "Optional arguments differ on redeclaration of g. float(float a), should be \
+             float(float a, optional float b)"
                 .to_owned()
         )
     );
@@ -591,7 +591,7 @@ fn redeclarations_of_another_type() {
         fte_only("void() droptofloor = #6;\nfloat(float a) droptofloor;\n"),
         (
             Code::W0210,
-            "droptofloor builtin was wrongly redefined as float(float). ignoring later \
+            "droptofloor builtin was wrongly redefined as float(float a). ignoring later \
              definition"
                 .to_owned()
         )
@@ -603,7 +603,7 @@ fn redeclarations_of_another_type() {
         )[1],
         (
             Code::W0211,
-            "Type redeclaration of float(float) anglemod replaces existing variable".to_owned()
+            "Type redeclaration of float(float a) anglemod replaces existing variable".to_owned()
         )
     );
     // A `noref` mark is a reference too (`def->referenced = true;`).
@@ -649,7 +649,7 @@ fn an_extensions_file_keeps_the_first_declaration() {
         found,
         [(
             Code::W0210,
-            "spin builtin was redefined as float(float). ignoring alternative definition"
+            "spin builtin was redefined as float(float a). ignoring alternative definition"
                 .to_owned()
         )]
     );

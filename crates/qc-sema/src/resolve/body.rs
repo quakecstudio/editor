@@ -25,7 +25,7 @@ use crate::resolve::{
     component_type,
 };
 use crate::symbol::{DefId, DefKind, Definition, FileId, Location, Reference};
-use crate::ty::{FunctionType, SimpleType, Type};
+use crate::ty::{FunctionType, ParamLabels, SimpleType, Type};
 
 impl<'a> Resolver<'a> {
     /// Declares, or checks, the next-think name of a state header (QC-13.6).
@@ -43,6 +43,7 @@ impl<'a> Resolver<'a> {
             ret: Type::Simple(SimpleType::Void),
             params: Vec::new(),
             variadic: false,
+            labels: ParamLabels::default(),
         }));
         let location = self.at(file, span);
         // FTEF-19.42: in a member function the name is a member function of the class or its

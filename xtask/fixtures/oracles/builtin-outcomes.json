@@ -69644,6 +69644,8 @@
   "fteqcc|void() f = #5;\nvoid(float x) f1 = {};\nvoid() g = { local int i; f1(i); };\n|-Werror -Wno-Q208 -Wno-Q302": "rejected",
   "fteqcc|void() f = #5;\nvoid(float x) f1 = {};\nvoid() g = { local string s; f1(s); };\n": "rejected",
   "fteqcc|void() f = #5;\nvoid(float x) f1 = {};\nvoid() g = { local string s; f1(s); };\n|-Werror -Wno-Q208 -Wno-Q302": "rejected",
+  "fteqcc|void() f = #5;\nvoid(float x, optional float y = 2) h = {}; float b; void() g = { b = h; };\n": "rejected",
+  "fteqcc|void() f = #5;\nvoid(float x, optional float y = 2) h = {}; float b; void() g = { b = h; };\n|-Werror -Wno-Q208 -Wno-Q302": "rejected",
   "fteqcc|void() f = #5;\nvoid(float() cb) g = #2;\n": "bound 5 f",
   "fteqcc|void() f = #5;\nvoid(float(float) *a) h = #6;\n": "bound 5 f",
   "fteqcc|void() f = #5;\nvoid(float(float) *a) h = #6;\n|-Fcaseinsens": "bound 5 f",

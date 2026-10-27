@@ -3521,8 +3521,10 @@ statement's checks (FTEF-23.6).
   (an entity type with a `parentclass`), and a field of a class too, the class branch writing
   over the field's `.`; a struct or union `struct NAME` or `union NAME`; a strict enum `enum
   NAME:BASE`; a pointer `T*`; a field `.T`; any other type by its name. A function type prints
-  its parameters' types; FTEQCC also prints their names and default values, which the semantic
-  model's function types do not keep.
+  each parameter as `[inout ][optional ]TYPE[ NAME][ = DEFAULT]`, then `...` when it is
+  variadic: the default as `QCC_VarAtOffset` prints the constant, a float `%gf` (`2f`, `0.5f`), an
+  integer `%#xi` (`0x3i`), a vector `'%g %g %g'`, a string quoted. The names are kept beside the
+  types for messages and never tell two types apart (QC-10.6).
 - **FTEF-24.8** An array's only member is `length`, an `int`, the array's size (`QCC_PR_Expect
   ("length")` after an array's `.`, FTE-13); `LightStyles.length` for an array of strings is the
   array's length, not the string's.

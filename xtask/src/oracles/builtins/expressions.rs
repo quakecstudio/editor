@@ -278,6 +278,8 @@ const PROGRAMS: &[&str] = &[
     "float a, b; void() g = { b = a.nope; };\n",
     "float a, b; void(float x) f = {}; void() g = { f(a.x); };\n",
     ".float fl; float b; void() g = { b = fl.x; };\n",
+    // FTEF-24.7: function types in messages.
+    "void(float x, optional float y = 2) h = {}; float b; void() g = { b = h; };\n",
 ];
 
 /// The options under which every warning but "no references" (Q302), which the fixtures' unused
