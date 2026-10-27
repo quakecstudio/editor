@@ -209,7 +209,9 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
 
 - **QCD-4.1** `E0301` "Unknown value \"NAME\"": a name with no definition in scope (QC-12.5).
 - **QCD-4.2** `E0302` "type mismatch for OP": no row of the operator table matches the
-  operand types (QC-16.2, QC-16.4); `OP` is the operator's spelling.
+  operand types (QC-16.2, QC-16.4); `OP` is the operator's spelling. Under an FTEQCC profile
+  "type mismatch for OP (A and B)", the operands' type names, when no opcode of the spelling
+  takes them (FTEF-23.4).
 - **QCD-4.3** `E0303` "not a function": a call of something that is not a function
   (QC-18.1).
 - **QCD-4.4** `E0304` "too many parameters": more arguments than a fixed parameter list
@@ -512,6 +514,14 @@ differs from what it appears to say, most of them listed by id itself in the `qc
   profile, never reported, since FTEQCC gives it only when `numpr_globals` is not `RESERVED_OFS`,
   which no definition makes while it parses (FTEF-12.18); the code is the warning class a
   `#pragma warning` names (FTEF-14.63).
+- **QCD-7.73** `W0231` "type mismatch for OP (A and B)": under an FTEQCC profile with `lax` on,
+  an operator no opcode of whose spelling takes its operands, at the operator (FTEF-23.4).
+  `WARN_LAXCAST`, so F314 names it and `-Fqccx` ignores it (FTEF-22.2).
+- **QCD-7.74** `W0232` "Implicit conversion from A to B": under an FTEQCC profile, an operand of
+  an operator converted to the opcode's type at a cost of 100 or more, a vector to a float or a
+  number down the ranking, at the operator, first the left operand's then the right's
+  (FTEF-23.5). `WARN_IMPLICITCONVERSION`, which `warningnames[]` does not name, so no
+  `#pragma warning` sets it.
 
 ## QCD-8 Preprocessor errors
 

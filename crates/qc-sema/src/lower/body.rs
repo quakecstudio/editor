@@ -4,6 +4,7 @@
 //! (QC-11.10, QC-13, FTEF-18, FTEF-19.19).
 
 use qc_diag::{Code, Diagnostic, Span};
+use qc_lexer::LexFlags;
 use qc_preproc::{FteFlag, PragmaDefault};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CScalar;
@@ -50,6 +51,12 @@ pub struct RawBody {
     /// The types the body's declarations write with no declarator, each with where it starts,
     /// which only have their type names checked (FTEF-20.12).
     pub type_only: Vec<(Type, Span)>,
+    /// The body as written, which the check stage types (`crate::check`).
+    pub syntax: Option<ast::FunctionBody>,
+    /// The compiler flags in force in the body, from each offset on (FTEF-21.1).
+    pub flags: Vec<(usize, CompilerFlags)>,
+    /// The lexer's flags in force in the body, from each offset on (FTEF-12.12).
+    pub lex_flags: Vec<(usize, LexFlags)>,
 }
 
 /// One alias a `using` statement makes (FTEF-20.5): `QCC_PR_GetDef (NULL, name, pr_scope,
@@ -144,7 +151,13 @@ pub(super) fn next_think_of(fn_body: &ast::FunctionBody) -> Option<(String, Span
 }
 
 pub(super) fn lower_body(fn_body: &ast::FunctionBody, fn_ty: &Type, cx: Cx<'_>) -> RawBody {
-    let mut body = RawBody::default();
+    let span = fn_body.syntax().span();
+    let mut body = RawBody {
+        syntax: Some(fn_body.clone()),
+        flags: Cx::marks_in(cx.flags, span),
+        lex_flags: Cx::marks_in(cx.lex, span),
+        ..RawBody::default()
+    };
     collect_params(
         fn_ty,
         fn_body,

@@ -14,10 +14,12 @@ use qc_preproc::FteFlag;
 use std::rc::Rc;
 
 use crate::cast::{Kind, Source, Supply};
+use crate::check::check_body;
 use crate::lower::{
     Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind, ValueKind,
     top_level_kind,
 };
+use crate::resolve::check_env::BodyEnv;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Found, Holder, Pending, Redeclaration, Resolver, Scope, ScopedFacts,
     component_type,
@@ -246,7 +248,21 @@ impl<'a> Resolver<'a> {
             self.declare_alias(file, scope, alias);
         }
         // QC-12.5: resolve each name use against globals and this function's own locals.
+        self.use_defs.clear();
         self.resolve_uses(file, Some(scope), &body.uses);
+        if let Some(syntax) = &body.syntax {
+            let uses = std::mem::take(&mut self.use_defs);
+            let mut env = BodyEnv {
+                resolver: self,
+                file,
+                in_class: class.is_some(),
+                uses: &uses,
+                flags: &body.flags,
+                lex: &body.lex_flags,
+            };
+            let typed = check_body(&mut env, syntax);
+            self.index.bodies.insert(owner, typed);
+        }
     }
 
     /// A definition the attribute `alias(TARGET)` gives (FTEF-21.9): `QCC_PR_GetDef (NULL,
@@ -464,6 +480,7 @@ impl<'a> Resolver<'a> {
                         };
                         self.report(Code::W0314, location, message);
                     }
+                    self.use_defs.insert(use_.span.start, def);
                     self.index.refs.push(Reference { location, def });
                 }
                 Found::Nothing => {}
@@ -570,7 +587,8 @@ impl<'a> Resolver<'a> {
             self.report(Code::E0206, location, format!("{} redeclared", local.name));
             return;
         }
-        if self.profile.definition_checks() && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
+        if self.profile.definition_checks()
+            && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
         {
             return;
         }

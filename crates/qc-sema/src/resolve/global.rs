@@ -216,7 +216,8 @@ impl<'a> Resolver<'a> {
         });
         let constant = decl.constant;
         let statics = decl.statics;
-        let field_component = decl.component && self.profile.field_components_typed_apart() && kind == DefKind::Field;
+        let field_component =
+            decl.component && self.profile.field_components_typed_apart() && kind == DefKind::Field;
         if let Some(facts) = self.fact_mut(id) {
             facts.constant = constant;
             facts.array = decl.array;
@@ -257,7 +258,9 @@ impl<'a> Resolver<'a> {
                     statics,
                     ..DeclFacts::default()
                 };
-                if self.profile.components_initialised() && self.lookup_global(&component_name).is_some() {
+                if self.profile.components_initialised()
+                    && self.lookup_global(&component_name).is_some()
+                {
                     // FTEF-19.5: FTEQCC makes the components with `QCC_PR_DummyDef`, which
                     // looks for no earlier definition, so an earlier one of the name stays.
                     continue;
@@ -297,11 +300,15 @@ impl<'a> Resolver<'a> {
         let lax = Self::lax_same(&resolved_old, params, &resolved_ty, r.params);
         // QC-11.12: a vector field's component has `qcc`'s `type_floatfield`, which no `.float`
         // written in the source is, and only another component's lookup has.
-        if self.profile.field_components_typed_apart() && field_component != component && kind == DefKind::Field {
+        if self.profile.field_components_typed_apart()
+            && field_component != component
+            && kind == DefKind::Field
+        {
             self.mismatch(r.name, r.location, &old, r.ty);
             return TypeCheck::Mismatch;
         }
-        let same = self.same_type(&old, r.ty) && (!self.profile.redeclaration_by_typecmp() || defaults_ok);
+        let same =
+            self.same_type(&old, r.ty) && (!self.profile.redeclaration_by_typecmp() || defaults_ok);
         if same {
             return TypeCheck::Same;
         }
@@ -465,7 +472,10 @@ impl<'a> Resolver<'a> {
             let same = self.profile.reinitialise_with_same_value()
                 && (literal.is_some_and(|literal| self.same_value(existing, name, literal))
                     || self.unused.contains(&existing));
-            if !same && self.profile.reinitialise_with_same_value() && self.parseentitydata(existing, name) {
+            if !same
+                && self.profile.reinitialise_with_same_value()
+                && self.parseentitydata(existing, name)
+            {
                 self.report(
                     Code::W0223,
                     r.location,
@@ -598,7 +608,9 @@ impl<'a> Resolver<'a> {
             self.declare_enum_item(file, decl, item, location);
             return Special::Declared(Vec::new());
         }
-        if self.profile.type_declarations() && self.check_type_names(&decl.ty, &[], decl.span.start, location) {
+        if self.profile.type_declarations()
+            && self.check_type_names(&decl.ty, &[], decl.span.start, location)
+        {
             return Special::Declared(Vec::new());
         }
         let qualifier_fatal = self.profile.qualifiers() && self.warn_qualifiers(decl, location);
@@ -700,7 +712,9 @@ impl<'a> Resolver<'a> {
             aborted |= self.check_array_declaration(file, decl, location);
         }
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
-        let value = if aborted || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized) {
+        let value = if aborted
+            || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized)
+        {
             Ok(None)
         } else {
             self.check_value(
@@ -949,7 +963,10 @@ impl<'a> Resolver<'a> {
     /// which a module with errors never reaches, it is reported whatever else was (QCD-1.4).
     pub(in crate::resolve) fn check_undefined_functions(&mut self) {
         let used: HashSet<DefId> = self.index.refs.iter().map(|r| r.def).collect();
-        let externs_refused = self.profile.target().is_some_and(|target| !target.supports_extern());
+        let externs_refused = self
+            .profile
+            .target()
+            .is_some_and(|target| !target.supports_extern());
         let mut undefined: Vec<FileDiagnostic> = Vec::new();
         for (index, def) in self.index.defs.iter().enumerate() {
             let id = DefId(index);
@@ -961,7 +978,8 @@ impl<'a> Resolver<'a> {
                     "extern is not supported with this target format".to_owned(),
                 ));
             }
-            let skipped = self.profile.qualifiers() && self.unused.contains(&id) && !used.contains(&id);
+            let skipped =
+                self.profile.qualifiers() && self.unused.contains(&id) && !used.contains(&id);
             // FTEF-19.41: a member function a class declares and nothing defines has no body
             // either, a virtual one among them, which is a field of function type.
             let var_member = def

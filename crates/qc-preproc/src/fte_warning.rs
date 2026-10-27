@@ -454,7 +454,7 @@ impl FteWarning {
             Code::W0217 => Self::NotStandardBehaviour,
             Code::W0218 => Self::GmqccSpecific,
             Code::W0219 => Self::NotConstant,
-            Code::W0220 => Self::LaxCast,
+            Code::W0220 | Code::W0231 => Self::LaxCast,
             Code::W0221 => Self::KeywordDisabled,
             Code::W0222 => Self::ParamWithNoName,
             Code::W0224 => Self::DeprecatedSyntax,

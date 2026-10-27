@@ -115,6 +115,7 @@ impl<'a> Resolver<'a> {
                         members: Vec::new(),
                         parent: parent_key,
                         defined: false,
+                        union: st.union,
                     },
                 );
             }
@@ -181,6 +182,7 @@ impl<'a> Resolver<'a> {
                     members: owned,
                     parent: parent_key,
                     defined: true,
+                    union: st.union,
                 },
             );
         }

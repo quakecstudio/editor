@@ -22,7 +22,7 @@ pub use decl::{
 pub use expr::{MemberBase, RawUse, UseKind};
 pub use types::{EnumItem, MemberKind, RawClass, RawMember, RawStruct, StructMember, TypeKind};
 
-use qc_diag::Diagnostic;
+use qc_diag::{Diagnostic, Span};
 use qc_preproc::{Enabled, FteFlag};
 use qc_syntax::ast::{self, AstNode as _};
 use qc_syntax::c_scalar::CContext;
@@ -80,6 +80,20 @@ impl Cx<'_> {
 
     /// The compiler flags at offset `at` (FTEF-21.1): the last that holds from at or before it,
     /// else the defaults.
+    /// The marks of `marks` that hold somewhere in `span`: the one in force at its start and
+    /// those after it, before its end.
+    fn marks_in<T: Copy>(marks: &[(usize, T)], span: Span) -> Vec<(usize, T)> {
+        let first = marks
+            .partition_point(|&(at, _)| at <= span.start)
+            .saturating_sub(1);
+        marks
+            .iter()
+            .skip(first)
+            .take_while(|&&(at, _)| at < span.end)
+            .copied()
+            .collect()
+    }
+
     fn flags_at(self, at: usize) -> CompilerFlags {
         CompilerFlags::at(self.flags, at)
     }

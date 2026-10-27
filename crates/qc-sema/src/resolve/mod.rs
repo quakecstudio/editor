@@ -34,6 +34,7 @@ use qc_diag::{Code, Diagnostic};
 use qc_preproc::{TargetFormat, WarningSettings};
 use qc_syntax::{Dialect, Keywords};
 
+use crate::check::TypedBody;
 use crate::expand::{OriginMap, ProtoPlan};
 use crate::lower::{
     ArrayDim, BuiltinFunction, FileDecls, LiteralValue, RawBody, RawDecl, RawParam, RawParamInfo,
@@ -45,6 +46,7 @@ use crate::ty::{SimpleType, Type};
 use profile::Profile;
 
 mod body;
+mod check_env;
 mod global;
 mod init;
 mod profile;
@@ -85,6 +87,8 @@ pub struct ModuleIndex {
     pub refs: Vec<Reference>,
     /// The semantic diagnostics, in the order found, each with its file.
     pub diagnostics: Vec<FileDiagnostic>,
+    /// Each function body's types, by the function's definition (`crate::check`).
+    pub bodies: HashMap<DefId, TypedBody>,
 }
 
 impl ModuleIndex {
@@ -233,6 +237,7 @@ pub(crate) fn resolve_mapped(
         keywords: Keywords::default(),
         extensions: &sources.extensions,
         profile,
+        use_defs: HashMap::new(),
         autoproto: false,
         externs: HashSet::new(),
         unit: FileId(0),
@@ -369,6 +374,8 @@ struct StructDef {
     parent: Option<String>,
     /// Whether a body defined it, else a tag named it.
     defined: bool,
+    /// Whether it is a union (FTEF-6.7).
+    union: bool,
 }
 
 /// What the resolver knows of a definition beyond its [`Definition`], as `qcc` and FTEQCC keep
@@ -424,6 +431,9 @@ struct Resolver<'a> {
     extensions: &'a HashSet<FileId>,
     /// The dialect profile and its rules.
     profile: Profile,
+    /// The definition each name of the body being resolved resolved to, by where the name
+    /// starts in its file's text, for the check stage.
+    use_defs: HashMap<usize, DefId>,
     /// Whether FTEQCC's `autoprototype` is on where the pass reads (FTE-22.3, FTEF-12.18).
     autoproto: bool,
     /// The functions an `extern` at file level made, `def->isextern` (FTEF-22.5).

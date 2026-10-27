@@ -200,6 +200,8 @@ pub enum Code {
     E0262,
     /// "Unknown value \"NAME\"" (QCD-4.1).
     E0301,
+    /// "type mismatch for OP", under an FTEQCC profile "type mismatch for OP (A and B)" (QCD-4.2).
+    E0302,
     /// "Goto statement with no matching label \"NAME\"" (QCD-4.8).
     E0308,
     /// "Type mismatch: TYPE, should be void()" (QCD-4.9).
@@ -355,6 +357,10 @@ pub enum Code {
     W0229,
     /// "Implicit type mismatch. Needed TYPE, got TYPE." as a warning (QCD-7.71).
     W0230,
+    /// "type mismatch for OP (A and B)" with `lax` on (QCD-7.73).
+    W0231,
+    /// "Implicit conversion from A to B" (QCD-7.74).
+    W0232,
     /// "NAME is builtin #N, which ENGINE does not have" (QCD-7.17).
     W0311,
     /// "Duplicate label NAME" (QCD-7.30).
@@ -369,7 +375,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, in order.
-    pub const ALL: [Self; 168] = [
+    pub const ALL: [Self; 171] = [
         Self::E0101,
         Self::E0102,
         Self::E0103,
@@ -458,6 +464,7 @@ impl Code {
         Self::E0261,
         Self::E0262,
         Self::E0301,
+        Self::E0302,
         Self::E0308,
         Self::E0309,
         Self::E0310,
@@ -533,6 +540,8 @@ impl Code {
         Self::W0228,
         Self::W0229,
         Self::W0230,
+        Self::W0231,
+        Self::W0232,
         Self::W0311,
         Self::W0312,
         Self::W0313,
@@ -614,6 +623,7 @@ impl Code {
             Self::E0261 => "E0261",
             Self::E0262 => "E0262",
             Self::E0301 => "E0301",
+            Self::E0302 => "E0302",
             Self::E0308 => "E0308",
             Self::E0501 => "E0501",
             Self::E0502 => "E0502",
@@ -670,6 +680,8 @@ impl Code {
             Self::W0228 => "W0228",
             Self::W0229 => "W0229",
             Self::W0230 => "W0230",
+            Self::W0231 => "W0231",
+            Self::W0232 => "W0232",
             Self::W0311 => "W0311",
             Self::W0312 => "W0312",
             Self::W0313 => "W0313",
@@ -777,6 +789,8 @@ impl Code {
             | Self::W0217
             | Self::W0218
             | Self::W0314
+            | Self::W0231
+            | Self::W0232
             | Self::W0402 => false,
             Self::E0101
             | Self::E0102
@@ -888,6 +902,7 @@ impl Code {
             | Self::E0313
             | Self::E0511
             | Self::E0404
+            | Self::E0302
             | Self::E0408 => true,
         }
     }

@@ -3353,3 +3353,56 @@ the others (FTEF-21.1) and the target as it reads the files (FTEF-20.4).
   `#pragma flag`, `#pragma target` and the command line, and those a warning decides with
   `-Werror -Wno-Q208`. Its run of 2026-10-22 (macOS arm64) agrees with the pinned FTEQCC on
   every case.
+
+## FTEF-23 Operators as FTEQCC types them
+
+**Source:** `qcc_pr_comp.c`, `pr_opcodes[]`, `QCC_PrioritiseOpcodes`, `QCC_NumericTypeRanking`,
+`QCC_canConv`, `QCC_PR_ChooseOpcode` and `QCC_PR_RefExpression`; `qccmain.c`, `QCC_main` (the
+basic types); `progslib.h`, `etype_t`; `progsint.h`, `QCC_opcode_t`,
+fte-team/fteqw@`f937b9d88f71fc4429db5fe56c6a98d922711b2e`.
+
+FTEQCC has no separate type rules for its operators: an operator's type is the type of the
+opcode it picks for its operands. The semantic model keeps the table (`crates/qc-sema/src/check/
+opcodes.rs`, the rows of `pr_opcodes[]` in order) and picks as FTEQCC picks
+(`crates/qc-sema/src/check/convert.rs`).
+
+### Behaviour
+
+- **FTEF-23.1** The opcodes an operator may be given are the rows of `pr_opcodes[]` whose
+  `name` is its spelling and whose priority class has the operator's priority, in the table's
+  order: `QCC_PrioritiseOpcodes` lists each priority's rows in table order and sorts them by
+  name with `qsort`, and `QCC_PR_RefExpression` starts at the first row of the spelling. The
+  table has 413 rows before its `NULL` name, the opcode numbering, and every row's `opname`
+  is the name `#pragma opcode` takes (FTEF-12).
+- **FTEF-23.2** `QCC_NumericTypeRanking` ranks the numeric types `double` 15, `float` 10,
+  `__uint64` 6, `__int64` 3, `__uint32` 1 and `__int32` 0 ("large gap, to try to de-prioritize
+  the opcodes that mix float and int types"); every other type is unranked.
+- **FTEF-23.3** `QCC_canConv` gives the cost of converting a value to a basic type, after an
+  accessor or a truth value is taken for its `parentclass`: 0 for the same type; 1 for a field
+  holding the type, in a member function's body (`pr_classtype`); 2 for a constant 0 of an
+  integer, float or pointer type (`QCC_SRef_IsNull`); between two ranked types `3 + (to - from)`
+  up the ranking and `150 + (from - to)` down it; 9 to `variant` and 10 from it; 200 from a
+  float to a vector and 201 from a vector to a float; else no conversion.
+- **FTEF-23.4** `QCC_PR_ChooseOpcode` takes, among the candidates of FTEF-23.1, the first
+  needing no conversion, else the first needing fewest: for an ordinary operator the larger of
+  the two operands' costs, and for an assignment the value's cost, the target's type having to
+  be the row's `type_a` exactly, and for a pointer row what it points at too (`type_pointer`
+  points at `__pointeraux`, a float). A member operator's row must also hold what the field
+  holds. Before choosing, an operand that is a truth value is taken for its `parentclass`, and
+  two operands of one enum type for the enum's base type. When no candidate can take the
+  operands it is the error `E0302` "type mismatch for OP (A and B)", a warning `W0231`
+  (`WARN_LAXCAST`) with `lax` on (FTEF-22.1), and the first candidate is used.
+- **FTEF-23.5** Once an opcode is chosen, an operand whose basic type is not the row's (and the
+  row's is not `variant`) is converted to it, with the warning `W0232` "Implicit conversion
+  from A to B" when the conversion costs 100 or more (FTEF-23.3), the left operand's before the
+  right's: `v < v` for two vectors is `LT_F` with the warning twice, "Implicit conversion from
+  vector to float". A, B are the types' names (`name`, not `TypeName`). The conversion is
+  `QCC_EvaluateCast(operand, row_type, true)`, the implicit cast of FTEF-19.31 and FTEF-22 with
+  its diagnostics: so a vector compared with `<` is then "Cannot cast from vector to float",
+  and after a mismatch (FTEF-23.4) the first candidate's cast of each operand is made or
+  refused, `s * a` for a string `s` being "Cannot cast from string to float" too, or under
+  `lax` "Implicit lax cast".
+- **FTEF-23.6** A refused cast is `QCC_PR_ParseError`: FTEQCC stops the function, skips to the
+  next `;` at file level and reads on from there as declarations. The semantic model, which
+  recovers on its own (QCD-1.4), stops checking the statement and checks the next one; the
+  module fails to compile either way.

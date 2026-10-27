@@ -17,6 +17,8 @@ use qc_diag::Code;
 use qc_syntax::c_scalar::{CScalar, REGISTERED_TYPES};
 
 use crate::cast::Kind;
+use crate::check::Shape;
+use crate::check::etype::Etype;
 use crate::lower::{RawDecl, TypeKind};
 use crate::resolve::{Resolver, TABLE_TYPES};
 use crate::symbol::Location;
@@ -270,7 +272,9 @@ impl Resolver<'_> {
             // ...)`, and so `vector` and `entity`.
             Type::Simple(
                 simple @ (SimpleType::String | SimpleType::Vector | SimpleType::Entity),
-            ) if self.profile.qcfuncs_off() && !self.is_type_name(simple.as_str(), typedefs, at) => {
+            ) if self.profile.qcfuncs_off()
+                && !self.is_type_name(simple.as_str(), typedefs, at) =>
+            {
                 Some(simple.as_str())
             }
             Type::Field(inner) | Type::Pointer(inner) => {
@@ -283,5 +287,76 @@ impl Resolver<'_> {
             }),
             Type::Simple(_) | Type::Unknown => None,
         }
+    }
+}
+
+impl Resolver<'_> {
+    /// What `ty` is at bottom for the check stage (FTEF-23.3): through typedefs, accessors and
+    /// strict enums; `None` for a type the model does not follow, on which nothing is checked.
+    pub(in crate::resolve) fn shape(&self, ty: &Type) -> Option<Shape> {
+        let ty = self.resolved(ty);
+        let plain = |etype| Some(Shape { etype, holds: None });
+        match &ty {
+            Type::Unknown => None,
+            Type::Simple(SimpleType::Void) => plain(Etype::Void),
+            Type::Simple(SimpleType::Float) => plain(Etype::Float),
+            Type::Simple(SimpleType::Vector) => plain(Etype::Vector),
+            Type::Simple(SimpleType::String) => plain(Etype::String),
+            Type::Simple(SimpleType::Entity) => plain(Etype::Entity),
+            Type::Function(_) => plain(Etype::Function),
+            Type::Field(inner) => Some(Shape {
+                etype: Etype::Field,
+                holds: self.shape(inner).map(|s| s.etype),
+            }),
+            Type::Pointer(inner) => Some(Shape {
+                etype: Etype::Pointer,
+                holds: self.shape(inner).map(|s| s.etype),
+            }),
+            Type::Named(name) => self.named_shape(&ty, name),
+        }
+    }
+
+    /// The shape of the named type `ty`, `name`.
+    fn named_shape(&self, ty: &Type, name: &str) -> Option<Shape> {
+        let plain = |etype| Some(Shape { etype, holds: None });
+        match ty.fteqcc_kind() {
+            Kind::Integer => return plain(Etype::Integer),
+            Kind::Uint => return plain(Etype::Uint),
+            Kind::Int64 => return plain(Etype::Int64),
+            Kind::Uint64 => return plain(Etype::Uint64),
+            Kind::Double => return plain(Etype::Double),
+            Kind::Float => return plain(Etype::Float),
+            Kind::Void
+            | Kind::String
+            | Kind::Vector
+            | Kind::Entity
+            | Kind::Field
+            | Kind::Function
+            | Kind::Pointer
+            | Kind::Opaque => {}
+        }
+        if matches!(name, "__variant" | "variant") {
+            return plain(Etype::Variant);
+        }
+        if let Some(base) = self.named(&self.strict_enums, name) {
+            return Some(Shape {
+                etype: Etype::Enum,
+                holds: self.shape(base).map(|s| s.etype),
+            });
+        }
+        if let Some(base) = self.named(&self.accessor_bases, &self.type_key(name)) {
+            return self.shape(base);
+        }
+        if self.has_name_key(&self.class_names, name) {
+            return plain(Etype::Entity);
+        }
+        if let Some(bare) = self.struct_type_name(name) {
+            let union = self
+                .struct_defs
+                .get(&self.type_key(bare))
+                .is_some_and(|st| st.union);
+            return plain(if union { Etype::Union } else { Etype::Struct });
+        }
+        None
     }
 }
