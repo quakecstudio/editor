@@ -202,6 +202,39 @@ pub struct StructMember {
     pub width_const: Option<IntConst>,
     /// Each array suffix's size as `QCC_PR_IntConstExpr` reads it (FTEF-6.17).
     pub sizes: Vec<IntConst>,
+    /// An anonymous struct or union member's own members, which an access finds through it
+    /// (FTEF-6.11).
+    pub nested: Vec<StructMember>,
+}
+
+/// Whether the bitfield width `e` is an integer constant: a literal with no fraction, or an
+/// expression (FTEF-6.9).
+fn integer_width(e: &ast::Expr, cx: Cx<'_>) -> bool {
+    match e {
+        ast::Expr::Literal(literal) => match literal.kind() {
+            Some(ast::LiteralKind::Float) => LiteralValue::of_literal(
+                e,
+                Dialect::Fteqcc,
+                cx.lex_flags_at(e.syntax().span().start),
+            )
+            .is_some_and(
+                |v| matches!(v, LiteralValue::Float(bits) if f32::from_bits(bits).fract() == 0.0),
+            ),
+            Some(ast::LiteralKind::FrameRef) | None => true,
+            Some(ast::LiteralKind::Vector | ast::LiteralKind::String) => false,
+        },
+        _ => true,
+    }
+}
+
+/// The members of the anonymous struct or union the member `field` is (FTEF-6.11).
+fn anonymous_members(field: &SyntaxNode, cx: Cx<'_>) -> Vec<StructMember> {
+    field
+        .descendants()
+        .find(|n| n.kind() == SyntaxKind::StructType)
+        .and_then(|n| lower_struct(&n, cx))
+        .map(|st| st.members)
+        .unwrap_or_default()
 }
 
 /// Each array suffix's size of the struct member `field` (FTEF-6.17).
@@ -323,19 +356,7 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
         if let Some(expr) = &width {
             lower_expr(expr, cx, &mut width_uses);
         }
-        let width_integer = width.as_ref().is_none_or(|e| match e {
-            ast::Expr::Literal(literal) => match literal.kind() {
-                Some(ast::LiteralKind::Float) => LiteralValue::of_literal(
-                    e,
-                    Dialect::Fteqcc,
-                    cx.lex_flags_at(e.syntax().span().start),
-                )
-                .is_some_and(|v| matches!(v, LiteralValue::Float(bits) if f32::from_bits(bits).fract() == 0.0)),
-                Some(ast::LiteralKind::FrameRef) | None => true,
-                Some(ast::LiteralKind::Vector | ast::LiteralKind::String) => false,
-            },
-            _ => true,
-        });
+        let width_integer = width.as_ref().is_none_or(|e| integer_width(e, cx));
         let initialized = field.child_tokens().any(|t| t.kind() == SyntaxKind::Eq);
         let mut member_ty = ty.clone();
         // The `*`s before the name, not those of C's `(*name)(params)` (FTEF-21.7).
@@ -400,6 +421,11 @@ pub(super) fn lower_struct(node: &SyntaxNode, cx: Cx<'_>) -> Option<RawStruct> {
                 .map(|n| token_text(&n))
                 .collect(),
             sizes: array_sizes(&field, cx),
+            nested: if member_name.is_none() {
+                anonymous_members(&field, cx)
+            } else {
+                Vec::new()
+            },
             width_const: width.as_ref().map(|e| IntConst::of(e, cx)),
             bits,
             is_static,

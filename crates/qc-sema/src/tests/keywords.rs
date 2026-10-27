@@ -274,8 +274,7 @@ fn class_member_words_lower_as_the_parser_read_them() {
     assert_eq!(errors(class, &[]), []);
     let label = "class C { __VIRTUAL: void() m; };\nvoid() C::m = {};\n";
     assert_eq!(errors(label, &[]), []);
-    let accessor =
-        "accessor A : float { SET float(float v) = { }; GET float() = { return 0; } };\n";
+    let accessor = "accessor A : float { SET float = { }; GET float = { return 0; } };\n";
     assert_eq!(errors(accessor, &["-Fcaseinsens"]), []);
 }
 

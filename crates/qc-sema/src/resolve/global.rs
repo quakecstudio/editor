@@ -699,7 +699,9 @@ impl<'a> Resolver<'a> {
         // FTE-11, FTEF-15.5: a `var` of function type holds a function; it defines none.
         let resolved_ty = self.resolved(&decl.ty);
         // FTE-17.7: an array of functions is a global holding functions, no function.
-        let kind = if (decl.has(&Qualifier::Var) || decl.pointer_var || decl.array.is_some())
+        // A `const` C function pointer is a constant, the function itself (FTEF-21.7).
+        let pointer_var = decl.pointer_var && !decl.has(&Qualifier::Const);
+        let kind = if (decl.has(&Qualifier::Var) || pointer_var || decl.array.is_some())
             && resolved_ty.is_function()
         {
             DefKind::Global
@@ -952,7 +954,8 @@ impl<'a> Resolver<'a> {
                 "Conflicting storage classes.".to_owned(),
             );
         }
-        if decl.has(&Qualifier::Const) && decl.has(&Qualifier::Var) {
+        // `isconstant+isvar>1`, C's function pointer a `var` (`isvar |= isptr>0`, FTEF-21.7).
+        if decl.has(&Qualifier::Const) && (decl.has(&Qualifier::Var) || decl.pointer_var) {
             self.report(Code::W0214, location, "Conflicting constness.".to_owned());
         }
         let modifier = [

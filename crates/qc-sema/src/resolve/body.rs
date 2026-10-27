@@ -604,8 +604,9 @@ impl<'a> Resolver<'a> {
         }
         if self.profile.body_checks() && local.global_function {
             // FTEF-21.10: a C function declared in a body is a global constant, its body
-            // elsewhere.
-            self.declare_global(&local.name, &local.ty, DefKind::Function, location, None);
+            // elsewhere unless one follows it there.
+            let init = local.initialized.then_some(None);
+            self.declare_global(&local.name, &local.ty, DefKind::Function, location, init);
             return;
         }
         if self.profile.qualifiers()

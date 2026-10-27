@@ -1084,3 +1084,26 @@ fn an_unknown_initialiser_is_no_constant() {
         [Code::E0301]
     );
 }
+
+// spec FTEF-6.11: an anonymous member's members are searched, in any case under `-Fcaseinsens`
+#[test]
+fn an_anonymous_members_members_are_matched() {
+    let program = "struct S { union { float a; vector v; }; float A; }; S x; \
+                   void() g = { x.a = 1; };";
+    assert_eq!(errors(program, &["-Fcaseinsens"]), [Code::E0252]);
+    assert_eq!(errors(program, &[]), []);
+}
+
+// spec FTEF-9.7: under `-Fcaseinsens` a basic type's word is no parent either
+#[test]
+fn a_basic_type_is_no_parent_in_any_case() {
+    for parent in ["vector", "string", "void"] {
+        let source = format!("class C : {parent} {{ float a; }};");
+        assert_eq!(
+            errors(&source, &["-Fcaseinsens"]),
+            [Code::E0241],
+            "{parent}"
+        );
+        assert_eq!(errors(&source, &[]), [Code::E0241], "{parent}");
+    }
+}

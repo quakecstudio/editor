@@ -369,6 +369,33 @@ impl<'a> Resolver<'a> {
             .then_some(bare)
     }
 
+    /// The members of `members` named `name`, in any case under `-Fcaseinsens`, those of an
+    /// anonymous struct or union member among them (FTEF-6.11), each distinct by name, type and
+    /// size, added to `found`.
+    fn matching_members(
+        &self,
+        members: &[StructMember],
+        name: &str,
+        depth: usize,
+        found: &mut Vec<(String, Type, Vec<String>)>,
+    ) {
+        let Some(depth) = depth.checked_sub(1) else {
+            return;
+        };
+        for m in members {
+            if m.name.is_empty() {
+                self.matching_members(&m.nested, name, depth, found);
+                continue;
+            }
+            if self.same_member_name(&m.name, name) {
+                let entry = (m.name.clone(), m.ty.clone(), m.array.clone());
+                if !found.contains(&entry) {
+                    found.push(entry);
+                }
+            }
+        }
+    }
+
     /// Whether `ty` is a struct or union (FTEF-9.11, FTEF-6.12).
     pub(in crate::resolve) fn is_struct_type(&self, ty: &Type) -> bool {
         matches!(ty, Type::Named(n) if self.struct_type_name(n).is_some())
@@ -419,18 +446,8 @@ impl<'a> Resolver<'a> {
             anonymous |= def.members.iter().any(|m| m.name.is_empty());
             // A member declared again with its name, type and size is one
             // (`oldparm && oldparm->arraysize == arraysize && !typecmp_lax`).
-            let mut distinct: Vec<(&str, &Type, &[String])> = Vec::new();
-            for m in &def.members {
-                let same_name = if self.profile.case_insensitive() {
-                    m.name.eq_ignore_ascii_case(name)
-                } else {
-                    m.name == name
-                };
-                let entry = (m.name.as_str(), &m.ty, m.array.as_slice());
-                if same_name && !distinct.contains(&entry) {
-                    distinct.push(entry);
-                }
-            }
+            let mut distinct: Vec<(String, Type, Vec<String>)> = Vec::new();
+            self.matching_members(&def.members, name, MAX_CLASS_DEPTH, &mut distinct);
             match distinct.len() {
                 0 => {}
                 1 => return StructMatch::One,

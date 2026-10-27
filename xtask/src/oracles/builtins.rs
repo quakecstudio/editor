@@ -1516,6 +1516,16 @@ pub(crate) fn expected_difference(
         if *oracle == Outcome::Hangs && HANGING.iter().any(|value| case.source.contains(value)) {
             return Some("FTEF-13.8");
         }
+        // FTEF-20.15: a body's enum is declared at file level here, so its names are seen
+        // after the body, where FTEQCC's are the function's.
+        if *oracle == Outcome::Rejected
+            && *ours != Outcome::Rejected
+            && case
+                .texts()
+                .any(|t| t.contains("= { enum") || t.contains("= { typedef enum"))
+        {
+            return Some("FTEF-20.15");
+        }
         // FTEF-14.47: an `#eof` that is not a file's first line ends the text here, where the
         // pinned FTEQCC crashes, reading on from the end it made; and `#merge` and `#datafile`
         // open no file here, where FTEQCC refuses a missing one.

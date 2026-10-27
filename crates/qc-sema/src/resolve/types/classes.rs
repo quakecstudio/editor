@@ -309,7 +309,15 @@ impl<'a> Resolver<'a> {
         let entity = parent == "__entity" || (parent == "entity" && !self.profile.qcfuncs_off());
         if found.is_none() && !entity {
             let parent_type = Type::Named(parent.as_str().into());
-            if self.unknown_type_name(&parent_type, &[], 0).is_some()
+            // A basic type's word, in any case under `-Fcaseinsens` (FTEF-19.33), is a type.
+            let basic_word = ["void", "float", "vector", "string"].iter().any(|word| {
+                if self.profile.case_insensitive() {
+                    parent.eq_ignore_ascii_case(word)
+                } else {
+                    parent == word
+                }
+            });
+            if !basic_word && self.unknown_type_name(&parent_type, &[], 0).is_some()
                 || (name == parent && !self.class_names.contains_key(name))
             {
                 self.report(
@@ -320,7 +328,8 @@ impl<'a> Resolver<'a> {
                 return;
             }
             let kind = self.resolved(&parent_type).fteqcc_kind();
-            if !matches!(kind, Kind::Entity | Kind::Opaque)
+            if basic_word
+                || !matches!(kind, Kind::Entity | Kind::Opaque)
                 || self.has_name(&self.structs, parent)
                 || self.has_name(&self.enum_types, parent)
             {

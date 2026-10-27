@@ -1260,7 +1260,18 @@ impl Parser<'_> {
             self.finish_node();
             return;
         }
-        if self.fte_type().is_some() {
+        // FTEF-10.9: `QCC_PR_ParseAccessorMember` reads a type's name and its `*`s, so a
+        // parameter list after it is where the `=` should be.
+        let paren = self.nth(1).filter(|t| t.kind == K::LParen).map(|t| t.span);
+        if let Some(shape) = self.fte_type() {
+            if shape.function
+                && let Some(span) = paren
+            {
+                self.error_at(Code::E0204, "expected =, found (", span);
+                self.recover(true);
+                self.finish_node();
+                return;
+            }
             if self.at(K::Name) {
                 self.name();
             }

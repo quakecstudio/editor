@@ -1624,7 +1624,9 @@ impl<'a> Parser<'a> {
                 self.array_suffix();
             }
             self.expect(K::RParen, ")");
-            if self.at_function_list() {
+            // `while(QCC_PR_CheckToken ("("))` goes on after the C-style branch, each list a
+            // function returning the type so far (FTEF-18.15).
+            while self.at_function_list() {
                 self.fte_param_list();
                 ty.function = true;
             }

@@ -737,6 +737,10 @@ others).
   whose index is of its indexer's and whose `value`, for `set`, is of the member's, and is
   checked as any function's body is: `bufstr_get(this, idx)` with a `float` parameter warns
   "Implicit cast from strbuf to float".
+- **FTEF-10.9** `QCC_PR_ParseAccessorMember` reads a member's type as a type's name and its `*`s,
+  so a parameter list after it stands where the `=` is expected: `get float() x = {};` and `set
+  void(float v) y = {};` are the fatal error `E0204` "expected =, found (".
+
 ## FTEF-11 The `__variant` type
 
 **Source:** `qcc_pr_lex.c`/`qccmain.c`, `type_variant` (`QCC_PR_NewType("__variant",
@@ -3481,6 +3485,14 @@ after it. The preprocessor cannot know the second: the block is the parser's.
   arithmetic read them (`QCC_PR_Statement`'s "type mismatch for OP",
   `QCC_SupplyConversionForAssignment`, `QCC_PR_GenerateLogicalTruth`, `sizeof`), the expression
   typing's (P2-06).
+- **FTEF-21.21** With `qcfuncs` off a C function a body declares (FTEF-21.10) is defined by a
+  body written with it, `void x() {}`, and needs none elsewhere; C's `(*name)(params)` there is
+  a variable (`isvar |= isptr>0`), no function, so `float (*x)(float); x(1);` and `entity
+  (*x)();` are accepted. After the `)` of `(*name)` the declarator's loop reads further parameter
+  lists (`float (*x)(float)(float);`). A `const` C function pointer is both, "Conflicting
+  constness." (`isconstant+isvar>1`), and a constant, a function needing a body. A function's
+  parameters are those of the last list before its name when the type takes none, `void(float
+  x) h = { x = 1; };`, and so for a struct's or a typedef's parameter type.
 
 ## FTEF-22 The flags and the target the casts read
 

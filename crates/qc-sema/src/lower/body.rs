@@ -282,11 +282,19 @@ fn collect_params(
 }
 
 /// The `ParamList` of the function that defines `fn_body` (QC-13.2): the vanilla function
-/// type's list, or an FTEQCC C-style declarator's own `(params)` list (FTE-17.1).
+/// type's list, an FTEQCC C-style declarator's own `(params)` list (FTE-17.1), or with
+/// `qcfuncs` off the list before the declarator's name.
 fn param_list_of(fn_body: &ast::FunctionBody) -> Option<ast::ParamList> {
     let declarator = fn_body.syntax().parent()?;
-    if let Some(list) = ast::Declarator::cast(declarator.clone()).and_then(|d| d.params()) {
-        return Some(list);
+    if let Some(declarator) = ast::Declarator::cast(declarator.clone()) {
+        if let Some(list) = declarator.params() {
+            return Some(list);
+        }
+        // With `qcfuncs` off the type takes no list, and the declarator's own lists before
+        // its name make the function, the last one its parameters (FTEF-18.15).
+        if let Some(list) = declarator.prefix_params().pop() {
+            return Some(list);
+        }
     }
     let declaration = declarator.parent()?;
     let ty = declaration
@@ -638,7 +646,9 @@ fn lower_local(local: &ast::LocalDecl, cx: Cx<'_>, body: &mut RawBody) {
         };
         // FTEF-21.10: `if (!flag_qcfuncs && pr_scope) isconstant = externfnc = true; //in C, a
         // locally defined function refers to an external one.`, at a C-style declarator's `(`.
+        // C's `(*name)(params)` is a variable (`isvar |= isptr>0`), no function.
         let global_function = fte
+            && !declarator.pointer_form().is_some_and(|stars| stars > 0)
             && declarator.params().is_some_and(|list| {
                 !cx.flags_at(list.syntax().span().start)
                     .has(FteFlag::Qcfuncs)

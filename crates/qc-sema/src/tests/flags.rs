@@ -436,3 +436,25 @@ fn the_definition_after_a_block() {
         [Code::E0213]
     );
 }
+
+// spec FTEF-21.21: with `qcfuncs` off a body's C function may be defined there, a C function
+// pointer is a variable, a `const` one a constant, and a function's parameters are the list
+// before its name
+#[test]
+fn c_declarators_with_qcfuncs_off() {
+    let off = |source: &str| codes(&format!("#pragma flag disable qcfuncs\n{source}\n"));
+    for source in [
+        "void() g = { void x() {} };",
+        "void() g = { void x() { } x(); };",
+        "void() g = { float (*x)(float); x(1); };",
+        "void() g = { entity (*x)(); };",
+        "float (*x)(float)(float);",
+        "void(float x) h = { x = 1; };",
+        "struct S { float a; }; S x; void(S s) h = { s.a = 1; }; void() g = { h(x); };",
+        "typedef void() fn; void(fn callback) h = { callback(); };",
+    ] {
+        assert_eq!(off(source), [], "{source}");
+    }
+    assert_eq!(off("void() g = { void h(); };"), [Code::E0211]);
+    assert_eq!(off("const float (*x)(float);"), [Code::W0214, Code::E0211]);
+}

@@ -540,3 +540,16 @@ fn a_further_parameter_list_needs_a_name() {
         assert!(fte_codes(source).contains(&Code::E0201), "{source}");
     }
 }
+
+// spec FTEF-10.9: an accessor member's type is a name and its `*`s, so a parameter list after it
+// is "expected =, found ("
+#[test]
+fn an_accessor_member_takes_no_parameter_list() {
+    for source in [
+        "accessor A : float { get float() x = {}; };\n",
+        "accessor A : float { set void(float v) y = {}; };\n",
+    ] {
+        assert_eq!(fte_codes(source), [Code::E0204], "{source}");
+    }
+    assert!(fte_codes("accessor A : float { set float y = {}; };\n").is_empty());
+}
