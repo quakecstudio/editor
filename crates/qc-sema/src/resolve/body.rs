@@ -19,6 +19,7 @@ use crate::lower::{
     Qualifier, RawAlias, RawBody, RawDecl, RawLocal, RawUse, StatePart, UseKind, ValueKind,
     top_level_kind,
 };
+use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::check_env::BodyEnv;
 use crate::resolve::{
     COMPONENTS, DeclFacts, Found, Holder, Pending, Redeclaration, Resolver, Scope, ScopedFacts,
@@ -667,6 +668,23 @@ impl<'a> Resolver<'a> {
         }
         if self.profile.definition_checks()
             && self.check_array_value(file, local.array, &local.ty, local.value.as_ref())
+        {
+            return;
+        }
+        if self.profile.fteqcc_diagnostics()
+            && let Some(aggregate) = &local.aggregate
+            && self
+                .check_aggregate(
+                    file,
+                    aggregate,
+                    &local.ty,
+                    Initialised {
+                        name: &local.name,
+                        holder,
+                    },
+                    AggregateSite::Local,
+                )
+                .is_err()
         {
             return;
         }

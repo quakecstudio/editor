@@ -45,6 +45,7 @@ use crate::ty::{SimpleType, Type};
 
 use profile::Profile;
 
+mod aggregate;
 mod body;
 mod check_env;
 mod global;

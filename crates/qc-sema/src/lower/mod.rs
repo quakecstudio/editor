@@ -16,8 +16,8 @@ mod types;
 
 pub use body::{RawAlias, RawBody, RawLocal, RawParam, StatePart};
 pub use decl::{
-    ArrayDim, BuiltinFunction, ExternBase, LiteralValue, Qualifier, RawDecl, RawParamInfo,
-    RawValue, ValueKind,
+    ArrayDim, BuiltinFunction, ExternBase, LiteralValue, Qualifier, RawAggregate, RawBraces,
+    RawDecl, RawElement, RawParamInfo, RawValue, ValueKind,
 };
 pub use expr::{MemberBase, RawUse, UseKind};
 pub use types::{

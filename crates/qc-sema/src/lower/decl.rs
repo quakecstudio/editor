@@ -71,6 +71,8 @@ pub struct RawDecl {
     /// For an aggregate initialiser, the first token inside its braces and its span: a
     /// two-dimensional array needs a `{` there (FTEF-19.8).
     pub aggregate_first: Option<(String, Span)>,
+    /// A braced initialiser, read against the type (FTEF-19.47).
+    pub aggregate: Option<RawAggregate>,
     /// The parameters of the function type the declaration gives, as FTEQCC's redeclaration
     /// rules compare them (FTEF-19.6, FTEF-19.7); empty for any other type.
     pub params: Vec<RawParamInfo>,
@@ -279,6 +281,7 @@ impl RawDecl {
             array: None,
             array_dims: 0,
             aggregate_first: None,
+            aggregate: None,
             params: Vec::new(),
             enum_item: None,
             typedef: None,
@@ -498,6 +501,99 @@ fn string_len(literal: &ast::Literal) -> Option<u32> {
         },
         _ => None,
     }
+}
+
+/// A braced initialiser and the sizes of its declarator's array dimensions, each a number or
+/// `None`, which `QCC_PR_ParseInitializerType_Internal` reads against the type (FTEF-19.47).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawAggregate {
+    /// The initialiser.
+    pub init: RawBraces,
+    /// Each dimension's size when it is a number; `None` for `[]` or another expression.
+    pub sizes: Vec<Option<u32>>,
+}
+
+/// `{ ... }` in an initialiser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawBraces {
+    /// Whether it names its members, `{ .a = 1 }`.
+    pub designated: bool,
+    /// The first token inside, `}` for none, and its span.
+    pub first: (String, Span),
+    /// Its elements, in order.
+    pub elements: Vec<RawElement>,
+}
+
+/// One element of a braced initialiser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RawElement {
+    /// A braced one.
+    Braces(RawBraces),
+    /// A value, read as a definition's value is.
+    Value(RawValue),
+}
+
+impl RawElement {
+    /// The text and span of its first token.
+    #[must_use]
+    pub fn first(&self) -> (String, Span) {
+        match self {
+            Self::Braces(braces) => ("{".to_owned(), braces.first.1),
+            Self::Value(value) => (value.first.clone(), value.span),
+        }
+    }
+}
+
+/// The braces `agg`, each element lowered.
+fn raw_braces(agg: &ast::AggregateInit, cx: Cx<'_>) -> RawBraces {
+    let mut tokens = agg
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(|e| match e {
+            qc_syntax::SyntaxElement::Token(t) if !t.kind().is_trivia() => Some(t),
+            qc_syntax::SyntaxElement::Token(_) | qc_syntax::SyntaxElement::Node(_) => None,
+        });
+    let first = tokens.nth(1).map_or_else(
+        || ("}".to_owned(), agg.syntax().span()),
+        |t| (t.text_lossless(), t.span()),
+    );
+    let elements = agg
+        .syntax()
+        .children()
+        .filter_map(|node| match ast::AggregateInit::cast(node.clone()) {
+            Some(inner) => Some(RawElement::Braces(raw_braces(&inner, cx))),
+            None => ast::Expr::cast(node).map(|expr| RawElement::Value(raw_value(&expr, cx))),
+        })
+        .collect();
+    RawBraces {
+        designated: first.0 == ".",
+        first,
+        elements,
+    }
+}
+
+/// The braced initialiser of `declarator`, if it has one.
+pub(super) fn raw_aggregate(
+    declarator: &ast::Declarator,
+    init: Option<&ast::Initializer>,
+    cx: Cx<'_>,
+) -> Option<RawAggregate> {
+    let Some(ast::Initializer::Aggregate(syntax)) = init else {
+        return None;
+    };
+    let sizes = declarator
+        .array_suffixes()
+        .map(|suffix| match suffix.children().find_map(ast::Expr::cast) {
+            Some(ast::Expr::Literal(literal)) => literal
+                .token()
+                .and_then(|t| t.text_lossless().parse::<u32>().ok()),
+            _ => None,
+        })
+        .collect();
+    Some(RawAggregate {
+        init: raw_braces(syntax, cx),
+        sizes,
+    })
 }
 
 pub(super) fn array_dim(
@@ -960,6 +1056,7 @@ pub(super) fn lower_declarators(
         raw.builtin = matches!(init, Some(ast::Initializer::Builtin(_)));
         raw.array = array_dim(&declarator, init.as_ref());
         raw.array_dims = declarator.array_suffixes().count();
+        raw.aggregate = raw_aggregate(&declarator, init.as_ref(), cx);
         if let Some(ast::Initializer::Aggregate(agg)) = &init {
             raw.aggregate_first = agg
                 .syntax()

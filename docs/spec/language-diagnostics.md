@@ -202,6 +202,10 @@ them, the statements are in [`coverage-baseline.tsv`](coverage-baseline.tsv).
   whose width is a literal with a fraction, a vector or a string (FTEF-6.9).
 - **QCD-3.57** `E0350` "NAME defined as virtual in CLASS, but nonvirtual in PARENT": under an
   FTEQCC profile, a virtual member function a parent class has as a nonvirtual one (FTEF-9.15).
+- **QCD-3.59** `E0354` "inherited structs must use designated initialisers": under an FTEQCC
+  profile, a struct with a parent initialised by position (FTEF-19.47).
+- **QCD-3.60** `E0355` "member U.M was already ininitialised": under an FTEQCC profile, a union
+  given a second element (FTEF-19.47).
 - **QCD-3.58** `E0351` "Multiple conflicting qualifiers on CLASS::TOKEN.": under an FTEQCC
   profile, a member function with more than one of `virtual`, `nonvirtual` and `static`
   (FTEF-9.16).

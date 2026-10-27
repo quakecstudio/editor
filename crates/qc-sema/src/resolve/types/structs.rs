@@ -430,6 +430,18 @@ impl Resolver<'_> {
         None
     }
 
+    /// The struct or union `ty` names, with a body.
+    pub(in crate::resolve) fn struct_def_of(&self, ty: &Type) -> Option<StructDef> {
+        let Type::Named(name) = self.resolved(ty) else {
+            return None;
+        };
+        let key = self.type_key(self.struct_type_name(&name)?);
+        self.struct_defs
+            .get(&key)
+            .filter(|def| def.defined)
+            .cloned()
+    }
+
     /// Whether a struct member named `member` is the one an access names `name`, in any case
     /// under `-Fcaseinsens` (FTEF-6.11).
     pub(in crate::resolve) fn same_member_name(&self, member: &str, name: &str) -> bool {

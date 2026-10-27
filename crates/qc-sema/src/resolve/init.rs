@@ -245,7 +245,7 @@ impl Resolver<'_> {
                         .map(|d| self.resolved(&d.ty))
                         .filter(|source| source != &ty)
                         .filter(|source| target_struct || is_struct(source))
-                        .map(|source| source.fteqcc_name())
+                        .map(|source| self.type_name(&source))
                 }
                 // A cast from a struct is reported as the cast's own use (`UseKind::CastTo`).
                 ValueKind::Cast(cast) => {
@@ -254,7 +254,7 @@ impl Resolver<'_> {
                         && !matches!(source, Type::Pointer(_))
                         && target_struct
                         && !is_struct(&source))
-                    .then(|| source.fteqcc_name())
+                    .then(|| self.type_name(&source))
                 }
                 ValueKind::Literal(_)
                 | ValueKind::Translate(_)
@@ -265,7 +265,7 @@ impl Resolver<'_> {
                 self.report(
                     Code::E0213,
                     location,
-                    format!("Cannot cast from {from} to {}", ty.fteqcc_name()),
+                    format!("Cannot cast from {from} to {}", self.type_name(&ty)),
                 );
                 return Err(Fatal);
             }

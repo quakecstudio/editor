@@ -3006,11 +3006,28 @@ pinned FTEQCC gives it with every warning on but those `QCC_SetDefaultProperties
   it writes the program rather than as it defines a name, a definition never referred to ("no
   references", `WARN_NOTREFERENCED`), a field allocated twice ("Field def already has a value",
   "Inconsistant field def") and the end_sys checks, which belong to the compiler's output
-  (QC-25); struct and union initialisers (designated members, "member ... was already
-  ininitialised", "inherited structs must use designated initialisers", "initializer-string too
-  long") and a definition of a struct type not yet defined ("redeclared with different storage
-  type"), the compiler's (QC-21); and FTEQCC's reacc and hexenc syntaxes (`flag_acc`, `var name
+  (QC-25); designated initialisers, `{ .a = 1 }`, whose members are read as written (FTEF-19.47
+  reads the others), and a definition of a struct type not yet defined ("redeclared with
+  different storage type"), the compiler's (QC-21); and FTEQCC's reacc and hexenc syntaxes (`flag_acc`, `var name
   : type`, a field `alias`), which `-Tid` does not enable.
+- **FTEF-19.47** A braced initialiser is read against the type element by element
+  (`QCC_PR_ParseInitializerType_Internal`): an array's elements up to its size ("arrays go
+  recursive", each an element of the next dimension or the element type), a vector's as three
+  floats, a struct's one per member in order, but `static` and `virtual` members, and each
+  value as a definition's value is (FTEF-19.31, FTEF-19.3): `float x[2] = {"a", 1};` is "Cannot
+  cast from string to float", `vector x[2] = {1, 2};` warns twice "Implicit cast from float to
+  vector", and `float x[2] = {y, 1};` for a variable `y` is "initializer for 'x' is not
+  constant". A member or element that is an array needs its own braces, else the fatal error
+  "expected {, found X"; a struct member given a value is cast to the struct, "Cannot cast from
+  float to struct S". A struct with a parent takes only `{}` or designated members, else the
+  fatal error `E0354` "inherited structs must use designated initialisers"; a union's members all
+  start at 0, so a second element is the fatal error `E0355` "member U.v was already
+  ininitialised". An element past the size or the members is left to what reads on: inside
+  braces "expected }, found X"; at a global's top level the warning "Missing semicolon at end of
+  definition" and the fatal error `"X" is not a type`; at a local's the warning, "Statement does
+  not do anything" and "expected ;, found }". So `float x[2] = {1, 2, 3};`, `S x = {1, 2};` for a
+  one-member `S` and `float x[2][2] = {{1, 2, 3}, {3, 4}};` are refused, and `float x[2] = {1,
+  2,};` and fewer elements than members are not.
 ## FTEF-20 Keywords
 
 **Source:** `qcc_pr_lex.c`, `QCC_PR_CheckKeyword`, `QCC_PR_CheckName`, `QCC_PR_ParseType` and

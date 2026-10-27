@@ -19,6 +19,7 @@ use std::rc::Rc;
 use crate::lower::{
     ArrayDim, ExternBase, LiteralValue, Qualifier, RawDecl, RawParamInfo, top_level_kind,
 };
+use crate::resolve::aggregate::{AggregateSite, Initialised};
 use crate::resolve::{
     COMPONENTS, DeclFacts, Facts, Fatal, FileDiagnostic, Holder, Init, MAX_TYPEDEF_DEPTH,
     MISDECLARED_BUILTINS, Pending, Redeclaration, Resolver, Special, TypeCheck, component_type,
@@ -397,6 +398,39 @@ impl<'a> Resolver<'a> {
         TypeCheck::Mismatch
     }
 
+    /// The checks of a global's initialiser before its value is read: what `QCC_PR_ParseDefs`
+    /// reports at the `=` (FTEF-19.4), an array's value and dimensions (FTEF-19.8) and a braced
+    /// initialiser read against the type (FTEF-19.47). Returns whether the declaration was
+    /// aborted.
+    fn check_initialiser_shape(
+        &mut self,
+        file: FileId,
+        decl: &RawDecl,
+        existing: Option<DefId>,
+        location: Location,
+    ) -> bool {
+        if self.profile.definition_checks()
+            && (self.check_initialisation(decl, existing, location)
+                || self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref())
+                || self.check_array_declaration(file, decl, location))
+        {
+            return true;
+        }
+        let Some(aggregate) = decl
+            .aggregate
+            .as_ref()
+            .filter(|_| self.profile.fteqcc_diagnostics())
+        else {
+            return false;
+        };
+        let def = Initialised {
+            name: &decl.name,
+            holder: Holder::Global,
+        };
+        self.check_aggregate(file, aggregate, &decl.ty, def, AggregateSite::Global)
+            .is_err()
+    }
+
     pub(in crate::resolve) fn mismatch(
         &mut self,
         name: &str,
@@ -704,15 +738,7 @@ impl<'a> Resolver<'a> {
         }
         let was_initialized =
             existing.is_some_and(|d| self.index.def(d).is_some_and(|d| d.initialized));
-        if self.profile.definition_checks() && !aborted {
-            aborted |= self.check_initialisation(decl, existing, location);
-        }
-        if self.profile.definition_checks() && !aborted {
-            aborted |= self.check_array_value(file, decl.array, &decl.ty, decl.value.as_ref());
-        }
-        if self.profile.definition_checks() && !aborted {
-            aborted |= self.check_array_declaration(file, decl, location);
-        }
+        aborted = aborted || self.check_initialiser_shape(file, decl, existing, location);
         // QC-11.5: id's qcc reports "NAME redeclared" at the `=`, before it reads the value.
         let value = if aborted
             || (!self.profile.reinitialise_with_same_value() && was_initialized && decl.initialized)
